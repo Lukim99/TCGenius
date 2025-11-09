@@ -6,8 +6,5 @@
     "express": "^5.1.0",
     "node-kakao": "^4.5.0",
     "request": "^2.88.2"
-  },
-  "scripts": {
-    "start": "node new-engine.js"
   }
 }
