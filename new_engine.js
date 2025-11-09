@@ -32,7 +32,7 @@ const ClaudeAPIKEY = "sk-ant-api03-Z6VYtcUCc1yDXfEfJKMjdTHnJhc8SBrDUiFJy1h6Ng67b
 const DeepSeekAPIKEY = "sk-f69fae2f328345d7a2d4fd0ffe5dc7db";
 
 const DEVICE_TYPE = "tablet";
-let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21a";
+let DEVICE_UUID = "";
 const DEVICE_NAME = "uDevice";
 const EMAIL = "lukim9_sub@kakao.com";
 const PASSWORD = "yanga0800";
