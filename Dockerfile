@@ -1,4 +1,4 @@
 FROM node:18-slim
-WORKDIR /app
+WORKDIR /
 COPY . .
 CMD ["node", "new_engine.js"]
