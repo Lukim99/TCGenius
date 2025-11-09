@@ -34,7 +34,7 @@ const DeepSeekAPIKEY = "sk-f69fae2f328345d7a2d4fd0ffe5dc7db";
 const DEVICE_TYPE = "tablet";
 let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21a";
 const DEVICE_NAME = "uDevice";
-const EMAIL = "lklklk9@kakao.com";
+const EMAIL = "lukim9_sub@kakao.com";
 const PASSWORD = "yanga0800";
 let client = new node_kakao.TalkClient();
 
