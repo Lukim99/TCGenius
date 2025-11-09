@@ -34,7 +34,7 @@ const DeepSeekAPIKEY = "sk-f69fae2f328345d7a2d4fd0ffe5dc7db";
 const DEVICE_TYPE = "tablet";
 let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21a";
 const DEVICE_NAME = "uDevice";
-const EMAIL = "lklklk9@kakao.com";
+const EMAIL = "lukim9_sub@kakao.com";
 const PASSWORD = "yanga0800";
 let client = new node_kakao.TalkClient();
 
@@ -300,6 +300,13 @@ Object.defineProperty(Object.prototype, 'concat', {
 
 Date.prototype.toYYYYMMDD = function() {
     return this.getFullYear() + "-" + pad_num(this.getMonth() + 1) + "-" + pad_num(this.getDate());
+}
+
+Date.prototype.getKoreanTime = function() {
+    const curr = new Date().getKoreanTime();
+    const utc = curr.getTime() + (curr.getTimezoneOffset() * 60 * 1000);
+    const korea = new Date(utc + (3600000 * 9));
+    return korea;
 }
 
 // DynamoDB 헬퍼 함수들 (Node.js async/await 방식)
@@ -784,7 +791,7 @@ class TCGUser {
     }
 
     attend() {
-        let now = new Date();
+        let now = new Date().getKoreanTime();
         let res = {
             success: false
         };
@@ -2263,8 +2270,8 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                if (user.daily_quest[0] != (new Date().toYYYYMMDD())) {
-                    user.daily_quest = [(new Date().toYYYYMMDD())];
+                if (user.daily_quest[0] != (new Date().getKoreanTime().toYYYYMMDD())) {
+                    user.daily_quest = [(new Date().getKoreanTime().toYYYYMMDD())];
                     await user.save();
                 }
 
@@ -4535,8 +4542,8 @@ client.on('chat', async (data, channel) => {
 
                 // 핫타임
                 if (args[0] == "핫타임") {
-                    if (new Date().getHours() >= 18 && new Date().getHours() <= 21) {
-                        let now = new Date();
+                    if (new Date().getKoreanTime().getHours() >= 18 && new Date().getKoreanTime().getHours() <= 21) {
+                        let now = new Date().getKoreanTime();
                         if (now.toYYYYMMDD() == user.hotTime) {
                             channel.sendChat("❌ 이미 오늘의 핫타임 보상을 받았습니다.");
                             return;
@@ -7050,7 +7057,7 @@ client.on('chat', async (data, channel) => {
                     } else {
                         if (targetPack.limit) {
                             // 주간 제한 리셋: 일요일이고 아직 리셋하지 않았다면
-                            let now = new Date();
+                            let now = new Date().getKoreanTime();
                             if (now.getDay() == 0 && user.shopLimit.weeklyResetAt != now.toYYYYMMDD()) {
                                 user.shopLimit.weekly = [];
                                 user.shopLimit.weeklyResetAt = now.toYYYYMMDD();
