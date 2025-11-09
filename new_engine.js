@@ -303,7 +303,7 @@ Date.prototype.toYYYYMMDD = function() {
 }
 
 Date.prototype.getKoreanTime = function() {
-    const curr = new Date().getKoreanTime();
+    const curr = new Date();
     const utc = curr.getTime() + (curr.getTimezoneOffset() * 60 * 1000);
     const korea = new Date(utc + (3600000 * 9));
     return korea;
