@@ -1,0 +1,121 @@
+[
+    {
+        "type": "유니크",
+        "count": 1,
+        "maxCount": 1,
+        "reward": [
+            {
+                "item": true,
+                "name": "행운의 복주머니",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "레어",
+        "count": 3,
+        "maxCount": 4,
+        "reward": [
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "레어",
+        "count": 4,
+        "maxCount": 5,
+        "reward": [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 5
+            }
+        ]
+    },
+    {
+        "type": "레어",
+        "count": 5,
+        "maxCount": 5,
+        "reward": [
+            {
+                "item": true,
+                "name": "윷",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "레어",
+        "count": 5,
+        "maxCount": 5,
+        "reward": [
+            {
+                "item": true,
+                "name": "전설 카드팩",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "일반",
+        "count": 563,
+        "maxCount": 596,
+        "reward": [
+            {
+                "item": true,
+                "name": "아티팩트 파편",
+                "count": 3
+            }
+        ]
+    },
+    {
+        "type": "일반",
+        "count": 555,
+        "maxCount": 596,
+        "reward": [
+            {
+                "item": true,
+                "name": "영롱한 기운",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "일반",
+        "count": 565,
+        "maxCount": 596,
+        "reward": [
+            {
+                "gold": true,
+                "count": 500
+            }
+        ]
+    },
+    {
+        "type": "일반",
+        "count": 554,
+        "maxCount": 596,
+        "reward": [
+            {
+                "item": true,
+                "name": "일반 소환권 조각",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "type": "일반",
+        "count": 565,
+        "maxCount": 596,
+        "reward": [
+            {
+                "item": true,
+                "name": "깔끔한 기운",
+                "count": 3
+            }
+        ]
+    }
+]

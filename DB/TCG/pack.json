@@ -1,0 +1,476 @@
+[
+  {
+      "name": "출석1",
+      "reward": [
+          {
+              "item": true,
+              "type": "소모품",
+              "name": "골드바",
+              "count": 1
+          },
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "일반 소환권",
+              "count": 10
+          },
+          {
+              "item": true,
+              "type": "선택팩",
+              "name": "초심자의 전설 카드 선택팩",
+              "count": 1
+          }
+      ]
+  },
+  {
+      "name": "출석2",
+      "reward": [
+          {
+              "garnet": true,
+              "count": 2000
+          },
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "픽업 소환권",
+              "count": 10
+          }
+      ]
+  },
+  {
+      "name": "출석3",
+      "reward": [
+          {
+              "item": true,
+              "type": "자물쇠",
+              "name": "보호자물쇠",
+              "count": 3
+          },
+          {
+              "item": true,
+              "type": "자물쇠",
+              "name": "강화자물쇠",
+              "count": 3
+          },
+          {
+              "item": true,
+              "type": "자물쇠",
+              "name": "축복자물쇠",
+              "count": 3
+          }
+      ]
+  },
+  {
+      "name": "출석4",
+      "reward": [
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "전설초월권",
+              "count": 1
+          },
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "일반 소환권",
+              "count": 20
+          }
+      ]
+  },
+  {
+      "name": "출석5",
+      "reward": [
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "일반 소환권",
+              "count": 30
+          }
+      ]
+  },
+  {
+      "name": "출석6",
+      "reward": [
+          {
+              "item": true,
+              "type": "티켓",
+              "name": "무료강화권",
+              "count": 5
+          },
+          {
+              "garnet": true,
+              "count": 1000
+          }
+      ]
+  },
+  {
+      "name": "출석7",
+      "reward": [
+          {
+              "item": true,
+              "name": "전설 카드팩",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "영웅 카드팩",
+              "count": 2
+          }
+      ]
+  },
+  {
+      "name": "330 픽업패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 20
+          },
+          {
+              "garnet": true,
+              "count": 300
+          }
+      ]
+  },
+  {
+      "name": "550 픽업패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 20
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 20
+          },
+          {
+              "garnet": true,
+              "count": 1000
+          }
+      ]
+  },
+  {
+      "name": "1100 픽업패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 50
+          },
+          {
+              "item": true,
+              "name": "강화자물쇠",
+              "count": 3
+          }
+      ]
+  },
+  {
+      "name": "영웅카드 패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "영웅 카드 선택팩",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "영웅초월권",
+              "count": 2
+          },
+          {
+              "garnet": true,
+              "count": 1200
+          }
+      ]
+  },
+  {
+      "name": "일발강화 패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "무료강화권",
+              "count": 10
+          },
+          {
+              "item": true,
+              "name": "강화자물쇠",
+              "count": 5
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 20
+          }
+      ]
+  },
+  {
+      "name": "한계돌파 패키지",
+      "reward": [
+          {
+              "item": true,
+              "name": "한계돌파석",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "희귀초월권",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "영웅초월권",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "전설초월권",
+              "count": 1
+          }
+      ]
+  },
+  {
+      "name": "테스트",
+      "reward": [
+          {
+              "gold": true,
+              "count": 100
+          },
+          {
+              "garnet": true,
+              "count": 100
+          }
+      ]
+  },
+  {
+      "name": "베스티스복지팩",
+      "reward": [
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 10
+          },
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 10
+          }
+      ]
+  },
+  {
+      "name": "반가워 선물 상자",
+      "reward": [
+          {
+              "item": true,
+              "name": "초심자의 전설 카드 선택팩",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "골드바",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 100
+          },
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 50
+          },
+          {
+              "item": true,
+              "name": "무료강화권",
+              "count": 5
+          },
+          {
+              "item": true,
+              "name": "메가카운트 이용권",
+              "count": 50
+          },
+          {
+              "garnet": true,
+              "count": 5000
+          }
+      ]
+  },
+  {
+      "name": "고마워 선물 상자",
+      "reward": [
+          {
+              "item": true,
+              "name": "전설 카드팩",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "골드바",
+              "count": 1
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 20
+          },
+          {
+              "item": true,
+              "name": "픽업 소환권",
+              "count": 20
+          },
+          {
+              "item": true,
+              "name": "메가카운트 이용권",
+              "count": 50
+          },
+          {
+              "garnet": true,
+              "count": 3000
+          }
+      ]
+  },
+  {
+      "name": "중달테마등장기념 패키지1",
+      "reward": [
+          {
+              "item": true,
+              "name": "[중간달리기]테마 카드팩",
+              "count": 2
+          },
+          {
+              "garnet": true,
+              "count": 1000
+          }
+      ]
+  },
+  {
+      "name": "중달테마등장기념 패키지2",
+      "reward": [
+          {
+              "item": true,
+              "name": "[중간달리기]테마 카드팩",
+              "count": 5
+          },
+          {
+              "garnet": true,
+              "count": 3000
+          },
+          {
+              "item": true,
+              "name": "무료강화권",
+              "count": 5
+          }
+      ]
+  },
+  {
+      "name": "중달테마등장기념 패키지3",
+      "reward": [
+          {
+              "item": true,
+              "name": "[중간달리기]테마 카드팩",
+              "count": 15
+          },
+          {
+              "garnet": true,
+              "count": 6000
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 50
+          }
+      ]
+  },
+  {
+      "name": "중달테마등장기념 패키지4",
+      "reward": [
+          {
+              "item": true,
+              "name": "[중간달리기]테마 카드팩",
+              "count": 50
+          },
+          {
+              "garnet": true,
+              "count": 12000
+          },
+          {
+              "item": true,
+              "name": "전설초월권",
+              "count": 1
+          }
+      ]
+  },
+  {
+      "name": "데메이컵테마등장기념 패키지1",
+      "reward": [
+          {
+              "item": true,
+              "name": "[데메이컵]테마 카드팩",
+              "count": 2
+          },
+          {
+              "garnet": true,
+              "count": 1000
+          }
+      ]
+  },
+  {
+      "name": "데메이컵테마등장기념 패키지2",
+      "reward": [
+          {
+              "item": true,
+              "name": "[데메이컵]테마 카드팩",
+              "count": 5
+          },
+          {
+              "garnet": true,
+              "count": 3000
+          },
+          {
+              "item": true,
+              "name": "무료강화권",
+              "count": 5
+          }
+      ]
+  },
+  {
+      "name": "데메이컵테마등장기념 패키지3",
+      "reward": [
+          {
+              "item": true,
+              "name": "[데메이컵]테마 카드팩",
+              "count": 15
+          },
+          {
+              "garnet": true,
+              "count": 6000
+          },
+          {
+              "item": true,
+              "name": "일반 소환권",
+              "count": 50
+          }
+      ]
+  },
+  {
+      "name": "데메이컵테마등장기념 패키지4",
+      "reward": [
+          {
+              "item": true,
+              "name": "[데메이컵]테마 카드팩",
+              "count": 50
+          },
+          {
+              "garnet": true,
+              "count": 12000
+          },
+          {
+              "item": true,
+              "name": "전설초월권",
+              "count": 1
+          }
+      ]
+  }
+]

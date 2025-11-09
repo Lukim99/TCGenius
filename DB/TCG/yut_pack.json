@@ -1,0 +1,112 @@
+{
+    "도": [
+        [
+            {
+                "item": true,
+                "name": "아티팩트",
+                "count": 5
+            }
+        ],
+        [
+            {
+                "gold": true,
+                "count": 200000
+            }
+        ],
+        [
+            {
+                "item": true,
+                "name": "슈퍼강화자물쇠",
+                "count": 1
+            }
+        ]
+    ],
+    "개": [
+        [
+            {
+                "item": true,
+                "name": "찬란한 주사위",
+                "count": 3
+            }
+        ],
+        [
+            {
+                "gold": true,
+                "count": 500000
+            }
+        ],
+        [
+            {
+                "item": true,
+                "name": "기운 랜덤박스",
+                "count": 20
+            }
+        ]
+    ],
+    "걸": [
+        [
+            {
+                "item": true,
+                "name": "찬란한 주사위",
+                "count": 7
+            }
+        ],
+        [
+            {
+                "gold": true,
+                "count": 770000
+            }
+        ],
+        [
+            {
+                "item": true,
+                "name": "영롱한 기운",
+                "count": 30
+            }
+        ]
+    ],
+    "윷": [
+        [
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 3
+            }
+        ],
+        [
+            {
+                "gold": true,
+                "count": 1200000
+            }
+        ],
+        [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 7
+            }
+        ]
+    ],
+    "모": [
+        [
+            {
+                "item": true,
+                "name": "심판 주사위",
+                "count": 3
+            }
+        ],
+        [
+            {
+                "gold": true,
+                "count": 1500000
+            }
+        ],
+        [
+            {
+                "item": true,
+                "name": "전설 카드 선택팩",
+                "count": 1
+            }
+        ]
+    ]
+}

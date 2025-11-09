@@ -1,0 +1,282 @@
+[
+    {
+        "name": "골드바",
+        "rewards": [
+            {
+                "gold": true,
+                "count": 1000000
+            }
+        ]
+    },
+    {
+        "name": "순금0.1g",
+        "rewards": [
+            {
+                "gold": true,
+                "count": 300000
+            }
+        ]
+    },
+    {
+        "name": "EP1 레이드 최초 클리어 보상 상자",
+        "rewards": [
+            {
+                "gold": true,
+                "count": 400000
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "무료강화권",
+                "count": 5
+            },
+            {
+                "item": true,
+                "type": "카드팩",
+                "name": "전설 카드팩",
+                "count": 1
+            },
+            {
+                "item": true,
+                "type": "재화",
+                "name": "스피릿",
+                "count": 5
+            }
+        ]
+    },
+    {
+        "name": "[독재자]테마 카드 선택팩 교환권",
+        "rewards": [
+            {
+                "item": true,
+                "type": "선택팩",
+                "name": "[독재자]테마 카드 선택팩",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "기운 랜덤박스",
+        "rewards": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "강렬한 기운",
+                        "count": {
+                            "min": 1,
+                            "max": 2
+                        },
+                        "weight": 2
+                    },
+                    {
+                        "item": true,
+                        "name": "영롱한 기운",
+                        "count": {
+                            "min": 5,
+                            "max": 10
+                        },
+                        "weight": 8
+                    },
+                    {
+                        "item": true,
+                        "name": "깔끔한 기운",
+                        "count": {
+                            "min": 10,
+                            "max": 20
+                        },
+                        "weight": 90
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "하급 기운 랜덤박스",
+        "rewards": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "강렬한 기운",
+                        "count": 1,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "영롱한 기운",
+                        "count": {
+                            "min": 2,
+                            "max": 4
+                        },
+                        "weight": 6
+                    },
+                    {
+                        "item": true,
+                        "name": "깔끔한 기운",
+                        "count": {
+                            "min": 3,
+                            "max": 8
+                        },
+                        "weight": 93
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "행운의 복주머니",
+        "rewards": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "전설 카드 선택팩",
+                        "count": 1,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "전설 카드팩",
+                        "count": 3,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 3000,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 5000,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 10000,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "전설초월권",
+                        "count": 1,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "강렬한 기운",
+                        "count": 10,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "무료강화권",
+                        "count": 10,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "일반 소환권",
+                        "count": 100,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "픽업 소환권",
+                        "count": 100,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "심판 주사위",
+                        "count": 5,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "운명 주사위",
+                        "count": 10,
+                        "weight": 1
+                    }
+                ]
+            },
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "전설 카드 선택팩",
+                        "count": 1,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "전설 카드팩",
+                        "count": 3,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 3000,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 5000,
+                        "weight": 1
+                    },
+                    {
+                        "garnet": true,
+                        "count": 10000,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "전설초월권",
+                        "count": 1,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "강렬한 기운",
+                        "count": 10,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "무료강화권",
+                        "count": 10,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "일반 소환권",
+                        "count": 100,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "픽업 소환권",
+                        "count": 100,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "심판 주사위",
+                        "count": 5,
+                        "weight": 1
+                    },
+                    {
+                        "item": true,
+                        "name": "운명 주사위",
+                        "count": 10,
+                        "weight": 1
+                    }
+                ]
+            }
+        ]
+    }
+]

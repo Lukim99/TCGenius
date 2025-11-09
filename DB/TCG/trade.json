@@ -1,0 +1,209 @@
+[
+    {
+        "name": "아티팩트",
+        "material": [
+            {
+                "item": true,
+                "name": "아티팩트 파편",
+                "count": 180
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "아티팩트",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "일반 소환권",
+        "material": [
+            {
+                "item": true,
+                "name": "일반 소환권 조각",
+                "count": 10
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "일반 소환권",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "전설 카드팩",
+        "material": [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 10
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "전설 카드팩",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "영웅 카드팩",
+        "material": [
+            {
+                "item": true,
+                "name": "영롱한 기운",
+                "count": 25
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "영웅 카드팩",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "하급 기운 랜덤박스",
+        "material": [
+            {
+                "item": true,
+                "name": "깔끔한 기운",
+                "count": 100
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "하급 기운 랜덤박스",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "해방의 열쇠",
+        "material": [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "영롱한 기운",
+                "count": 800
+            },
+            {
+                "item": true,
+                "name": "깔끔한 기운",
+                "count": 3000
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "해방의 열쇠",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "랜덤주사위",
+        "material": [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 2
+            },
+            {
+                "item": true,
+                "name": "영롱한 기운",
+                "count": 8
+            },
+            {
+                "item": true,
+                "name": "깔끔한 기운",
+                "count": 50
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "랜덤주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "빛나는 주사위",
+        "material": [
+            {
+                "item": true,
+                "name": "희미한 주사위",
+                "count": 5
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "빛나는 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "찬란한 주사위",
+        "material": [
+            {
+                "item": true,
+                "name": "빛나는 주사위",
+                "count": 5
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "찬란한 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "운명 주사위",
+        "material": [
+            {
+                "item": true,
+                "name": "찬란한 주사위",
+                "count": 5
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "심판 주사위",
+        "material": [
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 5
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "심판 주사위",
+                "count": 1
+            }
+        ]
+    }
+]

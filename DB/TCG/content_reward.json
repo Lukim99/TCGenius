@@ -1,0 +1,126 @@
+{
+    "이지": [
+        {
+            "gold": true,
+            "count": {
+                "min": 25000,
+                "max": 35000
+            }
+        },
+        {
+            "item": true,
+            "type": "재화",
+            "name": "스피릿",
+            "count": 3
+        },
+        {
+            "item": true,
+            "type": "소모품",
+            "name": "아티팩트",
+            "count": {
+                "min": 1,
+                "max": 4
+            }
+        },
+        {
+            "item": true,
+            "type": "카드팩",
+            "name": "전설 카드팩",
+            "count": 1,
+            "prob": 0.05
+        }
+    ],
+    "노말": [
+        {
+            "gold": true,
+            "count": {
+                "min": 60000,
+                "max": 90000
+            }
+        },
+        {
+            "item": true,
+            "type": "재화",
+            "name": "스피릿",
+            "count": 6
+        },
+        {
+            "item": true,
+            "type": "소모품",
+            "name": "아티팩트",
+            "count": {
+                "min": 1,
+                "max": 4
+            }
+        },
+        {
+            "item": true,
+            "type": "카드팩",
+            "name": "전설 카드팩",
+            "count": 1,
+            "prob": 0.05
+        }
+    ],
+    "하드": [
+        {
+            "gold": true,
+            "count": {
+                "min": 160000,
+                "max": 200000
+            }
+        },
+        {
+            "item": true,
+            "type": "재화",
+            "name": "스피릿",
+            "count": 10
+        },
+        {
+            "item": true,
+            "type": "소모품",
+            "name": "아티팩트",
+            "count": {
+                "min": 1,
+                "max": 4
+            }
+        },
+        {
+            "item": true,
+            "type": "카드팩",
+            "name": "전설 카드팩",
+            "count": 1,
+            "prob": 0.05
+        }
+    ],
+    "익스트림": [
+        {
+            "gold": true,
+            "count": {
+                "min": 300000,
+                "max": 400000
+            }
+        },
+        {
+            "item": true,
+            "type": "재화",
+            "name": "스피릿",
+            "count": 15
+        },
+        {
+            "item": true,
+            "type": "소모품",
+            "name": "아티팩트",
+            "count": {
+                "min": 1,
+                "max": 4
+            }
+        },
+        {
+            "item": true,
+            "type": "카드팩",
+            "name": "전설 카드팩",
+            "count": 1,
+            "prob": 0.05
+        }
+    ]
+}

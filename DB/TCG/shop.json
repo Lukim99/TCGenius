@@ -1,0 +1,729 @@
+[
+    {
+        "event": true,
+        "name": "메가카운트 패키지1",
+        "goods": "골드",
+        "price": 10000,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "daily": 20
+        }
+    },
+    {
+        "event": true,
+        "name": "메가카운트 패키지2",
+        "goods": "가넷",
+        "price": 500,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 10
+            }
+        ]
+    },
+    {
+        "event": true,
+        "name": "메가카운트 패키지3",
+        "goods": "가넷",
+        "price": 1400,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 30
+            }
+        ]
+    },
+    {
+        "event": true,
+        "name": "메가카운트 패키지4",
+        "goods": "가넷",
+        "price": 2300,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 50
+            },
+            {
+                "gold": true,
+                "count": 30000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "가넷",
+        "price": 100,
+        "item": [
+            {
+                "gold": true,
+                "count": 30000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "가넷",
+        "price": 500,
+        "item": [
+            {
+                "gold": true,
+                "count": 180000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "가넷",
+        "price": 1000,
+        "item": [
+            {
+                "gold": true,
+                "count": 400000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "name": "일반 소환권 패키지",
+        "goods": "골드",
+        "price": 10000,
+        "item": [
+            {
+                "item": true,
+                "type": "카드팩",
+                "name": "일반 소환권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "daily": 10
+        }
+    },
+    {
+        "normal": true,
+        "name": "데일리 기운 랜덤박스",
+        "goods": "골드",
+        "price": 10000,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "기운 랜덤박스",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "daily": 10
+        }
+    },
+    {
+        "normal": true,
+        "goods": "골드",
+        "price": 10000,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "하급 기운 랜덤박스",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "골드",
+        "price": 100000,
+        "item": [
+            {
+                "item": true,
+                "type": "자물쇠",
+                "name": "강화자물쇠",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 50,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "거래권",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 250,
+        "item": [
+            {
+                "item": true,
+                "type": "주사위",
+                "name": "운명 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 1000,
+        "item": [
+            {
+                "item": true,
+                "type": "주사위",
+                "name": "심판 주사위",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "name": "데일리 랜덤 주사위",
+        "goods": "골드",
+        "price": 300000,
+        "item": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "희미한 주사위",
+                        "count": 1,
+                        "weight": 10
+                    },
+                    {
+                        "item": true,
+                        "name": "빛나는 주사위",
+                        "count": 1,
+                        "weight": 8
+                    },
+                    {
+                        "item": true,
+                        "name": "찬란한 주사위",
+                        "count": 1,
+                        "weight": 6
+                    },
+                    {
+                        "item": true,
+                        "name": "운명 주사위",
+                        "count": 1,
+                        "weight": 3
+                    },
+                    {
+                        "item": true,
+                        "name": "심판 주사위",
+                        "count": 1,
+                        "weight": 1
+                    }
+                ]
+            }
+        ],
+        "limit": {
+            "daily": 3
+        }
+    },
+    {
+        "content": true,
+        "goods": "골드",
+        "price": 30000,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "반복 콘텐츠 입장권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "weekly": 5
+        }
+    },
+    {
+        "content": true,
+        "goods": "골드",
+        "price": 100000,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "주간 콘텐츠 입장권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "weekly": 1
+        }
+    },
+    {
+        "content": true,
+        "name": "무료강화권(피스)",
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "name": "무료강화권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 30
+        }
+    },
+    {
+        "content": true,
+        "name": "아티팩트 2p",
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "아티팩트",
+                "count": 2
+            }
+        ]
+    },
+    {
+        "content": true,
+        "name": "기운 랜덤박스 2p",
+        "goods": "스피릿",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "name": "기운 랜덤박스",
+                "count": 2
+            }
+        ]
+    },
+    {
+        "content": true,
+        "name": "피스 픽업팩",
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 10
+            }
+        ],
+        "limit": {
+            "lifetime": 10
+        }
+    },
+    {
+        "content": true,
+        "name": "골드바(피스)",
+        "goods": "피스",
+        "price": 3,
+        "item": [
+            {
+                "item": true,
+                "name": "골드바",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 2
+        }
+    },
+    {
+        "content": true,
+        "name": "전설초월권(피스)",
+        "goods": "피스",
+        "price": 5,
+        "item": [
+            {
+                "item": true,
+                "name": "전설초월권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 2
+        }
+    },
+    {
+        "content": true,
+        "goods": "피스",
+        "price": 2,
+        "item": [
+            {
+                "item": true,
+                "type": "카드팩",
+                "name": "전설 카드팩",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 10
+        }
+    },
+    {
+        "content": true,
+        "goods": "피스",
+        "price": 15,
+        "item": [
+            {
+                "item": true,
+                "type": "선택팩",
+                "name": "전설 카드 선택팩",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 1
+        }
+    },
+    {
+        "content": true,
+        "goods": "피스",
+        "price": 7,
+        "item": [
+            {
+                "item": true,
+                "type": "선택팩",
+                "name": "영웅 카드 선택팩",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 3
+        }
+    },
+    {
+        "content": true,
+        "name": "한계돌파석(피스)",
+        "goods": "피스",
+        "price": 10,
+        "item": [
+            {
+                "item": true,
+                "name": "한계돌파석",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 1
+        }
+    },
+    {
+        "content": true,
+        "name": "거래권(피스)",
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "거래권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 5
+        }
+    },
+    {
+        "content": true,
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "name": "[밍닝스플랜]테마 카드팩",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 20
+        }
+    },
+    {
+        "content": true,
+        "name": "운명 주사위(피스)",
+        "goods": "피스",
+        "price": 1,
+        "item": [
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 15
+        }
+    },
+    {
+        "content": true,
+        "name": "심판 주사위(피스)",
+        "goods": "피스",
+        "price": 2,
+        "item": [
+            {
+                "item": true,
+                "name": "심판 주사위",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 10
+        }
+    },
+    {
+        "package": true,
+        "name": "추석맞이 330 픽업",
+        "goods": "p",
+        "price": 330,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "픽업 소환권",
+                "count": 20
+            },
+            {
+                "garnet": true,
+                "count": 300
+            }
+        ],
+        "limit": {
+            "lifetime": 5
+        }
+    },
+    {
+        "package": true,
+        "name": "추석맞이 550 픽업",
+        "goods": "p",
+        "price": 550,
+        "item": [
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 40
+            },
+            {
+                "item": true,
+                "name": "윷",
+                "count": 1
+            },
+            {
+                "garnet": true,
+                "count": 1000
+            }
+        ],
+        "limit": {
+            "lifetime": 5
+        }
+    },
+    {
+        "package": true,
+        "name": "추석맞이 1100 픽업",
+        "goods": "p",
+        "price": 1100,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "픽업 소환권",
+                "count": 80
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "일반 소환권",
+                "count": 20
+            },
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "윷",
+                "count": 2
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 50
+            }
+        ],
+        "limit": {
+            "lifetime": 5
+        }
+    },
+    {
+        "package": true,
+        "name": "추석맞이 복주머니팩",
+        "goods": "p",
+        "price": 2200,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "행운의 복주머니",
+                "count": 1
+            },
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "윷",
+                "count": 2
+            }
+        ],
+        "limit": {
+            "lifetime": 5
+        }
+    },
+    {
+        "package": true,
+        "name": "주사위 선택 패키지",
+        "goods": "p",
+        "price": 1500,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "주사위 선택권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 10
+        }
+    },
+    {
+        "package": true,
+        "name": "메카가 몰고온 초월팩",
+        "goods": "p",
+        "price": 4500,
+        "item": [
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "메가카운트 이용권",
+                "count": 300
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "희귀초월권",
+                "count": 1
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "영웅초월권",
+                "count": 1
+            },
+            {
+                "item": true,
+                "type": "티켓",
+                "name": "전설초월권",
+                "count": 1
+            }
+        ],
+        "limit": {
+            "lifetime": 3
+        }
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 330,
+        "item": [
+            {
+                "garnet": true,
+                "count": 1100
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 990,
+        "item": [
+            {
+                "garnet": true,
+                "count": 3500
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 2200,
+        "item": [
+            {
+                "garnet": true,
+                "count": 8500
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 5500,
+        "item": [
+            {
+                "garnet": true,
+                "count": 22000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 11000,
+        "item": [
+            {
+                "garnet": true,
+                "count": 46000
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "p",
+        "price": 33000,
+        "item": [
+            {
+                "garnet": true,
+                "count": 150500
+            }
+        ]
+    },
+    {
+        "normal": true,
+        "goods": "골드",
+        "price": 50000,
+        "item": [
+            {
+                "item": true,
+                "type": "소모품",
+                "name": "아티팩트",
+                "count": 1
+            }
+        ]
+    }
+]

@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.913.0",
+    "@aws-sdk/lib-dynamodb": "^3.913.0",
+    "aws-sdk": "^2.1692.0",
+    "express": "^5.1.0",
+    "node-kakao": "^4.5.0",
+    "request": "^2.88.2"
+  }
+}

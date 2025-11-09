@@ -1,0 +1,255 @@
+[
+    {
+        "coupon": "테스트",
+        "reward": [
+            {
+                "gold": true,
+                "count": 10000
+            },
+            {
+                "garnet": true,
+                "count": 100
+            }
+        ]
+    },
+    {
+        "onetime": true,
+        "coupon": "테스트1",
+        "reward": [
+            {
+                "gold": true,
+                "count": 100
+            },
+            {
+                "garnet": true,
+                "count": 100
+            }
+        ]
+    },
+    {
+        "coupon": "기다려주셔서감사합니다",
+        "reward": [
+            {
+                "garnet": true,
+                "count": 3000
+            },
+            {
+                "item": true,
+                "name": "일반 소환권",
+                "count": 20
+            },
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 20
+            },
+            {
+                "gold": true,
+                "count": 100000
+            }
+        ]
+    },
+    {
+        "coupon": "1차쇼케이스감사쿠폰",
+        "reward": [
+            {
+                "garnet": true,
+                "count": 3000
+            },
+            {
+                "item": true,
+                "name": "무료강화권",
+                "count": 10
+            },
+            {
+                "item": true,
+                "name": "일반 소환권",
+                "count": 100
+            },
+            {
+                "item": true,
+                "name": "골드바",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "한계돌파석",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "거래권",
+                "count": 5
+            },
+            {
+                "item": true,
+                "name": "전설 카드 선택팩",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "전설초월권",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "coupon": "구구구",
+        "reward": [
+            {
+                "garnet": true,
+                "count": 100
+            }
+        ],
+        "onetime": true
+    },
+    {
+        "coupon": "콘텐츠익트퍼클은낮밤",
+        "reward": [
+            {
+                "gold": true,
+                "count": 100000
+            },
+            {
+                "garnet": true,
+                "count": 1000
+            },
+            {
+                "item": true,
+                "name": "무료강화권",
+                "count": 5
+            }
+        ]
+    },
+    {
+        "coupon": "SUPER EASY",
+        "reward": [
+            {
+                "garnet": true,
+                "count": 2000
+            },
+            {
+                "item": true,
+                "name": "일반 소환권",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "전설 카드팩",
+                "count": 2
+            },
+            {
+                "item": true,
+                "name": "기운 랜덤박스",
+                "count": 20
+            },
+            {
+                "item": true,
+                "name": "메가카운트 이용권",
+                "count": 200
+            }
+        ]
+    },
+    {
+        "coupon": "테스트1234",
+        "reward": []
+    },
+    {
+        "coupon": "2차쇼케이스가즈아",
+        "reward": [
+            {
+                "garnet": true,
+                "count": 3000
+            },
+            {
+                "item": true,
+                "name": "골드바",
+                "count": 3
+            },
+            {
+                "item": true,
+                "name": "일반 소환권",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "픽업 소환권",
+                "count": 50
+            },
+            {
+                "item": true,
+                "name": "경험치300물약",
+                "count": 5000
+            },
+            {
+                "item": true,
+                "name": "전설 카드팩",
+                "count": 5
+            },
+            {
+                "item": true,
+                "name": "전설 카드 선택팩",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "거래권",
+                "count": 5
+            },
+            {
+                "item": true,
+                "name": "전설초월권",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "기운 랜덤박스",
+                "count": 30
+            },
+            {
+                "item": true,
+                "name": "운명 주사위",
+                "count": 5
+            },
+            {
+                "item": true,
+                "name": "심판 주사위",
+                "count": 3
+            }
+        ]
+    },
+    {
+        "coupon": "1006대참사보상",
+        "reward": [
+            {
+                "item": true,
+                "name": "전설초월권",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "행운의 복주머니",
+                "count": 1
+            },
+            {
+                "item": true,
+                "name": "찬란한 주사위",
+                "count": 30
+            },
+            {
+                "garnet": true,
+                "count": 1000
+            }
+        ]
+    }
+]

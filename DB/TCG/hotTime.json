@@ -1,0 +1,14 @@
+{
+    "reward": [
+        {
+            "item": true,
+            "name": "기운 랜덤박스",
+            "count": 20
+        },
+        {
+            "item": true,
+            "name": "운명 주사위",
+            "count": 5
+        }
+    ]
+}
