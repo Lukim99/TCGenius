@@ -7,6 +7,9 @@ const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const VIEWMORE = ('\u200e'.repeat(500));
 
+// 콘텐츠 명령어 비활성화 플래그
+let contentCommandsBlocked = false;
+
 // AWS DynamoDB 설정
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
@@ -157,6 +160,7 @@ let tcgLoading = {};
 let combQueue = {};
 let chooseCard = {};
 let tcgRaid = {};
+let canRejoin = {};
 let editPack = {};
 let raidParties = {}; // 레이드 파티 관리 {partyId: {members: [], difficulty: "", phase: 1, ...}}
 
@@ -303,7 +307,7 @@ Date.prototype.toYYYYMMDD = function() {
 }
 
 Date.prototype.getKoreanTime = function() {
-    const curr = new Date().getKoreanTime();
+    const curr = new Date();
     const utc = curr.getTime() + (curr.getTimezoneOffset() * 60 * 1000);
     const korea = new Date(utc + (3600000 * 9));
     return korea;
@@ -4306,6 +4310,10 @@ client.on('chat', async (data, channel) => {
 
                 // 콘텐츠상점
                 if (args[0] == "콘텐츠상점") {
+                    if (contentCommandsBlocked) {
+                        channel.sendChat("❌ 현재 콘텐츠가 비활성화되어 있습니다.");
+                        return;
+                    }
                     let shopInfo = JSON.parse(read("DB/TCG/shop.json")).filter(s => s.content);
                     let sellingList = [];
                     shopInfo.forEach(sell => {
@@ -5026,6 +5034,24 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
+                if (args[0] == "콘텐츠제어" && user.isAdmin) {
+                    if (args[1] == "막기") {
+                        contentCommandsBlocked = true;
+                        channel.sendChat("✅ 콘텐츠 명령어가 비활성화되었습니다.");
+                        return;
+                    } else if (args[1] == "열기") {
+                        contentCommandsBlocked = false;
+                        channel.sendChat("✅ 콘텐츠 명령어가 활성화되었습니다.");
+                        return;
+                    } else if (args[1] == "상태") {
+                        channel.sendChat("콘텐츠 명령어 상태: " + (contentCommandsBlocked ? "비활성화됨" : "활성화됨"));
+                        return;
+                    } else {
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 콘텐츠제어 막기 | 열기 | 상태 ]");
+                        return;
+                    }
+                }
+
                 // 메가카운트
                 if (args[0] == "메가카운트") {
                     let mc = JSON.parse(read("DB/TCG/megaCount.json"));
@@ -5475,8 +5501,13 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                // 콘텐츠
+                /*
+                // 콘텐츠 (기존 시스템 - 주석 처리)
                 if (args[0] == "콘텐츠") {
+                    if (contentCommandsBlocked) {
+                        channel.sendChat("❌ 현재 콘텐츠가 비활성화되어 있습니다.");
+                        return;
+                    }
                     // 콘텐츠 입장
                     if (args[1] == "입장") {
                         if (!args[2] || !["노말", "하드", "익스트림"].includes(args[2])) {
@@ -6475,6 +6506,144 @@ client.on('chat', async (data, channel) => {
                         }
                         channel.sendChat("✨ 공대장스킬 발동!\n- 버프카드가 리필되었습니다.\n- 안성재/흐음 체력이 초기화되었습니다.\n남은 사용 가능 횟수: " + userParty.phase2.leaderSkillUses);
                         return;
+                    }
+                }
+                */
+
+                // 콘텐츠 (월야환담 레이드 - old_engine.js 구조 기반)
+                if (args[0] == "콘텐츠") {
+                    if (contentCommandsBlocked) {
+                        channel.sendChat("❌ 현재 콘텐츠 명령어가 비활성화되어 있습니다.");
+                        return;
+                    }
+                    if (args[1] == "입장") {
+                        if (["이지","노말","하드","익스트림"].includes(args[2])) {
+                            if (tcgRaid[user.id]) {
+                                channel.sendChat("❌ 이미 콘텐츠 진행중입니다.");
+                                return;
+                            }
+                            let powers = {
+                                "이지": 300,
+                                "노말": 600,
+                                "하드": 1100,
+                                "익스트림": 1500
+                            };
+                            if (user.content_power < powers[args[2]]) {
+                                channel.sendChat("❌ 콘텐츠 전투력(" + numberWithCommas(user.content_power.toString()) + ")이 입장 가능 전투력(" + numberWithCommas(powers[args[2]].toString()) + ")보다 낮습니다.");
+                                return;
+                            }
+                            if (canRejoin[user.id]) {
+                                if (user.gold < 20000) {
+                                    channel.sendChat("❌ 골드가 부족합니다!\n필요 골드: " + numberWithCommas(user.gold.toString()) + "/20,000");
+                                    return;
+                                }
+                                user.gold -= 20000;
+                                delete canRejoin[user.id];
+                            } else {
+                                let items = JSON.parse(read("DB/TCG/item.json"));
+                                let itemIdx = items.findIndex(i => i.name == "콘텐츠 입장권");
+                                let userItem = user.inventory.item.find(i => i.id == itemIdx) || {count: 0};
+                                if (userItem.count < 1) {
+                                    channel.sendChat("❌ 콘텐츠 입장권이 없습니다.");
+                                    return;
+                                }
+                                user.removeItem(itemIdx, 1);
+                            }
+                            user.removeItem(35, 999);
+                            user.removeItem(36, 999);
+                            user.removeItem(37, 999);
+                            user.removeItem(38, 999);
+                            user.addItem(35, 4);
+                            user.addItem(36, 3);
+                            user.addItem(37, 2);
+                            user.addItem(38, 1);
+                            tcgRaid[user.id] = {
+                                power: user.content_power,
+                                difficulty: args[2],
+                                level: 0
+                            };
+                            user.save();
+                            let bosses = JSON.parse(read("DB/TCG/bosses.json"));
+                            channel.sendChat("✅ 콘텐츠에 입장했습니다.\n\n< 1관문 > " + bosses[0].name + "\n체력: " + numberWithCommas(bosses[0].hp[tcgRaid[user.id].difficulty].toString()) + "\n\n버프카드가 지급되었습니다. 인벤토리를 확인해주세요.");
+                        }
+                    } else if (args[1] == "전투력") {
+                        if (args[2] == "설정" && user.isAdmin) {
+                            let arg = cmd.substr(cmd.split(" ")[0].length + 12).split(" ");
+                            if (arg.length == 0) {
+                                channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 콘텐츠 전투력 설정 <유저명> <전투력> ]");
+                                return;
+                            }
+                            let target = await getTCGUserByName(arg[0]);
+                            let num = Number(arg[1]);
+                            if (isNaN(num) || num % 1 != 0) {
+                                channel.sendChat("❌ 설정할 전투력이 제대로 입력되지 않았습니다.");
+                                return;
+                            }
+                            if (! target) {
+                                channel.sendChat("❌ 존재하지 않는 유저입니다: " + arg[0]);
+                                return;
+                            }
+                            target.content_power = num;
+                            await target.save();
+                            channel.sendChat("✅ " + target.name + "님의 콘텐츠 전투력을 " + numberWithCommas(num.toString()) + "(으)로 설정했습니다.");
+                        } else {
+                            if (tcgRaid[user.id]) {
+                                channel.sendChat(user.name + "님의 콘텐츠 전투력: " + numberWithCommas(tcgRaid[user.id].power.toString()));
+                            } else {
+                                channel.sendChat(user.name + "님의 콘텐츠 전투력: " + numberWithCommas(user.content_power.toString()));
+                            }
+                        }
+                    } else if (args[1] == "설정" && user.isAdmin) {
+                        save("DB/TCG/content.txt", cmd.substr(cmd.split(" ")[0].length + 8));
+                        channel.sendChat("✅ 콘텐츠 설명이 변경되었습니다.");
+                    } else if (args[1] == "공격" && tcgRaid[user.id]) {
+                        let bosses = JSON.parse(read("DB/TCG/bosses.json"));
+                        let sendMsg = [];
+                        if (bosses[tcgRaid[user.id].level].hp[tcgRaid[user.id].difficulty] <= tcgRaid[user.id].power) {
+                            sendMsg.push("✅ " + bosses[tcgRaid[user.id].level].name + " 토벌에 성공했습니다!");
+                            tcgRaid[user.id].level++;
+                            tcgRaid[user.id].power = user.content_power;
+                            if (! bosses[tcgRaid[user.id].level]) {
+                                let pack = JSON.parse(read("DB/TCG/content_reward.json"))[tcgRaid[user.id].difficulty];
+                                if (!user.content_clear['EP1']) {
+                                    pack.push({
+                                        item: true,
+                                        type: "소모품",
+                                        name: "EP1 레이드 최초 클리어 보상 상자",
+                                        count: 1
+                                    });
+                                    user.content_clear['EP1'] = true;
+                                }
+                                if (user.deck.content[0].includes(408) || user.deck.content[1].includes(408)) pack.push({gold:true,count:30000});
+                                let rewards = await user.givePack(pack);
+                                user.removeItem(35, 999);
+                                user.removeItem(36, 999);
+                                user.removeItem(37, 999);
+                                user.removeItem(38, 999);
+                                delete tcgRaid[user.id];
+                                user.save();
+                                sendMsg.push("콘텐츠를 클리어했습니다.\n\n[ 획득한 보상 ]\n" + rewards.join("\n"));
+                            } else {
+                                sendMsg.push("\n< " + (tcgRaid[user.id].level + 1) + "관문 > " + bosses[tcgRaid[user.id].level].name + "\n체력: " + numberWithCommas(bosses[tcgRaid[user.id].level].hp[tcgRaid[user.id].difficulty].toString()));
+                                sendMsg.push("\n[ 남은 버프카드 ]");
+                                if (user.inventory.item.find(i => i.id == 35)) sendMsg.push("- 전투력 상승 50 x" + user.inventory.item.find(i => i.id == 35).count);
+                                if (user.inventory.item.find(i => i.id == 36)) sendMsg.push("- 전투력 상승 100 x" + user.inventory.item.find(i => i.id == 36).count);
+                                if (user.inventory.item.find(i => i.id == 37)) sendMsg.push("- 전투력 상승 10% x" + user.inventory.item.find(i => i.id == 37).count);
+                                if (user.inventory.item.find(i => i.id == 38)) sendMsg.push("- 전투력 상승 20% x" + user.inventory.item.find(i => i.id == 38).count);
+                            }
+                            channel.sendChat(sendMsg.join("\n"));
+                        } else {
+                            channel.sendChat("✅ " + bosses[tcgRaid[user.id].level].name + " 토벌에 실패했습니다.\n\n2만 골드를 사용하여 다시 입장할 수 있습니다.");
+                            user.removeItem(35, 999);
+                            user.removeItem(36, 999);
+                            user.removeItem(37, 999);
+                            user.removeItem(38, 999);
+                            delete tcgRaid[user.id];
+                            canRejoin[user.id] = true;
+                            user.save();
+                        }
+                    } else {
+                        channel.sendChat("[ 콘텐츠 설명 ]\n" + VIEWMORE + "\n" + read("DB/TCG/content.txt"));
                     }
                 }
 
