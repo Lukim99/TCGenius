@@ -528,18 +528,20 @@ async function performCombination(user, channel, cardIds, grade, count) {
             } else {
                 prestigePackChance = 0.01; // 1%
             }
+            if (user.name == "루킴") prestigePackChance *= 50;
             
             if (prestigePackChance > 0 && Math.random() < prestigePackChance) {
                 const prestigePackId = items.findIndex(item => item.name === "프레스티지 카드팩");
                 if (prestigePackId !== -1) {
                     user.addItem(prestigePackId, 1);
                     resultMessages.push("✨ 축하합니다! 프레스티지 카드팩을 획득했습니다!");
+                    TCGLog("📜 프레스티지 로그 📜\n\n>> 조합한 유저: " + user + "\n>> 조합 카드 등급: " + grade);
                 }
             }
         }
         
         // 결과 메시지 구성
-        let resultMessage = `❇️ ${count}장의 ${grade} 카드 조합이 완료되었습니다!\n\n[ 획득한 카드 ]\n- [${resultRarity}] [${resultCard.title}] ${resultCard.name}`;
+        let resultMessage = `❇️ ${count}장의 ${grade} 카드를 조합했습니다.\n\n[ 획득한 카드 ]\n- ${resultRarity == "프레스티지" ? "✨" : "[" + resultRarity + "]"} [${resultCard.title}]${resultCard.name}`;
         
         // 보존된 카드가 있는 경우
         if (notDeleteCards.length > 0) {
@@ -2569,7 +2571,7 @@ client.on('chat', async (data, channel) => {
             }
             
             if (grade !== "전설" && selectedCardIds.length === 10) {
-                probMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득 가능!";
+                probMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득!";
             }
             
             probMessage += "\n\n조합 확정: [ /tcg 조합확정 ]";
@@ -2682,7 +2684,7 @@ client.on('chat', async (data, channel) => {
         if (msg.startsWith(">eval ")) {
             try {
                 let evalResult = eval(msg.substring(6));
-                channel.sendChat(evalResult);
+                channel.sendChat(evalResult.toString());
             } catch(e) {
                 let fuck = e;
                 console.log(fuck);
@@ -4587,7 +4589,7 @@ client.on('chat', async (data, channel) => {
                     }
                     
                     if (grade !== "전설" && count === 10) {
-                        cardListMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득 가능!\n";
+                        cardListMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득!\n";
                     }
                     
                     cardListMessage += "\n조합 확정: [ /tcg 조합확정 ]";
