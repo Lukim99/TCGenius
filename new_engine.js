@@ -1083,12 +1083,20 @@ class TCGUser {
             let passiveBonuses = this.liberation.passive.bonuses.filter(b => b.rarity === "legendary");
             let passiveRewards = [];
             for (let bonus of passiveBonuses) {
-                if (bonus.effect.includes("출석 시 가넷")) {
-                    let amount = Math.floor(Math.random() * 100) + 1;
-                    passiveRewards.push({garnet: true, count: amount});
-                } else if (bonus.effect.includes("출석 시 일반 소환권")) {
-                    let amount = Math.floor(Math.random() * 10) + 1;
-                    passiveRewards.push({item: true, type: "소모품", name: "일반 소환권", count: amount});
+                if (bonus.effect.includes("출석 시 가넷") && bonus.effect.includes("개 획득")) {
+                    // "출석 시 가넷 26개 획득" 형식에서 숫자 추출
+                    let match = bonus.effect.match(/가넷 (\d+)개/);
+                    if (match) {
+                        let amount = parseInt(match[1]);
+                        passiveRewards.push({garnet: true, count: amount});
+                    }
+                } else if (bonus.effect.includes("출석 시 일반 소환권") && bonus.effect.includes("개 획득")) {
+                    // "출석 시 일반 소환권 5개 획득" 형식에서 숫자 추출
+                    let match = bonus.effect.match(/소환권 (\d+)개/);
+                    if (match) {
+                        let amount = parseInt(match[1]);
+                        passiveRewards.push({item: true, type: "소모품", name: "일반 소환권", count: amount});
+                    }
                 } else if (bonus.effect.includes("출석 시 희미한 주사위")) {
                     passiveRewards.push({item: true, type: "아이템", name: "희미한 주사위", count: 1});
                 } else if (bonus.effect.includes("출석 시 빛나는 주사위")) {
@@ -1786,6 +1794,18 @@ function generateLiberationBonuses(deckType, diceType, currentRank) {
         let bonusRarity = getBonusRarity(diceType, currentRank, slot);
         let pool = bonusPools[deckType][bonusRarity];
         let randomBonus = pool[Math.floor(Math.random() * pool.length)];
+        
+        // 패시브덱 레전더리 보너스 중 가넷과 소환권은 랜덤 값으로 고정
+        if (deckType === "passive" && bonusRarity === "legendary") {
+            if (randomBonus === "출석 시 가넷 1~100개 획득") {
+                let garnetAmount = Math.floor(Math.random() * 100) + 1;
+                randomBonus = "출석 시 가넷 " + garnetAmount + "개 획득";
+            } else if (randomBonus === "출석 시 일반 소환권 1~10개 획득") {
+                let ticketAmount = Math.floor(Math.random() * 10) + 1;
+                randomBonus = "출석 시 일반 소환권 " + ticketAmount + "개 획득";
+            }
+        }
+        
         bonuses.push({
             slot: slot + 1,
             rarity: bonusRarity,
