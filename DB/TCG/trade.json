@@ -273,5 +273,64 @@
                 "count": 2
             }
         ]
+    },
+    {
+        "name": "프레스티지 박스",
+        "material": [
+            {
+                "item": true,
+                "name": "깔끔한 기운",
+                "count": 100
+            },
+            {
+                "gold": true,
+                "count": 100000
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "프레스티지 박스",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "만능 프레스티지 박스",
+        "material": [
+            {
+                "item": true,
+                "name": "강렬한 기운",
+                "count": 30
+            },
+            {
+                "gold": true,
+                "count": 5000000
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "만능 프레스티지 박스",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "프레스티지 카드팩",
+        "material": [
+            {
+                "item": true,
+                "name": "프레스티지 재료",
+                "count": 5
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "프레스티지 카드팩",
+                "count": 1
+            }
+        ]
     }
 ]

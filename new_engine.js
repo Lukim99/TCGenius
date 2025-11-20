@@ -160,6 +160,7 @@ let tcgLoading = {};
 let combQueue = {};
 let chooseCard = {};
 let manualCombine = {}; // 수동조합 대기 객체
+let prestigeLevelUp = {}; // 프레스티지 카드 레벨업 대기 객체
 let tcgRaid = {};
 let canRejoin = {};
 let editPack = {};
@@ -427,6 +428,34 @@ const COMBINE_PROBABILITIES = {
   ]
 };
 
+// 프레스티지 카드 레벨업 비용
+const PRESTIGE_LEVELUP_COST = [
+    { level: 0, gold: 1000000, materials: [{ item: true, name: "프레스티지 재료", count: 1 }] },
+    { level: 1, gold: 2000000, materials: [{ item: true, name: "조합용 자물쇠", count: 200 }] },
+    { level: 2, gold: 3000000, materials: [{ item: true, name: "조합용 자물쇠", count: 200 }] },
+    { level: 3, gold: 4000000, materials: [{ item: true, name: "조합용 자물쇠", count: 200 }] },
+    { level: 4, gold: 5000000, materials: [{ item: true, name: "해방의 열쇠", count: 1 }] },
+    { level: 5, gold: 6000000, materials: [{ item: true, name: "조합용 자물쇠", count: 300 }] },
+    { level: 6, gold: 7000000, materials: [{ item: true, name: "조합용 자물쇠", count: 300 }] },
+    { level: 7, gold: 8000000, materials: [{ item: true, name: "조합용 자물쇠", count: 300 }] },
+    { level: 8, gold: 9000000, materials: [{ item: true, name: "조합용 자물쇠", count: 300 }] },
+    { level: 9, gold: 10000000, materials: [{ item: true, name: "프레스티지 재료", count: 5 }] }
+];
+
+// 프레스티지 카드 특수능력 가져오기
+function getPrestigeAbility(cardData, level) {
+    if (!cardData.desc) return null;
+    
+    // desc에서 "Lv.N " 형식으로 특수능력 파싱
+    const lines = cardData.desc.split('\n');
+    for (const line of lines) {
+        if (line.startsWith(`Lv.${level} `)) {
+            return line.substring(`Lv.${level} `.length);
+        }
+    }
+    return null;
+}
+
 // 카드 조합 확률 계산
 function getCombineProbabilities(grade, count) {
     if (!COMBINE_PROBABILITIES[grade]) return null;
@@ -504,13 +533,13 @@ async function performCombination(user, channel, cardIds, grade, count) {
                 const prestigePackId = items.findIndex(item => item.name === "프레스티지 카드팩");
                 if (prestigePackId !== -1) {
                     user.addItem(prestigePackId, 1);
-                    resultMessages.push("✨ **축하합니다!** 프레스티지 카드팩을 획득했습니다!");
+                    resultMessages.push("✨ 축하합니다! 프레스티지 카드팩을 획득했습니다!");
                 }
             }
         }
         
         // 결과 메시지 구성
-        let resultMessage = `❇️ ${count}장의 ${grade} 카드 조합이 완료되었습니다!\n\n[ 획득한 카드 ]\n- [${resultCard.title}]${resultCard.name} (${resultRarity})`;
+        let resultMessage = `❇️ ${count}장의 ${grade} 카드 조합이 완료되었습니다!\n\n[ 획득한 카드 ]\n- [${resultRarity}] [${resultCard.title}] ${resultCard.name}`;
         
         // 보존된 카드가 있는 경우
         if (notDeleteCards.length > 0) {
@@ -518,9 +547,6 @@ async function performCombination(user, channel, cardIds, grade, count) {
                 notDeleteCards.map(id => `[${cards[id].title}]${cards[id].name}`).join("\n- ")
             }`;
         }
-        
-        // 사용한 아이템 표시 (필수)
-        resultMessage += `\n\n[ 사용한 아이템 ]\n- 조합용 자물쇠`;
         
         // 추가 메시지가 있는 경우
         if (resultMessages.length > 0) {
@@ -631,10 +657,29 @@ function printCard(cardData) {
         "일반": 2
     }
 
-    let cardStar = (cardData.rarity ? (cardData.transcend ? Array(cardData.transcend + 1).join("★") + Array(maxTranscend[cardData.rarity] - cardData.transcend + 1).join("☆") : Array(maxTranscend[cardData.rarity] + 1).join("☆")) : "");
+    // 프레스티지 카드는 레벨 표시, 일반 카드는 별 표시
+    let cardStar;
+    if (cardData.rarity === "프레스티지") {
+        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
+        cardStar = `Lv.${prestigeLevel}`;
+    } else {
+        cardStar = (cardData.rarity ? (cardData.transcend ? Array(cardData.transcend + 1).join("★") + Array(maxTranscend[cardData.rarity] - cardData.transcend + 1).join("☆") : Array(maxTranscend[cardData.rarity] + 1).join("☆")) : "");
+    }
+    
     let cardName = (cardData.title ? "[" + cardData.title + "]" : "[unknown]") + (cardData.name ? cardData.name : "unknown");
-    let cardLevel = (cardData.level ? "+" + cardData.level : "+0");
-    let cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
+    
+    // 프레스티지 카드는 강화 레벨 표시 안함
+    let cardLevel = (cardData.rarity === "프레스티지" ? "" : (cardData.level ? "+" + cardData.level : "+0"));
+    
+    // 프레스티지 카드는 레벨당 +10 파워, 일반 카드는 기존 방식
+    let cardPower;
+    if (cardData.rarity === "프레스티지") {
+        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
+        cardPower = cardData.power ? "P" + (cardData.power + (prestigeLevel * 10)) : "";
+    } else {
+        cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
+    }
+    
     let cardDesc = (cardData.desc && cardData.desc != "" ? "'" + cardData.desc + "'" : "");
     return (cardStar + " " + cardName + " " + cardLevel + " " + cardPower + " " + cardDesc).trim();
 }
@@ -727,7 +772,8 @@ class TCGUser {
         };
         this.deck = {
             content: [[-1,-1,-1,-1,-1],[-1,-1,-1,-1,-1]],
-            gold: [-1,-1,-1,-1,-1]
+            gold: [-1,-1,-1,-1,-1],
+            passive: [-1,-1,-1,-1,-1]
         };
         this.inventory = {
             item: [],
@@ -788,6 +834,19 @@ class TCGUser {
                 pendingChoice: null
             },
             gold: {
+                liberated: false,
+                rank: 0,
+                dice_count: {
+                    dim: 0,
+                    bright: 0,
+                    brilliant: 0,
+                    fate: 0,
+                    judgment: 0
+                },
+                bonuses: [],
+                pendingChoice: null
+            },
+            passive: {
                 liberated: false,
                 rank: 0,
                 dice_count: {
@@ -945,13 +1004,20 @@ class TCGUser {
         if (existingCard) {
             existingCard.count += count;
         } else {
-            this.inventory.card.push({
+            const newCard = {
                 breakLimit: false,
                 transcend: 0,
                 level: 0,
                 id: cardIdx,
                 count: count
-            });
+            };
+            
+            // 프레스티지 카드는 prestigeLevel 추가
+            if (card.title === "프레스티지") {
+                newCard.prestigeLevel = 0;
+            }
+            
+            this.inventory.card.push(newCard);
         }
         return true;
     }
@@ -1010,6 +1076,40 @@ class TCGUser {
 
         if (this.deck.gold.includes(528)) {
             res.isG2 = true;
+        }
+        
+        // 패시브덱 해방 레전더리 출석 보너스를 팩 형식으로 반환 (기존 보상 시스템과 통합)
+        if (this.liberation && this.liberation.passive && this.liberation.passive.liberated && this.liberation.passive.bonuses) {
+            let passiveBonuses = this.liberation.passive.bonuses.filter(b => b.rarity === "legendary");
+            let passiveRewards = [];
+            for (let bonus of passiveBonuses) {
+                if (bonus.effect.includes("출석 시 가넷")) {
+                    let amount = Math.floor(Math.random() * 100) + 1;
+                    passiveRewards.push({garnet: true, count: amount});
+                } else if (bonus.effect.includes("출석 시 일반 소환권")) {
+                    let amount = Math.floor(Math.random() * 10) + 1;
+                    passiveRewards.push({item: true, type: "소모품", name: "일반 소환권", count: amount});
+                } else if (bonus.effect.includes("출석 시 희미한 주사위")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "희미한 주사위", count: 1});
+                } else if (bonus.effect.includes("출석 시 빛나는 주사위")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "빛나는 주사위", count: 1});
+                } else if (bonus.effect.includes("출석 시 찬란한 주사위")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "찬란한 주사위", count: 1});
+                } else if (bonus.effect.includes("출석 시 운명 주사위")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "운명 주사위", count: 1});
+                } else if (bonus.effect.includes("출석 시 심판 주사위")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "심판 주사위", count: 1});
+                } else if (bonus.effect.includes("출석 시 깔끔한 기운")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "깔끔한 기운", count: 1});
+                } else if (bonus.effect.includes("출석 시 영롱한 기운")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "영롱한 기운", count: 1});
+                } else if (bonus.effect.includes("출석 시 강렬한 기운")) {
+                    passiveRewards.push({item: true, type: "아이템", name: "강렬한 기운", count: 1});
+                }
+            }
+            if (passiveRewards.length > 0) {
+                res.passiveRewards = passiveRewards;
+            }
         }
         
         this.shopLimit.daily = [];
@@ -1644,6 +1744,41 @@ function generateLiberationBonuses(deckType, diceType, currentRank) {
                 "덱이 똑같은 테마로만 이루어져 있을 시 데일리골드 증가 +100,000",
                 "가장 이득이 되는 카드의 효과 2번 발동"
             ]
+        },
+        passive: {
+            normal: [
+                "1번째 자리 단일 파워 +6", "2번째 자리 단일 파워 +6", "3번째 자리 단일 파워 +6",
+                "4번째 자리 단일 파워 +6", "5번째 자리 단일 파워 +6",
+                "1번째 자리 단일 파워 +2%", "2번째 자리 단일 파워 +2%", "3번째 자리 단일 파워 +2%",
+                "4번째 자리 단일 파워 +2%", "5번째 자리 단일 파워 +2%",
+                "모든 카드 단일 파워 +2", "1초월당 덱 파워 +1", "1강화당 덱 파워 +1", "덱 파워 +3%"
+            ],
+            rare: [
+                "1번째 자리 단일 파워 +12", "2번째 자리 단일 파워 +12", "3번째 자리 단일 파워 +12",
+                "4번째 자리 단일 파워 +12", "5번째 자리 단일 파워 +12",
+                "1번째 자리 단일 파워 +5%", "2번째 자리 단일 파워 +5%", "3번째 자리 단일 파워 +5%",
+                "4번째 자리 단일 파워 +5%", "5번째 자리 단일 파워 +5%",
+                "모든 카드 단일 파워 +3", "1초월당 덱 파워 +2", "1강화당 덱 파워 +2", "덱 파워 +6%"
+            ],
+            unique: [
+                "1번째 자리 단일 파워 +18", "2번째 자리 단일 파워 +18", "3번째 자리 단일 파워 +18",
+                "4번째 자리 단일 파워 +18", "5번째 자리 단일 파워 +18",
+                "1번째 자리 단일 파워 +8%", "2번째 자리 단일 파워 +8%", "3번째 자리 단일 파워 +8%",
+                "4번째 자리 단일 파워 +8%", "5번째 자리 단일 파워 +8%",
+                "모든 카드 단일 파워 +6", "1초월당 덱 파워 +4", "1강화당 덱 파워 +4", "덱 파워 +12%"
+            ],
+            legendary: [
+                "1번째 자리 단일 파워 +30", "2번째 자리 단일 파워 +30", "3번째 자리 단일 파워 +30",
+                "4번째 자리 단일 파워 +30", "5번째 자리 단일 파워 +30",
+                "1번째 자리 단일 파워 +12%", "2번째 자리 단일 파워 +12%", "3번째 자리 단일 파워 +12%",
+                "4번째 자리 단일 파워 +12%", "5번째 자리 단일 파워 +12%",
+                "모든 카드 단일 파워 +15", "1초월당 덱 파워 +5", "1강화당 덱 파워 +5", "덱 파워 +20%",
+                "출석 시 가넷 1~100개 획득", "출석 시 일반 소환권 1~10개 획득",
+                "출석 시 희미한 주사위 1개 획득", "출석 시 빛나는 주사위 1개 획득", "출석 시 찬란한 주사위 1개 획득",
+                "출석 시 운명 주사위 1개 획득", "출석 시 심판 주사위 1개 획득",
+                "출석 시 깔끔한 기운 1개 획득", "출석 시 영롱한 기운 1개 획득", "출석 시 강렬한 기운 1개 획득",
+                "아티팩트 성공 확률 3% 증가"
+            ]
         }
     };
     
@@ -1779,10 +1914,29 @@ function printCard(cardData) {
         "일반": 2
     };
 
-    let cardStar = (cardData.rarity ? (cardData.transcend ? Array(cardData.transcend + 1).join("★") + Array(maxTranscend[cardData.rarity] - cardData.transcend + 1).join("☆") : Array(maxTranscend[cardData.rarity] + 1).join("☆")) : "");
+    // 프레스티지 카드는 레벨 표시, 일반 카드는 별 표시
+    let cardStar;
+    if (cardData.rarity === "프레스티지") {
+        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
+        cardStar = `Lv.${prestigeLevel}`;
+    } else {
+        cardStar = (cardData.rarity ? (cardData.transcend ? Array(cardData.transcend + 1).join("★") + Array(maxTranscend[cardData.rarity] - cardData.transcend + 1).join("☆") : Array(maxTranscend[cardData.rarity] + 1).join("☆")) : "");
+    }
+    
     let cardName = (cardData.title ? "[" + cardData.title + "]" : "[unknown]") + (cardData.name ? cardData.name : "unknown");
-    let cardLevel = (cardData.level ? "+" + cardData.level : "+0");
-    let cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
+    
+    // 프레스티지 카드는 강화 레벨 표시 안함
+    let cardLevel = (cardData.rarity === "프레스티지" ? "" : (cardData.level ? "+" + cardData.level : "+0"));
+    
+    // 프레스티지 카드는 레벨당 +10 파워, 일반 카드는 기존 방식
+    let cardPower;
+    if (cardData.rarity === "프레스티지") {
+        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
+        cardPower = cardData.power ? "P" + (cardData.power + (prestigeLevel * 10)) : "";
+    } else {
+        cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
+    }
+    
     let cardDesc = (cardData.desc && cardData.desc != "" ? "'" + cardData.desc + "'" : "");
     return (cardStar + " " + cardName + " " + cardLevel + " " + cardPower + " " + cardDesc).trim();
 }
@@ -1893,6 +2047,35 @@ function DeepSeek(prompts, model) {
     });
 }
 
+// 패시브덱 보너스를 덱 파워에 적용하는 헬퍼 함수
+function applyPassiveDeckBonus(user, basePower) {
+    if (!user.liberation || !user.liberation.passive || !user.liberation.passive.liberated || !user.liberation.passive.bonuses) {
+        return basePower;
+    }
+    
+    let multiplier = 1.0;
+    let flatBonus = 0;
+    
+    for (let bonus of user.liberation.passive.bonuses) {
+        // 덱 파워 백분율 증가 보너스 적용
+        if (bonus.effect.includes("덱 파워") && bonus.effect.includes("%")) {
+            let match = bonus.effect.match(/\+(\d+)%/);
+            if (match) {
+                multiplier += parseFloat(match[1]) / 100;
+            }
+        }
+        // 모든 카드 단일 파워 증가 보너스 (간단 적용)
+        if (bonus.effect.includes("모든 카드 단일 파워 +")) {
+            let match = bonus.effect.match(/\+(\d+)/);
+            if (match) {
+                flatBonus += parseFloat(match[1]) * 5; // 5장으로 가정
+            }
+        }
+    }
+    
+    return (basePower + flatBonus) * multiplier;
+}
+
 // 순수 파워 계산 함수 (특수능력 제외, 강화/초월만 적용)
 function calculatePurePower(user, deck) {
     const cardList = JSON.parse(read("DB/TCG/card.json"));
@@ -1916,6 +2099,9 @@ function calculatePurePower(user, deck) {
         
         totalPower += card.power + levelBonus + transcendBonus;
     }
+    
+    // 패시브덱 보너스 적용
+    totalPower = applyPassiveDeckBonus(user, totalPower);
     
     return totalPower;
 }
@@ -1955,6 +2141,9 @@ function calculateDuoPower(user, deck) {
     for (let i = 0; i < Math.min(2, cardPowers.length); i++) {
         totalPower += cardPowers[i].power;
     }
+    
+    // 패시브덱 보너스 적용
+    totalPower = applyPassiveDeckBonus(user, totalPower);
     
     return totalPower;
 }
@@ -1999,9 +2188,37 @@ async function calculateDeckPower(user, deck, opts) {
         });
     }
     
+    // 패시브덱 카드 및 해방 보너스 정보 추가
+    let passiveDeck = null;
+    if (user.deck && user.deck.passive && user.deck.passive.length > 0) {
+        let passiveCards = user.deck.passive.map(d => user.inventory.card.find(c => c.id == d) || {none:true}).map(c => c.none ? "(비어있음)" : c.concat());
+        passiveCards.forEach(c => {
+            if (typeof c == 'object') c.deepMerge(cards[c.id]);
+        });
+        passiveCards = passiveCards.map((c,i) => "[" + (i + 1) + "]" + (typeof c == 'object' ? printCard(c) : "(비어있음)"));
+        
+        passiveDeck = "○ 패시브덱\n" + passiveCards.join("\n");
+        
+        // 패시브덱 해방 보너스 추가
+        if (user.liberation && user.liberation.passive && user.liberation.passive.liberated && user.liberation.passive.bonuses && user.liberation.passive.bonuses.length > 0) {
+            passiveDeck += "\n○ 패시브덱 해방 보너스\n";
+            user.liberation.passive.bonuses.forEach(bonus => {
+                let rarityIcon = "";
+                switch(bonus.rarity) {
+                    case "normal": rarityIcon = "⚪"; break;
+                    case "rare": rarityIcon = "🔵"; break;
+                    case "unique": rarityIcon = "🟣"; break;
+                    case "legendary": rarityIcon = "🟡"; break;
+                }
+                passiveDeck += rarityIcon + " " + bonus.effect + "\n";
+            });
+        }
+    }
+    
     let deckPrompt = (CONTENT ? "○ 콘텐츠덱" : "○ 골드덱") + "\n" + userCards.join("\n");
     if (artifact) deckPrompt += "\n" + artifact;
     if (liberationBonus) deckPrompt += "\n" + liberationBonus;
+    if (passiveDeck) deckPrompt += "\n" + passiveDeck;
 
     try {
         // DeepSeek API 호출
@@ -2425,6 +2642,14 @@ client.on('chat', async (data, channel) => {
                 } else if (chooseCard[senderID].type == "경험치물약") {
                     let user = await getTCGUserById(senderID);
                     let cardIdx = cards.findIndex(c => c.title == parsed.title && c.name == parsed.name);
+                    
+                    // 프레스티지 카드는 경험치물약 사용 불가
+                    if (cardIdx !== -1 && cards[cardIdx].rarity === "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드는 경험치물약을 사용할 수 없습니다.");
+                        delete chooseCard[senderID];
+                        return;
+                    }
+                    
                     let card = user.inventory.card.find(c => c.id == cardIdx);
                     let maxLevels = {
                         "일반": 1,
@@ -3503,7 +3728,44 @@ client.on('chat', async (data, channel) => {
                         }
                     }
                     
-                    let message = "[ " + user + "님의 덱 ]\n" + VIEWMORE + "\n" + content_deck.join("\n").trim() + "\n\n" + gold_deck.join("\n");
+                    // 패시브덱 표시
+                    let passive_deck = [];
+                    passive_deck.push("○ 패시브덱");
+                    for (let i = 0; i < 5; i++) {
+                        if (user.deck.passive[i] == undefined || user.deck.passive[i] == -1 || !cards[user.deck.passive[i]]) {
+                            passive_deck.push("-");
+                        } else {
+                            let card = user.inventory.card.find(c => c.id == user.deck.passive[i]);
+                            if (!card) {
+                                passive_deck.push("-");
+                            } else {
+                                card = card.concat();
+                                card.deepMerge(cards[user.deck.passive[i]]);
+                                passive_deck.push(printCard(card));
+                            }
+                        }
+                    }
+                    
+                    // 패시브덱의 해방 상태 추가
+                    if (user.liberation && user.liberation.passive && user.liberation.passive.liberated) {
+                        let rankNames = ["브론즈", "실버", "골드", "플래티넘"];
+                        passive_deck.push("◇ 해방등급: " + rankNames[user.liberation.passive.rank]);
+                        if (user.liberation.passive.bonuses && user.liberation.passive.bonuses.length > 0) {
+                            passive_deck.push("◇ 적용된 보너스:");
+                            user.liberation.passive.bonuses.forEach(bonus => {
+                                let rarityIcon = "";
+                                switch(bonus.rarity) {
+                                    case "normal": rarityIcon = "⚪"; break;
+                                    case "rare": rarityIcon = "🔵"; break;
+                                    case "unique": rarityIcon = "🟣"; break;
+                                    case "legendary": rarityIcon = "🟡"; break;
+                                }
+                                passive_deck.push(rarityIcon + " " + bonus.effect);
+                            });
+                        }
+                    }
+                    
+                    let message = "[ " + user + "님의 덱 ]\n" + VIEWMORE + "\n" + content_deck.join("\n").trim() + "\n\n" + gold_deck.join("\n") + "\n\n" + passive_deck.join("\n");
                     if (artifact.length > 0) {
                         message += "\n\n" + artifact.join("\n");
                     }
@@ -3584,6 +3846,43 @@ client.on('chat', async (data, channel) => {
                                 }
                                 card.deepMerge(cards[cardIdx]);
                                 user.deck.gold[deckIdx] = cardIdx;
+                                await user.save();
+                                channel.sendChat("✅ " + args[1] + "의 " + (deckIdx + 1) + "번째 카드를 아래 카드로 설정했습니다.\n" + printCard(card));
+                            }
+                        }
+                    } else if (args[1] == "패시브덱") {
+                        let deckIdx = Number(args[2]);
+                        let cardName = cmd.substr(cmd.split(" ")[0].length + 13);
+                        
+                        if (isNaN(deckIdx) || deckIdx % 1 != 0 || deckIdx < 1 || deckIdx > 5) {
+                            channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 덱편성 " + args[1] + " <인덱스> <카드 이름> ]");
+                        } else if (cardName == "제거") {
+                            user.deck.passive[deckIdx-1] = -1;
+                            await user.save();
+                            channel.sendChat("✅ " + args[1] + "의 " + (deckIdx) + "번째 카드를 제거했습니다.");
+                        } else {
+                            let cards = JSON.parse(read("DB/TCG/card.json"));
+                            deckIdx--;
+                            if (cardName.startsWith("[성장형]")) {
+                                channel.sendChat("❌ 성장형 카드는 덱에 편성할 수 없습니다.");
+                                return;
+                            }
+                            let cardIdx = cards.findIndex(c => ("[" + c.title + "]" + c.name) == cardName || ("[" + c.title + "] " + c.name) == cardName);
+                            if (cardIdx == -1) {
+                                channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드 이름은 다음과 같이 입력해야 합니다: [테마]카드명");
+                            } else {
+                                let card = user.inventory.card.find(c => c.id == cardIdx);
+                                if (!card) {
+                                    channel.sendChat("❌ 보유한 카드가 아닙니다.");
+                                    return;
+                                }
+                                card = card.concat();
+                                if (user.deck.passive.includes(cardIdx)) {
+                                    channel.sendChat("❌ 이미 패시브덱에 존재하는 카드입니다.");
+                                    return;
+                                }
+                                card.deepMerge(cards[cardIdx]);
+                                user.deck.passive[deckIdx] = cardIdx;
                                 await user.save();
                                 channel.sendChat("✅ " + args[1] + "의 " + (deckIdx + 1) + "번째 카드를 아래 카드로 설정했습니다.\n" + printCard(card));
                             }
@@ -3835,11 +4134,30 @@ client.on('chat', async (data, channel) => {
                             channel.sendChat("❌ 강화하려는 카드가 존재하지 않는 카드입니다.");
                             return;
                         }
+                        // 프레스티지 카드는 강화 불가
+                        const mainCardData = cards.find(c => ("[" + c.title + "]" + c.name).replace(/\s/gi,"") == cardArgs[0].replace(/\s/gi,""));
+                        if (mainCardData && mainCardData.rarity === "프레스티지") {
+                            channel.sendChat("❌ 프레스티지 카드는 강화할 수 없습니다.");
+                            return;
+                        }
                         let notExists = [];
                         for(let i = 1; i < cardArgs.length; i++) {
                             if (!cards.find(c => ("[" + c.title + "]" + c.name).replace(/\s/gi,"") == cardArgs[i].replace(/\s/gi,""))) {
                                 notExists.push(cardArgs[i]);
                             }
+                        }
+                        // 강화 재료로 프레스티지 카드 사용 불가 체크
+                        let hasPrestige = false;
+                        for(let i = 1; i < cardArgs.length; i++) {
+                            const materialCard = cards.find(c => ("[" + c.title + "]" + c.name).replace(/\s/gi,"") == cardArgs[i].replace(/\s/gi,""));
+                            if (materialCard && materialCard.rarity === "프레스티지") {
+                                hasPrestige = true;
+                                break;
+                            }
+                        }
+                        if (hasPrestige) {
+                            channel.sendChat("❌ 프레스티지 카드는 강화 재료로 사용할 수 없습니다.");
+                            return;
                         }
                         if (notExists.length > 0) {
                             let hasGrowth = false;
@@ -3943,6 +4261,11 @@ client.on('chat', async (data, channel) => {
                         channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드명은 다음과 같이 입력해야 합니다: [테마]카드명");
                         return;
                     }
+                    // 프레스티지 카드는 초월 불가
+                    if (!isGrowth && cardIdx !== -1 && cards[cardIdx].rarity === "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드는 초월할 수 없습니다.");
+                        return;
+                    }
                     if (!isGrowth && !user.inventory.card.find(c => c.id == cardIdx)) {
                         channel.sendChat("❌ 보유하고 있는 카드가 아닙니다.");
                         return;
@@ -4031,6 +4354,11 @@ client.on('chat', async (data, channel) => {
                         channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드명은 다음과 같이 입력해야 합니다: [테마]카드명");
                         return;
                     }
+                    // 프레스티지 카드는 한계돌파 불가
+                    if (cards[cardIdx].rarity === "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드는 한계돌파를 할 수 없습니다.");
+                        return;
+                    }
                     if (!user.inventory.card.find(c => c.id == cardIdx)) {
                         channel.sendChat("❌ 보유하고 있는 카드가 아닙니다.");
                         return;
@@ -4080,6 +4408,11 @@ client.on('chat', async (data, channel) => {
                     let isGrowth = (targetCard.startsWith("[성장형]") && user.growthCard.find(c => "[" + c.title + "]" + c.name == targetCard));
                     if (!isGrowth && cardIdx == -1) {
                         channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드명은 다음과 같이 입력해야 합니다: [테마]카드명");
+                        return;
+                    }
+                    // 프레스티지 카드는 무료강화 불가
+                    if (!isGrowth && cardIdx !== -1 && cards[cardIdx].rarity === "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드는 무료강화를 할 수 없습니다.");
                         return;
                     }
                     if (!isGrowth && !user.inventory.card.find(c => c.id == cardIdx)) {
@@ -4368,6 +4701,209 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
+                // 카드레벨업 1단계: 카드명 입력
+                if (args[0] == "카드레벨업" && args[1] !== "확인") {
+                    const cardName = cmd.split(" ").slice(1).join(" ");
+                    
+                    if (!cardName) {
+                        channel.sendChat("❌ 카드명을 입력해주세요.\n[ /TCGenius 카드레벨업 [카드명] ]");
+                        return;
+                    }
+                    
+                    const cards = JSON.parse(read("DB/TCG/card.json"));
+                    const items = JSON.parse(read("DB/TCG/item.json"));
+                    
+                    const parsed = parseCard(cardName);
+                    if (!parsed) {
+                        channel.sendChat("❌ 올바른 카드명을 입력해주세요.");
+                        return;
+                    }
+                    
+                    // 카드 찾기
+                    const cardIdx = cards.findIndex(c => c.title === parsed.title && c.name === parsed.name);
+                    if (cardIdx === -1) {
+                        channel.sendChat("❌ 존재하지 않는 카드입니다.");
+                        return;
+                    }
+                    
+                    const cardData = cards[cardIdx];
+                    
+                    if (cardData.title !== "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드만 레벨업이 가능합니다.");
+                        return;
+                    }
+                    
+                    // 보유 여부 확인
+                    const userCard = user.inventory.card.find(c => c.id === cardIdx);
+                    if (!userCard) {
+                        channel.sendChat("❌ 보유하지 않은 카드입니다.");
+                        return;
+                    }
+                    
+                    // 현재 레벨 확인
+                    if (!userCard.prestigeLevel) userCard.prestigeLevel = 0;
+                    const currentLevel = userCard.prestigeLevel;
+                    
+                    if (currentLevel >= 10) {
+                        channel.sendChat("❌ 이미 최대 레벨입니다.");
+                        return;
+                    }
+                    
+                    // 레벨업 비용 확인
+                    const levelUpCost = PRESTIGE_LEVELUP_COST[currentLevel];
+                    
+                    // 재료 확인 및 출력 준비
+                    let materials = [];
+                    let hasAllMaterials = true;
+                    
+                    // 골드 확인
+                    if (user.gold < levelUpCost.gold) {
+                        hasAllMaterials = false;
+                        materials.push(`❌ 골드 ${user.gold.toComma2()}/${levelUpCost.gold.toComma2()}`);
+                    } else {
+                        materials.push(`✅ 골드 ${user.gold.toComma2()}/${levelUpCost.gold.toComma2()}`);
+                    }
+                    
+                    // 아이템 재료 확인
+                    for (const material of levelUpCost.materials) {
+                        const itemIdx = items.findIndex(i => i.name === material.name);
+                        const userItem = user.inventory.item.find(i => i.id === itemIdx) || { count: 0 };
+                        
+                        if (userItem.count < material.count) {
+                            hasAllMaterials = false;
+                            materials.push(`❌ ${material.name} ${userItem.count.toComma2()}/${material.count.toComma2()}`);
+                        } else {
+                            materials.push(`✅ ${material.name} ${userItem.count.toComma2()}/${material.count.toComma2()}`);
+                        }
+                    }
+                    
+                    // prestigeLevelUp 객체에 저장
+                    prestigeLevelUp[user.id] = {
+                        cardIdx: cardIdx,
+                        currentLevel: currentLevel
+                    };
+                    
+                    // 필요한 재료 출력
+                    let costMessage = `[${cardData.title}]${cardData.name} 레벨업\n\n`;
+                    costMessage += `Lv.${currentLevel} → Lv.${currentLevel + 1}\n`;
+                    costMessage += `파워: ${cardData.power + (currentLevel * 10)} → ${cardData.power + ((currentLevel + 1) * 10)}\n\n`;
+                    
+                    // 특수능력 해금 안내
+                    const nextLevel = currentLevel + 1;
+                    if (nextLevel === 1 || nextLevel === 5 || nextLevel === 10) {
+                        costMessage += `✨ Lv.${nextLevel} 특수능력이 해금됩니다!\n`;
+                        const ability = getPrestigeAbility(cardData, nextLevel);
+                        if (ability) {
+                            costMessage += `${ability}\n\n`;
+                        } else {
+                            costMessage += `\n`;
+                        }
+                    }
+                    
+                    costMessage += `[ 필요한 재료 ]\n${materials.join("\n")}`;
+                    
+                    if (hasAllMaterials) {
+                        costMessage += `\n\n레벨업 진행: [ /tcg 카드레벨업 확인 ]`;
+                    } else {
+                        costMessage += `\n\n❌ 재료가 부족합니다.`;
+                    }
+                    
+                    channel.sendChat(costMessage);
+                    return;
+                }
+                
+                // 카드레벨업 2단계: 확인
+                if (args[0] == "카드레벨업" && args[1] === "확인") {
+                    if (!prestigeLevelUp[user.id]) {
+                        channel.sendChat("❌ 레벨업할 카드를 먼저 선택해주세요.\n[ /tcg 카드레벨업 [카드명] ]");
+                        return;
+                    }
+                    
+                    const cards = JSON.parse(read("DB/TCG/card.json"));
+                    const items = JSON.parse(read("DB/TCG/item.json"));
+                    
+                    const cardIdx = prestigeLevelUp[user.id].cardIdx;
+                    const currentLevel = prestigeLevelUp[user.id].currentLevel;
+                    const cardData = cards[cardIdx];
+                    
+                    // 보유 여부 재확인
+                    const userCard = user.inventory.card.find(c => c.id === cardIdx);
+                    if (!userCard) {
+                        channel.sendChat("❌ 보유하지 않은 카드입니다.");
+                        delete prestigeLevelUp[user.id];
+                        return;
+                    }
+                    
+                    // 레벨 변경 확인
+                    if (!userCard.prestigeLevel) userCard.prestigeLevel = 0;
+                    if (userCard.prestigeLevel !== currentLevel) {
+                        channel.sendChat("❌ 카드 레벨이 변경되었습니다. 다시 시도해주세요.");
+                        delete prestigeLevelUp[user.id];
+                        return;
+                    }
+                    
+                    // 레벨업 비용 확인
+                    const levelUpCost = PRESTIGE_LEVELUP_COST[currentLevel];
+                    
+                    // 골드 확인
+                    if (user.gold < levelUpCost.gold) {
+                        channel.sendChat(`❌ 골드가 부족합니다.\n현재 골드: ${user.gold.toComma2()} / ${levelUpCost.gold.toComma2()}`);
+                        delete prestigeLevelUp[user.id];
+                        return;
+                    }
+                    
+                    // 재료 확인
+                    let missingMaterials = [];
+                    for (const material of levelUpCost.materials) {
+                        const itemIdx = items.findIndex(i => i.name === material.name);
+                        const userItem = user.inventory.item.find(i => i.id === itemIdx);
+                        
+                        if (!userItem || userItem.count < material.count) {
+                            missingMaterials.push(`${material.name} x${material.count}`);
+                        }
+                    }
+                    
+                    if (missingMaterials.length > 0) {
+                        channel.sendChat(`❌ 재료가 부족합니다.\n부족한 재료: ${missingMaterials.join(", ")}`);
+                        delete prestigeLevelUp[user.id];
+                        return;
+                    }
+                    
+                    // 레벨업 진행
+                    user.gold -= levelUpCost.gold;
+                    
+                    // 재료 소모
+                    for (const material of levelUpCost.materials) {
+                        const itemIdx = items.findIndex(i => i.name === material.name);
+                        user.removeItem(itemIdx, material.count);
+                    }
+                    
+                    // 레벨 증가
+                    userCard.prestigeLevel++;
+                    
+                    // 결과 메시지
+                    const newLevel = userCard.prestigeLevel;
+                    const newPower = cardData.power + (newLevel * 10);
+                    
+                    let resultMessage = `✨ [${cardData.title}]${cardData.name} 레벨업 완료!\n\n`;
+                    resultMessage += `Lv.${currentLevel} → Lv.${newLevel}\n`;
+                    resultMessage += `파워: ${cardData.power + (currentLevel * 10)} → ${newPower}\n\n`;
+                    
+                    // 특수능력 해금 안내
+                    if (newLevel === 1 || newLevel === 5 || newLevel === 10) {
+                        resultMessage += `🎉 Lv.${newLevel} 특수능력이 해금되었습니다!\n`;
+                        const ability = getPrestigeAbility(cardData, newLevel);
+                        if (ability) {
+                            resultMessage += `${ability}`;
+                        }
+                    }
+                    
+                    channel.sendChat(resultMessage);
+                    await user.save();
+                    delete prestigeLevelUp[user.id];
+                    return;
+                }
+
                 if (args[0] == "데일리골드" && args[1] == "설정" && user.isAdmin) {
                     let arg = cmd.substr(cmd.split(" ")[0].length + 10).split(" ");
                     if (arg.length == 0) {
@@ -4430,6 +4966,9 @@ client.on('chat', async (data, channel) => {
                             attend_reward = attend_reward.concat(pack.find(p => p.name == "출석" + user.attendance.total).reward);
                         }
                         if (user.deck.gold.includes(509)) attend_reward.push({garnet:true,count:10});
+                        if (attendRes.passiveRewards && attendRes.passiveRewards.length > 0) {
+                            attend_reward = attend_reward.concat(attendRes.passiveRewards);
+                        }
                         attend_reward = attend_reward.concat(vipPack[user.vip]);
                         rewards = user.givePack(attend_reward);
                         channel.sendChat("✅ 출석을 완료했습니다!\n- 연속 출석일수: " + user.attendance.streak + "일\n- 누적 출석일수: " + user.attendance.total + "일\n\n[ 출석 보상 ]\n- 데일리 골드 " + numberWithCommas(gotGold.toString()) + "골드" + (vipPlus[user.vip] > 0 ? " (+" + (vipPlus[user.vip] * 100).fix() + "% 보너스!)" : "") + (rewards.length ? "\n" + rewards.join("\n") : ""));
@@ -4508,13 +5047,14 @@ client.on('chat', async (data, channel) => {
                         "고급": [{item: true, name: "깔끔한 기운", count: {min: 15, max: 25}}],
                         "희귀": [{item: true, name: "깔끔한 기운", count: {min: 30, max: 40}}],
                         "영웅": [{item: true, name: "영롱한 기운", count: {min: 8, max: 14}}],
-                        "전설": [{item: true, name: "강렬한 기운", count: {min: 3, max: 5}}]
+                        "전설": [{item: true, name: "강렬한 기운", count: {min: 3, max: 5}}],
+                        "프레스티지": [{item: true, name: "강렬한 기운", count: 30},{item: true, name: "프레스티지 재료", count: 1}]
                     };
                     let getPack = plusPack[cards[cardIdx].rarity];
                     let rewards = user.givePack(getPack);
                     user.removeCard(cardIdx, 1);
                     await user.save();
-                    channel.sendChat("✅ " + targetCard + " 카드를 분해했습니다.\n[ 획득한 기운 ]\n" + rewards.join("\n"));
+                    channel.sendChat("✅ " + targetCard + " 카드를 분해했습니다.\n[ 획득한 보상 ]\n" + rewards.join("\n"));
                     return;
                 }
 
@@ -4872,7 +5412,17 @@ client.on('chat', async (data, channel) => {
                         if (user.artifact.artifacts[idx1].fail) r = 1;
                         if (user.artifact.artifacts[idx1].prob_beauty) r -= (0.25 * (idx2 == 2 ? -1 : 1));
                         if (user.artifact.artifacts[idx1].prob_ugly) r += (0.5 * (idx2 == 2 ? -1 : 1));
-                        if (r < user.artifact.artifacts[idx1].success_prob) {
+                        
+                        // 패시브덱 아티팩트 성공 확률 보너스 적용
+                        let successProb = user.artifact.artifacts[idx1].success_prob;
+                        if (user.liberation && user.liberation.passive && user.liberation.passive.liberated && user.liberation.passive.bonuses) {
+                            let artifactBonus = user.liberation.passive.bonuses.find(b => b.effect.includes("아티팩트 성공 확률") && b.rarity === "legendary");
+                            if (artifactBonus) {
+                                successProb += 0.03; // 3% 증가
+                            }
+                        }
+                        
+                        if (r < successProb) {
                             user.artifact.artifacts[idx1].success_prob = Math.max(0.25, user.artifact.artifacts[idx1].success_prob - 0.1);
                             ability.display[ability.level] = 1;
                             ability.level++;
@@ -5376,7 +5926,7 @@ client.on('chat', async (data, channel) => {
                 // 해방
                 if (args[0] == "해방") {
                     if (args.length < 2) {
-                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 해방 [덱이름] ]\n덱이름: 콘텐츠덱1, 콘텐츠덱2, 골드덱");
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 해방 [덱이름] ]\n덱이름: 콘텐츠덱1, 콘텐츠덱2, 골드덱, 패시브덱");
                         return;
                     }
                     
@@ -5389,8 +5939,10 @@ client.on('chat', async (data, channel) => {
                         deckType = "content2";
                     } else if (deckName == "골드덱") {
                         deckType = "gold";
+                    } else if (deckName == "패시브덱") {
+                        deckType = "passive";
                     } else {
-                        channel.sendChat("❌ 잘못된 덱 이름입니다. 콘텐츠덱1, 콘텐츠덱2, 골드덱 중에서 선택해주세요.");
+                        channel.sendChat("❌ 잘못된 덱 이름입니다. 콘텐츠덱1, 콘텐츠덱2, 골드덱, 패시브덱 중에서 선택해주세요.");
                         return;
                     }
 
@@ -5451,7 +6003,7 @@ client.on('chat', async (data, channel) => {
                 if (args[0] == "주사위") {
                     if (args.length < 3) {
                         channel.sendChat("사용법: /TCGenius 주사위 [덱이름] [주사위종류]\n" +
-                                     "덱이름: 콘텐츠덱1, 콘텐츠덱2, 골드덱\n" +
+                                     "덱이름: 콘텐츠덱1, 콘텐츠덱2, 골드덱, 패시브덱\n" +
                                      "주사위종류: 희미한, 빛나는, 찬란한, 운명, 심판");
                         return;
                     }
@@ -5466,6 +6018,8 @@ client.on('chat', async (data, channel) => {
                         deckType = "content2";
                     } else if (deckName == "골드덱") {
                         deckType = "gold";
+                    } else if (deckName == "패시브덱") {
+                        deckType = "passive";
                     } else {
                         channel.sendChat("❌ 잘못된 덱 이름입니다.");
                         return;
@@ -5630,6 +6184,8 @@ client.on('chat', async (data, channel) => {
                         deckType = "content2";
                     } else if (deckName == "골드덱") {
                         deckType = "gold";
+                    } else if (deckName == "패시브덱") {
+                        deckType = "passive";
                     } else {
                         channel.sendChat("❌ 잘못된 덱 이름입니다.");
                         return;
@@ -6979,7 +7535,7 @@ client.on('chat', async (data, channel) => {
                             if ((matched = fullCmd.match(/거래소 등록 아이템 (.+?) (\d+) (\d+)$/)) == null) {
                                 channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 거래소 등록 아이템 [품목] [가격] [수량] ]");
                             } else {
-                                let canTrades = ["한계돌파석","보호자물쇠","강화자물쇠","축복자물쇠","경험치300물약","강렬한 기운","영롱한 기운","깔끔한 기운","희미한 주사위","빛나는 주사위","찬란한 주사위","운명 주사위","심판 주사위"];
+                                let canTrades = ["한계돌파석","조합용 자물쇠","경험치300물약","강렬한 기운","영롱한 기운","깔끔한 기운","희미한 주사위","빛나는 주사위","찬란한 주사위","운명 주사위","심판 주사위"];
                                 if (!canTrades.includes(matched[1])) {
                                     channel.sendChat("❌ 거래 가능 아이템이 아닙니다.\n\n[ 거래 가능 아이템]\n" + canTrades.map(c => "› " + c).join("\n"));
                                     return;
@@ -7618,7 +8174,7 @@ client.on('chat', async (data, channel) => {
                     
                     // 카드팩 처리
                     if (items[itemIdx].type == "카드팩") {
-                        if (["일반","고급","희귀","영웅","전설"].includes(items[itemIdx].name.split(" ")[0])) {
+                        if (["일반","고급","희귀","영웅","전설","프레스티지"].includes(items[itemIdx].name.split(" ")[0])) {
                             let cards = JSON.parse(read("DB/TCG/card.json"));
                             let shuffleCards = cards.filter(c => c.rarity == items[itemIdx].name.split(" ")[0]).shuffle();
                             let res = [];

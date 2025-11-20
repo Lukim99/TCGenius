@@ -278,5 +278,64 @@
                 ]
             }
         ]
+    },
+    {
+        "name": "프레스티지 박스",
+        "rewards": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "조합용 자물쇠",
+                        "count": {
+                            "min": 1,
+                            "max": 3
+                        },
+                        "weight": 90
+                    },
+                    {
+                        "item": true,
+                        "name": "강렬한 기운",
+                        "count": 1,
+                        "weight": 9
+                    },
+                    {
+                        "item": true,
+                        "name": "프레스티지 재료",
+                        "count": 1,
+                        "weight": 1
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "만능 프레스티지 박스",
+        "rewards": [
+            {
+                "roll": true,
+                "rolls": [
+                    {
+                        "item": true,
+                        "name": "프레스티지 재료",
+                        "count": 1,
+                        "weight": 95
+                    },
+                    {
+                        "item": true,
+                        "name": "프레스티지 카드팩",
+                        "count": 1,
+                        "weight": 4
+                    },
+                    {
+                        "item": true,
+                        "name": "프레스티지 변경권",
+                        "count": 1,
+                        "weight": 1
+                    }
+                ]
+            }
+        ]
     }
 ]
