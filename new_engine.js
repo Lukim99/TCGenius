@@ -388,7 +388,7 @@ const COMBINE_PROBABILITIES = {
     { count: 7, probs: {"일반": 5, "고급": 90, "희귀": 4, "영웅": 1} },
     { count: 8, probs: {"고급": 95, "희귀": 4, "영웅": 1} },
     { count: 9, probs: {"고급": 93, "희귀": 5, "영웅": 2} },
-    { count: 10, probs: {"고급": 92, "희귀": 5, "영웅": 2, "전설": 1, "프레스티지": 1} }
+    { count: 10, probs: {"고급": 92, "희귀": 5, "영웅": 2, "전설": 1} }
   ],
   "고급": [
     { count: 2, probs: {"고급": 100} },
@@ -399,7 +399,7 @@ const COMBINE_PROBABILITIES = {
     { count: 7, probs: {"고급": 3, "희귀": 92, "영웅": 5} },
     { count: 8, probs: {"희귀": 95, "영웅": 4, "전설": 1} },
     { count: 9, probs: {"희귀": 93, "영웅": 6, "전설": 1} },
-    { count: 10, probs: {"희귀": 90, "영웅": 8, "전설": 2, "프레스티지": 1} }
+    { count: 10, probs: {"희귀": 90, "영웅": 8, "전설": 2} }
   ],
   "희귀": [
     { count: 2, probs: {"희귀": 100} },
@@ -410,7 +410,7 @@ const COMBINE_PROBABILITIES = {
     { count: 7, probs: {"희귀": 8, "영웅": 90, "전설": 2} },
     { count: 8, probs: {"영웅": 98, "전설": 2} },
     { count: 9, probs: {"영웅": 96, "전설": 4} },
-    { count: 10, probs: {"영웅": 95, "전설": 5, "프레스티지": 1} }
+    { count: 10, probs: {"영웅": 95, "전설": 5} }
   ],
   "영웅": [
     { count: 2, probs: {"영웅": 100} },
@@ -421,7 +421,7 @@ const COMBINE_PROBABILITIES = {
     { count: 7, probs: {"영웅": 80, "전설": 20} },
     { count: 8, probs: {"영웅": 70, "전설": 30} },
     { count: 9, probs: {"영웅": 60, "전설": 40} },
-    { count: 10, probs: {"영웅": 40, "전설": 60, "프레스티지": 2} }
+    { count: 10, probs: {"영웅": 40, "전설": 60} }
   ],
   "전설": [
     { count: 10, probs: {"전설": 90, "프레스티지": 10} }
@@ -2569,10 +2569,10 @@ client.on('chat', async (data, channel) => {
             }
             
             if (grade !== "전설" && selectedCardIds.length === 10) {
-                probMessage += "\n✨ 10장 조합 시 1% 확률로 프레스티지 카드팩 획득 가능!";
+                probMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득 가능!";
             }
             
-            probMessage += "\n\n⚠️ 조합 시 조합용 자물쇠 1개가 소모됩니다.\n조합 확정: [ /tcg 조합확정 ]";
+            probMessage += "\n\n조합 확정: [ /tcg 조합확정 ]";
             
             channel.sendChat(probMessage);
             delete manualCombine[senderID];
@@ -4587,10 +4587,10 @@ client.on('chat', async (data, channel) => {
                     }
                     
                     if (grade !== "전설" && count === 10) {
-                        cardListMessage += "\n✨ 10장 조합 시 1% 확률로 프레스티지 카드팩 획득 가능!";
+                        cardListMessage += "\n✨ " + (grade == "영웅" ? 2 : 1) + "% 확률로 프레스티지 카드팩 획득 가능!\n";
                     }
                     
-                    cardListMessage += "\n\n⚠️ 조합 시 조합용 자물쇠 1개가 소모됩니다.\n조합 확정: [ /tcg 조합확정 ]";
+                    cardListMessage += "\n조합 확정: [ /tcg 조합확정 ]";
                     
                     channel.sendChat(cardListMessage);
                     return;
@@ -4682,6 +4682,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     
+                    await user.checkQuest("[조합] 제발 좀 떠라", channel);
                     // 조합 처리
                     await performCombination(
                         user,
