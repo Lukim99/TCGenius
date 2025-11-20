@@ -4212,10 +4212,10 @@ client.on('chat', async (data, channel) => {
                     }
                     
                     // 자동으로 카드 선택 (가장 앞에서부터)
-                    const selectedCards = userCards.slice(0, count).map(card => card.id);
+                    const autoSelectedCards = userCards.slice(0, count).map(card => card.id);
                     
                     // 중복 제거
-                    const uniqueCards = [...new Set(selectedCards)];
+                    const uniqueCards = [...new Set(autoSelectedCards)];
                     if (uniqueCards.length < count) {
                         channel.sendChat("❌ 조합에 필요한 카드가 부족합니다.");
                         return;
@@ -4238,8 +4238,36 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     
-                    // 즉시 조합 처리
-                    await performCombination(user, channel, uniqueCards.slice(0, count), grade, count);
+                    // 선택된 카드 리스트
+                    const finalSelectedCards = uniqueCards.slice(0, count);
+                    
+                    // 조합 큐에 추가
+                    combQueue[user.id] = {
+                        cards: finalSelectedCards,
+                        cardRarity: grade,
+                        cardCount: count
+                    };
+                    
+                    // 선택된 카드 리스트 출력
+                    let cardListMessage = `✅ 자동으로 ${count}장의 ${grade} 카드를 선택했습니다.\n\n[ 선택된 카드 ]\n`;
+                    finalSelectedCards.forEach((cardId, index) => {
+                        const cardData = cards[cardId];
+                        cardListMessage += `${index + 1}. [${cardData.title}]${cardData.name}\n`;
+                    });
+                    
+                    // 확률 정보 메시지 추가
+                    cardListMessage += `\n[ 조합 확률 ]\n`;
+                    for (const [rarity, prob] of Object.entries(probabilities)) {
+                        cardListMessage += `- ${rarity}: ${prob}%\n`;
+                    }
+                    
+                    if (grade !== "전설" && count === 10) {
+                        cardListMessage += "\n✨ 10장 조합 시 1% 확률로 프레스티지 카드팩 획득 가능!";
+                    }
+                    
+                    cardListMessage += "\n\n⚠️ 조합 시 조합용 자물쇠 1개가 소모됩니다.\n조합 확정: [ /tcg 조합확정 ]";
+                    
+                    channel.sendChat(cardListMessage);
                     return;
                 }
                 
@@ -4324,7 +4352,7 @@ client.on('chat', async (data, channel) => {
                     const lock = user.inventory.item.find(item => item.id === lockIdx);
                     
                     if (!lock || lock.count < 1) {
-                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!\n조합용 자물쇠는 상점에서 50,000골드에 구매할 수 있습니다.");
+                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!");
                         delete combQueue[user.id];
                         return;
                     }
