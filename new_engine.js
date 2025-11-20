@@ -4805,14 +4805,9 @@ client.on('chat', async (data, channel) => {
                         }
                     }
                     
-                    // prestigeLevelUp 객체에 저장
-                    prestigeLevelUp[user.id] = {
-                        cardIdx: cardIdx,
-                        currentLevel: currentLevel
-                    };
                     
                     // 필요한 재료 출력
-                    let costMessage = `[${cardData.title}]${cardData.name} 레벨업\n\n`;
+                    let costMessage = `✨ [${cardData.title}]${cardData.name} 레벨업 ✨\n`;
                     costMessage += `Lv.${currentLevel} → Lv.${currentLevel + 1}\n`;
                     costMessage += `파워: ${cardData.power + (currentLevel * 10)} → ${cardData.power + ((currentLevel + 1) * 10)}\n\n`;
                     
@@ -4822,7 +4817,7 @@ client.on('chat', async (data, channel) => {
                         costMessage += `✨ Lv.${nextLevel} 특수능력이 해금됩니다!\n`;
                         const ability = getPrestigeAbility(cardData, nextLevel);
                         if (ability) {
-                            costMessage += `${ability}\n\n`;
+                            costMessage += `- ${ability}\n\n`;
                         } else {
                             costMessage += `\n`;
                         }
@@ -4831,9 +4826,12 @@ client.on('chat', async (data, channel) => {
                     costMessage += `[ 필요한 재료 ]\n${materials.join("\n")}`;
                     
                     if (hasAllMaterials) {
+                        // prestigeLevelUp 객체에 저장
+                        prestigeLevelUp[user.id] = {
+                            cardIdx: cardIdx,
+                            currentLevel: currentLevel
+                        };
                         costMessage += `\n\n레벨업 진행: [ /tcg 카드레벨업 확인 ]`;
-                    } else {
-                        costMessage += `\n\n❌ 재료가 부족합니다.`;
                     }
                     
                     channel.sendChat(costMessage);
