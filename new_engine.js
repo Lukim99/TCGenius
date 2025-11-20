@@ -4983,7 +4983,6 @@ client.on('chat', async (data, channel) => {
                         let vipPlus = [0,0.01,0.02,0.03,0.05,0.07,0.1,0.12,0.15,0.18,0.21,0.3];
                         let gotGold = user.dailyGold + Math.round(user.dailyGold * vipPlus[user.vip]);
                         if (attendRes.isRoulette) {
-                            gotGold = 0;
                             let r = Math.random();
                             if (r < 0.07) {
                                 attend_reward.push({
@@ -5010,6 +5009,40 @@ client.on('chat', async (data, channel) => {
                         if (attendRes.passiveRewards && attendRes.passiveRewards.length > 0) {
                             attend_reward = attend_reward.concat(attendRes.passiveRewards);
                         }
+                        
+                        // 패시브덱 프레스티지 카드 출석 보너스 처리
+                        if (user.deck.passive && user.deck.passive.length > 0) {
+                            const cards = JSON.parse(read("DB/TCG/card.json"));
+                            for (const cardId of user.deck.passive) {
+                                if (cardId === -1) continue;
+                                
+                                const userCard = user.inventory.card.find(c => c.id === cardId);
+                                if (!userCard) continue;
+                                
+                                const cardData = cards[cardId];
+                                if (cardData.rarity !== "프레스티지") continue;
+                                
+                                const prestigeLevel = userCard.prestigeLevel || 0;
+                                
+                                // 각 프레스티지 카드의 출석 보너스 확인
+                                if (cardData.name === "딜러 장은비" && prestigeLevel >= 5) {
+                                    attend_reward.push({item: true, type: "아이템", name: "강렬한 기운", count: 1});
+                                } else if (cardData.name === "호딜러" && prestigeLevel >= 5) {
+                                    attend_reward.push({item: true, type: "아이템", name: "빛나는 주사위", count: 1});
+                                } else if (cardData.name === "시계의 주인" && prestigeLevel >= 5) {
+                                    attend_reward.push({item: true, type: "아이템", name: "아티팩트", count: 1});
+                                } else if (cardData.name === "지짐" && prestigeLevel >= 5) {
+                                    attend_reward.push({item: true, type: "아이템", name: "영롱한 기운", count: 1});
+                                } else if (cardData.name === "Buta" && prestigeLevel >= 10) {
+                                    // 데일리골드량의 0.01%만큼 가넷
+                                    const garnetAmount = Math.floor(gotGold * 0.0001);
+                                    if (garnetAmount > 0) {
+                                        attend_reward.push({garnet: true, count: garnetAmount});
+                                    }
+                                }
+                            }
+                        }
+                        
                         attend_reward = attend_reward.concat(vipPack[user.vip]);
                         rewards = user.givePack(attend_reward);
                         channel.sendChat("✅ 출석을 완료했습니다!\n- 연속 출석일수: " + user.attendance.streak + "일\n- 누적 출석일수: " + user.attendance.total + "일\n\n[ 출석 보상 ]\n- 데일리 골드 " + numberWithCommas(gotGold.toString()) + "골드" + (vipPlus[user.vip] > 0 ? " (+" + (vipPlus[user.vip] * 100).fix() + "% 보너스!)" : "") + (rewards.length ? "\n" + rewards.join("\n") : ""));
