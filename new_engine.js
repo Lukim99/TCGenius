@@ -906,63 +906,21 @@ class TCGUser {
         this.deck_power_duo = data.deck_power_duo || 0;
         this.deck_power_pure = data.deck_power_pure || 0;
         // 해방 시스템
-        if (data.liberation && data.liberation.passive) {
-            this.liberation = data.liberation;
-        } else {
-            this.liberation = {
-                content1: {
-                    liberated: false,
-                    rank: 0,
-                    dice_count: {
-                        dim: 0,
-                        bright: 0,
-                        brilliant: 0,
-                        fate: 0,
-                        judgment: 0
-                    },
-                    bonuses: [],
-                    pendingChoice: null
+        this.liberation = data.liberation;
+        if (!this.liberation.passive) {
+            this.liberation.passive = {
+                liberated: false,
+                rank: 0,
+                dice_count: {
+                    dim: 0,
+                    bright: 0,
+                    brilliant: 0,
+                    fate: 0,
+                    judgment: 0
                 },
-                content2: {
-                    liberated: false,
-                    rank: 0,
-                    dice_count: {
-                        dim: 0,
-                        bright: 0,
-                        brilliant: 0,
-                        fate: 0,
-                        judgment: 0
-                    },
-                    bonuses: [],
-                    pendingChoice: null
-                },
-                gold: {
-                    liberated: false,
-                    rank: 0,
-                    dice_count: {
-                        dim: 0,
-                        bright: 0,
-                        brilliant: 0,
-                        fate: 0,
-                        judgment: 0
-                    },
-                    bonuses: [],
-                    pendingChoice: null
-                },
-                passive: {
-                    liberated: false,
-                    rank: 0,
-                    dice_count: {
-                        dim: 0,
-                        bright: 0,
-                        brilliant: 0,
-                        fate: 0,
-                        judgment: 0
-                    },
-                    bonuses: [],
-                    pendingChoice: null
-                }
-            };
+                bonuses: [],
+                pendingChoice: null
+            }
         }
 
         return this;
@@ -4678,7 +4636,7 @@ client.on('chat', async (data, channel) => {
                     };
                     
                     // 카드 리스트 출력
-                    let cardList = `📋 ${grade} 등급 카드 리스트\n\n`;
+                    let cardList = `[ ${grade} 등급 카드 리스트 ]\n${VIEWMORE}\n`;
                     userCards.forEach((card, index) => {
                         const cardData = cards[card.id];
                         const lockStatus = card.locked ? " 🔒" : "";
@@ -6297,7 +6255,8 @@ client.on('chat', async (data, channel) => {
                     let deckNames = {
                         "content1": "콘텐츠덱1",
                         "content2": "콘텐츠덱2", 
-                        "gold": "골드덱"
+                        "gold": "골드덱",
+                        "passive": "패시브덱"
                     };
                     
                     let selectedBonuses = choice === "before" ? pendingChoice.before : pendingChoice.after;
