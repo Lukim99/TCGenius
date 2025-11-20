@@ -690,13 +690,13 @@ function printCard(cardData) {
             let abilities = [];
             
             const ability1 = getPrestigeAbility(cardData, 1);
-            if (ability1) abilities.push((prestigeLevel >= 1 ? "🟢" : "⚫") + ability1);
+            if (ability1) abilities.push((prestigeLevel >= 1 ? "🟢 " : "⚫ ") + ability1);
             
             const ability5 = getPrestigeAbility(cardData, 5);
-            if (ability5) abilities.push((prestigeLevel >= 5 ? "🟢" : "⚫") + ability5);
+            if (ability5) abilities.push((prestigeLevel >= 5 ? "🟢 " : "⚫ ") + ability5);
 
             const ability10 = getPrestigeAbility(cardData, 10);
-            if (ability10) abilities.push((prestigeLevel >= 10 ? "🟢" : "⚫") + ability10);
+            if (ability10) abilities.push((prestigeLevel >= 10 ? "🟢 " : "⚫ ") + ability10);
             
             if (abilities.length > 0) {
                 cardDesc = "\n" + abilities.join("\n");
@@ -3111,6 +3111,7 @@ client.on('chat', async (data, channel) => {
 
                         sortedCards.forEach(invCard => {
                             let card = cards[invCard.id];
+                            card.prestigeLevel = invCard.prestigeLevel;
                             card.level = invCard.level;
                             card.transcend = invCard.transcend;
                             card.breakLimit = invCard.breakLimit;
