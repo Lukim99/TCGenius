@@ -3901,9 +3901,9 @@ client.on('chat', async (data, channel) => {
                                 channel.sendChat("❌ 성장형 카드는 덱에 편성할 수 없습니다.");
                                 return;
                             }
-                            let cardIdx = cards.findIndex(c => ("[" + c.title + "]" + c.name) == cardName || ("[" + c.title + "] " + c.name) == cardName);
+                            let cardIdx = cards.findIndex(c => ("[" + c.title + "]" + c.name) == cardName);
                             if (cardIdx == -1) {
-                                channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드 이름은 다음과 같이 입력해야 합니다: [테마]카드명");
+                                channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드 이름은 다음과 같이 입력해야 합니다: [테마]카드명\n\n<DEBUG>\ncardIdx: " + cards.findIndex(c => ("[" + c.title + "]" + c.name).toLowerCase() == cardName.toLowerCase()) + "\ncardName: " + cardName + "\n");
                             } else {
                                 let card = user.inventory.card.find(c => c.id == cardIdx);
                                 if (!card) {
