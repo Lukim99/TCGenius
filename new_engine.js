@@ -874,6 +874,7 @@ class TCGUser {
         this.p = data.p > 0 ? data.p : 0;
         this.attendance = data.attendance;
         this.deck = data.deck;
+        if (!this.deck.passive) this.deck.passive = [-1,-1,-1,-1,-1];
         this.inventory = data.inventory;
         this.pickupStack = data.pickupStack;
         this.title = data.title;
@@ -905,7 +906,7 @@ class TCGUser {
         this.deck_power_duo = data.deck_power_duo || 0;
         this.deck_power_pure = data.deck_power_pure || 0;
         // 해방 시스템
-        if (data.liberation && data.liberation.content1) {
+        if (data.liberation && data.liberation.passive) {
             this.liberation = data.liberation;
         } else {
             this.liberation = {
@@ -936,6 +937,19 @@ class TCGUser {
                     pendingChoice: null
                 },
                 gold: {
+                    liberated: false,
+                    rank: 0,
+                    dice_count: {
+                        dim: 0,
+                        bright: 0,
+                        brilliant: 0,
+                        fate: 0,
+                        judgment: 0
+                    },
+                    bonuses: [],
+                    pendingChoice: null
+                },
+                passive: {
                     liberated: false,
                     rank: 0,
                     dice_count: {
