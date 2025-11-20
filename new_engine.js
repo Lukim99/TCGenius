@@ -682,7 +682,7 @@ function printCard(cardData) {
         cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
     }
     
-    let cardDesc = (cardData.desc && cardData.desc != "" ? "'" + cardData.desc + "'" : "");
+    let cardDesc = (cardData.desc && cardData.desc != "" ? (cardData.rarity == "프레스티지" ? "\n" + cardData.desc + "\n" : "'" + cardData.desc + "'") : "");
     return (cardStar + " " + cardName + " " + cardLevel + " " + cardPower + " " + cardDesc).trim();
 }
 
