@@ -248,28 +248,12 @@
             {
                 "item": true,
                 "type": "티켓",
-                "name": "반복 콘텐츠 입장권",
+                "name": "콘텐츠 입장권",
                 "count": 1
             }
         ],
         "limit": {
-            "weekly": 5
-        }
-    },
-    {
-        "content": true,
-        "goods": "골드",
-        "price": 100000,
-        "item": [
-            {
-                "item": true,
-                "type": "티켓",
-                "name": "주간 콘텐츠 입장권",
-                "count": 1
-            }
-        ],
-        "limit": {
-            "weekly": 1
+            "daily": 1
         }
     },
     {
