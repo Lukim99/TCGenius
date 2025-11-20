@@ -4552,7 +4552,7 @@ client.on('chat', async (data, channel) => {
                     const userCards = user.inventory.card
                         .filter(card => {
                             const cardData = cards[card.id];
-                            return cardData.rarity === grade && !card.locked; // 잠금된 카드 제외
+                            return cardData.rarity === grade && !card.lock; // 잠금된 카드 제외
                         })
                         .sort((a, b) => a.id - b.id); // ID 순으로 정렬
                     
@@ -4665,7 +4665,7 @@ client.on('chat', async (data, channel) => {
                     let cardList = `[ ${grade} 등급 카드 리스트 ]\n${VIEWMORE}\n`;
                     userCards.forEach((card, index) => {
                         const cardData = cards[card.id];
-                        const lockStatus = card.locked ? " 🔒" : "";
+                        const lockStatus = card.lock ? " 🔒" : "";
                         cardList += `${index + 1}. [${cardData.title}]${cardData.name}${lockStatus}\n`;
                     });
                     
