@@ -4737,7 +4737,7 @@ client.on('chat', async (data, channel) => {
 
                 // 카드레벨업 1단계: 카드명 입력
                 if (args[0] == "카드레벨업" && args[1] !== "확인") {
-                    const cardName = cmd.substr(cmd.split(" ")[0].length + 8);
+                    const cardName = cmd.substr(cmd.split(" ")[0].length + 7);
                     
                     if (!cardName) {
                         channel.sendChat("❌ 카드명을 입력해주세요.\n[ /TCGenius 카드레벨업 [카드명] ]");
