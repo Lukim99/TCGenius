@@ -3111,7 +3111,8 @@ client.on('chat', async (data, channel) => {
                             '고급': 2,
                             '희귀': 3,
                             '영웅': 4,
-                            '전설': 5
+                            '전설': 5,
+                            '프레스티지': 6
                         };
                         
                         let sortedCards = user.inventory.card.sort(function(a, b) {
@@ -4888,6 +4889,75 @@ client.on('chat', async (data, channel) => {
                     channel.sendChat(resultMessage);
                     await user.save();
                     delete prestigeLevelUp[user.id];
+                    return;
+                }
+
+                // 프레스티지 변경
+                if (args[0] == "프레스티지" && args[1] == "변경") {
+                    const cardNames = cmd.substr(cmd.split(" ")[0].length + 10).split(" ");
+                    
+                    if (cardNames.length < 2) {
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /tcg 프레스티지 변경 [현재 프레스티지 카드] [원하는 프레스티지 카드] ]");
+                        return;
+                    }
+                    
+                    const oldCardName = cardNames[0];
+                    const newCardName = cardNames.slice(1).join(" ");
+                    
+                    const cards = JSON.parse(read("DB/TCG/card.json"));
+                    const items = JSON.parse(read("DB/TCG/item.json"));
+                    
+                    // 버릴 카드 찾기
+                    const oldCardIdx = cards.findIndex(c => ("[" + c.title + "]" + c.name) == oldCardName);
+                    if (oldCardIdx === -1) {
+                        channel.sendChat("❌ 변경할 프레스티지 카드가 존재하지 않습니다.\n카드 이름은 다음과 같이 입력해야 합니다: [테마]카드명");
+                        return;
+                    }
+                    
+                    const oldCard = cards[oldCardIdx];
+                    if (oldCard.title !== "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드만 변경할 수 있습니다.");
+                        return;
+                    }
+                    
+                    // 원하는 카드 찾기
+                    const newCardIdx = cards.findIndex(c => ("[" + c.title + "]" + c.name) == newCardName);
+                    if (newCardIdx === -1) {
+                        channel.sendChat("❌ 원하는 카드가 존재하지 않습니다.\n카드 이름은 다음과 같이 입력해야 합니다: [테마]카드명");
+                        return;
+                    }
+                    
+                    const newCard = cards[newCardIdx];
+                    if (newCard.title !== "프레스티지") {
+                        channel.sendChat("❌ 프레스티지 카드로만 변경할 수 있습니다.");
+                        return;
+                    }
+                    
+                    // 보유 여부 확인
+                    const userOldCard = user.inventory.card.find(c => c.id === oldCardIdx);
+                    if (!userOldCard || userOldCard.count < 1) {
+                        channel.sendChat("❌ 현재 프레스티지 카드를 보유하고 있지 않습니다.");
+                        return;
+                    }
+                    
+                    // 프레스티지 변경권 확인
+                    const ticketIdx = items.findIndex(item => item.name === "프레스티지 변경권");
+                    const ticket = user.inventory.item.find(item => item.id === ticketIdx);
+                    if (!ticket || ticket.count < 1) {
+                        channel.sendChat("❌ 프레스티지 변경권이 필요합니다!");
+                        return;
+                    }
+                    
+                    // 변경 처리
+                    user.removeCard(oldCardIdx, 1);
+                    user.removeItem(ticketIdx, 1);
+                    user.addCard(newCardIdx, 1);
+                    
+                    let resultMessage = `✅ 프레스티지 카드를 변경했습니다.\n\n`;
+                    resultMessage += `[${oldCard.title}]${oldCard.name} ▶ [${newCard.title}]${newCard.name}`;
+                    
+                    channel.sendChat(resultMessage);
+                    await user.save();
                     return;
                 }
 
