@@ -1907,57 +1907,6 @@ function calculatePrice(trades, n) {
     return total;
 }
 
-// 카드 출력 함수
-function printCard(cardData) {
-    var GROW = {
-        "일반": {lv:1, tr:3, maxLv:5, maxTr:4}, 
-        "고급": {lv:2, tr:6, maxLv:5, maxTr:4},
-        "희귀": {lv:3, tr:9, maxLv:7, maxTr:6}, 
-        "영웅": {lv:4, tr:15, maxLv:9, maxTr:8},
-        "전설": {lv:5, tr:25, maxLv:12, maxTr:10}
-    };
-    let maxTranscend = {
-        "전설": 5,
-        "영웅": 4,
-        "희귀": 3,
-        "고급": 2,
-        "일반": 1
-    };
-    if (cardData.breakLimit) maxTranscend = {
-        "전설": 6,
-        "영웅": 5,
-        "희귀": 4,
-        "고급": 3,
-        "일반": 2
-    };
-
-    // 프레스티지 카드는 레벨 표시, 일반 카드는 별 표시
-    let cardStar;
-    if (cardData.rarity === "프레스티지") {
-        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
-        cardStar = `Lv.${prestigeLevel}`;
-    } else {
-        cardStar = (cardData.rarity ? (cardData.transcend ? Array(cardData.transcend + 1).join("★") + Array(maxTranscend[cardData.rarity] - cardData.transcend + 1).join("☆") : Array(maxTranscend[cardData.rarity] + 1).join("☆")) : "");
-    }
-    
-    let cardName = (cardData.title ? "[" + cardData.title + "]" : "[unknown]") + (cardData.name ? cardData.name : "unknown");
-    
-    // 프레스티지 카드는 강화 레벨 표시 안함
-    let cardLevel = (cardData.rarity === "프레스티지" ? "" : (cardData.level ? "+" + cardData.level : "+0"));
-    
-    // 프레스티지 카드는 레벨당 +10 파워, 일반 카드는 기존 방식
-    let cardPower;
-    if (cardData.rarity === "프레스티지") {
-        const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
-        cardPower = cardData.power ? "P" + (cardData.power + (prestigeLevel * 10)) : "";
-    } else {
-        cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
-    }
-    
-    let cardDesc = (cardData.desc && cardData.desc != "" ? "'" + cardData.desc + "'" : "");
-    return (cardStar + " " + cardName + " " + cardLevel + " " + cardPower + " " + cardDesc).trim();
-}
-
 // ===== LLM API 함수들 (Node.js 환경) =====
 
 // Claude Sonnet API 호출
