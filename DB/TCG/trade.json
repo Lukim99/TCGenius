@@ -205,5 +205,73 @@
                 "count": 1
             }
         ]
+    },
+    {
+        "name": "조합용 자물쇠 보호",
+        "material": [
+            {
+                "item": true,
+                "name": "보호자물쇠",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "조합용 자물쇠",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "조합용 자물쇠 강화",
+        "material": [
+            {
+                "item": true,
+                "name": "강화자물쇠",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "조합용 자물쇠",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "조합용 자물쇠 축복",
+        "material": [
+            {
+                "item": true,
+                "name": "축복자물쇠",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "조합용 자물쇠",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "name": "조합용 자물쇠 슈퍼강화",
+        "material": [
+            {
+                "item": true,
+                "name": "슈퍼강화자물쇠",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "item": true,
+                "name": "조합용 자물쇠",
+                "count": 2
+            }
+        ]
     }
 ]

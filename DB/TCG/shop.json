@@ -725,5 +725,18 @@
                 "count": 1
             }
         ]
+    },
+    {
+        "normal": true,
+        "goods": "골드",
+        "price": 50000,
+        "item": [
+            {
+                "item": true,
+                "type": "자물쇠",
+                "name": "조합용 자물쇠",
+                "count": 1
+            }
+        ]
     }
 ]
