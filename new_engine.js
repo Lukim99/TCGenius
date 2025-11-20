@@ -682,7 +682,39 @@ function printCard(cardData) {
         cardPower = (cardData.power ? "P" + (cardData.power + (cardData.rarity ? (cardData.level ? GROW[cardData.rarity].lv * cardData.level : 0) + (cardData.transcend ? GROW[cardData.rarity].tr * cardData.transcend : 0) : 0)) : "");
     }
     
-    let cardDesc = (cardData.desc && cardData.desc != "" ? (cardData.rarity == "프레스티지" ? "\n" + cardData.desc + "\n" : "'" + cardData.desc + "'") : "");
+    let cardDesc = "";
+    if (cardData.desc && cardData.desc != "") {
+        if (cardData.rarity === "프레스티지") {
+            // 프레스티지 카드는 레벨별 능력 표시
+            const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
+            let abilities = [];
+            
+            // 1레벨 능력
+            if (prestigeLevel >= 1) {
+                const ability1 = getPrestigeAbility(cardData, 1);
+                if (ability1) abilities.push("🟢 " + ability1);
+            }
+            
+            // 5레벨 능력
+            if (prestigeLevel >= 5) {
+                const ability5 = getPrestigeAbility(cardData, 5);
+                if (ability5) abilities.push("⚫ " + ability5);
+            }
+            
+            // 10레벨 능력
+            if (prestigeLevel >= 10) {
+                const ability10 = getPrestigeAbility(cardData, 10);
+                if (ability10) abilities.push("⚫ " + ability10);
+            }
+            
+            if (abilities.length > 0) {
+                cardDesc = "\n" + abilities.join("\n");
+            }
+        } else {
+            cardDesc = "'" + cardData.desc + "'";
+        }
+    }
+    
     return (cardStar + " " + cardName + " " + cardLevel + " " + cardPower + " " + cardDesc).trim();
 }
 
