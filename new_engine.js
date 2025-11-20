@@ -159,6 +159,7 @@ let megaCounting = {};
 let tcgLoading = {};
 let combQueue = {};
 let chooseCard = {};
+let manualCombine = {}; // 수동조합 대기 객체
 let tcgRaid = {};
 let canRejoin = {};
 let editPack = {};
@@ -372,6 +373,189 @@ async function queryItems(params) {
     } catch (error) {
         return { success: false, error: error };
     }
+}
+
+// 카드 조합 관련 상수
+const CARD_GRADES = ["일반", "고급", "희귀", "영웅", "전설", "프레스티지"];
+const COMBINE_PROBABILITIES = {
+  "일반": [
+    { count: 2, probs: {"일반": 100} },
+    { count: 3, probs: {"일반": 80, "고급": 20} },
+    { count: 4, probs: {"일반": 50, "고급": 49, "희귀": 1} },
+    { count: 5, probs: {"일반": 25, "고급": 72, "희귀": 3} },
+    { count: 6, probs: {"일반": 10, "고급": 85, "희귀": 5} },
+    { count: 7, probs: {"일반": 5, "고급": 90, "희귀": 4, "영웅": 1} },
+    { count: 8, probs: {"고급": 95, "희귀": 4, "영웅": 1} },
+    { count: 9, probs: {"고급": 93, "희귀": 5, "영웅": 2} },
+    { count: 10, probs: {"고급": 92, "희귀": 5, "영웅": 2, "전설": 1, "프레스티지": 1} }
+  ],
+  "고급": [
+    { count: 2, probs: {"고급": 100} },
+    { count: 3, probs: {"고급": 90, "희귀": 10} },
+    { count: 4, probs: {"고급": 60, "희귀": 39, "영웅": 1} },
+    { count: 5, probs: {"고급": 35, "희귀": 63, "영웅": 2} },
+    { count: 6, probs: {"고급": 15, "희귀": 82, "영웅": 3} },
+    { count: 7, probs: {"고급": 3, "희귀": 92, "영웅": 5} },
+    { count: 8, probs: {"희귀": 95, "영웅": 4, "전설": 1} },
+    { count: 9, probs: {"희귀": 93, "영웅": 6, "전설": 1} },
+    { count: 10, probs: {"희귀": 90, "영웅": 8, "전설": 2, "프레스티지": 1} }
+  ],
+  "희귀": [
+    { count: 2, probs: {"희귀": 100} },
+    { count: 3, probs: {"희귀": 90, "영웅": 10} },
+    { count: 4, probs: {"희귀": 60, "영웅": 40} },
+    { count: 5, probs: {"희귀": 35, "영웅": 64, "전설": 1} },
+    { count: 6, probs: {"희귀": 20, "영웅": 79, "전설": 1} },
+    { count: 7, probs: {"희귀": 8, "영웅": 90, "전설": 2} },
+    { count: 8, probs: {"영웅": 98, "전설": 2} },
+    { count: 9, probs: {"영웅": 96, "전설": 4} },
+    { count: 10, probs: {"영웅": 95, "전설": 5, "프레스티지": 1} }
+  ],
+  "영웅": [
+    { count: 2, probs: {"영웅": 100} },
+    { count: 3, probs: {"영웅": 96, "전설": 4} },
+    { count: 4, probs: {"영웅": 93, "전설": 7} },
+    { count: 5, probs: {"영웅": 90, "전설": 10} },
+    { count: 6, probs: {"영웅": 85, "전설": 15} },
+    { count: 7, probs: {"영웅": 80, "전설": 20} },
+    { count: 8, probs: {"영웅": 70, "전설": 30} },
+    { count: 9, probs: {"영웅": 60, "전설": 40} },
+    { count: 10, probs: {"영웅": 40, "전설": 60, "프레스티지": 2} }
+  ],
+  "전설": [
+    { count: 10, probs: {"전설": 90, "프레스티지": 10} }
+  ]
+};
+
+// 카드 조합 확률 계산
+function getCombineProbabilities(grade, count) {
+    if (!COMBINE_PROBABILITIES[grade]) return null;
+    const probSet = COMBINE_PROBABILITIES[grade].find(p => p.count === count);
+    return probSet ? probSet.probs : null;
+}
+
+// 랜덤 등급 선택 (확률에 따라)
+function getRandomGrade(grade, count) {
+    const probabilities = getCombineProbabilities(grade, count);
+    if (!probabilities) return grade; // 폴백
+    
+    const rand = Math.random() * 100;
+    let sum = 0;
+    
+    for (const [resultGrade, prob] of Object.entries(probabilities)) {
+        sum += prob;
+        if (rand <= sum) return resultGrade;
+    }
+    
+    // 기본값은 가장 높은 확률의 등급
+    return Object.entries(probabilities).reduce((a, b) => 
+        a[1] > b[1] ? a : b
+    )[0];
+}
+
+// 조합 처리 함수
+async function performCombination(user, channel, cardIds, grade, count) {
+    const cards = JSON.parse(read("DB/TCG/card.json"));
+    const items = JSON.parse(read("DB/TCG/item.json"));
+    
+    try {
+        // 조합용 자물쇠 소모 (필수)
+        const lockIdx = items.findIndex(item => item.name === "조합용 자물쇠");
+        if (lockIdx !== -1) {
+            user.removeItem(lockIdx, 1);
+        }
+        
+        // 카드 소모 (무한부활 카드는 보존)
+        const notDeleteCards = [];
+        for (const cardId of cardIds) {
+            const card = cards[cardId];
+            if (card.desc && card.desc.startsWith("무한부활")) {
+                notDeleteCards.push(cardId);
+            } else {
+                user.removeCard(cardId, 1);
+            }
+        }
+        
+        // 결과 카드 결정 (일반 확률)
+        const resultRarity = getRandomGrade(grade, count);
+        
+        // 결과 카드 선택
+        const possibleCards = cards.filter(card => card.rarity === resultRarity);
+        const resultCard = possibleCards[Math.floor(Math.random() * possibleCards.length)];
+        const cardIdx = cards.findIndex(c => c.title === resultCard.title && c.name === resultCard.name);
+        
+        // 카드 지급
+        user.addCard(cardIdx, 1);
+        
+        const resultMessages = [];
+        
+        // 프레스티지 카드팩 드롭 (10장 조합 시 확률)
+        let prestigePackChance = 0;
+        if (count === 10) {
+            if (grade === "영웅") {
+                prestigePackChance = 0.02; // 2%
+            } else if (grade === "전설") {
+                prestigePackChance = 0; // 전설은 별도 처리
+            } else {
+                prestigePackChance = 0.01; // 1%
+            }
+            
+            if (prestigePackChance > 0 && Math.random() < prestigePackChance) {
+                const prestigePackId = items.findIndex(item => item.name === "프레스티지 카드팩");
+                if (prestigePackId !== -1) {
+                    user.addItem(prestigePackId, 1);
+                    resultMessages.push("✨ **축하합니다!** 프레스티지 카드팩을 획득했습니다!");
+                }
+            }
+        }
+        
+        // 결과 메시지 구성
+        let resultMessage = `❇️ ${count}장의 ${grade} 카드 조합이 완료되었습니다!\n\n[ 획득한 카드 ]\n- [${resultCard.title}]${resultCard.name} (${resultRarity})`;
+        
+        // 보존된 카드가 있는 경우
+        if (notDeleteCards.length > 0) {
+            resultMessage += `\n\n[ 보존된 카드 ]\n- ${
+                notDeleteCards.map(id => `[${cards[id].title}]${cards[id].name}`).join("\n- ")
+            }`;
+        }
+        
+        // 사용한 아이템 표시 (필수)
+        resultMessage += `\n\n[ 사용한 아이템 ]\n- 조합용 자물쇠`;
+        
+        // 추가 메시지가 있는 경우
+        if (resultMessages.length > 0) {
+            resultMessage += `\n\n${resultMessages.join("\n")}`;
+        }
+        
+        await channel.sendChat(resultMessage);
+        await user.save();
+        
+    } catch (error) {
+        console.error("조합 처리 중 오류 발생:", error);
+        channel.sendChat("❌ 조합 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.");
+    } finally {
+        // 조합 큐 정리
+        if (combQueue[user.id]) {
+            delete combQueue[user.id];
+        }
+    }
+}
+
+// 커스텀 확률로 랜덤 등급 선택
+function getRandomGradeWithProbs(probabilities) {
+    const rand = Math.random() * 100;
+    let cumulative = 0;
+    
+    for (const [grade, prob] of Object.entries(probabilities)) {
+        cumulative += prob;
+        if (rand < cumulative) {
+            return grade;
+        }
+    }
+    
+    // 폴백: 마지막 등급 반환
+    const grades = Object.keys(probabilities);
+    return grades[grades.length - 1];
 }
 
 // TCG 관련 헬퍼 함수들
@@ -2096,6 +2280,93 @@ client.on('chat', async (data, channel) => {
                 editPack[senderID].reward.push(parsed);
                 channel.sendChat("✅ 추가되었습니다.");
             }
+            return;
+        }
+
+        // manualCombine 처리 (수동조합 번호 입력)
+        if (manualCombine[senderID]) {
+            const user = await getTCGUserById(senderID);
+            const grade = manualCombine[senderID].grade;
+            const userCards = manualCombine[senderID].userCards;
+            
+            // 번호 파싱
+            const numbers = msg.trim().split(/\s+/).map(n => parseInt(n));
+            
+            // 유효성 검사
+            if (numbers.length < 2 || numbers.length > 10) {
+                channel.sendChat("❌ 2개에서 10개 사이의 번호를 입력해주세요.");
+                return;
+            }
+            
+            // 숫자가 아닌 값이 있는지 확인
+            if (numbers.some(n => isNaN(n) || n < 1)) {
+                channel.sendChat("❌ 올바른 번호를 입력해주세요.");
+                return;
+            }
+            
+            // 전설 등급은 10장만 가능
+            if (grade === "전설" && numbers.length !== 10) {
+                channel.sendChat("❌ 전설 등급 카드는 10장으로만 조합할 수 있습니다.");
+                return;
+            }
+            
+            // 선택된 카드 ID 추출
+            const selectedCardIds = [];
+            for (const num of numbers) {
+                if (num > userCards.length) {
+                    channel.sendChat(`❌ 유효하지 않은 카드 번호가 존재합니다.`);
+                    return;
+                }
+                selectedCardIds.push(userCards[num - 1].id);
+            }
+            
+            // 중복 확인
+            if (new Set(selectedCardIds).size !== selectedCardIds.length) {
+                channel.sendChat("❌ 중복된 카드는 조합할 수 없습니다.");
+                return;
+            }
+            
+            // 조합 확률 정보 가져오기
+            const probabilities = getCombineProbabilities(grade, selectedCardIds.length);
+            if (!probabilities) {
+                channel.sendChat(`❌ ${grade} 등급 카드 ${selectedCardIds.length}장으로는 조합할 수 없습니다.`);
+                delete manualCombine[senderID];
+                return;
+            }
+            
+            // 조합용 자물쇠 확인
+            const items = JSON.parse(read("DB/TCG/item.json"));
+            const lockIdx = items.findIndex(item => item.name === "조합용 자물쇠");
+            const lock = user.inventory.item.find(item => item.id === lockIdx);
+            
+            if (!lock || lock.count < 1) {
+                channel.sendChat("❌ 조합용 자물쇠가 필요합니다!");
+                delete manualCombine[senderID];
+                return;
+            }
+            
+            // 조합 큐에 추가
+            combQueue[user.id] = {
+                cards: selectedCardIds,
+                cardRarity: grade,
+                cardCount: selectedCardIds.length
+            };
+            
+            // 확률 정보 메시지 생성
+            let probMessage = `✅ ${selectedCardIds.length}장의 ${grade} 카드를 조합하시겠습니까?\n\n[ 조합 확률 ]\n`;
+            
+            for (const [rarity, prob] of Object.entries(probabilities)) {
+                probMessage += `- ${rarity}: ${prob}%\n`;
+            }
+            
+            if (grade !== "전설" && selectedCardIds.length === 10) {
+                probMessage += "\n✨ 10장 조합 시 1% 확률로 프레스티지 카드팩 획득 가능!";
+            }
+            
+            probMessage += "\n\n⚠️ 조합 시 조합용 자물쇠 1개가 소모됩니다.\n조합 확정: [ /tcg 조합확정 ]";
+            
+            channel.sendChat(probMessage);
+            delete manualCombine[senderID];
             return;
         }
 
@@ -3899,235 +4170,173 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                if (args[0] == "조합") {
-                    let cardArgs = cmd.substr(cmd.split(" ")[0].length + 4).split(" ");
-                    if (cardArgs.length != 3) {
-                        channel.sendChat("❌ 정확히 3장의 카드를 입력해주세요.\n주의: 띄어쓰기가 포함된 카드는 띄어쓰기 없이 입력해주세요.");
+                // 자동조합 명령어
+                if (args[0] == "자동조합") {
+                    const grade = args[1]; // 등급
+                    const count = parseInt(args[2]); // 카드 수
+                    
+                    // 유효성 검사
+                    if (!grade || isNaN(count) || count < 2 || count > 10) {
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /tcg 자동조합 <등급> <수량(2-10)> ]\n예: /tcg 자동조합 희귀 5");
                         return;
                     }
-                    let cards = JSON.parse(read("DB/TCG/card.json"));
-                    let notExists = [];
-                    for(let i = 0; i < cardArgs.length; i++) {
-                        if (!cards.find(c => ("[" + c.title + "]" + c.name).replace(/\s/gi,"") == cardArgs[i].replace(/\s/gi,""))) {
-                            notExists.push(cardArgs[i]);
-                        }
-                    }
-                    if (notExists.length > 0) {
-                        channel.sendChat("❌ 존재하지 않는 카드가 존재합니다.\n- " + notExists.join("\n- "));
+                    
+                    // 유효한 등급인지 확인
+                    const validGrades = ["일반", "고급", "희귀", "영웅", "전설"];
+                    if (!validGrades.includes(grade)) {
+                        channel.sendChat("❌ 유효하지 않은 등급입니다.\n등급: 일반, 고급, 희귀, 영웅, 전설");
                         return;
                     }
-                    cardArgs = cardArgs.map(c => cards.findIndex(cc => ("[" + cc.title + "]" + cc.name).replace(/\s/gi,"") == c.replace(/\s/gi,"")));
-                    let notHas = [];
-                    for (let i = 0; i < cardArgs.length; i++) {
-                        if (!user.inventory.card.find(c => c.id == cardArgs[i])) {
-                            notHas.push("[" + cards[cardArgs[i]].title + "]" + cards[cardArgs[i]].name);
-                        }
-                    }
-                    if (notHas.length > 0) {
-                        channel.sendChat("❌ 보유하지 않은 카드가 존재합니다.\n- " + notHas.join("\n- "));
+                    
+                    // 전설 등급은 10장만 가능
+                    if (grade === "전설" && count !== 10) {
+                        channel.sendChat("❌ 전설 등급 카드는 10장으로만 조합할 수 있습니다.");
                         return;
                     }
-                    if (cardArgs.unique().length != 3) {
-                        channel.sendChat("❌ 중복된 카드는 조합할 수 없습니다.");
+                    
+                    // 카드 데이터 로드
+                    const cards = JSON.parse(read("DB/TCG/card.json"));
+                    
+                    // 보유한 해당 등급 카드 조회 (잠금되지 않은 카드만)
+                    const userCards = user.inventory.card
+                        .filter(card => {
+                            const cardData = cards[card.id];
+                            return cardData.rarity === grade && !card.locked; // 잠금된 카드 제외
+                        })
+                        .sort((a, b) => a.id - b.id); // ID 순으로 정렬
+                    
+                    // 충분한 카드가 있는지 확인
+                    if (userCards.length < count) {
+                        channel.sendChat(`❌ ${grade} 등급 카드가 부족합니다. (필요: ${count}장, 보유: ${userCards.length}장)`);
                         return;
                     }
-                    let correctRarity = true;
-                    let nowRarity = null;
-                    let hasLegend = false;
-                    for (let i = 0; i < cardArgs.length; i++) {
-                        if (!nowRarity) nowRarity = cards[cardArgs[i]].rarity;
-                        if (cards[cardArgs[i]].rarity != nowRarity) {
-                            correctRarity = false;
-                            break;
-                        }
-                        if (cards[cardArgs[i]].rarity == "전설") {
-                            hasLegend = true;
-                            break;
-                        }
-                    }
-                    if (!correctRarity) {
-                        channel.sendChat("❌ 3장의 카드 등급이 모두 동일해야 합니다.");
+                    
+                    // 자동으로 카드 선택 (가장 앞에서부터)
+                    const selectedCards = userCards.slice(0, count).map(card => card.id);
+                    
+                    // 중복 제거
+                    const uniqueCards = [...new Set(selectedCards)];
+                    if (uniqueCards.length < count) {
+                        channel.sendChat("❌ 조합에 필요한 카드가 부족합니다.");
                         return;
                     }
-                    if (hasLegend) {
-                        channel.sendChat("❌ 전설 카드는 조합할 수 없습니다.");
+                    
+                    // 조합 확률 정보 가져오기
+                    const probabilities = getCombineProbabilities(grade, count);
+                    if (!probabilities) {
+                        channel.sendChat(`❌ ${grade} 등급 카드 ${count}장으로는 조합할 수 없습니다.`);
                         return;
                     }
-                    combQueue[user.id] = {
-                        cards: cardArgs,
-                        useLocks: {
-                            protect: null,
-                            enforce: null,
-                            blessing: null
-                        }
+                    
+                    // 조합용 자물쇠 확인
+                    const items = JSON.parse(read("DB/TCG/item.json"));
+                    const lockIdx = items.findIndex(item => item.name === "조합용 자물쇠");
+                    const lock = user.inventory.item.find(item => item.id === lockIdx);
+                    
+                    if (!lock || lock.count < 1) {
+                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!\n조합용 자물쇠는 상점에서 50,000골드에 구매할 수 있습니다.");
+                        return;
+                    }
+                    
+                    // 즉시 조합 처리
+                    await performCombination(user, channel, uniqueCards.slice(0, count), grade, count);
+                    return;
+                }
+                
+                // 수동조합 명령어 - 1단계: 등급 입력
+                if (args[0] == "수동조합" && args.length === 2) {
+                    const grade = args[1]; // 등급
+                    
+                    // 유효성 검사
+                    if (!grade) {
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /tcg 수동조합 <등급> ]\n예: /tcg 수동조합 희귀");
+                        return;
+                    }
+                    
+                    // 유효한 등급인지 확인
+                    const validGrades = ["일반", "고급", "희귀", "영웅", "전설"];
+                    if (!validGrades.includes(grade)) {
+                        channel.sendChat("❌ 유효하지 않은 등급입니다.\n등급: 일반, 고급, 희귀, 영웅, 전설");
+                        return;
+                    }
+                    
+                    // 카드 데이터 로드
+                    const cards = JSON.parse(read("DB/TCG/card.json"));
+                    
+                    // 보유한 해당 등급 카드 조회
+                    const userCards = user.inventory.card
+                        .filter(card => {
+                            const cardData = cards[card.id];
+                            return cardData.rarity === grade;
+                        })
+                        .sort((a, b) => a.id - b.id);
+                    
+                    if (userCards.length < 2) {
+                        channel.sendChat(`❌ ${grade} 등급 카드가 부족합니다. (최소 2장 필요)`);
+                        return;
+                    }
+                    
+                    // manualCombine 객체에 저장
+                    manualCombine[sender.userId + ""] = {
+                        grade: grade,
+                        userCards: userCards
                     };
-                    channel.sendChat("✅ 3장의 카드를 조합하시겠습니까?\n\n자물쇠 사용: [ /TCGenius 자물쇠사용 <자물쇠> ]\n조합 확정: [ /TCGenius 조합확정 ]");
+                    
+                    // 카드 리스트 출력
+                    let cardList = `📋 ${grade} 등급 카드 리스트\n\n`;
+                    userCards.forEach((card, index) => {
+                        const cardData = cards[card.id];
+                        const lockStatus = card.locked ? " 🔒" : "";
+                        cardList += `${index + 1}. [${cardData.title}]${cardData.name}${lockStatus}\n`;
+                    });
+                    
+                    cardList += `\n조합할 카드 번호를 입력해주세요 (2~10개, 공백으로 구분)\n`;
+                    cardList += `예: 1 2 3 4 5`;
+                    
+                    channel.sendChat(cardList);
                     return;
                 }
 
-                if (args[0] == "자물쇠사용" && combQueue[user.id]) {
-                    if (args[1] == "보호자물쇠") {
-                        let items = JSON.parse(read("DB/TCG/item.json"));
-                        let itemIdx = items.findIndex(item => item.name == "보호자물쇠");
-                        let lock = user.inventory.item.find(item => item.id == itemIdx);
-                        if (!lock || lock.count < 1) {
-                            channel.sendChat("❌ 보호자물쇠가 필요합니다!");
-                            return;
-                        }
-                        let targetCard = args[2];
-                        if (!targetCard) {
-                            channel.sendChat("❌ 보호할 카드를 입력해주세요.\n[ /TCGenius 자물쇠사용 보호자물쇠 <카드명> ]");
-                            return;
-                        }
-                        let cards = JSON.parse(read("DB/TCG/card.json"));
-                        let cardIdx = cards.findIndex(c => "[" + c.title + "]" + c.name == targetCard);
-                        if (cardIdx == -1) {
-                            channel.sendChat("❌ 존재하지 않는 카드입니다.\n카드명은 다음과 같이 입력해야 합니다: [테마]카드명");
-                            return;
-                        }
-                        if (!user.inventory.card.find(c => c.id == cardIdx)) {
-                            channel.sendChat("❌ 보유하고 있는 카드가 아닙니다.");
-                            return;
-                        }
-                        if (!combQueue[user.id].cards.includes(cardIdx)) {
-                            channel.sendChat("❌ 조합에 사용될 카드가 아닙니다.");
-                            return;
-                        }
-                        combQueue[user.id].useLocks.protect = cardIdx;
-                        combQueue[user.id].useLocks.enforce = null;
-                        combQueue[user.id].useLocks.blessing = null;
-                        channel.sendChat("✅ 이번 카드 조합에 '보호자물쇠'를 사용합니다.");
-                    } else if (args[1] == "강화자물쇠") {
-                        let items = JSON.parse(read("DB/TCG/item.json"));
-                        let itemIdx = items.findIndex(item => item.name == "강화자물쇠");
-                        let lock = user.inventory.item.find(item => item.id == itemIdx);
-                        if (!lock || lock.count < 1) {
-                            channel.sendChat("❌ 강화자물쇠가 필요합니다!");
-                            return;
-                        }
-                        combQueue[user.id].useLocks.protect = null;
-                        combQueue[user.id].useLocks.enforce = true;
-                        combQueue[user.id].useLocks.blessing = null;
-                        channel.sendChat("✅ 이번 카드 조합에 '강화자물쇠'를 사용합니다.");
-                    } else if (args[1] == "슈퍼강화자물쇠") {
-                        let items = JSON.parse(read("DB/TCG/item.json"));
-                        let itemIdx = items.findIndex(item => item.name == "슈퍼강화자물쇠");
-                        let lock = user.inventory.item.find(item => item.id == itemIdx);
-                        if (!lock || lock.count < 1) {
-                            channel.sendChat("❌ 슈퍼강화자물쇠가 필요합니다!");
-                            return;
-                        }
-                        combQueue[user.id].useLocks.protect = null;
-                        combQueue[user.id].useLocks.enforce = 'super';
-                        combQueue[user.id].useLocks.blessing = null;
-                        channel.sendChat("✅ 이번 카드 조합에 '슈퍼강화자물쇠'를 사용합니다.");
-                    } else if (args[1] == "축복자물쇠") {
-                        let items = JSON.parse(read("DB/TCG/item.json"));
-                        let itemIdx = items.findIndex(item => item.name == "축복자물쇠");
-                        let lock = user.inventory.item.find(item => item.id == itemIdx);
-                        if (!lock || lock.count < 1) {
-                            channel.sendChat("❌ 축복자물쇠가 필요합니다!");
-                            return;
-                        }
-                        combQueue[user.id].useLocks.protect = null;
-                        combQueue[user.id].useLocks.enforce = null;
-                        combQueue[user.id].useLocks.blessing = true;
-                        channel.sendChat("✅ 이번 카드 조합에 '축복자물쇠'를 사용합니다.");
-                    }
-                    return;
-                }
 
+                // 조합 확정
                 if (args[0] == "조합확정" && combQueue[user.id]) {
+                    // 보유한 카드인지 확인
                     let check = true;
-                    for(let i = 0; i < combQueue[user.id].cards.length; i++) {
-                        if (!user.inventory.card.find(c => c.id == combQueue[user.id].cards[i]) || user.inventory.card.find(c => c.id == combQueue[user.id].cards[i]).count < combQueue[user.id].cards.filter(c => c == combQueue[user.id].cards[i]).length) {
+                    let cardCounts = {};
+                    for (let i = 0; i < combQueue[user.id].cards.length; i++) {
+                        const cardId = combQueue[user.id].cards[i];
+                        cardCounts[cardId] = (cardCounts[cardId] || 0) + 1;
+                        const userCard = user.inventory.card.find(c => c.id == cardId);
+                        if (!userCard || userCard.count < cardCounts[cardId]) {
                             check = false;
                             break;
                         }
                     }
                     if (!check) {
-                        channel.sendChat("❌ 조합 예정된 카드가 부족하여 조합에 실패했습니다.");
+                        channel.sendChat("❌ 보유하지 않은 카드가 포함되어 있습니다.");
                         delete combQueue[user.id];
                         return;
                     }
-                    let probs = {
-                        "일반": 0.4,
-                        "고급": 0.3,
-                        "희귀": 0.15,
-                        "영웅": 0.05
-                    };
-                    let rarities = ["일반", "고급", "희귀", "영웅", "전설", "전설"];
-                    let cards = JSON.parse(read("DB/TCG/card.json"));
-                    if (combQueue[user.id].useLocks.protect || combQueue[user.id].useLocks.enforce || combQueue[user.id].useLocks.blessing) {
-                        let items = JSON.parse(read("DB/TCG/item.json"));
-                        let itemIdx = items.findIndex(item => item.name == (combQueue[user.id].useLocks.protect ? "보호자물쇠" : (combQueue[user.id].useLocks.enforce ? (combQueue[user.id].useLocks.enforce == 'super' ? "슈퍼강화자물쇠" : "강화자물쇠") : "축복자물쇠")));
-                        let lock = user.inventory.item.find(item => item.id == itemIdx);
-                        if (!lock || lock.count < 1) {
-                            channel.sendChat("❌ 사용 예정된 자물쇠가 부족하여 조합에 실패했습니다.");
-                            return;
-                        }
-                        user.removeItem(itemIdx, 1);
-                        if (combQueue[user.id].useLocks.enforce) {
-                            if (combQueue[user.id].useLocks.enforce != 'super') {
-                                probs = {
-                                    "일반": 0.45,
-                                    "고급": 0.35,
-                                    "희귀": 0.2,
-                                    "영웅": 0.1
-                                };
-                            } else {
-                                probs = {
-                                    "일반": 0.7,
-                                    "고급": 0.6,
-                                    "희귀": 0.45,
-                                    "영웅": 0.35
-                                };
-                            }
-                        }
+                    
+                    // 조합용 자물쇠 확인
+                    const items = JSON.parse(read("DB/TCG/item.json"));
+                    const lockIdx = items.findIndex(item => item.name === "조합용 자물쇠");
+                    const lock = user.inventory.item.find(item => item.id === lockIdx);
+                    
+                    if (!lock || lock.count < 1) {
+                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!\n조합용 자물쇠는 상점에서 50,000골드에 구매할 수 있습니다.");
+                        delete combQueue[user.id];
+                        return;
                     }
-                    let rarity = cards[combQueue[user.id].cards[0]].rarity;
-                    let r = Math.random();
-                    let card = null;
-                    let notDeleteCards = [];
-                    for (let i = 0; i < combQueue[user.id].cards.length; i++) {
-                        if (cards[combQueue[user.id].cards[i]].desc && cards[combQueue[user.id].cards[i]].desc.startsWith("불징")) {
-                            let r = Math.random();
-                            if (r < 0.4) {
-                                notDeleteCards.push(combQueue[user.id].cards[i]);
-                            }
-                        }
-                    }
-                    await user.checkQuest("[조합] 제발 좀 떠라", channel);
-                    if (r < probs[rarity]) {
-                        card = cards.filter(c => c.rarity == rarities[rarities.indexOf(rarity) + 1]).getRandomElement();
-                        let cardIdx = cards.findIndex(c => c.title == card.title && c.name == card.name);
-                        user.addCard(cardIdx, 1);
-                        channel.sendChat("❇️ 카드를 조합하여 높은 등급의 카드를 획득했습니다!\n\n[ 획득한 카드 ]\n" + printCard(card) + (notDeleteCards.length > 0 ? "\n\n[ 보존된 카드 ]\n- " + notDeleteCards.map(c => "[" + cards[c].title + "]" + cards[c].name).join("\n- ") : ""));
-                    } else {
-                        let num = 1;
-                        if (combQueue[user.id].useLocks.blessing) num = 2;
-                        let gotCards = [];
-                        if (combQueue[user.id].useLocks.protect) notDeleteCards.push(combQueue[user.id].useLocks.protect);
-                        for (let i = 0; i < combQueue[user.id].cards.length; i++) {
-                            if (cards[combQueue[user.id].cards[i]].desc && cards[combQueue[user.id].cards[i]].desc.startsWith("무한부활")) {
-                                notDeleteCards.push(combQueue[user.id].cards[i]);
-                            }
-                        }
-                        for (let i = 0; i < num; i++) {
-                            card = cards.filter(c => c.rarity == rarity).getRandomElement();
-                            let cardIdx = cards.findIndex(c => c.title == card.title && c.name == card.name);
-                            user.addCard(cardIdx, 1);
-                            gotCards.push(printCard(card));
-                        }
-                        channel.sendChat("✅ 카드를 조합했습니다.\n\n[ 획득한 카드 ]\n" + gotCards.join("\n") + (notDeleteCards.length > 0 ? "\n\n[ 보존된 카드 ]\n- " + notDeleteCards.map(c => "[" + cards[c].title + "]" + cards[c].name).join("\n- ") : ""));
-                    }
-                    for (let i = 0; i < combQueue[user.id].cards.length; i++) {
-                        if (!notDeleteCards.includes(combQueue[user.id].cards[i])) {
-                            user.removeCard(combQueue[user.id].cards[i], 1);
-                        }
-                    }
-                    await user.save();
-                    delete combQueue[user.id];
+                    
+                    // 조합 처리
+                    await performCombination(
+                        user,
+                        channel,
+                        combQueue[user.id].cards,
+                        combQueue[user.id].cardRarity,
+                        combQueue[user.id].cardCount
+                    );
                     return;
                 }
 
