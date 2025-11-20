@@ -689,23 +689,14 @@ function printCard(cardData) {
             const prestigeLevel = cardData.prestigeLevel !== undefined ? cardData.prestigeLevel : 0;
             let abilities = [];
             
-            // 1레벨 능력
-            if (prestigeLevel >= 1) {
-                const ability1 = getPrestigeAbility(cardData, 1);
-                if (ability1) abilities.push("🟢 " + ability1);
-            }
+            const ability1 = getPrestigeAbility(cardData, 1);
+            if (ability1) abilities.push((prestigeLevel >= 1 ? "🟢" : "⚫") + ability1);
             
-            // 5레벨 능력
-            if (prestigeLevel >= 5) {
-                const ability5 = getPrestigeAbility(cardData, 5);
-                if (ability5) abilities.push("⚫ " + ability5);
-            }
-            
-            // 10레벨 능력
-            if (prestigeLevel >= 10) {
-                const ability10 = getPrestigeAbility(cardData, 10);
-                if (ability10) abilities.push("⚫ " + ability10);
-            }
+            const ability5 = getPrestigeAbility(cardData, 5);
+            if (ability5) abilities.push((prestigeLevel >= 5 ? "🟢" : "⚫") + ability5);
+
+            const ability10 = getPrestigeAbility(cardData, 10);
+            if (ability10) abilities.push((prestigeLevel >= 10 ? "🟢" : "⚫") + ability10);
             
             if (abilities.length > 0) {
                 cardDesc = "\n" + abilities.join("\n");
