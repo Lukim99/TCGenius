@@ -4177,7 +4177,7 @@ client.on('chat', async (data, channel) => {
                     
                     // 유효성 검사
                     if (!grade || isNaN(count) || count < 2 || count > 10) {
-                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /tcg 자동조합 <등급> <수량(2-10)> ]\n예: /tcg 자동조합 희귀 5");
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 자동조합 <등급> <수량(2-10)> ]");
                         return;
                     }
                     
@@ -4207,7 +4207,7 @@ client.on('chat', async (data, channel) => {
                     
                     // 충분한 카드가 있는지 확인
                     if (userCards.length < count) {
-                        channel.sendChat(`❌ ${grade} 등급 카드가 부족합니다. (필요: ${count}장, 보유: ${userCards.length}장)`);
+                        channel.sendChat(`❌ ${grade} 등급 카드가 부족합니다.\n필요 카드: ${count}장\n보유 카드: ${userCards.length}장`);
                         return;
                     }
                     
@@ -4234,7 +4234,7 @@ client.on('chat', async (data, channel) => {
                     const lock = user.inventory.item.find(item => item.id === lockIdx);
                     
                     if (!lock || lock.count < 1) {
-                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!\n조합용 자물쇠는 상점에서 50,000골드에 구매할 수 있습니다.");
+                        channel.sendChat("❌ 조합용 자물쇠가 필요합니다!");
                         return;
                     }
                     
@@ -4249,7 +4249,7 @@ client.on('chat', async (data, channel) => {
                     
                     // 유효성 검사
                     if (!grade) {
-                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /tcg 수동조합 <등급> ]\n예: /tcg 수동조합 희귀");
+                        channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 수동조합 <등급> ]");
                         return;
                     }
                     
