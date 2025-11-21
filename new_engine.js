@@ -8607,24 +8607,24 @@ async function login() {
 }
 
 // DynamoDB 자동 백업 시스템 시작
-const BackupManager = require('./backup-module.js');
-const backupManager = new BackupManager(AWSCFG, "tcg_user", 24);
+// const BackupManager = require('./backup-module.js');
+// const backupManager = new BackupManager(AWSCFG, "tcg_user", 24);
 
-// 백업 시스템 시작
-backupManager.start();
+// // 백업 시스템 시작
+// backupManager.start();
 
-// Graceful shutdown 처리
-process.on('SIGTERM', () => {
-    console.log('\n⚠️  SIGTERM signal received. Stopping backup system...');
-    backupManager.stop();
-    process.exit(0);
-});
+// // Graceful shutdown 처리
+// process.on('SIGTERM', () => {
+//     console.log('\n⚠️  SIGTERM signal received. Stopping backup system...');
+//     backupManager.stop();
+//     process.exit(0);
+// });
 
-process.on('SIGINT', () => {
-    console.log('\n⚠️  SIGINT signal received. Stopping backup system...');
-    backupManager.stop();
-    process.exit(0);
-});
+// process.on('SIGINT', () => {
+//     console.log('\n⚠️  SIGINT signal received. Stopping backup system...');
+//     backupManager.stop();
+//     process.exit(0);
+// });
 
 keepAlive();
 login().then();
