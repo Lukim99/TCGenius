@@ -20,8 +20,8 @@ const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, 
 const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand, BatchWriteCommand } = require("@aws-sdk/lib-dynamodb");
 
 const AWSCFG = {
-    accessKeyId: "AKIAXQIQADH3NM4KOREA",
-    secretAccessKey: "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",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_KEY_ID,
     region: "ap-northeast-2"
 };
 
@@ -36,14 +36,14 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 // LLM API Keys
-const ClaudeAPIKEY = "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";
-const DeepSeekAPIKEY = "sk-f69fae2f328345d7a2d4fd0ffe5dc7db";
+const ClaudeAPIKEY = process.env.CLAUDE_API_KEY;
+const DeepSeekAPIKEY = process.env.DEEPSEEK_API_KEY;
 
 const DEVICE_TYPE = "tablet";
 let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21a";
 const DEVICE_NAME = "uDevice";
-const EMAIL = "lukim9_sub@kakao.com";
-const PASSWORD = "yanga0800";
+const EMAIL = process.env.EMAIL;
+const PASSWORD = process.env.PASSWORD;
 let client = new node_kakao.TalkClient();
 
 function read(path) {
@@ -748,7 +748,7 @@ function GitHubModels(system, prompts, response_type, model) {
         if (!model) model = "openai/gpt-4.1";
         if (!response_type || !["text", "json"].includes(response_type)) response_type = "text";
         
-        const GITHUB_TOKEN = "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";
+        const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
         
         try {
             // 메시지 배열 구성
