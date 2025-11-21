@@ -2,6 +2,7 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const express = require('express');
 const request = require('request');
+const https = require('https');
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -678,9 +679,6 @@ async function performRestore(timeInput, channel) {
         const earliestTime = new Date(pitrStatus.PointInTimeRecoveryDescription.EarliestRestorableDateTime);
         const latestTime = new Date(pitrStatus.PointInTimeRecoveryDescription.LatestRestorableDateTime);
         
-        channel.sendChat(`[ 복원 가능 기간 ]\n최초: ${earliestTime.toLocaleString('ko-KR')}\n최근: ${latestTime.toLocaleString('ko-KR')}\n범위: ${Math.floor((latestTime - earliestTime) / (1000 * 60 * 60 * 24))}일`);
-        
-        // 2. 복원 시점 파싱
         let restoreDateTime = null;
         if (timeInput.toLowerCase() === 'latest') {
             restoreDateTime = latestTime;
@@ -745,7 +743,128 @@ async function performRestore(timeInput, channel) {
     }
 }
 
-// ========== PITR 복원 관련 함수 끝 ==========
+function GitHubModels(system, prompts, response_type, model) {
+    return new Promise((resolve, reject) => {
+        if (!model) model = "openai/gpt-4.1";
+        if (!response_type || !["text", "json"].includes(response_type)) response_type = "text";
+        
+        const GITHUB_TOKEN = "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";
+        
+        try {
+            // 메시지 배열 구성
+            const messages = [];
+            
+            // 시스템 메시지 추가 (있는 경우)
+            if (system && system.trim() !== "") {
+                messages.push({
+                    role: "system",
+                    content: system
+                });
+            }
+            
+            // 사용자 메시지 추가
+            if (typeof prompts === "string") {
+                messages.push({
+                    role: "user",
+                    content: prompts
+                });
+            } else if (Array.isArray(prompts)) {
+                for (let i = 0; i < prompts.length; i++) {
+                    messages.push({
+                        role: i % 2 === 0 ? "user" : "assistant",
+                        content: prompts[i]
+                    });
+                }
+            }
+            
+            // 요청 본문 구성
+            const requestBody = {
+                model: model,
+                messages: messages,
+                temperature: 0.7,
+                max_tokens: 4000
+            };
+            
+            // JSON 응답 형식 설정
+            if (response_type === "json") {
+                requestBody.response_format = {
+                    type: "json_object"
+                };
+            }
+            
+            const postData = JSON.stringify(requestBody);
+            
+            const options = {
+                hostname: 'models.github.ai',
+                path: '/inference/chat/completions',
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/vnd.github+json',
+                    'Authorization': `Bearer ${GITHUB_TOKEN}`,
+                    'X-GitHub-Api-Version': '2022-11-28',
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+            
+            const req = https.request(options, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            const responseData = JSON.parse(data);
+                            
+                            if (responseData.choices && responseData.choices.length > 0) {
+                                resolve({
+                                    success: true,
+                                    content: responseData.choices[0].message.content,
+                                    model: responseData.model || model,
+                                    usage: responseData.usage || null
+                                });
+                            } else {
+                                resolve({
+                                    success: false,
+                                    error: "응답에서 선택지를 찾을 수 없습니다."
+                                });
+                            }
+                        } catch (parseError) {
+                            resolve({
+                                success: false,
+                                error: "응답 파싱 중 오류 발생: " + parseError.message
+                            });
+                        }
+                    } else {
+                        resolve({
+                            success: false,
+                            error: `HTTP ${res.statusCode}: ${data}`
+                        });
+                    }
+                });
+            });
+            
+            req.on('error', (error) => {
+                resolve({
+                    success: false,
+                    error: "요청 처리 중 오류 발생: " + error.message
+                });
+            });
+            
+            req.write(postData);
+            req.end();
+            
+        } catch (e) {
+            resolve({
+                success: false,
+                error: "요청 처리 중 오류 발생: " + e.toString()
+            });
+        }
+    });
+}
 
 // 카드 조합 확률 계산
 function getCombineProbabilities(grade, count) {
