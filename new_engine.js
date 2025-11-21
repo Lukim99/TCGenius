@@ -10,9 +10,13 @@ const VIEWMORE = ('\u200e'.repeat(500));
 // 콘텐츠 명령어 비활성화 플래그
 let contentCommandsBlocked = false;
 
+// 복원 진행 중 플래그
+let isRestoring = false;
+let restoringChannel = null;
+
 // AWS DynamoDB 설정
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand, BatchWriteCommand } = require("@aws-sdk/lib-dynamodb");
 
 const AWSCFG = {
     accessKeyId: "AKIAXQIQADH3NM4KOREA",
@@ -455,6 +459,293 @@ function getPrestigeAbility(cardData, level) {
     }
     return null;
 }
+
+// ========== PITR 복원 관련 함수 ==========
+
+const TABLE_NAME = "tcg_user";
+const TEMP_TABLE_NAME = "tcg_user_restore_temp";
+
+// 테이블 상태 확인
+async function checkTableStatus(tableName) {
+    try {
+        const cmd = new DescribeTableCommand({ TableName: tableName });
+        const response = await dynamoClient.send(cmd);
+        return response.Table.TableStatus;
+    } catch (error) {
+        if (error.name === 'ResourceNotFoundException') return 'NOT_FOUND';
+        throw error;
+    }
+}
+
+// 테이블 활성화 대기
+async function waitForTableActive(tableName, channel, maxMinutes = 15) {
+    const maxAttempts = maxMinutes * 12;
+    for (let i = 0; i < maxAttempts; i++) {
+        const status = await checkTableStatus(tableName);
+        if (status === 'ACTIVE') {
+            if (channel) channel.sendChat(`✅ ${tableName} 테이블이 활성화되었습니다.`);
+            return true;
+        }
+        if (status === 'NOT_FOUND') {
+            if (channel) channel.sendChat(`❌ ${tableName} 테이블을 찾을 수 없습니다.`);
+            return false;
+        }
+        if (i % 12 === 0 && channel) { // 1분마다 상태 업데이트
+            channel.sendChat(`⏳ 대기 중... (${Math.floor(i * 5 / 60)}분 경과) - 상태: ${status}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+    if (channel) channel.sendChat(`❌ 타임아웃: ${maxMinutes}분 동안 테이블이 활성화되지 않았습니다.`);
+    return false;
+}
+
+// 테이블 삭제
+async function deleteTable(tableName, channel) {
+    try {
+        if (channel) channel.sendChat(`🗑️  ${tableName} 테이블 삭제 중...`);
+        await dynamoClient.send(new DeleteTableCommand({ TableName: tableName }));
+        
+        for (let i = 0; i < 60; i++) {
+            if (await checkTableStatus(tableName) === 'NOT_FOUND') {
+                if (channel) channel.sendChat(`✅ ${tableName} 테이블 삭제 완료`);
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        if (channel) channel.sendChat(`❌ 타임아웃: 테이블 삭제 실패`);
+        return false;
+    } catch (error) {
+        if (error.name === 'ResourceNotFoundException') {
+            if (channel) channel.sendChat(`✅ ${tableName} 테이블이 이미 삭제되었습니다.`);
+            return true;
+        }
+        throw error;
+    }
+}
+
+// PITR 상태 확인
+async function checkPITRStatus() {
+    const cmd = new DescribeContinuousBackupsCommand({ TableName: TABLE_NAME });
+    const response = await dynamoClient.send(cmd);
+    return response.ContinuousBackupsDescription;
+}
+
+// PITR로 복원
+async function restoreToPointInTime(targetTableName, restoreDateTime, channel) {
+    if (channel) {
+        channel.sendChat(`🔄 PITR 복원 시작...\n대상: ${targetTableName}\n시점: ${restoreDateTime.toLocaleString('ko-KR')}`);
+    }
+    
+    const cmd = new RestoreTableToPointInTimeCommand({
+        SourceTableName: TABLE_NAME,
+        TargetTableName: targetTableName,
+        RestoreDateTime: restoreDateTime,
+        UseLatestRestorableTime: false
+    });
+    
+    await dynamoClient.send(cmd);
+    if (channel) channel.sendChat(`✅ 복원 요청 전송됨`);
+}
+
+// 데이터 마이그레이션
+async function migrateData(sourceTable, targetTable, channel) {
+    if (channel) channel.sendChat(`📦 데이터 마이그레이션 시작: ${sourceTable} → ${targetTable}`);
+    
+    let totalItems = 0;
+    let lastEvaluatedKey = undefined;
+    let lastUpdate = Date.now();
+    
+    do {
+        const scanCmd = new ScanCommand({
+            TableName: sourceTable,
+            ExclusiveStartKey: lastEvaluatedKey,
+            Limit: 25
+        });
+        
+        const scanResult = await docClient.send(scanCmd);
+        const items = scanResult.Items || [];
+        
+        if (items.length > 0) {
+            const putRequests = items.map(item => ({
+                PutRequest: { Item: item }
+            }));
+            
+            const batchCmd = new BatchWriteCommand({
+                RequestItems: { [targetTable]: putRequests }
+            });
+            
+            await docClient.send(batchCmd);
+            totalItems += items.length;
+            
+            // 10초마다 진행상황 업데이트
+            if (channel && Date.now() - lastUpdate > 10000) {
+                channel.sendChat(`✅ 데이터 마이그레이션 중... (데이터 ${totalItems}개)`);
+                lastUpdate = Date.now();
+            }
+        }
+        
+        lastEvaluatedKey = scanResult.LastEvaluatedKey;
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+    } while (lastEvaluatedKey);
+    
+    if (channel) channel.sendChat(`✅ 총 ${totalItems}개 데이터 마이그레이션이 완료되었습니다.`);
+    return totalItems;
+}
+
+// 테이블 데이터 삭제
+async function clearTableData(tableName, channel) {
+    if (channel) channel.sendChat(`🗑️ ${tableName} 테이블의 데이터를 삭제합니다...`);
+    
+    let totalDeleted = 0;
+    let lastEvaluatedKey = undefined;
+    let lastUpdate = Date.now();
+    
+    do {
+        const scanCmd = new ScanCommand({
+            TableName: tableName,
+            ExclusiveStartKey: lastEvaluatedKey,
+            Limit: 25,
+            ProjectionExpression: "id"
+        });
+        
+        const scanResult = await docClient.send(scanCmd);
+        const items = scanResult.Items || [];
+        
+        if (items.length > 0) {
+            const deleteRequests = items.map(item => ({
+                DeleteRequest: { Key: { id: item.id } }
+            }));
+            
+            const batchCmd = new BatchWriteCommand({
+                RequestItems: { [tableName]: deleteRequests }
+            });
+            
+            await docClient.send(batchCmd);
+            totalDeleted += items.length;
+            
+            if (channel && Date.now() - lastUpdate > 10000) {
+                channel.sendChat(`🗑️ 삭제 중... (데이터 ${totalDeleted}개)`);
+                lastUpdate = Date.now();
+            }
+        }
+        
+        lastEvaluatedKey = scanResult.LastEvaluatedKey;
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+    } while (lastEvaluatedKey);
+    
+    if (channel) channel.sendChat(`✅ 총 ${totalDeleted}개의 데이터가 삭제되었습니다.`);
+    return totalDeleted;
+}
+
+// 시간 파싱 함수
+function parseDateTime(input) {
+    const relativeMatch = input.match(/^(\d+)(분|시간|일)\s*전$/);
+    if (relativeMatch) {
+        const value = parseInt(relativeMatch[1]);
+        const unit = relativeMatch[2];
+        const now = new Date();
+        if (unit === '분') return new Date(now.getTime() - value * 60 * 1000);
+        if (unit === '시간') return new Date(now.getTime() - value * 60 * 60 * 1000);
+        if (unit === '일') return new Date(now.getTime() - value * 24 * 60 * 60 * 1000);
+    }
+    if (input.includes('T')) return new Date(input);
+    if (input.includes(' ')) return new Date(input.replace(' ', 'T'));
+    if (input.match(/^\d{1,2}:\d{2}$/)) {
+        const today = new Date();
+        const [hour, minute] = input.split(':').map(Number);
+        today.setHours(hour, minute, 0, 0);
+        return today;
+    }
+    return null;
+}
+
+// 복원 프로세스 실행
+async function performRestore(timeInput, channel) {
+    try {
+        isRestoring = true;
+        restoringChannel = channel;
+        
+        const pitrStatus = await checkPITRStatus();
+        const isEnabled = pitrStatus.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus === 'ENABLED';
+        
+        if (!isEnabled) {
+            channel.sendChat('❌ PITR이 비활성화되어 있습니다.');
+            return;
+        }
+        
+        const earliestTime = new Date(pitrStatus.PointInTimeRecoveryDescription.EarliestRestorableDateTime);
+        const latestTime = new Date(pitrStatus.PointInTimeRecoveryDescription.LatestRestorableDateTime);
+        
+        channel.sendChat(`[ 복원 가능 기간 ]\n최초: ${earliestTime.toLocaleString('ko-KR')}\n최근: ${latestTime.toLocaleString('ko-KR')}\n범위: ${Math.floor((latestTime - earliestTime) / (1000 * 60 * 60 * 24))}일`);
+        
+        // 2. 복원 시점 파싱
+        let restoreDateTime = null;
+        if (timeInput.toLowerCase() === 'latest') {
+            restoreDateTime = latestTime;
+        } else {
+            restoreDateTime = parseDateTime(timeInput);
+        }
+        
+        if (!restoreDateTime) {
+            channel.sendChat('❌ 잘못된 시간 형식입니다.\n\n입력 예시:\n- "30분 전"\n- "2시간 전"\n- "1일 전"\n- "2025-11-22 03:00:00"\n- "latest"');
+            return;
+        }
+        
+        if (restoreDateTime < earliestTime || restoreDateTime > latestTime) {
+            channel.sendChat(`❌ 복원 시점이 복원 가능 범위를 벗어났습니다.\n입력: ${restoreDateTime.toLocaleString('ko-KR')}\n범위: ${earliestTime.toLocaleString('ko-KR')} ~ ${latestTime.toLocaleString('ko-KR')}`);
+            return;
+        }
+        
+        channel.sendChat(`✅ 복원 시점: ${restoreDateTime.toLocaleString('ko-KR')}\n   (${Math.floor((new Date() - restoreDateTime) / 1000 / 60)}분 전)\n\n⚠️ 모든 TCG 명령어가 차단됩니다.\n⚠️ 복원 완료까지 약 15-25분 소요됩니다.`);
+        
+        
+        // Step 1: 임시 테이블로 복원
+        channel.sendChat('\n[1/4] PITR을 임시 테이블로 복원...');
+        await restoreToPointInTime(TEMP_TABLE_NAME, restoreDateTime, channel);
+        
+        // Step 2: 임시 테이블 활성화 대기
+        channel.sendChat('\n[2/4] 임시 테이블 활성화 대기...');
+        if (!await waitForTableActive(TEMP_TABLE_NAME, channel)) {
+            channel.sendChat('❌ 복원 실패: 임시 테이블 활성화 실패');
+            await deleteTable(TEMP_TABLE_NAME, channel);
+            return;
+        }
+        
+        // Step 3: 기존 테이블 데이터 삭제
+        channel.sendChat('\n[3/4] 기존 테이블 데이터 삭제...');
+        await clearTableData(TABLE_NAME, channel);
+        
+        // Step 4: 데이터 마이그레이션
+        channel.sendChat('\n[4/4] 데이터 마이그레이션...');
+        const migratedCount = await migrateData(TEMP_TABLE_NAME, TABLE_NAME, channel);
+        
+        // Step 5: 임시 테이블 삭제
+        channel.sendChat('\n임시 테이블 정리 중...');
+        await deleteTable(TEMP_TABLE_NAME, channel);
+        
+        // 완료
+        channel.sendChat(`✅ 복원이 완료되었습니다.`);
+        
+    } catch (error) {
+        channel.sendChat(`❌ 복원 중 오류 발생: ${error.message}`);
+        console.error('복원 오류:', error);
+        
+        // 실패 시 임시 테이블 정리 시도
+        try {
+            await deleteTable(TEMP_TABLE_NAME, channel);
+        } catch (cleanupError) {
+            console.error('임시 테이블 정리 실패:', cleanupError);
+        }
+    } finally {
+        isRestoring = false;
+        restoringChannel = null;
+        channel.sendChat('✅ 모든 TCG 명령어가 다시 활성화되었습니다.');
+    }
+}
+
+// ========== PITR 복원 관련 함수 끝 ==========
 
 // 카드 조합 확률 계산
 function getCombineProbabilities(grade, count) {
@@ -2680,6 +2971,12 @@ client.on('chat', async (data, channel) => {
             if (cmd.toLowerCase().startsWith("tcg") || cmd.toLowerCase().startsWith("tcgenius")) {
                 const args = cmd.substr(cmd.split(" ")[0].length + 1).split(" ");
 
+                // 복원 중일 때 모든 TCG 명령어 차단
+                if (isRestoring) {
+                    channel.sendChat("⚠️ 현재 데이터 복원이 진행 중입니다.\n모든 TCG 명령어가 일시적으로 차단되었습니다.\n복원 완료까지 잠시만 기다려주세요.");
+                    return;
+                }
+
                 // 등록
                 if (args[0] == "등록") {
                     const nickname = cmd.substr(cmd.split(" ")[0].length + 4).trim();
@@ -2773,6 +3070,18 @@ client.on('chat', async (data, channel) => {
                     }
                     await user.save();
                     channel.sendChat("✅ " + user + " 계정에서 로그아웃했습니다.");
+                    return;
+                }
+
+                if (args[0] == "복원" && user.isAdmin) {
+                    const timeInput = cmd.substr(cmd.split(" ")[0].length + 4).trim();
+                    if (!timeInput) {
+                        channel.sendChat("❌ 복원 시점을 입력해주세요.\n\n사용법: /tcg 복원 [시간]\n\n입력 예시:\n- /tcg 복원 30분 전\n- /tcg 복원 2시간 전\n- /tcg 복원 1일 전\n- /tcg 복원 2025-11-22 03:00:00\n- /tcg 복원 latest");
+                        return;
+                    }
+                    
+                    // 복원 실행
+                    performRestore(timeInput, channel);
                     return;
                 }
 
@@ -3856,8 +4165,8 @@ client.on('chat', async (data, channel) => {
                                     return;
                                 }
                                 card = card.concat();
-                                if (user.deck.passive.includes(cardIdx)) {
-                                    channel.sendChat("❌ 이미 패시브덱에 존재하는 카드입니다.");
+                                if (user.deck.passive.includes(cardIdx) || user.deck.content[0].includes(cardIdx) || user.deck.content[1].includes(cardIdx) || user.deck.gold.includes(cardIdx)) {
+                                    channel.sendChat("❌ 이미 기존 덱에 존재하는 카드입니다.");
                                     return;
                                 }
                                 card.deepMerge(cards[cardIdx]);
