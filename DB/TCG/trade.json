@@ -332,5 +332,37 @@
                 "count": 1
             }
         ]
+    },
+    {
+        "name": "반복 콘텐츠 입장권 환급",
+        "material": [
+            {
+                "item": true,
+                "name": "반복 콘텐츠 입장권",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "gold": true,
+                "count": 30000
+            }
+        ]
+    },
+    {
+        "name": "주간 콘텐츠 입장권 환급",
+        "material": [
+            {
+                "item": true,
+                "name": "주간 콘텐츠 입장권",
+                "count": 1
+            }
+        ],
+        "reward": [
+            {
+                "gold": true,
+                "count": 100000
+            }
+        ]
     }
 ]

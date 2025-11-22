@@ -2646,7 +2646,7 @@ async function calculateDeckPower(user, deck, opts) {
         } else if (res.message) {
             return ("❌ 오류가 발생했습니다.\n" + res.message);
         } else {
-            return ("❌ 오류가 발생했습니다.\n" + JSON.stringify(res));
+            return ("❌ 오류가 발생했습니다.\n" + JSON.stringify(res, null, 4));
         }
     } catch(e) {
         return ("❌ " + e);
