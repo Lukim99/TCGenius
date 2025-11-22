@@ -7939,7 +7939,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     if (args[1] == "입장") {
-                        if (["이지","노말","하드","익스트림"].includes(args[2])) {
+                        if (["이지","노말","하드","익스트림","익스트림+","익스트림++"].includes(args[2])) {
                             if (tcgRaid[user.id]) {
                                 channel.sendChat("❌ 이미 콘텐츠 진행중입니다.");
                                 return;
@@ -7948,7 +7948,9 @@ client.on('chat', async (data, channel) => {
                                 "이지": 300,
                                 "노말": 600,
                                 "하드": 1100,
-                                "익스트림": 1500
+                                "익스트림": 1500,
+                                "익스트림+": 2000,
+                                "익스트림++": 3500
                             };
                             if (user.content_power < powers[args[2]]) {
                                 channel.sendChat("❌ 콘텐츠 전투력(" + numberWithCommas(user.content_power.toString()) + ")이 입장 가능 전투력(" + numberWithCommas(powers[args[2]].toString()) + ")보다 낮습니다.");
@@ -8999,7 +9001,36 @@ client.on('chat', async (data, channel) => {
                             sendMsg.push("\n[ 획득한 보상 ]\n" + rewards.join("\n"));
                         }
                     }
-                    // 버프카드 (콘텐츠용)
+                    // 버프카드 (콘텐츠용) - old_engine.js에서 이식
+                    else if (items[itemIdx].name.startsWith("전투력 상승 ")) {
+                        let num = items[itemIdx].name.substr(7);
+                        let success_prob = {
+                            "이지": 0.8,
+                            "노말": 0.75,
+                            "하드": 0.7,
+                            "익스트림": 0.65,
+                            "익스트림+": 0.6,
+                            "익스트림++": 0.55
+                        };
+                        if (num.includes("%")) num = Math.round(tcgRaid[user.id].power * (Number(num.replace("%","")) / 100));
+                        else num = Number(num);
+                        let r = Math.random();
+                        if (r < success_prob[tcgRaid[user.id].difficulty]) {
+                            tcgRaid[user.id].power += num;
+                            sendMsg.push("전투력이 " + items[itemIdx].name.substr(7) + " 상승했습니다.\n현재 전투력: " + numberWithCommas(tcgRaid[user.id].power.toString()) + " (+" + numberWithCommas(num.toString()) + ")");
+                        } else {
+                            tcgRaid[user.id].power -= num;
+                            sendMsg.push("전투력이 " + items[itemIdx].name.substr(7) + " 하락했습니다.\n현재 전투력: " + numberWithCommas(tcgRaid[user.id].power.toString()) + " (-" + numberWithCommas(num.toString()) + ")");
+                        }
+                        
+                        // 밍닝스플랜 레이드 버프카드 사용 추적
+                        if (mingRaid[user.id]) {
+                            mingRaid[user.id].buffCardUses++;
+                        }
+                    }
+                    
+                    /* 
+                    // ===== 구버전 버프카드 처리 (파티 시스템용) =====
                     else if (items[itemIdx].name.startsWith("전투력 상승 ")) {
                         // 파티 확인
                         let userParty = null;
@@ -9082,6 +9113,7 @@ client.on('chat', async (data, channel) => {
                             }
                         }
                     }
+                    */
                     
                     await user.save();
                     channel.sendChat(sendMsg.join("\n"));

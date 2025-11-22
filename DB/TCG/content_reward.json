@@ -122,5 +122,36 @@
             "count": 1,
             "prob": 0.05
         }
+    ],
+    "익스트림+": [
+        {
+            "gold": true,
+            "count": {
+                "min": 300000,
+                "max": 400000
+            }
+        },
+        {
+            "item": true,
+            "type": "재화",
+            "name": "스피릿",
+            "count": 15
+        },
+        {
+            "item": true,
+            "type": "소모품",
+            "name": "아티팩트",
+            "count": {
+                "min": 1,
+                "max": 4
+            }
+        },
+        {
+            "item": true,
+            "type": "카드팩",
+            "name": "전설 카드팩",
+            "count": 1,
+            "prob": 0.05
+        }
     ]
 }
