@@ -4318,7 +4318,7 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                // 덱파워측정
+                // 덱파워측정 (old_engine.js 스타일 - 콘텐츠 전투력만 측정)
                 if (args[0] == "덱파워측정") {
                     if (args[1] == "콘텐츠덱1") {
                         let user_request = cmd.substr(cmd.split(" ")[0].length + 13);
@@ -4328,20 +4328,37 @@ client.on('chat', async (data, channel) => {
                         // 비동기 처리
                         (async () => {
                             try {
-                                // 5인/듀오 파워 (LLM 기반, 한 번의 호출)
-                                let res5man = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, deckType: "content1", userRequest: user_request});
-                                
-                                // 보정공격대 파워 (순수)
-                                let resPure = calculatePurePower(user, user.deck.content[0]);
-                                
+                                let res = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, userRequest: user_request, deckType: "content1"});
                                 delete tcgLoading[user.id];
-                                
+                                if (typeof res == 'object') {
+                                    channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
+                                    user.content_power = res.calcPower;
+                                    await user.save();
+                                } else {
+                                    channel.sendChat(res);
+                                }
+                            } catch(e) {
+                                delete tcgLoading[user.id];
+                                channel.sendChat("❌ 오류가 발생했습니다: " + e);
+                            }
+                        })();
+                    /*
+                    // ===== 구버전 (3개 파워 측정) =====
+                    if (args[1] == "콘텐츠덱1") {
+                        let user_request = cmd.substr(cmd.split(" ")[0].length + 13);
+                        tcgLoading[user.id] = true;
+                        channel.sendChat("🤖 콘텐츠덱1의 덱 파워를 계산하는 중입니다..\n시간이 꽤 소요될 수 있습니다.");
+                        
+                        (async () => {
+                            try {
+                                let res5man = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, deckType: "content1", userRequest: user_request});
+                                let resPure = calculatePurePower(user, user.deck.content[0]);
+                                delete tcgLoading[user.id];
                                 if (typeof res5man == 'object' && res5man.calcPower) {
                                     user.deck_power_5man = res5man.calcPower;
                                     user.deck_power_duo = (typeof res5man.duoPower == 'number' ? res5man.duoPower : calculateDuoPower(user, user.deck.content[0]));
                                     user.deck_power_pure = resPure;
                                     await user.save();
-                                    
                                     channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n\n" +
                                         "🔥 5인공격대 파워: " + res5man.calcPower.toComma2() + "\n" +
                                         "👥 듀오공격대 파워: " + user.deck_power_duo.toComma2() + "\n" +
@@ -4350,11 +4367,12 @@ client.on('chat', async (data, channel) => {
                                 } else {
                                     channel.sendChat(res5man);
                                 }
-    } catch(e) {
+                            } catch(e) {
                                 delete tcgLoading[user.id];
                                 channel.sendChat("❌ 오류가 발생했습니다: " + e);
                             }
                         })();
+                    */
                     } else if (args[1] == "콘텐츠덱2") {
                         let user_request = cmd.substr(cmd.split(" ")[0].length + 13);
                         tcgLoading[user.id] = true;
@@ -4362,18 +4380,37 @@ client.on('chat', async (data, channel) => {
                         
                         (async () => {
                             try {
+                                let res = await calculateDeckPower(user, user.deck.content[1], {isContentDeck: true, userRequest: user_request, deckType: "content2"});
+                                delete tcgLoading[user.id];
+                                if (typeof res == 'object') {
+                                    channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
+                                    user.content_power = res.calcPower;
+                                    await user.save();
+                                } else {
+                                    channel.sendChat(res);
+                                }
+                            } catch(e) {
+                                delete tcgLoading[user.id];
+                                channel.sendChat("❌ 오류가 발생했습니다: " + e);
+                            }
+                        })();
+                    /*
+                    // ===== 구버전 (3개 파워 측정) =====
+                    } else if (args[1] == "콘텐츠덱2") {
+                        let user_request = cmd.substr(cmd.split(" ")[0].length + 13);
+                        tcgLoading[user.id] = true;
+                        channel.sendChat("🤖 콘텐츠덱2의 덱 파워를 계산하는 중입니다..\n시간이 꽤 소요될 수 있습니다.");
+                        (async () => {
+                            try {
                                 let res5man = await calculateDeckPower(user, user.deck.content[1], {isContentDeck: true, deckType: "content2", userRequest: user_request});
                                 let resDuo = calculateDuoPower(user, user.deck.content[1]);
                                 let resPure = calculatePurePower(user, user.deck.content[1]);
-                                
                                 delete tcgLoading[user.id];
-                                
                                 if (typeof res5man == 'object' && res5man.calcPower) {
                                     user.deck_power_5man = res5man.calcPower;
                                     user.deck_power_duo = resDuo;
                                     user.deck_power_pure = resPure;
                                     await user.save();
-                                    
                                     channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n\n" +
                                         "🔥 5인공격대 파워: " + res5man.calcPower.toComma2() + "\n" +
                                         "👥 듀오공격대 파워: " + resDuo.toComma2() + "\n" +
@@ -4387,6 +4424,7 @@ client.on('chat', async (data, channel) => {
                                 channel.sendChat("❌ 오류가 발생했습니다: " + e);
                             }
                         })();
+                    */
                     } else if (args[1] == "골드덱") {
                         let user_request = cmd.substr(cmd.split(" ")[0].length + 12);
                         tcgLoading[user.id] = true;
@@ -4394,19 +4432,38 @@ client.on('chat', async (data, channel) => {
                         
                         (async () => {
                             try {
+                                let res = await calculateDeckPower(user, user.deck.gold, {isGoldDeck: true, userRequest: user_request, deckType: "gold"});
+                                delete tcgLoading[user.id];
+                                if (typeof res == 'object') {
+                                    channel.sendChat("✅ " + user + "님의 덱 파워와 데일리 골드를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n🪙 데일리 골드: " + res.dailyGold.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
+                                    user.dailyGold = res.dailyGold;
+                                    await user.save();
+                                } else {
+                                    channel.sendChat(res);
+                                }
+                            } catch(e) {
+                                delete tcgLoading[user.id];
+                                channel.sendChat("❌ 오류가 발생했습니다: " + e);
+                            }
+                        })();
+                    /*
+                    // ===== 구버전 (3개 파워 측정) =====
+                    } else if (args[1] == "골드덱") {
+                        let user_request = cmd.substr(cmd.split(" ")[0].length + 12);
+                        tcgLoading[user.id] = true;
+                        channel.sendChat("🤖 골드덱의 덱 파워와 데일리 골드를 계산하는 중입니다..\n시간이 꽤 소요될 수 있습니다.");
+                        (async () => {
+                            try {
                                 let res5man = await calculateDeckPower(user, user.deck.gold, {isGoldDeck: true, deckType: "gold", userRequest: user_request});
                                 let resDuo = calculateDuoPower(user, user.deck.gold);
                                 let resPure = calculatePurePower(user, user.deck.gold);
-                                
                                 delete tcgLoading[user.id];
-                                
                                 if (typeof res5man == 'object' && res5man.calcPower && res5man.dailyGold) {
                                     user.dailyGold = res5man.dailyGold;
                                     user.deck_power_5man = res5man.calcPower;
                                     user.deck_power_duo = resDuo;
                                     user.deck_power_pure = resPure;
                                     await user.save();
-                                    
                                     channel.sendChat("✅ " + user + "님의 덱 파워와 데일리 골드를 계산했습니다.\n\n" +
                                         "🔥 5인공격대 파워: " + res5man.calcPower.toComma2() + "\n" +
                                         "👥 듀오공격대 파워: " + resDuo.toComma2() + "\n" +
@@ -4421,25 +4478,22 @@ client.on('chat', async (data, channel) => {
                                 channel.sendChat("❌ 오류가 발생했습니다: " + e);
                             }
                         })();
+                    */
                     }
                     return;
                 }
 
+                // 빠른덱파워측정은 3개 파워 측정 유지 (관리자 전용, GitHub Models 사용)
                 if (args[0] == "빠른덱파워측정" && user.isAdmin) {
                     if (args[1] == "콘텐츠덱1") {
                         let user_request = cmd.substr(cmd.split(" ")[0].length + 15);
                         tcgLoading[user.id] = true;
                         channel.sendChat("🤖 콘텐츠덱1의 덱 파워를 빠르게 계산하는 중입니다..");
                         
-                        // 비동기 처리
                         (async () => {
                             try {
-                                // 5인/듀오 파워 (LLM 기반, 한 번의 호출)
                                 let res5man = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, deckType: "content1", userRequest: user_request, isFaster: true});
-                                
-                                // 보정공격대 파워 (순수)
                                 let resPure = calculatePurePower(user, user.deck.content[0]);
-                                
                                 delete tcgLoading[user.id];
                                 
                                 if (typeof res5man == 'object' && res5man.calcPower) {
@@ -4456,7 +4510,7 @@ client.on('chat', async (data, channel) => {
                                 } else {
                                     channel.sendChat(res5man);
                                 }
-    } catch(e) {
+                            } catch(e) {
                                 delete tcgLoading[user.id];
                                 channel.sendChat("❌ 오류가 발생했습니다: " + e);
                             }
@@ -8761,26 +8815,26 @@ client.on('chat', async (data, channel) => {
                         channel.sendChat("❌ 사용할 수 없는 아이템입니다.");
                         return;
                     }
-                     if (items[itemIdx].type == "버프카드") {
-                        let isRaid = false;
-                        for (let pid in raidParties) {
-                            let party = raidParties[pid];
-                            if (party.members.find(m => m.userId == user.id) && party.phase >= 1) {
-                                isRaid = true;
-                                break;
-                            }
-                        }
-                        if (!isRaid) {
-                            channel.sendChat("❌ 콘텐츠 진행중이 아닙니다.\n모든 버프카드가 제거됩니다.");
-                            user.removeItem(35, 999);
-                            user.removeItem(36, 999);
-                            user.removeItem(37, 999);
-                            user.removeItem(38, 999);
-                            user.removeItem(39, 999);
-                            await user.save();
-                            return;
-                        }
-                    }
+                    // if (items[itemIdx].type == "버프카드") {
+                    //     let isRaid = false;
+                    //     for (let pid in raidParties) {
+                    //         let party = raidParties[pid];
+                    //         if (party.members.find(m => m.userId == user.id) && party.phase >= 1) {
+                    //             isRaid = true;
+                    //             break;
+                    //         }
+                    //     }
+                    //     if (!isRaid) {
+                    //         channel.sendChat("❌ 콘텐츠 진행중이 아닙니다.\n모든 버프카드가 제거됩니다.");
+                    //         user.removeItem(35, 999);
+                    //         user.removeItem(36, 999);
+                    //         user.removeItem(37, 999);
+                    //         user.removeItem(38, 999);
+                    //         user.removeItem(39, 999);
+                    //         await user.save();
+                    //         return;
+                    //     }
+                    // }
                     if (items[itemIdx].type == "소모품" && num > 10) {
                         channel.sendChat("❌ 소모품은 한 번에 10개까지 사용이 가능합니다.");
                         return;
