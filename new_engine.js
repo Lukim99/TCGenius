@@ -746,7 +746,7 @@ async function performRestore(timeInput, channel) {
 
 function GitHubModels(system, prompts, response_type, model) {
     return new Promise((resolve, reject) => {
-        if (!model) model = "openai/gpt-4.1";
+        if (!model) model = "openai/o4-mini";
         if (!response_type || !["text", "json"].includes(response_type)) response_type = "text";
         
         const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
