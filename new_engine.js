@@ -9078,9 +9078,9 @@ client.on('chat', async (data, channel) => {
                         }
                         
                         // 밍닝스플랜 레이드 버프카드 사용 추적
-                        if (mingRaid[user.id]) {
-                            mingRaid[user.id].buffCardUses++;
-                        }
+                        // if (mingRaid[user.id]) {
+                        //     mingRaid[user.id].buffCardUses++;
+                        // }
                     }
                     
                     /* 
