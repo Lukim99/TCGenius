@@ -4,1891 +4,819 @@
         "title": "GCL0",
         "rarity": "전설",
         "power": 98,
-        "desc": "조의 의지: (조)가 들어간 카드 장 수 만큼 덱 파워 20 증가",
-        "abilities": [
-            {
-                "type": "이름에 X가 들어간 카드 N장당 Y",
-                "condition": {
-                    "type": "countNameKeyword",
-                    "keyword": "조",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "조의 의지: (조)가 들어간 카드 장 수 만큼 덱 파워 20 증가"
     },
     {
         "name": "Raoul",
         "title": "GCL1-1",
         "rarity": "전설",
         "power": 103,
-        "desc": "피라미드: 모두 다 다른 등급으로 덱이 구성되면 모든 카드 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "모든 등급 다르면 Y",
-                "condition": {
-                    "type": "allDifferentRarity"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "피라미드: 모두 다 다른 등급으로 덱이 구성되면 모든 카드 단일 파워 30 증가"
     },
     {
         "name": "롤충에서탈출",
         "title": "GCL1-2",
         "rarity": "전설",
         "power": 102,
-        "desc": "로얄로더: 콘텐츠덱에 편성 시, 파워 50 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "content"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "로얄로더: 콘텐츠덱에 편성 시, 파워 50 증가"
     },
     {
         "name": "롤충에서탈출",
         "title": "GCL1-3",
         "rarity": "전설",
         "power": 103,
-        "desc": "올인: 덱에 편성 시, 파워 100 증가",
-        "abilities": [
-            {
-                "type": "단일 파워 증가",
-                "value": 100
-            }
-        ]
+        "desc": "올인: 덱에 편성 시, 파워 100 증가"
     },
     {
         "name": "롤충에서탈출",
         "title": "24FS",
         "rarity": "전설",
         "power": 110,
-        "desc": "쓰리핏/대머리교원: 덱에 편성 시 덱 파워 20% 증가, 대머리교주와 함께 편성 시 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "전체 덱 파워 증가%",
-                "value": 20
-            },
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "nameContains",
-                    "keyword": "대머리교주: "
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "쓰리핏/대머리교원: 덱에 편성 시 덱 파워 20% 증가, 대머리교주와 함께 편성 시 단일 파워 30 증가"
     },
     {
         "name": "시로하",
         "title": "RTG",
         "rarity": "전설",
         "power": 106,
-        "desc": "실.화: 편성된 카드 중, 전설이 없다면 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "X 등급 카드가 없으면 Y",
-                "condition": {
-                    "type": "noRarity",
-                    "rarity": "전설"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "실.화: 편성된 카드 중, 전설이 없다면 단일 파워 100 증가"
     },
     {
         "name": "Supperstar",
         "title": "대저택1",
         "rarity": "전설",
         "power": 101,
-        "desc": "대저택신: 컨텐츠 내 대저택 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "대저택"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "대저택신: 컨텐츠 내 대저택 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "호르아크티",
         "title": "대저택2",
         "rarity": "전설",
         "power": 97,
-        "desc": "암호킹: 컨텐츠 내 암호 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "암호"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "암호킹: 컨텐츠 내 암호 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "브란도",
         "title": "피지컬13",
         "rarity": "전설",
         "power": 93,
-        "desc": "디라신: 컨텐츠 내 디럭스라이벌즈 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "디럭스라이벌즈"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "디라신: 컨텐츠 내 디럭스라이벌즈 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "유치원생",
         "title": "나만아니면돼",
         "rarity": "전설",
         "power": 93,
-        "desc": "윷호동: 이 카드의 파워가 덱 내에서 가장 높을 시, 이 카드의 단일 파워 80 증가",
-        "abilities": [
-            {
-                "type": "이 카드가 최고 파워면 Y",
-                "condition": {
-                    "type": "isHighestPower"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "윷호동: 이 카드의 파워가 덱 내에서 가장 높을 시, 이 카드의 단일 파워 80 증가"
     },
     {
         "name": "대나무헬리콥터",
         "title": "극한의농락",
         "rarity": "전설",
         "power": 96,
-        "desc": "극농: 컨텐츠 내 메인매치 키워드가 들어갈 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "메인매치"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "극농: 컨텐츠 내 메인매치 키워드가 들어갈 시, 단일 파워 50 증가"
     },
     {
         "name": "조밍닝",
         "title": "흑백지니어스",
         "rarity": "전설",
         "power": 87,
-        "desc": "백팀원1: 백팀원 수만큼 덱 파워 20 증가",
-        "abilities": [
-            {
-                "type": "특정 조건 카드 N장당 Y",
-                "condition": {
-                    "type": "countTeam",
-                    "team": "백팀원",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "백팀원1: 백팀원 수만큼 덱 파워 20 증가"
     },
     {
         "name": "dlckdgus",
         "title": "흑백지니어스",
         "rarity": "전설",
         "power": 87,
-        "desc": "백팀원2: 백팀원 수만큼 덱 파워 5% 증가",
-        "abilities": [
-            {
-                "type": "특정 조건 카드 N장당 Y",
-                "condition": {
-                    "type": "countTeam",
-                    "team": "백팀원",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "백팀원2: 백팀원 수만큼 덱 파워 5% 증가"
     },
     {
         "name": "시로하",
         "title": "흑백지니어스",
         "rarity": "전설",
         "power": 87,
-        "desc": "백팀원3: 백팀원 수만큼 데일리 골드 10% 증가",
-        "abilities": [
-            {
-                "type": "특정 조건 카드 N장당 Y",
-                "condition": {
-                    "type": "countTeam",
-                    "team": "백팀원",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "백팀원3: 백팀원 수만큼 데일리 골드 10% 증가"
     },
     {
         "name": "시로하",
         "title": "디라이브",
         "rarity": "전설",
         "power": 92,
-        "desc": "메리크리스마스: 컨텐츠 내 크리스마스 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "크리스마스"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "메리크리스마스: 컨텐츠 내 크리스마스 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "조밍닝",
         "title": "파산게임",
         "rarity": "전설",
         "power": 101,
-        "desc": "차감쇼: 단일 파워가 100 이하인 카드가 있다면, 100을 감소시킨 후 이 카드의 단일 파워 100 증가(최대 1장)",
-        "abilities": [
-            {
-                "type": "조건부 복합 효과",
-                "condition": {
-                    "type": "hasPowerBelow",
-                    "threshold": 100
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                },
-                "note": "대상 카드 파워 100 감소"
-            }
-        ]
+        "desc": "차감쇼: 단일 파워가 100 이하인 카드가 있다면, 100을 감소시킨 후 이 카드의 단일 파워 100 증가(최대 1장)"
     },
     {
         "name": "굉장해 엄청나!",
         "title": "관찰자",
         "rarity": "전설",
         "power": 107,
-        "desc": "관찰자: 컨텐츠 내 관찰 키워드가 들어갈 시, 단일 파워 80 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "관찰"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "관찰자: 컨텐츠 내 관찰 키워드가 들어갈 시, 단일 파워 80 증가"
     },
     {
         "name": "장의사",
         "title": "제1월도",
         "rarity": "전설",
         "power": 103,
-        "desc": "월도승부사: '제n월도' 테마 카드가 덱에 있을 시, 데일리골드 30,000 증가",
-        "abilities": [
-            {
-                "type": "특정 테마 카드가 있으면 Y",
-                "condition": {
-                    "type": "hasTheme",
-                    "theme": "제n월도"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 30000
-                }
-            }
-        ]
+        "desc": "월도승부사: '제n월도' 테마 카드가 덱에 있을 시, 데일리골드 30,000 증가"
     },
     {
         "name": "테무랜드",
         "title": "제2월도",
         "rarity": "전설",
         "power": 103,
-        "desc": "프로겜블러: 덱 파워 100 감소 후, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "전체 덱 파워 증가",
-                "value": -100
-            },
-            {
-                "type": "전체 덱 파워 증가%",
-                "value": 30
-            }
-        ]
+        "desc": "프로겜블러: 덱 파워 100 감소 후, 덱 파워 30% 증가"
     },
     {
         "name": "일장춘몽",
         "title": "제2월도",
         "rarity": "전설",
         "power": 93,
-        "desc": "혜안: 테무랜드와 같은 덱에 편성될 시, 덱 파워가 80 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "nameContains",
-                    "keyword": "테무랜드"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "혜안: 테무랜드와 같은 덱에 편성될 시, 덱 파워가 80 증가"
     },
     {
         "name": "GM",
         "title": "제3월도",
         "rarity": "전설",
         "power": 100,
-        "desc": "주식왕: 골드덱 편성 시, 데일리 골드 40% 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 40
-                }
-            }
-        ]
+        "desc": "주식왕: 골드덱 편성 시, 데일리 골드 40% 증가"
     },
     {
         "name": "조밍닝",
         "title": "지니어서",
         "rarity": "전설",
         "power": 107,
-        "desc": "3K: 정확히 3장의 전설 카드 편성 시, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "X 등급 카드 정확히 N장이면 Y",
-                "condition": {
-                    "type": "exactRarity",
-                    "rarity": "전설",
-                    "count": 3
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "3K: 정확히 3장의 전설 카드 편성 시, 덱 파워 30% 증가"
     },
     {
         "name": "이명박",
         "title": "해고전쟁",
         "rarity": "전설",
         "power": 100,
-        "desc": "예측샷: 덱 내 카드들의 단일 파워에 들어간 숫자 '0'의 갯수만큼 덱 파워 5% 증가",
-        "abilities": [
-            {
-                "type": "파워에 특정 숫자 개수만큼 Y",
-                "condition": {
-                    "type": "countDigitInPower",
-                    "digit": "0",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "예측샷: 덱 내 카드들의 단일 파워에 들어간 숫자 '0'의 갯수만큼 덱 파워 5% 증가"
     },
     {
         "name": "ㅇㄷ미ㄷㄱ★1♠2Y",
         "title": "해고전쟁",
         "rarity": "전설",
         "power": 100,
-        "desc": "실세: 2번째 자리 편성 시, 덱 전체 파워 10% 증가",
-        "abilities": [
-            {
-                "type": "이 카드가 N번째면 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "position": 2
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "실세: 2번째 자리 편성 시, 덱 전체 파워 10% 증가"
     },
     {
         "name": "안성재",
         "title": "밍닝스플랜",
         "rarity": "전설",
         "power": 108,
-        "desc": "밍플마스터: 컨텐츠 내 밍닝스플랜 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "밍닝스플랜"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "밍플마스터: 컨텐츠 내 밍닝스플랜 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "브란도",
         "title": "GCL2-1",
         "rarity": "전설",
         "power": 100,
-        "desc": "브레이커: 골드덱 편성 시, 데일리 골드값을 -10,000하고 50% 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": [
-                    {
-                        "type": "데일리 골드 증가",
-                        "value": -10000
-                    },
-                    {
-                        "type": "데일리 골드 증가%",
-                        "value": 50
-                    }
-                ]
-            }
-        ]
+        "desc": "브레이커: 골드덱 편성 시, 데일리 골드값을 -10,000하고 50% 증가"
     },
     {
         "name": "조밍닝",
         "title": "GCL2-2",
         "rarity": "전설",
         "power": 98,
-        "desc": "결속자: 선택한 일반 등급 카드 1장과 능력치 공유",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "덱 편성/조합 전용 능력"
-            }
-        ]
+        "desc": "결속자: 선택한 일반 등급 카드 1장과 능력치 공유"
     },
     {
         "name": "지니어스2",
         "title": "25MSI",
         "rarity": "전설",
         "power": 101,
-        "desc": "유관의꿈: 초월당 덱 파워 5% 증가",
-        "abilities": [
-            {
-                "type": "초월 레벨당 Y",
-                "condition": {
-                    "type": "perTranscend",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "유관의꿈: 초월당 덱 파워 5% 증가"
     },
     {
         "name": "dlckdgus",
         "title": "25SPR",
         "rarity": "전설",
         "power": 103,
-        "desc": "데매킹: 컨텐츠 내 데스매치 키워드가 들어갈 시, 단일 파워 80 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "데스매치"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "데매킹: 컨텐츠 내 데스매치 키워드가 들어갈 시, 단일 파워 80 증가"
     },
     {
         "name": "FivEsEa",
         "title": "화이트",
         "rarity": "전설",
         "power": 95,
-        "desc": "사탕남: 컨텐츠 내 화이트데이 키워드가 들어갈 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "화이트데이"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 100
-                }
-            }
-        ]
+        "desc": "사탕남: 컨텐츠 내 화이트데이 키워드가 들어갈 시, 단일 파워 100 증가"
     },
     {
         "name": "오버라이드",
         "title": "E세계",
         "rarity": "전설",
         "power": 105,
-        "desc": "뇌대리: 이 카드 파워의 35%를 다른 카드 중 한 장에 부여",
-        "abilities": [
-            {
-                "type": "다른 카드 1장 파워 증가%",
-                "targetSelect": true,
-                "value": 35
-            }
-        ]
+        "desc": "뇌대리: 이 카드 파워의 35%를 다른 카드 중 한 장에 부여"
     },
     {
         "name": "행복",
         "title": "유겜",
         "rarity": "전설",
         "power": 104,
-        "desc": "행복한마동: 덱 내 (마)속성이 있을 시, 단일 파워 50% 감소",
-        "abilities": [
-            {
-                "type": "특정 속성이 있으면 Y",
-                "condition": {
-                    "type": "hasAttribute",
-                    "attribute": "마"
-                },
-                "effect": {
-                    "type": "단일 파워 증가%",
-                    "value": -50
-                }
-            }
-        ]
+        "desc": "행복한마동: 덱 내 (마)속성이 있을 시, 단일 파워 50% 감소"
     },
     {
         "name": "성준호",
         "title": "유겜",
         "rarity": "전설",
         "power": 103,
-        "desc": "만능멀티(마): 덱 내 (마)속성 갯수 만큼 덱 파워 5% 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "마",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "만능멀티(마): 덱 내 (마)속성 갯수 만큼 덱 파워 5% 증가"
     },
     {
         "name": "네모진각두부",
         "title": "유겜",
         "rarity": "전설",
         "power": 102,
-        "desc": "유관시너지(마): 행복과 성준호와 함께 덱 편성 시, 단일 파워 80 증가",
-        "abilities": [
-            {
-                "type": "복수 카드가 모두 있으면 Y",
-                "condition": {
-                    "type": "hasAllCards",
-                    "cards": ["행복", "성준호"]
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "유관시너지(마): 행복과 성준호와 함께 덱 편성 시, 단일 파워 80 증가"
     },
     {
         "name": "아르세우스",
         "title": "제4월도",
         "rarity": "전설",
         "power": 100,
-        "desc": "100억남: 골드덱 편성 시 데일리골드 100% 증가, 대신 이 카드가 덱에 포함될 시 데일리골드 % 증가값은 100% 초과할 수 없음(아티팩트는 영향받지않음)",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가% (상한선)",
-                    "value": 100,
-                    "cap": 100
-                }
-            }
-        ]
+        "desc": "100억남: 골드덱 편성 시 데일리골드 100% 증가, 대신 이 카드가 덱에 포함될 시 데일리골드 % 증가값은 100% 초과할 수 없음(아티팩트는 영향받지않음)"
     },
     {
         "name": "LaeFree",
         "title": "제5월도",
         "rarity": "전설",
         "power": 102,
-        "desc": "연합원: 덱 내 {제5월도}Inspector와 함께 편성 시, 데일리골드 30,000 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "Inspector",
-                    "cardTitle": "제5월도"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 30000
-                }
-            }
-        ]
+        "desc": "연합원: 덱 내 {제5월도}Inspector와 함께 편성 시, 데일리골드 30,000 증가"
     },
     {
         "name": "Inspector",
         "title": "제5월도",
         "rarity": "전설",
         "power": 102,
-        "desc": "연합원: 덱 내 {제5월도}LaeFree와 함께 편성 시, 덱파워 20% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "LaeFree",
-                    "cardTitle": "제5월도"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "연합원: 덱 내 {제5월도}LaeFree와 함께 편성 시, 덱파워 20% 증가"
     },
     {
         "name": "dlckdgus",
         "title": "듀얼레이스X",
         "rarity": "전설",
         "power": 101,
-        "desc": "GM의아들: GM과 함께 덱 편성 시, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "GM"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "GM의아들: GM과 함께 덱 편성 시, 덱 파워 30% 증가"
     },
     {
         "name": "FivEsEa",
         "title": "스쿼드배틀",
         "rarity": "전설",
         "power": 94,
-        "desc": "바지(파): 파이브팀속성 4인이 모일 시, 덱 파워 50% 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "파이브팀",
-                    "threshold": 4
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "바지(파): 파이브팀속성 4인이 모일 시, 덱 파워 50% 증가"
     },
     {
         "name": "승주",
         "title": "스쿼드배틀",
         "rarity": "전설",
         "power": 101,
-        "desc": "실세(파): 4, 5번째에 FivEsEa 카드가 있을 시, 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "X번째에 Y가 있으면 Z",
-                "condition": {
-                    "type": "hasCardAtPosition",
-                    "cardName": "FivEsEa",
-                    "positions": [4, 5]
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "실세(파): 4, 5번째에 FivEsEa 카드가 있을 시, 단일 파워 30 증가"
     },
     {
         "name": "Lasley",
         "title": "서울오프",
         "rarity": "전설",
         "power": 85,
-        "desc": "근성: 풀초월 및 풀강화 시, 단일 파워 85 증가",
-        "abilities": [
-            {
-                "type": "풀초월 및 풀강화 시 Y",
-                "condition": {
-                    "type": "fullTranscendAndEnhance"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 85
-                }
-            }
-        ]
+        "desc": "근성: 풀초월 및 풀강화 시, 단일 파워 85 증가"
     },
     {
         "name": "핫식스",
         "title": "GCL0",
         "rarity": "영웅",
         "power": 82,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "기승전결",
         "title": "GCL0",
         "rarity": "영웅",
         "power": 80,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psygenie",
         "title": "GCL1-1",
         "rarity": "영웅",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "GCL1-1",
         "rarity": "영웅",
         "power": 78,
-        "desc": "호팔이: 임대갈 능력이 활성화되어있을 시, 강화당 파워 20 증가",
-        "abilities": [
-            {
-                "type": "임대갈 능력 활성화 시 Y",
-                "condition": {
-                    "type": "isRental"
-                },
-                "effect": {
-                    "type": "강화당 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "호팔이: 임대갈 능력이 활성화되어있을 시, 강화당 파워 20 증가"
     },
     {
         "name": "기승전결",
         "title": "GCL1-2",
         "rarity": "영웅",
         "power": 88,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "GCL1-2",
         "rarity": "영웅",
         "power": 78,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "대나무헬리콥터",
         "title": "GCL1-3",
         "rarity": "영웅",
         "power": 92,
-        "desc": "롤해야됨: 롤충에서탈출 카드와 함께 편성될 시, 파워 20 감소",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "롤충에서탈출"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": -20
-                }
-            }
-        ]
+        "desc": "롤해야됨: 롤충에서탈출 카드와 함께 편성될 시, 파워 20 감소"
     },
     {
         "name": "코노모리",
         "title": "GCL1-3",
         "rarity": "영웅",
         "power": 80,
-        "desc": "서포터: 전설카드가 2장 이상 배치되어 있을 시, 덱 파워 20% 증가",
-        "abilities": [
-            {
-                "type": "특정 등급 N장 이상이면 Y",
-                "condition": {
-                    "type": "countRarity",
-                    "rarity": "전설",
-                    "threshold": 2
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "서포터: 전설카드가 2장 이상 배치되어 있을 시, 덱 파워 20% 증가"
     },
     {
         "name": "psygenie",
         "title": "24FS",
         "rarity": "영웅",
         "power": 91,
-        "desc": "대머리교원: 대머리교주와 함께 편성 시, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "nameContains": "대머리교주: "
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "대머리교원: 대머리교주와 함께 편성 시, 덱 파워 30% 증가"
     },
     {
         "name": "월야환담",
         "title": "24FS",
         "rarity": "영웅",
         "power": 88,
-        "desc": "대머리교주: 대머리교원들에게 단일 파워 20 추가 부여",
-        "abilities": [
-            {
-                "type": "TEAM_BOOST",
-                "note": "팀 부스트 전용 능력"
-            }
-        ]
+        "desc": "대머리교주: 대머리교원들에게 단일 파워 20 추가 부여"
     },
     {
         "name": "대나무헬리콥터",
         "title": "RTG",
         "rarity": "영웅",
         "power": 96,
-        "desc": "짝사랑: 덱에 시로하가 있을 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "시로하"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "짝사랑: 덱에 시로하가 있을 시, 단일 파워 50 증가"
     },
     {
         "name": "엑조디아",
         "title": "RTG",
         "rarity": "영웅",
         "power": 92,
-        "desc": "엑조디아: 덱이 엑조디아로만 이루어져 있을 시, 덱 파워 50% 증가",
-        "abilities": [
-            {
-                "type": "덱이 X로만 이루어지면 Y",
-                "condition": {
-                    "type": "deckOnlyCard",
-                    "cardName": "엑조디아"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "엑조디아: 덱이 엑조디아로만 이루어져 있을 시, 덱 파워 50% 증가"
     },
     {
         "name": "dlckdgus",
         "title": "RTG",
         "rarity": "영웅",
         "power": 89,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "RTG",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
-        "name": "장충동왕족발보쌔",
+        "name": "장충동왕족발보쌈",
         "title": "대저택1",
         "rarity": "영웅",
         "power": 97,
-        "desc": "abba: 조각과 함께 골드덱에 편성될 시, 데일리 골드 30,000 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있고 특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "hasCardAndDeckType",
-                    "cardName": "조각",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 30000
-                }
-            }
-        ]
+        "desc": "abba: 조각과 함께 골드덱에 편성될 시, 데일리 골드 30,000 증가"
     },
     {
         "name": "월야환담",
         "title": "대저택1",
         "rarity": "영웅",
         "power": 88,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "대저택2",
         "rarity": "영웅",
         "power": 87,
-        "desc": "대저택뽈시기: 컨텐츠 내 대저택 키워드가 들어갈 시, 덱 파워 20% 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "대저택"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "대저택뿌시기: 컨텐츠 내 대저택 키워드가 들어갈 시, 덱 파워 20% 증가"
     },
     {
         "name": "황정민",
         "title": "대저택2",
         "rarity": "영웅",
         "power": 85,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "wt",
         "title": "나만아니면돼",
         "rarity": "영웅",
         "power": 85,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "나만아니면돼",
         "rarity": "영웅",
         "power": 85,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "극한의농락",
         "rarity": "영웅",
         "power": 89,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "극한의농락",
         "rarity": "영웅",
         "power": 84,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "흑백지니어스",
         "rarity": "영웅",
         "power": 79,
-        "desc": "흑팀원1: 흑팀원 수만큼 덱 파워 5% 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "흑팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "흑팀원1: 흑팀원 수만큼 덱 파워 5% 증가"
     },
     {
         "name": "psygenie",
         "title": "흑백지니어스",
         "rarity": "영웅",
         "power": 75,
-        "desc": "백팀원4: 백팀원 수만큼 데일리 골드 1,000 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "백팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 1000
-                }
-            }
-        ]
+        "desc": "백팀원4: 백팀원 수만큼 데일리 골드 1,000 증가"
     },
     {
         "name": "브란도",
         "title": "디라이브",
         "rarity": "영웅",
         "power": 87,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Inspector",
         "title": "디라이브",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "핫식스",
         "title": "파산게임",
         "rarity": "영웅",
         "power": 89,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "위원장님",
         "title": "관찰자",
         "rarity": "영웅",
         "power": 90,
-        "desc": "조력자: 덱 내 아르세우스 카드가 있을 시, 덱 파워 20% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "아르세우스"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "조력자: 덱 내 아르세우스 카드가 있을 시, 덱 파워 20% 증가"
     },
     {
         "name": "저의채팅은거짓말이니무시해주세요",
         "title": "관찰자",
         "rarity": "영웅",
         "power": 82,
-        "desc": "조력자: 덱 내 유치원생 카드가 있을 시, 덱 파워 10% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "유치원생"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "조력자: 덱 내 유치원생 카드가 있을 시, 덱 파워 10% 증가"
     },
     {
         "name": "Raoul",
         "title": "제1월도",
         "rarity": "영웅",
         "power": 92,
-        "desc": "포커스타: 골드덱 편성 시, 덱 내 카드들의 초월 횟수만큼 데일리골드 1,000골드 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "총 초월 횟수당 골드 증가",
-                    "value": 1000
-                }
-            }
-        ]
+        "desc": "포커스타: 골드덱 편성 시, 덱 내 카드들의 초월 횟수만큼 데일리골드 1,000골드 증가"
     },
     {
         "name": "조밍닝",
         "title": "제1월도",
         "rarity": "영웅",
         "power": 83,
-        "desc": "38밍닝: 덱 내 파워가 138 이상인 카드가 있을 시, 단일 파워 38 증가",
-        "abilities": [
-            {
-                "type": "파워X 이상 카드가 있으면 Y",
-                "condition": {
-                    "type": "hasPowerAbove",
-                    "threshold": 138
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 38
-                }
-            }
-        ]
+        "desc": "38밍닝: 덱 내 파워가 138 이상인 카드가 있을 시, 단일 파워 38 증가"
     },
     {
         "name": "LaeFree",
         "title": "제1월도",
         "rarity": "영웅",
         "power": 82,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "제2월도",
         "rarity": "영웅",
         "power": 86,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Raoul",
         "title": "제2월도",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "직장인",
         "title": "제2월도",
         "rarity": "영웅",
         "power": 80,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "지니어서",
         "rarity": "영웅",
         "power": 91,
-        "desc": "2K: 정확히 2장의 전설 카드 편성 시, 덱 파워가 20% 증가",
-        "abilities": [
-            {
-                "type": "정확히 X등급 N장일 때 Y",
-                "condition": {
-                    "type": "exactRarity",
-                    "rarity": "전설",
-                    "count": 2
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "2K: 정확히 2장의 전설 카드 편성 시, 덱 파워가 20% 증가"
     },
     {
         "name": "FivEsEa",
         "title": "지니어서",
         "rarity": "영웅",
         "power": 88,
-        "desc": "1K: 정확히 1장의 전설 카드 편성 시, 덱 파워가 10% 증가",
-        "abilities": [
-            {
-                "type": "정확히 X등급 N장일 때 Y",
-                "condition": {
-                    "type": "exactRarity",
-                    "rarity": "전설",
-                    "count": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "1K: 정확히 1장의 전설 카드 편성 시, 덱 파워가 10% 증가"
     },
     {
         "name": "GM",
         "title": "지니어서",
         "rarity": "영웅",
         "power": 80,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "손 흔드는 라이언",
         "title": "해고전쟁",
         "rarity": "영웅",
         "power": 86,
-        "desc": "국회의사당원1: 국회의사당 세트 효과 발동 시 단일 파워 70 증가",
-        "abilities": [
-            {
-                "type": "세트 효과 발동 시 Y",
-                "condition": {
-                    "type": "hasTheme",
-                    "theme": "국회의사당"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 70
-                }
-            }
-        ]
+        "desc": "국회의사당원1: 국회의사당 세트 효과 발동 시 단일 파워 70 증가"
     },
     {
         "name": "마부장",
         "title": "해고전쟁",
         "rarity": "영웅",
         "power": 82,
-        "desc": "국회의사당원2: 국회의사당 세트 효과 발동 시 덱 전체 파워 80 증가",
-        "abilities": [
-            {
-                "type": "세트 효과 발동 시 Y",
-                "condition": {
-                    "type": "hasTheme",
-                    "theme": "국회의사당"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 80
-                }
-            }
-        ]
+        "desc": "국회의사당원2: 국회의사당 세트 효과 발동 시 덱 전체 파워 80 증가"
     },
     {
         "name": "낮밤",
         "title": "밍닝스플랜",
         "rarity": "영웅",
         "power": 95,
-        "desc": "감옥단골: 5번째 자리 편성 시, 덱 전체 파워 10% 증가",
-        "abilities": [
-            {
-                "type": "X번째 자리일 때 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "position": 5
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "감옥단골: 5번째 자리 편성 시, 덱 전체 파워 10% 증가"
     },
     {
         "name": "dlckdgus",
         "title": "밍닝스플랜",
         "rarity": "영웅",
         "power": 86,
-        "desc": "궤도: 오른쪽의 카드와 능력치를 공유하여 평균값으로 맞춥니다.",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "덱 편성 전용 능력"
-            }
-        ]
+        "desc": "궤도: 오른쪽의 카드와 능력치를 공유하여 평균값으로 맞춥니다."
     },
     {
         "name": "뉴히",
         "title": "GCL2-1",
         "rarity": "영웅",
         "power": 87,
-        "desc": "방밀전사: 골드덱 내 차감되는 효과를 모두 방지",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "골드 차감 방지",
-                    "value": true
-                }
-            }
-        ]
+        "desc": "방밀전사: 골드덱 내 차감되는 효과를 모두 방지"
     },
     {
         "name": "코노모리",
         "title": "GCL2-1",
         "rarity": "영웅",
         "power": 78,
-        "desc": "근성: 데일리 골드가 40,000 이하일 시, 획득 골드 +30%",
-        "abilities": [
-            {
-                "type": "골드가 X 이하일 때 Y",
-                "condition": {
-                    "type": "goldBelow",
-                    "threshold": 40000
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "근성: 데일리 골드가 40,000 이하일 시, 획득 골드 +30%"
     },
     {
         "name": "Lasley",
         "title": "GCL2-2",
         "rarity": "영웅",
         "power": 91,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "지니어스2",
         "title": "GCL2-2",
         "rarity": "영웅",
         "power": 76,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Lasley",
         "title": "25MSI",
         "rarity": "영웅",
         "power": 89,
-        "desc": "통수: 뉴히와 덱 편성 시, 뉴히의 단일 파워 20 차감 후 단일 파워 40 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_INTERACTION",
-                "note": "복합 상호작용 능력"
-            }
-        ]
+        "desc": "통수: 뉴히와 덱 편성 시, 뉴히의 단일 파워 20 차감 후 단일 파워 40 증가"
     },
     {
         "name": "브란도",
         "title": "25MSI",
         "rarity": "영웅",
         "power": 83,
-        "desc": "3연밙: 브란도가 3장 연속 이어져있을 시, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "X 카드 N장 연속이면 Y",
-                "condition": {
-                    "type": "consecutiveCard",
-                    "cardName": "브란도",
-                    "count": 3
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "3연벙: 브란도가 3장 연속 이어져있을 시, 덱 파워 30% 증가"
     },
     {
         "name": "시로하",
         "title": "25SPR",
         "rarity": "영웅",
         "power": 88,
-        "desc": "삼대떡: 두 자리를 봉인 후, 덱 전체 파워 및 데일리 골드량 33% 증가",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "덱 편성 전용 능력 (자리 봉인)"
-            }
-        ]
+        "desc": "삼대떡: 두 자리를 봉인 후, 덱 전체 파워 및 데일리 골드량 33% 증가"
     },
     {
         "name": "조밍닝",
         "title": "25SPR",
         "rarity": "영웅",
         "power": 86,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Raoul",
         "title": "25SPR",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "화이트",
         "rarity": "영웅",
         "power": 80,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "독재자",
         "rarity": "영웅",
         "power": 85,
-        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 효과 갯수당 Y",
-                "condition": {
-                    "type": "countAbilityType",
-                    "abilityKeyword": "시민승",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가"
     },
     {
         "name": "지니어스2",
         "title": "독재자",
         "rarity": "영웅",
         "power": 85,
-        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 효과 갯수당 Y",
-                "condition": {
-                    "type": "countAbilityType",
-                    "abilityKeyword": "시민승",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가"
     },
     {
         "name": "랜상",
         "title": "독재자",
         "rarity": "영웅",
         "power": 85,
-        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 효과 갯수당 Y",
-                "condition": {
-                    "type": "countAbilityType",
-                    "abilityKeyword": "시민승",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가"
     },
     {
         "name": "조밍닝",
         "title": "독재자",
         "rarity": "영웅",
         "power": 85,
-        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 효과 갯수당 Y",
-                "condition": {
-                    "type": "countAbilityType",
-                    "abilityKeyword": "시민승",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가"
     },
     {
         "name": "dlckdgus",
         "title": "독재자",
         "rarity": "영웅",
         "power": 85,
-        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 효과 갯수당 Y",
-                "condition": {
-                    "type": "countAbilityType",
-                    "abilityKeyword": "시민승",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "시민승: 덱에 속한 시민승 효과당 단일 파워 5 증가"
     },
     {
         "name": "조각",
         "title": "E세계",
         "rarity": "영웅",
         "power": 88,
-        "desc": "캬루: 편성된 카드 중 한 장의 파워 흡수(0으로 만든 후 단일 부여)",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "덱 편성 전용 능력 (파워 흡수)"
-            }
-        ]
+        "desc": "캬루: 편성된 카드 중 한 장의 파워 흡수(0으로 만든 후 단일 부여)"
     },
     {
         "name": "빵귤(민지)",
         "title": "E세계",
         "rarity": "영웅",
         "power": 86,
-        "desc": "후발주자: 4, 5번째 자리 배치 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "X번째 자리일 때 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "positions": [4, 5]
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "후발주자: 4, 5번째 자리 배치 시, 단일 파워 50 증가"
     },
     {
         "name": "Whiplash",
         "title": "E세계",
         "rarity": "영웅",
         "power": 78,
-        "desc": "흑막: 컨텐츠 내 대저택 키워드가 들어갈 시, 덱 파워 10% 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "대저택"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "흑막: 컨텐츠 내 대저택 키워드가 들어갈 시, 덱 파워 10% 증가"
     },
     {
         "name": "트리거",
         "title": "유겜",
         "rarity": "영웅",
         "power": 88,
-        "desc": "독재자(높): 높동속성이 있을 시, 덱 파워 50 증가",
-        "abilities": [
-            {
-                "type": "특정 속성이 있으면 Y",
-                "condition": {
-                    "type": "hasAttribute",
-                    "attribute": "높동"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "독재자(높): 높동속성이 있을 시, 덱 파워 50 증가"
     },
     {
         "name": "푸른눈의백룡",
         "title": "유겜",
         "rarity": "영웅",
         "power": 87,
-        "desc": "높동승(높): 높동속성이 있을 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "특정 속성이 있으면 Y",
-                "condition": {
-                    "type": "hasAttribute",
-                    "attribute": "높동"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "높동승(높): 높동속성이 있을 시, 단일 파워 50 증가"
     },
     {
         "name": "머랭쿠키",
         "title": "유겜",
         "rarity": "영웅",
         "power": 84,
-        "desc": "은비까기(높): 컨텐츠 내 유겜 키워드가 있을 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "유겜"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "은비까기(높): 컨텐츠 내 유겜 키워드가 있을 시, 단일 파워 50 증가"
     },
     {
         "name": "낮밤",
         "title": "제4월도",
         "rarity": "영웅",
         "power": 85,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "유치원생",
         "title": "제4월도",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Raoul",
         "title": "제5월도",
         "rarity": "영웅",
         "power": 90,
-        "desc": "다굴방지: 양 옆의 카드의 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "양 옆 카드 파워 증가",
-                "value": 30
-            }
-        ]
+        "desc": "다굴방지: 양 옆의 카드의 단일 파워 30 증가"
     },
     {
         "name": "메타난",
         "title": "제5월도",
         "rarity": "영웅",
         "power": 86,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "제5월도",
         "rarity": "영웅",
         "power": 83,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "아르세우스",
         "title": "제5월도",
         "rarity": "영웅",
         "power": 84,
-        "desc": "17연속: 골드덱 편성 시, 데일리골드 +17,000",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 17000
-                }
-            }
-        ]
+        "desc": "17연속: 골드덱 편성 시, 데일리골드 +17,000"
     },
     {
         "name": "익명테이션",
         "title": "제5월도",
         "rarity": "영웅",
         "power": 79,
-        "desc": "무한부활: 조합에 실패할 시, 이 카드만 살아남는다.",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "조합 실패 보호"
-            }
-        ]
+        "desc": "무한부활: 조합에 실패할 시, 이 카드만 살아남는다."
     },
     {
         "name": "랜상",
         "title": "듀얼레이스X",
         "rarity": "영웅",
         "power": 89,
-        "desc": "첫출전이지만: 컨텐츠 내 듀얼레이스X 키워드가 들어갈 시, 덱 파워 20% 증가",
-        "abilities": [
-            {
-                "type": "콘텐츠 키워드 일치 시 Y",
-                "condition": {
-                    "type": "contentKeyword",
-                    "keyword": "듀얼레이스X"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "첫출전이지만: 컨텐츠 내 듀얼레이스X 키워드가 들어갈 시, 덱 파워 20% 증가"
     },
     {
         "name": "시로하",
         "title": "듀얼레이스X",
         "rarity": "영웅",
         "power": 86,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "엑조디아",
         "title": "듀얼레이스X",
         "rarity": "영웅",
         "power": 82,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 87,
-        "desc": "파이브팀속성",
-        "abilities": []
+        "desc": "파이브팀속성"
     },
     {
         "name": "러각",
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 87,
-        "desc": "파이브팀속성",
-        "abilities": []
+        "desc": "파이브팀속성"
     },
     {
         "name": "롤충에서탈출",
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 87,
-        "desc": "원장: 나머지 카드의 등급이 고급 이하일 시, 덱 파워 30% 증가",
-        "abilities": [
-            {
-                "type": "나머지 카드 등급 제한 조건",
-                "condition": {
-                    "type": "noRarity",
-                    "excludeRarities": ["영웅", "전설"]
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "원장: 나머지 카드의 등급이 고급 이하일 시, 덱 파워 30% 증가"
     },
     {
         "name": "펭굴",
@@ -1902,1588 +830,1029 @@
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 83,
-        "desc": "군대이슈: 5번째 자리밖에 배치할 수 없다",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "위치 제한 (5번째만)"
-            }
-        ]
+        "desc": "군대이슈: 5번째 자리밖에 배치할 수 없다"
     },
     {
         "name": "익명테이션",
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 82,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "시그니를",
         "title": "스쿼드배틀",
         "rarity": "영웅",
         "power": 79,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "서울오프",
         "rarity": "영웅",
         "power": 81,
-        "desc": "윤종신: 풀초월 및 풀강화 시, 덱 파워 20% 증가",
-        "abilities": [
-            {
-                "type": "풀초월 및 풀강화 시 Y",
-                "condition": {
-                    "type": "fullTranscendAndEnhance"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "윤종신: 풀초월 및 풀강화 시, 덱 파워 20% 증가"
     },
     {
         "name": "엑조디아",
         "title": "서울오프",
         "rarity": "영웅",
         "power": 79,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "GCL0",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "GCL0",
         "rarity": "희귀",
         "power": 72,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "창문",
         "title": "GCL0",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "GCL1-1",
         "rarity": "희귀",
         "power": 73,
-        "desc": "임대갈: 호팔이 능력이 활성화되어있을 시, 초월당 파워 20 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 활성화 시 Y",
-                "condition": {
-                    "type": "hasAbility",
-                    "abilityKeyword": "호팔이"
-                },
-                "effect": {
-                    "type": "초월당 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "임대갈: 호팔이 능력이 활성화되어있을 시, 초월당 파워 20 증가"
     },
     {
         "name": "대나무헬리콥터",
         "title": "GCL1-1",
         "rarity": "희귀",
         "power": 72,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "wt",
         "title": "GCL1-1",
         "rarity": "희귀",
         "power": 66,
-        "desc": "목격자: 골드덱 편성 시, 데일리 골드량 6% 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 6
-                }
-            }
-        ]
+        "desc": "목격자: 골드덱 편성 시, 데일리 골드량 6% 증가"
     },
     {
         "name": "월야환담",
         "title": "GCL1-2",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "GCL1-2",
         "rarity": "희귀",
         "power": 69,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "wt",
         "title": "GCL1-2",
         "rarity": "희귀",
         "power": 66,
-        "desc": "6t: 콘텐츠덱 편성 시, 덱 파워 6% 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "content"
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 6
-                }
-            }
-        ]
+        "desc": "6t: 콘텐츠덱 편성 시, 덱 파워 6% 증가"
     },
     {
         "name": "psygenie",
         "title": "GCL1-3",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "GCL1-3",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "GCL1-3",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "대나무헬리콥터",
         "title": "24FS",
         "rarity": "희귀",
         "power": 74,
-        "desc": "대머리교원: 대머리교주와 함께 편성 시, 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "nameContains": "대머리교주: "
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "대머리교원: 대머리교주와 함께 편성 시, 단일 파워 30 증가"
     },
     {
         "name": "FivEsEa",
         "title": "24FS",
         "rarity": "희귀",
         "power": 68,
-        "desc": "대머리교원: 대머리교주와 함께 편성 시, 덱파워 30 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있으면 Y",
-                "condition": {
-                    "type": "hasCard",
-                    "nameContains": "대머리교주: "
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "대머리교원: 대머리교주와 함께 편성 시, 덱파워 30 증가"
     },
     {
         "name": "조밍닝",
         "title": "24FS",
         "rarity": "희귀",
         "power": 65,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "지니어스2",
         "title": "RTG",
         "rarity": "희귀",
         "power": 77,
-        "desc": "슴니즌: 이 카드를 강화할 때는 골드가 소모되지 않음",
-        "abilities": [
-            {
-                "type": "CARD_SPECIFIC",
-                "note": "강화 골드 미소모"
-            }
-        ]
+        "desc": "슴니즌: 이 카드를 강화할 때는 골드가 소모되지 않음"
     },
     {
         "name": "FivEsEa",
         "title": "RTG",
         "rarity": "희귀",
         "power": 73,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "유치원생",
         "title": "RTG",
         "rarity": "희귀",
         "power": 66,
-        "desc": "1세트의악마: 1번째 자리 편성 시, 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "X번째 자리일 때 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "position": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "1세트의악마: 1번째 자리 편성 시, 단일 파워 30 증가"
     },
     {
         "name": "LaeFree",
         "title": "RTG",
         "rarity": "희귀",
         "power": 64,
-        "desc": "빅게임헌터: 시로하의 특수능력을 모두 무효화",
-        "abilities": [
-            {
-                "type": "특정 카드 능력 무효화",
-                "target": "시로하"
-            }
-        ]
+        "desc": "빅게임헌터: 시로하의 특수능력을 모두 무효화"
     },
     {
         "name": "멸치볶음",
         "title": "대저택1",
         "rarity": "희귀",
         "power": 78,
-        "desc": "불징: 이 카드가 조합에 사용될 시, 40% 확률로 살아남는다.",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "조합 시 생존 확률"
-            }
-        ]
+        "desc": "불징: 이 카드가 조합에 사용될 시, 40% 확률로 살아남는다."
     },
     {
         "name": "Raoul",
         "title": "대저택1",
         "rarity": "희귀",
         "power": 73,
-        "desc": "도라에몽: 골드덱 편성 시, 데일리 골드량 10% 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "도라에몽: 골드덱 편성 시, 데일리 골드량 10% 증가"
     },
     {
         "name": "시로하",
         "title": "대저택2",
         "rarity": "희귀",
         "power": 78,
-        "desc": "시씨집안: '씨러브' 효과 활성화가 되어 있을 시, 데일리 골드량 40% 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 활성화 시 Y",
-                "condition": {
-                    "type": "hasAbility",
-                    "abilityKeyword": "씨러브"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 40
-                }
-            }
-        ]
+        "desc": "시씨집안: '씨러브' 효과 활성화가 되어 있을 시, 데일리 골드량 40% 증가"
     },
     {
         "name": "Clove",
         "title": "대저택2",
         "rarity": "희귀",
         "power": 73,
-        "desc": "씨러브: 덱 편성 시 '씨러브' 효과 활성화",
-        "abilities": [
-            {
-                "type": "효과 활성화",
-                "effectName": "씨러브"
-            }
-        ]
+        "desc": "씨러브: 덱 편성 시 '씨러브' 효과 활성화"
     },
     {
         "name": "Inspector",
         "title": "대저택2",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Raoul",
         "title": "피지컬13",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psychopass",
         "title": "피지컬13",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Supperstar",
         "title": "피지컬13",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "유치원생",
         "title": "피지컬13",
         "rarity": "희귀",
         "power": 70,
-        "desc": "비공식: 풀초월 및 풀강화 시 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "풀초월 및 풀강화 시 Y",
-                "condition": {
-                    "type": "fullTranscendAndEnhance"
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "비공식: 풀초월 및 풀강화 시 단일 파워 30 증가"
     },
     {
         "name": "엑조디아",
         "title": "나만아니면돼",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "나만아니면돼",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "극한의농락",
         "rarity": "희귀",
         "power": 76,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "극한의농락",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "흑백지니어스",
         "rarity": "희귀",
         "power": 70,
-        "desc": "백팀원5: 백팀원 수만큼 덱 내 모든 카드의 단일 파워 5 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "백팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "모든 카드 파워 증가",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "백팀원5: 백팀원 수만큼 덱 내 모든 카드의 단일 파워 5 증가"
     },
     {
         "name": "지니어스2",
         "title": "흑백지니어스",
         "rarity": "희귀",
         "power": 69,
-        "desc": "백팀원6: 백팀원 수만큼 단일 파워 10 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "백팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "백팀원6: 백팀원 수만큼 단일 파워 10 증가"
     },
     {
         "name": "유치원생",
         "title": "흑백지니어스",
         "rarity": "희귀",
         "power": 65,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "디라이브",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "지니어스2",
         "title": "디라이브",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "파산게임",
         "rarity": "희귀",
         "power": 77,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Supperstar",
         "title": "파산게임",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "동탄맘팬티도둑엄준식",
         "title": "관찰자",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "지니어스2",
         "title": "제1월도",
         "rarity": "희귀",
         "power": 78,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Inspector",
         "title": "제1월도",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "제1월도",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "기승전결",
         "title": "제1월도",
         "rarity": "희귀",
         "power": 67,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "제2월도",
         "rarity": "희귀",
         "power": 76,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "현식이아버지",
         "title": "제2월도",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "아지타마고",
         "title": "제2월도",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "시로하",
         "title": "지니어서",
         "rarity": "희귀",
         "power": 76,
-        "desc": "그긴거: 덱 합산 글자 갯수가 20자 넘어갈 시, 단일 파워 20 증가",
-        "abilities": [
-            {
-                "type": "덱 글자수 조건",
-                "condition": {
-                    "type": "deckNameLength",
-                    "threshold": 20
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "그긴거: 덱 합산 글자 갯수가 20자 넘어갈 시, 단일 파워 20 증가"
     },
     {
         "name": "GM님 팬 파이브",
         "title": "지니어서",
         "rarity": "희귀",
         "power": 71,
-        "desc": "부캐: 덱 내 FivEsEa 카드가 있을 시, 그 카드 능력치의 50%만큼 이 카드의 단일 파워 증가(중복불가)",
-        "abilities": [
-            {
-                "type": "특정 카드 파워 복사",
-                "condition": {
-                    "type": "hasCard",
-                    "cardName": "FivEsEa"
-                },
-                "effect": {
-                    "type": "파워 복사%",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "부캐: 덱 내 FivEsEa 카드가 있을 시, 그 카드 능력치의 50%만큼 이 카드의 단일 파워 증가(중복불가)"
     },
     {
         "name": "월야환담",
         "title": "지니어서",
         "rarity": "희귀",
         "power": 69,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "시그니를",
         "title": "지니어서",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "맛동산",
         "title": "해고전쟁",
         "rarity": "희귀",
         "power": 77,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
-        "name": "샵쌥메이커",
+        "name": "쌩쑈메이커",
         "title": "밍닝스플랜",
         "rarity": "희귀",
         "power": 78,
-        "desc": "올인메이커: 덱 전체 파워 500 이상일 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "덱 파워X 이상일 때 Y",
-                "condition": {
-                    "type": "deckPowerAbove",
-                    "threshold": 500
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "올인메이커: 덱 전체 파워 500 이상일 시, 단일 파워 50 증가"
     },
     {
         "name": "첫 만남은 다시 guitar",
         "title": "밍닝스플랜",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Myosotis",
         "title": "밍닝스플랜",
         "rarity": "희귀",
         "power": 69,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "기승전결",
         "title": "GCL2-1",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "dlckdgus",
         "title": "GCL2-1",
         "rarity": "희귀",
         "power": 71,
-        "desc": "살아남은자: 콘텐츠덱 포함 후 클리어 시, 30,000 골드 획득",
-        "abilities": [
-            {
-                "type": "CONTENT_REWARD",
-                "note": "콘텐츠 클리어 보상"
-            }
-        ]
+        "desc": "살아남은자: 콘텐츠덱 포함 후 클리어 시, 30,000 골드 획득"
     },
     {
         "name": "Raoul",
         "title": "GCL2-1",
         "rarity": "희귀",
         "power": 67,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "GCL2-2",
         "rarity": "희귀",
         "power": 73,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psygenie",
         "title": "GCL2-2",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "GCL2-2",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "dlckdgus",
         "title": "25MSI",
         "rarity": "희귀",
         "power": 77,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "25MSI",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "기승전결",
         "title": "25SPR",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "부타",
         "title": "25SPR",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psygenie",
         "title": "25SPR",
         "rarity": "희귀",
         "power": 75,
-        "desc": "긡: 덱 내 카드 4장이 전설일 시, 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "특정 등급 N장 이상이면 Y",
-                "condition": {
-                    "type": "countRarity",
-                    "rarity": "전설",
-                    "threshold": 4
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 30
-                }
-            }
-        ]
+        "desc": "깡: 덱 내 카드 4장이 전설일 시, 단일 파워 30 증가"
     },
     {
         "name": "아르세우스",
         "title": "25SPR",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "화이트",
         "rarity": "희귀",
         "power": 72,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "독재자",
         "rarity": "희귀",
         "power": 71,
-        "desc": "독재자: 덱 내 시민승 효과가 발동되어 있다면 모두 0으로 만든 후, 그 수만큼 이 카드의 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_INTERACTION",
-                "note": "시민승 효과 흡수"
-            }
-        ]
+        "desc": "독재자: 덱 내 시민승 효과가 발동되어 있다면 모두 0으로 만든 후, 그 수만큼 이 카드의 단일 파워 100 증가"
     },
     {
         "name": "X39825",
         "title": "E세계",
         "rarity": "희귀",
         "power": 74,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "오로라",
         "title": "E세계",
         "rarity": "희귀",
         "power": 70,
-        "desc": "봉인: 내 덱 혹은 콘텐츠 내 다른 카드를 침묵시킨다",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "다른 카드 침묵"
-            }
-        ]
+        "desc": "봉인: 내 덱 혹은 콘텐츠 내 다른 카드를 침묵시킨다"
     },
     {
         "name": "Glen Check",
         "title": "유겜",
         "rarity": "희귀",
         "power": 60,
-        "desc": "글버지(마): 마동속성 카드들에게 단일 파워 20 부여",
-        "abilities": [
-            {
-                "type": "TEAM_BOOST",
-                "note": "팀 부스트 전용"
-            }
-        ]
+        "desc": "글버지(마): 마동속성 카드들에게 단일 파워 20 부여"
     },
     {
         "name": "크시",
         "title": "유겜",
         "rarity": "희귀",
         "power": 78,
-        "desc": "유아용(높): 유/아/용 글자가 들어간 카드와 함께 편성 시, 한 장마다 단일 파워 10 증가",
-        "abilities": [
-            {
-                "type": "이름에 X글자 포함 카드 N장당 Y",
-                "condition": {
-                    "type": "countNameContains",
-                    "keywords": ["유", "아", "용"],
-                    "per": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "유아용(높): 유/아/용 글자가 들어간 카드와 함께 편성 시, 한 장마다 단일 파워 10 증가"
     },
     {
         "name": "칸나",
         "title": "유겜",
         "rarity": "희귀",
         "power": 74,
-        "desc": "마동속성",
-        "abilities": []
+        "desc": "마동속성"
     },
     {
         "name": "조치원생",
         "title": "유겜",
         "rarity": "희귀",
         "power": 74,
-        "desc": "이동주민(마): 덱 내 높동과 마동 속성 갯수가 똑같을 시, 유겜 테마 카드들의 단일 파워 30 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "높동/마동 균형 조건"
-            }
-        ]
+        "desc": "이동주민(마): 덱 내 높동과 마동 속성 갯수가 똑같을 시, 유겜 테마 카드들의 단일 파워 30 증가"
     },
     {
         "name": "두기",
         "title": "유겜",
         "rarity": "희귀",
         "power": 73,
-        "desc": "높동속성",
-        "abilities": []
+        "desc": "높동속성"
     },
     {
         "name": "Tyrant",
         "title": "유겜",
         "rarity": "희귀",
         "power": 69,
-        "desc": "스파이(높): 높동속성이 4장일 시, 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "높동",
-                    "threshold": 4
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 50
-                }
-            }
-        ]
+        "desc": "스파이(높): 높동속성이 4장일 시, 단일 파워 50 증가"
     },
     {
         "name": "Raoul",
         "title": "제4월도",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "제4월도",
         "rarity": "희귀",
         "power": 72,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Lasley",
         "title": "제5월도",
         "rarity": "희귀",
         "power": 75,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "랜상",
         "title": "제5월도",
         "rarity": "희귀",
         "power": 73,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "제5월도",
         "rarity": "희귀",
         "power": 71,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "러각",
         "title": "제5월도",
         "rarity": "희귀",
         "power": 68,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "완다 막시모프",
         "title": "듀얼레이스X",
         "rarity": "희귀",
         "power": 73,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Lasley",
         "title": "듀얼레이스X",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "듀얼레이스X",
         "rarity": "희귀",
         "power": 67,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "유치원생",
         "title": "스쿼드배틀",
         "rarity": "희귀",
         "power": 70,
-        "desc": "유심원생: 금일 데일리골드를 회수당합니다. 대신, 7% 확률로 골드바를 획득할 수 있는 룰렛을 돌립니다.",
-        "abilities": [
-            {
-                "type": "SPECIAL_EVENT",
-                "note": "골드 회수 후 룰렛"
-            }
-        ]
+        "desc": "유심원생: 금일 데일리골드를 회수당합니다. 대신, 7% 확률로 골드바를 획득할 수 있는 룰렛을 돌립니다."
     },
     {
         "name": "dlckdgus",
         "title": "스쿼드배틀",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "시로하",
         "title": "스쿼드배틀",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Raoul",
         "title": "스쿼드배틀",
         "rarity": "희귀",
         "power": 70,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "깡시",
         "title": "서울오프",
         "rarity": "희귀",
         "power": 73,
-        "desc": "노스타코인: 강화가 불가능하다, 대신 초월 시 받는 보너스 200%",
-        "abilities": [
-            {
-                "type": "CARD_SPECIFIC",
-                "note": "강화 불가, 초월 보너스 증가"
-            }
-        ]
+        "desc": "노스타코인: 강화가 불가능하다, 대신 초월 시 받는 보너스 200%"
     },
     {
         "name": "완다 막시모프",
         "title": "서울오프",
         "rarity": "희귀",
         "power": 70,
-        "desc": "잘못된선택: 코노모리와 함께 골드덱 편성 시, 데일리골드 -1,000 이후 10% 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있고 특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "hasCardAndDeckType",
-                    "cardName": "코노모리",
-                    "deckType": "gold"
-                },
-                "effect": [
-                    {
-                        "type": "데일리 골드 증가",
-                        "value": -1000
-                    },
-                    {
-                        "type": "데일리 골드 증가%",
-                        "value": 10
-                    }
-                ]
-            }
-        ]
+        "desc": "잘못된선택: 코노모리와 함께 골드덱 편성 시, 데일리골드 -1,000 이후 10% 증가"
     },
     {
         "name": "아드레날린",
         "title": "GCL0",
         "rarity": "고급",
         "power": 61,
-        "desc": "7의 딜레마: 이 카드의 순수 파워가 77이 될 시, 덱 파워 7% 증가",
-        "abilities": [
-            {
-                "type": "카드 파워X일 때 Y",
-                "condition": {
-                    "type": "selfPowerEquals",
-                    "threshold": 77
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 7
-                }
-            }
-        ]
+        "desc": "7의 딜레마: 이 카드의 순수 파워가 77이 될 시, 덱 파워 7% 증가"
     },
     {
         "name": "mvpjjj",
         "title": "GCL0",
         "rarity": "고급",
         "power": 54,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psygenie",
         "title": "GCL0",
         "rarity": "고급",
         "power": 64,
-        "desc": "종범신: 이 카드의 능력치를 0으로 만들고, 데일리골드 20,000 증가",
-        "abilities": [
-            {
-                "type": "CARD_SPECIFIC",
-                "note": "자신 파워 0, 골드 증가"
-            }
-        ]
+        "desc": "종범신: 이 카드의 능력치를 0으로 만들고, 데일리골드 20,000 증가"
     },
     {
         "name": "아드레날린",
         "title": "GCL1-1",
         "rarity": "고급",
         "power": 61,
-        "desc": "7의 딜레마: 이 카드의 순수 파워가 77이 될 시, 덱 파워 7% 증가",
-        "abilities": [
-            {
-                "type": "카드 파워X일 때 Y",
-                "condition": {
-                    "type": "selfPowerEquals",
-                    "threshold": 77
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 7
-                }
-            }
-        ]
+        "desc": "7의 딜레마: 이 카드의 순수 파워가 77이 될 시, 덱 파워 7% 증가"
     },
     {
         "name": "Supperstar",
         "title": "GCL1-1",
         "rarity": "고급",
         "power": 58,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "GCL1-1",
         "rarity": "고급",
         "power": 64,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "GCL1-2",
         "rarity": "고급",
         "power": 57,
-        "desc": "1st 도전자: 1번째 자리에 편성 시, 파워 20 증가",
-        "abilities": [
-            {
-                "type": "X번째 자리일 때 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "position": 1
-                },
-                "effect": {
-                    "type": "단일 파워 증가",
-                    "value": 20
-                }
-            }
-        ]
+        "desc": "1st 도전자: 1번째 자리에 편성 시, 파워 20 증가"
     },
     {
         "name": "브란도",
         "title": "GCL1-2",
         "rarity": "고급",
         "power": 56,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psychopass",
         "title": "GCL1-2",
         "rarity": "고급",
         "power": 54,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "조밍닝",
         "title": "GCL1-3",
         "rarity": "고급",
         "power": 64,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "GCL1-3",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Inspector",
         "title": "GCL1-3",
         "rarity": "고급",
         "power": 57,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "24FS",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "24FS",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "아드레날린",
         "title": "24FS",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "wt",
         "title": "RTG",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "RTG",
         "rarity": "고급",
         "power": 57,
-        "desc": "롤러코스터: 덱 내 단일 파워가 200 이상인 카드와 50 이하인 카드가 있을 시, 단일 파워 60 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "파워 범위 조건"
-            }
-        ]
+        "desc": "롤러코스터: 덱 내 단일 파워가 200 이상인 카드와 50 이하인 카드가 있을 시, 단일 파워 60 증가"
     },
     {
         "name": "코노모리",
         "title": "RTG",
         "rarity": "고급",
         "power": 55,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "핫식스",
         "title": "RTG",
         "rarity": "고급",
         "power": 50,
-        "desc": "콰트로마스터: 1자리를 봉인 후, 4개의 카드 등급이 모두 다를 시 덱 파워 60% 증가",
-        "abilities": [
-            {
-                "type": "DECK_BUILDER_ONLY",
-                "note": "1자리 봉인, 등급 다양성 조건"
-            }
-        ]
+        "desc": "콰트로마스터: 1자리를 봉인 후, 4개의 카드 등급이 모두 다를 시 덱 파워 60% 증가"
     },
     {
         "name": "아르세우스",
         "title": "RTG",
         "rarity": "고급",
         "power": 50,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "psychopass",
         "title": "대저택1",
         "rarity": "고급",
         "power": 69,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "대저택1",
         "rarity": "고급",
         "power": 67,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "대저택1",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "YR",
         "title": "대저택2",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "대저택2",
         "rarity": "고급",
         "power": 58,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "진필규",
         "title": "대저택2",
         "rarity": "고급",
         "power": 55,
-        "desc": "필규햄: 골드덱에 편성 시, 데일리 골드 5,000 증가",
-        "abilities": [
-            {
-                "type": "특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "deckType",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 5000
-                }
-            }
-        ]
+        "desc": "필규햄: 골드덱에 편성 시, 데일리 골드 5,000 증가"
     },
     {
         "name": "매그내릭",
         "title": "대저택2",
         "rarity": "고급",
         "power": 54,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "mvpjjj",
         "title": "피지컬13",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "핫식스",
         "title": "피지컬13",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "JOD",
         "title": "피지컬13",
         "rarity": "고급",
         "power": 59,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "레무링",
         "title": "나만아니면돼",
         "rarity": "고급",
         "power": 60,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Supperstar",
         "title": "나만아니면돼",
         "rarity": "고급",
         "power": 60,
-        "desc": "시간끌기: 5번째 자리 편성 시, 덱 파워 10% 증가",
-        "abilities": [
-            {
-                "type": "X번째 자리일 때 Y",
-                "condition": {
-                    "type": "isPosition",
-                    "position": 5
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가%",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "시간끌기: 5번째 자리 편성 시, 덱 파워 10% 증가"
     },
     {
         "name": "wt",
         "title": "극한의농락",
         "rarity": "고급",
         "power": 66,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "극한의농락",
         "rarity": "고급",
         "power": 62,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "Inspector",
         "title": "흑백지니어스",
         "rarity": "고급",
         "power": 57,
-        "desc": "흑팀원2: 흑팀원 수만큼 덱 파워 10 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "흑팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "전체 덱 파워 증가",
-                    "value": 10
-                }
-            }
-        ]
+        "desc": "흑팀원2: 흑팀원 수만큼 덱 파워 10 증가"
     },
     {
         "name": "wt",
         "title": "흑백지니어스",
         "rarity": "고급",
         "power": 56,
-        "desc": "흑팀원3: 흑팀원 수만큼 데일리 골드 5% 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "흑팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "데일리 골드 증가%",
-                    "value": 5
-                }
-            }
-        ]
+        "desc": "흑팀원3: 흑팀원 수만큼 데일리 골드 5% 증가"
     },
     {
         "name": "GM",
         "title": "흑백지니어스",
         "rarity": "고급",
         "power": 52,
-        "desc": "흑팀원4: 흑팀원 수만큼 데일리 골드 500 증가",
-        "abilities": [
-            {
-                "type": "특정 속성 N개당 Y",
-                "condition": {
-                    "type": "countAttribute",
-                    "attribute": "흑팀",
-                    "per": 1
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 500
-                }
-            }
-        ]
+        "desc": "흑팀원4: 흑팀원 수만큼 데일리 골드 500 증가"
     },
     {
         "name": "GM",
         "title": "디라이브",
         "rarity": "고급",
         "power": 62,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "뉴히",
         "title": "디라이브",
         "rarity": "고급",
         "power": 59,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "월야환담",
         "title": "파산게임",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "아르세우스",
         "title": "파산게임",
         "rarity": "고급",
         "power": 59,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "대황딮 데프트",
         "title": "관찰자",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "전설의포켓몬아르세우스",
         "title": "관찰자",
         "rarity": "고급",
         "power": 57,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "제1월도",
         "rarity": "고급",
         "power": 66,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "wt",
         "title": "제1월도",
         "rarity": "고급",
         "power": 62,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "브란도",
         "title": "제1월도",
         "rarity": "고급",
         "power": 58,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "리와",
         "title": "제1월도",
         "rarity": "고급",
         "power": 55,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "지2",
         "title": "제2월도",
         "rarity": "고급",
         "power": 66,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "제2월도",
         "rarity": "고급",
         "power": 63,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "재능부자",
         "title": "제2월도",
         "rarity": "고급",
         "power": 59,
-        "desc": "",
-        "abilities": []
+        "desc": ""
     },
     {
         "name": "아르세우스",
@@ -3525,216 +1894,112 @@
         "title": "해고전쟁",
         "rarity": "고급",
         "power": 67,
-        "desc": "씨벌이: 맛동산과 함께 골드덱 편성 시, 데일리 골드 18,000 증가",
-        "abilities": [
-            {
-                "type": "덱에 X가 있고 특정 덱 타입일 때 Y",
-                "condition": {
-                    "type": "hasCardAndDeckType",
-                    "cardName": "맛동산",
-                    "deckType": "gold"
-                },
-                "effect": {
-                    "type": "데일리 골드 증가",
-                    "value": 18000
-                }
-            }
-        ]
+        "desc": "씨벌이: 맛동산과 함께 골드덱 편성 시, 데일리 골드 18,000 증가"
     },
     {
         "name": "미룬이",
         "title": "해고전쟁",
         "rarity": "고급",
         "power": 59,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "해고전쟁"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "수의천",
         "title": "밍닝스플랜",
         "rarity": "고급",
         "power": 65,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "넛츠",
         "title": "밍닝스플랜",
         "rarity": "고급",
         "power": 58,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "스팸삼각김밥",
         "title": "밍닝스플랜",
         "rarity": "고급",
         "power": 55,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "FivEsEa",
         "title": "GCL2-1",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "아르세우스",
         "title": "GCL2-1",
         "rarity": "고급",
         "power": 57,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "psygenie",
         "title": "GCL2-1",
         "rarity": "고급",
         "power": 55,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "코노모리",
         "title": "GCL2-2",
         "rarity": "고급",
         "power": 62,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-2"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "롤충에서탈출",
         "title": "GCL2-2",
         "rarity": "고급",
         "power": 57,
-        "desc": "동부의왕: 덱 내 희귀 이상 등급의 카드가 없을 시, 단일 파워 100 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "희귀 이상 없음 조건"
-            }
-        ]
+        "desc": "동부의왕: 덱 내 희귀 이상 등급의 카드가 없을 시, 단일 파워 100 증가"
     },
     {
         "name": "Raoul",
         "title": "GCL2-2",
         "rarity": "고급",
         "power": 54,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-2"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "LaeFree",
         "title": "25MSI",
         "rarity": "고급",
         "power": 65,
-        "desc": "시로하천적: 필드 내 시로하의 파워 10을 모두 흡수",
-        "abilities": [
-            {
-                "type": "COMPLEX_INTERACTION",
-                "note": "특정 카드 파워 흡수"
-            }
-        ]
+        "desc": "시로하천적: 필드 내 시로하의 파워 10을 모두 흡수"
     },
     {
         "name": "조밍닝",
         "title": "25MSI",
         "rarity": "고급",
         "power": 61,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25MSI"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "GM",
         "title": "25SPR",
         "rarity": "고급",
         "power": 60,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25SPR"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "지니어스2",
         "title": "25SPR",
         "rarity": "고급",
         "power": 60,
-        "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25SPR"
-            }
-        ]
+        "desc": ""
     },
     {
         "name": "낮밤",
         "title": "25SPR",
         "rarity": "고급",
         "power": 60,
-        "desc": "역스윙: 골드덱 내 1,2번째 카드의 파워가 100 이상이고 3,4,5번째 카드의 파워가 100 이하일 시 데일리골드 20,000 증가",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "위치별 파워 조건"
-            }
-        ]
+        "desc": "역스윕: 골드덱 내 1,2번째 카드의 파워가 100 이상이고 3,4,5번째 카드의 파워가 100 이하일 시 데일리골드 20,000 증가"
     },
     {
         "name": "GM",
@@ -3748,20 +2013,7 @@
         "title": "독재자",
         "rarity": "고급",
         "power": 66,
-        "desc": "배신자: 덱 내 독재자 효과의 카드가 있을 시, 독재자의 단일 파워 50 증가",
-        "abilities": [
-            {
-                "type": "특정 능력 활성화 시 Y",
-                "condition": {
-                    "type": "hasAbility",
-                    "abilityKeyword": "독재자"
-                },
-                "effect": {
-                    "type": "COMPLEX_INTERACTION",
-                    "note": "독재자 카드 파워 증가"
-                }
-            }
-        ]
+        "desc": "배신자: 덱 내 독재자 효과의 카드가 있을 시, 독재자의 단일 파워 50 증가"
     },
     {
         "name": "psygenie",

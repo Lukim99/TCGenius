@@ -8,6 +8,9 @@ const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const VIEWMORE = ('\u200e'.repeat(500));
 
+// 수동 덱파워 측정 모듈
+const { calculateDeckPowerSync } = require('./manual_deck_power.js');
+
 // 콘텐츠 명령어 비활성화 플래그
 let contentCommandsBlocked = false;
 
@@ -2983,8 +2986,57 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        // chooseCard 처리 (선택팩, 경험치물약)
+        // chooseCard 처리 (선택팩, 경험치물약, 수동덱파워측정)
         if (chooseCard[senderID]) {
+            // 수동 덱파워 측정 처리
+            if (chooseCard[senderID].type == "manualPowerCalc") {
+                // 능력 적용 순서 파싱
+                const orderInput = msg.trim().split(/\s+/).map(n => parseInt(n));
+                
+                // 유효성 검증
+                const deckSize = chooseCard[senderID].deck.length;
+                if (orderInput.some(n => isNaN(n) || n < 1 || n > deckSize)) {
+                    channel.sendChat(`❌ 잘못된 입력입니다.\n1부터 ${deckSize}까지의 숫자를 공백으로 구분하여 입력하세요.\n예: 2 5 4 3 1`);
+                    return;
+                }
+                
+                // 중복 체크
+                const uniqueNumbers = new Set(orderInput);
+                if (uniqueNumbers.size !== orderInput.length) {
+                    channel.sendChat("❌ 중복된 숫자가 있습니다. 각 카드 번호는 한 번씩만 입력하세요.");
+                    return;
+                }
+                
+                try {
+                    const user = await getTCGUserById(senderID);
+                    const deck = chooseCard[senderID].deck;
+                    const deckType = chooseCard[senderID].deckType;
+                    
+                    channel.sendChat("⚙️ 덱파워를 계산하는 중입니다...");
+                    
+                    // 수동 계산 실행
+                    const result = calculateDeckPowerSync(user, deck, deckType, orderInput);
+                    
+                    // 결과 출력
+                    let resultMsg = `✅ 덱파워 계산 완료!\n\n`;
+                    resultMsg += `💪 최종 덱 파워: ${result.power.toLocaleString()}\n`;
+                    
+                    if (result.dailyGold !== null) {
+                        resultMsg += `💰 데일리 골드: ${result.dailyGold.toLocaleString()}\n`;
+                    }
+                    
+                    resultMsg += `\n[ 계산 과정 ]\n${VIEWMORE}\n${result.log}`;
+                    
+                    channel.sendChat(resultMsg);
+                    
+                    delete chooseCard[senderID];
+                } catch(e) {
+                    channel.sendChat(`❌ 계산 중 오류가 발생했습니다: ${e.message}`);
+                    delete chooseCard[senderID];
+                }
+                return;
+            }
+            
             // 주사위 선택 처리
             if (chooseCard[senderID].type == "주사위선택") {
                 const validDice = ["희미한 주사위","빛나는 주사위","찬란한 주사위","운명 주사위","심판 주사위"];
@@ -4479,6 +4531,87 @@ client.on('chat', async (data, channel) => {
                             }
                         })();
                     */
+                    }
+                    return;
+                }
+
+                // 수동 덱파워측정 (AI 없이 순수 코드로 계산)
+                if (args[0] == "수동덱파워측정") {
+                    if (args[1] == "콘텐츠덱1") {
+                        // Step 1: 능력 적용 순서 입력 요청
+                        chooseCard[user.id] = {
+                            type: "manualPowerCalc",
+                            deckType: "content1",
+                            deck: user.deck.content[0]
+                        };
+                        
+                        const cards = JSON.parse(read("DB/TCG/card.json"));
+                        let cardList = user.deck.content[0].map((id, idx) => {
+                            const card = cards[id];
+                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
+                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
+                        }).join("\n\n");
+                        
+                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (콘텐츠덱1)
+
+📋 덱 구성:
+${cardList}
+
+💡 능력을 적용할 순서를 입력하세요.
+   (예: 2 5 4 3 1)
+   
+⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
+   대상 선택이 필요한 능력은 스킵됩니다.`);
+                    } else if (args[1] == "콘텐츠덱2") {
+                        chooseCard[user.id] = {
+                            type: "manualPowerCalc",
+                            deckType: "content2",
+                            deck: user.deck.content[1]
+                        };
+                        
+                        const cards = JSON.parse(read("DB/TCG/card.json"));
+                        let cardList = user.deck.content[1].map((id, idx) => {
+                            const card = cards[id];
+                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
+                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
+                        }).join("\n\n");
+                        
+                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (콘텐츠덱2)
+
+📋 덱 구성:
+${cardList}
+
+💡 능력을 적용할 순서를 입력하세요.
+   (예: 2 5 4 3 1)
+   
+⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
+   대상 선택이 필요한 능력은 스킵됩니다.`);
+                    } else if (args[1] == "골드덱") {
+                        chooseCard[user.id] = {
+                            type: "manualPowerCalc",
+                            deckType: "gold",
+                            deck: user.deck.gold
+                        };
+                        
+                        const cards = JSON.parse(read("DB/TCG/card.json"));
+                        let cardList = user.deck.gold.map((id, idx) => {
+                            const card = cards[id];
+                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
+                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
+                        }).join("\n\n");
+                        
+                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (골드덱)
+
+📋 덱 구성:
+${cardList}
+
+💡 능력을 적용할 순서를 입력하세요.
+   (예: 2 5 4 3 1)
+   
+⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
+   대상 선택이 필요한 능력은 스킵됩니다.`);
+                    } else {
+                        channel.sendChat("❌ 사용법: /TCGenius 수동덱파워측정 [콘텐츠덱1|콘텐츠덱2|골드덱]");
                     }
                     return;
                 }
