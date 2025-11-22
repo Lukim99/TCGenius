@@ -4328,7 +4328,7 @@ client.on('chat', async (data, channel) => {
                         // 비동기 처리
                         (async () => {
                             try {
-                                let res = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, userRequest: user_request, deckType: "content1"});
+                                let res = await calculateDeckPower(user, user.deck.content[0], {isContentDeck: true, userRequest: user_request, deckType: "content1", isFaster: !!(user.vip >= 5)});
                                 delete tcgLoading[user.id];
                                 if (typeof res == 'object') {
                                     channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
@@ -4380,7 +4380,7 @@ client.on('chat', async (data, channel) => {
                         
                         (async () => {
                             try {
-                                let res = await calculateDeckPower(user, user.deck.content[1], {isContentDeck: true, userRequest: user_request, deckType: "content2"});
+                                let res = await calculateDeckPower(user, user.deck.content[1], {isContentDeck: true, userRequest: user_request, deckType: "content2", isFaster: !!(user.vip >= 5)});
                                 delete tcgLoading[user.id];
                                 if (typeof res == 'object') {
                                     channel.sendChat("✅ " + user + "님의 덱 파워를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
@@ -4432,7 +4432,7 @@ client.on('chat', async (data, channel) => {
                         
                         (async () => {
                             try {
-                                let res = await calculateDeckPower(user, user.deck.gold, {isGoldDeck: true, userRequest: user_request, deckType: "gold"});
+                                let res = await calculateDeckPower(user, user.deck.gold, {isGoldDeck: true, userRequest: user_request, deckType: "gold", isFaster: !!(user.vip >= 5)});
                                 delete tcgLoading[user.id];
                                 if (typeof res == 'object') {
                                     channel.sendChat("✅ " + user + "님의 덱 파워와 데일리 골드를 계산했습니다.\n덱 파워: " + res.calcPower.toComma2() + "\n🪙 데일리 골드: " + res.dailyGold.toComma2() + "\n\n[ 계산 과정 ]\n" + VIEWMORE + res.message);
