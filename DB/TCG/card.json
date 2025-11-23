@@ -3490,35 +3490,40 @@
         "title": "지니어서",
         "rarity": "고급",
         "power": 66,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "코노모리",
         "title": "지니어서",
         "rarity": "고급",
         "power": 63,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "psygenie",
         "title": "지니어서",
         "rarity": "고급",
         "power": 62,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "Oner",
         "title": "지니어서",
         "rarity": "고급",
         "power": 59,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "LaeFree",
         "title": "지니어서",
         "rarity": "고급",
         "power": 57,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "Cyberpsychosis",
@@ -3547,12 +3552,7 @@
         "rarity": "고급",
         "power": 59,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "해고전쟁"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "수의천",
@@ -3560,12 +3560,7 @@
         "rarity": "고급",
         "power": 65,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "넛츠",
@@ -3573,12 +3568,7 @@
         "rarity": "고급",
         "power": 58,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "스팸삼각김밥",
@@ -3586,12 +3576,7 @@
         "rarity": "고급",
         "power": 55,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "밍닝스플랜"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "FivEsEa",
@@ -3599,12 +3584,7 @@
         "rarity": "고급",
         "power": 61,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "아르세우스",
@@ -3612,12 +3592,7 @@
         "rarity": "고급",
         "power": 57,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "psygenie",
@@ -3625,12 +3600,7 @@
         "rarity": "고급",
         "power": 55,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-1"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "코노모리",
@@ -3638,12 +3608,7 @@
         "rarity": "고급",
         "power": 62,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-2"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "롤충에서탈출",
@@ -3664,12 +3629,7 @@
         "rarity": "고급",
         "power": 54,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "GCL2-2"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "LaeFree",
@@ -3690,12 +3650,7 @@
         "rarity": "고급",
         "power": 61,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25MSI"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "GM",
@@ -3703,12 +3658,7 @@
         "rarity": "고급",
         "power": 60,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25SPR"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "지니어스2",
@@ -3716,12 +3666,7 @@
         "rarity": "고급",
         "power": 60,
         "desc": "",
-        "abilities": [
-            {
-                "type": "COMPLEX_CONDITION",
-                "note": "25SPR"
-            }
-        ]
+        "abilities": []
     },
     {
         "name": "낮밤",
@@ -3741,7 +3686,8 @@
         "title": "화이트",
         "rarity": "고급",
         "power": 67,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "롤충에서탈출",
@@ -3768,91 +3714,130 @@
         "title": "독재자",
         "rarity": "고급",
         "power": 65,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "LaeFree",
         "title": "독재자",
         "rarity": "고급",
         "power": 62,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "피아스트",
         "title": "E세계",
         "rarity": "고급",
         "power": 64,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "예토전생",
         "title": "E세계",
         "rarity": "고급",
         "power": 61,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "LaeFree",
         "title": "E세계",
         "rarity": "고급",
         "power": 57,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "스탈린",
         "title": "유겜",
         "rarity": "고급",
         "power": 64,
-        "desc": "높동속성"
+        "desc": "높동속성",
+        "abilities": []
     },
     {
         "name": "Null",
         "title": "유겜",
         "rarity": "고급",
         "power": 62,
-        "desc": "충성(마): 행복과 함께 덱 편성 시, 행복의 특수 능력 반전"
+        "desc": "충성(마): 행복과 함께 덱 편성 시, 행복의 특수 능력 반전",
+        "abilities": [
+            {
+                "type": "COMPLEX_INTERACTION",
+                "note": "특수 능력 반전"
+            }
+        ]
     },
     {
         "name": "녕뇽냥냥",
         "title": "유겜",
         "rarity": "고급",
         "power": 59,
-        "desc": "관전자(높): 골드덱 내 높동속성이 있을 시, 데일리 골드 10,000 증가"
+        "desc": "관전자(높): 골드덱 내 높동속성이 있을 시, 데일리 골드 10,000 증가",
+        "abilities": [
+            {
+                "type": "특정 덱 타입에 X 속성이 있을 때 Y",
+                "condition": {
+                    "type": "deckTypeAndAttribute",
+                    "deckType": "gold",
+                    "attribute": "높동"
+                },
+                "effect": {
+                    "type": "데일리 골드 증가",
+                    "value": 10000
+                }
+            }
+        ]
     },
     {
         "name": "제우스",
         "title": "유겜",
         "rarity": "고급",
         "power": 100,
-        "desc": "범부(마): 덱편성 시, 단일 파워 45 감소"
+        "desc": "범부(마): 덱편성 시, 단일 파워 45 감소",
+        "abilities": [
+            {
+                "type": "덱 편성 시 Y",
+                "effect": {
+                    "type": "단일 파워 증가",
+                    "value": -45
+                }
+            }
+        ]
     },
     {
         "name": "초등학생",
         "title": "유겜",
         "rarity": "고급",
         "power": 53,
-        "desc": "높동속성"
+        "desc": "높동속성",
+        "abilities": []
     },
     {
         "name": "FivEsEa",
         "title": "제4월도",
         "rarity": "고급",
         "power": 66,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "Inspector",
         "title": "제4월도",
         "rarity": "고급",
         "power": 63,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "조밍닝",
         "title": "제4월도",
         "rarity": "고급",
         "power": 59,
-        "desc": ""
+        "desc": "",
+        "abilities": []
     },
     {
         "name": "지니어스2",

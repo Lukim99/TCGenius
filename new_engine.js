@@ -1711,10 +1711,10 @@ async function getTCGUserByCode(code) {
 // TCG 유틸: 아티팩트 능력 표시
 function invDisplayAbilityArtifact(artifact) {
     let calc = function(n) {
-        if (n >= 9) return 4;
-        if (n >= 7) return 3;
-        if (n >= 4) return 2;
-        if (n >= 1) return 1;
+        if (n >= 10) return 4;
+        if (n >= 9) return 3;
+        if (n >= 7) return 2;
+        if (n >= 6) return 1;
         return 0;
     }
     let plus = {
