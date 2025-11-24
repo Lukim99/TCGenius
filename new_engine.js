@@ -8,9 +8,6 @@ const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const VIEWMORE = ('\u200e'.repeat(500));
 
-// 수동 덱파워 측정 모듈
-const { calculateDeckPowerSync } = require('./manual_deck_power.js');
-
 // 콘텐츠 명령어 비활성화 플래그
 let contentCommandsBlocked = false;
 
@@ -905,7 +902,7 @@ async function performCombination(user, channel, cardIds, grade, count) {
         // 조합용 자물쇠 소모 (필수)
         const lockIdx = items.findIndex(item => item.name === "조합용 자물쇠");
         if (lockIdx !== -1) {
-            user.removeItem(lockIdx, 1);
+            await user.removeItem(lockIdx, 1);
         }
         
         // 카드 소모 (무한부활 카드는 보존)
@@ -915,7 +912,7 @@ async function performCombination(user, channel, cardIds, grade, count) {
             if (card.desc && card.desc.startsWith("무한부활")) {
                 notDeleteCards.push(cardId);
             } else {
-                user.removeCard(cardId, 1);
+                await user.removeCard(cardId, 1);
             }
         }
         
@@ -928,7 +925,7 @@ async function performCombination(user, channel, cardIds, grade, count) {
         const cardIdx = cards.findIndex(c => c.title === resultCard.title && c.name === resultCard.name);
         
         // 카드 지급
-        user.addCard(cardIdx, 1);
+        await user.addCard(cardIdx, 1);
         
         const resultMessages = [];
         
@@ -947,7 +944,7 @@ async function performCombination(user, channel, cardIds, grade, count) {
             if (prestigePackChance > 0 && Math.random() < prestigePackChance) {
                 const prestigePackId = items.findIndex(item => item.name === "프레스티지 카드팩");
                 if (prestigePackId !== -1) {
-                    user.addItem(prestigePackId, 1);
+                    await user.addItem(prestigePackId, 1);
                     resultMessages.push("✨ 축하합니다! 프레스티지 카드팩을 획득했습니다!");
                     TCGLog("📜 프레스티지 로그 📜\n\n>> 조합한 유저: " + user + "\n>> 조합 카드 등급: " + grade);
                 }
@@ -1378,7 +1375,7 @@ class TCGUser {
         await this.save();
     }
 
-    addItem(itemIdx, count) {
+    async addItem(itemIdx, count) {
         let item = JSON.parse(read("DB/TCG/item.json"))[itemIdx];
         if (!item) return false;
         
@@ -1391,10 +1388,11 @@ class TCGUser {
                 count: count
             });
         }
+        await this.save();
         return true;
     }
 
-    removeItem(itemIdx, count) {
+    async removeItem(itemIdx, count) {
         const existingItem = this.inventory.item.find(i => i.id == itemIdx);
         if (!existingItem) {
             return false;
@@ -1404,10 +1402,11 @@ class TCGUser {
         if (existingItem.count <= 0) {
             this.inventory.item.splice(this.inventory.item.findIndex(i => i.id == itemIdx), 1);
         }
+        await this.save();
         return true;
     }
 
-    addCard(cardIdx, count) {
+    async addCard(cardIdx, count) {
         let card = JSON.parse(read("DB/TCG/card.json"))[cardIdx];
         if (!card) return false;
         
@@ -1430,10 +1429,11 @@ class TCGUser {
             
             this.inventory.card.push(newCard);
         }
+        await this.save();
         return true;
     }
 
-    removeCard(cardIdx, count) {
+    async removeCard(cardIdx, count) {
         const existingCard = this.inventory.card.find(i => i.id == cardIdx);
         if (!existingCard) {
             return false;
@@ -1452,10 +1452,11 @@ class TCGUser {
                 this.deck.gold[this.deck.gold.indexOf(cardIdx)] = -1;
             }
         }
+        await this.save();
         return true;
     }
 
-    attend() {
+    async attend() {
         let now = new Date().getKoreanTime();
         let res = {
             success: false
@@ -1537,17 +1538,17 @@ class TCGUser {
             this.shopLimit.weekly = [];
             this.shopLimit.weeklyResetAt = now.toYYYYMMDD();
         }
-        this.save();
+        await this.save();
         res.success = true;
         return res;
     }
 
-    givePack(pack) {
+    async givePack(pack) {
         let rewards = [];
         let items = JSON.parse(read("DB/TCG/item.json"));
         let cards = JSON.parse(read("DB/TCG/card.json"));
         
-        pack.forEach(reward => {
+        for (let reward of pack) {
             if (reward.roll) {
                 let all_rolls = reward.rolls.reduce((cur, acc) => cur + acc.weight, 0);
                 let r = Math.floor(Math.random() * all_rolls);
@@ -1563,7 +1564,7 @@ class TCGUser {
             if (reward.prob) {
                 let r = Math.random();
                 if (r >= reward.prob) {
-                    return;
+                    continue;
                 }
             }
             
@@ -1575,43 +1576,43 @@ class TCGUser {
             if (reward.gold) {
                 this.gold += count;
                 rewards.push("- " + numberWithCommas(count.toString()) + "골드");
-                return;
+                continue;
             }
             
             if (reward.garnet) {
                 this.garnet += count;
                 rewards.push("- " + numberWithCommas(count.toString()) + "가넷");
-                return;
+                continue;
             }
             
             if (reward.item) {
                 let itemIdx = items.findIndex(i => i.name == reward.name);
                 if (itemIdx != -1) {
                     if (count < 0) {
-                        this.removeItem(itemIdx, Math.abs(count));
+                        await this.removeItem(itemIdx, Math.abs(count));
                     } else {
-                        this.addItem(itemIdx, count);
+                        await this.addItem(itemIdx, count);
                     }
                     rewards.push("- " + reward.name + " x" + count);
                 }
-                return;
+                continue;
             }
             
             if (reward.card) {
                 let cardIdx = cards.findIndex(c => c.name == reward.name && c.title == reward.title);
                 if (cardIdx != -1) {
                     if (count < 0) {
-                        this.removeCard(cardIdx, Math.abs(count));
+                        await this.removeCard(cardIdx, Math.abs(count));
                     } else {
-                        this.addCard(cardIdx, count);
+                        await this.addCard(cardIdx, count);
                     }
                     rewards.push("- [" + reward.title + "]" + reward.name + " x" + count);
                 }
-                return;
+                continue;
             }
-        });
+        }
         
-        this.save();
+        await this.save();
         return rewards;
     }
 
@@ -1628,7 +1629,7 @@ class TCGUser {
                 pack.push({gold: true, count: 30000});
             }
             
-            let rewards = this.givePack(pack);
+            let rewards = await this.givePack(pack);
             await channel.sendChat("✅ 일일 과제 달성!\n< " + quest + " >\n\n[ 보상 ]\n" + rewards.join("\n"));
             return true;
         }
@@ -2986,57 +2987,8 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        // chooseCard 처리 (선택팩, 경험치물약, 수동덱파워측정)
+        // chooseCard 처리 (선택팩, 경험치물약)
         if (chooseCard[senderID]) {
-            // 수동 덱파워 측정 처리
-            if (chooseCard[senderID].type == "manualPowerCalc") {
-                // 능력 적용 순서 파싱
-                const orderInput = msg.trim().split(/\s+/).map(n => parseInt(n));
-                
-                // 유효성 검증
-                const deckSize = chooseCard[senderID].deck.length;
-                if (orderInput.some(n => isNaN(n) || n < 1 || n > deckSize)) {
-                    channel.sendChat(`❌ 잘못된 입력입니다.\n1부터 ${deckSize}까지의 숫자를 공백으로 구분하여 입력하세요.\n예: 2 5 4 3 1`);
-                    return;
-                }
-                
-                // 중복 체크
-                const uniqueNumbers = new Set(orderInput);
-                if (uniqueNumbers.size !== orderInput.length) {
-                    channel.sendChat("❌ 중복된 숫자가 있습니다. 각 카드 번호는 한 번씩만 입력하세요.");
-                    return;
-                }
-                
-                try {
-                    const user = await getTCGUserById(senderID);
-                    const deck = chooseCard[senderID].deck;
-                    const deckType = chooseCard[senderID].deckType;
-                    
-                    channel.sendChat("⚙️ 덱파워를 계산하는 중입니다...");
-                    
-                    // 수동 계산 실행
-                    const result = calculateDeckPowerSync(user, deck, deckType, orderInput);
-                    
-                    // 결과 출력
-                    let resultMsg = `✅ 덱파워 계산 완료!\n\n`;
-                    resultMsg += `💪 최종 덱 파워: ${result.power.toLocaleString()}\n`;
-                    
-                    if (result.dailyGold !== null) {
-                        resultMsg += `💰 데일리 골드: ${result.dailyGold.toLocaleString()}\n`;
-                    }
-                    
-                    resultMsg += `\n[ 계산 과정 ]\n${VIEWMORE}\n${result.log}`;
-                    
-                    channel.sendChat(resultMsg);
-                    
-                    delete chooseCard[senderID];
-                } catch(e) {
-                    channel.sendChat(`❌ 계산 중 오류가 발생했습니다: ${e.message}`);
-                    delete chooseCard[senderID];
-                }
-                return;
-            }
-            
             // 주사위 선택 처리
             if (chooseCard[senderID].type == "주사위선택") {
                 const validDice = ["희미한 주사위","빛나는 주사위","찬란한 주사위","운명 주사위","심판 주사위"];
@@ -3048,21 +3000,20 @@ client.on('chat', async (data, channel) => {
                 let items = JSON.parse(read("DB/TCG/item.json"));
                 if (msg == "희미한 주사위") {
                     let idx = items.findIndex(i => i.name == "희미한 주사위");
-                    if (idx >= 0) user.addItem(idx, chooseCard[senderID].num * 100);
+                    if (idx >= 0) await user.addItem(idx, chooseCard[senderID].num * 100);
                 } else if (msg == "빛나는 주사위") {
                     let idx = items.findIndex(i => i.name == "빛나는 주사위");
-                    if (idx >= 0) user.addItem(idx, chooseCard[senderID].num * 65);
+                    if (idx >= 0) await user.addItem(idx, chooseCard[senderID].num * 65);
                 } else if (msg == "찬란한 주사위") {
                     let idx = items.findIndex(i => i.name == "찬란한 주사위");
-                    if (idx >= 0) user.addItem(idx, chooseCard[senderID].num * 35);
+                    if (idx >= 0) await user.addItem(idx, chooseCard[senderID].num * 35);
                 } else if (msg == "운명 주사위") {
                     let idx = items.findIndex(i => i.name == "운명 주사위");
-                    if (idx >= 0) user.addItem(idx, chooseCard[senderID].num * 15);
+                    if (idx >= 0) await user.addItem(idx, chooseCard[senderID].num * 15);
                 } else if (msg == "심판 주사위") {
                     let idx = items.findIndex(i => i.name == "심판 주사위");
-                    if (idx >= 0) user.addItem(idx, chooseCard[senderID].num * 5);
+                    if (idx >= 0) await user.addItem(idx, chooseCard[senderID].num * 5);
                 }
-                await user.save();
                 channel.sendChat("✅ '" + msg + "'를 선택했습니다.\n선택한 주사위가 지급되었습니다.");
                 delete chooseCard[senderID];
                 return;
@@ -3082,8 +3033,7 @@ client.on('chat', async (data, channel) => {
                         let user = await getTCGUserById(senderID);
                         chooseCard[senderID].num--;
                         let cardIdx = cards.findIndex(i => i.name == parsed.name && i.title == parsed.title);
-                        user.addCard(cardIdx, 1);
-                        await user.save();
+                        await user.addCard(cardIdx, 1);
                         channel.sendChat("✅ 카드를 " + (chooseCard[senderID].num <= 0 ? "모두 " : "") + "선택했습니다." + (chooseCard[senderID].num > 0 ? "\n" + chooseCard[senderID].num + "장의 카드를 더 골라주세요." : "\n모든 카드가 성공적으로 지급되었습니다."));
                         if (chooseCard[senderID].num <= 0) delete chooseCard[senderID];
                     }
@@ -3288,11 +3238,11 @@ client.on('chat', async (data, channel) => {
                     const normalTicket = user.inventory.item.find(i => i.id == 1);
                     if (normalTicket) {
                         if (normalTicket.count >= num) {
-                            user.removeItem(1, need);
+                            await user.removeItem(1, need);
                             need = 0;
                         } else {
                             need -= normalTicket.count;
-                            user.removeItem(1, normalTicket.count);
+                            await user.removeItem(1, normalTicket.count);
                         }
                     }
                     if ((need * 100) > user.garnet) {
@@ -3321,13 +3271,13 @@ client.on('chat', async (data, channel) => {
                     
                     if (user.deck.next) {
                         let nCount = 0;
-                        user.deck.next.forEach(next => {
-                            if (num < 1) return;
+                        for (let next of user.deck.next) {
+                            if (num < 1) break;
                             let cardIdx = cards.findIndex(c => c.title == next.title && c.name == next.name);
                             if (cardIdx != -1) {
                                 num--;
                                 resDisplay.find(r => r.rarity == cards[cardIdx].rarity).count++;
-                                user.addCard(cardIdx, 1);
+                                await user.addCard(cardIdx, 1);
                                 const existingResult = cardResults.find(c => c.id == cardIdx);
                                 if (existingResult) {
                                     existingResult.count++;
@@ -3341,7 +3291,7 @@ client.on('chat', async (data, channel) => {
                                 }
                             }
                             nCount++;
-                        });
+                        }
                         user.deck.next.splice(0, nCount);
                         if (user.deck.next.length == 0) delete user.deck.next;
                     }
@@ -3363,7 +3313,7 @@ client.on('chat', async (data, channel) => {
                         for (let i = 0; i < rs.count; i++) {
                             let card = cards.filter(c => c.rarity == rs.rarity).getRandomElement();
                             let cardIdx = cards.findIndex(c => c.title == card.title && c.name == card.name);
-                            user.addCard(cardIdx, 1);
+                            await user.addCard(cardIdx, 1);
                             const existingResult = cardResults.find(c => c.name == "[" + card.title + "]" + card.name);
                             if (existingResult) {
                                 existingResult.count++;
@@ -3376,8 +3326,6 @@ client.on('chat', async (data, channel) => {
                             }
                         }
                     }
-                    
-                    await user.save();
                     resDisplay = resDisplay.map(rs => rs.count <= 0 ? null : "- " + rs.rarity + " x" + rs.count).filter(rs => rs != null);
                     await user.checkQuest("[소환] 오늘은 뜬다 전설", channel);
                     channel.sendChat("[ 일뽑 x" + numberWithCommas(trueNum.toString()) + " 결과 ]\n" + resDisplay.join("\n") + "\n\n[ 획득한 카드 ]\n" + VIEWMORE + cardResults.map(cr => "<" + cr.rarity + "> " + cr.name + (cr.count > 1 ? " x" + cr.count : "")).join("\n"));
@@ -3397,11 +3345,11 @@ client.on('chat', async (data, channel) => {
                     const pickupTicket = user.inventory.item.find(i => i.id == 2);
                     if (pickupTicket) {
                         if (pickupTicket.count >= num) {
-                            user.removeItem(2, need);
+                            await user.removeItem(2, need);
                             need = 0;
                         } else {
                             need -= pickupTicket.count;
-                            user.removeItem(2, pickupTicket.count);
+                            await user.removeItem(2, pickupTicket.count);
                         }
                     }
                     if ((need * 100) > user.garnet) {
@@ -3452,7 +3400,7 @@ client.on('chat', async (data, channel) => {
                                 card = cards.filter(c => c.rarity == rs.rarity).getRandomElement();
                             }
                             let cardIdx = cards.findIndex(c => c.title == card.title && c.name == card.name);
-                            user.addCard(cardIdx, 1);
+                            await user.addCard(cardIdx, 1);
                             const existingResult = cardResults.find(c => c.name == "[" + card.title + "]" + card.name);
                             if (existingResult) {
                                 existingResult.count++;
@@ -3486,45 +3434,43 @@ client.on('chat', async (data, channel) => {
                     }
                     if (prevPickupStack < 80 && user.pickupStack[picknum] >= 80) {
                         if (picknum == 0) {
-                            user.addItem(6, 1);
+                            await user.addItem(6, 1);
                             channel.sendChat("[ 픽업1 80회 소환 보상 ]\n- 강화자물쇠 x1 획득");
                         } else if (picknum == 1) {
-                            user.addItem(5, 1);
+                            await user.addItem(5, 1);
                             channel.sendChat("[ 픽업2 80회 소환 보상 ]\n- 보호자물쇠 x1 획득");
                         }
                     }
                     if (prevPickupStack < 120 && user.pickupStack[picknum] >= 120) {
                         if (picknum == 0) {
-                            user.addItem(2, 10);
+                            await user.addItem(2, 10);
                             channel.sendChat("[ 픽업1 120회 소환 보상 ]\n- 픽업 소환권 x10 획득");
                         } else if (picknum == 1) {
-                            user.addItem(2, 10);
+                            await user.addItem(2, 10);
                             channel.sendChat("[ 픽업2 120회 소환 보상 ]\n- 픽업 소환권 x10 획득");
                         }
                     }
                     if (prevPickupStack < 160 && user.pickupStack[picknum] >= 160) {
                         if (picknum == 0) {
-                            user.addItem(30, 1);
+                            await user.addItem(30, 1);
                             channel.sendChat("[ 픽업1 160회 소환 보상 ]\n- 100% +1 강화권 x1 획득");
                         } else if (picknum == 1) {
-                            user.addItem(16, 1);
+                            await user.addItem(16, 1);
                             channel.sendChat("[ 픽업2 160회 소환 보상 ]\n- 영웅초월권 x1 획득");
                         }
                     }
                     if (prevPickupStack < 200 && user.pickupStack[picknum] >= 200) {
                         if (picknum == 0) {
                             let itemIdx = items.findIndex(item => item.name == "[" + theme + "]테마 카드 선택팩");
-                            user.addItem(itemIdx, 1);
+                            await user.addItem(itemIdx, 1);
                             channel.sendChat("[ 픽업1 200회 소환 보상 ]\n- [" + theme + "]테마 카드 선택팩 x1 획득");
                         } else if (picknum == 1) {
                             let itemIdx = items.findIndex(item => item.name == "[" + theme + "]테마 카드 선택팩");
-                            user.addItem(itemIdx, 1);
+                            await user.addItem(itemIdx, 1);
                             channel.sendChat("[ 픽업2 200회 소환 보상 ]\n- [" + theme + "]테마 카드 선택팩 x1 획득");
                         }
                         user.pickupStack[picknum] -= 200;
                     }
-                    
-                    await user.save();
                     result = result.map(rs => rs.count <= 0 ? null : "- " + (rs.rarity.includes("픽업") ? "★픽업 " : "") + rs.rarity.replace("픽업","") + " x" + rs.count).filter(rs => rs != null);
                     channel.sendChat("[ 픽뽑" + (picknum + 1) + " x" + numberWithCommas(num.toString()) + " 결과 ]\n" + result.join("\n") + "\n\n[ 획득한 카드 ]\n" + VIEWMORE + cardResults.map(cr => "<" + cr.rarity + "> " + cr.name + (cr.count > 1 ? " x" + cr.count : "")).join("\n"));
                     return;
@@ -3884,9 +3830,8 @@ client.on('chat', async (data, channel) => {
                         }
                         let result = null;
                         if (total_pack.length > 0) {
-                            result = targetUser.givePack(total_pack);
+                            result = await targetUser.givePack(total_pack);
                         }
-                        await targetUser.save();
                         channel.sendChat("✅ " + targetUser + "님에게 " + numberWithCommas(num.toString()) + " 포인트를 추가했습니다." + (vipPlus[targetUser.vip] > 0 ? " (+" + (vipPlus[targetUser.vip] * 100).fix() + "% 보너스!)" : "") + (vipMsg ? "\n\n" + vipMsg + "\n[ 지급 보상 ]\n" + result.join("\n") : ""));
                     }
                     return;
@@ -4535,87 +4480,6 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                // 수동 덱파워측정 (AI 없이 순수 코드로 계산)
-                if (args[0] == "수동덱파워측정") {
-                    if (args[1] == "콘텐츠덱1") {
-                        // Step 1: 능력 적용 순서 입력 요청
-                        chooseCard[user.id] = {
-                            type: "manualPowerCalc",
-                            deckType: "content1",
-                            deck: user.deck.content[0]
-                        };
-                        
-                        const cards = JSON.parse(read("DB/TCG/card.json"));
-                        let cardList = user.deck.content[0].map((id, idx) => {
-                            const card = cards[id];
-                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
-                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
-                        }).join("\n\n");
-                        
-                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (콘텐츠덱1)
-
-📋 덱 구성:
-${cardList}
-
-💡 능력을 적용할 순서를 입력하세요.
-   (예: 2 5 4 3 1)
-   
-⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
-   대상 선택이 필요한 능력은 스킵됩니다.`);
-                    } else if (args[1] == "콘텐츠덱2") {
-                        chooseCard[user.id] = {
-                            type: "manualPowerCalc",
-                            deckType: "content2",
-                            deck: user.deck.content[1]
-                        };
-                        
-                        const cards = JSON.parse(read("DB/TCG/card.json"));
-                        let cardList = user.deck.content[1].map((id, idx) => {
-                            const card = cards[id];
-                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
-                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
-                        }).join("\n\n");
-                        
-                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (콘텐츠덱2)
-
-📋 덱 구성:
-${cardList}
-
-💡 능력을 적용할 순서를 입력하세요.
-   (예: 2 5 4 3 1)
-   
-⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
-   대상 선택이 필요한 능력은 스킵됩니다.`);
-                    } else if (args[1] == "골드덱") {
-                        chooseCard[user.id] = {
-                            type: "manualPowerCalc",
-                            deckType: "gold",
-                            deck: user.deck.gold
-                        };
-                        
-                        const cards = JSON.parse(read("DB/TCG/card.json"));
-                        let cardList = user.deck.gold.map((id, idx) => {
-                            const card = cards[id];
-                            const abilities = card.abilities ? card.abilities.map(a => a.type).join(", ") : "능력 없음";
-                            return `${idx + 1}. [${card.title}]${card.name}\n   능력: ${abilities}`;
-                        }).join("\n\n");
-                        
-                        channel.sendChat(`🎮 수동 덱파워 측정 모드 (골드덱)
-
-📋 덱 구성:
-${cardList}
-
-💡 능력을 적용할 순서를 입력하세요.
-   (예: 2 5 4 3 1)
-   
-⚠️ 현재는 "즉시 적용" 능력만 지원됩니다.
-   대상 선택이 필요한 능력은 스킵됩니다.`);
-                    } else {
-                        channel.sendChat("❌ 사용법: /TCGenius 수동덱파워측정 [콘텐츠덱1|콘텐츠덱2|골드덱]");
-                    }
-                    return;
-                }
-
                 // 빠른덱파워측정은 3개 파워 측정 유지 (관리자 전용, GitHub Models 사용)
                 if (args[0] == "빠른덱파워측정" && user.isAdmin) {
                     if (args[1] == "콘텐츠덱1") {
@@ -4783,11 +4647,11 @@ ${cardList}
                     userCard.exp = 0;
                     userCard.overExp = 0;
                     
-                    user.removeItem(31, ["","일반","고급","희귀","영웅","전설"].indexOf(cards[card].rarity) * num);
-                    user.removeCard(card, num);
+                    await user.removeItem(31, ["","일반","고급","희귀","영웅","전설"].indexOf(cards[card].rarity) * num);
+                    await user.removeCard(card, num);
                     await user.save();
                     await target.save();
-                    cards[card].deepMerge(targetCard);
+                    cards[card].deepMerge(target.inventory.card.find(c => c.id == card));
                     channel.sendChat("✅ " + target + "님에게 카드를 선물했습니다.\n" + printCard(cards[card]));
                     return;
                 }
@@ -4834,9 +4698,9 @@ ${cardList}
                         return;
                     }
                     // 기본 상태로 전송 (강화 상태 무시)
-                    target.addCard(card, num);
-                    user.removeItem(31, ["","일반","고급","희귀","영웅","전설"].indexOf(cards[card].rarity) * num);
-                    user.removeCard(card, num);
+                    await target.addCard(card, num);
+                    await user.removeItem(31, ["","일반","고급","희귀","영웅","전설"].indexOf(cards[card].rarity) * num);
+                    await user.removeCard(card, num);
                     await user.save();
                     await target.save();
                     cards[card].deepMerge(target.inventory.card.find(c => c.id == card));
@@ -4959,7 +4823,7 @@ ${cardList}
                                 if (!(mainCard.desc && mainCard.desc.startsWith("슴니즌"))) user.gold -= Math.round(plusExpTotal / 2);
                                 for (let i = 1; i < cardArgs.length; i++) {
                                     if (user.inventory.card.find(c => c.id == cardArgs[i])) {
-                                        user.removeCard(cardArgs[i], 1);
+                                        await user.removeCard(cardArgs[i], 1);
                                     }
                                 }
                                 await user.checkQuest("[강화] 강화의 달인", channel);
@@ -5047,18 +4911,18 @@ ${cardList}
                     invCard.transcend++;
                     if (needMaterials || !useTicket) {
                         user.gold -= (maxLevels[card.rarity] * 50000);
-                        if (!isGrowth) user.removeCard(card.id, 1);
-                        else user.removeCard(cards.findIndex(c => "[" + c.title + "]" + c.name == args[2]), 1);
+                        if (!isGrowth) await user.removeCard(card.id, 1);
+                        else await user.removeCard(cards.findIndex(c => "[" + c.title + "]" + c.name == args[2]), 1);
                     } else {
-                        user.removeItem(itemIdx, 1);
+                        await user.removeItem(itemIdx, 1);
                     }
                     if (isGrowth && card.rarity != "전설" && maxLevels[card.rarity] == invCard.transcend && invCard.transcend == invCard.level) {
                         invCard.rarity = ["일반","고급","희귀","영웅","전설"][["일반","고급","희귀","영웅"].indexOf(card.rarity) + 1];
                         card.rarity = invCard.rarity;
                     }
                     let now = (Array(invCard.transcend + 1).join("★") + Array((maxLevels[card.rarity] + (invCard.breakLimit ? 1:0)) - invCard.transcend + 1).join("☆"));
-                    await user.save();
                     channel.sendChat("✅ " + ((needMaterials || !useTicket) ? "" : itemName + (dec_han(itemName.substr(-1)).length == 3 ? "을" : "를") + " 사용하여 ") + targetCard + " 카드를 초월시켰습니다!\n" + prev + " ▶ " + now);
+                    await user.save();
                     return;
                 }
 
@@ -5095,7 +4959,7 @@ ${cardList}
                         channel.sendChat("❌ 한계돌파석이 필요합니다!");
                         return;
                     }
-                    user.removeItem(itemIdx, 1);
+                    await user.removeItem(itemIdx, 1);
                     card.breakLimit = true;
                     let card_leveled_up = 0;
                     let needExp = {
@@ -5175,7 +5039,7 @@ ${cardList}
                             return;
                         }
                     }
-                    user.removeItem(itemIdx, 1);
+                    await user.removeItem(itemIdx, 1);
                     let needExp = {
                         "일반": 1000,
                         "고급": 10000,
@@ -5588,7 +5452,7 @@ ${cardList}
                     // 재료 소모
                     for (const material of levelUpCost.materials) {
                         const itemIdx = items.findIndex(i => i.name === material.name);
-                        user.removeItem(itemIdx, material.count);
+                        await user.removeItem(itemIdx, material.count);
                     }
                     
                     // 레벨 증가
@@ -5612,7 +5476,6 @@ ${cardList}
                     }
                     
                     channel.sendChat(resultMessage);
-                    await user.save();
                     delete prestigeLevelUp[user.id];
                     return;
                 }
@@ -5674,15 +5537,14 @@ ${cardList}
                     }
                     
                     // 변경 처리
-                    user.removeCard(oldCardIdx, 1);
-                    user.removeItem(ticketIdx, 1);
-                    user.addCard(newCardIdx, 1);
+                    await user.removeCard(oldCardIdx, 1);
+                    await user.removeItem(ticketIdx, 1);
+                    await user.addCard(newCardIdx, 1);
                     
                     let resultMessage = `✅ 프레스티지 카드를 변경했습니다.\n\n`;
                     resultMessage += `[${oldCard.title}]${oldCard.name} ▶ [${newCard.title}]${newCard.name}`;
                     
                     channel.sendChat(resultMessage);
-                    await user.save();
                     return;
                 }
 
@@ -5785,7 +5647,7 @@ ${cardList}
                         }
                         
                         attend_reward = attend_reward.concat(vipPack[user.vip]);
-                        rewards = user.givePack(attend_reward);
+                        rewards = await user.givePack(attend_reward);
                         channel.sendChat("✅ 출석을 완료했습니다!\n- 연속 출석일수: " + user.attendance.streak + "일\n- 누적 출석일수: " + user.attendance.total + "일\n\n[ 출석 보상 ]\n- 데일리 골드 " + numberWithCommas(gotGold.toString()) + "골드" + (vipPlus[user.vip] > 0 ? " (+" + (vipPlus[user.vip] * 100).fix() + "% 보너스!)" : "") + (rewards.length ? "\n" + rewards.join("\n") : ""));
                     } else {
                         channel.sendChat("❌ 이미 오늘 출석체크를 완료했습니다.");
@@ -5834,8 +5696,7 @@ ${cardList}
                     let getGold = plusGold[cards[cardIdx].rarity];
                     if (cards[cardIdx].desc && cards[cardIdx].desc.startsWith("이타치")) getGold = 1000;
                     user.gold += getGold;
-                    user.removeCard(cardIdx, 1);
-                    await user.save();
+                    await user.removeCard(cardIdx, 1);
                     channel.sendChat("✅ " + targetCard + " 카드를 되팔아 " + numberWithCommas(getGold.toString()) + " 골드를 획득했습니다.");
                     return;
                 }
@@ -5866,9 +5727,8 @@ ${cardList}
                         "프레스티지": [{item: true, name: "강렬한 기운", count: 30},{item: true, name: "프레스티지 재료", count: 1}]
                     };
                     let getPack = plusPack[cards[cardIdx].rarity];
-                    let rewards = user.givePack(getPack);
-                    user.removeCard(cardIdx, 1);
-                    await user.save();
+                    let rewards = await user.givePack(getPack);
+                    await user.removeCard(cardIdx, 1);
                     channel.sendChat("✅ " + targetCard + " 카드를 분해했습니다.\n[ 획득한 보상 ]\n" + rewards.join("\n"));
                     return;
                 }
@@ -5977,8 +5837,7 @@ ${cardList}
                     
                     if (targetUser && package) {
                         let rewards = [];
-                        rewards = targetUser.givePack(package.reward);
-                        await targetUser.save();
+                        rewards = await targetUser.givePack(package.reward);
                         channel.sendChat("✅ " + targetUser + "님에게 " + package.name + " 지급을 완료했습니다.\n\n[ 지급 목록 ]\n" + rewards.join("\n"));
                     } else {
                         channel.sendChat("❌ 존재하지 않는 패키지입니다.");
@@ -6057,9 +5916,8 @@ ${cardList}
                             channel.sendChat("❌ 이미 입력한 쿠폰입니다.");
                             return;
                         }
-                        let rewards = user.givePack(coupons.find(c => c.coupon == coupon).reward);
+                        let rewards = await user.givePack(coupons.find(c => c.coupon == coupon).reward);
                         user.entered_coupon.push(coupon);
-                        await user.save();
                         channel.sendChat("🎉 쿠폰 입력 보상을 받았습니다!\n\n[ 보상 목록 ]\n" + rewards.join("\n"));
                         if (coupons.find(c => c.coupon == coupon).onetime) {
                             coupons.splice(coupons.findIndex(c => c.coupon == coupon), 1);
@@ -6151,7 +6009,7 @@ ${cardList}
                             await user.checkQuest("[핫타임] 핫타임 출첵 완료", channel);
                             user.hotTime = now.toYYYYMMDD();
                             let hotTime = JSON.parse(read("DB/TCG/hotTime.json"));
-                            let rewards = user.givePack(hotTime.reward);
+                            let rewards = await user.givePack(hotTime.reward);
                             channel.sendChat("🔥 오늘의 핫타임 보상을 받았습니다!\n\n[ 보상 목록 ]\n" + rewards.join("\n"));
                         }
                     } else {
@@ -6273,8 +6131,7 @@ ${cardList}
                             channel.sendChat("❌ 잘못된 입력입니다.\n[ /TCGenius 아티팩트 분해 <아티팩트 번호> ]");
                         } else {
                             user.artifact.artifacts.splice(idx, 1);
-                            let rewards = user.givePack([{item:true,name:"아티팩트 파편",count:{min:10,max:55}},{gold:true,count:{min:500,max:1000}}]);
-                            await user.save();
+                            let rewards = await user.givePack([{item:true,name:"아티팩트 파편",count:{min:10,max:55}},{gold:true,count:{min:500,max:1000}}]);
                             channel.sendChat("✅ 아티팩트를 분해했습니다.\n\n[ 분해 결과 ]\n" + rewards.join("\n"));
                         }
                     } else if (args[1] == "거래") {
@@ -6451,10 +6308,9 @@ ${cardList}
                             channel.sendChat("❌ 제작 재료가 부족합니다.\n\n" + target + " x" + num.toComma() + " 제작 재료:\n" + materials.join("\n"));
                         } else {
                             trade.material.multiplyKey('count', -num);
-                            user.givePack(trade.material);
+                            await user.givePack(trade.material);
                             trade.reward.multiplyKey('count', num);
-                            let rewards = user.givePack(trade.reward);
-                            await user.save();
+                            let rewards = await user.givePack(trade.reward);
                             channel.sendChat("✅ 성공적으로 제작했습니다!\n\n" + rewards.join("\n"));
                         }
                     }
@@ -6587,15 +6443,14 @@ ${cardList}
                         return;
                     }
                     if (!card.desc || !card.desc.startsWith("슴니즌")) user.gold -= Math.round(getExp / 2);
-                    useCards.forEach(cardId => {
-                        user.removeCard(cardId, 1);
-                    });
+                    for (let cardId of useCards) {
+                        await user.removeCard(cardId, 1);
+                    }
                     if (!invCard.exp) invCard.exp = 0;
                     invCard.exp += getExp;
                     await user.checkQuest("[강화] 강화의 달인", channel);
                     channel.sendChat("✅ " + targetRarity + " 등급의 카드들을 일괄 사용하여 경험치가 +" + getExp.toComma2() + " 증가했습니다.\n(" + invCard.exp.toComma2() + "/" + needExp[card.rarity].toComma2() + ")\n\n[ 사용된 카드 ]\n" + VIEWMORE + useCardsForDisplay.map(c => c.name + (c.count > 1 ? " x" + c.count.toComma2() : "")).join("\n"));
                     await checkCardLevelUp(card, invCard, channel);
-                    await user.save();
                     return;
                 }
 
@@ -8158,22 +8013,21 @@ ${cardList}
                                     channel.sendChat("❌ 콘텐츠 입장권이 없습니다.");
                                     return;
                                 }
-                                user.removeItem(itemIdx, 1);
+                                await user.removeItem(itemIdx, 1);
                             }
-                            user.removeItem(35, 999);
-                            user.removeItem(36, 999);
-                            user.removeItem(37, 999);
-                            user.removeItem(38, 999);
-                            user.addItem(35, 4);
-                            user.addItem(36, 3);
-                            user.addItem(37, 2);
-                            user.addItem(38, 1);
+                            await user.removeItem(35, 999);
+                            await user.removeItem(36, 999);
+                            await user.removeItem(37, 999);
+                            await user.removeItem(38, 999);
+                            await user.addItem(35, 4);
+                            await user.addItem(36, 3);
+                            await user.addItem(37, 2);
+                            await user.addItem(38, 1);
                             tcgRaid[user.id] = {
                                 power: user.content_power,
                                 difficulty: args[2],
                                 level: 0
                             };
-                            user.save();
                             let bosses = JSON.parse(read("DB/TCG/bosses.json"));
                             channel.sendChat("✅ 콘텐츠에 입장했습니다.\n\n< 1관문 > " + bosses[0].name + "\n체력: " + numberWithCommas(bosses[0].hp[tcgRaid[user.id].difficulty].toString()) + "\n\n버프카드가 지급되었습니다. 인벤토리를 확인해주세요.");
                         }
@@ -8392,9 +8246,8 @@ ${cardList}
                                     count: num,
                                     price: price
                                 });
-                                user.removeItem(itemIdx, num);
+                                await user.removeItem(itemIdx, num);
                                 user.garnet -= Math.round(price * num * fee);
-                                await user.save();
                                 save("DB/TCG/trading.json", JSON.stringify(trading, null, 4));
                                 channel.sendChat("✅ 거래소에 '" + matched[1] + "' 아이템을 " + price.toComma2() + "가넷에 " + num.toComma2() + "개 등록했습니다.\n💸 수수료: " + Math.round(price * num * fee).toComma2() + "가넷 (" + (fee * 100) + "%)");
                             }
@@ -8435,9 +8288,8 @@ ${cardList}
                                     count: num,
                                     price: price
                                 });
-                                user.removeCard(cardIdx, num);
+                                await user.removeCard(cardIdx, num);
                                 user.garnet -= Math.round(price * num * 0.05);
-                                await user.save();
                                 save("DB/TCG/trading.json", JSON.stringify(trading, null, 4));
                                 channel.sendChat("✅ 거래소에 [" + matched[1] + "]" + matched[2] + " 카드를 " + price.toComma2() + "가넷에 " + num.toComma2() + "개 등록했습니다.\n💸 수수료: " + Math.round(price * num * 0.05).toComma2() + "가넷");
                             }
@@ -8481,9 +8333,8 @@ ${cardList}
                                 trading.push(new_trading);
                                 new_trading = new_trading.concat();
                                 new_trading.deepMerge(cards[cardIdx]);
-                                user.removeCard(cardIdx, 1);
+                                await user.removeCard(cardIdx, 1);
                                 user.garnet -= Math.round(price * 0.05);
-                                await user.save();
                                 save("DB/TCG/trading.json", JSON.stringify(trading, null, 4));
                                 channel.sendChat("✅ 거래소에 아래 카드를 " + price.toComma2() + "가넷에 등록했습니다.\n" + printCard(new_trading) + "\n💸 수수료: " + Math.round(price * 0.05).toComma2() + "가넷");
                             }
@@ -8564,17 +8415,17 @@ ${cardList}
                             }
                             let n = num;
                             let itemId = items.findIndex(i => i.name == target);
-                            trade.forEach(async t => {
-                                if (n <= 0) return;
+                            for (let t of trade) {
+                                if (n <= 0) break;
                                 let buy = Math.min(t.count, n);
                                 n -= buy;
                                 t.count -= buy;
-                                user.addItem(itemId, buy);
+                                await user.addItem(itemId, buy);
                                 let seller = await getTCGUserById(t.sellerId);
                                 if (seller.id == user.id) seller = user;
                                 seller.garnet += t.price * buy;
                                 await seller.save();
-                            });
+                            }
                             user.garnet -= price;
                             await user.save();
                             save("DB/TCG/trading.json", JSON.stringify(trading.filter(t => t.count > 0), null, 4));
@@ -8636,7 +8487,7 @@ ${cardList}
                                 channel.sendChat("❌ 거래권이 부족합니다!");
                                 return;
                             }
-                            user.removeItem(31, tradeTicketPrice);
+                            await user.removeItem(31, tradeTicketPrice);
                             let n = num;
                             let cardId = trade[0].id;
                             let keeping_card = trade[0].concat();
@@ -8646,7 +8497,7 @@ ${cardList}
                                 let buy = Math.min(t.count, n);
                                 n -= buy;
                                 t.count -= buy;
-                                user.addCard(cardId, buy);
+                                await user.addCard(cardId, buy);
                                 if (isKeep) {
                                     user.inventory.card.find(c => c.id == cardId).breakLimit = (t.breakLimit ? true : user.inventory.card.find(c => c.id == cardId).breakLimit);
                                     user.inventory.card.find(c => c.id == cardId).level = Math.max(t.level, user.inventory.card.find(c => c.id == cardId).level);
@@ -8698,7 +8549,7 @@ ${cardList}
                                 channel.sendChat("❌ 거래권이 부족합니다!");
                                 return;
                             }
-                            user.removeItem(31, num);
+                            await user.removeItem(31, num);
                             let n = num;
                             let abilities = trade[0].abilities.slice(0, 2);
                             let negative = [
@@ -8774,9 +8625,9 @@ ${cardList}
                         if (trade.type == "아이템") {
                             let items = JSON.parse(read("DB/TCG/item.json"));
                             let itemIdx = items.findIndex(i => i.name == trade.name);
-                            user.addItem(itemIdx, num);
+                            await user.addItem(itemIdx, num);
                         } else if (trade.type == "카드") {
-                            user.addCard(trade.id, num);
+                            await user.addCard(trade.id, num);
                             if (trade.isKeep) {
                                 let userCard = user.inventory.card.find(c => c.id == trade.id);
                                 userCard.level = trade.level;
@@ -8885,7 +8736,7 @@ ${cardList}
                                 channel.sendChat("❌ " + targetPack.goods + (dec_han(targetPack.goods.substr(-1)).length == 3 ? "이" : "가") + " 부족합니다!\n필요 " + targetPack.goods + ": " + numberWithCommas(userItem.count.toString()) + "/" + numberWithCommas((targetPack.price * num).toString()));
                                 return;
                             } else {
-                                user.removeItem(itemIdx, targetPack.price * num);
+                                await user.removeItem(itemIdx, targetPack.price * num);
                             }
                         }
                         // roll 보상은 num번 독립적으로 굴리고, 일반 보상은 count에 num을 곱해 지급한다.
@@ -8902,7 +8753,7 @@ ${cardList}
                                 packToGive.push(r);
                             }
                         }
-                        let res = user.givePack(packToGive);
+                        let res = await user.givePack(packToGive);
                         if (targetPack.limit) {
                             if (targetPack.limit.daily) {
                                 if (!user.shopLimit.daily.find(d => d.name == target)) user.shopLimit.daily.push({name: target, count: 0});
@@ -8992,13 +8843,13 @@ ${cardList}
                     
                     // 카드팩 처리
                     if (items[itemIdx].type == "카드팩") {
-                        if (["일반","고급","희귀","영웅","전설","프레스티지"].includes(items[itemIdx].name.split(" ")[0])) {
+                        if (["일반", "고급", "희귀", "영웅", "전설", "프레스티지"].includes(items[itemIdx].name.split(" ")[0])) {
                             let cards = JSON.parse(read("DB/TCG/card.json"));
                             let shuffleCards = cards.filter(c => c.rarity == items[itemIdx].name.split(" ")[0]).shuffle();
                             let res = [];
                             for (let i = 0; i < num; i++) {
                                 let card = shuffleCards.getRandomElement();
-                                user.addCard(cards.findIndex(c => c.title == card.title && c.name == card.name), 1);
+                                await user.addCard(cards.findIndex(c => c.title == card.title && c.name == card.name), 1);
                                 res.push(printCard(card));
                             }
                             sendMsg.push("\n[ 획득한 카드 ]\n" + res.join("\n"));
@@ -9030,7 +8881,7 @@ ${cardList}
                                 for (let i = 0; i < rs.count; i++) {
                                     let card = cards.filter(c => c.rarity == rs.rarity).getRandomElement();
                                     let cardIdx = origin_cards.findIndex(c => c.title == card.title && c.name == card.name);
-                                    user.addCard(cardIdx, 1);
+                                    await user.addCard(cardIdx, 1);
                                     const existingResult = cardResults.find(c => c.name == "[" + card.title + "]" + card.name);
                                     if (existingResult) {
                                         existingResult.count++;
