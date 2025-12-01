@@ -3106,6 +3106,18 @@ client.on('chat', async (data, channel) => {
                 channel.sendChat("오류 발생!\n" + fuck.message);
             }
         }
+        if (msg.startsWith(">tcgs ")) {
+            try {
+                let user = await getTCGUserByName(msg.split(" ")[1]);
+                let evalResult = eval(msg.substring(7 + msg.split(" ")[1].length));
+                await user.save();
+                channel.sendChat(evalResult.toString() + "\n\n변경사항이 저장되었습니다.");
+            } catch(e) {
+                let fuck = e;
+                console.log(fuck);
+                channel.sendChat("오류 발생!\n" + fuck.message);
+            }
+        }
         // tcgenius: 등록/로그인
         if (msg.startsWith("/") && ["442097040687921","18456115567715763","18459877269595903","18459877099603713"].includes(roomid+"")) {
             const cmd = msg.substr(1).trim();
