@@ -1479,7 +1479,7 @@ class TCGUser {
         if (this.deck.gold.includes(209)) {
             res.isRoulette = true;
         } else {
-            this.gold += this.dailyGold;
+            res.gold = this.dailyGold;
         }
 
         if (this.deck.gold.includes(517)) {
@@ -5588,6 +5588,7 @@ client.on('chat', async (data, channel) => {
                         if (attendRes.isRoulette) {
                             let r = Math.random();
                             if (r < 0.07) {
+                                gotGold = 0;
                                 attend_reward.push({
                                     item: true,
                                     type: "소모품",
@@ -5648,6 +5649,7 @@ client.on('chat', async (data, channel) => {
                         
                         attend_reward = attend_reward.concat(vipPack[user.vip]);
                         rewards = await user.givePack(attend_reward);
+                        user.gold += gotGold;
                         channel.sendChat("✅ 출석을 완료했습니다!\n- 연속 출석일수: " + user.attendance.streak + "일\n- 누적 출석일수: " + user.attendance.total + "일\n\n[ 출석 보상 ]\n- 데일리 골드 " + numberWithCommas(gotGold.toString()) + "골드" + (vipPlus[user.vip] > 0 ? " (+" + (vipPlus[user.vip] * 100).fix() + "% 보너스!)" : "") + (rewards.length ? "\n" + rewards.join("\n") : ""));
                     } else {
                         channel.sendChat("❌ 이미 오늘 출석체크를 완료했습니다.");
