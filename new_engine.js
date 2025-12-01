@@ -5578,7 +5578,7 @@ client.on('chat', async (data, channel) => {
 
                 if (args[0] == "출석") {
                     await user.checkQuest("[출석] 오늘도 나 등장", channel);
-                    let attendRes = user.attend();
+                    let attendRes = await user.attend();
                     if (attendRes.success) {
                         let pack = JSON.parse(read("DB/TCG/pack.json"));
                         let attend_reward = [];
