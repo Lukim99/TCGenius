@@ -5475,6 +5475,7 @@ client.on('chat', async (data, channel) => {
                         }
                     }
                     
+                    await user.save();
                     channel.sendChat(resultMessage);
                     delete prestigeLevelUp[user.id];
                     return;
@@ -6580,7 +6581,7 @@ client.on('chat', async (data, channel) => {
                                         break;
                                     }
                                 }
-                                user.givePack(gotItems);
+                                await user.givePack(gotItems);
                                 save("DB/TCG/megaCount.json", JSON.stringify(mc, null, 4));
                                 await user.save();
                                 channel.sendChat("[ 메가카운트 " + num + "회 결과 ]\n" + VIEWMORE + printPack(gotItems, "\n", "- "));
@@ -8083,12 +8084,12 @@ client.on('chat', async (data, channel) => {
                                 }
                                 if (user.deck.content[0].includes(408) || user.deck.content[1].includes(408)) pack.push({gold:true,count:30000});
                                 let rewards = await user.givePack(pack);
-                                user.removeItem(35, 999);
-                                user.removeItem(36, 999);
-                                user.removeItem(37, 999);
-                                user.removeItem(38, 999);
+                                await user.removeItem(35, 999);
+                                await user.removeItem(36, 999);
+                                await user.removeItem(37, 999);
+                                await user.removeItem(38, 999);
                                 delete tcgRaid[user.id];
-                                user.save();
+                                await user.save();
                                 sendMsg.push("콘텐츠를 클리어했습니다.\n\n[ 획득한 보상 ]\n" + rewards.join("\n"));
                             } else {
                                 sendMsg.push("\n< " + (tcgRaid[user.id].level + 1) + "관문 > " + bosses[tcgRaid[user.id].level].name + "\n체력: " + numberWithCommas(bosses[tcgRaid[user.id].level].hp[tcgRaid[user.id].difficulty].toString()));
@@ -8839,7 +8840,7 @@ client.on('chat', async (data, channel) => {
                         channel.sendChat("❌ 수량이 부족합니다.\n보유 수량: " + numberWithCommas((targetItem || {count:0}).count.toString()) + "개");
                         return;
                     }
-                    user.removeItem(itemIdx, num);
+                    await user.removeItem(itemIdx, num);
                     let sendMsg = [];
                     sendMsg.push("✅ " + items[itemIdx].name + " 아이템을 사용했습니다.");
                     
@@ -9018,7 +9019,7 @@ client.on('chat', async (data, channel) => {
                         let yut_pack = JSON.parse(read("DB/TCG/yut_pack.json"));
                         let yut = ["도","개","걸","윷","모","걸","개","도","도"].getRandomElement();
                         let pack = yut_pack[yut].getRandomElement();
-                        let rewards = user.givePack(pack);
+                        let rewards = await user.givePack(pack);
                         sendMsg.push("✨ 결과: " + yut + "\n\n[ 획득한 보상 ]\n" + rewards.join("\n"));
                     }
                     // 주사위 선택권
@@ -9035,7 +9036,8 @@ client.on('chat', async (data, channel) => {
                         if (consumable) {
                             let rewards = [];
                             for (let i = 0; i < num; i++) {
-                                rewards = rewards.concat(user.givePack(consumable.rewards));
+                                let givePackRes = await user.givePack(consumable.rewards);
+                                rewards = rewards.concat(givePackRes);
                             }
                             if (!consumable.rewards.find(r => r.gold || r.garnet)) rewards = mergeRewards(rewards);
                             sendMsg.push("\n[ 획득한 보상 ]\n" + rewards.join("\n"));
