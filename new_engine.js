@@ -1637,6 +1637,94 @@ class TCGUser {
     }
 }
 
+class RPGOwner {
+    constructor(name, id) {
+        this._get = 0;
+        this.id = id;
+        this.name = name;
+        this.characters = [];
+    }
+
+    load(data) {
+        this._get = data._get;
+        this.id = data.id;
+        this.name = data.name;
+        this.characters = data.characters;
+
+        return this;
+    }
+
+    toString() {
+        return `[Object RPGOwner ${this.name}]`;
+    }
+
+    async save() {
+        await updateItem('rpg_owner', this.id, this);
+    }
+}
+
+class RPGUser {
+    constructor(name, id, owner) {
+        this.redacted = false;
+        this.id = id;
+        this.ownerId = owner;
+        this.name = name;
+        this.isAdmin = false;
+        this.stat = {
+            power: 0,
+            speed: 0,
+            int: 0,
+            luck: 0
+        };
+        this.job = null;
+        this.level = 0;
+        this.exp = 0;
+        this.awaken = {
+            level: 0,
+            exp: 0,
+            point: 0,
+            bonuses: {
+                boss: 0, // 보스 대상 피해량 증가 (1당 +0.4%)
+                named: 0, // 네임드 대상 피해량 증가 (1당 +0.8%)
+                seed: 0, // 시드 대상 피해량 증가 (1당 +1.2%)
+                all: 0, // 모든 피해 증가 (1당 +0.2%)
+                skill: 0, // 스킬 피해 증가 (1당 +0.4%)
+                crit: 0, // 치명타 확률 증가 (1당 +0.2%)
+                critMul: 0, // 치명타 피해량 증가 (1당 +0.4%)
+                def: 0, // 받는 피해 감소량 (1당 +0.3%)
+                hp: 0, // HP 증가 (1당 +1%)
+                exp: 0 // 각성 레벨 경험치 증가량 (1당 +1%)
+            }
+        };
+        this.equips = {
+            helmet: {
+                id: 0
+            },
+            chest: {
+                id: 0
+            },
+            legs: {
+                id: 0
+            },
+            boots: {
+                id: 0
+            },
+            gauntlet: {
+                id: 0
+            },
+            necklace: {
+                id: 0
+            },
+            ring: {
+                id: 0
+            },
+            bracelet: {
+                id: 0
+            }
+        }
+    }
+}
+
 // getTCGUser 함수들
 async function getTCGUserById(id) {
     try {
@@ -3118,7 +3206,7 @@ client.on('chat', async (data, channel) => {
                 channel.sendChat("오류 발생!\n" + fuck.message);
             }
         }
-        // tcgenius: 등록/로그인
+        // tcgenius
         if (msg.startsWith("/") && ["442097040687921","18456115567715763","18459877269595903","18459877099603713"].includes(roomid+"")) {
             const cmd = msg.substr(1).trim();
             if (cmd.toLowerCase().startsWith("tcg") || cmd.toLowerCase().startsWith("tcgenius")) {
@@ -9175,6 +9263,12 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
             }
+        }
+
+
+        // 택배물량 자동 확인
+        if (msg.startsWith("!방번호")) {
+            channel.sendChat(`${roomid}`);
         }
 
     } catch(e) {
