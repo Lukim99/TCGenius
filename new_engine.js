@@ -9459,18 +9459,18 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)(남음|남))?$/)) {
+            if (deliver.saved && msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)(남음|남))?$/);
-                    const loadedQuantity = parseInt(match[1]);
+                    const match = msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/);
+                    const loadedQuantity = match[1] ? parseInt(match[1]) : null;
                     const changeAmount = match[2] ? parseInt(match[2]) : null;
                     const changeType = match[3] || null;
                     
                     const isIncrease = changeType && (changeType === '증가' || changeType === '증');
                     const isDecrease = changeType && (changeType === '감소' || changeType === '감');
                     
-                    user.quantity -= loadedQuantity;
+                    if (loadedQuantity) user.quantity -= loadedQuantity;
                     if (isIncrease) {
                         user.quantity += changeAmount;
                     } else if (isDecrease) {
@@ -9480,7 +9480,7 @@ client.on('chat', async (data, channel) => {
                     let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                     deliver.saved.quantity = sum;
 
-                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                    channel.sendChat(`✅ 처리 완료${loadedQuantity ? `\n· ${loadedQuantity.toComma2()} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
                 }
             }
 
