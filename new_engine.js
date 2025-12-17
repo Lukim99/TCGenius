@@ -9295,7 +9295,7 @@ client.on('chat', async (data, channel) => {
                         count: deliver.checkTotal.count,
                         users: deliver.checkTotal.users
                     }
-                    channel.sendChat(`✅ 체크완료\n· 가좌 ${deliver.checkTotal.quantity.toComma2()}· 11톤 ${quotient}대\n· 11톤 ${percent10}프로\n· 수량 ${deliver.checkTotal.count.toComma2()}개`);
+                    channel.sendChat(`✅ 체크완료\n· 가좌 ${deliver.checkTotal.quantity.toComma2()}\n· 11톤 ${quotient}대\n· 11톤 ${percent10}프로\n· 수량 ${deliver.checkTotal.count.toComma2()}개`);
                     delete deliver.checkTotal;
                 }
             }
@@ -9348,7 +9348,7 @@ client.on('chat', async (data, channel) => {
                 if (user) {
                     const match = msg.trim().match(/^(\d+)출발$/);
                     user.startQuantity = parseInt(match[1]);
-                    channel.sendChat(`✅ ${parseInt(match[1])}출발`);
+                    channel.sendChat(`✅ ${parseInt(match[1])}개 출발`);
                 }
             }
 
@@ -9367,10 +9367,10 @@ client.on('chat', async (data, channel) => {
                     deliver.saved.quantity -= loadedQuantity;
                     if (isIncrease) {
                         user.quantity += changeAmount;
-                        deliver.saved.quantity += loadedQuantity;
+                        deliver.saved.quantity += changeAmount;
                     } else if (isDecrease) {
                         user.quantity -= changeAmount;
-                        deliver.saved.quantity -= loadedQuantity;
+                        deliver.saved.quantity -= changeAmount;
                     }
 
                     channel.sendChat(`✅ ${loadedQuantity.toComma2()}개 상차${isIncrease ? `\n· ${changeAmount.toComma2()}개 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()}개 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}개\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}개`)
