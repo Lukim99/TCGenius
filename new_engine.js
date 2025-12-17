@@ -9467,7 +9467,7 @@ client.on('chat', async (data, channel) => {
                             let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                             deliver.saved.quantity = sum;
 
-                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
                         }
                     }
                 }
