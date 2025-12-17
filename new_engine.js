@@ -20,7 +20,8 @@ let exceptNames = {
     "♡정덕희♡": "정덕희",
     "야크모": "윤지돈",
     "hyeok": "윤건혁",
-    "S7-358 인천서구 원필수81가좌동": "원필수"
+    "S7-358 인천서구 원필수81가좌동": "원필수",
+    "강동현": "강광종"
 }
 
 // AWS DynamoDB 설정
@@ -9470,14 +9471,14 @@ client.on('chat', async (data, channel) => {
                     const isDecrease = changeType && (changeType === '감소' || changeType === '감');
                     
                     user.quantity -= loadedQuantity;
-                    deliver.saved.quantity -= loadedQuantity;
                     if (isIncrease) {
                         user.quantity += changeAmount;
-                        deliver.saved.quantity += changeAmount;
                     } else if (isDecrease) {
                         user.quantity -= changeAmount;
-                        deliver.saved.quantity -= changeAmount;
                     }
+
+                    let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
+                    deliver.saved.quantity = sum;
 
                     channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
                 }
@@ -9534,6 +9535,47 @@ client.on('chat', async (data, channel) => {
                 let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                 result.push(`\n총 남은 물량 ${sum.toComma2()}`);
                 channel.sendChat(result.join("\n"));
+            }
+
+            if (deliver.saved && msg.trim() == ("!잔류물량종합 체크")) {
+                if (deliver.checkRemain) {
+                    channel.sendChat("이미 잔류물량 종합을 체크하고 있습니다.");
+                } else {
+                    deliver.checkRemain = {
+                        users: []
+                    };
+                    channel.sendChat("금일잔류물량을 입력해주세요.\n예: 100");
+                }
+            }
+
+            if (deliver.checkRemain && msg.trim() == "!잔류물량종합 끝") {
+                let totalRemain = 0;
+                deliver.checkRemain.users.forEach(user => {
+                    let savedUser = deliver.saved.users.find(u => u.name == user.name);
+                    savedUser.quantity -= user.quantity;
+                    totalRemain += user.quantity;
+                });
+                let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
+                deliver.saved.quantity = sum;
+                channel.sendChat(`✅ 체크 완료\n· 금일잔류물량 총합: ${totalRemain.toComma2()}\n· 총 남은 물량: ${sum.toComma2()}`);
+            }
+
+            if (deliver.checkRemain && !isNaN(msg)) {
+                let num = Number(msg);
+                let savedUser = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (savedUser) {
+                    let user = deliver.checkRemain.users.find(u => u.name == sender.nickname);
+                    if (user) {
+                        user.quantity = num;
+                    } else {
+                        deliver.checkRemain.users.push({
+                            name: sender.nickname,
+                            quantity: num
+                        });
+                    }
+                    
+                    channel.sendChat(`✅ ${sender.nickname}님 남은 물량 ${savedUser.quantity.toComma2()} 중 잔류 물량 ${num.toComma2()}`);
+                }
             }
 
             await saveData('deliver', deliver);
