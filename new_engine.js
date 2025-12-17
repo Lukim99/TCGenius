@@ -384,6 +384,39 @@ async function queryItems(params) {
     }
 }
 
+async function saveData(id, data) {
+    try {
+        const command = new PutCommand({
+            TableName: 'save_data',
+            Item: {
+                id: id,
+                data: data
+            }
+        });
+        const response = await docClient.send(command);
+        return { success: true, result: response };
+    } catch (error) {
+        return { success: false, error: error };
+    }
+}
+
+async function loadData(id) {
+    try {
+        const command = new GetCommand({
+            TableName: 'save_data',
+            Key: { id: id }
+        });
+        const response = await docClient.send(command);
+        if (response.Item) {
+            return { success: true, data: response.Item.data };
+        } else {
+            return { success: false, error: 'Data not found' };
+        }
+    } catch (error) {
+        return { success: false, error: error };
+    }
+}
+
 // 카드 조합 관련 상수
 const CARD_GRADES = ["일반", "고급", "희귀", "영웅", "전설", "프레스티지"];
 const COMBINE_PROBABILITIES = {
@@ -9270,6 +9303,10 @@ client.on('chat', async (data, channel) => {
 
         // 택배물량 자동 확인
         if (["285186748232974","435426013866936"].includes(roomid+"")) {
+            let result = await loadData('deliver');
+            if (result.success) {
+                deliver = result.data;
+            }
             if (msg.trim() == ("!물량수량종합 체크")) {
                 if (deliver.checkTotal) {
                     channel.sendChat("이미 물량/수량 종합을 체크하고 있습니다.");
@@ -9376,6 +9413,8 @@ client.on('chat', async (data, channel) => {
                     channel.sendChat(`✅ ${loadedQuantity.toComma2()}개 상차${isIncrease ? `\n· ${changeAmount.toComma2()}개 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()}개 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}개\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}개`)
                 }
             }
+
+            await saveData('deliver', deliver);
         }
 
     } catch(e) {
