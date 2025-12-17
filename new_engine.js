@@ -9270,7 +9270,7 @@ client.on('chat', async (data, channel) => {
 
         // 택배물량 자동 확인
         if (["285186748232974","435426013866936"].includes(roomid+"")) {
-            if (msg.equals("!물량수량종합 체크")) {
+            if (msg.trim() == ("!물량수량종합 체크")) {
                 if (deliver.checkTotal) {
                     channel.sendChat("이미 물량/수량 종합을 체크하고 있습니다.");
                 } else {
@@ -9284,7 +9284,7 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (msg.equals("!물량수량종합 끝")) {
+            if (msg.trim() == ("!물량수량종합 끝")) {
                 if (deliver.checkTotal) {
                     let quotient = Math.floor(deliver.checkTotal.quantity / 750);
                     let remainder = deliver.checkTotal.quantity % 750;
