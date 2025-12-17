@@ -9557,6 +9557,7 @@ client.on('chat', async (data, channel) => {
                 });
                 let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                 deliver.saved.quantity = sum;
+                delete deliver.checkRemain;
                 channel.sendChat(`✅ 체크 완료\n· 금일잔류물량 총합: ${totalRemain.toComma2()}\n· 총 남은 물량: ${sum.toComma2()}`);
             }
 
@@ -9575,6 +9576,47 @@ client.on('chat', async (data, channel) => {
                     }
                     
                     channel.sendChat(`✅ ${sender.nickname}님 남은 물량 ${savedUser.quantity.toComma2()} 중 잔류 물량 ${num.toComma2()}`);
+                }
+            }
+
+
+            if (deliver.saved && msg.trim() == ("!주말예상물량 체크")) {
+                if (deliver.checkWeek) {
+                    channel.sendChat("이미 주말 예상 물량을 체크하고 있습니다.");
+                } else {
+                    deliver.checkWeek = {
+                        users: []
+                    };
+                    channel.sendChat("주말예상물량을 입력해주세요.\n입력 양식: [물량(%)] [수량(개)]\n예: 500 900");
+                }
+            }
+
+            if (deliver.checkWeek && msg.trim() == "!주말예상물량 끝") {
+                let sumQuantity = deliver.checkWeek.users.reduce((acc,cur) => acc + cur.quantity, 0);
+                let sumCount = deliver.checkWeek.users.reduce((acc,cur) => acc + cur.count, 0);
+                delete deliver.checkWeek;
+                channel.sendChat(`✅ 체크 완료\n· 주말예상물량 가좌 ${sumQuantity.toComma2()}\n· 예상수량 ${sumCount.toComma2()}`);
+            }
+
+            if (deliver.checkWeek && msg.trim().match(/^\s*(\d+)\s+(\d+)$/)) {
+                const match = msg.trim().match(/^\s*(\d+)\s+(\d+)$/);
+                if (match) {
+                    const quantity = parseInt(match[1]);
+                    const count = parseInt(match[2]);
+                    
+                    let user = deliver.checkWeek.users.find(u => u.name == sender.nickname);
+                    if (user) {
+                        user.quantity = quantity;
+                        user.count = count;
+                    } else {
+                        deliver.checkWeek.users.push({
+                            name: sender.nickname,
+                            quantity: quantity,
+                            count: count
+                        });
+                    }
+
+                    channel.sendChat(`✅ ${sender.nickname}님 주말 예상 물량 ${quantity} 수량 ${count} 체크 완료`);
                 }
             }
 
