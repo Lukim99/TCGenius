@@ -9353,8 +9353,6 @@ client.on('chat', async (data, channel) => {
                             count: numbers[1]
                         })
                     }
-                    
-                    return;
                 }
             }
 
