@@ -9430,7 +9430,15 @@ client.on('chat', async (data, channel) => {
                             exceptItem.quantity -= changeAmount;
                         }
 
-                        channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${exceptName} ${match[7]} 출발` : ""}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                        if (exceptItem.quantity <= 0) {
+                            const index = user.except.findIndex(e => e.name === exceptName);
+                            if (index > -1) {
+                                user.except.splice(index, 1);
+                            }
+                            channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${exceptName} ${match[7]} 출발` : ""}\n· ${user.name}님 ${exceptName} 완료`);
+                        } else {
+                            channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${exceptName} ${match[7]} 출발` : ""}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                        }
                     } else {
                         const targetUser = deliver.saved.users.find(u => u.name == exceptName);
                         if (targetUser) {
