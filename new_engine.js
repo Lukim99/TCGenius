@@ -9317,7 +9317,7 @@ client.on('chat', async (data, channel) => {
                         users: []
                     };
                     if (deliver.saved) delete deliver.saved;
-                    channel.sendChat("금일상차물량을 입력하세요.\n입력 양식: [물량(%)] [수량(개)]\n예: 900 500");
+                    channel.sendChat("금일상차물량을 입력하세요.\n입력 양식: [물량(%)] [수량]\n예: 900 500\n\n※ 주의: 숫자 2개 외 다른 내용 입력 시 처리되지 않습니다.");
                 }
             }
 
@@ -9378,10 +9378,10 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(\d+)출발$/)) {
+            if (deliver.saved && msg.trim().match(/^(\d+)(출발|출)$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(\d+)출발$/);
+                    const match = msg.trim().match(/^(\d+)(출발|출)$/);
                     user.startQuantity = parseInt(match[1]);
                     channel.sendChat(`✅ ${parseInt(match[1])} 출발`);
                 }
@@ -9408,8 +9408,17 @@ client.on('chat', async (data, channel) => {
                         deliver.saved.quantity -= changeAmount;
                     }
 
-                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}`)
+                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}%`)
                 }
+            }
+
+            if (deliver.saved && msg.trim == "!물량조회") {
+                let result = [];
+                deliver.saved.users.forEach(user => {
+                    if (user.quantity > 0) result.push(`${user.name}: ${user.quantity.toComma2()}`);
+                });
+                result.push(`\n총 남은 물량 ${deliver.saved.quantity}%`);
+                channel.sendChat(result.join("\n"));
             }
 
             await saveData('deliver', deliver);
