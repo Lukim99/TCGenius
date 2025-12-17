@@ -9494,10 +9494,12 @@ client.on('chat', async (data, channel) => {
                     if (existingExcept) {
                         existingExcept.quantity += exceptQuantity;
                         targetUser.quantity -= exceptQuantity;
+                        deliver.saved.quantity -= exceptQuantity;
                         channel.sendChat(`✅ ${targetName}님 ${exceptName} ${exceptQuantity} 추가 완료\n· ${targetName}님 가좌 물량 -${exceptQuantity} (${targetUser.quantity.toComma2()} 남음)`);
                     } else {
                         targetUser.except.push({ name: exceptName, quantity: exceptQuantity });
                         targetUser.quantity -= exceptQuantity;
+                        deliver.saved.quantity -= exceptQuantity;
                         channel.sendChat(`✅ ${targetName}님 ${exceptName} ${exceptQuantity} 추가 완료\n· ${targetName}님 가좌 물량 -${exceptQuantity} (${targetUser.quantity.toComma2()} 남음)`);
                     }
                 } else {
