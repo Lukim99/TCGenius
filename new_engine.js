@@ -16,6 +16,12 @@ let isRestoring = false;
 let restoringChannel = null;
 
 let deliver = {};
+let exceptNames = {
+    "♡정덕희♡": "정덕희",
+    "야크모": "윤지돈",
+    "hyeok": "윤건혁",
+    "S7-358 인천서구 원필수81가좌동": "원필수"
+}
 
 // AWS DynamoDB 설정
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require("@aws-sdk/client-dynamodb");
@@ -9307,6 +9313,7 @@ client.on('chat', async (data, channel) => {
             if (result.success) {
                 deliver = result.data;
             }
+            if (exceptNames[sender.nickname]) sender.nickname = exceptNames[sender.nickname];
             if (msg.trim() == ("!물량수량종합 체크")) {
                 if (deliver.checkTotal) {
                     channel.sendChat("이미 물량/수량 종합을 체크하고 있습니다.");
