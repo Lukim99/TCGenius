@@ -9409,10 +9409,10 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^([가-힣]+)(\d+)(출발|출)$/)) {
+            if (deliver.saved && msg.trim().match(/^([가-힣]+)\s*(\d+)\s*(출발|출)$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user && user.except && Array.isArray(user.except)) {
-                    const match = msg.trim().match(/^([가-힣]+)(\d+)(출발|출)$/);
+                    const match = msg.trim().match(/^([가-힣]+)\s*(\d+)\s*(출발|출)$/);
                     const exceptName = match[1];
                     const exceptQuantity = parseInt(match[2]);
                     
@@ -9424,10 +9424,10 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(\d+)(출발|출)$/)) {
+            if (deliver.saved && msg.trim().match(/^(\d+)\s*(출발|출)$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(\d+)(출발|출)$/);
+                    const match = msg.trim().match(/^(\d+)\s*(출발|출)$/);
                     user.startQuantity = parseInt(match[1]);
                     channel.sendChat(`✅ ${parseInt(match[1])} 출발`);
                 }
