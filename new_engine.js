@@ -9409,40 +9409,17 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^([가-힣]+)\s*(\d+)\s*(출발|출)$/)) {
-                let user = deliver.saved.users.find(u => u.name == sender.nickname);
-                if (user && user.except && Array.isArray(user.except)) {
-                    const match = msg.trim().match(/^([가-힣]+)\s*(\d+)\s*(출발|출)$/);
-                    const exceptName = match[1];
-                    const exceptQuantity = parseInt(match[2]);
-                    
-                    const exceptItem = user.except.find(e => e.name === exceptName);
-                    if (exceptItem) {
-                        user.startQuantity = exceptQuantity;
-                        channel.sendChat(`✅ ${exceptName} ${exceptQuantity} 출발`);
-                    }
-                }
-            }
-
-            if (deliver.saved && msg.trim().match(/^(\d+)\s*(출발|출)$/)) {
+            if (deliver.saved && msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(\d+)\s*(출발|출)$/);
-                    user.startQuantity = parseInt(match[1]);
-                    channel.sendChat(`✅ ${parseInt(match[1])} 출발`);
-                }
-            }
-
-            if (deliver.saved && msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/)) {
-                let user = deliver.saved.users.find(u => u.name == sender.nickname);
-                if (user) {
-                    const match = msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/);
+                    const match = msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/);
                     const exceptName = match[1];
                     const exceptQuantity = match[2] ? parseInt(match[2]) : null;
                     const changeAmount = match[3] ? parseInt(match[3]) : null;
                     const changeType = match[4] || null;
                     const isIncrease = changeType && (changeType === '증가' || changeType === '증');
                     const isDecrease = changeType && (changeType === '감소' || changeType === '감');
+                    const isStart = (match[7] && match[8]);
                     
                     const exceptItem = user.except ? user.except.find(e => e.name === exceptName) : null;
                     if (exceptItem) {
@@ -9453,7 +9430,7 @@ client.on('chat', async (data, channel) => {
                             exceptItem.quantity -= changeAmount;
                         }
 
-                        channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                        channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${exceptName} ${match[7]} 출발` : ""}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
                     } else {
                         const targetUser = deliver.saved.users.find(u => u.name == exceptName);
                         if (targetUser) {
@@ -9467,19 +9444,20 @@ client.on('chat', async (data, channel) => {
                             let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                             deliver.saved.quantity = sum;
 
-                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[7]} 출발` : ""}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
                         }
                     }
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/)) {
+            if (deliver.saved && msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/);
+                    const match = msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/);
                     const loadedQuantity = match[1] ? parseInt(match[1]) : null;
                     const changeAmount = match[2] ? parseInt(match[2]) : null;
                     const changeType = match[3] || null;
+                    const isStart = (match[6] && match[7]);
                     
                     const isIncrease = changeType && (changeType === '증가' || changeType === '증');
                     const isDecrease = changeType && (changeType === '감소' || changeType === '감');
@@ -9494,7 +9472,7 @@ client.on('chat', async (data, channel) => {
                     let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                     deliver.saved.quantity = sum;
 
-                    channel.sendChat(`✅ 처리 완료${loadedQuantity ? `\n· ${loadedQuantity.toComma2()} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                    channel.sendChat(`✅ 처리 완료${loadedQuantity ? `\n· ${loadedQuantity.toComma2()} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[6]} 출발` : ""}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
                 }
             }
 
