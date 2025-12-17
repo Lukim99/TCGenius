@@ -9383,14 +9383,14 @@ client.on('chat', async (data, channel) => {
                 if (user) {
                     const match = msg.trim().match(/^(\d+)출발$/);
                     user.startQuantity = parseInt(match[1]);
-                    channel.sendChat(`✅ ${parseInt(match[1])}개 출발`);
+                    channel.sendChat(`✅ ${parseInt(match[1])} 출발`);
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)남음)?$/)) {
+            if (deliver.saved && msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)(남음|남))?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)남음)?$/);
+                    const match = msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)(남음|남))?$/);
                     const loadedQuantity = parseInt(match[1]);
                     const changeAmount = match[2] ? parseInt(match[2]) : null;
                     const changeType = match[3] || null;
@@ -9408,7 +9408,7 @@ client.on('chat', async (data, channel) => {
                         deliver.saved.quantity -= changeAmount;
                     }
 
-                    channel.sendChat(`✅ ${loadedQuantity.toComma2()}개 상차${isIncrease ? `\n· ${changeAmount.toComma2()}개 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()}개 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}개\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}개`)
+                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}`)
                 }
             }
 
