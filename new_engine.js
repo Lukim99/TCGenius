@@ -9317,7 +9317,7 @@ client.on('chat', async (data, channel) => {
                         users: []
                     };
                     if (deliver.saved) delete deliver.saved;
-                    channel.sendChat("금일상차물량을 입력하세요.\n입력 양식: [물량(%)] [수량]\n예: 900 500\n\n※ 주의: 숫자 2개 외 다른 내용 입력 시 처리되지 않습니다.");
+                    channel.sendChat("금일상차물량을 입력해주세요.\n입력 양식: [물량(%)] [수량(개)]\n예: 900 500");
                 }
             }
 
@@ -9332,28 +9332,50 @@ client.on('chat', async (data, channel) => {
                         count: deliver.checkTotal.count,
                         users: deliver.checkTotal.users
                     }
-                    channel.sendChat(`✅ 체크완료\n· 가좌 ${deliver.checkTotal.quantity.toComma2()}\n· 11톤 ${quotient}대\n· 11톤 ${percent10}프로\n· 수량 ${deliver.checkTotal.count.toComma2()}개`);
+                    channel.sendChat(`✅ 체크완료\n· 가좌 ${deliver.checkTotal.quantity.toComma2()}\n· 11톤 ${quotient}대${percent10 == 0 ? "" : `\n· 11톤 ${percent10}프로`}\n· 예상수량 ${deliver.checkTotal.count.toComma2()}개`);
                     delete deliver.checkTotal;
                 }
             }
 
-            if (deliver.checkTotal && msg.trim().match(/^\d+\s+\d+$/)) {
-                const numbers = msg.split(/\s+/).map(n => parseInt(n));
-                if (numbers.length === 2 && !numbers.some(isNaN)) {
-                    deliver.checkTotal.quantity += numbers[0];
-                    deliver.checkTotal.count += numbers[1];
+            if (deliver.checkTotal && msg.trim().match(/^(\d+)\s+(\d+)(?:\s+[가-힣]+\d+)*$/)) {
+                const match = msg.trim().match(/^(\d+)\s+(\d+)(.*)$/);
+                if (match) {
+                    const quantity = parseInt(match[1]);
+                    const count = parseInt(match[2]);
+                    const exceptStr = match[3].trim();
+                    
+                    // except 항목들을 배열로 파싱
+                    const exceptList = [];
+                    if (exceptStr) {
+                        const exceptMatches = exceptStr.matchAll(/([가-힣]+)(\d+)/g);
+                        for (const em of exceptMatches) {
+                            exceptList.push({ name: em[1], quantity: parseInt(em[2]) });
+                        }
+                    }
+                    
+                    deliver.checkTotal.quantity += quantity;
+                    deliver.checkTotal.count += count;
                     let user = deliver.checkTotal.users.find(u => u.name == sender.nickname);
                     if (user) {
-                        user.quantity = numbers[0];
-                        user.count = numbers[1];
+                        user.quantity = quantity;
+                        user.count = count;
+                        if (exceptList.length > 0) {
+                            user.except = exceptList;
+                        }
                     } else {
-                        deliver.checkTotal.users.push({
+                        let newUser = {
                             name: sender.nickname,
-                            quantity: numbers[0],
-                            count: numbers[1]
-                        })
+                            quantity: quantity,
+                            count: count
+                        };
+                        if (exceptList.length > 0) {
+                            newUser.except = exceptList;
+                        }
+                        deliver.checkTotal.users.push(newUser);
                     }
-                    channel.sendChat(`✅ ${sender.nickname}님 물량 ${numbers[0]} 수량 ${numbers[1]} 체크 완료`);
+                    
+                    const exceptDisplay = exceptList.map(e => `${e.name} ${e.quantity}`).join(" ");
+                    channel.sendChat(`✅ ${sender.nickname}님 물량 ${quantity} 수량 ${count}${exceptDisplay ? ` ${exceptDisplay}` : ""} 체크 완료`);
                 }
             }
 
@@ -9379,12 +9401,53 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
+            if (deliver.saved && msg.trim().match(/^([가-힣]+)(\d+)(출발|출)$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user && user.except && Array.isArray(user.except)) {
+                    const match = msg.trim().match(/^([가-힣]+)(\d+)(출발|출)$/);
+                    const exceptName = match[1];
+                    const exceptQuantity = parseInt(match[2]);
+                    
+                    const exceptItem = user.except.find(e => e.name === exceptName);
+                    if (exceptItem) {
+                        user.startQuantity = exceptQuantity;
+                        channel.sendChat(`✅ ${exceptName} ${exceptQuantity} 출발`);
+                    }
+                }
+            }
+
             if (deliver.saved && msg.trim().match(/^(\d+)(출발|출)$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
                     const match = msg.trim().match(/^(\d+)(출발|출)$/);
                     user.startQuantity = parseInt(match[1]);
                     channel.sendChat(`✅ ${parseInt(match[1])} 출발`);
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^([가-힣]+)(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user && user.except && Array.isArray(user.except)) {
+                    const match = msg.trim().match(/^([가-힣]+)(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?$/);
+                    const exceptName = match[1];
+                    const exceptQuantity = parseInt(match[2]);
+                    const changeAmount = match[3] ? parseInt(match[3]) : null;
+                    const changeType = match[4] || null;
+                    
+                    const exceptItem = user.except.find(e => e.name === exceptName);
+                    if (exceptItem) {
+                        const isIncrease = changeType && (changeType === '증가' || changeType === '증');
+                        const isDecrease = changeType && (changeType === '감소' || changeType === '감');
+                        
+                        exceptItem.quantity -= exceptQuantity;
+                        if (isIncrease) {
+                            exceptItem.quantity += changeAmount;
+                        } else if (isDecrease) {
+                            exceptItem.quantity -= changeAmount;
+                        }
+
+                        channel.sendChat(`✅ ${exceptName} ${exceptQuantity} 상차${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                    }
                 }
             }
 
@@ -9409,16 +9472,56 @@ client.on('chat', async (data, channel) => {
                         deliver.saved.quantity -= changeAmount;
                     }
 
-                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}%`)
+                    channel.sendChat(`✅ ${loadedQuantity.toComma2()} 상차${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^(.+?)\s+([가-힣]+)(\d+)$/)) {
+                const match = msg.trim().match(/^(.+?)\s+([가-힣]+)(\d+)$/);
+                const targetName = match[1];
+                const exceptName = match[2];
+                const exceptQuantity = parseInt(match[3]);
+                
+                let targetUser = deliver.saved.users.find(u => u.name === targetName);
+                if (targetUser) {
+                    if (!targetUser.except) {
+                        targetUser.except = [];
+                    } else if (!Array.isArray(targetUser.except)) {
+                        targetUser.except = [targetUser.except];
+                    }
+                    
+                    const existingExcept = targetUser.except.find(e => e.name === exceptName);
+                    if (existingExcept) {
+                        existingExcept.quantity += exceptQuantity;
+                        targetUser.quantity -= exceptQuantity;
+                        channel.sendChat(`✅ ${targetName}님 ${exceptName} ${exceptQuantity} 추가 완료\n· ${targetName}님 가좌 물량 -${exceptQuantity} (${targetUser.quantity.toComma2()} 남음)`);
+                    } else {
+                        targetUser.except.push({ name: exceptName, quantity: exceptQuantity });
+                        channel.sendChat(`✅ ${targetName}님 ${exceptName} ${exceptQuantity} 추가 완료\n· ${targetName}님 가좌 물량 -${exceptQuantity} (${targetUser.quantity.toComma2()} 남음)`);
+                    }
+                } else {
+                    channel.sendChat("❌ 알 수 없는 이름입니다: " + targetName);
                 }
             }
 
             if (deliver.saved && msg.trim() == "!물량조회") {
                 let result = [];
                 deliver.saved.users.forEach(user => {
-                    if (user.quantity > 0) result.push(`${user.name}: ${user.quantity.toComma2()}`);
+                    if (user.quantity > 0) {
+                        let line = `${user.name}: ${user.quantity.toComma2()}`;
+                        if (user.except && Array.isArray(user.except) && user.except.length > 0) {
+                            const exceptDisplay = user.except
+                                .filter(e => e.quantity > 0)
+                                .map(e => `${e.name}${e.quantity}`)
+                                .join(", ");
+                            if (exceptDisplay) {
+                                line += ` (${exceptDisplay})`;
+                            }
+                        }
+                        result.push(line);
+                    }
                 });
-                result.push(`\n총 남은 물량 ${deliver.saved.quantity}%`);
+                result.push(`\n총 남은 물량 ${deliver.saved.quantity}`);
                 channel.sendChat(result.join("\n"));
             }
 
