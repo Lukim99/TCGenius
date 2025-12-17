@@ -9353,6 +9353,7 @@ client.on('chat', async (data, channel) => {
                             count: numbers[1]
                         })
                     }
+                    channel.sendChat(`✅ ${sender.nickname}님 물량 ${numbers[0]} 수량 ${numbers[1]} 체크 완료`);
                 }
             }
 
