@@ -9433,28 +9433,42 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^([가-힣]+)(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?$/)) {
+            if (deliver.saved && msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
-                if (user && user.except && Array.isArray(user.except)) {
-                    const match = msg.trim().match(/^([가-힣]+)(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?$/);
+                if (user) {
+                    const match = msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?$/);
                     const exceptName = match[1];
-                    const exceptQuantity = parseInt(match[2]);
+                    const exceptQuantity = match[2] ? parseInt(match[2]) : null;
                     const changeAmount = match[3] ? parseInt(match[3]) : null;
                     const changeType = match[4] || null;
+                    const isIncrease = changeType && (changeType === '증가' || changeType === '증');
+                    const isDecrease = changeType && (changeType === '감소' || changeType === '감');
                     
-                    const exceptItem = user.except.find(e => e.name === exceptName);
+                    const exceptItem = user.except ? user.except.find(e => e.name === exceptName) : null;
                     if (exceptItem) {
-                        const isIncrease = changeType && (changeType === '증가' || changeType === '증');
-                        const isDecrease = changeType && (changeType === '감소' || changeType === '감');
-                        
-                        exceptItem.quantity -= exceptQuantity;
+                        if (exceptQuantity) exceptItem.quantity -= exceptQuantity;
                         if (isIncrease) {
                             exceptItem.quantity += changeAmount;
                         } else if (isDecrease) {
                             exceptItem.quantity -= changeAmount;
                         }
 
-                        channel.sendChat(`✅ ${exceptName} ${exceptQuantity} 상차${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                        channel.sendChat(`✅ ${exceptName} 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${user.name}님 ${exceptName} 남은 물량 ${exceptItem.quantity.toComma2()}`);
+                    } else {
+                        const targetUser = deliver.saved.users.find(u => u.name == exceptName);
+                        if (targetUser) {
+                            if (exceptQuantity) targetUser.quantity -= exceptQuantity;
+                            if (isIncrease) {
+                                exceptItem.quantity += changeAmount;
+                            } else if (isDecrease) {
+                                exceptItem.quantity -= changeAmount;
+                            }
+
+                            let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
+                            deliver.saved.quantity = sum;
+
+                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${exceptName} ${changeAmount.toComma2()} 감소` : "")}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                        }
                     }
                 }
             }
