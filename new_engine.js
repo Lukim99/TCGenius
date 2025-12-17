@@ -9459,9 +9459,9 @@ client.on('chat', async (data, channel) => {
                         if (targetUser) {
                             if (exceptQuantity) targetUser.quantity -= exceptQuantity;
                             if (isIncrease) {
-                                exceptItem.quantity += changeAmount;
+                                targetUser.quantity += changeAmount;
                             } else if (isDecrease) {
-                                exceptItem.quantity -= changeAmount;
+                                targetUser.quantity -= changeAmount;
                             }
 
                             let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
