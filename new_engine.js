@@ -9409,10 +9409,10 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/)) {
+            if (deliver.saved && msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:\s*[완끝](?:\s*[완끝])?)?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/);
+                    const match = msg.trim().match(/^\s*([가-힣]+)\s*(?:(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:\s*[완끝](?:\s*[완끝])?)?$/);
                     const exceptName = match[1];
                     const exceptQuantity = match[2] ? parseInt(match[2]) : null;
                     const changeAmount = match[3] ? parseInt(match[3]) : null;
@@ -9458,10 +9458,10 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/)) {
+            if (deliver.saved && msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:\s*[완끝](?:\s*[완끝])?)?$/)) {
                 let user = deliver.saved.users.find(u => u.name == sender.nickname);
                 if (user) {
-                    const match = msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:(끝|완|완료))?$/);
+                    const match = msg.trim().match(/^(?:\s*(\d+)\s*(?:상차|상))?(?:\s*(\d+)\s*(증가|증|감소|감))?(?:\s*(\d+)\s*(남음|남))?(?:\s*(\d+)\s*(출발|출))?(?:\s*[완끝](?:\s*[완끝])?)?$/);
                     const loadedQuantity = match[1] ? parseInt(match[1]) : null;
                     const changeAmount = match[2] ? parseInt(match[2]) : null;
                     const changeType = match[3] || null;
