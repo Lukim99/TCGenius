@@ -9524,7 +9524,8 @@ client.on('chat', async (data, channel) => {
                         result.push(line);
                     }
                 });
-                result.push(`\n총 남은 물량 ${deliver.saved.quantity}`);
+                let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
+                result.push(`\n총 남은 물량 ${sum.toComma2()}`);
                 channel.sendChat(result.join("\n"));
             }
 
