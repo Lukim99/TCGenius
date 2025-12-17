@@ -9413,7 +9413,7 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            if (deliver.saved && msg.trim == "!물량조회") {
+            if (deliver.saved && msg.trim() == "!물량조회") {
                 let result = [];
                 deliver.saved.users.forEach(user => {
                     if (user.quantity > 0) result.push(`${user.name}: ${user.quantity.toComma2()}`);
