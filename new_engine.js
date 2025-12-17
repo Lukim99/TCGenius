@@ -15,6 +15,8 @@ let contentCommandsBlocked = false;
 let isRestoring = false;
 let restoringChannel = null;
 
+let deliver = {};
+
 // AWS DynamoDB 설정
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand, BatchWriteCommand } = require("@aws-sdk/lib-dynamodb");
@@ -9267,8 +9269,113 @@ client.on('chat', async (data, channel) => {
 
 
         // 택배물량 자동 확인
-        if (msg.startsWith("!방번호")) {
-            channel.sendChat(`${roomid}`);
+        if (["285186748232974"].includes(roomid+"")) {
+            if (msg.equals("!물량수량종합 체크")) {
+                if (deliver.checkTotal) {
+                    channel.sendChat("이미 물량/수량 종합을 체크하고 있습니다.");
+                } else {
+                    deliver.checkTotal = {
+                        quantity: 0,
+                        count: 0,
+                        users: []
+                    };
+                    if (deliver.saved) delete deliver.saved;
+                    channel.sendChat("금일상차물량을 입력하세요.\n입력 양식: [물량(%)] [수량(개)]\n예: 900 500");
+                }
+            }
+
+            if (msg.equals("!물량수량종합 끝")) {
+                if (deliver.checkTotal) {
+                    let quotient = Math.floor(deliver.checkTotal.quantity / 750);
+                    let remainder = deliver.checkTotal.quantity % 750;
+                    let percent = (remainder / 750) * 100;
+                    let percent10 = Math.round(percent / 10) * 10;
+                    deliver.saved = {
+                        quantity: deliver.checkTotal.quantity,
+                        count: deliver.checkTotal.count,
+                        users: deliver.checkTotal.users
+                    }
+                    channel.sendChat(`✅ 체크완료\n· 가좌 ${deliver.checkTotal.quantity.toComma2()}· 11톤 ${quotient}대\n· 11톤 ${percent10}프로\n· 수량 ${deliver.checkTotal.count.toComma2()}개`);
+                    delete deliver.checkTotal;
+                }
+            }
+
+            if (deliver.checkTotal && msg.trim().match(/^\d+\s+\d+$/)) {
+                const numbers = msg.split(/\s+/).map(n => parseInt(n));
+                if (numbers.length === 2 && !numbers.some(isNaN)) {
+                    deliver.checkTotal.quantity += numbers[0];
+                    deliver.checkTotal.count += numbers[1];
+                    let user = deliver.checkTotal.users.find(u => u.name == sender.nickname);
+                    if (user) {
+                        user.quantity = numbers[0];
+                        user.count = numbers[1];
+                    } else {
+                        deliver.checkTotal.users.push({
+                            name: sender.nickname,
+                            quantity: numbers[0],
+                            count: numbers[1]
+                        })
+                    }
+                    
+                    return;
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^수량 (\d+)개 증가$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user) {
+                    const match = msg.trim().match(/^수량 (\d+)개 증가$/);
+                    const increaseCount = parseInt(match[1]);
+                    deliver.saved.count += increaseCount;
+                    user.count += increaseCount;
+                    channel.sendChat(`✅ 가좌 예상수량 ${increaseCount.toComma2()}개 증가\n· ${deliver.saved.count.toComma2()}개`);
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^수량 (\d+)개 감소$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user) {
+                    const match = msg.trim().match(/^수량 (\d+)개 감소$/);
+                    const decreaseCount = parseInt(match[1]);
+                    deliver.saved.count -= decreaseCount;
+                    user.count -= decreaseCount;
+                    channel.sendChat(`✅ 가좌 예상수량 ${decreaseCount.toComma2()}개 감소\n· ${deliver.saved.count.toComma2()}개`);
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^(\d+)출발$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user) {
+                    const match = msg.trim().match(/^(\d+)출발$/);
+                    user.startQuantity = parseInt(match[1]);
+                    channel.sendChat(`✅ ${parseInt(match[1])}출발`);
+                }
+            }
+
+            if (deliver.saved && msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)남음)?$/)) {
+                let user = deliver.saved.users.find(u => u.name == sender.nickname);
+                if (user) {
+                    const match = msg.trim().match(/^(\d+)(?:상차|상)(?:\s*(\d+)(증가|증|감소|감))?(?:\s*(\d+)남음)?$/);
+                    const loadedQuantity = parseInt(match[1]);
+                    const changeAmount = match[2] ? parseInt(match[2]) : null;
+                    const changeType = match[3] || null;
+                    
+                    const isIncrease = changeType && (changeType === '증가' || changeType === '증');
+                    const isDecrease = changeType && (changeType === '감소' || changeType === '감');
+                    
+                    user.quantity -= loadedQuantity;
+                    deliver.saved.quantity -= loadedQuantity;
+                    if (isIncrease) {
+                        user.quantity += changeAmount;
+                        deliver.saved.quantity += loadedQuantity;
+                    } else if (isDecrease) {
+                        user.quantity -= changeAmount;
+                        deliver.saved.quantity -= loadedQuantity;
+                    }
+
+                    channel.sendChat(`✅ ${loadedQuantity.toComma2()}개 상차${isIncrease ? `\n· ${changeAmount.toComma2()}개 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()}개 감소` : "")}\n· ${user.name}님 남은물량 ${user.quantity.toComma2()}개\n· 총 남은물량 ${deliver.saved.quantity.toComma2()}개`)
+                }
+            }
         }
 
     } catch(e) {
