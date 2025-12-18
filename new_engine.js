@@ -24,6 +24,27 @@ let exceptNames = {
     "강동현": "강광종"
 }
 
+// 메시지 큐 시스템
+let deliverMessageQueue = [];
+let isProcessingDeliverQueue = false;
+
+async function processDeliverQueue() {
+    if (isProcessingDeliverQueue || deliverMessageQueue.length === 0) return;
+    
+    isProcessingDeliverQueue = true;
+    
+    while (deliverMessageQueue.length > 0) {
+        const task = deliverMessageQueue.shift();
+        try {
+            await task();
+        } catch (error) {
+            console.error('Error processing deliver queue:', error);
+        }
+    }
+    
+    isProcessingDeliverQueue = false;
+}
+
 // AWS DynamoDB 설정
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand, ScanCommand, BatchWriteCommand } = require("@aws-sdk/lib-dynamodb");
@@ -9310,11 +9331,27 @@ client.on('chat', async (data, channel) => {
 
         // 택배물량 자동 확인
         if (["285186748232974","435426013866936"].includes(roomid+"")) {
-            let result = await loadData('deliver');
-            if (result.success) {
-                deliver = result.data;
-            }
-            if (exceptNames[sender.nickname]) sender.nickname = exceptNames[sender.nickname];
+            // 현재 메시지의 컨텍스트 저장 (클로저로 캡처)
+            const capturedMsg = msg;
+            const capturedSender = sender;
+            const capturedChannel = channel;
+            const capturedRoomid = roomid;
+            
+            // 메시지를 큐에 추가하여 순차 처리
+            deliverMessageQueue.push(async () => {
+                let result = await loadData('deliver');
+                if (result.success) {
+                    deliver = result.data;
+                }
+                let currentNickname = capturedSender.nickname;
+                if (exceptNames[currentNickname]) currentNickname = exceptNames[currentNickname];
+                
+                // 큐 내부에서는 캡처된 변수를 사용
+                const msg = capturedMsg;
+                const sender = { ...capturedSender, nickname: currentNickname };
+                const channel = capturedChannel;
+                const roomid = capturedRoomid;
+                
             if (msg.trim() == ("!물량수량종합 체크")) {
                 if (deliver.checkTotal) {
                     channel.sendChat("이미 물량/수량 종합을 체크하고 있습니다.");
@@ -9620,7 +9657,11 @@ client.on('chat', async (data, channel) => {
                 }
             }
 
-            await saveData('deliver', deliver);
+                await saveData('deliver', deliver);
+            });
+            
+            // 큐 처리 시작
+            processDeliverQueue();
         }
 
     } catch(e) {
