@@ -9939,7 +9939,7 @@ client.on('chat', async (data, channel) => {
                             let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                             deliver.saved.quantity = sum;
 
-                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[7]} 출발` : ""}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                            channel.sendChat(`✅ ${exceptName}님 처리 완료${exceptQuantity ? `\n· ${exceptQuantity} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[7]} 출발` : ""}\n· ${exceptName}님 남은 물량 ${targetUser.quantity.toComma2()}${exceptQuantity || changeAmount ? `\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}` : ""}`);
                         }
                     }
                 }
@@ -9967,7 +9967,7 @@ client.on('chat', async (data, channel) => {
                     let sum = deliver.saved.users.reduce((acc,cur) => acc + cur.quantity, 0);
                     deliver.saved.quantity = sum;
 
-                    channel.sendChat(`✅ 처리 완료${loadedQuantity ? `\n· ${loadedQuantity.toComma2()} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[6]} 출발` : ""}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}`);
+                    channel.sendChat(`✅ 처리 완료${loadedQuantity ? `\n· ${loadedQuantity.toComma2()} 상차` : ""}${isIncrease ? `\n· ${changeAmount.toComma2()} 증가` : (isDecrease ? `\n· ${changeAmount.toComma2()} 감소` : "")}${isStart ? `\n· ${match[6]} 출발` : ""}\n· ${user.name}님 남은 물량 ${user.quantity.toComma2()}${loadedQuantity || changeAmount ? `\n· 총 남은 물량 ${deliver.saved.quantity.toComma2()}` : ""}`);
                 }
             }
 
