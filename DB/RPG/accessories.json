@@ -1,0 +1,322 @@
+[
+  {
+    "name": "기초 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 1,
+    "randomStat": 1
+  },
+  {
+    "name": "기초 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 1,
+    "effects": { "critChance": 1 }
+  },
+  {
+    "name": "기초 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 1,
+    "effects": { "critDamage": 2 }
+  },
+  {
+    "name": "초보자의 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 10,
+    "randomStat": 2
+  },
+  {
+    "name": "초보자의 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 10,
+    "effects": { "critChance": 2 }
+  },
+  {
+    "name": "초보자의 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 10,
+    "effects": { "critDamage": 3 }
+  },
+  {
+    "name": "빛나는 초보자의 목걸이",
+    "type": "necklace",
+    "rarity": "레어",
+    "level": 10,
+    "randomStat": 3
+  },
+  {
+    "name": "빛나는 초보자의 반지",
+    "type": "ring",
+    "rarity": "레어",
+    "level": 10,
+    "effects": { "critChance": 3, "skillDamage": 2 }
+  },
+  {
+    "name": "빛나는 초보자의 팔찌",
+    "type": "bracelet",
+    "rarity": "레어",
+    "level": 10,
+    "effects": { "critDamage": 5, "hpRecoveryOnHit": 1 }
+  },
+  {
+    "name": "수련자의 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 20,
+    "randomStat": 4
+  },
+  {
+    "name": "수련자의 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 20,
+    "effects": { "critChance": 3 }
+  },
+  {
+    "name": "수련자의 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 20,
+    "effects": { "critDamage": 4 }
+  },
+  {
+    "name": "빛나는 수련자의 목걸이",
+    "type": "necklace",
+    "rarity": "레어",
+    "level": 20,
+    "randomStat": 5,
+    "effects": { "allDamage": 2 }
+  },
+  {
+    "name": "빛나는 수련자의 반지",
+    "type": "ring",
+    "rarity": "레어",
+    "level": 20,
+    "effects": { "critChance": 4, "skillDamage": 3 }
+  },
+  {
+    "name": "빛나는 수련자의 팔찌",
+    "type": "bracelet",
+    "rarity": "레어",
+    "level": 20,
+    "effects": { "critDamage": 7, "hpRecoveryOnHit": 2 }
+  },
+  {
+    "name": "심연의 목걸이",
+    "type": "necklace",
+    "rarity": "레전더리",
+    "level": 20,
+    "randomStat": 8,
+    "effects": { "allDamage": 3 },
+    "uniqueEffect": {
+      "name": "적 처치 시 HP 5% 회복",
+      "hpRecoveryOnKill": 5
+    },
+    "setName": "심연을 마주한 콰트로"
+  },
+  {
+    "name": "운명의 반지",
+    "type": "ring",
+    "rarity": "레전더리",
+    "level": 20,
+    "effects": { "critChance": 5, "critDamage": 10 },
+    "uniqueEffect": {
+      "name": "운명 강타",
+      "description": "공격 적중 시 5% 확률로 '운명 강타' 발동 (데미지 ×1.3)",
+      "procChance": 5,
+      "damageMultiplier": 1.3
+    },
+    "setName": "심연을 마주한 콰트로"
+  },
+  {
+    "name": "힘의 팔찌",
+    "type": "bracelet",
+    "rarity": "레전더리",
+    "level": 20,
+    "stats": { "attackPower": 800 },
+    "effects": { "skillDamage": 5 },
+    "uniqueEffect": {
+      "name": "리소스 회복",
+      "description": "스킬 사용 시 10% 확률로 MP/GP/건력 3 회복",
+      "procChance": 10,
+      "resourceRecovery": 3
+    },
+    "setName": "심연을 마주한 콰트로"
+  },
+  {
+    "name": "중급 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 30,
+    "randomStat": 5
+  },
+  {
+    "name": "중급 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 30,
+    "effects": { "critChance": 3 }
+  },
+  {
+    "name": "중급 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 30,
+    "effects": { "critDamage": 5 }
+  },
+  {
+    "name": "빛나는 중급 목걸이",
+    "type": "necklace",
+    "rarity": "레어",
+    "level": 30,
+    "randomStat": 6,
+    "effects": { "allDamage": 2 }
+  },
+  {
+    "name": "빛나는 중급 반지",
+    "type": "ring",
+    "rarity": "레어",
+    "level": 30,
+    "effects": { "critChance": 4, "skillDamage": 3 }
+  },
+  {
+    "name": "빛나는 중급 팔찌",
+    "type": "bracelet",
+    "rarity": "레어",
+    "level": 30,
+    "effects": { "critDamage": 7, "hpRecoveryOnHit": 2 }
+  },
+  {
+    "name": "상급 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 40,
+    "randomStat": 7
+  },
+  {
+    "name": "상급 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 40,
+    "effects": { "critChance": 4 }
+  },
+  {
+    "name": "상급 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 40,
+    "effects": { "critDamage": 7 }
+  },
+  {
+    "name": "빛나는 상급 목걸이",
+    "type": "necklace",
+    "rarity": "레어",
+    "level": 40,
+    "randomStat": 8,
+    "effects": { "allDamage": 3 }
+  },
+  {
+    "name": "빛나는 상급 반지",
+    "type": "ring",
+    "rarity": "레어",
+    "level": 40,
+    "effects": { "critChance": 5, "skillDamage": 4 }
+  },
+  {
+    "name": "빛나는 상급 팔찌",
+    "type": "bracelet",
+    "rarity": "레어",
+    "level": 40,
+    "effects": { "critDamage": 9, "hpRecoveryOnHit": 3 }
+  },
+  {
+    "name": "정령의 목걸이",
+    "type": "necklace",
+    "rarity": "레전더리",
+    "level": 40,
+    "randomStat": 12,
+    "effects": { "allDamage": 4 },
+    "uniqueEffect": {
+      "name": "리소스 회복",
+      "description": "스킬 사용 시 10% 확률로 MP/GP/건력 3 회복",
+      "procChance": 10,
+      "resourceRecovery": 3
+    },
+    "setName": "징벌"
+  },
+  {
+    "name": "집행자의 반지",
+    "type": "ring",
+    "rarity": "레전더리",
+    "level": 40,
+    "effects": { "critChance": 7, "critDamage": 15 },
+    "uniqueEffect": {
+      "name": "추가 일격",
+      "description": "공격 적중 시 10% 확률로 '추가 일격' 발생 (공격력 스탯 × 25%)",
+      "procChance": 10,
+      "damageMultiplier": 0.25
+    },
+    "setName": "징벌"
+  },
+  {
+    "name": "고대의 팔찌",
+    "type": "bracelet",
+    "rarity": "레전더리",
+    "level": 40,
+    "stats": { "attackPower": 1000 },
+    "effects": { "skillDamage": 6 },
+    "uniqueEffect": {
+      "name": "피해 시 회복",
+      "description": "피해를 받을 때 HP 5% 회복",
+      "hpRecoveryOnDamaged": 5
+    },
+    "setName": "징벌"
+  },
+  {
+    "name": "고급 목걸이",
+    "type": "necklace",
+    "rarity": "일반",
+    "level": 50,
+    "randomStat": 8
+  },
+  {
+    "name": "고급 반지",
+    "type": "ring",
+    "rarity": "일반",
+    "level": 50,
+    "effects": { "critChance": 5 }
+  },
+  {
+    "name": "고급 팔찌",
+    "type": "bracelet",
+    "rarity": "일반",
+    "level": 50,
+    "effects": { "critDamage": 8 }
+  },
+  {
+    "name": "빛나는 고급 목걸이",
+    "type": "necklace",
+    "rarity": "레어",
+    "level": 50,
+    "randomStat": 10,
+    "effects": { "allDamage": 4 }
+  },
+  {
+    "name": "빛나는 고급 반지",
+    "type": "ring",
+    "rarity": "레어",
+    "level": 50,
+    "effects": { "critChance": 7, "skillDamage": 5 }
+  },
+  {
+    "name": "빛나는 고급 팔찌",
+    "type": "bracelet",
+    "rarity": "레어",
+    "level": 50,
+    "effects": { "critDamage": 10, "hpRecoveryOnHit": 3 }
+  }
+]

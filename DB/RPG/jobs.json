@@ -1,0 +1,168 @@
+{
+  "먼마": {
+    "name": "먼마",
+    "description": "강력한 주먹으로 적을 제압하는 전사",
+    "mainStat": "power",
+    "initialStats": {
+      "power": 5,
+      "speed": 1,
+      "int": 0,
+      "luck": 4
+    },
+    "initialHp": 1120,
+    "hpPerLevel": 1120,
+    "resources": {},
+    "weapon": "건틀릿",
+    "attackFormula": "power * 100",
+    "initialSkills": {
+      "passive": ["주먹강화"],
+      "active": ["안면강타"]
+    },
+    "levelUnlockSkills": {
+      "5": { "name": "광속연타", "type": "active" },
+      "10": { "name": "룰지안봄", "type": "active" },
+      "20": { "name": "브란도 땅에 묻기", "type": "active" },
+      "30": { "name": "유생 수성못에 묻기", "type": "active" },
+      "40": { "name": "시벌론", "type": "active" }
+    },
+    "awakenSkills": [
+      { "name": "두번 찍어", "type": "awakening" },
+      { "name": "조까", "type": "awakening" },
+      { "name": "우선순위", "type": "awakening" }
+    ]
+  },
+  "성준호": {
+    "name": "성준호",
+    "description": "빠른 이동과 치명적인 배신으로 적을 무너뜨리는 암살자",
+    "mainStat": "speed",
+    "initialStats": {
+      "power": 0,
+      "speed": 6,
+      "int": 0,
+      "luck": 4
+    },
+    "initialHp": 860,
+    "hpPerLevel": 860,
+    "resources": {
+      "gp": 100
+    },
+    "weapon": "쌍검",
+    "attackFormula": "speed * 100",
+    "initialSkills": {
+      "passive": ["이속보다 빠른 배신"],
+      "active": ["약점찾기"]
+    },
+    "levelUnlockSkills": {
+      "5": { "name": "연속 찌르기", "type": "active" },
+      "10": { "name": "연막", "type": "active" },
+      "20": { "name": "약자멸시", "type": "active" },
+      "30": { "name": "배신스택", "type": "active" },
+      "40": { "name": "배신!", "type": "active" }
+    },
+    "awakenSkills": [
+      { "name": "행복의 개", "type": "awakening" },
+      { "name": "조각내기", "type": "awakening" },
+      { "name": "호팔이의 꿈", "type": "awakening" }
+    ]
+  },
+  "빵귤": {
+    "name": "빵귤",
+    "description": "시간을 조작하고 마법으로 적을 압도하는 마법사",
+    "mainStat": "int",
+    "initialStats": {
+      "power": 0,
+      "speed": 3,
+      "int": 4,
+      "luck": 3
+    },
+    "initialHp": 820,
+    "hpPerLevel": 820,
+    "resources": {
+      "mp": 0
+    },
+    "weapon": "지팡이",
+    "attackFormula": "int * 100",
+    "initialSkills": {
+      "passive": ["시간의 흐름"],
+      "active": ["가속!"]
+    },
+    "levelUnlockSkills": {
+      "5": { "name": "헤트", "type": "active" },
+      "10": { "name": "유드베트", "type": "active" },
+      "20": { "name": "유드 알레프", "type": "active" },
+      "30": { "name": "오징오", "type": "active" },
+      "40": { "name": "궁극의 틱택토", "type": "active" }
+    },
+    "awakenSkills": [
+      { "name": "불사조", "type": "awakening" },
+      { "name": "쿠루미 타임", "type": "awakening" },
+      { "name": "자인", "type": "awakening" }
+    ]
+  },
+  "호르아크티": {
+    "name": "호르아크티",
+    "description": "운명을 도박으로 바꾸는 행운의 도박사",
+    "mainStat": "luck",
+    "initialStats": {
+      "power": 0,
+      "speed": 3,
+      "int": 0,
+      "luck": 7
+    },
+    "initialHp": 970,
+    "hpPerLevel": 970,
+    "resources": {},
+    "weapon": "아르카나",
+    "attackFormula": "luck * 100",
+    "initialSkills": {
+      "passive": ["고급 룰렛"],
+      "active": ["도박 카드"]
+    },
+    "levelUnlockSkills": {
+      "5": { "name": "교촌파워", "type": "active" },
+      "10": { "name": "한탕", "type": "active" },
+      "20": { "name": "러시안 룰렛", "type": "active" },
+      "30": { "name": "한탕룰렛", "type": "active" },
+      "40": { "name": "0의 의지", "type": "active" }
+    },
+    "awakenSkills": [
+      { "name": "히든 발견", "type": "awakening" },
+      { "name": "100억", "type": "awakening" },
+      { "name": "대저택의 운명", "type": "awakening" }
+    ]
+  },
+  "건마": {
+    "name": "건마",
+    "description": "건전한 마음으로 권총을 다루는 하이브리드 전사",
+    "mainStat": "power",
+    "initialStats": {
+      "power": 5,
+      "speed": 3,
+      "int": 0,
+      "luck": 2
+    },
+    "initialHp": 980,
+    "hpPerLevel": 980,
+    "resources": {
+      "gunpower": 3
+    },
+    "weapon": "권총",
+    "attackFormula": "power * 100",
+    "initialSkills": {
+      "passive": ["건전한 마음가짐"],
+      "active": ["마사지"]
+    },
+    "levelUnlockSkills": {
+      "5": { "name": "뼈에서 살을", "type": "active" },
+      "10": { "name": "건마의 나침반", "type": "active" },
+      "20": { "name": "숙청", "type": "active" },
+      "30": { "name": "디럭스 라이벌샷", "type": "active" },
+      "40": { "name": "건마스터", "type": "active" }
+    },
+    "awakenSkills": [
+      { "name": "건.력", "type": "awakening" },
+      { "name": "탈락반사건", "type": "awakening" },
+      { "name": "단체숙청", "type": "awakening" }
+    ]
+  }
+}

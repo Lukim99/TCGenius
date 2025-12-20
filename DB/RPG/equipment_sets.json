@@ -1,0 +1,40 @@
+[
+  {
+    "name": "심연을 마주한 콰트로",
+    "level": 20,
+    "rarity": "레전더리",
+    "pieces": [
+      "심연의 목걸이",
+      "운명의 반지",
+      "힘의 팔찌"
+    ],
+    "setEffects": {
+      "3": {
+        "description": "공격 시 10% 추가 데미지",
+        "effects": {
+          "allDamage": 10
+        }
+      }
+    }
+  },
+  {
+    "name": "징벌",
+    "level": 40,
+    "rarity": "레전더리",
+    "pieces": [
+      "정령의 목걸이",
+      "집행자의 반지",
+      "고대의 팔찌"
+    ],
+    "setEffects": {
+      "3": {
+        "description": "공격 시 15% 추가 데미지, 전투 시작 시 3턴간 지속되는 5,000의 보호막",
+        "effects": {
+          "allDamage": 15,
+          "startingShield": 5000,
+          "shieldDuration": 3
+        }
+      }
+    }
+  }
+]

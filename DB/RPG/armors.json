@@ -1,0 +1,412 @@
+[
+  {
+    "name": "기초 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 1,
+    "stats": { "hp": 100 }
+  },
+  {
+    "name": "기초 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 1,
+    "stats": { "hp": 100 }
+  },
+  {
+    "name": "기초 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 1,
+    "stats": { "hp": 100 }
+  },
+  {
+    "name": "기초 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 1,
+    "stats": { "hp": 100 }
+  },
+  {
+    "name": "기초 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 1,
+    "stats": { "hp": 100 }
+  },
+  {
+    "name": "초보자의 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 10,
+    "stats": { "hp": 200 }
+  },
+  {
+    "name": "초보자의 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 10,
+    "stats": { "hp": 200 }
+  },
+  {
+    "name": "초보자의 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 10,
+    "stats": { "hp": 200 }
+  },
+  {
+    "name": "초보자의 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 10,
+    "stats": { "hp": 200 }
+  },
+  {
+    "name": "초보자의 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 10,
+    "stats": { "hp": 200 }
+  },
+  {
+    "name": "빛나는 초보자의 투구",
+    "type": "helmet",
+    "rarity": "레어",
+    "level": 10,
+    "stats": { "hp": 220 },
+    "randomStat": 1
+  },
+  {
+    "name": "빛나는 초보자의 상의",
+    "type": "chest",
+    "rarity": "레어",
+    "level": 10,
+    "stats": { "hp": 220 },
+    "randomStat": 1
+  },
+  {
+    "name": "빛나는 초보자의 하의",
+    "type": "legs",
+    "rarity": "레어",
+    "level": 10,
+    "stats": { "hp": 220 },
+    "randomStat": 1
+  },
+  {
+    "name": "빛나는 초보자의 장갑",
+    "type": "gloves",
+    "rarity": "레어",
+    "level": 10,
+    "stats": { "hp": 220 },
+    "randomStat": 1
+  },
+  {
+    "name": "빛나는 초보자의 신발",
+    "type": "boots",
+    "rarity": "레어",
+    "level": 10,
+    "stats": { "hp": 220 },
+    "randomStat": 1
+  },
+  {
+    "name": "수련자의 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 20,
+    "stats": { "hp": 300 }
+  },
+  {
+    "name": "수련자의 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 20,
+    "stats": { "hp": 300 }
+  },
+  {
+    "name": "수련자의 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 20,
+    "stats": { "hp": 300 }
+  },
+  {
+    "name": "수련자의 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 20,
+    "stats": { "hp": 300 }
+  },
+  {
+    "name": "수련자의 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 20,
+    "stats": { "hp": 300 }
+  },
+  {
+    "name": "빛나는 수련자의 투구",
+    "type": "helmet",
+    "rarity": "레어",
+    "level": 20,
+    "stats": { "hp": 330 },
+    "randomStat": 2
+  },
+  {
+    "name": "빛나는 수련자의 상의",
+    "type": "chest",
+    "rarity": "레어",
+    "level": 20,
+    "stats": { "hp": 330 },
+    "randomStat": 2
+  },
+  {
+    "name": "빛나는 수련자의 하의",
+    "type": "legs",
+    "rarity": "레어",
+    "level": 20,
+    "stats": { "hp": 330 },
+    "randomStat": 2
+  },
+  {
+    "name": "빛나는 수련자의 장갑",
+    "type": "gloves",
+    "rarity": "레어",
+    "level": 20,
+    "stats": { "hp": 330 },
+    "randomStat": 2
+  },
+  {
+    "name": "빛나는 수련자의 신발",
+    "type": "boots",
+    "rarity": "레어",
+    "level": 20,
+    "stats": { "hp": 330 },
+    "randomStat": 2
+  },
+  {
+    "name": "훈련자의 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 30,
+    "stats": { "hp": 400 }
+  },
+  {
+    "name": "훈련자의 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 30,
+    "stats": { "hp": 400 }
+  },
+  {
+    "name": "훈련자의 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 30,
+    "stats": { "hp": 400 }
+  },
+  {
+    "name": "훈련자의 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 30,
+    "stats": { "hp": 400 }
+  },
+  {
+    "name": "훈련자의 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 30,
+    "stats": { "hp": 400 }
+  },
+  {
+    "name": "빛나는 훈련자의 투구",
+    "type": "helmet",
+    "rarity": "레어",
+    "level": 30,
+    "stats": { "hp": 440 },
+    "randomStat": { "min": 2, "max": 3 }
+  },
+  {
+    "name": "빛나는 훈련자의 상의",
+    "type": "chest",
+    "rarity": "레어",
+    "level": 30,
+    "stats": { "hp": 440 },
+    "randomStat": { "min": 2, "max": 3 }
+  },
+  {
+    "name": "빛나는 훈련자의 하의",
+    "type": "legs",
+    "rarity": "레어",
+    "level": 30,
+    "stats": { "hp": 440 },
+    "randomStat": { "min": 2, "max": 3 }
+  },
+  {
+    "name": "빛나는 훈련자의 장갑",
+    "type": "gloves",
+    "rarity": "레어",
+    "level": 30,
+    "stats": { "hp": 440 },
+    "randomStat": { "min": 2, "max": 3 }
+  },
+  {
+    "name": "빛나는 훈련자의 신발",
+    "type": "boots",
+    "rarity": "레어",
+    "level": 30,
+    "stats": { "hp": 440 },
+    "randomStat": { "min": 2, "max": 3 }
+  },
+  {
+    "name": "숙련자의 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 40,
+    "stats": { "hp": 500 }
+  },
+  {
+    "name": "숙련자의 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 40,
+    "stats": { "hp": 500 }
+  },
+  {
+    "name": "숙련자의 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 40,
+    "stats": { "hp": 500 }
+  },
+  {
+    "name": "숙련자의 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 40,
+    "stats": { "hp": 500 }
+  },
+  {
+    "name": "숙련자의 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 40,
+    "stats": { "hp": 500 }
+  },
+  {
+    "name": "빛나는 숙련자의 투구",
+    "type": "helmet",
+    "rarity": "레어",
+    "level": 40,
+    "stats": { "hp": 550 },
+    "randomStat": { "min": 3, "max": 4 }
+  },
+  {
+    "name": "빛나는 숙련자의 상의",
+    "type": "chest",
+    "rarity": "레어",
+    "level": 40,
+    "stats": { "hp": 550 },
+    "randomStat": { "min": 3, "max": 4 }
+  },
+  {
+    "name": "빛나는 숙련자의 하의",
+    "type": "legs",
+    "rarity": "레어",
+    "level": 40,
+    "stats": { "hp": 550 },
+    "randomStat": { "min": 3, "max": 4 }
+  },
+  {
+    "name": "빛나는 숙련자의 장갑",
+    "type": "gloves",
+    "rarity": "레어",
+    "level": 40,
+    "stats": { "hp": 550 },
+    "randomStat": { "min": 3, "max": 4 }
+  },
+  {
+    "name": "빛나는 숙련자의 신발",
+    "type": "boots",
+    "rarity": "레어",
+    "level": 40,
+    "stats": { "hp": 550 },
+    "randomStat": { "min": 3, "max": 4 }
+  },
+  {
+    "name": "달인의 투구",
+    "type": "helmet",
+    "rarity": "일반",
+    "level": 50,
+    "stats": { "hp": 600 }
+  },
+  {
+    "name": "달인의 상의",
+    "type": "chest",
+    "rarity": "일반",
+    "level": 50,
+    "stats": { "hp": 600 }
+  },
+  {
+    "name": "달인의 하의",
+    "type": "legs",
+    "rarity": "일반",
+    "level": 50,
+    "stats": { "hp": 600 }
+  },
+  {
+    "name": "달인의 장갑",
+    "type": "gloves",
+    "rarity": "일반",
+    "level": 50,
+    "stats": { "hp": 600 }
+  },
+  {
+    "name": "달인의 신발",
+    "type": "boots",
+    "rarity": "일반",
+    "level": 50,
+    "stats": { "hp": 600 }
+  },
+  {
+    "name": "빛나는 달인의 투구",
+    "type": "helmet",
+    "rarity": "레어",
+    "level": 50,
+    "stats": { "hp": 660 },
+    "randomStat": 4
+  },
+  {
+    "name": "빛나는 달인의 상의",
+    "type": "chest",
+    "rarity": "레어",
+    "level": 50,
+    "stats": { "hp": 660 },
+    "randomStat": 4
+  },
+  {
+    "name": "빛나는 달인의 하의",
+    "type": "legs",
+    "rarity": "레어",
+    "level": 50,
+    "stats": { "hp": 660 },
+    "randomStat": 4
+  },
+  {
+    "name": "빛나는 달인의 장갑",
+    "type": "gloves",
+    "rarity": "레어",
+    "level": 50,
+    "stats": { "hp": 660 },
+    "randomStat": 4
+  },
+  {
+    "name": "빛나는 달인의 신발",
+    "type": "boots",
+    "rarity": "레어",
+    "level": 50,
+    "stats": { "hp": 660 },
+    "randomStat": 4
+  }
+]

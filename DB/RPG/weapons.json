@@ -1,0 +1,860 @@
+[
+  {
+    "name": "기초 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "먼마",
+    "stats": { "power": 1 },
+    "effects": { "normalAttackDamage": 2 }
+  },
+  {
+    "name": "훈련용 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 1 },
+    "effects": { "evasion": 1 }
+  },
+  {
+    "name": "초보 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 1 },
+    "effects": { "startingMp": 5 }
+  },
+  {
+    "name": "초보 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 1 },
+    "effects": { "skillDamage": 2 }
+  },
+  {
+    "name": "초보 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 1 },
+    "effects": { "critDamage": 2 }
+  },
+  {
+    "name": "기초 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 1,
+    "jobRestriction": "건마",
+    "stats": { "power": 1, "hp": 30 },
+    "effects": { "skillDamage": 2 }
+  },
+  {
+    "name": "강화 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "먼마",
+    "stats": { "power": 2 },
+    "effects": { "normalAttackDamage": 3 }
+  },
+  {
+    "name": "승급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "먼마",
+    "stats": { "power": 3 },
+    "effects": { "normalAttackDamage": 4, "critDamage": 5 }
+  },
+  {
+    "name": "빠른 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 2 },
+    "effects": { "evasion": 2 }
+  },
+  {
+    "name": "날카로운 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 3 },
+    "effects": { "evasion": 2, "singleAttackDamage": 4 }
+  },
+  {
+    "name": "숙련 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 2 },
+    "effects": { "startingMp": 7 }
+  },
+  {
+    "name": "마력 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 3 },
+    "effects": { "startingMp": 8 }
+  },
+  {
+    "name": "숙련 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 1, "speed": 1 },
+    "effects": { "skillDamage": 3 }
+  },
+  {
+    "name": "강화 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 2, "speed": 1 },
+    "effects": { "skillDamage": 4 }
+  },
+  {
+    "name": "초심자의 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 2 },
+    "effects": { "critChance": 2 }
+  },
+  {
+    "name": "행운의 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 3 },
+    "effects": { "critChance": 3, "gamblingCardDamage": 4 }
+  },
+  {
+    "name": "강화 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 10,
+    "jobRestriction": "건마",
+    "stats": { "power": 2, "hp": 40 }
+  },
+  {
+    "name": "전투 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레어",
+    "level": 10,
+    "jobRestriction": "건마",
+    "stats": { "power": 3, "hp": 50 },
+    "effects": { "gunpowerSkillDamage": 4 }
+  },
+  {
+    "name": "수련 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "먼마",
+    "stats": { "power": 4 },
+    "effects": { "normalAttackDamage": 4, "critDamage": 5 }
+  },
+  {
+    "name": "빛나는 수련 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "먼마",
+    "stats": { "power": 5 },
+    "effects": { "normalAttackDamage": 5, "critDamage": 8 }
+  },
+  {
+    "name": "무쇠의 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "먼마",
+    "stats": { "power": 8 },
+    "effects": { "normalAttackDamage": 8, "critDamage": 15 },
+    "uniqueEffect": {
+      "name": "강타 증폭",
+      "description": "일반 공격 적중 시 15% 확률로 추가 타격 1회 발생 (공격력의 20% 피해)",
+      "procChance": 15,
+      "damageMultiplier": 0.2
+    }
+  },
+  {
+    "name": "수련 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 4 },
+    "effects": { "evasion": 3 }
+  },
+  {
+    "name": "빛나는 수련 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 5 },
+    "effects": { "evasion": 4, "critChance": 3 }
+  },
+  {
+    "name": "암살자의 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 8 },
+    "effects": { "evasion": 5, "critChance": 5 },
+    "uniqueEffect": {
+      "name": "백어택",
+      "description": "선 턴으로 공격할 경우, 데미지 +20% 증가",
+      "firstTurnDamageBonus": 20
+    }
+  },
+  {
+    "name": "수련 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 4 },
+    "effects": { "skillDamage": 3 }
+  },
+  {
+    "name": "빛나는 수련 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 5 },
+    "effects": { "skillDamage": 4, "mpRegenPerTurn": 2 }
+  },
+  {
+    "name": "크로노 스태프",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 8 },
+    "effects": { "skillDamage": 8, "aoeSkillDamage": 5 },
+    "uniqueEffect": {
+      "name": "시간의 잔상",
+      "description": "스킬 사용 시 20% 확률로 이전 스킬을 1회 더 발동 (50%의 피해, MP 소모 없음)",
+      "procChance": 20,
+      "damageMultiplier": 0.5,
+      "noMpCost": true
+    }
+  },
+  {
+    "name": "수련 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 3, "speed": 1 },
+    "effects": { "skillDamage": 4 }
+  },
+  {
+    "name": "빛나는 수련 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 4, "speed": 1 },
+    "effects": { "skillDamage": 5 }
+  },
+  {
+    "name": "크로노 건틀릿",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 7, "speed": 2 },
+    "effects": { "skillDamage": 10 },
+    "uniqueEffect": {
+      "name": "시간 압축",
+      "description": "3턴마다 모든 스킬 쿨타임 1턴 감소",
+      "cooldownReductionInterval": 3,
+      "cooldownReductionAmount": 1
+    }
+  },
+  {
+    "name": "수련 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 4 },
+    "effects": { "critChance": 3 }
+  },
+  {
+    "name": "빛나는 수련 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 5 },
+    "effects": { "critChance": 4, "critDamage": 8, "gamblingCardDamage": 5 }
+  },
+  {
+    "name": "천운의 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 8 },
+    "effects": { "critChance": 6, "critDamage": 12 },
+    "uniqueEffect": {
+      "name": "황금 카드",
+      "description": "스킬/일반 공격 사용 시 10% 확률로 발동 → 데미지 ×1.5",
+      "procChance": 10,
+      "damageMultiplier": 1.5
+    }
+  },
+  {
+    "name": "수련 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 20,
+    "jobRestriction": "건마",
+    "stats": { "power": 3, "hp": 60 }
+  },
+  {
+    "name": "빛나는 수련 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레어",
+    "level": 20,
+    "jobRestriction": "건마",
+    "stats": { "power": 4, "hp": 80 },
+    "effects": { "skillDamage": 5, "lowHpDamageBonus": 3 },
+    "uniqueEffect": {
+      "name": "위기의 힘",
+      "description": "HP 50% 이하일 때 모든 피해 +3%",
+      "hpThreshold": 50,
+      "damageBonus": 3
+    }
+  },
+  {
+    "name": "격동의 리볼버",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레전더리",
+    "level": 20,
+    "jobRestriction": "건마",
+    "stats": { "power": 7, "hp": 120 },
+    "effects": { "skillDamage": 8 },
+    "uniqueEffect": {
+      "name": "피의 각성",
+      "description": "HP 50% 이하일 때 모든 피해 +10%, HP 30% 이하일 때 추가로 +10% (총 +20%)",
+      "hpThresholds": [
+        { "threshold": 50, "damageBonus": 10 },
+        { "threshold": 30, "damageBonus": 20 }
+      ]
+    }
+  },
+  {
+    "name": "중급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "먼마",
+    "stats": { "power": 6 },
+    "effects": { "normalAttackDamage": 6 }
+  },
+  {
+    "name": "빛나는 중급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "먼마",
+    "stats": { "power": 7 },
+    "effects": { "normalAttackDamage": 7, "critDamage": 12 }
+  },
+  {
+    "name": "중급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 6 },
+    "effects": { "evasion": 4 }
+  },
+  {
+    "name": "빛나는 중급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 7 },
+    "effects": { "evasion": 5, "critChance": 4 }
+  },
+  {
+    "name": "중급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 6 },
+    "effects": { "skillDamage": 5 }
+  },
+  {
+    "name": "빛나는 중급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 7 },
+    "effects": { "skillDamage": 8 }
+  },
+  {
+    "name": "중급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 5, "speed": 1 },
+    "effects": { "skillDamage": 6 }
+  },
+  {
+    "name": "빛나는 중급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 6, "speed": 2 },
+    "effects": { "skillDamage": 8, "mpRegenPerTurn": 2 }
+  },
+  {
+    "name": "중급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 6 },
+    "effects": { "critChance": 4 }
+  },
+  {
+    "name": "빛나는 중급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 7 },
+    "effects": { "critChance": 5, "critDamage": 10 }
+  },
+  {
+    "name": "중급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 30,
+    "jobRestriction": "건마",
+    "stats": { "power": 5, "hp": 100 }
+  },
+  {
+    "name": "빛나는 중급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레어",
+    "level": 30,
+    "jobRestriction": "건마",
+    "stats": { "power": 6, "hp": 140 },
+    "effects": { "skillDamage": 6 }
+  },
+  {
+    "name": "상급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "먼마",
+    "stats": { "power": 8 },
+    "effects": { "normalAttackDamage": 7 }
+  },
+  {
+    "name": "빛나는 상급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "먼마",
+    "stats": { "power": 9 },
+    "effects": { "normalAttackDamage": 9, "critDamage": 15 }
+  },
+  {
+    "name": "광폭의 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "먼마",
+    "stats": { "power": 14 },
+    "effects": { "normalAttackDamage": 12, "critDamage": 20 },
+    "uniqueEffect": {
+      "name": "분쇄 충격",
+      "description": "일반 공격 적중 시 20% 확률로 강화 일격(STR × 35% 추가 피해)",
+      "procChance": 20,
+      "damageMultiplier": 0.35
+    }
+  },
+  {
+    "name": "상급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 8 },
+    "effects": { "evasion": 5 }
+  },
+  {
+    "name": "빛나는 상급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 9 },
+    "effects": { "evasion": 6, "critChance": 5 }
+  },
+  {
+    "name": "사일런트 킬링",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 14 },
+    "effects": { "evasion": 7, "critChance": 7 },
+    "uniqueEffect": {
+      "name": "그림자 절단",
+      "description": "선 턴에 공격하면 최종 데미지 +25% 증가, 회피에 성공하면 다음 공격의 치명타 확률 +20%",
+      "firstTurnDamageBonus": 25,
+      "evasionCritBonus": 20
+    }
+  },
+  {
+    "name": "상급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 8 },
+    "effects": { "skillDamage": 6 }
+  },
+  {
+    "name": "빛나는 상급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 9 },
+    "effects": { "skillDamage": 8 }
+  },
+  {
+    "name": "크로노 블래스터",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 14 },
+    "effects": { "skillDamage": 12 },
+    "uniqueEffect": {
+      "name": "시간 분할",
+      "description": "광역 스킬 사용 시 25% 확률로 스킬 데미지의 30% 만큼 추가 폭발 발생",
+      "procChance": 25,
+      "damageMultiplier": 0.3,
+      "aoeOnly": true
+    }
+  },
+  {
+    "name": "상급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 7, "speed": 1 },
+    "effects": { "skillDamage": 7 }
+  },
+  {
+    "name": "빛나는 상급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 8, "speed": 2 },
+    "effects": { "skillDamage": 9, "mpRegenPerTurn": 3 }
+  },
+  {
+    "name": "크로노 브레이커",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 12, "speed": 3 },
+    "effects": { "skillDamage": 14 },
+    "uniqueEffect": {
+      "name": "시점 붕괴",
+      "description": "스킬 사용 시 20% 확률로 해당 스킬의 쿨타임 즉시 초기화",
+      "procChance": 20,
+      "cooldownReset": true
+    }
+  },
+  {
+    "name": "상급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 8 },
+    "effects": { "critChance": 5 }
+  },
+  {
+    "name": "빛나는 상급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 9 },
+    "effects": { "critChance": 6, "critDamage": 13 }
+  },
+  {
+    "name": "초월의 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 14 },
+    "effects": { "critChance": 8, "critDamage": 18 },
+    "uniqueEffect": {
+      "name": "초특급 한탕 도박",
+      "description": "공격 시 15% 확률로 '특별 카드' 발동 - 해당 공격의 데미지 2배, 치명타 확률 +20%",
+      "procChance": 15,
+      "damageMultiplier": 2,
+      "critChanceBonus": 20
+    }
+  },
+  {
+    "name": "상급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 40,
+    "jobRestriction": "건마",
+    "stats": { "power": 7, "hp": 160 }
+  },
+  {
+    "name": "빛나는 상급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레어",
+    "level": 40,
+    "jobRestriction": "건마",
+    "stats": { "power": 8, "hp": 200 },
+    "effects": { "skillDamage": 7 }
+  },
+  {
+    "name": "피의 격류",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레전더리",
+    "level": 40,
+    "jobRestriction": "건마",
+    "stats": { "power": 13, "hp": 300 },
+    "effects": { "skillDamage": 12 },
+    "uniqueEffect": {
+      "name": "혈분출",
+      "description": "HP가 50% 이하일 때: 모든 피해 +20%, HP가 30% 이하일 때: 추가로 피해 +15%",
+      "hpThresholds": [
+        { "threshold": 50, "damageBonus": 20 },
+        { "threshold": 30, "damageBonus": 35 }
+      ]
+    }
+  },
+  {
+    "name": "고급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "먼마",
+    "stats": { "power": 9 }
+  },
+  {
+    "name": "빛나는 고급 건틀릿",
+    "type": "weapon",
+    "weaponType": "건틀릿",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "먼마",
+    "stats": { "power": 10 },
+    "effects": { "normalAttackDamage": 10, "critDamage": 18 }
+  },
+  {
+    "name": "고급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 9 },
+    "effects": { "evasion": 6 }
+  },
+  {
+    "name": "빛나는 고급 쌍검",
+    "type": "weapon",
+    "weaponType": "쌍검",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "성준호",
+    "stats": { "speed": 10 },
+    "effects": { "evasion": 7, "critChance": 6 }
+  },
+  {
+    "name": "고급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 9 },
+    "effects": { "skillDamage": 7 }
+  },
+  {
+    "name": "빛나는 고급 지팡이",
+    "type": "weapon",
+    "weaponType": "지팡이",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 10 },
+    "effects": { "skillDamage": 10, "aoeSkillDamage": 6 }
+  },
+  {
+    "name": "고급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 8, "speed": 1 },
+    "effects": { "skillDamage": 8 }
+  },
+  {
+    "name": "빛나는 고급 마도장갑",
+    "type": "weapon",
+    "weaponType": "마도장갑",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "빵귤",
+    "stats": { "int": 9, "speed": 2 },
+    "effects": { "skillDamage": 11, "mpRegenPerTurn": 4 }
+  },
+  {
+    "name": "고급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 9 },
+    "effects": { "critChance": 6 }
+  },
+  {
+    "name": "빛나는 고급 아르카나",
+    "type": "weapon",
+    "weaponType": "아르카나",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "호르아크티",
+    "stats": { "luck": 10 },
+    "effects": { "critChance": 7, "critDamage": 16 }
+  },
+  {
+    "name": "고급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "일반",
+    "level": 50,
+    "jobRestriction": "건마",
+    "stats": { "power": 8, "hp": 200 }
+  },
+  {
+    "name": "빛나는 고급 권총",
+    "type": "weapon",
+    "weaponType": "권총",
+    "rarity": "레어",
+    "level": 50,
+    "jobRestriction": "건마",
+    "stats": { "power": 9, "hp": 260 },
+    "effects": { "skillDamage": 10 }
+  }
+]
