@@ -156,6 +156,14 @@ async function doDcAction(targetUrl, mode = 'normal') {
         let res = await axios.get(targetUrl, axiosConfig);
         let html = res.data;
 
+        if (html.includes('location.href')) {
+            const nextUrl = html.match(/location\.href\s*=\s*['"]([^'"]+)['"]/)[1];
+            console.log(`[리다이렉트] -> ${nextUrl}`);
+            axiosConfig.headers['Referer'] = targetUrl;
+            res = await axios.get(nextUrl, axiosConfig);
+            html = res.data;
+        }
+
         const $ = cheerio.load(html);
         
         // 3. 토큰 추출 (PC 버전은 보통 특정 변수나 meta에 있음)
