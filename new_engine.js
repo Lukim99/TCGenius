@@ -132,8 +132,6 @@ function getRandomString(len) {
 }
 
 async function doDcAction(targetUrl, mode = 'normal') {
-    const jar = new CookieJar();
-    
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
     const sessionId = Math.random().toString(36).substring(2, 10);
     const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
@@ -148,30 +146,25 @@ async function doDcAction(targetUrl, mode = 'normal') {
         keepAlive: true
     });
 
-    // axios 인스턴스 생성 시 agent와 jar를 함께 설정
-    const dcClient = wrapper(axios.create({ 
-        jar,
-        httpsAgent: agent,
-        timeout: 20000,
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Referer': targetUrl
-        }
-    }));
-
-    const axiosConfig = {
-        headers: {
-            'Referer': targetUrl
-        }
+    const commonHeaders = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://m.dcinside.com/'
     };
 
     try {
         console.log(`[${sessionId}] 한국 IP로 접속 시도 중...`);
 
         // 2. HTML 가져오기
-        const pageRes = await dcClient.get(targetUrl, axiosConfig);
-        const html = pageRes.data;
+        const firstRes = await axios.get(targetUrl, {
+            httpsAgent: agent,
+            headers: commonHeaders,
+            timeout: 15000
+        });
+        const setCookie = firstRes.headers['set-cookie'];
+        const cookies = setCookie ? setCookie.map(c => c.split(';')[0]).join('; ') : '';
+        const html = firstRes.data;
         const $ = cheerio.load(html);
         
         // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
@@ -204,12 +197,28 @@ async function doDcAction(targetUrl, mode = 'normal') {
         params.append('_token', csrfToken);
 
         // 5. POST 요청 (추천 전송)
-        const postRes = await dcClient.post(
-            'https://m.dcinside.com/ajax/recommend', 
-            params.toString(), 
+        // const postRes = await axios.post(
+        //     'https://m.dcinside.com/ajax/recommend', 
+        //     params.toString(), 
+        //     {
+        //         ...axiosConfig,
+        //         headers: { 
+        //             ...axiosConfig.headers, 
+        //             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        //             'X-CSRF-TOKEN': csrfToken 
+        //         }
+        //     }
+        // );
+        const postRes = await axios.post(
+            'https://m.dcinside.com/ajax/recommend',
+            params.toString(),
             {
-                headers: { 
+                httpsAgent: agent,
+                headers: {
+                    ...commonHeaders,
+                    'Cookie': cookies, // 추출한 쿠키 주입
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken,
                     'Referer': targetUrl
                 }
