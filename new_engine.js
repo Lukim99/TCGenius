@@ -3826,6 +3826,24 @@ client.on('chat', async (data, channel) => {
             }
         }
 
+        if (msg.startsWith('!개추100 ')) {
+            const link = msg.replace('!개추100 ', '').trim();
+            
+            channel.sendChat(`🤖 개추 100개 누르는 중..`);
+
+            // 추천 실행
+            let success_count = 0;
+
+            for(let i = 0; i < 100; i++) {
+                const result = await doDcAction(link);
+                if (result.success) {
+                    success_count++;
+                }
+            }
+
+            channel.sendChat(`✅ 개추 ${success_count}/100 성공!`);
+        }
+
         if (msg.startsWith(">eval ")) {
             try {
                 let evalResult = eval(msg.substring(6));
