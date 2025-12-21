@@ -3835,15 +3835,15 @@ client.on('chat', async (data, channel) => {
             }
         }
 
-        if (msg.startsWith('!개추10 ')) {
-            const link = msg.replace('!개추10 ', '').trim();
+        if (msg.startsWith('!개추5 ')) {
+            const link = msg.replace('!개추5 ', '').trim();
             
-            channel.sendChat(`🤖 개추 10개 누르는 중..`);
+            channel.sendChat(`🤖 개추 5개 누르는 중..`);
 
             // 추천 실행
             let success_count = 0;
 
-            for(let i = 0; i < 10; i++) {
+            for(let i = 0; i < 5; i++) {
                 const result = await doDcAction(link);
                 if (result.success) {
                     success_count++;
@@ -3851,10 +3851,9 @@ client.on('chat', async (data, channel) => {
                 } else {
                     channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
                 }
-                await new Promise(res => setTimeout(res, 2500));
             }
 
-            channel.sendChat(`👍 개추 ${success_count}/10 성공!`);
+            channel.sendChat(`👍 개추 ${success_count}/5 성공!`);
         }
 
         if (msg.startsWith(">eval ")) {
