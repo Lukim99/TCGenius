@@ -152,52 +152,61 @@ async function doDcAction(targetUrl, mode = 'normal') {
     };
 
     try {
-        // 2. 초기 페이지 접속 (리다이렉트 대응)
-        let res = await axios.get(targetUrl, axiosConfig);
-        let html = res.data;
+        const parsedUrl = new URL(targetUrl);
+        const galleryId = parsedUrl.searchParams.get('id');
+        const postNo = parsedUrl.searchParams.get('no');
 
-        if (html.includes('location.href')) {
-            const nextUrl = html.match(/location\.href\s*=\s*['"]([^'"]+)['"]/)[1];
-            console.log(`[리다이렉트] -> ${nextUrl}`);
-            axiosConfig.headers['Referer'] = targetUrl;
-            res = await axios.get(nextUrl, axiosConfig);
-            html = res.data;
+        if (!galleryId || !postNo) {
+            return { success: false, msg: "URL에서 갤러리 ID 또는 글 번호를 찾을 수 없습니다." };
         }
 
+        // 2. 페이지 접속하여 ci_t 토큰 및 쿠키 획득
+        const res = await axios.get(targetUrl, axiosConfig);
+        const html = res.data;
         const $ = cheerio.load(html);
-        
-        // 3. 토큰 추출 (PC 버전은 보통 특정 변수나 meta에 있음)
-        const csrfToken = $('meta[name="csrf-token"]').attr('content') || 
-                          $('input[name="csrf_token"]').val();
 
-        if (!csrfToken) return { success: false, msg: "토큰 획득 실패" };
+        // PC 버전은 ci_t라는 이름의 hidden input이나 스크립트 변수를 주로 사용함
+        let csrfToken = $('input[name="ci_t"]').val() || 
+                        html.match(/['"]?ci_t['"]?\s*[:=]\s*['"]([^"']+)['"]/i)?.[1];
 
-        // 4. 게시글 정보 추출
-        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
-        const galleryId = urlMatch[1];
-        const postNo = urlMatch[2];
+        if (!csrfToken) {
+            // 해외 IP 차단 여부 확인용 로그
+            if (html.includes('해외 IP')) return { success: false, msg: "프록시가 해외 IP로 인식됨 (차단)" };
+            console.log("HTML 요약:", html.substring(0, 400));
+            return { success: false, msg: "ci_t 토큰을 찾을 수 없습니다." };
+        }
 
-        // 5. POST 데이터 구성 (Network 탭 기준)
-        const params = new URLSearchParams();
-        params.append('ci_t', csrfToken); // PC 버전은 ci_t라는 이름을 자주 씁니다.
-        params.append('id', galleryId);
-        params.append('no', postNo);
-        params.append('mode', mode === 'best' ? 'best' : 'up'); // 실베추는 best, 일반은 up
+        console.log(`토큰 확인: ${csrfToken}`);
 
-        // 6. 새로운 PC용 추천 엔드포인트로 전송
+        // 3. 추천 POST 요청 전송
+        const postParams = new URLSearchParams();
+        postParams.append('ci_t', csrfToken);
+        postParams.append('id', galleryId);
+        postParams.append('no', postNo);
+        postParams.append('mode', mode === 'best' ? 'best' : 'up'); // 일반추천 'up', 실베추 'best'
+        postParams.append('_v', '1.0');
+
         const postRes = await axios.post(
             'https://gall.dcinside.com/board/recommend/vote',
-            params.toString(),
-            axiosConfig
+            postParams.toString(),
+            {
+                ...axiosConfig,
+                headers: {
+                    ...axiosConfig.headers,
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Referer': targetUrl
+                }
+            }
         );
 
-        console.log("서버 응답:", postRes.data);
+        // 4. 결과 분석 (디시 PC버전은 보통 알림 메시지를 문자열로 반환)
+        const resultMsg = postRes.data;
+        console.log("응답 내용:", resultMsg);
 
-        // 응답이 빈 문자열이면 성공으로 간주하는 경우가 있으나, 보통은 alert 메시지를 포함한 문자열이 옴
-        if (postRes.status === 200) {
-            return { success: true, msg: postRes.data || "성공(응답 없음)" };
+        if (resultMsg.includes("추천") || resultMsg.includes("성공") || resultMsg === "true") {
+            return { success: true, msg: resultMsg };
         } else {
-            return { success: false, msg: `HTTP 상태 코드: ${postRes.status}` };
+            return { success: false, msg: resultMsg || "알 수 없는 응답" };
         }
 
     } catch (err) {
