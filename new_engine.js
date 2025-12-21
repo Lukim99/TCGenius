@@ -133,7 +133,7 @@ function getRandomString(len) {
 
 async function doDcAction(targetUrl, mode = 'normal') {
     const jar = new CookieJar();
-    const dcClient = wrapper(axios.create({ jar }));
+    
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
     const sessionId = Math.random().toString(36).substring(2, 10);
     const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
@@ -148,7 +148,9 @@ async function doDcAction(targetUrl, mode = 'normal') {
         keepAlive: true
     });
 
-    const axiosConfig = {
+    // axios 인스턴스 생성 시 agent와 jar를 함께 설정
+    const dcClient = wrapper(axios.create({ 
+        jar,
         httpsAgent: agent,
         timeout: 20000,
         headers: {
@@ -156,13 +158,13 @@ async function doDcAction(targetUrl, mode = 'normal') {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Referer': targetUrl
         }
-    };
+    }));
 
     try {
         console.log(`[${sessionId}] 한국 IP로 접속 시도 중...`);
 
         // 2. HTML 가져오기
-        const pageRes = await dcClient.get(targetUrl, axiosConfig);
+        const pageRes = await dcClient.get(targetUrl);
         const html = pageRes.data;
         const $ = cheerio.load(html);
         
@@ -196,13 +198,11 @@ async function doDcAction(targetUrl, mode = 'normal') {
         params.append('_token', csrfToken);
 
         // 5. POST 요청 (추천 전송)
-        const postRes = await axios.post(
+        const postRes = await dcClient.post(
             'https://m.dcinside.com/ajax/recommend', 
             params.toString(), 
             {
-                ...axiosConfig,
                 headers: { 
-                    ...axiosConfig.headers, 
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'X-CSRF-TOKEN': csrfToken 
                 }
