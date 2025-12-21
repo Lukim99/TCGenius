@@ -161,26 +161,33 @@ async function doDcAction(targetUrl, mode = 'normal') {
     try {
         console.log(`[세션: ${sessionId}] 한국 IP 할당 시도 중...`);
 
-        // 3. GET 요청으로 CSRF 토큰 획득
-        const pageRes = await axios.get(targetUrl, axiosConfig);
-        const html = pageRes.data;
-        const $ = cheerio.load(html);
-        
-        // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
-        let csrfToken = $('meta[name="csrf-token"]').attr('content') || 
-                        $('input[name="csrf_token"]').val() ||
-                        $('input[name="_token"]').val();
+        let pageRes = await axios.get(targetUrl, axiosConfig);
+        let html = pageRes.data;
 
-        // 만약 meta 태그에 없다면 스크립트 내부에서 정규식으로 추출 시도
-        if (!csrfToken) {
-            const tokenMatch = html.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
-            if (tokenMatch) csrfToken = tokenMatch[1];
+        // 만약 리다이렉트 스크립트가 발견되면 해당 주소로 다시 요청
+        if (html.includes('location.href')) {
+            const nextUrlMatch = html.match(/location\.href\s*=\s*['"]([^'"]+)['"]/);
+            if (nextUrlMatch) {
+                const nextUrl = nextUrlMatch[1];
+                console.log(`리다이렉트 발견 -> ${nextUrl}로 재접속 중...`);
+                
+                // 리퍼러를 이전 주소로 업데이트하여 재요청
+                axiosConfig.headers['Referer'] = targetUrl;
+                pageRes = await axios.get(nextUrl, axiosConfig);
+                html = pageRes.data;
+            }
         }
 
+        const $ = cheerio.load(html);
+        
+        // 이제 실제 게시글 HTML에서 토큰을 찾습니다.
+        let csrfToken = $('meta[name="csrf-token"]').attr('content') || 
+                        $('input[name="csrf_token"]').val();
+
         if (!csrfToken) {
-            // 실패 시 서버가 보낸 HTML 내용 일부 확인 (디버깅용)
-            console.log("HTML 요약:", html.substring(0, 500)); 
-            return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)" };
+            // 만약 여기서도 실패하면 HTML 본문을 확인해봐야 함
+            console.log("HTML 본문 확인:", html.substring(0, 300));
+            return { success: false, msg: "최종 페이지에서도 토큰을 찾지 못했습니다." };
         }
 
         // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
