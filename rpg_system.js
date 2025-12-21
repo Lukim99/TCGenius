@@ -90,7 +90,7 @@ class RPGJobManager {
 const jobManager = new RPGJobManager();
 
 // 장비 데이터 로더
-class RPGEquipmentManager {
+class RPGEquipmentDataManager {
     constructor() {
         this.weapons = [];
         this.armors = [];
@@ -459,8 +459,8 @@ class RPGEquipmentManager {
     }
 }
 
-// 전역 EquipmentManager 인스턴스
-const equipmentManager = new RPGEquipmentManager();
+// 전역 EquipmentDataManager 인스턴스
+const equipmentManager = new RPGEquipmentDataManager();
 
 // 1. 스탯 시스템
 class RPGStats {
@@ -1146,7 +1146,7 @@ class RPGMonster {
 module.exports = {
     RPGJobManager,
     jobManager,
-    RPGEquipmentManager,
+    RPGEquipmentDataManager,
     equipmentManager,
     RPGStats,
     RPGResource,
@@ -1154,6 +1154,7 @@ module.exports = {
     RPGSkill,
     RPGSkillManager,
     RPGEquipment,
+    RPGEquipmentManager,
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,

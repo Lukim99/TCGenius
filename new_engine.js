@@ -20,7 +20,7 @@ const PROXY_CONFIG = {
 const {
     RPGJobManager,
     jobManager,
-    RPGEquipmentManager,
+    RPGEquipmentDataManager,
     equipmentManager,
     RPGStats,
     RPGResource,
@@ -28,6 +28,7 @@ const {
     RPGSkill,
     RPGSkillManager,
     RPGEquipment,
+    RPGEquipmentManager,
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,
