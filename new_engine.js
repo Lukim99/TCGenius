@@ -3813,16 +3813,16 @@ client.on('chat', async (data, channel) => {
         if (msg.startsWith('!개추 ')) {
             const link = msg.replace('!개추 ', '').trim();
             
-            channel.sendChat(`✅ 추천 작업을 시작합니다.\n링크: ${link}\n(한국 IP 세션 생성 중...)`);
+            channel.sendChat(`🤖 개추 누르는 중..`);
 
             // 추천 실행
             const result = await doDcAction(link);
 
             // 결과 보고
             if (result.success) {
-                channel.sendChat(`✅ 추천 완료!\n메시지: ${result.msg}`);
+                channel.sendChat(`✅ 개추 성공!`);
             } else {
-                channel.sendChat(`❌ 추천 실패\n사유: ${result.msg}`);
+                channel.sendChat(`❌ 개추 실패\n${result.msg}`);
             }
         }
 
