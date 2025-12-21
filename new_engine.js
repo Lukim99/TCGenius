@@ -5,6 +5,7 @@ const request = require('request');
 const https = require('https');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { HttpsProxyAgent } = require('hpagent');
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -128,58 +129,81 @@ function getRandomString(len) {
     return randomstring;
 }
 
-async function doDcRecommend(targetUrl) {
-    const sessionId = Math.random().toString(36).substring(2, 10);
-    const proxyUser = `${PROXY_CONFIG.username}-country-kr-session-${sessionId}`;
+async function doDcAction(targetUrl, mode = 'normal') {
+    // 1. 매 실행마다 새로운 세션 ID 생성 (새로운 한국 IP 할당)
+    const sessionId = Math.random().toString(36).substring(2, 12);
+    const proxyUser = `f164b5cdae2b7e26a1d4-country-kr-session-${sessionId}`;
+    const proxyPass = 'faa4d69696422426';
+    
+    // 프록시 URL 구성 (프로토콜://ID:PW@HOST:PORT)
+    const proxyUrl = `http://${proxyUser}:${proxyPass}@gw.dataimpulse.com:823`;
+
+    // 2. hpagent를 이용한 HTTPS 에이전트 설정 (인증서 오류 및 407 방지)
+    const agent = new HttpsProxyAgent({
+        proxy: proxyUrl,
+        rejectUnauthorized: false, // 인증서 altnames 에러 방지
+        keepAlive: true
+    });
 
     const axiosConfig = {
-        proxy: {
-            host: PROXY_CONFIG.host,
-            port: PROXY_CONFIG.port,
-            auth: { username: proxyUser, password: PROXY_CONFIG.password }
-        },
-        httpsAgent: new https.Agent({
-            rejectUnauthorized: false
-        }),
-        timeout: 15000,
+        httpsAgent: agent,
+        timeout: 20000,
         headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Referer': targetUrl
+            'Referer': targetUrl,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest'
         }
     };
 
     try {
-        // 1. 페이지 접속 및 토큰 획득
-        const res = await axios.get(targetUrl, axiosConfig);
-        const $ = cheerio.load(res.data);
+        console.log(`[세션: ${sessionId}] 한국 IP 할당 시도 중...`);
+
+        // 3. GET 요청으로 CSRF 토큰 획득
+        const pageRes = await axios.get(targetUrl, axiosConfig);
+        const $ = cheerio.load(pageRes.data);
         const csrfToken = $('meta[name="csrf-token"]').attr('content');
 
-        if (!csrfToken) return { success: false, msg: "보안 토큰 획득 실패 (차단 가능성)" };
+        if (!csrfToken) {
+            return { success: false, msg: "보안 토큰 획득 실패 (IP 차단 또는 사이트 구조 변경)" };
+        }
 
-        // 2. 게시글 정보 추출
+        // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
         if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다." };
 
-        // 3. 추천 POST 전송
-        const postData = new URLSearchParams({
-            'type': 'recommend_join',
-            'id': urlMatch[1],
-            'no': urlMatch[2],
-            '_token': csrfToken
-        });
+        const params = new URLSearchParams();
+        params.append('type', mode === 'best' ? 'recommend_best' : 'recommend_join');
+        params.append('id', urlMatch[1]);
+        params.append('no', urlMatch[2]);
+        params.append('_token', csrfToken);
 
-        const postRes = await axios.post('https://m.dcinside.com/ajax/recommend', postData.toString(), {
-            ...axiosConfig,
-            headers: { ...axiosConfig.headers, 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
-        });
+        // 5. POST 요청 (추천 전송)
+        const postRes = await axios.post(
+            'https://m.dcinside.com/ajax/recommend', 
+            params.toString(), 
+            {
+                ...axiosConfig,
+                headers: { 
+                    ...axiosConfig.headers, 
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-CSRF-TOKEN': csrfToken 
+                }
+            }
+        );
 
-        // 결과 분석 (디시는 성공 시 JSON 혹은 특정 문자열 반환)
+        // 6. 결과 확인
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
-            return { success: true, msg: "추천 성공!" };
+            return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
             return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
         }
+
     } catch (err) {
+        // 상세 에러 처리
+        if (err.response && err.response.status === 407) {
+            return { success: false, msg: "프록시 인증 실패(407). 대시보드에서 화이트리스트 IP를 확인하세요." };
+        }
         return { success: false, msg: `에러: ${err.message}` };
     }
 }
