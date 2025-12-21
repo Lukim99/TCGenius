@@ -132,9 +132,16 @@ function getRandomString(len) {
 }
 
 async function doDcAction(targetUrl, mode = 'normal') {
+    const UA_LIST = [
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36'
+    ];
+    const randomUA = UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
-    const sessionId = Math.random().toString(36).substring(2, 10);
-    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr`;
+    const sessionId = Math.random().toString(36).substring(2, 15);
+    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
     const proxyPass = 'faa4d69696422426';
     
     // 중요: 특수문자가 포함된 ID를 URL 형식에 맞게 인코딩
@@ -143,11 +150,11 @@ async function doDcAction(targetUrl, mode = 'normal') {
     const agent = new HttpsProxyAgent({
         proxy: proxyUrl,
         rejectUnauthorized: false,
-        keepAlive: true
+        keepAlive: false
     });
 
     const commonHeaders = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': randomUA,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': targetUrl
@@ -225,8 +232,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
-            console.log(postRes);
-            return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
+            return { success: false, msg: postRes.data.cause || "이미 추천했거나 실패함" };
         }
 
     } catch (err) {
