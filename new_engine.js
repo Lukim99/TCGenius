@@ -132,7 +132,7 @@ function getRandomString(len) {
 async function doDcAction(targetUrl, mode = 'normal') {
     // 1. 매 실행마다 새로운 세션 ID 생성 (새로운 한국 IP 할당)
     const sessionId = Math.random().toString(36).substring(2, 12);
-    const proxyUser = `f164b5cdae2b7e26a1d4-country-kr-session-${sessionId}`;
+    const proxyUser = `f164b5cdae2b7e26a1d4`;
     const proxyPass = 'faa4d69696422426';
     
     // 프록시 URL 구성 (프로토콜://ID:PW@HOST:PORT)
