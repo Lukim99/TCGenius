@@ -169,6 +169,8 @@ async function doDcAction(targetUrl, mode = 'normal') {
         // 2. HTML 가져오기
         const firstRes = await axios.get(targetUrl, {
             httpsAgent: agent,
+            ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256',
+            honorCipherOrder: true,
             headers: commonHeaders,
             timeout: 15000
         });
