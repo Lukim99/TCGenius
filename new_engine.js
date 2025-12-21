@@ -130,83 +130,89 @@ function getRandomString(len) {
 }
 
 async function doDcAction(targetUrl, mode = 'normal') {
-    // 1. 매 실행마다 새로운 세션 ID 생성 (새로운 한국 IP 할당)
-    const sessionId = Math.random().toString(36).substring(2, 12);
-    const proxyUser = `f164b5cdae2b7e26a1d4__cr.kr`;
+    // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
+    const sessionId = Math.random().toString(36).substring(2, 10);
+    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr`;
     const proxyPass = 'faa4d69696422426';
     
-    // 프록시 URL 구성 (프로토콜://ID:PW@HOST:PORT)
-    const proxyUrl = `http://${proxyUser}:${proxyPass}@gw.dataimpulse.com:823`;
+    // 중요: 특수문자가 포함된 ID를 URL 형식에 맞게 인코딩
+    const proxyUrl = `http://${rawUser}:${proxyPass}@gw.dataimpulse.com:823`;
 
-    const agent = new HttpsProxyAgent({ proxy: proxyUrl, rejectUnauthorized: false });
+    const agent = new HttpsProxyAgent({
+        proxy: proxyUrl,
+        rejectUnauthorized: false,
+        keepAlive: true
+    });
 
-    let axiosConfig = {
+    const axiosConfig = {
         httpsAgent: agent,
-        timeout: 15000,
+        timeout: 20000,
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': targetUrl,
-            'X-Requested-With': 'XMLHttpRequest', // AJAX 요청임을 명시
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+            'Referer': 'https://m.dcinside.com/', // 리퍼러를 메인으로 먼저 설정
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
         }
     };
 
     try {
-        const parsedUrl = new URL(targetUrl);
-        const galleryId = parsedUrl.searchParams.get('id');
-        const postNo = parsedUrl.searchParams.get('no');
+        console.log(`[${sessionId}] 한국 IP로 접속 시도 중...`);
 
-        if (!galleryId || !postNo) {
-            return { success: false, msg: "URL에서 갤러리 ID 또는 글 번호를 찾을 수 없습니다." };
-        }
-
-        // 2. 페이지 접속하여 ci_t 토큰 및 쿠키 획득
-        const res = await axios.get(targetUrl, axiosConfig);
-        const html = res.data;
+        // 2. HTML 가져오기
+        const pageRes = await axios.get(targetUrl, axiosConfig);
+        const html = pageRes.data;
         const $ = cheerio.load(html);
+        
+        // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
+        let csrfToken = $('meta[name="csrf-token"]').attr('content') || 
+                        $('input[name="csrf_token"]').val() ||
+                        $('input[name="_token"]').val();
 
-        // PC 버전은 ci_t라는 이름의 hidden input이나 스크립트 변수를 주로 사용함
-        let csrfToken = $('input[name="ci_t"]').val() || 
-                        html.match(/['"]?ci_t['"]?\s*[:=]\s*['"]([^"']+)['"]/i)?.[1];
+        // 만약 meta 태그에 없다면 스크립트 내부에서 정규식으로 추출 시도
+        if (!csrfToken) {
+            const tokenMatch = html.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
+            if (tokenMatch) csrfToken = tokenMatch[1];
+        }
 
         if (!csrfToken) {
-            // 해외 IP 차단 여부 확인용 로그
-            if (html.includes('해외 IP')) return { success: false, msg: "프록시가 해외 IP로 인식됨 (차단)" };
-            console.log("HTML 요약:", html.substring(0, 400));
-            return { success: false, msg: "ci_t 토큰을 찾을 수 없습니다." };
+            // 실패 시 서버가 보낸 HTML 내용 일부 확인 (디버깅용)
+            console.log("HTML 요약:", html.substring(0, 500)); 
+            return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)" };
         }
 
-        console.log(`토큰 확인: ${csrfToken}`);
+        console.log(`토큰 획득 성공: ${csrfToken.substring(0, 10)}...`);
 
-        // 3. 추천 POST 요청 전송
-        const postParams = new URLSearchParams();
-        postParams.append('ci_t', csrfToken);
-        postParams.append('id', galleryId);
-        postParams.append('no', postNo);
-        postParams.append('mode', mode === 'best' ? 'best' : 'up'); // 일반추천 'up', 실베추 'best'
-        postParams.append('_v', '1.0');
+        // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
+        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
+        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다." };
 
+        const params = new URLSearchParams();
+        params.append('type', mode === 'best' ? 'recommend_best' : 'recommend_join');
+        params.append('id', urlMatch[1]);
+        params.append('no', urlMatch[2]);
+        params.append('_token', csrfToken);
+
+        // 5. POST 요청 (추천 전송)
         const postRes = await axios.post(
-            'https://gall.dcinside.com/board/recommend/vote',
-            postParams.toString(),
+            'https://m.dcinside.com/ajax/recommend', 
+            params.toString(), 
             {
                 ...axiosConfig,
-                headers: {
-                    ...axiosConfig.headers,
+                headers: { 
+                    ...axiosConfig.headers, 
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'Referer': targetUrl
+                    'X-CSRF-TOKEN': csrfToken 
                 }
             }
         );
 
-        // 4. 결과 분석 (디시 PC버전은 보통 알림 메시지를 문자열로 반환)
-        const resultMsg = postRes.data;
-        console.log("응답 내용:", resultMsg);
-
-        if (resultMsg.includes("추천") || resultMsg.includes("성공") || resultMsg === "true") {
-            return { success: true, msg: resultMsg };
+        // 6. 결과 확인
+        if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
+            return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
-            return { success: false, msg: resultMsg || "알 수 없는 응답" };
+            return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
         }
 
     } catch (err) {
