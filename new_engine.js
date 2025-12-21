@@ -158,9 +158,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
     const commonHeaders = {
         'User-Agent': randomUA,
-        'X-Forwarded-For': fakeIp, // 랜덤 IP 주입
-        'Client-IP': fakeIp,
-        'X-Real-IP': fakeIp,
+        'X-Forwarded-For': fakeIp,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
         'Cache-Control': 'no-cache, no-store, must-revalidate', // 캐시 방지 헤더 추가
@@ -171,11 +169,21 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
     try {
         // 2. HTML 가져오기
-        const firstRes = await axios.get(targetUrl, {
+        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
+        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음" };
+        const galleryId = urlMatch ? urlMatch[1] : '';
+        const preRes = await axios.get(`https://m.dcinside.com/board/${galleryId}`, { httpsAgent: agent, headers: commonHeaders });
+        const freshCookie = preRes.headers['set-cookie']?.join('; ') || '';
+
+        const cacheBuster = `?_=${getRandomString(10)}`;
+        const firstRes = await axios.get(targetUrl + cacheBuster, {
             httpsAgent: agent,
             ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256',
             honorCipherOrder: true,
-            headers: commonHeaders,
+            headers: {
+                ...commonHeaders,
+                'Cookie': freshCookie
+            },
             timeout: 15000
         });
         const setCookie = firstRes.headers['set-cookie'];
@@ -201,9 +209,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
         }
 
         // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
-        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
-        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다." };
-
         const params = new URLSearchParams();
         params.append('type', mode === 'best' ? 'recommend_best' : 'recommend_join');
         params.append('id', urlMatch[1]);
