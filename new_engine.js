@@ -150,9 +150,11 @@ async function doDcAction(targetUrl, mode = 'normal') {
         timeout: 20000,
         headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Referer': targetUrl,
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'X-Requested-With': 'XMLHttpRequest'
+            'Referer': 'https://m.dcinside.com/', // 리퍼러를 메인으로 먼저 설정
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
         }
     };
 
@@ -161,11 +163,24 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
         // 3. GET 요청으로 CSRF 토큰 획득
         const pageRes = await axios.get(targetUrl, axiosConfig);
-        const $ = cheerio.load(pageRes.data);
-        const csrfToken = $('meta[name="csrf-token"]').attr('content');
+        const html = pageRes.data;
+        const $ = cheerio.load(html);
+        
+        // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
+        let csrfToken = $('meta[name="csrf-token"]').attr('content') || 
+                        $('input[name="csrf_token"]').val() ||
+                        $('input[name="_token"]').val();
+
+        // 만약 meta 태그에 없다면 스크립트 내부에서 정규식으로 추출 시도
+        if (!csrfToken) {
+            const tokenMatch = html.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
+            if (tokenMatch) csrfToken = tokenMatch[1];
+        }
 
         if (!csrfToken) {
-            return { success: false, msg: "보안 토큰 획득 실패 (IP 차단 또는 사이트 구조 변경)" };
+            // 실패 시 서버가 보낸 HTML 내용 일부 확인 (디버깅용)
+            console.log("HTML 요약:", html.substring(0, 500)); 
+            return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)" };
         }
 
         // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
