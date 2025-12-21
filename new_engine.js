@@ -154,8 +154,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
     };
 
     try {
-        console.log(`[${sessionId}] 한국 IP로 접속 시도 중...`);
-
         // 2. HTML 가져오기
         const firstRes = await axios.get(targetUrl, {
             httpsAgent: agent,
@@ -183,8 +181,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
             console.log("HTML 요약:", html.substring(0, 500)); 
             return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)" };
         }
-
-        console.log(`토큰 획득 성공: ${csrfToken.substring(0, 10)}...`);
 
         // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
@@ -229,7 +225,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
-            console.log(postRes);
             return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
         }
 
