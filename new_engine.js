@@ -3,11 +3,19 @@ const fs = require('fs');
 const express = require('express');
 const request = require('request');
 const https = require('https');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const VIEWMORE = ('\u200e'.repeat(500));
 
+const PROXY_CONFIG = {
+    host: 'gw.dataimpulse.com',
+    port: 823,
+    username: process.env.PROXY_ID,
+    password: process.env.PROXY_PW
+};
 // RPG 시스템 모듈 불러오기
 const {
     RPGJobManager,
@@ -117,6 +125,59 @@ function getRandomString(len) {
         randomstring += chars.substring(rnum, rnum + 1);
     }
     return randomstring;
+}
+
+async function doDcRecommend(targetUrl) {
+    const sessionId = Math.random().toString(36).substring(2, 10);
+    const proxyUser = `${PROXY_CONFIG.username}-country-kr-session-${sessionId}`;
+
+    const axiosConfig = {
+        proxy: {
+            host: PROXY_CONFIG.host,
+            port: PROXY_CONFIG.port,
+            auth: { username: proxyUser, password: PROXY_CONFIG.password }
+        },
+        timeout: 15000,
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+            'Referer': targetUrl
+        }
+    };
+
+    try {
+        // 1. 페이지 접속 및 토큰 획득
+        const res = await axios.get(targetUrl, axiosConfig);
+        const $ = cheerio.load(res.data);
+        const csrfToken = $('meta[name="csrf-token"]').attr('content');
+
+        if (!csrfToken) return { success: false, msg: "보안 토큰 획득 실패 (차단 가능성)" };
+
+        // 2. 게시글 정보 추출
+        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
+        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다." };
+
+        // 3. 추천 POST 전송
+        const postData = new URLSearchParams({
+            'type': 'recommend_join',
+            'id': urlMatch[1],
+            'no': urlMatch[2],
+            '_token': csrfToken
+        });
+
+        const postRes = await axios.post('https://m.dcinside.com/ajax/recommend', postData.toString(), {
+            ...axiosConfig,
+            headers: { ...axiosConfig.headers, 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        // 결과 분석 (디시는 성공 시 JSON 혹은 특정 문자열 반환)
+        if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
+            return { success: true, msg: "추천 성공!" };
+        } else {
+            return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
+        }
+    } catch (err) {
+        return { success: false, msg: `에러: ${err.message}` };
+    }
 }
 
 function get_captcha_key() {
@@ -3684,6 +3745,22 @@ client.on('chat', async (data, channel) => {
                 }
             }
             return;
+        }
+
+        if (msg.startsWith('!개추 ')) {
+            const link = msg.replace('!개추 ', '').trim();
+            
+            chat.sendText(`✅ 추천 작업을 시작합니다.\n링크: ${link}\n(한국 IP 세션 생성 중...)`);
+
+            // 추천 실행
+            const result = await doDcRecommend(link);
+
+            // 결과 보고
+            if (result.success) {
+                chat.sendText(`✅ 추천 완료!\n메시지: ${result.msg}`);
+            } else {
+                chat.sendText(`❌ 추천 실패\n사유: ${result.msg}`);
+            }
         }
 
         if (msg.startsWith(">eval ")) {
