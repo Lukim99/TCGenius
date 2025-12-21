@@ -3805,6 +3805,11 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
+        if (msg == "!방번호") {
+            channel.sendChat("✅ channel.channelId: " + roomid);
+            return;
+        }
+
         if (msg.startsWith('!개추 ')) {
             const link = msg.replace('!개추 ', '').trim();
             
