@@ -3751,16 +3751,16 @@ client.on('chat', async (data, channel) => {
         if (msg.startsWith('!개추 ')) {
             const link = msg.replace('!개추 ', '').trim();
             
-            chat.sendText(`✅ 추천 작업을 시작합니다.\n링크: ${link}\n(한국 IP 세션 생성 중...)`);
+            channel.sendChat(`✅ 추천 작업을 시작합니다.\n링크: ${link}\n(한국 IP 세션 생성 중...)`);
 
             // 추천 실행
             const result = await doDcRecommend(link);
 
             // 결과 보고
             if (result.success) {
-                chat.sendText(`✅ 추천 완료!\n메시지: ${result.msg}`);
+                channel.sendChat(`✅ 추천 완료!\n메시지: ${result.msg}`);
             } else {
-                chat.sendText(`❌ 추천 실패\n사유: ${result.msg}`);
+                channel.sendChat(`❌ 추천 실패\n사유: ${result.msg}`);
             }
         }
 
