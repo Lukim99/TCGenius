@@ -3844,7 +3844,8 @@ client.on('chat', async (data, channel) => {
             let success_count = 0;
 
             for(let i = 0; i < 5; i++) {
-                const result = await doDcAction(link);
+                let tempLink = link + "?test=" + getRandomString(10);
+                const result = await doDcAction(tempLink);
                 if (result.success) {
                     success_count++;
                     channel.sendChat(`👍 개추 ${i+1}번째 성공!\nCSRF 토큰: ${result.token}`);
