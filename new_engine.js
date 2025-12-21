@@ -3781,7 +3781,7 @@ client.on('chat', async (data, channel) => {
             channel.sendChat(`✅ 추천 작업을 시작합니다.\n링크: ${link}\n(한국 IP 세션 생성 중...)`);
 
             // 추천 실행
-            const result = await doDcRecommend(link);
+            const result = await doDcAction(link);
 
             // 결과 보고
             if (result.success) {
