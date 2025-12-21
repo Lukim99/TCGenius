@@ -139,12 +139,8 @@ async function doDcAction(targetUrl, mode = 'normal') {
         'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36'
     ];
     const randomUA = UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
-    // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
-    const sessionId = Math.random().toString(36).substring(2, 15);
     const rawUser = `f164b5cdae2b7e26a1d4__cr.kr`;
     const proxyPass = 'faa4d69696422426';
-    
-    // 중요: 특수문자가 포함된 ID를 URL 형식에 맞게 인코딩
     const proxyUrl = `http://${rawUser}:${proxyPass}@gw.dataimpulse.com:823`;
 
     const agent = new HttpsProxyAgent({
@@ -157,14 +153,20 @@ async function doDcAction(targetUrl, mode = 'normal') {
     const fakeIp = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
 
     const commonHeaders = {
-        'User-Agent': randomUA,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'X-Forwarded-For': fakeIp,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache, no-store, must-revalidate', // 캐시 방지 헤더 추가
-        'Pragma': 'no-cache',
-        'Connection': 'close', // 연결 유지 방지
-        'Referer': 'https://m.dcinside.com/'
+        'Connection': 'close',
+        'Referer': targetUrl,
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Dest': 'empty',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Host': 'm.dcinside.com',
+        'Origin': 'https://m.dcinside.com',
+        'Sec-Ch-Ua-Mobile': '?1',
+        'Sec-Ch-Ua-Platform': 'iOS'
     };
 
     try {
@@ -237,8 +239,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
                     ...commonHeaders,
                     'Cookie': cookies, // 추출한 쿠키 주입
                     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Csrf-Token': csrfToken,
                     'Referer': targetUrl
                 }
             }
@@ -248,7 +249,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken };
         } else {
-            return { success: false, msg: (postRes.data.cause || "이미 추천했거나 실패함"), token: csrfToken };
+            return { success: false, msg: (postRes.data.cause || "알 수 없음"), token: csrfToken };
         }
 
     } catch (err) {
@@ -3838,9 +3839,9 @@ client.on('chat', async (data, channel) => {
 
             // 결과 보고
             if (result.success) {
-                channel.sendChat(`👍 개추 성공!\nCSRF 토큰: ${result.token}`);
+                channel.sendChat(`👍 개추 성공!`);
             } else {
-                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}\nCSRF 토큰: ${result.token}`);
+                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}`);
             }
         }
 
@@ -3857,9 +3858,9 @@ client.on('chat', async (data, channel) => {
                 const result = await doDcAction(tempLink);
                 if (result.success) {
                     success_count++;
-                    channel.sendChat(`👍 개추 ${i+1}번째 성공!\nCSRF 토큰: ${result.token}`);
+                    channel.sendChat(`👍 개추 ${i+1}번째 성공!`);
                 } else {
-                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}\nCSRF 토큰: ${result.token}`);
+                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
                 }
             }
 
