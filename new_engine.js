@@ -6,6 +6,8 @@ const https = require('https');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
+const { wrapper } = require('axios-cookiejar-support');
+const { CookieJar } = require('tough-cookie');
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -130,6 +132,8 @@ function getRandomString(len) {
 }
 
 async function doDcAction(targetUrl, mode = 'normal') {
+    const jar = new CookieJar();
+    const dcClient = wrapper(axios.create({ jar }));
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
     const sessionId = Math.random().toString(36).substring(2, 10);
     const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
@@ -149,11 +153,8 @@ async function doDcAction(targetUrl, mode = 'normal') {
         timeout: 20000,
         headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Referer': 'https://m.dcinside.com/', // 리퍼러를 메인으로 먼저 설정
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Referer': targetUrl
         }
     };
 
@@ -161,7 +162,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         console.log(`[${sessionId}] 한국 IP로 접속 시도 중...`);
 
         // 2. HTML 가져오기
-        const pageRes = await axios.get(targetUrl, axiosConfig);
+        const pageRes = await dcClient.get(targetUrl, axiosConfig);
         const html = pageRes.data;
         const $ = cheerio.load(html);
         
