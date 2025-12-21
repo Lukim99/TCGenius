@@ -153,8 +153,13 @@ async function doDcAction(targetUrl, mode = 'normal') {
         keepAlive: false
     });
 
+    const fakeIp = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+
     const commonHeaders = {
         'User-Agent': randomUA,
+        'X-Forwarded-For': fakeIp, // 랜덤 IP 주입
+        'Client-IP': fakeIp,
+        'X-Real-IP': fakeIp,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': targetUrl
