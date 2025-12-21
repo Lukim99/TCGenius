@@ -196,7 +196,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
         // 5. POST 요청 (추천 전송)
         const postRes = await axios.post(
-            'https://m.dcinside.com/ajax/recommend/vote', 
+            'https://m.dcinside.com/ajax/recommend', 
             params.toString(), 
             {
                 ...axiosConfig,
