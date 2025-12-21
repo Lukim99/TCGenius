@@ -138,6 +138,8 @@ async function doDcAction(targetUrl, mode = 'normal') {
     // 프록시 URL 구성 (프로토콜://ID:PW@HOST:PORT)
     const proxyUrl = `http://${proxyUser}:${proxyPass}@gw.dataimpulse.com:823`;
 
+    const agent = new HttpsProxyAgent({ proxy: proxyUrl, rejectUnauthorized: false });
+
     let axiosConfig = {
         httpsAgent: agent,
         timeout: 15000,
