@@ -3822,9 +3822,9 @@ client.on('chat', async (data, channel) => {
 
             // 결과 보고
             if (result.success) {
-                channel.sendChat(`✅ 개추 성공!`);
+                channel.sendChat(`👍 개추 성공!`);
             } else {
-                channel.sendChat(`❌ 개추 실패\n${result.msg}`);
+                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}`);
             }
         }
 
@@ -3840,12 +3840,14 @@ client.on('chat', async (data, channel) => {
                 const result = await doDcAction(link);
                 if (result.success) {
                     success_count++;
+                    channel.sendChat("👍 개추!");
                 } else {
                     channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
                 }
+                await new Promise(res => setTimeout(res, 2500));
             }
 
-            channel.sendChat(`✅ 개추 ${success_count}/10 성공!`);
+            channel.sendChat(`👍 개추 ${success_count}/10 성공!`);
         }
 
         if (msg.startsWith(">eval ")) {
