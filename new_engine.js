@@ -225,6 +225,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
+            console.log(postRes);
             return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
         }
 
