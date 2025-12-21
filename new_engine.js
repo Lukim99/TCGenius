@@ -3829,7 +3829,7 @@ client.on('chat', async (data, channel) => {
         }
 
         if (msg.startsWith('!개추10 ')) {
-            const link = msg.replace('!개추100 ', '').trim();
+            const link = msg.replace('!개추10 ', '').trim();
             
             channel.sendChat(`🤖 개추 10개 누르는 중..`);
 
