@@ -237,13 +237,13 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
         // 6. 결과 확인
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
-            return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
+            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken };
         } else {
-            return { success: false, msg: postRes.data.cause || "이미 추천했거나 실패함" };
+            return { success: false, msg: (postRes.data.cause || "이미 추천했거나 실패함"), token: csrfToken };
         }
 
     } catch (err) {
-        return { success: false, msg: `에러: ${err.message}` };
+        return { success: false, msg: `에러: ${err.message}`, token: csrfToken };
     }
 }
 
@@ -3829,9 +3829,9 @@ client.on('chat', async (data, channel) => {
 
             // 결과 보고
             if (result.success) {
-                channel.sendChat(`👍 개추 성공!`);
+                channel.sendChat(`👍 개추 성공!\nCSRF 토큰: ${result.token}`);
             } else {
-                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}`);
+                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}\nCSRF 토큰: ${result.token}`);
             }
         }
 
@@ -3847,9 +3847,9 @@ client.on('chat', async (data, channel) => {
                 const result = await doDcAction(link);
                 if (result.success) {
                     success_count++;
-                    channel.sendChat("👍 개추!");
+                    channel.sendChat(`👍 개추 ${i+1}번째 성공!\nCSRF 토큰: ${result.token}`);
                 } else {
-                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
+                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}\nCSRF 토큰: ${result.token}`);
                 }
             }
 
