@@ -247,7 +247,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         }
 
     } catch (err) {
-        return { success: false, msg: `에러: ${err.message}`, token: csrfToken };
+        return { success: false, msg: `에러: ${err.message}`, token: "없음" };
     }
 }
 
