@@ -141,7 +141,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
     const randomUA = UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
     const sessionId = Math.random().toString(36).substring(2, 15);
-    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
+    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr`;
     const proxyPass = 'faa4d69696422426';
     
     // 중요: 특수문자가 포함된 ID를 URL 형식에 맞게 인코딩
@@ -3840,6 +3840,8 @@ client.on('chat', async (data, channel) => {
                 const result = await doDcAction(link);
                 if (result.success) {
                     success_count++;
+                } else {
+                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
                 }
             }
 
