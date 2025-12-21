@@ -132,7 +132,7 @@ function getRandomString(len) {
 async function doDcAction(targetUrl, mode = 'normal') {
     // 1. 세션 및 한국 타겟팅 설정 (문자열 조합 주의)
     const sessionId = Math.random().toString(36).substring(2, 10);
-    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr`;
+    const rawUser = `f164b5cdae2b7e26a1d4__cr.kr;sessid.${sessionId}`;
     const proxyPass = 'faa4d69696422426';
     
     // 중요: 특수문자가 포함된 ID를 URL 형식에 맞게 인코딩
@@ -212,7 +212,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
         } else {
-            console.log(postRes.data);
             return { success: false, msg: postRes.data.message || "이미 추천했거나 실패함" };
         }
 
