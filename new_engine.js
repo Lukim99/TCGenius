@@ -150,11 +150,10 @@ async function doDcAction(targetUrl, mode = 'normal') {
         maxCachedSessions: 0
     });
 
-    const fakeIp = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+    let currentIp = "확인 불가";
 
     const commonHeaders = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-        'X-Forwarded-For': fakeIp,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
         'Connection': 'close',
@@ -170,9 +169,15 @@ async function doDcAction(targetUrl, mode = 'normal') {
     };
 
     try {
+        try {
+            const ipCheck = await axios.get('https://api.ipify.org?format=json', { httpsAgent: agent, timeout: 5000 });
+            currentIp = ipCheck.data.ip;
+        } catch (e) {
+            currentIp = "IP 조회 실패";
+        }
         // 2. HTML 가져오기
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
-        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음" };
+        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음", ip: currentIp };
         const galleryId = urlMatch ? urlMatch[1] : '';
         const preRes = await axios.get(`https://m.dcinside.com/board/${galleryId}`, { httpsAgent: agent, headers: commonHeaders });
         const freshCookie = preRes.headers['set-cookie']?.join('; ') || '';
@@ -247,13 +252,13 @@ async function doDcAction(targetUrl, mode = 'normal') {
 
         // 6. 결과 확인
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
-            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken };
+            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp };
         } else {
-            return { success: false, msg: (postRes.data.cause || "알 수 없음"), token: csrfToken };
+            return { success: false, msg: (postRes.data.cause || "알 수 없음"), token: csrfToken, ip: currentIp };
         }
 
     } catch (err) {
-        return { success: false, msg: `에러: ${err.message}`, token: "없음" };
+        return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: "IP 조회 실패" };
     }
 }
 
@@ -3839,9 +3844,9 @@ client.on('chat', async (data, channel) => {
 
             // 결과 보고
             if (result.success) {
-                channel.sendChat(`👍 개추 성공!`);
+                channel.sendChat(`👍 개추 성공!\nIP: ${result.ip}`);
             } else {
-                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}`);
+                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
             }
         }
 
@@ -3858,9 +3863,9 @@ client.on('chat', async (data, channel) => {
                 const result = await doDcAction(tempLink);
                 if (result.success) {
                     success_count++;
-                    channel.sendChat(`👍 개추 ${i+1}번째 성공!`);
+                    channel.sendChat(`👍 개추 ${i+1}번째 성공!\nIP: ${result.ip}`);
                 } else {
-                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}`);
+                    channel.sendChat(`❌ 개추 ${i+1}번째 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
                 }
             }
 
