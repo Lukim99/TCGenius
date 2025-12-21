@@ -150,7 +150,8 @@ async function doDcAction(targetUrl, mode = 'normal') {
     const agent = new HttpsProxyAgent({
         proxy: proxyUrl,
         rejectUnauthorized: false,
-        keepAlive: false
+        keepAlive: false,
+        maxCachedSessions: 0
     });
 
     const fakeIp = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
@@ -162,7 +163,10 @@ async function doDcAction(targetUrl, mode = 'normal') {
         'X-Real-IP': fakeIp,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': targetUrl
+        'Cache-Control': 'no-cache, no-store, must-revalidate', // 캐시 방지 헤더 추가
+        'Pragma': 'no-cache',
+        'Connection': 'close', // 연결 유지 방지
+        'Referer': 'https://m.dcinside.com/'
     };
 
     try {
@@ -177,27 +181,6 @@ async function doDcAction(targetUrl, mode = 'normal') {
         const setCookie = firstRes.headers['set-cookie'];
         const cookies = setCookie ? setCookie.map(c => c.split(';')[0]).join('; ') : '';
         const html = firstRes.data;
-        if (html.includes('location.href')) {
-            const redirectMatch = html.match(/location\.href\s*=\s*['"]([^'"]+)['"]/);
-            if (redirectMatch) {
-                const realUrl = redirectMatch[1];
-                console.log(`[리다이렉트 발견] 진짜 페이지로 이동 중: ${realUrl}`);
-                
-                // 첫 접속에서 받은 쿠키를 추출해서 다음 요청에 넣어줘야 함
-                const setCookie = res.headers['set-cookie'];
-                const firstCookies = setCookie ? setCookie.map(c => c.split(';')[0]).join('; ') : '';
-                
-                // 2. 진짜 페이지로 재접속 (여기서 진짜 토큰이 나옵니다)
-                res = await axios.get(realUrl, {
-                    httpsAgent: agent,
-                    ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256',
-                    honorCipherOrder: true,
-                    timeout: 15000,
-                    headers: { ...commonHeaders, 'Cookie': firstCookies }
-                });
-                html = res.data;
-            }
-        }
         const $ = cheerio.load(html);
         
         // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
