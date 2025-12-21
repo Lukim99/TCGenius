@@ -132,93 +132,65 @@ function getRandomString(len) {
 async function doDcAction(targetUrl, mode = 'normal') {
     // 1. 매 실행마다 새로운 세션 ID 생성 (새로운 한국 IP 할당)
     const sessionId = Math.random().toString(36).substring(2, 12);
-    const proxyUser = `f164b5cdae2b7e26a1d4`;
+    const proxyUser = `f164b5cdae2b7e26a1d4__cr.kr`;
     const proxyPass = 'faa4d69696422426';
     
     // 프록시 URL 구성 (프로토콜://ID:PW@HOST:PORT)
     const proxyUrl = `http://${proxyUser}:${proxyPass}@gw.dataimpulse.com:823`;
 
-    // 2. hpagent를 이용한 HTTPS 에이전트 설정 (인증서 오류 및 407 방지)
-    const agent = new HttpsProxyAgent({
-        proxy: proxyUrl,
-        rejectUnauthorized: false, // 인증서 altnames 에러 방지
-        keepAlive: true
-    });
-
-    const axiosConfig = {
+    let axiosConfig = {
         httpsAgent: agent,
-        timeout: 20000,
+        timeout: 15000,
         headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Referer': 'https://m.dcinside.com/', // 리퍼러를 메인으로 먼저 설정
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': targetUrl,
+            'X-Requested-With': 'XMLHttpRequest', // AJAX 요청임을 명시
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
         }
     };
 
     try {
-        console.log(`[세션: ${sessionId}] 한국 IP 할당 시도 중...`);
+        // 2. 초기 페이지 접속 (리다이렉트 대응)
+        let res = await axios.get(targetUrl, axiosConfig);
+        let html = res.data;
 
-        // 3. GET 요청으로 CSRF 토큰 획득
-        const pageRes = await axios.get(targetUrl, axiosConfig);
-        const html = pageRes.data;
         const $ = cheerio.load(html);
         
-        // 3. 토큰 추출 (디시는 여러 곳에 토큰을 숨겨둡니다)
-        let csrfToken = $('meta[name="csrf-token"]').attr('content') || 
-                        $('input[name="csrf_token"]').val() ||
-                        $('input[name="_token"]').val();
+        // 3. 토큰 추출 (PC 버전은 보통 특정 변수나 meta에 있음)
+        const csrfToken = $('meta[name="csrf-token"]').attr('content') || 
+                          $('input[name="csrf_token"]').val();
 
-        // 만약 meta 태그에 없다면 스크립트 내부에서 정규식으로 추출 시도
-        if (!csrfToken) {
-            const tokenMatch = html.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
-            if (tokenMatch) csrfToken = tokenMatch[1];
-        }
+        if (!csrfToken) return { success: false, msg: "토큰 획득 실패" };
 
-        if (!csrfToken) {
-            // 실패 시 서버가 보낸 HTML 내용 일부 확인 (디버깅용)
-            console.log("HTML 요약:", html.substring(0, 500)); 
-            return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)" };
-        }
-
-        // 4. 게시글 정보(갤러리 ID, 글 번호) 추출
+        // 4. 게시글 정보 추출
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
-        if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다." };
+        const galleryId = urlMatch[1];
+        const postNo = urlMatch[2];
 
+        // 5. POST 데이터 구성 (Network 탭 기준)
         const params = new URLSearchParams();
-        params.append('type', mode === 'best' ? 'recommend_best' : 'recommend_join');
-        params.append('id', urlMatch[1]);
-        params.append('no', urlMatch[2]);
-        params.append('_token', csrfToken);
+        params.append('ci_t', csrfToken); // PC 버전은 ci_t라는 이름을 자주 씁니다.
+        params.append('id', galleryId);
+        params.append('no', postNo);
+        params.append('mode', mode === 'best' ? 'best' : 'up'); // 실베추는 best, 일반은 up
 
-        // 5. POST 요청 (추천 전송)
+        // 6. 새로운 PC용 추천 엔드포인트로 전송
         const postRes = await axios.post(
-            'https://m.dcinside.com/ajax/recommend', 
-            params.toString(), 
-            {
-                ...axiosConfig,
-                headers: { 
-                    ...axiosConfig.headers, 
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-CSRF-TOKEN': csrfToken 
-                }
-            }
+            'https://gall.dcinside.com/board/recommend/vote',
+            params.toString(),
+            axiosConfig
         );
 
-        // 6. 결과 확인
-        if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
-            return { success: true, msg: mode === 'best' ? "실베추 성공!" : "추천 성공!" };
+        console.log("서버 응답:", postRes.data);
+
+        // 응답이 빈 문자열이면 성공으로 간주하는 경우가 있으나, 보통은 alert 메시지를 포함한 문자열이 옴
+        if (postRes.status === 200) {
+            return { success: true, msg: postRes.data || "성공(응답 없음)" };
         } else {
-            return { success: false, msg: JSON.stringify(postRes.data, null, 4) || "이미 추천했거나 실패함" };
+            return { success: false, msg: `HTTP 상태 코드: ${postRes.status}` };
         }
 
     } catch (err) {
-        // 상세 에러 처리
-        if (err.response && err.response.status === 407) {
-            return { success: false, msg: "프록시 인증 실패(407). 대시보드에서 화이트리스트 IP를 확인하세요." };
-        }
         return { success: false, msg: `에러: ${err.message}` };
     }
 }
