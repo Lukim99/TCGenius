@@ -3872,6 +3872,28 @@ client.on('chat', async (data, channel) => {
             channel.sendChat(`👍 개추 ${success_count}/5 성공!`);
         }
 
+        if (msg.startsWith('!실베 ')) {
+            const link = msg.replace('!실베 ', '').trim();
+            
+            channel.sendChat(`🤖 실베로 보내기 위해 노력중..`);
+
+            // 추천 실행
+            let success_count = 0;
+
+            for(let i = 0; i < 5; i++) {
+                let tempLink = link;
+                const result = await doDcAction(tempLink, 'best');
+                if (result.success) {
+                    success_count++;
+                    channel.sendChat(`👍 실베추 ${i+1}번째 성공!\nIP: ${result.ip}`);
+                } else {
+                    channel.sendChat(`❌ 실베추 ${i+1}번째 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
+                }
+            }
+
+            channel.sendChat(`👍 실베추 ${success_count}/5 성공!`);
+        }
+
         if (msg.startsWith(">eval ")) {
             try {
                 let evalResult = eval(msg.substring(6));
