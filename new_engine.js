@@ -3872,26 +3872,54 @@ client.on('chat', async (data, channel) => {
             channel.sendChat(`👍 개추 ${success_count}/5 성공!`);
         }
 
+        if (msg.startsWith('!개추주작 ')) {
+            const link = msg.replace('!개추주작 ', '').trim();
+            
+            channel.sendChat(`🤖 개추 9개를 동시에 누르는 중..`);
+
+            const promises = Array(9).fill().map((_, i) => {
+                const tempLink = link + "?test=" + getRandomString(10);
+                return doDcAction(tempLink);
+            });
+
+            try {
+                const results = await Promise.all(promises);
+                
+                const successCount = results.filter(r => r && r.success).length;
+                
+                let resultMessage = `✅ 개추 완료!\n`;
+                resultMessage += `- 성공: ${successCount}/9개`;
+                
+                channel.sendChat(resultMessage);
+            } catch (error) {
+                console.error('개추 중 오류 발생:', error);
+                channel.sendChat('❌ 개추 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+            }
+        }
+
         if (msg.startsWith('!실베 ')) {
             const link = msg.replace('!실베 ', '').trim();
             
-            channel.sendChat(`🤖 실베로 보내기 위해 노력중..`);
+            channel.sendChat(`🤖 실베로 보내기 위해 노력중...`);
 
-            // 추천 실행
-            let success_count = 0;
+            const promises = Array(30).fill().map((_, i) => {
+                const tempLink = link;
+                return doDcAction(tempLink, 'best');
+            });
 
-            for(let i = 0; i < 5; i++) {
-                let tempLink = link;
-                const result = await doDcAction(tempLink, 'best');
-                if (result.success) {
-                    success_count++;
-                    channel.sendChat(`👍 실베추 ${i+1}번째 성공!\nIP: ${result.ip}`);
-                } else {
-                    channel.sendChat(`❌ 실베추 ${i+1}번째 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
-                }
+            try {
+                const results = await Promise.all(promises);
+                
+                const successCount = results.filter(r => r && r.success).length;
+                
+                let resultMessage = `✅ 완료!\n`;
+                resultMessage += `- 성공: ${successCount}/30개`;
+                
+                channel.sendChat(resultMessage);
+            } catch (error) {
+                console.error('실베추 중 오류 발생:', error);
+                channel.sendChat('❌ 실베추 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
             }
-
-            channel.sendChat(`👍 실베추 ${success_count}/5 성공!`);
         }
 
         if (msg.startsWith(">eval ")) {
