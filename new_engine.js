@@ -236,7 +236,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
         //     }
         // );
         const postRes = await axios.post(
-            'https://m.dcinside.com/ajax/recommend',
+            mode === 'best' ? 'https://m.dcinside.com/bestcontent/recommend' : 'https://m.dcinside.com/ajax/recommend',
             params.toString(),
             {
                 httpsAgent: agent,
