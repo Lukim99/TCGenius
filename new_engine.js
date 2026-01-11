@@ -2590,6 +2590,29 @@ async function getRPGOwnerByUserId(userId) {
     }
 }
 
+async function getRPGOwnerByName(name) {
+    try {
+        let res = await queryItems({
+            TableName: "rpg_owner",
+            IndexName: "nameIdx",
+            KeyConditionExpression: "#name = :name_val",
+            ExpressionAttributeNames: {
+                "#name": "name"
+            },
+            ExpressionAttributeValues: {
+                ":name_val": name
+            }
+        });
+        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) {
+            return new RPGOwner(res.result[0].Items[0].name, res.result[0].Items[0].id).load(res.result[0].Items[0]);
+        }
+        return null;
+    } catch (e) {
+        console.log("getRPGOwnerByName error:", e);
+        return null;
+    }
+}
+
 // getRPGUser 함수들
 async function getRPGUserById(id) {
     try {
@@ -10610,27 +10633,36 @@ client.on('chat', async (data, channel) => {
 
                 // ===== 등록 명령어 =====
                 if (args[0] === "등록") {
-                    // 이미 등록된 사용자
                     if (owner) {
                         channel.sendChat("❌ 이미 등록된 사용자입니다.");
                         return;
                     }
                     
-                    // 닉네임 확인
                     if (!args[1]) {
                         channel.sendChat("❌ 닉네임을 입력해주세요.");
                         return;
                     }
-                    
+
                     const nickname = args.slice(1).join(" ");
+                    
+                    // 중복 닉네임 체크
+                    const existingOwner = await getRPGOwnerByName(nickname);
+                    if (existingOwner) {
+                        channel.sendChat("❌ 이미 사용 중인 닉네임입니다.\n다른 닉네임을 선택해주세요.");
+                        return;
+                    }
+                    
                     const ownerId = sender.userId + "";
                     
                     // 새 Owner 생성
                     const newOwner = new RPGOwner(nickname, ownerId);
-                    newOwner.id = sender.userId + "";
-                    await newOwner.save();
+                    const res = await putItem('rpg_owner', newOwner);
+                    if (res.success) {
+                        channel.sendChat("✅ 성공적으로 등록되셨습니다!\n환영합니다, " + nickname + "님!\n\n이제 아래 명령어로 캐릭터를 생성해주세요.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]\n\n직업: 먼마, 성준호, 빵귤, 호르아크티, 건마");
+                    } else {
+                        channel.sendChat("❌ 등록 과정에서 오류가 발생했습니다.\n" + VIEWMORE + "\n" + (res.result && res.result[0] && (res.result[0].message || res.result[0].Message) || "Unknown Error"));
+                    }
                     
-                    channel.sendChat(`✅ RPG 계정이 생성되었습니다!\n닉네임: ${nickname}\n\n이제 아래 명령어로 캐릭터를 생성해주세요.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]\n\n직업: 먼마, 성준호, 빵귤, 호르아크티, 건마`);
                     return;
                 }
                 
@@ -10649,6 +10681,13 @@ client.on('chat', async (data, channel) => {
                     
                     const characterName = args[1];
                     const jobType = args[2];
+                    
+                    // 중복 캐릭터명 체크
+                    const existingCharacter = await getRPGUserByName(characterName);
+                    if (existingCharacter) {
+                        channel.sendChat("❌ 이미 사용 중인 캐릭터명입니다.\n다른 이름을 선택해주세요.");
+                        return;
+                    }
                     
                     const result = await owner.createCharacter(characterName, jobType);
                     
