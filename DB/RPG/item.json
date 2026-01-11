@@ -1,0 +1,594 @@
+[
+  {
+    "name": "강화석",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "강화할 때 사용됨"
+  },
+  {
+    "name": "순수한 결정체",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "증폭할 때 사용됨"
+  },
+  {
+    "name": "장비 증폭서",
+    "type": "소모품",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "장비에 사용 시 강화 초기화 후 증폭 상태 전환"
+  },
+  {
+    "name": "순수한 황금 장비 증폭서",
+    "type": "소모품",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "장비에 사용 시 강화 초기화 후 증폭 상태 전환, +8~+12 중 랜덤으로 스트레이트 강화됨 (+8=45%, +9=35%, +10=10%, +11=7%, +12=3%)",
+    "effects": {
+      "enhanceMin": 8,
+      "enhanceMax": 12,
+      "probability": [45, 35, 10, 7, 3]
+    }
+  },
+  {
+    "name": "증폭 변환서",
+    "type": "소모품",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "증폭 상태의 장비에 사용 시 차원의 스탯 변경"
+  },
+  {
+    "name": "장비 보호권",
+    "type": "티켓",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "장비의 파괴를 초기화로 대신 막아줌",
+    "acquisition": "포인트샵"
+  },
+  {
+    "name": "증폭 보호권",
+    "type": "티켓",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "증폭 중 장비의 파괴를 초기화로 대신 막아줌",
+    "acquisition": "포인트샵"
+  },
+  {
+    "name": "트로피 조각",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "재료",
+    "acquisition": "트로피 분해"
+  },
+  {
+    "name": "미솔로지등급 트로피 상자",
+    "type": "상자",
+    "rarity": "레어",
+    "desc": "트로피 갈갈이 후 가챠 전용",
+    "acquisition": "트로피 조각으로 제작"
+  },
+  {
+    "name": "유생의 강화기",
+    "type": "소모품",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "강화재료없이 1회 강화 시도",
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "유생의 증폭기",
+    "type": "소모품",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "증폭재료없이 1회 강화 시도",
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "레전더리 정수",
+    "type": "재료",
+    "rarity": "레전더리",
+    "desc": "레전더리 상자 구매 전용",
+    "acquisition": "레전더리 분해, 레전더리 소울 1개 사용 시 1개 지급"
+  },
+  {
+    "name": "레전더리 소울",
+    "type": "재료",
+    "rarity": "레전더리",
+    "tradeable": true,
+    "desc": "레전더리 정수 거래용",
+    "acquisition": "레전더리 정수 * 5개 조합"
+  },
+  {
+    "name": "LV20 레전더리 랜덤상자",
+    "type": "상자",
+    "rarity": "레전더리",
+    "level": 20,
+    "desc": "20제 레전더리 장비 랜덤 드랍"
+  },
+  {
+    "name": "LV40 레전더리 랜덤상자",
+    "type": "상자",
+    "rarity": "레전더리",
+    "level": 40,
+    "desc": "40제 레전더리 장비 랜덤 드랍"
+  },
+  {
+    "name": "LV50 레전더리 랜덤상자",
+    "type": "상자",
+    "rarity": "레전더리",
+    "level": 50,
+    "desc": "50제 레전더리 장비 랜덤 드랍"
+  },
+  {
+    "name": "E세계 랜덤 상자",
+    "type": "상자",
+    "rarity": "레전더리",
+    "desc": "시간의목걸이 or 절명의반지 or 용기의팔찌"
+  },
+  {
+    "name": "무너진 유적지 랜덤 상자",
+    "type": "상자",
+    "rarity": "레전더리",
+    "desc": "대머리 길의 목걸이 or 고란의 본링 or 월드엘프의 팔찌"
+  },
+  {
+    "name": "경험치200%물약",
+    "type": "물약",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "앞으로의 던전 10회의 경험치 2배 증가 (중복 불가)",
+    "effects": { "expMultiplier": 2, "dungeonCount": 10 },
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "경험치300%물약",
+    "type": "물약",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "앞으로의 던전 10회의 경험치 3배 증가 (중복 불가)",
+    "effects": { "expMultiplier": 3, "dungeonCount": 10 },
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "LV+1 레벨업권",
+    "type": "티켓",
+    "rarity": "레어",
+    "desc": "사용 시 레벨 1 증가",
+    "effects": { "levelUp": 1 },
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "스킬 초기화권",
+    "type": "티켓",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "스킬트리 전체 초기화",
+    "acquisition": "이벤트, 포인트"
+  },
+  {
+    "name": "스킬 포인트 1회 복구권",
+    "type": "티켓",
+    "rarity": "일반",
+    "tradeable": false,
+    "desc": "스킬 하나의 SP를 초기화",
+    "acquisition": "이벤트, 포인트"
+  },
+  {
+    "name": "봉인된 자물쇠",
+    "type": "자물쇠",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "포인트전용 가챠 시스템, 열쇠가 있어야 열 수 있음",
+    "acquisition": "잡몹, 포인트"
+  },
+  {
+    "name": "지니어스의 열쇠",
+    "type": "열쇠",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "포인트전용 가챠 시스템, 자물쇠가 있어야 사용 가능. 자물쇠 하나 열 때 3개 소모",
+    "effects": { "unlockCost": 3 },
+    "acquisition": "이벤트, 포인트"
+  },
+  {
+    "name": "초보 체력 물약",
+    "type": "물약",
+    "rarity": "일반",
+    "desc": "체력 회복 +1,500",
+    "effects": { "hpRecover": 1500 }
+  },
+  {
+    "name": "중수 체력 물약",
+    "type": "물약",
+    "rarity": "일반",
+    "desc": "체력 회복 +8,000",
+    "effects": { "hpRecover": 8000 }
+  },
+  {
+    "name": "고수 체력 물약",
+    "type": "물약",
+    "rarity": "일반",
+    "desc": "체력 회복 +16,000",
+    "effects": { "hpRecover": 16000 }
+  },
+  {
+    "name": "달인 체력 물약",
+    "type": "물약",
+    "rarity": "일반",
+    "desc": "체력 회복 +32,000",
+    "effects": { "hpRecover": 32000 }
+  },
+  {
+    "name": "포츈 쿠키",
+    "type": "물약",
+    "rarity": "일반",
+    "desc": "50% 확률로 체력 +50%, 50% 확률로 체력 -50%",
+    "effects": { "hpPercentage": 50, "random": true },
+    "acquisition": "일반 상점"
+  },
+  {
+    "name": "파이브가 만든 빵",
+    "type": "음식",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "체력 회복 +15%",
+    "effects": { "hpRecoverPercent": 15 },
+    "acquisition": "이벤트, 자물쇠"
+  },
+  {
+    "name": "진사이의 편의점 빵",
+    "type": "음식",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "체력 회복 +30%",
+    "effects": { "hpRecoverPercent": 30 },
+    "acquisition": "이벤트, 자물쇠"
+  },
+  {
+    "name": "황금밀랍초",
+    "type": "소모품",
+    "rarity": "레어",
+    "desc": "캐릭귀속된 에픽 제외 장비를 계정창고로 보낼 수 있음",
+    "effects": {
+      "costByLevel": {
+        "1": 1,
+        "10": 2,
+        "20": 3,
+        "30": 4,
+        "40": 5,
+        "50": 10
+      },
+      "rarityBonus": { "레어": 1, "레전더리": 2 }
+    },
+    "acquisition": "이벤트, 포인트"
+  },
+  {
+    "name": "원샷황금밀랍초",
+    "type": "소모품",
+    "rarity": "레전더리",
+    "desc": "캐릭귀속된 모든 장비를 계정창고로 보낼 수 있음",
+    "effects": { "unlockAll": true },
+    "acquisition": "큰 이벤트"
+  },
+  {
+    "name": "브란도의 심사권",
+    "type": "소모품",
+    "rarity": "레전더리",
+    "desc": "캐릭귀속된 에픽 제외 장비를 귀속 풀어주고 거래가능으로 변경하게 만들어줌",
+    "effects": {
+      "costByLevel": {
+        "1": 1,
+        "10": 2,
+        "20": 3,
+        "30": 4,
+        "40": 5,
+        "50": 10
+      },
+      "rarityBonus": { "레어": 1, "레전더리": 2 }
+    },
+    "acquisition": "포인트"
+  },
+  {
+    "name": "생명의 숨결",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "일반 제작 재료",
+    "acquisition": "잡몹"
+  },
+  {
+    "name": "희석된 경화제",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "일반 제작 재료",
+    "acquisition": "던전"
+  },
+  {
+    "name": "발광조각",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "일반 제작 재료",
+    "acquisition": "낚시, 드랍"
+  },
+  {
+    "name": "빈병",
+    "type": "재료",
+    "rarity": "일반",
+    "desc": "일반 제작 재료",
+    "acquisition": "상점"
+  },
+  {
+    "name": "피로 회복의 정수",
+    "type": "재료",
+    "rarity": "일반",
+    "desc": "일반 제작 재료",
+    "acquisition": "잡몹, 조금 낮은 확률"
+  },
+  {
+    "name": "피로 회복제30(제작)",
+    "type": "물약",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "사용 시 피로도 30 회복(하루 1회)",
+    "effects": { "fatigueRecover": 30, "dailyLimit": 1 },
+    "acquisition": "제작"
+  },
+  {
+    "name": "피로 회복제30",
+    "type": "물약",
+    "rarity": "레어",
+    "tradeable": false,
+    "desc": "사용 시 피로도 30 회복(하루 1회, 다른 회복제랑 중복 안됨)",
+    "effects": { "fatigueRecover": 30, "dailyLimit": 1 },
+    "acquisition": "포인트"
+  },
+  {
+    "name": "피로 회복제10",
+    "type": "물약",
+    "rarity": "일반",
+    "tradeable": false,
+    "desc": "사용 시 피로도 10 회복(하루 1회, 다른 회복제랑 중복 안됨)",
+    "effects": { "fatigueRecover": 10, "dailyLimit": 1 },
+    "acquisition": "이벤트"
+  },
+  {
+    "name": "피로 회복제1",
+    "type": "물약",
+    "rarity": "일반",
+    "tradeable": false,
+    "desc": "사용 시 피로도 1 회복(하루 1회, 다른 회복제랑 중복 안됨)",
+    "effects": { "fatigueRecover": 1, "dailyLimit": 1 },
+    "acquisition": "포인트"
+  },
+  {
+    "name": "부활석",
+    "type": "소모품",
+    "rarity": "레어",
+    "desc": "부활할 때 사용",
+    "effects": { "revive": true },
+    "acquisition": "이벤트, 포인트"
+  },
+  {
+    "name": "자양강장제(소)",
+    "type": "버프물약",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "사용 시 3턴동안 공격력 15% 상승",
+    "effects": { "attackBonus": 15, "duration": 3 },
+    "acquisition": "제작"
+  },
+  {
+    "name": "자양강장제(대)",
+    "type": "버프물약",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "사용 시 이번 게임동안 공격력 15% 상승(중복 불가)",
+    "effects": { "attackBonus": 15, "permanent": true },
+    "acquisition": "제작"
+  },
+  {
+    "name": "회오리폭탄",
+    "type": "전투소모품",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "무력화 게이지 300을 넣어줌",
+    "effects": { "stunGauge": 300 },
+    "acquisition": "제작"
+  },
+  {
+    "name": "빛나는 회오리폭탄",
+    "type": "전투소모품",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "무력화 게이지 450을 넣어줌",
+    "effects": { "stunGauge": 450 },
+    "acquisition": "제작, 포인트"
+  },
+  {
+    "name": "파괴폭탄",
+    "type": "전투소모품",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "파괴레벨 3",
+    "effects": { "breakLevel": 3 },
+    "acquisition": "제작"
+  },
+  {
+    "name": "빛나는 파괴폭탄",
+    "type": "전투소모품",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "파괴레벨 4",
+    "effects": { "breakLevel": 4 },
+    "acquisition": "제작, 포인트"
+  },
+  {
+    "name": "E세계의 조각",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "E세계 랜덤 상자 조합",
+    "acquisition": "E세계 대저택 테마 던전"
+  },
+  {
+    "name": "유적지의 흩어진 파편",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "유적지 랜덤 상자 조합",
+    "acquisition": "무너진 유적지 던전"
+  },
+  {
+    "name": "낚싯대 수리기",
+    "type": "소모품",
+    "rarity": "일반",
+    "desc": "낚싯대의 내구도를 3천 회복 시켜줌",
+    "effects": { "durabilityRecover": 3000 },
+    "acquisition": "제작"
+  },
+  {
+    "name": "피라미",
+    "type": "물고기",
+    "rarity": "일반",
+    "desc": "사용 시 20 경험치 획득",
+    "effects": { "exp": 20 },
+    "acquisition": "낚시(일반 떡밥)"
+  },
+  {
+    "name": "붕어",
+    "type": "물고기",
+    "rarity": "일반",
+    "desc": "사용 시 50 경험치 획득",
+    "effects": { "exp": 50 },
+    "acquisition": "낚시(일반 떡밥)"
+  },
+  {
+    "name": "잉어",
+    "type": "물고기",
+    "rarity": "일반",
+    "desc": "사용 시 200 경험치 획득",
+    "effects": { "exp": 200 },
+    "acquisition": "낚시(일반 떡밥)"
+  },
+  {
+    "name": "황금 피라미",
+    "type": "물고기",
+    "rarity": "레어",
+    "desc": "사용 시 200 경험치 획득",
+    "effects": { "exp": 200 },
+    "acquisition": "낚시(황금 떡밥)"
+  },
+  {
+    "name": "황금 붕어",
+    "type": "물고기",
+    "rarity": "레어",
+    "desc": "사용 시 500 경험치 획득",
+    "effects": { "exp": 500 },
+    "acquisition": "낚시(황금 떡밥)"
+  },
+  {
+    "name": "황금 잉어",
+    "type": "물고기",
+    "rarity": "레어",
+    "desc": "사용 시 2000 경험치 획득",
+    "effects": { "exp": 2000 },
+    "acquisition": "낚시(황금 떡밥)"
+  },
+  {
+    "name": "증폭제",
+    "type": "재료",
+    "rarity": "일반",
+    "tradeable": true,
+    "desc": "증폭용 아이템 재료",
+    "acquisition": "낚시"
+  },
+  {
+    "name": "2024 펫 알",
+    "type": "상자",
+    "rarity": "레어",
+    "desc": "펫 가챠템",
+    "acquisition": "포인트샵"
+  },
+  {
+    "name": "2024 펫 생명체 숨결",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "2024 펫 알에서 나오는 재료"
+  },
+  {
+    "name": "베스티스 펫 동력 코어",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "2024 펫 알에서 나오는 재료"
+  },
+  {
+    "name": "붉은 금속 투구 파편",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "2024 펫 알에서 나오는 재료"
+  },
+  {
+    "name": "응축된 붉은 뇌전의 정수",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "2024 펫 알에서 나오는 재료"
+  },
+  {
+    "name": "기계 야수의 강철 발톱",
+    "type": "재료",
+    "rarity": "레어",
+    "desc": "2024 펫 알에서 나오는 재료"
+  },
+  {
+    "name": "2024 펫 전용 무기",
+    "type": "펫장비",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "2024 펫 전용 무기"
+  },
+  {
+    "name": "2024 펫 전용 복장",
+    "type": "펫장비",
+    "rarity": "레어",
+    "tradeable": true,
+    "desc": "2024 펫 전용 복장"
+  },
+  {
+    "name": "2024 게임마스터즈 펫",
+    "type": "펫",
+    "rarity": "레전더리",
+    "tradeable": true,
+    "desc": "착용 시 귀속"
+  },
+  {
+    "name": "2024 겜블러 펫",
+    "type": "펫",
+    "rarity": "레전더리",
+    "tradeable": true,
+    "desc": "착용 시 귀속"
+  },
+  {
+    "name": "2024 스타시커 펫",
+    "type": "펫",
+    "rarity": "레전더리",
+    "tradeable": true,
+    "desc": "착용 시 귀속"
+  },
+  {
+    "name": "2024 쌍용지니어스 펫",
+    "type": "펫",
+    "rarity": "레전더리",
+    "tradeable": true,
+    "desc": "착용 시 귀속"
+  },
+  {
+    "name": "시즌1 패스 티켓",
+    "type": "티켓",
+    "rarity": "레전더리",
+    "desc": "보유 시 플러스 패스 활성화",
+    "acquisition": "가넷구매"
+  }
+]

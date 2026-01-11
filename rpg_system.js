@@ -462,6 +462,56 @@ class RPGEquipmentDataManager {
 // 전역 EquipmentDataManager 인스턴스
 const equipmentManager = new RPGEquipmentDataManager();
 
+// 아이템 데이터 로더
+class RPGItemDataManager {
+    constructor() {
+        this.items = [];
+        this.loadItems();
+    }
+
+    loadItems() {
+        try {
+            const itemsPath = path.join(__dirname, 'DB', 'RPG', 'item.json');
+            const itemsData = fs.readFileSync(itemsPath, 'utf8');
+            this.items = JSON.parse(itemsData);
+        } catch (error) {
+            console.error('아이템 데이터 로드 실패:', error);
+            this.items = [];
+        }
+    }
+
+    getItem(index) {
+        return this.items[index];
+    }
+
+    findItemByName(name) {
+        return this.items.find(item => item.name === name);
+    }
+
+    getItemsByType(type) {
+        return this.items.filter(item => item.type === type);
+    }
+
+    getItemsByRarity(rarity) {
+        return this.items.filter(item => item.rarity === rarity);
+    }
+
+    getTradeableItems() {
+        return this.items.filter(item => item.tradeable === true);
+    }
+
+    getAllItems() {
+        return this.items;
+    }
+
+    getItemCount() {
+        return this.items.length;
+    }
+}
+
+// 전역 ItemDataManager 인스턴스
+const itemManager = new RPGItemDataManager();
+
 // 1. 스탯 시스템
 class RPGStats {
     constructor(power = 0, speed = 0, int = 0, luck = 0) {
@@ -896,57 +946,156 @@ class RPGEquipmentManager {
     }
 }
 
-// 8. 인벤토리 시스템
-class RPGInventory {
-    constructor(maxSize = 100) {
-        this.items = [];
-        this.maxSize = maxSize;
+// 8. 소모품 아이템 클래스
+class RPGConsumableItem {
+    constructor(name, type, count = 1) {
+        this.name = name;
+        this.type = type;
+        this.count = count;
+        this.stackable = true;
     }
 
     load(data) {
-        this.items = data.items || [];
-        this.maxSize = data.maxSize || 100;
+        Object.assign(this, data);
         return this;
     }
 
-    addItem(item) {
-        if (this.items.length >= this.maxSize) {
-            return { success: false, message: '인벤토리가 가득 찼습니다.' };
+    add(amount) {
+        this.count += amount;
+        return { success: true, count: this.count };
+    }
+
+    consume(amount) {
+        if (this.count < amount) {
+            return { success: false, message: '아이템이 부족합니다.' };
         }
-        this.items.push(item);
-        return { success: true, message: `${item.name}을(를) 획득했습니다.` };
-    }
-
-    removeItem(itemId) {
-        const index = this.items.findIndex(item => item.id === itemId);
-        if (index === -1) {
-            return { success: false, message: '아이템을 찾을 수 없습니다.' };
-        }
-        const item = this.items.splice(index, 1)[0];
-        return { success: true, item, message: `${item.name}을(를) 제거했습니다.` };
-    }
-
-    findItem(itemId) {
-        return this.items.find(item => item.id === itemId);
-    }
-
-    getItemCount() {
-        return this.items.length;
-    }
-
-    isFull() {
-        return this.items.length >= this.maxSize;
+        this.count -= amount;
+        return { success: true, remaining: this.count };
     }
 
     toJSON() {
         return {
-            items: this.items,
+            name: this.name,
+            type: this.type,
+            count: this.count,
+            stackable: this.stackable
+        };
+    }
+}
+
+// 9. 인벤토리 시스템 (장비 + 소모품)
+class RPGInventory {
+    constructor(maxSize = 100) {
+        this.equipments = [];      // 장비 아이템 (RPGEquipment)
+        this.consumables = new Map(); // 소모품 아이템 (Map<itemName, RPGConsumableItem>)
+        this.maxSize = maxSize;
+    }
+
+    load(data) {
+        this.equipments = data.equipments || [];
+        this.maxSize = data.maxSize || 100;
+        
+        this.consumables = new Map();
+        if (data.consumables) {
+            for (let [name, itemData] of Object.entries(data.consumables)) {
+                this.consumables.set(name, new RPGConsumableItem(itemData.name, itemData.type, itemData.count).load(itemData));
+            }
+        }
+        return this;
+    }
+
+    // 장비 추가
+    addEquipment(equipment) {
+        if (this.getTotalItemCount() >= this.maxSize) {
+            return { success: false, message: '인벤토리가 가득 찼습니다.' };
+        }
+        this.equipments.push(equipment);
+        return { success: true, message: `${equipment.name}을(를) 획득했습니다.` };
+    }
+
+    // 소모품 추가 (스택 가능)
+    addConsumable(itemName, itemType, count = 1) {
+        if (this.consumables.has(itemName)) {
+            const item = this.consumables.get(itemName);
+            item.add(count);
+            return { success: true, message: `${itemName} +${count} (총 ${item.count}개)` };
+        } else {
+            if (this.getTotalItemCount() >= this.maxSize) {
+                return { success: false, message: '인벤토리가 가득 찼습니다.' };
+            }
+            this.consumables.set(itemName, new RPGConsumableItem(itemName, itemType, count));
+            return { success: true, message: `${itemName} ${count}개를 획득했습니다.` };
+        }
+    }
+
+    // 장비 제거
+    removeEquipment(equipmentId) {
+        const index = this.equipments.findIndex(item => item.id === equipmentId);
+        if (index === -1) {
+            return { success: false, message: '장비를 찾을 수 없습니다.' };
+        }
+        const item = this.equipments.splice(index, 1)[0];
+        return { success: true, item, message: `${item.name}을(를) 제거했습니다.` };
+    }
+
+    // 소모품 소비
+    consumeItem(itemName, count = 1) {
+        const item = this.consumables.get(itemName);
+        if (!item) {
+            return { success: false, message: '아이템을 찾을 수 없습니다.' };
+        }
+        
+        const result = item.consume(count);
+        if (result.success && item.count <= 0) {
+            this.consumables.delete(itemName);
+        }
+        return result;
+    }
+
+    // 장비 찾기
+    findEquipment(equipmentId) {
+        return this.equipments.find(item => item.id === equipmentId);
+    }
+
+    // 소모품 찾기
+    findConsumable(itemName) {
+        return this.consumables.get(itemName);
+    }
+
+    // 소모품 개수 확인
+    getConsumableCount(itemName) {
+        const item = this.consumables.get(itemName);
+        return item ? item.count : 0;
+    }
+
+    // 소모품 보유 확인
+    hasConsumable(itemName, count = 1) {
+        const item = this.consumables.get(itemName);
+        return item && item.count >= count;
+    }
+
+    getTotalItemCount() {
+        return this.equipments.length + this.consumables.size;
+    }
+
+    isFull() {
+        return this.getTotalItemCount() >= this.maxSize;
+    }
+
+    toJSON() {
+        const consumablesObj = {};
+        for (let [name, item] of this.consumables) {
+            consumablesObj[name] = item.toJSON();
+        }
+        return {
+            equipments: this.equipments,
+            consumables: consumablesObj,
             maxSize: this.maxSize
         };
     }
 }
 
-// 9. 각성 시스템
+// 10. 각성 시스템
 class RPGAwakening {
     constructor() {
         this.isAwakened = false;
@@ -1047,7 +1196,7 @@ class RPGAwakening {
     }
 }
 
-// 10. 전투 스탯 계산기
+// 11. 전투 스탯 계산기
 class RPGCombatCalculator {
     static calculateAttackPower(mainStat) {
         return mainStat * 100;
@@ -1074,7 +1223,7 @@ class RPGCombatCalculator {
     }
 }
 
-// 11. 몬스터 시스템
+// 12. 몬스터 시스템
 class RPGMonster {
     constructor(name, level, type = 'seed') {
         this.name = name;
@@ -1148,6 +1297,8 @@ module.exports = {
     jobManager,
     RPGEquipmentDataManager,
     equipmentManager,
+    RPGItemDataManager,
+    itemManager,
     RPGStats,
     RPGResource,
     RPGLevel,
@@ -1155,6 +1306,7 @@ module.exports = {
     RPGSkillManager,
     RPGEquipment,
     RPGEquipmentManager,
+    RPGConsumableItem,
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,

@@ -25,6 +25,7 @@ const {
     jobManager,
     RPGEquipmentDataManager,
     equipmentManager,
+    itemManager,
     RPGStats,
     RPGResource,
     RPGLevel,
@@ -1870,6 +1871,7 @@ class RPGOwner {
         this.name = name;
         this.characters = []; // 최대 5개의 캐릭터 ID 배열
         this.maxCharacters = 5;
+        this.activeCharacter = null; // 현재 선택된 캐릭터 ID
     }
 
     load(data) {
@@ -1878,6 +1880,7 @@ class RPGOwner {
         this.name = data.name;
         this.characters = data.characters || [];
         this.maxCharacters = data.maxCharacters || 5;
+        this.activeCharacter = data.activeCharacter || null;
 
         return this;
     }
@@ -1962,112 +1965,97 @@ class RPGUser {
         this.ownerId = owner;
         this.name = name;
         this.isAdmin = false;
+        this.job = null;
         
-        // 스탯 (힘 / 속도 / 지능 / 행운)
-        this.stat = {
-            power: 0,    // 힘 (1당 일반 공격 데미지 0.5% 증가, 공격력 100)
-            speed: 0,    // 속도 (선턴 판정, 1당 회피율 0.5% 증가, 공격력 100)
-            int: 0,      // 지능 (1당 스킬 공격 데미지 0.3% 증가, 공격력 100)
-            luck: 0      // 행운 (1당 치명타 확률 0.8% 증가, 공격력 100)
-        };
+        // 캡슐화된 시스템들
+        this.stats = new RPGStats();                    // 스탯 시스템
+        this.level = new RPGLevel();                    // 레벨 시스템
+        this.skillManager = null;                       // 스킬 매니저 (직업 설정 후 초기화)
+        this.equipmentManager = new RPGEquipmentManager(); // 장비 매니저
+        this.inventory = new RPGInventory();            // 인벤토리
+        this.awakening = new RPGAwakening();            // 각성 시스템
         
-        // 직업
-        this.job = null; // '먼마', '성준호', '빵귤', '호르아크티', '건마'
-        
-        // 레벨 및 경험치
-        this.level = 1;
-        this.exp = 0;
-        this.maxLevel = 50;
-        this.sp = 0; // 스킬 포인트
-        
-        // HP
-        this.hp = 0;
-        this.maxHp = 0;
+        // HP 시스템
+        this.hp = new RPGResource('hp', 0, 0);
         
         // 직업별 리소스
-        this.resources = {
-            gp: 0,        // 성준호 전용 (최대 100)
-            maxGp: 0,
-            mp: 0,        // 빵귤 전용
-            maxMp: 0,
-            gunpower: 0,  // 건마 전용 (건력, 최대 3)
-            maxGunpower: 0
-        };
+        this.gpResource = new RPGResource('gp', 0, 0);        // 성준호
+        this.mpResource = new RPGResource('mp', 0, 0);        // 빵귤
+        this.gunpowerResource = new RPGResource('gunpower', 0, 0); // 건마
         
-        // 각성 시스템 (레벨 50 달성 후)
-        this.awaken = {
-            isAwakened: false,
-            level: 0,         // 각성 레벨 (1~500)
-            exp: 0,
-            maxLevel: 500,
-            point: 0,         // AP (Awakening Point)
-            bonuses: {
-                boss: 0,      // 보스 피해 (1당 +0.4%) (최대 100)
-                named: 0,     // 네임드 피해 (1당 +0.8%) (최대 100)
-                seed: 0,      // 시드 피해 (1당 +1.2%) (최대 100)
-                all: 0,       // 모든 피해 (1당 +0.2%) (최대 100)
-                skill: 0,     // 스킬 데미지 (1당 +0.4%) (최대 100)
-                crit: 0,      // 치명타 확률 (1당 +0.1%) (최대 100)
-                critMul: 0,   // 치명타 피해량 (1당 +0.4%) (최대 100)
-                def: 0,       // 받는 피해 감소 (1당 +0.2%) (최대 100)
-                hp: 0,        // HP 증가 (1당 +1%) (최대 100)
-                exp: 0,       // 각성 레벨 경험치 증가량 (1당 +1%) (최대 100)
-                neutralize: 0 // 무력화 효율 증가 (1당 +1%) (최대 100)
-            }
-        };
-        
-        // 스킬 시스템
-        this.skills = {
-            passive: [],
-            active: [],
-            awakening: []    // 각성 스킬
-        };
-        
-        // 스킬 레벨 및 쿨타임
-        this.skillLevels = {};    // {skillName: level}
-        this.skillCooldowns = {}; // {skillName: remainingTurns}
-        
-        // 장비
-        this.equips = {
-            weapon: { id: 0 },      // 주무기 (건틀릿, 쌍검, 지팡이, 마도장갑, 아르카나, 권총)
-            helmet: { id: 0 },      // 투구
-            chest: { id: 0 },       // 상의
-            legs: { id: 0 },        // 하의
-            boots: { id: 0 },       // 신발
-            gloves: { id: 0 },      // 장갑
-            necklace: { id: 0 },    // 목걸이
-            ring: { id: 0 },        // 반지
-            bracelet: { id: 0 }     // 팔찌
-        };
-        
-        // 인벤토리
-        this.inventory = [];
-        
-        // 전투 스탯
-        this.combatStats = {
-            attackPower: 0,
-            critChance: 0,
-            critDamage: 150,  // 기본 치명타 피해량 150%
-            evasion: 0,
-            defense: 0
-        };
+        // 기타
+        this.sp = 0; // 스킬 포인트
     }
 
+    // 데이터 로드
     load(data) {
-        Object.assign(this, data);
+        this._get = data._get || 0;
+        this.redacted = data.redacted || false;
+        this.id = data.id;
+        this.ownerId = data.ownerId;
+        this.name = data.name;
+        this.isAdmin = data.isAdmin || false;
+        this.job = data.job;
+        this.sp = data.sp || 0;
+        
+        // 시스템 로드
+        if (data.stats) this.stats.load(data.stats);
+        if (data.level) this.level.load(data.level);
+        if (data.skillManager) {
+            this.skillManager = new RPGSkillManager(this.job);
+            this.skillManager.load(data.skillManager);
+        }
+        if (data.equipmentManager) this.equipmentManager.load(data.equipmentManager);
+        if (data.inventory) this.inventory.load(data.inventory);
+        if (data.awakening) this.awakening.load(data.awakening);
+        if (data.hp) this.hp.load(data.hp);
+        if (data.gpResource) this.gpResource.load(data.gpResource);
+        if (data.mpResource) this.mpResource.load(data.mpResource);
+        if (data.gunpowerResource) this.gunpowerResource.load(data.gunpowerResource);
+        
         return this;
     }
 
+    // JSON 변환
+    toJSON() {
+        return {
+            _get: this._get,
+            redacted: this.redacted,
+            id: this.id,
+            ownerId: this.ownerId,
+            name: this.name,
+            isAdmin: this.isAdmin,
+            job: this.job,
+            sp: this.sp,
+            stats: this.stats.toJSON(),
+            level: this.level.toJSON(),
+            skillManager: this.skillManager ? this.skillManager.toJSON() : null,
+            equipmentManager: this.equipmentManager.toJSON(),
+            inventory: this.inventory.toJSON(),
+            awakening: this.awakening.toJSON(),
+            hp: this.hp.toJSON(),
+            gpResource: this.gpResource.toJSON(),
+            mpResource: this.mpResource.toJSON(),
+            gunpowerResource: this.gunpowerResource.toJSON()
+        };
+    }
+
     toString() {
-        return `[RPGUser ${this.name} Lv.${this.level} ${this.job}]`;
+        return `[RPGUser ${this.name} Lv.${this.level.level} ${this.job}]`;
     }
 
     async save() {
-        await updateItem('rpg_user', this.id, this);
+        await updateItem('rpg_user', this.id, this.toJSON());
     }
 
-    // 직업 설정 (캐릭터 생성 시)
+    // ==================== 직업 설정 ====================
     setJob(jobType) {
+        // 직업 유효성 검사
+        if (!jobManager.isValidJob(jobType)) {
+            const validJobs = jobManager.getAllJobs().join(', ');
+            throw new Error(`유효하지 않은 직업: ${jobType} (가능한 직업: ${validJobs})`);
+        }
+        
         this.job = jobType;
         
         // jobs.json에서 직업 정보 로드
@@ -2076,229 +2064,487 @@ class RPGUser {
         const resources = jobManager.getJobResources(jobType);
         
         // 스탯 설정
-        this.stat = {
-            power: initialStats.power,
-            speed: initialStats.speed,
-            int: initialStats.int,
-            luck: initialStats.luck
-        };
+        this.stats = new RPGStats(
+            initialStats.power,
+            initialStats.speed,
+            initialStats.int,
+            initialStats.luck
+        );
         
         // HP 설정
-        this.maxHp = initialHp;
-        this.hp = this.maxHp;
+        this.hp.setMax(initialHp);
+        this.hp.add(initialHp); // HP 풀로 채우기
         
         // 리소스 설정
         if (resources.gp) {
-            this.resources.maxGp = resources.gp;
-            this.resources.gp = resources.gp;
+            this.gpResource.setMax(resources.gp);
+            this.gpResource.add(resources.gp);
         }
         if (resources.mp !== undefined) {
-            this.resources.maxMp = resources.mp;
-            this.resources.mp = resources.mp;
+            this.mpResource.setMax(resources.mp);
+            this.mpResource.add(resources.mp);
         }
         if (resources.gunpower) {
-            this.resources.maxGunpower = resources.gunpower;
-            this.resources.gunpower = resources.gunpower;
+            this.gunpowerResource.setMax(resources.gunpower);
+            this.gunpowerResource.add(resources.gunpower);
         }
         
-        this.initializeSkills();
-        this.updateCombatStats();
+        // 스킬 매니저 초기화 (jobs.json의 initialSkills 사용)
+        this.skillManager = new RPGSkillManager(jobType);
     }
 
-    // 스킬 초기화
-    initializeSkills() {
-        // jobs.json에서 초기 스킬 로드
-        const initialSkills = jobManager.getJobInitialSkills(this.job);
+    // ==================== 레벨업 시스템 ====================
+    gainExp(amount) {
+        const result = this.level.addExp(amount);
         
-        // 패시브 스킬 추가
-        if (initialSkills.passive) {
-            initialSkills.passive.forEach(skillName => {
-                this.skills.passive.push(skillName);
-                this.skillLevels[skillName] = 1;
+        if (result.leveledUp) {
+            // 레벨업 시 처리
+            result.levels.forEach(newLevel => {
+                this.sp++; // 스킬 포인트 획득
+                this.increaseHpByLevel();
+                this.unlockSkillsByLevel(newLevel);
             });
+            
+            // 레벨 50 달성 시 각성 가능
+            if (this.level.level >= 50 && !this.awakening.isAwakened) {
+                result.canAwaken = true;
+            }
         }
         
-        // 액티브 스킬 추가
-        if (initialSkills.active) {
-            initialSkills.active.forEach(skillName => {
-                this.skills.active.push(skillName);
-                this.skillLevels[skillName] = 1;
-            });
-        }
+        return result;
     }
 
-    // 전투 스탯 업데이트
-    updateCombatStats() {
-        // jobs.json에서 주 스탯 가져오기
-        const mainStatName = jobManager.getJobMainStat(this.job);
-        const mainStat = this.stat[mainStatName] || 0;
-        this.combatStats.attackPower = mainStat * 100;
-        
-        // 치명타 확률 = 행운 × 0.8%
-        this.combatStats.critChance = this.stat.luck * 0.8;
-        
-        // 회피율 = 속도 × 0.5%
-        this.combatStats.evasion = this.stat.speed * 0.5;
-        
-        // 각성 보너스 적용
-        if (this.awaken.isAwakened) {
-            this.combatStats.critChance += this.awaken.bonuses.crit * 0.1;
-            this.combatStats.critDamage += this.awaken.bonuses.critMul * 0.4;
-        }
-    }
-
-    // 레벨업
-    levelUp() {
-        if (this.level >= this.maxLevel) {
-            return { success: false, message: '이미 최대 레벨입니다!' };
-        }
-        
-        this.level++;
-        this.sp++; // 스킬 포인트 1 획득
-        
+    increaseHpByLevel() {
         // jobs.json에서 레벨당 HP 증가량 로드
         const hpGain = jobManager.getJobHpPerLevel(this.job);
-        this.maxHp += hpGain;
-        this.hp = this.maxHp; // 레벨업 시 HP 전체 회복
-        
-        // 레벨에 따른 스킬 해금
-        this.unlockSkillsByLevel();
-        
-        // 레벨 50 달성 시 각성 퀘스트 가능
-        if (this.level === 50) {
-            return { success: true, message: `레벨업! Lv.${this.level}\n각성 퀘스트를 진행할 수 있습니다!`, canAwaken: true };
-        }
-        
-        return { success: true, message: `레벨업! Lv.${this.level}\nHP +${hpGain}, SP +1` };
+        this.hp.setMax(this.hp.max + hpGain);
+        this.hp.add(hpGain); // 레벨업 시 HP 전체 회복
     }
 
-    // 경험치 획득
-    gainExp(amount) {
-        this.exp += amount;
-        
-        let leveledUp = false;
-        let messages = [];
-        
-        // 레벨업 체크
-        while (this.exp >= this.getRequiredExp() && this.level < this.maxLevel) {
-            this.exp -= this.getRequiredExp();
-            let result = this.levelUp();
-            leveledUp = true;
-            messages.push(result.message);
-        }
-        
-        if (leveledUp) {
-            return { success: true, leveledUp: true, messages };
-        }
-        
-        return { success: true, leveledUp: false, message: `경험치 +${amount} (${this.exp}/${this.getRequiredExp()})` };
-    }
-
-    // 필요 경험치 계산
-    getRequiredExp() {
-        const expTable = {
-            1: 50, 2: 80, 3: 120, 4: 180, 5: 260, 6: 360, 7: 480, 8: 650, 9: 850,
-            10: 1150, 11: 1500, 12: 1900, 13: 2350, 14: 2850, 15: 3400, 16: 4000,
-            17: 4650, 18: 5350, 19: 6100, 20: 6900, 21: 7750, 22: 8650, 23: 9600,
-            24: 10600, 25: 11650, 26: 12750, 27: 13900, 28: 15100, 29: 16350,
-            30: 17168, 31: 18112, 32: 19108, 33: 20159, 34: 21268, 35: 22437,
-            36: 23671, 37: 24973, 38: 26347, 39: 27796, 40: 29325, 41: 30937,
-            42: 32639, 43: 34434, 44: 36328, 45: 38326, 46: 40434, 47: 42658,
-            48: 45004, 49: 50090
-        };
-        return expTable[this.level] || 50090;
-    }
-
-    // 레벨에 따른 스킬 해금
-    unlockSkillsByLevel() {
+    unlockSkillsByLevel(level) {
         // jobs.json에서 해당 레벨의 해금 스킬 로드
-        const unlockSkill = jobManager.getJobLevelUnlockSkills(this.job, this.level);
+        const unlockSkill = jobManager.getJobLevelUnlockSkills(this.job, level);
         
         if (unlockSkill) {
-            this.skills[unlockSkill.type].push(unlockSkill.name);
-            this.skillLevels[unlockSkill.name] = 1;
+            this.skillManager.unlockSkill(unlockSkill.name, unlockSkill.type);
         }
     }
 
-    // 각성
+    // ==================== 각성 시스템 ====================
     awaken() {
-        if (this.level < 50) {
+        if (this.level.level < 50) {
             return { success: false, message: '레벨 50을 달성해야 각성할 수 있습니다.' };
         }
         
-        if (this.awaken.isAwakened) {
-            return { success: false, message: '이미 각성한 캐릭터입니다.' };
+        const result = this.awakening.awaken();
+        if (result.success) {
+            this.unlockAwakenSkills();
         }
-        
-        this.awaken.isAwakened = true;
-        this.awaken.level = 1;
-        
-        // 각성 스킬 해금
-        this.unlockAwakenSkills();
-        
-        return { success: true, message: `${this.name}이(가) 각성했습니다!\n각성 스킬이 해금되었습니다!` };
+        return result;
     }
 
-    // 각성 스킬 해금
     unlockAwakenSkills() {
         // jobs.json에서 각성 스킬 로드
         const awakenSkills = jobManager.getJobAwakenSkills(this.job);
         
         awakenSkills.forEach(skill => {
-            this.skills[skill.type].push(skill.name);
-            this.skillLevels[skill.name] = 1;
+            this.skillManager.unlockSkill(skill.name, skill.type);
         });
     }
 
-    // 스탯 증가
-    increaseStat(statName, amount) {
-        if (!this.stat.hasOwnProperty(statName)) {
-            return { success: false, message: '유효하지 않은 스탯입니다.' };
-        }
-        
-        if (this.stat[statName] >= 50) {
-            return { success: false, message: `${statName}은(는) 이미 최대치(50)입니다.` };
-        }
-        
-        this.stat[statName] += amount;
-        if (this.stat[statName] > 50) {
-            this.stat[statName] = 50;
-        }
-        
-        this.updateCombatStats();
-        return { success: true, message: `${statName} +${amount}` };
+    gainAwakenExp(amount) {
+        return this.awakening.addExp(amount);
     }
 
-    // 캐릭터 정보 표시
+    investAP(bonusType, amount) {
+        return this.awakening.investAP(bonusType, amount);
+    }
+
+    // ==================== 스탯 시스템 ====================
+    increaseStat(statName, amount) {
+        return this.stats.increase(statName, amount);
+    }
+
+    // ==================== 스킬 시스템 ====================
+    learnSkill(skillName, skillType) {
+        return this.skillManager.unlockSkill(skillName, skillType);
+    }
+
+    levelUpSkill(skillName) {
+        if (this.sp <= 0) {
+            return { success: false, message: 'SP가 부족합니다.' };
+        }
+        
+        const result = this.skillManager.levelUpSkill(skillName);
+        if (result.success) {
+            this.sp--;
+        }
+        return result;
+    }
+
+    getSkill(skillName) {
+        return this.skillManager.getSkill(skillName);
+    }
+
+    // ==================== 장비 시스템 ====================
+    equipItem(slot, equipment) {
+        return this.equipmentManager.equip(slot, equipment);
+    }
+
+    unequipItem(slot) {
+        return this.equipmentManager.unequip(slot);
+    }
+
+    getEquippedItem(slot) {
+        return this.equipmentManager.getEquipped(slot);
+    }
+
+    // ==================== 인벤토리 시스템 ====================
+    addEquipmentToInventory(equipment) {
+        return this.inventory.addEquipment(equipment);
+    }
+
+    addConsumableToInventory(itemName, itemType, count = 1) {
+        return this.inventory.addConsumable(itemName, itemType, count);
+    }
+
+    removeEquipmentFromInventory(equipmentId) {
+        return this.inventory.removeEquipment(equipmentId);
+    }
+
+    consumeItemFromInventory(itemName, count = 1) {
+        return this.inventory.consumeItem(itemName, count);
+    }
+
+    findEquipmentInInventory(equipmentId) {
+        return this.inventory.findEquipment(equipmentId);
+    }
+
+    findConsumableInInventory(itemName) {
+        return this.inventory.findConsumable(itemName);
+    }
+
+    getConsumableCount(itemName) {
+        return this.inventory.getConsumableCount(itemName);
+    }
+
+    hasConsumable(itemName, count = 1) {
+        return this.inventory.hasConsumable(itemName, count);
+    }
+
+    // ==================== 리소스 관리 ====================
+    addGP(amount) {
+        if (this.job !== '성준호') {
+            return { success: false, message: 'GP는 성준호 전용 리소스입니다.' };
+        }
+        return this.gpResource.add(amount);
+    }
+
+    consumeGP(amount) {
+        if (this.job !== '성준호') {
+            return { success: false, message: 'GP는 성준호 전용 리소스입니다.' };
+        }
+        return this.gpResource.consume(amount);
+    }
+
+    addMP(amount) {
+        if (this.job !== '빵귤') {
+            return { success: false, message: 'MP는 빵귤 전용 리소스입니다.' };
+        }
+        return this.mpResource.add(amount);
+    }
+
+    consumeMP(amount) {
+        if (this.job !== '빵귤') {
+            return { success: false, message: 'MP는 빵귤 전용 리소스입니다.' };
+        }
+        return this.mpResource.consume(amount);
+    }
+
+    addGunpower(amount) {
+        if (this.job !== '건마') {
+            return { success: false, message: '건력은 건마 전용 리소스입니다.' };
+        }
+        return this.gunpowerResource.add(amount);
+    }
+
+    consumeGunpower(amount) {
+        if (this.job !== '건마') {
+            return { success: false, message: '건력은 건마 전용 리소스입니다.' };
+        }
+        return this.gunpowerResource.consume(amount);
+    }
+
+    // HP 관리
+    takeDamage(amount) {
+        return this.hp.consume(amount);
+    }
+
+    heal(amount) {
+        return this.hp.add(amount);
+    }
+
+    // ==================== 전투 스탯 계산 ====================
+    getMainStat() {
+        // jobs.json에서 주 스탯 가져오기
+        const mainStatName = jobManager.getJobMainStat(this.job);
+        return this.stats[mainStatName] || 0;
+    }
+
+    getAttackPower() {
+        const mainStat = this.getMainStat();
+        const equipStats = this.equipmentManager.getTotalStats();
+        const baseAttack = RPGCombatCalculator.calculateAttackPower(mainStat);
+        const equipBonus = equipStats.attackPower || 0;
+        return baseAttack + equipBonus;
+    }
+
+    getCritChance() {
+        const awakenBonus = this.awakening.isAwakened ? this.awakening.bonuses.crit : 0;
+        const equipStats = this.equipmentManager.getTotalStats();
+        const equipBonus = equipStats.critChance || 0;
+        return RPGCombatCalculator.calculateCritChance(this.stats.luck, awakenBonus) + equipBonus;
+    }
+
+    getCritDamage() {
+        const awakenBonus = this.awakening.isAwakened ? this.awakening.bonuses.critMul : 0;
+        const equipStats = this.equipmentManager.getTotalStats();
+        const equipBonus = equipStats.critDamage || 0;
+        return RPGCombatCalculator.calculateCritDamage(150, awakenBonus) + equipBonus;
+    }
+
+    getEvasion() {
+        const equipStats = this.equipmentManager.getTotalStats();
+        const equipBonus = equipStats.evasion || 0;
+        return RPGCombatCalculator.calculateEvasion(this.stats.speed) + equipBonus;
+    }
+
+    // ==================== 아이템 사용 ====================
+    useItem(itemName) {
+        const itemData = itemManager.findItemByName(itemName);
+        if (!itemData) {
+            return { success: false, message: `${itemName}은(는) 존재하지 않는 아이템입니다.` };
+        }
+
+        if (!this.hasConsumable(itemName)) {
+            return { success: false, message: `${itemName}을(를) 보유하고 있지 않습니다.` };
+        }
+
+        const result = { success: true, message: '', effects: {} };
+
+        switch (itemData.type) {
+            case '물약':
+                result.effects = this.applyPotionEffect(itemData);
+                break;
+            case '물고기':
+                result.effects = this.applyExpItem(itemData);
+                break;
+            case '버프물약':
+                result.effects = this.applyBuffPotion(itemData);
+                break;
+            case '음식':
+                result.effects = this.applyFoodEffect(itemData);
+                break;
+            case '소모품':
+                result.effects = this.applyConsumableEffect(itemData);
+                break;
+            case '티켓':
+                result.message = `${itemName}을(를) 사용했습니다.`;
+                break;
+            default:
+                return { success: false, message: `${itemName}은(는) 사용할 수 없는 아이템입니다.` };
+        }
+
+        this.consumeItemFromInventory(itemName, 1);
+        result.message = result.message || `${itemName}을(를) 사용했습니다.`;
+        return result;
+    }
+
+    applyPotionEffect(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.hpRecover) {
+            this.heal(effects.hpRecover);
+            result.hpRecover = effects.hpRecover;
+        }
+
+        if (effects.hpRecoverPercent) {
+            const healAmount = Math.floor(this.hp.max * effects.hpRecoverPercent / 100);
+            this.heal(healAmount);
+            result.hpRecoverPercent = effects.hpRecoverPercent;
+        }
+
+        if (effects.fatigueRecover) {
+            result.fatigueRecover = effects.fatigueRecover;
+        }
+
+        return result;
+    }
+
+    applyExpItem(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.exp) {
+            const expResult = this.gainExp(effects.exp);
+            result.exp = effects.exp;
+            result.leveledUp = expResult.leveledUp;
+        }
+
+        return result;
+    }
+
+    applyBuffPotion(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.attackBonus) {
+            result.attackBonus = effects.attackBonus;
+            result.duration = effects.duration || effects.permanent;
+        }
+
+        return result;
+    }
+
+    applyFoodEffect(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.hpRecoverPercent) {
+            const healAmount = Math.floor(this.hp.max * effects.hpRecoverPercent / 100);
+            this.heal(healAmount);
+            result.hpRecoverPercent = effects.hpRecoverPercent;
+        }
+
+        return result;
+    }
+
+    applyConsumableEffect(itemData) {
+        const effects = itemData.effects || {};
+        return effects;
+    }
+
+    enhanceEquipment(equipmentId) {
+        if (!this.hasConsumable('강화석', 1)) {
+            return { success: false, message: '강화석이 부족합니다.' };
+        }
+
+        const equipment = this.findEquipmentInInventory(equipmentId) || this.getEquippedItem(equipmentId);
+        if (!equipment) {
+            return { success: false, message: '장비를 찾을 수 없습니다.' };
+        }
+
+        const currentEnhancement = equipment.enhancement || 0;
+        const enhanceResult = equipmentManager.attemptEnhancement(currentEnhancement);
+
+        this.consumeItemFromInventory('강화석', 1);
+        equipment.enhancement = enhanceResult.newEnhancement;
+
+        return {
+            success: true,
+            result: enhanceResult.result,
+            oldEnhancement: currentEnhancement,
+            newEnhancement: enhanceResult.newEnhancement,
+            equipment: equipment
+        };
+    }
+
+    // ==================== 캐릭터 정보 ====================
     getCharacterInfo() {
-        let info = [];
+        const info = [];
         info.push(`━━━━━━━━━━━━━━━`);
         info.push(`👤 ${this.name} [${this.job}]`);
-        info.push(`📊 Lv.${this.level} (${this.exp}/${this.getRequiredExp()})`);
-        info.push(`❤️ HP: ${this.hp}/${this.maxHp}`);
+        info.push(`📊 Lv.${this.level.level} (${this.level.exp}/${this.level.getRequiredExp()})`);
+        info.push(`❤️ HP: ${this.hp.current}/${this.hp.max}`);
         info.push(``);
         info.push(`⚔️ 스탯`);
-        info.push(`  힘: ${this.stat.power} / 속도: ${this.stat.speed}`);
-        info.push(`  지능: ${this.stat.int} / 행운: ${this.stat.luck}`);
+        info.push(`  힘: ${this.stats.power} / 속도: ${this.stats.speed}`);
+        info.push(`  지능: ${this.stats.int} / 행운: ${this.stats.luck}`);
         info.push(``);
-        info.push(`💪 전투력: ${this.combatStats.attackPower}`);
-        info.push(`🎯 치명타: ${this.combatStats.critChance.toFixed(1)}% (${this.combatStats.critDamage}%)`);
-        info.push(`🏃 회피율: ${this.combatStats.evasion.toFixed(1)}%`);
+        info.push(`💪 공격력: ${this.getAttackPower()}`);
+        info.push(`🎯 치명타: ${this.getCritChance().toFixed(1)}% (${this.getCritDamage().toFixed(0)}%)`);
+        info.push(`🏃 회피율: ${this.getEvasion().toFixed(1)}%`);
         
         // 리소스 표시
         if (this.job === '성준호') {
-            info.push(`⚡ GP: ${this.resources.gp}/${this.resources.maxGp}`);
+            info.push(`⚡ GP: ${this.gpResource.current}/${this.gpResource.max}`);
         } else if (this.job === '빵귤') {
-            info.push(`✨ MP: ${this.resources.mp}`);
+            info.push(`✨ MP: ${this.mpResource.current}`);
         } else if (this.job === '건마') {
-            info.push(`🔫 건력: ${this.resources.gunpower}/${this.resources.maxGunpower}`);
+            info.push(`🔫 건력: ${this.gunpowerResource.current}/${this.gunpowerResource.max}`);
         }
         
-        if (this.awaken.isAwakened) {
+        if (this.awakening.isAwakened) {
             info.push(``);
-            info.push(`🌟 각성 Lv.${this.awaken.level} (AP: ${this.awaken.point})`);
+            info.push(`🌟 각성 Lv.${this.awakening.level} (AP: ${this.awakening.ap})`);
         }
         
+        info.push(`━━━━━━━━━━━━━━━`);
+        
+        return info.join('\n');
+    }
+
+    getSkillInfo() {
+        if (!this.skillManager) {
+            return '스킬 정보가 없습니다.';
+        }
+        
+        const info = [];
+        info.push(`━━━━ 스킬 목록 ━━━━`);
+        
+        const passiveSkills = this.skillManager.getSkillsByType('passive');
+        if (passiveSkills.length > 0) {
+            info.push(`\n[패시브]`);
+            passiveSkills.forEach(skill => {
+                info.push(`• ${skill.name} (Lv.${skill.level})`);
+            });
+        }
+        
+        const activeSkills = this.skillManager.getSkillsByType('active');
+        if (activeSkills.length > 0) {
+            info.push(`\n[액티브]`);
+            activeSkills.forEach(skill => {
+                const cooldownInfo = skill.isReady() ? '사용가능' : `쿨타임 ${skill.cooldown}턴`;
+                info.push(`• ${skill.name} (Lv.${skill.level}) - ${cooldownInfo}`);
+            });
+        }
+        
+        const awakenSkills = this.skillManager.getSkillsByType('awakening');
+        if (awakenSkills.length > 0) {
+            info.push(`\n[각성 스킬]`);
+            awakenSkills.forEach(skill => {
+                const cooldownInfo = skill.isReady() ? '사용가능' : `쿨타임 ${skill.cooldown}턴`;
+                info.push(`• ${skill.name} (Lv.${skill.level}) - ${cooldownInfo}`);
+            });
+        }
+        
+        info.push(`\n━━━━━━━━━━━━━━━`);
+        info.push(`SP: ${this.sp}`);
+        
+        return info.join('\n');
+    }
+
+    getInventoryInfo() {
+        const info = [];
+        info.push(`━━━━ 인벤토리 ━━━━`);
+        info.push(`[장비] (${this.inventory.equipments.length}개)`);
+        
+        if (this.inventory.equipments.length > 0) {
+            this.inventory.equipments.forEach((equip, index) => {
+                const enhanceText = equip.getEnhancementDisplay();
+                info.push(`${index + 1}. [${equip.rarity}] ${equip.name} ${enhanceText}`);
+            });
+        }
+
+        info.push(`\n[소모품] (${this.inventory.consumables.size}종류)`);
+        if (this.inventory.consumables.size > 0) {
+            for (let [name, item] of this.inventory.consumables) {
+                info.push(`• ${name} x${item.count}`);
+            }
+        }
+
+        info.push(`\n전체: ${this.inventory.getTotalItemCount()}/${this.inventory.maxSize}`);
         info.push(`━━━━━━━━━━━━━━━`);
         
         return info.join('\n');
@@ -10348,6 +10594,201 @@ client.on('chat', async (data, channel) => {
             
             // 큐 처리 시작
             processDeliverQueue();
+        }
+
+
+
+
+
+        // RPG here
+        if (msg.startsWith("/") && ["442097040687921","18456115567715763","18459877269595903","18459877099603713"].includes(roomid+"")) {
+            const cmd = msg.substr(1).trim();
+            if (cmd.toLowerCase().startsWith("rpg") || cmd.toLowerCase().startsWith("rpgenius")) {
+                const args = cmd.substr(cmd.split(" ")[0].length + 1).split(" ");
+
+                const owner = await getRPGOwnerByUserId(sender.userId+"");
+
+                // ===== 등록 명령어 =====
+                if (args[0] === "등록") {
+                    // 이미 등록된 사용자
+                    if (owner) {
+                        channel.sendChat("❌ 이미 등록된 사용자입니다.");
+                        return;
+                    }
+                    
+                    // 닉네임 확인
+                    if (!args[1]) {
+                        channel.sendChat("❌ 닉네임을 입력해주세요.");
+                        return;
+                    }
+                    
+                    const nickname = args.slice(1).join(" ");
+                    const ownerId = sender.userId + "";
+                    
+                    // 새 Owner 생성
+                    const newOwner = new RPGOwner(nickname, ownerId);
+                    newOwner.id = sender.userId + "";
+                    await newOwner.save();
+                    
+                    channel.sendChat(`✅ RPG 계정이 생성되었습니다!\n닉네임: ${nickname}\n\n이제 아래 명령어로 캐릭터를 생성해주세요.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]\n\n직업: 먼마, 성준호, 빵귤, 호르아크티, 건마`);
+                    return;
+                }
+                
+                // 등록되지 않은 사용자
+                if (!owner) {
+                    channel.sendChat("❌ 등록되지 않은 사용자입니다.\n\n[ /RPGenius 등록 [닉네임] ]");
+                    return;
+                }
+
+                // ===== 캐릭터생성 명령어 =====
+                if (args[0] === "캐릭터생성") {
+                    if (!args[1] || !args[2]) {
+                        channel.sendChat("❌ 잘못된 입력입니다.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]\n\n직업: 먼마, 성준호, 빵귤, 호르아크티, 건마");
+                        return;
+                    }
+                    
+                    const characterName = args[1];
+                    const jobType = args[2];
+                    
+                    const result = await owner.createCharacter(characterName, jobType);
+                    
+                    if (result.success) {
+                        // 첫 번째 캐릭터라면 자동으로 활성화
+                        if (owner.characters.length === 1) {
+                            owner.activeCharacter = result.character.id;
+                            await owner.save();
+                        }
+                        channel.sendChat(`✅ ${result.message}\n\n[ /RPGenius 캐릭터목록 ]`);
+                    } else {
+                        channel.sendChat(`❌ ${result.message}`);
+                    }
+                    return;
+                }
+
+                // ===== 캐릭터목록 명령어 =====
+                if (args[0] === "캐릭터목록" || args[0] === "캐릭터") {
+                    const characters = await owner.getCharacters();
+                    
+                    if (characters.length === 0) {
+                        channel.sendChat("❌ 생성된 캐릭터가 없습니다.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]");
+                        return;
+                    }
+                    
+                    const charList = [];
+                    charList.push(`━━━━ ${owner.name}님의 캐릭터 목록 ━━━━`);
+                    charList.push(``);
+                    
+                    characters.forEach((char, idx) => {
+                        const activeMarker = (owner.activeCharacter === char.id) ? "★ " : "  ";
+                        charList.push(`${activeMarker}${idx + 1}. ${char.name} (Lv.${char.level} ${char.job})`);
+                    });
+                    
+                    charList.push(``);
+                    charList.push(`전체 ${characters.length}/${owner.maxCharacters}개`);
+                    charList.push(`━━━━━━━━━━━━━━━`);
+                    charList.push(`\n[ /RPGenius 캐릭터선택 [번호] ]`);
+                    
+                    channel.sendChat(charList.join('\n'));
+                    return;
+                }
+
+                // ===== 캐릭터선택 명령어 =====
+                if (args[0] === "캐릭터선택") {
+                    const characters = await owner.getCharacters();
+                    
+                    if (characters.length === 0) {
+                        channel.sendChat("❌ 생성된 캐릭터가 없습니다.");
+                        return;
+                    }
+                    
+                    const charNum = parseInt(args[1]);
+                    if (isNaN(charNum) || charNum < 1 || charNum > characters.length) {
+                        channel.sendChat(`❌ 올바른 캐릭터 번호를 입력해주세요. (1~${characters.length})`);
+                        return;
+                    }
+                    
+                    const selectedChar = characters[charNum - 1];
+                    owner.activeCharacter = selectedChar.id;
+                    await owner.save();
+                    
+                    channel.sendChat(`✅ ${selectedChar.name} (Lv.${selectedChar.level} ${selectedChar.job}) 캐릭터를 선택했습니다.`);
+                    return;
+                }
+
+                // 캐릭터 목록 조회 (캐릭터가 필요한 명령어들)
+                const characters = await owner.getCharacters();
+                
+                // 캐릭터가 없는 경우
+                if (characters.length === 0) {
+                    channel.sendChat("❌ 생성된 캐릭터가 없습니다.\n/RPG 캐릭터생성 [캐릭터명] [직업]으로 캐릭터를 먼저 생성해주세요.");
+                    return;
+                }
+
+                // 활성 캐릭터 찾기
+                let character = null;
+                if (owner.activeCharacter) {
+                    character = characters.find(c => c.id === owner.activeCharacter);
+                }
+                // 활성 캐릭터가 없거나 찾지 못하면 첫 번째 캐릭터 사용
+                if (!character) {
+                    character = characters[0];
+                    owner.activeCharacter = character.id;
+                    await owner.save();
+                }
+
+                // ===== 정보 명령어 =====
+                if (args[0] === "정보" || args[0] === "캐릭터정보" || args[0] === "내정보") {
+                    const info = character.getCharacterInfo();
+                    channel.sendChat(info);
+                    return;
+                }
+
+                // ===== 스킬 명령어 =====
+                if (args[0] === "스킬" || args[0] === "스킬정보") {
+                    const skillInfo = character.getSkillInfo();
+                    channel.sendChat(skillInfo);
+                    return;
+                }
+
+                // ===== 인벤토리 명령어 =====
+                if (args[0] === "인벤토리" || args[0] === "가방") {
+                    const inventoryInfo = [];
+                    inventoryInfo.push(`━━━━ ${character.name}의 인벤토리 ━━━━`);
+                    inventoryInfo.push(`Lv.${character.level.level} ${character.job}`);
+                    inventoryInfo.push(``);
+                    
+                    // 장비 아이템
+                    const equipments = character.inventory.equipments || [];
+                    
+                    if (equipments.length > 0) {
+                        inventoryInfo.push(`【장비】 (${equipments.length}개)`);
+                        equipments.forEach((item, idx) => {
+                            const enhanceText = item.enhancement ? ` +${item.enhancement}` : '';
+                            const rarityText = item.rarity || '일반';
+                            inventoryInfo.push(`${idx + 1}. [${rarityText}] ${item.name}${enhanceText}`);
+                        });
+                        inventoryInfo.push(``);
+                    }
+                    
+                    // 소모품 아이템
+                    const consumables = character.inventory.consumables || new Map();
+                    
+                    if (consumables.size > 0) {
+                        inventoryInfo.push(`【소모품】 (${consumables.size}종류)`);
+                        for (let [name, item] of consumables) {
+                            inventoryInfo.push(`• ${name} x${item.count}`);
+                        }
+                        inventoryInfo.push(``);
+                    }
+                    
+                    const totalItems = equipments.length + (consumables.size || 0);
+                    inventoryInfo.push(`전체: ${totalItems}개`);
+                    inventoryInfo.push(`━━━━━━━━━━━━━━━`);
+                    
+                    channel.sendChat(inventoryInfo.join('\n'));
+                    return;
+                }
+            }
         }
 
     } catch(e) {

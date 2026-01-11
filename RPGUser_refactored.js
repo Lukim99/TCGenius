@@ -2,7 +2,7 @@
 // 기존 RPGUser 클래스를 교체하여 사용하세요.
 
 // RPG 시스템 모듈 불러오기
-const { jobManager, equipmentManager } = require('./rpg_system.js');
+const { jobManager, equipmentManager, itemManager } = require('./rpg_system.js');
 
 class RPGUser {
     constructor(name, id, owner) {
@@ -247,16 +247,36 @@ class RPGUser {
     }
 
     // ==================== 인벤토리 시스템 ====================
-    addItemToInventory(item) {
-        return this.inventory.addItem(item);
+    addEquipmentToInventory(equipment) {
+        return this.inventory.addEquipment(equipment);
     }
 
-    removeItemFromInventory(itemId) {
-        return this.inventory.removeItem(itemId);
+    addConsumableToInventory(itemName, itemType, count = 1) {
+        return this.inventory.addConsumable(itemName, itemType, count);
     }
 
-    findItemInInventory(itemId) {
-        return this.inventory.findItem(itemId);
+    removeEquipmentFromInventory(equipmentId) {
+        return this.inventory.removeEquipment(equipmentId);
+    }
+
+    consumeItemFromInventory(itemName, count = 1) {
+        return this.inventory.consumeItem(itemName, count);
+    }
+
+    findEquipmentInInventory(equipmentId) {
+        return this.inventory.findEquipment(equipmentId);
+    }
+
+    findConsumableInInventory(itemName) {
+        return this.inventory.findConsumable(itemName);
+    }
+
+    getConsumableCount(itemName) {
+        return this.inventory.getConsumableCount(itemName);
+    }
+
+    hasConsumable(itemName, count = 1) {
+        return this.inventory.hasConsumable(itemName, count);
     }
 
     // ==================== 리소스 관리 ====================
@@ -346,6 +366,137 @@ class RPGUser {
         return RPGCombatCalculator.calculateEvasion(this.stats.speed) + equipBonus;
     }
 
+    // ==================== 아이템 사용 ====================
+    useItem(itemName) {
+        const itemData = itemManager.findItemByName(itemName);
+        if (!itemData) {
+            return { success: false, message: `${itemName}은(는) 존재하지 않는 아이템입니다.` };
+        }
+
+        if (!this.hasConsumable(itemName)) {
+            return { success: false, message: `${itemName}을(를) 보유하고 있지 않습니다.` };
+        }
+
+        const result = { success: true, message: '', effects: {} };
+
+        switch (itemData.type) {
+            case '물약':
+                result.effects = this.applyPotionEffect(itemData);
+                break;
+            case '물고기':
+                result.effects = this.applyExpItem(itemData);
+                break;
+            case '버프물약':
+                result.effects = this.applyBuffPotion(itemData);
+                break;
+            case '음식':
+                result.effects = this.applyFoodEffect(itemData);
+                break;
+            case '소모품':
+                result.effects = this.applyConsumableEffect(itemData);
+                break;
+            case '티켓':
+                result.message = `${itemName}을(를) 사용했습니다.`;
+                break;
+            default:
+                return { success: false, message: `${itemName}은(는) 사용할 수 없는 아이템입니다.` };
+        }
+
+        this.consumeItemFromInventory(itemName, 1);
+        result.message = result.message || `${itemName}을(를) 사용했습니다.`;
+        return result;
+    }
+
+    applyPotionEffect(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.hpRecover) {
+            this.heal(effects.hpRecover);
+            result.hpRecover = effects.hpRecover;
+        }
+
+        if (effects.hpRecoverPercent) {
+            const healAmount = Math.floor(this.hp.max * effects.hpRecoverPercent / 100);
+            this.heal(healAmount);
+            result.hpRecoverPercent = effects.hpRecoverPercent;
+        }
+
+        if (effects.fatigueRecover) {
+            result.fatigueRecover = effects.fatigueRecover;
+        }
+
+        return result;
+    }
+
+    applyExpItem(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.exp) {
+            const expResult = this.gainExp(effects.exp);
+            result.exp = effects.exp;
+            result.leveledUp = expResult.leveledUp;
+        }
+
+        return result;
+    }
+
+    applyBuffPotion(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.attackBonus) {
+            result.attackBonus = effects.attackBonus;
+            result.duration = effects.duration || effects.permanent;
+        }
+
+        return result;
+    }
+
+    applyFoodEffect(itemData) {
+        const effects = itemData.effects || {};
+        const result = {};
+
+        if (effects.hpRecoverPercent) {
+            const healAmount = Math.floor(this.hp.max * effects.hpRecoverPercent / 100);
+            this.heal(healAmount);
+            result.hpRecoverPercent = effects.hpRecoverPercent;
+        }
+
+        return result;
+    }
+
+    applyConsumableEffect(itemData) {
+        const effects = itemData.effects || {};
+        return effects;
+    }
+
+    enhanceEquipment(equipmentId) {
+        if (!this.hasConsumable('강화석', 1)) {
+            return { success: false, message: '강화석이 부족합니다.' };
+        }
+
+        const equipment = this.findEquipmentInInventory(equipmentId) || this.getEquippedItem(equipmentId);
+        if (!equipment) {
+            return { success: false, message: '장비를 찾을 수 없습니다.' };
+        }
+
+        const currentEnhancement = equipment.enhancement || 0;
+        const enhanceResult = equipmentManager.attemptEnhancement(currentEnhancement);
+
+        this.consumeItemFromInventory('강화석', 1);
+        equipment.enhancement = enhanceResult.newEnhancement;
+
+        return {
+            success: true,
+            result: enhanceResult.result,
+            oldEnhancement: currentEnhancement,
+            newEnhancement: enhanceResult.newEnhancement,
+            equipment: equipment
+        };
+    }
+
     // ==================== 캐릭터 정보 ====================
     getCharacterInfo() {
         const info = [];
@@ -420,6 +571,31 @@ class RPGUser {
         
         return info.join('\n');
     }
+
+    getInventoryInfo() {
+        const info = [];
+        info.push(`━━━━ 인벤토리 ━━━━`);
+        info.push(`[장비] (${this.inventory.equipments.length}개)`);
+        
+        if (this.inventory.equipments.length > 0) {
+            this.inventory.equipments.forEach((equip, index) => {
+                const enhanceText = equip.getEnhancementDisplay();
+                info.push(`${index + 1}. [${equip.rarity}] ${equip.name} ${enhanceText}`);
+            });
+        }
+
+        info.push(`\n[소모품] (${this.inventory.consumables.size}종류)`);
+        if (this.inventory.consumables.size > 0) {
+            for (let [name, item] of this.inventory.consumables) {
+                info.push(`• ${name} x${item.count}`);
+            }
+        }
+
+        info.push(`\n전체: ${this.inventory.getTotalItemCount()}/${this.inventory.maxSize}`);
+        info.push(`━━━━━━━━━━━━━━━`);
+        
+        return info.join('\n');
+    }
 }
 
 // ==================== 사용 예시 ====================
@@ -453,9 +629,20 @@ if (character.level.level >= 50) {
     character.awaken();
 }
 
+// 아이템 사용
+character.addConsumableToInventory('초보 체력 물약', '물약', 5);
+const useResult = character.useItem('초보 체력 물약');
+console.log(useResult);
+
+// 장비 강화
+character.addConsumableToInventory('강화석', '재료', 10);
+const enhanceResult = character.enhanceEquipment('weapon_001');
+console.log(enhanceResult);
+
 // 캐릭터 정보 출력
 console.log(character.getCharacterInfo());
 console.log(character.getSkillInfo());
+console.log(character.getInventoryInfo());
 
 // 저장
 await character.save();
