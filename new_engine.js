@@ -3851,17 +3851,28 @@ client.on('chat', async (data, channel) => {
                                 'User-Agent': 'Mozilla/5.0'
                             }
                         });
+                        const ext = attachment.url.split('.').pop();
 
                         form.append('image', imageResponse.data, {
-                            filename: 'kakao_received_image.jpg',
+                            filename: 'kakao_received_image.' + ext,
                             contentType: attachment.mt
                         });
                     }
                 } else if (['STICKER', 'STICKERANI'].includes(node_kakao.KnownChatType[data.chat.type])) {
                     const attachment = data.attachment();
                     if (attachment && attachment.path) {
-                        const emoticonUrl = `https://item.kakaocdn.net/dw/${attachment.path}`;
-                        form.append('image_url', emoticonUrl);
+                        const imageResponse = await axios.get(`https://item.kakaocdn.net/dw/${attachment.path}`, {
+                            responseType: 'arraybuffer',
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0'
+                            }
+                        });
+                        const ext = attachment.path.split('.').pop();
+
+                        form.append('image', imageResponse.data, {
+                            filename: 'kakao_received_image.' + ext,
+                            contentType: attachment.mt
+                        });
                     }
                 }
 
