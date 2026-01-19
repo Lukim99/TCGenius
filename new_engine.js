@@ -4,6 +4,7 @@ const express = require('express');
 const request = require('request');
 const https = require('https');
 const axios = require('axios');
+const FormData = require('form-data');
 const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
 const { wrapper } = require('axios-cookiejar-support');
@@ -3852,7 +3853,7 @@ client.on('chat', async (data, channel) => {
                         }
                     });
 
-                    channel.sendChat(JSON.stringify(uploadResponse, null, 4));
+                    channel.sendChat(JSON.stringify(uploadResponse.data, null, 4));
                 }
             } catch (error) {
                 console.error('이미지 처리 중 오류 발생:', error.message);
