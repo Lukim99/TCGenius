@@ -3861,15 +3861,18 @@ client.on('chat', async (data, channel) => {
         // }
 
         if (channel.channelId == "435426013866936") {
-            if (data.chat.type == node_kakao.KnownChatType.TEXT) {
+            if (msg.startsWith("!로그 ")) {
                 try {
                     const response = await fetch('https://kakao-kch44cwq8-kyumin-yangs-projects.vercel.app/api/log', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            content: msg,
+                            content: msg.substr(4),
                         })
                     });
+
+                    const data = await response.json();
+                    channel.sendChat(JSON.stringify(data, null, 4));
                 } catch (e) {
                     console.error(e);
                 }
