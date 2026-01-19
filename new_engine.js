@@ -3842,7 +3842,7 @@ client.on('chat', async (data, channel) => {
                 form.append('sender', sender.nickname);
                 form.append('room', room);
                 
-                if (data.chat.type == node_kakao.KnownChatType.PHOTO) {
+                if (node_kakao.KnownChatType[data.chat.type] == 'PHOTO') {
                     const attachment = data.attachment();
                     if (attachment && attachment.url) {
                         const imageResponse = await axios.get(attachment.url, {
@@ -3856,6 +3856,12 @@ client.on('chat', async (data, channel) => {
                             filename: 'kakao_received_image.jpg',
                             contentType: attachment.mt
                         });
+                    }
+                } else if (['STICKER', 'STICKERANI'].includes(node_kakao.KnownChatType[data.chat.type])) {
+                    const attachment = data.attachment();
+                    if (attachment && attachment.path) {
+                        const emoticonUrl = `https://item.kakaocdn.net/dw/${attachment.path}`;
+                        form.append('image_url', emoticonUrl);
                     }
                 }
 
