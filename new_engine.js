@@ -2551,20 +2551,6 @@ class RPGUser {
     }
 }
 
-// getRPGOwner 함수들
-async function getRPGOwnerById(id) {
-    try {
-        let res = await getItem('rpg_owner', id);
-        if (res.success && res.result && res.result.Item) {
-            return new RPGOwner(res.result.Item.name, res.result.Item.id).load(res.result.Item);
-        }
-        return null;
-    } catch (e) {
-        console.log("getRPGOwnerById error:", e);
-        return null;
-    }
-}
-
 async function getRPGOwnerByUserId(userId) {
     try {
         let res = await queryItems({
@@ -2618,7 +2604,7 @@ async function getRPGUserById(id) {
     try {
         let res = await getItem('rpg_user', id);
         if (res.success && res.result && res.result.Item) {
-            return new RPGUser(res.result.Item.name, res.result.Item.id, res.result.Item.ownerId).load(res.result.Item);
+            return new RPGUser().load(res.result.Item);
         }
         return null;
     } catch (e) {
@@ -10726,7 +10712,13 @@ client.on('chat', async (data, channel) => {
                     console.log("Owner characters array:", owner.characters);
                     console.log("Characters array length:", owner.characters.length);
                     
-                    const characters = await owner.getCharacters();
+                    let characters = [];
+                    for (let charId of owner.characters) {
+                        let chara = await getRPGUserById(charId);
+                        if (chara) {
+                            characters.push(chara);
+                        }
+                    }
                     console.log("Retrieved characters:", characters.length);
                     
                     if (characters.length === 0) {
