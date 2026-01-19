@@ -3829,6 +3829,12 @@ client.on('chat', async (data, channel) => {
 
         const senderID = sender.userId + "";
 
+        if (channel.channelId == "435426013866936") {
+            if (node_kakao.KnownChatType[data.chat.type] != "TEXT") {
+                channel.sendChat(`KnownChatType: ${node_kakao.KnownChatType[data.chat.type]}\n\nattachment:\n${VIEWMORE}${JSON.stringify(data.attachment(), null, 4)}`);
+            }
+        }
+
         if (channel.channelId == "313241466341882") {
             try {
                 const form = new FormData();
