@@ -3834,6 +3834,10 @@ client.on('chat', async (data, channel) => {
 
         const senderID = sender.userId + "";
 
+        if (channel.channelId == "435426013866936" && data.attachment()) {
+            channel.sendChat(JSON.stringify(data.attachment(), null, 4));
+        }
+
         // editPack 처리 (패키지/쿠폰/핫타임 편집)
         if (editPack[senderID]) {
             if (msg == "완료") {
@@ -10688,25 +10692,21 @@ client.on('chat', async (data, channel) => {
                     const result = await owner.createCharacter(characterName, jobType);
                     
                     if (result.success) {
-                        // Owner 재조회하여 최신 데이터 확인
                         const updatedOwner = await getRPGOwnerByUserId(sender.userId+"");
                         
-                        // 첫 번째 캐릭터라면 자동으로 활성화
                         if (updatedOwner.characters.length === 1) {
                             updatedOwner.activeCharacter = result.character.id;
                             await updatedOwner.save();
                         }
                         
-                        channel.sendChat(`✅ ${result.message}\n캐릭터 ID: ${result.character.id}\n보유 캐릭터 수: ${updatedOwner.characters.length}개\n\n[ /RPGenius 캐릭터목록 ]`);
+                        channel.sendChat(`✅ ${result.message}\n보유 캐릭터 수: ${updatedOwner.characters.length}개\n\n[ /RPGenius 캐릭터목록 ]`);
                     } else {
                         channel.sendChat(`❌ ${result.message}`);
                     }
                     return;
                 }
 
-                // ===== 캐릭터목록 명령어 =====
                 if (args[0] === "캐릭터목록" || args[0] === "캐릭터") {
-                    // 디버그: owner 정보 확인
                     console.log("Owner ID:", owner.id);
                     console.log("Owner characters array:", owner.characters);
                     console.log("Characters array length:", owner.characters.length);
@@ -10721,23 +10721,22 @@ client.on('chat', async (data, channel) => {
                     console.log("Retrieved characters:", characters.length);
                     
                     if (characters.length === 0) {
-                        channel.sendChat(`❌ 생성된 캐릭터가 없습니다.\n\nOwner ID: ${owner.id}\n캐릭터 배열: [${owner.characters.join(', ')}]\n배열 길이: ${owner.characters.length}\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]`);
+                        channel.sendChat(`❌ 생성된 캐릭터가 없습니다.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]`);
                         return;
                     }
                     
                     const charList = [];
-                    charList.push(`━━━━ ${owner.name}님의 캐릭터 목록 ━━━━`);
+                    charList.push(`[ ${owner.name}님의 캐릭터 목록 ]`);
                     charList.push(``);
                     
                     characters.forEach((char, idx) => {
                         const activeMarker = (owner.activeCharacter === char.id) ? "★ " : "  ";
-                        charList.push(`${activeMarker}${idx + 1}. ${char.name} (Lv.${char.level} ${char.job})`);
+                        charList.push(`${activeMarker}${idx + 1}. ${char.name} (Lv.${char.level.level} ${char.job})`);
                     });
                     
                     charList.push(``);
                     charList.push(`전체 ${characters.length}/${owner.maxCharacters}개`);
-                    charList.push(`━━━━━━━━━━━━━━━`);
-                    charList.push(`\n[ /RPGenius 캐릭터선택 [번호] ]`);
+                    charList.push(`\n\n[ /RPGenius 캐릭터선택 [번호] ]`);
                     
                     channel.sendChat(charList.join('\n'));
                     return;
