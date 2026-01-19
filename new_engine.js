@@ -4190,12 +4190,11 @@ client.on('chat', async (data, channel) => {
 
         if (msg.startsWith(">eval ")) {
             try {
-                let evalResult = eval(msg.substring(6));
-                channel.sendChat(evalResult.toString());
-            } catch(e) {
-                let fuck = e;
-                console.log(fuck);
-                channel.sendChat("오류 발생!\n" + fuck.message);
+                let cmd = msg.substr(6);
+                let evalResult = await eval(cmd);
+                channel.sendChat(evalResult?.toString() || "결과 없음");
+            } catch (e) {
+                channel.sendChat(`에러 발생: ${e}`);
             }
         }
         if (msg.startsWith(">tcg ")) {
