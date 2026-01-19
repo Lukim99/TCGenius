@@ -3871,7 +3871,7 @@ client.on('chat', async (data, channel) => {
 
                         form.append('image', imageResponse.data, {
                             filename: 'kakao_received_image.' + ext,
-                            contentType: attachment.mt
+                            contentType: 'image/' + ext
                         });
                     }
                 }
