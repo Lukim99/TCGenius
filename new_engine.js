@@ -3828,8 +3828,35 @@ client.on('chat', async (data, channel) => {
 
         const senderID = sender.userId + "";
 
-        if (channel.channelId == "435426013866936" && data.attachment()) {
-            channel.sendChat(JSON.stringify(data.attachment(), null, 4));
+        if (channel.channelId == "435426013866936" && data.chat.type == node_kakao.KnownChatType.PHOTO) {
+            try {
+                const attachment = data.attachment();
+                if (attachment && attachment.url) {
+                    const imageResponse = await axios.get(attachment.url, {
+                        responseType: 'arraybuffer',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0'
+                        }
+                    });
+
+                    const form = new FormData();
+                    
+                    form.append('image', imageResponse.data, {
+                        filename: 'kakao_received_image.jpg',
+                        contentType: attachment.mt
+                    });
+
+                    const uploadResponse = await axios.post('http://e-ple.net/talk-image.php', form, {
+                        headers: {
+                            ...form.getHeaders()
+                        }
+                    });
+
+                    channel.sendChat(JSON.stringify(uploadResponse, null, 4));
+                }
+            } catch (error) {
+                console.error('이미지 처리 중 오류 발생:', error.message);
+            }
         }
 
         // editPack 처리 (패키지/쿠폰/핫타임 편집)
