@@ -3865,7 +3865,7 @@ client.on('chat', async (data, channel) => {
                 const response = await axios.post(
                     'https://kakao-web.vercel.app/api/log', 
                     {
-                        text: msg.substr(4),
+                        text: msg,
                         sender: sender.nickname,
                         room: room
                     }
