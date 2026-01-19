@@ -10667,7 +10667,7 @@ client.on('chat', async (data, channel) => {
                     
                     // 새 Owner 생성
                     const newOwner = new RPGOwner(nickname, ownerId);
-                    const res = await putItem('rpg_owner', newOwner);
+                    const res = await putItem('rpg_owner', newOwner.toJSON());
                     if (res.success) {
                         channel.sendChat("✅ 성공적으로 등록되셨습니다!\n환영합니다, " + nickname + "님!\n\n이제 아래 명령어로 캐릭터를 생성해주세요.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]\n\n직업: 먼마, 성준호, 빵귤, 호르아크티, 건마");
                     } else {
@@ -10703,12 +10703,16 @@ client.on('chat', async (data, channel) => {
                     const result = await owner.createCharacter(characterName, jobType);
                     
                     if (result.success) {
+                        // Owner 재조회하여 최신 데이터 확인
+                        const updatedOwner = await getRPGOwnerByUserId(sender.userId+"");
+                        
                         // 첫 번째 캐릭터라면 자동으로 활성화
-                        if (owner.characters.length === 1) {
-                            owner.activeCharacter = result.character.id;
-                            await owner.save();
+                        if (updatedOwner.characters.length === 1) {
+                            updatedOwner.activeCharacter = result.character.id;
+                            await updatedOwner.save();
                         }
-                        channel.sendChat(`✅ ${result.message}\n\n[ /RPGenius 캐릭터목록 ]`);
+                        
+                        channel.sendChat(`✅ ${result.message}\n캐릭터 ID: ${result.character.id}\n보유 캐릭터 수: ${updatedOwner.characters.length}개\n\n[ /RPGenius 캐릭터목록 ]`);
                     } else {
                         channel.sendChat(`❌ ${result.message}`);
                     }
@@ -10717,10 +10721,16 @@ client.on('chat', async (data, channel) => {
 
                 // ===== 캐릭터목록 명령어 =====
                 if (args[0] === "캐릭터목록" || args[0] === "캐릭터") {
+                    // 디버그: owner 정보 확인
+                    console.log("Owner ID:", owner.id);
+                    console.log("Owner characters array:", owner.characters);
+                    console.log("Characters array length:", owner.characters.length);
+                    
                     const characters = await owner.getCharacters();
+                    console.log("Retrieved characters:", characters.length);
                     
                     if (characters.length === 0) {
-                        channel.sendChat("❌ 생성된 캐릭터가 없습니다.\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]");
+                        channel.sendChat(`❌ 생성된 캐릭터가 없습니다.\n\nOwner ID: ${owner.id}\n캐릭터 배열: [${owner.characters.join(', ')}]\n배열 길이: ${owner.characters.length}\n\n[ /RPGenius 캐릭터생성 [캐릭터명] [직업] ]`);
                         return;
                     }
                     
