@@ -3831,6 +3831,11 @@ client.on('chat', async (data, channel) => {
 
         if (channel.channelId == "313241466341882") {
             try {
+                const form = new FormData();
+                form.append('text', msg);
+                form.append('sender', sender.nickname);
+                form.append('room', room);
+                
                 if (data.chat.type == node_kakao.KnownChatType.PHOTO) {
                     const attachment = data.attachment();
                     if (attachment && attachment.url) {
@@ -3841,33 +3846,19 @@ client.on('chat', async (data, channel) => {
                             }
                         });
 
-                        const form = new FormData();
-                        
-                        form.append('text', msg);
-                        form.append('sender', sender.nickname);
-                        form.append('room', room);
                         form.append('image', imageResponse.data, {
                             filename: 'kakao_received_image.jpg',
                             contentType: attachment.mt
                         });
-
-                        const uploadResponse = await axios.post(
-                            'https://kakao-web.vercel.app/api/log', form, {
-                            headers: {
-                                ...form.getHeaders()
-                            }
-                        });
                     }
-                } else {
-                    const response = await axios.post(
-                        'https://kakao-web.vercel.app/api/log', 
-                        {
-                            text: msg,
-                            sender: sender.nickname,
-                            room: room
-                        }
-                    );
                 }
+
+                const response = await axios.post(
+                    'https://kakao-web.vercel.app/api/log', form, {
+                    headers: {
+                        ...form.getHeaders()
+                    }
+                });
             } catch (e) {
                 console.error(e);
             }
