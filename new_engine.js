@@ -3863,7 +3863,7 @@ client.on('chat', async (data, channel) => {
         if (channel.channelId == "435426013866936") {
             if (msg.startsWith("!로그 ")) {
                 try {
-                    const response = await fetch('https://kakao-kch44cwq8-kyumin-yangs-projects.vercel.app/api/log', {
+                    const response = await axios.post('https://kakao-kch44cwq8-kyumin-yangs-projects.vercel.app/api/log', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -3871,8 +3871,7 @@ client.on('chat', async (data, channel) => {
                         })
                     });
 
-                    const data = await response.json();
-                    channel.sendChat(JSON.stringify(data, null, 4));
+                    channel.sendChat(JSON.stringify(response.data, null, 4));
                 } catch (e) {
                     console.error(e);
                 }
