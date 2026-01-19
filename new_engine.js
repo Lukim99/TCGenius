@@ -3860,22 +3860,18 @@ client.on('chat', async (data, channel) => {
         //     }
         // }
 
-        if (channel.channelId == "435426013866936") {
-            if (msg.startsWith("!로그 ")) {
-                try {
-                    const response = await axios.post(
-                        'https://kakao-web.vercel.app/api/log', 
-                        {
-                            text: msg.substr(4),
-                            sender: sender.nickname,
-                            room: room
-                        }
-                    );
-
-                    channel.sendChat(JSON.stringify(response.data, null, 4));
-                } catch (e) {
-                    console.error(e);
-                }
+        if (channel.channelId == "313241466341882") {
+            try {
+                const response = await axios.post(
+                    'https://kakao-web.vercel.app/api/log', 
+                    {
+                        text: msg.substr(4),
+                        sender: sender.nickname,
+                        room: room
+                    }
+                );
+            } catch (e) {
+                console.error(e);
             }
         }
 
