@@ -4103,6 +4103,17 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
+        if (msg == "!등록") {
+            let sendUser = read(`user_${sender.userId}.json`);
+            if (sendUser) sendUser = JSON.parse(sendUser);
+            if (sendUser) {
+                channel.sendChat("❌ 이미 등록하셨습니다.");
+            } else {
+                save(`user_${sender.userId}.json`, JSON.stringify({name: sender.nickname}));
+                channel.sendChat("✅ 등록되었습니다.\n잠시만 기다려주시면 의뢰하신 내용에 대한 안내를 진행해드리겠습니다.");
+            }
+        }
+
         if (msg.startsWith('!개추 ')) {
             const link = msg.replace('!개추 ', '').trim();
             
