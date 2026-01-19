@@ -2603,8 +2603,8 @@ async function getRPGOwnerByName(name) {
 async function getRPGUserById(id) {
     try {
         let res = await getItem('rpg_user', id);
-        if (res.success && res.result && res.result.Item) {
-            return new RPGUser().load(res.result.Item);
+        if (res.success && res.result && res.result[0].Item) {
+            return new RPGUser().load(res.result[0].Item);
         }
         return null;
     } catch (e) {
