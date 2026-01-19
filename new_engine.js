@@ -1913,8 +1913,8 @@ class RPGOwner {
         let newCharacter = new RPGUser(characterName, characterId, this.id);
         newCharacter.setJob(jobType);
         
-        // 캐릭터 저장
-        await newCharacter.save();
+        // 캐릭터 저장 (새 캐릭터이므로 putItem 사용)
+        await putItem('rpg_user', newCharacter.toJSON());
         
         // Owner의 캐릭터 목록에 추가
         this.characters.push(characterId);
