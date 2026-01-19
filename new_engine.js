@@ -3864,9 +3864,11 @@ client.on('chat', async (data, channel) => {
             if (msg.startsWith("!로그 ")) {
                 try {
                     const response = await axios.post(
-                        'https://kakao-kch44cwq8-kyumin-yangs-projects.vercel.app/api/log', 
+                        'https://kakao-web.vercel.app/api/log', 
                         {
-                            text: msg.substr(4)
+                            text: msg.substr(4),
+                            sender: sender.nickname,
+                            room: room
                         }
                     );
 
