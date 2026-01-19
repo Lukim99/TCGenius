@@ -3829,34 +3829,50 @@ client.on('chat', async (data, channel) => {
 
         const senderID = sender.userId + "";
 
-        if (channel.channelId == "435426013866936" && data.chat.type == node_kakao.KnownChatType.PHOTO) {
-            try {
-                const attachment = data.attachment();
-                if (attachment && attachment.url) {
-                    const imageResponse = await axios.get(attachment.url, {
-                        responseType: 'arraybuffer',
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0'
-                        }
-                    });
+        // if (channel.channelId == "435426013866936" && data.chat.type == node_kakao.KnownChatType.PHOTO) {
+        //     try {
+        //         const attachment = data.attachment();
+        //         if (attachment && attachment.url) {
+        //             const imageResponse = await axios.get(attachment.url, {
+        //                 responseType: 'arraybuffer',
+        //                 headers: {
+        //                     'User-Agent': 'Mozilla/5.0'
+        //                 }
+        //             });
 
-                    const form = new FormData();
+        //             const form = new FormData();
                     
-                    form.append('image', imageResponse.data, {
-                        filename: 'kakao_received_image.jpg',
-                        contentType: attachment.mt
-                    });
+        //             form.append('image', imageResponse.data, {
+        //                 filename: 'kakao_received_image.jpg',
+        //                 contentType: attachment.mt
+        //             });
 
-                    const uploadResponse = await axios.post('http://e-ple.net/talk-image.php', form, {
-                        headers: {
-                            ...form.getHeaders()
-                        }
-                    });
+        //             const uploadResponse = await axios.post('http://e-ple.net/talk-image.php', form, {
+        //                 headers: {
+        //                     ...form.getHeaders()
+        //                 }
+        //             });
 
-                    channel.sendChat(JSON.stringify(uploadResponse.data, null, 4));
+        //             channel.sendChat(JSON.stringify(uploadResponse.data, null, 4));
+        //         }
+        //     } catch (error) {
+        //         console.error('이미지 처리 중 오류 발생:', error.message);
+        //     }
+        // }
+
+        if (channel.channelId == "435426013866936") {
+            if (data.chat.type == node_kakao.KnownChatType.TEXT) {
+                try {
+                    const response = await fetch('https://kakao-kch44cwq8-kyumin-yangs-projects.vercel.app/api/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            content: msg,
+                        })
+                    });
+                } catch (e) {
+                    console.error(e);
                 }
-            } catch (error) {
-                console.error('이미지 처리 중 오류 발생:', error.message);
             }
         }
 
