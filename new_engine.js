@@ -2453,34 +2453,32 @@ class RPGUser {
     // ==================== 캐릭터 정보 ====================
     getCharacterInfo() {
         const info = [];
-        info.push(`━━━━━━━━━━━━━━━`);
-        info.push(`👤 ${this.name} [${this.job}]`);
-        info.push(`📊 Lv.${this.level.level} (${this.level.exp}/${this.level.getRequiredExp()})`);
-        info.push(`❤️ HP: ${this.hp.current}/${this.hp.max}`);
+        info.push(`[ 정보 ]`);
+        info.push(`[${this.job}] ${this.name}`);
+        info.push(`Lv.${this.level.level} (${this.level.exp}/${this.level.getRequiredExp()})`);
+        info.push(`HP: ${this.hp.current}/${this.hp.max}`);
         info.push(``);
-        info.push(`⚔️ 스탯`);
-        info.push(`  힘: ${this.stats.power} / 속도: ${this.stats.speed}`);
-        info.push(`  지능: ${this.stats.int} / 행운: ${this.stats.luck}`);
+        info.push(`· 스탯`);
+        info.push(`  힘: ${this.stats.power} | 속도: ${this.stats.speed}`);
+        info.push(`  지능: ${this.stats.int} | 행운: ${this.stats.luck}`);
         info.push(``);
-        info.push(`💪 공격력: ${this.getAttackPower()}`);
-        info.push(`🎯 치명타: ${this.getCritChance().toFixed(1)}% (${this.getCritDamage().toFixed(0)}%)`);
-        info.push(`🏃 회피율: ${this.getEvasion().toFixed(1)}%`);
+        info.push(`· 공격력: ${this.getAttackPower()}`);
+        info.push(`· 치명타: ${this.getCritChance().toFixed(1)}% (${this.getCritDamage().toFixed(0)}%)`);
+        info.push(`· 회피율: ${this.getEvasion().toFixed(1)}%`);
         
         // 리소스 표시
         if (this.job === '성준호') {
-            info.push(`⚡ GP: ${this.gpResource.current}/${this.gpResource.max}`);
+            info.push(`· GP: ${this.gpResource.current}/${this.gpResource.max}`);
         } else if (this.job === '빵귤') {
-            info.push(`✨ MP: ${this.mpResource.current}`);
+            info.push(`· MP: ${this.mpResource.current}`);
         } else if (this.job === '건마') {
-            info.push(`🔫 건력: ${this.gunpowerResource.current}/${this.gunpowerResource.max}`);
+            info.push(`· 건력: ${this.gunpowerResource.current}/${this.gunpowerResource.max}`);
         }
         
         if (this.awakening.isAwakened) {
             info.push(``);
             info.push(`🌟 각성 Lv.${this.awakening.level} (AP: ${this.awakening.ap})`);
         }
-        
-        info.push(`━━━━━━━━━━━━━━━`);
         
         return info.join('\n');
     }
@@ -2491,7 +2489,7 @@ class RPGUser {
         }
         
         const info = [];
-        info.push(`━━━━ 스킬 목록 ━━━━`);
+        info.push(`[ 스킬 목록 ]`);
         
         const passiveSkills = this.skillManager.getSkillsByType('passive');
         if (passiveSkills.length > 0) {
@@ -2519,7 +2517,6 @@ class RPGUser {
             });
         }
         
-        info.push(`\n━━━━━━━━━━━━━━━`);
         info.push(`SP: ${this.sp}`);
         
         return info.join('\n');
@@ -2527,7 +2524,7 @@ class RPGUser {
 
     getInventoryInfo() {
         const info = [];
-        info.push(`━━━━ 인벤토리 ━━━━`);
+        info.push(`[ 인벤토리 ]`);
         info.push(`[장비] (${this.inventory.equipments.length}개)`);
         
         if (this.inventory.equipments.length > 0) {
@@ -2543,9 +2540,6 @@ class RPGUser {
                 info.push(`• ${name} x${item.count}`);
             }
         }
-
-        info.push(`\n전체: ${this.inventory.getTotalItemCount()}/${this.inventory.maxSize}`);
-        info.push(`━━━━━━━━━━━━━━━`);
         
         return info.join('\n');
     }
@@ -10803,8 +10797,7 @@ client.on('chat', async (data, channel) => {
                 // ===== 인벤토리 명령어 =====
                 if (args[0] === "인벤토리" || args[0] === "가방") {
                     const inventoryInfo = [];
-                    inventoryInfo.push(`━━━━ ${character.name}의 인벤토리 ━━━━`);
-                    inventoryInfo.push(`Lv.${character.level.level} ${character.job}`);
+                    inventoryInfo.push(`[ ${character.name}님의 인벤토리 ]`);
                     inventoryInfo.push(``);
                     
                     // 장비 아이템
@@ -10832,8 +10825,8 @@ client.on('chat', async (data, channel) => {
                     }
                     
                     const totalItems = equipments.length + (consumables.size || 0);
-                    inventoryInfo.push(`전체: ${totalItems}개`);
-                    inventoryInfo.push(`━━━━━━━━━━━━━━━`);
+                    if (totalItems > 0) inventoryInfo.push(`전체: ${totalItems}개`);
+                    else inventoryInfo.push(`인벤토리가 비어있습니다.`);
                     
                     channel.sendChat(inventoryInfo.join('\n'));
                     return;
