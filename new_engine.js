@@ -206,9 +206,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 const loginPageRes = await axios.get('https://msign.dcinside.com/login', {
                     httpsAgent: agent,
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                        ...commonHeaders,
+                        'Host': 'msign.dcinside.com',
                         'Referer': 'https://www.dcinside.com'
                     }
                 });
@@ -231,6 +230,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     loginParams.append('user_id', id);
                     loginParams.append('pw', password);
                     loginParams.append('_token', loginToken);
+                    
+                    console.log("로그인 POST 전 쿠키:", cookiesToString(sessionCookies));
 
                     const loginRes = await axios.post(
                         'https://msign.dcinside.com/login',
@@ -238,9 +239,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                         {
                             httpsAgent: agent,
                             headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                                'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                                ...commonHeaders,
+                                'Host': 'msign.dcinside.com',
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 'Cookie': cookiesToString(sessionCookies),
                                 'Origin': 'https://msign.dcinside.com',
@@ -252,32 +252,19 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     );
                     
                     sessionCookies = mergeCookies(sessionCookies, parseCookies(loginRes.headers['set-cookie']));
-                    
-                    // 로그인 후 dcinside.com에 접속하여 세션 동기화
-                    const dcMainRes = await axios.get('https://www.dcinside.com', {
-                        httpsAgent: agent,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                            'Cookie': cookiesToString(sessionCookies)
-                        }
-                    });
-                    
-                    sessionCookies = mergeCookies(sessionCookies, parseCookies(dcMainRes.headers['set-cookie']));
+                    console.log("로그인 POST 후 쿠키:", cookiesToString(sessionCookies));
                     
                     // m.dcinside.com에도 세션 전파
                     const mdcMainRes = await axios.get('https://m.dcinside.com', {
                         httpsAgent: agent,
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            ...commonHeaders,
                             'Cookie': cookiesToString(sessionCookies)
                         }
                     });
                     
                     sessionCookies = mergeCookies(sessionCookies, parseCookies(mdcMainRes.headers['set-cookie']));
+                    console.log("m.dcinside.com 방문 후 쿠키:", cookiesToString(sessionCookies));
                 }
             } catch (loginErr) {
                 console.log(`로그인 에러: ${loginErr.message}`);
@@ -289,6 +276,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음", ip: currentIp };
         const galleryId = urlMatch ? urlMatch[1] : '';
         
+        console.log("갤러리 요청 전 쿠키:", cookiesToString(sessionCookies));
+        
         const preRes = await axios.get(`https://m.dcinside.com/board/${galleryId}`, { 
             httpsAgent: agent,
             headers: {
@@ -298,6 +287,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         });
         
         sessionCookies = mergeCookies(sessionCookies, parseCookies(preRes.headers['set-cookie']));
+        console.log("갤러리 요청 후 쿠키:", cookiesToString(sessionCookies));
 
         const cacheBuster = `?_=${getRandomString(10)}`;
         const firstRes = await axios.get(targetUrl + cacheBuster, {
@@ -312,6 +302,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         });
         
         sessionCookies = mergeCookies(sessionCookies, parseCookies(firstRes.headers['set-cookie']));
+        console.log("게시글 요청 후 쿠키:", cookiesToString(sessionCookies));
+        
         const html = firstRes.data;
         const $ = cheerio.load(html);
         
@@ -340,18 +332,9 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         params.append('_token', csrfToken);
 
         // 5. POST 요청 (추천 전송)
-        // const postRes = await axios.post(
-        //     'https://m.dcinside.com/ajax/recommend', 
-        //     params.toString(), 
-        //     {
-        //         ...axiosConfig,
-        //         headers: { 
-        //             ...axiosConfig.headers, 
-        //             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        //             'X-CSRF-TOKEN': csrfToken 
-        //         }
-        //     }
-        // );
+        console.log("추천 POST 전 쿠키:", cookiesToString(sessionCookies));
+        console.log("쿠키 키 목록:", Object.keys(sessionCookies).join(', '));
+        
         const postRes = await axios.post(
             mode === 'best' ? 'https://m.dcinside.com/bestcontent/recommend' : 'https://m.dcinside.com/ajax/recommend',
             params.toString(),
@@ -367,6 +350,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
             }
         );
 
+        console.log("추천 응답:", postRes.data);
+        
         // 6. 결과 확인
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp };
