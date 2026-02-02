@@ -133,7 +133,7 @@ function getRandomString(len) {
     return randomstring;
 }
 
-async function doDcAction(targetUrl, mode = 'normal') {
+async function doDcAction(targetUrl, mode = 'normal', id = null, password = null) {
     const UA_LIST = [
         'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
@@ -153,6 +153,7 @@ async function doDcAction(targetUrl, mode = 'normal') {
     });
 
     let currentIp = "확인 불가";
+    let loginCookie = '';
 
     const commonHeaders = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
@@ -177,12 +178,75 @@ async function doDcAction(targetUrl, mode = 'normal') {
         } catch (e) {
             currentIp = "IP 조회 실패";
         }
+
+        // 로그인 처리
+        if (id && password) {
+            try {
+                const loginPageRes = await axios.get('https://m.dcinside.com/auth/login', {
+                    httpsAgent: agent,
+                    headers: commonHeaders
+                });
+                const loginPageHtml = loginPageRes.data;
+                const loginPageCookie = loginPageRes.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || '';
+                
+                const $login = cheerio.load(loginPageHtml);
+                let loginToken = $login('meta[name="csrf-token"]').attr('content') || 
+                                $login('input[name="_token"]').val() ||
+                                $login('input[name="csrf_token"]').val();
+                
+                if (!loginToken) {
+                    const tokenMatch = loginPageHtml.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
+                    if (tokenMatch) loginToken = tokenMatch[1];
+                }
+
+                if (!loginToken) {
+                    console.log("로그인 토큰을 찾을 수 없습니다.");
+                } else {
+                    const loginParams = new URLSearchParams();
+                    loginParams.append('user_id', id);
+                    loginParams.append('pw', password);
+                    loginParams.append('_token', loginToken);
+
+                    const loginRes = await axios.post(
+                        'https://m.dcinside.com/auth/login',
+                        loginParams.toString(),
+                        {
+                            httpsAgent: agent,
+                            headers: {
+                                ...commonHeaders,
+                                'Cookie': loginPageCookie,
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'Referer': 'https://m.dcinside.com/auth/login'
+                            },
+                            maxRedirects: 0,
+                            validateStatus: (status) => status >= 200 && status < 400
+                        }
+                    );
+
+                    if (loginRes.headers['set-cookie']) {
+                        loginCookie = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
+                        console.log("로그인 성공!");
+                    } else {
+                        console.log("로그인 실패 - 쿠키를 받지 못했습니다.");
+                    }
+                }
+            } catch (loginErr) {
+                console.log(`로그인 에러: ${loginErr.message}`);
+            }
+        }
         // 2. HTML 가져오기
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
         if (!urlMatch) return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음", ip: currentIp };
         const galleryId = urlMatch ? urlMatch[1] : '';
-        const preRes = await axios.get(`https://m.dcinside.com/board/${galleryId}`, { httpsAgent: agent, headers: commonHeaders });
+        const preRes = await axios.get(`https://m.dcinside.com/board/${galleryId}`, { 
+            httpsAgent: agent, 
+            headers: {
+                ...commonHeaders,
+                'Cookie': loginCookie
+            }
+        });
         const freshCookie = preRes.headers['set-cookie']?.join('; ') || '';
+        const combinedCookie = loginCookie ? `${loginCookie}; ${freshCookie}` : freshCookie;
 
         const cacheBuster = `?_=${getRandomString(10)}`;
         const firstRes = await axios.get(targetUrl + cacheBuster, {
@@ -191,12 +255,13 @@ async function doDcAction(targetUrl, mode = 'normal') {
             honorCipherOrder: true,
             headers: {
                 ...commonHeaders,
-                'Cookie': freshCookie
+                'Cookie': combinedCookie
             },
             timeout: 15000
         });
         const setCookie = firstRes.headers['set-cookie'];
-        const cookies = setCookie ? setCookie.map(c => c.split(';')[0]).join('; ') : '';
+        const pageCookies = setCookie ? setCookie.map(c => c.split(';')[0]).join('; ') : '';
+        const cookies = loginCookie ? `${loginCookie}; ${pageCookies}` : pageCookies;
         const html = firstRes.data;
         const $ = cheerio.load(html);
         
@@ -3861,18 +3926,8 @@ client.on('chat', async (data, channel) => {
                 } else if (['STICKER', 'STICKERANI'].includes(node_kakao.KnownChatType[data.chat.type])) {
                     const attachment = data.attachment();
                     if (attachment && attachment.path) {
-                        const imageResponse = await axios.get(`https://item.kakaocdn.net/dw/${attachment.path}`, {
-                            responseType: 'arraybuffer',
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0'
-                            }
-                        });
-                        const ext = attachment.path.split('.').pop();
-
-                        form.append('image', imageResponse.data, {
-                            filename: 'kakao_received_image.' + ext,
-                            contentType: 'image/' + ext
-                        });
+                        const emoticonUrl = `https://item.kakaocdn.net/dw/${attachment.path}`;
+                        form.append('image_url', emoticonUrl);
                     }
                 }
 
