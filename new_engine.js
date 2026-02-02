@@ -182,9 +182,13 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         // 로그인 처리
         if (id && password) {
             try {
-                const loginPageRes = await axios.get('https://m.dcinside.com/auth/login', {
+                const loginPageRes = await axios.get('https://msign.dcinside.com/login', {
                     httpsAgent: agent,
-                    headers: commonHeaders
+                    headers: {
+                        ...commonHeaders,
+                        'Host': 'msign.dcinside.com',
+                        'Referer': 'https://www.dcinside.com'
+                    }
                 });
                 const loginPageHtml = loginPageRes.data;
                 const loginPageCookie = loginPageRes.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || '';
@@ -208,15 +212,16 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     loginParams.append('_token', loginToken);
 
                     const loginRes = await axios.post(
-                        'https://m.dcinside.com/auth/login',
+                        'https://msign.dcinside.com/login',
                         loginParams.toString(),
                         {
                             httpsAgent: agent,
                             headers: {
                                 ...commonHeaders,
+                                'Host': 'msign.dcinside.com',
                                 'Cookie': loginPageCookie,
                                 'Content-Type': 'application/x-www-form-urlencoded',
-                                'Referer': 'https://m.dcinside.com/auth/login'
+                                'Referer': 'https://msign.dcinside.com/login'
                             },
                             maxRedirects: 0,
                             validateStatus: (status) => status >= 200 && status < 400
@@ -4276,23 +4281,14 @@ client.on('chat', async (data, channel) => {
             
             channel.sendChat(`🤖 로그인하여 개추 누르는 중..`);
 
-            const promises = Array(9).fill().map((_, i) => {
-                const tempLink = link + "?test=" + getRandomString(10);
-                return doDcAction(tempLink, 'normal', 'venus1684', 'yanga0800!');
-            });
+            // 추천 실행
+            const result = await doDcAction(link, 'normal', 'venus1684', 'yanga0800!');
 
-            try {
-                const results = await Promise.all(promises);
-                
-                const successCount = results.filter(r => r && r.success).length;
-                
-                let resultMessage = `✅ 개추 완료!\n`;
-                resultMessage += `- 성공: ${successCount}/9개`;
-                
-                channel.sendChat(resultMessage);
-            } catch (error) {
-                console.error('개추 중 오류 발생:', error);
-                channel.sendChat('❌ 개추 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+            // 결과 보고
+            if (result.success) {
+                channel.sendChat(`👍 개추 성공!\nIP: ${result.ip}`);
+            } else {
+                channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
             }
         }
 
