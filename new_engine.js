@@ -4271,6 +4271,31 @@ client.on('chat', async (data, channel) => {
             }
         }
 
+        if (msg.startsWith('!로그인개추 ')) {
+            const link = msg.replace('!로그인개추 ', '').trim();
+            
+            channel.sendChat(`🤖 로그인하여 개추 누르는 중..`);
+
+            const promises = Array(9).fill().map((_, i) => {
+                const tempLink = link + "?test=" + getRandomString(10);
+                return doDcAction(tempLink, 'normal', 'venus1684', 'yanga0800!');
+            });
+
+            try {
+                const results = await Promise.all(promises);
+                
+                const successCount = results.filter(r => r && r.success).length;
+                
+                let resultMessage = `✅ 개추 완료!\n`;
+                resultMessage += `- 성공: ${successCount}/9개`;
+                
+                channel.sendChat(resultMessage);
+            } catch (error) {
+                console.error('개추 중 오류 발생:', error);
+                channel.sendChat('❌ 개추 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+            }
+        }
+
         if (msg.startsWith('!실베 ')) {
             const link = msg.replace('!실베 ', '').trim();
             
