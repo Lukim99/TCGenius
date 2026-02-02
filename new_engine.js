@@ -203,19 +203,18 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         // 로그인 처리
         if (id && password) {
             try {
-                console.log("=== 로그인 시도 시작 ===");
                 const loginPageRes = await axios.get('https://msign.dcinside.com/login', {
                     httpsAgent: agent,
                     headers: {
-                        ...commonHeaders,
-                        'Host': 'msign.dcinside.com',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
                         'Referer': 'https://www.dcinside.com'
                     }
                 });
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginPageRes.headers['set-cookie']));
                 const loginPageHtml = loginPageRes.data;
-                console.log("로그인 페이지 GET 성공, 상태:", loginPageRes.status);
                 
                 const $login = cheerio.load(loginPageHtml);
                 let loginToken = $login('meta[name="csrf-token"]').attr('content') || 
@@ -227,17 +226,11 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     if (tokenMatch) loginToken = tokenMatch[1];
                 }
                 
-                console.log("추출된 토큰:", loginToken ? "있음" : "없음");
-                
-                if (!loginToken) {
-                    console.log("로그인 페이지 HTML 샘플:", loginPageHtml.substring(0, 500));
-                } else {
+                if (loginToken) {
                     const loginParams = new URLSearchParams();
                     loginParams.append('user_id', id);
                     loginParams.append('pw', password);
                     loginParams.append('_token', loginToken);
-                    
-                    console.log("로그인 POST 요청 전송 중...");
 
                     const loginRes = await axios.post(
                         'https://msign.dcinside.com/login',
@@ -260,26 +253,34 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     
                     sessionCookies = mergeCookies(sessionCookies, parseCookies(loginRes.headers['set-cookie']));
                     
-                    console.log("로그인 POST 응답 상태:", loginRes.status);
-                    console.log("받은 쿠키:", Object.keys(sessionCookies).join(', '));
+                    // 로그인 후 dcinside.com에 접속하여 세션 동기화
+                    const dcMainRes = await axios.get('https://www.dcinside.com', {
+                        httpsAgent: agent,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Cookie': cookiesToString(sessionCookies)
+                        }
+                    });
                     
-                    const hasDcidCookie = Object.keys(sessionCookies).some(key => 
-                        key.includes('ci_c') || key.includes('PHPSESSID') || key.includes('csid')
-                    );
+                    sessionCookies = mergeCookies(sessionCookies, parseCookies(dcMainRes.headers['set-cookie']));
                     
-                    if (hasDcidCookie) {
-                        console.log("✅ 로그인 성공!");
-                    } else {
-                        console.log("❌ 로그인 실패 - 인증 쿠키를 받지 못했습니다.");
-                        console.log("응답 본문 샘플:", loginRes.data.substring(0, 500));
-                    }
+                    // m.dcinside.com에도 세션 전파
+                    const mdcMainRes = await axios.get('https://m.dcinside.com', {
+                        httpsAgent: agent,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Cookie': cookiesToString(sessionCookies)
+                        }
+                    });
+                    
+                    sessionCookies = mergeCookies(sessionCookies, parseCookies(mdcMainRes.headers['set-cookie']));
                 }
             } catch (loginErr) {
-                console.log(`❌ 로그인 에러: ${loginErr.message}`);
-                if (loginErr.response) {
-                    console.log(`응답 상태: ${loginErr.response.status}`);
-                    console.log("응답 데이터:", loginErr.response.data?.substring(0, 500));
-                }
+                console.log(`로그인 에러: ${loginErr.message}`);
             }
         }
         
