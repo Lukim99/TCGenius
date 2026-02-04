@@ -27,6 +27,10 @@ const {
     RPGEquipmentDataManager,
     equipmentManager,
     itemManager,
+    RPGDungeonManager,
+    dungeonManager,
+    RPGMonsterManager,
+    monsterManager,
     RPGStats,
     RPGResource,
     RPGLevel,
@@ -37,7 +41,8 @@ const {
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,
-    RPGMonster
+    RPGMonster,
+    RPGBattle
 } = require('./rpg_system.js');
 
 // 콘텐츠 명령어 비활성화 플래그
@@ -48,6 +53,10 @@ let isRestoring = false;
 let restoringChannel = null;
 
 let deliver = {};
+
+// RPG 배틀 상태 관리
+const activeBattles = new Map(); // userId -> RPGBattle instance
+
 let exceptNames = {
     "♡정덕희♡": "정덕희",
     "야크모": "윤지돈",
@@ -10885,7 +10894,7 @@ client.on('chat', async (data, channel) => {
                     charList.push(``);
                     
                     characters.forEach((char, idx) => {
-                        const activeMarker = (owner.activeCharacter === char.id) ? "★ " : "  ";
+                        const activeMarker = (owner.activeCharacter === char.id) ? "★ " : "   ";
                         charList.push(`${activeMarker}${idx + 1}. ${char.name} (Lv.${char.level.level} ${char.job})`);
                     });
                     
@@ -10990,6 +10999,309 @@ client.on('chat', async (data, channel) => {
                     else inventoryInfo.push(`인벤토리가 비어있습니다.`);
                     
                     channel.sendChat(inventoryInfo.join('\n'));
+                    return;
+                }
+
+                // ===== 탐험 명령어 =====
+                if (args[0] === "탐험" || args[0] === "던전") {
+                    const availableDungeons = dungeonManager.getDungeonsByLevel(character.level.level);
+                    
+                    if (availableDungeons.length === 0) {
+                        channel.sendChat("❌ 입장 가능한 던전이 없습니다.");
+                        return;
+                    }
+                    
+                    const dungeonList = [];
+                    dungeonList.push(`[ 던전 목록 ]`);
+                    dungeonList.push(``);
+                    
+                    availableDungeons.forEach((dungeon, idx) => {
+                        dungeonList.push(`${idx + 1}. ${dungeon.name} (권장 Lv.${dungeon.requiredLevel})`);
+                        dungeonList.push(`   ${dungeon.description}`);
+                    });
+                    
+                    dungeonList.push(``);
+                    dungeonList.push(`[ /RPGenius 입장 [번호] ]`);
+                    
+                    channel.sendChat(dungeonList.join('\n'));
+                    return;
+                }
+
+                // ===== 던전 입장 명령어 =====
+                if (args[0] === "입장") {
+                    if (activeBattles.has(sender.userId + "")) {
+                        channel.sendChat("❌ 이미 전투 중입니다.");
+                        return;
+                    }
+                    
+                    const availableDungeons = dungeonManager.getDungeonsByLevel(character.level.level);
+                    const dungeonNum = parseInt(args[1]);
+                    
+                    if (isNaN(dungeonNum) || dungeonNum < 1 || dungeonNum > availableDungeons.length) {
+                        channel.sendChat(`❌ 올바른 던전 번호를 입력해주세요. (1~${availableDungeons.length})`);
+                        return;
+                    }
+                    
+                    const selectedDungeon = availableDungeons[dungeonNum - 1];
+                    
+                    // 랜덤 몬스터 선택
+                    const monsterIds = selectedDungeon.monsters;
+                    const randomMonsterId = monsterIds[Math.floor(Math.random() * monsterIds.length)];
+                    const monster = monsterManager.createMonsterInstance(randomMonsterId);
+                    
+                    if (!monster) {
+                        channel.sendChat("❌ 몬스터 생성에 실패했습니다.");
+                        return;
+                    }
+                    
+                    // 전투 시작
+                    const battle = new RPGBattle(character, monster);
+                    activeBattles.set(sender.userId + "", battle);
+                    
+                    const status = battle.getBattleStatus();
+                    const battleMsg = [];
+                    battleMsg.push(...status.log);
+                    battleMsg.push(``);
+                    battleMsg.push(`━━━━━━━━━━━━━━`);
+                    battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
+                    battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                    battleMsg.push(`━━━━━━━━━━━━━━`);
+                    
+                    if (status.isPlayerTurn) {
+                        battleMsg.push(``);
+                        battleMsg.push(`[ 행동 선택 ]`);
+                        battleMsg.push(`/RPGenius 공격 - 일반 공격`);
+                        battleMsg.push(`/RPGenius 스킬 [스킬명] - 스킬 사용`);
+                        battleMsg.push(`/RPGenius 아이템 [아이템명] - 아이템 사용`);
+                        battleMsg.push(`/RPGenius 도망 - 전투에서 도망`);
+                    } else {
+                        // 몬스터 선공인 경우 즉시 몬스터 턴 실행
+                        const monsterResult = battle.monsterTurn();
+                        if (monsterResult.success) {
+                            battleMsg.push(...monsterResult.log.slice(status.log.length));
+                            
+                            if (!battle.isActive) {
+                                // 패배
+                                activeBattles.delete(sender.userId + "");
+                            } else {
+                                battleMsg.push(``);
+                                battleMsg.push(`[ 행동 선택 ]`);
+                                battleMsg.push(`/RPGenius 공격 - 일반 공격`);
+                                battleMsg.push(`/RPGenius 스킬 [스킬명] - 스킬 사용`);
+                                battleMsg.push(`/RPGenius 아이템 [아이템명] - 아이템 사용`);
+                                battleMsg.push(`/RPGenius 도망 - 전투에서 도망`);
+                            }
+                        }
+                    }
+                    
+                    channel.sendChat(battleMsg.join('\n'));
+                    return;
+                }
+
+                // ===== 전투 명령어들 =====
+                const battle = activeBattles.get(sender.userId + "");
+                
+                if (args[0] === "공격") {
+                    if (!battle) {
+                        channel.sendChat("❌ 전투 중이 아닙니다. /RPGenius 탐험 명령어로 던전에 입장하세요.");
+                        return;
+                    }
+                    
+                    const result = battle.playerAttack();
+                    if (!result.success) {
+                        channel.sendChat("❌ " + result.message);
+                        return;
+                    }
+                    
+                    const battleMsg = [];
+                    battleMsg.push(...result.log);
+                    
+                    if (!battle.isActive) {
+                        // 전투 종료
+                        if (result.victory) {
+                            // 보상 지급
+                            character.gainExp(result.rewards.exp);
+                            await character.save();
+                        }
+                        activeBattles.delete(sender.userId + "");
+                    } else {
+                        // 몬스터 턴
+                        const monsterResult = battle.monsterTurn();
+                        if (monsterResult.success) {
+                            const newLogs = monsterResult.log.slice(result.log.length);
+                            battleMsg.push(...newLogs);
+                            
+                            if (!battle.isActive) {
+                                // 패배
+                                activeBattles.delete(sender.userId + "");
+                            } else {
+                                const status = battle.getBattleStatus();
+                                battleMsg.push(``);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
+                                battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(``);
+                                battleMsg.push(`[ 행동 선택 ]`);
+                                battleMsg.push(`/RPGenius 공격 | 스킬 [스킬명] | 아이템 [아이템명] | 도망`);
+                            }
+                        }
+                    }
+                    
+                    channel.sendChat(battleMsg.join('\n'));
+                    await character.save();
+                    return;
+                }
+
+                if (args[0] === "스킬") {
+                    if (!battle) {
+                        channel.sendChat("❌ 전투 중이 아닙니다.");
+                        return;
+                    }
+                    
+                    if (!args[1]) {
+                        channel.sendChat("❌ 스킬명을 입력해주세요. /RPGenius 스킬 [스킬명]");
+                        return;
+                    }
+                    
+                    const skillName = args.slice(1).join(" ");
+                    const result = battle.playerSkill(skillName);
+                    
+                    if (!result.success) {
+                        channel.sendChat("❌ " + result.message);
+                        return;
+                    }
+                    
+                    const battleMsg = [];
+                    battleMsg.push(...result.log);
+                    
+                    if (!battle.isActive) {
+                        // 전투 종료
+                        if (result.victory) {
+                            character.gainExp(result.rewards.exp);
+                            await character.save();
+                        }
+                        activeBattles.delete(sender.userId + "");
+                    } else {
+                        // 몬스터 턴
+                        const monsterResult = battle.monsterTurn();
+                        if (monsterResult.success) {
+                            const newLogs = monsterResult.log.slice(result.log.length);
+                            battleMsg.push(...newLogs);
+                            
+                            if (!battle.isActive) {
+                                activeBattles.delete(sender.userId + "");
+                            } else {
+                                const status = battle.getBattleStatus();
+                                battleMsg.push(``);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
+                                battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(``);
+                                battleMsg.push(`[ 행동 선택 ]`);
+                                battleMsg.push(`/RPGenius 공격 | 스킬 [스킬명] | 아이템 [아이템명] | 도망`);
+                            }
+                        }
+                    }
+                    
+                    channel.sendChat(battleMsg.join('\n'));
+                    await character.save();
+                    return;
+                }
+
+                if (args[0] === "아이템") {
+                    if (!battle) {
+                        channel.sendChat("❌ 전투 중이 아닙니다.");
+                        return;
+                    }
+                    
+                    if (!args[1]) {
+                        channel.sendChat("❌ 아이템명을 입력해주세요. /RPGenius 아이템 [아이템명]");
+                        return;
+                    }
+                    
+                    const itemName = args.slice(1).join(" ");
+                    const result = battle.playerUseItem(itemName);
+                    
+                    if (!result.success) {
+                        channel.sendChat("❌ " + result.message);
+                        return;
+                    }
+                    
+                    const battleMsg = [];
+                    battleMsg.push(...result.log);
+                    
+                    // 몬스터 턴
+                    const monsterResult = battle.monsterTurn();
+                    if (monsterResult.success) {
+                        const newLogs = monsterResult.log.slice(result.log.length);
+                        battleMsg.push(...newLogs);
+                        
+                        if (!battle.isActive) {
+                            activeBattles.delete(sender.userId + "");
+                        } else {
+                            const status = battle.getBattleStatus();
+                            battleMsg.push(``);
+                            battleMsg.push(`━━━━━━━━━━━━━━`);
+                            battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
+                            battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                            battleMsg.push(`━━━━━━━━━━━━━━`);
+                            battleMsg.push(``);
+                            battleMsg.push(`[ 행동 선택 ]`);
+                            battleMsg.push(`/RPGenius 공격 | 스킬 [스킬명] | 아이템 [아이템명] | 도망`);
+                        }
+                    }
+                    
+                    channel.sendChat(battleMsg.join('\n'));
+                    await character.save();
+                    return;
+                }
+
+                if (args[0] === "도망") {
+                    if (!battle) {
+                        channel.sendChat("❌ 전투 중이 아닙니다.");
+                        return;
+                    }
+                    
+                    const result = battle.playerEscape();
+                    
+                    if (!result.success) {
+                        channel.sendChat("❌ " + result.message);
+                        return;
+                    }
+                    
+                    const battleMsg = [];
+                    battleMsg.push(...result.log);
+                    
+                    if (result.escaped) {
+                        // 도망 성공
+                        activeBattles.delete(sender.userId + "");
+                    } else {
+                        // 도망 실패, 몬스터 턴
+                        const monsterResult = battle.monsterTurn();
+                        if (monsterResult.success) {
+                            const newLogs = monsterResult.log.slice(result.log.length);
+                            battleMsg.push(...newLogs);
+                            
+                            if (!battle.isActive) {
+                                activeBattles.delete(sender.userId + "");
+                            } else {
+                                const status = battle.getBattleStatus();
+                                battleMsg.push(``);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
+                                battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                                battleMsg.push(`━━━━━━━━━━━━━━`);
+                                battleMsg.push(``);
+                                battleMsg.push(`[ 행동 선택 ]`);
+                                battleMsg.push(`/RPGenius 공격 | 스킬 [스킬명] | 아이템 [아이템명] | 도망`);
+                            }
+                        }
+                    }
+                    
+                    channel.sendChat(battleMsg.join('\n'));
+                    await character.save();
                     return;
                 }
             }

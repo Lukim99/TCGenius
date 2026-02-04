@@ -1,0 +1,154 @@
+{
+  "monster_rookie_duelist": {
+    "id": "monster_rookie_duelist",
+    "name": "초보 듀얼리스트",
+    "description": "처음 카드 게임을 시작한 초보자",
+    "level": 1,
+    "stats": {
+      "hp": 500,
+      "power": 5,
+      "speed": 3,
+      "int": 2,
+      "luck": 1
+    },
+    "skills": ["일반 공격"],
+    "rewards": {
+      "exp": 50,
+      "gold": 100,
+      "items": []
+    }
+  },
+  "monster_nervous_player": {
+    "id": "monster_nervous_player",
+    "name": "떨리는 플레이어",
+    "description": "긴장한 나머지 손이 떨리는 플레이어",
+    "level": 2,
+    "stats": {
+      "hp": 600,
+      "power": 6,
+      "speed": 4,
+      "int": 3,
+      "luck": 2
+    },
+    "skills": ["일반 공격", "떨림 공격"],
+    "rewards": {
+      "exp": 80,
+      "gold": 150,
+      "items": []
+    }
+  },
+  "monster_card_collector": {
+    "id": "monster_card_collector",
+    "name": "카드 수집가",
+    "description": "희귀 카드를 모으는 광적인 수집가",
+    "level": 3,
+    "stats": {
+      "hp": 800,
+      "power": 8,
+      "speed": 5,
+      "int": 6,
+      "luck": 4
+    },
+    "skills": ["일반 공격", "카드 투척"],
+    "rewards": {
+      "exp": 120,
+      "gold": 200,
+      "items": []
+    }
+  },
+  "monster_snack_worker": {
+    "id": "monster_snack_worker",
+    "name": "과자 공장 직원",
+    "description": "맛동산의 매력에 빠진 공장 직원",
+    "level": 10,
+    "stats": {
+      "hp": 1500,
+      "power": 15,
+      "speed": 10,
+      "int": 12,
+      "luck": 8
+    },
+    "skills": ["일반 공격", "맛동산 투척", "과자 가루 살포"],
+    "rewards": {
+      "exp": 250,
+      "gold": 400,
+      "items": []
+    }
+  },
+  "monster_possessed_chef": {
+    "id": "monster_possessed_chef",
+    "name": "홀린 요리사",
+    "description": "과자에 홀려 정신을 잃은 요리사",
+    "level": 12,
+    "stats": {
+      "hp": 1800,
+      "power": 18,
+      "speed": 12,
+      "int": 15,
+      "luck": 10
+    },
+    "skills": ["일반 공격", "뜨거운 기름 공격", "칼질"],
+    "rewards": {
+      "exp": 350,
+      "gold": 550,
+      "items": []
+    }
+  },
+  "monster_lawmaker": {
+    "id": "monster_lawmaker",
+    "name": "국회의원",
+    "description": "법안을 통과시키려는 국회의원",
+    "level": 20,
+    "stats": {
+      "hp": 3000,
+      "power": 25,
+      "speed": 18,
+      "int": 30,
+      "luck": 15
+    },
+    "skills": ["일반 공격", "법안 공격", "필리버스터"],
+    "rewards": {
+      "exp": 500,
+      "gold": 800,
+      "items": []
+    }
+  },
+  "monster_speaker": {
+    "id": "monster_speaker",
+    "name": "국회의장",
+    "description": "회의를 주재하는 국회의장",
+    "level": 22,
+    "stats": {
+      "hp": 3500,
+      "power": 28,
+      "speed": 20,
+      "int": 35,
+      "luck": 18
+    },
+    "skills": ["일반 공격", "의사봉 타격", "징계"],
+    "rewards": {
+      "exp": 600,
+      "gold": 1000,
+      "items": []
+    }
+  },
+  "monster_corrupt_politician": {
+    "id": "monster_corrupt_politician",
+    "name": "부패한 정치인",
+    "description": "뒷거래에 능통한 부패한 정치인",
+    "level": 25,
+    "stats": {
+      "hp": 4000,
+      "power": 30,
+      "speed": 22,
+      "int": 40,
+      "luck": 20
+    },
+    "skills": ["일반 공격", "뇌물 공격", "로비"],
+    "rewards": {
+      "exp": 800,
+      "gold": 1200,
+      "items": []
+    }
+  }
+}

@@ -512,6 +512,81 @@ class RPGItemDataManager {
 // 전역 ItemDataManager 인스턴스
 const itemManager = new RPGItemDataManager();
 
+// 던전 데이터 로더
+class RPGDungeonManager {
+    constructor() {
+        this.dungeons = {};
+        this.loadDungeons();
+    }
+
+    loadDungeons() {
+        try {
+            const dungeonsPath = path.join(__dirname, 'DB', 'RPG', 'dungeons.json');
+            const dungeonsData = fs.readFileSync(dungeonsPath, 'utf8');
+            this.dungeons = JSON.parse(dungeonsData);
+        } catch (error) {
+            console.error('던전 데이터 로드 실패:', error);
+            this.dungeons = {};
+        }
+    }
+
+    getDungeon(dungeonName) {
+        return this.dungeons[dungeonName];
+    }
+
+    getAllDungeons() {
+        return Object.keys(this.dungeons);
+    }
+
+    getDungeonsByLevel(level) {
+        return Object.values(this.dungeons).filter(d => d.requiredLevel <= level);
+    }
+}
+
+const dungeonManager = new RPGDungeonManager();
+
+// 몬스터 데이터 로더
+class RPGMonsterManager {
+    constructor() {
+        this.monsters = {};
+        this.loadMonsters();
+    }
+
+    loadMonsters() {
+        try {
+            const monstersPath = path.join(__dirname, 'DB', 'RPG', 'monsters.json');
+            const monstersData = fs.readFileSync(monstersPath, 'utf8');
+            this.monsters = JSON.parse(monstersData);
+        } catch (error) {
+            console.error('몬스터 데이터 로드 실패:', error);
+            this.monsters = {};
+        }
+    }
+
+    getMonster(monsterId) {
+        return this.monsters[monsterId];
+    }
+
+    createMonsterInstance(monsterId) {
+        const monsterData = this.monsters[monsterId];
+        if (!monsterData) return null;
+
+        const monster = new RPGMonster(monsterData.name, monsterData.level);
+        monster.id = monsterData.id;
+        monster.description = monsterData.description;
+        monster.stats = { ...monsterData.stats };
+        monster.hp = monsterData.stats.hp;
+        monster.maxHp = monsterData.stats.hp;
+        monster.attackPower = monsterData.stats.power * 10;
+        monster.skills = [...monsterData.skills];
+        monster.rewards = { ...monsterData.rewards };
+        
+        return monster;
+    }
+}
+
+const monsterManager = new RPGMonsterManager();
+
 // 1. 스탯 시스템
 class RPGStats {
     constructor(power = 0, speed = 0, int = 0, luck = 0) {
@@ -1291,6 +1366,255 @@ class RPGMonster {
     }
 }
 
+// 13. 배틀 시스템
+class RPGBattle {
+    constructor(character, monster) {
+        this.character = character;
+        this.monster = monster;
+        this.turn = 0;
+        this.isPlayerTurn = false;
+        this.battleLog = [];
+        this.isActive = true;
+        this.escaped = false;
+        
+        // 속도에 따라 선공 결정
+        const playerSpeed = character.stats.speed + (character.equipmentManager.getTotalStats().speed || 0);
+        const monsterSpeed = monster.stats.speed || 0;
+        this.isPlayerTurn = playerSpeed >= monsterSpeed;
+        
+        this.battleLog.push(`⚔️ 전투 시작!`);
+        this.battleLog.push(`${character.name} VS ${monster.name} (Lv.${monster.level})`);
+        this.battleLog.push(``);
+        if (this.isPlayerTurn) {
+            this.battleLog.push(`✨ ${character.name}의 선공!`);
+        } else {
+            this.battleLog.push(`💥 ${monster.name}의 선공!`);
+        }
+    }
+
+    // 플레이어 공격
+    playerAttack() {
+        if (!this.isActive || !this.isPlayerTurn) {
+            return { success: false, message: '지금은 공격할 수 없습니다.' };
+        }
+
+        this.turn++;
+        const totalStats = this.character.equipmentManager.getTotalStats();
+        const power = this.character.stats.power + (totalStats.power || 0);
+        const luck = this.character.stats.luck + (totalStats.luck || 0);
+        
+        // 기본 데미지 계산
+        let baseDamage = power * 15 + Math.floor(Math.random() * 50);
+        
+        // 크리티컬 판정
+        const critChance = Math.min(luck * 0.5, 30);
+        const isCrit = Math.random() * 100 < critChance;
+        
+        let finalDamage = baseDamage;
+        if (isCrit) {
+            finalDamage = Math.floor(baseDamage * 1.5);
+            this.battleLog.push(`💥 CRITICAL HIT!`);
+        }
+        
+        const result = this.monster.takeDamage(finalDamage);
+        this.battleLog.push(`[${this.character.name}의 공격] ${finalDamage} 데미지!`);
+        this.battleLog.push(`${this.monster.name} HP: ${this.monster.hp}/${this.monster.maxHp}`);
+        
+        if (result.isDead) {
+            return this.endBattle(true);
+        }
+        
+        this.isPlayerTurn = false;
+        return { success: true, damage: finalDamage, log: [...this.battleLog] };
+    }
+
+    // 플레이어 스킬 사용
+    playerSkill(skillName) {
+        if (!this.isActive || !this.isPlayerTurn) {
+            return { success: false, message: '지금은 스킬을 사용할 수 없습니다.' };
+        }
+
+        const skill = this.character.skillManager.getSkill(skillName);
+        if (!skill) {
+            return { success: false, message: '해당 스킬을 찾을 수 없습니다.' };
+        }
+
+        if (!skill.isUnlocked) {
+            return { success: false, message: '잠긴 스킬입니다.' };
+        }
+
+        // 리소스 소모
+        let resourceCheck = { success: true };
+        if (skill.cost > 0) {
+            if (skill.costType === 'gp') {
+                resourceCheck = this.character.gpResource.consume(skill.cost);
+            } else if (skill.costType === 'mp') {
+                resourceCheck = this.character.mpResource.consume(skill.cost);
+            } else if (skill.costType === 'gunpower') {
+                resourceCheck = this.character.gunpowerResource.consume(skill.cost);
+            }
+        }
+
+        if (!resourceCheck.success) {
+            return resourceCheck;
+        }
+
+        this.turn++;
+        const totalStats = this.character.equipmentManager.getTotalStats();
+        const int = this.character.stats.int + (totalStats.int || 0);
+        
+        // 스킬 데미지 계산 (스킬 계수 * 지능)
+        let skillDamage = Math.floor(skill.power * (1 + int * 0.03));
+        
+        const result = this.monster.takeDamage(skillDamage);
+        this.battleLog.push(`[${this.character.name}의 ${skillName}] ${skillDamage} 데미지!`);
+        this.battleLog.push(`${this.monster.name} HP: ${this.monster.hp}/${this.monster.maxHp}`);
+        
+        if (result.isDead) {
+            return this.endBattle(true);
+        }
+        
+        this.isPlayerTurn = false;
+        return { success: true, damage: skillDamage, log: [...this.battleLog] };
+    }
+
+    // 아이템 사용
+    playerUseItem(itemName) {
+        if (!this.isActive || !this.isPlayerTurn) {
+            return { success: false, message: '지금은 아이템을 사용할 수 없습니다.' };
+        }
+
+        const consumables = this.character.inventory.consumables;
+        const item = consumables.get(itemName);
+        
+        if (!item || item.count <= 0) {
+            return { success: false, message: '해당 아이템이 없습니다.' };
+        }
+
+        this.turn++;
+        
+        // 아이템 효과 적용
+        if (item.effect === 'heal') {
+            const healAmount = item.value;
+            this.character.hp.add(healAmount);
+            this.battleLog.push(`[${itemName} 사용] HP ${healAmount} 회복!`);
+            this.battleLog.push(`${this.character.name} HP: ${this.character.hp.current}/${this.character.hp.max}`);
+        }
+        
+        // 아이템 소모
+        item.count--;
+        if (item.count <= 0) {
+            consumables.delete(itemName);
+        }
+        
+        this.isPlayerTurn = false;
+        return { success: true, log: [...this.battleLog] };
+    }
+
+    // 도망
+    playerEscape() {
+        if (!this.isActive || !this.isPlayerTurn) {
+            return { success: false, message: '지금은 도망칠 수 없습니다.' };
+        }
+
+        const totalStats = this.character.equipmentManager.getTotalStats();
+        const speed = this.character.stats.speed + (totalStats.speed || 0);
+        
+        // 도망 성공 확률 (속도에 비례, 최대 70%)
+        const escapeChance = Math.min(30 + speed * 2, 70);
+        const isSuccess = Math.random() * 100 < escapeChance;
+        
+        if (isSuccess) {
+            this.battleLog.push(`💨 도망에 성공했습니다!`);
+            this.isActive = false;
+            this.escaped = true;
+            return { success: true, escaped: true, log: [...this.battleLog] };
+        } else {
+            this.battleLog.push(`❌ 도망에 실패했습니다!`);
+            this.isPlayerTurn = false;
+            return { success: true, escaped: false, log: [...this.battleLog] };
+        }
+    }
+
+    // 몬스터 턴
+    monsterTurn() {
+        if (!this.isActive || this.isPlayerTurn) {
+            return { success: false };
+        }
+
+        const damage = Math.floor(this.monster.attackPower + Math.random() * 20);
+        this.character.hp.current = Math.max(0, this.character.hp.current - damage);
+        
+        this.battleLog.push(``);
+        this.battleLog.push(`[${this.monster.name}의 공격] ${damage} 데미지!`);
+        this.battleLog.push(`${this.character.name} HP: ${this.character.hp.current}/${this.character.hp.max}`);
+        
+        if (this.character.hp.current <= 0) {
+            return this.endBattle(false);
+        }
+        
+        this.isPlayerTurn = true;
+        return { success: true, damage, log: [...this.battleLog] };
+    }
+
+    // 전투 종료
+    endBattle(playerWon) {
+        this.isActive = false;
+        this.battleLog.push(``);
+        
+        if (playerWon) {
+            this.battleLog.push(`✅ 승리!`);
+            this.battleLog.push(`${this.monster.name}을(를) 처치했습니다!`);
+            
+            // 보상 지급
+            const rewards = this.monster.rewards;
+            this.battleLog.push(``);
+            this.battleLog.push(`[ 보상 ]`);
+            if (rewards.exp) {
+                this.battleLog.push(`• 경험치: +${rewards.exp}`);
+            }
+            if (rewards.gold) {
+                this.battleLog.push(`• 골드: +${rewards.gold}`);
+            }
+            
+            return {
+                success: true,
+                victory: true,
+                rewards: rewards,
+                log: [...this.battleLog]
+            };
+        } else {
+            this.battleLog.push(`💀 패배...`);
+            this.battleLog.push(`${this.character.name}이(가) 쓰러졌습니다.`);
+            
+            return {
+                success: true,
+                victory: false,
+                log: [...this.battleLog]
+            };
+        }
+    }
+
+    getBattleStatus() {
+        return {
+            turn: this.turn,
+            isActive: this.isActive,
+            isPlayerTurn: this.isPlayerTurn,
+            character: {
+                name: this.character.name,
+                hp: this.character.hp.current,
+                maxHp: this.character.hp.max
+            },
+            monster: {
+                name: this.monster.name,
+                hp: this.monster.hp,
+                maxHp: this.monster.maxHp
+            },
+            log: [...this.battleLog]
+        };
+    }
+}
+
 // ==================== 내보내기 ====================
 module.exports = {
     RPGJobManager,
@@ -1299,6 +1623,10 @@ module.exports = {
     equipmentManager,
     RPGItemDataManager,
     itemManager,
+    RPGDungeonManager,
+    dungeonManager,
+    RPGMonsterManager,
+    monsterManager,
     RPGStats,
     RPGResource,
     RPGLevel,
@@ -1310,5 +1638,6 @@ module.exports = {
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,
-    RPGMonster
+    RPGMonster,
+    RPGBattle
 };

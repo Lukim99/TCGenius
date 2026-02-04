@@ -1,0 +1,35 @@
+{
+  "예선장": {
+    "id": "dungeon_preliminary",
+    "name": "예선장",
+    "description": "예선장입니다.",
+    "requiredLevel": 1,
+    "monsters": ["monster_rookie_duelist", "monster_nervous_player", "monster_card_collector"],
+    "rewards": {
+      "gold": { "min": 100, "max": 300 },
+      "exp": { "min": 50, "max": 150 }
+    }
+  },
+  "맛동산회사": {
+    "id": "dungeon_snack_company",
+    "name": "맛동산 회사",
+    "description": "맛동산 회사입니다.",
+    "requiredLevel": 3,
+    "monsters": ["monster_snack_worker", "monster_possessed_chef"],
+    "rewards": {
+      "gold": { "min": 300, "max": 600 },
+      "exp": { "min": 150, "max": 300 }
+    }
+  },
+  "국회의사당": {
+    "id": "dungeon_parliament",
+    "name": "국회의사당",
+    "description": "국회의사당입니다.",
+    "requiredLevel": 5,
+    "monsters": ["monster_lawmaker", "monster_speaker", "monster_corrupt_politician"],
+    "rewards": {
+      "gold": { "min": 600, "max": 1200 },
+      "exp": { "min": 300, "max": 600 }
+    }
+  }
+}
