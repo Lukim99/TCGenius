@@ -1,7 +1,7 @@
 {
   "먼마": {
     "name": "먼마",
-    "description": "강력한 주먹으로 적을 제압하는 전사",
+    "description": "기본 체방이 높은 평타 기반 직업, 무력화 및 파괴가 강함",
     "mainStat": "power",
     "initialStats": {
       "power": 5,
@@ -33,7 +33,7 @@
   },
   "성준호": {
     "name": "성준호",
-    "description": "빠른 이동과 치명적인 배신으로 적을 무너뜨리는 암살자",
+    "description": "GP 자원을 이용한 속도형 딜러",
     "mainStat": "speed",
     "initialStats": {
       "power": 0,
@@ -67,7 +67,7 @@
   },
   "빵귤": {
     "name": "빵귤",
-    "description": "시간을 조작하고 마법으로 적을 압도하는 마법사",
+    "description": "MP 자원을 이용한 지능형 딜러",
     "mainStat": "int",
     "initialStats": {
       "power": 0,
@@ -101,7 +101,7 @@
   },
   "호르아크티": {
     "name": "호르아크티",
-    "description": "운명을 도박으로 바꾸는 행운의 도박사",
+    "description": "안정성 낮은, 고점높고 저점낮은 전투방식의 딜러",
     "mainStat": "luck",
     "initialStats": {
       "power": 0,
@@ -133,7 +133,7 @@
   },
   "건마": {
     "name": "건마",
-    "description": "건전한 마음으로 권총을 다루는 하이브리드 전사",
+    "description": "총알개념의 '건력' 자원 및 HP 사용",
     "mainStat": "power",
     "initialStats": {
       "power": 5,
