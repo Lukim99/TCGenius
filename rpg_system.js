@@ -1514,7 +1514,7 @@ class RPGBattle {
         }
         
         const result = this.monster.takeDamage(finalDamage);
-        turnLog.push(`[${this.character.name}의 공격] ${finalDamage.toLocaleString()} 데미지!`);
+        turnLog.push(`[${this.character.name}의 공격] ${finalDamage.toLocaleString()} 피해를 입혔습니다!`);
         turnLog.push(`${this.monster.name} HP: ${this.monster.hp.toLocaleString()}/${this.monster.maxHp.toLocaleString()}`);
         
         this.addTurnLog(turnLog);
@@ -1609,9 +1609,9 @@ class RPGBattle {
             const result = this.monster.takeDamage(totalDamage);
             
             if (hits > 1) {
-                turnLog.push(`[${this.character.name}의 ${skillName}] ${hits}회 공격! 총 ${totalDamage.toLocaleString()} 데미지!`);
+                turnLog.push(`[${this.character.name}의 ${skillName}] ${hits}회 공격! 총 ${totalDamage.toLocaleString()} 피해를 입혔습니다!`);
             } else {
-                turnLog.push(`[${this.character.name}의 ${skillName}] ${totalDamage.toLocaleString()} 데미지!`);
+                turnLog.push(`[${this.character.name}의 ${skillName}] ${totalDamage.toLocaleString()} 피해를 입혔습니다!`);
             }
             
             turnLog.push(`${this.monster.name} HP: ${this.monster.hp.toLocaleString()}/${this.monster.maxHp.toLocaleString()}`);
@@ -1658,7 +1658,7 @@ class RPGBattle {
             let damage = Math.floor(skillEffect.power * (1 + mainStat * 0.02));
             const result = this.monster.takeDamage(damage);
             
-            turnLog.push(`[${this.character.name}의 ${skillName}] ${damage.toLocaleString()} 데미지!`);
+            turnLog.push(`[${this.character.name}의 ${skillName}] ${damage.toLocaleString()} 피해를 입혔습니다!`);
             
             if (skillEffect.defenseDown) {
                 turnLog.push(`${this.monster.name}의 방어력 감소!`);
