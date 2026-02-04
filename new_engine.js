@@ -10779,7 +10779,7 @@ client.on('chat', async (data, channel) => {
 
 
         // RPG here
-        if (msg.startsWith("/") && ["442097040687921","18470462260425659"].includes(roomid+"")) {
+        if (msg.startsWith("/") && ["442097040687921","18470462260425659","435426013866936"].includes(roomid+"")) {
             const cmd = msg.substr(1).trim();
             if (cmd.toLowerCase().startsWith("rpg") || cmd.toLowerCase().startsWith("rpgenius")) {
                 const args = cmd.substr(cmd.split(" ")[0].length + 1).split(" ");
