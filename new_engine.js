@@ -4288,7 +4288,7 @@ client.on('chat', async (data, channel) => {
                     channel.sendChat("❌ 해당 유저의 닉변 기록이 없습니다.");
                     return;
                 }
-                const lines = logs.map((log, i) => `${i + 1}. ${log.event_type} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`);
+                const lines = logs.map((log, i) => `${i + 1}. ${log.event_type.replace('프로필변경 (', '').replace(')', '')} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`);
                 channel.sendChat(`📋 닉변 기록 (${logs.length}건)\n\n${lines.join('\n')}`);
             } catch (e) {
                 console.log('닉변 조회 실패:', e);
@@ -4321,7 +4321,7 @@ client.on('chat', async (data, channel) => {
                 for (let i = 0; i < sorted.length; i++) {
                     const [uid, info] = sorted[i];
                     if (i === 10) lines.push(VIEWMORE);
-                    lines.push(`${i + 1}위. ${info.nickname || uid} - ${info.count}회`);
+                    lines.push(`${i + 1}위. ${info.nickname || uid} - ${info.count.toLocaleString()}회`);
                 }
                 channel.sendChat(`📊 채팅수 랭킹\n\n${lines.join('\n')}`);
             } catch (e) {
@@ -11416,7 +11416,7 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
-    if (channel.channelId != '18448110985554752') return;
+    if (channel.channelId + '' != '18448110985554752') return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -11435,7 +11435,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
         });
 
         if (!prevLogs || prevLogs.length === 0) {
-            channel.sendChat(`👋 ${nick}님, 처음 오셨네요! 환영합니다!`);
+            channel.sendChat(`👋 ${nick} 환영해!\n닉네임은 두 글자 + 성별로 바꿔줘\n(예 : 나야 여)`);
         } else {
             const lines = prevLogs.slice(0, 10).map((log, i) =>
                 `${i + 1}. [${log.event_type}] ${log.nickname || '?'} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`
@@ -11448,7 +11448,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
-    if (channel.channelId != '18448110985554752') return;
+    if (channel.channelId + '' != '18448110985554752') return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -11466,10 +11466,11 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
-    if (channel.channelId != '18448110985554752') return;
+    if (channel.channelId + '' != '18448110985554752') return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
         const newNick = user ? user.nickname : null;
+        if (!oldNick || !newNick || oldNick === newNick) return;
         await supabase.from('join_leave_logs').insert({
             event_type: `프로필변경 (${oldNick} → ${newNick})`,
             user_id: user ? user.userId + '' : null,
