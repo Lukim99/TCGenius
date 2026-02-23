@@ -571,13 +571,21 @@ class RPGMonsterManager {
         const monsterData = this.monsters[monsterId];
         if (!monsterData) return null;
 
-        const monster = new RPGMonster(monsterData.name, monsterData.level);
-        monster.id = monsterData.id;
-        monster.description = monsterData.description;
-        monster.stats = { ...monsterData.stats };
-        monster.hp = monsterData.stats.hp;
-        monster.maxHp = monsterData.stats.hp;
-        monster.attackPower = monsterData.stats.power * 10;
+        const monster = new RPGMonster(monsterData.id, monsterData.name, monsterData.level);
+        
+        // stats 로드
+        if (monsterData.stats) {
+            monster.stats.power = monsterData.stats.power || 0;
+            monster.stats.speed = monsterData.stats.speed || 0;
+            monster.stats.int = monsterData.stats.int || 0;
+            monster.stats.luck = monsterData.stats.luck || 0;
+            
+            // HP 설정
+            monster.hp.max = monsterData.stats.hp || 100;
+            monster.hp.current = monster.hp.max;
+        }
+        
+        // 스킬 및 보상
         monster.skills = [...monsterData.skills];
         monster.rewards = { ...monsterData.rewards };
         
@@ -586,78 +594,6 @@ class RPGMonsterManager {
 }
 
 const monsterManager = new RPGMonsterManager();
-
-// 스킬 효과 데이터베이스
-class RPGSkillEffectDatabase {
-    constructor() {
-        this.skillEffects = this.initializeSkillEffects();
-    }
-
-    initializeSkillEffects() {
-        return {
-            // 먼마 스킬들
-            "안면강타": { type: "damage", power: 150, description: "강력한 주먹으로 적의 안면을 타격" },
-            "광속연타": { type: "damage", power: 80, hits: 3, description: "빠른 연속 공격" },
-            "룰지안봄": { type: "damage", power: 250, description: "강력한 일격" },
-            "브란도 땅에 묻기": { type: "damage", power: 300, neutralize: 30, description: "적을 땅에 묻어 무력화" },
-            "유생 수성못에 묻기": { type: "damage", power: 350, neutralize: 50, description: "적을 수성못에 묻음" },
-            "시벌론": { type: "damage", power: 500, description: "최강의 일격" },
-            
-            // 성준호 스킬들
-            "약점찾기": { type: "debuff", power: 80, defenseDown: 20, description: "적의 약점을 찾아 방어력 감소" },
-            "연속 찌르기": { type: "damage", power: 60, hits: 5, description: "빠른 연속 공격" },
-            "연막": { type: "buff", evasionUp: 30, duration: 3, description: "연막으로 회피율 증가" },
-            "약자멸시": { type: "damage", power: 200, lowHpBonus: true, description: "HP가 낮은 적에게 추가 피해" },
-            "배신스택": { type: "buff", stackDamage: 50, description: "스택을 쌓아 다음 공격 강화" },
-            "배신!": { type: "damage", power: 400, consumeStacks: true, description: "모든 스택을 소모해 강력한 공격" },
-            
-            // 빵귤 스킬들
-            "가속!": { type: "buff", speedUp: 5, duration: 3, description: "속도 증가" },
-            "헤트": { type: "damage", power: 120, description: "마법 공격" },
-            "유드베트": { type: "damage", power: 180, description: "강력한 마법 공격" },
-            "유드 알레프": { type: "damage", power: 250, description: "초강력 마법 공격" },
-            "오징오": { type: "damage", power: 300, aoe: true, description: "광역 마법 공격" },
-            "궁극의 틱택토": { type: "damage", power: 500, freeze: true, description: "시간을 멈추고 공격" },
-            
-            // 호르아크티 스킬들
-            "도박 카드": { type: "damage", power: 100, random: [50, 200], description: "랜덤 데미지" },
-            "교촌파워": { type: "damage", power: 150, random: [75, 300], description: "랜덤 데미지" },
-            "한탕": { type: "damage", power: 200, random: [50, 400], description: "큰 랜덤 데미지" },
-            "러시안 룰렛": { type: "damage", power: 300, random: [0, 600], description: "0 또는 대박" },
-            "한탕룰렛": { type: "damage", power: 400, random: [100, 800], description: "극단적 랜덤" },
-            "0의 의지": { type: "damage", power: 1000, selfDamage: 50, description: "자신도 피해를 입지만 강력한 공격" },
-            
-            // 건마 스킬들
-            "마사지": { type: "heal", healAmount: 100, description: "체력 회복" },
-            "뼈에서 살을": { type: "damage", power: 130, hpCost: 50, description: "HP를 소모해 공격" },
-            "건마의 나침반": { type: "buff", accuracyUp: 30, duration: 3, description: "명중률 증가" },
-            "숙청": { type: "damage", power: 250, hpCost: 100, description: "HP를 소모해 강력한 공격" },
-            "디럭스 라이벌샷": { type: "damage", power: 350, description: "강력한 사격" },
-            "건마스터": { type: "damage", power: 500, hpCost: 200, description: "HP를 대량 소모해 초강력 공격" },
-            
-            // 몬스터 스킬들
-            "일반 공격": { type: "damage", power: 100, description: "평범한 공격" },
-            "떨림 공격": { type: "damage", power: 80, accuracyDown: true, description: "떨리는 손으로 공격, 명중률 감소" },
-            "카드 투척": { type: "damage", power: 120, description: "날카로운 카드를 투척" },
-            "맛동산 투척": { type: "damage", power: 90, stun: 20, description: "맛동산을 던져 공격, 기절 확률" },
-            "과자 가루 살포": { type: "debuff", accuracyDown: 15, duration: 2, description: "과자 가루를 뿌려 명중률 감소" },
-            "뜨거운 기름 공격": { type: "damage", power: 150, burn: true, description: "뜨거운 기름으로 공격, 화상" },
-            "칼질": { type: "damage", power: 130, bleed: true, description: "날카롭게 베어 출혈" },
-            "법안 공격": { type: "damage", power: 140, description: "법안으로 공격" },
-            "필리버스터": { type: "debuff", speedDown: 20, duration: 3, description: "무한 토론으로 속도 감소" },
-            "의사봉 타격": { type: "damage", power: 160, stun: 30, description: "의사봉으로 강타, 기절 확률" },
-            "징계": { type: "damage", power: 120, defenseDown: 15, description: "징계로 방어력 감소" },
-            "뇌물 공격": { type: "damage", power: 150, goldSteal: 50, description: "뇌물로 공격, 골드 소실" },
-            "로비": { type: "buff", attackUp: 30, duration: 2, description: "로비로 공격력 증가" }
-        };
-    }
-
-    getSkillEffect(skillName) {
-        return this.skillEffects[skillName] || { type: "damage", power: 100, description: "기본 공격" };
-    }
-}
-
-const skillEffectDB = new RPGSkillEffectDatabase();
 
 // 1. 스탯 시스템
 class RPGStats {
@@ -1370,105 +1306,171 @@ class RPGCombatCalculator {
     }
 }
 
-// 12. 몬스터 시스템
+// 12. 몬스터 시스템 (플레이어 구조와 동일하게 재설계)
 class RPGMonster {
-    constructor(name, level, type = 'seed') {
+    constructor(id, name, level) {
+        this.id = id;           // 몬스터 고유 ID
         this.name = name;
         this.level = level;
-        this.type = type;       // 'seed', 'named', 'boss'
-        this.hp = 0;
-        this.maxHp = 0;
-        this.attackPower = 0;
-        this.defense = 0;
-        this.exp = 0;
-        this.neutralizeGauge = 0;   // 무력화 게이지
-        this.maxNeutralizeGauge = 0;
-        this.isNeutralized = false; // 무력화 상태
-        this.drops = [];            // 드랍 아이템
+        
+        // 플레이어와 동일한 구조
+        this.stats = new RPGStats();  // 스탯 (power, speed, int, luck)
+        this.hp = new RPGResource('HP', 0, 0);
+        
+        // 몬스터 고유 데이터
+        this.skills = [];       // 스킬 목록
+        this.rewards = {};      // 보상
     }
 
     load(data) {
-        Object.assign(this, data);
+        if (data.stats) {
+            this.stats.load(data.stats);
+        }
+        if (data.hp) {
+            this.hp.max = data.hp;
+            this.hp.current = data.hp;
+        }
+        if (data.skills) {
+            this.skills = [...data.skills];
+        }
+        if (data.rewards) {
+            this.rewards = { ...data.rewards };
+        }
         return this;
     }
 
-    takeDamage(damage) {
-        this.hp = Math.max(0, this.hp - damage);
-        return {
-            success: true,
-            damage,
-            remainingHp: this.hp,
-            isDead: this.hp <= 0
-        };
-    }
-
-    addNeutralize(amount) {
-        this.neutralizeGauge = Math.min(this.neutralizeGauge + amount, this.maxNeutralizeGauge);
-        if (this.neutralizeGauge >= this.maxNeutralizeGauge) {
-            this.isNeutralized = true;
-            return { success: true, neutralized: true };
-        }
-        return { success: true, neutralized: false, gauge: this.neutralizeGauge };
-    }
-
-    resetNeutralize() {
-        this.neutralizeGauge = 0;
-        this.isNeutralized = false;
-    }
-
     isDead() {
-        return this.hp <= 0;
+        return this.hp.current <= 0;
     }
 
     toJSON() {
         return {
+            id: this.id,
             name: this.name,
             level: this.level,
-            type: this.type,
-            hp: this.hp,
-            maxHp: this.maxHp,
-            attackPower: this.attackPower,
-            defense: this.defense,
-            exp: this.exp,
-            neutralizeGauge: this.neutralizeGauge,
-            maxNeutralizeGauge: this.maxNeutralizeGauge,
-            isNeutralized: this.isNeutralized,
-            drops: this.drops
+            stats: this.stats.toJSON(),
+            hp: this.hp.toJSON(),
+            skills: [...this.skills],
+            rewards: { ...this.rewards }
         };
     }
 }
 
-// 13. 배틀 시스템
+// 13. 배틀 시스템 (processHunt 스타일 - actor/victim 기반)
 class RPGBattle {
     constructor(character, monster) {
+        // 원본 참조 유지
         this.character = character;
         this.monster = monster;
+        
+        // tempObj 구조 생성 (old_engine.js의 processHunt 방식)
+        this.tempObj = {
+            name: {
+                player: character.name,
+                monster: monster.name
+            },
+            stat: {
+                player: {
+                    hp: character.hp.current,
+                    maxHp: character.hp.max,
+                    power: character.stats.power,
+                    speed: character.stats.speed,
+                    int: character.stats.int,
+                    luck: character.stats.luck
+                },
+                monster: {
+                    hp: monster.hp.current,
+                    maxHp: monster.hp.max,
+                    power: monster.stats.power,
+                    speed: monster.stats.speed,
+                    int: monster.stats.int,
+                    luck: monster.stats.luck
+                }
+            },
+            effect: {
+                player: {},  // 상태이상 (burn, bleed, stun 등)
+                monster: {}
+            },
+            stack: {
+                player: {},  // 스택 관리 (배신스택, 혈중첩 등)
+                monster: {}
+            },
+            logs: []  // 전투 로그
+        };
+        
         this.turn = 0;
-        this.isPlayerTurn = false;
-        this.battleLog = [];
-        this.turnLogs = []; // 턴별 로그 저장
-        this.currentTurnLog = [];
         this.isActive = true;
         this.escaped = false;
+        this.turnLogs = [];
+        this.currentTurnLog = [];
         
-        // 속도에 따라 선공 결정
-        const playerSpeed = character.stats.speed + (character.equipmentManager.getTotalStats().speed || 0);
-        const monsterSpeed = monster.stats.speed || 0;
-        this.isPlayerTurn = playerSpeed >= monsterSpeed;
+        // 전투 시작 로그
+        this.tempObj.logs.push(`⚔️ 전투 시작!`);
+        this.tempObj.logs.push(`${this.tempObj.name.player} VS ${this.tempObj.name.monster} (Lv.${monster.level.toLocaleString()})`);
+        this.tempObj.logs.push(``);
         
-        this.battleLog.push(`⚔️ 전투 시작!`);
-        this.battleLog.push(`${character.name} VS ${monster.name} (Lv.${monster.level.toLocaleString()})`);
-        this.battleLog.push(``);
-        if (this.isPlayerTurn) {
-            this.battleLog.push(`✨ ${character.name}의 선공!`);
+        const playerSpeed = this.tempObj.stat.player.speed;
+        const monsterSpeed = this.tempObj.stat.monster.speed;
+        if (playerSpeed >= monsterSpeed) {
+            this.tempObj.logs.push(`✨ ${this.tempObj.name.player}의 선공!`);
         } else {
-            this.battleLog.push(`💥 ${monster.name}의 선공!`);
+            this.tempObj.logs.push(`💥 ${this.tempObj.name.monster}의 선공!`);
         }
+    }
+    
+    // processTurn - old_engine.js의 processHunt 스타일 기본 틀
+    processTurn(actor, victim, action) {
+        // actor: 'player' 또는 'monster'
+        // victim: 'monster' 또는 'player'
+        // action: { type: 'attack' | 'skill' | 'item', data: ... }
+        
+        const turnLog = [];
+        
+        // 기본 공격 처리 예시 (향후 확장)
+        if (action.type === 'attack') {
+            const actorStat = this.tempObj.stat[actor];
+            const victimStat = this.tempObj.stat[victim];
+            
+            // 간단한 데미지 계산
+            const baseDamage = actorStat.power * 15 + Math.floor(Math.random() * 50);
+            
+            // 크리티컬 판정
+            const baseCritChance = 5;
+            const critChance = Math.min(baseCritChance + (actorStat.luck * 0.5), 50);
+            const isCrit = Math.random() * 100 < critChance;
+            
+            let finalDamage = baseDamage;
+            if (isCrit) {
+                finalDamage = Math.floor(baseDamage * 1.5);
+                turnLog.push(`💥 치명타!`);
+            }
+            
+            // 피해 적용
+            victimStat.hp = Math.max(0, victimStat.hp - finalDamage);
+            
+            turnLog.push(`[${this.tempObj.name[actor]}의 공격] ${finalDamage.toLocaleString()} 피해를 입혔습니다!`);
+            turnLog.push(`${this.tempObj.name[victim]} HP: ${victimStat.hp.toLocaleString()}/${victimStat.maxHp.toLocaleString()}`);
+        }
+        
+        // TODO: 스킬, 아이템 처리 추가
+        
+        this.addTurnLog(turnLog);
+        this.finalizeTurn();
+        
+        // 승패 판정
+        if (this.tempObj.stat.monster.hp <= 0) {
+            return this.endBattle(true);
+        }
+        if (this.tempObj.stat.player.hp <= 0) {
+            return this.endBattle(false);
+        }
+        
+        return { success: true, log: this.getRecentLog() };
     }
     
     // 최근 3턴 로그만 반환
     getRecentLog() {
-        const initLog = this.battleLog.slice(0, 5); // 전투 시작 메시지
+        const initLog = this.tempObj.logs.slice(0, 5); // 전투 시작 메시지
         const recentTurns = this.turnLogs.slice(-3); // 최근 3턴
         const flatRecent = recentTurns.flat();
         return [...initLog, ...flatRecent];
@@ -1487,350 +1489,6 @@ class RPGBattle {
         }
     }
 
-    // 플레이어 공격
-    playerAttack() {
-        if (!this.isActive || !this.isPlayerTurn) {
-            return { success: false, message: '지금은 공격할 수 없습니다.' };
-        }
-
-        this.turn++;
-        const totalStats = this.character.equipmentManager.getTotalStats();
-        const power = this.character.stats.power + (totalStats.power || 0);
-        const luck = this.character.stats.luck + (totalStats.luck || 0);
-        
-        // 기본 데미지 계산
-        let baseDamage = power * 15 + Math.floor(Math.random() * 50);
-        
-        // 크리티컬 판정 - 기본 5% + 행운당 0.5% (최대 50%)
-        const baseCritChance = 5;
-        const critChance = Math.min(baseCritChance + (luck * 0.5), 50);
-        const isCrit = Math.random() * 100 < critChance;
-        
-        let finalDamage = baseDamage;
-        const turnLog = [];
-        if (isCrit) {
-            finalDamage = Math.floor(baseDamage * 1.5);
-            turnLog.push(`💥 CRITICAL HIT!`);
-        }
-        
-        const result = this.monster.takeDamage(finalDamage);
-        turnLog.push(`[${this.character.name}의 공격] ${finalDamage.toLocaleString()} 피해를 입혔습니다!`);
-        turnLog.push(`${this.monster.name} HP: ${this.monster.hp.toLocaleString()}/${this.monster.maxHp.toLocaleString()}`);
-        
-        this.addTurnLog(turnLog);
-        this.finalizeTurn();
-        
-        if (result.isDead) {
-            return this.endBattle(true);
-        }
-        
-        this.isPlayerTurn = false;
-        return { success: true, damage: finalDamage, log: this.getRecentLog() };
-    }
-
-    // 플레이어 스킬 사용
-    playerSkill(skillName) {
-        if (!this.isActive || !this.isPlayerTurn) {
-            return { success: false, message: '지금은 스킬을 사용할 수 없습니다.' };
-        }
-
-        const skill = this.character.skillManager.getSkill(skillName);
-        if (!skill) {
-            return { success: false, message: '해당 스킬을 찾을 수 없습니다.' };
-        }
-
-        if (!skill.isUnlocked) {
-            return { success: false, message: '잠긴 스킬입니다.' };
-        }
-
-        // 스킬 효과 데이터 가져오기
-        const skillEffect = skillEffectDB.getSkillEffect(skillName);
-
-        // 리소스 소모
-        let resourceCheck = { success: true };
-        if (skill.cost > 0) {
-            if (skill.costType === 'gp') {
-                resourceCheck = this.character.gpResource.consume(skill.cost);
-            } else if (skill.costType === 'mp') {
-                resourceCheck = this.character.mpResource.consume(skill.cost);
-            } else if (skill.costType === 'gunpower') {
-                resourceCheck = this.character.gunpowerResource.consume(skill.cost);
-            }
-        }
-
-        if (!resourceCheck.success) {
-            return resourceCheck;
-        }
-
-        // HP 소모 스킬 처리
-        if (skillEffect.hpCost) {
-            if (this.character.hp.current <= skillEffect.hpCost) {
-                return { success: false, message: 'HP가 부족합니다.' };
-            }
-            this.character.hp.current -= skillEffect.hpCost;
-        }
-        
-        const turnLog = [];
-        if (skillEffect.hpCost) {
-            turnLog.push(`[HP ${skillEffect.hpCost.toLocaleString()} 소모]`);
-        }
-
-        this.turn++;
-        const totalStats = this.character.equipmentManager.getTotalStats();
-        const power = this.character.stats.power + (totalStats.power || 0);
-        const int = this.character.stats.int + (totalStats.int || 0);
-        const mainStat = this.character.job === '빵귤' ? int : power;
-        
-        // 스킬 타입별 처리
-        if (skillEffect.type === 'damage') {
-            let basePower = skillEffect.power;
-            
-            // 랜덤 데미지 스킬 (호르아크티)
-            if (skillEffect.random) {
-                const [min, max] = skillEffect.random;
-                basePower = Math.floor(Math.random() * (max - min + 1)) + min;
-            }
-            
-            // 다단히트 스킬
-            let totalDamage = 0;
-            const hits = skillEffect.hits || 1;
-            
-            for (let i = 0; i < hits; i++) {
-                let damage = Math.floor(basePower * (1 + mainStat * 0.02));
-                
-                // HP 낮은 적 추가 피해
-                if (skillEffect.lowHpBonus && this.monster.hp < this.monster.maxHp * 0.3) {
-                    damage = Math.floor(damage * 1.5);
-                }
-                
-                totalDamage += damage;
-            }
-            
-            const result = this.monster.takeDamage(totalDamage);
-            
-            if (hits > 1) {
-                turnLog.push(`[${this.character.name}의 ${skillName}] ${hits}회 공격! 총 ${totalDamage.toLocaleString()} 피해를 입혔습니다!`);
-            } else {
-                turnLog.push(`[${this.character.name}의 ${skillName}] ${totalDamage.toLocaleString()} 피해를 입혔습니다!`);
-            }
-            
-            turnLog.push(`${this.monster.name} HP: ${this.monster.hp.toLocaleString()}/${this.monster.maxHp.toLocaleString()}`);
-            
-            // 자신도 피해 (호르아크티 - 0의 의지)
-            if (skillEffect.selfDamage) {
-                this.character.hp.current = Math.max(0, this.character.hp.current - skillEffect.selfDamage);
-                turnLog.push(`[반동 피해] ${this.character.name} HP ${skillEffect.selfDamage.toLocaleString()} 감소!`);
-            }
-            
-            this.addTurnLog(turnLog);
-            this.finalizeTurn();
-            
-            if (result.isDead) {
-                return this.endBattle(true);
-            }
-            
-        } else if (skillEffect.type === 'heal') {
-            const healAmount = skillEffect.healAmount;
-            this.character.hp.add(healAmount);
-            turnLog.push(`[${this.character.name}의 ${skillName}] HP ${healAmount.toLocaleString()} 회복!`);
-            turnLog.push(`${this.character.name} HP: ${this.character.hp.current.toLocaleString()}/${this.character.hp.max.toLocaleString()}`);
-            
-            this.addTurnLog(turnLog);
-            this.finalizeTurn();
-            
-        } else if (skillEffect.type === 'buff') {
-            turnLog.push(`[${this.character.name}의 ${skillName}] ${skillEffect.description}`);
-            
-            if (skillEffect.speedUp) {
-                turnLog.push(`속도 +${skillEffect.speedUp} (${skillEffect.duration}턴)`);
-            }
-            if (skillEffect.accuracyUp) {
-                turnLog.push(`명중률 +${skillEffect.accuracyUp}% (${skillEffect.duration}턴)`);
-            }
-            if (skillEffect.evasionUp) {
-                turnLog.push(`회피율 +${skillEffect.evasionUp}% (${skillEffect.duration}턴)`);
-            }
-            
-            this.addTurnLog(turnLog);
-            this.finalizeTurn();
-            
-        } else if (skillEffect.type === 'debuff') {
-            let damage = Math.floor(skillEffect.power * (1 + mainStat * 0.02));
-            const result = this.monster.takeDamage(damage);
-            
-            turnLog.push(`[${this.character.name}의 ${skillName}] ${damage.toLocaleString()} 피해를 입혔습니다!`);
-            
-            if (skillEffect.defenseDown) {
-                turnLog.push(`${this.monster.name}의 방어력 감소!`);
-            }
-            
-            turnLog.push(`${this.monster.name} HP: ${this.monster.hp.toLocaleString()}/${this.monster.maxHp.toLocaleString()}`);
-            
-            this.addTurnLog(turnLog);
-            this.finalizeTurn();
-            
-            if (result.isDead) {
-                return this.endBattle(true);
-            }
-        }
-        
-        this.isPlayerTurn = false;
-        return { success: true, log: this.getRecentLog() };
-    }
-
-    // 아이템 사용
-    playerUseItem(itemName) {
-        if (!this.isActive || !this.isPlayerTurn) {
-            return { success: false, message: '지금은 아이템을 사용할 수 없습니다.' };
-        }
-
-        const consumables = this.character.inventory.consumables;
-        const item = consumables.get(itemName);
-        
-        if (!item || item.count <= 0) {
-            return { success: false, message: '해당 아이템이 없습니다.' };
-        }
-
-        this.turn++;
-        
-        // 아이템 효과 적용
-        const turnLog = [];
-        if (item.effect === 'heal') {
-            const healAmount = item.value;
-            this.character.hp.add(healAmount);
-            turnLog.push(`[${itemName} 사용] HP ${healAmount.toLocaleString()} 회복!`);
-            turnLog.push(`${this.character.name} HP: ${this.character.hp.current.toLocaleString()}/${this.character.hp.max.toLocaleString()}`);
-        }
-        
-        // 아이템 소모
-        item.count--;
-        if (item.count <= 0) {
-            consumables.delete(itemName);
-        }
-        
-        this.addTurnLog(turnLog);
-        this.finalizeTurn();
-        
-        this.isPlayerTurn = false;
-        return { success: true, log: this.getRecentLog() };
-    }
-
-    // 도망
-    playerEscape() {
-        if (!this.isActive || !this.isPlayerTurn) {
-            return { success: false, message: '지금은 도망칠 수 없습니다.' };
-        }
-
-        const totalStats = this.character.equipmentManager.getTotalStats();
-        const speed = this.character.stats.speed + (totalStats.speed || 0);
-        
-        // 도망 성공 확률 (속도에 비례, 최대 70%)
-        const escapeChance = Math.min(30 + speed * 2, 70);
-        const isSuccess = Math.random() * 100 < escapeChance;
-        
-        const turnLog = [];
-        if (isSuccess) {
-            turnLog.push(`💨 도망에 성공했습니다!`);
-            this.addTurnLog(turnLog);
-            this.isActive = false;
-            this.escaped = true;
-            return { success: true, escaped: true, log: this.getRecentLog() };
-        } else {
-            turnLog.push(`❌ 도망에 실패했습니다!`);
-            this.addTurnLog(turnLog);
-            this.finalizeTurn();
-            this.isPlayerTurn = false;
-            return { success: true, escaped: false, log: this.getRecentLog() };
-        }
-    }
-
-    // 몬스터 턴
-    monsterTurn() {
-        if (!this.isActive || this.isPlayerTurn) {
-            return { success: false };
-        }
-
-        const turnLog = [];
-        turnLog.push(``);
-        
-        // 몬스터 스킬 목록에서 랜덤 선택
-        const monsterSkills = this.monster.skills || ["일반 공격"];
-        const selectedSkill = monsterSkills[Math.floor(Math.random() * monsterSkills.length)];
-        const skillEffect = skillEffectDB.getSkillEffect(selectedSkill);
-        
-        // 스킬 타입별 처리
-        if (skillEffect.type === 'damage') {
-            let basePower = skillEffect.power;
-            let damage = Math.floor(basePower * (this.monster.stats.power / 10) + Math.random() * 20);
-            
-            // 명중률 감소 스킬
-            if (skillEffect.accuracyDown) {
-                const missChance = 30; // 30% 빗나갈 확률
-                if (Math.random() * 100 < missChance) {
-                    turnLog.push(`[${this.monster.name}의 ${selectedSkill}] 빗나갔습니다!`);
-                    this.addTurnLog(turnLog);
-                    this.finalizeTurn();
-                    this.isPlayerTurn = true;
-                    return { success: true, damage: 0, log: this.getRecentLog() };
-                }
-            }
-            
-            this.character.hp.current = Math.max(0, this.character.hp.current - damage);
-            turnLog.push(`[${this.monster.name}의 ${selectedSkill}] ${damage.toLocaleString()} 피해를 입혔습니다!`);
-            
-            // 추가 효과
-            if (skillEffect.stun && Math.random() * 100 < skillEffect.stun) {
-                turnLog.push(`💫 ${this.character.name} 기절!`);
-            }
-            
-            if (skillEffect.burn) {
-                turnLog.push(`🔥 ${this.character.name} 화상!`);
-            }
-            
-            if (skillEffect.bleed) {
-                turnLog.push(`🩸 ${this.character.name} 출혈!`);
-            }
-            
-            if (skillEffect.defenseDown) {
-                turnLog.push(`🛡️ ${this.character.name}의 방어력 감소!`);
-            }
-            
-            if (skillEffect.goldSteal) {
-                turnLog.push(`💰 골드 ${skillEffect.goldSteal.toLocaleString()} 소실!`);
-            }
-            
-        } else if (skillEffect.type === 'debuff') {
-            turnLog.push(`[${this.monster.name}의 ${selectedSkill}] ${skillEffect.description}`);
-            
-            if (skillEffect.accuracyDown) {
-                turnLog.push(`🎯 ${this.character.name}의 명중률 ${skillEffect.accuracyDown}% 감소! (${skillEffect.duration}턴)`);
-            }
-            
-            if (skillEffect.speedDown) {
-                turnLog.push(`🐌 ${this.character.name}의 속도 ${skillEffect.speedDown} 감소! (${skillEffect.duration}턴)`);
-            }
-            
-        } else if (skillEffect.type === 'buff') {
-            turnLog.push(`[${this.monster.name}의 ${selectedSkill}] ${skillEffect.description}`);
-            
-            if (skillEffect.attackUp) {
-                turnLog.push(`⚔️ ${this.monster.name}의 공격력 ${skillEffect.attackUp} 증가! (${skillEffect.duration}턴)`);
-            }
-        }
-        
-        turnLog.push(`${this.character.name} HP: ${this.character.hp.current.toLocaleString()}/${this.character.hp.max.toLocaleString()}`);
-        
-        this.addTurnLog(turnLog);
-        this.finalizeTurn();
-        
-        if (this.character.hp.current <= 0) {
-            return this.endBattle(false);
-        }
-        
-        this.isPlayerTurn = true;
-        return { success: true, log: this.getRecentLog() };
-    }
-
     // 전투 종료
     endBattle(playerWon) {
         this.isActive = false;
@@ -1839,7 +1497,7 @@ class RPGBattle {
         
         if (playerWon) {
             endLog.push(`✅ 승리!`);
-            endLog.push(`${this.monster.name}을(를) 처치했습니다!`);
+            endLog.push(`${this.tempObj.name.monster}을(를) 처치했습니다!`);
             
             // 보상 지급
             const rewards = this.monster.rewards;
@@ -1854,6 +1512,10 @@ class RPGBattle {
             
             this.addTurnLog(endLog);
             
+            // tempObj 상태를 원본 객체에 동기화
+            this.character.hp.current = this.tempObj.stat.player.hp;
+            this.monster.hp.current = this.tempObj.stat.monster.hp;
+            
             return {
                 success: true,
                 victory: true,
@@ -1862,9 +1524,13 @@ class RPGBattle {
             };
         } else {
             endLog.push(`💀 패배...`);
-            endLog.push(`${this.character.name}이(가) 쓰러졌습니다.`);
+            endLog.push(`${this.tempObj.name.player}이(가) 쓰러졌습니다.`);
             
             this.addTurnLog(endLog);
+            
+            // tempObj 상태를 원본 객체에 동기화
+            this.character.hp.current = this.tempObj.stat.player.hp;
+            this.monster.hp.current = this.tempObj.stat.monster.hp;
             
             return {
                 success: true,
@@ -1878,18 +1544,8 @@ class RPGBattle {
         return {
             turn: this.turn,
             isActive: this.isActive,
-            isPlayerTurn: this.isPlayerTurn,
-            character: {
-                name: this.character.name,
-                hp: this.character.hp.current,
-                maxHp: this.character.hp.max
-            },
-            monster: {
-                name: this.monster.name,
-                hp: this.monster.hp,
-                maxHp: this.monster.maxHp
-            },
-            log: [...this.battleLog]
+            tempObj: this.tempObj,
+            log: this.getRecentLog()
         };
     }
 }
@@ -1906,8 +1562,6 @@ module.exports = {
     dungeonManager,
     RPGMonsterManager,
     monsterManager,
-    RPGSkillEffectDatabase,
-    skillEffectDB,
     RPGStats,
     RPGResource,
     RPGLevel,

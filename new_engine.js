@@ -9,6 +9,12 @@ const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
 const { wrapper } = require('axios-cookiejar-support');
 const { CookieJar } = require('tough-cookie');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+);
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -2563,10 +2569,10 @@ class RPGUser {
     // ==================== 캐릭터 정보 ====================
     getCharacterInfo() {
         const info = [];
-        info.push(`[ 정보 ]`);
+        info.push(`[ ${this.name} 캐릭터 정보 ]`);
         info.push(`[${this.job}] ${this.name}`);
         info.push(`Lv.${this.level.level} (${this.level.exp}/${this.level.getRequiredExp()})`);
-        info.push(`HP: ${this.hp.current}/${this.hp.max}`);
+        info.push(`HP: ${this.hp.max}`);
         info.push(``);
         info.push(`· 스탯`);
         info.push(`  힘: ${this.stats.power} | 속도: ${this.stats.speed}`);
@@ -3901,6 +3907,30 @@ client.on('chat', async (data, channel) => {
         if (! sender) return;
         
         if (! bot) return;
+
+        if (channel.channelId + '' === '18448110985554752') {
+            try {
+                const today = new Date().toISOString().slice(0, 10);
+                const { data: existing } = await supabase
+                    .from('chat_counts')
+                    .select('id, count')
+                    .eq('user_id', sender.userId + '')
+                    .eq('date', today)
+                    .single();
+                if (existing) {
+                    await supabase.from('chat_counts').update({ count: existing.count + 1, nickname: sender.nickname }).eq('id', existing.id);
+                } else {
+                    await supabase.from('chat_counts').insert({
+                        user_id: sender.userId + '',
+                        nickname: sender.nickname,
+                        date: today,
+                        count: 1
+                    });
+                }
+            } catch (e) {
+                console.log('채팅 수 기록 실패:', e);
+            }
+        }
         
         const reply = str => {
             if(roomtype != "OM") {
@@ -4238,6 +4268,66 @@ client.on('chat', async (data, channel) => {
 
         if (msg == "!방번호") {
             channel.sendChat("✅ channel.channelId: " + roomid);
+            return;
+        }
+
+        if (msg.startsWith("!닉변") && channel.channelId + '' === '18448110985554752') {
+            const mentionId = data.chat.attachment?.mentions?.[0]?.user_id;
+            if (!mentionId) {
+                channel.sendChat("❌ 멘션한 유저가 없습니다.\n사용법: !닉변 @유저");
+                return;
+            }
+            try {
+                const { data: logs, error } = await supabase
+                    .from('join_leave_logs')
+                    .select('*')
+                    .eq('user_id', mentionId + '')
+                    .like('event_type', '프로필변경%')
+                    .order('timestamp', { ascending: false });
+                if (error || !logs || logs.length === 0) {
+                    channel.sendChat("❌ 해당 유저의 닉변 기록이 없습니다.");
+                    return;
+                }
+                const lines = logs.map((log, i) => `${i + 1}. ${log.event_type} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`);
+                channel.sendChat(`📋 닉변 기록 (${logs.length}건)\n\n${lines.join('\n')}`);
+            } catch (e) {
+                console.log('닉변 조회 실패:', e);
+                channel.sendChat("❌ 닉변 기록 조회 중 오류가 발생했습니다.");
+            }
+            return;
+        }
+
+        if (msg == "!채팅수") {
+            try {
+                const { data: ranks, error } = await supabase
+                    .from('chat_counts')
+                    .select('user_id, nickname, count')
+                    .order('count', { ascending: false });
+                if (error || !ranks || ranks.length === 0) {
+                    channel.sendChat("❌ 채팅 수 기록이 없습니다.");
+                    return;
+                }
+                const merged = {};
+                for (const r of ranks) {
+                    if (!merged[r.user_id]) {
+                        merged[r.user_id] = { nickname: r.nickname, count: 0 };
+                    }
+                    merged[r.user_id].count += r.count;
+                    if (r.nickname) merged[r.user_id].nickname = r.nickname;
+                }
+                const sorted = Object.entries(merged)
+                    .sort((a, b) => b[1].count - a[1].count);
+                const lines = [];
+                for (let i = 0; i < sorted.length; i++) {
+                    const [uid, info] = sorted[i];
+                    if (i === 10) lines.push(VIEWMORE);
+                    lines.push(`${i + 1}위. ${info.nickname || uid} - ${info.count}회`);
+                }
+                channel.sendChat(`📊 채팅수 랭킹\n\n${lines.join('\n')}`);
+            } catch (e) {
+                console.log('채팅수 조회 실패:', e);
+                channel.sendChat("❌ 채팅수 조회 중 오류가 발생했습니다.");
+            }
             return;
         }
 
@@ -11143,7 +11233,10 @@ client.on('chat', async (data, channel) => {
                                 battleMsg.push(`━━━━━━━━━━━━━━`);
                                 battleMsg.push(``);
                                 battleMsg.push(`[ 행동 선택 ]`);
-                                battleMsg.push(`/RPGenius 공격 | 스킬 [스킬명] | 아이템 [아이템명] | 도망`);
+                                battleMsg.push(`/RPGenius 공격 - 일반 공격`);
+                                battleMsg.push(`/RPGenius 스킬 [스킬명] - 스킬 사용`);
+                                battleMsg.push(`/RPGenius 아이템 [아이템명] - 아이템 사용`);
+                                battleMsg.push(`/RPGenius 도망 - 전투에서 도망`);
                             }
                         }
                     }
@@ -11320,6 +11413,72 @@ client.on('error', (err) => {
 
 client.on('disconnected', (reason) => {
     console.log(`연결이 끊어졌습니다.\n사유: ${reason}`);
+});
+
+client.on('user_join', async (joinLog, channel, user, feed) => {
+    if (channel.channelId != '18448110985554752') return;
+    const uid = user ? user.userId + '' : null;
+    const nick = user ? user.nickname : null;
+    try {
+        const { data: prevLogs } = await supabase
+            .from('join_leave_logs')
+            .select('*')
+            .eq('user_id', uid)
+            .not('event_type', 'like', '프로필변경%')
+            .order('timestamp', { ascending: false });
+
+        await supabase.from('join_leave_logs').insert({
+            event_type: '입장',
+            user_id: uid,
+            nickname: nick,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!prevLogs || prevLogs.length === 0) {
+            channel.sendChat(`👋 ${nick}님, 처음 오셨네요! 환영합니다!`);
+        } else {
+            const lines = prevLogs.slice(0, 10).map((log, i) =>
+                `${i + 1}. [${log.event_type}] ${log.nickname || '?'} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`
+            );
+            channel.sendChat(`📋 ${nick}님의 이전 입/퇴장 로그\n${VIEWMORE}\n${lines.join('\n')}`);
+        }
+    } catch (e) {
+        console.log('입장 로그 기록 실패:', e);
+    }
+});
+
+client.on('user_left', async (leftLog, channel, user, feed) => {
+    if (channel.channelId != '18448110985554752') return;
+    const uid = user ? user.userId + '' : null;
+    const nick = user ? user.nickname : null;
+    try {
+        const kicker = channel.getUserInfo(leftLog.sender);
+
+        await supabase.from('join_leave_logs').insert({
+            event_type: (kicker ? `강퇴 by ${kicker.nickname}` : '퇴장'),
+            user_id: uid,
+            nickname: nick,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) {
+        console.log('퇴장 로그 기록 실패:', e);
+    }
+});
+
+client.on('profile_changed', async (channel, lastInfo, user) => {
+    if (channel.channelId != '18448110985554752') return;
+    try {
+        const oldNick = lastInfo ? lastInfo.nickname : null;
+        const newNick = user ? user.nickname : null;
+        await supabase.from('join_leave_logs').insert({
+            event_type: `프로필변경 (${oldNick} → ${newNick})`,
+            user_id: user ? user.userId + '' : null,
+            nickname: newNick,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) {
+        console.log('프로필 변경 로그 기록 실패:', e);
+    }
 });
 
 async function registerDevice(authClient) {
