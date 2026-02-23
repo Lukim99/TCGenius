@@ -3908,7 +3908,7 @@ client.on('chat', async (data, channel) => {
         
         if (! bot) return;
 
-        if (channel.channelId + '' === '18448110985554752') {
+        if (channel.channelId + '' === '18448110985554752' && ! ['봇', '오픈채팅봇'].includes(sender.nickname)) {
             try {
                 const today = new Date().toISOString().slice(0, 10);
                 const { data: existing } = await supabase
