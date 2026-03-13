@@ -4313,6 +4313,11 @@ client.on('chat', async (data, channel) => {
                     monthAgo.setDate(monthAgo.getDate() - 30);
                     dateFilter = monthAgo.toISOString().slice(0, 10);
                     title = "📊 채팅수 랭킹 (최근 한 달)";
+                } else if (args[1] === "이번달" || args[1] === "이번달") {
+                    const now = new Date();
+                    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    dateFilter = firstDayOfMonth.toISOString().slice(0, 10);
+                    title = "📊 채팅수 랭킹 (이번 달)";
                 }
                 
                 let query = supabase
