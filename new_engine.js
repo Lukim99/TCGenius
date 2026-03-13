@@ -4297,12 +4297,34 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        if (msg == "!채팅수") {
+        if (msg.startsWith("!채팅수")) {
             try {
-                const { data: ranks, error } = await supabase
+                const args = msg.split(' ');
+                let dateFilter = null;
+                let title = "📊 채팅수 랭킹";
+                
+                if (args[1] === "1주" || args[1] === "1주일") {
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    dateFilter = weekAgo.toISOString().slice(0, 10);
+                    title = "📊 채팅수 랭킹 (최근 1주)";
+                } else if (args[1] === "한달" || args[1] === "1달" || args[1] === "1개월") {
+                    const monthAgo = new Date();
+                    monthAgo.setDate(monthAgo.getDate() - 30);
+                    dateFilter = monthAgo.toISOString().slice(0, 10);
+                    title = "📊 채팅수 랭킹 (최근 한 달)";
+                }
+                
+                let query = supabase
                     .from('chat_counts')
-                    .select('user_id, nickname, count')
-                    .order('count', { ascending: false });
+                    .select('user_id, nickname, count, date');
+                
+                if (dateFilter) {
+                    query = query.gte('date', dateFilter);
+                }
+                
+                const { data: ranks, error } = await query.order('count', { ascending: false });
+                
                 if (error || !ranks || ranks.length === 0) {
                     channel.sendChat("❌ 채팅 수 기록이 없습니다.");
                     return;
@@ -4323,7 +4345,7 @@ client.on('chat', async (data, channel) => {
                     if (i === 10) lines.push(VIEWMORE);
                     lines.push(`${i + 1}위. ${info.nickname || uid} - ${info.count.toLocaleString()}회`);
                 }
-                channel.sendChat(`📊 채팅수 랭킹\n\n${lines.join('\n')}`);
+                channel.sendChat(`${title}\n\n${lines.join('\n')}`);
             } catch (e) {
                 console.log('채팅수 조회 실패:', e);
                 channel.sendChat("❌ 채팅수 조회 중 오류가 발생했습니다.");
