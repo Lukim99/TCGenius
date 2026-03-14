@@ -4630,6 +4630,32 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
+        if (msg.startsWith("/닉변") && channel.channelId + '' === '18477786254222718') {
+            const mentionId = data.chat.attachment?.mentions?.[0]?.user_id;
+            if (!mentionId) {
+                channel.sendChat("❌ 멘션한 유저가 없습니다.\n사용법: /닉변 @유저");
+                return;
+            }
+            try {
+                const { data: logs, error } = await supabase
+                    .from('join_leave_logs')
+                    .select('*')
+                    .eq('user_id', mentionId + '')
+                    .like('event_type', '프로필변경%')
+                    .order('timestamp', { ascending: false });
+                if (error || !logs || logs.length === 0) {
+                    channel.sendChat("❌ 해당 유저의 닉변 기록이 없습니다.");
+                    return;
+                }
+                const lines = logs.map((log, i) => `${i + 1}. ${log.event_type.replace('프로필변경 (', '').replace(')', '')} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`);
+                channel.sendChat(`📋 닉변 기록 (${logs.length}건)\n\n${lines.join('\n')}`);
+            } catch (e) {
+                console.log('닉변 조회 실패:', e);
+                channel.sendChat("❌ 닉변 기록 조회 중 오류가 발생했습니다.");
+            }
+            return;
+        }
+
         if (msg.startsWith("!채팅수")) {
             try {
                 const args = msg.split(' ');
@@ -11826,7 +11852,7 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
-    if (channel.channelId + '' != '18448110985554752') return;
+    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
         const newNick = user ? user.nickname : null;
