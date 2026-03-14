@@ -4162,7 +4162,7 @@ client.on('chat', async (data, channel) => {
                         const currentPoints = Number(account.points || 0);
                     
                         if (currentPoints < amount) {
-                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
+                            channel.sendChat(`❌ 포인트가 부족합니다.\n현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
                             return;
                         }
                     
@@ -4190,7 +4190,7 @@ client.on('chat', async (data, channel) => {
                         const currentPoints = Number(account.points || 0);
                     
                         if (currentPoints < amount) {
-                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
+                            channel.sendChat(`❌ 포인트가 부족합니다.\n현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
                             return;
                         }
                     
@@ -4261,7 +4261,7 @@ client.on('chat', async (data, channel) => {
                         const targetAccount = await getRoomPointAccount(roomid, firstMentionId, firstMentionInfo ? firstMentionInfo.nickname : '');
 
                         if (Number(senderAccount.points || 0) < amount) {
-                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${Number(senderAccount.points || 0).toLocaleString()}P`);
+                            channel.sendChat(`❌ 포인트가 부족합니다.\n현재 보유 포인트: ${Number(senderAccount.points || 0).toLocaleString()}P`);
                             return;
                         }
 
@@ -4289,7 +4289,7 @@ client.on('chat', async (data, channel) => {
                             : currentPoints - amount;
 
                         if (nextPoints < 0) {
-                            channel.sendChat(`❌ 차감 후 포인트가 음수가 됩니다. 현재 포인트: ${currentPoints.toLocaleString()}P`);
+                            channel.sendChat(`❌ 차감 후 포인트가 음수가 됩니다.\n현재 포인트: ${currentPoints.toLocaleString()}P`);
                             return;
                         }
 
@@ -4333,7 +4333,7 @@ client.on('chat', async (data, channel) => {
                     }
                 } catch (e) {
                     console.log('1547 room command error:', e);
-                    channel.sendChat('❌ 명령 처리 중 오류가 발생했습니다. Supabase 설정과 테이블 구성을 확인해주세요.');
+                    channel.sendChat('❌ 명령 처리 중 오류가 발생했습니다.');
                     return;
                 }
             }
