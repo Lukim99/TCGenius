@@ -4136,6 +4136,16 @@ client.on('chat', async (data, channel) => {
                     const firstMentionId = mentionIds[0];
                     const allUserInfo = Array.from(channel.getAllUserInfo());
                     const firstMentionInfo = firstMentionId ? allUserInfo.find(info => info.userId + '' === firstMentionId) : null;
+                    const amountMatches = slashBody.match(/-?\d+/g) || [];
+                    const parsedAmounts = amountMatches.map(num => Number(num)).filter(num => Number.isInteger(num));
+                    const firstAmount = parsedAmounts[0];
+                    const mentionStrippedArgLine = commandArgFirstLine
+                        .replace(/@\S+/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    const nonMentionTokens = mentionStrippedArgLine ? mentionStrippedArgLine.split(' ').filter(Boolean) : [];
+                    const trailingAmountToken = nonMentionTokens[nonMentionTokens.length - 1];
+                    const lastAmount = /^-?\d+$/.test(trailingAmountToken || '') ? Number(trailingAmountToken) : undefined;
                     const fishCatalog = [
                         { name: '멸치', minSize: 4, maxSize: 12, minValue: 10, maxValue: 40 },
                         { name: '붕어', minSize: 12, maxSize: 35, minValue: 40, maxValue: 120 },
@@ -4152,7 +4162,7 @@ client.on('chat', async (data, channel) => {
                     }
 
                     if (commandName === '홀') {
-                        const amount = Number(commandArgs[0]);
+                        const amount = firstAmount;
                         if (!Number.isInteger(amount) || amount <= 0) {
                             channel.sendChat('❌ 사용법: /홀 200');
                             return;
@@ -4180,7 +4190,7 @@ client.on('chat', async (data, channel) => {
                     }
 
                     if (commandName === '짝') {
-                        const amount = Number(commandArgs[0]);
+                        const amount = firstAmount;
                         if (!Number.isInteger(amount) || amount <= 0) {
                             channel.sendChat('❌ 사용법: /짝 200');
                             return;
@@ -4247,7 +4257,7 @@ client.on('chat', async (data, channel) => {
                     }
 
                     if (commandName === '포인트이체') {
-                        const amount = Number(commandArgs.find(arg => /^-?\d+$/.test(arg)));
+                        const amount = lastAmount;
                         if (!firstMentionId || !Number.isInteger(amount) || amount <= 0) {
                             channel.sendChat('❌ 사용법: /포인트이체 @유저 100');
                             return;
@@ -4272,7 +4282,7 @@ client.on('chat', async (data, channel) => {
                     }
 
                     if (commandName === '포인트지급' || commandName === '포인트차감') {
-                        const amount = Number(commandArgs.find(arg => /^-?\d+$/.test(arg)));
+                        const amount = lastAmount;
                         if (!isSenderManager) {
                             channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.');
                             return;
@@ -4294,7 +4304,7 @@ client.on('chat', async (data, channel) => {
                         }
 
                         await setRoomPointAccountById(targetAccount.id, firstMentionInfo ? firstMentionInfo.nickname : (targetAccount.nickname || ''), nextPoints);
-                        sendChat(`✅ ${firstMentionInfo ? firstMentionInfo.nickname : '대상'}님에게 ${amount.toLocaleString()}P ${commandName === '포인트지급' ? '지급' : '차감'} 완료. 현재 포인트: ${nextPoints.toLocaleString()}P`, [firstMentionId]);
+                        sendChat(`✅ ${firstMentionInfo ? firstMentionInfo.nickname : '대상'}님에게 ${amount.toLocaleString()}P를 ${commandName === '포인트지급' ? '지급' : '차감'}했습니다!\n현재 포인트: ${nextPoints.toLocaleString()}P`, [firstMentionId]);
                         return;
                     }
 
