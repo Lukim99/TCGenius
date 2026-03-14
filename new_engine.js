@@ -4004,7 +4004,8 @@ client.on('chat', async (data, channel) => {
         const roomid = channel.channelId;
         const roomtype = (channel._channel.info == undefined ? "OM" : channel._channel.info.type);
         const isReply = (data.originalType === node_kakao.KnownChatType.REPLY);
-        const isManager = (bot && bot.perm >= 4);
+        const isManager = (bot && (bot.perm == 4 || bot.perm == 1));
+        const isSenderManager = sender.perm == 4 || sender.perm == 1;
 
         
         
@@ -4133,7 +4134,8 @@ client.on('chat', async (data, channel) => {
                         ? data.chat.attachment.mentions.map(m => m.user_id + '')
                         : [];
                     const firstMentionId = mentionIds[0];
-                    const firstMentionInfo = firstMentionId ? channel.getAllUserInfo().find(info => info.userId + '' === firstMentionId) : null;
+                    const allUserInfo = Array.from(channel.getAllUserInfo());
+                    const firstMentionInfo = firstMentionId ? allUserInfo.find(info => info.userId + '' === firstMentionId) : null;
                     const fishCatalog = [
                         { name: '멸치', minSize: 4, maxSize: 12, minValue: 10, maxValue: 40 },
                         { name: '붕어', minSize: 12, maxSize: 35, minValue: 40, maxValue: 120 },
@@ -4271,7 +4273,7 @@ client.on('chat', async (data, channel) => {
 
                     if (commandName === '포인트지급' || commandName === '포인트차감') {
                         const amount = Number(commandArgs.find(arg => /^-?\d+$/.test(arg)));
-                        if (!isManager) {
+                        if (!isSenderManager) {
                             channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.');
                             return;
                         }
@@ -4297,7 +4299,7 @@ client.on('chat', async (data, channel) => {
                     }
 
                     if (commandName === '공식질문등록') {
-                        if (!isManager) {
+                        if (!isSenderManager) {
                             channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.');
                             return;
                         }
