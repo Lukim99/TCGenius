@@ -59,6 +59,7 @@ let isRestoring = false;
 let restoringChannel = null;
 
 let deliver = {};
+let fishingUsers = {};
 
 // RPG 배틀 상태 관리
 const activeBattles = new Map(); // userId -> RPGBattle instance
@@ -3890,6 +3891,109 @@ async function joinOpenChat(channel, link, reply) {
     return true;
 }
 
+async function getRoomPointAccount(roomId, userId, nickname) {
+    const { data, error } = await supabase
+        .from('room_points')
+        .select('id, room_id, user_id, nickname, points')
+        .eq('room_id', roomId + '')
+        .eq('user_id', userId + '')
+        .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+        if (nickname && data.nickname !== nickname) {
+            await supabase
+                .from('room_points')
+                .update({ nickname, updated_at: new Date().toISOString() })
+                .eq('id', data.id);
+            data.nickname = nickname;
+        }
+        return data;
+    }
+
+    const insertPayload = {
+        room_id: roomId + '',
+        user_id: userId + '',
+        nickname: nickname || '',
+        points: 0,
+        updated_at: new Date().toISOString()
+    };
+
+    const { data: inserted, error: insertError } = await supabase
+        .from('room_points')
+        .insert(insertPayload)
+        .select('id, room_id, user_id, nickname, points')
+        .single();
+
+    if (insertError) throw insertError;
+    return inserted;
+}
+
+async function setRoomPointAccountById(id, nickname, points) {
+    const { data, error } = await supabase
+        .from('room_points')
+        .update({
+            nickname,
+            points,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select('id, room_id, user_id, nickname, points')
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+async function getOfficialQuestion(roomId, question) {
+    const { data, error } = await supabase
+        .from('official_questions')
+        .select('id, room_id, question, answer, created_by, updated_by')
+        .eq('room_id', roomId + '')
+        .eq('question', question)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data;
+}
+
+async function upsertOfficialQuestion(roomId, question, answer, userId) {
+    const existing = await getOfficialQuestion(roomId, question);
+
+    if (existing) {
+        const { data, error } = await supabase
+            .from('official_questions')
+            .update({
+                answer,
+                updated_by: userId + '',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', existing.id)
+            .select('id, room_id, question, answer, created_by, updated_by')
+            .single();
+
+        if (error) throw error;
+        return data;
+    }
+
+    const { data, error } = await supabase
+        .from('official_questions')
+        .insert({
+            room_id: roomId + '',
+            question,
+            answer,
+            created_by: userId + '',
+            updated_by: userId + '',
+            updated_at: new Date().toISOString()
+        })
+        .select('id, room_id, question, answer, created_by, updated_by')
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
 //chat on
 client.on('chat', async (data, channel) => {
     try {
@@ -4013,6 +4117,223 @@ client.on('chat', async (data, channel) => {
                 });
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        if (channel.channelId + '' === '18477786254222718') {
+            if (msg.startsWith('/')) {
+                try {
+                    const slashBody = data.text.slice(1);
+                    const firstLine = slashBody.split('\n')[0].trim();
+                    const spaceIndex = firstLine.indexOf(' ');
+                    const commandName = (spaceIndex === -1 ? firstLine : firstLine.slice(0, spaceIndex)).trim();
+                    const commandArgFirstLine = spaceIndex === -1 ? '' : firstLine.slice(spaceIndex + 1).trim();
+                    const commandArgs = commandArgFirstLine ? commandArgFirstLine.split(/\s+/).filter(Boolean) : [];
+                    const mentionIds = Array.isArray(data.chat.attachment?.mentions)
+                        ? data.chat.attachment.mentions.map(m => m.user_id + '')
+                        : [];
+                    const firstMentionId = mentionIds[0];
+                    const firstMentionInfo = firstMentionId ? channel.getAllUserInfo().find(info => info.userId + '' === firstMentionId) : null;
+                    const fishCatalog = [
+                        { name: '멸치', minSize: 4, maxSize: 12, minValue: 10, maxValue: 40 },
+                        { name: '붕어', minSize: 12, maxSize: 35, minValue: 40, maxValue: 120 },
+                        { name: '고등어', minSize: 20, maxSize: 55, minValue: 80, maxValue: 220 },
+                        { name: '광어', minSize: 30, maxSize: 90, minValue: 150, maxValue: 450 },
+                        { name: '참치', minSize: 80, maxSize: 220, minValue: 400, maxValue: 1200 },
+                        { name: '잉어', minSize: 180, maxSize: 420, minValue: 1200, maxValue: 3000 }
+                    ];
+
+                    if (commandName === '포인트' || commandName === '잔고') {
+                        const account = await getRoomPointAccount(roomid, sender.userId, sender.nickname);
+                        channel.sendChat(`💰 ${sender.nickname}님의 포인트: ${Number(account.points || 0).toLocaleString()}P`);
+                        return;
+                    }
+
+                    if (commandName === '홀') {
+                        const amount = Number(commandArgs[0]);
+                        if (!Number.isInteger(amount) || amount <= 0) {
+                            channel.sendChat('❌ 사용법: /홀 200');
+                            return;
+                        }
+                    
+                        const account = await getRoomPointAccount(roomid, sender.userId, sender.nickname);
+                        const currentPoints = Number(account.points || 0);
+                    
+                        if (currentPoints < amount) {
+                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
+                            return;
+                        }
+                    
+                        const rolledNumber = Math.floor(Math.random() * 100) + 1;
+                        const isOdd = rolledNumber % 2 === 1;
+                        const nextPoints = isOdd ? currentPoints + amount : currentPoints - amount;
+                    
+                        await setRoomPointAccountById(account.id, sender.nickname, nextPoints);
+                        channel.sendChat(
+                            `🎲 나온 숫자: ${rolledNumber}\n` +
+                            `${isOdd ? `✅ 홀수입니다! ${amount.toLocaleString()}P를 획득했습니다.` : `❌ 짝수입니다! ${amount.toLocaleString()}P를 잃었습니다.`}\n` +
+                            `💰 현재 포인트: ${nextPoints.toLocaleString()}P`
+                        );
+                        return;
+                    }
+
+                    if (commandName === '짝') {
+                        const amount = Number(commandArgs[0]);
+                        if (!Number.isInteger(amount) || amount <= 0) {
+                            channel.sendChat('❌ 사용법: /짝 200');
+                            return;
+                        }
+                    
+                        const account = await getRoomPointAccount(roomid, sender.userId, sender.nickname);
+                        const currentPoints = Number(account.points || 0);
+                    
+                        if (currentPoints < amount) {
+                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${currentPoints.toLocaleString()}P`);
+                            return;
+                        }
+                    
+                        const rolledNumber = Math.floor(Math.random() * 100) + 1;
+                        const isOdd = rolledNumber % 2 === 1;
+                        const nextPoints = isOdd ? currentPoints + amount : currentPoints - amount;
+                    
+                        await setRoomPointAccountById(account.id, sender.nickname, nextPoints);
+                        channel.sendChat(
+                            `🎲 나온 숫자: ${rolledNumber}\n` +
+                            `${!isOdd ? `✅ 짝수입니다! ${amount.toLocaleString()}P를 획득했습니다.` : `❌ 홀수입니다! ${amount.toLocaleString()}P를 잃었습니다.`}\n` +
+                            `💰 현재 포인트: ${nextPoints.toLocaleString()}P`
+                        );
+                        return;
+                    }
+                    
+                    if (commandName === '낚시') {
+                        if (fishingUsers[senderID]) {
+                            channel.sendChat('❌ 이미 낚시 중입니다. 물고기가 걸릴 때까지 기다려주세요.');
+                            return;
+                        }
+                    
+                        fishingUsers[senderID] = true;
+                        const waitSeconds = Math.floor(Math.random() * 26) + 5;
+                    
+                        channel.sendChat(`🎣 ${sender.nickname}님이 낚싯대를 던졌습니다...\n${waitSeconds}초 후 결과가 나옵니다.`);
+                    
+                        setTimeout(async () => {
+                            try {
+                                const fish = fishCatalog[Math.floor(Math.random() * fishCatalog.length)];
+                                const size = Math.floor(Math.random() * (fish.maxSize - fish.minSize + 1)) + fish.minSize;
+                                const value = Math.floor(Math.random() * (fish.maxValue - fish.minValue + 1)) + fish.minValue;
+                    
+                                const account = await getRoomPointAccount(roomid, sender.userId, sender.nickname);
+                                const nextPoints = Number(account.points || 0) + value;
+                    
+                                await setRoomPointAccountById(account.id, sender.nickname, nextPoints);
+                    
+                                channel.sendChat(
+                                    `🐟 ${sender.nickname}님이 ${fish.name}를 낚았습니다!\n` +
+                                    `📏 크기: ${size}cm\n` +
+                                    `💵 가치: ${value.toLocaleString()}P\n` +
+                                    `💰 현재 포인트: ${nextPoints.toLocaleString()}P`
+                                );
+                            } catch (fishingError) {
+                                console.log('fishing game error:', fishingError);
+                                channel.sendChat('❌ 낚시 결과를 처리하는 중 오류가 발생했습니다.');
+                            } finally {
+                                delete fishingUsers[senderID];
+                            }
+                        }, waitSeconds * 1000);
+                    
+                        return;
+                    }
+
+                    if (commandName === '포인트이체') {
+                        const amount = Number(commandArgs.find(arg => /^-?\d+$/.test(arg)));
+                        if (!firstMentionId || !Number.isInteger(amount) || amount <= 0) {
+                            channel.sendChat('❌ 사용법: /포인트이체 @유저 100');
+                            return;
+                        }
+                        if (firstMentionId === senderID) {
+                            channel.sendChat('❌ 본인에게는 포인트를 이체할 수 없습니다.');
+                            return;
+                        }
+
+                        const senderAccount = await getRoomPointAccount(roomid, sender.userId, sender.nickname);
+                        const targetAccount = await getRoomPointAccount(roomid, firstMentionId, firstMentionInfo ? firstMentionInfo.nickname : '');
+
+                        if (Number(senderAccount.points || 0) < amount) {
+                            channel.sendChat(`❌ 포인트가 부족합니다. 현재 보유 포인트: ${Number(senderAccount.points || 0).toLocaleString()}P`);
+                            return;
+                        }
+
+                        await setRoomPointAccountById(senderAccount.id, sender.nickname, Number(senderAccount.points || 0) - amount);
+                        await setRoomPointAccountById(targetAccount.id, firstMentionInfo ? firstMentionInfo.nickname : (targetAccount.nickname || ''), Number(targetAccount.points || 0) + amount);
+                        sendChat(`✅ ${sender.nickname}님이 ${firstMentionInfo ? firstMentionInfo.nickname : '대상'}님에게 ${amount.toLocaleString()}P를 이체했습니다.`, [firstMentionId]);
+                        return;
+                    }
+
+                    if (commandName === '포인트지급' || commandName === '포인트차감') {
+                        const amount = Number(commandArgs.find(arg => /^-?\d+$/.test(arg)));
+                        if (!isManager) {
+                            channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.');
+                            return;
+                        }
+                        if (!firstMentionId || !Number.isInteger(amount) || amount <= 0) {
+                            channel.sendChat(`❌ 사용법: /${commandName} @유저 100`);
+                            return;
+                        }
+
+                        const targetAccount = await getRoomPointAccount(roomid, firstMentionId, firstMentionInfo ? firstMentionInfo.nickname : '');
+                        const currentPoints = Number(targetAccount.points || 0);
+                        const nextPoints = commandName === '포인트지급'
+                            ? currentPoints + amount
+                            : currentPoints - amount;
+
+                        if (nextPoints < 0) {
+                            channel.sendChat(`❌ 차감 후 포인트가 음수가 됩니다. 현재 포인트: ${currentPoints.toLocaleString()}P`);
+                            return;
+                        }
+
+                        await setRoomPointAccountById(targetAccount.id, firstMentionInfo ? firstMentionInfo.nickname : (targetAccount.nickname || ''), nextPoints);
+                        sendChat(`✅ ${firstMentionInfo ? firstMentionInfo.nickname : '대상'}님에게 ${amount.toLocaleString()}P ${commandName === '포인트지급' ? '지급' : '차감'} 완료. 현재 포인트: ${nextPoints.toLocaleString()}P`, [firstMentionId]);
+                        return;
+                    }
+
+                    if (commandName === '공식질문등록') {
+                        if (!isManager) {
+                            channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.');
+                            return;
+                        }
+
+                        const registrationBody = slashBody.slice('공식질문등록'.length).trim();
+                        const separatorIndex = registrationBody.indexOf('-');
+                        if (separatorIndex === -1) {
+                            channel.sendChat('❌ 사용법: /공식질문등록 질문-답변');
+                            return;
+                        }
+
+                        const question = registrationBody.slice(0, separatorIndex).trim();
+                        const answer = registrationBody.slice(separatorIndex + 1).trim();
+
+                        if (!question || !answer) {
+                            channel.sendChat('❌ 질문과 답변을 모두 입력해주세요.\n사용법: /공식질문등록 질문-답변');
+                            return;
+                        }
+
+                        await upsertOfficialQuestion(roomid, question, answer, sender.userId);
+                        channel.sendChat(`✅ 공식질문 등록 완료\n질문: ${question}\n답변:\n${answer}`);
+                        return;
+                    }
+
+                    if (commandName) {
+                        const officialQuestion = await getOfficialQuestion(roomid, commandName);
+                        if (officialQuestion) {
+                            channel.sendChat(officialQuestion.answer);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.log('1547 room command error:', e);
+                    channel.sendChat('❌ 명령 처리 중 오류가 발생했습니다. Supabase 설정과 테이블 구성을 확인해주세요.');
+                    return;
+                }
             }
         }
 
@@ -11443,7 +11764,7 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
-    if (channel.channelId + '' != '18448110985554752') return;
+    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -11462,7 +11783,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
         });
 
         if (!prevLogs || prevLogs.length === 0) {
-            channel.sendChat(`👋 ${nick} 환영해!\n닉네임은 두 글자 + 성별로 바꿔줘\n(예 : 나야 여)`);
+            if (channel.channelId + '' == '18448110985554752') channel.sendChat(`👋 ${nick} 환영해!\n닉네임은 두 글자 + 성별로 바꿔줘\n(예 : 나야 여)`);
         } else {
             const lines = prevLogs.slice(0, 10).map((log, i) =>
                 `${i + 1}. [${log.event_type}] ${log.nickname || '?'} (${new Date(log.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })})`
@@ -11475,7 +11796,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
-    if (channel.channelId + '' != '18448110985554752') return;
+    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
