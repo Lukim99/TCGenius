@@ -4206,7 +4206,7 @@ client.on('chat', async (data, channel) => {
                     
                         const rolledNumber = Math.floor(Math.random() * 100) + 1;
                         const isOdd = rolledNumber % 2 === 1;
-                        const nextPoints = isOdd ? currentPoints + amount : currentPoints - amount;
+                        const nextPoints = !isOdd ? currentPoints + amount : currentPoints - amount;
                     
                         await setRoomPointAccountById(account.id, sender.nickname, nextPoints);
                         channel.sendChat(
@@ -4224,9 +4224,10 @@ client.on('chat', async (data, channel) => {
                         }
                     
                         fishingUsers[senderID] = true;
-                        const waitSeconds = Math.floor(Math.random() * 26) + 5;
+                        //const waitSeconds = Math.floor(Math.random() * 26) + 5;
+                        let waitSeconds = 0;
                     
-                        channel.sendChat(`🎣 ${sender.nickname}님이 낚싯대를 던졌습니다...\n${waitSeconds}초 후 결과가 나옵니다.`);
+                        //channel.sendChat(`🎣 ${sender.nickname}님이 낚싯대를 던졌습니다...\n${waitSeconds}초 후 결과가 나옵니다.`);
                     
                         setTimeout(async () => {
                             try {
