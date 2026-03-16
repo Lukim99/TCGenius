@@ -118,14 +118,21 @@ async function processAgentQuery(sessionId, channel, userMessage) {
     }
 
     let history = await chat.getHistory();
-    if (history.length > MAX_HISTORY_LENGTH) {
-        let slicedHistory = history.slice(history.length - MAX_HISTORY_LENGTH);
-        if (slicedHistory.length > 0 && slicedHistory[0].role !== 'user') {
-            slicedHistory.shift(); 
-        }
-        
-        session.chat = model.startChat({ history: slicedHistory });
+    let cleanedHistory = history.filter(msg => {
+        const hasFunctionCall = msg.parts.some(part => part.functionCall);
+        const hasFunctionResponse = msg.parts.some(part => part.functionResponse);
+        return !hasFunctionCall && !hasFunctionResponse;
+    });
+    if (cleanedHistory.length > MAX_HISTORY_LENGTH) {
+        cleanedHistory = cleanedHistory.slice(cleanedHistory.length - MAX_HISTORY_LENGTH);
     }
+    while (
+        cleanedHistory.length > 0 && 
+        (cleanedHistory[0].role !== 'user' || !cleanedHistory[0].parts.some(part => part.text))
+    ) {
+        cleanedHistory.shift(); 
+    }
+    session.chat = model.startChat({ history: cleanedHistory });
 
     session.timer = setTimeout(() => {
         chatSessions.delete(sessionId);
