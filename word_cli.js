@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// 파라미터 구조: node word_cli.js <command> <db_type> [search_mode] [keyword]
-const [, , command, dbType, searchMode, keyword] = process.argv;
+// 파라미터 구조: node word_cli.js <command> <db_type> <search_mode> <keyword> <length> <sort>
+const [, , command, dbType, searchMode, keyword, lengthOpt, sortOpt] = process.argv;
 
 const dbMap = {
     'all': { file: 'DB/allWords.txt', delimiter: '\n' },
@@ -27,75 +27,60 @@ if (!fs.existsSync(targetPath)) {
 
 try {
     const content = fs.readFileSync(targetPath, 'utf-8');
-    // 지정된 구분자로 분리 후 공백 제거 및 빈 문자열 필터링
     const words = content.split(dbInfo.delimiter).map(w => w.trim()).filter(w => w.length > 0);
 
     let results = [];
-    const limit = 50;
 
-    switch (command) {
-        case 'search':
-            if (!searchMode || !keyword) {
-                console.error('Error: search 명령어는 search_mode와 keyword가 필요합니다.');
-                process.exit(1);
-            }
-            if (searchMode === 'start') results = words.filter(w => w.startsWith(keyword));
-            else if (searchMode === 'end') results = words.filter(w => w.endsWith(keyword));
-            else if (searchMode === 'include') results = words.filter(w => w.includes(keyword));
-            else if (searchMode === 'exact') results = words.filter(w => w === keyword);
-            else {
-                console.error('Error: 지원하지 않는 검색 모드입니다.');
-                process.exit(1);
-            }
-
-            const output = results.slice(0, limit).join(', ');
-            const countText = results.length > limit ? ` (총 ${results.length}개 중 ${limit}개 표시)` : ` (총 ${results.length}개)`;
-            console.log(output ? output + countText : "검색 결과가 없습니다.");
-            break;
-
-        case 'verify':
-            // 특정 단어가 해당 DB에 존재하는지 정확히 확인 (true/false)
-            if (!keyword) {
-                console.error('Error: verify 명령어는 keyword가 필요합니다.');
-                process.exit(1);
-            }
-            const exists = words.includes(keyword);
-            console.log(exists ? "TRUE: 존재합니다." : "FALSE: 존재하지 않습니다.");
-            break;
-
-        case 'random':
-            // 조건에 맞는 단어 중 무작위 1개 추출 (AI가 단어를 제시할 때 사용)
-            if (searchMode === 'start' && keyword) {
-                results = words.filter(w => w.startsWith(keyword));
-            } else if (searchMode === 'end' && keyword) {
-                results = words.filter(w => w.endsWith(keyword));
-            } else {
-                results = words; // 조건이 없으면 전체에서 무작위
-            }
-
-            if (results.length === 0) {
-                console.log("조건에 맞는 단어가 없어 무작위 추출에 실패했습니다.");
-            } else {
-                const randomIndex = Math.floor(Math.random() * results.length);
-                console.log(results[randomIndex]);
-            }
-            break;
-
-        case 'count':
-            // 조건에 맞는 단어의 총 개수만 반환
-            if (searchMode === 'start' && keyword) {
-                results = words.filter(w => w.startsWith(keyword));
-            } else if (searchMode === 'end' && keyword) {
-                results = words.filter(w => w.endsWith(keyword));
-            } else {
-                results = words;
-            }
-            console.log(`총 ${results.length}개`);
-            break;
-
-        default:
-            console.error('Error: 알 수 없는 명령어입니다. (search, verify, random, count 중 택 1)');
+    // 1. 단어 존재 여부 단순 검증 (verify)
+    if (command === 'verify') {
+        if (!keyword || keyword === '""') {
+            console.error('Error: verify 명령어는 keyword가 필요합니다.');
             process.exit(1);
+        }
+        const exists = words.includes(keyword.replace(/"/g, ''));
+        console.log(exists ? "TRUE: 존재합니다." : "FALSE: 존재하지 않습니다.");
+        process.exit(0);
+    }
+
+    // 2. 기본 검색 모드 적용
+    const cleanKeyword = keyword ? keyword.replace(/"/g, '') : '';
+    if (searchMode === 'start' && cleanKeyword) results = words.filter(w => w.startsWith(cleanKeyword));
+    else if (searchMode === 'end' && cleanKeyword) results = words.filter(w => w.endsWith(cleanKeyword));
+    else if (searchMode === 'include' && cleanKeyword) results = words.filter(w => w.includes(cleanKeyword));
+    else if (searchMode === 'exact' && cleanKeyword) results = words.filter(w => w === cleanKeyword);
+    else results = words;
+
+    // 3. N글자 단어 필터링 적용
+    const targetLength = parseInt(lengthOpt, 10);
+    if (!isNaN(targetLength) && targetLength > 0) {
+        results = results.filter(w => w.length === targetLength);
+    }
+
+    // 4. 정렬 옵션 적용 (가장 긴 단어 / 가장 짧은 단어)
+    if (sortOpt === 'desc') {
+        results.sort((a, b) => b.length - a.length);
+    } else if (sortOpt === 'asc') {
+        results.sort((a, b) => a.length - b.length);
+    }
+
+    // 5. 명령어에 따른 결과 출력
+    const limit = 50;
+    if (command === 'search') {
+        const output = results.slice(0, limit).join(', ');
+        const countText = results.length > limit ? ` (총 ${results.length}개 중 ${limit}개 표시)` : ` (총 ${results.length}개)`;
+        console.log(output ? output + countText : "검색 결과가 없습니다.");
+    } else if (command === 'random') {
+        if (results.length === 0) {
+            console.log("조건에 맞는 단어가 없어 무작위 추출에 실패했습니다.");
+        } else {
+            const randomIndex = Math.floor(Math.random() * results.length);
+            console.log(results[randomIndex]);
+        }
+    } else if (command === 'count') {
+        console.log(`총 ${results.length}개`);
+    } else {
+        console.error('Error: 알 수 없는 명령어입니다.');
+        process.exit(1);
     }
 
 } catch (error) {
