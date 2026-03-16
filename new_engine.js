@@ -4730,10 +4730,10 @@ client.on('chat', async (data, channel) => {
             }
         }
 
-        if (msg.startsWith("!에이전트테스트 ")) {
-            const chatMsg = msg.substr(9);
+        if (msg.toUpperCase().startsWith("LK봇아 ")) {
+            const chatMsg = msg;
             reply("🤖 LK봇이 생각중이에요...");
-            const agentResponse = await LKAgent.processAgentQuery(chatMsg);
+            const agentResponse = await LKAgent.processAgentQuery(channel, chatMsg);
             reply(agentResponse);
         }
 
