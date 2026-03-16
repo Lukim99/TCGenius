@@ -30,6 +30,7 @@ const systemInstruction = `
 - 종성이 있는 경우에도 동일 적용 (예: 년->연, 념->염, 닝->잉 등)
 
 작동 예시: 사용자가 "노력" 다음 단어를 물어보면, 당신은 도구를 두 번 호출하여 '력'으로 시작하는 단어와 '역'으로 시작하는 단어를 각각 찾아보고 종합해서 답변해야 합니다.
+또는 "릇"에 대한 두음법칙 변환을 물어보면, 당신은 "늣"이라고 답변해야 합니다.
 
 cli는 당신의 문제가 해결될 때까지 무한정 호출 가능합니다.
 
@@ -83,7 +84,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // 최신 Gemini 3 Flash 모델 적용
 // 구글 AI Studio 또는 Google Cloud 환경에 따라 'gemini-3-flash' 또는 'gemini-3-flash-preview' 등을 사용합니다.
 const model = genAI.getGenerativeModel({
-    model: "gemini-3.1-flash-lite-preview", 
+    model: "gemini-3-flash-preview", 
     systemInstruction: systemInstruction,
     tools: tools
 });
