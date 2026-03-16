@@ -111,4 +111,8 @@ async function processAgentQuery(sessionId, channel, userMessage) {
     return result.response.text();
 }
 
-module.exports = { processAgentQuery };
+function clearAgentHistory(sessionId) {
+    chatSessions.delete(sessionId);
+}
+
+module.exports = { processAgentQuery, clearAgentHistory };
