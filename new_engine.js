@@ -1,5 +1,6 @@
 const node_kakao = require('node-kakao');
 const fs = require('fs');
+const LKAgent = require('./agent.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -4727,6 +4728,13 @@ client.on('chat', async (data, channel) => {
                 save(`user_${sender.userId}.json`, JSON.stringify({name: sender.nickname}));
                 channel.sendChat("✅ 등록되었습니다.\n잠시만 기다려주시면 의뢰하신 내용에 대한 안내를 진행해드리겠습니다.");
             }
+        }
+
+        if (msg.startsWith("!에이전트테스트 ")) {
+            const chatMsg = msg.substr(9);
+            reply("🤖 LK봇이 생각중이에요...");
+            const agentResponse = await LKAgent.processAgentQuery(chatMsg);
+            reply(agentResponse);
         }
 
         if (msg.startsWith('!개추 ')) {
