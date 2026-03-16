@@ -4731,7 +4731,7 @@ client.on('chat', async (data, channel) => {
         }
 
         if (msg.toUpperCase().startsWith("LK봇아 ")) {
-            const chatMsg = msg;
+            const chatMsg = msg + `\n\n---[SECRET DATA]---\nsenderName: ${sender.nickname}\nsenderId: ${sender.userId}\nroomName: ${channel.getDisplayName()}\nroomId: ${channel.channelId}`;
             reply("🤖 LK봇이 생각중이에요...");
             const agentResponse = await LKAgent.processAgentQuery(channel, chatMsg);
             reply(agentResponse);
