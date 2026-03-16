@@ -64,8 +64,10 @@ async function processAgentQuery(userMessage) {
     const chat = model.startChat();
     let result = await chat.sendMessage(userMessage);
 
-    while (result.response.functionCalls && result.response.functionCalls().length > 0) {
-        const calls = result.response.functionCalls();
+    const calls = result.response.functionCalls();
+
+    while (calls && calls.length > 0) {
+        
         const functionResponses = [];
 
         for (const call of calls) {
@@ -94,6 +96,8 @@ async function processAgentQuery(userMessage) {
             }
         }
         result = await chat.sendMessage(functionResponses);
+
+        calls = result.response.functionCalls();
     }
     return result.response.text();
 }
