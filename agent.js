@@ -55,9 +55,13 @@ const model = genAI.getGenerativeModel({
 });
 
 async function processAgentQuery(channel, userMessage) {
-    const chat = model.startChat();
+    let chat = chatSessions.get(sessionId);
+    if (!chat) {
+        chat = model.startChat();
+        chatSessions.set(sessionId, chat);
+    }
+    
     let result = await chat.sendMessage(userMessage);
-
     let calls = result.response.functionCalls();
 
     while (calls && calls.length > 0) {
