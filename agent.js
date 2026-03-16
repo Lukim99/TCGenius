@@ -55,7 +55,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // 최신 Gemini 3 Flash 모델 적용
 // 구글 AI Studio 또는 Google Cloud 환경에 따라 'gemini-3-flash' 또는 'gemini-3-flash-preview' 등을 사용합니다.
 const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash", 
+    model: "gemini-3.1-flash-lite-preview", 
     systemInstruction: systemInstruction,
     tools: tools
 });
