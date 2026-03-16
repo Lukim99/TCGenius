@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { execSync } = require("child_process");
 const fs = require('fs');
 const path = require('path');
-const node_kakao = required('node-kakao');
+const node_kakao = require('node-kakao');
 
 const targetPath = path.join(__dirname, "agent_system.txt");
 const systemInstruction = fs.readFileSync(targetPath, 'utf-8');
