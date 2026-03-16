@@ -54,7 +54,7 @@ const model = genAI.getGenerativeModel({
     tools: tools
 });
 
-async function processAgentQuery(channel, userMessage) {
+async function processAgentQuery(sessionId, channel, userMessage) {
     let chat = chatSessions.get(sessionId);
     if (!chat) {
         chat = model.startChat();
