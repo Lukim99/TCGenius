@@ -64,7 +64,7 @@ async function processAgentQuery(userMessage) {
     const chat = model.startChat();
     let result = await chat.sendMessage(userMessage);
 
-    const calls = result.response.functionCalls();
+    let calls = result.response.functionCalls();
 
     while (calls && calls.length > 0) {
         
