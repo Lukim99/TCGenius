@@ -45,19 +45,32 @@ const tools = [{
 }];
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// 최신 Gemini 3 Flash 모델 적용
-// 구글 AI Studio 또는 Google Cloud 환경에 따라 'gemini-3-flash' 또는 'gemini-3-flash-preview' 등을 사용합니다.
 const model = genAI.getGenerativeModel({
     model: "gemini-3-flash-preview", 
     systemInstruction: systemInstruction,
     tools: tools
 });
 
-async function processAgentQuery(channel, userMessage) {
-    const chat = model.startChat();
-    let result = await chat.sendMessage(userMessage);
+const chatSessions = new Map();
 
+const MAX_HISTORY_LENGTH = 20;
+const TTL_DURATION_MS = 5 * 60 * 1000;
+
+async function processAgentQuery(sessionId, channel, userMessage) {
+    let session = chatSessions.get(sessionId);
+    let chat;
+
+    if (session) {
+        // 기존 세션이 있으면 기존 타이머 제거
+        clearTimeout(session.timer);
+        chat = session.chat;
+    } else {
+        // 새 세션 생성
+        chat = model.startChat();
+        session = { chat: chat, timer: null };
+    }
+    
+    let result = await chat.sendMessage(userMessage);
     let calls = result.response.functionCalls();
 
     while (calls && calls.length > 0) {
@@ -101,10 +114,31 @@ async function processAgentQuery(channel, userMessage) {
         }
         channel.sendChat(`[ Agent Tool Calls ]\n${sendCalls.join("\n")}`);
         result = await chat.sendMessage(functionResponses);
-
         calls = result.response.functionCalls();
     }
+
+    let history = await chat.getHistory();
+    if (history.length > MAX_HISTORY_LENGTH) {
+        let slicedHistory = history.slice(history.length - MAX_HISTORY_LENGTH);
+        if (slicedHistory.length > 0 && slicedHistory[0].role !== 'user') {
+            slicedHistory.shift(); 
+        }
+        
+        session.chat = model.startChat({ history: slicedHistory });
+    }
+
+    session.timer = setTimeout(() => {
+        chatSessions.delete(sessionId);
+        console.log(`[Agent] Session ${sessionId} expired and cleared (5m TTL).`);
+        channel.sendChat(`[ LK Agent ] 마지막 채팅으로부터 5분이 지나 채팅 기록이 삭제되었습니다.`);
+    }, TTL_DURATION_MS);
+
+    chatSessions.set(sessionId, session);
     return result.response.text();
 }
 
-module.exports = { processAgentQuery };
+function clearAgentHistory(sessionId) {
+    chatSessions.delete(sessionId);
+}
+
+module.exports = { processAgentQuery, clearAgentHistory };

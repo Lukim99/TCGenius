@@ -4731,10 +4731,17 @@ client.on('chat', async (data, channel) => {
         }
 
         if (msg.toUpperCase().startsWith("LK봇아 ")) {
-            const chatMsg = msg;
-            reply("🤖 LK봇이 생각중이에요...");
-            const agentResponse = await LKAgent.processAgentQuery(channel, chatMsg);
-            reply(agentResponse);
+            const sessionId = `${channel.channelId}`;
+            const chatMsg = msg + `\n\n---[SECRET DATA]---\nsenderName: ${sender.nickname}\nsenderId: ${sender.userId}\nroomName: ${channel.getDisplayName()}\nroomId: ${channel.channelId}`;
+            reply("❇️ 생각중...");
+            try {
+                const agentResponse = await LKAgent.processAgentQuery(sessionId, channel, chatMsg);
+                reply(agentResponse);
+            } catch(e) {
+                console.log(e);
+                reply("❌ 알 수 없는 오류가 발생했습니다.\n채팅 기록을 초기화합니다.");
+                await LKAgent.clearAgentHistory();
+            }
         }
 
         if (msg.startsWith('!개추 ')) {
