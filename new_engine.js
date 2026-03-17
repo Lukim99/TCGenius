@@ -1,6 +1,7 @@
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const LKAgent = require('./agent.js');
+const wordchain = require('./wordchain.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -3997,6 +3998,7 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 
 //chat on
 client.on('chat', async (data, channel) => {
+    wordchain.onChat(data, channel);
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
