@@ -3998,7 +3998,7 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 
 //chat on
 client.on('chat', async (data, channel) => {
-    wordchain.onChat(data, channel);
+    if (channel.channelId + "" == "313241466341882") wordchain.onChat(data, channel);
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
