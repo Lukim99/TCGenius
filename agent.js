@@ -46,7 +46,7 @@ const tools = [{
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview", 
+    model: "gemini-3.1-flash-lite-preview", 
     systemInstruction: systemInstruction,
     tools: tools
 });
@@ -112,7 +112,7 @@ async function processAgentQuery(sessionId, channel, userMessage) {
                 });
             }
         }
-        channel.sendChat(`[ Agent Tool Calls ]\n${sendCalls.join("\n")}`);
+        channel.sendChat(`${result.response.text()}\n\n[ Agent Tool Calls ]\n${sendCalls.join("\n")}`);
         result = await chat.sendMessage(functionResponses);
         calls = result.response.functionCalls();
     }
