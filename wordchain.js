@@ -2,17 +2,99 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand } = require("@aws-sdk/lib-dynamodb");
+const { createClient } = require('@supabase/supabase-js');
 
-const dynamoClient = new DynamoDBClient({ region: "ap-northeast-2", credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID } });
-const docClient = DynamoDBDocumentClient.from(dynamoClient);
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+);
 
-async function getItem(table, id) { try { const r = await docClient.send(new GetCommand({ TableName: table, Key: { id } })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
-async function putItem(table, item) { try { const r = await docClient.send(new PutCommand({ TableName: table, Item: item })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
-async function updateItem(table, id, data) { try { let ue = "SET " + Object.keys(data).filter(d => d != "id").map(d => "#" + d + "=:new_" + d).join(","); let ean = {}; let eav = {}; Object.keys(data).filter(d => d != "id").forEach(e => { ean["#" + e] = e; eav[":new_" + e] = data[e]; }); const r = await docClient.send(new UpdateCommand({ TableName: table, Key: { id }, UpdateExpression: ue, ExpressionAttributeNames: ean, ExpressionAttributeValues: eav })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
-async function queryItems(params) { try { const r = await docClient.send(new QueryCommand(params)); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
-async function deleteItem(table, id) { try { const r = await docClient.send(new DeleteCommand({ TableName: table, Key: { id } })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
+// Supabase wrapper functions
+async function getItem(table, id) { 
+    try { 
+        const { data, error } = await supabase.from(table).select('*').eq('id', id).single(); 
+        if (error) return { success: false, result: [error] };
+        return { success: true, result: [{ Item: data }] }; 
+    } catch (e) { 
+        return { success: false, result: [e] }; 
+    } 
+}
+
+async function putItem(table, item) { 
+    try { 
+        const { data, error } = await supabase.from(table).upsert(item, { onConflict: 'id' }).select(); 
+        if (error) return { success: false, result: [error] };
+        return { success: true, result: [data] }; 
+    } catch (e) { 
+        return { success: false, result: [e] }; 
+    } 
+}
+
+async function updateItem(table, id, data) { 
+    try { 
+        const updateData = Object.keys(data).reduce((acc, key) => {
+            if (key !== 'id') acc[key] = data[key];
+            return acc;
+        }, {});
+        const { data: result, error } = await supabase.from(table).update(updateData).eq('id', id).select(); 
+        if (error) return { success: false, result: [error] };
+        return { success: true, result: [result] }; 
+    } catch (e) { 
+        return { success: false, result: [e] }; 
+    } 
+}
+
+async function queryItems(params) { 
+    try {
+        let query = supabase.from(params.TableName).select('*');
+        
+        // Handle KeyConditionExpression for common patterns
+        if (params.KeyConditionExpression) {
+            // Parse simple equality conditions like "p1=:v" or "#g=:v"
+            const match = params.KeyConditionExpression.match(/([#\w]+)\s*=\s*:([\w]+)/);
+            if (match) {
+                const fieldName = params.ExpressionAttributeNames ? params.ExpressionAttributeNames[match[1]] || match[1].replace('#', '') : match[1].replace('#', '');
+                const valueName = match[2];
+                const value = params.ExpressionAttributeValues[':' + valueName];
+                query = query.eq(fieldName, value);
+            }
+        }
+        
+        // Handle FilterExpression
+        if (params.FilterExpression) {
+            const filterMatch = params.FilterExpression.match(/([#\w.]+)\s*=\s*:([\w]+)/);
+            if (filterMatch) {
+                const fieldPath = filterMatch[1].split('.');
+                const fieldName = fieldPath.map(f => params.ExpressionAttributeNames?.[f] || f.replace('#', '')).join('.');
+                const valueName = filterMatch[2];
+                const value = params.ExpressionAttributeValues[':' + valueName];
+                
+                // For nested fields like state.playing, we need to use contains or custom filter
+                if (fieldPath.length > 1) {
+                    query = query.eq(fieldPath[0].replace('#', ''), value);
+                } else {
+                    query = query.eq(fieldName, value);
+                }
+            }
+        }
+        
+        const { data, error } = await query;
+        if (error) return { success: false, result: [error] };
+        return { success: true, result: [{ Items: data || [] }] }; 
+    } catch (e) { 
+        return { success: false, result: [e] }; 
+    } 
+}
+
+async function deleteItem(table, id) { 
+    try { 
+        const { data, error } = await supabase.from(table).delete().eq('id', id).select(); 
+        if (error) return { success: false, result: [error] };
+        return { success: true, result: [data] }; 
+    } catch (e) { 
+        return { success: false, result: [e] }; 
+    } 
+}
 
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return 'null'; } }
 function save(p, data) { fs.writeFileSync(p, data, 'utf8'); return data; }
@@ -45,8 +127,27 @@ function toTimeNotation(sec) { let y=0,mo=0,w=0,d=0,h=0,m=0; sec=Math.ceil(sec);
 function msToMinSec(ms) { let t=Math.floor(ms/1000),m=Math.floor(t/60),s=t%60; if(m<=0&&s<=0) return "0초"; if(m<=0) return s+"초"; if(s<=0) return m+"분"; return m+"분 "+s+"초"; }
 
 // ====== User Class ======
-function User(name, id) { this._get=1; this.id=id; this.name=name; this.isAdmin=false; this.code=getRandomString(10).toUpperCase(); this.logged_in=[id]; this.rank=-1; this.rate=null; this.lp=0; this.playing={}; this.title=null; this.titles=[]; this.character_setting=null; this.credit=0; this.restricted={}; this.money=10000; this.stocks=[]; this.stockInit=false; this.arbeit=null; this.inventory=[]; this.equips={weapon:{name:"맨손",tier:"-"},armor:{name:"평상복",tier:"-"},artifact:[]}; this.cash=0; this.entered_coupon=[]; this.hunterRate=1500; this.initHunterRate="F"; this.lastHunterRate=null; this.remainArcana=100; this.guild=null; this.pet={name:null,level:0,damage:0}; this.equipSet=[null,null,null]; this.gem=0; this.init={artifact:false}; this.artifactMaxSlot=3; this.stat={str:0,def:0,int:0}; this.tbTicket=0; this.tbCoupon=[]; this.notified=0; this.isRPG=false; }
-User.prototype.load = function(d) { Object.keys(d).forEach(k => { this[k] = d[k]; }); if(this.rate) this.rate=Number(this.rate); if(this.lp) this.lp=Number(this.lp); if(!this.playing) this.playing={}; return this; }
+function User(name, id) { 
+    this._get = 1; 
+    this.id = id; 
+    this.name = name; 
+    this.isAdmin = false; 
+    this.code = getRandomString(10).toUpperCase(); 
+    this.logged_in = [id]; 
+    this.rate = null; 
+    this.lp = 0; 
+    this.playing = {}; 
+    this.credit = 0; 
+    this.title = null; 
+    this.titles = []; 
+}
+User.prototype.load = function(d) { 
+    Object.keys(d).forEach(k => { this[k] = d[k]; }); 
+    if(this.rate) this.rate = Number(this.rate); 
+    if(this.lp) this.lp = Number(this.lp); 
+    if(!this.playing) this.playing = {}; 
+    return this; 
+}
 User.prototype.toString = function() { return (this.title?"["+this.title+"] ":"")+this.name; }
 User.prototype.save = async function() { await updateItem('user_data', this.id, this); }
 
@@ -148,25 +249,39 @@ Game.prototype.cancelAfkKick = function() {
 }
 
 async function getGameById(id) { if(typeof id!='number') id=Number(id); let r=await getItem('game_data',id); if(r.success&&r.result[0]&&r.result[0].Item) return new Game().load(r.result[0].Item); return null; }
-async function getGameByRoomId(rid) { let r=await queryItems({TableName:"game_data",IndexName:"roomIdx",KeyConditionExpression:"#r=:v",FilterExpression:"#s.#p=:p",ExpressionAttributeNames:{"#r":"room_id","#s":"state","#p":"playing"},ExpressionAttributeValues:{":v":rid,":p":true}}); if(r.success&&r.result[0]&&r.result[0].Items&&r.result[0].Items[0]) return new Game().load(r.result[0].Items[0]); return null; }
+async function getGameByRoomId(rid) { 
+    try {
+        const { data, error } = await supabase.from('game_data').select('*').eq('room_id', rid).contains('state', {playing: true}).limit(1);
+        if (error || !data || data.length === 0) return null;
+        return new Game().load(data[0]);
+    } catch(e) {
+        return null;
+    }
+}
 async function getGameByPlayerName(name) { let u=await getUserByName(name); if(u&&u.playing.game){ let g=await getGameById(u.playing.game.id); if(g&&g.state.playing) return g; } return null; }
 
 async function getAllGame(id) {
-    let returnRes = [];
-    let p1Res = await queryItems({TableName:"game_data",IndexName:"p1Idx",KeyConditionExpression:"p1=:v",ExpressionAttributeValues:{":v":id}});
-    let p2Res = await queryItems({TableName:"game_data",IndexName:"p2Idx",KeyConditionExpression:"p2=:v",ExpressionAttributeValues:{":v":id}});
-    if (p1Res.success && p1Res.result[0] && p1Res.result[0].Items) returnRes = returnRes.concat(p1Res.result[0].Items.map(r => new Game().load(r)));
-    if (p2Res.success && p2Res.result[0] && p2Res.result[0].Items) returnRes = returnRes.concat(p2Res.result[0].Items.map(r => new Game().load(r)));
-    // Remove duplicates
-    let uniqueRes = [];
-    let ids = new Set();
-    for (let game of returnRes) {
-        if (!ids.has(game.id)) {
-            uniqueRes.push(game);
-            ids.add(game.id);
+    try {
+        const { data: p1Games, error: p1Error } = await supabase.from('game_data').select('*').eq('p1', id);
+        const { data: p2Games, error: p2Error } = await supabase.from('game_data').select('*').eq('p2', id);
+        
+        let returnRes = [];
+        if (!p1Error && p1Games) returnRes = returnRes.concat(p1Games.map(r => new Game().load(r)));
+        if (!p2Error && p2Games) returnRes = returnRes.concat(p2Games.map(r => new Game().load(r)));
+        
+        // Remove duplicates
+        let uniqueRes = [];
+        let ids = new Set();
+        for (let game of returnRes) {
+            if (!ids.has(game.id)) {
+                uniqueRes.push(game);
+                ids.add(game.id);
+            }
         }
+        return uniqueRes;
+    } catch(e) {
+        return [];
     }
-    return uniqueRes;
 }
 
 function getWinStreak(games, id) {
@@ -271,7 +386,7 @@ async function onChat(data, channel) {
 
             // 등록
             if (cmd.startsWith("등록 ") || cmd.startsWith("ㄷㄹ ")) {
-                if (user) { Send("❌ 이미 등록된 사용자입니다."); }
+                if (user) { Send("❌ 이미 로그인이 되어있습니다: " + user.name); }
                 else {
                     let name = arg.trim();
                     if (!name || name.length < 1 || name.length > 10) { Send("❌ 닉네임은 1~10글자여야 합니다."); }
@@ -346,16 +461,20 @@ async function onChat(data, channel) {
 
             // 레이팅순위
             if (cmd == "레이팅순위" || cmd == "ㄹㅇㅌㅅㅇ") {
-                let res = await queryItems({ TableName: "user_data", IndexName: "getIdx", KeyConditionExpression: "#g = :v", FilterExpression: "attribute_exists(#rate) AND #rate <> :nl", ExpressionAttributeNames: { "#g": "_get", "#rate": "rate" }, ExpressionAttributeValues: { ":v": 1, ":nl": null } });
-                if (!res.success) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
-                else {
-                    let users = (res.result[0].Items || []).map(r => new User().load(r)).filter(u => u.rate != null && !isNaN(u.rate));
-                    if (!users.length) { Send("❌ 레이팅에 참가한 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                try {
+                    const { data, error } = await supabase.from('user_data').select('*').eq('_get', 1).not('rate', 'is', null);
+                    if (error) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
                     else {
-                        users.sort((a, b) => b.rate - a.rate);
-                        let rateRank = users.map((u, i) => (i + 1) + "위 :: 「" + getTier(u.rate) + "」 " + u + "\n▣ " + u.rate);
-                        Send("◆ 레이팅 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                        let users = (data || []).map(r => new User().load(r)).filter(u => u.rate != null && !isNaN(u.rate));
+                        if (!users.length) { Send("❌ 레이팅에 참가한 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                        else {
+                            users.sort((a, b) => b.rate - a.rate);
+                            let rateRank = users.map((u, i) => (i + 1) + "위 :: 「" + getTier(u.rate) + "」 " + u + "\n▣ " + u.rate);
+                            Send("◆ 레이팅 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                        }
                     }
+                } catch(e) {
+                    Send("❌ 순위 조회 과정에서 오류가 발생했습니다.");
                 }
                 return;
             }
@@ -557,10 +676,14 @@ async function onChat(data, channel) {
                 
                 let game = new Game("끝말", [player1.name, player2.name], roomid);
                 // Dynamically get highest id
-                let allGameRes = await queryItems({TableName:"game_data",IndexName:"getIdx",KeyConditionExpression:"#g=:v",ExpressionAttributeNames:{"#g":"_get"},ExpressionAttributeValues:{":v":1}});
                 let countRes = 1;
-                if (allGameRes.success && allGameRes.result[0] && allGameRes.result[0].Items) {
-                    countRes = Math.max(0, ...allGameRes.result[0].Items.map(i => i.id)) + 1;
+                try {
+                    const { data: allGames, error } = await supabase.from('game_data').select('id').eq('_get', 1).order('id', { ascending: false }).limit(1);
+                    if (!error && allGames && allGames.length > 0) {
+                        countRes = allGames[0].id + 1;
+                    }
+                } catch(e) {
+                    // Fallback to 1 if query fails
                 }
                 game.id = countRes;
                 game.word = input_words;
@@ -582,16 +705,20 @@ async function onChat(data, channel) {
                 return;
             }
             if (cmd == "스펠순위" || cmd == "ㅅㅍㅅㅇ") {
-                let res = await queryItems({ TableName: "user_data", IndexName: "getIdx", KeyConditionExpression: "#g = :v", ExpressionAttributeNames: { "#g": "_get" }, ExpressionAttributeValues: { ":v": 1 } });
-                if (!res.success) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
-                else {
-                    let users = (res.result[0].Items || []).map(r => new User().load(r)).filter(u => u.lp > 0);
-                    if (!users.length) { Send("❌ LP가 1 이상인 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                try {
+                    const { data, error } = await supabase.from('user_data').select('*').eq('_get', 1).gt('lp', 0);
+                    if (error) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
                     else {
-                        users.sort((a, b) => b.lp - a.lp);
-                        let rateRank = users.map((u, i) => (i + 1) + "위 :: " + u + "\n▣ " + numberWithCommas(u.lp.toString()));
-                        Send("◆ 스펠룰 LP 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                        let users = (data || []).map(r => new User().load(r)).filter(u => u.lp > 0);
+                        if (!users.length) { Send("❌ LP가 1 이상인 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                        else {
+                            users.sort((a, b) => b.lp - a.lp);
+                            let rateRank = users.map((u, i) => (i + 1) + "위 :: " + u + "\n▣ " + numberWithCommas(u.lp.toString()));
+                            Send("◆ 스펠룰 LP 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                        }
                     }
+                } catch(e) {
+                    Send("❌ 순위 조회 과정에서 오류가 발생했습니다.");
                 }
                 return;
             }
@@ -697,9 +824,13 @@ async function onChat(data, channel) {
                             // 매칭 성사
                             let game = new Game(gameType, [waitObj.wait, user.name], roomid);
                             let countRes = 1;
-                            let allGameRes = await queryItems({TableName:"game_data",IndexName:"getIdx",KeyConditionExpression:"#g=:v",ExpressionAttributeNames:{"#g":"_get"},ExpressionAttributeValues:{":v":1}});
-                            if (allGameRes.success && allGameRes.result[0] && allGameRes.result[0].Items) {
-                                countRes = Math.max(0, ...allGameRes.result[0].Items.map(i => i.id)) + 1;
+                            try {
+                                const { data: allGames, error } = await supabase.from('game_data').select('id').eq('_get', 1).order('id', { ascending: false }).limit(1);
+                                if (!error && allGames && allGames.length > 0) {
+                                    countRes = allGames[0].id + 1;
+                                }
+                            } catch(e) {
+                                // Fallback to 1 if query fails
                             }
                             game.id = countRes;
                             game.p1 = waitUser.id; game.p2 = user.id;
@@ -874,22 +1005,22 @@ async function onChat(data, channel) {
             if (cmd.startsWith("스펠설명 ") || cmd.startsWith("ㅅㅍㅅㅁ ")) { let cs = cmd.substr(5); if (!spellrule.spell[cs]) Send("❌ 존재하지 않는 스펠입니다."); else Send("[ " + cs + " ]\n· " + spellrule.spell[cs].desc.join("\n· ")); return; }
 
             // 단어/뜻 조회
-            if (["단어","뜻","ㄸ"].includes(cmd.split(" ")[0])) {
-                if (arg) {
-                    let q = arg.trim();
-                    if (!allword.includes(q)) { Send("❌ 구엜룰 기준 존재하지 않는 단어입니다."); }
-                    else {
-                        let types = [];
-                        if (neosyl.includes(q.substr(-1))) types.push("한방");
-                        if (leadsyl.includes(q.substr(-1))) types.push("유도");
-                        if (routesyl.includes(q.substr(-1))) types.push("루트");
-                        if (!types.length) types.push("일반");
-                        let mean = await getMean(q);
-                        Send("✅ 구엜룰 기준 존재하는 단어입니다.\n\n유형: " + types.join(", ") + "\n끝말: " + q.substr(-1) + (q.substr(-1) == dueum(q.substr(-1)) ? "" : "(" + dueum(q.substr(-1)) + ")") + (mean ? "\n뜻: " + mean : ""));
-                    }
-                }
-                return;
-            }
+            // if (["단어","뜻","ㄸ"].includes(cmd.split(" ")[0])) {
+            //     if (arg) {
+            //         let q = arg.trim();
+            //         if (!allword.includes(q)) { Send("❌ 구엜룰 기준 존재하지 않는 단어입니다."); }
+            //         else {
+            //             let types = [];
+            //             if (neosyl.includes(q.substr(-1))) types.push("한방");
+            //             if (leadsyl.includes(q.substr(-1))) types.push("유도");
+            //             if (routesyl.includes(q.substr(-1))) types.push("루트");
+            //             if (!types.length) types.push("일반");
+            //             let mean = await getMean(q);
+            //             Send("✅ 구엜룰 기준 존재하는 단어입니다.\n\n유형: " + types.join(", ") + "\n끝말: " + q.substr(-1) + (q.substr(-1) == dueum(q.substr(-1)) ? "" : "(" + dueum(q.substr(-1)) + ")") + (mean ? "\n뜻: " + mean : ""));
+            //         }
+            //     }
+            //     return;
+            // }
 
             // 도움말
             if (["도움말","명령어","?","ㄷㅇㅁ","ㅁㄹㅇ"].includes(cmd)) {
