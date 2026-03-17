@@ -62,18 +62,29 @@ async function queryItems(params) {
         
         // Handle FilterExpression
         if (params.FilterExpression) {
-            const filterMatch = params.FilterExpression.match(/([#\w.]+)\s*=\s*:([\w]+)/);
-            if (filterMatch) {
-                const fieldPath = filterMatch[1].split('.');
-                const fieldName = fieldPath.map(f => params.ExpressionAttributeNames?.[f] || f.replace('#', '')).join('.');
-                const valueName = filterMatch[2];
+            // Check for contains() function
+            const containsMatch = params.FilterExpression.match(/contains\(([#\w]+),\s*:([\w]+)\)/);
+            if (containsMatch) {
+                const fieldName = params.ExpressionAttributeNames ? params.ExpressionAttributeNames[containsMatch[1]] || containsMatch[1].replace('#', '') : containsMatch[1].replace('#', '');
+                const valueName = containsMatch[2];
                 const value = params.ExpressionAttributeValues[':' + valueName];
-                
-                // For nested fields like state.playing, we need to use contains or custom filter
-                if (fieldPath.length > 1) {
-                    query = query.eq(fieldPath[0].replace('#', ''), value);
-                } else {
-                    query = query.eq(fieldName, value);
+                // Use Supabase's contains for JSONB arrays
+                query = query.contains(fieldName, [value]);
+            } else {
+                // Handle regular equality filters
+                const filterMatch = params.FilterExpression.match(/([#\w.]+)\s*=\s*:([\w]+)/);
+                if (filterMatch) {
+                    const fieldPath = filterMatch[1].split('.');
+                    const fieldName = fieldPath.map(f => params.ExpressionAttributeNames?.[f] || f.replace('#', '')).join('.');
+                    const valueName = filterMatch[2];
+                    const value = params.ExpressionAttributeValues[':' + valueName];
+                    
+                    // For nested fields like state.playing, we need to use contains or custom filter
+                    if (fieldPath.length > 1) {
+                        query = query.eq(fieldPath[0].replace('#', ''), value);
+                    } else {
+                        query = query.eq(fieldName, value);
+                    }
                 }
             }
         }
