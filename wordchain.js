@@ -17,6 +17,7 @@ function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return
 function save(p, data) { fs.writeFileSync(p, data, 'utf8'); return data; }
 
 const PREFIX = "$";
+const PREFIXS = ["1","!","$"];
 const VIEWMORE = '\u200e'.repeat(500);
 const CHOSEONG = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
 const JUNGSEONG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
@@ -148,6 +149,20 @@ async function searchWord(query, type) {
     return result;
 }
 
+Date.prototype.toDateString = function() {
+    let y = this.getFullYear();
+    let m = this.getMonth() + 1;
+    let d = this.getDate();
+    let yo = "일월화수목금토"[this.getDay()];
+    let h = this.getHours();
+    let ampm = h >= 12 ? "오후" : "오전";
+    if (h > 12) h -= 12;
+    if (h == 0) h = 12;
+    let minutes = this.getMinutes();
+    let sec = this.getSeconds();
+    return y + "/" + pad_num(m) + "/" + pad_num(d) + "(" + yo + ") " + ampm + " " + pad_num(h) + ":" + pad_num(minutes) + ":" + pad_num(sec);
+}
+
 // ====== Spell Rules ======
 const spellrule = { spell: {} };
 // Placeholder - will be set after module load
@@ -194,7 +209,7 @@ async function onChat(data, channel) {
         function Send(text) { channel.sendChat(filterCurses(text)); }
 
         // ====== PREFIX Commands ======
-        if (msg.startsWith(PREFIX)) {
+        if (PREFIXS.includes(msg.substr(0, 1))) {
             let cmd = msg.substr(PREFIX.length);
             let arg = cmd.indexOf(" ") > -1 ? cmd.substr(cmd.indexOf(" ") + 1) : null;
 
@@ -538,8 +553,13 @@ async function onChat(data, channel) {
                 let game = await getGameByPlayerName(user.name);
                 if (game) {
                     let check = game.checkInput(user, wrd);
-                    if (!check.success) { Send("❌ " + check.reason); }
-                    else {
+                    if (!check.success && !((game.type == "밴룰" && game.state.order == null) && check.reason == "시작단어로 유도단어 또는 한방단어를 사용할 수 없습니다.")) { Send("❌ " + check.reason); }
+                    else if (game.type == "밴룰" && game.state.order == null) {
+                        game.state.banned = wrd;
+                        game.state.order = game.player.indexOf(user.name);
+                        await game.save();
+                        Send("✅ '" + wrd + "' 단어가 금지되었습니다.\n\n선공은 " + user + "님입니다.");
+                    } else {
                         game.clearTurnTimer();
                         let ntr = await game.nextTurn(user, wrd);
                         ntr.message.forEach(m => Send(m));
