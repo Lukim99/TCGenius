@@ -3,7 +3,7 @@ const fs = require('fs');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, DeleteCommand } = require("@aws-sdk/lib-dynamodb");
 
 const dynamoClient = new DynamoDBClient({ region: "ap-northeast-2", credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID } });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -12,6 +12,7 @@ async function getItem(table, id) { try { const r = await docClient.send(new Get
 async function putItem(table, item) { try { const r = await docClient.send(new PutCommand({ TableName: table, Item: item })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
 async function updateItem(table, id, data) { try { let ue = "SET " + Object.keys(data).filter(d => d != "id").map(d => "#" + d + "=:new_" + d).join(","); let ean = {}; let eav = {}; Object.keys(data).filter(d => d != "id").forEach(e => { ean["#" + e] = e; eav[":new_" + e] = data[e]; }); const r = await docClient.send(new UpdateCommand({ TableName: table, Key: { id }, UpdateExpression: ue, ExpressionAttributeNames: ean, ExpressionAttributeValues: eav })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
 async function queryItems(params) { try { const r = await docClient.send(new QueryCommand(params)); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
+async function deleteItem(table, id) { try { const r = await docClient.send(new DeleteCommand({ TableName: table, Key: { id } })); return { success: true, result: [r] }; } catch (e) { return { success: false, result: [e] }; } }
 
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return 'null'; } }
 function save(p, data) { fs.writeFileSync(p, data, 'utf8'); return data; }
@@ -128,9 +129,54 @@ Game.prototype.checkInput = function(user, wrd) {
     if(!r.reason) r.success=true; return r;
 }
 
+Game.prototype.clearTurnTimer = function() {
+    let t = getTimer(this.id);
+    if(t.turn) {
+        try { clearTimeout(t.turn); } catch(ex) {}
+        t.turn = null;
+    }
+}
+
+Game.prototype.cancelAfkKick = function() {
+    let t = getTimer(this.id);
+    if(t.afk) {
+        try { clearTimeout(t.afk); } catch(ex) {}
+        t.afk = null;
+        t.afkUser = null;
+    }
+    this.state.afkKick.user = null;
+}
+
 async function getGameById(id) { if(typeof id!='number') id=Number(id); let r=await getItem('game_data',id); if(r.success&&r.result[0]&&r.result[0].Item) return new Game().load(r.result[0].Item); return null; }
 async function getGameByRoomId(rid) { let r=await queryItems({TableName:"game_data",IndexName:"roomIdx",KeyConditionExpression:"#r=:v",FilterExpression:"#s.#p=:p",ExpressionAttributeNames:{"#r":"room_id","#s":"state","#p":"playing"},ExpressionAttributeValues:{":v":rid,":p":true}}); if(r.success&&r.result[0]&&r.result[0].Items&&r.result[0].Items[0]) return new Game().load(r.result[0].Items[0]); return null; }
 async function getGameByPlayerName(name) { let u=await getUserByName(name); if(u&&u.playing.game){ let g=await getGameById(u.playing.game.id); if(g&&g.state.playing) return g; } return null; }
+
+async function getAllGame(id) {
+    let returnRes = [];
+    let p1Res = await queryItems({TableName:"game_data",IndexName:"p1Idx",KeyConditionExpression:"p1=:v",ExpressionAttributeValues:{":v":id}});
+    let p2Res = await queryItems({TableName:"game_data",IndexName:"p2Idx",KeyConditionExpression:"p2=:v",ExpressionAttributeValues:{":v":id}});
+    if (p1Res.success && p1Res.result[0] && p1Res.result[0].Items) returnRes = returnRes.concat(p1Res.result[0].Items.map(r => new Game().load(r)));
+    if (p2Res.success && p2Res.result[0] && p2Res.result[0].Items) returnRes = returnRes.concat(p2Res.result[0].Items.map(r => new Game().load(r)));
+    // Remove duplicates
+    let uniqueRes = [];
+    let ids = new Set();
+    for (let game of returnRes) {
+        if (!ids.has(game.id)) {
+            uniqueRes.push(game);
+            ids.add(game.id);
+        }
+    }
+    return uniqueRes;
+}
+
+function getWinStreak(games, id) {
+    let cur = 0, max = 0;
+    for(let g of games) {
+        if(g.result.win && g.result.win.id == id) { cur++; if(cur > max) max = cur; }
+        else cur = 0;
+    }
+    return { cur: cur, max: max };
+}
 
 function getRate(user, num, result) { result=result||"승"; let K=50; const exp=1/(1+Math.pow(10,(1500-user.rate)/400)); const act=result=="승"?1:0; return Math.round(K*(act-exp)); }
 function getTier(r) { if(r<50) return "Unranked F"; if(r<100) return "Unranked E-"; if(r<200) return "Unranked E+"; if(r<300) return "Unranked D"; if(r<400) return "Unranked C-"; if(r<500) return "Unranked C+"; if(r<600) return "Unranked B"; if(r<700) return "Unranked A-"; if(r<800) return "Unranked A+"; if(r<900) return "Unranked S"; if(r<1000) return "Semiranked"; if(r<1100) return "아이언Ⅲ"; if(r<1200) return "아이언Ⅰ"; if(r<1300) return "브론즈Ⅲ"; if(r<1400) return "브론즈Ⅰ"; if(r<1500) return "실버Ⅲ"; if(r<1600) return "실버Ⅰ"; if(r<1700) return "골드Ⅲ"; if(r<1800) return "골드Ⅰ"; if(r<1900) return "플레티넘Ⅲ"; if(r<2000) return "플레티넘Ⅰ"; if(r<2100) return "에메랄드Ⅲ"; if(r<2200) return "에메랄드Ⅰ"; if(r<2300) return "다이아Ⅲ"; if(r<2400) return "다이아Ⅰ"; return "마스터"; }
@@ -204,6 +250,8 @@ Game.prototype.switchTurn = async function(channel) {
 
 // ====== State ======
 let wordchainQueue = {};
+let loginRequest = {};
+let myCheck = {};
 
 // ====== Main Handler ======
 async function onChat(data, channel) {
@@ -241,18 +289,54 @@ async function onChat(data, channel) {
                 return;
             }
 
-            // 로그인
-            if (cmd.startsWith("로그인 ") || cmd.startsWith("ㄹㄱㅇ ")) {
-                if (user) { Send("❌ 이미 로그인된 상태입니다."); }
-                else {
-                    let tu = await getUserByCode(arg.trim());
-                    if (!tu) { Send("❌ 존재하지 않는 코드입니다."); }
-                    else { if (!tu.logged_in.includes(senderID)) tu.logged_in.push(senderID); tu.code = getRandomString(10).toUpperCase(); await tu.save(); Send("✅ " + tu.name + "님으로 로그인되었습니다."); }
+            // 로그인승인 (로그인승인제)
+            if (cmd.startsWith("로그인 ")) {
+                let targetUserName = arg ? arg.trim() : null;
+                if (!targetUserName) { Send("❌ 계정을 입력해주세요."); return; }
+                let targetUser = await getUserByName(targetUserName);
+                if (!targetUser) {
+                    Send("❌ 계정을 찾을 수 없습니다.");
+                } else if (user) {
+                    Send("❌ 이미 로그인된 상태입니다: " + user.name);
+                } else {
+                    if (!loginRequest[targetUser.id]) loginRequest[targetUser.id] = [];
+                    if (loginRequest[targetUser.id].find(lr => lr.id == senderID)) {
+                        let existingCode = loginRequest[targetUser.id].find(lr => lr.id == senderID).code;
+                        Send("❌ 이미 로그인 요청을 했습니다.\n" + targetUser.name + " 계정으로 로그인 된 방에서 아래 명령어를 입력하세요.\n\n[ $로그인승인 " + existingCode + " ]");
+                        return;
+                    }
+                    let code = getRandomString(6).toUpperCase();
+                    loginRequest[targetUser.id].push({
+                        id: senderID,
+                        code: code,
+                        room: channel
+                    });
+                    Send("📑 로그인 요청이 완료되었습니다.\n" + targetUser.name + " 계정으로 로그인 된 방에서 아래 명령어를 입력하세요.\n\n[ $로그인승인 " + code + " ]");
                 }
                 return;
             }
 
-            // 코드
+            if (cmd.startsWith("로그인승인 ")) {
+                if (!user) { Send("❌ 등록되지 않은 사용자입니다."); return; }
+                if (!loginRequest[user.id] || loginRequest[user.id].length == 0) { Send("❌ 들어온 로그인 요청이 없습니다."); return; }
+                let targetCode = arg ? arg.trim() : null;
+                if (!targetCode) { Send("❌ 코드를 입력해주세요."); return; }
+                
+                let lrIndex = loginRequest[user.id].findIndex(lr => lr.code == targetCode);
+                if (lrIndex == -1) {
+                    Send("❌ 잘못된 코드입니다.");
+                } else {
+                    let lr = loginRequest[user.id][lrIndex];
+                    if (!user.logged_in.includes(lr.id)) user.logged_in.push(lr.id);
+                    await user.save();
+                    lr.room.sendChat(`✅ ${user.name} 계정으로 로그인했습니다!`);
+                    loginRequest[user.id].splice(lrIndex, 1);
+                    Send("✅ 로그인 요청을 승인했습니다.");
+                }
+                return;
+            }
+
+            // 코드 (Deprecated with approval system, but kept for compatibility or admin)
             if (cmd == "코드") {
                 if (!user) { Send("❌ 등록되지 않은 사용자입니다."); }
                 else if (!channel._channel || !channel._channel.info || channel._channel.info.activeUserCount != 2) { Send("❌ 코드는 1:1 채팅방에서만 확인할 수 있습니다."); }
@@ -276,7 +360,227 @@ async function onChat(data, channel) {
                 return;
             }
 
-            // 스펠순위
+            // 레이팅조작
+            if ((cmd.startsWith("레이팅조작 ") || cmd.startsWith("ㄹㅇㅌㅈㅈ ")) && user && user.isAdmin) {
+                let args = cmd.split(" ");
+                if (args.length < 3) return;
+                let vUser = await getUserByName(args[1]);
+                if (!vUser) {
+                    Send("❌ 유저를 찾을 수 없습니다.");
+                } else if (isNaN(args[2])) {
+                    Send("❌ 레이팅은 숫자로 입력해주세요.");
+                } else {
+                    vUser.rate = Number(args[2]);
+                    await vUser.save();
+                    Send("✅ 레이팅 변경이 완료되었습니다.");
+                }
+                return;
+            }
+
+            // 완전삭제
+            if (cmd.startsWith("완전삭제 ") && user && user.isAdmin) {
+                let targetUserName = cmd.split(" ")[1];
+                let targetUser = await getUserByName(targetUserName); // Or handle deleted user if you have getDeletedUserByName
+                if (!targetUser) {
+                    Send("❌ 유저를 찾을 수 없습니다.");
+                } else {
+                    myCheck[senderID] = {
+                        type: "완전삭제",
+                        arg: { user: targetUser }
+                    };
+                    Send("❗ 완전삭제 시 복구가 불가능합니다.\n정말 진행하시겠습니까?\n[ " + PREFIX + "확인 ]");
+                }
+                return;
+            }
+
+            // 확인 (완전삭제 및 등록용)
+            if (myCheck[senderID] && cmd == "확인") {
+                if (myCheck[senderID].type == "등록") {
+                    let nu = new User(myCheck[senderID].arg.name, senderID);
+                    let res = await putItem('user_data', nu);
+                    if (res.success) {
+                        Send("✅ 성공적으로 등록되셨습니다!\n환영합니다, " + nu.name + "님!");
+                    } else {
+                        Send("❌ 등록 과정에서 오류가 발생했습니다.");
+                    }
+                } else if (myCheck[senderID].type == "완전삭제") {
+                    let res = await deleteItem("user_data", myCheck[senderID].arg.user.id);
+                    
+                    if (!res.success) {
+                        Send("❌ 완전삭제에 실패했습니다.");
+                    } else {
+                        Send("✅ '" + myCheck[senderID].arg.user.name + "' 유저가 완전히 삭제되었습니다.\n[ 마지막 데이터 ]\n" + VIEWMORE + "\n" + JSON.stringify(myCheck[senderID].arg.user, null, 4));
+                    }
+                }
+                delete myCheck[senderID];
+                return;
+            }
+
+            // 게임무효
+            if (["게임무효","ㄱㅇㅁㅎ","무효","ㅁㅎ"].includes(cmd.split(" ")[0]) && user && user.isAdmin) {
+                let gameIdOrRoom = cmd.split(" ")[1];
+                let game = null;
+                if (!gameIdOrRoom) {
+                    game = await getGameByRoomId(roomid);
+                    if (!game) { Send("❌ 이 방에서 진행중인 게임이 없습니다."); return; }
+                } else {
+                    game = await getGameById(gameIdOrRoom);
+                    if (!game) { Send("❌ 게임을 찾을 수 없습니다."); return; }
+                }
+
+                let gameP1 = await getUserByName(game.player[0]);
+                let gameP2 = await getUserByName(game.player[1]);
+                game.state.playing = false;
+                if (gameP1) gameP1.playing = {};
+                if (gameP2) gameP2.playing = {};
+                game.result = { state: "무효" };
+                clearAllTimers(game.id);
+                await game.save();
+                if (gameP1) await gameP1.save();
+                if (gameP2) await gameP2.save();
+                Send("✅ " + game.id + "번 게임이 무효 처리되었습니다.\n해당 게임은 승률이나 연승에 영향을 끼치지 않습니다.");
+                return;
+            }
+
+            // 게임중단
+            if (["게임중단","ㄱㅇㅈㄷ","중단","ㅈㄷ"].includes(cmd.split(" ")[0]) && user && user.isAdmin) {
+                let gameIdOrRoom = cmd.split(" ")[1];
+                let game = null;
+                if (!gameIdOrRoom) {
+                    game = await getGameByRoomId(roomid);
+                    if (!game) { Send("❌ 이 방에서 진행중인 게임이 없습니다."); return; }
+                } else {
+                    game = await getGameById(gameIdOrRoom);
+                    if (!game) { Send("❌ 게임을 찾을 수 없습니다."); return; }
+                    if (!game.state.playing) { Send("❌ 진행중인 게임이 아니므로 중단할 수 없습니다."); return; }
+                }
+
+                let gameP1 = await getUserByName(game.player[0]);
+                let gameP2 = await getUserByName(game.player[1]);
+                game.state.playing = false;
+                game.result = {
+                    state: "중단",
+                    player: [gameP1.id, gameP2.id],
+                    room: gameP1.playing.game ? gameP1.playing.game.room : roomName
+                };
+                if (gameP1) gameP1.playing = {};
+                if (gameP2) gameP2.playing = {};
+                clearAllTimers(game.id);
+                await game.save();
+                if (gameP1) await gameP1.save();
+                if (gameP2) await gameP2.save();
+                Send("✅ " + game.id + "번 게임이 중단되었습니다.\n언제든지 재개할 수 있습니다.");
+                return;
+            }
+
+            // 게임재개
+            if (["게임재개","ㄱㅇㅈㄱ","재개","ㅈㄱ"].includes(cmd.split(" ")[0]) && user && user.isAdmin) {
+                let rgame = await getGameByRoomId(roomid);
+                if (rgame) { Send("❌ 이미 이 방에서 진행중인 게임이 있습니다."); return; }
+                
+                let gameId = cmd.split(" ")[1];
+                if (!gameId) return;
+                
+                let game = await getGameById(gameId);
+                if (!game) { Send("❌ 게임을 찾을 수 없습니다."); return; }
+                if (game.result.state != "중단") { Send("❌ 중단된 게임이 아닙니다."); return; }
+
+                let gameP1 = await getUserById(game.result.player[0]);
+                let gameP2 = await getUserById(game.result.player[1]);
+                
+                if (gameP1 && gameP1.playing.game) {
+                    let p1g = await getGameById(gameP1.playing.game.id);
+                    if (p1g && p1g.state.playing) {
+                        Send("❌ " + gameP1.name + "님이 게임을 진행중입니다.\n\n방: " + gameP1.playing.game.room + "\n게임: " + gameP1.playing.game.type + "\n상대: " + gameP1.playing.game.enemy + "님");
+                        return;
+                    }
+                }
+                if (gameP2 && gameP2.playing.game) {
+                    let p2g = await getGameById(gameP2.playing.game.id);
+                    if (p2g && p2g.state.playing) {
+                        Send("❌ " + gameP2.name + "님이 게임을 진행중입니다.\n\n방: " + gameP2.playing.game.room + "\n게임: " + gameP2.playing.game.type + "\n상대: " + gameP2.playing.game.enemy + "님");
+                        return;
+                    }
+                }
+
+                game.state.playing = true;
+                if (gameP1) gameP1.playing.game = { id: game.id, room: roomName, type: game.type, enemy: gameP2.name };
+                if (gameP2) gameP2.playing.game = { id: game.id, room: roomName, type: game.type, enemy: gameP1.name };
+                game.room_id = roomid;
+                game.state.last = new Date().toString();
+                game.result = {};
+                await game.save();
+                if (gameP1) await gameP1.save();
+                if (gameP2) await gameP2.save();
+                Send("✅ " + game.id + "번 게임이 재개되었습니다.\n" + gameP1.name + " vs " + gameP2.name + "\n[ " + PREFIX + "상태 ] 를 입력해주세요.");
+                return;
+            }
+
+            // 커스텀
+            if (cmd.startsWith("커스텀 ") || cmd.startsWith("ㅋㅅㅌ ")) {
+                let rgame = await getGameByRoomId(roomid);
+                if (rgame) { Send("❌ 이미 이 방에서 진행중인 게임이 있습니다."); return; }
+                
+                let args = cmd.split(" ");
+                if (args.length < 5) { Send("❌ 제대로 입력되지 않았습니다.\n" + PREFIX + "커스텀 [P1] [P2] [차례] [수]"); return; }
+                
+                let player1 = await getUserByName(args[1]);
+                if (!player1) { Send("❌ " + args[1] + " 유저가 존재하지 않습니다."); return; }
+                if (player1.playing.game) {
+                    let p1g = await getGameById(player1.playing.game.id);
+                    if (p1g && p1g.state.playing) { Send("❌ " + player1.name + "님이 게임을 진행중입니다.\n\n방: " + player1.playing.game.room + "\n게임: " + player1.playing.game.type + "\n상대: " + player1.playing.game.enemy + "님"); return; }
+                }
+                
+                let player2 = await getUserByName(args[2]);
+                if (!player2) { Send("❌ " + args[2] + " 유저가 존재하지 않습니다."); return; }
+                if (player2.playing.game) {
+                    let p2g = await getGameById(player2.playing.game.id);
+                    if (p2g && p2g.state.playing) { Send("❌ " + player2.name + "님이 게임을 진행중입니다.\n\n방: " + player2.playing.game.room + "\n게임: " + player2.playing.game.type + "\n상대: " + player2.playing.game.enemy + "님"); return; }
+                }
+                
+                if (args[3] != player1.name && args[3] != player2.name) { Send("❌ 차례는 참가자 중에서 지정해야 합니다."); return; }
+                
+                let input_words = args.splice(4, 100);
+                let words = [];
+                let tempSyl = input_words[0].substr(0, 1);
+                let tempSyl2 = dueum(tempSyl);
+                
+                for (let i = 0; i < input_words.length; i++) {
+                    if (input_words[i].length <= 1) { Send("❌ 단어는 모두 2글자 이상으로 입력되어야 합니다."); return; }
+                    if (input_words[i].substr(0, 1) != tempSyl && input_words[i].substr(0, 1) != tempSyl2) { Send("❌ 끝말이 맞지 않는 부분이 있습니다.\n>> " + input_words[i - 1] + " " + input_words[i]); return; }
+                    if (!allword.includes(input_words[i])) { Send("❌ 존재하지 않는 단어가 있습니다.\n>> " + input_words[i]); return; }
+                    if (words.includes(input_words[i])) { Send("❌ 중복되는 단어가 있습니다.\n>> " + input_words[i]); return; }
+                    words.push(input_words[i]);
+                    tempSyl = input_words[i].substr(-1);
+                    tempSyl2 = dueum(tempSyl);
+                }
+                
+                let game = new Game("끝말", [player1.name, player2.name], roomid);
+                // Dynamically get highest id
+                let allGameRes = await queryItems({TableName:"game_data",IndexName:"getIdx",KeyConditionExpression:"#g=:v",ExpressionAttributeNames:{"#g":"_get"},ExpressionAttributeValues:{":v":1}});
+                let countRes = 1;
+                if (allGameRes.success && allGameRes.result[0] && allGameRes.result[0].Items) {
+                    countRes = Math.max(0, ...allGameRes.result[0].Items.map(i => i.id)) + 1;
+                }
+                game.id = countRes;
+                game.word = input_words;
+                game.state.syl = tempSyl;
+                game.state.syl2 = tempSyl2;
+                game.state.order = game.player.indexOf(args[3]);
+                
+                let res = await putItem('game_data', game);
+                if (!res.success) {
+                    Send("❌ 게임 생성 과정에서 오류가 발생했습니다.");
+                } else {
+                    player1.playing.game = { id: game.id, room: roomName, type: game.type, enemy: player2.name };
+                    player2.playing.game = { id: game.id, room: roomName, type: game.type, enemy: player1.name };
+                    await player1.save();
+                    await player2.save();
+                    Send("✅ 끝말잇기 " + game.id + "번 게임이 생성되었습니다.");
+                    Send("∴ 구엜룰 | " + game.player[0] + " vs " + game.player[1] + "\n\n" + game.word.join(" ") + "\n\n" + game.state.syl + (game.state.syl == game.state.syl2 ? "" : "(" + game.state.syl2 + ")") + " | " + game.player[game.state.order] + "님 차례");
+                }
+                return;
+            }
             if (cmd == "스펠순위" || cmd == "ㅅㅍㅅㅇ") {
                 let res = await queryItems({ TableName: "user_data", IndexName: "getIdx", KeyConditionExpression: "#g = :v", ExpressionAttributeNames: { "#g": "_get" }, ExpressionAttributeValues: { ":v": 1 } });
                 if (!res.success) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
@@ -288,6 +592,61 @@ async function onChat(data, channel) {
                         let rateRank = users.map((u, i) => (i + 1) + "위 :: " + u + "\n▣ " + numberWithCommas(u.lp.toString()));
                         Send("◆ 스펠룰 LP 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
                     }
+                }
+                return;
+            }
+
+            // 유저정보
+            if (cmd.startsWith("유저정보") || cmd.startsWith("ㅇㅈㅈㅂ") || cmd.startsWith("승률정보") || cmd.startsWith("ㅅㄹㅈㅂ")) {
+                let targetUserName = arg ? arg.trim() : (user ? user.name : null);
+                let targetUser = targetUserName ? await getUserByName(targetUserName) : null;
+                if (!targetUser) {
+                    Send("❌ 봇에 등록되지 않은 사용자입니다.");
+                } else {
+                    let userInfo = [];
+                    let games = (await getAllGame(targetUser.id)).filter(g => g.word && g.word.length >= 3).sort((a, b) => a.id - b.id);
+                    let gameTypes = ["끝말", "레이팅", "밴룰", "쿵따", "스펠"];
+                    gameTypes.forEach(type => {
+                        let thisGames = games.filter(g => g.type == type);
+                        let winGames = thisGames.filter(g => g.result && g.result.win && g.result.win.id == targetUser.id);
+                        let loseGames = thisGames.filter(g => g.result && g.result.lose && g.result.lose.id == targetUser.id);
+                        let thisGame = {
+                            win: winGames.length,
+                            lose: loseGames.length
+                        };
+                        thisGame.num = thisGame.win + thisGame.lose;
+                        thisGame.streak = getWinStreak(thisGames, targetUser.id).cur;
+
+                        if (thisGame.num > 0)
+                            userInfo.push("≪ " + (type == "끝말" ? "구엜룰" : type == "쿵따" ? "쿵쿵따" : type == "스펠" ? "스펠룰" : type) + " ≫\n:: " + thisGame.num + "전 " + thisGame.win + "승 " + thisGame.lose + "패 (승률 " + (thisGame.win / thisGame.num * 100).toFixed(2) + "%)" + (type == "레이팅" ? "\n:: 레이팅 점수: " + targetUser.rate + "\n:: 레이팅 티어: " + getTier(targetUser.rate) : type == "스펠" ? "\n:: LP: " + numberWithCommas(targetUser.lp.toString()) : "") + (thisGame.streak > 0 ? "\n:: 『 " + thisGame.streak + "연승 중! 』" : ""));
+                    });
+                    Send("[ " + targetUser.name + "님의 정보 ]\n\n" + (userInfo.length == 0 ? "승률 정보가 없습니다." : userInfo.join("\n\n")) + "\n\n※ 세 수 이상 진행되어야 인정됩니다.");
+                }
+                return;
+            }
+
+            // 게임목록
+            if (cmd.startsWith("게임목록") || cmd.startsWith("ㄱㅇㅁㄹ")) {
+                let targetUserName = arg ? arg.trim() : (user ? user.name : null);
+                let targetUser = targetUserName ? await getUserByName(targetUserName) : null;
+                if (!targetUser) {
+                    Send("❌ 봇에 등록되지 않은 사용자입니다.");
+                } else {
+                    let userInfo = [];
+                    let games = (await getAllGame(targetUser.id)).filter(g => g.word && g.word.length >= 3).sort((a, b) => a.id - b.id);
+                    let gameTypes = ["끝말", "레이팅", "밴룰", "쿵따", "스펠"];
+                    gameTypes.forEach(type => {
+                        let thisGames = games.filter(g => g.type == type);
+                        let thisGame = {
+                            win: thisGames.filter(g => g.result && g.result.win && g.result.win.id == targetUser.id).map(g => g.id),
+                            lose: thisGames.filter(g => g.result && g.result.lose && g.result.lose.id == targetUser.id).map(g => g.id)
+                        };
+                        thisGame.num = thisGame.win.length + thisGame.lose.length;
+                        
+                        if (thisGame.num > 0)
+                            userInfo.push("≪ " + (type == "끝말" ? "구엜룰" : type == "쿵따" ? "쿵쿵따" : type == "스펠" ? "스펠룰" : type) + " ≫" + (thisGame.win.length > 0 ? "\n:: 승리한 게임 ::\n" + thisGame.win.join(", ") : "") + (thisGame.lose.length > 0 ? (thisGame.win.length > 0 ? "\n" : "") + "\n:: 패배한 게임 ::\n" + thisGame.lose.join(", ") : ""));
+                    });
+                    Send("[ " + targetUser.name + "님이 플레이한 게임 목록 ]" + (userInfo.length == 0 ? "" : "\n" + VIEWMORE) + "\n\n" + (userInfo.length == 0 ? "게임을 플레이하지 않았습니다." : userInfo.join("\n\n")) + "\n\n※ 세 수 이상 진행되어야 인정됩니다.");
                 }
                 return;
             }
@@ -320,6 +679,11 @@ async function onChat(data, channel) {
                         } else {
                             let waitObj = wordchainQueue[roomid].find(r => r.type == gameType);
                             let waitUser = await getUserByName(waitObj.wait);
+                            if (!waitUser) {
+                                Send("❌ 대기 중인 유저 정보를 불러오지 못했습니다.");
+                                delete wordchainQueue[roomid];
+                                return;
+                            }
                             if (waitUser.playing.game) {
                                 let wg = await getGameById(waitUser.playing.game.id);
                                 if (wg && wg.state.playing) {
@@ -332,15 +696,19 @@ async function onChat(data, channel) {
                             }
                             // 매칭 성사
                             let game = new Game(gameType, [waitObj.wait, user.name], roomid);
-                            let countRes = Number(read("COUNT")) + 1;
-                            game.id = countRes; save("COUNT", countRes.toString());
+                            let countRes = 1;
+                            let allGameRes = await queryItems({TableName:"game_data",IndexName:"getIdx",KeyConditionExpression:"#g=:v",ExpressionAttributeNames:{"#g":"_get"},ExpressionAttributeValues:{":v":1}});
+                            if (allGameRes.success && allGameRes.result[0] && allGameRes.result[0].Items) {
+                                countRes = Math.max(0, ...allGameRes.result[0].Items.map(i => i.id)) + 1;
+                            }
+                            game.id = countRes;
                             game.p1 = waitUser.id; game.p2 = user.id;
                             waitUser.playing.game = { id: game.id, room: roomName, type: game.type, enemy: user.name };
                             user.playing.game = { id: game.id, room: roomName, type: game.type, enemy: waitUser.name };
                             if (game.type == "순위전" || game.type == "레이팅") { waitUser.playing.game.timeLimit = 420000; user.playing.game.timeLimit = 420000; waitUser.playing.game.overtime = 3; user.playing.game.overtime = 3; waitUser.playing.game.isOvertime = false; user.playing.game.isOvertime = false; }
                             if (game.type == "스펠") { waitUser.playing.game.cooldown = 0; user.playing.game.cooldown = 0; game.state.CANUSEKILL = true; game.state.CANUSELEAD = true; game.state.mode = "스펠"; game.state.canUseWords = []; game.state.mustUseUsedWord = false; game.state.spell = {}; Object.keys(spellrule.spell).forEach(k => { game.state.spell[k] = { desc: spellrule.spell[k].desc, used: false }; }); }
                             let res = await putItem('game_data', game);
-                            if (!res.success) { Send("❌ 매칭 과정에서 오류가 발생했습니다."); }
+                            if (!res.success) { Send("❌ 매칭 과정에서 오류가 발생했습니다.\n디버그: " + (res.result[0].message || res.result[0].Message || JSON.stringify(res.result))); }
                             else {
                                 await waitUser.save(); await user.save(); clearTimeout(waitObj.timeout);
                                 Send("〈 끝말잇기 #" + game.id + " 〉\n" + enterType + " 게임이 매칭되었습니다!\n>> " + game.player[0] + " vs " + game.player[1] + "\n\n[ ▼ 게임 설명 ▼ ]" + VIEWMORE + "\n◆ 0(단어)를 입력해 진행할 수 있습니다.\n" + read(game.type + ".txt"));
@@ -506,22 +874,36 @@ async function onChat(data, channel) {
             if (cmd.startsWith("스펠설명 ") || cmd.startsWith("ㅅㅍㅅㅁ ")) { let cs = cmd.substr(5); if (!spellrule.spell[cs]) Send("❌ 존재하지 않는 스펠입니다."); else Send("[ " + cs + " ]\n· " + spellrule.spell[cs].desc.join("\n· ")); return; }
 
             // 단어/뜻 조회
-            // if (["단어","뜻","ㄸ"].includes(cmd.split(" ")[0])) {
-            //     if (arg) {
-            //         let q = arg;
-            //         if (!allword.includes(q)) { Send("❌ 구엜룰 기준 존재하지 않는 단어입니다."); }
-            //         else {
-            //             let types = [];
-            //             if (neosyl.includes(q.substr(-1))) types.push("한방");
-            //             if (leadsyl.includes(q.substr(-1))) types.push("유도");
-            //             if (routesyl.includes(q.substr(-1))) types.push("루트");
-            //             if (!types.length) types.push("일반");
-            //             let mean = await getMean(q);
-            //             Send("✅ 구엜룰 기준 존재하는 단어입니다.\n\n유형: " + types.join(", ") + "\n끝말: " + q.substr(-1) + (q.substr(-1) == dueum(q.substr(-1)) ? "" : "(" + dueum(q.substr(-1)) + ")") + (mean ? "\n뜻: " + mean : ""));
-            //         }
-            //     }
-            //     return;
-            // }
+            if (["단어","뜻","ㄸ"].includes(cmd.split(" ")[0])) {
+                if (arg) {
+                    let q = arg.trim();
+                    if (!allword.includes(q)) { Send("❌ 구엜룰 기준 존재하지 않는 단어입니다."); }
+                    else {
+                        let types = [];
+                        if (neosyl.includes(q.substr(-1))) types.push("한방");
+                        if (leadsyl.includes(q.substr(-1))) types.push("유도");
+                        if (routesyl.includes(q.substr(-1))) types.push("루트");
+                        if (!types.length) types.push("일반");
+                        let mean = await getMean(q);
+                        Send("✅ 구엜룰 기준 존재하는 단어입니다.\n\n유형: " + types.join(", ") + "\n끝말: " + q.substr(-1) + (q.substr(-1) == dueum(q.substr(-1)) ? "" : "(" + dueum(q.substr(-1)) + ")") + (mean ? "\n뜻: " + mean : ""));
+                    }
+                }
+                return;
+            }
+
+            // 도움말
+            if (["도움말","명령어","?","ㄷㅇㅁ","ㅁㄹㅇ"].includes(cmd)) {
+                let helpText = fs.existsSync("DB/도움말.txt") ? read("DB/도움말.txt") : read("도움말.txt");
+                if (helpText != 'null') Send(helpText.replace("--", VIEWMORE).replace(/\$/g, PREFIX));
+                return;
+            }
+
+            // 레이팅티어
+            if (cmd == "레이팅티어" || cmd == "ㄹㅇㅌㅌㅇ") {
+                let tierText = fs.existsSync("DB/레이팅티어.txt") ? read("DB/레이팅티어.txt") : read("레이팅티어.txt");
+                if (tierText != 'null') Send(tierText.replace("--", VIEWMORE));
+                return;
+            }
 
             // 검색 / 모든 / 루트 / 한방 / 유도 / 공단
             if (cmd.indexOf(" ") > 0 && ["모든","모두","ㅁㄷ","루트","ㄹㅌ","ㄾ","한방","ㅎㅂ","유도","ㅇㄷ","공단","ㄱㄷ","검색","ㄱㅅ"].includes(cmd.split(" ")[0])) {
