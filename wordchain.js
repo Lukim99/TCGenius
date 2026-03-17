@@ -149,6 +149,14 @@ async function searchWord(query, type) {
     return result;
 }
 
+function pad_num(kor, max_len) {
+    if (typeof kor != 'string') kor = kor.toString();
+    max_len = max_len || 2;
+    if(kor.length >= max_len)
+        return kor;
+    return (new Array(max_len - kor.length + 1).join("0")) + kor;
+}
+
 Date.prototype.toDateString = function() {
     let y = this.getFullYear();
     let m = this.getMonth() + 1;
@@ -225,7 +233,7 @@ async function onChat(data, channel) {
                         else {
                             let nu = new User(name, senderID);
                             let res = await putItem('user_data', nu);
-                            if (res.success) Send("✅ 성공적으로 등록되셨습니다!\n환영합니다, " + name + "님!\n\n코드: " + nu.code + "\n※ 코드는 다른 기기에서 로그인할 때 사용됩니다.");
+                            if (res.success) Send("✅ 성공적으로 등록되셨습니다!\n환영합니다, " + name + "님!");
                             else Send("❌ 등록 과정에서 오류가 발생했습니다.");
                         }
                     }
@@ -239,13 +247,50 @@ async function onChat(data, channel) {
                 else {
                     let tu = await getUserByCode(arg.trim());
                     if (!tu) { Send("❌ 존재하지 않는 코드입니다."); }
-                    else { if (!tu.logged_in.includes(senderID)) tu.logged_in.push(senderID); await tu.save(); Send("✅ " + tu.name + "님으로 로그인되었습니다."); }
+                    else { if (!tu.logged_in.includes(senderID)) tu.logged_in.push(senderID); tu.code = getRandomString(10).toUpperCase(); await tu.save(); Send("✅ " + tu.name + "님으로 로그인되었습니다."); }
                 }
                 return;
             }
 
             // 코드
-            if (cmd == "코드") { if (!user) Send("❌ 등록되지 않은 사용자입니다."); else Send("🔑 코드: " + user.code); return; }
+            if (cmd == "코드") {
+                if (!user) { Send("❌ 등록되지 않은 사용자입니다."); }
+                else if (!channel._channel || !channel._channel.info || channel._channel.info.activeUserCount != 2) { Send("❌ 코드는 1:1 채팅방에서만 확인할 수 있습니다."); }
+                else { Send("🔑 코드: " + user.code); }
+                return;
+            }
+
+            // 레이팅순위
+            if (cmd == "레이팅순위" || cmd == "ㄹㅇㅌㅅㅇ") {
+                let res = await queryItems({ TableName: "user_data", IndexName: "getIdx", KeyConditionExpression: "#g = :v", FilterExpression: "attribute_exists(#rate) AND #rate <> :nl", ExpressionAttributeNames: { "#g": "_get", "#rate": "rate" }, ExpressionAttributeValues: { ":v": 1, ":nl": null } });
+                if (!res.success) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
+                else {
+                    let users = (res.result[0].Items || []).map(r => new User().load(r)).filter(u => u.rate != null && !isNaN(u.rate));
+                    if (!users.length) { Send("❌ 레이팅에 참가한 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                    else {
+                        users.sort((a, b) => b.rate - a.rate);
+                        let rateRank = users.map((u, i) => (i + 1) + "위 :: 「" + getTier(u.rate) + "」 " + u + "\n▣ " + u.rate);
+                        Send("◆ 레이팅 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                    }
+                }
+                return;
+            }
+
+            // 스펠순위
+            if (cmd == "스펠순위" || cmd == "ㅅㅍㅅㅇ") {
+                let res = await queryItems({ TableName: "user_data", IndexName: "getIdx", KeyConditionExpression: "#g = :v", ExpressionAttributeNames: { "#g": "_get" }, ExpressionAttributeValues: { ":v": 1 } });
+                if (!res.success) { Send("❌ 순위 조회 과정에서 오류가 발생했습니다."); }
+                else {
+                    let users = (res.result[0].Items || []).map(r => new User().load(r)).filter(u => u.lp > 0);
+                    if (!users.length) { Send("❌ LP가 1 이상인 유저가 존재하지 않아 순위를 측정할 수 없습니다."); }
+                    else {
+                        users.sort((a, b) => b.lp - a.lp);
+                        let rateRank = users.map((u, i) => (i + 1) + "위 :: " + u + "\n▣ " + numberWithCommas(u.lp.toString()));
+                        Send("◆ 스펠룰 LP 순위 ◆\n" + VIEWMORE + "\n\n" + rateRank.join("\n\n"));
+                    }
+                }
+                return;
+            }
 
             // 끝말잇기 매칭
             if (cmd.substr(-3) == "1ㄷ1" || ["끝말","ㄲㅁ","구엜","ㄱㅇ","끝말잇기","ㄲㅁㅇㄱ","끝잇","ㄲㅇ","순위전","ㅅㅇㅈ","레이팅","ㄹㅇㅌ","스펠","ㅅㅍ","스펠룰","구엜룰","밴룰","ㅂㄹ"].includes(cmd)) {
@@ -510,24 +555,30 @@ async function onChat(data, channel) {
         // ====== Non-prefix: Spell usage (S...) ======
         if (user && user.playing.game && msg.toUpperCase().startsWith("S") && msg.length > 1) {
             let game = await getGameByPlayerName(user.name);
-            if (game && game.type == "스펠" && game.state.order != null && game.player[game.state.order] == user.name) {
+            if (game && game.type == "스펠") {
                 let cmdSpell = msg.substr(1);
-                if (spellrule.spell[cmdSpell] && game.state.spell[cmdSpell] && !game.state.spell[cmdSpell].used) {
+                if (!game.state.spell[cmdSpell]) {
+                    Send("❌ 존재하지 않는 스펠입니다.");
+                } else if (game.state.spell[cmdSpell].used) {
+                    Send("❌ 이미 사용된 스펠입니다.");
+                } else if (game.word.length < 2) {
+                    Send("❌ 두 수 이상 진행된 후 사용 가능합니다.");
+                } else if (user.playing.game.cooldown != 0 && (new Date()) - (new Date(user.playing.game.cooldown)) < 30000) {
                     let now = new Date();
-                    if (user.playing.game.cooldown && (now - new Date(user.playing.game.cooldown)) / 1000 < 30) {
-                        let recent = new Date(user.playing.game.cooldown);
-                        Send("❌ " + (30 - ((now - recent) / 1000)).toFixed(1) + "초 남았습니다.");
+                    let recent = new Date(user.playing.game.cooldown);
+                    Send("❌ " + (30 - ((now - recent) / 1000)).toFixed(1) + "초 남았습니다.");
+                } else {
+                    let spellRes = await spellrule.spell[cmdSpell].act(game, user, channel);
+                    if (spellRes === true) {
+                        game.state.spell[cmdSpell].used = true;
+                        user.playing.game.cooldown = new Date().toString();
+                        await game.save(); await user.save();
+                        let now = new Date();
+                        let recent = new Date(game.state.last);
+                        Send("[ " + cmdSpell + " ]\n" + game.state.spell[cmdSpell].desc[0]);
+                        Send("🌟 스펠룰 | " + game.player[0] + " vs " + game.player[1] + "\n\n" + game.word.join(" ") + "\n\n" + game.state.syl + (game.state.syl == game.state.syl2 ? "" : "(" + game.state.syl2 + ")") + " | " + game.player[game.state.order] + "님 차례\n⏱️ " + msToMinSec(Math.round(60000 - (now - recent))) + " 안에 이어가세요!");
                     } else {
-                        let spellRes = await spellrule.spell[cmdSpell].act(game, user, channel);
-                        if (spellRes === true) {
-                            game.state.spell[cmdSpell].used = true;
-                            user.playing.game.cooldown = new Date().toString();
-                            await game.save(); await user.save();
-                            Send("✅ " + cmdSpell + " 스펠을 사용했습니다.");
-                            Send("🌟 스펠룰 | " + game.player[0] + " vs " + game.player[1] + "\n\n" + game.word.join(" ") + "\n\n" + game.state.syl + (game.state.syl == game.state.syl2 ? "" : "(" + game.state.syl2 + ")") + " | " + game.player[game.state.order] + "님 차례");
-                        } else {
-                            Send("❌ " + spellRes);
-                        }
+                        Send("❌ " + spellRes);
                     }
                 }
             }
@@ -588,11 +639,16 @@ async function onChat(data, channel) {
 
         // ====== Non-prefix: Forfeit (ㅈㅈ) ======
         if (msg == "ㅈㅈ") {
-            if (user && user.playing.game) {
+            if (user && wordchainQueue[roomid] && wordchainQueue[roomid].find(r => r.wait == user.name)) {
+                let wq = wordchainQueue[roomid].find(r => r.wait == user.name);
+                Send("✅ " + wq.type + "1ㄷ1 요청이 정상적으로 취소되었습니다.");
+                clearTimeout(wq.timeout);
+                wordchainQueue[roomid].splice(wordchainQueue[roomid].findIndex(r => r.wait == user.name), 1);
+            } else if (user && user.playing.game && user.playing.game.room == roomName) {
                 let game = await getGameByPlayerName(user.name);
-                if (game && game.state.order != null) {
+                if (game) {
                     let enemy = await getUserByName(user.playing.game.enemy);
-                    Send("◈ " + user.name + "님이 항복하셨습니다.");
+                    Send("◈ " + user + "님이 게임을 포기하셨습니다.");
                     await game.end(enemy, channel);
                 }
             }
