@@ -2,6 +2,7 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const LKAgent = require('./agent.js');
 const wordchain = require('./wordchain.js');
+const lolChatbot = require('./lol_chatbot.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -3999,6 +4000,7 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 //chat on
 client.on('chat', async (data, channel) => {
     if (JSON.parse(read("DB/wordchain_enabled_rooms.json")).enabled.includes(channel.channelId + "")) wordchain.onChat(data, channel);
+    if (await lolChatbot.onChat(data, channel)) return;
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
@@ -4618,6 +4620,7 @@ client.on('chat', async (data, channel) => {
                 const { data: logs, error } = await supabase
                     .from('join_leave_logs')
                     .select('*')
+                    .eq('channel_id', channel.channelId + '')
                     .eq('user_id', mentionId + '')
                     .like('event_type', '프로필변경%')
                     .order('timestamp', { ascending: false });
@@ -4644,6 +4647,7 @@ client.on('chat', async (data, channel) => {
                 const { data: logs, error } = await supabase
                     .from('join_leave_logs')
                     .select('*')
+                    .eq('channel_id', channel.channelId + '')
                     .eq('user_id', mentionId + '')
                     .like('event_type', '프로필변경%')
                     .order('timestamp', { ascending: false });
@@ -11820,19 +11824,21 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
-    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
+    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
         const { data: prevLogs } = await supabase
             .from('join_leave_logs')
             .select('*')
+            .eq('channel_id', channel.channelId + '')
             .eq('user_id', uid)
             .not('event_type', 'like', '프로필변경%')
             .order('timestamp', { ascending: false });
 
         await supabase.from('join_leave_logs').insert({
             event_type: '입장',
+            channel_id: channel.channelId + '',
             user_id: uid,
             nickname: nick,
             timestamp: new Date().toISOString()
@@ -11849,10 +11855,16 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
     } catch (e) {
         console.log('입장 로그 기록 실패:', e);
     }
+
+    try {
+        await lolChatbot.onUserJoin(channel, user);
+    } catch (e) {
+        console.log('lol_chatbot 입장 연동 실패:', e);
+    }
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
-    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
+    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -11860,6 +11872,7 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 
         await supabase.from('join_leave_logs').insert({
             event_type: (kicker ? `강퇴 by ${kicker.nickname}` : '퇴장'),
+            channel_id: channel.channelId + '',
             user_id: uid,
             nickname: nick,
             timestamp: new Date().toISOString()
@@ -11867,22 +11880,35 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
     } catch (e) {
         console.log('퇴장 로그 기록 실패:', e);
     }
+
+    try {
+        await lolChatbot.onUserLeft(channel, user);
+    } catch (e) {
+        console.log('lol_chatbot 퇴장 연동 실패:', e);
+    }
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
-    if (! ['18448110985554752', '18477786254222718'].includes(channel.channelId + '')) return;
+    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
         const newNick = user ? user.nickname : null;
         if (!oldNick || !newNick || oldNick === newNick) return;
         await supabase.from('join_leave_logs').insert({
             event_type: `프로필변경 (${oldNick} → ${newNick})`,
+            channel_id: channel.channelId + '',
             user_id: user ? user.userId + '' : null,
             nickname: newNick,
             timestamp: new Date().toISOString()
         });
     } catch (e) {
         console.log('프로필 변경 로그 기록 실패:', e);
+    }
+
+    try {
+        await lolChatbot.onProfileChanged(channel, lastInfo, user);
+    } catch (e) {
+        console.log('lol_chatbot 프로필변경 연동 실패:', e);
     }
 });
 
