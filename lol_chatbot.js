@@ -48,6 +48,8 @@ const perms = (() => {
     f([0, 1, 2, 3, 4]);
     return r;
 })();
+const TIER_KO = { C: '챌린저', GM: '그랜드마스터', M: '마스터', D: '다이아몬드', E: '에메랄드', P: '플래티넘', G: '골드', S: '실버', B: '브론즈', I: '아이언', U: '언랭' };
+const TIER_ROMAN = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
 
 function isTarget(channel) { return !!channel && channel.channelId + '' === TARGET_CHANNEL_ID; }
 function commas(v) { return Number(v || 0).toLocaleString('ko-KR'); }
@@ -75,6 +77,21 @@ function parseNick(nick) {
     const idx = riot.lastIndexOf('#');
     if (!tier || idx < 1 || idx >= riot.length - 1) return null;
     return { year: parts[0], riotName: riot.slice(0, idx).trim(), riotTag: riot.slice(idx + 1).trim(), tier };
+}
+function riotId(name, tag) { return name && tag ? `${name}#${tag}` : ''; }
+function formatNickname(nick) { const p = parseNick(nick); return p ? riotId(p.riotName, p.riotTag) : (nick || ''); }
+function userDisplayName(user, fallback = '') { return riotId(user?.riot_name, user?.riot_tag) || formatNickname(user?.display_nickname || '') || fallback || user?.display_nickname || ''; }
+function formatProfileChange(eventType) {
+    const m = (eventType || '').match(/^프로필변경 \((.*) → (.*)\)$/);
+    if (!m) return eventType || '';
+    return `${formatNickname(m[1])} → ${formatNickname(m[2])}`;
+}
+function formatTier(token) {
+    const tier = parseTier(token || '');
+    if (!tier) return '미인식';
+    if (tier.group === 'U') return TIER_KO.U;
+    if (['M', 'GM', 'C'].includes(tier.group)) return `${TIER_KO[tier.group]}${tier.lp ? ` ${commas(tier.lp)} LP` : ''}`;
+    return `${TIER_KO[tier.group] || (tier.raw || token)} ${TIER_ROMAN[tier.div] || tier.div || ''}`.trim();
 }
 function scoreRow(tier) {
     if (!tier) return SCORE_RAW[SCORE_RAW.length - 1];
@@ -110,7 +127,7 @@ async function putUser(payload) {
 function baseUser(userId, nickname, channelId, old = {}) {
     const now = new Date().toISOString();
     const p = parseNick(nickname);
-    return { user_id: userId + '', channel_id: channelId + '', display_nickname: nickname || '', birth_year: p ? p.year : old.birth_year || null, riot_name: p ? p.riotName : old.riot_name || null, riot_tag: p ? p.riotTag : old.riot_tag || null, tier_token: p ? p.tier.raw : old.tier_token || null, tier_group: p ? p.tier.group : old.tier_group || null, tier_division: p ? p.tier.div : old.tier_division || null, tier_lp: p ? p.tier.lp : old.tier_lp || 0, line: old.line || null, nickname_history: Array.isArray(old.nickname_history) ? old.nickname_history : [], line_history: Array.isArray(old.line_history) ? old.line_history : [], level: +old.level || 1, exp: +old.exp || 0, coins: +old.coins || 0, attendance_days: +old.attendance_days || 0, attendance_streak: +old.attendance_streak || 0, last_attendance_date: old.last_attendance_date || null, total_chat_count: +old.total_chat_count || 0, reaction_wins: +old.reaction_wins || 0, wordchain_wins: +old.wordchain_wins || 0, choseong_wins: +old.choseong_wins || 0, last_chat_at: old.last_chat_at || null, last_seen_at: now, updated_at: now, created_at: old.created_at || now };
+    return { user_id: userId + '', channel_id: channelId + '', display_nickname: p ? riotId(p.riotName, p.riotTag) : (nickname || old.display_nickname || ''), birth_year: p ? p.year : old.birth_year || null, riot_name: p ? p.riotName : old.riot_name || null, riot_tag: p ? p.riotTag : old.riot_tag || null, tier_token: p ? p.tier.raw : old.tier_token || null, tier_group: p ? p.tier.group : old.tier_group || null, tier_division: p ? p.tier.div : old.tier_division || null, tier_lp: p ? p.tier.lp : old.tier_lp || 0, line: old.line || null, nickname_history: Array.isArray(old.nickname_history) ? old.nickname_history : [], line_history: Array.isArray(old.line_history) ? old.line_history : [], level: +old.level || 1, exp: +old.exp || 0, coins: +old.coins || 0, attendance_days: +old.attendance_days || 0, attendance_streak: +old.attendance_streak || 0, last_attendance_date: old.last_attendance_date || null, total_chat_count: +old.total_chat_count || 0, reaction_wins: +old.reaction_wins || 0, wordchain_wins: +old.wordchain_wins || 0, choseong_wins: +old.choseong_wins || 0, last_chat_at: old.last_chat_at || null, last_seen_at: now, updated_at: now, created_at: old.created_at || now };
 }
 async function ensureUser(info, channelId) { const old = await getUser(info.userId + ''); return putUser(baseUser(info.userId, info.nickname, channelId, old || {})); }
 async function addCoins(info, amount, channelId) { const u = await ensureUser(info, channelId); return putUser({ ...u, coins: +u.coins + amount, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() }); }
@@ -118,8 +135,8 @@ async function touchChat(sender, msg, channelId) {
     const u = await ensureUser(sender, channelId);
     let exp = +u.exp + 5, level = +u.level, reward = 0, up = false;
     while (exp >= needExp(level)) { exp -= needExp(level); level += 1; reward += level >= 10 ? 500 : 50; up = true; }
-    const next = await putUser({ ...u, display_nickname: sender.nickname || '', total_chat_count: +u.total_chat_count + 1, last_chat_at: new Date().toISOString(), exp, level, coins: +u.coins + reward, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
-    await supabase.from('lol_chatbot_chat_logs').insert({ channel_id: channelId + '', user_id: sender.userId + '', nickname: sender.nickname || '', message: (msg || '').slice(0, 1500), created_at: new Date().toISOString() });
+    const next = await putUser({ ...u, display_nickname: userDisplayName(u, sender.nickname || ''), total_chat_count: +u.total_chat_count + 1, last_chat_at: new Date().toISOString(), exp, level, coins: +u.coins + reward, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
+    await supabase.from('lol_chatbot_chat_logs').insert({ channel_id: channelId + '', user_id: sender.userId + '', nickname: userDisplayName(next, sender.nickname || ''), message: (msg || '').slice(0, 1500), created_at: new Date().toISOString() });
     return { user: next, up, reward };
 }
 
@@ -169,13 +186,13 @@ async function attendance(sender, channel) {
     const u = await ensureUser(sender, channel.channelId + '');
     const today = todayKst();
     if (u.last_attendance_date === today) {
-        channel.sendChat(`❌ ${sender.nickname}님은 오늘 이미 출석했습니다.`);
+        channel.sendChat(`❌ ${userDisplayName(u, sender.nickname)}님은 오늘 이미 출석했습니다.`);
         return true;
     }
     const streak = u.last_attendance_date === yesterdayKst() ? +u.attendance_streak + 1 : 1;
     const reward = streak % 10 === 0 ? 100 : 50;
     const next = await putUser({ ...u, attendance_days: +u.attendance_days + 1, attendance_streak: streak, last_attendance_date: today, coins: +u.coins + reward, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
-    channel.sendChat(`✅ ${sender.nickname}님 출석 완료\n🪙 +${reward}메리${streak % 10 === 0 ? '\n🎉 10일마다 2배 보너스 적용!' : ''}\n📅 누적 출석: ${next.attendance_days}일\n🔥 연속 출석: ${next.attendance_streak}일\n🪙 현재 메리: ${commas(next.coins)}메리`);
+    channel.sendChat(`✅ ${userDisplayName(next, sender.nickname)}님 출석 완료\n🪙 +${reward}메리${streak % 10 === 0 ? '\n🎉 10일마다 2배 보너스 적용!' : ''}\n📅 누적 출석: ${next.attendance_days}일\n🔥 연속 출석: ${next.attendance_streak}일\n🪙 현재 메리: ${commas(next.coins)}메리`);
     return true;
 }
 
@@ -232,7 +249,7 @@ async function catchReaction(msg, sender, channel) {
     clearReaction(channelId);
     const u = await ensureUser(sender, channelId);
     const next = await putUser({ ...u, reaction_wins: +u.reaction_wins + 1, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
-    channel.sendChat(`🏆 반응게임 우승: ${sender.nickname}\n${ms != null ? `⏱ 반응 속도: ${ms}ms\n` : ''}🥇 누적 우승: ${next.reaction_wins}회`);
+    channel.sendChat(`🏆 반응게임 우승: ${userDisplayName(next, sender.nickname)}\n${ms != null ? `⏱ 반응 속도: ${ms}ms\n` : ''}🥇 누적 우승: ${next.reaction_wins}회`);
     return true;
 }
 
@@ -285,9 +302,9 @@ async function catchWord(msg, sender, channel) {
     g.current = word;
     g.used.add(word);
     g.lastUserId = sender.userId + '';
-    g.lastNickname = sender.nickname;
+    g.lastNickname = formatNickname(sender.nickname);
     armWordTimeout(g);
-    channel.sendChat(`✅ ${sender.nickname}: ${word}\n다음 글자: '${word[word.length - 1]}'`);
+    channel.sendChat(`✅ ${formatNickname(sender.nickname)}: ${word}\n다음 글자: '${word[word.length - 1]}'`);
     return true;
 }
 
@@ -318,7 +335,7 @@ async function catchCho(msg, sender, channel) {
     clearCho(channelId);
     const u = await ensureUser(sender, channelId);
     const next = await putUser({ ...u, choseong_wins: +u.choseong_wins + 1, coins: +u.coins + 10, updated_at: new Date().toISOString(), last_seen_at: new Date().toISOString() });
-    channel.sendChat(`🏆 초성게임 우승: ${sender.nickname}\n정답: ${g.answer}\n🪙 +10메리\n🥇 누적 초성 우승: ${next.choseong_wins}회`);
+    channel.sendChat(`🏆 초성게임 우승: ${userDisplayName(next, sender.nickname)}\n정답: ${g.answer}\n🪙 +10메리\n🥇 누적 초성 우승: ${next.choseong_wins}회`);
     return true;
 }
 
@@ -329,19 +346,19 @@ async function getSummary(channel) {
     if (!logs.length) return '요약할 최근 대화가 없습니다.';
     if (!gemini) {
         const speakers = {};
-        logs.forEach(log => { speakers[log.nickname] = (speakers[log.nickname] || 0) + 1; });
+        logs.forEach(log => { const name = formatNickname(log.nickname) || log.nickname || '?'; speakers[name] = (speakers[name] || 0) + 1; });
         const top = Object.entries(speakers).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${name}(${count})`).join(', ');
-        const recent = logs.slice(-8).map(log => `${log.nickname}: ${log.message}`).join('\n');
+        const recent = logs.slice(-8).map(log => `${formatNickname(log.nickname) || log.nickname || '?'}: ${log.message}`).join('\n');
         return `최근 대화 요약(간이)\n주요 발화자: ${top || '없음'}\n\n최근 메시지\n${recent}`;
     }
     const prompt = [
-        '다음 카카오톡 단체 채팅 내용을 한국어로 간결하게 요약해줘.',
+        '다음 카카오톡 단체 채팅 내용을 마크다운 없이 한국어로 간결하게 요약해줘.',
         '1. 핵심 주제 3개 이내',
         '2. 결정/합의 사항',
         '3. 분위기/특이사항',
         '4. 중요 발언자 있으면 표시',
         '',
-        logs.map(log => `[${dt(log.created_at)}] ${log.nickname}: ${log.message}`).join('\n')
+        logs.map(log => `[${dt(log.created_at)}] ${formatNickname(log.nickname) || log.nickname || '?'}: ${log.message}`).join('\n')
     ].join('\n');
     const res = await gemini.generateContent(prompt);
     return res.response.text().trim();
@@ -374,7 +391,7 @@ async function setLine(userInfo, line, channelId) {
 
 function validateNicknameOrWarn(sender, channel) {
     if (parseNick(sender.nickname)) return true;
-    channel.sendChat('닉네임을 양식에 맞춰주세요');
+    channel.sendChat('❌ 닉네임을 양식에 맞춰주세요!\n[년생] [Riot 태그] [티어]\n예) 08 홍길동#KR1 G1');
     return false;
 }
 
@@ -423,7 +440,7 @@ async function handleCommand(data, channel, sender, isSenderManager) {
     if (cmd === '레벨' || cmd === '정보' || cmd === '내정보') {
         const u = await ensureUser(sender, channel.channelId + '');
         channel.sendChat(
-            `👤 ${sender.nickname}\n` +
+            `👤 ${userDisplayName(u, sender.nickname)}\n` +
             `Lv.${u.level} (${u.exp}/${needExp(u.level)} EXP)\n` +
             `🪙 메리: ${commas(u.coins)}\n` +
             `💬 누적 채팅: ${commas(u.total_chat_count)}\n` +
@@ -431,14 +448,14 @@ async function handleCommand(data, channel, sender, isSenderManager) {
             `🎮 반응 ${u.reaction_wins} / 끝말 ${u.wordchain_wins} / 초성 ${u.choseong_wins}\n` +
             `🕒 마지막 채팅: ${dt(u.last_chat_at)}\n` +
             `🎯 등록 라인: ${u.line || '미등록'}\n` +
-            `🏅 티어: ${u.tier_token || '미인식'}`
+            `🏅 티어: ${formatTier(u.tier_token)}`
         );
         return true;
     }
 
     if (cmd === '메리' || cmd === '잔고') {
         const u = await ensureUser(sender, channel.channelId + '');
-        channel.sendChat(`🪙 ${sender.nickname}님의 메리: ${commas(u.coins)}메리`);
+        channel.sendChat(`🪙 ${userDisplayName(u, sender.nickname)}님의 메리: ${commas(u.coins)}메리`);
         return true;
     }
 
@@ -455,19 +472,19 @@ async function handleCommand(data, channel, sender, isSenderManager) {
         }
         const signed = cmd === '메리지급' ? amount : -amount;
         const next = await addCoins(target, signed, channel.channelId + '');
-        channel.sendChat(`✅ ${target.nickname}님에게 ${signed > 0 ? `${commas(amount)}메리 지급` : `${commas(amount)}메리 차감`}\n🪙 현재 메리: ${commas(next.coins)}메리`);
+        channel.sendChat(`✅ ${userDisplayName(next, target.nickname)}님에게 ${signed > 0 ? `${commas(amount)}메리 지급` : `${commas(amount)}메리 차감`}\n🪙 현재 메리: ${commas(next.coins)}메리`);
         return true;
     }
 
     if (cmd === '채팅순위') {
         const users = await getUsersRank('total_chat_count', 15);
-        channel.sendChat(`📊 채팅 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${u.display_nickname} - ${commas(u.total_chat_count)}회`).join('\n') || '기록 없음'}`);
+        channel.sendChat(`📊 채팅 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${userDisplayName(u)} - ${commas(u.total_chat_count)}회`).join('\n') || '기록 없음'}`);
         return true;
     }
 
     if (cmd === '반응순위') {
         const users = await getUsersRank('reaction_wins', 15);
-        channel.sendChat(`⚡ 반응게임 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${u.display_nickname} - ${commas(u.reaction_wins)}회`).join('\n') || '기록 없음'}`);
+        channel.sendChat(`⚡ 반응게임 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${userDisplayName(u)} - ${commas(u.reaction_wins)}회`).join('\n') || '기록 없음'}`);
         return true;
     }
 
@@ -475,13 +492,13 @@ async function handleCommand(data, channel, sender, isSenderManager) {
         const { data, error } = await supabase.from('lol_chatbot_users').select('*').eq('channel_id', TARGET_CHANNEL_ID);
         if (error) throw error;
         const users = (data || []).sort((a, b) => (Number(b.level || 1) - Number(a.level || 1)) || (Number(b.exp || 0) - Number(a.exp || 0))).slice(0, 15);
-        channel.sendChat(`🌟 레벨 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${u.display_nickname} - Lv.${u.level} (${u.exp}/${needExp(u.level)})`).join('\n') || '기록 없음'}`);
+        channel.sendChat(`🌟 레벨 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${userDisplayName(u)} - Lv.${u.level} (${u.exp}/${needExp(u.level)})`).join('\n') || '기록 없음'}`);
         return true;
     }
 
     if (cmd === '메리순위') {
         const users = await getUsersRank('coins', 15);
-        channel.sendChat(`🪙 메리 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${u.display_nickname} - ${commas(u.coins)}메리`).join('\n') || '기록 없음'}`);
+        channel.sendChat(`🪙 메리 순위\n${VIEWMORE}\n${users.map((u, i) => `${i + 1}위. ${userDisplayName(u)} - ${commas(u.coins)}메리`).join('\n') || '기록 없음'}`);
         return true;
     }
 
@@ -533,7 +550,7 @@ async function handleCommand(data, channel, sender, isSenderManager) {
             channel.sendChat('❌ 해당 유저의 닉변 기록이 없습니다.');
             return true;
         }
-        channel.sendChat(`📋 닉변 기록 (${logs.length}건)\n${logs.map((log, i) => `${i + 1}. ${log.event_type.replace('프로필변경 (', '').replace(')', '')} (${dt(log.timestamp)})`).join('\n')}`);
+        channel.sendChat(`📋 닉변 기록 (${logs.length}건)\n${logs.map((log, i) => `${i + 1}. ${formatProfileChange(log.event_type)} (${dt(log.timestamp)})`).join('\n')}`);
         return true;
     }
 
@@ -544,14 +561,14 @@ async function handleCommand(data, channel, sender, isSenderManager) {
             channel.sendChat('❌ 해당 유저의 입퇴장 기록이 없습니다.');
             return true;
         }
-        channel.sendChat(`📋 입퇴장 기록\n${VIEWMORE}\n${logs.map((log, i) => `${i + 1}. [${log.event_type}] ${log.nickname || '?'} (${dt(log.timestamp)})`).join('\n')}`);
+        channel.sendChat(`📋 입퇴장 기록\n${VIEWMORE}\n${logs.map((log, i) => `${i + 1}. [${log.event_type}] ${formatNickname(log.nickname) || '?'} (${dt(log.timestamp)})`).join('\n')}`);
         return true;
     }
 
     if (cmd === '마지막채팅') {
         const target = ctx.firstMention || sender;
         const u = await ensureUser(target, channel.channelId + '');
-        channel.sendChat(`🕒 ${target.nickname}님의 마지막 채팅 시각\n${dt(u.last_chat_at)}`);
+        channel.sendChat(`🕒 ${userDisplayName(u, target.nickname)}님의 마지막 채팅 시각\n${dt(u.last_chat_at)}`);
         return true;
     }
 
@@ -563,7 +580,7 @@ async function handleCommand(data, channel, sender, isSenderManager) {
             return true;
         }
         const next = await setLine(target, line, channel.channelId + '');
-        channel.sendChat(`✅ ${target.nickname}님의 라인이 ${next.line}(으)로 등록되었습니다.`);
+        channel.sendChat(`✅ ${userDisplayName(next, target.nickname)}님의 라인이 ${next.line}(으)로 등록되었습니다.`);
         return true;
     }
 
@@ -574,12 +591,12 @@ async function handleCommand(data, channel, sender, isSenderManager) {
         for (const target of targets) {
             const u = await ensureUser(target, channel.channelId + '');
             if (!u.line || !u.tier_token) {
-                rows.push(`${target.nickname} - 라인 또는 티어 정보 부족`);
+                rows.push(`${userDisplayName(u, target.nickname)} - 라인 또는 티어 정보 부족`);
                 continue;
             }
             const score = lineScore(u, u.line);
             total += score;
-            rows.push(`${target.nickname} | ${u.line} | ${u.tier_token} | ${score.toFixed(1)}점`);
+            rows.push(`${userDisplayName(u, target.nickname)} | ${u.line} | ${formatTier(u.tier_token)} | ${score.toFixed(1)}점`);
         }
         const avg = targets.length ? (total / targets.length).toFixed(1) : '0.0';
         channel.sendChat(`🔥 멸망전 점수\n${rows.join('\n')}\n\n합계: ${total.toFixed(1)}점\n평균: ${avg}점`);
@@ -596,7 +613,7 @@ async function handleCommand(data, channel, sender, isSenderManager) {
         for (const target of targets) {
             const u = await ensureUser(target, channel.channelId + '');
             if (!u.tier_token) {
-                channel.sendChat(`❌ ${target.nickname}님의 닉네임에서 티어를 인식할 수 없습니다.`);
+                channel.sendChat(`❌ ${userDisplayName(u, target.nickname)}님의 닉네임에서 티어를 인식할 수 없습니다.`);
                 return true;
             }
             players.push({ ...u, mention_nickname: target.nickname });
@@ -607,8 +624,8 @@ async function handleCommand(data, channel, sender, isSenderManager) {
             channel.sendChat('❌ 밸런스 계산에 실패했습니다.');
             return true;
         }
-        const aLines = LINES.map((line, i) => `${line}: ${best.a[best.pa[i]].display_nickname} (${best.a[best.pa[i]].line || '미등록'} / ${best.a[best.pa[i]].tier_token || '미인식'} / ${lineScore(best.a[best.pa[i]], line).toFixed(1)})`);
-        const bLines = LINES.map((line, i) => `${line}: ${best.b[best.pb[i]].display_nickname} (${best.b[best.pb[i]].line || '미등록'} / ${best.b[best.pb[i]].tier_token || '미인식'} / ${lineScore(best.b[best.pb[i]], line).toFixed(1)})`);
+        const aLines = LINES.map((line, i) => `${line}: ${userDisplayName(best.a[best.pa[i]])} (${best.a[best.pa[i]].line || '미등록'} / ${formatTier(best.a[best.pa[i]].tier_token)} / ${lineScore(best.a[best.pa[i]], line).toFixed(1)})`);
+        const bLines = LINES.map((line, i) => `${line}: ${userDisplayName(best.b[best.pb[i]])} (${best.b[best.pb[i]].line || '미등록'} / ${formatTier(best.b[best.pb[i]].tier_token)} / ${lineScore(best.b[best.pb[i]], line).toFixed(1)})`);
         channel.sendChat(`⚖️ 내전 밸런스\n\n[ 1팀 ]\n${aLines.join('\n')}\n합계: ${best.sa.toFixed(1)}\n\n[ 2팀 ]\n${bLines.join('\n')}\n합계: ${best.sb.toFixed(1)}\n\n점수 차이: ${best.diff.toFixed(1)}`);
         return true;
     }
@@ -627,7 +644,7 @@ async function onChat(data, channel) {
         await ensureUser(sender, channel.channelId + '');
         if (msg) {
             const chatResult = await touchChat(sender, msg, channel.channelId + '');
-            if (chatResult.up && chatResult.reward > 0) channel.sendChat(`🌟 ${sender.nickname}님 레벨업! Lv.${chatResult.user.level}\n🪙 +${chatResult.reward}메리`);
+            if (chatResult.up && chatResult.reward > 0) channel.sendChat(`🌟 ${userDisplayName(chatResult.user, sender.nickname)}님 레벨업! Lv.${chatResult.user.level}\n🪙 +${chatResult.reward}메리`);
         }
         if (ATTENDANCE.has(msg)) {
             if (!validateNicknameOrWarn(sender, channel)) return true;
