@@ -3,7 +3,7 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const TARGET_CHANNEL_ID = '2222333';
+const TARGET_CHANNEL_ID = '18479216221100211';
 const VIEWMORE = '\u200e'.repeat(500);
 const LINES = ['탑', '정글', '미드', '원딜', '서폿'];
 const ATTENDANCE = new Set(['ㅊㅊ', '출석']);
