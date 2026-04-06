@@ -180,6 +180,19 @@ class RPGEquipmentDataManager {
         return filtered;
     }
 
+    // 등급+레벨로 랜덤 장비 1개 반환 (던전 드랍용)
+    getRandomEquipmentByRarityAndLevel(rarity, level) {
+        const pool = [
+            ...this.weapons.filter(w => w.rarity === rarity && w.level === level),
+            ...this.armors.filter(a => a.rarity === rarity && a.level === level),
+            ...this.accessories.filter(a => a.rarity === rarity && a.level === level)
+        ];
+        if (pool.length === 0) return null;
+        const picked = pool[Math.floor(Math.random() * pool.length)];
+        const category = picked.type === 'weapon' ? 'weapon' : (picked.type === 'necklace' || picked.type === 'ring' || picked.type === 'bracelet') ? 'accessory' : 'armor';
+        return { ...picked, category };
+    }
+
     // 등급으로 필터링
     filterByRarity(equipments, rarity) {
         return equipments.filter(e => e.rarity === rarity);
@@ -782,13 +795,17 @@ class RPGShopManager {
         const priceType = item.priceType || 'point';
         const price = item.price;
 
-        // 가격 확인 (포인트 / 가넷)
+        // 가격 확인 (포인트 / 가넷 / 골드)
         if (priceType === 'garnet') {
             if (owner.garnet < price) return { success: false, message: `가넷이 부족합니다. (필요: ${price}, 보유: ${owner.garnet})` };
             owner.garnet -= price;
+        } else if (priceType === 'gold') {
+            if (owner.gold < price) return { success: false, message: `골드가 부족합니다. (필요: ${price}, 보유: ${owner.gold})` };
+            owner.gold -= price;
         } else {
-            // 포인트는 외부에서 처리 (이 시스템에서는 가격만 반환)
-            return { success: false, message: '포인트 결제는 외부 시스템에서 처리됩니다.', price, priceType: 'point' };
+            // 포인트
+            if (owner.point < price) return { success: false, message: `포인트가 부족합니다. (필요: ${price}, 보유: ${owner.point})` };
+            owner.point -= price;
         }
 
         // 아이템 지급
@@ -1444,6 +1461,14 @@ class RPGLevel {
         return this.level >= this.maxLevel;
     }
 
+    toString() {
+        return String(this.level);
+    }
+
+    valueOf() {
+        return this.level;
+    }
+
     toJSON() {
         return {
             level: this.level,
@@ -1883,7 +1908,16 @@ class RPGInventory {
     }
 
     load(data) {
-        this.equipments = data.equipments || [];
+        this.equipments = [];
+        if (data.equipments && Array.isArray(data.equipments)) {
+            for (const eqData of data.equipments) {
+                if (eqData && eqData.id) {
+                    this.equipments.push(
+                        new RPGEquipment(eqData.id, eqData.name, eqData.type, eqData.rarity, eqData.level, eqData.stats).load(eqData)
+                    );
+                }
+            }
+        }
         this.maxSize = data.maxSize || 100;
         
         this.consumables = new Map();
@@ -1979,7 +2013,7 @@ class RPGInventory {
             consumablesObj[name] = item.toJSON();
         }
         return {
-            equipments: this.equipments,
+            equipments: this.equipments.map(eq => (typeof eq.toJSON === 'function') ? eq.toJSON() : eq),
             consumables: consumablesObj,
             maxSize: this.maxSize
         };
@@ -2881,11 +2915,25 @@ class RPGBattle {
             if (dungeonRewards && dungeonRewards.slots) {
                 for (const slot of dungeonRewards.slots) {
                     if (Math.random() * 100 < slot.chance) {
+                        // 가중치 랜덤 픽
+                        const roll = Math.random() * 100;
+                        let cumulative = 0;
+                        let pickedItem = null;
                         for (const item of slot.items) {
-                            if (Math.random() * 100 < item.chance) {
-                                collectedRewards.items.push({ name: `${item.rarity} Lv.${item.level} 장비`, type: item.type, rarity: item.rarity, level: item.level });
-                                endLog.push(`• 장비: [${item.rarity}] Lv.${item.level} 장비 획득!`);
+                            cumulative += item.chance;
+                            if (roll < cumulative) { pickedItem = item; break; }
+                        }
+                        if (!pickedItem) pickedItem = slot.items[slot.items.length - 1];
+                        
+                        if (pickedItem) {
+                            // name이 있으면 특정 장비, 없으면 등급+레벨 풀에서 랜덤
+                            let equipName = pickedItem.name;
+                            if (!equipName) {
+                                const randomEquip = equipmentManager.getRandomEquipmentByRarityAndLevel(pickedItem.rarity, pickedItem.level);
+                                equipName = randomEquip ? randomEquip.name : `[${pickedItem.rarity}] Lv.${pickedItem.level} 장비`;
                             }
+                            collectedRewards.items.push({ name: equipName, type: 'equipment', rarity: pickedItem.rarity, level: pickedItem.level, isEquipment: true });
+                            endLog.push(`• 장비: [${pickedItem.rarity}] ${equipName} 획득!`);
                         }
                     }
                 }
@@ -2907,7 +2955,7 @@ class RPGBattle {
                 for (const bon of dungeonRewards.bonus) {
                     if (Math.random() * 100 < bon.chance) {
                         collectedRewards.items.push({ name: bon.name, count: bon.count });
-                        endLog.push(`• [보너스] ${bon.name} x${bon.count}`);
+                        endLog.push(`• 🔷 ${bon.name} x${bon.count}`);
                     }
                 }
             }
@@ -2921,7 +2969,7 @@ class RPGBattle {
             for (const gd of globalDrops) {
                 if (Math.random() * 100 < gd.chance) {
                     collectedRewards.items.push({ name: gd.name, count: gd.count });
-                    endLog.push(`• [글로벌] ${gd.name} x${gd.count}`);
+                    endLog.push(`• 🌟 ${gd.name} x${gd.count}`);
                 }
             }
             
