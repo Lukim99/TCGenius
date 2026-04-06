@@ -262,6 +262,21 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 const loginPageHtml = loginPageRes.data;
                 
                 const $login = cheerio.load(loginPageHtml);
+                
+                // 디버그: 로그인 폼의 실제 필드명 추출
+                const formInputs = [];
+                $login('form input').each((i, el) => {
+                    const name = $login(el).attr('name');
+                    const type = $login(el).attr('type');
+                    const value = $login(el).val();
+                    if (name) formInputs.push({ name, type: type || 'text', value: value || '' });
+                });
+                console.log("로그인 폼 필드:", JSON.stringify(formInputs));
+                
+                // 폼 action URL 확인
+                const formAction = $login('form').attr('action');
+                console.log("폼 action:", formAction);
+                
                 let loginToken = $login('meta[name="csrf-token"]').attr('content') || 
                                 $login('input[name="_token"]').val() ||
                                 $login('input[name="csrf_token"]').val();
@@ -273,13 +288,29 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 
                 if (!loginToken) {
                     console.log("로그인 CSRF 토큰을 찾을 수 없습니다.");
+                    console.log("로그인 페이지 HTML (처음 2000자):", loginPageHtml.substring(0, 2000));
                     return { success: false, msg: "로그인 페이지에서 토큰을 찾을 수 없습니다.", token: "없음", ip: currentIp };
                 }
+                
+                console.log("CSRF 토큰:", loginToken);
 
                 // 2단계: 로그인 POST (리다이렉트 수동 추적으로 쿠키 수집)
+                // 폼 필드를 동적으로 구성 (히든 필드 포함)
                 const loginParams = new URLSearchParams();
-                loginParams.append('user_id', id);
-                loginParams.append('pw', password);
+                for (const input of formInputs) {
+                    if (input.type === 'hidden' && input.name !== '_token') {
+                        loginParams.append(input.name, input.value);
+                    }
+                }
+                // ID/PW 필드명을 폼에서 추출
+                const idField = formInputs.find(f => f.type === 'text' || f.name.includes('id') || f.name.includes('user'));
+                const pwField = formInputs.find(f => f.type === 'password' || f.name.includes('pw') || f.name.includes('pass'));
+                const idFieldName = idField ? idField.name : 'user_id';
+                const pwFieldName = pwField ? pwField.name : 'pw';
+                console.log(`로그인 필드명: ID=${idFieldName}, PW=${pwFieldName}`);
+                
+                loginParams.append(idFieldName, id);
+                loginParams.append(pwFieldName, password);
                 loginParams.append('_token', loginToken);
                 
                 console.log("로그인 POST 전 쿠키:", cookiesToString(sessionCookies));
@@ -304,6 +335,12 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                         validateStatus: (status) => status >= 200 && status < 400
                     }
                 );
+                
+                console.log("로그인 POST 응답 상태:", loginRes.status);
+                console.log("로그인 POST Location:", loginRes.headers['location'] || '없음');
+                console.log("로그인 POST Set-Cookie:", JSON.stringify(loginRes.headers['set-cookie'] || []));
+                const loginResBody = typeof loginRes.data === 'string' ? loginRes.data.substring(0, 1000) : JSON.stringify(loginRes.data).substring(0, 1000);
+                console.log("로그인 POST 응답 본문:", loginResBody);
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginRes.headers['set-cookie']));
                 console.log("로그인 POST 후 쿠키:", cookiesToString(sessionCookies));
