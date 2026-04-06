@@ -171,7 +171,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36'
     ];
     const randomUA = UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
-    const proxyUrl = `http://${PROXY_CONFIG.username}:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+    const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
 
     const agent = new HttpsProxyAgent({
         proxy: proxyUrl,
