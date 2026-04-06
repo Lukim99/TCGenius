@@ -177,9 +177,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         proxy: proxyUrl,
         rejectUnauthorized: false,
         keepAlive: true,
-        maxCachedSessions: 0,
-        ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256',
-        honorCipherOrder: true
+        maxCachedSessions: 0
     });
 
     let currentIp = "확인 불가";
@@ -2051,6 +2049,19 @@ class RPGOwner {
 
     toString() {
         return `[Object RPGOwner ${this.name}]`;
+    }
+
+    toJSON() {
+        return {
+            _get: this._get,
+            id: this.id,
+            name: this.name,
+            characters: this.characters,
+            maxCharacters: this.maxCharacters,
+            activeCharacter: this.activeCharacter,
+            gold: this.gold,
+            garnet: this.garnet
+        };
     }
 
     async save() {
@@ -11717,7 +11728,12 @@ client.on('chat', async (data, channel) => {
                         if (result.victory) {
                             // 보상 지급
                             character.gainExp(result.rewards.exp);
+                            if (result.rewards.gold > 0) owner.gold += result.rewards.gold;
+                            for (const item of result.rewards.items || []) {
+                                character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                            }
                             await character.save();
+                            await owner.save();
                         }
                         activeBattles.delete(sender.userId + "");
                     } else {
@@ -11728,7 +11744,14 @@ client.on('chat', async (data, channel) => {
                             battleMsg.push(...newLogs);
                             
                             if (!battle.isActive) {
-                                // 패배
+                                if (monsterResult.victory && monsterResult.rewards) {
+                                    character.gainExp(monsterResult.rewards.exp);
+                                    if (monsterResult.rewards.gold > 0) owner.gold += monsterResult.rewards.gold;
+                                    for (const item of monsterResult.rewards.items || []) {
+                                        character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                                    }
+                                    await owner.save();
+                                }
                                 activeBattles.delete(sender.userId + "");
                             } else {
                                 const status = battle.getBattleStatus();
@@ -11778,7 +11801,12 @@ client.on('chat', async (data, channel) => {
                         // 전투 종료
                         if (result.victory) {
                             character.gainExp(result.rewards.exp);
+                            if (result.rewards.gold > 0) owner.gold += result.rewards.gold;
+                            for (const item of result.rewards.items || []) {
+                                character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                            }
                             await character.save();
+                            await owner.save();
                         }
                         activeBattles.delete(sender.userId + "");
                     } else {
@@ -11789,6 +11817,14 @@ client.on('chat', async (data, channel) => {
                             battleMsg.push(...newLogs);
                             
                             if (!battle.isActive) {
+                                if (monsterResult.victory && monsterResult.rewards) {
+                                    character.gainExp(monsterResult.rewards.exp);
+                                    if (monsterResult.rewards.gold > 0) owner.gold += monsterResult.rewards.gold;
+                                    for (const item of monsterResult.rewards.items || []) {
+                                        character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                                    }
+                                    await owner.save();
+                                }
                                 activeBattles.delete(sender.userId + "");
                             } else {
                                 const status = battle.getBattleStatus();
@@ -11838,6 +11874,14 @@ client.on('chat', async (data, channel) => {
                         battleMsg.push(...newLogs);
                         
                         if (!battle.isActive) {
+                            if (monsterResult.victory && monsterResult.rewards) {
+                                character.gainExp(monsterResult.rewards.exp);
+                                if (monsterResult.rewards.gold > 0) owner.gold += monsterResult.rewards.gold;
+                                for (const item of monsterResult.rewards.items || []) {
+                                    character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                                }
+                                await owner.save();
+                            }
                             activeBattles.delete(sender.userId + "");
                         } else {
                             const status = battle.getBattleStatus();
