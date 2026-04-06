@@ -276,7 +276,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     return { success: false, msg: "로그인 페이지에서 토큰을 찾을 수 없습니다.", token: "없음", ip: currentIp };
                 }
 
-                // 2단계: 로그인 POST
+                // 2단계: 로그인 POST (리다이렉트 수동 추적으로 쿠키 수집)
                 const loginParams = new URLSearchParams();
                 loginParams.append('user_id', id);
                 loginParams.append('pw', password);
@@ -284,17 +284,23 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 
                 console.log("로그인 POST 전 쿠키:", cookiesToString(sessionCookies));
 
+                let currentUrl = 'https://msign.dcinside.com/login';
+                let currentHost = 'msign.dcinside.com';
+                
+                // POST 요청 (리다이렉트 비활성화)
                 const loginRes = await axios.post(
-                    'https://msign.dcinside.com/login',
+                    currentUrl,
                     loginParams.toString(),
                     {
                         httpsAgent: agent,
                         headers: {
-                            ...getAjaxHeaders('msign.dcinside.com', 'https://msign.dcinside.com/login'),
+                            ...getNavigateHeaders('msign.dcinside.com', 'https://msign.dcinside.com/login'),
                             'Content-Type': 'application/x-www-form-urlencoded',
-                            'Cookie': cookiesToString(sessionCookies)
+                            'Cookie': cookiesToString(sessionCookies),
+                            'Origin': 'https://msign.dcinside.com',
+                            'Cache-Control': 'max-age=0'
                         },
-                        maxRedirects: 5,
+                        maxRedirects: 0,
                         validateStatus: (status) => status >= 200 && status < 400
                     }
                 );
@@ -302,27 +308,84 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginRes.headers['set-cookie']));
                 console.log("로그인 POST 후 쿠키:", cookiesToString(sessionCookies));
                 
-                // 3단계: 로그인 성공 여부 확인
-                const cookieStr = cookiesToString(sessionCookies);
-                if (cookieStr.includes('mc_ses') || cookieStr.includes('PHPSESSID') || cookieStr.includes('ci_c')) {
-                    isLoggedIn = true;
-                    console.log("로그인 성공 확인 (세션 쿠키 존재)");
-                } else {
-                    console.log("로그인 실패 의심: 세션 쿠키가 없습니다. 쿠키:", cookieStr);
+                // 3단계: 리다이렉트 체인 수동 추적 (각 단계 쿠키 수집)
+                let redirectUrl = loginRes.headers['location'];
+                let redirectCount = 0;
+                const MAX_REDIRECTS = 10;
+                
+                while (redirectUrl && redirectCount < MAX_REDIRECTS) {
+                    redirectCount++;
+                    // 상대 경로 처리
+                    if (redirectUrl.startsWith('/')) {
+                        const urlObj = new URL(currentUrl);
+                        redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+                    }
+                    
+                    const redirectHost = new URL(redirectUrl).host;
+                    console.log(`리다이렉트 ${redirectCount}: ${redirectUrl}`);
+                    
+                    const redirectRes = await axios.get(redirectUrl, {
+                        httpsAgent: agent,
+                        headers: {
+                            ...getNavigateHeaders(redirectHost, currentUrl),
+                            'Sec-Fetch-Site': redirectHost === currentHost ? 'same-origin' : 'same-site',
+                            'Cookie': cookiesToString(sessionCookies)
+                        },
+                        maxRedirects: 0,
+                        validateStatus: (status) => status >= 200 && status < 400
+                    });
+                    
+                    sessionCookies = mergeCookies(sessionCookies, parseCookies(redirectRes.headers['set-cookie']));
+                    console.log(`리다이렉트 ${redirectCount} 후 쿠키 키:`, Object.keys(sessionCookies).join(', '));
+                    
+                    currentUrl = redirectUrl;
+                    currentHost = redirectHost;
+                    redirectUrl = redirectRes.headers['location'];
                 }
                 
-                // 4단계: m.dcinside.com에 세션 전파
+                // 4단계: 로그인 성공 여부 확인 (PHPSESSID는 로그인 전에도 존재하므로 제외)
+                const loginCookieKeys = Object.keys(sessionCookies);
+                const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
+                const foundLoginCookie = loginIndicators.find(key => loginCookieKeys.some(k => k.includes(key)));
+                
+                if (foundLoginCookie) {
+                    isLoggedIn = true;
+                    console.log(`로그인 성공 확인 (${foundLoginCookie} 쿠키 존재)`);
+                } else {
+                    console.log("로그인 실패 의심: 로그인 전용 쿠키가 없습니다. 쿠키 키:", loginCookieKeys.join(', '));
+                }
+                
+                // 5단계: m.dcinside.com에 세션 전파
                 const mdcMainRes = await axios.get('https://m.dcinside.com', {
                     httpsAgent: agent,
                     headers: {
-                        ...getNavigateHeaders('m.dcinside.com', 'https://msign.dcinside.com/login'),
-                        'Sec-Fetch-Site': 'same-site',
+                        ...getNavigateHeaders('m.dcinside.com', currentUrl),
+                        'Sec-Fetch-Site': currentHost === 'm.dcinside.com' ? 'same-origin' : 'same-site',
                         'Cookie': cookiesToString(sessionCookies)
-                    }
+                    },
+                    maxRedirects: 0,
+                    validateStatus: (status) => status >= 200 && status < 400
                 });
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(mdcMainRes.headers['set-cookie']));
-                console.log("m.dcinside.com 방문 후 쿠키:", cookiesToString(sessionCookies));
+                
+                // m.dcinside.com도 리다이렉트할 수 있음
+                let mdcRedirect = mdcMainRes.headers['location'];
+                if (mdcRedirect) {
+                    if (mdcRedirect.startsWith('/')) mdcRedirect = `https://m.dcinside.com${mdcRedirect}`;
+                    const mdcRedirectRes = await axios.get(mdcRedirect, {
+                        httpsAgent: agent,
+                        headers: {
+                            ...getNavigateHeaders('m.dcinside.com', 'https://m.dcinside.com'),
+                            'Cookie': cookiesToString(sessionCookies)
+                        },
+                        maxRedirects: 0,
+                        validateStatus: (status) => status >= 200 && status < 400
+                    });
+                    sessionCookies = mergeCookies(sessionCookies, parseCookies(mdcRedirectRes.headers['set-cookie']));
+                }
+                
+                console.log("m.dcinside.com 방문 후 쿠키 키:", Object.keys(sessionCookies).join(', '));
             } catch (loginErr) {
                 console.log(`로그인 에러: ${loginErr.message}`);
                 return { success: false, msg: `로그인 실패: ${loginErr.message}`, token: "없음", ip: currentIp };
