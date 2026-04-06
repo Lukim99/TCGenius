@@ -1,0 +1,179 @@
+{
+  "40만 골드 상자": {
+    "id": "40만 골드 상자", "name": "40만 골드 상자",
+    "materials": [{ "name": "골드", "count": 440000 }],
+    "result": { "name": "40만 골드 상자", "count": 1 }
+  },
+  "200만 골드 상자": {
+    "id": "200만 골드 상자", "name": "200만 골드 상자",
+    "materials": [{ "name": "골드", "count": 2200000 }],
+    "result": { "name": "200만 골드 상자", "count": 1 }
+  },
+  "1000만 골드 상자": {
+    "id": "1000만 골드 상자", "name": "1000만 골드 상자",
+    "materials": [{ "name": "골드", "count": 11000000 }],
+    "result": { "name": "1000만 골드 상자", "count": 1 }
+  },
+  "피로 회복제30(제작)": {
+    "id": "피로 회복제30(제작)", "name": "피로 회복제30(제작)",
+    "materials": [
+      { "name": "생명의 숨결", "count": 25 },
+      { "name": "강화석", "count": 20 },
+      { "name": "피로 회복의 정수", "count": 1 }
+    ],
+    "result": { "name": "피로 회복제30(제작)", "count": 1 }
+  },
+  "순수한 결정체": {
+    "id": "순수한 결정체", "name": "순수한 결정체",
+    "materials": [{ "name": "강화석", "count": 1000 }],
+    "result": { "name": "순수한 결정체", "count": 1 }
+  },
+  "미솔로지등급 트로피 상자": {
+    "id": "미솔로지등급 트로피 상자", "name": "미솔로지등급 트로피 상자",
+    "materials": [
+      { "name": "트로피 조각", "count": 5 },
+      { "name": "200만 골드 상자", "count": 1 }
+    ],
+    "result": { "name": "미솔로지등급 트로피 상자", "count": 1 }
+  },
+  "레전더리 소울": {
+    "id": "레전더리 소울", "name": "레전더리 소울",
+    "materials": [{ "name": "레전더리 정수", "count": 5 }],
+    "result": { "name": "레전더리 소울", "count": 1 }
+  },
+  "레전더리 정수": {
+    "id": "레전더리 정수", "name": "레전더리 정수",
+    "materials": [{ "name": "레전더리 소울", "count": 1 }],
+    "result": { "name": "레전더리 정수", "count": 1 }
+  },
+  "LV20 레전더리 랜덤상자": {
+    "id": "LV20 레전더리 랜덤상자", "name": "LV20 레전더리 랜덤상자",
+    "materials": [
+      { "name": "레전더리 정수", "count": 3 },
+      { "name": "40만 골드 상자", "count": 1 }
+    ],
+    "result": { "name": "LV20 레전더리 랜덤상자", "count": 1 }
+  },
+  "LV40 레전더리 랜덤상자": {
+    "id": "LV40 레전더리 랜덤상자", "name": "LV40 레전더리 랜덤상자",
+    "materials": [
+      { "name": "레전더리 정수", "count": 10 },
+      { "name": "40만 골드 상자", "count": 2 }
+    ],
+    "result": { "name": "LV40 레전더리 랜덤상자", "count": 1 }
+  },
+  "LV50 레전더리 랜덤상자": {
+    "id": "LV50 레전더리 랜덤상자", "name": "LV50 레전더리 랜덤상자",
+    "materials": [
+      { "name": "레전더리 정수", "count": 20 },
+      { "name": "생명의 숨결", "count": 220 },
+      { "name": "40만 골드 상자", "count": 3 }
+    ],
+    "result": { "name": "LV50 레전더리 랜덤상자", "count": 1 }
+  },
+  "장비 증폭서": {
+    "id": "장비 증폭서", "name": "장비 증폭서",
+    "materials": [
+      { "name": "증폭제", "count": 2 },
+      { "name": "희석된 경화제", "count": 10 }
+    ],
+    "result": { "name": "장비 증폭서", "count": 1 }
+  },
+  "증폭 변환서": {
+    "id": "증폭 변환서", "name": "증폭 변환서",
+    "materials": [{ "name": "증폭제", "count": 1 }],
+    "result": { "name": "증폭 변환서", "count": 1 }
+  },
+  "자양강장제(소)": {
+    "id": "자양강장제(소)", "name": "자양강장제(소)",
+    "materials": [
+      { "name": "생명의 숨결", "count": 15 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "자양강장제(소)", "count": 1 }
+  },
+  "자양강장제(대)": {
+    "id": "자양강장제(대)", "name": "자양강장제(대)",
+    "materials": [
+      { "name": "생명의 숨결", "count": 62 },
+      { "name": "희석된 경화제", "count": 3 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "자양강장제(대)", "count": 1 }
+  },
+  "회오리폭탄": {
+    "id": "회오리폭탄", "name": "회오리폭탄",
+    "materials": [
+      { "name": "생명의 숨결", "count": 10 },
+      { "name": "희석된 경화제", "count": 6 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "회오리폭탄", "count": 1 }
+  },
+  "빛나는 회오리폭탄": {
+    "id": "빛나는 회오리폭탄", "name": "빛나는 회오리폭탄",
+    "materials": [
+      { "name": "생명의 숨결", "count": 25 },
+      { "name": "발광조각", "count": 3 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "빛나는 회오리폭탄", "count": 1 }
+  },
+  "파괴폭탄": {
+    "id": "파괴폭탄", "name": "파괴폭탄",
+    "materials": [
+      { "name": "생명의 숨결", "count": 10 },
+      { "name": "희석된 경화제", "count": 6 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "파괴폭탄", "count": 1 }
+  },
+  "빛나는 파괴폭탄": {
+    "id": "빛나는 파괴폭탄", "name": "빛나는 파괴폭탄",
+    "materials": [
+      { "name": "생명의 숨결", "count": 25 },
+      { "name": "발광조각", "count": 3 },
+      { "name": "빈병", "count": 1 }
+    ],
+    "result": { "name": "빛나는 파괴폭탄", "count": 1 }
+  },
+  "E세계 랜덤 상자": {
+    "id": "E세계 랜덤 상자", "name": "E세계 랜덤 상자",
+    "materials": [
+      { "name": "레전더리 정수", "count": 10 },
+      { "name": "E세계의 조각", "count": 10 },
+      { "name": "40만 골드 상자", "count": 3 }
+    ],
+    "result": { "name": "E세계 랜덤 상자", "count": 1 }
+  },
+  "유적지 랜덤 상자": {
+    "id": "유적지 랜덤 상자", "name": "유적지 랜덤 상자",
+    "materials": [
+      { "name": "레전더리 정수", "count": 10 },
+      { "name": "유적지의 흩어진 파편", "count": 10 },
+      { "name": "40만 골드 상자", "count": 3 }
+    ],
+    "result": { "name": "유적지 랜덤 상자", "count": 1 }
+  },
+  "일반 떡밥": {
+    "id": "일반 떡밥", "name": "일반 떡밥",
+    "materials": [{ "name": "생명의 숨결", "count": 5 }],
+    "result": { "name": "일반 떡밥", "count": 1 }
+  },
+  "황금 떡밥": {
+    "id": "황금 떡밥", "name": "황금 떡밥",
+    "materials": [
+      { "name": "생명의 숨결", "count": 10 },
+      { "name": "발광조각", "count": 1 }
+    ],
+    "result": { "name": "황금 떡밥", "count": 1 }
+  },
+  "낚싯대 수리기": {
+    "id": "낚싯대 수리기", "name": "낚싯대 수리기",
+    "materials": [
+      { "name": "생명의 숨결", "count": 150 },
+      { "name": "희석된 경화제", "count": 5 }
+    ],
+    "result": { "name": "낚싯대 수리기", "count": 1 }
+  }
+}

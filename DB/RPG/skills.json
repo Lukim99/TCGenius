@@ -1,0 +1,392 @@
+{
+  "먼마": {
+    "passive": {
+      "주먹강화": {
+        "id": "주먹강화", "name": "주먹강화", "type": "passive", "maxLevel": 10, "unlockLevel": 1,
+        "effects": {
+          "normalAttackDamageBonus": { "base": 3, "perLevel": 3 },
+          "critDamageBonus": { "base": 5, "perLevel": 5 }
+        }
+      }
+    },
+    "active": {
+      "안면강타": {
+        "id": "안면강타", "name": "안면강타", "type": "active", "maxLevel": 10, "unlockLevel": 1,
+        "cooldown": 4, "stagger": 350, "counter": true,
+        "damage": { "base": 120, "perLevel": 10, "stat": "power", "damageType": "physical" }
+      },
+      "광속연타": {
+        "id": "광속연타", "name": "광속연타", "type": "active", "maxLevel": 10, "unlockLevel": 5,
+        "cooldown": 5, "stagger": 180,
+        "damage": { "base": 30, "perLevel": 3, "stat": "power", "damageType": "physical", "hits": 3, "maxTargets": 3 },
+        "effects": { "critChanceBonus": { "base": 10, "perLevel": 1 } }
+      },
+      "룰지안봄": {
+        "id": "룰지안봄", "name": "룰지안봄", "type": "active", "maxLevel": 5, "unlockLevel": 10,
+        "cooldown": 5,
+        "buff": { "type": "atkUp", "atkBonus": { "base": 10, "perLevel": 3 }, "duration": { "base": 2, "perLevel": 1 } }
+      },
+      "브란도 땅에 묻기": {
+        "id": "브란도 땅에 묻기", "name": "브란도 땅에 묻기", "type": "active", "maxLevel": 10, "unlockLevel": 20,
+        "cooldown": 5, "stagger": 470, "destroyLevel": 3,
+        "damage": { "base": 180, "perLevel": 10, "stat": "power", "damageType": "physical" },
+        "penalty": { "type": "damageTakenIncrease", "percent": 15, "duration": 1 }
+      },
+      "유생 수성못에 묻기": {
+        "id": "유생 수성못에 묻기", "name": "유생 수성못에 묻기", "type": "active", "maxLevel": 5, "unlockLevel": 30,
+        "cooldown": { "base": 10, "perLevel": -1 },
+        "cc": { "type": "stun", "duration": 2, "targetAll": true }
+      },
+      "시벌론": {
+        "id": "시벌론", "name": "시벌론", "type": "active", "maxLevel": 10, "unlockLevel": 40,
+        "cooldown": 2, "stagger": 330, "destroyLevel": 2,
+        "damage": { "base": 105, "perLevel": 5, "stat": "power", "damageType": "physical" },
+        "effects": { "nextNormalAtkBonus": { "base": 5, "perLevel": 1 } }
+      }
+    },
+    "awakeningPassive": {
+      "두번 찍어": {
+        "id": "두번 찍어", "name": "두번 찍어", "type": "awakeningPassive", "maxLevel": 10,
+        "effects": {
+          "extraHitChance": { "base": 10, "perLevel": 5 },
+          "extraHitDamage": { "base": 10, "perLevel": 3 },
+          "critDamageBonus": { "base": 5, "perLevel": 5 },
+          "normalAtkMaxTargets": 2
+        }
+      }
+    },
+    "awakeningActive": {
+      "조까": {
+        "id": "조까", "name": "조까", "type": "awakeningActive", "maxLevel": 1,
+        "cooldown": 40, "stagger": 760,
+        "damage": { "base": 1050, "perLevel": 0, "stat": "power", "damageType": "physical" },
+        "effects": { "critDamageBonus": { "base": 100, "perLevel": 0 }, "stunNextTurn": true }
+      },
+      "우선순위": {
+        "id": "우선순위", "name": "우선순위", "type": "awakeningActive", "maxLevel": 10,
+        "cooldown": 3,
+        "multiTarget": [
+          { "damage": { "base": 140, "perLevel": 5 }, "stagger": 250 },
+          { "damage": { "base": 110, "perLevel": 3 }, "stagger": 210 },
+          { "damage": { "base": 80, "perLevel": 1 }, "stagger": 130 }
+        ],
+        "damageType": "physical", "stat": "power"
+      }
+    }
+  },
+  "성준호": {
+    "resource": "GP",
+    "passive": {
+      "이속보다 빠른 배신": {
+        "id": "이속보다 빠른 배신", "name": "이속보다 빠른 배신", "type": "passive", "maxLevel": 10, "unlockLevel": 1,
+        "effects": {
+          "evasionBonus": { "base": 1, "perLevel": 1 },
+          "normalAttackExtraDamage": { "base": 50, "perLevel": 10, "scaleStat": "speed" },
+          "gpRegenPerTurn": 5
+        }
+      }
+    },
+    "active": {
+      "약점찾기": {
+        "id": "약점찾기", "name": "약점찾기", "type": "active", "maxLevel": 10, "unlockLevel": 1,
+        "cost": { "type": "GP", "base": 26, "perLevel": 1 }, "counter": true,
+        "damage": { "base": 120, "perLevel": 10, "stat": "speed", "damageType": "physical" },
+        "effects": { "critChanceMultiplier": 2 }
+      },
+      "연속 찌르기": {
+        "id": "연속 찌르기", "name": "연속 찌르기", "type": "active", "maxLevel": 10, "unlockLevel": 5,
+        "cost": { "type": "GP", "amount": 25 }, "stagger": 120,
+        "damage": { "base": 55, "perLevel": 5, "stat": "speed", "damageType": "physical", "hits": 2 }
+      },
+      "연막": {
+        "id": "연막", "name": "연막", "type": "active", "maxLevel": 5, "unlockLevel": 10,
+        "cost": { "type": "GP", "base": 70, "perLevel": -3 },
+        "buff": { "type": "evasionUp", "evasionBonus": { "base": 15, "perLevel": 2 }, "duration": 2 }
+      },
+      "약자멸시": {
+        "id": "약자멸시", "name": "약자멸시", "type": "active", "maxLevel": 10, "unlockLevel": 20,
+        "cost": { "type": "GP", "amount": 35 }, "stagger": 180, "destroyLevel": 1,
+        "damage": { "base": 160, "perLevel": 10, "stat": "speed", "damageType": "physical" },
+        "effects": { "lowerLevelBonus": 10, "speedBuff": { "amount": 10, "duration": 2 } }
+      },
+      "배신스택": {
+        "id": "배신스택", "name": "배신스택", "type": "active", "maxLevel": 5, "unlockLevel": 30,
+        "cost": { "type": "GP", "base": 45, "perLevel": -5 },
+        "effects": { "betrayalStack": 1, "maxStacks": 5, "atkPerStack": 2, "shieldPercent": 5 }
+      },
+      "배신!": {
+        "id": "배신!", "name": "배신!", "type": "active", "maxLevel": 10, "unlockLevel": 40,
+        "cost": { "type": "GP", "amount": 80 }, "stagger": 230, "counter": true, "destroyLevel": 2,
+        "damage": { "base": 150, "perLevel": 10, "stat": "speed", "damageType": "physical" },
+        "effects": { "consumeBetrayal": true, "bonusPerStack": 20 }
+      }
+    },
+    "awakeningPassive": {
+      "행복의 개": {
+        "id": "행복의 개", "name": "행복의 개", "type": "awakeningPassive", "maxLevel": 10,
+        "effects": {
+          "evasionBonus": { "base": 2, "perLevel": 1 },
+          "counterOnEvade": { "base": 55, "perLevel": 3 },
+          "critDamageBonus": { "base": 5, "perLevel": 5 },
+          "gpRegenPerTurn": { "base": 1, "perLevel": 1 }
+        }
+      }
+    },
+    "awakeningActive": {
+      "조각내기": {
+        "id": "조각내기", "name": "조각내기", "type": "awakeningActive", "maxLevel": 1,
+        "cost": { "type": "GP", "amount": 65 }, "cooldown": 35, "stagger": 450,
+        "damage": { "base": 1020, "perLevel": 0, "stat": "speed", "damageType": "physical" },
+        "effects": { "critChanceBonus": { "base": 30 }, "critDamageBonus": { "base": 100 }, "executeThreshold": 25 }
+      },
+      "호팔이의 꿈": {
+        "id": "호팔이의 꿈", "name": "호팔이의 꿈", "type": "awakeningActive", "maxLevel": 10,
+        "effects": { "gpGain": { "base": 20, "perLevel": 1 } }
+      }
+    }
+  },
+  "빵귤": {
+    "resource": "MP",
+    "passive": {
+      "시간의 흐름": {
+        "id": "시간의 흐름", "name": "시간의 흐름", "type": "passive", "maxLevel": 10, "unlockLevel": 1,
+        "effects": {
+          "skillDamageBonus": { "base": 10, "perLevel": 2, "scaleStat": "totalStats" },
+          "mpRegenPerTurn": { "base": 11, "perLevel": 1 },
+          "firstTurnMpBonus": 5,
+          "skillCooldownReduction": 1
+        }
+      }
+    },
+    "active": {
+      "가속!": {
+        "id": "가속!", "name": "가속!", "type": "active", "maxLevel": 10, "unlockLevel": 1,
+        "cost": { "type": "MP", "amount": 25 }, "cooldown": 5, "stagger": 85, "counter": true,
+        "damage": { "base": 115, "perLevel": 12, "stat": "int", "damageType": "magical" },
+        "effects": { "guaranteeFirstTurn": true }
+      },
+      "헤트": {
+        "id": "헤트", "name": "헤트", "type": "active", "maxLevel": 10, "unlockLevel": 5,
+        "cost": { "type": "MP", "amount": 40 }, "cooldown": 5, "stagger": 45,
+        "damage": { "base": 65, "perLevel": 4, "stat": "int", "damageType": "magical", "aoe": true },
+        "effects": { "mpPerHit": 3 }
+      },
+      "유드베트": {
+        "id": "유드베트", "name": "유드베트", "type": "active", "maxLevel": 5, "unlockLevel": 10,
+        "cost": { "type": "MP", "amount": 50 }, "cooldown": 10,
+        "buff": { "type": "skillDmgUp", "skillDmgBonus": { "base": 15, "perLevel": 3 }, "duration": { "base": 2, "perLevel": 1 }, "mpCostReduction": { "base": 10, "perLevel": 2 } }
+      },
+      "유드 알레프": {
+        "id": "유드 알레프", "name": "유드 알레프", "type": "active", "maxLevel": 10, "unlockLevel": 20,
+        "cost": { "type": "MP", "amount": 80 }, "cooldown": 8, "stagger": 125,
+        "damage": { "base": 170, "perLevel": 15, "stat": "int", "damageType": "magical", "aoe": true },
+        "effects": { "bonusPerTarget": 5, "firstTurnBonus": 20 },
+        "penalty": { "type": "stun", "duration": 1, "target": "self" }
+      },
+      "오징오": {
+        "id": "오징오", "name": "오징오", "type": "active", "maxLevel": 5, "unlockLevel": 30,
+        "cost": { "type": "MP", "amount": 45 }, "cooldown": 10,
+        "summon": { "duration": { "base": 3, "perLevel": 1 }, "mpRegen": 5,
+          "extraDamage": { "base": 2000, "perLevel": 400, "scaleStat": "int" },
+          "shield": 3000 }
+      },
+      "궁극의 틱택토": {
+        "id": "궁극의 틱택토", "name": "궁극의 틱택토", "type": "active", "maxLevel": 10, "unlockLevel": 40,
+        "cost": { "type": "MP", "amount": 15 }, "cooldown": 1, "stagger": 25, "destroyLevel": 1,
+        "damage": { "base": 20, "perLevel": 5, "stat": "int", "damageType": "magical" },
+        "effects": { "ninthUse": { "base": 650, "perLevel": 30 } }
+      }
+    },
+    "awakeningPassive": {
+      "불사조": {
+        "id": "불사조", "name": "불사조", "type": "awakeningPassive", "maxLevel": 10,
+        "effects": {
+          "skillDamageBonus": { "base": 25, "perLevel": 5, "scaleStat": "int" },
+          "mpRegenPerTurn": { "base": 5, "perLevel": 1 },
+          "chronoExplosion": { "chance": 30, "damagePercent": 5 }
+        }
+      }
+    },
+    "awakeningActive": {
+      "쿠루미 타임": {
+        "id": "쿠루미 타임", "name": "쿠루미 타임", "type": "awakeningActive", "maxLevel": 1,
+        "cost": { "type": "MP", "amount": 120 }, "cooldown": 35, "stagger": 320, "destroyLevel": 3,
+        "damage": { "base": 1150, "perLevel": 0, "stat": "int", "damageType": "magical" },
+        "effects": { "bonusDamage": 25, "critDamageBonus": { "base": 100 }, "preActionBonus": 120 }
+      },
+      "자인": {
+        "id": "자인", "name": "자인", "type": "awakeningActive", "maxLevel": 10,
+        "cost": { "type": "MP", "base": 70, "perLevel": -5 }, "cooldown": 12,
+        "cc": { "type": "stun", "duration": 1, "targetAll": true }
+      }
+    }
+  },
+  "호르아크티": {
+    "passive": {
+      "고급 룰렛": {
+        "id": "고급 룰렛", "name": "고급 룰렛", "type": "passive", "maxLevel": 10, "unlockLevel": 1,
+        "effects": {
+          "critDamageBonus": { "base": 10, "perLevel": 5 },
+          "icheonpo": { "chanceScaleStat": "luck", "damageMultiplier": 1.5 },
+          "gamblerCard": { "triggerChance": 10 }
+        }
+      }
+    },
+    "active": {
+      "도박 카드": {
+        "id": "도박 카드", "name": "도박 카드", "type": "active", "maxLevel": 10, "unlockLevel": 1,
+        "cooldown": 3, "stagger": 65,
+        "cards": {
+          "heart": { "damage": 90, "damageType": "magical" },
+          "spade": { "damage": 60, "critChanceBonus": 30 },
+          "diamond": { "damage": 45, "hits": 2 },
+          "clover": { "damage": 110, "successBonus": 10 }
+        },
+        "perLevel": 3, "stat": "luck"
+      },
+      "교촌파워": {
+        "id": "교촌파워", "name": "교촌파워", "type": "active", "maxLevel": 10, "unlockLevel": 5,
+        "cooldown": 3, "stagger": 90, "destroyLevel": 1,
+        "damage": { "base": 130, "perLevel": 10, "stat": "luck", "damageType": "physical" },
+        "gamble": { "chance": 50, "success": { "critDamageBonus": 30 }, "fail": { "damageTakenIncrease": 10, "duration": 1 } }
+      },
+      "한탕": {
+        "id": "한탕", "name": "한탕", "type": "active", "maxLevel": 5, "unlockLevel": 10,
+        "cooldown": 6,
+        "buff": { "type": "critBuff", "critChance": { "base": 20, "perLevel": 2 }, "critDamage": { "base": 30, "perLevel": 10 }, "duration": 3 },
+        "penalty": { "type": "damageTakenIncrease", "base": 30, "perLevel": -2, "duration": 1 }
+      },
+      "러시안 룰렛": {
+        "id": "러시안 룰렛", "name": "러시안 룰렛", "type": "active", "maxLevel": 10, "unlockLevel": 20,
+        "cooldown": 6, "stagger": 140, "counter": true,
+        "cards": {
+          "red": { "damage": { "base": 170, "perLevel": 10 }, "weight": 20 },
+          "blue": { "damage": { "base": 110, "perLevel": 5 }, "debuff": { "speedDown": 10, "duration": 2 }, "weight": 20 },
+          "gold": { "damage": { "base": 70, "perLevel": 3 }, "hits": 2, "randomTargets": 2, "weight": 20 },
+          "black": { "damage": { "base": 150, "perLevel": 7 }, "selfHpCost": 10, "weight": 20 },
+          "colorless": { "damage": { "base": 95, "perLevel": 0 }, "cooldownReduction": 1, "weight": 19 },
+          "death": { "selfDamage": 30, "resetCooldown": true, "weight": 1 }
+        },
+        "stat": "luck", "damageType": "physical"
+      },
+      "한탕룰렛": {
+        "id": "한탕룰렛", "name": "한탕룰렛", "type": "active", "maxLevel": 5, "unlockLevel": 30,
+        "cooldown": 1, "stagger": 30, "destroyLevel": 1,
+        "gamble": { "failChance": 99, "failDamage": 100, "winDamage": 1000, "stackingWinChance": 1 },
+        "stat": "luck", "damageType": "physical"
+      },
+      "0의 의지": {
+        "id": "0의 의지", "name": "0의 의지", "type": "active", "maxLevel": 10, "unlockLevel": 40,
+        "passiveEffect": true,
+        "effects": { "stackPerAttack": { "min": 1, "max": 10, "perLevel": 1 }, "maxStacks": 100,
+          "burstDamage": { "base": 420, "perLevel": 15, "aoe": true } }
+      }
+    },
+    "awakeningPassive": {
+      "히든 발견": {
+        "id": "히든 발견", "name": "히든 발견", "type": "awakeningPassive", "maxLevel": 10,
+        "effects": {
+          "critChanceBonus": { "base": 15, "perLevel": 3 },
+          "critDamageBonus": { "base": 7.5, "perLevel": 0 },
+          "critChanceCap": 80,
+          "overflowConversion": 120,
+          "icheonpoMultiplier": 1.5
+        }
+      }
+    },
+    "awakeningActive": {
+      "100억": {
+        "id": "100억", "name": "100억", "type": "awakeningActive", "maxLevel": 1,
+        "cooldown": 15, "stagger": 444, "destroyLevel": 1,
+        "gamble": {
+          "bigSuccess": { "damage": 1400, "critDamageBonus": 200 },
+          "bigFail": { "damage": 140, "selfDamage": 20 }
+        },
+        "stat": "luck", "damageType": "physical"
+      },
+      "대저택의 운명": {
+        "id": "대저택의 운명", "name": "대저택의 운명", "type": "awakeningActive", "maxLevel": 10,
+        "damage": { "base": 110, "perLevel": 10, "stat": "luck", "damageType": "magical" },
+        "effects": { "randomTargets": { "min": 1, "max": 5 } }
+      }
+    }
+  },
+  "건마": {
+    "resource": "건력",
+    "passive": {
+      "건전한 마음가짐": {
+        "id": "건전한 마음가짐", "name": "건전한 마음가짐", "type": "passive", "maxLevel": 10, "unlockLevel": 1,
+        "effects": {
+          "lowHpDamageBonus": { "threshold": 50, "base": 10, "perLevel": 3 },
+          "criticalHpCostReduction": { "threshold": 20, "multiplier": 0.1 },
+          "gunpowerChance": 20,
+          "gunpowerDamageBonus": { "base": 1, "perLevel": 1 },
+          "gunpowerDamageTakenIncrease": 5
+        }
+      }
+    },
+    "active": {
+      "마사지": {
+        "id": "마사지", "name": "마사지", "type": "active", "maxLevel": 10, "unlockLevel": 1,
+        "cost": { "type": "HP", "base": 20, "perLevel": -1 },
+        "effects": { "gainGunpower": 1, "lowHpCostReduction": { "threshold": 50, "multiplier": 0.5 } }
+      },
+      "뼈에서 살을": {
+        "id": "뼈에서 살을", "name": "뼈에서 살을", "type": "active", "maxLevel": 10, "unlockLevel": 5,
+        "cost": { "type": "HP", "amount": 10 }, "stagger": 123,
+        "damage": { "base": 110, "perLevel": 10, "stat": "power", "damageType": "physical" },
+        "gunpowerBonus": { "1": 10, "2": 25, "3": 50 }
+      },
+      "건마의 나침반": {
+        "id": "건마의 나침반", "name": "건마의 나침반", "type": "active", "maxLevel": 5, "unlockLevel": 10,
+        "cost": { "type": "HP", "base": 20, "perLevel": -1 },
+        "effects": { "gainGunpower": 3 },
+        "buff": { "type": "atkUp", "atkBonus": { "base": 8, "perLevel": 3 }, "duration": 3 }
+      },
+      "숙청": {
+        "id": "숙청", "name": "숙청", "type": "active", "maxLevel": 10, "unlockLevel": 20,
+        "cost": { "type": "HP", "amount": 15 }, "stagger": 221, "counter": true, "destroyLevel": 2,
+        "damage": { "base": 120, "perLevel": 12, "stat": "power", "damageType": "physical" },
+        "effects": { "critDamageBonus": { "base": 20 } },
+        "gunpowerBonus": { "1": { "critDamage": 40 }, "2": { "critDamage": 60 }, "3": { "critDamage": 100, "hpRecover": 5 } }
+      },
+      "디럭스 라이벌샷": {
+        "id": "디럭스 라이벌샷", "name": "디럭스 라이벌샷", "type": "active", "maxLevel": 5, "unlockLevel": 30,
+        "cost": { "type": "HP", "base": 50, "perLevel": -3 }, "stagger": 169, "destroyLevel": 1,
+        "damage": { "base": 110, "perLevel": 10, "stat": "power", "damageType": "physical", "aoe": true },
+        "effects": { "gunpowerPerHit": 1 },
+        "gunpowerBonus": { "1": 20, "2": 40, "3": 80 }
+      },
+      "건마스터": {
+        "id": "건마스터", "name": "건마스터", "type": "active", "maxLevel": 10, "unlockLevel": 40,
+        "cost": { "type": "HP", "base": 20, "perLevel": -1 },
+        "buff": { "type": "guaranteeCrit", "duration": 1, "atkBonus": { "base": 20, "perLevel": 3 } },
+        "effects": { "shieldPercent": 3 }
+      }
+    },
+    "awakeningPassive": {
+      "건.력": {
+        "id": "건.력", "name": "건.력", "type": "awakeningPassive", "maxLevel": 10,
+        "effects": {
+          "lowHpDamageBonus": { "threshold": 30, "base": 20, "perLevel": 5 },
+          "fullGunpowerCritBonus": 20,
+          "maxGunpowerIncrease": 1,
+          "gunpowerAutoGenChance": 50
+        }
+      }
+    },
+    "awakeningActive": {
+      "탈락반사건": {
+        "id": "탈락반사건", "name": "탈락반사건", "type": "awakeningActive", "maxLevel": 1,
+        "cost": { "type": "HP", "amount": 99, "gunpower": 3 }, "cooldown": 50, "stagger": 669,
+        "damage": { "base": 1650, "perLevel": 0, "stat": "power", "damageType": "physical" },
+        "effects": { "bleed": { "duration": 5, "damagePercent": 20 }, "hpRecover": 10 }
+      },
+      "단체숙청": {
+        "id": "단체숙청", "name": "단체숙청", "type": "awakeningActive", "maxLevel": 10,
+        "damage": { "base": 60, "perLevel": 3, "stat": "power", "damageType": "physical", "aoe": true },
+        "effects": { "gunpowerDamageBonus": { "base": 8, "perLevel": 2 } }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "rods": {
+    "허름한 낚싯대": {
+      "id": "허름한 낚싯대", "name": "허름한 낚싯대",
+      "minTime": 60, "maxTime": 120, "basket": 100,
+      "durability": -1
+    },
+    "레고 낚싯대": {
+      "id": "레고 낚싯대", "name": "레고 낚싯대",
+      "minTime": 40, "maxTime": 80, "basket": 240,
+      "durability": 10000
+    },
+    "일레이나 낚싯대": {
+      "id": "일레이나 낚싯대", "name": "일레이나 낚싯대",
+      "minTime": 30, "maxTime": 90, "basket": 260,
+      "durability": 10000
+    }
+  },
+  "baits": {
+    "일반 떡밥": {
+      "id": "일반 떡밥", "name": "일반 떡밥",
+      "drops": [
+        { "name": "피라미", "chance": 60, "type": "fish", "exp": 20 },
+        { "name": "붕어", "chance": 25, "type": "fish", "exp": 50 },
+        { "name": "잉어", "chance": 9, "type": "fish", "exp": 200 },
+        { "name": "강화석", "chance": 5.5, "type": "item", "count": 1 },
+        { "name": "봉인된 자물쇠", "chance": 0.2, "type": "item", "count": 1 },
+        { "name": "스킬 포인트 1회 복구권", "chance": 0.1, "type": "item", "count": 1 },
+        { "name": "부활석", "chance": 0.1, "type": "item", "count": 1 },
+        { "name": "유생의 강화기", "chance": 0.04, "type": "item", "count": 1 },
+        { "name": "순수한 결정체", "chance": 0.035, "type": "item", "count": 1 },
+        { "name": "증폭제", "chance": 0.015, "type": "item", "count": 1 },
+        { "name": "트로피 조각", "chance": 0.01, "type": "item", "count": 1 }
+      ]
+    },
+    "황금 떡밥": {
+      "id": "황금 떡밥", "name": "황금 떡밥",
+      "drops": [
+        { "name": "황금 피라미", "chance": 60, "type": "fish", "exp": 200 },
+        { "name": "황금 붕어", "chance": 25, "type": "fish", "exp": 500 },
+        { "name": "황금 잉어", "chance": 9, "type": "fish", "exp": 2000 },
+        { "name": "발광조각", "chance": 3, "type": "item", "count": 3 },
+        { "name": "강화석", "chance": 2.5, "type": "item", "count": 10 },
+        { "name": "순수한 결정체", "chance": 0.2, "type": "item", "count": 1 },
+        { "name": "스킬 포인트 1회 복구권", "chance": 0.1, "type": "item", "count": 1 },
+        { "name": "지니어스의 열쇠", "chance": 0.05, "type": "item", "count": 1 },
+        { "name": "유생의 증폭기", "chance": 0.05, "type": "item", "count": 1 },
+        { "name": "유생의 강화기", "chance": 0.05, "type": "item", "count": 1 },
+        { "name": "증폭제", "chance": 0.035, "type": "item", "count": 1 },
+        { "name": "트로피 조각", "chance": 0.014, "type": "item", "count": 1 },
+        { "name": "미솔로지등급 트로피 상자", "chance": 0.001, "type": "item", "count": 1 }
+      ]
+    }
+  }
+}

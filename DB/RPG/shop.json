@@ -1,0 +1,36 @@
+{
+  "point": {
+    "장비 보호권": { "name": "장비 보호권", "price": 1500, "maxBuy": -1 },
+    "증폭 보호권": { "name": "증폭 보호권", "price": 2000, "maxBuy": -1 },
+    "스킬 초기화권": { "name": "스킬 초기화권", "price": 300, "maxBuy": -1 },
+    "스킬 포인트 1회 복구권": { "name": "스킬 포인트 1회 복구권", "price": 100, "maxBuy": -1 },
+    "지니어스의 열쇠 3개": { "name": "지니어스의 열쇠", "price": 375, "count": 3, "bonus": [{ "name": "봉인된 자물쇠", "count": 1 }], "maxBuy": -1 },
+    "지니어스의 열쇠 8개": { "name": "지니어스의 열쇠", "price": 375, "count": 8, "bonus": [{ "name": "봉인된 자물쇠", "count": 2 }], "maxBuy": -1 },
+    "지니어스의 열쇠 50개": { "name": "지니어스의 열쇠", "price": 2300, "count": 50, "bonus": [{ "name": "봉인된 자물쇠", "count": 16 }], "maxBuy": -1 },
+    "지니어스의 열쇠 100개": { "name": "지니어스의 열쇠", "price": 4500, "count": 100, "bonus": [{ "name": "봉인된 자물쇠", "count": 33 }], "maxBuy": -1 },
+    "황금밀랍초 1개": { "name": "황금밀랍초", "price": 250, "count": 1, "maxBuy": -1 },
+    "황금밀랍초 5개": { "name": "황금밀랍초", "price": 1200, "count": 5, "maxBuy": -1 },
+    "황금밀랍초 10개": { "name": "황금밀랍초", "price": 2250, "count": 10, "maxBuy": -1 },
+    "황금밀랍초 30개": { "name": "황금밀랍초", "price": 6375, "count": 30, "maxBuy": -1 },
+    "브란도의 심사권 1개": { "name": "브란도의 심사권", "price": 325, "count": 1, "maxBuy": -1 },
+    "브란도의 심사권 5개": { "name": "브란도의 심사권", "price": 1575, "count": 5, "maxBuy": -1 },
+    "브란도의 심사권 10개": { "name": "브란도의 심사권", "price": 2925, "count": 10, "maxBuy": -1 },
+    "브란도의 심사권 30개": { "name": "브란도의 심사권", "price": 9220, "count": 30, "maxBuy": -1 },
+    "피로 회복제30": { "name": "피로 회복제30", "price": 100, "count": 1, "maxBuy": -1 },
+    "피로 회복제1": { "name": "피로 회복제1", "price": 10, "count": 1, "maxBuy": -1 },
+    "부활석": { "name": "부활석", "price": 100, "count": 1, "maxBuy": -1 },
+    "400가넷": { "name": "가넷", "price": 1400, "count": 400, "type": "currency", "maxBuy": -1 },
+    "1000가넷": { "name": "가넷", "price": 3400, "count": 1000, "type": "currency", "maxBuy": -1 },
+    "2000가넷": { "name": "가넷", "price": 6700, "count": 2000, "type": "currency", "maxBuy": -1 },
+    "4000가넷": { "name": "가넷", "price": 13100, "count": 4000, "type": "currency", "maxBuy": -1 },
+    "레고 낚싯대": { "name": "레고 낚싯대", "price": 3000, "count": 1, "maxBuy": -1 }
+  },
+  "seasonal": {
+    "2024 펫 알 20개 꾸러미": { "name": "2024 펫 알", "price": 8900, "count": 20, "maxBuy": 2 },
+    "2024 펫 알 10개 꾸러미": { "name": "2024 펫 알", "price": 4500, "count": 10, "maxBuy": 10 },
+    "2024 펫 알": { "name": "2024 펫 알", "price": 500, "count": 1, "maxBuy": -1 },
+    "2024 펫 알(가넷)": { "name": "2024 펫 알", "priceType": "garnet", "price": 150, "count": 1, "maxBuy": 100 },
+    "시즌1 플러스 패스 티켓": { "name": "시즌1 플러스 패스 티켓", "priceType": "garnet", "price": 1850, "count": 1, "maxBuy": 1 },
+    "시즌1 패스 10경험치": { "name": "시즌1 패스 경험치", "priceType": "garnet", "price": 15, "count": 10, "type": "passExp", "maxBuy": -1 }
+  }
+}

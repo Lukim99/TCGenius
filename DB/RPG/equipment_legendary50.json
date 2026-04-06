@@ -1,0 +1,93 @@
+{
+  "weapons": {
+    "파동의 건틀릿": {
+      "id": "파동의 건틀릿", "name": "파동의 건틀릿", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "먼마",
+      "effects": { "power": 18, "powerMax": 2, "normalAtkDmgPercent": 15, "critDamage": 25 },
+      "uniqueEffect": { "type": "waveSplit", "desc": "일반 공격 적중 시 25% 확률로 광역 충격파 발생 (공격력의 45% 피해, 최대 3명)", "chance": 25, "dmgPercent": 45, "maxTargets": 3 }
+    },
+    "그림자 절명도": {
+      "id": "그림자 절명도", "name": "그림자 절명도", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "성준호",
+      "effects": { "speed": 18, "speedMax": 2, "evasionPercent": 10, "critChance": 10 },
+      "uniqueEffect": { "type": "shadowDeath", "desc": "선턴 공격 시 최종 데미지 +35%, 회피 성공 시 즉시 반격(공격력의 40%, 쿨1턴)", "firstTurnDmg": 35, "counterDmg": 40, "counterCooldown": 1 }
+    },
+    "크로노 레이즈": {
+      "id": "크로노 레이즈", "name": "크로노 레이즈", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "빵귤", "subType": "지팡이",
+      "effects": { "int": 18, "intMax": 2, "skillDmgPercent": 18 },
+      "uniqueEffect": { "type": "chronoExplosion", "desc": "스킬 적중 시 30% 확률로 추가 폭발 1회 발생 (기본 데미지의 40%)", "chance": 30, "dmgPercent": 40 }
+    },
+    "크로노 루프": {
+      "id": "크로노 루프", "name": "크로노 루프", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "빵귤", "subType": "마도장갑",
+      "effects": { "int": 16, "speed": 3, "intMax": 2, "skillDmgPercent": 20 },
+      "uniqueEffect": { "type": "chronoLoop", "desc": "스킬 사용 시 15% 확률로 MP 50%로 즉시 재발동", "chance": 15, "mpCostPercent": 50 }
+    },
+    "천운의 심판": {
+      "id": "천운의 심판", "name": "천운의 심판", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "호르아크티",
+      "effects": { "luck": 18, "luckMax": 2, "critChance": 12, "critDamage": 25 },
+      "uniqueEffect": { "type": "ultimateCard", "desc": "공격 시 12% 확률로 궁극 카드 발동 (데미지 2배 및 치명타 확정), 발동 시 다음 공격 치명타 확률 +15%", "chance": 12, "dmgMultiplier": 2, "nextCritBonus": 15 }
+    },
+    "피의 태도": {
+      "id": "피의 태도", "name": "피의 태도", "rarity": "레전더리", "level": 50, "type": "weapon", "job": "건마",
+      "effects": { "power": 16, "powerMax": 2, "hp": 420, "skillDmgPercent": 18 },
+      "uniqueEffect": { "type": "rage", "desc": "HP 50%↓: +25%, HP 30%↓: +20%(총45%), HP 10%↓: +25%(총70%). HP 30%↓ 적중시 HP 3% 회복", "thresholds": [{ "hp": 50, "dmg": 25 }, { "hp": 30, "dmg": 20, "healPercent": 3 }, { "hp": 10, "dmg": 25 }] }
+    }
+  },
+  "accessories": {
+    "시간의 목걸이": {
+      "id": "시간의 목걸이", "name": "시간의 목걸이", "rarity": "레전더리", "level": 50, "type": "necklace",
+      "effects": { "randomStats": 16, "bonusDmgPercent": 7 },
+      "uniqueEffect": { "type": "skillCooldownReduce", "chance": 10, "turns": 1 }
+    },
+    "절명의 반지": {
+      "id": "절명의 반지", "name": "절명의 반지", "rarity": "레전더리", "level": 50, "type": "ring",
+      "effects": { "critChance": 10, "critDamage": 20 },
+      "uniqueEffect": { "type": "deathStrike", "chance": 10, "dmgMultiplier": 1.4 }
+    },
+    "용기의 팔찌": {
+      "id": "용기의 팔찌", "name": "용기의 팔찌", "rarity": "레전더리", "level": 50, "type": "bracelet",
+      "effects": { "atkFlat": 1500, "skillDmgPercent": 8 },
+      "uniqueEffect": { "type": "damagedHeal", "healPercent": 6 }
+    },
+    "대머리 길의 목걸이": {
+      "id": "대머리 길의 목걸이", "name": "대머리 길의 목걸이", "rarity": "레전더리", "level": 50, "type": "necklace",
+      "effects": { "randomStats": 14, "bonusDmgPercent": 10 },
+      "uniqueEffect": { "type": "skillDmgBoost", "skillDmgPercent": 12 }
+    },
+    "고란의 본링": {
+      "id": "고란의 본링", "name": "고란의 본링", "rarity": "레전더리", "level": 50, "type": "ring",
+      "effects": { "critChance": 12, "critDamage": 18 },
+      "uniqueEffect": { "type": "critBonusDmg", "bonusDmgPercent": 12 }
+    },
+    "월드엘프의 팔찌": {
+      "id": "월드엘프의 팔찌", "name": "월드엘프의 팔찌", "rarity": "레전더리", "level": 50, "type": "bracelet",
+      "effects": { "atkFlat": 1300, "normalAtkDmgPercent": 10 },
+      "uniqueEffect": { "type": "allStatBoost", "allStats": 1, "allStatsMax": 5 }
+    }
+  },
+  "armor": {
+    "영웅의 투구": {
+      "id": "영웅의 투구", "name": "영웅의 투구", "rarity": "레전더리", "level": 50, "type": "helmet",
+      "effects": { "hp": 720, "randomStats": 6 },
+      "uniqueEffect": { "type": "mentalFocus", "desc": "스킬 사용 시 20% 확률로 받는 피해 감소 10%", "chance": 20, "reducePercent": 10 }
+    },
+    "영웅의 상의": {
+      "id": "영웅의 상의", "name": "영웅의 상의", "rarity": "레전더리", "level": 50, "type": "chest",
+      "effects": { "hp": 720, "dmgReductionPercent": 7 },
+      "uniqueEffect": { "type": "bloodShield", "desc": "피해 후 20% 확률로 최대 HP 6% 보호막", "chance": 20, "shieldPercent": 6 }
+    },
+    "영웅의 하의": {
+      "id": "영웅의 하의", "name": "영웅의 하의", "rarity": "레전더리", "level": 50, "type": "pants",
+      "effects": { "hp": 720, "randomStats": 6 },
+      "uniqueEffect": { "type": "enhancedHP", "desc": "전투 시작 시 최대 HP +8%", "hpPercent": 8 }
+    },
+    "영웅의 장갑": {
+      "id": "영웅의 장갑", "name": "영웅의 장갑", "rarity": "레전더리", "level": 50, "type": "gloves",
+      "effects": { "hp": 720, "bonusDmgPercent": 5 },
+      "uniqueEffect": { "type": "combatEnhance", "desc": "공격 적중 시 15% 확률로 다음 공격 +15%", "chance": 15, "dmgPercent": 15 }
+    },
+    "영웅의 신발": {
+      "id": "영웅의 신발", "name": "영웅의 신발", "rarity": "레전더리", "level": 50, "type": "shoes",
+      "effects": { "hp": 720, "randomStats": 6 },
+      "uniqueEffect": { "type": "acceleration", "speed": 4 }
+    }
+  }
+}

@@ -45,13 +45,24 @@ const {
     RPGLevel,
     RPGSkill,
     RPGSkillManager,
+    RPGSkillDataManager,
+    skillDataManager,
     RPGEquipment,
     RPGEquipmentManager,
     RPGInventory,
     RPGAwakening,
     RPGCombatCalculator,
     RPGMonster,
-    RPGBattle
+    RPGBattle,
+    craftingManager,
+    fishingManager,
+    trophyManager,
+    shopManager,
+    achievementManager,
+    petManager,
+    gachaManager,
+    tradeManager,
+    seasonPassManager
 } = require('./rpg_system.js');
 
 // 콘텐츠 명령어 비활성화 플래그
@@ -1992,6 +2003,8 @@ class RPGOwner {
         this.characters = []; // 최대 5개의 캐릭터 ID 배열
         this.maxCharacters = 5;
         this.activeCharacter = null; // 현재 선택된 캐릭터 ID
+        this.gold = 0;    // 골드 화폐
+        this.garnet = 0;  // 가넷 화폐 (캐시)
     }
 
     load(data) {
@@ -2001,6 +2014,8 @@ class RPGOwner {
         this.characters = data.characters || [];
         this.maxCharacters = data.maxCharacters || 5;
         this.activeCharacter = data.activeCharacter || null;
+        this.gold = data.gold || 0;
+        this.garnet = data.garnet || 0;
 
         return this;
     }
@@ -2105,6 +2120,10 @@ class RPGUser {
         
         // 기타
         this.sp = 0; // 스킬 포인트
+        
+        // 피로도 시스템
+        this.fatigue = { current: 156, max: 156 }; // 피로도 (156 기본)
+        this.fatigueLastReset = new Date().toDateString(); // 마지막 리셋 날짜
     }
 
     // 데이터 로드
@@ -2133,7 +2152,37 @@ class RPGUser {
         if (data.mpResource) this.mpResource.load(data.mpResource);
         if (data.gunpowerResource) this.gunpowerResource.load(data.gunpowerResource);
         
+        // 피로도
+        if (data.fatigue) this.fatigue = data.fatigue;
+        this.fatigueLastReset = data.fatigueLastReset || new Date().toDateString();
+        this._checkFatigueReset();
+        
         return this;
+    }
+    
+    // 피로도 일일 리셋 체크
+    _checkFatigueReset() {
+        const today = new Date().toDateString();
+        if (this.fatigueLastReset !== today) {
+            this.fatigue.current = this.fatigue.max;
+            this.fatigueLastReset = today;
+        }
+    }
+    
+    // 피로도 소모
+    consumeFatigue(amount) {
+        this._checkFatigueReset();
+        if (this.fatigue.current < amount) {
+            return { success: false, message: `피로도가 부족합니다. (필요: ${amount}, 보유: ${this.fatigue.current})` };
+        }
+        this.fatigue.current -= amount;
+        return { success: true, remaining: this.fatigue.current };
+    }
+    
+    // 피로도 회복
+    recoverFatigue(amount) {
+        this.fatigue.current = Math.min(this.fatigue.current + amount, this.fatigue.max);
+        return { success: true, current: this.fatigue.current };
     }
 
     // JSON 변환
@@ -2156,7 +2205,9 @@ class RPGUser {
             hp: this.hp.toJSON(),
             gpResource: this.gpResource.toJSON(),
             mpResource: this.mpResource.toJSON(),
-            gunpowerResource: this.gunpowerResource.toJSON()
+            gunpowerResource: this.gunpowerResource.toJSON(),
+            fatigue: this.fatigue,
+            fatigueLastReset: this.fatigueLastReset
         };
     }
 
@@ -11509,13 +11560,15 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     
+                    character._checkFatigueReset();
                     const dungeonList = [];
-                    dungeonList.push(`[ 던전 목록 ]`);
+                    dungeonList.push(`[ 던전 목록 ] 피로도: ${character.fatigue.current}/${character.fatigue.max}`);
                     dungeonList.push(``);
                     
                     availableDungeons.forEach((dungeon, idx) => {
-                        dungeonList.push(`${idx + 1}. ${dungeon.name} (권장 Lv.${dungeon.requiredLevel})`);
-                        dungeonList.push(`   ${dungeon.description}`);
+                        const region = dungeon.region ? `[${dungeon.region}] ` : '';
+                        const fatigue = dungeon.fatigueCost ? ` (피로 ${dungeon.fatigueCost})` : '';
+                        dungeonList.push(`${idx + 1}. ${region}${dungeon.name} (Lv.${dungeon.requiredLevel}~${dungeon.maxLevel || '?'})${fatigue}`);
                     });
                     
                     dungeonList.push(``);
@@ -11542,18 +11595,34 @@ client.on('chat', async (data, channel) => {
                     
                     const selectedDungeon = availableDungeons[dungeonNum - 1];
                     
-                    // 랜덤 몬스터 선택
-                    const monsterIds = selectedDungeon.monsters;
-                    const randomMonsterId = monsterIds[Math.floor(Math.random() * monsterIds.length)];
-                    const monster = monsterManager.createMonsterInstance(randomMonsterId);
+                    // 피로도 체크
+                    const fatigueCost = selectedDungeon.fatigueCost || 5;
+                    const fatigueResult = character.consumeFatigue(fatigueCost);
+                    if (!fatigueResult.success) {
+                        channel.sendChat(`❌ ${fatigueResult.message}`);
+                        return;
+                    }
+                    
+                    // 페이즈 시스템: 1페이즈 첫 번째 몬스터로 시작
+                    let monsterId = null;
+                    if (selectedDungeon.phases && selectedDungeon.phases.length > 0) {
+                        const phase1 = selectedDungeon.phases[0];
+                        const monsterEntry = phase1.monsters[Math.floor(Math.random() * phase1.monsters.length)];
+                        monsterId = monsterEntry.id;
+                    } else if (selectedDungeon.monsters) {
+                        monsterId = selectedDungeon.monsters[Math.floor(Math.random() * selectedDungeon.monsters.length)];
+                    }
+                    
+                    const monster = monsterManager.createMonsterInstance(monsterId);
                     
                     if (!monster) {
+                        character.recoverFatigue(fatigueCost); // 실패 시 피로도 환불
                         channel.sendChat("❌ 몬스터 생성에 실패했습니다.");
                         return;
                     }
                     
-                    // 전투 시작
-                    const battle = new RPGBattle(character, monster);
+                    // 전투 시작 (던전 정보 전달하여 보상 처리)
+                    const battle = new RPGBattle(character, monster, selectedDungeon);
                     activeBattles.set(sender.userId + "", battle);
                     
                     const status = battle.getBattleStatus();
@@ -11803,6 +11872,792 @@ client.on('chat', async (data, channel) => {
                     
                     channel.sendChat(battleMsg.join('\n'));
                     await character.save();
+                    return;
+                }
+
+                // ===== 지갑 명령어 =====
+                if (args[0] === "지갑" || args[0] === "화폐") {
+                    const msg = [];
+                    msg.push(`━━━ ${owner.name}님의 지갑 ━━━`);
+                    msg.push(`💰 골드: ${owner.gold.toLocaleString()}`);
+                    msg.push(`💎 가넷: ${owner.garnet.toLocaleString()}`);
+                    msg.push(`━━━━━━━━━━━━━━━`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 피로도 명령어 =====
+                if (args[0] === "피로도") {
+                    character._checkFatigueReset();
+                    const pct = Math.floor(character.fatigue.current / character.fatigue.max * 100);
+                    const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
+                    channel.sendChat(`⚡ 피로도: ${character.fatigue.current}/${character.fatigue.max} [${bar}] ${pct}%`);
+                    return;
+                }
+
+                // ===== 장비목록 (현재 장착) =====
+                if (args[0] === "장비목록" || args[0] === "장착목록") {
+                    const equipped = character.equipmentManager.equipped;
+                    const msg = [];
+                    msg.push(`━━━ ${character.name}의 장비 ━━━`);
+                    const slotNames = { weapon: '무기', helmet: '투구', chest: '상의', legs: '하의', boots: '신발', gloves: '장갑', necklace: '목걸이', ring: '반지', bracelet: '팔찌' };
+                    for (const [slot, name] of Object.entries(slotNames)) {
+                        const item = equipped instanceof Map ? equipped.get(slot) : (equipped ? equipped[slot] : null);
+                        if (item) {
+                            const enh = item.enhancement ? `+${item.enhancement}` : '';
+                            const amp = item.isAmplified && item.amplification ? `+${item.amplification}증폭` : '';
+                            msg.push(`[${name}] [${item.rarity}] ${item.name} ${enh}${amp}`);
+                        } else {
+                            msg.push(`[${name}] - 비어있음`);
+                        }
+                    }
+                    msg.push(`━━━━━━━━━━━━━━━`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 장비정보 =====
+                if (args[0] === "장비정보") {
+                    const idx = parseInt(args[1]) - 1;
+                    const equips = character.inventory.equipments || [];
+                    if (isNaN(idx) || idx < 0 || idx >= equips.length) {
+                        channel.sendChat(`❌ 올바른 장비 번호를 입력해주세요. (1~${equips.length})\n/RPGenius 인벤토리 로 번호를 확인하세요.`);
+                        return;
+                    }
+                    const item = equips[idx];
+                    const msg = [];
+                    msg.push(`━━━ [${item.rarity}] ${item.name} ━━━`);
+                    msg.push(`레벨: ${item.level} | 타입: ${item.type}`);
+                    if (item.enhancement) msg.push(`강화: +${item.enhancement}`);
+                    if (item.isAmplified) msg.push(`증폭: +${item.amplification} (${item.ampStat})`);
+                    if (item.boundTo) msg.push(`귀속: ${item.boundTo}`);
+                    msg.push(`\n[스탯]`);
+                    for (const [k, v] of Object.entries(item.stats || {})) {
+                        msg.push(`  ${k}: +${v}`);
+                    }
+                    if (item.tradeable === false) msg.push(`\n⚠️ 거래 불가`);
+                    msg.push(`━━━━━━━━━━━━━━━`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 장착 =====
+                if (args[0] === "장착") {
+                    const idx = parseInt(args[1]) - 1;
+                    const equips = character.inventory.equipments || [];
+                    if (isNaN(idx) || idx < 0 || idx >= equips.length) {
+                        channel.sendChat(`❌ 올바른 장비 번호를 입력해주세요. (1~${equips.length})`);
+                        return;
+                    }
+                    const item = equips[idx];
+                    const slot = item.type;
+                    const prevItem = character.equipmentManager.equipped instanceof Map ? character.equipmentManager.equipped.get(slot) : null;
+                    character.equipmentManager.equip(slot, item);
+                    character.inventory.equipments.splice(idx, 1);
+                    if (item.bindType === 'equip' && !item.boundTo) {
+                        item.boundTo = character.id;
+                    }
+                    if (prevItem) {
+                        character.inventory.equipments.push(prevItem);
+                    }
+                    await character.save();
+                    channel.sendChat(`✅ [${item.rarity}] ${item.name}을(를) ${slot} 슬롯에 장착했습니다.${prevItem ? `\n기존 장비 [${prevItem.name}]이(가) 인벤토리로 이동했습니다.` : ''}`);
+                    return;
+                }
+
+                // ===== 해제 =====
+                if (args[0] === "해제") {
+                    const slotMap = { '무기': 'weapon', '투구': 'helmet', '상의': 'chest', '하의': 'legs', '신발': 'boots', '장갑': 'gloves', '목걸이': 'necklace', '반지': 'ring', '팔찌': 'bracelet' };
+                    const slot = slotMap[args[1]] || args[1];
+                    if (!slot || !character.equipmentManager.slots.includes(slot)) {
+                        channel.sendChat(`❌ 올바른 슬롯을 입력해주세요.\n슬롯: ${Object.keys(slotMap).join(', ')}`);
+                        return;
+                    }
+                    const equipped = character.equipmentManager.equipped;
+                    const item = equipped instanceof Map ? equipped.get(slot) : null;
+                    if (!item) {
+                        channel.sendChat(`❌ 해당 슬롯에 장착된 장비가 없습니다.`);
+                        return;
+                    }
+                    character.equipmentManager.unequip(slot);
+                    character.inventory.equipments.push(item);
+                    await character.save();
+                    channel.sendChat(`✅ [${item.name}]을(를) 해제했습니다. 인벤토리로 이동했습니다.`);
+                    return;
+                }
+
+                // ===== 강화 =====
+                if (args[0] === "강화") {
+                    const idx = parseInt(args[1]) - 1;
+                    const equips = character.inventory.equipments || [];
+                    if (isNaN(idx) || idx < 0 || idx >= equips.length) {
+                        channel.sendChat(`❌ 올바른 장비 번호를 입력해주세요. (1~${equips.length})`);
+                        return;
+                    }
+                    const item = equips[idx];
+                    const oldEnhancement = item.enhancement || 0;
+                    const targetEnhancement = Math.min(oldEnhancement + 1, 16);
+                    const isArmor = ['helmet', 'chest', 'legs', 'boots', 'gloves'].includes(item.type);
+                    const stoneCost = equipmentManager.getEnhancementStoneCost(targetEnhancement, item.level, item.rarity, isArmor);
+                    const goldCost = equipmentManager.getEnhancementGoldCost(targetEnhancement, item.level, item.rarity);
+
+                    if (!character.hasConsumable('강화석', stoneCost)) {
+                        channel.sendChat(`❌ 강화석이 부족합니다. (필요: ${stoneCost}개)`);
+                        return;
+                    }
+                    if (owner.gold < goldCost) {
+                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()}, 보유: ${owner.gold.toLocaleString()})`);
+                        return;
+                    }
+                    const result = equipmentManager.attemptEnhancement(oldEnhancement);
+                    character.consumeItemFromInventory('강화석', stoneCost);
+                    owner.gold -= goldCost;
+                    item.enhancement = result.newEnhancement;
+                    const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
+                    const msg = [`━━━ 강화 결과 ━━━`, `${item.name}: +${oldEnhancement} → +${result.newEnhancement}`, resultText];
+                    if (result.result === 'destroy') {
+                        equips.splice(idx, 1);
+                        msg.push(`장비가 파괴되었습니다...`);
+                    }
+                    await character.save();
+                    await owner.save();
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 증폭 =====
+                if (args[0] === "증폭") {
+                    const idx = parseInt(args[1]) - 1;
+                    const statArg = args[2];
+                    const equips = character.inventory.equipments || [];
+                    if (isNaN(idx) || idx < 0 || idx >= equips.length) {
+                        channel.sendChat(`❌ 올바른 장비 번호를 입력해주세요.\n/RPGenius 증폭 [장비번호] [스탯]\n스탯: power, speed, int, luck`);
+                        return;
+                    }
+                    const item = equips[idx];
+                    if (!item.isAmplified && !statArg) {
+                        channel.sendChat(`❌ 증폭할 차원 스탯을 선택해주세요.\n/RPGenius 증폭 ${args[1]} [power/speed/int/luck]`);
+                        return;
+                    }
+                    const oldAmplification = item.amplification || 0;
+                    const targetAmplification = Math.min(oldAmplification + 1, 16);
+                    const crystalCost = equipmentManager.getAmplificationCrystalCost(targetAmplification);
+                    const goldCost = equipmentManager.getAmplificationGoldCost(targetAmplification, item.level, item.rarity);
+
+                    if (!character.hasConsumable('증폭서', 1)) {
+                        channel.sendChat(`❌ 증폭서가 부족합니다.`);
+                        return;
+                    }
+                    if (!character.hasConsumable('순수한 결정체', crystalCost)) {
+                        channel.sendChat(`❌ 순수한 결정체가 부족합니다. (필요: ${crystalCost}개)`);
+                        return;
+                    }
+                    if (owner.gold < goldCost) {
+                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()})`);
+                        return;
+                    }
+                    if (!item.isAmplified) {
+                        item.isAmplified = true;
+                        item.ampStat = statArg;
+                    }
+                    const result = equipmentManager.attemptAmplification ? equipmentManager.attemptAmplification(oldAmplification) : { result: 'success', newAmplification: oldAmplification + 1 };
+                    character.consumeItemFromInventory('증폭서', 1);
+                    character.consumeItemFromInventory('순수한 결정체', crystalCost);
+                    owner.gold -= goldCost;
+                    item.amplification = result.newAmplification;
+                    const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
+                    const msg = [`━━━ 증폭 결과 ━━━`, `${item.name} (${item.ampStat}): +${oldAmplification} → +${result.newAmplification}`, resultText];
+                    if (result.result === 'destroy') {
+                        equips.splice(idx, 1);
+                        msg.push(`장비가 파괴되었습니다...`);
+                    }
+                    await character.save();
+                    await owner.save();
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 스킬레벨업 =====
+                if (args[0] === "스킬레벨업" || args[0] === "스킬업") {
+                    if (!args[1]) {
+                        channel.sendChat(`❌ 스킬명을 입력해주세요.\n/RPGenius 스킬레벨업 [스킬명]`);
+                        return;
+                    }
+                    const skillName = args.slice(1).join(' ');
+                    const result = character.levelUpSkill(skillName);
+                    if (!result.success) {
+                        channel.sendChat(`❌ ${result.message}`);
+                        return;
+                    }
+                    await character.save();
+                    channel.sendChat(`✅ ${skillName} 스킬이 레벨업되었습니다! (남은 SP: ${character.sp})`);
+                    return;
+                }
+
+                // ===== 스탯투자 =====
+                if (args[0] === "스탯투자" || args[0] === "스탯") {
+                    const statMap = { '힘': 'power', '속도': 'speed', '지능': 'int', '행운': 'luck' };
+                    const statName = statMap[args[1]] || args[1];
+                    const amount = parseInt(args[2]) || 1;
+                    if (!statName || !['power', 'speed', 'int', 'luck'].includes(statName)) {
+                        channel.sendChat(`❌ 올바른 스탯을 입력해주세요.\n/RPGenius 스탯투자 [힘/속도/지능/행운] [수치]\n현재 스탯: 힘${character.stats.power} 속도${character.stats.speed} 지능${character.stats.int} 행운${character.stats.luck}`);
+                        return;
+                    }
+                    const result = character.increaseStat(statName, amount);
+                    if (!result.success) {
+                        channel.sendChat(`❌ ${result.message}`);
+                        return;
+                    }
+                    await character.save();
+                    channel.sendChat(`✅ ${args[1] || statName} 스탯을 ${amount} 올렸습니다! (현재: ${character.stats[statName]})`);
+                    return;
+                }
+
+                // ===== 각성 =====
+                if (args[0] === "각성") {
+                    if (args[1] === "투자" || args[1] === "AP") {
+                        const bonusType = args[2];
+                        const amount = parseInt(args[3]) || 1;
+                        if (!bonusType) {
+                            channel.sendChat(`❌ /RPGenius 각성 투자 [보너스타입] [수치]\n보너스타입: crit, critMul, hp, attack`);
+                            return;
+                        }
+                        const result = character.investAP(bonusType, amount);
+                        if (!result.success) {
+                            channel.sendChat(`❌ ${result.message}`);
+                            return;
+                        }
+                        await character.save();
+                        channel.sendChat(`✅ 각성 AP를 ${bonusType}에 ${amount} 투자했습니다!`);
+                        return;
+                    }
+                    const result = character.awaken();
+                    if (!result.success) {
+                        channel.sendChat(`❌ ${result.message}`);
+                        return;
+                    }
+                    await character.save();
+                    channel.sendChat(`🌟 각성에 성공했습니다! 각성 스킬이 해금되었습니다.\n/RPGenius 스킬 로 확인해보세요.`);
+                    return;
+                }
+
+                // ===== 제작 =====
+                if (args[0] === "제작목록" || args[0] === "레시피") {
+                    const recipes = craftingManager.getAllRecipes ? craftingManager.getAllRecipes() : [];
+                    if (recipes.length === 0) {
+                        channel.sendChat(`❌ 제작 가능한 레시피가 없습니다.`);
+                        return;
+                    }
+                    const msg = [`━━━ 제작 레시피 ━━━`];
+                    recipes.forEach((r, i) => {
+                        msg.push(`${i + 1}. ${r.name} — ${(r.materials || []).map(m => `${m.name}x${m.count}`).join(', ')}${r.gold ? ` / ${r.gold}G` : ''}`);
+                    });
+                    msg.push(`\n/RPGenius 제작 [레시피명]`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                if (args[0] === "제작") {
+                    if (!args[1]) {
+                        channel.sendChat(`❌ /RPGenius 제작 [레시피명]`);
+                        return;
+                    }
+                    const recipeName = args.slice(1).join(' ');
+                    const canCraft = craftingManager.canCraft ? craftingManager.canCraft(recipeName, character.inventory, owner.gold) : null;
+                    if (canCraft && !canCraft.success) {
+                        channel.sendChat(`❌ ${canCraft.message}`);
+                        return;
+                    }
+                    const result = craftingManager.craft ? craftingManager.craft(recipeName, character.inventory, owner) : null;
+                    if (!result || !result.success) {
+                        channel.sendChat(`❌ ${result ? result.message : '제작에 실패했습니다.'}`);
+                        return;
+                    }
+                    await character.save();
+                    await owner.save();
+                    channel.sendChat(`✅ ${result.itemName || recipeName}을(를) 제작했습니다!`);
+                    return;
+                }
+
+                // ===== 낚시 =====
+                if (args[0] === "낚시") {
+                    if (args[1] === "정보") {
+                        const rod = character.findConsumableInInventory ? character.findConsumableInInventory('낚싯대') : null;
+                        const bait = character.findConsumableInInventory ? character.findConsumableInInventory('떡밥') : null;
+                        const msg = [`━━━ 낚시 정보 ━━━`];
+                        msg.push(`🎣 낚싯대: ${rod ? `${rod.name} x${rod.count}` : '없음'}`);
+                        msg.push(`🪱 떡밥: ${bait ? `${bait.name} x${bait.count}` : '없음'}`);
+                        msg.push(`━━━━━━━━━━━━━━━`);
+                        channel.sendChat(msg.join('\\n'));
+                        return;
+                    }
+                    const rodName = args[1] || '기본 낚싯대';
+                    const baitName = args[2] || '기본 떡밥';
+                    const rodData = fishingManager.getRod(rodName);
+                    const baitData = fishingManager.getBait(baitName);
+                    if (!rodData || !baitData) {
+                        channel.sendChat(`❌ 낚싯대/떡밥 이름이 올바르지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
+                        return;
+                    }
+                    if (!character.hasConsumable(rodName, 1)) {
+                        channel.sendChat(`❌ ${rodName}을(를) 보유하고 있지 않습니다.`);
+                        return;
+                    }
+                    if (!character.hasConsumable(baitName, 1)) {
+                        channel.sendChat(`❌ ${baitName}이(가) 부족합니다.`);
+                        return;
+                    }
+
+                    const time = fishingManager.getFishingTime(rodName);
+                    const drop = fishingManager.rollCatch(baitName);
+                    character.consumeItemFromInventory(baitName, 1);
+
+                    const msg = [`🎣 낚시 결과 (${time}초)`, ``];
+                    if (!drop) {
+                        msg.push(`  아무것도 잡지 못했습니다...`);
+                    } else {
+                        msg.push(`  🐟 ${drop.name} x${drop.count || 1}`);
+                        character.addConsumableToInventory(drop.name, drop.type || '물고기', drop.count || 1);
+                    }
+                    await character.save();
+                    channel.sendChat(msg.join('\\n'));
+                    return;
+                }
+
+                // ===== 트로피 =====
+                if (args[0] === "트로피") {
+                    if (args[1] === "장착") {
+                        const tName = args.slice(2).join(' ');
+                        if (!tName) { channel.sendChat(`❌ /RPGenius 트로피 장착 [트로피명]`); return; }
+                        const tData = trophyManager.getTrophy ? trophyManager.getTrophy(tName) : null;
+                        if (!tData) { channel.sendChat(`❌ 존재하지 않는 트로피입니다.`); return; }
+                        if (!character.trophySlots) character.trophySlots = [null, null, null];
+                        const emptySlot = character.trophySlots.indexOf(null);
+                        if (emptySlot === -1) { channel.sendChat(`❌ 트로피 슬롯이 가득 찼습니다. (최대 3개)\n먼저 /RPGenius 트로피 해제 [슬롯번호] 로 해제해주세요.`); return; }
+                        character.trophySlots[emptySlot] = tName;
+                        await character.save();
+                        channel.sendChat(`✅ [${tData.rarity || ''}] ${tName}을(를) 슬롯 ${emptySlot + 1}에 장착했습니다.`);
+                        return;
+                    }
+                    if (args[1] === "해제") {
+                        const slotNum = parseInt(args[2]) - 1;
+                        if (!character.trophySlots) character.trophySlots = [null, null, null];
+                        if (isNaN(slotNum) || slotNum < 0 || slotNum > 2) { channel.sendChat(`❌ 슬롯 번호를 입력해주세요. (1~3)`); return; }
+                        const removed = character.trophySlots[slotNum];
+                        character.trophySlots[slotNum] = null;
+                        await character.save();
+                        channel.sendChat(removed ? `✅ ${removed}을(를) 해제했습니다.` : `❌ 해당 슬롯에 트로피가 없습니다.`);
+                        return;
+                    }
+                    if (!character.trophySlots) character.trophySlots = [null, null, null];
+                    const msg = [`━━━ 트로피 슬롯 ━━━`];
+                    character.trophySlots.forEach((t, i) => {
+                        if (t) {
+                            const data = trophyManager.getTrophy ? trophyManager.getTrophy(t) : null;
+                            msg.push(`${i + 1}. [${data ? data.rarity : '?'}] ${t}`);
+                        } else {
+                            msg.push(`${i + 1}. - 비어있음`);
+                        }
+                    });
+                    msg.push(`\n/RPGenius 트로피 장착 [이름]\n/RPGenius 트로피 해제 [번호]`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 펫 =====
+                if (args[0] === "펫") {
+                    if (args[1] === "장착") {
+                        const petName = args.slice(2).join(' ');
+                        if (!petName) { channel.sendChat(`❌ /RPGenius 펫 장착 [펫이름]`); return; }
+                        if (!character.pets) character.pets = [];
+                        const pet = character.pets.find(p => p.name === petName);
+                        if (!pet) { channel.sendChat(`❌ 해당 펫을 보유하고 있지 않습니다.`); return; }
+                        character.activePet = petName;
+                        await character.save();
+                        channel.sendChat(`✅ ${petName}을(를) 장착했습니다!`);
+                        return;
+                    }
+                    const msg = [`━━━ 펫 정보 ━━━`];
+                    msg.push(`장착 중: ${character.activePet || '없음'}`);
+                    if (character.pets && character.pets.length > 0) {
+                        msg.push(`\n[보유 펫]`);
+                        character.pets.forEach((p, i) => msg.push(`${i + 1}. ${p.name} (${p.type || '?'})`));
+                    } else {
+                        msg.push(`보유 중인 펫이 없습니다.`);
+                    }
+                    msg.push(`\n/RPGenius 알열기 [알이름]`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 알열기 =====
+                if (args[0] === "알열기") {
+                    const eggName = args.slice(1).join(' ');
+                    if (!eggName) { channel.sendChat(`❌ /RPGenius 알열기 [알이름]`); return; }
+                    if (!character.hasConsumable(eggName, 1)) {
+                        channel.sendChat(`❌ ${eggName}을(를) 보유하고 있지 않습니다.`);
+                        return;
+                    }
+                    const result = petManager.openEgg ? petManager.openEgg(eggName) : null;
+                    if (!result || !result.success) {
+                        channel.sendChat(`❌ ${result ? result.message : '알 열기에 실패했습니다.'}`);
+                        return;
+                    }
+                    character.consumeItemFromInventory(eggName, 1);
+                    if (!character.pets) character.pets = [];
+                    character.pets.push({ name: result.petName, type: result.petType });
+                    await character.save();
+                    channel.sendChat(`🥚✨ ${eggName}에서 [${result.petType}] ${result.petName}이(가) 부화했습니다!`);
+                    return;
+                }
+
+                // ===== 상점 =====
+                if (args[0] === "상점") {
+                    if (args[1] === "시즌" || args[1] === "기간") {
+                        const itemsObj = shopManager.getSeasonalItems();
+                        const items = Object.entries(itemsObj);
+                        const msg = [`━━━ 시즌 상점 ━━━`];
+                        items.forEach(([key, item], i) => {
+                            msg.push(`${i + 1}. ${key} — ${item.price.toLocaleString()} ${item.priceType === 'garnet' ? '가넷' : '포인트'}${item.limit ? ` (한정 ${item.limit}개)` : ''}`);
+                        });
+                        if (items.length === 0) msg.push(`현재 판매 중인 시즌 상품이 없습니다.`);
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    const itemsObj = shopManager.getPointShopItems();
+                    const items = Object.entries(itemsObj);
+                    const msg = [`━━━ 상점 ━━━`];
+                    items.forEach(([key, item], i) => {
+                        msg.push(`${i + 1}. ${key} — ${item.price.toLocaleString()} ${item.priceType === 'garnet' ? '가넷' : '포인트'}`);
+                    });
+                    msg.push(`\n/RPGenius 구매 [아이템명] [수량]`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 구매 =====
+                if (args[0] === "구매") {
+                    const count = parseInt(args[args.length - 1]);
+                    const hasCount = !isNaN(count) && args.length > 2;
+                    const itemName = hasCount ? args.slice(1, -1).join(' ') : args.slice(1).join(' ');
+                    const qty = hasCount ? count : 1;
+                    if (!itemName) { channel.sendChat(`❌ /RPGenius 구매 [아이템명] [수량]`); return; }
+                    const findKey = (obj) => Object.keys(obj || {}).find(k => k === itemName || (obj[k] && obj[k].name === itemName));
+                    let category = null;
+                    let key = findKey(shopManager.getPointShopItems());
+                    if (key) category = 'point';
+                    if (!key) {
+                        key = findKey(shopManager.getSeasonalItems());
+                        if (key) category = 'seasonal';
+                    }
+                    if (!key || !category) {
+                        channel.sendChat(`❌ 상점에서 해당 아이템을 찾을 수 없습니다.\n/RPGenius 상점 으로 목록을 확인하세요.`);
+                        return;
+                    }
+                    for (let i = 0; i < qty; i++) {
+                        const r = shopManager.purchase(category, key, owner, character.inventory);
+                        if (!r.success) {
+                            channel.sendChat(`❌ ${r.message}`);
+                            return;
+                        }
+                    }
+                    await character.save();
+                    await owner.save();
+                    channel.sendChat(`✅ ${itemName} x${qty}을(를) 구매했습니다! (잔액: 💰${owner.gold.toLocaleString()} 💎${owner.garnet.toLocaleString()})`);
+                    return;
+                }
+
+                // ===== 경매장 =====
+                if (args[0] === "경매장") {
+                    if (args[1] === "등록") {
+                        const itemName = args[2];
+                        const count = parseInt(args[3]) || 1;
+                        const price = parseInt(args[4]);
+                        if (!itemName || isNaN(price)) {
+                            channel.sendChat(`❌ /RPGenius 경매장 등록 [아이템명] [수량] [가격]`);
+                            return;
+                        }
+                        const result = tradeManager.auctionRegister(owner.id, owner.name, itemName, count, price);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        channel.sendChat(`✅ 경매장에 ${itemName} x${count}을(를) ${price.toLocaleString()}G에 등록했습니다. (수수료 5%)`);
+                        return;
+                    }
+                    if (args[1] === "구매") {
+                        const listingId = parseInt(args[2]);
+                        if (isNaN(listingId)) { channel.sendChat(`❌ /RPGenius 경매장 구매 [매물번호]`); return; }
+                        const result = tradeManager.auctionBuy(owner.id, listingId, owner);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        await owner.save();
+                        channel.sendChat(`✅ 매물 #${listingId}을(를) 구매했습니다! (${result.item.name} x${result.item.count})`);
+                        return;
+                    }
+                    if (args[1] === "취소") {
+                        const listingId = parseInt(args[2]);
+                        if (isNaN(listingId)) { channel.sendChat(`❌ /RPGenius 경매장 취소 [매물번호]`); return; }
+                        const result = tradeManager.auctionCancel(owner.id, listingId);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        channel.sendChat(`✅ 매물 #${listingId} 등록을 취소했습니다.`);
+                        return;
+                    }
+                    if (args[1] === "검색") {
+                        const keyword = args.slice(2).join(' ');
+                        if (!keyword) { channel.sendChat(`❌ /RPGenius 경매장 검색 [키워드]`); return; }
+                        const results = tradeManager.searchAuction(keyword);
+                        const msg = [`━━━ 검색 결과: "${keyword}" ━━━`];
+                        results.forEach(l => msg.push(`#${l.id} ${l.itemName} x${l.count} — ${l.price.toLocaleString()}G (${l.sellerName})`));
+                        if (results.length === 0) msg.push(`검색 결과가 없습니다.`);
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    // 목록
+                    const page = parseInt(args[1]) || 1;
+                    const listings = tradeManager.getAuctionListings(page);
+                    const msg = [`━━━ 경매장 (${page}페이지) ━━━`];
+                    (listings.listings || []).forEach(l => {
+                        msg.push(`#${l.id} ${l.itemName} x${l.count} — ${l.price.toLocaleString()}G (${l.sellerName})`);
+                    });
+                    if (!listings.listings || listings.listings.length === 0) msg.push(`등록된 매물이 없습니다.`);
+                    else msg.push(`\n${listings.page}/${listings.totalPages} 페이지`);
+                    msg.push(`\n/RPGenius 경매장 [페이지]\n/RPGenius 경매장 등록/구매/취소/검색`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 거래소 =====
+                if (args[0] === "거래소") {
+                    if (args[1] === "등록") {
+                        const itemName = args[2];
+                        const count = parseInt(args[3]) || 1;
+                        const price = parseInt(args[4]);
+                        if (!itemName || isNaN(price)) {
+                            channel.sendChat(`❌ /RPGenius 거래소 등록 [아이템명] [수량] [가넷가격]`);
+                            return;
+                        }
+                        const result = tradeManager.exchangeRegister(owner.id, owner.name, itemName, count, price);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        channel.sendChat(`✅ 거래소에 ${itemName} x${count}을(를) ${price}가넷에 등록했습니다.`);
+                        return;
+                    }
+                    if (args[1] === "구매") {
+                        const listingId = parseInt(args[2]);
+                        if (isNaN(listingId)) { channel.sendChat(`❌ /RPGenius 거래소 구매 [매물번호]`); return; }
+                        const result = tradeManager.exchangeBuy(owner.id, listingId, owner);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        await owner.save();
+                        channel.sendChat(`✅ 매물 #${listingId}을(를) 구매했습니다!`);
+                        return;
+                    }
+                    const page = parseInt(args[1]) || 1;
+                    const listings = tradeManager.getExchangeListings(page);
+                    const msg = [`━━━ 거래소 (${page}페이지) ━━━`];
+                    (listings.listings || []).forEach(l => {
+                        msg.push(`#${l.id} ${l.itemName} x${l.count} — ${l.price}가넷 (${l.sellerName})`);
+                    });
+                    if (!listings.listings || listings.listings.length === 0) msg.push(`등록된 매물이 없습니다.`);
+                    msg.push(`\n/RPGenius 거래소 등록/구매`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 우편 =====
+                if (args[0] === "우편함" || args[0] === "우편") {
+                    if (args[1] === "수령") {
+                        const mailId = parseInt(args[2]);
+                        if (isNaN(mailId)) { channel.sendChat(`❌ /RPGenius 우편 수령 [우편번호]`); return; }
+                        const result = tradeManager.claimMail(owner.id, mailId);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        const mail = result.mail;
+                        if (mail.type === 'item') {
+                            character.addConsumableToInventory(mail.itemName, '아이템', mail.count);
+                            await character.save();
+                        } else if (mail.type === 'garnet') {
+                            owner.garnet += mail.garnet;
+                        } else if (mail.type === 'gold') {
+                            owner.gold += mail.garnet;
+                        }
+                        await owner.save();
+                        channel.sendChat(`✅ 우편 #${mailId}을(를) 수령했습니다!`);
+                        return;
+                    }
+                    if (args[1] === "전체수령") {
+                        const result = tradeManager.claimAllMail(owner.id);
+                        if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                        result.claimed.forEach(c => {
+                            if (c.type === 'item') character.addConsumableToInventory(c.itemName, '아이템', c.count);
+                            else if (c.type === 'garnet') owner.garnet += c.garnet;
+                            else if (c.type === 'gold') owner.gold += c.garnet;
+                        });
+                        await character.save();
+                        await owner.save();
+                        channel.sendChat(`✅ ${result.claimed.length}개의 우편을 수령했습니다!`);
+                        return;
+                    }
+                    if (args[1] === "보내기") {
+                        const toName = args[2];
+                        const sendType = args[3]; // '아이템' or '가넷'
+                        if (!toName || !sendType) {
+                            channel.sendChat(`❌ /RPGenius 우편 보내기 [닉네임] 아이템 [아이템명] [수량]\n/RPGenius 우편 보내기 [닉네임] 가넷 [수량]`);
+                            return;
+                        }
+                        const targetOwner = await getRPGOwnerByName(toName);
+                        if (!targetOwner) { channel.sendChat(`❌ 대상을 찾을 수 없습니다.`); return; }
+                        if (sendType === "아이템") {
+                            const itemName = args[4];
+                            const count = parseInt(args[5]) || 1;
+                            if (!itemName) { channel.sendChat(`❌ 아이템명을 입력해주세요.`); return; }
+                            const result = tradeManager.sendItemMail(owner.id, owner.name, targetOwner.id, itemName, count);
+                            if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                            channel.sendChat(`✅ ${toName}님에게 ${itemName} x${count}을(를) 우편으로 보냈습니다.`);
+                        } else if (sendType === "가넷") {
+                            const amount = parseInt(args[4]);
+                            if (isNaN(amount) || amount <= 0) { channel.sendChat(`❌ 올바른 수량을 입력해주세요.`); return; }
+                            if (owner.garnet < amount) { channel.sendChat(`❌ 가넷이 부족합니다.`); return; }
+                            const result = tradeManager.sendGarnetMail(owner.id, owner.name, targetOwner.id, amount);
+                            if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                            owner.garnet -= amount;
+                            await owner.save();
+                            channel.sendChat(`✅ ${toName}님에게 ${amount}가넷을 보냈습니다.`);
+                        }
+                        return;
+                    }
+                    // 목록
+                    const mails = tradeManager.getMail(owner.id);
+                    const msg = [`━━━ 우편함 ━━━`];
+                    if (mails.length > 0) {
+                        mails.forEach(m => {
+                            const content = m.type === 'item' ? `${m.itemName} x${m.count}` : m.type === 'garnet' ? `${m.garnet}가넷` : `${m.garnet}G`;
+                            msg.push(`#${m.id} [${m.fromName}] ${content}${m.message ? ` "${m.message}"` : ''}`);
+                        });
+                    } else {
+                        msg.push(`우편함이 비어있습니다.`);
+                    }
+                    msg.push(`\n/RPGenius 우편 수령 [번호] | 전체수령 | 보내기`);
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 자물쇠열기 (가챠) =====
+                if (args[0] === "자물쇠열기" || args[0] === "가챠") {
+                    if (!character.hasConsumable('지니어스의 열쇠', 1)) {
+                        channel.sendChat(`❌ 지니어스의 열쇠가 필요합니다.`);
+                        return;
+                    }
+                    if (!character.hasConsumable('봉인된 자물쇠', 1)) {
+                        channel.sendChat(`❌ 봉인된 자물쇠가 필요합니다.`);
+                        return;
+                    }
+                    character.consumeItemFromInventory('지니어스의 열쇠', 1);
+                    character.consumeItemFromInventory('봉인된 자물쇠', 1);
+                    const result = gachaManager.open('봉인된 자물쇠');
+                    if (!result) { channel.sendChat(`❌ 가챠 데이터를 불러올 수 없습니다.`); return; }
+                    const msg = [`🔓 봉인된 자물쇠를 열었습니다!`, ``];
+                    result.results.forEach(r => {
+                        msg.push(`  🎁 ${r.name} x${r.count}`);
+                        character.addConsumableToInventory(r.name, '아이템', r.count);
+                    });
+                    await character.save();
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 시즌패스 =====
+                if (args[0] === "시즌패스" || args[0] === "패스") {
+                    if (args[1] === "보상" || args[1] === "수령") {
+                        if (!owner.passExp) owner.passExp = 0;
+                        if (!owner.passClaimedLevels) owner.passClaimedLevels = [];
+                        const hasPlus = owner.hasSeasonPlus || false;
+                        const unclaimed = seasonPassManager.getUnclaimedRewards(owner.passExp, owner.passClaimedLevels, hasPlus);
+                        if (!unclaimed || unclaimed.length === 0) {
+                            channel.sendChat(`❌ 수령할 보상이 없습니다.`);
+                            return;
+                        }
+                        const msg = [`━━━ 시즌패스 보상 수령 ━━━`];
+                        unclaimed.forEach(r => {
+                            const rewards = [].concat(r.free || [], (hasPlus ? (r.plus || []) : []));
+                            msg.push(`Lv.${r.level}: ${rewards.map(rw => `${rw.name || rw.item} x${rw.count || 1}`).join(', ')}`);
+                            owner.passClaimedLevels.push(r.level);
+                            rewards.forEach(rw => {
+                                if (rw.type === 'gold') owner.gold += (rw.count || rw.amount || 0);
+                                else if (rw.type === 'garnet') owner.garnet += (rw.count || rw.amount || 0);
+                                else character.addConsumableToInventory(rw.name || rw.item, '아이템', rw.count || 1);
+                            });
+                        });
+                        await character.save();
+                        await owner.save();
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    // 패스 정보
+                    if (!owner.passExp) owner.passExp = 0;
+                    const level = seasonPassManager.getPassLevel(owner.passExp);
+                    const nextExp = 100 - (owner.passExp % 100);
+                    const msg = [`━━━ 시즌패스 ━━━`];
+                    msg.push(`🏅 레벨: ${level}`);
+                    msg.push(`✨ 경험치: ${owner.passExp} (다음 레벨까지: ${nextExp})`);
+                    msg.push(`💎 플러스 패스: ${owner.hasSeasonPlus ? '활성' : '미활성'}`);
+                    if (!owner.passClaimedLevels) owner.passClaimedLevels = [];
+                    const unclaimed = seasonPassManager.getUnclaimedRewards(owner.passExp, owner.passClaimedLevels, owner.hasSeasonPlus || false);
+                    if (unclaimed && unclaimed.length > 0) {
+                        msg.push(`\n📦 미수령 보상: ${unclaimed.length}개`);
+                        msg.push(`/RPGenius 시즌패스 보상 으로 수령하세요.`);
+                    }
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 아이템사용 (비전투) =====
+                if (args[0] === "사용") {
+                    const itemName = args.slice(1).join(' ');
+                    if (!itemName) { channel.sendChat(`❌ /RPGenius 사용 [아이템명]`); return; }
+                    const result = character.useItem(itemName);
+                    if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                    await character.save();
+                    const msg = [`✅ ${result.message}`];
+                    if (result.effects) {
+                        if (result.effects.hpRecover) msg.push(`  ❤️ HP +${result.effects.hpRecover}`);
+                        if (result.effects.hpRecoverPercent) msg.push(`  ❤️ HP +${result.effects.hpRecoverPercent}%`);
+                        if (result.effects.fatigueRecover) {
+                            character.recoverFatigue(result.effects.fatigueRecover);
+                            msg.push(`  ⚡ 피로도 +${result.effects.fatigueRecover}`);
+                        }
+                        if (result.effects.exp) msg.push(`  📊 EXP +${result.effects.exp}${result.effects.leveledUp ? ' (레벨업!)' : ''}`);
+                    }
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 도움말 =====
+                if (args[0] === "도움말" || args[0] === "명령어" || args[0] === "help") {
+                    const msg = [
+                        `━━━ RPGenius 명령어 ━━━`,
+                        ``,
+                        `📋 기본`,
+                        `  등록 / 캐릭터생성 / 캐릭터목록 / 캐릭터선택`,
+                        `  정보 / 지갑 / 피로도 / 도움말`,
+                        ``,
+                        `⚔️ 전투`,
+                        `  탐험 / 입장 / 공격 / 스킬 / 아이템 / 도망`,
+                        ``,
+                        `📊 성장`,
+                        `  스킬레벨업 / 스탯투자 / 각성`,
+                        ``,
+                        `🛡️ 장비`,
+                        `  인벤토리 / 장비목록 / 장비정보 / 장착 / 해제`,
+                        `  강화 / 증폭`,
+                        ``,
+                        `🎮 컨텐츠`,
+                        `  제작목록 / 제작 / 낚시 / 사용`,
+                        `  트로피 / 펫 / 알열기`,
+                        `  상점 / 구매 / 업적 / 칭호`,
+                        ``,
+                        `💰 거래`,
+                        `  경매장 / 거래소 / 우편함`,
+                        ``,
+                        `🎁 기타`,
+                        `  자물쇠열기 / 시즌패스`,
+                        `━━━━━━━━━━━━━━━`
+                    ];
+                    channel.sendChat(msg.join('\n'));
                     return;
                 }
             }

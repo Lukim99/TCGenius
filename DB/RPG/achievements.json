@@ -1,0 +1,62 @@
+{
+  "란도장작": {
+    "id": "란도장작", "name": "란도장작", "type": "title",
+    "condition": { "type": "skillUse", "skill": "브란도 땅에 묻기", "count": 50 },
+    "effects": { "normalAtkDmgPercent": 1 }
+  },
+  "이부카페도둑": {
+    "id": "이부카페도둑", "name": "이부카페도둑", "type": "title",
+    "condition": { "type": "skillUse", "skill": "배신!", "count": 50 },
+    "effects": { "evasionPercent": 0.5 }
+  },
+  "오징어친구": {
+    "id": "오징어친구", "name": "오징어친구", "type": "title",
+    "condition": { "type": "skillUse", "skill": "오징오", "count": 50 },
+    "effects": { "skillDmgPercent": 1 }
+  },
+  "한탕이": {
+    "id": "한탕이", "name": "한탕이", "type": "title",
+    "condition": { "type": "skillUse", "skill": "한탕룰렛", "count": 50 },
+    "effects": { "critChance": 0.5 }
+  },
+  "건전한마사지": {
+    "id": "건전한마사지", "name": "건전한마사지", "type": "title",
+    "condition": { "type": "skillUse", "skill": "마사지", "count": 50 },
+    "effects": { "hpPercent": 1 }
+  },
+  "Awakening": {
+    "id": "Awakening", "name": "Awakening", "type": "title",
+    "condition": { "type": "awakening" },
+    "effects": { "atkPercent": 0.2 }
+  },
+  "전설의 플레이어": {
+    "id": "전설의 플레이어", "name": "전설의 플레이어", "type": "title",
+    "condition": { "type": "obtainTrophy", "rarity": "미솔로지" },
+    "effects": { "expRate": 1.5 }
+  },
+  "LEGENDARY": {
+    "id": "LEGENDARY", "name": "LEGENDARY", "type": "title",
+    "condition": { "type": "allEquipRarity", "rarity": "레전더리" },
+    "effects": { "atkPercent": 0.5 }
+  },
+  "은혜갚은까치": {
+    "id": "은혜갚은까치", "name": "은혜갚은까치", "type": "title",
+    "condition": { "type": "dungeonHidden", "dungeon": "늑대인간을 찾아라" },
+    "effects": { "critChance": 1 }
+  },
+  "2024마스터즈": {
+    "id": "2024마스터즈", "name": "2024마스터즈", "type": "title",
+    "condition": { "type": "collectAllPets", "series": "2024" },
+    "effects": { "speed": 1 }
+  },
+  "제작마스터": {
+    "id": "제작마스터", "name": "제작마스터", "type": "title",
+    "condition": { "type": "craftCount", "count": 100 },
+    "effects": { "itemDropRate": 1 }
+  },
+  "강화마스터": {
+    "id": "강화마스터", "name": "강화마스터", "type": "title",
+    "condition": { "type": "enhanceCount", "count": 100 },
+    "effects": { "enhanceSuccessRate": 1 }
+  }
+}

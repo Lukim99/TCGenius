@@ -1,0 +1,177 @@
+{
+  "조각난 트로피": {
+    "id": "조각난 트로피", "name": "조각난 트로피", "rarity": "레어", "tradeable": false,
+    "effects": { "allStats": 1 }
+  },
+  "GCL0 조밍닝": {
+    "id": "GCL0 조밍닝", "name": "GCL0 조밍닝", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 10, "critChance": 10, "itemDropRate": 8 }
+  },
+  "가넷전쟁 라울": {
+    "id": "가넷전쟁 라울", "name": "가넷전쟁 라울", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "critChance": 10, "critDamage": 20, "goldRate": 8 }
+  },
+  "시크릿코드 롤충에서탈출": {
+    "id": "시크릿코드 롤충에서탈출", "name": "시크릿코드 롤충에서탈출", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "int": 5, "intMax": 10, "skillDmgPercent": 10 }
+  },
+  "게임의법칙 롤충에서탈출": {
+    "id": "게임의법칙 롤충에서탈출", "name": "게임의법칙 롤충에서탈출", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "skillCooldownIncrease": 1, "atkPercent": 25, "critChance": 15 }
+  },
+  "ROAD TO GCL 시로하": {
+    "id": "ROAD TO GCL 시로하", "name": "ROAD TO GCL 시로하", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "power": 5, "powerMax": 10, "atkPercent": 10 }
+  },
+  "2024 FINAL SHOWDOWN 롤충에서탈출": {
+    "id": "2024 FINAL SHOWDOWN 롤충에서탈출", "name": "2024 FINAL SHOWDOWN 롤충에서탈출", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "allStats": 3, "allStatsMax": 1, "atkPercent": 3, "goldRate": 8 }
+  },
+  "대저택 ONE 슈퍼스타": {
+    "id": "대저택 ONE 슈퍼스타", "name": "대저택 ONE 슈퍼스타", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "int": 5, "critChance": 5, "bossDmgPercent": 10 }
+  },
+  "2024 MSI 아르세우스": {
+    "id": "2024 MSI 아르세우스", "name": "2024 MSI 아르세우스", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "luck": 5, "luckMax": 10, "critChance": 12 }
+  },
+  "피지컬13 브란도": {
+    "id": "피지컬13 브란도", "name": "피지컬13 브란도", "rarity": "레전더리", "tradeable": true,
+    "effects": { "speed": 3, "speedMax": 7, "evasionPercent": 5 }
+  },
+  "나만아니면돼 유치원생": {
+    "id": "나만아니면돼 유치원생", "name": "나만아니면돼 유치원생", "rarity": "레전더리", "tradeable": true,
+    "effects": { "allStats": 2, "allStatsMax": 1, "atkPercent": 3 }
+  },
+  "극한의농락 대나무헬리콥터": {
+    "id": "극한의농락 대나무헬리콥터", "name": "극한의농락 대나무헬리콥터", "rarity": "레전더리", "tradeable": true,
+    "effects": { "hpRegen": 120, "goldRate": 5, "maxHp": 3500 }
+  },
+  "흑백지니어스 백팀": {
+    "id": "흑백지니어스 백팀", "name": "흑백지니어스 백팀", "rarity": "레전더리", "tradeable": true,
+    "effects": { "atkPercent": 5, "critChance": 5, "critDamage": 5, "skillDmgPercent": 5 }
+  },
+  "크리스마스 이브 시로하": {
+    "id": "크리스마스 이브 시로하", "name": "크리스마스 이브 시로하", "rarity": "레전더리", "tradeable": true,
+    "effects": { "atkPercent": 5, "bonusDmgPercent": 10 }
+  },
+  "파산게임 조밍닝": {
+    "id": "파산게임 조밍닝", "name": "파산게임 조밍닝", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 10, "critDamage": 20, "goldRate": 8 }
+  },
+  "관찰자 파이브": {
+    "id": "관찰자 파이브", "name": "관찰자 파이브", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "speed": 5, "speedMax": 10, "atkPercent": 10 }
+  },
+  "월도랜드 FIRST 장의사": {
+    "id": "월도랜드 FIRST 장의사", "name": "월도랜드 FIRST 장의사", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "power": 3, "int": 3, "powerMax": 6, "intMax": 6, "critChance": 10 }
+  },
+  "월도랜드 SECOND 테무싸지": {
+    "id": "월도랜드 SECOND 테무싸지", "name": "월도랜드 SECOND 테무싸지", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "luck": 5, "critChance": 5, "bossDmgPercent": 10 }
+  },
+  "월도랜드 THIRD GM": {
+    "id": "월도랜드 THIRD GM", "name": "월도랜드 THIRD GM", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "allStats": 1, "goldRate": 8, "itemDropRate": 8 }
+  },
+  "더지니어서 조밍닝": {
+    "id": "더지니어서 조밍닝", "name": "더지니어서 조밍닝", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "allStats": 1, "atkFlat": 1000 }
+  },
+  "해고전쟁 국회의사당": {
+    "id": "해고전쟁 국회의사당", "name": "해고전쟁 국회의사당", "rarity": "레전더리", "tradeable": true,
+    "effects": { "allStats": 1, "hpRegen": 120, "atkPercent": 2 }
+  },
+  "밍닝스플랜 안성재": {
+    "id": "밍닝스플랜 안성재", "name": "밍닝스플랜 안성재", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "speed": 3, "int": 3, "speedMax": 6, "intMax": 6, "skillDmgPercent": 10 }
+  },
+  "가넷게임 브란도": {
+    "id": "가넷게임 브란도", "name": "가넷게임 브란도", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 25, "hpRegen": 250 },
+    "uniqueEffect": { "type": "startHpReduction", "percent": 50 }
+  },
+  "예언의결속 조밍닝": {
+    "id": "예언의결속 조밍닝", "name": "예언의결속 조밍닝", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 10, "allStatsMax": 3 },
+    "uniqueEffect": { "type": "secondTurnBonusDmg", "percent": 15 }
+  },
+  "스코어 서바이벌 라울": {
+    "id": "스코어 서바이벌 라울", "name": "스코어 서바이벌 라울", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "skillLevelBonus": [{ "level": 5, "bonus": 1 }, { "level": 15, "bonus": 1 }, { "level": 25, "bonus": 1 }] }
+  },
+  "2025 MSI 지니어스2": {
+    "id": "2025 MSI 지니어스2", "name": "2025 MSI 지니어스2", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "skillLevelBonus": [{ "level": 25, "bonus": 2 }], "atkPercent": 15, "allStats": 1 }
+  },
+  "2025 FINAL SHOWDOWN 지니어스": {
+    "id": "2025 FINAL SHOWDOWN 지니어스", "name": "2025 FINAL SHOWDOWN 지니어스", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "skillLevelBonus": [{ "level": 40, "bonus": 4 }], "allStatsMax": 4, "atkFlat": 444 }
+  },
+  "2025 DMC SPRING 지니어스": {
+    "id": "2025 DMC SPRING 지니어스", "name": "2025 DMC SPRING 지니어스", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "allStats": 3, "speed": 3, "atkPercent": 3 }
+  },
+  "2025 DMC SUMMER 라울": {
+    "id": "2025 DMC SUMMER 라울", "name": "2025 DMC SUMMER 라울", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 10, "expRate": 3 },
+    "uniqueEffect": { "type": "executeDmg", "threshold": 20, "percent": 20 }
+  },
+  "화이트데이 파이브": {
+    "id": "화이트데이 파이브", "name": "화이트데이 파이브", "rarity": "레전더리", "tradeable": true,
+    "effects": { "atkPercent": 3, "goldRate": 5, "itemDropRate": 5 }
+  },
+  "독재자 시민팀": {
+    "id": "독재자 시민팀", "name": "독재자 시민팀", "rarity": "레전더리", "tradeable": true,
+    "effects": { "atkPercent": 7, "power": 3 },
+    "uniqueEffect": { "type": "soloAtkBonus", "percent": 10 }
+  },
+  "중간달리기 조밍닝": {
+    "id": "중간달리기 조밍닝", "name": "중간달리기 조밍닝", "rarity": "레전더리", "tradeable": true,
+    "effects": { "int": 2, "luck": 2, "intMax": 5, "luckMax": 5, "bonusDmgPercent": 7 }
+  },
+  "E세계 오버라이드": {
+    "id": "E세계 오버라이드", "name": "E세계 오버라이드", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 5, "allStatsMax": 3 },
+    "uniqueEffect": { "type": "statTransfer", "sourcePercent": 10 }
+  },
+  "유사겜 마동": {
+    "id": "유사겜 마동", "name": "유사겜 마동", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "power": 3, "powerMax": 3, "int": 3, "intMax": 3, "luck": 3, "luckMax": 3 }
+  },
+  "타임아일랜드 슈브르즈": {
+    "id": "타임아일랜드 슈브르즈", "name": "타임아일랜드 슈브르즈", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "int": 5, "intMax": 10, "critDamage": 20 }
+  },
+  "월도랜드 4th 아르세우스": {
+    "id": "월도랜드 4th 아르세우스", "name": "월도랜드 4th 아르세우스", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkFlat": 100, "hpRegen": 100, "goldRate": 10 }
+  },
+  "월도랜드 포인트쟁탈전 인랲듀오": {
+    "id": "월도랜드 포인트쟁탈전 인랲듀오", "name": "월도랜드 포인트쟁탈전 인랲듀오", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 8, "itemDropRate": 8 },
+    "uniqueEffect": { "type": "duoAtkBonus", "percent": 10 }
+  },
+  "듀얼레이스X 지니어스": {
+    "id": "듀얼레이스X 지니어스", "name": "듀얼레이스X 지니어스", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "atkPercent": 10, "critChance": 10 },
+    "uniqueEffect": { "type": "duoBonusDmg", "percent": 15 }
+  },
+  "스쿼드배틀 파이브팀": {
+    "id": "스쿼드배틀 파이브팀", "name": "스쿼드배틀 파이브팀", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "skillLevelBonus": [{ "level": 40, "bonus": 4 }], "int": 4, "bonusDmgPercent": 4 }
+  },
+  "부타게임 레인": {
+    "id": "부타게임 레인", "name": "부타게임 레인", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "allStatsMax": 1, "skillLevelBonus": [{ "level": 1, "bonus": 1 }], "awakeningPassiveLevel": 1 }
+  },
+  "GCL OFFLINE 라즐리": {
+    "id": "GCL OFFLINE 라즐리", "name": "GCL OFFLINE 라즐리", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "speed": 3, "int": 3, "speedMax": 6, "intMax": 6, "normalAtkDmgPercent": 10 }
+  },
+  "인트리그미션 브란도": {
+    "id": "인트리그미션 브란도", "name": "인트리그미션 브란도", "rarity": "미솔로지", "tradeable": true,
+    "effects": { "speed": 5, "int": 5, "goldRate": 8 }
+  }
+}

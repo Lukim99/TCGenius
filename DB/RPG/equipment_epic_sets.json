@@ -1,0 +1,110 @@
+{
+  "유사이어티": {
+    "id": "유사이어티", "name": "유사이어티 세트",
+    "pieces": {
+      "짜장면 모자": { "type": "helmet", "effects": { "hp": 1980, "luck": 8, "luckMax": 2 }, "uniqueEffect": { "type": "statConvert", "desc": "행운의 10%만큼 힘 증가", "source": "luck", "target": "power", "percent": 10 } },
+      "에렌 예거의 조사병단 자켓": { "type": "chest", "effects": { "hp": 1980, "dmgReductionPercent": 10 }, "uniqueEffect": { "type": "onHitShield", "desc": "피해 시 1000 보호막 생성", "shieldAmount": 1000 } },
+      "롤탈의 카고바지": { "type": "pants", "effects": { "def": 180, "hp": 600, "critChance": 4, "speed": 10 } },
+      "롤탈의 오픈핑거 장갑": { "type": "gloves", "effects": { "def": 175, "hp": 550, "bonusDmgPercent": 4 }, "uniqueEffect": { "type": "extraStrike", "chance": 20, "dmgPercent": 30 } },
+      "롤탈의 스니커즈": { "type": "shoes", "effects": { "def": 175, "hp": 550 }, "uniqueEffect": { "type": "turnStatGain", "stat": "speed", "perTurn": 3, "max": 15 } }
+    },
+    "setEffects": {
+      "2": { "desc": "AGI +8%", "speedPercent": 8 },
+      "3": { "desc": "일반 공격 시 12% 확률로 2연타", "extraAttackChance": 12 },
+      "5": { "desc": "전투 시작 시 선턴 확정, 일반 공격 데미지 +15%", "guaranteeFirstTurn": true, "normalAtkDmgPercent": 15 }
+    }
+  },
+  "유생 디 오리진": {
+    "id": "유생 디 오리진", "name": "유생 디 오리진 세트",
+    "pieces": {
+      "장의사의 허름한 투구": { "type": "helmet", "effects": { "def": 170, "hp": 580, "int": 20, "skillDmgPercent": 4 } },
+      "테무랜드서 산 티셔츠": { "type": "chest", "effects": { "def": 175, "hp": 620, "startMP": 20 }, "uniqueEffect": { "type": "turnResourceRegen", "gp": 3, "mp": 3, "gunpower": 3 } },
+      "쿠루미 치마": { "type": "pants", "effects": { "def": 170, "hp": 580, "aoeSkillDmgPercent": 6 } },
+      "안성재의 요리용 장갑": { "type": "gloves", "effects": { "def": 165, "hp": 520, "bonusDmgPercent": 4 }, "uniqueEffect": { "type": "statScaleDmg", "stat": "int", "percent": 8 } },
+      "장충동왕족발": { "type": "shoes", "effects": { "def": 160, "hp": 520, "allStats": 10 } }
+    },
+    "setEffects": {
+      "2": { "desc": "스킬 데미지 +10%", "skillDmgPercent": 10 },
+      "3": { "desc": "광역 스킬 적중 시 20% 확률로 MP 20 회복", "aoeHitMpRecoverChance": 20, "mpRecover": 20 },
+      "5": { "desc": "스킬 적중 시 15% 확률로 즉시 재사용(데미지 50%)", "skillRecastChance": 15, "recastDmgPercent": 50 }
+    }
+  },
+  "아르세우스": {
+    "id": "아르세우스", "name": "아르세우스 세트",
+    "pieces": {
+      "아르세우스 금관": { "type": "helmet", "effects": { "def": 175, "hp": 600, "luck": 18, "critChance": 4 } },
+      "아르세우스의 금빛 상의": { "type": "chest", "effects": { "def": 180, "hp": 640, "critDamage": 10 } },
+      "아르세우스의 금빛 하의": { "type": "pants", "effects": { "def": 175, "hp": 600 }, "uniqueEffect": { "type": "luckJudgement", "successRateBonus": 5 } },
+      "아르세우스의 금빛 손톱": { "type": "gloves", "effects": { "def": 170, "hp": 540, "bonusDmgPercent": 4 }, "uniqueEffect": { "type": "critStatScale", "stat": "luck", "percent": 6 } },
+      "아르세우스의 발자국": { "type": "shoes", "effects": { "def": 170, "hp": 540 }, "uniqueEffect": { "type": "turnStatGain", "stat": "luck", "perTurn": 3, "max": 15 } }
+    },
+    "setEffects": {
+      "2": { "desc": "치명타 확률 +6%", "critChance": 6 },
+      "3": { "desc": "크리티컬 발생 시 15% 확률로 피해 ×1.5", "critMultiplierChance": 15, "critMultiplier": 1.5 },
+      "5": { "desc": "공격 시 8% 확률로 운명 발동 (1턴 치명타 확정, 최종데미지 +25%)", "fateChance": 8, "fateDmgBonus": 25 }
+    }
+  },
+  "진사이": {
+    "id": "진사이", "name": "진사이 세트",
+    "pieces": {
+      "진사이": { "type": "helmet", "effects": { "def": 185, "hp": 700, "power": 15, "dmgReductionPercent": 3 } },
+      "침대진": { "type": "chest", "effects": { "def": 185, "hp": 750, "hpPercent": 10 }, "uniqueEffect": { "type": "onHitStatBuff", "chance": 8, "stat": "power", "percentBonus": 10, "turns": 1 } },
+      "뉴비": { "type": "pants", "effects": { "def": 180, "hp": 700, "skillDmgPercent": 5 } },
+      "여고생": { "type": "gloves", "effects": { "def": 175, "hp": 620, "bonusDmgPercent": 5 }, "uniqueEffect": { "type": "lifesteal", "percent": 5 } },
+      "최강자 쥐엠": { "type": "shoes", "effects": { "def": 175, "hp": 620, "speed": 8 }, "uniqueEffect": { "type": "lowHpDmg", "threshold": 50, "dmgPercent": 10 } }
+    },
+    "setEffects": {
+      "2": { "desc": "전투 시작 시 최대 HP의 20% 보호막", "startShieldPercent": 20 },
+      "3": { "desc": "HP 50% 이하일 때 최종 데미지 +20%", "lowHpDmg": { "threshold": 50, "dmgPercent": 20 } },
+      "5": { "desc": "공격 시 15% 확률로 치명타 피해량 +50%, 스킬 데미지 +25%", "procChance": 15, "critDamageBonus": 50, "skillDmgBonus": 25 }
+    }
+  },
+  "고대인의 유산": {
+    "id": "고대인의 유산", "name": "고대인의 유산 세트",
+    "pieces": {
+      "월드엘프네여의 모자": { "type": "helmet", "effects": { "def": 170, "hp": 580, "speed": 10, "evasionPercent": 3 } },
+      "엔드리스의 상의": { "type": "chest", "effects": { "def": 175, "hp": 600, "dmgReductionPercent": 4, "critChance": 3 } },
+      "길대머리의 하의": { "type": "pants", "effects": { "def": 170, "hp": 580, "bonusDmgPercent": 4 } },
+      "고테란맨의 글러브": { "type": "gloves", "effects": { "def": 165, "hp": 540, "critDamage": 8 } },
+      "마이세이프의 신발": { "type": "shoes", "effects": { "def": 165, "hp": 540, "speed": 10 }, "uniqueEffect": { "type": "turnEvasionGain", "perTurn": 1, "max": 5 } }
+    },
+    "setEffects": {
+      "2": { "desc": "회피율 +5%", "evasionPercent": 5 },
+      "3": { "desc": "회피 성공 시 HP 6% 회복", "evasionHealPercent": 6 },
+      "5": { "desc": "회피 성공 시 다음 공격 확정 치명타 및 최종데미지 +20%", "evasionGuaranteeCrit": true, "evasionDmgBonus": 20 }
+    }
+  },
+  "더데빌": {
+    "id": "더데빌", "name": "더데빌 세트", "type": "accessory",
+    "pieces": {
+      "THE DEVIL 목걸이": { "type": "necklace", "effects": { "speed": 20, "critChance": 4, "normalAtkDmgPercent": 5 } },
+      "THE DEVIL 반지": { "type": "ring", "effects": { "critDamage": 12, "evasionPercent": 3 }, "uniqueEffect": { "type": "extraStrike", "chance": 15, "statScale": "speed", "percent": 25 } },
+      "THE DEVIL 팔찌": { "type": "bracelet", "effects": { "bonusDmgPercent": 5 }, "uniqueEffect": { "type": "turnStatGain", "stat": "speed", "perTurn": 4, "max": 20 } }
+    },
+    "setEffects": {
+      "3": { "desc": "일반 공격 시 15% 확률로 공격 2회 추가(각 40% 피해)", "extraAttackChance": 15, "extraAttackCount": 2, "extraAttackDmg": 40 }
+    }
+  },
+  "딜러의 은총": {
+    "id": "딜러의 은총", "name": "딜러의 은총 세트", "type": "accessory",
+    "pieces": {
+      "장은비의 은목걸이": { "type": "necklace", "effects": { "int": 22, "skillDmgPercent": 6, "startMP": 20 } },
+      "호두의 반짝이는 링": { "type": "ring", "effects": { "critChance": 4, "skillDmgPercent": 4 }, "uniqueEffect": { "type": "skillHitMpRecover", "mp": 5 } },
+      "브란도미르의 팔찌": { "type": "bracelet", "effects": { "bonusDmgPercent": 4 }, "uniqueEffect": { "type": "skillCooldownReduce", "chance": 15, "turns": 1 } }
+    },
+    "setEffects": {
+      "3": { "desc": "스킬 데미지 +12%, MP 소모량 -10%, 스킬 적중 시 12% 확률로 40% 추가 피해", "skillDmgPercent": 12, "mpCostReduction": 10, "skillExtraDmgChance": 12, "skillExtraDmg": 40 }
+    }
+  },
+  "월도랜드 골동품": {
+    "id": "월도랜드 골동품", "name": "월도랜드 골동품 세트", "type": "accessory",
+    "pieces": {
+      "GM의 금목걸이": { "type": "necklace", "effects": { "luck": 20, "critDamage": 20 } },
+      "100억짜리 반지": { "type": "ring", "effects": { "bonusDmgPercent": 5 }, "uniqueEffect": { "type": "critStatScale", "stat": "luck", "percent": 5 } },
+      "싸이지니의 연합 인증 팔찌": { "type": "bracelet", "effects": { "critDamage": 12 }, "uniqueEffect": { "type": "turnStatGain", "stat": "luck", "perTurn": 4, "max": 20 } }
+    },
+    "setEffects": {
+      "3": { "desc": "치명타 확률 +10%, 공격 시 10% 확률로 최종 데미지 +35% 및 모든 스킬 쿨타임 -1", "critChance": 10, "procChance": 10, "procDmgBonus": 35, "procCooldownReduce": 1 }
+    }
+  }
+}

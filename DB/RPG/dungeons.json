@@ -1,35 +1,557 @@
 {
   "예선장": {
-    "id": "dungeon_preliminary",
-    "name": "예선장",
-    "description": "예선장입니다.",
-    "requiredLevel": 1,
-    "monsters": ["monster_rookie_duelist", "monster_nervous_player", "monster_card_collector"],
+    "id": "예선장", "name": "예선장", "region": "해고전쟁",
+    "requiredLevel": 1, "maxLevel": 3, "fatigueCost": 5,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "씨벌이", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "뭔마", "count": 1 }] }
+    ],
     "rewards": {
-      "gold": { "min": 100, "max": 300 },
-      "exp": { "min": 50, "max": 150 }
+      "exp": 70, "gold": { "min": 80, "max": 120 },
+      "slots": [
+        { "chance": 80, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 100 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 100 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 2, "max": 4 }],
+      "bonus": [{ "name": "초보 체력 물약", "count": 1, "chance": 20 }]
     }
   },
-  "맛동산회사": {
-    "id": "dungeon_snack_company",
-    "name": "맛동산 회사",
-    "description": "맛동산 회사입니다.",
-    "requiredLevel": 3,
-    "monsters": ["monster_snack_worker", "monster_possessed_chef"],
+  "맛동산 회사": {
+    "id": "맛동산 회사", "name": "맛동산 회사", "region": "해고전쟁",
+    "requiredLevel": 3, "maxLevel": 5, "fatigueCost": 5,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "미췬넘", "count": 2 }] },
+      { "phase": 2, "monsters": [{ "id": "미룬이", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "맛동산", "count": 1 }] }
+    ],
     "rewards": {
-      "gold": { "min": 300, "max": 600 },
-      "exp": { "min": 150, "max": 300 }
+      "exp": 160, "gold": { "min": 200, "max": 300 },
+      "slots": [
+        { "chance": 70, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 80 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 20 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 90 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 10 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 3, "max": 5 }],
+      "bonus": [{ "name": "초보 체력 물약", "count": 1, "chance": 20 }]
     }
   },
   "국회의사당": {
-    "id": "dungeon_parliament",
-    "name": "국회의사당",
-    "description": "국회의사당입니다.",
-    "requiredLevel": 5,
-    "monsters": ["monster_lawmaker", "monster_speaker", "monster_corrupt_politician"],
+    "id": "국회의사당", "name": "국회의사당", "region": "해고전쟁",
+    "requiredLevel": 5, "maxLevel": 7, "fatigueCost": 5,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "마부장", "count": 2 }] },
+      { "phase": 2, "monsters": [{ "id": "딜러스파이", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "이명박", "count": 1 }] }
+    ],
     "rewards": {
-      "gold": { "min": 600, "max": 1200 },
-      "exp": { "min": 300, "max": 600 }
+      "exp": 305, "gold": { "min": 450, "max": 550 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 40 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 60 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "일반", "level": 1, "chance": 70 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 30 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 4, "max": 7 }],
+      "bonus": [{ "name": "초보 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "잉여왕 선발전": {
+    "id": "잉여왕 선발전", "name": "잉여왕 선발전", "region": "해고전쟁",
+    "requiredLevel": 8, "maxLevel": 9, "fatigueCost": 6,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "모으령", "count": 2 }] },
+      { "phase": 2, "monsters": [{ "id": "TE", "count": 2 }] },
+      { "phase": 3, "monsters": [{ "id": "우사미", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 750, "gold": { "min": 600, "max": 700 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레어", "level": 1, "chance": 80 }, { "type": "equipment", "rarity": "일반", "level": 1, "chance": 20 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레어", "level": 1, "chance": 50 }, { "type": "equipment", "rarity": "일반", "level": 1, "chance": 50 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 5, "max": 8 }],
+      "bonus": [{ "name": "초보 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "미니게임천국": {
+    "id": "미니게임천국", "name": "미니게임천국", "region": "해고전쟁",
+    "requiredLevel": 10, "maxLevel": 11, "fatigueCost": 6,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "우정", "count": 3 }] },
+      { "phase": 2, "monsters": [{ "id": "우정잉여왕", "count": 2 }] }
+    ],
+    "rewards": {
+      "exp": 1350, "gold": { "min": 850, "max": 950 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 70 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 30 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 80 }, { "type": "equipment", "rarity": "레어", "level": 10, "chance": 20 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 6, "max": 9 }],
+      "bonus": [{ "name": "초보 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "왕실": {
+    "id": "왕실", "name": "왕실", "region": "해고전쟁",
+    "requiredLevel": 12, "maxLevel": 13, "fatigueCost": 7,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "물장구", "count": 2 }] },
+      { "phase": 2, "monsters": [{ "id": "X", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "SitoSoym", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 1700, "gold": { "min": 1000, "max": 1200 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 50 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 50 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 60 }, { "type": "equipment", "rarity": "레어", "level": 10, "chance": 40 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 7, "max": 10 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "1대 부타 척결전": {
+    "id": "1대 부타 척결전", "name": "1대 부타 척결전", "region": "해고전쟁",
+    "requiredLevel": 14, "maxLevel": 15, "fatigueCost": 7,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "갸라도스", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "부타우정잉여왕", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 2300, "gold": { "min": 1300, "max": 1500 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 40 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 60 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 50 }, { "type": "equipment", "rarity": "레어", "level": 10, "chance": 50 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 8, "max": 12 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "부타게임 최종전": {
+    "id": "부타게임 최종전", "name": "부타게임 최종전", "region": "해고전쟁",
+    "requiredLevel": 16, "maxLevel": 17, "fatigueCost": 8,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "지오", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "부타레인", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 3000, "gold": { "min": 1800, "max": 2100 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "일반", "level": 10, "chance": 30 }, { "type": "equipment", "rarity": "레어", "level": 1, "chance": 70 }] },
+        { "chance": 30, "items": [{ "type": "equipment", "rarity": "레어", "level": 10, "chance": 100 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 10, "max": 15 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "M.A.L": {
+    "id": "M.A.L", "name": "M.A.L", "region": "더지니어서",
+    "requiredLevel": 18, "maxLevel": 19, "fatigueCost": 8,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "허생", "count": 1 }, { "id": "ATTACKER", "count": 1 }, { "id": "진실의눈", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "암흑성운", "count": 1 }, { "id": "야라밍밍", "count": 1 }, { "id": "선한사람", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "재호", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 4000, "gold": { "min": 2200, "max": 2500 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레어", "level": 10, "chance": 80 }, { "type": "equipment", "rarity": "일반", "level": 10, "chance": 20 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레어", "level": 10, "chance": 50 }, { "type": "equipment", "rarity": "일반", "level": 10, "chance": 50 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 12, "max": 18 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 20 }]
+    }
+  },
+  "깐부대전": {
+    "id": "깐부대전", "name": "깐부대전", "region": "더지니어서",
+    "requiredLevel": 20, "maxLevel": 21, "fatigueCost": 9,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "시그니를", "count": 1 }, { "id": "GM님팬파이브", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "오너", "count": 1 }, { "id": "LaeFree", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 4800, "gold": { "min": 2500, "max": 3000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 29 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 70 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레어", "level": 20, "chance": 20 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 80 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 12, "max": 18 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "표식의 방": {
+    "id": "표식의 방", "name": "표식의 방", "region": "더지니어서",
+    "requiredLevel": 22, "maxLevel": 23, "fatigueCost": 9,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "C", "count": 1 }, { "id": "E_시드", "count": 1 }, { "id": "G", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "A보스", "count": 1 }, { "id": "B보스", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 6200, "gold": { "min": 2800, "max": 3200 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 39 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 60 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레어", "level": 20, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 70 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 15, "max": 20 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "비공개 눈치게임": {
+    "id": "비공개 눈치게임", "name": "비공개 눈치게임", "region": "더지니어서",
+    "requiredLevel": 24, "maxLevel": 25, "fatigueCost": 10,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "시그니를시드", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "월야환담", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "조밍닝", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 7000, "gold": { "min": 3500, "max": 4000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 39 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 60 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 69.5 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 18, "max": 24 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "딜레마 룸": {
+    "id": "딜레마 룸", "name": "딜레마 룸", "region": "더지니어서",
+    "requiredLevel": 26, "maxLevel": 27, "fatigueCost": 10,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "34K순금", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "100K순금", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 10300, "gold": { "min": 5000, "max": 6000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1.5 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 38.5 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 60 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 69 }] }
+      ],
+      "fixed": [],
+      "bonus": []
+    }
+  },
+  "사물의 방": {
+    "id": "사물의 방", "name": "사물의 방", "region": "더지니어서",
+    "requiredLevel": 28, "maxLevel": 29, "fatigueCost": 10,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "물", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "물사진", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "물사진사진", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 7900, "gold": { "min": 6000, "max": 7000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1.8 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 38.2 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 60 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1.3 }, { "type": "equipment", "rarity": "레어", "level": 20, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 20, "chance": 68.7 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 20, "max": 25 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "드래곤볼": {
+    "id": "드래곤볼", "name": "드래곤볼", "region": "더지니어서",
+    "requiredLevel": 30, "maxLevel": 31, "fatigueCost": 11,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "방어", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "기", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "파", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 8400, "gold": { "min": 7500, "max": 8500 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 58 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 69 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 22, "max": 28 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "STAGE K": {
+    "id": "STAGE K", "name": "STAGE K", "region": "더지니어서",
+    "requiredLevel": 32, "maxLevel": 33, "fatigueCost": 12,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "K", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "KK", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "KKK", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 8800, "gold": { "min": 9000, "max": 10000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 58 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 69 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 25, "max": 30 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "생존백서": {
+    "id": "생존백서", "name": "생존백서", "region": "타임아일랜드",
+    "requiredLevel": 34, "maxLevel": 35, "fatigueCost": 12,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "부서진코어", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 9800, "gold": { "min": 9500, "max": 11000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 58 }] },
+        { "chance": 20, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 69 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 28, "max": 35 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "미스터리 타임": {
+    "id": "미스터리 타임", "name": "미스터리 타임", "region": "타임아일랜드",
+    "requiredLevel": 36, "maxLevel": 37, "fatigueCost": 13,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "시침이떼지마", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "바다거북", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 10400, "gold": { "min": 10000, "max": 11500 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 58 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 69 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 30, "max": 38 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "보드타임": {
+    "id": "보드타임", "name": "보드타임", "region": "타임아일랜드",
+    "requiredLevel": 38, "maxLevel": 39, "fatigueCost": 13,
+    "specialMechanic": { "type": "burningTime", "chance": 30, "damageMultiplier": 2 },
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "작은주사위", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "큰주사위", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 11100, "gold": { "min": 11000, "max": 12500 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 58 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 20, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 30, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 30, "chance": 69 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 32, "max": 40 }],
+      "bonus": [{ "name": "중수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "광장의 딜레마": {
+    "id": "광장의 딜레마", "name": "광장의 딜레마", "region": "타임아일랜드",
+    "requiredLevel": 40, "maxLevel": 41, "fatigueCost": 14,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "남는시계", "count": 5 }] },
+      { "phase": 2, "monsters": [{ "id": "12번시계", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 11600, "gold": { "min": 13000, "max": 15000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 35 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 64.5 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.2 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 25 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 74.8 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 36, "max": 45 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "DXM 경마장": {
+    "id": "DXM 경마장", "name": "DXM 경마장", "region": "타임아일랜드",
+    "requiredLevel": 42, "maxLevel": 43, "fatigueCost": 14,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "데우스엑스마키나", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 12900, "gold": { "min": 14000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 35 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 64.5 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.2 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 25 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 74.8 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 38, "max": 48 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "시침증권거래소": {
+    "id": "시침증권거래소", "name": "시침증권거래소", "region": "타임아일랜드",
+    "requiredLevel": 44, "maxLevel": 45, "fatigueCost": 15,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "기초시간수급자", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "카이로스", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "슈브르즈", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 14100, "gold": { "min": 15000, "max": 17000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 35 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 64 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 25 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 74.5 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 40, "max": 50 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "왕좌의 게임": {
+    "id": "왕좌의 게임", "name": "왕좌의 게임", "region": "타임아일랜드",
+    "requiredLevel": 46, "maxLevel": 47, "fatigueCost": 15,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "은혁", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "암살자", "count": 1 }, { "id": "광대", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "왕", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 15400, "gold": { "min": 16000, "max": 18000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 35 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 64 }] },
+        { "chance": 25, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 25 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 74.5 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 42, "max": 52 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "흑색지대": {
+    "id": "흑색지대", "name": "흑색지대", "region": "흑백지니어스",
+    "requiredLevel": 48, "maxLevel": 49, "fatigueCost": 16,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "흑팀원", "count": 5 }] },
+      { "phase": 2, "monsters": [{ "id": "지짐", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 27000, "gold": { "min": 18000, "max": 20000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 1 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 35 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 64 }] },
+        { "chance": 35, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 40, "chance": 0.5 }, { "type": "equipment", "rarity": "레어", "level": 40, "chance": 25 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 74.5 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 45, "max": 55 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 25 }]
+    }
+  },
+  "백색지대": {
+    "id": "백색지대", "name": "백색지대", "region": "흑백지니어스",
+    "requiredLevel": 50, "maxLevel": 51, "fatigueCost": 16,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "백팀원", "count": 5 }] },
+      { "phase": 2, "monsters": [{ "id": "붕종원", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 32000, "gold": { "min": 22000, "max": 25000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 60 }] },
+        { "chance": 40, "items": [{ "type": "equipment", "rarity": "레어", "level": 50, "chance": 30 }, { "type": "equipment", "rarity": "일반", "level": 40, "chance": 70 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 60, "max": 80 }],
+      "bonus": [{ "name": "고수 체력 물약", "count": 1, "chance": 30 }]
+    }
+  },
+  "대저택 살인사건": {
+    "id": "대저택 살인사건", "name": "대저택 살인사건", "region": "E세계 대저택",
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "조각_네임드", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "민지", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 38000, "gold": { "min": 12000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "name": "시간의 목걸이", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] },
+        { "chance": 100, "items": [{ "type": "equipment", "name": "시간의 목걸이", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 50, "max": 55 }, { "name": "발광조각", "min": 4, "max": 8 }],
+      "bonus": [
+        { "name": "E세계의 조각", "count": 1, "chance": 8 },
+        { "name": "레전더리 정수", "count": 1, "chance": 5 },
+        { "name": "레전더리 소울", "count": 1, "chance": 2 },
+        { "name": "고수 체력 물약", "count": 1, "chance": 20 }
+      ]
+    }
+  },
+  "암호탑": {
+    "id": "암호탑", "name": "암호탑", "region": "E세계 대저택",
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "피아스트", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 38000, "gold": { "min": 12000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "name": "절명의 반지", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] },
+        { "chance": 100, "items": [{ "type": "equipment", "name": "절명의 반지", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 50, "max": 55 }, { "name": "발광조각", "min": 4, "max": 8 }],
+      "bonus": [
+        { "name": "E세계의 조각", "count": 1, "chance": 8 },
+        { "name": "레전더리 정수", "count": 1, "chance": 5 },
+        { "name": "레전더리 소울", "count": 1, "chance": 2 },
+        { "name": "고수 체력 물약", "count": 1, "chance": 20 }
+      ]
+    }
+  },
+  "늑대인간을 찾아라": {
+    "id": "늑대인간을 찾아라", "name": "늑대인간을 찾아라", "region": "E세계 대저택",
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "오로라", "count": 1 }] },
+      { "phase": 2, "monsters": [{ "id": "쿠마가와미소기", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 38000, "gold": { "min": 12000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "name": "용기의 팔찌", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] },
+        { "chance": 100, "items": [{ "type": "equipment", "name": "용기의 팔찌", "rarity": "레전더리", "level": 50, "chance": 2 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 58 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 50, "max": 55 }, { "name": "발광조각", "min": 4, "max": 8 }],
+      "bonus": [
+        { "name": "E세계의 조각", "count": 1, "chance": 8 },
+        { "name": "레전더리 정수", "count": 1, "chance": 5 },
+        { "name": "레전더리 소울", "count": 1, "chance": 2 },
+        { "name": "고수 체력 물약", "count": 1, "chance": 20 }
+      ]
+    }
+  },
+  "무너진 유적지": {
+    "id": "무너진 유적지", "name": "무너진 유적지", "region": "더지니어스클랜",
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "길대머리", "count": 1 }, { "id": "고테란맨", "count": 1 }, { "id": "월드엘프네여", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 38000, "gold": { "min": 12000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [
+          { "type": "equipment", "name": "대머리 길의 목걸이", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "name": "고란의 본링", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "name": "월드엘프의 팔찌", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 },
+          { "type": "equipment", "rarity": "일반", "level": 50, "chance": 57 }
+        ]},
+        { "chance": 100, "items": [
+          { "type": "equipment", "name": "대머리 길의 목걸이", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "name": "고란의 본링", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "name": "월드엘프의 팔찌", "rarity": "레전더리", "level": 50, "chance": 1 },
+          { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 },
+          { "type": "equipment", "rarity": "일반", "level": 50, "chance": 57 }
+        ]}
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 55, "max": 62 }, { "name": "발광조각", "min": 5, "max": 10 }],
+      "bonus": [
+        { "name": "유적지의 흩어진 파편", "count": 1, "chance": 8 },
+        { "name": "레전더리 정수", "count": 1, "chance": 5 },
+        { "name": "레전더리 소울", "count": 1, "chance": 2 },
+        { "name": "고수 체력 물약", "count": 1, "chance": 20 }
+      ]
+    }
+  },
+  "랭크 피라미드": {
+    "id": "랭크 피라미드", "name": "랭크 피라미드", "region": "더지니어스클랜",
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "phases": [
+      { "phase": 1, "monsters": [{ "id": "니네들", "count": 5 }] },
+      { "phase": 2, "monsters": [{ "id": "GM_네임드", "count": 1 }] },
+      { "phase": 3, "monsters": [{ "id": "myseif", "count": 1 }] }
+    ],
+    "rewards": {
+      "exp": 38000, "gold": { "min": 12000, "max": 16000 },
+      "slots": [
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 50, "chance": 3 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 57 }] },
+        { "chance": 100, "items": [{ "type": "equipment", "rarity": "레전더리", "level": 50, "chance": 3 }, { "type": "equipment", "rarity": "레어", "level": 50, "chance": 40 }, { "type": "equipment", "rarity": "일반", "level": 50, "chance": 57 }] }
+      ],
+      "fixed": [{ "name": "생명의 숨결", "min": 55, "max": 62 }, { "name": "발광조각", "min": 5, "max": 10 }],
+      "bonus": [
+        { "name": "레전더리 정수", "count": 1, "chance": 8 },
+        { "name": "레전더리 소울", "count": 1, "chance": 2 },
+        { "name": "고수 체력 물약", "count": 1, "chance": 20 }
+      ]
     }
   }
 }

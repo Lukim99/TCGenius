@@ -1,0 +1,91 @@
+{
+  "eggs": {
+    "2024 펫 알": {
+      "id": "2024 펫 알", "name": "2024 펫 알",
+      "drops": [
+        { "name": "2024 펫 생명체 숨결", "chance": 77.3, "count": 1 },
+        { "name": "2024 펫 생명체 숨결", "chance": 17.5, "count": 2 },
+        { "name": "2024 펫 전용 무기", "chance": 1.5 },
+        { "name": "2024 펫 전용 복장", "chance": 1.5 },
+        { "name": "2024 게임마스터즈 펫", "chance": 0.5 },
+        { "name": "2024 겜블러 펫", "chance": 0.5 },
+        { "name": "2024 스타시커 펫", "chance": 0.5 },
+        { "name": "2024 쌍용지니어스 펫", "chance": 0.5 },
+        { "name": "베스티스 펫 동력 코어", "chance": 0.05 },
+        { "name": "붉은 금속 투구 파편", "chance": 0.05 },
+        { "name": "응축된 붉은 뇌전의 정수", "chance": 0.05 },
+        { "name": "기계 야수의 강철 발톱", "chance": 0.05 }
+      ]
+    }
+  },
+  "pets": {
+    "2024 베스티스 펫": {
+      "id": "2024 베스티스 펫", "name": "2024 베스티스 펫", "series": "2024",
+      "effects": { "allStats": 1, "allStatsMax": 1, "bonusDmgPercent": 10 },
+      "craftMaterials": [
+        { "name": "베스티스 펫 동력 코어", "count": 1 },
+        { "name": "붉은 금속 투구 파편", "count": 1 },
+        { "name": "응축된 붉은 뇌전의 정수", "count": 1 },
+        { "name": "기계 야수의 강철 발톱", "count": 1 }
+      ]
+    },
+    "2024 게임마스터즈 펫": {
+      "id": "2024 게임마스터즈 펫", "name": "2024 게임마스터즈 펫", "series": "2024",
+      "effects": { "speed": 2, "evasionPercent": 1 }
+    },
+    "2024 겜블러 펫": {
+      "id": "2024 겜블러 펫", "name": "2024 겜블러 펫", "series": "2024",
+      "effects": { "power": 2, "normalAtkDmgPercent": 5 }
+    },
+    "2024 스타시커 펫": {
+      "id": "2024 스타시커 펫", "name": "2024 스타시커 펫", "series": "2024",
+      "effects": { "int": 2, "skillDmgPercent": 5 }
+    },
+    "2024 쌍용지니어스 펫": {
+      "id": "2024 쌍용지니어스 펫", "name": "2024 쌍용지니어스 펫", "series": "2024",
+      "effects": { "luck": 2, "critDamage": 5 }
+    }
+  },
+  "petEquipment": {
+    "2024 펫 전용 무기": {
+      "id": "2024 펫 전용 무기", "name": "2024 펫 전용 무기", "slot": "weapon",
+      "effects": { "randomStats": 2, "statBonus": 1 }
+    },
+    "2024 펫 전용 복장": {
+      "id": "2024 펫 전용 복장", "name": "2024 펫 전용 복장", "slot": "armor",
+      "effects": { "damageReductionPercent": 1 }
+    },
+    "[패스]미니 일레이나 전용 무기": {
+      "id": "[패스]미니 일레이나 전용 무기", "name": "[패스]미니 일레이나 전용 무기", "slot": "weapon",
+      "effects": { "allStats": 1 }
+    },
+    "[패스]미니 일레이나 전용 복장": {
+      "id": "[패스]미니 일레이나 전용 복장", "name": "[패스]미니 일레이나 전용 복장", "slot": "armor",
+      "effects": { "critChance": 2 }
+    }
+  },
+  "passPets": {
+    "[패스]미니 일레이나": {
+      "id": "[패스]미니 일레이나", "name": "[패스]미니 일레이나",
+      "effects": { "allStats": 1 }
+    }
+  },
+  "breathCrafts": {
+    "베스티스 펫 동력 코어": { "cost": 70, "currency": "2024 펫 생명체 숨결" },
+    "붉은 금속 투구 파편": { "cost": 70, "currency": "2024 펫 생명체 숨결" },
+    "응축된 붉은 뇌전의 정수": { "cost": 70, "currency": "2024 펫 생명체 숨결" },
+    "기계 야수의 강철 발톱": { "cost": 70, "currency": "2024 펫 생명체 숨결" },
+    "2024 펫 전용 무기": { "cost": 50, "currency": "2024 펫 생명체 숨결" },
+    "2024 펫 전용 복장": { "cost": 50, "currency": "2024 펫 생명체 숨결" },
+    "2024 게임마스터즈 펫": { "cost": 130, "currency": "2024 펫 생명체 숨결" },
+    "2024 겜블러 펫": { "cost": 130, "currency": "2024 펫 생명체 숨결" },
+    "2024 스타시커 펫": { "cost": 130, "currency": "2024 펫 생명체 숨결" },
+    "2024 쌍용지니어스 펫": { "cost": 130, "currency": "2024 펫 생명체 숨결" }
+  },
+  "partSalvage": {
+    "베스티스 펫 동력 코어": { "gives": "2024 펫 생명체 숨결", "count": 7 },
+    "붉은 금속 투구 파편": { "gives": "2024 펫 생명체 숨결", "count": 7 },
+    "응축된 붉은 뇌전의 정수": { "gives": "2024 펫 생명체 숨결", "count": 7 },
+    "기계 야수의 강철 발톱": { "gives": "2024 펫 생명체 숨결", "count": 7 }
+  }
+}

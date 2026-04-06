@@ -1,0 +1,45 @@
+{
+  "season1": {
+    "id": "season1",
+    "name": "시즌1 패스",
+    "expPerLevel": 100,
+    "expSources": {
+      "dungeonClear": 10,
+      "enhance": 1,
+      "amplify": 1
+    },
+    "rewards": [
+      { "level": 1, "free": { "name": "생명의 숨결", "count": 50 }, "plus": { "name": "[패스]미니 일레이나", "count": 1, "type": "pet" } },
+      { "level": 2, "free": { "name": "부활석", "count": 2 }, "plus": { "name": "부활석", "count": 1 } },
+      { "level": 3, "free": { "name": "경험치200%물약", "count": 1 }, "plus": { "name": "경험치200%물약", "count": 1 } },
+      { "level": 4, "free": { "name": "피로 회복의 정수", "count": 1 }, "plus": { "name": "희석된 경화제", "count": 10 } },
+      { "level": 5, "free": { "name": "파이브가 만든 빵", "count": 3 }, "plus": { "name": "파이브가 만든 빵", "count": 3 } },
+      { "level": 6, "free": { "name": "강화석", "count": 50 }, "plus": { "name": "강화석", "count": 100 } },
+      { "level": 7, "free": { "name": "스킬 포인트 1회 복구권", "count": 1 }, "plus": { "name": "스킬 포인트 1회 복구권", "count": 1 } },
+      { "level": 8, "free": { "name": "자양강장제(소)", "count": 2 }, "plus": { "name": "자양강장제(대)", "count": 1 } },
+      { "level": 9, "free": { "name": "파괴폭탄", "count": 5 }, "plus": { "name": "빛나는 파괴폭탄", "count": 3 } },
+      { "level": 10, "free": { "name": "피로 회복제10", "count": 1 }, "plus": { "name": "[패스]미니 일레이나 전용 복장", "count": 1, "type": "petEquip" } },
+      { "level": 11, "free": { "name": "생명의 숨결", "count": 100 }, "plus": { "name": "생명의 숨결", "count": 200 } },
+      { "level": 12, "free": { "name": "부활석", "count": 2 }, "plus": { "name": "달인 체력 물약", "count": 3 } },
+      { "level": 13, "free": { "name": "유생의 강화기", "count": 2 }, "plus": { "name": "유생의 증폭기", "count": 3 } },
+      { "level": 14, "free": { "name": "강화석", "count": 100 }, "plus": { "name": "순수한 결정체", "count": 1 } },
+      { "level": 15, "free": { "name": "황금밀랍초", "count": 5 }, "plus": { "name": "스킬 초기화권", "count": 1 } },
+      { "level": 16, "free": { "name": "진사이의 편의점 빵", "count": 3 }, "plus": { "name": "진사이의 편의점 빵", "count": 3 } },
+      { "level": 17, "free": { "name": "일반 떡밥", "count": 300 }, "plus": { "name": "황금 떡밥", "count": 100 } },
+      { "level": 18, "free": { "name": "낚싯대 수리기", "count": 1 }, "plus": { "name": "낚싯대 수리기", "count": 1 } },
+      { "level": 19, "free": { "name": "회오리폭탄", "count": 5 }, "plus": { "name": "빛나는 회오리폭탄", "count": 3 } },
+      { "level": 20, "free": { "name": "지니어스의 열쇠", "count": 10 }, "plus": { "name": "[패스]미니 일레이나 전용 무기", "count": 1, "type": "petEquip" } },
+      { "level": 21, "free": { "name": "생명의 숨결", "count": 300 }, "plus": { "name": "생명의 숨결", "count": 200 } },
+      { "level": 22, "free": { "name": "유생의 강화기", "count": 3 }, "plus": { "name": "유생의 증폭기", "count": 3 } },
+      { "level": 23, "free": { "name": "40만 골드 상자", "count": 1 }, "plus": { "name": "40만 골드 상자", "count": 1 } },
+      { "level": 24, "free": { "name": "브란도의 심사권", "count": 3 }, "plus": { "name": "브란도의 심사권", "count": 3 } },
+      { "level": 25, "free": { "name": "피로 회복제10", "count": 1 }, "plus": { "name": "지니어스의 열쇠", "count": 10 } },
+      { "level": 26, "free": { "name": "강화석", "count": 100 }, "plus": { "name": "순수한 결정체", "count": 1 } },
+      { "level": 27, "free": { "name": "발광조각", "count": 5 }, "plus": { "name": "발광조각", "count": 5 } },
+      { "level": 28, "free": { "name": "일반 떡밥", "count": 1000 }, "plus": { "name": "황금 떡밥", "count": 500 } },
+      { "level": 29, "free": { "name": "증폭제", "count": 1 }, "plus": { "name": "100프로 +9 장비 강화권", "count": 1, "tradeable": false } },
+      { "level": 30, "free": { "name": "LV50 레전더리 랜덤상자", "count": 1 }, "plus": { "name": "일레이나 낚싯대", "count": 1 } }
+    ],
+    "repeatReward": { "free": { "name": "강화석", "count": 100 }, "plus": { "name": "강화석", "count": 100 } }
+  }
+}

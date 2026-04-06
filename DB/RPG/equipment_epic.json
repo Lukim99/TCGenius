@@ -1,0 +1,104 @@
+{
+  "weapons": {
+    "뭔마": {
+      "id": "뭔마", "name": "뭔마", "rarity": "에픽", "level": 50, "type": "weapon", "job": "먼마", "tradeable": false,
+      "effects": { "power": 24, "powerMax": 10, "normalAtkDmgPercent": 20, "critDamage": 35 },
+      "uniqueEffects": [
+        { "type": "skillToNormal", "desc": "스킬 사용 직후 30% 확률로 일반 타격 추가", "chance": 30 },
+        { "type": "extraStrike", "desc": "일반 공격 적중 시 20% 확률로 공격력의 60% 추가 타격", "chance": 20, "dmgPercent": 60 }
+      ]
+    },
+    "월야환담": {
+      "id": "월야환담", "name": "월야환담", "rarity": "에픽", "level": 50, "type": "weapon", "job": "먼마", "tradeable": false,
+      "effects": { "power": 26, "powerMax": 8, "skillDmgPercent": 18, "critChance": 10 },
+      "uniqueEffects": [
+        { "type": "critAOE", "desc": "치명타 발생 시 공격력의 80% 광역 피해(3명)", "dmgPercent": 80, "maxTargets": 3 },
+        { "type": "killBonus", "desc": "폭발로 적 처치 시 다음 공격 +30%", "dmgPercent": 30 },
+        { "type": "skillBonus", "skill": "우선순위", "cooldownReduce": 1, "skillLevelBonus": 5 }
+      ]
+    },
+    "배신자의 말로": {
+      "id": "배신자의 말로", "name": "배신자의 말로", "rarity": "에픽", "level": 50, "type": "weapon", "job": "성준호", "tradeable": false,
+      "effects": { "speed": 24, "speedMax": 10, "evasionPercent": 8, "critChance": 15 },
+      "uniqueEffects": [
+        { "type": "betrayalStack", "desc": "배신스택 스킬 사용 시 배신 1스택 추가", "extraStack": 1 },
+        { "type": "skillBonus", "skill": "배신!", "critDamageBonus": 30, "skillLevelBonus": 1 }
+      ]
+    },
+    "조각": {
+      "id": "조각", "name": "조각", "rarity": "에픽", "level": 50, "type": "weapon", "job": "성준호", "tradeable": false,
+      "effects": { "speed": 26, "speedMax": 8, "critDamage": 35, "evasionPercent": 4 },
+      "uniqueEffects": [
+        { "type": "clone", "desc": "공격 시 15% 확률로 분신이 동일 공격 1회(50% 피해), 분신 발동 시 다음 치명타 +25%", "chance": 15, "dmgPercent": 50, "nextCritBonus": 25 },
+        { "type": "skillBonus", "skill": "연막", "skillLevelBonus": 1 },
+        { "type": "skillBonus", "skill": "행복의 개", "skillLevelBonus": 2 }
+      ]
+    },
+    "이빨빠진 호랑지팡이": {
+      "id": "이빨빠진 호랑지팡이", "name": "이빨빠진 호랑지팡이", "rarity": "에픽", "level": 50, "type": "weapon", "job": "빵귤", "subType": "지팡이", "tradeable": false,
+      "effects": { "int": 24, "intMax": 10, "skillDmgPercent": 22, "aoeSkillDmgPercent": 15 },
+      "uniqueEffects": [
+        { "type": "aoeRecast", "desc": "광역 스킬 적중 시 20% 확률로 즉시 재발동(데미지 50%, MP 무소모)", "chance": 20, "dmgReduction": 50 },
+        { "type": "recastBonus", "desc": "재발동 시 공격력의 40% 추가 피해", "dmgPercent": 40 }
+      ]
+    },
+    "오징어장기말지팡이": {
+      "id": "오징어장기말지팡이", "name": "오징어장기말지팡이", "rarity": "에픽", "level": 50, "type": "weapon", "job": "빵귤", "subType": "지팡이", "tradeable": false,
+      "effects": { "int": 20, "intMax": 20 },
+      "uniqueEffects": [
+        { "type": "skillBonus", "skill": "오징오", "skillLevelBonus": 5 },
+        { "type": "conditionalBuff", "condition": "오징오 활성화", "skillDmgPercent": 25, "int": 10 }
+      ]
+    },
+    "대추리": {
+      "id": "대추리", "name": "대추리", "rarity": "에픽", "level": 50, "type": "weapon", "job": "빵귤", "subType": "마도장갑", "tradeable": false,
+      "effects": { "int": 20, "speed": 10, "intMax": 6, "skillDmgPercent": 25 },
+      "uniqueEffects": [
+        { "type": "cooldownReset", "desc": "스킬 사용 시 25% 확률로 쿨타임 0, 해당 스킬 추가 데미지 +40%", "chance": 25, "bonusDmg": 40 },
+        { "type": "startMP", "value": 200 }
+      ]
+    },
+    "궁땍또": {
+      "id": "궁땍또", "name": "궁땍또", "rarity": "에픽", "level": 50, "type": "weapon", "job": "빵귤", "subType": "마도장갑", "tradeable": false,
+      "effects": { "int": 18, "speed": 12, "intMax": 8 },
+      "uniqueEffects": [
+        { "type": "skillBonus", "skill": "궁극의 틱택토", "skillLevelBonus": 5 },
+        { "type": "skillModify", "skill": "궁극의 틱택토", "dmgReduction": 30, "triggerChange": { "from": 9, "to": 3 } },
+        { "type": "bonusDmg", "percent": 10 }
+      ]
+    },
+    "교촌치킨 VIP카드": {
+      "id": "교촌치킨 VIP카드", "name": "교촌치킨 VIP카드", "rarity": "에픽", "level": 50, "type": "weapon", "job": "호르아크티", "tradeable": false,
+      "effects": { "luck": 24, "luckMax": 10, "critChance": 14, "critDamage": 35 },
+      "uniqueEffects": [
+        { "type": "skillBonus", "skill": "교촌파워", "successRateBonus": 45, "bonusDmg": 35, "extraTargets": 1, "cooldownReduce": 1 }
+      ]
+    },
+    "무한의 굴레": {
+      "id": "무한의 굴레", "name": "무한의 굴레", "rarity": "에픽", "level": 50, "type": "weapon", "job": "호르아크티", "tradeable": false,
+      "effects": { "luck": 26, "luckMax": 8, "gamblingDmgPercent": 20, "skillDmgPercent": 12 },
+      "uniqueEffects": [
+        { "type": "gamblingReroll", "desc": "도박 카드 발동 시 재발동 확률 15% (연속 가능)", "chance": 15 }
+      ]
+    },
+    "폭주마": {
+      "id": "폭주마", "name": "폭주마", "rarity": "에픽", "level": 50, "type": "weapon", "job": "건마", "tradeable": false,
+      "effects": { "power": 22, "powerMax": 10, "hp": 1850, "skillDmgPercent": 22 },
+      "uniqueEffects": [
+        { "type": "hpSeal", "desc": "최대 체력의 60% 봉인 (실질 HP 40%)", "sealPercent": 60 },
+        { "type": "allDmgBonus", "percent": 60 },
+        { "type": "lifesteal", "desc": "피해량의 10% HP 회복", "percent": 10 },
+        { "type": "hpScaleDmg", "desc": "보유 HP의 1% 만큼 추가 데미지", "percent": 1 }
+      ]
+    },
+    "건력 해방 리볼버": {
+      "id": "건력 해방 리볼버", "name": "건력 해방 리볼버", "rarity": "에픽", "level": 50, "type": "weapon", "job": "건마", "tradeable": false,
+      "effects": { "power": 26, "powerMax": 8, "skillDmgPercent": 20 },
+      "uniqueEffects": [
+        { "type": "gunpowerMax", "bonus": 1 },
+        { "type": "gunpowerDmg", "desc": "건력 사용시 해당 스킬 최종 데미지 +25%", "dmgPerGunpower": 25 },
+        { "type": "gunpowerCritBonus", "desc": "건력 3개 이상 사용 시 치명타 피해량 +40%", "threshold": 3, "critDamageBonus": 40 }
+      ]
+    }
+  }
+}
