@@ -751,41 +751,42 @@ const PUPPETEER_MAX_CONCURRENT = 2;
 
 async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
     if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
-        return { success: false, msg: "동시 브라우저 한도 초과. 잠시 후 다시 시도해주세요.", token: "없음", ip: "대기중" };
+        return { success: false, msg: "동시 브라우저 한도 초과.", token: "없음", ip: "대기중", logs: ["대기열 초과"] };
     }
     puppeteerRunning++;
     
     let browser = null;
     let currentIp = "확인 불가";
+    const logs = [];
+    const log = (msg) => logs.push(msg);
     
     try {
         const apiKey = process.env.BROWSERLESS_API_KEY;
         if (!apiKey) {
-            return { success: false, msg: "BROWSERLESS_API_KEY가 설정되지 않았습니다.", token: "없음", ip: currentIp };
+            return { success: false, msg: "BROWSERLESS_API_KEY 미설정", token: "없음", ip: currentIp, logs: ["API키 없음"] };
         }
         
-        // --- 1단계: Browserless.io로 로그인 (프록시 없이, JS/SSO 처리용) ---
+        // --- 1단계: Browserless.io로 로그인 ---
         let loginCookies = {};
         
         if (id && password) {
             const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}`;
-            console.log(`[Browserless] 1. 로그인용 원격 브라우저 연결`);
+            log("브라우저 연결 시도");
             
             browser = await puppeteer.connect({
                 browserWSEndpoint: wsEndpoint,
                 protocolTimeout: 50000
             });
             
-            console.log('[Browserless] 2. 연결 성공');
+            log("연결 성공");
             const page = await browser.newPage();
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
             
-            console.log("=== Browserless 로그인 시작 ===");
             await page.goto('https://sign.dcinside.com/login', { 
                 waitUntil: 'networkidle2', 
                 timeout: 30000 
             });
-            console.log("로그인 페이지 URL:", page.url());
+            log("로그인 페이지: " + page.url());
             
             // ID/PW 셀렉터 찾기
             const idSelector = await page.evaluate(() => {
@@ -800,12 +801,10 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             });
             
             if (!idSelector || !pwSelector) {
-                console.log("로그인 폼을 찾을 수 없습니다.");
+                log("로그인 폼 없음");
                 await browser.close();
-                return { success: false, msg: "로그인 폼을 찾을 수 없습니다.", token: "없음", ip: currentIp };
+                return { success: false, msg: "로그인 폼 없음", token: "없음", ip: currentIp, logs };
             }
-            
-            console.log(`ID 셀렉터: ${idSelector}, PW 셀렉터: ${pwSelector}`);
             
             // ID 입력
             await page.click(idSelector);
@@ -847,40 +846,27 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             }
             
             // 쿠키 추출
-            console.log("로그인 후 URL:", page.url());
             const cookies = await page.cookies();
             const cookieNames = cookies.map(c => c.name);
-            console.log("로그인 후 쿠키:", cookieNames.join(', '));
             
             const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
             const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
             
             if (foundLogin) {
-                console.log(`로그인 성공! (${foundLogin} 쿠키 확인)`);
-                // 쿠키를 key=value 형태로 변환
+                log("로그인 성공 (" + foundLogin + ")");
                 cookies.forEach(c => { loginCookies[c.name] = c.value; });
             } else {
-                console.log("로그인 실패: 로그인 쿠키 없음");
-                const errorMsg = await page.evaluate(() => {
-                    const el = document.querySelector('.error_info') || 
-                               document.querySelector('.login_error') ||
-                               document.querySelector('.alert');
-                    return el ? el.textContent.trim() : null;
-                });
-                if (errorMsg) console.log("로그인 에러:", errorMsg);
+                log("로그인 실패: 쿠키 없음. URL: " + page.url());
                 await browser.close();
-                return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp };
+                return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp, logs };
             }
             
-            // 브라우저 즉시 종료 (Browserless unit 절약)
             await browser.close();
             browser = null;
-            console.log("[Browserless] 브라우저 종료. 쿠키 추출 완료.");
+            log("브라우저 종료, 쿠키 추출 완료");
         }
         
-        // --- 2단계: axios + DataImpulse 한국 프록시로 추천 실행 ---
-        console.log("=== axios + DataImpulse 프록시로 추천 시작 ===");
-        
+        // --- 2단계: axios + DataImpulse 한국 프록시로 추천 ---
         const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
         const agent = new HttpsProxyAgent({
             proxy: proxyUrl,
@@ -894,21 +880,20 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         try {
             const ipRes = await axios.get('https://api.ipify.org?format=json', { httpsAgent: agent, timeout: 10000 });
             currentIp = ipRes.data.ip;
-            console.log("DataImpulse 프록시 IP:", currentIp);
+            log("프록시 IP: " + currentIp);
         } catch (e) {
-            console.log("IP 조회 실패:", e.message);
+            log("IP 조회 실패: " + e.message);
         }
         
         // 게시글 URL 파싱
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
         if (!urlMatch) {
-            return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음", ip: currentIp };
+            return { success: false, msg: "잘못된 링크", token: "없음", ip: currentIp, logs };
         }
         const galleryId = urlMatch[1];
         const postNo = urlMatch[2];
         
         // 모바일 게시글 페이지 방문 → CSRF 토큰 추출
-        console.log("게시글 페이지 GET:", targetUrl);
         const pageRes = await axios.get(targetUrl, {
             httpsAgent: agent,
             headers: {
@@ -945,11 +930,11 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         const finalCookieString = Object.entries(mergedCookies).map(([k, v]) => `${k}=${v}`).join('; ');
         
         if (!csrfToken) {
-            console.log("CSRF 토큰 없음. HTML 일부:", pageRes.data.substring(0, 500));
-            return { success: false, msg: "CSRF 토큰을 찾을 수 없습니다.", token: "없음", ip: currentIp };
+            log("CSRF 토큰 없음");
+            return { success: false, msg: "CSRF 토큰 없음", token: "없음", ip: currentIp, logs };
         }
         
-        console.log("CSRF 토큰:", csrfToken);
+        log("CSRF 토큰 확보");
         
         // 추천 POST
         const recommendUrl = mode === 'best' 
@@ -977,19 +962,18 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             timeout: 15000
         });
         
-        console.log("추천 응답:", JSON.stringify(postRes.data));
+        log("추천 응답: " + JSON.stringify(postRes.data));
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
-            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp };
+            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
         } else {
-            return { success: false, msg: (postRes.data?.cause || "알 수 없음"), token: csrfToken, ip: currentIp };
+            return { success: false, msg: (postRes.data?.cause || "알 수 없음"), token: csrfToken, ip: currentIp, logs };
         }
         
     } catch (err) {
-        console.log("Browserless 에러:", err.message);
-        console.log("Browserless 에러 스택:", err.stack?.split('\n').slice(0, 5).join('\n'));
+        log("에러: " + err.message);
         if (browser) await browser.close().catch(() => {});
-        return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp };
+        return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp, logs };
     } finally {
         puppeteerRunning--;
     }
@@ -5517,6 +5501,53 @@ client.on('chat', async (data, channel) => {
             } else {
                 channel.sendChat(`❌ 개추 실패\n메시지: ${result.msg}\nIP: ${result.ip}`);
             }
+        }
+
+        if (msg.startsWith('!고닉추 ')) {
+            const link = msg.replace('!고닉추 ', '').trim();
+            
+            const account_list = [
+                ['venus1684', 'yanga0800!'],
+                ['bridge0616', 'yanga0800!'],
+                ['maze5410', 'yanga0800!'],
+                ['coincide8675', 'yanga0800!'],
+                ['cooking5252', 'yanga0800!'],
+                ['lukim999', 'Yanga0800!'],
+                ['reality2190', 'yanga0800!'],
+                ['triumph4211', 's5yp8beY$5b5gR)'],
+                ['would0156', 'yanga0800!'],
+                ['seller0475', 'Tia0%?wng-i!gp1qRSI#'],
+                ['smoke3080', 'yanga0800!'],
+                ['overall5879', 'yanga0800!'],
+                ['adjust6545', 'yanga0800!'],
+                ['victory8059', 'yanga0800!'],
+                ['reside6157', 'yanga0800!']
+            ];
+            
+            channel.sendChat(`🤖 ${account_list.length}개 계정으로 개추 시작..`);
+            
+            let successCount = 0;
+            const failLogs = [];
+            
+            for (let i = 0; i < account_list.length; i++) {
+                const [accId, accPw] = account_list[i];
+                try {
+                    const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        failLogs.push(`[${accId}] ${result.msg} (IP: ${result.ip})\n  ${result.logs.join(' → ')}`);
+                    }
+                } catch (e) {
+                    failLogs.push(`[${accId}] 예외: ${e.message}`);
+                }
+            }
+            
+            let resultMsg = `✅ 고닉추 완료!\n성공: ${successCount}/${account_list.length}개`;
+            if (failLogs.length > 0) {
+                resultMsg += `\n실패: ${failLogs.length}개\n${VIEWMORE}\n` + failLogs.join('\n\n');
+            }
+            channel.sendChat(resultMsg);
         }
 
         if (msg.startsWith('!실베 ')) {
