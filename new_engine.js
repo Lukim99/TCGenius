@@ -765,9 +765,22 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
         
         console.log(`[Puppeteer] 1. 브라우저 실행 시도 (execPath: ${execPath}, proxy: ${proxyServer})`);
+        
+        // Chromium 바이너리 존재 확인
+        try {
+            const { execSync } = require('child_process');
+            const chromiumCheck = execSync(`ls -la ${execPath} 2>&1 || echo NOT_FOUND`).toString().trim();
+            console.log(`[Puppeteer] 1a. Chromium 바이너리: ${chromiumCheck.substring(0, 200)}`);
+            const chromiumVer = execSync(`${execPath} --version 2>&1 || echo VERSION_FAIL`).toString().trim();
+            console.log(`[Puppeteer] 1b. Chromium 버전: ${chromiumVer}`);
+        } catch (e) {
+            console.log(`[Puppeteer] 1a. 바이너리 확인 실패: ${e.message}`);
+        }
+        
         browser = await puppeteer.launch({
             executablePath: execPath,
-            headless: 'new',
+            headless: true,
+            protocolTimeout: 30000,
             args: [
                 `--proxy-server=${proxyServer}`,
                 '--no-sandbox',
@@ -775,13 +788,11 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--disable-extensions',
-                '--single-process',
                 '--disable-background-networking',
                 '--disable-default-apps',
                 '--disable-sync',
                 '--disable-translate',
                 '--disable-software-rasterizer',
-                '--disable-logging',
                 '--no-first-run',
                 '--no-zygote',
                 '--js-flags=--max-old-space-size=64'
