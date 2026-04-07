@@ -1,7 +1,7 @@
 {
   "예선장": {
     "id": "예선장", "name": "예선장", "region": "해고전쟁",
-    "requiredLevel": 1, "maxLevel": 3, "fatigueCost": 5,
+    "requiredLevel": 1, "maxLevel": 3, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "씨벌이", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "뭔마", "count": 1 }] }
@@ -18,7 +18,7 @@
   },
   "맛동산 회사": {
     "id": "맛동산 회사", "name": "맛동산 회사", "region": "해고전쟁",
-    "requiredLevel": 3, "maxLevel": 5, "fatigueCost": 5,
+    "requiredLevel": 3, "maxLevel": 5, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "미췬넘", "count": 2 }] },
       { "phase": 2, "monsters": [{ "id": "미룬이", "count": 1 }] },
@@ -36,7 +36,7 @@
   },
   "국회의사당": {
     "id": "국회의사당", "name": "국회의사당", "region": "해고전쟁",
-    "requiredLevel": 5, "maxLevel": 7, "fatigueCost": 5,
+    "requiredLevel": 5, "maxLevel": 7, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "마부장", "count": 2 }] },
       { "phase": 2, "monsters": [{ "id": "딜러스파이", "count": 1 }] },
@@ -54,7 +54,7 @@
   },
   "잉여왕 선발전": {
     "id": "잉여왕 선발전", "name": "잉여왕 선발전", "region": "해고전쟁",
-    "requiredLevel": 8, "maxLevel": 9, "fatigueCost": 6,
+    "requiredLevel": 8, "maxLevel": 9, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "모으령", "count": 2 }] },
       { "phase": 2, "monsters": [{ "id": "TE", "count": 2 }] },
@@ -72,7 +72,7 @@
   },
   "미니게임천국": {
     "id": "미니게임천국", "name": "미니게임천국", "region": "해고전쟁",
-    "requiredLevel": 10, "maxLevel": 11, "fatigueCost": 6,
+    "requiredLevel": 10, "maxLevel": 11, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "우정", "count": 3 }] },
       { "phase": 2, "monsters": [{ "id": "우정잉여왕", "count": 2 }] }
@@ -89,7 +89,7 @@
   },
   "왕실": {
     "id": "왕실", "name": "왕실", "region": "해고전쟁",
-    "requiredLevel": 12, "maxLevel": 13, "fatigueCost": 7,
+    "requiredLevel": 12, "maxLevel": 13, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "물장구", "count": 2 }] },
       { "phase": 2, "monsters": [{ "id": "X", "count": 1 }] },
@@ -107,7 +107,7 @@
   },
   "1대 부타 척결전": {
     "id": "1대 부타 척결전", "name": "1대 부타 척결전", "region": "해고전쟁",
-    "requiredLevel": 14, "maxLevel": 15, "fatigueCost": 7,
+    "requiredLevel": 14, "maxLevel": 15, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "갸라도스", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "부타우정잉여왕", "count": 1 }] }
@@ -159,7 +159,7 @@
   },
   "깐부대전": {
     "id": "깐부대전", "name": "깐부대전", "region": "더지니어서",
-    "requiredLevel": 20, "maxLevel": 21, "fatigueCost": 9,
+    "requiredLevel": 20, "maxLevel": 21, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "시그니를", "count": 1 }, { "id": "GM님팬파이브", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "오너", "count": 1 }, { "id": "LaeFree", "count": 1 }] }
@@ -176,7 +176,7 @@
   },
   "표식의 방": {
     "id": "표식의 방", "name": "표식의 방", "region": "더지니어서",
-    "requiredLevel": 22, "maxLevel": 23, "fatigueCost": 9,
+    "requiredLevel": 22, "maxLevel": 23, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "C", "count": 1 }, { "id": "E_시드", "count": 1 }, { "id": "G", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "A보스", "count": 1 }, { "id": "B보스", "count": 1 }] }
@@ -193,7 +193,7 @@
   },
   "비공개 눈치게임": {
     "id": "비공개 눈치게임", "name": "비공개 눈치게임", "region": "더지니어서",
-    "requiredLevel": 24, "maxLevel": 25, "fatigueCost": 10,
+    "requiredLevel": 24, "maxLevel": 25, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "시그니를시드", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "월야환담", "count": 1 }] },
@@ -211,7 +211,7 @@
   },
   "딜레마 룸": {
     "id": "딜레마 룸", "name": "딜레마 룸", "region": "더지니어서",
-    "requiredLevel": 26, "maxLevel": 27, "fatigueCost": 10,
+    "requiredLevel": 26, "maxLevel": 27, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "34K순금", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "100K순금", "count": 1 }] }
@@ -228,7 +228,7 @@
   },
   "사물의 방": {
     "id": "사물의 방", "name": "사물의 방", "region": "더지니어서",
-    "requiredLevel": 28, "maxLevel": 29, "fatigueCost": 10,
+    "requiredLevel": 28, "maxLevel": 29, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "물", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "물사진", "count": 1 }] },
@@ -246,7 +246,7 @@
   },
   "드래곤볼": {
     "id": "드래곤볼", "name": "드래곤볼", "region": "더지니어서",
-    "requiredLevel": 30, "maxLevel": 31, "fatigueCost": 11,
+    "requiredLevel": 30, "maxLevel": 31, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "방어", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "기", "count": 1 }] },
@@ -264,7 +264,7 @@
   },
   "STAGE K": {
     "id": "STAGE K", "name": "STAGE K", "region": "더지니어서",
-    "requiredLevel": 32, "maxLevel": 33, "fatigueCost": 12,
+    "requiredLevel": 32, "maxLevel": 33, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "K", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "KK", "count": 1 }] },
@@ -282,7 +282,7 @@
   },
   "생존백서": {
     "id": "생존백서", "name": "생존백서", "region": "타임아일랜드",
-    "requiredLevel": 34, "maxLevel": 35, "fatigueCost": 12,
+    "requiredLevel": 34, "maxLevel": 35, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "부서진코어", "count": 1 }] }
     ],
@@ -298,7 +298,7 @@
   },
   "미스터리 타임": {
     "id": "미스터리 타임", "name": "미스터리 타임", "region": "타임아일랜드",
-    "requiredLevel": 36, "maxLevel": 37, "fatigueCost": 13,
+    "requiredLevel": 36, "maxLevel": 37, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "시침이떼지마", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "바다거북", "count": 1 }] }
@@ -315,7 +315,7 @@
   },
   "보드타임": {
     "id": "보드타임", "name": "보드타임", "region": "타임아일랜드",
-    "requiredLevel": 38, "maxLevel": 39, "fatigueCost": 13,
+    "requiredLevel": 38, "maxLevel": 39, "fatigueCost": 8,
     "specialMechanic": { "type": "burningTime", "chance": 30, "damageMultiplier": 2 },
     "phases": [
       { "phase": 1, "monsters": [{ "id": "작은주사위", "count": 1 }] },
@@ -333,7 +333,7 @@
   },
   "광장의 딜레마": {
     "id": "광장의 딜레마", "name": "광장의 딜레마", "region": "타임아일랜드",
-    "requiredLevel": 40, "maxLevel": 41, "fatigueCost": 14,
+    "requiredLevel": 40, "maxLevel": 41, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "남는시계", "count": 5 }] },
       { "phase": 2, "monsters": [{ "id": "12번시계", "count": 1 }] }
@@ -350,7 +350,7 @@
   },
   "DXM 경마장": {
     "id": "DXM 경마장", "name": "DXM 경마장", "region": "타임아일랜드",
-    "requiredLevel": 42, "maxLevel": 43, "fatigueCost": 14,
+    "requiredLevel": 42, "maxLevel": 43, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "데우스엑스마키나", "count": 1 }] }
     ],
@@ -366,7 +366,7 @@
   },
   "시침증권거래소": {
     "id": "시침증권거래소", "name": "시침증권거래소", "region": "타임아일랜드",
-    "requiredLevel": 44, "maxLevel": 45, "fatigueCost": 15,
+    "requiredLevel": 44, "maxLevel": 45, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "기초시간수급자", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "카이로스", "count": 1 }] },
@@ -384,7 +384,7 @@
   },
   "왕좌의 게임": {
     "id": "왕좌의 게임", "name": "왕좌의 게임", "region": "타임아일랜드",
-    "requiredLevel": 46, "maxLevel": 47, "fatigueCost": 15,
+    "requiredLevel": 46, "maxLevel": 47, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "은혁", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "암살자", "count": 1 }, { "id": "광대", "count": 1 }] },
@@ -402,7 +402,7 @@
   },
   "흑색지대": {
     "id": "흑색지대", "name": "흑색지대", "region": "흑백지니어스",
-    "requiredLevel": 48, "maxLevel": 49, "fatigueCost": 16,
+    "requiredLevel": 48, "maxLevel": 49, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "흑팀원", "count": 5 }] },
       { "phase": 2, "monsters": [{ "id": "지짐", "count": 1 }] }
@@ -419,7 +419,7 @@
   },
   "백색지대": {
     "id": "백색지대", "name": "백색지대", "region": "흑백지니어스",
-    "requiredLevel": 50, "maxLevel": 51, "fatigueCost": 16,
+    "requiredLevel": 50, "maxLevel": 51, "fatigueCost": 8,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "백팀원", "count": 5 }] },
       { "phase": 2, "monsters": [{ "id": "붕종원", "count": 1 }] }
@@ -436,7 +436,7 @@
   },
   "대저택 살인사건": {
     "id": "대저택 살인사건", "name": "대저택 살인사건", "region": "E세계 대저택",
-    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 8, "dailyLimit": 3,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "조각_네임드", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "민지", "count": 1 }] }
@@ -458,7 +458,7 @@
   },
   "암호탑": {
     "id": "암호탑", "name": "암호탑", "region": "E세계 대저택",
-    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 8, "dailyLimit": 3,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "피아스트", "count": 1 }] }
     ],
@@ -479,7 +479,7 @@
   },
   "늑대인간을 찾아라": {
     "id": "늑대인간을 찾아라", "name": "늑대인간을 찾아라", "region": "E세계 대저택",
-    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 8, "dailyLimit": 3,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "오로라", "count": 1 }] },
       { "phase": 2, "monsters": [{ "id": "쿠마가와미소기", "count": 1 }] }
@@ -501,7 +501,7 @@
   },
   "무너진 유적지": {
     "id": "무너진 유적지", "name": "무너진 유적지", "region": "더지니어스클랜",
-    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 8, "dailyLimit": 3,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "길대머리", "count": 1 }, { "id": "고테란맨", "count": 1 }, { "id": "월드엘프네여", "count": 1 }] }
     ],
@@ -534,7 +534,7 @@
   },
   "랭크 피라미드": {
     "id": "랭크 피라미드", "name": "랭크 피라미드", "region": "더지니어스클랜",
-    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 20, "dailyLimit": 3,
+    "requiredLevel": 50, "maxLevel": 50, "fatigueCost": 8, "dailyLimit": 3,
     "phases": [
       { "phase": 1, "monsters": [{ "id": "니네들", "count": 5 }] },
       { "phase": 2, "monsters": [{ "id": "GM_네임드", "count": 1 }] },

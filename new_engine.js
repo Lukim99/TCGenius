@@ -2788,8 +2788,27 @@ class RPGUser {
             case '소모품':
                 result.effects = this.applyConsumableEffect(itemData);
                 break;
+            case '전투소모품':
+                return { success: false, message: `${itemName}은(는) 전투 중에만 사용할 수 있습니다.` };
             case '티켓':
-                result.message = `${itemName}을(를) 사용했습니다.`;
+                if (itemData.effects && itemData.effects.levelUp) {
+                    const prevLevel = this.level.level;
+                    this.level.level += itemData.effects.levelUp;
+                    this.level.exp = 0;
+                    this.sp += itemData.effects.levelUp;
+                    this.increaseHpByLevel();
+                    this.unlockSkillsByLevel(this.level.level);
+                    result.effects = { levelUp: itemData.effects.levelUp };
+                    result.message = `${itemName}을(를) 사용하여 레벨업했습니다! (Lv.${prevLevel} -> Lv.${this.level.level})`;
+                } else if (itemName === '스킬 초기화권') {
+                    this.skillManager = new RPGSkillManager(this.job);
+                    this.sp = this.level.level;
+                    result.message = `스킬이 모두 초기화되었습니다. SP가 ${this.sp}으로 복구되었습니다.`;
+                } else if (itemName === '스킬 포인트 1회 복구권') {
+                    return { success: false, message: `스킬 포인트 1회 복구권은 구현 중입니다.` };
+                } else {
+                    result.message = `${itemName}을(를) 사용했습니다.`;
+                }
                 break;
             default:
                 return { success: false, message: `${itemName}은(는) 사용할 수 없는 아이템입니다.` };
@@ -11883,7 +11902,7 @@ client.on('chat', async (data, channel) => {
                     const selectedDungeon = availableDungeons[dungeonNum - 1];
                     
                     // 피로도 체크
-                    const fatigueCost = selectedDungeon.fatigueCost || 5;
+                    const fatigueCost = selectedDungeon.fatigueCost || 8;
                     const fatigueResult = character.consumeFatigue(fatigueCost);
                     if (!fatigueResult.success) {
                         channel.sendChat(`❌ ${fatigueResult.message}`);
@@ -13172,6 +13191,62 @@ client.on('chat', async (data, channel) => {
                         }
                         if (result.effects.exp) msg.push(`  📊 EXP +${result.effects.exp}${result.effects.leveledUp ? ' (레벨업!)' : ''}`);
                     }
+                    channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 업적/칭호 =====
+                if (args[0] === "업적" || args[0] === "칭호") {
+                    if (args[1] === "장착") {
+                        const titleName = args.slice(2).join(' ');
+                        if (!titleName) { channel.sendChat(`❌ /RPGenius 칭호 장착 [칭호명]`); return; }
+                        if (!character.titles) character.titles = [];
+                        if (!character.titles.includes(titleName)) { channel.sendChat(`❌ 획득하지 않은 칭호입니다.`); return; }
+                        character.title = titleName;
+                        await character.save();
+                        channel.sendChat(`✅ [${titleName}] 칭호를 장착했습니다.`);
+                        return;
+                    }
+                    if (args[1] === "해제") {
+                        if (!character.title) { channel.sendChat(`❌ 장착 중인 칭호가 없습니다.`); return; }
+                        const removed = character.title;
+                        character.title = null;
+                        await character.save();
+                        channel.sendChat(`✅ [${removed}] 칭호를 해제했습니다.`);
+                        return;
+                    }
+                    if (args[1] === "확인" || args[1] === "갱신") {
+                        const allAchievements = achievementManager.getAllAchievements();
+                        const newlyUnlocked = [];
+                        if (!character.titles) character.titles = [];
+                        allAchievements.forEach(ach => {
+                            if (!character.titles.includes(ach.name)) {
+                                if (achievementManager.checkCondition(ach.name, character)) {
+                                    character.titles.push(ach.name);
+                                    newlyUnlocked.push(ach.name);
+                                }
+                            }
+                        });
+
+                        if (newlyUnlocked.length > 0) {
+                            await character.save();
+                            channel.sendChat(`🎉 새로운 칭호를 획득했습니다!\n- ${newlyUnlocked.join('\n- ')}`);
+                            return;
+                        } else {
+                            channel.sendChat(`새로 달성한 업적이 없습니다.`);
+                            return;
+                        }
+                    }
+
+                    const msg = [`━━━ 칭호/업적 정보 ━━━`];
+                    msg.push(`장착 중: ${character.title ? `[${character.title}]` : '없음'}`);
+                    if (character.titles && character.titles.length > 0) {
+                        msg.push(`\n[보유 칭호]`);
+                        character.titles.forEach((t, i) => msg.push(`${i + 1}. [${t}]`));
+                    } else {
+                        msg.push(`\n보유 중인 칭호가 없습니다.`);
+                    }
+                    msg.push(`\n/RPGenius 칭호 장착 [이름] | 해제 | 갱신`);
                     channel.sendChat(msg.join('\n'));
                     return;
                 }
