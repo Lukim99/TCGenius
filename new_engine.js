@@ -917,21 +917,39 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         params.append('no', postNo);
         params.append('_token', csrfToken);
         
-        const postRes = await axios.post(recommendUrl, params.toString(), {
-            httpsAgent: agent,
-            headers: {
-                'User-Agent': randomUA,
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-Csrf-Token': csrfToken,
-                'Referer': targetUrl,
-                'Origin': 'https://m.dcinside.com',
-                'Cookie': finalCookieString
-            },
-            timeout: 15000
-        });
+        const doRecommendPost = async (reqAgent) => {
+            return axios.post(recommendUrl, params.toString(), {
+                httpsAgent: reqAgent,
+                headers: {
+                    'User-Agent': randomUA,
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-Csrf-Token': csrfToken,
+                    'Referer': targetUrl,
+                    'Origin': 'https://m.dcinside.com',
+                    'Cookie': finalCookieString
+                },
+                timeout: 15000
+            });
+        };
         
+        let postRes = await doRecommendPost(agent);
         log("추천 응답: " + JSON.stringify(postRes.data));
+        
+        // 캡차 실패 시 재시도 (새 프록시 IP로)
+        if (postRes.data?.cause === 'captcha') {
+            for (let retry = 1; retry <= 2; retry++) {
+                log(`캡차 감지, ${retry}차 재시도 (3초 대기)`);
+                await new Promise(r => setTimeout(r, 3000));
+                const retryAgent = new HttpsProxyAgent({
+                    proxy: proxyUrl,
+                    rejectUnauthorized: false
+                });
+                postRes = await doRecommendPost(retryAgent);
+                log(`재시도${retry} 응답: ` + JSON.stringify(postRes.data));
+                if (postRes.data?.cause !== 'captcha') break;
+            }
+        }
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
@@ -5499,8 +5517,9 @@ client.on('chat', async (data, channel) => {
             const failLogs = [];
             
             for (let i = 0; i < account_list.length; i += PUPPETEER_MAX_CONCURRENT) {
+                if (i > 0) await delay(2000);
                 const chunk = account_list.slice(i, i + PUPPETEER_MAX_CONCURRENT);
-                const results = await Promise.all(chunk.map(async ([accId, accPw]) => {
+                await Promise.all(chunk.map(async ([accId, accPw]) => {
                     try {
                         const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
                         if (result.success) {
