@@ -442,28 +442,35 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 let currentUrl = loginActionUrl;
                 let currentHost = new URL(loginActionUrl).host;
                 
-                // POST 요청 (리다이렉트 비활성화, AJAX 방식)
+                // POST 요청 (리다이렉트 비활성화, 브라우저 폼 제출 방식)
                 const loginRes = await axios.post(
                     loginActionUrl,
                     loginParams.toString(),
                     {
                         httpsAgent: agent,
                         headers: {
-                            ...getAjaxHeaders('msign.dcinside.com', 'https://msign.dcinside.com/login'),
+                            ...getNavigateHeaders('msign.dcinside.com', 'https://msign.dcinside.com/login'),
                             'Content-Type': 'application/x-www-form-urlencoded',
                             'Cookie': cookiesToString(sessionCookies),
-                            'X-CSRF-TOKEN': loginToken
+                            'Origin': 'https://msign.dcinside.com',
+                            'Sec-Fetch-User': '?1',
+                            'Upgrade-Insecure-Requests': '1',
+                            'Cache-Control': 'max-age=0'
                         },
                         maxRedirects: 0,
-                        validateStatus: (status) => status >= 200 && status < 400
+                        validateStatus: (status) => status >= 200 && status < 400,
+                        responseType: 'text'
                     }
                 );
                 
                 console.log("로그인 POST 응답 상태:", loginRes.status);
+                console.log("로그인 POST Content-Type:", loginRes.headers['content-type'] || '없음');
                 console.log("로그인 POST Location:", loginRes.headers['location'] || '없음');
                 console.log("로그인 POST Set-Cookie:", JSON.stringify(loginRes.headers['set-cookie'] || []));
-                const loginResBody = typeof loginRes.data === 'string' ? loginRes.data.substring(0, 1000) : JSON.stringify(loginRes.data).substring(0, 1000);
-                console.log("로그인 POST 응답 본문:", loginResBody);
+                console.log("로그인 POST 응답 타입:", typeof loginRes.data, "길이:", (loginRes.data || '').length);
+                console.log("로그인 POST 응답 헤더 전체:", JSON.stringify(loginRes.headers));
+                const loginResBody = typeof loginRes.data === 'string' ? loginRes.data.substring(0, 2000) : JSON.stringify(loginRes.data).substring(0, 2000);
+                console.log("로그인 POST 응답 본문:", loginResBody || '(비어있음)');
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginRes.headers['set-cookie']));
                 console.log("로그인 POST 후 쿠키:", cookiesToString(sessionCookies));
