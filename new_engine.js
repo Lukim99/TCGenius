@@ -12679,17 +12679,23 @@ client.on('chat', async (data, channel) => {
                 // ===== 낚시 =====
                 if (args[0] === "낚시") {
                     if (args[1] === "정보") {
-                        const rod = character.findConsumableInInventory ? character.findConsumableInInventory('낚싯대') : null;
-                        const bait = character.findConsumableInInventory ? character.findConsumableInInventory('떡밥') : null;
+                        const rods = [];
+                        const baits = [];
+                        if (character.inventory && character.inventory.consumables) {
+                            for (let [name, item] of character.inventory.consumables) {
+                                if (fishingManager.getRod(name)) rods.push(`${name} x${item.count.toLocaleString()}`);
+                                if (fishingManager.getBait(name)) baits.push(`${name} x${item.count.toLocaleString()}`);
+                            }
+                        }
                         const msg = [`━━━ 낚시 정보 ━━━`];
-                        msg.push(`🎣 낚싯대: ${rod ? `${rod.name} x${rod.count.toLocaleString()}` : '없음'}`);
-                        msg.push(`🪱 떡밥: ${bait ? `${bait.name} x${bait.count.toLocaleString()}` : '없음'}`);
+                        msg.push(`🎣 낚싯대: ${rods.length > 0 ? rods.join(', ') : '없음'}`);
+                        msg.push(`🪱 떡밥: ${baits.length > 0 ? baits.join(', ') : '없음'}`);
                         msg.push(`━━━━━━━━━━━━━━━`);
                         channel.sendChat(msg.join('\n'));
                         return;
                     }
-                    const rodName = args[1] || '기본 낚싯대';
-                    const baitName = args[2] || '기본 떡밥';
+                    const rodName = args[1] || '허름한 낚싯대';
+                    const baitName = args[2] || '일반 떡밥';
                     const rodData = fishingManager.getRod(rodName);
                     const baitData = fishingManager.getBait(baitName);
                     if (!rodData || !baitData) {
@@ -12782,15 +12788,15 @@ client.on('chat', async (data, channel) => {
                     } else {
                         msg.push(`보유 중인 펫이 없습니다.`);
                     }
-                    msg.push(`\n/RPGenius 알열기 [알이름]`);
+                    msg.push(`\n/RPGenius 부화 [알이름]`);
                     channel.sendChat(msg.join('\n'));
                     return;
                 }
 
-                // ===== 알열기 =====
-                if (args[0] === "알열기") {
+                // ===== 부화 =====
+                if (args[0] === "부화") {
                     const eggName = args.slice(1).join(' ');
-                    if (!eggName) { channel.sendChat(`❌ /RPGenius 알열기 [알이름]`); return; }
+                    if (!eggName) { channel.sendChat(`❌ /RPGenius 부화 [알이름]`); return; }
                     if (!character.hasConsumable(eggName, 1)) {
                         channel.sendChat(`❌ ${eggName}을(를) 보유하고 있지 않습니다.`);
                         return;
@@ -12802,9 +12808,9 @@ client.on('chat', async (data, channel) => {
                     }
                     character.consumeItemFromInventory(eggName, 1);
                     if (!character.pets) character.pets = [];
-                    character.pets.push({ name: result.petName, type: result.petType });
+                    character.pets.push({ name: result.name, type: result.type || '일반' });
                     await character.save();
-                    channel.sendChat(`🥚✨ ${eggName}에서 [${result.petType}] ${result.petName}이(가) 부화했습니다!`);
+                    channel.sendChat(`🥚✨ ${eggName}에서 [${result.type || '일반'}] ${result.name}이(가) 부화했습니다!`);
                     return;
                 }
 
@@ -13272,7 +13278,7 @@ client.on('chat', async (data, channel) => {
                         ``,
                         `🎮 컨텐츠`,
                         `  제작목록 / 제작 / 낚시 / 사용`,
-                        `  트로피 / 펫 / 알열기`,
+                        `  트로피 / 펫 / 부화`,
                         `  상점 / 구매 / 업적 / 칭호`,
                         ``,
                         `💰 거래`,

@@ -668,7 +668,7 @@ class RPGCraftingManager {
 
         // 결과물 지급
         const result = recipe.result;
-        inventory.addConsumable({ name: result.name, count: result.count });
+        inventory.addConsumable(result.name, '아이템', result.count);
 
         return { success: true, message: `${result.name} x${result.count.toLocaleString()} 제작 완료!`, item: result };
     }
@@ -917,10 +917,10 @@ class RPGPetManager {
         for (const drop of egg.drops) {
             cumulative += drop.chance;
             if (roll < cumulative) {
-                return { name: drop.name, count: drop.count || 1 };
+                return { name: drop.name, count: drop.count || 1, success: true };
             }
         }
-        return { name: egg.drops[0].name, count: egg.drops[0].count || 1 };
+        return { name: egg.drops[0].name, count: egg.drops[0].count || 1, success: true };
     }
 
     // 펫 효과 계산
@@ -2285,7 +2285,23 @@ class RPGBattle {
         let baseDamage = mainStat * 15 + Math.floor(Math.random() * (mainStat * 5 + 50));
         
         // 힘 1당 평타 데미지 0.5% 증가
-        const normalAttackBonus = 1 + (stat.power * 0.005);
+        let normalAttackBonus = 1 + (stat.power * 0.005);
+
+        // 패시브 효과 (평타 데미지 증가) 적용
+        if (actor === 'player' && this.character.skillManager) {
+            const jobType = this.character.job || this.character.jobType;
+            const passives = this.character.skillManager.getSkillsByType('passive');
+            for (const skill of passives) {
+                const detail = skillDataManager.getSkillDetail(jobType, skill.name);
+                if (detail && detail.effects && detail.effects.normalAttackDamageBonus) {
+                    const bonus = typeof detail.effects.normalAttackDamageBonus === 'object' ?
+                                  detail.effects.normalAttackDamageBonus.base + (detail.effects.normalAttackDamageBonus.perLevel || 0) * (skill.level - 1) :
+                                  detail.effects.normalAttackDamageBonus;
+                    normalAttackBonus += (bonus / 100);
+                }
+            }
+        }
+
         baseDamage = Math.floor(baseDamage * normalAttackBonus);
         
         // 공격력 버프 적용
@@ -2370,6 +2386,40 @@ class RPGBattle {
         return Math.random() * 100 < evasionChance;
     }
     
+    // 턴 시작 시 패시브 효과 처리
+    _applyPassiveEffects(actor, turnLog) {
+        if (actor !== 'player') return;
+        const jobType = this.character.job || this.character.jobType;
+        const skillManager = this.character.skillManager;
+        if (!skillManager) return;
+
+        const passives = skillManager.getSkillsByType('passive').concat(skillManager.getSkillsByType('awakeningPassive'));
+        for (const skill of passives) {
+            const detail = skillDataManager.getSkillDetail(jobType, skill.name);
+            if (detail && detail.effects) {
+                const effects = detail.effects;
+                // MP 회복
+                if (effects.mpRegenPerTurn !== undefined && this.tempObj.stat.player.mp !== undefined) {
+                    const regen = typeof effects.mpRegenPerTurn === 'object' ? effects.mpRegenPerTurn.base + (effects.mpRegenPerTurn.perLevel || 0) * (skill.level - 1) : effects.mpRegenPerTurn;
+                    const prevMp = this.tempObj.stat.player.mp;
+                    this.tempObj.stat.player.mp = Math.min(this.tempObj.stat.player.maxMp, prevMp + regen);
+                    if (this.tempObj.stat.player.mp > prevMp) {
+                        turnLog.push(`[패시브: ${skill.name}] MP +${regen} 회복 (${this.tempObj.stat.player.mp}/${this.tempObj.stat.player.maxMp})`);
+                    }
+                }
+                // GP 회복
+                if (effects.gpRegenPerTurn !== undefined && this.tempObj.stat.player.gp !== undefined) {
+                    const regen = typeof effects.gpRegenPerTurn === 'object' ? effects.gpRegenPerTurn.base + (effects.gpRegenPerTurn.perLevel || 0) * (skill.level - 1) : effects.gpRegenPerTurn;
+                    const prevGp = this.tempObj.stat.player.gp;
+                    this.tempObj.stat.player.gp = Math.min(this.tempObj.stat.player.maxGp, prevGp + regen);
+                    if (this.tempObj.stat.player.gp > prevGp) {
+                        turnLog.push(`[패시브: ${skill.name}] GP +${regen} 회복 (${this.tempObj.stat.player.gp}/${this.tempObj.stat.player.maxGp})`);
+                    }
+                }
+            }
+        }
+    }
+
     // 턴 시작 시 상태이상 처리 (출혈, 화상 등 DoT)
     _processStatusEffects(target) {
         const eff = this.tempObj.effects[target];
@@ -2418,6 +2468,9 @@ class RPGBattle {
         turnLog.push(`━ 턴 ${this.turn} ━`);
 
         // 플레이어 DoT 처리 (출혈 등)
+        // 패시브 효과 (MP, GP 리젠 등) 처리
+        this._applyPassiveEffects('player', turnLog);
+
         const playerDot = this._processStatusEffects('player');
         if (playerDot.length > 0) {
             turnLog.push(...playerDot);
@@ -2610,7 +2663,18 @@ class RPGBattle {
             const hits = dmg.hits || 1;
 
             // 지능 1당 스킬 데미지 0.3% 증가
-            const intBonus = 1 + (playerStat.int * 0.003);
+            let intBonus = 1 + (playerStat.int * 0.003);
+            if (this.character.skillManager) {
+                const jobType = this.character.job || this.character.jobType;
+                const passives = this.character.skillManager.getSkillsByType('passive').concat(this.character.skillManager.getSkillsByType('awakeningPassive'));
+                for (const pSkill of passives) {
+                    const pDetail = skillDataManager.getSkillDetail(jobType, pSkill.name);
+                    if (pDetail && pDetail.effects && pDetail.effects.skillDamageBonus) {
+                        const bonus = typeof pDetail.effects.skillDamageBonus === 'object' ? pDetail.effects.skillDamageBonus.base + (pDetail.effects.skillDamageBonus.perLevel || 0) * (pSkill.level - 1) : pDetail.effects.skillDamageBonus;
+                        intBonus += (bonus / 100);
+                    }
+                }
+            }
 
             let totalDamage = 0;
             let hitLog = [];
@@ -2719,7 +2783,18 @@ class RPGBattle {
             const mainStat = Math.max(playerStat.power, playerStat.speed, playerStat.int, playerStat.luck);
             const skillLevelMultiplier = 1 + (skill.level - 1) * 0.15;
             let baseDamage = Math.floor(mainStat * 20 * skillLevelMultiplier + Math.floor(Math.random() * (mainStat * 8)));
-            const skillDamageBonus = 1 + (playerStat.int * 0.003);
+            let skillDamageBonus = 1 + (playerStat.int * 0.003);
+            if (this.character.skillManager) {
+                const jobType = this.character.job || this.character.jobType;
+                const passives = this.character.skillManager.getSkillsByType('passive').concat(this.character.skillManager.getSkillsByType('awakeningPassive'));
+                for (const pSkill of passives) {
+                    const pDetail = skillDataManager.getSkillDetail(jobType, pSkill.name);
+                    if (pDetail && pDetail.effects && pDetail.effects.skillDamageBonus) {
+                        const bonus = typeof pDetail.effects.skillDamageBonus === 'object' ? pDetail.effects.skillDamageBonus.base + (pDetail.effects.skillDamageBonus.perLevel || 0) * (pSkill.level - 1) : pDetail.effects.skillDamageBonus;
+                        skillDamageBonus += (bonus / 100);
+                    }
+                }
+            }
             baseDamage = Math.floor(baseDamage * skillDamageBonus);
 
             const { isCrit, critMultiplier } = this._rollCritical('player');
