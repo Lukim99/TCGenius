@@ -764,6 +764,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
         
+        console.log(`[Puppeteer] 1. 브라우저 실행 시도 (execPath: ${execPath}, proxy: ${proxyServer})`);
         browser = await puppeteer.launch({
             executablePath: execPath,
             headless: 'new',
@@ -787,16 +788,20 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             ]
         });
         
+        console.log('[Puppeteer] 2. 브라우저 실행 성공');
         const page = await browser.newPage();
+        console.log('[Puppeteer] 3. 새 페이지 생성');
         
         await page.authenticate({
             username: proxyUsername,
             password: proxyPassword
         });
         
+        console.log('[Puppeteer] 4. 프록시 인증 설정 완료');
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
         // IP 확인
+        console.log('[Puppeteer] 5. IP 확인 시작');
         try {
             await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle0', timeout: 10000 });
             const ipText = await page.evaluate(() => document.body.innerText);
@@ -1013,6 +1018,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
     } catch (err) {
         console.log("Puppeteer 에러:", err.message);
+        console.log("Puppeteer 에러 스택:", err.stack?.split('\n').slice(0, 5).join('\n'));
         if (browser) await browser.close().catch(() => {});
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp };
     } finally {
