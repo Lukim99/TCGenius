@@ -2459,8 +2459,8 @@ class RPGBattle {
                 turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
                 this.addTurnLog(turnLog);
                 this.finalizeTurn();
-                // 도망쳤으므로 패배(보상없음) 처리하거나 특수 종료
-                return this.endBattle(false, true);
+                // 도망쳤으므로 승리로 간주하고 보상 지급
+                return this.endBattle(true, true);
             }
         }
 
@@ -2655,7 +2655,7 @@ class RPGBattle {
                     turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
                     this.addTurnLog(turnLog);
                     this.finalizeTurn();
-                    return this.endBattle(false, true);
+                    return this.endBattle(true, true);
                 }
             }
 
@@ -2752,7 +2752,7 @@ class RPGBattle {
 
                         this.addTurnLog(turnLog);
                         this.finalizeTurn();
-                        return this.endBattle(false, true);
+                        return this.endBattle(true, true);
                     }
                 }
             }
@@ -2926,8 +2926,13 @@ class RPGBattle {
         endLog.push(``);
         
         if (playerWon) {
-            endLog.push(`✅ 승리!`);
-            endLog.push(`${this.tempObj.name.monster}을(를) 처치했습니다!`);
+            if (isMonsterEscaped) {
+                endLog.push(`✅ 승리!`);
+                endLog.push(`${this.tempObj.name.monster}이(가) 도망가서 전투가 종료되었습니다.`);
+            } else {
+                endLog.push(`✅ 승리!`);
+                endLog.push(`${this.tempObj.name.monster}을(를) 처치했습니다!`);
+            }
             
             // 보상 계산
             const collectedRewards = { exp: 0, gold: 0, items: [] };
