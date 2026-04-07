@@ -780,7 +780,9 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         browser = await puppeteer.launch({
             executablePath: execPath,
             headless: true,
-            protocolTimeout: 30000,
+            dumpio: true,
+            protocolTimeout: 60000,
+            timeout: 60000,
             args: [
                 `--proxy-server=${proxyServer}`,
                 '--no-sandbox',
@@ -794,7 +796,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 '--disable-translate',
                 '--disable-software-rasterizer',
                 '--no-first-run',
-                '--no-zygote',
+                '--single-process',
                 '--js-flags=--max-old-space-size=64'
             ]
         });
