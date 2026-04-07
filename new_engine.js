@@ -5508,7 +5508,12 @@ client.on('chat', async (data, channel) => {
                 ['overall5879', 'yanga0800!'],
                 ['adjust6545', 'yanga0800!'],
                 ['victory8059', 'yanga0800!'],
-                ['reside6157', 'yanga0800!']
+                ['reside6157', 'yanga0800!'],
+                ['absurd8070', 'yanga0800!'],
+                ['gesture7973', 'yanga0800!'],
+                ['beam0504', 'yanga0800!'],
+                ['confess4791', 'yanga0800!'],
+                ['journal7862', 'yanga0800!']
             ];
             
             channel.sendChat(`🤖 ${account_list.length}개 계정으로 개추 시작..`);
