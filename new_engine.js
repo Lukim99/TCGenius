@@ -768,11 +768,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
         const proxyPassword = PROXY_CONFIG.password;
         
-        const launchArgs = JSON.stringify({
-            args: [`--proxy-server=${proxyServer}`]
-        });
-        
-        const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}&launch=${encodeURIComponent(launchArgs)}`;
+        const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}&--proxy-server=${encodeURIComponent(proxyServer)}`;
         
         console.log(`[Browserless] 1. 원격 브라우저 연결 시도 (proxy: ${proxyServer})`);
         
