@@ -513,6 +513,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 let redirectUrl = loginRes.headers['location'];
                 let redirectCount = 0;
                 const MAX_REDIRECTS = 10;
+                const visitedUrls = new Set();
                 
                 while (redirectUrl && redirectCount < MAX_REDIRECTS) {
                     redirectCount++;
@@ -522,14 +523,30 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                         redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
                     }
                     
+                    // 무한 루프 방지
+                    if (visitedUrls.has(redirectUrl)) {
+                        console.log(`리다이렉트 루프 감지, 중단: ${redirectUrl}`);
+                        break;
+                    }
+                    visitedUrls.add(redirectUrl);
+                    
                     const redirectHost = new URL(redirectUrl).host;
                     console.log(`리다이렉트 ${redirectCount}: ${redirectUrl}`);
                     
                     const redirectRes = await axios.get(redirectUrl, {
                         httpsAgent: agent,
                         headers: {
-                            ...getNavigateHeaders(redirectHost, currentUrl),
-                            'Sec-Fetch-Site': redirectHost === currentHost ? 'same-origin' : 'same-site',
+                            'User-Agent': desktopUA,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
+                            'Host': redirectHost,
+                            'Referer': currentUrl,
+                            'Sec-Fetch-Mode': 'navigate',
+                            'Sec-Fetch-Site': redirectHost === currentHost ? 'same-origin' : 'cross-site',
+                            'Sec-Fetch-Dest': 'document',
+                            'Upgrade-Insecure-Requests': '1',
                             'Cookie': cookiesToString(sessionCookies)
                         },
                         maxRedirects: 0,
@@ -537,12 +554,15 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     });
                     
                     sessionCookies = mergeCookies(sessionCookies, parseCookies(redirectRes.headers['set-cookie']));
+                    console.log(`리다이렉트 ${redirectCount} 상태: ${redirectRes.status}, Set-Cookie:`, JSON.stringify(redirectRes.headers['set-cookie'] || []));
                     console.log(`리다이렉트 ${redirectCount} 후 쿠키 키:`, Object.keys(sessionCookies).join(', '));
                     
                     currentUrl = redirectUrl;
                     currentHost = redirectHost;
                     redirectUrl = redirectRes.headers['location'];
                 }
+                
+                console.log(`리다이렉트 총 ${redirectCount}회 완료`);
                 
                 // 4단계: 로그인 성공 여부 확인 (PHPSESSID는 로그인 전에도 존재하므로 제외)
                 const loginCookieKeys = Object.keys(sessionCookies);
@@ -561,10 +581,10 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     httpsAgent: agent,
                     headers: {
                         ...getNavigateHeaders('m.dcinside.com', currentUrl),
-                        'Sec-Fetch-Site': currentHost === 'm.dcinside.com' ? 'same-origin' : 'same-site',
+                        'Sec-Fetch-Site': 'same-site',
                         'Cookie': cookiesToString(sessionCookies)
                     },
-                    maxRedirects: 0,
+                    maxRedirects: 5,
                     validateStatus: (status) => status >= 200 && status < 400
                 });
                 
