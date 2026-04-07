@@ -927,7 +927,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         console.log("게시글 페이지 이동:", targetUrl);
         await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1');
         
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
         console.log("게시글 페이지 URL:", page.url());
         
         // CSRF 토큰 추출
