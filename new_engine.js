@@ -746,88 +746,69 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
     }
 }
 
-let puppeteerBusy = false;
+let puppeteerRunning = 0;
+const PUPPETEER_MAX_CONCURRENT = 2;
 
 async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
-    if (puppeteerBusy) {
-        return { success: false, msg: "다른 로그인 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.", token: "없음", ip: "대기중" };
+    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
+        return { success: false, msg: "동시 브라우저 한도 초과. 잠시 후 다시 시도해주세요.", token: "없음", ip: "대기중" };
     }
-    puppeteerBusy = true;
+    puppeteerRunning++;
     
     let browser = null;
     let currentIp = "확인 불가";
     
     try {
+        const apiKey = process.env.BROWSERLESS_API_KEY;
+        if (!apiKey) {
+            return { success: false, msg: "BROWSERLESS_API_KEY가 설정되지 않았습니다.", token: "없음", ip: currentIp };
+        }
+        
         const proxyServer = `http://${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
         const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
         const proxyPassword = PROXY_CONFIG.password;
         
-        const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
-        
-        console.log(`[Puppeteer] 1. 브라우저 실행 시도 (execPath: ${execPath}, proxy: ${proxyServer})`);
-        
-        // Chromium 바이너리 존재 확인
-        try {
-            const { execSync } = require('child_process');
-            const chromiumCheck = execSync(`ls -la ${execPath} 2>&1 || echo NOT_FOUND`).toString().trim();
-            console.log(`[Puppeteer] 1a. Chromium 바이너리: ${chromiumCheck.substring(0, 200)}`);
-            const chromiumVer = execSync(`${execPath} --version 2>&1 || echo VERSION_FAIL`).toString().trim();
-            console.log(`[Puppeteer] 1b. Chromium 버전: ${chromiumVer}`);
-        } catch (e) {
-            console.log(`[Puppeteer] 1a. 바이너리 확인 실패: ${e.message}`);
-        }
-        
-        browser = await puppeteer.launch({
-            executablePath: execPath,
-            headless: true,
-            dumpio: true,
-            protocolTimeout: 60000,
-            timeout: 60000,
-            args: [
-                `--proxy-server=${proxyServer}`,
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-extensions',
-                '--disable-background-networking',
-                '--disable-default-apps',
-                '--disable-sync',
-                '--disable-translate',
-                '--disable-software-rasterizer',
-                '--no-first-run',
-                '--single-process',
-                '--js-flags=--max-old-space-size=64'
-            ]
+        const launchArgs = JSON.stringify({
+            args: [`--proxy-server=${proxyServer}`],
+            headless: true
         });
         
-        console.log('[Puppeteer] 2. 브라우저 실행 성공');
+        const wsEndpoint = `wss://production-sfo.browserless.io/chromium/playwright?token=${apiKey}&launch=${encodeURIComponent(launchArgs)}`;
+        
+        console.log(`[Browserless] 1. 원격 브라우저 연결 시도 (proxy: ${proxyServer})`);
+        
+        browser = await puppeteer.connect({
+            browserWSEndpoint: wsEndpoint,
+            protocolTimeout: 50000
+        });
+        
+        console.log('[Browserless] 2. 원격 브라우저 연결 성공');
         const page = await browser.newPage();
-        console.log('[Puppeteer] 3. 새 페이지 생성');
+        console.log('[Browserless] 3. 새 페이지 생성');
         
         await page.authenticate({
             username: proxyUsername,
             password: proxyPassword
         });
         
-        console.log('[Puppeteer] 4. 프록시 인증 설정 완료');
+        console.log('[Browserless] 4. 프록시 인증 설정 완료');
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
         // IP 확인
-        console.log('[Puppeteer] 5. IP 확인 시작');
+        console.log('[Browserless] 5. IP 확인 시작');
         try {
-            await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle0', timeout: 10000 });
+            await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle0', timeout: 15000 });
             const ipText = await page.evaluate(() => document.body.innerText);
             const ipData = JSON.parse(ipText);
             currentIp = ipData.ip;
-            console.log("Puppeteer 프록시 IP:", currentIp);
+            console.log("[Browserless] 프록시 IP:", currentIp);
         } catch (e) {
-            console.log("IP 조회 실패:", e.message);
+            console.log("[Browserless] IP 조회 실패:", e.message);
         }
         
         // 로그인 처리
         if (id && password) {
-            console.log("=== Puppeteer 로그인 시작 ===");
+            console.log("=== Browserless 로그인 시작 ===");
             
             await page.goto('https://sign.dcinside.com/login', { 
                 waitUntil: 'networkidle2', 
@@ -842,16 +823,12 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 document.querySelectorAll('form input').forEach(el => {
                     inputs.push({ name: el.name, type: el.type, id: el.id });
                 });
-                return {
-                    inputs,
-                    url: window.location.href,
-                    title: document.title
-                };
+                return { inputs, title: document.title };
             });
             console.log("로그인 폼 필드:", JSON.stringify(formInfo.inputs));
             console.log("페이지 타이틀:", formInfo.title);
             
-            // ID 입력 (name 또는 id로 찾기)
+            // ID/PW 셀렉터 찾기
             const idSelector = await page.evaluate(() => {
                 const el = document.querySelector('input[name="user_id"]') || 
                            document.querySelector('input[name="code"]') ||
@@ -874,18 +851,19 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             
             console.log(`ID 셀렉터: ${idSelector}, PW 셀렉터: ${pwSelector}`);
             
-            // 입력 필드 클리어 후 타이핑
+            // ID 입력
             await page.click(idSelector);
             await page.keyboard.down('Control');
             await page.keyboard.press('a');
             await page.keyboard.up('Control');
-            await page.type(idSelector, id, { delay: 50 });
+            await page.type(idSelector, id, { delay: 30 });
             
+            // PW 입력
             await page.click(pwSelector);
             await page.keyboard.down('Control');
             await page.keyboard.press('a');
             await page.keyboard.up('Control');
-            await page.type(pwSelector, password, { delay: 50 });
+            await page.type(pwSelector, password, { delay: 30 });
             
             // 로그인 버튼 클릭
             const submitSelector = await page.evaluate(() => {
@@ -894,12 +872,10 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                             document.querySelector('.btn_login') ||
                             document.querySelector('#login_submit') ||
                             document.querySelector('form button');
-                if (btn) {
-                    if (btn.id) return `#${btn.id}`;
-                    if (btn.className) return `.${btn.className.split(' ')[0]}`;
-                    return btn.tagName === 'BUTTON' ? 'form button' : 'input[type="submit"]';
-                }
-                return null;
+                if (!btn) return null;
+                if (btn.id) return `#${btn.id}`;
+                if (btn.className) return `.${btn.className.split(' ')[0]}`;
+                return btn.tagName === 'BUTTON' ? 'form button' : 'input[type="submit"]';
             });
             
             console.log("로그인 버튼 셀렉터:", submitSelector);
@@ -910,14 +886,13 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                     page.click(submitSelector)
                 ]);
             } else {
-                // 폼 직접 제출
                 await Promise.all([
                     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
                     page.evaluate(() => document.querySelector('form').submit())
                 ]);
             }
             
-            // 로그인 후 URL 및 쿠키 확인
+            // 로그인 결과 확인
             console.log("로그인 후 URL:", page.url());
             const cookies = await page.cookies();
             const cookieNames = cookies.map(c => c.name);
@@ -930,7 +905,6 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 console.log(`로그인 성공! (${foundLogin} 쿠키 확인)`);
             } else {
                 console.log("로그인 실패 의심: 로그인 쿠키 없음");
-                // 로그인 페이지에 에러 메시지가 있는지 확인
                 const errorMsg = await page.evaluate(() => {
                     const el = document.querySelector('.error_info') || 
                                document.querySelector('.login_error') ||
@@ -952,12 +926,9 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         // 모바일 게시글 페이지 방문
         console.log("게시글 페이지 이동:", targetUrl);
-        
-        // 모바일 UA로 전환 (추천 API는 m.dcinside.com 사용)
         await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1');
         
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 20000 });
-        
         console.log("게시글 페이지 URL:", page.url());
         
         // CSRF 토큰 추출
@@ -982,11 +953,10 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         console.log("CSRF 토큰:", csrfToken);
         
-        // 추천 POST 요청 (브라우저 컨텍스트에서 AJAX 실행)
+        // 추천 POST (브라우저 컨텍스트에서 fetch 실행)
         const recommendUrl = mode === 'best' 
             ? 'https://m.dcinside.com/bestcontent/recommend' 
             : 'https://m.dcinside.com/ajax/recommend';
-        
         const recommendType = mode === 'best' ? 'recommend_best' : 'recommend_join';
         
         const result = await page.evaluate(async (url, type, gId, pNo, token) => {
@@ -1008,8 +978,9 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                     credentials: 'include'
                 });
                 
-                const data = await res.json();
-                return { status: res.status, data };
+                const text = await res.text();
+                try { return { status: res.status, data: JSON.parse(text) }; }
+                catch { return { status: res.status, data: text }; }
             } catch (e) {
                 return { status: 0, error: e.message };
             }
@@ -1026,16 +997,17 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         if (result.data && (result.data.result === true || result.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp };
         } else {
-            return { success: false, msg: (result.data?.cause || "알 수 없음"), token: csrfToken, ip: currentIp };
+            const cause = typeof result.data === 'object' ? (result.data?.cause || "알 수 없음") : result.data;
+            return { success: false, msg: cause, token: csrfToken, ip: currentIp };
         }
         
     } catch (err) {
-        console.log("Puppeteer 에러:", err.message);
-        console.log("Puppeteer 에러 스택:", err.stack?.split('\n').slice(0, 5).join('\n'));
+        console.log("Browserless 에러:", err.message);
+        console.log("Browserless 에러 스택:", err.stack?.split('\n').slice(0, 5).join('\n'));
         if (browser) await browser.close().catch(() => {});
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp };
     } finally {
-        puppeteerBusy = false;
+        puppeteerRunning--;
     }
 }
 
