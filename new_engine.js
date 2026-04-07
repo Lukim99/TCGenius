@@ -364,21 +364,49 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
         // 로그인 처리
         if (id && password) {
             try {
+                // 데스크톱 UA 사용 (로그인은 데스크톱 sign.dcinside.com 이용)
+                const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+                
                 // 1단계: 로그인 페이지 GET → 세션 쿠키 + CSRF 토큰 확보
-                const loginPageRes = await axios.get('https://msign.dcinside.com/login', {
+                const loginPageRes = await axios.get('https://sign.dcinside.com/login', {
                     httpsAgent: agent,
                     headers: {
-                        ...getNavigateHeaders('msign.dcinside.com', 'https://www.dcinside.com'),
-                        'Sec-Fetch-Site': 'cross-site'
-                    }
+                        'User-Agent': desktopUA,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive',
+                        'Host': 'sign.dcinside.com',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1'
+                    },
+                    responseType: 'text'
                 });
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginPageRes.headers['set-cookie']));
+                console.log("로그인 페이지 GET Set-Cookie:", JSON.stringify(loginPageRes.headers['set-cookie'] || []));
                 const loginPageHtml = loginPageRes.data;
                 
                 const $login = cheerio.load(loginPageHtml);
                 
-                // 디버그: 로그인 폼의 실제 필드명 추출
+                // 디버그: 로그인 페이지의 JavaScript 분석
+                const scriptContents = [];
+                $login('script').each((i, el) => {
+                    const src = $login(el).attr('src');
+                    const inline = $login(el).html();
+                    if (src) scriptContents.push(`[외부] ${src}`);
+                    if (inline && inline.trim().length > 0) scriptContents.push(`[인라인] ${inline.trim().substring(0, 500)}`);
+                });
+                console.log("로그인 페이지 스크립트:", JSON.stringify(scriptContents));
+                
+                // document.cookie 패턴 확인 (JS가 쿠키를 설정하는지)
+                const cookieSetMatches = loginPageHtml.match(/document\.cookie\s*=/g);
+                console.log("JS document.cookie 설정 횟수:", cookieSetMatches ? cookieSetMatches.length : 0);
+                
+                // 폼 필드 추출
                 const formInputs = [];
                 $login('form input').each((i, el) => {
                     const name = $login(el).attr('name');
@@ -388,9 +416,10 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 });
                 console.log("로그인 폼 필드:", JSON.stringify(formInputs));
                 
-                // 폼 action URL 확인
                 const formAction = $login('form').attr('action');
-                console.log("폼 action:", formAction);
+                const formMethod = $login('form').attr('method');
+                const formId = $login('form').attr('id');
+                console.log("폼 action:", formAction, "method:", formMethod, "id:", formId);
                 
                 let loginToken = $login('meta[name="csrf-token"]').attr('content') || 
                                 $login('input[name="_token"]').val() ||
@@ -402,25 +431,22 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 }
                 
                 if (!loginToken) {
-                    console.log("로그인 CSRF 토큰을 찾을 수 없습니다.");
-                    console.log("로그인 페이지 HTML (처음 2000자):", loginPageHtml.substring(0, 2000));
+                    console.log("CSRF 토큰 없음. HTML 일부:", loginPageHtml.substring(0, 3000));
                     return { success: false, msg: "로그인 페이지에서 토큰을 찾을 수 없습니다.", token: "없음", ip: currentIp };
                 }
                 
                 console.log("CSRF 토큰:", loginToken);
 
-                // 2단계: 로그인 POST (리다이렉트 수동 추적으로 쿠키 수집)
-                // 폼 필드를 동적으로 구성 (모든 필드 포함)
+                // 2단계: 로그인 POST
                 const loginParams = new URLSearchParams();
                 
-                // ID/PW 필드명을 폼에서 추출
-                const idField = formInputs.find(f => f.type === 'text' || f.name.includes('id') || f.name.includes('user'));
-                const pwField = formInputs.find(f => f.type === 'password' || f.name.includes('pw') || f.name.includes('pass'));
+                const idField = formInputs.find(f => f.type === 'text' || f.name.includes('id') || f.name.includes('user') || f.name === 'code');
+                const pwField = formInputs.find(f => f.type === 'password');
                 const idFieldName = idField ? idField.name : 'user_id';
                 const pwFieldName = pwField ? pwField.name : 'pw';
                 console.log(`로그인 필드명: ID=${idFieldName}, PW=${pwFieldName}`);
                 
-                // 폼 필드 순서대로 구성 (브라우저와 동일하게)
+                // 폼 필드 순서대로 구성
                 for (const input of formInputs) {
                     if (input.name === idFieldName) {
                         loginParams.append(input.name, id);
@@ -438,21 +464,30 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 console.log("로그인 POST body:", loginParams.toString());
                 console.log("로그인 POST 전 쿠키:", cookiesToString(sessionCookies));
 
-                const loginActionUrl = formAction || 'https://msign.dcinside.com/login';
+                const loginActionUrl = formAction || 'https://sign.dcinside.com/login';
                 let currentUrl = loginActionUrl;
                 let currentHost = new URL(loginActionUrl).host;
                 
-                // POST 요청 (리다이렉트 비활성화, 브라우저 폼 제출 방식)
+                // POST 요청 (데스크톱 브라우저 폼 제출)
                 const loginRes = await axios.post(
                     loginActionUrl,
                     loginParams.toString(),
                     {
                         httpsAgent: agent,
                         headers: {
-                            ...getNavigateHeaders('msign.dcinside.com', 'https://msign.dcinside.com/login'),
+                            'User-Agent': desktopUA,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Accept-Encoding': 'gzip, deflate, br',
                             'Content-Type': 'application/x-www-form-urlencoded',
                             'Cookie': cookiesToString(sessionCookies),
-                            'Origin': 'https://msign.dcinside.com',
+                            'Host': currentHost,
+                            'Origin': `https://${currentHost}`,
+                            'Referer': `https://${currentHost}/login`,
+                            'Connection': 'keep-alive',
+                            'Sec-Fetch-Mode': 'navigate',
+                            'Sec-Fetch-Site': 'same-origin',
+                            'Sec-Fetch-Dest': 'document',
                             'Sec-Fetch-User': '?1',
                             'Upgrade-Insecure-Requests': '1',
                             'Cache-Control': 'max-age=0'
@@ -468,7 +503,6 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 console.log("로그인 POST Location:", loginRes.headers['location'] || '없음');
                 console.log("로그인 POST Set-Cookie:", JSON.stringify(loginRes.headers['set-cookie'] || []));
                 console.log("로그인 POST 응답 타입:", typeof loginRes.data, "길이:", (loginRes.data || '').length);
-                console.log("로그인 POST 응답 헤더 전체:", JSON.stringify(loginRes.headers));
                 const loginResBody = typeof loginRes.data === 'string' ? loginRes.data.substring(0, 2000) : JSON.stringify(loginRes.data).substring(0, 2000);
                 console.log("로그인 POST 응답 본문:", loginResBody || '(비어있음)');
                 
