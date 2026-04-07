@@ -643,7 +643,7 @@ class RPGCraftingManager {
                 }
             } else {
                 if (!inventory.hasConsumable(mat.name, mat.count)) {
-                    return { success: false, message: `${mat.name}이(가) 부족합니다. (필요: ${mat.count}개)` };
+                    return { success: false, message: `${mat.name}이(가) 부족합니다. (필요: ${mat.count.toLocaleString()}개)` };
                 }
             }
         }
@@ -651,8 +651,8 @@ class RPGCraftingManager {
     }
 
     // 제작 실행 (재료 소모 + 결과물 지급)
-    craft(recipeName, inventory, owner) {
-        const check = this.canCraft(recipeName, inventory, owner ? owner.gold : 0);
+    craft(recipeName, inventory, character) {
+        const check = this.canCraft(recipeName, inventory, character ? character.gold : 0);
         if (!check.success) return check;
 
         const recipe = this.recipes[recipeName];
@@ -660,7 +660,7 @@ class RPGCraftingManager {
         // 재료 소모
         for (const mat of recipe.materials) {
             if (mat.name === '골드') {
-                owner.gold -= mat.count;
+                character.gold -= mat.count;
             } else {
                 inventory.consumeItem(mat.name, mat.count);
             }
@@ -670,7 +670,7 @@ class RPGCraftingManager {
         const result = recipe.result;
         inventory.addConsumable({ name: result.name, count: result.count });
 
-        return { success: true, message: `${result.name} x${result.count} 제작 완료!`, item: result };
+        return { success: true, message: `${result.name} x${result.count.toLocaleString()} 제작 완료!`, item: result };
     }
 }
 
@@ -788,7 +788,7 @@ class RPGShopManager {
     }
 
     // 구매 처리
-    purchase(category, itemKey, owner, inventory) {
+    purchase(category, itemKey, character, owner, inventory) {
         const item = this.getItem(category, itemKey);
         if (!item) return { success: false, message: '존재하지 않는 상품입니다.' };
 
@@ -797,20 +797,20 @@ class RPGShopManager {
 
         // 가격 확인 (포인트 / 가넷 / 골드)
         if (priceType === 'garnet') {
-            if (owner.garnet < price) return { success: false, message: `가넷이 부족합니다. (필요: ${price}, 보유: ${owner.garnet})` };
-            owner.garnet -= price;
+            if (character.garnet < price) return { success: false, message: `가넷이 부족합니다. (필요: ${price.toLocaleString()}, 보유: ${character.garnet.toLocaleString()})` };
+            character.garnet -= price;
         } else if (priceType === 'gold') {
-            if (owner.gold < price) return { success: false, message: `골드가 부족합니다. (필요: ${price}, 보유: ${owner.gold})` };
-            owner.gold -= price;
+            if (character.gold < price) return { success: false, message: `골드가 부족합니다. (필요: ${price.toLocaleString()}, 보유: ${character.gold.toLocaleString()})` };
+            character.gold -= price;
         } else {
             // 포인트
-            if (owner.point < price) return { success: false, message: `포인트가 부족합니다. (필요: ${price}, 보유: ${owner.point})` };
+            if (owner.point < price) return { success: false, message: `포인트가 부족합니다. (필요: ${price.toLocaleString()}, 보유: ${owner.point.toLocaleString()})` };
             owner.point -= price;
         }
 
         // 아이템 지급
         if (item.type === 'currency' && item.name === '가넷') {
-            owner.garnet += item.count;
+            character.garnet += item.count;
         } else {
             inventory.addConsumable({ name: item.name, count: item.count || 1 });
         }
@@ -1001,23 +1001,23 @@ class RPGTradeManager {
             price, currency: 'gold', timestamp: Date.now()
         };
         this.auctionListings.push(listing);
-        return { success: true, message: `경매장에 ${itemName} x${count} 등록 완료! (${price.toLocaleString()} 골드)`, listing };
+        return { success: true, message: `경매장에 ${itemName} x${count.toLocaleString()} 등록 완료! (${price.toLocaleString()} 골드)`, listing };
     }
 
-    auctionBuy(buyerId, listingId, buyerOwner) {
+    auctionBuy(buyerId, listingId, buyerCharacter) {
         const idx = this.auctionListings.findIndex(l => l.id === listingId);
         if (idx === -1) return { success: false, message: '존재하지 않는 매물입니다.' };
         const listing = this.auctionListings[idx];
         if (listing.sellerId === buyerId) return { success: false, message: '자신의 매물은 구매할 수 없습니다.' };
-        if (buyerOwner.gold < listing.price) return { success: false, message: `골드가 부족합니다. (필요: ${listing.price.toLocaleString()})` };
+        if (buyerCharacter.gold < listing.price) return { success: false, message: `골드가 부족합니다. (필요: ${listing.price.toLocaleString()})` };
 
-        buyerOwner.gold -= listing.price;
+        buyerCharacter.gold -= listing.price;
         this.auctionListings.splice(idx, 1);
 
         // 판매자에게 골드 우편 발송
         this._sendMail(listing.sellerId, 'system', '경매장', 'gold', null, 0, Math.floor(listing.price * 0.95), `${listing.itemName} 판매 대금 (수수료 5%)`);
 
-        return { success: true, message: `${listing.itemName} x${listing.count} 구매 완료!`, item: { name: listing.itemName, count: listing.count } };
+        return { success: true, message: `${listing.itemName} x${listing.count.toLocaleString()} 구매 완료!`, item: { name: listing.itemName, count: listing.count } };
     }
 
     auctionCancel(sellerId, listingId) {
@@ -1048,22 +1048,22 @@ class RPGTradeManager {
             price, currency: 'garnet', timestamp: Date.now()
         };
         this.exchangeListings.push(listing);
-        return { success: true, message: `거래소에 ${itemName} x${count} 등록 완료! (${price.toLocaleString()} 가넷)`, listing };
+        return { success: true, message: `거래소에 ${itemName} x${count.toLocaleString()} 등록 완료! (${price.toLocaleString()} 가넷)`, listing };
     }
 
-    exchangeBuy(buyerId, listingId, buyerOwner) {
+    exchangeBuy(buyerId, listingId, buyerCharacter) {
         const idx = this.exchangeListings.findIndex(l => l.id === listingId);
         if (idx === -1) return { success: false, message: '존재하지 않는 매물입니다.' };
         const listing = this.exchangeListings[idx];
         if (listing.sellerId === buyerId) return { success: false, message: '자신의 매물은 구매할 수 없습니다.' };
-        if (buyerOwner.garnet < listing.price) return { success: false, message: `가넷이 부족합니다. (필요: ${listing.price.toLocaleString()})` };
+        if (buyerCharacter.garnet < listing.price) return { success: false, message: `가넷이 부족합니다. (필요: ${listing.price.toLocaleString()})` };
 
-        buyerOwner.garnet -= listing.price;
+        buyerCharacter.garnet -= listing.price;
         this.exchangeListings.splice(idx, 1);
 
         this._sendMail(listing.sellerId, 'system', '거래소', 'garnet', null, 0, Math.floor(listing.price * 0.95), `${listing.itemName} 판매 대금 (수수료 5%)`);
 
-        return { success: true, message: `${listing.itemName} x${listing.count} 구매 완료!`, item: { name: listing.itemName, count: listing.count } };
+        return { success: true, message: `${listing.itemName} x${listing.count.toLocaleString()} 구매 완료!`, item: { name: listing.itemName, count: listing.count } };
     }
 
     getExchangeListings(page = 1, perPage = 10) {
@@ -2557,19 +2557,19 @@ class RPGBattle {
                 if (costInfo.type === 'GP') {
                     const currentGp = playerStat.gp !== undefined ? playerStat.gp : 0;
                     if (currentGp < costInfo.amount) {
-                        return { success: false, message: `GP가 부족합니다. (필요: ${costInfo.amount}, 보유: ${currentGp})` };
+                        return { success: false, message: `GP가 부족합니다. (필요: ${costInfo.amount.toLocaleString()}, 보유: ${currentGp.toLocaleString()})` };
                     }
                     playerStat.gp = currentGp - costInfo.amount;
                 } else if (costInfo.type === 'MP') {
                     const currentMp = playerStat.mp !== undefined ? playerStat.mp : 0;
                     if (currentMp < costInfo.amount) {
-                        return { success: false, message: `MP가 부족합니다. (필요: ${costInfo.amount}, 보유: ${currentMp})` };
+                        return { success: false, message: `MP가 부족합니다. (필요: ${costInfo.amount.toLocaleString()}, 보유: ${currentMp.toLocaleString()})` };
                     }
                     playerStat.mp = currentMp - costInfo.amount;
                 } else if (costInfo.type === 'HP') {
                     const hpCost = Math.floor(playerStat.maxHp * costInfo.amount / 100);
                     if (playerStat.hp <= hpCost) {
-                        return { success: false, message: `HP가 부족합니다. (필요: ${hpCost})` };
+                        return { success: false, message: `HP가 부족합니다. (필요: ${hpCost.toLocaleString()})` };
                     }
                     playerStat.hp -= hpCost;
                 }
@@ -2635,7 +2635,7 @@ class RPGBattle {
             // 무력화 게이지 적용
             if (skillDetail.stagger && this.monster.staggerGauge) {
                 this.monster.staggerGauge.current = Math.max(0, this.monster.staggerGauge.current - skillDetail.stagger);
-                turnLog.push(`   무력화: -${skillDetail.stagger} (${this.monster.staggerGauge.current}/${this.monster.staggerGauge.max})`);
+                turnLog.push(`   무력화: -${skillDetail.stagger.toLocaleString()} (${this.monster.staggerGauge.current.toLocaleString()}/${this.monster.staggerGauge.max.toLocaleString()})`);
                 if (this.monster.staggerGauge.current <= 0) {
                     turnLog.push(`   🔓 ${this.tempObj.name.monster} 무력화!`);
                     this.tempObj.effects.monster.stunned = 1;
@@ -2650,25 +2650,25 @@ class RPGBattle {
                 const bonus = buff.atkBonus.base + (buff.atkBonus.perLevel || 0) * (skill.level - 1);
                 const duration = typeof buff.duration === 'object' ? buff.duration.base + (buff.duration.perLevel || 0) * (skill.level - 1) : (buff.duration || 2);
                 this.tempObj.effects.player.atkBuff = { percent: bonus, turns: duration };
-                turnLog.push(`   공격력 +${bonus}% (${duration}턴)`);
+                turnLog.push(`   공격력 +${bonus.toLocaleString()}% (${duration}턴)`);
             } else if (buff.type === 'evasionUp') {
                 const bonus = buff.evasionBonus.base + (buff.evasionBonus.perLevel || 0) * (skill.level - 1);
                 this.tempObj.effects.player.evasionBuff = { percent: bonus, turns: buff.duration || 2 };
-                turnLog.push(`   회피율 +${bonus}% (${buff.duration || 2}턴)`);
+                turnLog.push(`   회피율 +${bonus.toLocaleString()}% (${buff.duration || 2}턴)`);
             } else if (buff.type === 'skillDmgUp') {
                 const bonus = buff.skillDmgBonus.base + (buff.skillDmgBonus.perLevel || 0) * (skill.level - 1);
                 const duration = typeof buff.duration === 'object' ? buff.duration.base + (buff.duration.perLevel || 0) * (skill.level - 1) : (buff.duration || 2);
                 this.tempObj.effects.player.skillDmgBuff = { percent: bonus, turns: duration };
-                turnLog.push(`   스킬 데미지 +${bonus}% (${duration}턴)`);
+                turnLog.push(`   스킬 데미지 +${bonus.toLocaleString()}% (${duration}턴)`);
             } else if (buff.type === 'critBuff') {
                 const critChance = buff.critChance.base + (buff.critChance.perLevel || 0) * (skill.level - 1);
                 const critDmg = buff.critDamage.base + (buff.critDamage.perLevel || 0) * (skill.level - 1);
                 this.tempObj.effects.player.critBuff = { critChance, critDamage: critDmg, turns: buff.duration || 3 };
-                turnLog.push(`   치명타 확률 +${critChance}%, 치명타 피해 +${critDmg}% (${buff.duration || 3}턴)`);
+                turnLog.push(`   치명타 확률 +${critChance.toLocaleString()}%, 치명타 피해 +${critDmg.toLocaleString()}% (${buff.duration || 3}턴)`);
             } else if (buff.type === 'guaranteeCrit') {
                 const bonus = buff.atkBonus ? buff.atkBonus.base + (buff.atkBonus.perLevel || 0) * (skill.level - 1) : 0;
                 this.tempObj.effects.player.guaranteeCrit = { turns: buff.duration || 1, atkBonus: bonus };
-                turnLog.push(`   다음 턴 치명타 확정! 공격력 +${bonus}%`);
+                turnLog.push(`   다음 턴 치명타 확정! 공격력 +${bonus.toLocaleString()}%`);
             }
         } else if (skillDetail && skillDetail.cc) {
             // CC 스킬 처리
@@ -2685,7 +2685,7 @@ class RPGBattle {
                 const buff = skillDetail.buff;
                 const bonus = buff.atkBonus.base + (buff.atkBonus.perLevel || 0) * (skill.level - 1);
                 this.tempObj.effects.player.atkBuff = { percent: bonus, turns: buff.duration || 3 };
-                turnLog.push(`   공격력 +${bonus}% (${buff.duration || 3}턴)`);
+                turnLog.push(`   공격력 +${bonus.toLocaleString()}% (${buff.duration || 3}턴)`);
             }
         } else {
             // 스킬 데이터가 없는 경우 기존 폴백 로직
@@ -2774,7 +2774,7 @@ class RPGBattle {
             turnLog.push(`   ${this.tempObj.name.player} HP: ${this.tempObj.stat.player.hp.toLocaleString()}/${this.tempObj.stat.player.maxHp.toLocaleString()}`);
         } else if (effects.stunGauge) {
             // 회오리폭탄 등 무력화 아이템
-            turnLog.push(`💣 ${itemName} 사용! 무력화 게이지 ${effects.stunGauge} 적용!`);
+            turnLog.push(`💣 ${itemName} 사용! 무력화 게이지 ${effects.stunGauge.toLocaleString()} 적용!`);
         } else if (effects.breakLevel) {
             // 파괴폭탄
             turnLog.push(`💣 ${itemName} 사용! 파괴 레벨 ${effects.breakLevel} 적용!`);
@@ -2945,7 +2945,7 @@ class RPGBattle {
                     const count = fix.min + Math.floor(Math.random() * (fix.max - fix.min + 1));
                     if (count > 0) {
                         collectedRewards.items.push({ name: fix.name, count });
-                        endLog.push(`• ${fix.name} x${count}`);
+                        endLog.push(`• ${fix.name} x${count.toLocaleString()}`);
                     }
                 }
             }
@@ -2955,7 +2955,7 @@ class RPGBattle {
                 for (const bon of dungeonRewards.bonus) {
                     if (Math.random() * 100 < bon.chance) {
                         collectedRewards.items.push({ name: bon.name, count: bon.count });
-                        endLog.push(`• 🔷 ${bon.name} x${bon.count}`);
+                        endLog.push(`• 🔷 ${bon.name} x${bon.count.toLocaleString()}`);
                     }
                 }
             }
@@ -2969,7 +2969,7 @@ class RPGBattle {
             for (const gd of globalDrops) {
                 if (Math.random() * 100 < gd.chance) {
                     collectedRewards.items.push({ name: gd.name, count: gd.count });
-                    endLog.push(`• 🌟 ${gd.name} x${gd.count}`);
+                    endLog.push(`• 🌟 ${gd.name} x${gd.count.toLocaleString()}`);
                 }
             }
             

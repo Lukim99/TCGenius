@@ -80,15 +80,52 @@ const activeBattles = new Map(); // userId -> RPGBattle instance
 const activeDungeons = new Map(); // userId -> { dungeon, phaseIndex, monsterIndex, monstersRemaining }
 
 // 던전 진행 처리 헬퍼 (전투 승리 후 다음 몬스터 스폰 또는 던전 클리어)
-async function _advanceDungeon(userId, character, owner, victoryData, battleMsg) {
+async function _advanceDungeon(userId, character, owner, oldBattle, victoryData, battleMsg) {
+    // HP 동기화 (이전 전투 결과를 새 캐릭터 객체에 반영)
+    if (oldBattle && oldBattle.character) {
+        character.hp.current = oldBattle.character.hp.current;
+    }
+
     // 보상 분배
     if (victoryData.rewards) {
         character.gainExp(victoryData.rewards.exp);
-        if (victoryData.rewards.gold > 0) owner.gold += victoryData.rewards.gold;
+        if (victoryData.rewards.gold > 0) character.gold += victoryData.rewards.gold;
         for (const item of victoryData.rewards.items || []) {
-            character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+            if (item.isEquipment || item.type === 'equipment') {
+                const baseEquipment = equipmentManager.findEquipmentByName(item.name);
+                if (baseEquipment) {
+                    let equipmentData = null;
+                    if (baseEquipment.category === 'weapon') {
+                        const index = equipmentManager.weapons.findIndex(e => e.name === item.name);
+                        if (index !== -1) equipmentData = equipmentManager.createEquipmentInstance(index, 'weapon');
+                    } else if (baseEquipment.category === 'armor') {
+                        const index = equipmentManager.armors.findIndex(e => e.name === item.name);
+                        if (index !== -1) equipmentData = equipmentManager.createEquipmentInstance(index, 'armor');
+                    } else if (baseEquipment.category === 'accessory') {
+                        const index = equipmentManager.accessories.findIndex(e => e.name === item.name);
+                        if (index !== -1) equipmentData = equipmentManager.createEquipmentInstance(index, 'accessory');
+                    }
+                    if (equipmentData) {
+                        const equipment = new RPGEquipment(
+                            `equip_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+                            equipmentData.name,
+                            equipmentData.type,
+                            equipmentData.rarity,
+                            equipmentData.level,
+                            equipmentData.stats || {}
+                        ).load(equipmentData);
+                        character.addEquipmentToInventory(equipment);
+                    } else {
+                        character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                    }
+                } else {
+                    character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+                }
+            } else {
+                character.addConsumableToInventory(item.name, item.type || '아이템', item.count || 1);
+            }
         }
-        await owner.save();
+        await character.save();
     }
 
     const ds = activeDungeons.get(userId);
@@ -2216,9 +2253,8 @@ class RPGOwner {
         this.characters = []; // 최대 5개의 캐릭터 ID 배열
         this.maxCharacters = 5;
         this.activeCharacter = null; // 현재 선택된 캐릭터 ID
-        this.gold = 0;    // 골드 화폐
-        this.garnet = 0;  // 가넷 화폐 (캐시)
         this.point = 0;   // 포인트
+        this.total_point = 0; // 누적 포인트 (차감 안 됨, 별도 명령어로만 차감)
     }
 
     load(data) {
@@ -2228,9 +2264,8 @@ class RPGOwner {
         this.characters = data.characters || [];
         this.maxCharacters = data.maxCharacters || 5;
         this.activeCharacter = data.activeCharacter || null;
-        this.gold = data.gold || 0;
-        this.garnet = data.garnet || 0;
         this.point = data.point || 0;
+        this.total_point = data.total_point || 0;
 
         return this;
     }
@@ -2247,9 +2282,8 @@ class RPGOwner {
             characters: this.characters,
             maxCharacters: this.maxCharacters,
             activeCharacter: this.activeCharacter,
-            gold: this.gold,
-            garnet: this.garnet,
-            point: this.point
+            point: this.point,
+            total_point: this.total_point
         };
     }
 
@@ -2349,6 +2383,8 @@ class RPGUser {
         
         // 기타
         this.sp = 0; // 스킬 포인트
+        this.gold = 0;    // 골드 화폐
+        this.garnet = 0;  // 가넷 화폐 (캐시)
         
         // 피로도 시스템
         this.fatigue = { current: 156, max: 156 }; // 피로도 (156 기본)
@@ -2380,6 +2416,8 @@ class RPGUser {
         if (data.gpResource) this.gpResource.load(data.gpResource);
         if (data.mpResource) this.mpResource.load(data.mpResource);
         if (data.gunpowerResource) this.gunpowerResource.load(data.gunpowerResource);
+        this.gold = data.gold || 0;
+        this.garnet = data.garnet || 0;
         
         // 피로도
         if (data.fatigue) this.fatigue = data.fatigue;
@@ -2402,7 +2440,7 @@ class RPGUser {
     consumeFatigue(amount) {
         this._checkFatigueReset();
         if (this.fatigue.current < amount) {
-            return { success: false, message: `피로도가 부족합니다. (필요: ${amount}, 보유: ${this.fatigue.current})` };
+            return { success: false, message: `피로도가 부족합니다. (필요: ${amount.toLocaleString()}, 보유: ${this.fatigue.current.toLocaleString()})` };
         }
         this.fatigue.current -= amount;
         return { success: true, remaining: this.fatigue.current };
@@ -2436,7 +2474,9 @@ class RPGUser {
             mpResource: this.mpResource.toJSON(),
             gunpowerResource: this.gunpowerResource.toJSON(),
             fatigue: this.fatigue,
-            fatigueLastReset: this.fatigueLastReset
+            fatigueLastReset: this.fatigueLastReset,
+            gold: this.gold,
+            garnet: this.garnet
         };
     }
 
@@ -2855,24 +2895,24 @@ class RPGUser {
         const info = [];
         info.push(`[ ${this.name} 캐릭터 정보 ]`);
         info.push(`[${this.job}] ${this.name}`);
-        info.push(`Lv.${this.level.level} (${this.level.exp}/${this.level.getRequiredExp()})`);
-        info.push(`HP: ${this.hp.max}`);
+        info.push(`Lv.${this.level.level} (${this.level.exp.toLocaleString()}/${this.level.getRequiredExp().toLocaleString()})`);
+        info.push(`HP: ${this.hp.max.toLocaleString()}`);
         info.push(``);
         info.push(`· 스탯`);
-        info.push(`  힘: ${this.stats.power} | 속도: ${this.stats.speed}`);
-        info.push(`  지능: ${this.stats.int} | 행운: ${this.stats.luck}`);
+        info.push(`  힘: ${this.stats.power.toLocaleString()} | 속도: ${this.stats.speed.toLocaleString()}`);
+        info.push(`  지능: ${this.stats.int.toLocaleString()} | 행운: ${this.stats.luck.toLocaleString()}`);
         info.push(``);
-        info.push(`· 공격력: ${this.getAttackPower()}`);
+        info.push(`· 공격력: ${this.getAttackPower().toLocaleString()}`);
         info.push(`· 치명타: ${this.getCritChance().toFixed(1)}% (${this.getCritDamage().toFixed(0)}%)`);
         info.push(`· 회피율: ${this.getEvasion().toFixed(1)}%`);
         
         // 리소스 표시
         if (this.job === '성준호') {
-            info.push(`· GP: ${this.gpResource.current}/${this.gpResource.max}`);
+            info.push(`· GP: ${this.gpResource.current.toLocaleString()}/${this.gpResource.max.toLocaleString()}`);
         } else if (this.job === '빵귤') {
-            info.push(`· MP: ${this.mpResource.current}`);
+            info.push(`· MP: ${this.mpResource.current.toLocaleString()}`);
         } else if (this.job === '건마') {
-            info.push(`· 건력: ${this.gunpowerResource.current}/${this.gunpowerResource.max}`);
+            info.push(`· 건력: ${this.gunpowerResource.current.toLocaleString()}/${this.gunpowerResource.max.toLocaleString()}`);
         }
         
         if (this.awakening.isAwakened) {
@@ -2937,7 +2977,7 @@ class RPGUser {
         info.push(`\n[소모품] (${this.inventory.consumables.size}종류)`);
         if (this.inventory.consumables.size > 0) {
             for (let [name, item] of this.inventory.consumables) {
-                info.push(`• ${name} x${item.count}`);
+                info.push(`• ${name} x${item.count.toLocaleString()}`);
             }
         }
         
@@ -11737,8 +11777,8 @@ client.on('chat', async (data, channel) => {
                     return;
                 }
 
-                // ===== 스킬 명령어 =====
-                if (args[0] === "스킬" || args[0] === "스킬정보") {
+                // ===== 스킬목록 명령어 =====
+                if (args[0] === "스킬목록" || args[0] === "스킬정보") {
                     const skillInfo = character.getSkillInfo();
                     const skillLines = skillInfo.split('\n');
                     skillLines.splice(1, 0, VIEWMORE);
@@ -11777,7 +11817,7 @@ client.on('chat', async (data, channel) => {
                         inventoryInfo.push(`【소모품】 ${consumables.size}종`);
                         inventoryInfo.push(``);
                         for (let [name, item] of consumables) {
-                            inventoryInfo.push(`  • ${name} x${item.count}`);
+                            inventoryInfo.push(`  • ${name} x${item.count.toLocaleString()}`);
                         }
                     }
                     
@@ -11809,7 +11849,7 @@ client.on('chat', async (data, channel) => {
                     
                     character._checkFatigueReset();
                     const dungeonList = [];
-                    dungeonList.push(`[ 던전 목록 ] 피로도: ${character.fatigue.current}/${character.fatigue.max}`);
+                    dungeonList.push(`[ 던전 목록 ] 피로도: ${character.fatigue.current.toLocaleString()}/${character.fatigue.max.toLocaleString()}`);
                     dungeonList.push(VIEWMORE);
                     
                     availableDungeons.forEach((dungeon, idx) => {
@@ -11866,6 +11906,7 @@ client.on('chat', async (data, channel) => {
                     
                     if (monsterQueue.length === 0) {
                         character.recoverFatigue(fatigueCost);
+                        await character.save();
                         channel.sendChat("❌ 던전 데이터에 몬스터가 없습니다.");
                         return;
                     }
@@ -11876,6 +11917,7 @@ client.on('chat', async (data, channel) => {
                     
                     if (!monster) {
                         character.recoverFatigue(fatigueCost);
+                        await character.save();
                         channel.sendChat("❌ 몬스터 생성에 실패했습니다.");
                         return;
                     }
@@ -11896,12 +11938,14 @@ client.on('chat', async (data, channel) => {
                     const status = battle.getBattleStatus();
                     const battleMsg = [];
                     battleMsg.push(`━━━ ${selectedDungeon.name} ━━━`);
+                    battleMsg.push(`⚡ 피로도 -${fatigueCost} (${character.fatigue.current.toLocaleString()}/${character.fatigue.max.toLocaleString()})`);
+                    battleMsg.push(``);
                     battleMsg.push(`📍 ${monsterQueue[0].phase}페이즈 (1/${totalMonsters})`);
                     battleMsg.push(...status.log);
                     battleMsg.push(``);
                     battleMsg.push(`━━━━━━━━━━━━━━`);
-                    battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
-                    battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                    battleMsg.push(`${status.character.name}: HP ${status.character.hp.toLocaleString()}/${status.character.maxHp.toLocaleString()}`);
+                    battleMsg.push(`${status.monster.name}: HP ${status.monster.hp.toLocaleString()}/${status.monster.maxHp.toLocaleString()}`);
                     battleMsg.push(`━━━━━━━━━━━━━━`);
                     
                     if (status.isPlayerTurn) {
@@ -11962,7 +12006,7 @@ client.on('chat', async (data, channel) => {
                     
                     if (!battle.isActive) {
                         if (victoryData) {
-                            await _advanceDungeon(userId, character, owner, victoryData, battleMsg);
+                            await _advanceDungeon(userId, character, owner, battle, victoryData, battleMsg);
                         } else {
                             activeBattles.delete(userId);
                             activeDungeons.delete(userId);
@@ -11975,8 +12019,8 @@ client.on('chat', async (data, channel) => {
                         const status = cb.getBattleStatus();
                         battleMsg.push(``);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
-                        battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
-                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                        battleMsg.push(`${status.character.name}: HP ${status.character.hp.toLocaleString()}/${status.character.maxHp.toLocaleString()}`);
+                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp.toLocaleString()}/${status.monster.maxHp.toLocaleString()}`);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
                         battleMsg.push(``);
                         battleMsg.push(`[ 행동 선택 ]`);
@@ -11990,7 +12034,7 @@ client.on('chat', async (data, channel) => {
 
                 if (args[0] === "스킬") {
                     if (!battle) {
-                        channel.sendChat("❌ 전투 중이 아닙니다.");
+                        channel.sendChat("❌ 전투 중이 아닙니다.\n스킬 목록은 /RPGenius 스킬목록 으로 확인하세요.");
                         return;
                     }
                     
@@ -12024,7 +12068,7 @@ client.on('chat', async (data, channel) => {
                     
                     if (!battle.isActive) {
                         if (victoryData) {
-                            await _advanceDungeon(userId, character, owner, victoryData, battleMsg);
+                            await _advanceDungeon(userId, character, owner, battle, victoryData, battleMsg);
                         } else {
                             activeBattles.delete(userId);
                             activeDungeons.delete(userId);
@@ -12036,8 +12080,8 @@ client.on('chat', async (data, channel) => {
                         const status = cb.getBattleStatus();
                         battleMsg.push(``);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
-                        battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
-                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                        battleMsg.push(`${status.character.name}: HP ${status.character.hp.toLocaleString()}/${status.character.maxHp.toLocaleString()}`);
+                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp.toLocaleString()}/${status.monster.maxHp.toLocaleString()}`);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
                         battleMsg.push(``);
                         battleMsg.push(`[ 행동 선택 ]`);
@@ -12081,7 +12125,7 @@ client.on('chat', async (data, channel) => {
                     
                     if (!battle.isActive) {
                         if (victoryData) {
-                            await _advanceDungeon(userId, character, owner, victoryData, battleMsg);
+                            await _advanceDungeon(userId, character, owner, battle, victoryData, battleMsg);
                         } else {
                             activeBattles.delete(userId);
                             activeDungeons.delete(userId);
@@ -12093,8 +12137,8 @@ client.on('chat', async (data, channel) => {
                         const status = cb.getBattleStatus();
                         battleMsg.push(``);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
-                        battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
-                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                        battleMsg.push(`${status.character.name}: HP ${status.character.hp.toLocaleString()}/${status.character.maxHp.toLocaleString()}`);
+                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp.toLocaleString()}/${status.monster.maxHp.toLocaleString()}`);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
                         battleMsg.push(``);
                         battleMsg.push(`[ 행동 선택 ]`);
@@ -12141,8 +12185,8 @@ client.on('chat', async (data, channel) => {
                         const status = cb.getBattleStatus();
                         battleMsg.push(``);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
-                        battleMsg.push(`${status.character.name}: HP ${status.character.hp}/${status.character.maxHp}`);
-                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp}/${status.monster.maxHp}`);
+                        battleMsg.push(`${status.character.name}: HP ${status.character.hp.toLocaleString()}/${status.character.maxHp.toLocaleString()}`);
+                        battleMsg.push(`${status.monster.name}: HP ${status.monster.hp.toLocaleString()}/${status.monster.maxHp.toLocaleString()}`);
                         battleMsg.push(`━━━━━━━━━━━━━━`);
                         battleMsg.push(``);
                         battleMsg.push(`[ 행동 선택 ]`);
@@ -12157,12 +12201,145 @@ client.on('chat', async (data, channel) => {
                 // ===== 지갑 명령어 =====
                 if (args[0] === "지갑" || args[0] === "화폐") {
                     const msg = [];
-                    msg.push(`━━━ ${owner.name}님의 지갑 ━━━`);
-                    msg.push(`💰 골드: ${owner.gold.toLocaleString()}`);
-                    msg.push(`💎 가넷: ${owner.garnet.toLocaleString()}`);
+                    msg.push(`━━━ ${character.name}님의 지갑 ━━━`);
+                    msg.push(`💰 골드: ${character.gold.toLocaleString()}`);
+                    msg.push(`💎 가넷: ${character.garnet.toLocaleString()}`);
                     msg.push(`⭐ 포인트: ${owner.point.toLocaleString()}`);
                     msg.push(`━━━━━━━━━━━━━━━`);
                     channel.sendChat(msg.join('\n'));
+                    return;
+                }
+
+                // ===== 관리자 명령어 =====
+                if (args[0] === "골드추가" || args[0] === "골드차감") {
+                    if (!isSenderManager) { channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.'); return; }
+                    const targetName = args[1];
+                    const amount = parseInt(args[2]);
+                    if (!targetName || isNaN(amount) || amount <= 0) {
+                        channel.sendChat(`❌ 사용법: /rpg ${args[0]} [캐릭터이름] [숫자]`);
+                        return;
+                    }
+                    const targetChar = await getRPGUserByName(targetName);
+                    if (!targetChar) { channel.sendChat(`❌ 캐릭터 "${targetName}"을(를) 찾을 수 없습니다.`); return; }
+                    if (args[0] === "골드추가") {
+                        targetChar.gold += amount;
+                        await targetChar.save();
+                        channel.sendChat(`✅ ${targetChar.name}에게 골드 ${amount.toLocaleString()}을(를) 추가했습니다. (보유: ${targetChar.gold.toLocaleString()})`);
+                    } else {
+                        targetChar.gold = Math.max(0, targetChar.gold - amount);
+                        await targetChar.save();
+                        channel.sendChat(`✅ ${targetChar.name}의 골드를 ${amount.toLocaleString()} 차감했습니다. (보유: ${targetChar.gold.toLocaleString()})`);
+                    }
+                    return;
+                }
+
+                if (args[0] === "가넷추가" || args[0] === "가넷차감") {
+                    if (!isSenderManager) { channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.'); return; }
+                    const targetName = args[1];
+                    const amount = parseInt(args[2]);
+                    if (!targetName || isNaN(amount) || amount <= 0) {
+                        channel.sendChat(`❌ 사용법: /rpg ${args[0]} [캐릭터이름] [숫자]`);
+                        return;
+                    }
+                    const targetChar = await getRPGUserByName(targetName);
+                    if (!targetChar) { channel.sendChat(`❌ 캐릭터 "${targetName}"을(를) 찾을 수 없습니다.`); return; }
+                    if (args[0] === "가넷추가") {
+                        targetChar.garnet += amount;
+                        await targetChar.save();
+                        channel.sendChat(`✅ ${targetChar.name}에게 가넷 ${amount.toLocaleString()}을(를) 추가했습니다. (보유: ${targetChar.garnet.toLocaleString()})`);
+                    } else {
+                        targetChar.garnet = Math.max(0, targetChar.garnet - amount);
+                        await targetChar.save();
+                        channel.sendChat(`✅ ${targetChar.name}의 가넷을 ${amount.toLocaleString()} 차감했습니다. (보유: ${targetChar.garnet.toLocaleString()})`);
+                    }
+                    return;
+                }
+
+                if (args[0] === "포인트추가" || args[0] === "포인트차감") {
+                    if (!isSenderManager) { channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.'); return; }
+                    const targetName = args[1];
+                    const amount = parseInt(args[2]);
+                    if (!targetName || isNaN(amount) || amount <= 0) {
+                        channel.sendChat(`❌ 사용법: /rpg ${args[0]} [Owner이름] [숫자]`);
+                        return;
+                    }
+                    const targetOwner = await getRPGOwnerByName(targetName);
+                    if (!targetOwner) { channel.sendChat(`❌ Owner "${targetName}"을(를) 찾을 수 없습니다.`); return; }
+                    if (args[0] === "포인트추가") {
+                        targetOwner.point += amount;
+                        targetOwner.total_point += amount;
+                        await targetOwner.save();
+                        channel.sendChat(`✅ ${targetOwner.name}님에게 포인트 ${amount.toLocaleString()}을(를) 추가했습니다. (보유: ${targetOwner.point.toLocaleString()} / 누적: ${targetOwner.total_point.toLocaleString()})`);
+                    } else {
+                        targetOwner.point = Math.max(0, targetOwner.point - amount);
+                        await targetOwner.save();
+                        channel.sendChat(`✅ ${targetOwner.name}님의 포인트를 ${amount.toLocaleString()} 차감했습니다. (보유: ${targetOwner.point.toLocaleString()} / 누적: ${targetOwner.total_point.toLocaleString()})`);
+                    }
+                    return;
+                }
+
+                if (args[0] === "누적포인트차감") {
+                    if (!isSenderManager) { channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.'); return; }
+                    const targetName = args[1];
+                    const amount = parseInt(args[2]);
+                    if (!targetName || isNaN(amount) || amount <= 0) {
+                        channel.sendChat(`❌ 사용법: /rpg 누적포인트차감 [Owner이름] [숫자]`);
+                        return;
+                    }
+                    const targetOwner = await getRPGOwnerByName(targetName);
+                    if (!targetOwner) { channel.sendChat(`❌ Owner "${targetName}"을(를) 찾을 수 없습니다.`); return; }
+                    targetOwner.total_point = Math.max(0, targetOwner.total_point - amount);
+                    await targetOwner.save();
+                    channel.sendChat(`✅ ${targetOwner.name}님의 누적 포인트를 ${amount.toLocaleString()} 차감했습니다. (누적: ${targetOwner.total_point.toLocaleString()})`);
+                    return;
+                }
+
+                if (args[0] === "경험치추가" || args[0] === "경험치차감") {
+                    if (!isSenderManager) { channel.sendChat('❌ 관리자만 사용할 수 있는 명령어입니다.'); return; }
+                    const targetName = args[1];
+                    const amount = parseInt(args[2]);
+                    if (!targetName || isNaN(amount) || amount <= 0) {
+                        channel.sendChat(`❌ 사용법: /rpg ${args[0]} [캐릭터이름] [숫자]`);
+                        return;
+                    }
+                    const targetChar = await getRPGUserByName(targetName);
+                    if (!targetChar) { channel.sendChat(`❌ 캐릭터 "${targetName}"을(를) 찾을 수 없습니다.`); return; }
+                    if (args[0] === "경험치추가") {
+                        const result = targetChar.gainExp(amount);
+                        await targetChar.save();
+                        let msg = `✅ ${targetChar.name}에게 경험치 ${amount.toLocaleString()}을(를) 추가했습니다.`;
+                        msg += `\n(Lv.${targetChar.level.level} | ${targetChar.level.exp.toLocaleString()}/${targetChar.level.getRequiredExp().toLocaleString()})`;
+                        if (result.leveledUp) {
+                            msg += `\n🎉 레벨업! → Lv.${targetChar.level.level}`;
+                        }
+                        channel.sendChat(msg);
+                    } else {
+                        const prevLevel = targetChar.level.level;
+                        let remaining = amount;
+                        while (remaining > 0) {
+                            if (targetChar.level.exp >= remaining) {
+                                targetChar.level.exp -= remaining;
+                                remaining = 0;
+                            } else {
+                                remaining -= targetChar.level.exp;
+                                targetChar.level.exp = 0;
+                                if (targetChar.level.level > 1) {
+                                    targetChar.level.level--;
+                                    targetChar.level.exp = targetChar.level.getRequiredExp() - 1;
+                                } else {
+                                    targetChar.level.exp = 0;
+                                    remaining = 0;
+                                }
+                            }
+                        }
+                        await targetChar.save();
+                        let msg = `✅ ${targetChar.name}의 경험치를 ${amount.toLocaleString()} 차감했습니다.`;
+                        msg += `\n(Lv.${targetChar.level.level} | ${targetChar.level.exp.toLocaleString()}/${targetChar.level.getRequiredExp().toLocaleString()})`;
+                        if (targetChar.level.level < prevLevel) {
+                            msg += `\n⬇️ 레벨다운! Lv.${prevLevel} → Lv.${targetChar.level.level}`;
+                        }
+                        channel.sendChat(msg);
+                    }
                     return;
                 }
 
@@ -12171,7 +12348,7 @@ client.on('chat', async (data, channel) => {
                     character._checkFatigueReset();
                     const pct = Math.floor(character.fatigue.current / character.fatigue.max * 100);
                     const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
-                    channel.sendChat(`⚡ 피로도: ${character.fatigue.current}/${character.fatigue.max} [${bar}] ${pct}%`);
+                    channel.sendChat(`⚡ 피로도: ${character.fatigue.current.toLocaleString()}/${character.fatigue.max.toLocaleString()} [${bar}] ${pct}%`);
                     return;
                 }
 
@@ -12301,16 +12478,16 @@ client.on('chat', async (data, channel) => {
                     const goldCost = equipmentManager.getEnhancementGoldCost(targetEnhancement, item.level, item.rarity);
 
                     if (!character.hasConsumable('강화석', stoneCost)) {
-                        channel.sendChat(`❌ 강화석이 부족합니다. (필요: ${stoneCost}개)`);
+                        channel.sendChat(`❌ 강화석이 부족합니다. (필요: ${stoneCost.toLocaleString()}개)`);
                         return;
                     }
-                    if (owner.gold < goldCost) {
-                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()}, 보유: ${owner.gold.toLocaleString()})`);
+                    if (character.gold < goldCost) {
+                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()}, 보유: ${character.gold.toLocaleString()})`);
                         return;
                     }
                     const result = equipmentManager.attemptEnhancement(oldEnhancement);
                     character.consumeItemFromInventory('강화석', stoneCost);
-                    owner.gold -= goldCost;
+                    character.gold -= goldCost;
                     item.enhancement = result.newEnhancement;
                     const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
                     const msg = [`━━━ 강화 결과 ━━━`, `${item.name}: +${oldEnhancement} → +${result.newEnhancement}`, resultText];
@@ -12319,7 +12496,6 @@ client.on('chat', async (data, channel) => {
                         msg.push(`장비가 파괴되었습니다...`);
                     }
                     await character.save();
-                    await owner.save();
                     channel.sendChat(msg.join('\n'));
                     return;
                 }
@@ -12348,11 +12524,11 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     if (!character.hasConsumable('순수한 결정체', crystalCost)) {
-                        channel.sendChat(`❌ 순수한 결정체가 부족합니다. (필요: ${crystalCost}개)`);
+                        channel.sendChat(`❌ 순수한 결정체가 부족합니다. (필요: ${crystalCost.toLocaleString()}개)`);
                         return;
                     }
-                    if (owner.gold < goldCost) {
-                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()})`);
+                    if (character.gold < goldCost) {
+                        channel.sendChat(`❌ 골드가 부족합니다. (필요: ${goldCost.toLocaleString()}, 보유: ${character.gold.toLocaleString()})`);
                         return;
                     }
                     if (!item.isAmplified) {
@@ -12362,7 +12538,7 @@ client.on('chat', async (data, channel) => {
                     const result = equipmentManager.attemptAmplification ? equipmentManager.attemptAmplification(oldAmplification) : { result: 'success', newAmplification: oldAmplification + 1 };
                     character.consumeItemFromInventory('증폭서', 1);
                     character.consumeItemFromInventory('순수한 결정체', crystalCost);
-                    owner.gold -= goldCost;
+                    character.gold -= goldCost;
                     item.amplification = result.newAmplification;
                     const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
                     const msg = [`━━━ 증폭 결과 ━━━`, `${item.name} (${item.ampStat}): +${oldAmplification} → +${result.newAmplification}`, resultText];
@@ -12371,7 +12547,6 @@ client.on('chat', async (data, channel) => {
                         msg.push(`장비가 파괴되었습니다...`);
                     }
                     await character.save();
-                    await owner.save();
                     channel.sendChat(msg.join('\n'));
                     return;
                 }
@@ -12389,7 +12564,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     await character.save();
-                    channel.sendChat(`✅ ${skillName} 스킬이 레벨업되었습니다! (남은 SP: ${character.sp})`);
+                    channel.sendChat(`✅ ${skillName} 스킬이 레벨업되었습니다! (남은 SP: ${character.sp.toLocaleString()})`);
                     return;
                 }
 
@@ -12399,7 +12574,7 @@ client.on('chat', async (data, channel) => {
                     const statName = statMap[args[1]] || args[1];
                     const amount = parseInt(args[2]) || 1;
                     if (!statName || !['power', 'speed', 'int', 'luck'].includes(statName)) {
-                        channel.sendChat(`❌ 올바른 스탯을 입력해주세요.\n/RPGenius 스탯투자 [힘/속도/지능/행운] [수치]\n현재 스탯: 힘${character.stats.power} 속도${character.stats.speed} 지능${character.stats.int} 행운${character.stats.luck}`);
+                        channel.sendChat(`❌ 올바른 스탯을 입력해주세요.\n/RPGenius 스탯투자 [힘/속도/지능/행운] [수치]\n현재 스탯: 힘${character.stats.power.toLocaleString()} 속도${character.stats.speed.toLocaleString()} 지능${character.stats.int.toLocaleString()} 행운${character.stats.luck.toLocaleString()}`);
                         return;
                     }
                     const result = character.increaseStat(statName, amount);
@@ -12408,7 +12583,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     await character.save();
-                    channel.sendChat(`✅ ${args[1] || statName} 스탯을 ${amount} 올렸습니다! (현재: ${character.stats[statName]})`);
+                    channel.sendChat(`✅ ${args[1] || statName} 스탯을 ${amount.toLocaleString()} 올렸습니다! (현재: ${character.stats[statName].toLocaleString()})`);
                     return;
                 }
 
@@ -12436,7 +12611,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     await character.save();
-                    channel.sendChat(`🌟 각성에 성공했습니다! 각성 스킬이 해금되었습니다.\n/RPGenius 스킬 로 확인해보세요.`);
+                    channel.sendChat(`🌟 각성에 성공했습니다! 각성 스킬이 해금되었습니다.\n/RPGenius 스킬목록 으로 확인해보세요.`);
                     return;
                 }
 
@@ -12452,7 +12627,7 @@ client.on('chat', async (data, channel) => {
                         msg.push(``);
                         msg.push(`< ${r.name} >`);
                         for (const m of (r.materials || [])) {
-                            msg.push(`- ${m.name} x${m.count}`);
+                            msg.push(`- ${m.name} x${m.count.toLocaleString()}`);
                         }
                         if (r.gold) msg.push(`- ${r.gold.toLocaleString()} 골드`);
                     });
@@ -12467,18 +12642,17 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     const recipeName = args.slice(1).join(' ');
-                    const canCraft = craftingManager.canCraft ? craftingManager.canCraft(recipeName, character.inventory, owner.gold) : null;
+                    const canCraft = craftingManager.canCraft ? craftingManager.canCraft(recipeName, character.inventory, character.gold) : null;
                     if (canCraft && !canCraft.success) {
                         channel.sendChat(`❌ ${canCraft.message}`);
                         return;
                     }
-                    const result = craftingManager.craft ? craftingManager.craft(recipeName, character.inventory, owner) : null;
+                    const result = craftingManager.craft ? craftingManager.craft(recipeName, character.inventory, character) : null;
                     if (!result || !result.success) {
                         channel.sendChat(`❌ ${result ? result.message : '제작에 실패했습니다.'}`);
                         return;
                     }
                     await character.save();
-                    await owner.save();
                     channel.sendChat(`✅ ${result.itemName || recipeName}을(를) 제작했습니다!`);
                     return;
                 }
@@ -12489,8 +12663,8 @@ client.on('chat', async (data, channel) => {
                         const rod = character.findConsumableInInventory ? character.findConsumableInInventory('낚싯대') : null;
                         const bait = character.findConsumableInInventory ? character.findConsumableInInventory('떡밥') : null;
                         const msg = [`━━━ 낚시 정보 ━━━`];
-                        msg.push(`🎣 낚싯대: ${rod ? `${rod.name} x${rod.count}` : '없음'}`);
-                        msg.push(`🪱 떡밥: ${bait ? `${bait.name} x${bait.count}` : '없음'}`);
+                        msg.push(`🎣 낚싯대: ${rod ? `${rod.name} x${rod.count.toLocaleString()}` : '없음'}`);
+                        msg.push(`🪱 떡밥: ${bait ? `${bait.name} x${bait.count.toLocaleString()}` : '없음'}`);
                         msg.push(`━━━━━━━━━━━━━━━`);
                         channel.sendChat(msg.join('\n'));
                         return;
@@ -12520,11 +12694,11 @@ client.on('chat', async (data, channel) => {
                     if (!drop) {
                         msg.push(`  아무것도 잡지 못했습니다...`);
                     } else {
-                        msg.push(`  🐟 ${drop.name} x${drop.count || 1}`);
+                        msg.push(`  🐟 ${drop.name} x${(drop.count || 1).toLocaleString()}`);
                         character.addConsumableToInventory(drop.name, drop.type || '물고기', drop.count || 1);
                     }
                     await character.save();
-                    channel.sendChat(msg.join('\\n'));
+                    channel.sendChat(msg.join('\n'));
                     return;
                 }
 
@@ -12669,7 +12843,7 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     for (let i = 0; i < qty; i++) {
-                        const r = shopManager.purchase(category, key, owner, character.inventory);
+                        const r = shopManager.purchase(category, key, character, owner, character.inventory);
                         if (!r.success) {
                             channel.sendChat(`❌ ${r.message}`);
                             return;
@@ -12677,7 +12851,7 @@ client.on('chat', async (data, channel) => {
                     }
                     await character.save();
                     await owner.save();
-                    channel.sendChat(`✅ ${itemName} x${qty}을(를) 구매했습니다!\n(잔액: 💰${owner.gold.toLocaleString()} 💎${owner.garnet.toLocaleString()} ⭐${owner.point.toLocaleString()})`);
+                    channel.sendChat(`✅ ${itemName} x${qty.toLocaleString()}을(를) 구매했습니다!\n(잔액: 💰${character.gold.toLocaleString()} 💎${character.garnet.toLocaleString()} ⭐${owner.point.toLocaleString()})`);
                     return;
                 }
 
@@ -12720,16 +12894,16 @@ client.on('chat', async (data, channel) => {
                         }
                         const result = tradeManager.auctionRegister(owner.id, owner.name, itemName, count, price);
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                        channel.sendChat(`✅ 경매장에 ${itemName} x${count}을(를) ${price.toLocaleString()}G에 등록했습니다. (수수료 5%)`);
+                        channel.sendChat(`✅ 경매장에 ${itemName} x${count.toLocaleString()}을(를) ${price.toLocaleString()}G에 등록했습니다. (수수료 5%)`);
                         return;
                     }
                     if (args[1] === "구매") {
                         const listingId = parseInt(args[2]);
                         if (isNaN(listingId)) { channel.sendChat(`❌ /RPGenius 경매장 구매 [매물번호]`); return; }
-                        const result = tradeManager.auctionBuy(owner.id, listingId, owner);
+                        const result = tradeManager.auctionBuy(owner.id, listingId, character);
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                        await owner.save();
-                        channel.sendChat(`✅ 매물 #${listingId}을(를) 구매했습니다! (${result.item.name} x${result.item.count})`);
+                        await character.save();
+                        channel.sendChat(`✅ 매물 #${listingId}을(를) 구매했습니다! (${result.item.name} x${result.item.count.toLocaleString()})`);
                         return;
                     }
                     if (args[1] === "취소") {
@@ -12768,7 +12942,7 @@ client.on('chat', async (data, channel) => {
                         (listings.listings).forEach(l => {
                             msg.push(``);
                             msg.push(`< ${l.itemName} > #${l.id}`);
-                            msg.push(`- ${l.count}개 / ${l.price.toLocaleString()}G`);
+                            msg.push(`- ${l.count.toLocaleString()}개 / ${l.price.toLocaleString()}G`);
                             msg.push(`- 판매자: ${l.sellerName}`);
                         });
                         msg.push(`\n${listings.page}/${listings.totalPages} 페이지`);
@@ -12807,15 +12981,15 @@ client.on('chat', async (data, channel) => {
                         }
                         const result = tradeManager.exchangeRegister(owner.id, owner.name, itemName, count, price);
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                        channel.sendChat(`✅ 거래소에 ${itemName} x${count}을(를) ${price}가넷에 등록했습니다.`);
+                        channel.sendChat(`✅ 거래소에 ${itemName} x${count.toLocaleString()}을(를) ${price.toLocaleString()}가넷에 등록했습니다.`);
                         return;
                     }
                     if (args[1] === "구매") {
                         const listingId = parseInt(args[2]);
                         if (isNaN(listingId)) { channel.sendChat(`❌ /RPGenius 거래소 구매 [매물번호]`); return; }
-                        const result = tradeManager.exchangeBuy(owner.id, listingId, owner);
+                        const result = tradeManager.exchangeBuy(owner.id, listingId, character);
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                        await owner.save();
+                        await character.save();
                         channel.sendChat(`✅ 매물 #${listingId}을(를) 구매했습니다!`);
                         return;
                     }
@@ -12828,7 +13002,7 @@ client.on('chat', async (data, channel) => {
                         (listings.listings).forEach(l => {
                             msg.push(``);
                             msg.push(`< ${l.itemName} > #${l.id}`);
-                            msg.push(`- ${l.count}개 / ${l.price.toLocaleString()}가넷`);
+                            msg.push(`- ${l.count.toLocaleString()}개 / ${l.price.toLocaleString()}가넷`);
                             msg.push(`- 판매자: ${l.sellerName}`);
                         });
                     }
@@ -12847,13 +13021,12 @@ client.on('chat', async (data, channel) => {
                         const mail = result.mail;
                         if (mail.type === 'item') {
                             character.addConsumableToInventory(mail.itemName, '아이템', mail.count);
-                            await character.save();
                         } else if (mail.type === 'garnet') {
-                            owner.garnet += mail.garnet;
+                            character.garnet += mail.garnet;
                         } else if (mail.type === 'gold') {
-                            owner.gold += mail.garnet;
+                            character.gold += mail.garnet;
                         }
-                        await owner.save();
+                        await character.save();
                         channel.sendChat(`✅ 우편 #${mailId}을(를) 수령했습니다!`);
                         return;
                     }
@@ -12862,11 +13035,10 @@ client.on('chat', async (data, channel) => {
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
                         result.claimed.forEach(c => {
                             if (c.type === 'item') character.addConsumableToInventory(c.itemName, '아이템', c.count);
-                            else if (c.type === 'garnet') owner.garnet += c.garnet;
-                            else if (c.type === 'gold') owner.gold += c.garnet;
+                            else if (c.type === 'garnet') character.garnet += c.garnet;
+                            else if (c.type === 'gold') character.gold += c.garnet;
                         });
                         await character.save();
-                        await owner.save();
                         channel.sendChat(`✅ ${result.claimed.length}개의 우편을 수령했습니다!`);
                         return;
                     }
@@ -12885,16 +13057,16 @@ client.on('chat', async (data, channel) => {
                             if (!itemName) { channel.sendChat(`❌ 아이템명을 입력해주세요.`); return; }
                             const result = tradeManager.sendItemMail(owner.id, owner.name, targetOwner.id, itemName, count);
                             if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                            channel.sendChat(`✅ ${toName}님에게 ${itemName} x${count}을(를) 우편으로 보냈습니다.`);
+                            channel.sendChat(`✅ ${toName}님에게 ${itemName} x${count.toLocaleString()}을(를) 우편으로 보냈습니다.`);
                         } else if (sendType === "가넷") {
                             const amount = parseInt(args[4]);
                             if (isNaN(amount) || amount <= 0) { channel.sendChat(`❌ 올바른 수량을 입력해주세요.`); return; }
-                            if (owner.garnet < amount) { channel.sendChat(`❌ 가넷이 부족합니다.`); return; }
+                            if (character.garnet < amount) { channel.sendChat(`❌ 가넷이 부족합니다.`); return; }
                             const result = tradeManager.sendGarnetMail(owner.id, owner.name, targetOwner.id, amount);
                             if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                            owner.garnet -= amount;
-                            await owner.save();
-                            channel.sendChat(`✅ ${toName}님에게 ${amount}가넷을 보냈습니다.`);
+                            character.garnet -= amount;
+                            await character.save();
+                            channel.sendChat(`✅ ${toName}님에게 ${amount.toLocaleString()}가넷을 보냈습니다.`);
                         }
                         return;
                     }
@@ -12903,7 +13075,7 @@ client.on('chat', async (data, channel) => {
                     const msg = [`━━━ 우편함 ━━━`];
                     if (mails.length > 0) {
                         mails.forEach(m => {
-                            const content = m.type === 'item' ? `${m.itemName} x${m.count}` : m.type === 'garnet' ? `${m.garnet}가넷` : `${m.garnet}G`;
+                            const content = m.type === 'item' ? `${m.itemName} x${m.count.toLocaleString()}` : m.type === 'garnet' ? `${m.garnet.toLocaleString()}가넷` : `${m.garnet.toLocaleString()}G`;
                             msg.push(`#${m.id} [${m.fromName}] ${content}${m.message ? ` "${m.message}"` : ''}`);
                         });
                     } else {
@@ -12930,7 +13102,7 @@ client.on('chat', async (data, channel) => {
                     if (!result) { channel.sendChat(`❌ 가챠 데이터를 불러올 수 없습니다.`); return; }
                     const msg = [`🔓 봉인된 자물쇠를 열었습니다!`, ``];
                     result.results.forEach(r => {
-                        msg.push(`  🎁 ${r.name} x${r.count}`);
+                        msg.push(`  🎁 ${r.name} x${r.count.toLocaleString()}`);
                         character.addConsumableToInventory(r.name, '아이템', r.count);
                     });
                     await character.save();
@@ -12952,11 +13124,11 @@ client.on('chat', async (data, channel) => {
                         const msg = [`━━━ 시즌패스 보상 수령 ━━━`, VIEWMORE];
                         unclaimed.forEach(r => {
                             const rewards = [].concat(r.free || [], (hasPlus ? (r.plus || []) : []));
-                            msg.push(`Lv.${r.level}: ${rewards.map(rw => `${rw.name || rw.item} x${rw.count || 1}`).join(', ')}`);
+                            msg.push(`Lv.${r.level}: ${rewards.map(rw => `${rw.name || rw.item} x${(rw.count || 1).toLocaleString()}`).join(', ')}`);
                             owner.passClaimedLevels.push(r.level);
                             rewards.forEach(rw => {
-                                if (rw.type === 'gold') owner.gold += (rw.count || rw.amount || 0);
-                                else if (rw.type === 'garnet') owner.garnet += (rw.count || rw.amount || 0);
+                                if (rw.type === 'gold') character.gold += (rw.count || rw.amount || 0);
+                                else if (rw.type === 'garnet') character.garnet += (rw.count || rw.amount || 0);
                                 else character.addConsumableToInventory(rw.name || rw.item, '아이템', rw.count || 1);
                             });
                         });
