@@ -10,6 +10,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
+const puppeteer = require('puppeteer-core');
 const { wrapper } = require('axios-cookiejar-support');
 const { CookieJar } = require('tough-cookie');
 const { createClient } = require('@supabase/supabase-js');
@@ -374,12 +375,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 const loginGetVisited = new Set();
                 
                 for (let i = 0; i < 15; i++) {
-                    if (loginGetVisited.has(loginPageUrl)) {
-                        console.log(`로그인 GET 루프 감지 (${i}회째): ${loginPageUrl}`);
-                        console.log("방문한 URL들:", [...loginGetVisited].join(' -> '));
-                        break;
-                    }
-                    loginGetVisited.add(loginPageUrl);
+                    const prevCookieCount = Object.keys(sessionCookies).length;
+                    const prevCookieStr = cookiesToString(sessionCookies);
                     
                     loginPageRes = await axios.get(loginPageUrl, {
                         httpsAgent: agent,
@@ -406,12 +403,22 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                     if (!nextLocation) break; // 리다이렉트 없으면 최종 페이지
                     
                     // 상대 경로 처리
+                    let nextUrl;
                     if (nextLocation.startsWith('/')) {
                         const u = new URL(loginPageUrl);
-                        loginPageUrl = `${u.protocol}//${u.host}${nextLocation}`;
+                        nextUrl = `${u.protocol}//${u.host}${nextLocation}`;
                     } else {
-                        loginPageUrl = nextLocation;
+                        nextUrl = nextLocation;
                     }
+                    
+                    // 진짜 무한 루프 감지: 같은 URL + 쿠키 변화 없음
+                    const newCookieStr = cookiesToString(sessionCookies);
+                    if (nextUrl === loginPageUrl && newCookieStr === prevCookieStr) {
+                        console.log(`진짜 루프 감지 (쿠키 변화 없음), 중단: ${nextUrl}`);
+                        break;
+                    }
+                    
+                    loginPageUrl = nextUrl;
                 }
                 
                 console.log("최종 로그인 페이지 URL:", loginPageUrl, "상태:", loginPageRes.status);
@@ -736,6 +743,280 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
 
     } catch (err) {
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: "IP 조회 실패" };
+    }
+}
+
+let puppeteerBusy = false;
+
+async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
+    if (puppeteerBusy) {
+        return { success: false, msg: "다른 로그인 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.", token: "없음", ip: "대기중" };
+    }
+    puppeteerBusy = true;
+    
+    let browser = null;
+    let currentIp = "확인 불가";
+    
+    try {
+        const proxyServer = `http://${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+        const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
+        const proxyPassword = PROXY_CONFIG.password;
+        
+        const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+        
+        browser = await puppeteer.launch({
+            executablePath: execPath,
+            headless: 'new',
+            args: [
+                `--proxy-server=${proxyServer}`,
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--single-process',
+                '--disable-background-networking',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--disable-software-rasterizer',
+                '--disable-logging',
+                '--no-first-run',
+                '--no-zygote',
+                '--js-flags=--max-old-space-size=64'
+            ]
+        });
+        
+        const page = await browser.newPage();
+        
+        await page.authenticate({
+            username: proxyUsername,
+            password: proxyPassword
+        });
+        
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        // IP 확인
+        try {
+            await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle0', timeout: 10000 });
+            const ipText = await page.evaluate(() => document.body.innerText);
+            const ipData = JSON.parse(ipText);
+            currentIp = ipData.ip;
+            console.log("Puppeteer 프록시 IP:", currentIp);
+        } catch (e) {
+            console.log("IP 조회 실패:", e.message);
+        }
+        
+        // 로그인 처리
+        if (id && password) {
+            console.log("=== Puppeteer 로그인 시작 ===");
+            
+            await page.goto('https://sign.dcinside.com/login', { 
+                waitUntil: 'networkidle2', 
+                timeout: 30000 
+            });
+            
+            console.log("로그인 페이지 URL:", page.url());
+            
+            // 로그인 폼 필드 확인
+            const formInfo = await page.evaluate(() => {
+                const inputs = [];
+                document.querySelectorAll('form input').forEach(el => {
+                    inputs.push({ name: el.name, type: el.type, id: el.id });
+                });
+                return {
+                    inputs,
+                    url: window.location.href,
+                    title: document.title
+                };
+            });
+            console.log("로그인 폼 필드:", JSON.stringify(formInfo.inputs));
+            console.log("페이지 타이틀:", formInfo.title);
+            
+            // ID 입력 (name 또는 id로 찾기)
+            const idSelector = await page.evaluate(() => {
+                const el = document.querySelector('input[name="user_id"]') || 
+                           document.querySelector('input[name="code"]') ||
+                           document.querySelector('input[type="text"][name]');
+                return el ? (el.name ? `input[name="${el.name}"]` : `input[type="text"]`) : null;
+            });
+            
+            const pwSelector = await page.evaluate(() => {
+                const el = document.querySelector('input[type="password"]');
+                return el ? (el.name ? `input[name="${el.name}"]` : 'input[type="password"]') : null;
+            });
+            
+            if (!idSelector || !pwSelector) {
+                console.log("로그인 폼을 찾을 수 없습니다.");
+                const pageContent = await page.content();
+                console.log("페이지 HTML (처음 2000자):", pageContent.substring(0, 2000));
+                await browser.close();
+                return { success: false, msg: "로그인 폼을 찾을 수 없습니다.", token: "없음", ip: currentIp };
+            }
+            
+            console.log(`ID 셀렉터: ${idSelector}, PW 셀렉터: ${pwSelector}`);
+            
+            // 입력 필드 클리어 후 타이핑
+            await page.click(idSelector);
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+            await page.type(idSelector, id, { delay: 50 });
+            
+            await page.click(pwSelector);
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+            await page.type(pwSelector, password, { delay: 50 });
+            
+            // 로그인 버튼 클릭
+            const submitSelector = await page.evaluate(() => {
+                const btn = document.querySelector('button[type="submit"]') ||
+                            document.querySelector('input[type="submit"]') ||
+                            document.querySelector('.btn_login') ||
+                            document.querySelector('#login_submit') ||
+                            document.querySelector('form button');
+                if (btn) {
+                    if (btn.id) return `#${btn.id}`;
+                    if (btn.className) return `.${btn.className.split(' ')[0]}`;
+                    return btn.tagName === 'BUTTON' ? 'form button' : 'input[type="submit"]';
+                }
+                return null;
+            });
+            
+            console.log("로그인 버튼 셀렉터:", submitSelector);
+            
+            if (submitSelector) {
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+                    page.click(submitSelector)
+                ]);
+            } else {
+                // 폼 직접 제출
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+                    page.evaluate(() => document.querySelector('form').submit())
+                ]);
+            }
+            
+            // 로그인 후 URL 및 쿠키 확인
+            console.log("로그인 후 URL:", page.url());
+            const cookies = await page.cookies();
+            const cookieNames = cookies.map(c => c.name);
+            console.log("로그인 후 쿠키:", cookieNames.join(', '));
+            
+            const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
+            const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
+            
+            if (foundLogin) {
+                console.log(`로그인 성공! (${foundLogin} 쿠키 확인)`);
+            } else {
+                console.log("로그인 실패 의심: 로그인 쿠키 없음");
+                // 로그인 페이지에 에러 메시지가 있는지 확인
+                const errorMsg = await page.evaluate(() => {
+                    const el = document.querySelector('.error_info') || 
+                               document.querySelector('.login_error') ||
+                               document.querySelector('.alert');
+                    return el ? el.textContent.trim() : null;
+                });
+                if (errorMsg) console.log("로그인 에러 메시지:", errorMsg);
+            }
+        }
+        
+        // 게시글 URL 파싱
+        const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
+        if (!urlMatch) {
+            await browser.close();
+            return { success: false, msg: "올바른 디시 링크가 아닙니다.", token: "없음", ip: currentIp };
+        }
+        const galleryId = urlMatch[1];
+        const postNo = urlMatch[2];
+        
+        // 모바일 게시글 페이지 방문
+        console.log("게시글 페이지 이동:", targetUrl);
+        
+        // 모바일 UA로 전환 (추천 API는 m.dcinside.com 사용)
+        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1');
+        
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+        
+        console.log("게시글 페이지 URL:", page.url());
+        
+        // CSRF 토큰 추출
+        const csrfToken = await page.evaluate(() => {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) return meta.getAttribute('content');
+            const input = document.querySelector('input[name="csrf_token"]') || 
+                         document.querySelector('input[name="_token"]');
+            if (input) return input.value;
+            const match = document.documentElement.innerHTML.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
+            return match ? match[1] : null;
+        });
+        
+        if (!csrfToken) {
+            const pageTitle = await page.title();
+            console.log("CSRF 토큰 없음. 페이지 타이틀:", pageTitle);
+            const htmlSnippet = await page.evaluate(() => document.documentElement.innerHTML.substring(0, 500));
+            console.log("HTML 요약:", htmlSnippet);
+            await browser.close();
+            return { success: false, msg: "한국 IP가 아니거나 차단된 IP입니다. (토큰 없음)", token: "없음", ip: currentIp };
+        }
+        
+        console.log("CSRF 토큰:", csrfToken);
+        
+        // 추천 POST 요청 (브라우저 컨텍스트에서 AJAX 실행)
+        const recommendUrl = mode === 'best' 
+            ? 'https://m.dcinside.com/bestcontent/recommend' 
+            : 'https://m.dcinside.com/ajax/recommend';
+        
+        const recommendType = mode === 'best' ? 'recommend_best' : 'recommend_join';
+        
+        const result = await page.evaluate(async (url, type, gId, pNo, token) => {
+            try {
+                const params = new URLSearchParams();
+                params.append('type', type);
+                params.append('id', gId);
+                params.append('no', pNo);
+                params.append('_token', token);
+                
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-Csrf-Token': token
+                    },
+                    body: params.toString(),
+                    credentials: 'include'
+                });
+                
+                const data = await res.json();
+                return { status: res.status, data };
+            } catch (e) {
+                return { status: 0, error: e.message };
+            }
+        }, recommendUrl, recommendType, galleryId, postNo, csrfToken);
+        
+        console.log("추천 응답:", JSON.stringify(result));
+        
+        await browser.close();
+        
+        if (result.error) {
+            return { success: false, msg: `추천 요청 에러: ${result.error}`, token: csrfToken, ip: currentIp };
+        }
+        
+        if (result.data && (result.data.result === true || result.data === 'success')) {
+            return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp };
+        } else {
+            return { success: false, msg: (result.data?.cause || "알 수 없음"), token: csrfToken, ip: currentIp };
+        }
+        
+    } catch (err) {
+        console.log("Puppeteer 에러:", err.message);
+        if (browser) await browser.close().catch(() => {});
+        return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp };
+    } finally {
+        puppeteerBusy = false;
     }
 }
 
@@ -5253,7 +5534,7 @@ client.on('chat', async (data, channel) => {
             channel.sendChat(`🤖 로그인하여 개추 누르는 중..`);
 
             // 추천 실행
-            const result = await doDcAction(link, 'normal', 'venus1684', 'yanga0800!');
+            const result = await doDcActionWithPuppeteer(link, 'normal', 'venus1684', 'yanga0800!');
 
             // 결과 보고
             if (result.success) {
