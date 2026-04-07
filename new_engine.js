@@ -367,25 +367,54 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 // 데스크톱 UA 사용 (로그인은 데스크톱 sign.dcinside.com 이용)
                 const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
                 
-                // 1단계: 로그인 페이지 GET → 세션 쿠키 + CSRF 토큰 확보
+                // 1단계: 로그인 페이지 GET → 리다이렉트 수동 추적
                 console.log("=== 데스크톱 로그인 시작 (sign.dcinside.com) ===");
-                const loginPageRes = await axios.get('https://sign.dcinside.com/login', {
-                    httpsAgent: agent,
-                    headers: {
-                        'User-Agent': desktopUA,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Connection': 'keep-alive',
-                        'Sec-Fetch-Mode': 'navigate',
-                        'Sec-Fetch-Site': 'none',
-                        'Sec-Fetch-Dest': 'document',
-                        'Sec-Fetch-User': '?1',
-                        'Upgrade-Insecure-Requests': '1'
-                    },
-                    responseType: 'text',
-                    maxRedirects: 10
-                });
-                console.log("로그인 페이지 GET 성공, 상태:", loginPageRes.status, "URL:", loginPageRes.request?.res?.responseUrl || '알 수 없음');
+                let loginPageUrl = 'https://sign.dcinside.com/login';
+                let loginPageRes;
+                const loginGetVisited = new Set();
+                
+                for (let i = 0; i < 15; i++) {
+                    if (loginGetVisited.has(loginPageUrl)) {
+                        console.log(`로그인 GET 루프 감지 (${i}회째): ${loginPageUrl}`);
+                        console.log("방문한 URL들:", [...loginGetVisited].join(' -> '));
+                        break;
+                    }
+                    loginGetVisited.add(loginPageUrl);
+                    
+                    loginPageRes = await axios.get(loginPageUrl, {
+                        httpsAgent: agent,
+                        headers: {
+                            'User-Agent': desktopUA,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Connection': 'keep-alive',
+                            'Sec-Fetch-Mode': 'navigate',
+                            'Sec-Fetch-Site': 'none',
+                            'Sec-Fetch-Dest': 'document',
+                            'Upgrade-Insecure-Requests': '1',
+                            'Cookie': cookiesToString(sessionCookies)
+                        },
+                        responseType: 'text',
+                        maxRedirects: 0,
+                        validateStatus: (status) => status >= 200 && status < 400
+                    });
+                    
+                    sessionCookies = mergeCookies(sessionCookies, parseCookies(loginPageRes.headers['set-cookie']));
+                    console.log(`로그인GET[${i}] 상태:${loginPageRes.status} URL:${loginPageUrl} Set-Cookie:${JSON.stringify(loginPageRes.headers['set-cookie'] || []).substring(0, 200)}`);
+                    
+                    const nextLocation = loginPageRes.headers['location'];
+                    if (!nextLocation) break; // 리다이렉트 없으면 최종 페이지
+                    
+                    // 상대 경로 처리
+                    if (nextLocation.startsWith('/')) {
+                        const u = new URL(loginPageUrl);
+                        loginPageUrl = `${u.protocol}//${u.host}${nextLocation}`;
+                    } else {
+                        loginPageUrl = nextLocation;
+                    }
+                }
+                
+                console.log("최종 로그인 페이지 URL:", loginPageUrl, "상태:", loginPageRes.status);
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginPageRes.headers['set-cookie']));
                 console.log("로그인 페이지 GET Set-Cookie:", JSON.stringify(loginPageRes.headers['set-cookie'] || []));
