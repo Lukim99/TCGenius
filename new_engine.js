@@ -749,99 +749,129 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
 let puppeteerRunning = 0;
 const PUPPETEER_MAX_CONCURRENT = 2;
 
-async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
-    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
-        return { success: false, msg: "동시 브라우저 한도 초과.", token: "없음", ip: "대기중", logs: ["대기열 초과"] };
+// 세션 쿠키 캐시: { accountId: { cookies: {}, savedAt: timestamp } }
+const dcSessionCache = {};
+const DC_SESSION_TTL = 3 * 60 * 60 * 1000; // 3시간
+
+function getCachedSession(accountId) {
+    const entry = dcSessionCache[accountId];
+    if (!entry) return null;
+    if (Date.now() - entry.savedAt > DC_SESSION_TTL) {
+        delete dcSessionCache[accountId];
+        return null;
     }
-    puppeteerRunning++;
-    
+    return entry.cookies;
+}
+
+function saveCachedSession(accountId, cookies) {
+    dcSessionCache[accountId] = { cookies: { ...cookies }, savedAt: Date.now() };
+}
+
+function invalidateSession(accountId) {
+    delete dcSessionCache[accountId];
+}
+
+async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
     let browser = null;
     let currentIp = "확인 불가";
     const logs = [];
     const log = (msg) => logs.push(msg);
     
     try {
-        const apiKey = process.env.BROWSERLESS_API_KEY;
-        if (!apiKey) {
-            return { success: false, msg: "BROWSERLESS_API_KEY 미설정", token: "없음", ip: currentIp, logs: ["API키 없음"] };
-        }
-        
-        // --- 1단계: Browserless.io로 로그인 ---
+        // --- 1단계: 세션 캐시 확인 또는 Browserless 로그인 ---
         let loginCookies = {};
         
         if (id && password) {
-            const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}`;
-            log("브라우저 연결");
-            
-            browser = await puppeteer.connect({
-                browserWSEndpoint: wsEndpoint,
-                protocolTimeout: 30000
-            });
-            
-            const page = await browser.newPage();
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-            
-            await page.goto('https://sign.dcinside.com/login', { 
-                waitUntil: 'domcontentloaded', 
-                timeout: 15000 
-            });
-            log("로그인 페이지 로드");
-            
-            // 셀렉터 찾기 + 값 입력 + 폼 제출을 한 번의 evaluate로 처리
-            const formResult = await page.evaluate((uid, upw) => {
-                const idEl = document.querySelector('input[name="user_id"]') || 
-                             document.querySelector('input[name="code"]') ||
-                             document.querySelector('input[type="text"][name]');
-                const pwEl = document.querySelector('input[type="password"]');
-                if (!idEl || !pwEl) return { ok: false };
-                
-                // 직접 value 설정 (타이핑 대신)
-                const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                nativeSet.call(idEl, uid);
-                idEl.dispatchEvent(new Event('input', { bubbles: true }));
-                nativeSet.call(pwEl, upw);
-                pwEl.dispatchEvent(new Event('input', { bubbles: true }));
-                
-                return { ok: true };
-            }, id, password);
-            
-            if (!formResult.ok) {
-                log("로그인 폼 없음");
-                await browser.close();
-                return { success: false, msg: "로그인 폼 없음", token: "없음", ip: currentIp, logs };
-            }
-            
-            // 로그인 제출
-            await Promise.all([
-                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                page.evaluate(() => {
-                    const btn = document.querySelector('button[type="submit"]') ||
-                                document.querySelector('input[type="submit"]') ||
-                                document.querySelector('.btn_login') ||
-                                document.querySelector('form button');
-                    if (btn) btn.click();
-                    else document.querySelector('form').submit();
-                })
-            ]);
-            
-            // 쿠키 추출
-            const cookies = await page.cookies();
-            const cookieNames = cookies.map(c => c.name);
-            
-            const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
-            const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
-            
-            if (foundLogin) {
-                log("로그인 성공 (" + foundLogin + ")");
-                cookies.forEach(c => { loginCookies[c.name] = c.value; });
+            const cached = getCachedSession(id);
+            if (cached) {
+                loginCookies = cached;
+                log("캐시 세션 사용");
             } else {
-                log("로그인 실패. URL: " + page.url());
-                await browser.close();
-                return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp, logs };
+                // Browserless 동시 실행 제한
+                if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
+                    return { success: false, msg: "동시 브라우저 한도 초과.", token: "없음", ip: "대기중", logs: ["대기열 초과"] };
+                }
+                puppeteerRunning++;
+                
+                try {
+                    const apiKey = process.env.BROWSERLESS_API_KEY;
+                    if (!apiKey) {
+                        return { success: false, msg: "BROWSERLESS_API_KEY 미설정", token: "없음", ip: currentIp, logs: ["API키 없음"] };
+                    }
+                    
+                    const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}`;
+                    log("브라우저 연결");
+                    
+                    browser = await puppeteer.connect({
+                        browserWSEndpoint: wsEndpoint,
+                        protocolTimeout: 30000
+                    });
+                    
+                    const page = await browser.newPage();
+                    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                    
+                    await page.goto('https://sign.dcinside.com/login', { 
+                        waitUntil: 'domcontentloaded', 
+                        timeout: 15000 
+                    });
+                    log("로그인 페이지 로드");
+                    
+                    const formResult = await page.evaluate((uid, upw) => {
+                        const idEl = document.querySelector('input[name="user_id"]') || 
+                                     document.querySelector('input[name="code"]') ||
+                                     document.querySelector('input[type="text"][name]');
+                        const pwEl = document.querySelector('input[type="password"]');
+                        if (!idEl || !pwEl) return { ok: false };
+                        
+                        const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        nativeSet.call(idEl, uid);
+                        idEl.dispatchEvent(new Event('input', { bubbles: true }));
+                        nativeSet.call(pwEl, upw);
+                        pwEl.dispatchEvent(new Event('input', { bubbles: true }));
+                        
+                        return { ok: true };
+                    }, id, password);
+                    
+                    if (!formResult.ok) {
+                        log("로그인 폼 없음");
+                        await browser.close();
+                        return { success: false, msg: "로그인 폼 없음", token: "없음", ip: currentIp, logs };
+                    }
+                    
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+                        page.evaluate(() => {
+                            const btn = document.querySelector('button[type="submit"]') ||
+                                        document.querySelector('input[type="submit"]') ||
+                                        document.querySelector('.btn_login') ||
+                                        document.querySelector('form button');
+                            if (btn) btn.click();
+                            else document.querySelector('form').submit();
+                        })
+                    ]);
+                    
+                    const cookies = await page.cookies();
+                    const cookieNames = cookies.map(c => c.name);
+                    
+                    const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
+                    const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
+                    
+                    if (foundLogin) {
+                        log("로그인 성공 (" + foundLogin + ")");
+                        cookies.forEach(c => { loginCookies[c.name] = c.value; });
+                        saveCachedSession(id, loginCookies);
+                    } else {
+                        log("로그인 실패. URL: " + page.url());
+                        await browser.close();
+                        return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp, logs };
+                    }
+                    
+                    await browser.close();
+                    browser = null;
+                } finally {
+                    puppeteerRunning--;
+                }
             }
-            
-            await browser.close();
-            browser = null;
         }
         
         // --- 2단계: axios + DataImpulse 한국 프록시로 추천 ---
@@ -899,7 +929,8 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         const finalCookieString = Object.entries(mergedCookies).map(([k, v]) => `${k}=${v}`).join('; ');
         
         if (!csrfToken) {
-            log("CSRF 토큰 없음");
+            if (id) invalidateSession(id);
+            log("CSRF 토큰 없음 (세션 무효화)");
             return { success: false, msg: "CSRF 토큰 없음", token: "없음", ip: currentIp, logs };
         }
         
@@ -959,10 +990,9 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
     } catch (err) {
         log("에러: " + err.message);
+        if (id) invalidateSession(id);
         if (browser) await browser.close().catch(() => {});
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp, logs };
-    } finally {
-        puppeteerRunning--;
     }
 }
 
