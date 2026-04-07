@@ -771,79 +771,58 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         if (id && password) {
             const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}`;
-            log("브라우저 연결 시도");
+            log("브라우저 연결");
             
             browser = await puppeteer.connect({
                 browserWSEndpoint: wsEndpoint,
-                protocolTimeout: 50000
+                protocolTimeout: 30000
             });
             
-            log("연결 성공");
             const page = await browser.newPage();
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
             
             await page.goto('https://sign.dcinside.com/login', { 
-                waitUntil: 'networkidle2', 
-                timeout: 30000 
+                waitUntil: 'domcontentloaded', 
+                timeout: 15000 
             });
-            log("로그인 페이지: " + page.url());
+            log("로그인 페이지 로드");
             
-            // ID/PW 셀렉터 찾기
-            const idSelector = await page.evaluate(() => {
-                const el = document.querySelector('input[name="user_id"]') || 
-                           document.querySelector('input[name="code"]') ||
-                           document.querySelector('input[type="text"][name]');
-                return el ? (el.name ? `input[name="${el.name}"]` : `input[type="text"]`) : null;
-            });
-            const pwSelector = await page.evaluate(() => {
-                const el = document.querySelector('input[type="password"]');
-                return el ? (el.name ? `input[name="${el.name}"]` : 'input[type="password"]') : null;
-            });
+            // 셀렉터 찾기 + 값 입력 + 폼 제출을 한 번의 evaluate로 처리
+            const formResult = await page.evaluate((uid, upw) => {
+                const idEl = document.querySelector('input[name="user_id"]') || 
+                             document.querySelector('input[name="code"]') ||
+                             document.querySelector('input[type="text"][name]');
+                const pwEl = document.querySelector('input[type="password"]');
+                if (!idEl || !pwEl) return { ok: false };
+                
+                // 직접 value 설정 (타이핑 대신)
+                const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeSet.call(idEl, uid);
+                idEl.dispatchEvent(new Event('input', { bubbles: true }));
+                nativeSet.call(pwEl, upw);
+                pwEl.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                return { ok: true };
+            }, id, password);
             
-            if (!idSelector || !pwSelector) {
+            if (!formResult.ok) {
                 log("로그인 폼 없음");
                 await browser.close();
                 return { success: false, msg: "로그인 폼 없음", token: "없음", ip: currentIp, logs };
             }
             
-            // ID 입력
-            await page.click(idSelector);
-            await page.keyboard.down('Control');
-            await page.keyboard.press('a');
-            await page.keyboard.up('Control');
-            await page.type(idSelector, id, { delay: 30 });
-            
-            // PW 입력
-            await page.click(pwSelector);
-            await page.keyboard.down('Control');
-            await page.keyboard.press('a');
-            await page.keyboard.up('Control');
-            await page.type(pwSelector, password, { delay: 30 });
-            
-            // 로그인 버튼 클릭
-            const submitSelector = await page.evaluate(() => {
-                const btn = document.querySelector('button[type="submit"]') ||
-                            document.querySelector('input[type="submit"]') ||
-                            document.querySelector('.btn_login') ||
-                            document.querySelector('#login_submit') ||
-                            document.querySelector('form button');
-                if (!btn) return null;
-                if (btn.id) return `#${btn.id}`;
-                if (btn.className) return `.${btn.className.split(' ')[0]}`;
-                return btn.tagName === 'BUTTON' ? 'form button' : 'input[type="submit"]';
-            });
-            
-            if (submitSelector) {
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-                    page.click(submitSelector)
-                ]);
-            } else {
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-                    page.evaluate(() => document.querySelector('form').submit())
-                ]);
-            }
+            // 로그인 제출
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+                page.evaluate(() => {
+                    const btn = document.querySelector('button[type="submit"]') ||
+                                document.querySelector('input[type="submit"]') ||
+                                document.querySelector('.btn_login') ||
+                                document.querySelector('form button');
+                    if (btn) btn.click();
+                    else document.querySelector('form').submit();
+                })
+            ]);
             
             // 쿠키 추출
             const cookies = await page.cookies();
@@ -856,14 +835,13 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 log("로그인 성공 (" + foundLogin + ")");
                 cookies.forEach(c => { loginCookies[c.name] = c.value; });
             } else {
-                log("로그인 실패: 쿠키 없음. URL: " + page.url());
+                log("로그인 실패. URL: " + page.url());
                 await browser.close();
                 return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp, logs };
             }
             
             await browser.close();
             browser = null;
-            log("브라우저 종료, 쿠키 추출 완료");
         }
         
         // --- 2단계: axios + DataImpulse 한국 프록시로 추천 ---
@@ -875,15 +853,6 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         const randomUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
         const cookieString = Object.entries(loginCookies).map(([k, v]) => `${k}=${v}`).join('; ');
-        
-        // IP 확인
-        try {
-            const ipRes = await axios.get('https://api.ipify.org?format=json', { httpsAgent: agent, timeout: 10000 });
-            currentIp = ipRes.data.ip;
-            log("프록시 IP: " + currentIp);
-        } catch (e) {
-            log("IP 조회 실패: " + e.message);
-        }
         
         // 게시글 URL 파싱
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
@@ -5529,18 +5498,20 @@ client.on('chat', async (data, channel) => {
             let successCount = 0;
             const failLogs = [];
             
-            for (let i = 0; i < account_list.length; i++) {
-                const [accId, accPw] = account_list[i];
-                try {
-                    const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
-                    if (result.success) {
-                        successCount++;
-                    } else {
-                        failLogs.push(`[${accId}] ${result.msg} (IP: ${result.ip})\n  ${result.logs.join(' → ')}`);
+            for (let i = 0; i < account_list.length; i += PUPPETEER_MAX_CONCURRENT) {
+                const chunk = account_list.slice(i, i + PUPPETEER_MAX_CONCURRENT);
+                const results = await Promise.all(chunk.map(async ([accId, accPw]) => {
+                    try {
+                        const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
+                        if (result.success) {
+                            successCount++;
+                        } else {
+                            failLogs.push(`[${accId}] ${result.msg} (IP: ${result.ip})\n  ${result.logs.join(' → ')}`);
+                        }
+                    } catch (e) {
+                        failLogs.push(`[${accId}] 예외: ${e.message}`);
                     }
-                } catch (e) {
-                    failLogs.push(`[${accId}] 예외: ${e.message}`);
-                }
+                }));
             }
             
             let resultMsg = `✅ 고닉추 완료!\n성공: ${successCount}/${account_list.length}개`;
