@@ -368,23 +368,24 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
                 
                 // 1단계: 로그인 페이지 GET → 세션 쿠키 + CSRF 토큰 확보
+                console.log("=== 데스크톱 로그인 시작 (sign.dcinside.com) ===");
                 const loginPageRes = await axios.get('https://sign.dcinside.com/login', {
                     httpsAgent: agent,
                     headers: {
                         'User-Agent': desktopUA,
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Accept-Encoding': 'gzip, deflate, br',
                         'Connection': 'keep-alive',
-                        'Host': 'sign.dcinside.com',
                         'Sec-Fetch-Mode': 'navigate',
                         'Sec-Fetch-Site': 'none',
                         'Sec-Fetch-Dest': 'document',
                         'Sec-Fetch-User': '?1',
                         'Upgrade-Insecure-Requests': '1'
                     },
-                    responseType: 'text'
+                    responseType: 'text',
+                    maxRedirects: 10
                 });
+                console.log("로그인 페이지 GET 성공, 상태:", loginPageRes.status, "URL:", loginPageRes.request?.res?.responseUrl || '알 수 없음');
                 
                 sessionCookies = mergeCookies(sessionCookies, parseCookies(loginPageRes.headers['set-cookie']));
                 console.log("로그인 페이지 GET Set-Cookie:", JSON.stringify(loginPageRes.headers['set-cookie'] || []));
@@ -478,10 +479,8 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                             'User-Agent': desktopUA,
                             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                             'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                            'Accept-Encoding': 'gzip, deflate, br',
                             'Content-Type': 'application/x-www-form-urlencoded',
                             'Cookie': cookiesToString(sessionCookies),
-                            'Host': currentHost,
                             'Origin': `https://${currentHost}`,
                             'Referer': `https://${currentHost}/login`,
                             'Connection': 'keep-alive',
@@ -539,9 +538,7 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                             'User-Agent': desktopUA,
                             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                             'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                            'Accept-Encoding': 'gzip, deflate, br',
                             'Connection': 'keep-alive',
-                            'Host': redirectHost,
                             'Referer': currentUrl,
                             'Sec-Fetch-Mode': 'navigate',
                             'Sec-Fetch-Site': redirectHost === currentHost ? 'same-origin' : 'cross-site',
@@ -609,6 +606,14 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
                 console.log("m.dcinside.com 방문 후 쿠키 키:", Object.keys(sessionCookies).join(', '));
             } catch (loginErr) {
                 console.log(`로그인 에러: ${loginErr.message}`);
+                if (loginErr.response) {
+                    console.log(`로그인 에러 응답 상태: ${loginErr.response.status}`);
+                    console.log(`로그인 에러 응답 헤더:`, JSON.stringify(loginErr.response.headers));
+                }
+                if (loginErr.config) {
+                    console.log(`실패한 요청 URL: ${loginErr.config.url}`);
+                    console.log(`실패한 요청 메서드: ${loginErr.config.method}`);
+                }
                 return { success: false, msg: `로그인 실패: ${loginErr.message}`, token: "없음", ip: currentIp };
             }
         }
