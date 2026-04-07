@@ -811,14 +811,18 @@ class RPGShopManager {
         // 아이템 지급
         if (item.type === 'currency' && item.name === '가넷') {
             character.garnet += item.count;
+        } else if (item.type === 'currency' && item.name === '골드') {
+            character.gold += item.count;
+        } else if (item.type === 'passExp') {
+            owner.passExp = (owner.passExp || 0) + (item.count || 1);
         } else {
-            inventory.addConsumable({ name: item.name, count: item.count || 1 });
+            inventory.addConsumable(item.name, item.itemType || '아이템', item.count || 1);
         }
 
         // 보너스 아이템
         if (item.bonus) {
             for (const bon of item.bonus) {
-                inventory.addConsumable({ name: bon.name, count: bon.count });
+                inventory.addConsumable(bon.name, bon.itemType || '아이템', bon.count || 1);
             }
         }
 
@@ -2448,6 +2452,18 @@ class RPGBattle {
         turnLog.push(`⚔️ [${this.tempObj.name.player}의 공격] ${finalDamage.toLocaleString()} 피해!`);
         turnLog.push(`   ${this.tempObj.name.monster} HP: ${this.tempObj.stat.monster.hp.toLocaleString()}/${this.tempObj.stat.monster.maxHp.toLocaleString()}`);
 
+        // 도망 기믹 체크
+        if (this.monster.specialMechanic && this.monster.specialMechanic.type === 'escapeAtHp') {
+            if (this.tempObj.stat.monster.hp <= this.monster.specialMechanic.threshold && this.tempObj.stat.monster.hp > 0) {
+                turnLog.push(`💨 ${this.tempObj.name.monster}: "${this.monster.specialMechanic.message || '도망친다!'}"`);
+                turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
+                this.addTurnLog(turnLog);
+                this.finalizeTurn();
+                // 도망쳤으므로 승리로 간주하고 보상 지급
+                return this.endBattle(true, true);
+            }
+        }
+
         this.addTurnLog(turnLog);
         this.finalizeTurn();
 
@@ -2632,6 +2648,17 @@ class RPGBattle {
             }
             turnLog.push(`   ${this.tempObj.name.monster} HP: ${this.tempObj.stat.monster.hp.toLocaleString()}/${this.tempObj.stat.monster.maxHp.toLocaleString()}`);
 
+            // 도망 기믹 체크
+            if (this.monster.specialMechanic && this.monster.specialMechanic.type === 'escapeAtHp') {
+                if (this.tempObj.stat.monster.hp <= this.monster.specialMechanic.threshold && this.tempObj.stat.monster.hp > 0) {
+                    turnLog.push(`💨 ${this.tempObj.name.monster}: "${this.monster.specialMechanic.message || '도망친다!'}"`);
+                    turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
+                    this.addTurnLog(turnLog);
+                    this.finalizeTurn();
+                    return this.endBattle(true, true);
+                }
+            }
+
             // 무력화 게이지 적용
             if (skillDetail.stagger && this.monster.staggerGauge) {
                 this.monster.staggerGauge.current = Math.max(0, this.monster.staggerGauge.current - skillDetail.stagger);
@@ -2709,6 +2736,25 @@ class RPGBattle {
                 this._applyDamage('monster', finalDamage);
                 turnLog.push(`✨ [${this.tempObj.name.player}] ${skillName} 사용! ${finalDamage.toLocaleString()} 피해!`);
                 turnLog.push(`   ${this.tempObj.name.monster} HP: ${this.tempObj.stat.monster.hp.toLocaleString()}/${this.tempObj.stat.monster.maxHp.toLocaleString()}`);
+
+                // 도망 기믹 체크
+                if (this.monster.specialMechanic && this.monster.specialMechanic.type === 'escapeAtHp') {
+                    if (this.tempObj.stat.monster.hp <= this.monster.specialMechanic.threshold && this.tempObj.stat.monster.hp > 0) {
+                        turnLog.push(`💨 ${this.tempObj.name.monster}: "${this.monster.specialMechanic.message || '도망친다!'}"`);
+                        turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
+
+                        // 스킬 쿨타임 설정
+                        const cooldown = skillDetail ? skillDataManager.getSkillCooldown(skillDetail, skill.level) : (skill.maxCooldown || 0);
+                        if (cooldown > 0) {
+                            skill.maxCooldown = cooldown;
+                            skill.resetCooldown();
+                        }
+
+                        this.addTurnLog(turnLog);
+                        this.finalizeTurn();
+                        return this.endBattle(true, true);
+                    }
+                }
             }
         }
 
@@ -2874,14 +2920,19 @@ class RPGBattle {
     }
 
     // 전투 종료
-    endBattle(playerWon) {
+    endBattle(playerWon, isMonsterEscaped = false) {
         this.isActive = false;
         const endLog = [];
         endLog.push(``);
         
         if (playerWon) {
-            endLog.push(`✅ 승리!`);
-            endLog.push(`${this.tempObj.name.monster}을(를) 처치했습니다!`);
+            if (isMonsterEscaped) {
+                endLog.push(`✅ 승리!`);
+                endLog.push(`${this.tempObj.name.monster}이(가) 도망가서 전투가 종료되었습니다.`);
+            } else {
+                endLog.push(`✅ 승리!`);
+                endLog.push(`${this.tempObj.name.monster}을(를) 처치했습니다!`);
+            }
             
             // 보상 계산
             const collectedRewards = { exp: 0, gold: 0, items: [] };
@@ -2987,8 +3038,12 @@ class RPGBattle {
                 log: this.getRecentLog()
             };
         } else {
-            endLog.push(`💀 패배...`);
-            endLog.push(`${this.tempObj.name.player}이(가) 쓰러졌습니다.`);
+            if (isMonsterEscaped) {
+                endLog.push(`전투가 종료되었습니다.`);
+            } else {
+                endLog.push(`💀 패배...`);
+                endLog.push(`${this.tempObj.name.player}이(가) 쓰러졌습니다.`);
+            }
             
             this.addTurnLog(endLog);
             this.finalizeTurn();
@@ -3000,6 +3055,7 @@ class RPGBattle {
             return {
                 success: true,
                 victory: false,
+                escaped: isMonsterEscaped,
                 log: this.getRecentLog()
             };
         }
