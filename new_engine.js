@@ -751,7 +751,7 @@ const PUPPETEER_MAX_CONCURRENT = 2;
 
 // 세션 쿠키 캐시: { accountId: { cookies: {}, savedAt: timestamp } }
 const dcSessionCache = {};
-const DC_SESSION_TTL = 3 * 60 * 60 * 1000; // 3시간
+const DC_SESSION_TTL = 24 * 60 * 60 * 1000; // 24시간
 
 function getCachedSession(accountId) {
     const entry = dcSessionCache[accountId];
@@ -968,19 +968,19 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         log("추천 응답: " + JSON.stringify(postRes.data));
         
         // 캡차 실패 시 재시도 (새 프록시 IP로)
-        if (postRes.data?.cause === 'captcha') {
-            for (let retry = 1; retry <= 2; retry++) {
-                log(`캡차 감지, ${retry}차 재시도 (3초 대기)`);
-                await new Promise(r => setTimeout(r, 3000));
-                const retryAgent = new HttpsProxyAgent({
-                    proxy: proxyUrl,
-                    rejectUnauthorized: false
-                });
-                postRes = await doRecommendPost(retryAgent);
-                log(`재시도${retry} 응답: ` + JSON.stringify(postRes.data));
-                if (postRes.data?.cause !== 'captcha') break;
-            }
-        }
+        // if (postRes.data?.cause === 'captcha') {
+        //     for (let retry = 1; retry <= 2; retry++) {
+        //         log(`캡차 감지, ${retry}차 재시도 (3초 대기)`);
+        //         await new Promise(r => setTimeout(r, 3000));
+        //         const retryAgent = new HttpsProxyAgent({
+        //             proxy: proxyUrl,
+        //             rejectUnauthorized: false
+        //         });
+        //         postRes = await doRecommendPost(retryAgent);
+        //         log(`재시도${retry} 응답: ` + JSON.stringify(postRes.data));
+        //         if (postRes.data?.cause !== 'captcha') break;
+        //     }
+        // }
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
@@ -5521,7 +5521,7 @@ client.on('chat', async (data, channel) => {
         }
 
         if (msg.startsWith('!고닉추 ')) {
-            const link = msg.replace('!고닉추 ', '').trim();
+            const args = msg.replace('!고닉추 ', '').trim();
             
             const account_list = [
                 ['venus1684', 'yanga0800!'],
@@ -5543,24 +5543,54 @@ client.on('chat', async (data, channel) => {
                 ['gesture7973', 'yanga0800!'],
                 ['beam0504', 'yanga0800!'],
                 ['confess4791', 'yanga0800!'],
-                ['journal7862', 'yanga0800!']
+                ['journal7862', 'yanga0800!'],
+                ['magazine1128', 'yanga0800!'],
+                ['goodbye1888', 'yanga0800!'],
+                ['merry1031', 'yanga0800!'],
+                ['cell4660', 'yanga0800!'],
+                ['concrete7942', 'yanga0800!'],
+                ['genre8535', 'yanga0800!'],
+                ['glue3141', 'yanga0800!'],
+                ['belong9368', 'yanga0800!'],
+                ['recipe0383', 'yanga0800!'],
+                ['down2834', 'yanga0800!']
             ];
             
-            channel.sendChat(`🤖 ${account_list.length}개 계정으로 개추 시작..`);
+            // 인자 파싱: !고닉추 x-y [링크] | !고닉추 x [링크] | !고닉추 [링크]
+            let link, selectedAccounts;
+            const rangeMatch = args.match(/^(\d+)-(\d+)\s+(https?:\/\/.+)$/);
+            const countMatch = args.match(/^(\d+)\s+(https?:\/\/.+)$/);
+            
+            if (rangeMatch) {
+                const startIdx = parseInt(rangeMatch[1]);
+                const endIdx = parseInt(rangeMatch[2]);
+                link = rangeMatch[3];
+                selectedAccounts = account_list.slice(startIdx, endIdx + 1);
+                channel.sendChat(`🤖 계정 #${startIdx}~#${endIdx} (${selectedAccounts.length}개)로 개추 시작..`);
+            } else if (countMatch) {
+                const count = parseInt(countMatch[1]);
+                link = countMatch[2];
+                selectedAccounts = account_list.slice(0, count);
+                channel.sendChat(`🤖 처음 ${selectedAccounts.length}개 계정으로 개추 시작..`);
+            } else {
+                link = args;
+                selectedAccounts = account_list;
+                channel.sendChat(`🤖 전체 ${selectedAccounts.length}개 계정으로 개추 시작..`);
+            }
             
             let successCount = 0;
             const failLogs = [];
             
-            for (let i = 0; i < account_list.length; i += PUPPETEER_MAX_CONCURRENT) {
-                if (i > 0) await delay(2000);
-                const chunk = account_list.slice(i, i + PUPPETEER_MAX_CONCURRENT);
+            for (let i = 0; i < selectedAccounts.length; i += PUPPETEER_MAX_CONCURRENT) {
+                if (i > 0) await delay(5000);
+                const chunk = selectedAccounts.slice(i, i + PUPPETEER_MAX_CONCURRENT);
                 await Promise.all(chunk.map(async ([accId, accPw]) => {
                     try {
                         const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
                         if (result.success) {
                             successCount++;
                         } else {
-                            failLogs.push(`[${accId}] ${result.msg} (IP: ${result.ip})\n  ${result.logs.join(' → ')}`);
+                            failLogs.push(`[${accId}] ${result.msg}\n  ${result.logs.join(' → ')}`);
                         }
                     } catch (e) {
                         failLogs.push(`[${accId}] 예외: ${e.message}`);
@@ -5568,7 +5598,7 @@ client.on('chat', async (data, channel) => {
                 }));
             }
             
-            let resultMsg = `✅ 고닉추 완료!\n성공: ${successCount}/${account_list.length}개`;
+            let resultMsg = `✅ 고닉추 완료!\n성공: ${successCount}/${selectedAccounts.length}개`;
             if (failLogs.length > 0) {
                 resultMsg += `\n실패: ${failLogs.length}개\n${VIEWMORE}\n` + failLogs.join('\n\n');
             }
