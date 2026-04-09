@@ -988,7 +988,24 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         params.append('no', postNo);
         params.append('_token', csrfToken);
         
-        const doRecommendPost = async (reqAgent, extraParams = {}) => {
+        // set-cookie 파싱 헬퍼
+        const parseCookies = (setCookieArr) => {
+            const out = {};
+            if (setCookieArr) {
+                setCookieArr.forEach(str => {
+                    const nv = str.split(';')[0];
+                    const eq = nv.indexOf('=');
+                    if (eq > 0) out[nv.substring(0, eq).trim()] = nv.substring(eq + 1).trim();
+                });
+            }
+            return out;
+        };
+        
+        // 쿠키 누적 객체 (추천 요청 → 캡차 이미지 → 재추천에서 동일 세션 유지)
+        let liveCookies = { ...mergedCookies };
+        const buildCookieStr = () => Object.entries(liveCookies).map(([k, v]) => `${k}=${v}`).join('; ');
+        
+        const doRecommendPost = async (reqAgent, extraParams = {}, cookieStr = null) => {
             const postParams = new URLSearchParams(params.toString());
             for (const [k, v] of Object.entries(extraParams)) {
                 postParams.set(k, v);
@@ -1002,7 +1019,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                     'X-Csrf-Token': csrfToken,
                     'Referer': targetUrl,
                     'Origin': 'https://m.dcinside.com',
-                    'Cookie': finalCookieString
+                    'Cookie': cookieStr || buildCookieStr()
                 },
                 timeout: 15000
             });
@@ -1010,6 +1027,9 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         let postRes = await doRecommendPost(agent);
         log("추천 응답: " + JSON.stringify(postRes.data));
+        
+        // 첫 추천 응답의 set-cookie 병합
+        Object.assign(liveCookies, parseCookies(postRes.headers['set-cookie']));
         
         // 캡차 감지 시 2Captcha로 풀기
         if (postRes.data?.cause === 'captcha' && postRes.data?.ran_code) {
@@ -1024,11 +1044,14 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                     headers: {
                         'User-Agent': randomUA,
                         'Referer': targetUrl,
-                        'Cookie': finalCookieString
+                        'Cookie': buildCookieStr()
                     },
                     responseType: 'arraybuffer',
                     timeout: 10000
                 });
+                
+                // 캡차 이미지 응답의 set-cookie도 병합
+                Object.assign(liveCookies, parseCookies(imgRes.headers['set-cookie']));
                 
                 const imgBase64 = Buffer.from(imgRes.data).toString('base64');
                 log(`캡차 이미지 수신 (${imgRes.data.length} bytes)`);
@@ -1037,10 +1060,11 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 const captchaAnswer = await solveCaptchaWith2Captcha(imgBase64);
                 log(`캡차 정답: ${captchaAnswer}`);
                 
-                // 캡차 정답과 함께 재추천
+                // 동일 쿠키 + ran_code + 캡차 정답으로 재추천
                 postRes = await doRecommendPost(agent, { 
                     code: captchaAnswer,
-                    code_recommend: captchaAnswer
+                    code_recommend: captchaAnswer,
+                    ran_code: ranCode
                 });
                 log("캡차 재시도 응답: " + JSON.stringify(postRes.data));
             } catch (captchaErr) {
