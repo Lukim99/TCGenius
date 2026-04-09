@@ -759,7 +759,8 @@ async function solveCaptchaWith2Captcha(imageBase64) {
             case: false,
             numeric: 0,
             minLength: 1,
-            maxLength: 4
+            maxLength: 4,
+            comment: 'do not write red letters. all letters are lowercase.'
         }
     }, { timeout: 15000 });
     
@@ -914,15 +915,28 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             }
         }
         
-        // --- 2단계: axios + DataImpulse 한국 프록시로 추천 ---
+        // --- 2단계: axios + keepAlive 프록시 + 수동 쿠키로 추천 ---
         const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
         const agent = new HttpsProxyAgent({
             proxy: proxyUrl,
+            keepAlive: true,
+            keepAliveMsecs: 30000,
             rejectUnauthorized: false
         });
         
         const randomUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
-        const cookieString = Object.entries(loginCookies).map(([k, v]) => `${k}=${v}`).join('; ');
+        
+        // 수동 쿠키 관리 (set-cookie 자동 병합)
+        let liveCookies = { ...loginCookies };
+        const mergeCookies = (res) => {
+            const sc = res.headers['set-cookie'];
+            if (sc) sc.forEach(str => {
+                const nv = str.split(';')[0];
+                const eq = nv.indexOf('=');
+                if (eq > 0) liveCookies[nv.substring(0, eq).trim()] = nv.substring(eq + 1).trim();
+            });
+        };
+        const cookieStr = () => Object.entries(liveCookies).map(([k, v]) => `${k}=${v}`).join('; ');
         
         // 게시글 URL 파싱
         const urlMatch = targetUrl.match(/board\/([^/]+)\/(\d+)/);
@@ -939,11 +953,12 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 'User-Agent': randomUA,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'ko-KR,ko;q=0.9',
-                'Cookie': cookieString,
+                'Cookie': cookieStr(),
                 'Referer': `https://m.dcinside.com/board/${galleryId}`
             },
             timeout: 20000
         });
+        mergeCookies(pageRes);
         
         const $ = cheerio.load(pageRes.data);
         let csrfToken = $('meta[name="csrf-token"]').attr('content') 
@@ -955,19 +970,6 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
             csrfToken = tokenMatch ? tokenMatch[1] : null;
         }
         
-        // set-cookie 병합
-        const newCookies = {};
-        const setCookieArr = pageRes.headers['set-cookie'];
-        if (setCookieArr) {
-            setCookieArr.forEach(str => {
-                const nameValue = str.split(';')[0];
-                const eqIdx = nameValue.indexOf('=');
-                if (eqIdx > 0) newCookies[nameValue.substring(0, eqIdx).trim()] = nameValue.substring(eqIdx + 1).trim();
-            });
-        }
-        const mergedCookies = { ...loginCookies, ...newCookies };
-        const finalCookieString = Object.entries(mergedCookies).map(([k, v]) => `${k}=${v}`).join('; ');
-        
         if (!csrfToken) {
             if (id) invalidateSession(id);
             log("CSRF 토큰 없음 (세션 무효화)");
@@ -976,101 +978,77 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         
         log("CSRF 토큰 확보");
         
-        // 추천 POST
+        // 추천 POST (keepAlive로 동일 TCP 커넥션 재사용)
         const recommendUrl = mode === 'best' 
             ? 'https://m.dcinside.com/bestcontent/recommend' 
             : 'https://m.dcinside.com/ajax/recommend';
         const recommendType = mode === 'best' ? 'recommend_best' : 'recommend_join';
         
-        const params = new URLSearchParams();
-        params.append('type', recommendType);
-        params.append('id', galleryId);
-        params.append('no', postNo);
-        params.append('_token', csrfToken);
+        const baseParams = new URLSearchParams();
+        baseParams.append('type', recommendType);
+        baseParams.append('id', galleryId);
+        baseParams.append('no', postNo);
+        baseParams.append('_token', csrfToken);
         
-        // set-cookie 파싱 헬퍼
-        const parseCookies = (setCookieArr) => {
-            const out = {};
-            if (setCookieArr) {
-                setCookieArr.forEach(str => {
-                    const nv = str.split(';')[0];
-                    const eq = nv.indexOf('=');
-                    if (eq > 0) out[nv.substring(0, eq).trim()] = nv.substring(eq + 1).trim();
-                });
-            }
-            return out;
+        const commonHeaders = {
+            'User-Agent': randomUA,
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-Csrf-Token': csrfToken,
+            'Referer': targetUrl,
+            'Origin': 'https://m.dcinside.com',
+            'Cookie': cookieStr()
         };
         
-        // 쿠키 누적 객체 (추천 요청 → 캡차 이미지 → 재추천에서 동일 세션 유지)
-        let liveCookies = { ...mergedCookies };
-        const buildCookieStr = () => Object.entries(liveCookies).map(([k, v]) => `${k}=${v}`).join('; ');
-        
-        const doRecommendPost = async (reqAgent, extraParams = {}, cookieStr = null) => {
-            const postParams = new URLSearchParams(params.toString());
-            for (const [k, v] of Object.entries(extraParams)) {
-                postParams.set(k, v);
-            }
-            return axios.post(recommendUrl, postParams.toString(), {
-                httpsAgent: reqAgent,
-                headers: {
-                    'User-Agent': randomUA,
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-Csrf-Token': csrfToken,
-                    'Referer': targetUrl,
-                    'Origin': 'https://m.dcinside.com',
-                    'Cookie': cookieStr || buildCookieStr()
-                },
-                timeout: 15000
-            });
-        };
-        
-        let postRes = await doRecommendPost(agent);
+        // 첫 번째 추천 요청
+        let postRes = await axios.post(recommendUrl, baseParams.toString(), {
+            httpsAgent: agent,
+            headers: commonHeaders,
+            timeout: 15000
+        });
+        mergeCookies(postRes);
         log("추천 응답: " + JSON.stringify(postRes.data));
-        
-        // 첫 추천 응답의 set-cookie 병합
-        Object.assign(liveCookies, parseCookies(postRes.headers['set-cookie']));
         
         // 캡차 감지 시 2Captcha로 풀기
         if (postRes.data?.cause === 'captcha' && postRes.data?.ran_code) {
             try {
-                log("캡차 감지, 2Captcha로 풀기 시도");
                 const ranCode = postRes.data.ran_code;
+                log("캡차 감지 (ran_code: " + ranCode.substring(0, 8) + "...), 2Captcha로 풀기 시도");
                 
-                // DC Inside 캡차 이미지: m.dcinside.com/captcha/code?id={갤}&dccode={ran_code}&type=F
+                // 1) 캡차 이미지를 별도 axios(프록시X, 쿠키X)로 가져옴 → 메인 세션에 영향 없음
                 const captchaImgUrl = `https://m.dcinside.com/captcha/code?id=${galleryId}&dccode=${ranCode}&type=F`;
                 const imgRes = await axios.get(captchaImgUrl, {
-                    httpsAgent: agent,
-                    headers: {
-                        'User-Agent': randomUA,
-                        'Referer': targetUrl,
-                        'Cookie': buildCookieStr()
-                    },
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36' },
                     responseType: 'arraybuffer',
                     timeout: 10000
                 });
                 
-                // 캡차 이미지 응답의 set-cookie도 병합
-                Object.assign(liveCookies, parseCookies(imgRes.headers['set-cookie']));
-                
                 const imgBase64 = Buffer.from(imgRes.data).toString('base64');
-                log(`캡차 이미지 수신 (${imgRes.data.length} bytes)`);
+                log(`캡차 이미지 수신 (${imgRes.data.length} bytes, 별도 세션)`);
                 
-                // 2Captcha로 풀기
+                // 2) 2Captcha로 풀기
                 const captchaAnswer = await solveCaptchaWith2Captcha(imgBase64);
                 log(`캡차 정답: ${captchaAnswer}`);
                 
-                // 동일 쿠키 + ran_code + 캡차 정답으로 재추천
-                postRes = await doRecommendPost(agent, { 
-                    code: captchaAnswer,
-                    code_recommend: captchaAnswer,
-                    ran_code: ranCode
+                // 3) 동일 keepAlive 커넥션 + 동일 쿠키로 즉시 재추천
+                const retryParams = new URLSearchParams(baseParams.toString());
+                retryParams.set('code', captchaAnswer);
+                retryParams.set('code_recommend', captchaAnswer);
+                retryParams.set('ran_code', ranCode);
+                
+                postRes = await axios.post(recommendUrl, retryParams.toString(), {
+                    httpsAgent: agent,
+                    headers: { ...commonHeaders, 'Cookie': cookieStr() },
+                    timeout: 15000
                 });
                 log("캡차 재시도 응답: " + JSON.stringify(postRes.data));
             } catch (captchaErr) {
                 log("캡차 풀기 실패: " + captchaErr.message);
             }
         }
+        
+        // keepAlive 에이전트 정리
+        agent.destroy();
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
