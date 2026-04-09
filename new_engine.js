@@ -5566,12 +5566,12 @@ client.on('chat', async (data, channel) => {
                 const endIdx = parseInt(rangeMatch[2]);
                 link = rangeMatch[3];
                 selectedAccounts = account_list.slice(startIdx, endIdx + 1);
-                channel.sendChat(`🤖 계정 #${startIdx}~#${endIdx} (${selectedAccounts.length}개)로 개추 시작..`);
+                channel.sendChat(`🤖 계정 ＃${startIdx} ~ ＃${endIdx} (${selectedAccounts.length}개)로 개추 시작..`);
             } else if (countMatch) {
                 const count = parseInt(countMatch[1]);
                 link = countMatch[2];
                 selectedAccounts = account_list.slice(0, count);
-                channel.sendChat(`🤖 처음 ${selectedAccounts.length}개 계정으로 개추 시작..`);
+                channel.sendChat(`🤖 ${selectedAccounts.length}개 계정으로 개추 시작..`);
             } else {
                 link = args;
                 selectedAccounts = account_list;
