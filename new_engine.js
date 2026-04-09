@@ -746,6 +746,46 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
     }
 }
 
+// 2Captcha 이미지 캡차 풀기
+async function solveCaptchaWith2Captcha(imageBase64) {
+    const apiKey = process.env.TWOCAPTCHA_API_KEY;
+    if (!apiKey) throw new Error('TWOCAPTCHA_API_KEY 미설정');
+    
+    const createRes = await axios.post('https://api.2captcha.com/createTask', {
+        clientKey: apiKey,
+        task: {
+            type: 'ImageToTextTask',
+            body: imageBase64,
+            case: false,
+            numeric: 0,
+            minLength: 1,
+            maxLength: 4
+        }
+    }, { timeout: 15000 });
+    
+    if (createRes.data.errorId !== 0) {
+        throw new Error(`2Captcha 생성 실패: ${createRes.data.errorDescription}`);
+    }
+    
+    const taskId = createRes.data.taskId;
+    
+    for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const resultRes = await axios.post('https://api.2captcha.com/getTaskResult', {
+            clientKey: apiKey,
+            taskId: taskId
+        }, { timeout: 15000 });
+        
+        if (resultRes.data.status === 'ready') {
+            return resultRes.data.solution.text;
+        }
+        if (resultRes.data.errorId !== 0) {
+            throw new Error(`2Captcha 실패: ${resultRes.data.errorDescription}`);
+        }
+    }
+    throw new Error('2Captcha 시간 초과 (60초)');
+}
+
 let puppeteerRunning = 0;
 const PUPPETEER_MAX_CONCURRENT = 2;
 
@@ -948,8 +988,12 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         params.append('no', postNo);
         params.append('_token', csrfToken);
         
-        const doRecommendPost = async (reqAgent) => {
-            return axios.post(recommendUrl, params.toString(), {
+        const doRecommendPost = async (reqAgent, extraParams = {}) => {
+            const postParams = new URLSearchParams(params.toString());
+            for (const [k, v] of Object.entries(extraParams)) {
+                postParams.set(k, v);
+            }
+            return axios.post(recommendUrl, postParams.toString(), {
                 httpsAgent: reqAgent,
                 headers: {
                     'User-Agent': randomUA,
@@ -967,20 +1011,43 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         let postRes = await doRecommendPost(agent);
         log("추천 응답: " + JSON.stringify(postRes.data));
         
-        // 캡차 실패 시 재시도 (새 프록시 IP로)
-        // if (postRes.data?.cause === 'captcha') {
-        //     for (let retry = 1; retry <= 2; retry++) {
-        //         log(`캡차 감지, ${retry}차 재시도 (3초 대기)`);
-        //         await new Promise(r => setTimeout(r, 3000));
-        //         const retryAgent = new HttpsProxyAgent({
-        //             proxy: proxyUrl,
-        //             rejectUnauthorized: false
-        //         });
-        //         postRes = await doRecommendPost(retryAgent);
-        //         log(`재시도${retry} 응답: ` + JSON.stringify(postRes.data));
-        //         if (postRes.data?.cause !== 'captcha') break;
-        //     }
-        // }
+        // 캡차 감지 시 2Captcha로 풀기
+        if (postRes.data?.cause === 'captcha' && postRes.data?.ran_code) {
+            try {
+                log("캡차 감지, 2Captcha로 풀기 시도");
+                const ranCode = postRes.data.ran_code;
+                
+                // DC Inside 캡차 이미지 가져오기
+                const captchaImgUrl = `https://m.dcinside.com/kcaptcha/image/?gall_id=${galleryId}&kcaptcha_type=recommend&time=${Date.now()}`;
+                const imgRes = await axios.get(captchaImgUrl, {
+                    httpsAgent: agent,
+                    headers: {
+                        'User-Agent': randomUA,
+                        'Referer': targetUrl,
+                        'Cookie': finalCookieString
+                    },
+                    responseType: 'arraybuffer',
+                    timeout: 10000
+                });
+                
+                const imgBase64 = Buffer.from(imgRes.data).toString('base64');
+                log(`캡차 이미지 수신 (${imgRes.data.length} bytes)`);
+                
+                // 2Captcha로 풀기
+                const captchaAnswer = await solveCaptchaWith2Captcha(imgBase64);
+                log(`캡차 정답: ${captchaAnswer}`);
+                
+                // 캡차 정답과 함께 재추천
+                postRes = await doRecommendPost(agent, { 
+                    code: captchaAnswer,
+                    verify_code: captchaAnswer,
+                    ran_code: ranCode
+                });
+                log("캡차 재시도 응답: " + JSON.stringify(postRes.data));
+            } catch (captchaErr) {
+                log("캡차 풀기 실패: " + captchaErr.message);
+            }
+        }
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
