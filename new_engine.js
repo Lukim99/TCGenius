@@ -1017,8 +1017,8 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 log("캡차 감지, 2Captcha로 풀기 시도");
                 const ranCode = postRes.data.ran_code;
                 
-                // DC Inside 캡차 이미지 가져오기
-                const captchaImgUrl = `https://m.dcinside.com/kcaptcha/image/?gall_id=${galleryId}&kcaptcha_type=recommend&time=${Date.now()}`;
+                // DC Inside 캡차 이미지: m.dcinside.com/captcha/code?id={갤}&dccode={ran_code}&type=F
+                const captchaImgUrl = `https://m.dcinside.com/captcha/code?id=${galleryId}&dccode=${ranCode}&type=F`;
                 const imgRes = await axios.get(captchaImgUrl, {
                     httpsAgent: agent,
                     headers: {
@@ -1040,8 +1040,7 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
                 // 캡차 정답과 함께 재추천
                 postRes = await doRecommendPost(agent, { 
                     code: captchaAnswer,
-                    verify_code: captchaAnswer,
-                    ran_code: ranCode
+                    code_recommend: captchaAnswer
                 });
                 log("캡차 재시도 응답: " + JSON.stringify(postRes.data));
             } catch (captchaErr) {
@@ -5649,7 +5648,7 @@ client.on('chat', async (data, channel) => {
             const failLogs = [];
             
             for (let i = 0; i < selectedAccounts.length; i += PUPPETEER_MAX_CONCURRENT) {
-                if (i > 0) await delay(5000);
+                if (i > 0) await delay(1000);
                 const chunk = selectedAccounts.slice(i, i + PUPPETEER_MAX_CONCURRENT);
                 await Promise.all(chunk.map(async ([accId, accPw]) => {
                     try {
