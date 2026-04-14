@@ -1246,7 +1246,8 @@ async function getItem(table, id) {
     try {
         const command = new GetCommand({
             TableName: table,
-            Key: { id: id }
+            Key: { id: id },
+            ConsistentRead: true
         });
         const response = await docClient.send(command);
         return { success: true, result: [response] };
@@ -2832,7 +2833,10 @@ class RPGUser {
     }
 
     async save() {
-        await updateItem('rpg_user', this.id, this.toJSON());
+        const result = await updateItem('rpg_user', this.id, this.toJSON());
+        if (!result.success) {
+            console.error(`[RPGUser.save] 저장 실패 (id: ${this.id}):`, result.error);
+        }
     }
 
     // ==================== 직업 설정 ====================
@@ -3148,9 +3152,15 @@ class RPGUser {
                     result.effects = { levelUp: itemData.effects.levelUp };
                     result.message = `${itemName}을(를) 사용하여 레벨업했습니다! (Lv.${prevLevel} -> Lv.${this.level.level})`;
                 } else if (itemName === '스킬 초기화권') {
-                    this.skillManager = new RPGSkillManager(this.job);
-                    this.sp = this.level.level;
-                    result.message = `스킬이 모두 초기화되었습니다. SP가 ${this.sp}으로 복구되었습니다.`;
+                    let refundedSP = 0;
+                    for (const [name, skill] of this.skillManager.skills) {
+                        if (skill.level > 1) {
+                            refundedSP += (skill.level - 1);
+                            skill.level = 1;
+                        }
+                    }
+                    this.sp += refundedSP;
+                    result.message = `스킬이 모두 초기화되었습니다. SP ${refundedSP}을(를) 돌려받았습니다. (보유 SP: ${this.sp})`;
                 } else if (itemName === '스킬 포인트 1회 복구권') {
                     return { success: false, message: `스킬 포인트 1회 복구권은 구현 중입니다.` };
                 } else {
@@ -12327,7 +12337,7 @@ client.on('chat', async (data, channel) => {
                     const dungeonNum = parseInt(args[1]);
                     
                     if (isNaN(dungeonNum) || dungeonNum < 1 || dungeonNum > availableDungeons.length) {
-                        channel.sendChat(`❌ 올바른 던전 번호를 입력해주세요. (1~${availableDungeons.length})`);
+                        channel.sendChat(`❌ 올바른 던전 번호를 입력해주세요.`);
                         return;
                     }
                     
@@ -12870,6 +12880,10 @@ client.on('chat', async (data, channel) => {
                         channel.sendChat(`❌ 해당 장비의 타입(${slot})이 올바르지 않습니다.`);
                         return;
                     }
+                    if (slot === 'weapon' && item.jobRestriction && item.jobRestriction !== character.job) {
+                        channel.sendChat(`❌ 이 무기는 [${item.jobRestriction}] 전용입니다. (현재 직업: ${character.job})`);
+                        return;
+                    }
                     const equipResult = character.equipmentManager.equip(slot, item);
                     if (!equipResult.success) {
                         channel.sendChat(`❌ ${equipResult.message}`);
@@ -13123,15 +13137,40 @@ client.on('chat', async (data, channel) => {
                         msg.push(`🎣 낚싯대: ${rods.length > 0 ? rods.join(', ') : '없음'}`);
                         msg.push(`🪱 떡밥: ${baits.length > 0 ? baits.join(', ') : '없음'}`);
                         msg.push(`━━━━━━━━━━━━━━━`);
+                        msg.push(`/RPGenius 낚시 로 낚시를 시작합니다.`);
                         channel.sendChat(msg.join('\n'));
                         return;
                     }
-                    const rodName = args[1] || '허름한 낚싯대';
-                    const baitName = args[2] || '일반 떡밥';
-                    const rodData = fishingManager.getRod(rodName);
-                    const baitData = fishingManager.getBait(baitName);
-                    if (!rodData || !baitData) {
-                        channel.sendChat(`❌ 낚싯대/떡밥 이름이 올바르지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
+                    // 인벤토리에서 낚싯대와 떡밥 자동 탐색
+                    let rodName = null;
+                    let baitName = null;
+                    const fullArg = args.slice(1).join(' ');
+                    // 명시적 지정: 전체 텍스트에서 알려진 낚싯대/떡밥 이름 매칭
+                    if (fullArg) {
+                        for (const rName of Object.keys(fishingManager.data.rods || {})) {
+                            if (fullArg.includes(rName)) { rodName = rName; break; }
+                        }
+                        for (const bName of Object.keys(fishingManager.data.baits || {})) {
+                            if (fullArg.includes(bName)) { baitName = bName; break; }
+                        }
+                    }
+                    // 미지정 시 인벤토리에서 자동 선택
+                    if (!rodName && character.inventory && character.inventory.consumables) {
+                        for (const [name] of character.inventory.consumables) {
+                            if (fishingManager.getRod(name)) { rodName = name; break; }
+                        }
+                    }
+                    if (!baitName && character.inventory && character.inventory.consumables) {
+                        for (const [name] of character.inventory.consumables) {
+                            if (fishingManager.getBait(name)) { baitName = name; break; }
+                        }
+                    }
+                    if (!rodName) {
+                        channel.sendChat(`❌ 낚싯대를 보유하고 있지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
+                        return;
+                    }
+                    if (!baitName) {
+                        channel.sendChat(`❌ 떡밥을 보유하고 있지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
                         return;
                     }
                     if (!character.hasConsumable(rodName, 1)) {
@@ -13147,7 +13186,7 @@ client.on('chat', async (data, channel) => {
                     const drop = fishingManager.rollCatch(baitName);
                     character.consumeItemFromInventory(baitName, 1);
 
-                    const msg = [`🎣 낚시 결과 (${time}초)`, ``];
+                    const msg = [`🎣 낚시 결과 (${rodName} + ${baitName})`, ``];
                     if (!drop) {
                         msg.push(`  아무것도 잡지 못했습니다...`);
                     } else {
@@ -13618,7 +13657,6 @@ client.on('chat', async (data, channel) => {
                     if (!itemName) { channel.sendChat(`❌ /RPGenius 사용 [아이템명]`); return; }
                     const result = character.useItem(itemName);
                     if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                    await character.save();
                     const msg = [`✅ ${result.message}`];
                     if (result.effects) {
                         if (result.effects.hpRecover) msg.push(`  ❤️ HP +${result.effects.hpRecover}`);
@@ -13629,6 +13667,7 @@ client.on('chat', async (data, channel) => {
                         }
                         if (result.effects.exp) msg.push(`  📊 EXP +${result.effects.exp}${result.effects.leveledUp ? ' (레벨업!)' : ''}`);
                     }
+                    await character.save();
                     channel.sendChat(msg.join('\n'));
                     return;
                 }

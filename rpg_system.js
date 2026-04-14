@@ -182,11 +182,23 @@ class RPGEquipmentDataManager {
 
     // 등급+레벨로 랜덤 장비 1개 반환 (던전 드랍용)
     getRandomEquipmentByRarityAndLevel(rarity, level) {
-        const pool = [
-            ...this.weapons.filter(w => w.rarity === rarity && w.level === level),
-            ...this.armors.filter(a => a.rarity === rarity && a.level === level),
-            ...this.accessories.filter(a => a.rarity === rarity && a.level === level)
+        // 해당 등급에서 level 이하 장비 풀 구성
+        let pool = [
+            ...this.weapons.filter(w => w.rarity === rarity && w.level <= level),
+            ...this.armors.filter(a => a.rarity === rarity && a.level <= level),
+            ...this.accessories.filter(a => a.rarity === rarity && a.level <= level)
         ];
+        // level 이하에 없으면 해당 등급 전체에서 가장 낮은 레벨 장비 풀로 대체
+        if (pool.length === 0) {
+            const allOfRarity = [
+                ...this.weapons.filter(w => w.rarity === rarity),
+                ...this.armors.filter(a => a.rarity === rarity),
+                ...this.accessories.filter(a => a.rarity === rarity)
+            ];
+            if (allOfRarity.length === 0) return null;
+            const minLevel = Math.min(...allOfRarity.map(e => e.level));
+            pool = allOfRarity.filter(e => e.level === minLevel);
+        }
         if (pool.length === 0) return null;
         const picked = pool[Math.floor(Math.random() * pool.length)];
         const category = picked.type === 'weapon' ? 'weapon' : (picked.type === 'necklace' || picked.type === 'ring' || picked.type === 'bracelet') ? 'accessory' : 'armor';
