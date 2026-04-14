@@ -11,8 +11,6 @@ const FormData = require('form-data');
 const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
 const puppeteer = require('puppeteer-core');
-const { wrapper } = require('axios-cookiejar-support');
-const { CookieJar } = require('tough-cookie');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
@@ -746,53 +744,13 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
     }
 }
 
-// 2Captcha 이미지 캡차 풀기
-async function solveCaptchaWith2Captcha(imageBase64) {
-    const apiKey = process.env.TWOCAPTCHA_API_KEY;
-    if (!apiKey) throw new Error('TWOCAPTCHA_API_KEY 미설정');
-    
-    const createRes = await axios.post('https://api.2captcha.com/createTask', {
-        clientKey: apiKey,
-        task: {
-            type: 'ImageToTextTask',
-            body: imageBase64,
-            case: false,
-            numeric: 0,
-            minLength: 1,
-            maxLength: 4,
-            comment: 'do not write red letters. all letters are lowercase.'
-        }
-    }, { timeout: 15000 });
-    
-    if (createRes.data.errorId !== 0) {
-        throw new Error(`2Captcha 생성 실패: ${createRes.data.errorDescription}`);
-    }
-    
-    const taskId = createRes.data.taskId;
-    
-    for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const resultRes = await axios.post('https://api.2captcha.com/getTaskResult', {
-            clientKey: apiKey,
-            taskId: taskId
-        }, { timeout: 15000 });
-        
-        if (resultRes.data.status === 'ready') {
-            return resultRes.data.solution.text;
-        }
-        if (resultRes.data.errorId !== 0) {
-            throw new Error(`2Captcha 실패: ${resultRes.data.errorDescription}`);
-        }
-    }
-    throw new Error('2Captcha 시간 초과 (60초)');
-}
 
 let puppeteerRunning = 0;
 const PUPPETEER_MAX_CONCURRENT = 2;
 
 // 세션 쿠키 캐시: { accountId: { cookies: {}, savedAt: timestamp } }
 const dcSessionCache = {};
-const DC_SESSION_TTL = 24 * 60 * 60 * 1000; // 24시간
+const DC_SESSION_TTL = 3 * 60 * 60 * 1000; // 3시간
 
 function getCachedSession(accountId) {
     const entry = dcSessionCache[accountId];
@@ -1009,42 +967,11 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         mergeCookies(postRes);
         log("추천 응답: " + JSON.stringify(postRes.data));
         
-        // 캡차 감지 시 2Captcha로 풀기
-        if (postRes.data?.cause === 'captcha' && postRes.data?.ran_code) {
-            try {
-                const ranCode = postRes.data.ran_code;
-                log("캡차 감지 (ran_code: " + ranCode.substring(0, 8) + "...), 2Captcha로 풀기 시도");
-                
-                // 1) 캡차 이미지를 별도 axios(프록시X, 쿠키X)로 가져옴 → 메인 세션에 영향 없음
-                const captchaImgUrl = `https://m.dcinside.com/captcha/code?id=${galleryId}&dccode=${ranCode}&type=F`;
-                const imgRes = await axios.get(captchaImgUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36' },
-                    responseType: 'arraybuffer',
-                    timeout: 10000
-                });
-                
-                const imgBase64 = Buffer.from(imgRes.data).toString('base64');
-                log(`캡차 이미지 수신 (${imgRes.data.length} bytes, 별도 세션)`);
-                
-                // 2) 2Captcha로 풀기
-                const captchaAnswer = await solveCaptchaWith2Captcha(imgBase64);
-                log(`캡차 정답: ${captchaAnswer}`);
-                
-                // 3) 동일 keepAlive 커넥션 + 동일 쿠키로 즉시 재추천
-                const retryParams = new URLSearchParams(baseParams.toString());
-                retryParams.set('code', captchaAnswer);
-                retryParams.set('code_recommend', captchaAnswer);
-                retryParams.set('ran_code', ranCode);
-                
-                postRes = await axios.post(recommendUrl, retryParams.toString(), {
-                    httpsAgent: agent,
-                    headers: { ...commonHeaders, 'Cookie': cookieStr() },
-                    timeout: 15000
-                });
-                log("캡차 재시도 응답: " + JSON.stringify(postRes.data));
-            } catch (captchaErr) {
-                log("캡차 풀기 실패: " + captchaErr.message);
-            }
+        // 캡차 감지 시 실패 처리
+        if (postRes.data?.cause === 'captcha') {
+            log("캡차 감지 → 실패 처리");
+            agent.destroy();
+            return { success: false, msg: "캡차 발생", token: csrfToken, ip: currentIp, logs };
         }
         
         // keepAlive 에이전트 정리
