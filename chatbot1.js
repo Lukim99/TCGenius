@@ -104,7 +104,7 @@ function getUserByName(name) {
 
 const view_all = ('\u200e'.repeat(500));
 
-const TARGET_CHANNEL_ID = '18448110985554752';
+const TARGET_CHANNEL_ID = '18479279168270549';
  let attendanceQueue = Promise.resolve();
 
 function isTargetChannel(channel) {
