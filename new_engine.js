@@ -3,6 +3,7 @@ const fs = require('fs');
 const LKAgent = require('./agent.js');
 const wordchain = require('./wordchain.js');
 const lolChatbot = require('./lol_chatbot.js');
+const chatbot1 = require('./chatbot1.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -77,6 +78,7 @@ let fishingUsers = {};
 // RPG 배틀 상태 관리
 const activeBattles = new Map(); // userId -> RPGBattle instance
 const activeDungeons = new Map(); // userId -> { dungeon, phaseIndex, monsterIndex, monstersRemaining }
+const activeFishing = new Map(); // userId -> { endTime, rodName, baitName, rodIndex, catchResult }
 
 // 던전 진행 처리 헬퍼 (전투 승리 후 다음 몬스터 스폰 또는 던전 클리어)
 async function _advanceDungeon(userId, character, owner, oldBattle, victoryData, battleMsg) {
@@ -2737,6 +2739,12 @@ class RPGUser {
         // 피로도 시스템
         this.fatigue = { current: 156, max: 156 }; // 피로도 (156 기본)
         this.fatigueLastReset = new Date().toDateString(); // 마지막 리셋 날짜
+        
+        // 낚시 시스템
+        this.fishingData = {
+            keepNet: [],  // 살림망: [{ name, type, count }]
+            rods: []      // 낚싯대: [{ name, durability, maxDurability }]
+        };
     }
 
     // 데이터 로드
@@ -2772,6 +2780,27 @@ class RPGUser {
         this.fatigueLastReset = data.fatigueLastReset || new Date().toDateString();
         this._checkFatigueReset();
         
+        // 낚시 데이터
+        if (data.fishingData) {
+            this.fishingData = data.fishingData;
+            if (!this.fishingData.keepNet) this.fishingData.keepNet = [];
+            if (!this.fishingData.rods) this.fishingData.rods = [];
+        }
+        
+        // 낚싯대 마이그레이션: 소비아이템 인벤토리 → fishingData.rods
+        const rodNames = ['허름한 낚싯대', '레고 낚싯대', '일레이나 낚싯대'];
+        for (const rName of rodNames) {
+            if (this.inventory && this.inventory.consumables && this.inventory.consumables.has(rName)) {
+                const item = this.inventory.consumables.get(rName);
+                const rodInfo = fishingManager.getRod(rName);
+                const dur = rodInfo ? rodInfo.durability : -1;
+                for (let i = 0; i < item.count; i++) {
+                    this.fishingData.rods.push({ name: rName, durability: dur, maxDurability: dur });
+                }
+                this.inventory.consumables.delete(rName);
+            }
+        }
+        
         return this;
     }
     
@@ -2800,6 +2829,60 @@ class RPGUser {
         return { success: true, current: this.fatigue.current };
     }
 
+    // ==================== 낚시 시스템 ====================
+    // 낚싯대 추가
+    addFishingRod(rodName, durability, maxDurability) {
+        this.fishingData.rods.push({ name: rodName, durability, maxDurability });
+    }
+    
+    // 낚싯대 목록 조회
+    getFishingRods() {
+        return this.fishingData.rods;
+    }
+    
+    // 특정 이름의 낚싯대 찾기 (첫 번째 매칭, 인덱스 반환)
+    findFishingRodIndex(rodName) {
+        return this.fishingData.rods.findIndex(r => r.name === rodName);
+    }
+    
+    // 낚싯대 내구도 차감 (인덱스 기반)
+    useFishingRod(rodIndex) {
+        const rod = this.fishingData.rods[rodIndex];
+        if (!rod) return { success: false, message: '낚싯대를 찾을 수 없습니다.' };
+        if (rod.durability === -1) return { success: true, broken: false, rod }; // 무한 내구도
+        rod.durability -= 1;
+        if (rod.durability <= 0) {
+            this.fishingData.rods.splice(rodIndex, 1);
+            return { success: true, broken: true, rod };
+        }
+        return { success: true, broken: false, rod };
+    }
+    
+    // 살림망 총 아이템 수
+    getKeepNetCount() {
+        return this.fishingData.keepNet.reduce((sum, item) => sum + item.count, 0);
+    }
+    
+    // 살림망에 아이템 추가
+    addToKeepNet(itemName, itemType, count = 1) {
+        const existing = this.fishingData.keepNet.find(i => i.name === itemName);
+        if (existing) {
+            existing.count += count;
+        } else {
+            this.fishingData.keepNet.push({ name: itemName, type: itemType, count });
+        }
+    }
+    
+    // 살림망 비우기 → 인벤토리로 이동
+    emptyKeepNet() {
+        const items = [...this.fishingData.keepNet];
+        for (const item of items) {
+            this.addConsumableToInventory(item.name, item.type || '물고기', item.count);
+        }
+        this.fishingData.keepNet = [];
+        return items;
+    }
+
     // JSON 변환
     toJSON() {
         return {
@@ -2823,6 +2906,7 @@ class RPGUser {
             gunpowerResource: this.gunpowerResource.toJSON(),
             fatigue: this.fatigue,
             fatigueLastReset: this.fatigueLastReset,
+            fishingData: this.fishingData,
             gold: this.gold,
             garnet: this.garnet
         };
@@ -2996,6 +3080,14 @@ class RPGUser {
     }
 
     addConsumableToInventory(itemName, itemType, count = 1) {
+        // 낚싯대인 경우 fishingData.rods에 추가
+        const rodData = fishingManager.getRod(itemName);
+        if (rodData) {
+            for (let i = 0; i < count; i++) {
+                this.addFishingRod(itemName, rodData.durability, rodData.durability);
+            }
+            return true;
+        }
         return this.inventory.addConsumable(itemName, itemType, count);
     }
 
@@ -4737,6 +4829,8 @@ client.on('chat', async (data, channel) => {
                 console.log('채팅 수 기록 실패:', e);
             }
         }
+
+        if (await chatbot1.onChat(data, channel, { client })) return;
         
         const reply = str => {
             if(roomtype != "OM") {
@@ -5430,6 +5524,11 @@ client.on('chat', async (data, channel) => {
                 save(`user_${sender.userId}.json`, JSON.stringify({name: sender.nickname}));
                 channel.sendChat("✅ 등록되었습니다.\n잠시만 기다려주시면 의뢰하신 내용에 대한 안내를 진행해드리겠습니다.");
             }
+        }
+
+        if (msg.startsWith("!초댉 ")) {
+            const url = msg.substring(4);
+            joinOpenChat(channel, url, reply);
         }
 
         if (msg.toUpperCase().startsWith("LK봇아 ")) {
@@ -12229,6 +12328,39 @@ client.on('chat', async (data, channel) => {
                     await owner.save();
                 }
 
+                // ===== 낚시 중 활동 차단 =====
+                const fishingState = activeFishing.get(sender.userId + "");
+                if (fishingState && args[0] !== "낚시") {
+                    const now = Date.now();
+                    if (now < fishingState.endTime) {
+                        const remaining = Math.ceil((fishingState.endTime - now) / 1000);
+                        channel.sendChat(`🎣 낚시 중입니다. (남은 시간: ${remaining}초)\n낚시가 끝날 때까지 다른 활동을 할 수 없습니다.`);
+                        return;
+                    } else {
+                        // 타이머 만료 - 자동 완료 처리
+                        const catchResult = fishingState.catchResult;
+                        if (catchResult) {
+                            const catchCount = catchResult.count || 1;
+                            character.addToKeepNet(catchResult.name, catchResult.type || '물고기', catchCount);
+                        }
+                        const rodResult = character.useFishingRod(fishingState.rodIndex);
+                        activeFishing.delete(sender.userId + "");
+                        await character.save();
+                        let autoMsg = `🎣 낚시 완료! `;
+                        if (catchResult) {
+                            autoMsg += `${catchResult.name} x${(catchResult.count || 1).toLocaleString()}`;
+                        } else {
+                            autoMsg += `아무것도 잡지 못했습니다...`;
+                        }
+                        if (rodResult && rodResult.broken) {
+                            autoMsg += `\n💥 ${fishingState.rodName}가 파괴되었습니다!`;
+                        }
+                        channel.sendChat(autoMsg);
+                        // 이후 명령어는 처리하지 않고 리턴 (다음 명령에서 처리)
+                        return;
+                    }
+                }
+
                 // ===== 정보 명령어 =====
                 if (args[0] === "정보" || args[0] === "캐릭터정보" || args[0] === "내정보") {
                     const info = character.getCharacterInfo();
@@ -13103,61 +13235,194 @@ client.on('chat', async (data, channel) => {
 
                 if (args[0] === "제작") {
                     if (!args[1]) {
-                        channel.sendChat(`❌ /RPGenius 제작 [레시피명]`);
+                        channel.sendChat(`❌ /RPGenius 제작 [레시피명] [수량]`);
                         return;
                     }
-                    const recipeName = args.slice(1).join(' ');
-                    const canCraft = craftingManager.canCraft ? craftingManager.canCraft(recipeName, character.inventory, character.gold) : null;
-                    if (canCraft && !canCraft.success) {
-                        channel.sendChat(`❌ ${canCraft.message}`);
-                        return;
-                    }
-                    const result = craftingManager.craft ? craftingManager.craft(recipeName, character.inventory, character) : null;
-                    if (!result || !result.success) {
-                        channel.sendChat(`❌ ${result ? result.message : '제작에 실패했습니다.'}`);
-                        return;
+                    const craftCount = parseInt(args[args.length - 1]);
+                    const hasCraftCount = !isNaN(craftCount) && args.length > 2;
+                    const recipeName = hasCraftCount ? args.slice(1, -1).join(' ') : args.slice(1).join(' ');
+                    const craftQty = hasCraftCount ? craftCount : 1;
+                    if (craftQty < 1) { channel.sendChat(`❌ 수량은 1 이상이어야 합니다.`); return; }
+                    let lastResult = null;
+                    for (let ci = 0; ci < craftQty; ci++) {
+                        const canCraft = craftingManager.canCraft ? craftingManager.canCraft(recipeName, character.inventory, character.gold) : null;
+                        if (canCraft && !canCraft.success) {
+                            if (ci === 0) { channel.sendChat(`❌ ${canCraft.message}`); return; }
+                            channel.sendChat(`⚠️ ${ci}회 제작 후 재료가 부족합니다.\n✅ ${recipeName} x${ci.toLocaleString()} 제작 완료!`);
+                            await character.save();
+                            return;
+                        }
+                        const result = craftingManager.craft ? craftingManager.craft(recipeName, character.inventory, character) : null;
+                        if (!result || !result.success) {
+                            if (ci === 0) { channel.sendChat(`❌ ${result ? result.message : '제작에 실패했습니다.'}`); return; }
+                            channel.sendChat(`⚠️ ${ci}회 제작 후 중단되었습니다.\n✅ ${recipeName} x${ci.toLocaleString()} 제작 완료!`);
+                            await character.save();
+                            return;
+                        }
+                        lastResult = result;
+                        // 제작 결과가 낚싯대인 경우 fishingData.rods로 이동
+                        if (result.item) {
+                            const craftRodData = fishingManager.getRod(result.item.name);
+                            if (craftRodData) {
+                                const itemCount = result.item.count || 1;
+                                character.consumeItemFromInventory(result.item.name, itemCount);
+                                for (let ri = 0; ri < itemCount; ri++) {
+                                    character.addFishingRod(result.item.name, craftRodData.durability, craftRodData.durability);
+                                }
+                            }
+                        }
                     }
                     await character.save();
-                    channel.sendChat(`✅ ${result.itemName || recipeName}을(를) 제작했습니다!`);
+                    channel.sendChat(`✅ ${lastResult?.itemName || recipeName} x${craftQty.toLocaleString()}을(를) 제작했습니다!`);
                     return;
                 }
 
                 // ===== 낚시 =====
                 if (args[0] === "낚시") {
+                    const userId = sender.userId + "";
+                    const currentFishing = activeFishing.get(userId);
+                    
+                    // --- 낚시 정보 ---
                     if (args[1] === "정보") {
-                        const rods = [];
+                        const rodList = character.getFishingRods();
                         const baits = [];
                         if (character.inventory && character.inventory.consumables) {
                             for (let [name, item] of character.inventory.consumables) {
-                                if (fishingManager.getRod(name)) rods.push(`${name} x${item.count.toLocaleString()}`);
                                 if (fishingManager.getBait(name)) baits.push(`${name} x${item.count.toLocaleString()}`);
                             }
                         }
+                        const keepNetCount = character.getKeepNetCount();
                         const msg = [`━━━ 낚시 정보 ━━━`];
-                        msg.push(`🎣 낚싯대: ${rods.length > 0 ? rods.join(', ') : '없음'}`);
+                        msg.push(`🎣 낚싯대:`);
+                        if (rodList.length > 0) {
+                            rodList.forEach((rod, idx) => {
+                                const rodData = fishingManager.getRod(rod.name);
+                                const durText = rod.durability === -1 ? '∞' : `${rod.durability.toLocaleString()}/${rod.maxDurability.toLocaleString()}`;
+                                const basketText = rodData ? rodData.basket : '?';
+                                msg.push(`  ${idx + 1}. ${rod.name} (내구도: ${durText}) [살림망 제한: ${basketText}]`);
+                            });
+                        } else {
+                            msg.push(`  없음`);
+                        }
                         msg.push(`🪱 떡밥: ${baits.length > 0 ? baits.join(', ') : '없음'}`);
+                        msg.push(`🪣 살림망: ${keepNetCount}개`);
                         msg.push(`━━━━━━━━━━━━━━━`);
-                        msg.push(`/RPGenius 낚시 로 낚시를 시작합니다.`);
+                        msg.push(`/RPGenius 낚시 - 낚시 시작`);
+                        msg.push(`/RPGenius 낚시 살림망 - 살림망 확인`);
+                        msg.push(`/RPGenius 낚시 살림망비우기 - 인벤토리로 이동`);
                         channel.sendChat(msg.join('\n'));
                         return;
                     }
-                    // 인벤토리에서 낚싯대와 떡밥 자동 탐색
-                    let rodName = null;
-                    let baitName = null;
-                    const fullArg = args.slice(1).join(' ');
-                    // 명시적 지정: 전체 텍스트에서 알려진 낚싯대/떡밥 이름 매칭
-                    if (fullArg) {
-                        for (const rName of Object.keys(fishingManager.data.rods || {})) {
-                            if (fullArg.includes(rName)) { rodName = rName; break; }
+                    
+                    // --- 살림망 확인 ---
+                    if (args[1] === "살림망") {
+                        const keepNet = character.fishingData.keepNet;
+                        const totalCount = character.getKeepNetCount();
+                        const msg = [`━━━ 🪣 살림망 (${totalCount}개) ━━━`];
+                        if (keepNet.length > 0) {
+                            keepNet.forEach(item => {
+                                const emoji = item.type === 'fish' ? '🐟' : '📦';
+                                msg.push(`  ${emoji} ${item.name} x${item.count.toLocaleString()}`);
+                            });
+                        } else {
+                            msg.push(`  살림망이 비어있습니다.`);
                         }
+                        msg.push(`━━━━━━━━━━━━━━━`);
+                        msg.push(`/RPGenius 낚시 살림망비우기 - 인벤토리로 이동`);
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    
+                    // --- 살림망 비우기 ---
+                    if (args[1] === "살림망비우기") {
+                        const items = character.emptyKeepNet();
+                        if (items.length === 0) {
+                            channel.sendChat(`🪣 살림망이 이미 비어있습니다.`);
+                            return;
+                        }
+                        const msg = [`✅ 살림망의 아이템을 인벤토리로 이동했습니다!`];
+                        items.forEach(item => {
+                            const emoji = item.type === 'fish' ? '🐟' : '📦';
+                            msg.push(`  ${emoji} ${item.name} x${item.count.toLocaleString()}`);
+                        });
+                        await character.save();
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    
+                    // --- 낚시 결과 확인 (타이머 만료 후) ---
+                    if (currentFishing) {
+                        const now = Date.now();
+                        if (now < currentFishing.endTime) {
+                            const remaining = Math.ceil((currentFishing.endTime - now) / 1000);
+                            channel.sendChat(`🎣 낚시 중... (남은 시간: ${remaining}초)\n잠시 후 /RPGenius 낚시 로 결과를 확인하세요.`);
+                            return;
+                        }
+                        // 타이머 만료 - 결과 처리
+                        const catchResult = currentFishing.catchResult;
+                        const msg = [`🎣 낚시 결과 (${currentFishing.rodName} + ${currentFishing.baitName})`, ``];
+                        if (catchResult) {
+                            const catchCount = catchResult.count || 1;
+                            character.addToKeepNet(catchResult.name, catchResult.type || '물고기', catchCount);
+                            msg.push(`  🐟 ${catchResult.name} x${catchCount.toLocaleString()} → 살림망에 추가!`);
+                        } else {
+                            msg.push(`  아무것도 잡지 못했습니다...`);
+                        }
+                        const rodResult = character.useFishingRod(currentFishing.rodIndex);
+                        if (rodResult && rodResult.broken) {
+                            msg.push(`  💥 ${currentFishing.rodName}이(가) 파괴되었습니다!`);
+                        } else if (rodResult && rodResult.rod && rodResult.rod.durability !== -1) {
+                            msg.push(`  🔧 ${currentFishing.rodName} 내구도: ${rodResult.rod.durability.toLocaleString()}/${rodResult.rod.maxDurability.toLocaleString()}`);
+                        }
+                        msg.push(`  🪣 살림망: ${character.getKeepNetCount()}개`);
+                        activeFishing.delete(userId);
+                        await character.save();
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    
+                    // --- 낚시 시작 ---
+                    // 전투/사냥 중 체크
+                    if (activeBattles.has(userId)) {
+                        channel.sendChat(`❌ 전투 중에는 낚시를 할 수 없습니다.`);
+                        return;
+                    }
+                    if (activeDungeons.has(userId)) {
+                        channel.sendChat(`❌ 던전 탐험 중에는 낚시를 할 수 없습니다.`);
+                        return;
+                    }
+                    
+                    // 낚싯대 선택 (fishingData.rods에서)
+                    let rodName = null;
+                    let rodIndex = -1;
+                    const fullArg = args.slice(1).join(' ');
+                    if (fullArg) {
+                        // 명시적 낚싯대 지정
+                        rodIndex = character.fishingData.rods.findIndex(r => fullArg.includes(r.name));
+                        if (rodIndex !== -1) rodName = character.fishingData.rods[rodIndex].name;
+                    }
+                    // 미지정 시 첫 번째 낚싯대 자동 선택
+                    if (rodIndex === -1 && character.fishingData.rods.length > 0) {
+                        rodIndex = 0;
+                        rodName = character.fishingData.rods[0].name;
+                    }
+                    if (rodIndex === -1 || !rodName) {
+                        channel.sendChat(`❌ 낚싯대를 보유하고 있지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
+                        return;
+                    }
+                    
+                    // 내구도 체크
+                    const selectedRod = character.fishingData.rods[rodIndex];
+                    if (selectedRod.durability === 0) {
+                        channel.sendChat(`❌ ${rodName}의 내구도가 0입니다. 사용할 수 없습니다.`);
+                        return;
+                    }
+                    
+                    // 떡밥 선택
+                    let baitName = null;
+                    if (fullArg) {
                         for (const bName of Object.keys(fishingManager.data.baits || {})) {
                             if (fullArg.includes(bName)) { baitName = bName; break; }
-                        }
-                    }
-                    // 미지정 시 인벤토리에서 자동 선택
-                    if (!rodName && character.inventory && character.inventory.consumables) {
-                        for (const [name] of character.inventory.consumables) {
-                            if (fishingManager.getRod(name)) { rodName = name; break; }
                         }
                     }
                     if (!baitName && character.inventory && character.inventory.consumables) {
@@ -13165,36 +13430,48 @@ client.on('chat', async (data, channel) => {
                             if (fishingManager.getBait(name)) { baitName = name; break; }
                         }
                     }
-                    if (!rodName) {
-                        channel.sendChat(`❌ 낚싯대를 보유하고 있지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
-                        return;
-                    }
                     if (!baitName) {
                         channel.sendChat(`❌ 떡밥을 보유하고 있지 않습니다.\n/RPGenius 낚시 정보 로 보유 현황을 확인하세요.`);
-                        return;
-                    }
-                    if (!character.hasConsumable(rodName, 1)) {
-                        channel.sendChat(`❌ ${rodName}을(를) 보유하고 있지 않습니다.`);
                         return;
                     }
                     if (!character.hasConsumable(baitName, 1)) {
                         channel.sendChat(`❌ ${baitName}이(가) 부족합니다.`);
                         return;
                     }
-
-                    const time = fishingManager.getFishingTime(rodName);
-                    const drop = fishingManager.rollCatch(baitName);
-                    character.consumeItemFromInventory(baitName, 1);
-
-                    const msg = [`🎣 낚시 결과 (${rodName} + ${baitName})`, ``];
-                    if (!drop) {
-                        msg.push(`  아무것도 잡지 못했습니다...`);
-                    } else {
-                        msg.push(`  🐟 ${drop.name} x${(drop.count || 1).toLocaleString()}`);
-                        character.addConsumableToInventory(drop.name, drop.type || '물고기', drop.count || 1);
+                    
+                    // 살림망 제한 체크
+                    const rodData = fishingManager.getRod(rodName);
+                    const basketLimit = rodData ? rodData.basket : 100;
+                    const currentKeepNet = character.getKeepNetCount();
+                    if (currentKeepNet >= basketLimit) {
+                        channel.sendChat(`❌ 살림망이 가득 찼습니다! (${currentKeepNet}/${basketLimit})\n[ /RPGenius 낚시 살림망비우기 ]`);
+                        return;
                     }
+                    
+                    // 낚시 시작 - 떡밥 소모, 딜레이 설정, 결과 미리 굴림
+                    character.consumeItemFromInventory(baitName, 1);
+                    const fishingTime = fishingManager.getFishingTime(rodName);
+                    const catchResult = fishingManager.rollCatch(baitName);
+                    
+                    activeFishing.set(userId, {
+                        endTime: Date.now() + (fishingTime * 1000),
+                        rodName,
+                        baitName,
+                        rodIndex,
+                        catchResult
+                    });
+                    
+                    // 딜레이 종료 시 알림 메시지
+                    setTimeout(() => {
+                        if (activeFishing.has(userId)) {
+                            channel.sendChat(`🔔 무언가 미끼를 물었습니다!\n/RPGenius 낚시 로 결과를 확인하세요.`);
+                        }
+                    }, fishingTime * 1000);
+                    
                     await character.save();
-                    channel.sendChat(msg.join('\n'));
+                    
+                    const durText = selectedRod.durability === -1 ? '∞' : `${selectedRod.durability.toLocaleString()}`;
+                    channel.sendChat(`🎣 낚시를 시작합니다! (${rodName} + ${baitName})\n⏱️ ${fishingTime}초 후 결과를 확인할 수 있습니다.\n🪣 살림망: ${currentKeepNet}/${basketLimit}`);
                     return;
                 }
 
@@ -13344,6 +13621,14 @@ client.on('chat', async (data, channel) => {
                             channel.sendChat(`❌ ${r.message}`);
                             return;
                         }
+                    }
+                    // 낚싯대 구매 시 fishingData.rods에 등록 + 소비아이템에서 제거
+                    const rodData = fishingManager.getRod(itemName);
+                    if (rodData) {
+                        for (let i = 0; i < qty; i++) {
+                            character.addFishingRod(itemName, rodData.durability, rodData.durability);
+                        }
+                        character.consumeItemFromInventory(itemName, qty);
                     }
                     await character.save();
                     await owner.save();
@@ -13516,7 +13801,14 @@ client.on('chat', async (data, channel) => {
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
                         const mail = result.mail;
                         if (mail.type === 'item') {
-                            character.addConsumableToInventory(mail.itemName, '아이템', mail.count);
+                            const mailRodData = fishingManager.getRod(mail.itemName);
+                            if (mailRodData) {
+                                for (let i = 0; i < mail.count; i++) {
+                                    character.addFishingRod(mail.itemName, mailRodData.durability, mailRodData.durability);
+                                }
+                            } else {
+                                character.addConsumableToInventory(mail.itemName, '아이템', mail.count);
+                            }
                         } else if (mail.type === 'garnet') {
                             character.garnet += mail.garnet;
                         } else if (mail.type === 'gold') {
@@ -13530,7 +13822,16 @@ client.on('chat', async (data, channel) => {
                         const result = tradeManager.claimAllMail(owner.id);
                         if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
                         result.claimed.forEach(c => {
-                            if (c.type === 'item') character.addConsumableToInventory(c.itemName, '아이템', c.count);
+                            if (c.type === 'item') {
+                                const cRodData = fishingManager.getRod(c.itemName);
+                                if (cRodData) {
+                                    for (let ri = 0; ri < c.count; ri++) {
+                                        character.addFishingRod(c.itemName, cRodData.durability, cRodData.durability);
+                                    }
+                                } else {
+                                    character.addConsumableToInventory(c.itemName, '아이템', c.count);
+                                }
+                            }
                             else if (c.type === 'garnet') character.garnet += c.garnet;
                             else if (c.type === 'gold') character.gold += c.garnet;
                         });
@@ -13551,8 +13852,14 @@ client.on('chat', async (data, channel) => {
                             const itemName = args[4];
                             const count = parseInt(args[5]) || 1;
                             if (!itemName) { channel.sendChat(`❌ 아이템명을 입력해주세요.`); return; }
+                            if (!character.hasConsumable(itemName, count)) {
+                                channel.sendChat(`❌ ${itemName}이(가) 부족합니다. (보유: ${character.getConsumableCount(itemName).toLocaleString()}개)`);
+                                return;
+                            }
                             const result = tradeManager.sendItemMail(owner.id, owner.name, targetOwner.id, itemName, count);
                             if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
+                            character.consumeItemFromInventory(itemName, count);
+                            await character.save();
                             channel.sendChat(`✅ ${toName}님에게 ${itemName} x${count.toLocaleString()}을(를) 우편으로 보냈습니다.`);
                         } else if (sendType === "가넷") {
                             const amount = parseInt(args[4]);
@@ -13653,20 +13960,42 @@ client.on('chat', async (data, channel) => {
 
                 // ===== 아이템사용 (비전투) =====
                 if (args[0] === "사용") {
-                    const itemName = args.slice(1).join(' ');
-                    if (!itemName) { channel.sendChat(`❌ /RPGenius 사용 [아이템명]`); return; }
-                    const result = character.useItem(itemName);
-                    if (!result.success) { channel.sendChat(`❌ ${result.message}`); return; }
-                    const msg = [`✅ ${result.message}`];
-                    if (result.effects) {
-                        if (result.effects.hpRecover) msg.push(`  ❤️ HP +${result.effects.hpRecover}`);
-                        if (result.effects.hpRecoverPercent) msg.push(`  ❤️ HP +${result.effects.hpRecoverPercent}%`);
-                        if (result.effects.fatigueRecover) {
-                            character.recoverFatigue(result.effects.fatigueRecover);
-                            msg.push(`  ⚡ 피로도 +${result.effects.fatigueRecover}`);
+                    const useCount = parseInt(args[args.length - 1]);
+                    const hasUseCount = !isNaN(useCount) && args.length > 2;
+                    const itemName = hasUseCount ? args.slice(1, -1).join(' ') : args.slice(1).join(' ');
+                    const useQty = hasUseCount ? useCount : 1;
+                    if (!itemName) { channel.sendChat(`❌ /RPGenius 사용 [아이템명] [수량]`); return; }
+                    if (useQty < 1) { channel.sendChat(`❌ 수량은 1 이상이어야 합니다.`); return; }
+                    let totalEffects = { hpRecover: 0, hpRecoverPercent: 0, fatigueRecover: 0, exp: 0, leveledUp: false };
+                    let usedCount = 0;
+                    let lastMsg = '';
+                    for (let ui = 0; ui < useQty; ui++) {
+                        const result = character.useItem(itemName);
+                        if (!result.success) {
+                            if (ui === 0) { channel.sendChat(`❌ ${result.message}`); return; }
+                            break;
                         }
-                        if (result.effects.exp) msg.push(`  📊 EXP +${result.effects.exp}${result.effects.leveledUp ? ' (레벨업!)' : ''}`);
+                        usedCount++;
+                        lastMsg = result.message;
+                        if (result.effects) {
+                            if (result.effects.hpRecover) totalEffects.hpRecover += result.effects.hpRecover;
+                            if (result.effects.hpRecoverPercent) totalEffects.hpRecoverPercent += result.effects.hpRecoverPercent;
+                            if (result.effects.fatigueRecover) {
+                                character.recoverFatigue(result.effects.fatigueRecover);
+                                totalEffects.fatigueRecover += result.effects.fatigueRecover;
+                            }
+                            if (result.effects.exp) totalEffects.exp += result.effects.exp;
+                            if (result.effects.leveledUp) totalEffects.leveledUp = true;
+                            if (result.effects.levelUp) totalEffects.levelUp = (totalEffects.levelUp || 0) + result.effects.levelUp;
+                        }
                     }
+                    const msg = [`✅ ${itemName} x${usedCount.toLocaleString()} 사용 완료!`];
+                    if (totalEffects.hpRecover) msg.push(`  ❤️ HP +${totalEffects.hpRecover.toLocaleString()}`);
+                    if (totalEffects.hpRecoverPercent) msg.push(`  ❤️ HP +${totalEffects.hpRecoverPercent}%`);
+                    if (totalEffects.fatigueRecover) msg.push(`  ⚡ 피로도 +${totalEffects.fatigueRecover.toLocaleString()}`);
+                    if (totalEffects.exp) msg.push(`  📊 EXP +${totalEffects.exp.toLocaleString()}${totalEffects.leveledUp ? ' (레벨업!)' : ''}`);
+                    if (totalEffects.levelUp) msg.push(`  🎉 레벨 +${totalEffects.levelUp}`);
+                    if (usedCount < useQty) msg.push(`  ⚠️ ${usedCount}/${useQty}개만 사용됨 (아이템 부족)`);
                     await character.save();
                     channel.sendChat(msg.join('\n'));
                     return;
@@ -13748,7 +14077,8 @@ client.on('chat', async (data, channel) => {
                         `  강화 / 증폭`,
                         ``,
                         `🎮 컨텐츠`,
-                        `  제작목록 / 제작 / 낚시 / 사용`,
+                        `  제작목록 / 제작 / 사용`,
+                        `  낚시 / 낚시 정보 / 낚시 살림망 / 낚시 살림망비우기`,
                         `  트로피 / 펫 / 부화`,
                         `  상점 / 구매 / 업적 / 칭호`,
                         ``,
@@ -13818,6 +14148,12 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
     } catch (e) {
         console.log('lol_chatbot 입장 연동 실패:', e);
     }
+
+    try {
+        await chatbot1.onUserJoin(joinLog, channel, user, feed, { client });
+    } catch (e) {
+        console.log('chatbot1 입장 연동 실패:', e);
+    }
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
@@ -13843,6 +14179,12 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
     } catch (e) {
         console.log('lol_chatbot 퇴장 연동 실패:', e);
     }
+
+    try {
+        await chatbot1.onUserLeft(leftLog, channel, user, feed, { client });
+    } catch (e) {
+        console.log('chatbot1 퇴장 연동 실패:', e);
+    }
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
@@ -13866,6 +14208,12 @@ client.on('profile_changed', async (channel, lastInfo, user) => {
         await lolChatbot.onProfileChanged(channel, lastInfo, user);
     } catch (e) {
         console.log('lol_chatbot 프로필변경 연동 실패:', e);
+    }
+
+    try {
+        await chatbot1.onProfileChanged(channel, lastInfo, user, { client });
+    } catch (e) {
+        console.log('chatbot1 프로필변경 연동 실패:', e);
     }
 });
 
