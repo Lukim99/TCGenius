@@ -4789,6 +4789,7 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 client.on('chat', async (data, channel) => {
     if (JSON.parse(read("DB/wordchain_enabled_rooms.json")).enabled.includes(channel.channelId + "")) wordchain.onChat(data, channel);
     if (await lolChatbot.onChat(data, channel)) return;
+    if (await chatbot1.onChat(data, channel, { client })) return;
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
@@ -4829,8 +4830,6 @@ client.on('chat', async (data, channel) => {
                 console.log('채팅 수 기록 실패:', e);
             }
         }
-
-        if (await chatbot1.onChat(data, channel, { client })) return;
         
         const reply = str => {
             if(roomtype != "OM") {
