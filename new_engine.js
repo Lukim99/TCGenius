@@ -4677,7 +4677,7 @@ async function joinOpenChat(channel, link, reply) {
         return false;
     }
     reply("[✓] LK봇을 성공적으로 초대했습니다.");
-    joinRes.result.sendChat(`✅ LK봇이 초대되었습니다!\n모두들 반갑습니다!`, false);
+    joinRes.result.sendChat(`✅ 봇이 성공적으로 설치되었습니다.`, false);
     client.channelList.get("384981318100178").sendChat(`[ LK봇 초대 안내 ]\n방 이름: ${joinRes.result.getDisplayName()}\n방 링크: ${data.result.openLink.linkURL}`);
     return true;
 }
