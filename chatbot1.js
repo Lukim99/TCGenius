@@ -105,10 +105,14 @@ function getUserByName(name) {
 const view_all = ('\u200e'.repeat(500));
 
 const TARGET_CHANNEL_ID = '18479279168270549';
+const TARGET_CHANNEL_IDS = [
+    TARGET_CHANNEL_ID,
+    '18474003313873303'
+];
  let attendanceQueue = Promise.resolve();
 
 function isTargetChannel(channel) {
-    return !!channel && channel.channelId + '' === TARGET_CHANNEL_ID;
+    return !!channel && TARGET_CHANNEL_IDS.includes(channel.channelId + '');
 }
 
  function enqueueAttendanceTask(task) {
@@ -2014,6 +2018,8 @@ async function onProfileChanged(channel, lastInfo, user, context = {}) {
 
 module.exports = {
     TARGET_CHANNEL_ID,
+    TARGET_CHANNEL_IDS,
+    isTargetChannel,
     onChat,
     onUserJoin,
     onUserLeft,

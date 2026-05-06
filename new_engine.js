@@ -14110,7 +14110,7 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
-    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -14156,7 +14156,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
-    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -14187,7 +14187,7 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
-    if (! ['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
         const newNick = user ? user.nickname : null;
