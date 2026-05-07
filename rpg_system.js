@@ -507,7 +507,11 @@ class RPGEquipmentDataManager {
     // 증폭 시도 (강화와 동일한 확률표 사용)
     attemptAmplification(currentAmplification) {
         // 강화와 동일한 확률표 사용
-        return this.attemptEnhancement(currentAmplification);
+        const result = this.attemptEnhancement(currentAmplification);
+        return {
+            ...result,
+            newAmplification: result.newEnhancement
+        };
     }
 
     // 장비 증폭서 사용: 강화 → 증폭 변환 (강화 초기화, 랜덤 차원 스탯 부여)
@@ -1496,11 +1500,11 @@ class RPGLevel {
 
 // 4. 스킬 시스템
 class RPGSkill {
-    constructor(name, type, level = 1) {
+    constructor(name, type, level = 1, maxLevel = 10) {
         this.name = name;           // 스킬 이름
         this.type = type;           // 'passive', 'active', 'awakening'
         this.level = level;         // 스킬 레벨
-        this.maxLevel = 10;
+        this.maxLevel = maxLevel;
         this.cooldown = 0;          // 현재 쿨타임
         this.maxCooldown = 0;       // 최대 쿨타임
     }
@@ -1550,12 +1554,23 @@ class RPGSkillManager {
         this.initializeJobSkills();
     }
 
+    createSkill(name, type, level = 1, data = null) {
+        const skillDetail = this.jobType ? skillDataManager.getSkillDetail(this.jobType, name) : null;
+        const maxLevel = skillDetail && skillDetail.maxLevel ? skillDetail.maxLevel : ((data && data.maxLevel) || 10);
+        const skill = new RPGSkill(name, type, level, maxLevel);
+        if (data) {
+            skill.load(data);
+            skill.maxLevel = maxLevel;
+        }
+        return skill;
+    }
+
     load(data) {
         this.jobType = data.jobType;
         this.skills = new Map();
         if (data.skills) {
             for (let [name, skillData] of Object.entries(data.skills)) {
-                this.skills.set(name, new RPGSkill(skillData.name, skillData.type, skillData.level).load(skillData));
+                this.skills.set(name, this.createSkill(name, skillData.type, skillData.level, skillData));
             }
         }
         return this;
@@ -1568,14 +1583,14 @@ class RPGSkillManager {
         // 패시브 스킬 추가
         if (initialSkills.passive) {
             initialSkills.passive.forEach(skillName => {
-                this.skills.set(skillName, new RPGSkill(skillName, 'passive', 1));
+                this.skills.set(skillName, this.createSkill(skillName, 'passive', 1));
             });
         }
         
         // 액티브 스킬 추가
         if (initialSkills.active) {
             initialSkills.active.forEach(skillName => {
-                this.skills.set(skillName, new RPGSkill(skillName, 'active', 1));
+                this.skills.set(skillName, this.createSkill(skillName, 'active', 1));
             });
         }
     }
@@ -1584,7 +1599,7 @@ class RPGSkillManager {
         if (this.skills.has(name)) {
             return { success: false, message: `${name}은(는) 이미 보유한 스킬입니다.` };
         }
-        this.skills.set(name, new RPGSkill(name, type, level));
+        this.skills.set(name, this.createSkill(name, type, level));
         return { success: true, message: `${name} 스킬을 획득했습니다!` };
     }
 
@@ -1718,6 +1733,12 @@ class RPGEquipment {
         this.rarity = rarity;       // '일반', '레어', '레전더리', '에픽'
         this.level = level;         // 장비 레벨
         this.stats = stats;         // { power: 1, hp: 100, ... }
+        this.effects = {};
+        this.uniqueEffect = null;
+        this.generatedStats = null;
+        this.setName = null;
+        this.jobRestriction = null;
+        this.weaponType = null;
         this.tradeable = rarity !== '에픽';
         this.enhancement = 0;       // 강화 수치 (0~16)
         this.amplification = 0;     // 증폭 수치 (0~16)
@@ -1787,10 +1808,17 @@ class RPGEquipment {
             rarity: this.rarity,
             level: this.level,
             stats: this.stats,
+            effects: this.effects,
+            uniqueEffect: this.uniqueEffect,
+            generatedStats: this.generatedStats,
+            setName: this.setName,
+            jobRestriction: this.jobRestriction,
+            weaponType: this.weaponType,
             tradeable: this.tradeable,
             enhancement: this.enhancement,
             amplification: this.amplification,
             isAmplified: this.isAmplified,
+            ampStat: this.ampStat,
             boundTo: this.boundTo,
             bindType: this.bindType
         };
@@ -1859,8 +1887,21 @@ class RPGEquipmentManager {
     getTotalStats() {
         const totalStats = {};
         for (let equipment of this.equipped.values()) {
-            for (let [stat, value] of Object.entries(equipment.stats)) {
-                totalStats[stat] = (totalStats[stat] || 0) + value;
+            for (let [stat, value] of Object.entries(equipment.stats || {})) {
+                if (typeof value === 'number') {
+                    totalStats[stat] = (totalStats[stat] || 0) + value;
+                }
+            }
+            for (let [effect, value] of Object.entries(equipment.effects || {})) {
+                if (typeof value === 'number') {
+                    totalStats[effect] = (totalStats[effect] || 0) + value;
+                }
+            }
+            if (equipment.isAmplified && equipment.ampStat) {
+                const ampBonus = equipment.amplification >= 9 ? equipment.amplification - 8 : 0;
+                if (ampBonus > 0) {
+                    totalStats[equipment.ampStat] = (totalStats[equipment.ampStat] || 0) + ampBonus;
+                }
             }
         }
         return totalStats;
@@ -2221,6 +2262,7 @@ class RPGBattle {
         this.character = character;
         this.monster = monster;
         this.dungeon = dungeon; // 던전 보상 처리용
+        const playerBattleStats = character.getBattleStatSnapshot ? character.getBattleStatSnapshot() : null;
         
         // tempObj 구조 생성 (old_engine.js의 processHunt 방식)
         this.tempObj = {
@@ -2229,7 +2271,7 @@ class RPGBattle {
                 monster: monster.name
             },
             stat: {
-                player: {
+                player: playerBattleStats || {
                     hp: character.hp.current,
                     maxHp: character.hp.max,
                     power: character.stats.power,
@@ -2314,7 +2356,17 @@ class RPGBattle {
             }
         }
 
+        if (actor === 'player') {
+            normalAttackBonus += ((stat.normalAttackDamage || 0) + (stat.allDamage || 0)) / 100;
+            if (stat.lowHpDamageBonus && stat.maxHp > 0 && stat.hp <= Math.floor(stat.maxHp / 2)) {
+                normalAttackBonus += stat.lowHpDamageBonus / 100;
+            }
+        }
+
         baseDamage = Math.floor(baseDamage * normalAttackBonus);
+        if (actor === 'player' && stat.attackPower) {
+            baseDamage += Math.floor(stat.attackPower * 0.15);
+        }
         
         // 공격력 버프 적용
         if (eff.atkBuff) {
@@ -2335,7 +2387,8 @@ class RPGBattle {
         const baseCritChance = 5;
         // 행운 1당 치명타 확률 0.8%
         let critChance = baseCritChance + (stat.luck * 0.8);
-        let critDmgBonus = 0;
+        let critDmgBonus = stat.critDamage || 0;
+        critChance += stat.critChance || 0;
         
         // 크리티컬 버프 적용
         if (eff.critBuff) {
@@ -2387,7 +2440,7 @@ class RPGBattle {
         const stat = this.tempObj.stat[defender];
         const eff = this.tempObj.effects[defender];
         // 속도 1당 회피율 0.5%
-        let evasionChance = stat.speed * 0.5;
+        let evasionChance = stat.speed * 0.5 + (stat.evasion || 0);
         
         // 회피 버프
         if (eff.evasionBuff) {
@@ -2488,7 +2541,7 @@ class RPGBattle {
             turnLog.push(...playerDot);
             if (this.tempObj.stat.player.hp <= 0) {
                 this.addTurnLog(turnLog);
-                this.finalizeTurn();
+                this.finalizeTurn('player');
                 return this.endBattle(false);
             }
         }
@@ -2497,7 +2550,7 @@ class RPGBattle {
         if (this._rollEvasion('monster')) {
             turnLog.push(`${this.tempObj.name.monster}이(가) 공격을 회피했습니다!`);
             this.addTurnLog(turnLog);
-            this.finalizeTurn();
+            this.finalizeTurn('player');
             return { success: true, log: this.getRecentLog() };
         }
 
@@ -2523,14 +2576,14 @@ class RPGBattle {
                 turnLog.push(`💨 ${this.tempObj.name.monster}: "${this.monster.specialMechanic.message || '도망친다!'}"`);
                 turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
                 this.addTurnLog(turnLog);
-                this.finalizeTurn();
+                this.finalizeTurn('player');
                 // 도망쳤으므로 승리로 간주하고 보상 지급
                 return this.endBattle(true, true);
             }
         }
 
         this.addTurnLog(turnLog);
-        this.finalizeTurn();
+        this.finalizeTurn('player');
 
         // 승패 판정
         if (this.tempObj.stat.monster.hp <= 0) {
@@ -2554,7 +2607,7 @@ class RPGBattle {
             turnLog.push(...monsterDot);
             if (this.tempObj.stat.monster.hp <= 0) {
                 this.addTurnLog(turnLog);
-                this.finalizeTurn();
+                this.finalizeTurn('monster');
                 return this.endBattle(true);
             }
         }
@@ -2563,7 +2616,7 @@ class RPGBattle {
         if (this.tempObj.effects.monster.stunned) {
             turnLog.push(`💫 ${this.tempObj.name.monster}은(는) 행동불능 상태!`);
             this.addTurnLog(turnLog);
-            this.finalizeTurn();
+            this.finalizeTurn('monster');
             return { success: true, log: this.getRecentLog() };
         }
 
@@ -2571,7 +2624,7 @@ class RPGBattle {
         if (this._rollEvasion('player')) {
             turnLog.push(`${this.tempObj.name.player}이(가) 공격을 회피했습니다!`);
             this.addTurnLog(turnLog);
-            this.finalizeTurn();
+            this.finalizeTurn('monster');
             return { success: true, log: this.getRecentLog() };
         }
 
@@ -2592,7 +2645,7 @@ class RPGBattle {
         turnLog.push(`   ${this.tempObj.name.player} HP: ${this.tempObj.stat.player.hp.toLocaleString()}/${this.tempObj.stat.player.maxHp.toLocaleString()}`);
 
         this.addTurnLog(turnLog);
-        this.finalizeTurn();
+        this.finalizeTurn('monster');
 
         // 승패 판정
         if (this.tempObj.stat.player.hp <= 0) {
@@ -2670,7 +2723,7 @@ class RPGBattle {
             const scaleStat = dmg.stat || 'power';
             const statValue = playerStat[scaleStat] || 0;
             // 공격력 = 스탯 * 100 (jobs.json 기준)
-            const attackPower = statValue * 100;
+            const attackPower = statValue * 100 + (playerStat.attackPower || 0);
             const percent = dmg.base + (dmg.perLevel || 0) * (skill.level - 1);
             const hits = dmg.hits || 1;
 
@@ -2688,11 +2741,25 @@ class RPGBattle {
                 }
             }
 
+            let equipmentDamageBonus = ((playerStat.skillDamage || 0) + (playerStat.allDamage || 0)) / 100;
+            if (hits === 1) {
+                equipmentDamageBonus += (playerStat.singleAttackDamage || 0) / 100;
+            }
+            if ((dmg.targetAll || hits > 1) && playerStat.aoeSkillDamage) {
+                equipmentDamageBonus += playerStat.aoeSkillDamage / 100;
+            }
+            if (playerStat.gunpower > 0 && playerStat.gunpowerSkillDamage) {
+                equipmentDamageBonus += playerStat.gunpowerSkillDamage / 100;
+            }
+            if (playerStat.lowHpDamageBonus && playerStat.maxHp > 0 && playerStat.hp <= Math.floor(playerStat.maxHp / 2)) {
+                equipmentDamageBonus += playerStat.lowHpDamageBonus / 100;
+            }
+
             let totalDamage = 0;
             let hitLog = [];
 
             for (let i = 0; i < hits; i++) {
-                let hitDamage = Math.floor(attackPower * (percent / 100) * intBonus);
+                let hitDamage = Math.floor(attackPower * (percent / 100) * intBonus * (1 + equipmentDamageBonus));
                 // 약간의 랜덤성 (±5%)
                 hitDamage = Math.floor(hitDamage * (0.95 + Math.random() * 0.1));
 
@@ -2730,7 +2797,7 @@ class RPGBattle {
                     turnLog.push(`💨 ${this.tempObj.name.monster}: "${this.monster.specialMechanic.message || '도망친다!'}"`);
                     turnLog.push(`${this.tempObj.name.monster}이(가) 도망쳤습니다!`);
                     this.addTurnLog(turnLog);
-                    this.finalizeTurn();
+                    this.finalizeTurn('player');
                     return this.endBattle(true, true);
                 }
             }
@@ -2838,7 +2905,7 @@ class RPGBattle {
                         }
 
                         this.addTurnLog(turnLog);
-                        this.finalizeTurn();
+                        this.finalizeTurn('player');
                         return this.endBattle(true, true);
                     }
                 }
@@ -2853,7 +2920,7 @@ class RPGBattle {
         }
 
         this.addTurnLog(turnLog);
-        this.finalizeTurn();
+        this.finalizeTurn('player');
 
         // 승패 판정
         if (this.tempObj.stat.monster.hp <= 0) {
@@ -2907,7 +2974,18 @@ class RPGBattle {
             turnLog.push(`   ${this.tempObj.name.player} HP: ${this.tempObj.stat.player.hp.toLocaleString()}/${this.tempObj.stat.player.maxHp.toLocaleString()}`);
         } else if (effects.stunGauge) {
             // 회오리폭탄 등 무력화 아이템
-            turnLog.push(`💣 ${itemName} 사용! 무력화 게이지 ${effects.stunGauge.toLocaleString()} 적용!`);
+            if (this.monster.staggerGauge) {
+                this.monster.staggerGauge.current = Math.max(0, this.monster.staggerGauge.current - effects.stunGauge);
+                turnLog.push(`💣 ${itemName} 사용! 무력화 게이지 ${effects.stunGauge.toLocaleString()} 적용!`);
+                turnLog.push(`   무력화: -${effects.stunGauge.toLocaleString()} (${this.monster.staggerGauge.current.toLocaleString()}/${this.monster.staggerGauge.max.toLocaleString()})`);
+                if (this.monster.staggerGauge.current <= 0) {
+                    turnLog.push(`   🔓 ${this.tempObj.name.monster} 무력화!`);
+                    this.tempObj.effects.monster.stunned = 1;
+                    this.monster.staggerGauge.current = this.monster.staggerGauge.max;
+                }
+            } else {
+                turnLog.push(`💣 ${itemName} 사용! 하지만 대상은 무력화 게이지가 없습니다.`);
+            }
         } else if (effects.breakLevel) {
             // 파괴폭탄
             turnLog.push(`💣 ${itemName} 사용! 파괴 레벨 ${effects.breakLevel} 적용!`);
@@ -2919,7 +2997,7 @@ class RPGBattle {
         this.character.inventory.consumeItem(itemName, 1);
 
         this.addTurnLog(turnLog);
-        this.finalizeTurn();
+        this.finalizeTurn('player');
 
         return { success: true, log: this.getRecentLog() };
     }
@@ -2948,13 +3026,13 @@ class RPGBattle {
             this.monster.hp.current = this.tempObj.stat.monster.hp;
 
             this.addTurnLog(turnLog);
-            this.finalizeTurn();
+            this.finalizeTurn('player');
 
             return { success: true, escaped: true, log: this.getRecentLog() };
         } else {
             turnLog.push(`🏃 도망에 실패했습니다!`);
             this.addTurnLog(turnLog);
-            this.finalizeTurn();
+            this.finalizeTurn('player');
 
             return { success: true, escaped: false, log: this.getRecentLog() };
         }
@@ -2976,7 +3054,7 @@ class RPGBattle {
     }
     
     // 턴 종료 시 호출
-    finalizeTurn() {
+    finalizeTurn(actorSide = null) {
         if (this.currentTurnLog.length > 0) {
             this.turnLogs.push([...this.currentTurnLog]);
             this.currentTurnLog = [];
@@ -2987,8 +3065,10 @@ class RPGBattle {
             const eff = this.tempObj.effects[side];
             for (const key of Object.keys(eff)) {
                 if (key === 'stunned') {
-                    eff.stunned = Math.max(0, (eff.stunned || 0) - 1);
-                    if (eff.stunned <= 0) delete eff.stunned;
+                    if (actorSide === side) {
+                        eff.stunned = Math.max(0, (eff.stunned || 0) - 1);
+                        if (eff.stunned <= 0) delete eff.stunned;
+                    }
                 } else if (eff[key] && typeof eff[key] === 'object' && eff[key].turns !== undefined) {
                     eff[key].turns--;
                     if (eff[key].turns <= 0) delete eff[key];

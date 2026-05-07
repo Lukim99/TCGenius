@@ -1113,6 +1113,50 @@ function pad_han(kor, max_len) {
     return kor + (new Array(max_len - kor.length + 1).join("ㅤ"));
 }
 
+const EQUIPMENT_STAT_LABELS = {
+    power: '힘',
+    speed: '속도',
+    int: '지능',
+    luck: '행운',
+    hp: 'HP',
+    attackPower: '공격력',
+    critChance: '치명타 확률',
+    critDamage: '치명타 피해',
+    evasion: '회피율',
+    normalAttackDamage: '평타 피해',
+    singleAttackDamage: '단일 공격 피해',
+    skillDamage: '스킬 피해',
+    allDamage: '모든 피해',
+    aoeSkillDamage: '광역 스킬 피해',
+    gunpowerSkillDamage: '건력 스킬 피해',
+    lowHpDamageBonus: '저체력 피해 증가',
+    mpRegenPerTurn: '턴당 MP 회복',
+    startingMp: '시작 MP',
+    startingGp: '시작 GP',
+    startingGunpower: '시작 건력',
+    gamblingCardDamage: '도박 카드 피해'
+};
+
+function formatEquipmentValue(key, value) {
+    const percentKeys = ['critChance', 'critDamage', 'evasion', 'normalAttackDamage', 'singleAttackDamage', 'skillDamage', 'allDamage', 'aoeSkillDamage', 'gunpowerSkillDamage', 'lowHpDamageBonus', 'gamblingCardDamage'];
+    const suffix = percentKeys.includes(key) ? '%' : '';
+    return `+${Number(value).toLocaleString()}${suffix}`;
+}
+
+function formatEquipmentEntries(entries) {
+    return entries.map(([key, value]) => `  ${EQUIPMENT_STAT_LABELS[key] || key}: ${formatEquipmentValue(key, value)}`);
+}
+
+function getRpgEnhancementResultText(resultType) {
+    return {
+        great: '🌟 대성공!',
+        success: '✅ 성공!',
+        downgrade: '⬇️ 하락...',
+        reset: '🔄 초기화...',
+        destroy: '💥 파괴!',
+    }[resultType] || '❌ 알 수 없는 결과';
+}
+
 // Prototype 확장
 Number.prototype.toComma = function() {
     var abs = Math.abs(this),
@@ -2735,6 +2779,7 @@ class RPGUser {
         this.sp = 0; // 스킬 포인트
         this.gold = 0;    // 골드 화폐
         this.garnet = 0;  // 가넷 화폐 (캐시)
+        this.protectionTickets = { enhancement: false, amplification: false };
         
         // 피로도 시스템
         this.fatigue = { current: 156, max: 156 }; // 피로도 (156 기본)
@@ -2774,6 +2819,7 @@ class RPGUser {
         if (data.gunpowerResource) this.gunpowerResource.load(data.gunpowerResource);
         this.gold = data.gold || 0;
         this.garnet = data.garnet || 0;
+        this.protectionTickets = data.protectionTickets || { enhancement: false, amplification: false };
         
         // 피로도
         if (data.fatigue) this.fatigue = data.fatigue;
@@ -2908,7 +2954,8 @@ class RPGUser {
             fatigueLastReset: this.fatigueLastReset,
             fishingData: this.fishingData,
             gold: this.gold,
-            garnet: this.garnet
+            garnet: this.garnet,
+            protectionTickets: this.protectionTickets
         };
     }
 
@@ -3074,6 +3121,242 @@ class RPGUser {
         return this.equipmentManager.getEquipped(slot);
     }
 
+    getEquipmentStats() {
+        return this.equipmentManager.getTotalStats();
+    }
+
+    getEffectiveStats() {
+        const equipStats = this.getEquipmentStats();
+        return {
+            power: this.stats.power + (equipStats.power || 0),
+            speed: this.stats.speed + (equipStats.speed || 0),
+            int: this.stats.int + (equipStats.int || 0),
+            luck: this.stats.luck + (equipStats.luck || 0),
+            hp: this.hp.max + (equipStats.hp || 0),
+            attackPower: equipStats.attackPower || 0,
+            critChance: equipStats.critChance || 0,
+            critDamage: equipStats.critDamage || 0,
+            evasion: equipStats.evasion || 0,
+            normalAttackDamage: equipStats.normalAttackDamage || 0,
+            singleAttackDamage: equipStats.singleAttackDamage || 0,
+            skillDamage: equipStats.skillDamage || 0,
+            allDamage: equipStats.allDamage || 0,
+            aoeSkillDamage: equipStats.aoeSkillDamage || 0,
+            gunpowerSkillDamage: equipStats.gunpowerSkillDamage || 0,
+            lowHpDamageBonus: equipStats.lowHpDamageBonus || 0,
+            mpRegenPerTurn: equipStats.mpRegenPerTurn || 0,
+            startingMp: equipStats.startingMp || 0,
+            startingGp: equipStats.startingGp || 0,
+            startingGunpower: equipStats.startingGunpower || 0,
+            gamblingCardDamage: equipStats.gamblingCardDamage || 0
+        };
+    }
+
+    getBattleStatSnapshot() {
+        const equipStats = this.getEquipmentStats();
+        const effectiveStats = this.getEffectiveStats();
+        const hpBonus = equipStats.hp || 0;
+        const maxGp = this.gpResource.max + (effectiveStats.startingGp || 0);
+        const maxMp = this.mpResource.max + (effectiveStats.startingMp || 0);
+        const maxGunpower = this.gunpowerResource.max + (effectiveStats.startingGunpower || 0);
+        return {
+            hp: Math.min(this.hp.current + hpBonus, effectiveStats.hp),
+            maxHp: effectiveStats.hp,
+            power: effectiveStats.power,
+            speed: effectiveStats.speed,
+            int: effectiveStats.int,
+            luck: effectiveStats.luck,
+            gp: Math.min(this.gpResource.current + (effectiveStats.startingGp || 0), maxGp),
+            maxGp: maxGp,
+            mp: Math.min(this.mpResource.current + (effectiveStats.startingMp || 0), maxMp),
+            maxMp: maxMp,
+            gunpower: Math.min(this.gunpowerResource.current + (effectiveStats.startingGunpower || 0), maxGunpower || 3),
+            maxGunpower: maxGunpower || 3,
+            attackPower: effectiveStats.attackPower,
+            critChance: effectiveStats.critChance,
+            critDamage: effectiveStats.critDamage,
+            evasion: effectiveStats.evasion,
+            normalAttackDamage: effectiveStats.normalAttackDamage,
+            singleAttackDamage: effectiveStats.singleAttackDamage,
+            skillDamage: effectiveStats.skillDamage,
+            allDamage: effectiveStats.allDamage,
+            aoeSkillDamage: effectiveStats.aoeSkillDamage,
+            gunpowerSkillDamage: effectiveStats.gunpowerSkillDamage,
+            lowHpDamageBonus: effectiveStats.lowHpDamageBonus,
+            mpRegenPerTurn: effectiveStats.mpRegenPerTurn,
+            gamblingCardDamage: effectiveStats.gamblingCardDamage
+        };
+    }
+
+    getInventoryEquipmentByIndex(index) {
+        const equipments = this.inventory.equipments || [];
+        if (!Number.isInteger(index) || index < 0 || index >= equipments.length) {
+            return null;
+        }
+        return equipments[index];
+    }
+
+    handleEquipmentTicketResult(result, type) {
+        if (result.result === 'destroy' && this.protectionTickets[type]) {
+            this.protectionTickets[type] = false;
+            if (type === 'enhancement') {
+                result.result = 'reset';
+                result.newEnhancement = 0;
+            } else {
+                result.result = 'reset';
+                result.newAmplification = 0;
+            }
+            result.protected = true;
+            result.success = false;
+        }
+        return result;
+    }
+
+    useEquipmentTargetedItem(itemName, options = {}, itemData = null) {
+        const targetItems = ['장비 증폭서', '순수한 황금 장비 증폭서', '증폭 변환서', '유생의 강화기', '유생의 증폭기', '장비 보호권', '증폭 보호권'];
+        if (!targetItems.includes(itemName)) {
+            return null;
+        }
+
+        if (itemName === '장비 보호권') {
+            if (this.protectionTickets.enhancement) {
+                return { success: false, message: '이미 장비 보호권이 활성화되어 있습니다.' };
+            }
+            this.protectionTickets.enhancement = true;
+            return { success: true, message: '장비 보호권이 활성화되었습니다. 다음 장비 파괴를 1회 방지합니다.', effects: { protection: 'enhancement' } };
+        }
+
+        if (itemName === '증폭 보호권') {
+            if (this.protectionTickets.amplification) {
+                return { success: false, message: '이미 증폭 보호권이 활성화되어 있습니다.' };
+            }
+            this.protectionTickets.amplification = true;
+            return { success: true, message: '증폭 보호권이 활성화되었습니다. 다음 증폭 파괴를 1회 방지합니다.', effects: { protection: 'amplification' } };
+        }
+
+        const targetEquipmentIndex = options.targetEquipmentIndex;
+        const equipment = this.getInventoryEquipmentByIndex(targetEquipmentIndex);
+        if (!equipment) {
+            return { success: false, message: '대상 장비를 찾을 수 없습니다. /RPGenius 사용 [아이템명] [장비번호] 형식으로 입력해주세요.' };
+        }
+
+        const statArg = options.statArg;
+        const statChoices = ['power', 'speed', 'int', 'luck'];
+        const selectedStat = statChoices.includes(statArg) ? statArg : null;
+
+        if (itemName === '장비 증폭서') {
+            const convertResult = equipmentManager.convertToAmplification(equipment);
+            if (!convertResult.success) return convertResult;
+            if (selectedStat) equipment.ampStat = selectedStat;
+            return { success: true, message: `[${equipment.name}] ${convertResult.message}`, effects: { equipmentTargeted: true } };
+        }
+
+        if (itemName === '순수한 황금 장비 증폭서') {
+            const convertResult = equipmentManager.convertToAmplification(equipment);
+            if (!convertResult.success) return convertResult;
+            if (selectedStat) equipment.ampStat = selectedStat;
+            const effects = (itemData && itemData.effects) || {};
+            const min = effects.enhanceMin || 8;
+            const max = effects.enhanceMax || 12;
+            const probability = Array.isArray(effects.probability) ? effects.probability : [45, 35, 10, 7, 3];
+            const roll = Math.random() * probability.reduce((sum, value) => sum + value, 0);
+            let cumulative = 0;
+            let selectedLevel = min;
+            for (let i = 0; i < probability.length; i++) {
+                cumulative += probability[i];
+                if (roll < cumulative) {
+                    selectedLevel = min + i;
+                    break;
+                }
+            }
+            equipment.amplification = Math.min(selectedLevel, max);
+            return { success: true, message: `[${equipment.name}] ${convertResult.message} (+${equipment.amplification}증폭)`, effects: { equipmentTargeted: true, amplification: equipment.amplification } };
+        }
+
+        if (itemName === '증폭 변환서') {
+            const changeResult = equipmentManager.changeAmplificationStat(equipment);
+            if (!changeResult.success) return changeResult;
+            if (selectedStat) {
+                equipment.ampStat = selectedStat;
+                changeResult.message = `차원의 ${EQUIPMENT_STAT_LABELS[selectedStat] || selectedStat}(으)로 변경됨`;
+            }
+            return { success: true, message: `[${equipment.name}] ${changeResult.message}`, effects: { equipmentTargeted: true } };
+        }
+
+        if (itemName === '유생의 강화기') {
+            const oldEnhancement = equipment.enhancement || 0;
+            const result = this.handleEquipmentTicketResult(equipmentManager.attemptEnhancement(oldEnhancement), 'enhancement');
+            equipment.enhancement = result.newEnhancement;
+            let message = `[${equipment.name}] +${oldEnhancement} → +${result.newEnhancement} (${getRpgEnhancementResultText(result.result)})`;
+            if (result.protected) message += ` [보호권 발동]`;
+            return { success: true, message: message, effects: { equipmentTargeted: true } };
+        }
+
+        if (itemName === '유생의 증폭기') {
+            if (!equipment.isAmplified) {
+                const convertResult = equipmentManager.convertToAmplification(equipment);
+                if (!convertResult.success) return convertResult;
+                if (selectedStat) equipment.ampStat = selectedStat;
+            }
+            const oldAmplification = equipment.amplification || 0;
+            const result = this.handleEquipmentTicketResult(equipmentManager.attemptAmplification(oldAmplification), 'amplification');
+            equipment.amplification = result.newAmplification;
+            let message = `[${equipment.name}] (${EQUIPMENT_STAT_LABELS[equipment.ampStat] || equipment.ampStat}) +${oldAmplification} → +${result.newAmplification} (${getRpgEnhancementResultText(result.result)})`;
+            if (result.protected) message += ` [보호권 발동]`;
+            return { success: true, message: message, effects: { equipmentTargeted: true } };
+        }
+
+        return null;
+    }
+
+    bulkUseFishItems() {
+        if (!this.inventory || !this.inventory.consumables) {
+            return { success: false, message: '사용 가능한 물고기가 없습니다.' };
+        }
+
+        const usedItems = [];
+        let totalExp = 0;
+        let leveledUp = false;
+
+        for (const [itemName, item] of this.inventory.consumables.entries()) {
+            const itemData = itemManager.findItemByName(itemName);
+            if (!itemData || itemData.type !== '물고기') {
+                continue;
+            }
+
+            const count = item.count || 0;
+            if (count <= 0) {
+                continue;
+            }
+
+            const expPerItem = itemData.effects && itemData.effects.exp ? itemData.effects.exp : 0;
+            const gainedExp = expPerItem * count;
+            if (gainedExp > 0) {
+                const expResult = this.gainExp(gainedExp);
+                totalExp += gainedExp;
+                if (expResult.leveledUp) {
+                    leveledUp = true;
+                }
+            }
+
+            this.consumeItemFromInventory(itemName, count);
+            usedItems.push({ name: itemName, count, exp: gainedExp });
+        }
+
+        if (usedItems.length === 0) {
+            return { success: false, message: '보유 중인 물고기가 없습니다.' };
+        }
+
+        return {
+            success: true,
+            usedItems,
+            effects: {
+                exp: totalExp,
+                leveledUp
+            }
+        };
+    }
+
     // ==================== 인벤토리 시스템 ====================
     addEquipmentToInventory(equipment) {
         return this.inventory.addEquipment(equipment);
@@ -3171,12 +3454,13 @@ class RPGUser {
     getMainStat() {
         // jobs.json에서 주 스탯 가져오기
         const mainStatName = jobManager.getJobMainStat(this.job);
-        return this.stats[mainStatName] || 0;
+        const effectiveStats = this.getEffectiveStats();
+        return effectiveStats[mainStatName] || 0;
     }
 
     getAttackPower() {
         const mainStat = this.getMainStat();
-        const equipStats = this.equipmentManager.getTotalStats();
+        const equipStats = this.getEquipmentStats();
         const baseAttack = RPGCombatCalculator.calculateAttackPower(mainStat);
         const equipBonus = equipStats.attackPower || 0;
         return baseAttack + equipBonus;
@@ -3184,26 +3468,28 @@ class RPGUser {
 
     getCritChance() {
         const awakenBonus = this.awakening.isAwakened ? this.awakening.bonuses.crit : 0;
-        const equipStats = this.equipmentManager.getTotalStats();
+        const equipStats = this.getEquipmentStats();
+        const effectiveStats = this.getEffectiveStats();
         const equipBonus = equipStats.critChance || 0;
-        return RPGCombatCalculator.calculateCritChance(this.stats.luck, awakenBonus) + equipBonus;
+        return RPGCombatCalculator.calculateCritChance(effectiveStats.luck, awakenBonus) + equipBonus;
     }
 
     getCritDamage() {
         const awakenBonus = this.awakening.isAwakened ? this.awakening.bonuses.critMul : 0;
-        const equipStats = this.equipmentManager.getTotalStats();
+        const equipStats = this.getEquipmentStats();
         const equipBonus = equipStats.critDamage || 0;
         return RPGCombatCalculator.calculateCritDamage(150, awakenBonus) + equipBonus;
     }
 
     getEvasion() {
-        const equipStats = this.equipmentManager.getTotalStats();
+        const equipStats = this.getEquipmentStats();
+        const effectiveStats = this.getEffectiveStats();
         const equipBonus = equipStats.evasion || 0;
-        return RPGCombatCalculator.calculateEvasion(this.stats.speed) + equipBonus;
+        return RPGCombatCalculator.calculateEvasion(effectiveStats.speed) + equipBonus;
     }
 
     // ==================== 아이템 사용 ====================
-    useItem(itemName) {
+    useItem(itemName, options = {}) {
         const itemData = itemManager.findItemByName(itemName);
         if (!itemData) {
             return { success: false, message: `${itemName}은(는) 존재하지 않는 아이템입니다.` };
@@ -3211,6 +3497,15 @@ class RPGUser {
 
         if (!this.hasConsumable(itemName)) {
             return { success: false, message: `${itemName}을(를) 보유하고 있지 않습니다.` };
+        }
+
+        const equipmentItemResult = this.useEquipmentTargetedItem(itemName, options, itemData);
+        if (equipmentItemResult) {
+            if (!equipmentItemResult.success) {
+                return equipmentItemResult;
+            }
+            this.consumeItemFromInventory(itemName, 1);
+            return equipmentItemResult;
         }
 
         const result = { success: true, message: '', effects: {} };
@@ -3361,18 +3656,26 @@ class RPGUser {
     // ==================== 캐릭터 정보 ====================
     getCharacterInfo() {
         const info = [];
+        const effectiveStats = this.getEffectiveStats();
+        const equipStats = this.getEquipmentStats();
+        const equipmentBonusEntries = Object.entries(equipStats).filter(([, value]) => typeof value === 'number' && value !== 0);
         info.push(`[ ${this.name} 캐릭터 정보 ]`);
         info.push(`[${this.job}] ${this.name}`);
         info.push(`Lv.${this.level.level} (${this.level.exp.toLocaleString()}/${this.level.getRequiredExp().toLocaleString()})`);
-        info.push(`HP: ${this.hp.max.toLocaleString()}`);
+        info.push(`HP: ${effectiveStats.hp.toLocaleString()}`);
         info.push(``);
         info.push(`· 스탯`);
-        info.push(`  힘: ${this.stats.power.toLocaleString()} | 속도: ${this.stats.speed.toLocaleString()}`);
-        info.push(`  지능: ${this.stats.int.toLocaleString()} | 행운: ${this.stats.luck.toLocaleString()}`);
+        info.push(`  힘: ${effectiveStats.power.toLocaleString()} | 속도: ${effectiveStats.speed.toLocaleString()}`);
+        info.push(`  지능: ${effectiveStats.int.toLocaleString()} | 행운: ${effectiveStats.luck.toLocaleString()}`);
         info.push(``);
         info.push(`· 공격력: ${this.getAttackPower().toLocaleString()}`);
         info.push(`· 치명타: ${this.getCritChance().toFixed(1)}% (${this.getCritDamage().toFixed(0)}%)`);
         info.push(`· 회피율: ${this.getEvasion().toFixed(1)}%`);
+        if (equipmentBonusEntries.length > 0) {
+            info.push(``);
+            info.push(`[ 장비 보너스 ]`);
+            info.push(...formatEquipmentEntries(equipmentBonusEntries));
+        }
         
         // 리소스 표시
         if (this.job === '성준호') {
@@ -12954,9 +13257,12 @@ client.on('chat', async (data, channel) => {
                     for (const [slot, name] of Object.entries(slotNames)) {
                         const item = equipped instanceof Map ? equipped.get(slot) : (equipped ? equipped[slot] : null);
                         if (item) {
-                            const enh = item.enhancement ? `+${item.enhancement}` : '';
-                            const amp = item.isAmplified && item.amplification ? `+${item.amplification}증폭` : '';
-                            msg.push(`[${name}] [${item.rarity}] ${item.name} ${enh}${amp}`);
+                            const display = item.getEnhancementDisplay ? item.getEnhancementDisplay() : (item.isAmplified && item.amplification ? `+${item.amplification}증폭` : (item.enhancement ? `+${item.enhancement}` : ''));
+                            const summaryParts = [];
+                            if (display) summaryParts.push(display);
+                            if (item.ampStat) summaryParts.push(`차원:${EQUIPMENT_STAT_LABELS[item.ampStat] || item.ampStat}`);
+                            if (item.setName) summaryParts.push(`세트:${item.setName}`);
+                            msg.push(`[${name}] [${item.rarity}] ${item.name}${summaryParts.length > 0 ? ` (${summaryParts.join(', ')})` : ''}`);
                         } else {
                             msg.push(`[${name}] - 비어있음`);
                         }
@@ -12975,16 +13281,33 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     const item = equips[idx];
+                    const statEntries = Object.entries(item.stats || {}).filter(([, value]) => typeof value === 'number' && value !== 0);
+                    const effectEntries = Object.entries(item.effects || {}).filter(([, value]) => typeof value === 'number' && value !== 0);
                     const msg = [];
                     msg.push(`━━━ [${item.rarity}] ${item.name} ━━━`);
                     msg.push(VIEWMORE);
                     msg.push(`레벨: ${item.level} | 타입: ${item.type}`);
                     if (item.enhancement) msg.push(`강화: +${item.enhancement}`);
-                    if (item.isAmplified) msg.push(`증폭: +${item.amplification} (${item.ampStat})`);
+                    if (item.isAmplified) msg.push(`증폭: +${item.amplification} (${EQUIPMENT_STAT_LABELS[item.ampStat] || item.ampStat})`);
+                    if (item.jobRestriction) msg.push(`직업 제한: ${item.jobRestriction}`);
+                    if (item.setName) msg.push(`세트: ${item.setName}`);
                     if (item.boundTo) msg.push(`귀속: ${item.boundTo}`);
-                    msg.push(`\n[스탯]`);
-                    for (const [k, v] of Object.entries(item.stats || {})) {
-                        msg.push(`  ${k}: +${v}`);
+                    if (statEntries.length > 0) {
+                        msg.push(`\n[스탯]`);
+                        msg.push(...formatEquipmentEntries(statEntries));
+                    }
+                    if (effectEntries.length > 0) {
+                        msg.push(`\n[효과]`);
+                        msg.push(...formatEquipmentEntries(effectEntries));
+                    }
+                    if (item.generatedStats && Object.keys(item.generatedStats).length > 0) {
+                        msg.push(`\n[랜덤 스탯]`);
+                        msg.push(...formatEquipmentEntries(Object.entries(item.generatedStats).filter(([, value]) => typeof value === 'number' && value !== 0)));
+                    }
+                    if (item.uniqueEffect) {
+                        msg.push(`\n[고유 효과]`);
+                        msg.push(`  ${item.uniqueEffect.name}`);
+                        if (item.uniqueEffect.description) msg.push(`  ${item.uniqueEffect.description}`);
                     }
                     if (item.tradeable === false) msg.push(`\n⚠️ 거래 불가`);
                     msg.push(`━━━━━━━━━━━━━━━`);
@@ -13084,9 +13407,13 @@ client.on('chat', async (data, channel) => {
                     const result = equipmentManager.attemptEnhancement(oldEnhancement);
                     character.consumeItemFromInventory('강화석', stoneCost);
                     character.gold -= goldCost;
+                    character.handleEquipmentTicketResult(result, 'enhancement');
                     item.enhancement = result.newEnhancement;
-                    const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
+                    const resultText = getRpgEnhancementResultText(result.result);
                     const msg = [`━━━ 강화 결과 ━━━`, `${item.name}: +${oldEnhancement} → +${result.newEnhancement}`, resultText];
+                    if (result.protected) {
+                        msg.push(`장비 보호권이 발동했습니다!`);
+                    }
                     if (result.result === 'destroy') {
                         equips.splice(idx, 1);
                         msg.push(`장비가 파괴되었습니다...`);
@@ -13115,8 +13442,8 @@ client.on('chat', async (data, channel) => {
                     const crystalCost = equipmentManager.getAmplificationCrystalCost(targetAmplification);
                     const goldCost = equipmentManager.getAmplificationGoldCost(targetAmplification, item.level, item.rarity);
 
-                    if (!character.hasConsumable('증폭서', 1)) {
-                        channel.sendChat(`❌ 증폭서가 부족합니다.`);
+                    if (!character.hasConsumable('장비 증폭서', 1)) {
+                        channel.sendChat(`❌ 장비 증폭서가 부족합니다.`);
                         return;
                     }
                     if (!character.hasConsumable('순수한 결정체', crystalCost)) {
@@ -13128,16 +13455,24 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     if (!item.isAmplified) {
-                        item.isAmplified = true;
+                        const convertResult = equipmentManager.convertToAmplification(item);
+                        if (!convertResult.success) {
+                            channel.sendChat(`❌ ${convertResult.message}`);
+                            return;
+                        }
                         item.ampStat = statArg;
                     }
                     const result = equipmentManager.attemptAmplification ? equipmentManager.attemptAmplification(oldAmplification) : { result: 'success', newAmplification: oldAmplification + 1 };
-                    character.consumeItemFromInventory('증폭서', 1);
+                    character.consumeItemFromInventory('장비 증폭서', 1);
                     character.consumeItemFromInventory('순수한 결정체', crystalCost);
                     character.gold -= goldCost;
+                    character.handleEquipmentTicketResult(result, 'amplification');
                     item.amplification = result.newAmplification;
-                    const resultText = result.result === 'success' ? '✅ 성공!' : result.result === 'fail' ? '❌ 실패...' : '💥 파괴!';
+                    const resultText = getRpgEnhancementResultText(result.result);
                     const msg = [`━━━ 증폭 결과 ━━━`, `${item.name} (${item.ampStat}): +${oldAmplification} → +${result.newAmplification}`, resultText];
+                    if (result.protected) {
+                        msg.push(`증폭 보호권이 발동했습니다!`);
+                    }
                     if (result.result === 'destroy') {
                         equips.splice(idx, 1);
                         msg.push(`장비가 파괴되었습니다...`);
@@ -13959,9 +14294,52 @@ client.on('chat', async (data, channel) => {
 
                 // ===== 아이템사용 (비전투) =====
                 if (args[0] === "사용") {
-                    const useCount = parseInt(args[args.length - 1]);
-                    const hasUseCount = !isNaN(useCount) && args.length > 2;
-                    const itemName = hasUseCount ? args.slice(1, -1).join(' ') : args.slice(1).join(' ');
+                    const fishBulkKeywords = ['물고기전체', '전체물고기', '물고기전부', '물고기모두', '물고기일괄'];
+                    if (fishBulkKeywords.includes(args[1])) {
+                        const bulkResult = character.bulkUseFishItems();
+                        if (!bulkResult.success) {
+                            channel.sendChat(`❌ ${bulkResult.message}`);
+                            return;
+                        }
+                        const msg = [`✅ 물고기 일괄 사용 완료!`];
+                        bulkResult.usedItems.forEach((entry) => {
+                            msg.push(`  🐟 ${entry.name} x${entry.count.toLocaleString()}${entry.exp ? ` (EXP +${entry.exp.toLocaleString()})` : ''}`);
+                        });
+                        if (bulkResult.effects.exp) {
+                            msg.push(`  📊 총 EXP +${bulkResult.effects.exp.toLocaleString()}${bulkResult.effects.leveledUp ? ' (레벨업!)' : ''}`);
+                        }
+                        await character.save();
+                        channel.sendChat(msg.join('\n'));
+                        return;
+                    }
+                    let itemData = null;
+                    let itemArgEnd = 1;
+                    for (let i = args.length; i >= 2; i--) {
+                        const candidate = args.slice(1, i).join(' ');
+                        const found = itemManager.findItemByName(candidate);
+                        if (found) {
+                            itemData = found;
+                            itemArgEnd = i;
+                            break;
+                        }
+                    }
+                    const itemName = itemData ? itemData.name : args.slice(1).join(' ');
+                    const restArgs = args.slice(itemArgEnd);
+                    const equipmentTargetItems = ['장비 증폭서', '순수한 황금 장비 증폭서', '증폭 변환서', '유생의 강화기', '유생의 증폭기', '장비 보호권', '증폭 보호권'];
+                    if (equipmentTargetItems.includes(itemName)) {
+                        const targetEquipmentIndex = ['장비 보호권', '증폭 보호권'].includes(itemName) ? null : (parseInt(restArgs[0]) - 1);
+                        const statArg = restArgs[1];
+                        const result = character.useItem(itemName, { targetEquipmentIndex, statArg });
+                        if (!result.success) {
+                            channel.sendChat(`❌ ${result.message}`);
+                            return;
+                        }
+                        await character.save();
+                        channel.sendChat(`✅ ${result.message}`);
+                        return;
+                    }
+                    const useCount = parseInt(restArgs[0]);
+                    const hasUseCount = !isNaN(useCount) && restArgs.length > 0;
                     const useQty = hasUseCount ? useCount : 1;
                     if (!itemName) { channel.sendChat(`❌ /RPGenius 사용 [아이템명] [수량]`); return; }
                     if (useQty < 1) { channel.sendChat(`❌ 수량은 1 이상이어야 합니다.`); return; }
