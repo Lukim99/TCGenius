@@ -80,6 +80,87 @@ const activeBattles = new Map(); // userId -> RPGBattle instance
 const activeDungeons = new Map(); // userId -> { dungeon, phaseIndex, monsterIndex, monstersRemaining }
 const activeFishing = new Map(); // userId -> { endTime, rodName, baitName, rodIndex, catchResult }
 
+function clearAutoFishingState(userId) {
+    const fishingState = activeFishing.get(userId);
+    if (fishingState && fishingState.timer) {
+        clearTimeout(fishingState.timer);
+    }
+    activeFishing.delete(userId);
+}
+
+function scheduleNextAutoFishing(userId) {
+    const fishingState = activeFishing.get(userId);
+    if (!fishingState) {
+        return;
+    }
+
+    const fishingTime = fishingManager.getFishingTime(fishingState.rodName);
+    fishingState.nextCatchAt = Date.now() + (fishingTime * 1000);
+    fishingState.timer = setTimeout(async () => {
+        try {
+            await processAutoFishing(userId);
+        } catch (error) {
+            console.log('[RPG Auto Fishing] error:', error);
+            clearAutoFishingState(userId);
+        }
+    }, fishingTime * 1000);
+    activeFishing.set(userId, fishingState);
+}
+
+async function processAutoFishing(userId) {
+    const fishingState = activeFishing.get(userId);
+    if (!fishingState) {
+        return;
+    }
+
+    const character = await getRPGUserById(fishingState.characterId);
+    if (!character) {
+        clearAutoFishingState(userId);
+        return;
+    }
+
+    const rodIndex = character.findFishingRodIndex(fishingState.rodName);
+    if (rodIndex === -1) {
+        clearAutoFishingState(userId);
+        return;
+    }
+
+    const rodData = fishingManager.getRod(fishingState.rodName);
+    const basketLimit = rodData ? rodData.basket : 100;
+    if (character.getKeepNetCount() >= basketLimit) {
+        clearAutoFishingState(userId);
+        fishingState.channel.sendChat(`🪣 살림망이 가득 찼습니다! (${character.getKeepNetCount()}/${basketLimit})\n[ /RPGenius 낚시 살림망비우기 ]`);
+        return;
+    }
+
+    if (!character.hasConsumable(fishingState.baitName, 1)) {
+        clearAutoFishingState(userId);
+        return;
+    }
+
+    character.consumeItemFromInventory(fishingState.baitName, 1);
+    const catchResult = fishingManager.rollCatch(fishingState.baitName);
+    if (catchResult) {
+        character.addToKeepNet(catchResult.name, catchResult.type || '물고기', catchResult.count || 1);
+    }
+
+    const rodResult = character.useFishingRod(rodIndex);
+    await character.save();
+
+    if (character.getKeepNetCount() >= basketLimit) {
+        clearAutoFishingState(userId);
+        fishingState.channel.sendChat(`🪣 살림망이 가득 찼습니다! (${character.getKeepNetCount()}/${basketLimit})\n[ /RPGenius 낚시 살림망비우기 ]`);
+        return;
+    }
+
+    if (!rodResult || rodResult.broken) {
+        clearAutoFishingState(userId);
+        return;
+    }
+
+    scheduleNextAutoFishing(userId);
+}
+
 // 던전 진행 처리 헬퍼 (전투 승리 후 다음 몬스터 스폰 또는 던전 클리어)
 async function _advanceDungeon(userId, character, owner, oldBattle, victoryData, battleMsg) {
     // HP 동기화 (이전 전투 결과를 새 캐릭터 객체에 반영)
@@ -12632,7 +12713,7 @@ client.on('chat', async (data, channel) => {
 
                 // ===== 낚시 중 활동 차단 =====
                 const fishingState = activeFishing.get(sender.userId + "");
-                if (fishingState && args[0] !== "낚시") {
+                if (fishingState && fishingState.endTime && args[0] !== "낚시") {
                     const now = Date.now();
                     if (now < fishingState.endTime) {
                         const remaining = Math.ceil((fishingState.endTime - now) / 1000);
@@ -13684,34 +13765,10 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     
-                    // --- 낚시 결과 확인 (타이머 만료 후) ---
+                    // --- 자동 낚시 중단 ---
                     if (currentFishing) {
-                        const now = Date.now();
-                        if (now < currentFishing.endTime) {
-                            const remaining = Math.ceil((currentFishing.endTime - now) / 1000);
-                            channel.sendChat(`🎣 낚시 중... (남은 시간: ${remaining}초)\n잠시 후 /RPGenius 낚시 로 결과를 확인하세요.`);
-                            return;
-                        }
-                        // 타이머 만료 - 결과 처리
-                        const catchResult = currentFishing.catchResult;
-                        const msg = [`🎣 낚시 결과 (${currentFishing.rodName} + ${currentFishing.baitName})`, ``];
-                        if (catchResult) {
-                            const catchCount = catchResult.count || 1;
-                            character.addToKeepNet(catchResult.name, catchResult.type || '물고기', catchCount);
-                            msg.push(`  🐟 ${catchResult.name} x${catchCount.toLocaleString()} → 살림망에 추가!`);
-                        } else {
-                            msg.push(`  아무것도 잡지 못했습니다...`);
-                        }
-                        const rodResult = character.useFishingRod(currentFishing.rodIndex);
-                        if (rodResult && rodResult.broken) {
-                            msg.push(`  💥 ${currentFishing.rodName}이(가) 파괴되었습니다!`);
-                        } else if (rodResult && rodResult.rod && rodResult.rod.durability !== -1) {
-                            msg.push(`  🔧 ${currentFishing.rodName} 내구도: ${rodResult.rod.durability.toLocaleString()}/${rodResult.rod.maxDurability.toLocaleString()}`);
-                        }
-                        msg.push(`  🪣 살림망: ${character.getKeepNetCount()}개`);
-                        activeFishing.delete(userId);
-                        await character.save();
-                        channel.sendChat(msg.join('\n'));
+                        clearAutoFishingState(userId);
+                        channel.sendChat(`🎣 자동 낚시를 중단했습니다.\n🪣 살림망: ${character.getKeepNetCount()}개`);
                         return;
                     }
                     
@@ -13782,30 +13839,20 @@ client.on('chat', async (data, channel) => {
                         return;
                     }
                     
-                    // 낚시 시작 - 떡밥 소모, 딜레이 설정, 결과 미리 굴림
-                    character.consumeItemFromInventory(baitName, 1);
-                    const fishingTime = fishingManager.getFishingTime(rodName);
-                    const catchResult = fishingManager.rollCatch(baitName);
-                    
                     activeFishing.set(userId, {
-                        endTime: Date.now() + (fishingTime * 1000),
+                        characterId: character.id,
+                        channel,
                         rodName,
                         baitName,
                         rodIndex,
-                        catchResult
+                        timer: null,
+                        nextCatchAt: 0
                     });
-                    
-                    // 딜레이 종료 시 알림 메시지
-                    setTimeout(() => {
-                        if (activeFishing.has(userId)) {
-                            channel.sendChat(`🔔 무언가 미끼를 물었습니다!\n/RPGenius 낚시 로 결과를 확인하세요.`);
-                        }
-                    }, fishingTime * 1000);
+                    scheduleNextAutoFishing(userId);
                     
                     await character.save();
                     
-                    const durText = selectedRod.durability === -1 ? '∞' : `${selectedRod.durability.toLocaleString()}`;
-                    channel.sendChat(`🎣 낚시를 시작합니다! (${rodName} + ${baitName})\n⏱️ ${fishingTime}초 후 결과를 확인할 수 있습니다.\n🪣 살림망: ${currentKeepNet}/${basketLimit}`);
+                    channel.sendChat(`🎣 자동 낚시를 시작했습니다! (${rodName} + ${baitName})\n다시 /RPGenius 낚시 를 입력하면 중단됩니다.\n🪣 살림망: ${currentKeepNet}/${basketLimit}`);
                     return;
                 }
 
