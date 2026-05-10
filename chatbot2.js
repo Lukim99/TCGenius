@@ -557,6 +557,33 @@ async function getGhostUsers(channel) {
     });
 }
 
+function parseProfileChangeEventType(value) {
+    const match = (value || '').match(/^프로필변경\s*\((.*?)\s*(?:→|->)\s*(.*?)\)$/);
+    if (!match) return null;
+    return {
+        before: (match[1] || '').trim(),
+        after: (match[2] || '').trim()
+    };
+}
+
+async function getProfileChangeLogs(channelId, userId, limit = 30) {
+    const { data, error } = await supabase
+        .from('join_leave_logs')
+        .select('event_type, timestamp')
+        .eq('channel_id', channelId)
+        .eq('user_id', userId + '')
+        .like('event_type', '프로필변경%')
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+    if (error) throw error;
+    return (data || [])
+        .map(row => ({
+            ...row,
+            parsed: parseProfileChangeEventType(row.event_type)
+        }))
+        .filter(row => row.parsed);
+}
+
 async function getShopItem(channelId, name) {
     const key = itemKey(channelId, name);
     const { data, error } = await supabase.from('chatbot2_shop_items').select('*').eq('id', key).maybeSingle();
