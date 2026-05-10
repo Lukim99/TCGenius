@@ -50,3 +50,17 @@ create table if not exists public.chatbot2_shop_items (
 
 create index if not exists idx_chatbot2_shop_items_channel_id on public.chatbot2_shop_items(channel_id);
 create unique index if not exists idx_chatbot2_shop_items_channel_item_key on public.chatbot2_shop_items(channel_id, item_key);
+
+create table if not exists public.chatbot2_bag_items (
+    id text primary key,
+    channel_id text not null,
+    user_id text not null,
+    item_key text not null,
+    item_name text not null,
+    quantity integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_chatbot2_bag_items_channel_user on public.chatbot2_bag_items(channel_id, user_id);
+create unique index if not exists idx_chatbot2_bag_items_user_item_key on public.chatbot2_bag_items(channel_id, user_id, item_key);

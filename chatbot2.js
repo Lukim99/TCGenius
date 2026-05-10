@@ -161,6 +161,10 @@ function itemKey(channelId, name) {
     return `${channelId}:${(name || '').trim().toLowerCase()}`;
 }
 
+function bagItemKey(channelId, userId, name) {
+    return `${channelId}:${userId}:${(name || '').trim().toLowerCase()}`;
+}
+
 function displayName(user, fallback = '') {
     return user?.display_nickname || fallback || '알 수 없음';
 }
@@ -286,6 +290,16 @@ async function isGameEnabledForUser(userInfo, channelId) {
 
 async function setGameEnabled(userInfo, channelId, enabled) {
     return updateUser(userInfo, channelId, { game_enabled: !!enabled });
+}
+
+async function setGameEnabledForAll(channel, enabled) {
+    const channelId = channel.channelId + '';
+    const members = Array.from(channel.getAllUserInfo() || []);
+    const result = [];
+    for (const member of members) {
+        result.push(await setGameEnabled(member, channelId, enabled));
+    }
+    return result;
 }
 
 function clearUpdown(channelId) {
@@ -433,15 +447,20 @@ async function catchChoseong(msg, sender, channel) {
 }
 
 async function getUsersByPoints(channelId, limit = 15) {
-    const { data, error } = await supabase.from('chatbot2_users').select('*').eq('channel_id', channelId);
-    if (error) throw error;
-    return (data || []).sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, limit);
+    const users = await getAllUsers(channelId);
+    return users.sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, limit);
 }
 
 async function getAllUsers(channelId) {
-    const { data, error } = await supabase.from('chatbot2_users').select('*').eq('channel_id', channelId);
-    if (error) throw error;
-    return data || [];
+    const channel = channelId;
+    const currentChannelId = channel.channelId + '';
+    const members = Array.from(channel.getAllUserInfo() || []);
+    const result = [];
+    for (const member of members) {
+        const user = await ensureUser(member, currentChannelId);
+        result.push(user);
+    }
+    return result;
 }
 
 async function getChatCount(channelId, userId, sinceIso) {
@@ -463,6 +482,8 @@ async function getChatStats(channelId, userId) {
 }
 
 async function getChatRanking(channelId, periodKey, limit = 50) {
+    const channel = channelId;
+    const currentChannelId = channel.channelId + '';
     const sinceMap = {
         오늘: startOfTodayIso(),
         주간: startOfWeekIso(),
@@ -470,15 +491,17 @@ async function getChatRanking(channelId, periodKey, limit = 50) {
         전체: null
     };
     const sinceIso = Object.prototype.hasOwnProperty.call(sinceMap, periodKey) ? sinceMap[periodKey] : null;
-    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname, created_at').eq('channel_id', channelId);
+    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname, created_at').eq('channel_id', currentChannelId);
     if (sinceIso) query = query.gte('created_at', sinceIso);
     const { data, error } = await query;
     if (error) throw error;
-    const users = await getAllUsers(channelId);
+    const users = await getAllUsers(channel);
     const nameMap = new Map(users.map(user => [user.user_id + '', displayName(user)]));
+    const memberIds = new Set(users.map(user => user.user_id + ''));
     const rankingMap = new Map();
     for (const row of data || []) {
         const userId = row.user_id + '';
+        if (!memberIds.has(userId)) continue;
         const current = rankingMap.get(userId) || { user_id: userId, nickname: nameMap.get(userId) || row.nickname || '알 수 없음', count: 0 };
         current.count += 1;
         if (!nameMap.has(userId) && row.nickname) current.nickname = row.nickname;
@@ -490,14 +513,8 @@ async function getChatRanking(channelId, periodKey, limit = 50) {
 }
 
 async function getChannelMembers(channel) {
-    const channelId = channel.channelId + '';
-    const members = Array.from(channel.getAllUserInfo() || []);
-    const result = [];
-    for (const member of members) {
-        const user = await ensureUser(member, channelId);
-        result.push(user);
-    }
-    return result.sort((a, b) => displayName(a).localeCompare(displayName(b), 'ko'));
+    const users = await getAllUsers(channel);
+    return users.sort((a, b) => displayName(a).localeCompare(displayName(b), 'ko'));
 }
 
 function formatRankLines(items, renderLine, emptyText) {
@@ -578,6 +595,55 @@ async function removeShopItem(channelId, name) {
     return data;
 }
 
+async function getBagItem(channelId, userId, name) {
+    const key = bagItemKey(channelId, userId, name);
+    const { data, error } = await supabase.from('chatbot2_bag_items').select('*').eq('id', key).maybeSingle();
+    if (error) throw error;
+    return data || null;
+}
+
+async function listBagItems(channelId, userId) {
+    const { data, error } = await supabase
+        .from('chatbot2_bag_items')
+        .select('*')
+        .eq('channel_id', channelId)
+        .eq('user_id', userId + '')
+        .gt('quantity', 0)
+        .order('item_name', { ascending: true });
+    if (error) throw error;
+    return data || [];
+}
+
+async function addBagItem(channelId, userId, item, quantity) {
+    const existing = await getBagItem(channelId, userId, item.item_key || item.name);
+    const timestamp = nowIso();
+    const nextQuantity = Number(existing?.quantity || 0) + Number(quantity || 0);
+    const payload = {
+        id: bagItemKey(channelId, userId, item.item_key || item.name),
+        channel_id: channelId + '',
+        user_id: userId + '',
+        item_key: item.item_key || (item.name || '').trim().toLowerCase(),
+        item_name: item.name || existing?.item_name || '',
+        quantity: nextQuantity,
+        created_at: existing?.created_at || timestamp,
+        updated_at: timestamp
+    };
+    const { data, error } = await supabase.from('chatbot2_bag_items').upsert(payload, { onConflict: 'id' }).select('*').single();
+    if (error) throw error;
+    return data;
+}
+
+async function useBagItem(channelId, userId, name, quantity = 1) {
+    const existing = await getBagItem(channelId, userId, name);
+    const amount = Number(quantity || 0);
+    if (!existing || Number(existing.quantity || 0) < amount || amount <= 0) {
+        return { ok: false, reason: 'not_found' };
+    }
+    const { data, error } = await supabase.from('chatbot2_bag_items').update({ quantity: Number(existing.quantity || 0) - amount, updated_at: nowIso() }).eq('id', existing.id).select('*').single();
+    if (error) throw error;
+    return { ok: true, item: data, quantity: amount };
+}
+
 async function addPoints(userInfo, channelId, amount) {
     const user = await ensureUser(userInfo, channelId);
     const nextPoints = Math.max(0, Number(user.points || 0) + Number(amount || 0));
@@ -589,20 +655,24 @@ async function addPoints(userInfo, channelId, amount) {
     });
 }
 
-async function purchaseShopItem(userInfo, channelId, name) {
+async function purchaseShopItem(userInfo, channelId, name, quantity = 1) {
     const item = await getShopItem(channelId, name);
     if (!item || !item.is_active) return { ok: false, reason: 'not_found' };
+    const amount = Number(quantity || 0);
+    if (!Number.isInteger(amount) || amount <= 0) return { ok: false, reason: 'invalid_quantity' };
     const user = await ensureUser(userInfo, channelId);
-    if (Number(user.points || 0) < Number(item.price || 0)) {
-        return { ok: false, reason: 'not_enough_points', item, user };
+    const totalPrice = Number(item.price || 0) * amount;
+    if (Number(user.points || 0) < totalPrice) {
+        return { ok: false, reason: 'not_enough_points', item, user, quantity: amount, totalPrice };
     }
     const next = await putUser({
         ...user,
-        points: Number(user.points || 0) - Number(item.price || 0),
+        points: Number(user.points || 0) - totalPrice,
         updated_at: nowIso(),
         last_seen_at: nowIso()
     });
-    return { ok: true, item, user: next };
+    const bagItem = await addBagItem(channelId, user.user_id || userInfo.userId + '', item, amount);
+    return { ok: true, item, user: next, bagItem, quantity: amount, totalPrice };
 }
 
 function parsePositiveAmount(text) {
@@ -619,6 +689,16 @@ function parseShopRegister(argLine) {
     const description = parts.slice(2).join(' | ').trim();
     if (!name || !Number.isFinite(price) || price <= 0) return null;
     return { name, price, description };
+}
+
+function parsePurchaseArgs(argLine) {
+    const text = (argLine || '').trim();
+    if (!text) return null;
+    const match = text.match(/^(.*?)(?:\s+(\d+))?$/);
+    const name = (match?.[1] || '').trim();
+    const quantity = match?.[2] ? Number(match[2]) : 1;
+    if (!name || !Number.isInteger(quantity) || quantity <= 0) return null;
+    return { name, quantity };
 }
 
 async function handleCommand(data, channel, sender) {
@@ -643,7 +723,7 @@ async function handleCommand(data, channel, sender) {
     }
 
     if (cmd === '포인트순위') {
-        const users = await getUsersByPoints(channelId, 15);
+        const users = await getUsersByPoints(channel, 15);
         channel.sendChat(`🏆 포인트 순위\n${VIEWMORE}\n${users.map((user, index) => `${index + 1}위. ${displayName(user)} - ${commas(user.points)}P`).join('\n') || '기록 없음'}`);
         return true;
     }
@@ -654,7 +734,7 @@ async function handleCommand(data, channel, sender) {
             channel.sendChat('❌ 사용법: /채팅수 [오늘/주간/월간/전체]');
             return true;
         }
-        const ranking = await getChatRanking(channelId, period, 50);
+        const ranking = await getChatRanking(channel, period, 50);
         const body = formatRankLines(
             ranking,
             (entry, index) => `${index + 1}위. ${entry.nickname} - ${commas(entry.count)}회`,
@@ -690,12 +770,17 @@ async function handleCommand(data, channel, sender) {
         }
         const mode = (ctx.args[0] || '').toLowerCase();
         const target = ctx.firstMention;
-        if (!target || !['on', 'off'].includes(mode)) {
-            channel.sendChat('❌ 사용법: /게임 <on/off> @멘션');
+        if (!['on', 'off'].includes(mode)) {
+            channel.sendChat('❌ 사용법: /게임 <on/off> [@멘션]');
+            return true;
+        }
+        if (!target) {
+            const updated = await setGameEnabledForAll(channel, mode === 'on');
+            channel.sendChat(`✅ 현재 방 전체 유저(${updated.length}명)의 게임 참여가 ${mode.toUpperCase()}${mode == 'on' ? "으" : ""}로 설정되었습니다.`);
             return true;
         }
         const next = await setGameEnabled(target, channelId, mode === 'on');
-        channel.sendChat(`✅ ${displayName(next, target.nickname)}님의 게임 참여가 ${mode.toUpperCase()}${mode == 'on' ? "으":""}로 설정되었습니다.`);
+        channel.sendChat(`✅ ${displayName(next, target.nickname)}님의 게임 참여가 ${mode.toUpperCase()}${mode == 'on' ? "으" : ""}로 설정되었습니다.`);
         return true;
     }
 
@@ -745,24 +830,54 @@ async function handleCommand(data, channel, sender) {
         return true;
     }
 
+    if (cmd === '가방') {
+        const items = await listBagItems(channelId, sender.userId + '');
+        channel.sendChat(`[ ${sender.nickname}님의 가방 ]\n${VIEWMORE}\n${items.map(item => `- ${item.item_name} x${commas(item.quantity)}`).join('\n') || '보유한 아이템이 없습니다.'}`);
+        return true;
+    }
+
     if (cmd === '구매') {
-        const name = (ctx.argLine || '').trim();
-        if (!name) {
-            channel.sendChat('❌ 사용법: /구매 [상품명]');
+        const parsedPurchase = parsePurchaseArgs(ctx.argLine);
+        if (!parsedPurchase) {
+            channel.sendChat('❌ 사용법: /구매 [상품명] [수량]');
             return true;
         }
-        const result = await purchaseShopItem(sender, channelId, name);
+        const result = await purchaseShopItem(sender, channelId, parsedPurchase.name, parsedPurchase.quantity);
         if (!result.ok) {
             if (result.reason === 'not_found') {
                 channel.sendChat('❌ 해당 상품을 찾을 수 없습니다.');
                 return true;
             }
+            if (result.reason === 'invalid_quantity') {
+                channel.sendChat('❌ 수량은 1 이상의 정수만 입력할 수 있습니다.');
+                return true;
+            }
             if (result.reason === 'not_enough_points') {
-                channel.sendChat(`❌ 포인트가 부족합니다.\n필요 포인트: ${commas(result.item.price)}P\n현재 포인트: ${commas(result.user.points)}P`);
+                channel.sendChat(`❌ 포인트가 부족합니다.\n필요 포인트: ${commas(result.totalPrice)}P\n현재 포인트: ${commas(result.user.points)}P`);
                 return true;
             }
         }
-        channel.sendChat(`✅ ${displayName(result.user, sender.nickname)}님이 ${result.item.name} 상품을 구매했습니다!\n💰 남은 포인트: ${commas(result.user.points)}P`);
+        channel.sendChat(`✅ ${displayName(result.user, sender.nickname)}님이 ${result.item.name}${result.quantity > 1 ? ` ${commas(result.quantity)}개` : ''} 상품을 구매했습니다!\n🎒 보유 수량: ${commas(result.bagItem.quantity)}개\n💰 남은 포인트: ${commas(result.user.points)}P`);
+        return true;
+    }
+
+    if (cmd === '사용') {
+        if (!isManager(sender)) {
+            channel.sendChat('❌ 방장/부방장만 사용할 수 있는 명령어입니다.');
+            return true;
+        }
+        const target = ctx.firstMention;
+        const name = (ctx.argLine || '').replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!target || !name) {
+            channel.sendChat('❌ 사용법: /사용 [아이템 이름] @멘션');
+            return true;
+        }
+        const result = await useBagItem(channelId, target.userId + '', name, 1);
+        if (!result.ok) {
+            channel.sendChat('❌ 해당 유저가 보유한 아이템이 없습니다.');
+            return true;
+        }
+        channel.sendChat(`✅ ${displayName(null, target.nickname)}님의 '${name}' 아이템을 사용했습니다.`);
         return true;
     }
 
