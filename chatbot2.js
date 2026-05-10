@@ -27,7 +27,30 @@ const words = (() => {
         return ['사과', '바다', '노을', '사랑', '학교', '자동차'];
     }
 })();
-const choseongWords = words.filter(v => v.length >= 2 && v.length <= 6);
+
+const CHOSEONG_TOPICS = {
+    과일: [
+        '사과', '배', '복숭아', '포도', '딸기', '바나나', '오렌지', '귤', '레몬', '라임',
+        '자몽', '수박', '참외', '멜론', '망고', '파인애플', '키위', '체리', '자두', '살구',
+        '감', '석류', '무화과', '블루베리', '라즈베리', '크랜베리', '아보카도', '두리안', '리치', '용과',
+        '샤인머스캣', '청포도', '머루', '유자', '한라봉'
+    ],
+    동물: [
+        '강아지', '고양이', '토끼', '호랑이', '사자', '기린', '코끼리', '하마', '얼룩말', '원숭이',
+        '침팬지', '고릴라', '판다', '곰', '늑대', '여우', '사슴', '다람쥐', '햄스터', '고슴도치',
+        '수달', '너구리', '독수리', '참새', '비둘기', '앵무새', '오리', '거위', '펭귄', '돌고래',
+        '고래', '상어', '문어', '오징어', '거북이'
+    ],
+    음식: [
+        '김치찌개', '된장찌개', '순두부찌개', '비빔밥', '불고기', '갈비탕', '삼계탕', '냉면', '잡채', '떡볶이',
+        '순대', '튀김', '김밥', '라면', '우동', '짜장면', '짬뽕', '탕수육', '볶음밥', '돈가스',
+        '초밥', '회덮밥', '파스타', '피자', '햄버거', '샌드위치', '토스트', '오므라이스', '카레', '닭갈비',
+        '제육볶음', '보쌈', '족발', '만두', '호떡'
+    ]
+};
+const choseongWordPools = Object.fromEntries(
+    Object.entries(CHOSEONG_TOPICS).map(([topic, list]) => [topic, list.filter(v => /^[가-힣]{2,}$/.test(v) && v.length >= 2 && v.length <= 10)])
+);
 const updownGames = new Map();
 const choseongGames = new Map();
 
@@ -300,7 +323,6 @@ async function catchUpdown(msg, sender, channel) {
     const channelId = channel.channelId + '';
     const state = updownGames.get(channelId);
     if (!state || msg.startsWith('/')) return false;
-    if (!/^\d+$/.test(msg.trim())) return false;
     if (!await isGameEnabledForUser(sender, channelId)) return false;
     const guess = Number(msg.trim());
     if (guess < 1 || guess > state.max) return false;
@@ -327,7 +349,23 @@ async function catchUpdown(msg, sender, channel) {
     return true;
 }
 
-async function startChoseong(channel, sender) {
+function normalizeChoseongTopic(value) {
+    const token = (value || '').trim().toLowerCase();
+    if (!token) return null;
+    if (['과일', 'fruit', 'fruits'].includes(token)) return '과일';
+    if (['동물', 'animal', 'animals'].includes(token)) return '동물';
+    if (['음식', 'food', 'foods'].includes(token)) return '음식';
+    if (['랜덤', 'random', '아무거나'].includes(token)) return '랜덤';
+    return null;
+}
+
+function chooseChoseongTopic(requestedTopic) {
+    if (requestedTopic && requestedTopic !== '랜덤') return requestedTopic;
+    const topics = Object.keys(choseongWordPools);
+    return topics[Math.floor(Math.random() * topics.length)] || '과일';
+}
+
+async function startChoseong(channel, sender, topicInput) {
     const channelId = channel.channelId + '';
     if (choseongGames.has(channelId)) {
         channel.sendChat('❌ 이미 초성퀴즈가 진행 중입니다.');
@@ -337,17 +375,25 @@ async function startChoseong(channel, sender) {
         channel.sendChat('❌ 현재 본인의 게임 참여가 비활성화되어 있습니다.');
         return true;
     }
-    const answer = choseongWords[Math.floor(Math.random() * Math.max(1, choseongWords.length))] || '사과';
+    const requestedTopic = normalizeChoseongTopic(topicInput);
+    if (topicInput && !requestedTopic) {
+        channel.sendChat('❌ 사용 가능한 주제: 과일, 동물, 음식\n예) /초성퀴즈 과일');
+        return true;
+    }
+    const topic = chooseChoseongTopic(requestedTopic);
+    const pool = choseongWordPools[topic] || choseongWordPools.과일;
+    const answer = pool[Math.floor(Math.random() * Math.max(1, pool.length))] || '사과';
     const state = {
+        topic,
         answer,
         timeout: setTimeout(() => {
             if (choseongGames.get(channelId) !== state) return;
             clearChoseong(channelId);
-            channel.sendChat(`⌛ 초성퀴즈 종료\n정답: ${answer}`);
+            channel.sendChat(`⌛ 초성퀴즈 종료\n주제: ${topic}\n정답: ${answer}`);
         }, CHOSEONG_TIMEOUT)
     };
     choseongGames.set(channelId, state);
-    channel.sendChat(`[ 초성퀴즈 시작 ]\n초성: ${choseong(answer)}`);
+    channel.sendChat(`[ 초성퀴즈 시작 ]\n주제: ${topic}\n초성: ${choseong(answer)}`);
     return true;
 }
 
@@ -368,6 +414,7 @@ async function catchChoseong(msg, sender, channel) {
     });
     channel.sendChat(
         `🏆 초성퀴즈 정답!\n` +
+        `주제: ${state.topic}\n` +
         `정답: ${state.answer}\n` +
         `우승: ${displayName(next, sender.nickname)}\n` +
         `🎁 +${GAME_REWARD}포인트\n` +
@@ -557,7 +604,7 @@ async function handleCommand(data, channel, sender) {
         return true;
     }
 
-    if (cmd === '초성퀴즈' || cmd === '초성게임') return startChoseong(channel, sender);
+    if (cmd === '초성퀴즈' || cmd === '초성게임') return startChoseong(channel, sender, ctx.args[0]);
 
     if (cmd === '초성중지') {
         clearChoseong(channelId);
