@@ -98,6 +98,10 @@ function dt(value) {
     return value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기록 없음';
 }
 
+function d(value) {
+    return value ? new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기록 없음';
+}
+
 function pseudoKstDate(date = new Date()) {
     return new Date(date.getTime() + KST_OFFSET_MS);
 }
@@ -706,6 +710,30 @@ async function handleCommand(data, channel, sender) {
     const ctx = cmdCtx(data, channel);
     const cmd = ctx.command;
 
+    if (cmd === '명령어') {
+        channel.sendChat(
+            `[ 명령어 목록 ]\n${VIEWMORE}\n\n` +
+            `/출석\n- 출석체크\n\n` +
+            `/내정보\n- 자신의 정보 확인\n\n` +
+            `/가방\n- 자신이 보유한 아이템 확인\n\n` +
+            `/포인트순위\n- 포인트 순위 확인\n\n` +
+            `/채팅수 [오늘/주간/월간/전체]\n- 채팅 순위 확인\n\n` +
+            `/출석확인\n- 오늘 출석체크한 사람 확인\n\n` +
+            `/유령확인\n- 2일 이상 채팅을 치지 않은 유저 확인\n\n` +
+            `/닉변기록 @멘션\n- 해당 유저의 닉변 기록 확인\n\n` +
+            `/업다운 (숫자)\n- 1부터 숫자까지의 범위 내에서 업다운 게임 시작 (기본 100)\n\n` +
+            `/초성퀴즈 | /초성게임\n- 초성퀴즈 시작\n\n` +
+            `/상점 | /포인트상점\n- 상점 조회\n\n` +
+            `/구매 [상품명]\n- 상품 구매\n\n` +
+            `/상점등록 [상품명] | [가격] | [설명]\n- 상점 물품 등록 (방장 전용)\n\n` +
+            `/상점제거 [상품명]\n- 상점 물품 제거\n\n` +
+            `/게임 <on/off> @멘션\n- 게임 on/off (방장/부방장 전용)\n\n` +
+            `/포인트지급 <숫자> @멘션\n- 포인트 지급 (방장 전용)\n\n` +
+            `/포인트차감 <숫자> @멘션\n- 포인트 차감 (방장 전용)`
+        );
+        return true;
+    }
+
     if (cmd === '출석') return attendance(sender, channel);
 
     if (cmd === '포인트' || cmd === '잔고' || cmd === '내정보') {
@@ -759,6 +787,24 @@ async function handleCommand(data, channel, sender) {
         channel.sendChat(
             `[ 유령 확인 ]\n\n` +
             `${ghosts.map(user => `- ${displayName(user)}${user.last_chat_at ? `\n  마지막 채팅: ${dt(user.last_chat_at)}` : `\n  입장 후 채팅 없음 (${dt(user.last_join_at)})`}`).join('\n') || '유령 유저가 없습니다.'}`
+        );
+        return true;
+    }
+
+    if (cmd === '닉변기록') {
+        const target = ctx.firstMention;
+        if (!target) {
+            channel.sendChat('❌ 사용법: /닉변기록 @멘션');
+            return true;
+        }
+        const logs = await getProfileChangeLogs(channelId, target.userId + '', 30);
+        if (!logs.length) {
+            channel.sendChat(`❌ ${target.nickname}님의 닉변 기록이 없습니다.`);
+            return true;
+        }
+        channel.sendChat(
+            `[ ${target.nickname}님의 닉변 기록 ]\n${VIEWMORE}\n` +
+            `${logs.map((log, index) => `${index + 1}. (${d(log.timestamp)})\n- ${log.parsed.before} >>> ${log.parsed.after}`).join('\n\n')}`
         );
         return true;
     }
