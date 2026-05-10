@@ -14626,7 +14626,7 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
-    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
         const newNick = user ? user.nickname : null;
@@ -14652,6 +14652,12 @@ client.on('profile_changed', async (channel, lastInfo, user) => {
         await chatbot1.onProfileChanged(channel, lastInfo, user, { client });
     } catch (e) {
         console.log('chatbot1 프로필변경 연동 실패:', e);
+    }
+
+    try {
+        await chatbot2.onProfileChanged(channel, lastInfo, user);
+    } catch (e) {
+        console.log('chatbot2 프로필변경 연동 실패:', e);
     }
 });
 

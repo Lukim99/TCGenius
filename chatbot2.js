@@ -964,11 +964,24 @@ async function onUserLeft(channel, user) {
     }
 }
 
+async function onProfileChanged(channel, lastInfo, user) {
+    if (!isTargetChannel(channel) || !supabase || !user) return;
+    try {
+        const oldNick = lastInfo ? lastInfo.nickname : null;
+        const newNick = user ? user.nickname : null;
+        if (!newNick || oldNick === newNick) return;
+        await updateUser(user, channel.channelId + '', { display_nickname: newNick });
+    } catch (e) {
+        console.log('[chatbot2] onProfileChanged error:', e);
+    }
+}
+
 module.exports = {
     TARGET_CHANNEL_ID,
     TARGET_CHANNEL_IDS,
     isTargetChannel,
     onChat,
     onUserJoin,
-    onUserLeft
+    onUserLeft,
+    onProfileChanged
 };
