@@ -347,8 +347,10 @@ async function catchUpdown(msg, sender, channel) {
     const state = updownGames.get(channelId);
     if (!state || msg.startsWith('/')) return false;
     if (!await isGameEnabledForUser(sender, channelId)) return false;
-    const guess = Number(msg.trim());
-    if (guess < 1 || guess > state.max) return false;
+    const raw = (msg || '').trim();
+    if (!/^\d+$/.test(raw)) return false;
+    const guess = Number(raw);
+    if (!Number.isInteger(guess) || guess < 1 || guess > state.max) return false;
     state.tries += 1;
     if (guess === state.answer) {
         clearUpdown(channelId);
