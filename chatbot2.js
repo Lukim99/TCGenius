@@ -732,7 +732,7 @@ async function handleCommand(data, channel, sender) {
 
     if (cmd === '상점' || cmd === '포인트상점') {
         const items = await listShopItems(channelId);
-        channel.sendChat(`[ 포인트 상점 ]\n${VIEWMORE}\n${items.map((item, index) => `〈 ${item.name} 〉  | ${commas(item.price)}P${item.description ? `\n\n   ${item.description}` : ''}`).join('\n') || '등록된 상품이 없습니다.'}`);
+        channel.sendChat(`[ 포인트 상점 ]\n${VIEWMORE}\n${items.map((item, index) => `〈 ${item.name} 〉  ${commas(item.price)}P${item.description ? `\n- ${item.description}` : ''}`).join('\n\n') || '등록된 상품이 없습니다.'}`);
         return true;
     }
 
