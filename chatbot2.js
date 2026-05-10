@@ -362,7 +362,7 @@ async function catchUpdown(msg, sender, channel) {
         });
         channel.sendChat(
             `${displayName(next, sender.nickname)}님이 정답을 맞히셨습니다!\n` +
-            `정답: ${state.answer}\n` +
+            `정답: ${state.answer}\n\n` +
             `- 시도 횟수: ${commas(state.tries)}회\n` +
             `- 포인트: ${commas(next.points)}P (+${GAME_REWARD})`
         );
@@ -436,12 +436,10 @@ async function catchChoseong(msg, sender, channel) {
         last_seen_at: nowIso()
     });
     channel.sendChat(
-        `🏆 초성퀴즈 정답!\n` +
+        `${displayName(next, sender.nickname)}님이 정답을 맞히셨습니다!\n` +
         `주제: ${state.topic}\n` +
-        `정답: ${state.answer}\n` +
-        `우승: ${displayName(next, sender.nickname)}\n` +
-        `🎁 +${GAME_REWARD}포인트\n` +
-        `💰 현재 포인트: ${commas(next.points)}P`
+        `정답: ${state.answer}\n\n` +
+        `- 포인트: ${commas(next.points)}P (+${GAME_REWARD})`
     );
     return true;
 }
