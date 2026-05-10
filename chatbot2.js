@@ -429,6 +429,12 @@ async function getUsersByPoints(channelId, limit = 15) {
     return (data || []).sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, limit);
 }
 
+async function getAllUsers(channelId) {
+    const { data, error } = await supabase.from('chatbot2_users').select('*').eq('channel_id', channelId);
+    if (error) throw error;
+    return data || [];
+}
+
 async function getChatCount(channelId, userId, sinceIso) {
     let query = supabase.from('chatbot2_chat_logs').select('*', { count: 'exact', head: true }).eq('channel_id', channelId).eq('user_id', userId + '');
     if (sinceIso) query = query.gte('created_at', sinceIso);
@@ -447,6 +453,80 @@ async function getChatStats(channelId, userId) {
     return { today, week, month, total };
 }
 
+async function getChatRanking(channelId, periodKey, limit = 50) {
+    const sinceMap = {
+        오늘: startOfTodayIso(),
+        주간: startOfWeekIso(),
+        월간: startOfMonthIso(),
+        전체: null
+    };
+    const sinceIso = Object.prototype.hasOwnProperty.call(sinceMap, periodKey) ? sinceMap[periodKey] : null;
+    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname, created_at').eq('channel_id', channelId);
+    if (sinceIso) query = query.gte('created_at', sinceIso);
+    const { data, error } = await query;
+    if (error) throw error;
+    const users = await getAllUsers(channelId);
+    const nameMap = new Map(users.map(user => [user.user_id + '', displayName(user)]));
+    const rankingMap = new Map();
+    for (const row of data || []) {
+        const userId = row.user_id + '';
+        const current = rankingMap.get(userId) || { user_id: userId, nickname: nameMap.get(userId) || row.nickname || '알 수 없음', count: 0 };
+        current.count += 1;
+        if (!nameMap.has(userId) && row.nickname) current.nickname = row.nickname;
+        rankingMap.set(userId, current);
+    }
+    return Array.from(rankingMap.values())
+        .sort((a, b) => Number(b.count || 0) - Number(a.count || 0) || (a.nickname || '').localeCompare(b.nickname || '', 'ko'))
+        .slice(0, limit);
+}
+
+async function getChannelMembers(channel) {
+    const channelId = channel.channelId + '';
+    const members = Array.from(channel.getAllUserInfo() || []);
+    const result = [];
+    for (const member of members) {
+        const user = await ensureUser(member, channelId);
+        result.push(user);
+    }
+    return result.sort((a, b) => displayName(a).localeCompare(displayName(b), 'ko'));
+}
+
+function formatRankLines(items, renderLine, emptyText) {
+    if (!items.length) return emptyText;
+    const top = items.slice(0, 10).map(renderLine).join('\n');
+    const rest = items.slice(10).map(renderLine).join('\n');
+    return rest ? `${top}\n${VIEWMORE}\n${rest}` : top;
+}
+
+function parseChatPeriod(value) {
+    const token = (value || '').trim();
+    if (!token) return '전체';
+    if (['오늘', '주간', '월간', '전체'].includes(token)) return token;
+    return null;
+}
+
+async function getAttendanceStatus(channel) {
+    const users = await getChannelMembers(channel);
+    const today = todayKst();
+    return {
+        attended: users.filter(user => user.last_attendance_date === today),
+        absent: users.filter(user => user.last_attendance_date !== today)
+    };
+}
+
+function isOlderThanDays(value, days) {
+    if (!value) return false;
+    return Date.now() - new Date(value).getTime() >= days * 24 * 60 * 60 * 1000;
+}
+
+async function getGhostUsers(channel) {
+    const users = await getChannelMembers(channel);
+    return users.filter(user => {
+        if (user.last_chat_at) return isOlderThanDays(user.last_chat_at, 2);
+        return !!user.last_join_at && isOlderThanDays(user.last_join_at, 2);
+    });
+}
+
 async function getShopItem(channelId, name) {
     const key = itemKey(channelId, name);
     const { data, error } = await supabase.from('chatbot2_shop_items').select('*').eq('id', key).maybeSingle();
@@ -462,6 +542,7 @@ async function listShopItems(channelId) {
 
 async function saveShopItem(channelId, name, price, description, sender) {
     const existing = await getShopItem(channelId, name);
+    if (existing && existing.is_active) return null;
     const timestamp = nowIso();
     const payload = {
         id: itemKey(channelId, name),
@@ -499,6 +580,22 @@ async function addPoints(userInfo, channelId, amount) {
     });
 }
 
+async function purchaseShopItem(userInfo, channelId, name) {
+    const item = await getShopItem(channelId, name);
+    if (!item || !item.is_active) return { ok: false, reason: 'not_found' };
+    const user = await ensureUser(userInfo, channelId);
+    if (Number(user.points || 0) < Number(item.price || 0)) {
+        return { ok: false, reason: 'not_enough_points', item, user };
+    }
+    const next = await putUser({
+        ...user,
+        points: Number(user.points || 0) - Number(item.price || 0),
+        updated_at: nowIso(),
+        last_seen_at: nowIso()
+    });
+    return { ok: true, item, user: next };
+}
+
 function parsePositiveAmount(text) {
     const match = (text || '').match(/-?\d+/);
     const value = match ? Number(match[0]) : NaN;
@@ -525,11 +622,11 @@ async function handleCommand(data, channel, sender) {
     if (cmd === '포인트' || cmd === '잔고' || cmd === '내정보') {
         const user = await ensureUser(sender, channelId);
         channel.sendChat(
-            `👤 ${displayName(user, sender.nickname)}\n` +
+            `[ ${displayName(user, sender.nickname)}님의 정보 ]\n\n` +
             `💰 포인트: ${commas(user.points)}P\n` +
             `💬 누적 채팅: ${commas(user.total_chat_count)}회\n` +
-            `📅 출석: ${commas(user.attendance_days)}일 (연속 ${commas(user.attendance_streak)}일)\n` +
-            `🎮 업다운 ${commas(user.updown_wins)} / 초성 ${commas(user.choseong_wins)}\n` +
+            `📅 출석 횟수: ${commas(user.attendance_days)}일${user.attendance_streak > 1 ? ` (연속 ${commas(user.attendance_streak)}일)` : ""}\n` +
+            `🎮 게임 승리 횟수\n - 업다운 ${commas(user.updown_wins)}회\n - 초성퀴즈 ${commas(user.choseong_wins)}회\n` +
             `⚙️ 게임 참여: ${user.game_enabled === false ? 'OFF' : 'ON'}\n` +
             `🕒 마지막 채팅: ${dt(user.last_chat_at)}`
         );
@@ -543,15 +640,36 @@ async function handleCommand(data, channel, sender) {
     }
 
     if (cmd === '채팅수') {
-        const target = ctx.firstMention || sender;
-        const user = await ensureUser(target, channelId);
-        const stats = await getChatStats(channelId, target.userId + '');
+        const period = parseChatPeriod(ctx.args[0]);
+        if (!period) {
+            channel.sendChat('❌ 사용법: /채팅수 [오늘/주간/월간/전체]');
+            return true;
+        }
+        const ranking = await getChatRanking(channelId, period, 50);
+        const body = formatRankLines(
+            ranking,
+            (entry, index) => `${index + 1}위. ${entry.nickname} - ${commas(entry.count)}회`,
+            '기록 없음'
+        );
+        channel.sendChat(`[ ${period} 채팅수 순위 ]\n${body}`);
+        return true;
+    }
+
+    if (cmd === '출석확인') {
+        const status = await getAttendanceStatus(channel);
         channel.sendChat(
-            `💬 ${displayName(user, target.nickname)} 채팅수\n` +
-            `오늘: ${commas(stats.today)}회\n` +
-            `주간: ${commas(stats.week)}회\n` +
-            `월간: ${commas(stats.month)}회\n` +
-            `전체: ${commas(stats.total)}회`
+            `[ 출석 확인 ]\n${VIEWMORE}\n` +
+            `- 출석 (${status.attended.length}명)\n${status.attended.map(user => `  ${displayName(user)}`).join('\n') || '  없음'}\n\n` +
+            `- 미출석 (${status.absent.length}명)\n${status.absent.map(user => `  ${displayName(user)}`).join('\n') || '  없음'}`
+        );
+        return true;
+    }
+
+    if (cmd === '유령확인') {
+        const ghosts = await getGhostUsers(channel);
+        channel.sendChat(
+            `[ 유령 확인 ]\n\n` +
+            `${ghosts.map(user => `- ${displayName(user)}${user.last_chat_at ? `\n  마지막 채팅: ${dt(user.last_chat_at)}` : `\n  입장 후 채팅 없음 (${dt(user.last_join_at)})`}`).join('\n') || '유령 유저가 없습니다.'}`
         );
         return true;
     }
@@ -585,7 +703,7 @@ async function handleCommand(data, channel, sender) {
         }
         const signedAmount = cmd === '포인트지급' ? amount : -amount;
         const next = await addPoints(target, channelId, signedAmount);
-        channel.sendChat(`✅ ${displayName(next, target.nickname)}님의 포인트가 ${cmd === '포인트지급' ? `${commas(amount)}P 지급` : `${commas(amount)}P 차감`}되었습니다.\n💰 현재 포인트: ${commas(next.points)}P`);
+        channel.sendChat(`✅ ${displayName(next, target.nickname)}님${cmd === '포인트지급' ? `에게 ${commas(amount)}P를 지급` : `의 포인트를 ${commas(amount)}P 차감`}했습니다.\n💰 현재 포인트: ${commas(next.points)}P`);
         return true;
     }
 
@@ -614,7 +732,28 @@ async function handleCommand(data, channel, sender) {
 
     if (cmd === '상점' || cmd === '포인트상점') {
         const items = await listShopItems(channelId);
-        channel.sendChat(`🛒 포인트 상점\n${VIEWMORE}\n${items.map((item, index) => `${index + 1}. ${item.name} - ${commas(item.price)}P${item.description ? `\n   ${item.description}` : ''}`).join('\n') || '등록된 상품이 없습니다.'}`);
+        channel.sendChat(`[ 포인트 상점 ]\n${VIEWMORE}\n${items.map((item, index) => `〈 ${item.name} 〉  | ${commas(item.price)}P${item.description ? `\n\n   ${item.description}` : ''}`).join('\n') || '등록된 상품이 없습니다.'}`);
+        return true;
+    }
+
+    if (cmd === '구매') {
+        const name = (ctx.argLine || '').trim();
+        if (!name) {
+            channel.sendChat('❌ 사용법: /구매 [상품명]');
+            return true;
+        }
+        const result = await purchaseShopItem(sender, channelId, name);
+        if (!result.ok) {
+            if (result.reason === 'not_found') {
+                channel.sendChat('❌ 해당 상품을 찾을 수 없습니다.');
+                return true;
+            }
+            if (result.reason === 'not_enough_points') {
+                channel.sendChat(`❌ 포인트가 부족합니다.\n필요 포인트: ${commas(result.item.price)}P\n현재 포인트: ${commas(result.user.points)}P`);
+                return true;
+            }
+        }
+        channel.sendChat(`✅ ${displayName(result.user, sender.nickname)}님이 ${result.item.name} 상품을 구매했습니다!\n💰 남은 포인트: ${commas(result.user.points)}P`);
         return true;
     }
 
@@ -629,6 +768,10 @@ async function handleCommand(data, channel, sender) {
             return true;
         }
         const item = await saveShopItem(channelId, parsed.name, parsed.price, parsed.description, sender);
+        if (!item) {
+            channel.sendChat('❌ 이미 등록된 동일한 상품명은 등록할 수 없습니다.');
+            return true;
+        }
         channel.sendChat(`✅ 상점 상품이 등록되었습니다.\n상품명: ${item.name}\n가격: ${commas(item.price)}P${item.description ? `\n설명: ${item.description}` : ''}`);
         return true;
     }
@@ -678,8 +821,11 @@ async function onChat(data, channel) {
 async function onUserJoin(channel, user) {
     if (!isTargetChannel(channel) || !supabase || !user) return;
     try {
-        const next = await updateUser(user, channel.channelId + '', { last_join_at: nowIso(), display_nickname: user.nickname || '' });
-        channel.sendChat(`👋 ${displayName(next, user.nickname)}님이 입장했습니다.`);
+        const channelId = channel.channelId + '';
+        const next = await updateUser(user, channelId, { last_join_at: nowIso(), display_nickname: user.nickname || '' });
+        if (await isFirstJoin(channelId, user.userId + '')) {
+            channel.sendChat(`👋 ${displayName(next, user.nickname)}님이 처음 입장했습니다!`);
+        }
     } catch (e) {
         console.log('[chatbot2] onUserJoin error:', e);
     }
@@ -689,7 +835,6 @@ async function onUserLeft(channel, user) {
     if (!isTargetChannel(channel) || !supabase || !user) return;
     try {
         const next = await updateUser(user, channel.channelId + '', { last_leave_at: nowIso(), display_nickname: user.nickname || '' });
-        channel.sendChat(`🚪 ${displayName(next, user.nickname)}님이 퇴장했습니다.`);
     } catch (e) {
         console.log('[chatbot2] onUserLeft error:', e);
     }
