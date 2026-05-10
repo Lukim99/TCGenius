@@ -68,6 +68,15 @@ function commas(value) {
     return Number(value || 0).toLocaleString('ko-KR');
 }
 
+function chatPointReward(message) {
+    if (!message || message.startsWith('/')) return 0;
+    return message
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.length >= 2)
+        .length * CHAT_POINT_REWARD;
+}
+
 function nowIso() {
     return new Date().toISOString();
 }
@@ -220,7 +229,7 @@ async function updateUser(userInfo, channelId, patch) {
 async function touchChat(sender, msg, channelId) {
     const current = await ensureUser(sender, channelId);
     const timestamp = nowIso();
-    const reward = msg.startsWith('/') ? 0 : CHAT_POINT_REWARD;
+    const reward = chatPointReward(msg);
     const next = await putUser({
         ...current,
         display_nickname: sender.nickname || current.display_nickname || '',
