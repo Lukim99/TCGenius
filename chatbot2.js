@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
-const TARGET_CHANNEL_ID = ['18482851783691995'];
+const TARGET_CHANNEL_ID = ['18482851783691995', '18482856788777711'];
 const TARGET_CHANNEL_IDS = TARGET_CHANNEL_ID;
 const VIEWMORE = '\u200e'.repeat(500);
 const ATTENDANCE_KEYWORDS = new Set(['ㅊㅊ', '출석']);
@@ -831,7 +831,7 @@ async function handleCommand(data, channel, sender) {
         }
         channel.sendChat(
             `[ ${target.nickname}님의 닉변 기록 ]\n${VIEWMORE}\n` +
-            `${logs.map((log, index) => `${index + 1}. (${d(log.timestamp)})\n- ${log.parsed.before} >>> ${log.parsed.after}`).join('\n\n')}`
+            `${logs.map((log, index) => `${index + 1}. ${dt(log.timestamp)}\n- ${log.parsed.before} >>> ${log.parsed.after}`).join('\n\n')}`
         );
         return true;
     }
