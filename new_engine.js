@@ -4,6 +4,7 @@ const LKAgent = require('./agent.js');
 const wordchain = require('./wordchain.js');
 const lolChatbot = require('./lol_chatbot.js');
 const chatbot1 = require('./chatbot1.js');
+const chatbot2 = require('./chatbot2.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -5172,8 +5173,9 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 //chat on
 client.on('chat', async (data, channel) => {
     if (JSON.parse(read("DB/wordchain_enabled_rooms.json")).enabled.includes(channel.channelId + "")) wordchain.onChat(data, channel);
-    if (await lolChatbot.onChat(data, channel)) return;
-    if (await chatbot1.onChat(data, channel, { client })) return;
+    if (lolChatbot.TARGET_CHANNEL_ID == channel.channelId && await lolChatbot.onChat(data, channel)) return;
+    if (chatbot1.TARGET_CHANNEL_IDS.includes(channel.channelId) && await chatbot1.onChat(data, channel, { client })) return;
+    if (chatbot2.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await chatbot2.onChat(data, channel)) return;
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
@@ -14535,7 +14537,7 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
-    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -14578,10 +14580,16 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
     } catch (e) {
         console.log('chatbot1 입장 연동 실패:', e);
     }
+
+    try {
+        await chatbot2.onUserJoin(channel, user);
+    } catch (e) {
+        console.log('chatbot2 입장 연동 실패:', e);
+    }
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
-    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
+    if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
     try {
@@ -14608,6 +14616,12 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
         await chatbot1.onUserLeft(leftLog, channel, user, feed, { client });
     } catch (e) {
         console.log('chatbot1 퇴장 연동 실패:', e);
+    }
+
+    try {
+        await chatbot2.onUserLeft(channel, user);
+    } catch (e) {
+        console.log('chatbot2 퇴장 연동 실패:', e);
     }
 });
 
@@ -14644,7 +14658,7 @@ client.on('profile_changed', async (channel, lastInfo, user) => {
 async function registerDevice(authClient) {
     let requestData = await authClient.requestPasscode({"email": EMAIL, "password": PASSWORD, "forced": true});
     if (!requestData.success) {
-    return {"success": false, "message": `RequestPasscode Failed! Data: ${JSON.stringify(requestData, null, 2)}`};
+        return {"success": false, "message": `RequestPasscode Failed! Data: ${JSON.stringify(requestData, null, 2)}`};
     } else {
         let readline = require("readline");
         let inputInterface = readline.createInterface({
