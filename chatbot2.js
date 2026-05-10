@@ -857,7 +857,7 @@ async function handleCommand(data, channel, sender) {
                 return true;
             }
         }
-        channel.sendChat(`✅ ${displayName(result.user, sender.nickname)}님이 ${result.item.name}${result.quantity > 1 ? ` ${commas(result.quantity)}개` : ''} 상품을 구매했습니다!\n🎒 보유 수량: ${commas(result.bagItem.quantity)}개\n💰 남은 포인트: ${commas(result.user.points)}P`);
+        channel.sendChat(`✅ ${displayName(result.user, sender.nickname)}님이 ${result.item.name} 상품을 ${result.quantity > 1 ? ` ${commas(result.quantity)}개` : ''} 구매했습니다!\n🎒 보유 수량: ${commas(result.bagItem.quantity)}개\n💰 남은 포인트: ${commas(result.user.points)}P`);
         return true;
     }
 
