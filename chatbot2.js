@@ -234,6 +234,16 @@ async function updateUser(userInfo, channelId, patch) {
     });
 }
 
+async function isFirstJoin(channelId, userId) {
+    const user = await getUser(channelId, userId);
+    if (!user || !user.created_at || !user.last_join_at) return false;
+    if (user.last_leave_at) return false;
+    const createdAt = new Date(user.created_at).getTime();
+    const joinedAt = new Date(user.last_join_at).getTime();
+    if (!Number.isFinite(createdAt) || !Number.isFinite(joinedAt)) return false;
+    return Math.abs(joinedAt - createdAt) < 10000;
+}
+
 async function touchChat(sender, msg, channelId) {
     const current = await ensureUser(sender, channelId);
     const timestamp = nowIso();
