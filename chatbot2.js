@@ -8,7 +8,7 @@ const VIEWMORE = '\u200e'.repeat(500);
 const ATTENDANCE_KEYWORDS = new Set(['ㅊㅊ', '출석']);
 const CHAT_POINT_REWARD = 1;
 const ATTENDANCE_REWARD = 100;
-const GAME_REWARD = 50;
+const GAME_REWARD = 10;
 const UPDOWN_TIMEOUT = 5 * 60 * 1000;
 const CHOSEONG_TIMEOUT = 30 * 1000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -112,6 +112,14 @@ function startOfTodayIso(date = new Date()) {
     return new Date(utcMs).toISOString();
 }
 
+function addDaysIso(iso, days) {
+    return new Date(new Date(iso).getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function startOfYesterdayIso(date = new Date()) {
+    return addDaysIso(startOfTodayIso(date), -1);
+}
+
 function startOfWeekIso(date = new Date()) {
     const kst = pseudoKstDate(date);
     const day = kst.getUTCDay();
@@ -120,10 +128,46 @@ function startOfWeekIso(date = new Date()) {
     return new Date(utcMs).toISOString();
 }
 
+function startOfNextWeekIso(date = new Date()) {
+    return addDaysIso(startOfWeekIso(date), 7);
+}
+
+function startOfLastWeekIso(date = new Date()) {
+    return addDaysIso(startOfWeekIso(date), -7);
+}
+
 function startOfMonthIso(date = new Date()) {
     const kst = pseudoKstDate(date);
     const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), 1, 0, 0, 0, 0) - KST_OFFSET_MS;
     return new Date(utcMs).toISOString();
+}
+
+function startOfNextMonthIso(date = new Date()) {
+    const kst = pseudoKstDate(date);
+    const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() + 1, 1, 0, 0, 0, 0) - KST_OFFSET_MS;
+    return new Date(utcMs).toISOString();
+}
+
+function getChatPeriodRange(periodKey, date = new Date()) {
+    if (periodKey === '오늘') {
+        return { startIso: startOfTodayIso(date), endIso: addDaysIso(startOfTodayIso(date), 1) };
+    }
+    if (periodKey === '어제') {
+        return { startIso: startOfYesterdayIso(date), endIso: startOfTodayIso(date) };
+    }
+    if (periodKey === '주간') {
+        return { startIso: startOfWeekIso(date), endIso: startOfNextWeekIso(date) };
+    }
+    if (periodKey === '저번주') {
+        return { startIso: startOfLastWeekIso(date), endIso: startOfWeekIso(date) };
+    }
+    if (periodKey === '월간') {
+        return { startIso: startOfMonthIso(date), endIso: startOfNextMonthIso(date) };
+    }
+    if (periodKey === '전체') {
+        return { startIso: null, endIso: null };
+    }
+    return null;
 }
 
 function mentions(data) {
@@ -477,36 +521,40 @@ async function getAllUsers(channelId) {
     return result;
 }
 
-async function getChatCount(channelId, userId, sinceIso) {
+async function getChatCount(channelId, userId, sinceIso, untilIso) {
     let query = supabase.from('chatbot2_chat_logs').select('*', { count: 'exact', head: true }).eq('channel_id', channelId).eq('user_id', userId + '');
     if (sinceIso) query = query.gte('created_at', sinceIso);
+    if (untilIso) query = query.lt('created_at', untilIso);
     const { count, error } = await query;
     if (error) throw error;
     return Number(count || 0);
 }
 
 async function getChatStats(channelId, userId) {
-    const [today, week, month, total] = await Promise.all([
-        getChatCount(channelId, userId, startOfTodayIso()),
-        getChatCount(channelId, userId, startOfWeekIso()),
-        getChatCount(channelId, userId, startOfMonthIso()),
-        getChatCount(channelId, userId, null)
+    const todayRange = getChatPeriodRange('오늘');
+    const yesterdayRange = getChatPeriodRange('어제');
+    const weekRange = getChatPeriodRange('주간');
+    const lastWeekRange = getChatPeriodRange('저번주');
+    const monthRange = getChatPeriodRange('월간');
+    const [today, yesterday, week, lastWeek, month, total] = await Promise.all([
+        getChatCount(channelId, userId, todayRange.startIso, todayRange.endIso),
+        getChatCount(channelId, userId, yesterdayRange.startIso, yesterdayRange.endIso),
+        getChatCount(channelId, userId, weekRange.startIso, weekRange.endIso),
+        getChatCount(channelId, userId, lastWeekRange.startIso, lastWeekRange.endIso),
+        getChatCount(channelId, userId, monthRange.startIso, monthRange.endIso),
+        getChatCount(channelId, userId, null, null)
     ]);
-    return { today, week, month, total };
+    return { today, yesterday, week, lastWeek, month, total };
 }
 
 async function getChatRanking(channelId, periodKey, limit = 50) {
     const channel = channelId;
     const currentChannelId = channel.channelId + '';
-    const sinceMap = {
-        오늘: startOfTodayIso(),
-        주간: startOfWeekIso(),
-        월간: startOfMonthIso(),
-        전체: null
-    };
-    const sinceIso = Object.prototype.hasOwnProperty.call(sinceMap, periodKey) ? sinceMap[periodKey] : null;
+    const range = getChatPeriodRange(periodKey);
+    if (!range) return [];
     let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname, created_at').eq('channel_id', currentChannelId);
-    if (sinceIso) query = query.gte('created_at', sinceIso);
+    if (range.startIso) query = query.gte('created_at', range.startIso);
+    if (range.endIso) query = query.lt('created_at', range.endIso);
     const { data, error } = await query;
     if (error) throw error;
     const users = await getAllUsers(channel);
@@ -533,15 +581,15 @@ async function getChannelMembers(channel) {
 
 function formatRankLines(items, renderLine, emptyText) {
     if (!items.length) return emptyText;
-    const top = items.slice(0, 10).map(renderLine).join('\n');
-    const rest = items.slice(10).map(renderLine).join('\n');
+    const top = items.slice(0, 10).map((item, index) => renderLine(item, index)).join('\n');
+    const rest = items.slice(10).map((item, index) => renderLine(item, index + 10)).join('\n');
     return rest ? `${top}\n${VIEWMORE}\n${rest}` : top;
 }
 
 function parseChatPeriod(value) {
     const token = (value || '').trim();
     if (!token) return '전체';
-    if (['오늘', '주간', '월간', '전체'].includes(token)) return token;
+    if (['오늘', '어제', '주간', '저번주', '월간', '전체'].includes(token)) return token;
     return null;
 }
 
@@ -685,6 +733,27 @@ async function useBagItem(channelId, userId, name, quantity = 1) {
     return { ok: true, item: data, quantity: amount };
 }
 
+async function giftBagItem(channelId, fromUserId, toUserId, name, quantity = 1) {
+    const existing = await getBagItem(channelId, fromUserId, name);
+    const amount = Number(quantity || 0);
+    if (!existing || Number(existing.quantity || 0) < amount || amount <= 0) {
+        return { ok: false, reason: 'not_found' };
+    }
+    const used = await useBagItem(channelId, fromUserId, name, amount);
+    if (!used.ok) return used;
+    const bagItem = await addBagItem(channelId, toUserId, {
+        item_key: existing.item_key || name,
+        name: existing.item_name || name
+    }, amount);
+    return {
+        ok: true,
+        quantity: amount,
+        itemName: existing.item_name || name,
+        fromItem: used.item,
+        toItem: bagItem
+    };
+}
+
 async function addPoints(userInfo, channelId, amount) {
     const user = await ensureUser(userInfo, channelId);
     const nextPoints = Math.max(0, Number(user.points || 0) + Number(amount || 0));
@@ -753,8 +822,9 @@ async function handleCommand(data, channel, sender) {
             `/출석\n- 출석체크\n\n` +
             `/내정보\n- 자신의 정보 확인\n\n` +
             `/가방\n- 자신이 보유한 아이템 확인\n\n` +
+            `/아이템선물 [아이템] @멘션\n- 보유한 아이템 1개 선물\n\n` +
             `/포인트순위\n- 포인트 순위 확인\n\n` +
-            `/채팅수 [오늘/주간/월간/전체]\n- 채팅 순위 확인\n\n` +
+            `/채팅수 [오늘/어제/주간/저번주/월간/전체]\n- 채팅 순위 확인\n\n` +
             `/출석확인\n- 오늘 출석체크한 사람 확인\n\n` +
             `/유령확인\n- 2일 이상 채팅을 치지 않은 유저 확인\n\n` +
             `/닉변기록 @멘션\n- 해당 유저의 닉변 기록 확인\n\n` +
@@ -796,7 +866,7 @@ async function handleCommand(data, channel, sender) {
     if (cmd === '채팅수') {
         const period = parseChatPeriod(ctx.args[0]);
         if (!period) {
-            channel.sendChat('❌ 사용법: /채팅수 [오늘/주간/월간/전체]');
+            channel.sendChat('❌ 사용법: /채팅수 [오늘/어제/주간/저번주/월간/전체]');
             return true;
         }
         const ranking = await getChatRanking(channel, period, 50);
@@ -916,6 +986,26 @@ async function handleCommand(data, channel, sender) {
     if (cmd === '가방') {
         const items = await listBagItems(channelId, sender.userId + '');
         channel.sendChat(`[ ${sender.nickname}님의 가방 ]\n${VIEWMORE}\n${items.map(item => `- ${item.item_name} x${commas(item.quantity)}`).join('\n') || '보유한 아이템이 없습니다.'}`);
+        return true;
+    }
+
+    if (cmd === '아이템선물') {
+        const target = ctx.firstMention;
+        const name = (ctx.argLine || '').replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!target || !name) {
+            channel.sendChat('❌ 사용법: /아이템선물 [아이템] @멘션');
+            return true;
+        }
+        if (target.userId + '' === sender.userId + '') {
+            channel.sendChat('❌ 자기 자신에게는 아이템을 선물할 수 없습니다.');
+            return true;
+        }
+        const result = await giftBagItem(channelId, sender.userId + '', target.userId + '', name, 1);
+        if (!result.ok) {
+            channel.sendChat('❌ 보유한 아이템이 없거나 수량이 부족합니다.');
+            return true;
+        }
+        channel.sendChat(`✅ ${displayName(null, sender.nickname)}님이 ${displayName(null, target.nickname)}님에게 '${result.itemName}' 아이템을 선물했습니다.`);
         return true;
     }
 
