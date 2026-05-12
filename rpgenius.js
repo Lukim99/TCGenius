@@ -21,6 +21,10 @@ const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['가챠', '번들', '마법석', '소모품', '티켓', '재료'];
+const ELITE_KILL_REQUIREMENT = 100;
+const ELITE_ENCOUNTER_RATE = 0.1;
+const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
+const eliteFieldStates = {};
 
 const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
@@ -844,15 +848,112 @@ function enterField(user, fieldName) {
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
     user.hp = hp;
-    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {} };
+    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
     return '✅ 필드에 입장했습니다: ' + dungeon.name;
 }
 
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
     const fieldName = user.field.name;
+    releaseEliteEncounter(user);
     user.field = null;
     return '✅ 필드에서 퇴장했습니다: ' + fieldName;
+}
+
+function getEliteState(fieldName) {
+    if (!eliteFieldStates[fieldName]) eliteFieldStates[fieldName] = { owner: null, defeatedAt: 0 };
+    return eliteFieldStates[fieldName];
+}
+
+function releaseEliteEncounter(user) {
+    if (!user || !user.field || !user.field.name) return;
+    const state = getEliteState(user.field.name);
+    if (state.owner == user.name) state.owner = null;
+}
+
+function tryEncounterElite(user, dungeon, lines) {
+    if (!dungeon.elite || !user.field || user.field.elite) return;
+    if (Number(user.field.killCount || 0) < ELITE_KILL_REQUIREMENT) return;
+    const state = getEliteState(dungeon.name);
+    if (state.owner || Date.now() - Number(state.defeatedAt || 0) < ELITE_RESPAWN_COOLDOWN) return;
+    if (Math.random() >= ELITE_ENCOUNTER_RATE) return;
+    state.owner = user.name;
+    user.field.elite = { hp: Number(dungeon.elite.hp || 0), encounteredAt: Date.now() };
+    lines.push('', '⚠️ 엘리트 몬스터 조우!');
+    lines.push('- ' + dungeon.elite.name + '이(가) 나타났습니다!');
+}
+
+function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
+    const items = readJson(ITEMS_PATH, []);
+    const rewardLines = [];
+    let levelUps = 0;
+    (dungeon.elite.reward || []).forEach(reward => {
+        if (reward.roll != null && Math.random() >= Number(reward.roll || 0)) return;
+        const count = rollCount(reward.count);
+        if (reward.type == '경험치') {
+            const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
+            const amount = Math.round(count * levelExpMultiplier * (1 + Number(slotEffects.expBonus || 0)));
+            levelUps += addExperience(user, amount);
+            rewardLines.push('- XP ' + comma(amount));
+            return;
+        }
+        if (reward.type == '골드') {
+            const amount = Math.round(count * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0)));
+            user.gold = Number(user.gold || 0) + amount;
+            rewardLines.push('- 🪙 ' + comma(amount));
+            return;
+        }
+        if (reward.type == '아이템') {
+            addInventoryItem(user, reward.item_id, count);
+            const item = items[reward.item_id];
+            rewardLines.push('- ' + (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count));
+        }
+    });
+    lines.push('', '[ 엘리트 처치 보상 ]');
+    if (rewardLines.length > 0) rewardLines.forEach(line => lines.push(line));
+    else lines.push('- 없음');
+    if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
+}
+
+function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const elite = dungeon.elite;
+    const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
+    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
+    const criticalResult = applyCriticalDamage(damageWithSlotBonus, stats, extra);
+    const finalDamage = getDamageAfterReducedDefense(criticalResult.damage, elite.def, extra && extra.pnt || stats.pnt, slotEffects.defReduction);
+    const remainHp = Math.max(0, currentHp - finalDamage);
+    const maxHp = Number(stats.hp || 0);
+    const lines = ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    if (remainHp <= 0) {
+        lines.push('- ' + elite.name + ' 처치!');
+        applyEliteReward(user, dungeon, slotEffects, extra, lines);
+        const state = getEliteState(dungeon.name);
+        state.owner = null;
+        state.defeatedAt = Date.now();
+        user.field.elite = null;
+        user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+        return lines.join('\n');
+    }
+    user.field.elite.hp = remainHp;
+    lines.push('- ' + elite.name + ' HP: ' + comma(remainHp) + '/' + comma(elite.hp));
+    const fieldDamageBase = Number(elite.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
+    const fieldDamage = getDamageAfterDefense(fieldDamageBase, stats.def, elite.pnt);
+    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    user.hp = Math.max(0, beforeHp - fieldDamage);
+    lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+    if (user.hp <= 0) {
+        user.hp = 1;
+        releaseEliteEncounter(user);
+        user.field = null;
+        lines.push('- 남은 체력: 1/' + comma(maxHp));
+        lines.push('', '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
+        return lines.join('\n');
+    }
+    lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
+    user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+    return lines.join('\n');
 }
 
 function buildHuntResult(user, dungeon, rawDamage, extra) {
@@ -882,6 +983,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
     if (killCount > 0) {
+        user.field.killCount = Number(user.field.killCount || 0) + killCount;
         const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
         let expReward = Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelExpMultiplier * (1 + slotEffects.expBonus));
         let goldReward = 0;
@@ -933,6 +1035,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+    if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
 }
 
@@ -944,6 +1047,7 @@ function useBasicAttackInField(user) {
     if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const stats = calculateUserStats(user);
     const rawDamage = Math.round(Number(stats.atk || 0) * (randomInt(95, 105) / 100));
+    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, {});
     return buildHuntResult(user, dungeon, rawDamage, {});
 }
 
@@ -977,6 +1081,7 @@ function useSkillInField(user, skillName) {
     if (skillData.skill.name == '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
     const rawDamage = Math.round(Number(stats.atk || 0) * multiplier);
     user.field.skillCooldowns[skillData.skill.name] = now + Number(skillData.skill.cooltime || 0);
+    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
     return buildHuntResult(user, dungeon, rawDamage, extra);
 }
 
