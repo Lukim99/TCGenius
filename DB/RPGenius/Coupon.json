@@ -1,0 +1,10 @@
+[
+    {
+        "code": "CBT",
+        "reward": [
+            { "type": "골드", "count": { "min": 5000, "max": 5000 } },
+            { "type": "아이템", "item_id": 19, "count": { "min": 10, "max": 10 } }
+        ],
+        "expired_At": null
+    }
+]

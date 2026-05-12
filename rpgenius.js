@@ -15,6 +15,7 @@ const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const BUNDLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bundle.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
+const COUPON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Coupon.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
@@ -735,7 +736,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (passiveMp > 0) {
         const beforeMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
         user.mp = Math.min(Number(stats.mp || 0), beforeMp + passiveMp);
-        lines.push('- MP +' + comma(user.mp - beforeMp));
+        if (user.mp - beforeMp > 0) lines.push('- MP +' + comma(user.mp - beforeMp));
     }
 
     user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
@@ -1109,6 +1110,12 @@ const EQUIPMENT_BLESSED_PROTECT_ITEM_ID = 5;
 const EQUIPMENT_UPGRADE_MAX = 15;
 const EQUIPMENT_RARITY_CORRECTION = { '일반': 0.7, '레어': 0.9, '유니크': 1.1, '레전더리': 1.4 };
 const EQUIPMENT_GOLD_RATE = { '일반': 1.0, '레어': 1.5, '유니크': 1.8, '레전더리': 2.1 };
+const EQUIPMENT_DISASSEMBLE_REWARD = {
+    '일반': { min: 120, max: 230 },
+    '레어': { min: 270, max: 330 },
+    '유니크': { min: 350, max: 430 },
+    '레전더리': { min: 560, max: 650 }
+};
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
 const EQUIPMENT_UPGRADE_RATES = [
     { great: 0.10, success: 0.90, down: 0, reset: 0 },
@@ -1147,6 +1154,21 @@ function getEquipmentUpgradeCost(equipment, type, level) {
     const goldRate = EQUIPMENT_GOLD_RATE[equipment.rarity] || 1;
     const gold = Math.floor(goldRate * ((Math.pow(targetLevel, 4) / 5) + 1));
     return { stone, gold };
+}
+
+function disassembleEquipment(user, numberArg) {
+    const selected = getEquipmentByNumber(user, numberArg);
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    if (selected.source == 'equipped') return '❌ 장착 중인 장비는 분해할 수 없습니다.';
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    const rewardRange = EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
+    if (!rewardRange) return '❌ 분해할 수 없는 장비 등급입니다.';
+    const stoneCount = randomInt(rewardRange.min, rewardRange.max);
+    user.inventory.equipment.splice(selected.index, 1);
+    addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneCount);
+    return '✅ 장비를 분해했습니다.\n[ 분해 장비 ]\n- <' + equipment.rarity + '> ' + equipment.name + '\n[ 획득 결과 ]\n- 강화석 x' + comma(stoneCount);
 }
 
 function formatUpgradeRatePercent(value) {
@@ -1363,6 +1385,23 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
         user.inventory.card.push(card);
         addRewardSummary(summary, 'card:' + id + ':' + star, '[' + formatStar(star) + '] 일반 ' + characterCards[id].name, 1);
     }
+}
+
+function useCoupon(user, codeArg) {
+    const code = String(codeArg || '').trim();
+    if (!code) return '❌ /RPGenius 쿠폰 [코드]';
+    const coupons = readJson(COUPON_PATH, []);
+    const coupon = coupons.find(data => String(data.code || '').toUpperCase() == code.toUpperCase());
+    if (!coupon) return '❌ 존재하지 않는 쿠폰입니다.';
+    if (coupon.expired_At != null && Date.now() > Number(new Date(coupon.expired_At).getTime() || 0)) return '❌ 만료된 쿠폰입니다.';
+    if (!Array.isArray(user.usedCoupons)) user.usedCoupons = [];
+    if (user.usedCoupons.includes(coupon.code)) return '❌ 이미 사용한 쿠폰입니다.';
+    const summary = {};
+    (coupon.reward || []).forEach(reward => grantPackReward(user, reward, summary));
+    user.usedCoupons.push(coupon.code);
+    const lines = ['✅ 쿠폰 보상을 획득했습니다.', '[ 획득 결과 ]'];
+    Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+    return lines.join('\n');
 }
 
 function applyUseFunc(user, func, useCount, resultLines) {
@@ -1603,6 +1642,7 @@ class RPGUser {
         this.pendingAction = null;
         this.maxCardLimit = 52;
         this.mail = [];
+        this.usedCoupons = [];
     }
 
     load(data) {
@@ -1614,6 +1654,7 @@ class RPGUser {
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
+        if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
         if (!this.exp) this.exp = 0;
@@ -2032,6 +2073,17 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (args[0] == '쿠폰') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 쿠폰 [코드]');
+            return true;
+        }
+        const result = useCoupon(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '장착') {
         if (!args[1]) {
             reply('❌ /RPGenius 장착 [장비번호]');
@@ -2049,6 +2101,17 @@ async function onChat(data, channel) {
             return true;
         }
         const result = formatEquipmentUpgradePreview(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '분해') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 분해 [장비번호]');
+            return true;
+        }
+        const result = disassembleEquipment(user, args[1]);
         await user.save();
         reply(result);
         return true;
