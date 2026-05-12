@@ -27,5 +27,24 @@
     [
         { "type": "무기", "weapon_id": 3, "roll": 0.5 },
         { "type": "갑옷", "armor_id": 3, "roll": 0.5 }
+    ],
+    [
+        { "type": "아이템", "item_id": 30, "count": { "min": 1, "max": 1 }, "roll": 0.9 },
+        { "type": "아이템", "item_id": 31, "count": { "min": 1, "max": 1 }, "roll": 0.009 },
+        { "type": "아이템", "item_id": 16, "count": { "min": 1, "max": 1 }, "roll": 0.001 }
+    ],
+    [
+        { "type": "무기", "weapon_id": 0, "roll": 0.1428 },
+        { "type": "무기", "weapon_id": 1, "roll": 0.1428 },
+        { "type": "갑옷", "armor_id": 0, "roll": 0.1428 },
+        { "type": "갑옷", "armor_id": 1, "roll": 0.1428 },
+        { "type": "장신구", "accessory_id": 0, "roll": 0.1428 },
+        { "type": "장신구", "accessory_id": 1, "roll": 0.1428 },
+        { "type": "장신구", "accessory_id": 2, "roll": 0.1428 },
+        { "type": "아이템", "item_id": 30, "count": { "min": 2, "max": 2 }, "roll": 0.0004 }
+    ],
+    [
+        { "type": "무기", "weapon_id": 2, "roll": 0.5 },
+        { "type": "갑옷", "armor_id": 2, "roll": 0.5 }
     ]
 ]

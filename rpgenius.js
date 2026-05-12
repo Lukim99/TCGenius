@@ -16,6 +16,7 @@ const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
+const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
@@ -148,6 +149,10 @@ function formatPackEntry(entry) {
         const armor = equipments.armor && equipments.armor[entry.armor_id];
         return armor ? '<' + armor.rarity + '> ' + armor.name : '알 수 없는 갑옷';
     }
+    if (entry.type == '장신구') {
+        const accessory = equipments.accessory && equipments.accessory[entry.accessory_id];
+        return accessory ? '<' + accessory.rarity + '> ' + accessory.name : '알 수 없는 장신구';
+    }
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
     return entry.type || '알 수 없는 보상';
@@ -249,6 +254,45 @@ function addStats(target, stats) {
     });
 }
 
+function getCardSlotEffectValue(card, cardData) {
+    if (!card || !cardData || !cardData.slot_effect) return 0;
+    const star = Number(card.star || 0);
+    if (star < 4) return 0;
+    return Number(cardData.slot_effect.base || 0) + Number(cardData.slot_effect.per_level || 0) * (star - 4);
+}
+
+function calculateCardSlotEffects(user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const effects = {
+        expBonus: 0,
+        hpDamageReduction: 0,
+        killRecoveryChance: 0,
+        crit: 0,
+        mpCostReduction: 0,
+        damageBonus: 0,
+        critMul: 0,
+        goldBonus: 0,
+        itemDropChance: 0,
+        pnt: 0
+    };
+    (user.card_slot || []).forEach(card => {
+        const cardData = characterCards[card.id];
+        const value = getCardSlotEffectValue(card, cardData);
+        if (value <= 0) return;
+        if (cardData.name == '빵귤') effects.expBonus += value;
+        if (cardData.name == '뭔마') effects.hpDamageReduction += value;
+        if (cardData.name == '글렌첵') effects.killRecoveryChance += value;
+        if (cardData.name == '오버라이드') effects.crit += value;
+        if (cardData.name == '일레이나') effects.mpCostReduction += value;
+        if (cardData.name == '진필규') effects.damageBonus += value;
+        if (cardData.name == '켄시') effects.critMul += value;
+        if (cardData.name == '제우스') effects.goldBonus += value;
+        if (cardData.name == '타이란트') effects.itemDropChance += value;
+        if (cardData.name == '마쉐비') effects.pnt += value;
+    });
+    return effects;
+}
+
 function getBaseStat(card) {
     const table = readJson(BASE_STAT_PATH, []);
     const star = Number(card && card.star || 0);
@@ -274,6 +318,10 @@ function calculateUserStats(user) {
         const data = equip && getEquipmentData('accessory', equip.id);
         if (data) addStats(stats, data.stat);
     });
+    const slotEffects = calculateCardSlotEffects(user);
+    stats.crit = Number(stats.crit || 0) + slotEffects.crit;
+    stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
+    stats.pnt = Number(stats.pnt || 0) + slotEffects.pnt;
     return stats;
 }
 
@@ -317,6 +365,203 @@ function formatMyInfo(user) {
     lines.push('치명타 확률: ' + formatStatValue('crit', stats.crit).replace(/^\+/, ''));
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
     return lines.join('\n');
+}
+
+function getAccessibleDungeons(level) {
+    const dungeons = readJson(DUNGEON_PATH, []);
+    return dungeons.filter(dungeon => Number(dungeon.requireLevel || 1) <= Number(level || 1));
+}
+
+function formatFieldList(user) {
+    const level = Number(user.level || 1);
+    const dungeons = getAccessibleDungeons(level);
+    const lines = ['[ 입장 가능한 필드 목록 ]', VIEWMORE];
+    dungeons.forEach(dungeon => lines.push('〈 ' + dungeon.name + ' 〉 권장 Lv. ' + Number(dungeon.requireLevel || 1)));
+    return lines.join('\n');
+}
+
+function findDungeonByName(name) {
+    const dungeons = readJson(DUNGEON_PATH, []);
+    return dungeons.find(dungeon => dungeon.name == name);
+}
+
+function getDamageAfterDefense(damage, defense, penetration) {
+    const finalDefense = Math.max(0, Number(defense || 0) - Number(penetration || 0));
+    return Math.floor(Number(damage || 0) * (100 / (100 + finalDefense)));
+}
+
+function applyCriticalDamage(damage, stats, extra) {
+    const critChance = Math.max(0, Number(stats.crit || 0));
+    const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
+    const isCritical = Math.random() < critChance;
+    return {
+        damage: isCritical ? Math.round(Number(damage || 0) * critMul) : Number(damage || 0),
+        isCritical: isCritical
+    };
+}
+
+function getSkillValue(skill, index, star) {
+    const format = skill.format && skill.format[index];
+    return Number(format && format.base || 0) + Number(format && format.per_star || 0) * Number(star || 0);
+}
+
+function getMainCardSkills(user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const skills = readJson(SKILLS_PATH, []);
+    const card = user.main_card && characterCards[user.main_card.id];
+    if (!card) return [];
+    return (card.skills || []).map(index => ({ index: index, skill: skills[index] })).filter(data => data.skill);
+}
+
+function findUsableSkill(user, skillName) {
+    return getMainCardSkills(user).find(data => data.skill.name == skillName);
+}
+
+function getPassiveMpRecovery(user) {
+    const skillData = getMainCardSkills(user).find(data => data.skill.name == '피아스트');
+    if (!skillData) return 0;
+    return getSkillValue(skillData.skill, 1, user.main_card && user.main_card.star);
+}
+
+function addExperience(user, amount) {
+    user.level = Number(user.level || 1);
+    user.exp = Number(user.exp || 0) + Number(amount || 0);
+    let levelUps = 0;
+    let need = getMaxExpForLevel(user.level);
+    while (need > 0 && user.exp >= need) {
+        user.exp -= need;
+        user.level += 1;
+        levelUps++;
+        need = getMaxExpForLevel(user.level);
+    }
+    return levelUps;
+}
+
+function enterField(user, fieldName) {
+    const dungeon = findDungeonByName(fieldName);
+    if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
+    const level = Number(user.level || 1);
+    if (level < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
+    const stats = calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
+    user.hp = hp;
+    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {} };
+    return '✅ 필드에 입장했습니다: ' + dungeon.name;
+}
+
+function leaveField(user) {
+    if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
+    const fieldName = user.field.name;
+    user.field = null;
+    return '✅ 필드에서 퇴장했습니다: ' + fieldName;
+}
+
+function buildHuntResult(user, dungeon, rawDamage, extra) {
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
+    const criticalResult = applyCriticalDamage(damageWithSlotBonus, stats, extra);
+    const finalDamage = getDamageAfterDefense(criticalResult.damage, dungeon.def, extra && extra.pnt || stats.pnt);
+    const killCount = Math.floor(finalDamage / Number(dungeon.hp || 1));
+    const fieldDamageBase = Number(dungeon.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
+    const fieldDamage = getDamageAfterDefense(fieldDamageBase, stats.def, dungeon.pnt);
+    const maxHp = Number(stats.hp || 0);
+    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    user.hp = Math.max(0, beforeHp - fieldDamage);
+
+    const lines = ['⚔️ ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- 총 ' + comma(killCount) + '마리 처치'];
+    lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+
+    if (user.hp <= 0) {
+        user.hp = 1;
+        user.field = null;
+        lines.push('- 남은 체력: 1/' + comma(maxHp));
+        lines.push('', '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
+        return lines.join('\n');
+    }
+
+    lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
+
+    if (killCount > 0) {
+        let expReward = Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * (1 + slotEffects.expBonus));
+        let goldReward = 0;
+        for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
+        goldReward = Math.round(goldReward * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0)));
+        user.gold = Number(user.gold || 0) + goldReward;
+        const levelUps = addExperience(user, expReward);
+        lines.push('', '[ 보상 ]');
+        lines.push('- XP ' + comma(expReward));
+        lines.push('- 🪙 ' + comma(goldReward));
+        if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
+    }
+
+    if (killCount > 0 && slotEffects.killRecoveryChance > 0) {
+        let recoveryCount = 0;
+        for (let i = 0; i < killCount; i++) if (Math.random() < slotEffects.killRecoveryChance) recoveryCount++;
+        if (recoveryCount > 0) {
+            const beforeRecoverHp = Number(user.hp || 0);
+            const beforeRecoverMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
+            user.hp = Math.min(maxHp, beforeRecoverHp + Math.round(maxHp * 0.1) * recoveryCount);
+            user.mp = Math.min(Number(stats.mp || 0), beforeRecoverMp + Math.round(Number(stats.mp || 0) * 0.1) * recoveryCount);
+            lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' / MP +' + comma(user.mp - beforeRecoverMp));
+        }
+    }
+
+    const passiveMp = getPassiveMpRecovery(user);
+    if (passiveMp > 0) {
+        const beforeMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
+        user.mp = Math.min(Number(stats.mp || 0), beforeMp + passiveMp);
+        lines.push('- MP +' + comma(user.mp - beforeMp));
+    }
+
+    user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+    return lines.join('\n');
+}
+
+function useBasicAttackInField(user) {
+    if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    const now = Date.now();
+    if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
+    const dungeon = findDungeonByName(user.field.name);
+    if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
+    const stats = calculateUserStats(user);
+    const rawDamage = Math.round(Number(stats.atk || 0) * (randomInt(95, 105) / 100));
+    return buildHuntResult(user, dungeon, rawDamage, {});
+}
+
+function useSkillInField(user, skillName) {
+    if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    const now = Date.now();
+    if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
+    if (!user.field.skillCooldowns) user.field.skillCooldowns = {};
+    const skillData = findUsableSkill(user, skillName);
+    if (!skillData) return '❌ 사용할 수 없는 스킬입니다.';
+    const cooldownEnd = Number(user.field.skillCooldowns[skillData.skill.name] || 0);
+    if (now < cooldownEnd) return '❌ 스킬 쿨타임입니다. (' + Math.ceil((cooldownEnd - now) / 1000) + '초)';
+
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const maxMp = Number(stats.mp || 0);
+    const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const mpCost = Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction))));
+    if (mp < mpCost) return '❌ MP가 부족합니다.';
+    user.mp = mp - mpCost;
+
+    const dungeon = findDungeonByName(user.field.name);
+    if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
+    const star = Number(user.main_card && user.main_card.star || 0);
+    let multiplier = getSkillValue(skillData.skill, 0, star);
+    const extra = {};
+    if (skillData.skill.name == '글버지') multiplier *= 2;
+    if (skillData.skill.name == '불사조') extra.receivedDamageMul = 1.5;
+    if (skillData.skill.name == 'SUPER EASY') extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '백억이요') extra.goldBonus = getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
+    const rawDamage = Math.round(Number(stats.atk || 0) * multiplier);
+    user.field.skillCooldowns[skillData.skill.name] = now + Number(skillData.skill.cooltime || 0);
+    return buildHuntResult(user, dungeon, rawDamage, extra);
 }
 
 async function sendCharacterCardImage(channel, card) {
@@ -479,9 +724,12 @@ async function handleAdminCommand(command, adminUser) {
         const field = command.args[0].startsWith('골드') ? 'gold' : command.args[0].startsWith('가넷') ? 'garnet' : 'point';
         const sign = command.args[0].endsWith('지급') ? 1 : -1;
         targetUser[field] = Math.max(0, Number(targetUser[field] || 0) + amount * sign);
+        if (field == 'point') {
+            targetUser.total_point += amount * sign;
+        }
         await targetUser.save();
         const goodsName = field == 'gold' ? '골드' : field == 'garnet' ? '가넷' : '포인트';
-        return '✅ ' + targetUser.name + '님의 ' + goodsName + '를 ' + comma(amount) + (sign > 0 ? ' 지급' : ' 차감') + '했습니다.\n현재 보유: ' + comma(targetUser[field]);
+        return `✅ ${targetUser.name}님${sign > 0 ? `에게 ${comma(amount)} ${goodsName}${goodsName == "가넷" ? "을" : "를"} 지급했습니다.` : `의 ${goodsName}${goodsName == "가넷" ? "을" : "를"} ${comma(amount)} 차감했습니다.`}`;
     }
 
     const restText = command.raw.substr(command.prefixLength + 1 + command.args[0].length + 1 + targetName.length + 1).trim();
@@ -503,7 +751,7 @@ async function handleAdminCommand(command, adminUser) {
     }
     cleanupInventoryItems(targetUser);
     await targetUser.save();
-    return '✅ ' + targetUser.name + '님에게 ' + itemName + ' x' + comma(count) + (command.args[0] == '아이템지급' ? ' 지급' : ' 제거') + '했습니다.';
+    return '✅ ' + targetUser.name + '님에게' + (command.args[0] == '아이템지급' ? '' : '서') + ' 아이템을 ' + (command.args[0] == '아이템지급' ? '지급' : '제거') + '했습니다: ' + itemName + ' x' + comma(count);
 }
 
 function addEquipmentInventory(user, type, id) {
@@ -567,6 +815,12 @@ function grantPackReward(user, reward, summary) {
         addEquipmentInventory(user, 'armor', reward.armor_id);
         const equipment = equipments.armor && equipments.armor[reward.armor_id];
         addRewardSummary(summary, 'armor:' + reward.armor_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 갑옷', 1);
+        return;
+    }
+    if (reward.type == '장신구') {
+        addEquipmentInventory(user, 'accessory', reward.accessory_id);
+        const equipment = equipments.accessory && equipments.accessory[reward.accessory_id];
+        addRewardSummary(summary, 'accessory:' + reward.accessory_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 장신구', 1);
     }
 }
 
@@ -763,6 +1017,11 @@ class RPGUser {
         this.logged_in = [id];
         this.main_card = {};
         this.need_character_card_select = true;
+        this.level = 1;
+        this.exp = 0;
+        this.hp = 0;
+        this.mp = 0;
+        this.field = null;
         this.card_slot = [];
         this.equipments = {
             armor: {
@@ -796,6 +1055,9 @@ class RPGUser {
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
+        if (!this.level) this.level = 1;
+        if (!this.exp) this.exp = 0;
+        if (typeof this.field == 'undefined') this.field = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         return this;
@@ -975,6 +1237,9 @@ async function onChat(data, channel) {
             user.main_card = userCard;
             user.inventory.card.push(userCard);
             user.need_character_card_select = false;
+            const stats = calculateUserStats(user);
+            user.hp = Number(stats.hp || 0);
+            user.mp = Number(stats.mp || 0);
             await user.save();
             reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name);
         }
@@ -996,6 +1261,54 @@ async function onChat(data, channel) {
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
         reply(formatCharacterCardList());
+        return true;
+    }
+
+    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬'].includes(args[0])) {
+        reply('❌ 필드 입장 중에는 공격, 스킬, 필드퇴장 명령어만 사용할 수 있습니다.');
+        return true;
+    }
+
+    if (args[0] == '필드') {
+        reply(formatFieldList(user));
+        return true;
+    }
+
+    if (args[0] == '필드입장') {
+        const fieldName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!fieldName) {
+            reply('❌ /RPGenius 필드입장 [필드명]');
+            return true;
+        }
+        const result = enterField(user, fieldName);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '필드퇴장') {
+        const result = leaveField(user);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '공격') {
+        const result = useBasicAttackInField(user);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '스킬') {
+        const skillName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!skillName) {
+            reply('❌ /RPGenius 스킬 [스킬명]');
+            return true;
+        }
+        const result = useSkillInField(user, skillName);
+        await user.save();
+        reply(result);
         return true;
     }
 
