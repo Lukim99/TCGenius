@@ -599,9 +599,56 @@ function getMaxExpForLevel(level) {
     return typeof value == 'number' ? value : 0;
 }
 
+const STAT_POINT_OPTIONS = {
+    '공격력': { key: 'atk', plusKey: 'atk', flat: 2, plus: 0.01, label: '공격력', plusLabel: '최종 공격력' },
+    '체력': { key: 'hp', plusKey: 'hp', flat: 10, plus: 0.01, label: '체력', plusLabel: '최종 체력' },
+    'MP': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
+    'mp': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
+    '방어력': { key: 'def', plusKey: 'def', flat: 3, plus: 0.01, label: '방어력', plusLabel: '최종 방어력' },
+    '방어관통력': { key: 'pnt', flat: 1, plus: 0, label: '방어 관통력' },
+    '방어 관통력': { key: 'pnt', flat: 1, plus: 0, label: '방어 관통력' }
+};
+
+const STAT_POINT_DISPLAY = [
+    { name: '공격력', key: 'atk', plusKey: 'atk', flat: 2 },
+    { name: '체력', key: 'hp', plusKey: 'hp', flat: 10 },
+    { name: 'MP', key: 'mp', plusKey: 'mp', flat: 12 },
+    { name: '방어력', key: 'def', plusKey: 'def', flat: 3 },
+    { name: '방어 관통력', key: 'pnt', flat: 1 }
+];
+
+function normalizeStatPointData(user) {
+    if (!user.statPointStats || typeof user.statPointStats != 'object') user.statPointStats = {};
+    ['atk', 'hp', 'mp', 'def', 'pnt'].forEach(key => {
+        user.statPointStats[key] = Number(user.statPointStats[key] || 0);
+    });
+    user.statPoint = Number(user.statPoint || 0);
+}
+
 function calculateUserStats(user) {
     const stats = getBaseStat(user.main_card);
     const plusStats = {};
+    normalizeStatPointData(user);
+    Object.keys(user.statPointStats).forEach(key => {
+        const count = Number(user.statPointStats[key] || 0);
+        if (key == 'atk') {
+            stats.atk = Number(stats.atk || 0) + count * 2;
+            plusStats.atk = Number(plusStats.atk || 0) + count * 0.01;
+        }
+        if (key == 'hp') {
+            stats.hp = Number(stats.hp || 0) + count * 10;
+            plusStats.hp = Number(plusStats.hp || 0) + count * 0.01;
+        }
+        if (key == 'mp') {
+            stats.mp = Number(stats.mp || 0) + count * 12;
+            plusStats.mp = Number(plusStats.mp || 0) + count * 0.01;
+        }
+        if (key == 'def') {
+            stats.def = Number(stats.def || 0) + count * 3;
+            plusStats.def = Number(plusStats.def || 0) + count * 0.01;
+        }
+        if (key == 'pnt') stats.pnt = Number(stats.pnt || 0) + count;
+    });
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
         if (data) {
@@ -739,7 +786,39 @@ function addExperience(user, amount) {
         levelUps++;
         need = getMaxExpForLevel(user.level);
     }
+    if (levelUps > 0) user.statPoint = Number(user.statPoint || 0) + levelUps;
     return levelUps;
+}
+
+function investStatPoint(user, statArg, countArg) {
+    normalizeStatPointData(user);
+    const option = STAT_POINT_OPTIONS[String(statArg || '').trim()];
+    if (!option) return '❌ /RPGenius 스탯포인트 [공격력|체력|MP|방어력|방어 관통력] <숫자>';
+    const count = typeof countArg == 'undefined' ? 1 : Number(countArg);
+    if (!Number.isInteger(count) || count < 1) return '❌ 숫자는 1 이상의 정수여야 합니다.';
+    if (Number(user.statPoint || 0) < count) return '❌ 잔여 스탯포인트가 부족합니다.';
+    user.statPoint -= count;
+    user.statPointStats[option.key] = Number(user.statPointStats[option.key] || 0) + count;
+    const flatValue = option.flat * count;
+    const plusValue = option.plus * count;
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    if (plusValue > 0) return '✅ ' + option.label + '에 스탯포인트 ' + comma(count) + '을 투자해 ' + option.label + '이 ' + comma(flatValue) + ', ' + option.plusLabel + '이 +' + (Math.round(plusValue * 1000) / 10) + '% 증가했습니다.';
+    return '✅ ' + option.label + '에 스탯포인트 ' + comma(count) + '을 투자해 ' + option.label + '이 ' + comma(flatValue) + ' 증가했습니다.';
+}
+
+function formatStatPointStatus(user) {
+    normalizeStatPointData(user);
+    const lines = ['[ 스탯포인트 현황 ]'];
+    STAT_POINT_DISPLAY.forEach(stat => {
+        const count = Number(user.statPointStats[stat.key] || 0);
+        const flat = count * stat.flat;
+        if (stat.plusKey) lines.push('- ' + stat.name + ' +' + comma(flat) + ' / +' + (Math.round(count * 10) / 10) + '%');
+        else lines.push('- ' + stat.name + ' +' + comma(flat));
+    });
+    lines.push('', '잔여 스탯포인트: ' + comma(user.statPoint || 0));
+    return lines.join('\n');
 }
 
 function enterField(user, fieldName) {
@@ -1743,6 +1822,8 @@ class RPGUser {
         this.point = 0;
         this.total_point = 0;
         this.mileage = 0;
+        this.statPoint = 0;
+        this.statPointStats = { atk: 0, hp: 0, mp: 0, def: 0, pnt: 0 };
         this.pendingAction = null;
         this.maxCardLimit = 52;
         this.maxAccessory = 1;
@@ -1765,6 +1846,7 @@ class RPGUser {
         if (!this.exp) this.exp = 0;
         if (typeof this.field == 'undefined') this.field = null;
         if (typeof this.mileage == 'undefined') this.mileage = 0;
+        normalizeStatPointData(this);
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
@@ -2082,6 +2164,24 @@ async function onChat(data, channel) {
 
     if (['장비인벤', 'ei'].includes(args[0])) {
         reply(formatEquipmentInventory(user));
+        return true;
+    }
+
+    if (args[0] == '스탯') {
+        reply(formatStatPointStatus(user));
+        return true;
+    }
+
+    if (args[0] == '스탯포인트') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 스탯포인트 [공격력|체력|MP|방어력|방어 관통력] <숫자>');
+            return true;
+        }
+        const statName = args[1] == '방어' && args[2] == '관통력' ? '방어 관통력' : args[1];
+        const countArg = statName == '방어 관통력' ? args[3] : args[2];
+        const result = investStatPoint(user, statName, countArg);
+        await user.save();
+        reply(result);
         return true;
     }
 
