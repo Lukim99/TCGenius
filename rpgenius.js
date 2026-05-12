@@ -10,6 +10,8 @@ const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
+const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
+const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
 const dynamoClient = new DynamoDBClient({
@@ -45,11 +47,25 @@ function formatValue(format) {
     return Math.round(value * 1000) / 10 + '%';
 }
 
+function formatIncreaseValue(format) {
+    const value = Number(format && (format.per_star || format.per_level) || 0);
+    if (format && format.type == 'flat') return value.toString();
+    return Math.round(value * 1000) / 10 + '%';
+}
+
 function formatSkillDesc(skill) {
     if (!skill) return '알 수 없는 스킬입니다.';
     return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
         const format = skill.format && skill.format[Number(index) - 1];
         return formatValue(format);
+    });
+}
+
+function formatSkillDescWithIncrease(skill) {
+    if (!skill) return '알 수 없는 스킬입니다.';
+    return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
+        const format = skill.format && skill.format[Number(index) - 1];
+        return formatValue(format) + '(+' + formatIncreaseValue(format) + ')';
     });
 }
 
@@ -92,13 +108,140 @@ function comma(value) {
     return Number(value || 0).toLocaleString('ko-KR');
 }
 
+function formatRoll(value) {
+    const percent = Number(value || 0) * 100;
+    return (Number.isInteger(percent) ? percent : percent.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')) + '%';
+}
+
+function formatCount(count) {
+    if (!count) return 'x1';
+    const min = Number(count.min || 0);
+    const max = Number(count.max || 0);
+    if (min == max) return 'x' + comma(min);
+    return 'x' + comma(min) + '~' + comma(max);
+}
+
+function formatStatValue(key, value) {
+    const number = Number(value || 0);
+    const sign = number > 0 ? '+' : '';
+    if (['crit', 'critMul', 'atk%', 'def%', 'hp%'].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
+    return sign + comma(number);
+}
+
+function formatPackEntry(entry) {
+    const items = readJson(ITEMS_PATH, []);
+    const equipments = readJson(EQUIPMENT_PATH, {});
+    if (entry.type == '아이템') {
+        const item = items[entry.item_id];
+        return item ? item.name + ' ' + formatCount(entry.count) : '알 수 없는 아이템';
+    }
+    if (entry.type == '무기') {
+        const weapon = equipments.weapon && equipments.weapon[entry.weapon_id];
+        return weapon ? '<' + weapon.rarity + '> ' + weapon.name : '알 수 없는 무기';
+    }
+    if (entry.type == '갑옷') {
+        const armor = equipments.armor && equipments.armor[entry.armor_id];
+        return armor ? '<' + armor.rarity + '> ' + armor.name : '알 수 없는 갑옷';
+    }
+    if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
+    if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
+    return entry.type || '알 수 없는 보상';
+}
+
+function formatPack(pack) {
+    if (!Array.isArray(pack)) return '';
+    return pack.map(entry => formatRoll(entry.roll) + ' [ ' + formatPackEntry(entry) + ' ]').join('\n');
+}
+
+function formatCharacterCardDetail(card) {
+    const skills = readJson(SKILLS_PATH, []);
+    const lines = [];
+    if (card.slot_effect) {
+        lines.push('[ 5성 이상 / 카드 슬롯 효과 ]');
+        lines.push('- ' + card.slot_effect.name + ' ' + formatValue(card.slot_effect));
+        lines.push(' ㄴ 5성 이후 등급마다 +' + formatIncreaseValue(card.slot_effect));
+        lines.push('');
+    }
+    lines.push('[ 스킬 ]');
+    (card.skills || []).forEach(skillIndex => {
+        const skill = skills[skillIndex];
+        if (skill) {
+            lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ]');
+            formatSkillDescWithIncrease(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
+        }
+    });
+    return lines.join('\n').trim();
+}
+
+function formatEquipmentStatLines(equipment) {
+    const statNames = {
+        atk: '공격력',
+        pnt: '방어 관통력',
+        def: '방어력',
+        hp: '체력',
+        crit: '치명타 확률',
+        critMul: '치명타 피해량'
+    };
+    const plusStatNames = {
+        atk: '최종 공격력',
+        def: '최종 방어력',
+        hp: '최종 체력'
+    };
+    const lines = [];
+    Object.keys(statNames).forEach(key => {
+        if (equipment.stat && typeof equipment.stat[key] != 'undefined') lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, equipment.stat[key]));
+    });
+    Object.keys(plusStatNames).forEach(key => {
+        if (equipment.plusStat && typeof equipment.plusStat[key] != 'undefined') lines.push('- ' + plusStatNames[key] + ' ' + formatStatValue(key + '%', equipment.plusStat[key]));
+    });
+    return lines.join('\n');
+}
+
+function findEquipmentByName(name) {
+    const equipments = readJson(EQUIPMENT_PATH, {});
+    const types = [
+        { key: 'weapon', name: '무기' },
+        { key: 'armor', name: '갑옷' },
+        { key: 'accessory', name: '장신구' }
+    ];
+    for (const type of types) {
+        const list = equipments[type.key] || [];
+        const index = list.findIndex(equipment => equipment.name == name);
+        if (index != -1) return { index, type: type.name, equipment: list[index] };
+    }
+    return null;
+}
+
+function formatDescription(name) {
+    const items = readJson(ITEMS_PATH, []);
+    const packs = readJson(PACKS_PATH, []);
+    const item = items.find(data => data.name == name);
+    if (item) {
+        const lines = ['《 ' + item.name + ' 》 [' + item.type + ']', '- ' + item.desc];
+        if (item.type == '가챠' && typeof item.pack == 'number' && packs[item.pack]) lines.push(VIEWMORE, formatPack(packs[item.pack]));
+        return lines.join('\n');
+    }
+
+    const characterCard = findCharacterCardByName(name);
+    if (characterCard) {
+        return ['《 ' + characterCard.card.name + ' 》 [캐릭터 카드]', VIEWMORE, formatCharacterCardDetail(characterCard.card)].join('\n');
+    }
+
+    const equipment = findEquipmentByName(name);
+    if (equipment) {
+        return ['《 ' + equipment.equipment.name + ' 》 [' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
+    }
+
+    return null;
+}
+
 function formatInventory(user) {
     const items = readJson(ITEMS_PATH, []);
     const lines = [
         '[ ' + user.name + '님의 인벤토리 ]',
-        '🪙 ' + comma(user.gold) + ' [골드]',
-        '🔷 ' + comma(user.garnet) + ' [가넷]',
-        '⭐ ' + comma(user.point) + ' [포인트]'
+        '🪙 ' + comma(user.gold),
+        '💠 ' + comma(user.garnet),
+        '💵 ' + comma(user.point) + 'P'
     ];
     const inventoryItems = (user.inventory.item || [])
         .map(inv => ({ data: items[inv.id], count: Number(inv.count || 0) }))
@@ -389,27 +532,27 @@ async function onChat(data, channel) {
         const user = await getRPGUserById(senderId);
         if (!user) {
             reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
-            return true;
+        } else {
+            if (!user.need_character_card_select) {
+                reply('❌ 이미 캐릭터 카드를 선택했습니다.');
+                return true;
+            }
+            const characterCard = findCharacterCardByName(cardName);
+            if (!characterCard) {
+                reply('❌ 존재하지 않는 캐릭터 카드입니다.\n' + formatCharacterCardList());
+                return true;
+            }
+            const userCard = {
+                id: characterCard.index,
+                star: 0,
+                type: '일반'
+            };
+            user.main_card = userCard;
+            user.inventory.card.push(userCard);
+            user.need_character_card_select = false;
+            await user.save();
+            reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name);
         }
-        if (!user.need_character_card_select) {
-            reply('❌ 이미 캐릭터 카드를 선택했습니다.');
-            return true;
-        }
-        const characterCard = findCharacterCardByName(cardName);
-        if (!characterCard) {
-            reply('❌ 존재하지 않는 캐릭터 카드입니다.\n' + formatCharacterCardList());
-            return true;
-        }
-        const userCard = {
-            id: characterCard.index,
-            star: 0,
-            type: '일반'
-        };
-        user.main_card = userCard;
-        user.inventory.card.push(userCard);
-        user.need_character_card_select = false;
-        await user.save();
-        reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name);
         return true;
     }
 
@@ -432,6 +575,13 @@ async function onChat(data, channel) {
 
     if (['캐릭인벤', 'ci'].includes(args[0])) {
         reply(formatCharacterInventory(user));
+        return true;
+    }
+
+    if (args[0] == '설명') {
+        const name = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        const description = formatDescription(name);
+        reply(description || '❌ 존재하지 않는 이름입니다.');
         return true;
     }
 
