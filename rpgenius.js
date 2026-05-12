@@ -452,10 +452,9 @@ function equipMainCharacterCard(user, numberArg) {
     return '✅ 메인 캐릭터 카드를 장착했습니다: ' + formatUserCard(card);
 }
 
-function equipCharacterCardSlot(user, slotArg, numberArg) {
-    const slotNumber = Number(slotArg);
+function equipCharacterCardSlot(user, numberArg) {
     const maxCardSlot = Number(user.maxCardSlot || 5);
-    if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
+    if (Array.isArray(user.card_slot) && user.card_slot.length >= maxCardSlot) return '❌ 카드 슬롯이 가득 찼습니다.';
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
@@ -464,9 +463,8 @@ function equipCharacterCardSlot(user, slotArg, numberArg) {
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
     user.inventory.card.splice(number - 1, 1);
-    if (user.card_slot[slotNumber - 1]) user.inventory.card.push(user.card_slot[slotNumber - 1]);
-    user.card_slot[slotNumber - 1] = card;
-    return '✅ 카드 슬롯 ' + slotNumber + '번에 장착했습니다: ' + formatUserCard(card);
+    user.card_slot.push(card);
+    return '✅ 카드 슬롯에 장착했습니다: ' + formatUserCard(card);
 }
 
 function removeCharacterCardSlot(user, slotArg) {
@@ -1978,11 +1976,11 @@ async function onChat(data, channel) {
     }
 
     if (args[0] == '캐릭터카드' && args[1] == '슬롯' && args[2] == '장착') {
-        if (!args[3] || !args[4]) {
-            reply('❌ /RPGenius 캐릭터카드 슬롯 장착 [슬롯번호] [번호]');
+        if (!args[3]) {
+            reply('❌ /RPGenius 캐릭터카드 슬롯 장착 [번호]');
             return true;
         }
-        const result = equipCharacterCardSlot(user, args[3], args[4]);
+        const result = equipCharacterCardSlot(user, args[3]);
         await user.save();
         reply(result);
         return true;
