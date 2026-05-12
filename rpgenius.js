@@ -9,6 +9,8 @@ const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
+const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
+const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
 const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
@@ -86,6 +88,66 @@ function findCharacterCardByName(name) {
     return { index, card: characterCards[index] };
 }
 
+function comma(value) {
+    return Number(value || 0).toLocaleString('ko-KR');
+}
+
+function formatInventory(user) {
+    const items = readJson(ITEMS_PATH, []);
+    const lines = [
+        '[ ' + user.name + '님의 인벤토리 ]',
+        '🪙 ' + comma(user.gold) + ' [골드]',
+        '🔷 ' + comma(user.garnet) + ' [가넷]',
+        '⭐ ' + comma(user.point) + ' [포인트]'
+    ];
+    const inventoryItems = (user.inventory.item || [])
+        .map(inv => ({ data: items[inv.id], count: Number(inv.count || 0) }))
+        .filter(inv => inv.data && inv.count > 0);
+
+    if (inventoryItems.length == 0) {
+        lines.push('', '인벤토리가 비어있습니다.');
+        return lines.join('\n');
+    }
+
+    lines.push(VIEWMORE);
+    ITEM_TYPE_ORDER.forEach(type => {
+        const typeItems = inventoryItems
+            .filter(inv => inv.data.type == type)
+            .sort((a, b) => a.data.name.localeCompare(b.data.name, 'ko-KR'));
+        if (typeItems.length > 0) {
+            lines.push('', '《 ' + type + ' 》');
+            typeItems.forEach(inv => lines.push('- ' + inv.data.name + ' x' + comma(inv.count)));
+        }
+    });
+    return lines.join('\n');
+}
+
+function formatStar(star) {
+    const displayStar = Number(star || 0) + 1;
+    if (displayStar == 10) return '𝛧';
+    if (displayStar == 11) return '𝛴';
+    if (displayStar == 12) return '𝛀';
+    return displayStar + '성';
+}
+
+function formatCharacterInventory(user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const cards = user.inventory.card || [];
+    const lines = ['[ ' + user.name + '님의 캐릭터 카드 (' + cards.length + '/' + user.maxCardLimit + ') ]'];
+
+    if (cards.length == 0) {
+        lines.push('', '캐릭터 카드가 없습니다.');
+        return lines.join('\n');
+    }
+
+    lines.push(VIEWMORE);
+    cards.forEach(card => {
+        const data = characterCards[card.id];
+        if (data) lines.push('[' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
+    });
+    return lines.join('\n');
+}
+
 async function putItem(table, item) {
     try {
         const command = new PutCommand({
@@ -155,6 +217,7 @@ class RPGUser {
         this.garnet = 0;
         this.point = 0;
         this.total_point = 0;
+        this.maxCardLimit = 52;
         this.mail = [];
     }
 
@@ -166,6 +229,7 @@ class RPGUser {
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.mail)) this.mail = [];
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
+        if (!this.maxCardLimit) this.maxCardLimit = 52;
         return this;
     }
 
@@ -358,6 +422,16 @@ async function onChat(data, channel) {
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
         reply(formatCharacterCardList());
+        return true;
+    }
+
+    if (['인벤토리', '인벤', 'i'].includes(args[0])) {
+        reply(formatInventory(user));
+        return true;
+    }
+
+    if (['캐릭인벤', 'ci'].includes(args[0])) {
+        reply(formatCharacterInventory(user));
         return true;
     }
 
