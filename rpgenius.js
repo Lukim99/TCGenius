@@ -293,6 +293,68 @@ function calculateCardSlotEffects(user) {
     return effects;
 }
 
+function formatCardSlotEffectLines(user) {
+    const slotEffects = calculateCardSlotEffects(user);
+    const effectMap = [
+        ['expBonus', '경험치 획득 증가량'],
+        ['hpDamageReduction', '사냥 시 HP 소모량 감소'],
+        ['killRecoveryChance', '적 처치 시 HP/MP 10% 회복 확률'],
+        ['crit', '치명타 확률 증가'],
+        ['mpCostReduction', '사냥 시 MP 소모량 감소'],
+        ['damageBonus', '일반 몬스터에게 주는 피해 증가'],
+        ['critMul', '치명타 피해량 증가'],
+        ['goldBonus', '골드 획득 증가량'],
+        ['itemDropChance', '아이템 드랍 확률'],
+        ['pnt', '방어 관통력']
+    ];
+    return effectMap
+        .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
+        .map(entry => {
+            const value = Number(slotEffects[entry[0]] || 0);
+            const display = entry[0] == 'pnt' ? comma(value) : Math.round(value * 1000) / 10 + '%';
+            return '◆ ' + entry[1] + ' ' + display;
+        });
+}
+
+function getCharacterInventoryCard(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return null;
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards[number - 1] || null;
+}
+
+function equipMainCharacterCard(user, numberArg) {
+    const card = getCharacterInventoryCard(user, numberArg);
+    if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    user.main_card = card;
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    return '✅ 메인 캐릭터 카드를 장착했습니다: ' + formatUserCard(card);
+}
+
+function equipCharacterCardSlot(user, slotArg, numberArg) {
+    const slotNumber = Number(slotArg);
+    const maxCardSlot = Number(user.maxCardSlot || 5);
+    if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
+    const card = getCharacterInventoryCard(user, numberArg);
+    if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
+    if (!Array.isArray(user.card_slot)) user.card_slot = [];
+    user.card_slot[slotNumber - 1] = card;
+    return '✅ 카드 슬롯 ' + slotNumber + '번에 장착했습니다: ' + formatUserCard(card);
+}
+
+function removeCharacterCardSlot(user, slotArg) {
+    const slotNumber = Number(slotArg);
+    const maxCardSlot = Number(user.maxCardSlot || 5);
+    if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
+    if (!Array.isArray(user.card_slot) || !user.card_slot[slotNumber - 1]) return '❌ 해당 슬롯에 장착된 카드가 없습니다.';
+    const removed = user.card_slot[slotNumber - 1];
+    user.card_slot[slotNumber - 1] = null;
+    return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
+}
+
 function getBaseStat(card) {
     const table = readJson(BASE_STAT_PATH, []);
     const star = Number(card && card.star || 0);
@@ -350,6 +412,8 @@ function formatMyInfo(user) {
         '〈 장착 중인 카드 슬롯 (' + cardSlots.length + '/' + maxCardSlot + ') 〉'
     ];
     for (let i = 0; i < maxCardSlot; i++) lines.push(cardSlots[i] ? '- ' + formatUserCard(cardSlots[i]) : '-');
+    const slotEffectLines = formatCardSlotEffectLines(user);
+    if (slotEffectLines.length > 0) lines.push('', '〈 카드 슬롯 효과 〉', ...slotEffectLines);
     lines.push('', '〈 장착 중인 장비 〉');
     lines.push(formatEquippedEquipment('무기', 'weapon', user.equipments && user.equipments.weapon));
     lines.push(formatEquippedEquipment('갑옷', 'armor', user.equipments && user.equipments.armor));
@@ -576,11 +640,23 @@ function useSkillInField(user, skillName) {
     return buildHuntResult(user, dungeon, rawDamage, extra);
 }
 
-async function sendCharacterCardImage(channel, card) {
-    const fileName = card.name + '1성.png';
-    const filePath = path.join(CARD_IMAGE_PATH, fileName);
+async function sendCharacterCardCoverImage(channel, card) {
+    const fileName = '캐릭터표지.png';
+    const filePath = path.join(CARD_IMAGE_PATH, card.name, fileName);
     if (!fs.existsSync(filePath)) return;
-    await channel.sendMedia(node_kakao.KnownChatType.PHOTO, { name: fileName, data: fs.readFileSync(filePath), width: 300, height: 500, ext: 'png' });
+    await channel.sendMedia(node_kakao.KnownChatType.PHOTO, { name: fileName, data: fs.readFileSync(filePath), width: 1920, height: 1080, ext: 'png' });
+}
+
+async function sendUserMainCardImage(channel, user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const mainCard = user.main_card;
+    const card = mainCard && characterCards[mainCard.id];
+    if (!card) return;
+    const star = String(Number(mainCard.star || 0)).padStart(2, '0');
+    const fileName = star + ' ' + card.name + '.png';
+    const filePath = path.join(CARD_IMAGE_PATH, card.name, fileName);
+    if (!fs.existsSync(filePath)) return;
+    await channel.sendMedia(node_kakao.KnownChatType.PHOTO, { name: fileName, data: fs.readFileSync(filePath), width: 399, height: 515, ext: 'png' });
 }
 
 function formatDescription(name) {
@@ -648,9 +724,9 @@ function formatCharacterInventory(user) {
     }
 
     lines.push(VIEWMORE);
-    cards.forEach(card => {
+    cards.forEach((card, index) => {
         const data = characterCards[card.id];
-        if (data) lines.push('[' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
+        if (data) lines.push('[' + (index + 1) + '] [' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
     });
     return lines.join('\n');
 }
@@ -770,6 +846,56 @@ function addEquipmentInventory(user, type, id) {
     if (!user.inventory) user.inventory = { card: [], item: [] };
     if (!user.inventory.equipment) user.inventory.equipment = [];
     user.inventory.equipment.push({ type: type, id: id, level: 0 });
+}
+
+function equipItemByName(user, equipmentName) {
+    if (!user.inventory || !Array.isArray(user.inventory.equipment) || user.inventory.equipment.length == 0) {
+        return '❌ 보유 중인 장비가 없습니다.';
+    }
+    const equipments = readJson(EQUIPMENT_PATH, {});
+    const invIndex = user.inventory.equipment.findIndex(entry => {
+        const list = equipments[entry.type] || [];
+        const data = list[entry.id];
+        return data && data.name == equipmentName;
+    });
+    if (invIndex == -1) return '❌ 보유 중인 장비에서 찾을 수 없습니다: ' + equipmentName;
+
+    const target = user.inventory.equipment[invIndex];
+    const data = equipments[target.type] && equipments[target.type][target.id];
+    if (!data) return '❌ 잘못된 장비 데이터입니다.';
+
+    if (!user.equipments) user.equipments = { weapon: {}, armor: {}, accessory: {} };
+
+    if (target.type == 'weapon' || target.type == 'armor') {
+        const prev = user.equipments[target.type];
+        user.equipments[target.type] = { id: target.id, level: Number(target.level || 0) };
+        user.inventory.equipment.splice(invIndex, 1);
+        if (prev && typeof prev.id != 'undefined') {
+            user.inventory.equipment.push({ type: target.type, id: prev.id, level: Number(prev.level || 0) });
+        }
+        return '✅ 장착했습니다: <' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+    }
+
+    if (target.type == 'accessory') {
+        if (!user.equipments.accessory || typeof user.equipments.accessory != 'object') user.equipments.accessory = {};
+        const accessories = user.equipments.accessory;
+        const maxSlot = 3;
+        let slotKey = null;
+        for (let i = 0; i < maxSlot; i++) {
+            const key = String(i);
+            const equipped = accessories[key];
+            if (!equipped || typeof equipped.id == 'undefined') {
+                slotKey = key;
+                break;
+            }
+        }
+        if (slotKey == null) return '❌ 장신구 슬롯이 가득 찼습니다. 먼저 다른 장신구를 해제해주세요.';
+        accessories[slotKey] = { id: target.id, level: Number(target.level || 0) };
+        user.inventory.equipment.splice(invIndex, 1);
+        return '✅ 장착했습니다: <' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+    }
+
+    return '❌ 알 수 없는 장비 타입입니다.';
 }
 
 function addRewardSummary(summary, key, label, count) {
@@ -1276,8 +1402,8 @@ async function onChat(data, channel) {
         return true;
     }
 
-    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬'].includes(args[0])) {
-        reply('❌ 필드 입장 중에는 공격, 스킬, 필드퇴장 명령어만 사용할 수 있습니다.');
+    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '설명', '사용'].includes(args[0])) {
+        reply('❌ 필드에서 사용할 수 없는 명령어입니다.\n/RPGenius 필드퇴장');
         return true;
     }
 
@@ -1334,7 +1460,41 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (args[0] == '캐릭터카드' && args[1] == '장착') {
+        if (!args[2]) {
+            reply('❌ /RPGenius 캐릭터카드 장착 [번호]');
+            return true;
+        }
+        const result = equipMainCharacterCard(user, args[2]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '캐릭터카드' && args[1] == '슬롯' && args[2] == '장착') {
+        if (!args[3] || !args[4]) {
+            reply('❌ /RPGenius 캐릭터카드 슬롯 장착 [슬롯번호] [번호]');
+            return true;
+        }
+        const result = equipCharacterCardSlot(user, args[3], args[4]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '캐릭터카드' && args[1] == '슬롯' && args[2] == '제거') {
+        if (!args[3]) {
+            reply('❌ /RPGenius 캐릭터카드 슬롯 제거 [슬롯번호]');
+            return true;
+        }
+        const result = removeCharacterCardSlot(user, args[3]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '내정보') {
+        await sendUserMainCardImage(channel, user);
         reply(formatMyInfo(user));
         return true;
     }
@@ -1343,7 +1503,7 @@ async function onChat(data, channel) {
         const name = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
         const description = formatDescription(name);
         const characterCard = findCharacterCardByName(name);
-        if (description && characterCard) await sendCharacterCardImage(channel, characterCard.card);
+        if (description && characterCard) await sendCharacterCardCoverImage(channel, characterCard.card);
         reply(description || '❌ 존재하지 않는 이름입니다.');
         return true;
     }
@@ -1375,7 +1535,27 @@ async function onChat(data, channel) {
         const lastArg = useArgs[useArgs.length - 1];
         const useCount = /^\d+$/.test(lastArg) && useArgs.length > 1 ? lastArg : null;
         const itemName = useCount ? useArgs.slice(0, -1).join(' ') : useText;
+        if (user.field && user.field.name) {
+            const items = readJson(ITEMS_PATH, []);
+            const targetItem = items.find(item => item.name == itemName);
+            if (targetItem && targetItem.type != '소모품') {
+                reply('❌ 필드에서는 소모품만 사용할 수 있습니다.');
+                return true;
+            }
+        }
         const result = await useItem(user, itemName, useCount);
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '장착') {
+        const equipmentName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!equipmentName) {
+            reply('❌ /RPGenius 장착 [장비이름]');
+            return true;
+        }
+        const result = equipItemByName(user, equipmentName);
+        await user.save();
         reply(result);
         return true;
     }
