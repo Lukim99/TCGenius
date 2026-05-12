@@ -941,7 +941,7 @@ function formatShopItem(shopItem) {
     }
     if (shopItem.type == '가넷') return '💠 ' + comma(shopItem.count);
     if (shopItem.type == '골드') return '🪙 ' + comma(shopItem.count);
-    if (shopItem.type == '마일리지') return 'Ⓜ️ ' + comma(shopItem.count) + '마일리지';
+    if (shopItem.type == '마일리지') return 'Ⓜ️ ' + comma(shopItem.count);
     return shopItem.type;
 }
 
@@ -949,7 +949,7 @@ function formatPrice(price) {
     if (price.goods == 'gold') return '🪙 ' + comma(price.amount);
     if (price.goods == 'garnet') return '💠 ' + comma(price.amount);
     if (price.goods == 'point') return '💵 ' + comma(price.amount) + 'P';
-    if (price.goods == 'mileage') return 'Ⓜ️ ' + comma(price.amount) + '마일리지';
+    if (price.goods == 'mileage') return 'Ⓜ️ ' + comma(price.amount);
     return comma(price.amount);
 }
 
