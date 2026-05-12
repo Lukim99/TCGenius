@@ -13,12 +13,13 @@ const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
+const BUNDLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bundle.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
-const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
+const ITEM_TYPE_ORDER = ['가챠', '번들', '마법석', '소모품', '티켓', '재료'];
 
 const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
@@ -155,12 +156,18 @@ function formatPackEntry(entry) {
     }
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
+    if (entry.type == '마일리지') return 'Ⓜ️ ' + formatCount(entry.count) + '마일리지';
     return entry.type || '알 수 없는 보상';
 }
 
 function formatPack(pack) {
     if (!Array.isArray(pack)) return '';
     return pack.map(entry => formatRoll(entry.roll) + ' [ ' + formatPackEntry(entry) + ' ]').join('\n');
+}
+
+function formatBundle(bundle) {
+    if (!Array.isArray(bundle)) return '';
+    return bundle.map(entry => '[ ' + formatPackEntry(entry) + ' ]').join('\n');
 }
 
 function formatCharacterCardDetail(card) {
@@ -252,6 +259,13 @@ function addStats(target, stats) {
     Object.keys(stats || {}).forEach(key => {
         target[key] = Number(target[key] || 0) + Number(stats[key] || 0);
     });
+}
+
+function getEquipmentStatsAtLevel(equipment, level) {
+    const stats = Object.assign({}, equipment && equipment.stat || {});
+    const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
+    for (let i = 0; i < max; i++) addStats(stats, equipment.upgrade[i].stat || {});
+    return stats;
 }
 
 function getCardSlotEffectValue(card, cardData) {
@@ -355,6 +369,27 @@ function removeCharacterCardSlot(user, slotArg) {
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
 }
 
+function convertCharacterCard(user, numberArg) {
+    const number = Number(numberArg);
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
+    const card = cards[number - 1];
+    const before = Object.assign({}, card);
+    let newId = card.id;
+    while (newId == card.id) newId = randomInt(0, characterCards.length - 1);
+    card.id = newId;
+    if (user.main_card && user.main_card.id == before.id && user.main_card.star == before.star && user.main_card.type == before.type) user.main_card.id = newId;
+    if (Array.isArray(user.card_slot)) {
+        user.card_slot.forEach(slotCard => {
+            if (slotCard && slotCard.id == before.id && slotCard.star == before.star && slotCard.type == before.type) slotCard.id = newId;
+        });
+    }
+    user.pendingAction = null;
+    return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
+}
+
 function getBaseStat(card) {
     const table = readJson(BASE_STAT_PATH, []);
     const star = Number(card && card.star || 0);
@@ -372,13 +407,13 @@ function calculateUserStats(user) {
     const stats = getBaseStat(user.main_card);
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
-        if (data) addStats(stats, data.stat);
+        if (data) addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
     });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
         const equip = accessories[key];
         const data = equip && getEquipmentData('accessory', equip.id);
-        if (data) addStats(stats, data.stat);
+        if (data) addStats(stats, getEquipmentStatsAtLevel(data, equip.level));
     });
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
@@ -662,11 +697,13 @@ async function sendUserMainCardImage(channel, user) {
 function formatDescription(name) {
     const items = readJson(ITEMS_PATH, []);
     const packs = readJson(PACKS_PATH, []);
+    const bundles = readJson(BUNDLE_PATH, []);
 
     const item = items.find(data => data.name == name);
     if (item) {
         const lines = ['《 ' + formatNameWithTrade(item) + ' 》 [' + item.type + ']', '- ' + item.desc];
         if (item.type == '가챠' && typeof item.pack == 'number' && packs[item.pack]) lines.push(VIEWMORE, formatPack(packs[item.pack]));
+        if (item.type == '번들' && typeof item.pack == 'number' && bundles[item.pack]) lines.push(VIEWMORE, formatBundle(bundles[item.pack]));
         return lines.join('\n');
     }
 
@@ -689,7 +726,8 @@ function formatInventory(user) {
         '[ ' + user.name + '님의 인벤토리 ]',
         '🪙 ' + comma(user.gold),
         '💠 ' + comma(user.garnet),
-        '💵 ' + comma(user.point) + 'P'
+        '💵 ' + comma(user.point) + 'P',
+        'Ⓜ️ ' + comma(user.mileage) + '마일리지'
     ];
     const inventoryItems = (user.inventory.item || [])
         .map(inv => ({ data: items[inv.id], count: Number(inv.count || 0) }))
@@ -731,6 +769,59 @@ function formatCharacterInventory(user) {
     return lines.join('\n');
 }
 
+function getEquippedEquipmentRefs(user) {
+    const refs = [];
+    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') refs.push({ type: 'weapon', equip: user.equipments.weapon });
+    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') refs.push({ type: 'armor', equip: user.equipments.armor });
+    const accessories = user.equipments && user.equipments.accessory || {};
+    Object.keys(accessories).forEach(key => {
+        if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: accessories[key] });
+    });
+    return refs;
+}
+
+function getAllUserEquipments(user) {
+    const list = [];
+    (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => list.push({ source: 'inventory', index, equip }));
+    getEquippedEquipmentRefs(user).forEach(ref => list.push({ source: 'equipped', type: ref.type, equip: ref.equip }));
+    return list;
+}
+
+function getEquipmentTypeLabel(type) {
+    if (type == 'weapon') return '무기';
+    if (type == 'armor') return '갑옷';
+    if (type == 'accessory') return '장신구';
+    return type;
+}
+
+function formatEquipmentInventoryLine(number, entry) {
+    const data = getEquipmentData(entry.equip.type || entry.type, entry.equip.id);
+    if (!data) return null;
+    const level = Number(entry.equip.level || 0);
+    return '[' + number + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '');
+}
+
+function formatEquipmentInventory(user) {
+    const lines = ['[ ' + user.name + '님의 보유 장비 ]', VIEWMORE];
+    const all = getAllUserEquipments(user);
+    const types = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']];
+    let hasEquipment = false;
+    types.forEach(type => {
+        const filtered = all
+            .map((entry, index) => Object.assign({ number: index + 1 }, entry))
+            .filter(entry => (entry.equip.type || entry.type) == type[0]);
+        if (filtered.length == 0) return;
+        hasEquipment = true;
+        lines.push('', '《 ' + type[1] + ' 》');
+        filtered.forEach(entry => {
+            const line = formatEquipmentInventoryLine(entry.number, entry);
+            if (line) lines.push(line);
+        });
+    });
+    if (!hasEquipment) lines.push('', '보유 중인 장비가 없습니다.');
+    return lines.join('\n');
+}
+
 function formatShopItem(shopItem) {
     const items = readJson(ITEMS_PATH, []);
     if (shopItem.type == '아이템') {
@@ -740,6 +831,7 @@ function formatShopItem(shopItem) {
     }
     if (shopItem.type == '가넷') return '💠 ' + comma(shopItem.count);
     if (shopItem.type == '골드') return '🪙 ' + comma(shopItem.count);
+    if (shopItem.type == '마일리지') return 'Ⓜ️ ' + comma(shopItem.count) + '마일리지';
     return shopItem.type;
 }
 
@@ -747,6 +839,7 @@ function formatPrice(price) {
     if (price.goods == 'gold') return '🪙 ' + comma(price.amount);
     if (price.goods == 'garnet') return '💠 ' + comma(price.amount);
     if (price.goods == 'point') return '💵 ' + comma(price.amount) + 'P';
+    if (price.goods == 'mileage') return 'Ⓜ️ ' + comma(price.amount) + '마일리지';
     return comma(price.amount);
 }
 
@@ -764,7 +857,7 @@ function formatShop(shopType) {
     return lines.join('\n').trim();
 }
 
-const GOODS_FIELD = { gold: 'gold', garnet: 'garnet', point: 'point' };
+const GOODS_FIELD = { gold: 'gold', garnet: 'garnet', point: 'point', mileage: 'mileage' };
 
 function cleanupInventoryItems(user) {
     if (user.inventory && Array.isArray(user.inventory.item)) {
@@ -848,20 +941,20 @@ function addEquipmentInventory(user, type, id) {
     user.inventory.equipment.push({ type: type, id: id, level: 0 });
 }
 
-function equipItemByName(user, equipmentName) {
+function equipItemByNumber(user, numberArg) {
     if (!user.inventory || !Array.isArray(user.inventory.equipment) || user.inventory.equipment.length == 0) {
         return '❌ 보유 중인 장비가 없습니다.';
     }
-    const equipments = readJson(EQUIPMENT_PATH, {});
-    const invIndex = user.inventory.equipment.findIndex(entry => {
-        const list = equipments[entry.type] || [];
-        const data = list[entry.id];
-        return data && data.name == equipmentName;
-    });
-    if (invIndex == -1) return '❌ 보유 중인 장비에서 찾을 수 없습니다: ' + equipmentName;
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 장비 번호는 1 이상의 정수여야 합니다.';
+    const all = getAllUserEquipments(user);
+    const selected = all[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    if (selected.source == 'equipped') return '❌ 이미 장착 중인 장비입니다.';
 
+    const invIndex = selected.index;
     const target = user.inventory.equipment[invIndex];
-    const data = equipments[target.type] && equipments[target.type][target.id];
+    const data = getEquipmentData(target.type, target.id);
     if (!data) return '❌ 잘못된 장비 데이터입니다.';
 
     if (!user.equipments) user.equipments = { weapon: {}, armor: {}, accessory: {} };
@@ -896,6 +989,137 @@ function equipItemByName(user, equipmentName) {
     }
 
     return '❌ 알 수 없는 장비 타입입니다.';
+}
+
+const EQUIPMENT_STONE_ITEM_ID = 0;
+const EQUIPMENT_UPGRADE_MAX = 15;
+const EQUIPMENT_RARITY_CORRECTION = { '일반': 0.7, '레어': 0.9, '유니크': 1.1, '레전더리': 1.4 };
+const EQUIPMENT_GOLD_RATE = { '일반': 1.0, '레어': 1.5, '유니크': 1.8, '레전더리': 2.1 };
+const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
+const EQUIPMENT_UPGRADE_RATES = [
+    { great: 0.10, success: 0.90, down: 0, reset: 0 },
+    { great: 0.08, success: 0.91, down: 0.01, reset: 0 },
+    { great: 0.06, success: 0.91, down: 0.03, reset: 0 },
+    { great: 0.05, success: 0.85, down: 0.10, reset: 0 },
+    { great: 0.04, success: 0.80, down: 0.16, reset: 0 },
+    { great: 0.03, success: 0.75, down: 0.22, reset: 0 },
+    { great: 0.02, success: 0.70, down: 0.28, reset: 0 },
+    { great: 0.015, success: 0.60, down: 0.385, reset: 0 },
+    { great: 0.012, success: 0.50, down: 0.388, reset: 0.10 },
+    { great: 0.01, success: 0.30, down: 0.54, reset: 0.15 },
+    { great: 0.005, success: 0.15, down: 0.545, reset: 0.30 },
+    { great: 0, success: 0.10, down: 0.50, reset: 0.40 },
+    { great: 0, success: 0.03, down: 0.47, reset: 0.50 },
+    { great: 0, success: 0.015, down: 0.335, reset: 0.65 },
+    { great: 0, success: 0.007, down: 0.193, reset: 0.80 }
+];
+
+function getEquipmentByNumber(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return null;
+    const all = getAllUserEquipments(user);
+    const ordered = ['weapon', 'armor', 'accessory'];
+    return all
+        .map((entry, index) => Object.assign({ rawNumber: index + 1 }, entry))
+        .sort((a, b) => ordered.indexOf(a.equip.type || a.type) - ordered.indexOf(b.equip.type || b.type) || a.rawNumber - b.rawNumber)[number - 1] || null;
+}
+
+function getEquipmentUpgradeCost(equipment, type, level) {
+    const targetLevel = Number(level || 0) + 1;
+    const rarityCorrection = EQUIPMENT_RARITY_CORRECTION[equipment.rarity] || 1;
+    const stoneMultiplier = EQUIPMENT_STONE_MULTIPLIERS[level] || 1;
+    const armorMultiplier = type == 'armor' ? 0.85 : 1;
+    const stone = Math.floor(((level + 10) * 3 * rarityCorrection) * stoneMultiplier * armorMultiplier);
+    const goldRate = EQUIPMENT_GOLD_RATE[equipment.rarity] || 1;
+    const gold = Math.floor(goldRate * ((Math.pow(targetLevel, 4) / 5) + 1));
+    return { stone, gold };
+}
+
+function formatUpgradeRatePercent(value) {
+    return Math.round(Number(value || 0) * 1000) / 10 + '%';
+}
+
+function formatEquipmentUpgradePreview(user, numberArg) {
+    const selected = getEquipmentByNumber(user, numberArg);
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    if (type == 'accessory') return '❌ 장신구는 강화할 수 없습니다.';
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    const level = Number(selected.equip.level || 0);
+    if (level >= EQUIPMENT_UPGRADE_MAX) return '❌ 이미 최대 강화 단계입니다.';
+
+    const nextLevel = level + 1;
+    const currentStats = getEquipmentStatsAtLevel(equipment, level);
+    const nextStats = getEquipmentStatsAtLevel(equipment, nextLevel);
+    const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', crit: '치명타 확률', critMul: '치명타 피해량' };
+    const rates = EQUIPMENT_UPGRADE_RATES[level];
+    const cost = getEquipmentUpgradeCost(equipment, type, level);
+    const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
+    const hasStone = stoneCount >= cost.stone;
+    const hasGold = Number(user.gold || 0) >= cost.gold;
+    const lines = ['⚒️ ' + equipment.name + ' +' + level + ' -> +' + nextLevel];
+    Object.keys(statNames).forEach(key => {
+        if (Number(currentStats[key] || 0) != Number(nextStats[key] || 0)) lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, currentStats[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key, nextStats[key] || 0).replace(/^\+/, ''));
+    });
+    lines.push('', '[ 강화 확률 ]');
+    lines.push('⏫ 대성공 ' + formatUpgradeRatePercent(rates.great));
+    lines.push('🔼 성공 ' + formatUpgradeRatePercent(rates.success));
+    lines.push('🔽 하락 ' + formatUpgradeRatePercent(rates.down));
+    lines.push('⏬ 초기화 ' + formatUpgradeRatePercent(rates.reset));
+    lines.push('', '[ 필요 재료 ]');
+    lines.push((hasStone ? '✅ ' : '❌ ') + '강화석 x' + comma(cost.stone));
+    lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
+    if (!hasStone || !hasGold) {
+        user.pendingAction = null;
+        lines.push('', '❌ 재료가 부족합니다!');
+    } else {
+        user.pendingAction = { type: '장비강화', number: Number(numberArg), source: selected.source, index: selected.index, equipmentType: type };
+        lines.push('', '/RPGenius 강화');
+    }
+    return lines.join('\n');
+}
+
+function runEquipmentUpgrade(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '장비강화') return '❌ 진행 중인 장비 강화가 없습니다.';
+    const selected = getEquipmentByNumber(user, pending.number);
+    if (!selected) {
+        user.pendingAction = null;
+        return '❌ 강화할 장비를 찾을 수 없습니다.';
+    }
+    const type = selected.equip.type || selected.type;
+    if (type == 'accessory') {
+        user.pendingAction = null;
+        return '❌ 장신구는 강화할 수 없습니다.';
+    }
+    const equipment = getEquipmentData(type, selected.equip.id);
+    const level = Number(selected.equip.level || 0);
+    if (!equipment || level >= EQUIPMENT_UPGRADE_MAX) {
+        user.pendingAction = null;
+        return '❌ 강화할 수 없는 장비입니다.';
+    }
+    const cost = getEquipmentUpgradeCost(equipment, type, level);
+    if (getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone || Number(user.gold || 0) < cost.gold) {
+        user.pendingAction = null;
+        return '❌ 재료가 부족합니다!';
+    }
+    removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
+    user.gold = Number(user.gold || 0) - cost.gold;
+    const rates = EQUIPMENT_UPGRADE_RATES[level];
+    const roll = Math.random();
+    let result = 'reset';
+    if (roll < rates.great) result = 'great';
+    else if (roll < rates.great + rates.success) result = 'success';
+    else if (roll < rates.great + rates.success + rates.down) result = 'down';
+    const before = level;
+    if (result == 'great') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 2);
+    if (result == 'success') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 1);
+    if (result == 'down') selected.equip.level = Math.max(0, level - 1);
+    if (result == 'reset') selected.equip.level = 0;
+    user.pendingAction = null;
+    const messages = { great: '🌟 강화 대성공!!', success: '✨ 강화 성공!', down: '❌ 강화 실패..', reset: '🟥 초기화...' };
+    return messages[result] + '\n' + equipment.name + ' +' + before + ' -> +' + Number(selected.equip.level || 0);
 }
 
 function addRewardSummary(summary, key, label, count) {
@@ -941,6 +1165,11 @@ function grantPackReward(user, reward, summary) {
     if (reward.type == '가넷') {
         user.garnet = Number(user.garnet || 0) + count;
         addRewardSummary(summary, 'garnet', '💠 가넷', count);
+        return;
+    }
+    if (reward.type == '마일리지') {
+        user.mileage = Number(user.mileage || 0) + count;
+        addRewardSummary(summary, 'mileage', 'Ⓜ️ 마일리지', count);
         return;
     }
     if (reward.type == '무기') {
@@ -1015,7 +1244,7 @@ async function useItem(user, itemName, countArg) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
-    if (!['소모품', '가챠'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+    if (!['소모품', '가챠', '번들', '마법석'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
 
     const useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
@@ -1028,6 +1257,14 @@ async function useItem(user, itemName, countArg) {
             const requireItem = items[require.id];
             return '❌ 필요한 아이템이 부족합니다: ' + (requireItem ? requireItem.name : '알 수 없는 아이템') + ' x' + comma(requiredCount);
         }
+    }
+    if (item.type == '번들') {
+        const bundles = readJson(BUNDLE_PATH, []);
+        if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
+    }
+    if (item.type == '마법석') {
+        if (item.use == '캐릭터변환' && useCount != 1) return '❌ 캐릭터 변환석은 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use != '캐릭터변환') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -1055,6 +1292,22 @@ async function useItem(user, itemName, countArg) {
         lines.push('[ 획득 결과 ]');
         Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
     }
+    if (item.type == '번들') {
+        const bundles = readJson(BUNDLE_PATH, []);
+        const bundle = bundles[item.pack];
+        const summary = {};
+        for (let i = 0; i < useCount; i++) bundle.forEach(reward => grantPackReward(user, reward, summary));
+        lines.push('[ 획득 결과 ]');
+        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+    }
+    if (item.type == '마법석') {
+        if (item.use == '캐릭터변환') {
+            user.pendingAction = { type: '캐릭터변환' };
+            lines.push('변환할 캐릭터 카드를 선택해주세요.');
+            lines.push('/RPGenius 선택 [카드번호]');
+            lines.push('', formatCharacterInventory(user));
+        }
+    }
 
     await user.save();
     return lines.join('\n');
@@ -1080,6 +1333,8 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     if (owned < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + ')';
 
     user[field] = owned - totalPrice;
+    const mileageEarned = shopItem.price.goods == 'point' ? Math.round(totalPrice * 0.1) : 0;
+    if (mileageEarned > 0) user.mileage = Number(user.mileage || 0) + mileageEarned;
 
     if (shopItem.type == '아이템') {
         addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
@@ -1087,6 +1342,8 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
         user.garnet = Number(user.garnet || 0) + Number(shopItem.count) * count;
     } else if (shopItem.type == '골드') {
         user.gold = Number(user.gold || 0) + Number(shopItem.count) * count;
+    } else if (shopItem.type == '마일리지') {
+        user.mileage = Number(user.mileage || 0) + Number(shopItem.count) * count;
     } else {
         return '❌ 처리할 수 없는 상품입니다.';
     }
@@ -1094,7 +1351,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     await user.save();
 
     const rewardItem = { type: shopItem.type, item_id: shopItem.item_id, count: Number(shopItem.count) * count };
-    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice });
+    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
 }
 
 function formatStar(star) {
@@ -1180,6 +1437,8 @@ class RPGUser {
         this.garnet = 0;
         this.point = 0;
         this.total_point = 0;
+        this.mileage = 0;
+        this.pendingAction = null;
         this.maxCardLimit = 52;
         this.mail = [];
     }
@@ -1190,12 +1449,15 @@ class RPGUser {
         if (!this.inventory) this.inventory = { card: [], item: [] };
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
+        if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
         if (!this.exp) this.exp = 0;
         if (typeof this.field == 'undefined') this.field = null;
+        if (typeof this.mileage == 'undefined') this.mileage = 0;
+        if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         return this;
@@ -1390,6 +1652,30 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '캐릭터변환') {
+        if (args[0] != '선택') {
+            reply('❌ 캐릭터 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]');
+            return true;
+        }
+        const result = convertCharacterCard(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '장비강화') {
+        if (args[0] == '강화') {
+            const result = runEquipmentUpgrade(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 장비 강화가 취소되었습니다.');
+        return true;
+    }
+
     const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
     if (adminResult !== null) {
         reply(adminResult);
@@ -1457,6 +1743,11 @@ async function onChat(data, channel) {
 
     if (['캐릭인벤', 'ci'].includes(args[0])) {
         reply(formatCharacterInventory(user));
+        return true;
+    }
+
+    if (['장비인벤', 'ei'].includes(args[0])) {
+        reply(formatEquipmentInventory(user));
         return true;
     }
 
@@ -1549,12 +1840,22 @@ async function onChat(data, channel) {
     }
 
     if (args[0] == '장착') {
-        const equipmentName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
-        if (!equipmentName) {
-            reply('❌ /RPGenius 장착 [장비이름]');
+        if (!args[1]) {
+            reply('❌ /RPGenius 장착 [장비번호]');
             return true;
         }
-        const result = equipItemByName(user, equipmentName);
+        const result = equipItemByNumber(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '장비강화') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 장비강화 [장비번호]');
+            return true;
+        }
+        const result = formatEquipmentUpgradePreview(user, args[1]);
         await user.save();
         reply(result);
         return true;

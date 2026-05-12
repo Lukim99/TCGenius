@@ -46,5 +46,8 @@
     [
         { "type": "무기", "weapon_id": 2, "roll": 0.5 },
         { "type": "갑옷", "armor_id": 2, "roll": 0.5 }
+    ],
+    [
+        { "type": "아이템", "item_id": 17, "count": { "min": 1, "max": 10 } }
     ]
 ]
