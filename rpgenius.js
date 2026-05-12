@@ -337,6 +337,105 @@ function getCharacterInventoryCard(user, numberArg) {
     return cards[number - 1] || null;
 }
 
+const CARD_COMBINE_TABLE = [
+    { rate: 0.90, gold: 400 },
+    { rate: 0.90, gold: 800 },
+    { rate: 0.90, gold: 1600 },
+    { rate: 0.85, gold: 3200 },
+    { rate: 0.75, gold: 6400 },
+    { rate: 0.65, gold: 12800 },
+    { rate: 0.55, gold: 25600 },
+    { rate: 0.45, gold: 51200 },
+    { rate: 0.35, gold: 128000 },
+    { rate: 0.25, gold: 256000 },
+    { rate: 0.15, gold: 512000 }
+];
+
+function getCardCombineInfo(star) {
+    return CARD_COMBINE_TABLE[Number(star || 0)] || null;
+}
+
+function formatRatePercent(rate) {
+    return Math.round(Number(rate || 0) * 1000) / 10 + '%';
+}
+
+function getCardCombineSelection(user, numberArgs) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ /RPGenius 카드조합 [카드번호1] [카드번호2] [카드번호3]' };
+    const numbers = numberArgs.map(arg => Number(arg));
+    if (numbers.some(number => !Number.isInteger(number) || number < 1 || number > cards.length)) return { error: '❌ 존재하지 않는 카드 번호가 있습니다.' };
+    if (new Set(numbers).size != 3) return { error: '❌ 서로 다른 카드 3장을 선택해야 합니다.' };
+    const selected = numbers.map(number => cards[number - 1]);
+    const star = Number(selected[0].star || 0);
+    if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 입력된 카드 3개는 모두 같은 등급이어야 합니다.' };
+    const info = getCardCombineInfo(star);
+    if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
+    return { numbers, selected, star, info };
+}
+
+function getRandomCardCombineNumbers(user, starArg) {
+    const starText = String(starArg || '').trim();
+    const star = starText == '제타' ? 9 : starText == '시그마' ? 10 : starText == '오메가' ? 11 : Number(starText.replace(/성$/, '')) - 1;
+    if (!Number.isInteger(star) || star < 0) return { error: '❌ /RPGenius 랜덤카드조합 [등급]' };
+    const info = getCardCombineInfo(star);
+    if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const numbers = cards
+        .map((card, index) => ({ card, number: index + 1 }))
+        .filter(entry => Number(entry.card.star || 0) == star)
+        .map(entry => entry.number);
+    if (numbers.length < 3) return { error: '❌ 해당 등급의 카드가 3장 이상 필요합니다.' };
+    for (let i = numbers.length - 1; i > 0; i--) {
+        const j = randomInt(0, i);
+        const temp = numbers[i];
+        numbers[i] = numbers[j];
+        numbers[j] = temp;
+    }
+    return { numbers: numbers.slice(0, 3) };
+}
+
+function formatCardCombinePreview(user, numberArgs) {
+    const selection = getCardCombineSelection(user, numberArgs);
+    if (selection.error) return selection.error;
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const lines = ['[ 캐릭터 카드 조합 ]'];
+    selection.selected.forEach(card => {
+        const data = characterCards[card.id];
+        lines.push('- [' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + (data ? data.name : '알 수 없음'));
+    });
+    lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
+    lines.push('- 필요 골드: 🪙 ' + comma(selection.info.gold));
+    if (Number(user.gold || 0) < selection.info.gold) {
+        user.pendingAction = null;
+        lines.push('', '❌ 골드가 부족합니다.');
+    } else {
+        user.pendingAction = { type: '카드조합', numbers: selection.numbers };
+        lines.push('', '/RPGenius 조합');
+    }
+    return lines.join('\n');
+}
+
+function runCardCombine(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '카드조합') return '❌ 진행 중인 카드조합이 없습니다.';
+    const selection = getCardCombineSelection(user, pending.numbers);
+    user.pendingAction = null;
+    if (selection.error) return selection.error;
+    if (Number(user.gold || 0) < selection.info.gold) return '❌ 골드가 부족합니다.';
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    if (characterCards.length == 0) return '❌ 캐릭터 카드 데이터가 없습니다.';
+    user.gold = Number(user.gold || 0) - selection.info.gold;
+    selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
+    const success = Math.random() < selection.info.rate;
+    const resultCard = {
+        id: randomInt(0, characterCards.length - 1),
+        star: success ? selection.star + 1 : selection.star,
+        type: '일반'
+    };
+    user.inventory.card.push(resultCard);
+    return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
+}
+
 function equipMainCharacterCard(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
@@ -1680,6 +1779,19 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '카드조합') {
+        if (args[0] == '조합') {
+            const result = runCardCombine(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 카드조합이 취소되었습니다.');
+        return true;
+    }
+
     const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
     if (adminResult !== null) {
         reply(adminResult);
@@ -1783,6 +1895,25 @@ async function onChat(data, channel) {
             return true;
         }
         const result = removeCharacterCardSlot(user, args[3]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '카드조합') {
+        const result = formatCardCombinePreview(user, args.slice(1, 4));
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '랜덤카드조합') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 랜덤카드조합 [등급]');
+            return true;
+        }
+        const selected = getRandomCardCombineNumbers(user, args[1]);
+        const result = selected.error ? selected.error : formatCardCombinePreview(user, selected.numbers);
         await user.save();
         reply(result);
         return true;
