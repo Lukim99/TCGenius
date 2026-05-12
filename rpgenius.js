@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,6 +13,7 @@ const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
+const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
 const dynamoClient = new DynamoDBClient({
@@ -212,12 +214,109 @@ function findEquipmentByName(name) {
     return null;
 }
 
+function formatNameWithTrade(data) {
+    return data.name + (data.no_trade ? ' [거래불가]' : '');
+}
+
+function formatUserCard(card) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    if (!card || typeof card.id == 'undefined') return '없음';
+    const data = characterCards[card.id];
+    if (!data) return '없음';
+    return '[' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + data.name;
+}
+
+function getEquipmentData(type, id) {
+    const equipments = readJson(EQUIPMENT_PATH, {});
+    const list = equipments[type] || [];
+    return list[id];
+}
+
+function formatEquippedEquipment(label, type, equip) {
+    if (!equip || typeof equip.id == 'undefined') return '[' + label + '] 없음';
+    const data = getEquipmentData(type, equip.id);
+    if (!data) return '[' + label + '] 없음';
+    const level = Number(equip.level || 0);
+    return '[' + label + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '');
+}
+
+function addStats(target, stats) {
+    Object.keys(stats || {}).forEach(key => {
+        target[key] = Number(target[key] || 0) + Number(stats[key] || 0);
+    });
+}
+
+function calculateUserStats(user) {
+    const stats = { atk: 0, def: 0, pnt: 0, crit: 0, critMul: 1.4 };
+    [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
+        const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
+        if (data) addStats(stats, data.stat);
+    });
+    const accessories = user.equipments && user.equipments.accessory || {};
+    Object.keys(accessories).forEach(key => {
+        const equip = accessories[key];
+        const data = equip && getEquipmentData('accessory', equip.id);
+        if (data) addStats(stats, data.stat);
+    });
+    return stats;
+}
+
+function formatMyInfo(user) {
+    const level = Number(user.level || 1);
+    const exp = Number(user.exp || 0);
+    const maxExp = Number(user.max_exp || 100);
+    const maxHp = Number(user.max_hp || 200);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const maxMp = Number(user.max_mp || 200);
+    const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const cardSlots = user.card_slot || [];
+    const maxCardSlot = Number(user.maxCardSlot || 5);
+    const stats = calculateUserStats(user);
+
+    const lines = [
+        '[ ' + user.name + '님의 정보 ]',
+        VIEWMORE,
+        'Lv. ' + level + ' (' + comma(exp) + '/' + comma(maxExp) + ')',
+        'HP: ' + comma(hp) + '/' + comma(maxHp),
+        'MP: ' + comma(mp) + '/' + comma(maxMp),
+        '',
+        '〈 장착 중인 캐릭터 카드 〉',
+        '- ' + formatUserCard(user.main_card),
+        '',
+        '〈 장착 중인 카드 슬롯 (' + cardSlots.length + '/' + maxCardSlot + ') 〉'
+    ];
+    for (let i = 0; i < maxCardSlot; i++) lines.push(cardSlots[i] ? '- ' + formatUserCard(cardSlots[i]) : '-');
+    lines.push('', '〈 장착 중인 장비 〉');
+    lines.push(formatEquippedEquipment('무기', 'weapon', user.equipments && user.equipments.weapon));
+    lines.push(formatEquippedEquipment('갑옷', 'armor', user.equipments && user.equipments.armor));
+
+    const accessories = user.equipments && user.equipments.accessory || {};
+    const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
+    if (accessoryKeys.length == 0) lines.push('[장신구] 없음');
+    accessoryKeys.forEach(key => lines.push(formatEquippedEquipment('장신구', 'accessory', accessories[key])));
+    lines.push('', '〈 스탯 〉');
+    lines.push('공격력: ' + comma(stats.atk));
+    lines.push('방어력: ' + comma(stats.def));
+    lines.push('방어 관통력: ' + comma(stats.pnt));
+    lines.push('치명타 확률: ' + formatStatValue('crit', stats.crit).replace(/^\+/, ''));
+    lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
+    return lines.join('\n');
+}
+
+async function sendCharacterCardImage(channel, card) {
+    const fileName = card.name + '1성.png';
+    const filePath = path.join(CARD_IMAGE_PATH, fileName);
+    if (!fs.existsSync(filePath)) return;
+    await channel.sendMedia(node_kakao.KnownChatType.PHOTO, { name: fileName, data: fs.readFileSync(filePath), width: 300, height: 500, ext: 'png' });
+}
+
 function formatDescription(name) {
     const items = readJson(ITEMS_PATH, []);
     const packs = readJson(PACKS_PATH, []);
+
     const item = items.find(data => data.name == name);
     if (item) {
-        const lines = ['《 ' + item.name + ' 》 [' + item.type + ']', '- ' + item.desc];
+        const lines = ['《 ' + formatNameWithTrade(item) + ' 》 [' + item.type + ']', '- ' + item.desc];
         if (item.type == '가챠' && typeof item.pack == 'number' && packs[item.pack]) lines.push(VIEWMORE, formatPack(packs[item.pack]));
         return lines.join('\n');
     }
@@ -229,7 +328,7 @@ function formatDescription(name) {
 
     const equipment = findEquipmentByName(name);
     if (equipment) {
-        return ['《 ' + equipment.equipment.name + ' 》 [' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
+        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
     }
 
     return null;
@@ -265,14 +364,6 @@ function formatInventory(user) {
     return lines.join('\n');
 }
 
-function formatStar(star) {
-    const displayStar = Number(star || 0) + 1;
-    if (displayStar == 10) return '𝛧';
-    if (displayStar == 11) return '𝛴';
-    if (displayStar == 12) return '𝛀';
-    return displayStar + '성';
-}
-
 function formatCharacterInventory(user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const cards = user.inventory.card || [];
@@ -289,6 +380,14 @@ function formatCharacterInventory(user) {
         if (data) lines.push('[' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
     });
     return lines.join('\n');
+}
+
+function formatStar(star) {
+    const displayStar = Number(star || 0) + 1;
+    if (displayStar == 10) return '𝛧';
+    if (displayStar == 11) return '𝛴';
+    if (displayStar == 12) return '𝛀';
+    return displayStar + '성';
 }
 
 async function putItem(table, item) {
@@ -578,10 +677,17 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (args[0] == '내정보') {
+        reply(formatMyInfo(user));
+        return true;
+    }
+
     if (args[0] == '설명') {
         const name = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
         const description = formatDescription(name);
+        const characterCard = findCharacterCardByName(name);
         reply(description || '❌ 존재하지 않는 이름입니다.');
+        if (description && characterCard) await sendCharacterCardImage(channel, characterCard.card);
         return true;
     }
 
