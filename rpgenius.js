@@ -13,6 +13,7 @@ const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
+const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
@@ -328,7 +329,7 @@ function formatDescription(name) {
 
     const equipment = findEquipmentByName(name);
     if (equipment) {
-        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
+        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
     }
 
     return null;
@@ -380,6 +381,86 @@ function formatCharacterInventory(user) {
         if (data) lines.push('[' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
     });
     return lines.join('\n');
+}
+
+function formatShopItem(shopItem) {
+    const items = readJson(ITEMS_PATH, []);
+    if (shopItem.type == '아이템') {
+        const item = items[shopItem.item_id];
+        const itemName = item ? item.name : '알 수 없는 아이템';
+        return itemName + ' x' + comma(shopItem.count);
+    }
+    if (shopItem.type == '가넷') return '💠 ' + comma(shopItem.count);
+    if (shopItem.type == '골드') return '🪙 ' + comma(shopItem.count);
+    return shopItem.type;
+}
+
+function formatPrice(price) {
+    if (price.goods == 'gold') return '🪙 ' + comma(price.amount);
+    if (price.goods == 'garnet') return '💠 ' + comma(price.amount);
+    if (price.goods == 'point') return '💵 ' + comma(price.amount) + 'P';
+    return comma(price.amount);
+}
+
+function formatShop(shopType) {
+    const shops = readJson(SHOP_PATH, {});
+    const shop = shops[shopType];
+    if (!shop || !Array.isArray(shop)) return null;
+    
+    const lines = ['[ ' + shopType + ' 상점 ]', VIEWMORE];
+    shop.forEach((item, index) => {
+        lines.push('│ [' + (index + 1) + '] 〈 ' + formatShopItem(item) + ' 〉');
+        lines.push('│ 가격: ' + formatPrice(item.price));
+        lines.push('');
+    });
+    return lines.join('\n').trim();
+}
+
+const GOODS_FIELD = { gold: 'gold', garnet: 'garnet', point: 'point' };
+
+function addInventoryItem(user, itemId, count) {
+    if (!user.inventory) user.inventory = { card: [], item: [] };
+    if (!Array.isArray(user.inventory.item)) user.inventory.item = [];
+    const existing = user.inventory.item.find(inv => inv.id == itemId);
+    if (existing) existing.count = Number(existing.count || 0) + count;
+    else user.inventory.item.push({ id: itemId, count: count });
+}
+
+async function purchaseShopItem(user, shopType, indexArg, countArg) {
+    const shops = readJson(SHOP_PATH, {});
+    const shop = shops[shopType];
+    if (!shop || !Array.isArray(shop)) return '❌ 존재하지 않는 상점입니다.';
+
+    const index = Number(indexArg);
+    if (!Number.isInteger(index) || index < 1 || index > shop.length) return '❌ 존재하지 않는 상품 번호입니다.';
+
+    const count = countArg == null || countArg === '' ? 1 : Number(countArg);
+    if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
+
+    const shopItem = shop[index - 1];
+    const field = GOODS_FIELD[shopItem.price.goods];
+    if (!field) return '❌ 알 수 없는 화폐입니다.';
+
+    const totalPrice = Number(shopItem.price.amount) * count;
+    const owned = Number(user[field] || 0);
+    if (owned < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + ')';
+
+    user[field] = owned - totalPrice;
+
+    if (shopItem.type == '아이템') {
+        addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
+    } else if (shopItem.type == '가넷') {
+        user.garnet = Number(user.garnet || 0) + Number(shopItem.count) * count;
+    } else if (shopItem.type == '골드') {
+        user.gold = Number(user.gold || 0) + Number(shopItem.count) * count;
+    } else {
+        return '❌ 처리할 수 없는 상품입니다.';
+    }
+
+    await user.save();
+
+    const rewardItem = { type: shopItem.type, item_id: shopItem.item_id, count: Number(shopItem.count) * count };
+    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice });
 }
 
 function formatStar(star) {
@@ -686,8 +767,25 @@ async function onChat(data, channel) {
         const name = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
         const description = formatDescription(name);
         const characterCard = findCharacterCardByName(name);
-        reply(description || '❌ 존재하지 않는 이름입니다.');
         if (description && characterCard) await sendCharacterCardImage(channel, characterCard.card);
+        reply(description || '❌ 존재하지 않는 이름입니다.');
+        return true;
+    }
+
+    if (args[0] == '상점') {
+        const shopType = args[1] || '일반';
+        const shopDisplay = formatShop(shopType);
+        reply(shopDisplay || '❌ 존재하지 않는 상점입니다.');
+        return true;
+    }
+
+    if (args[0] == '구매') {
+        if (!args[1] || !args[2]) {
+            reply('❌ /RPGenius 구매 [상점] [번호] [갯수]');
+            return true;
+        }
+        const result = await purchaseShopItem(user, args[1], args[2], args[3]);
+        reply(result);
         return true;
     }
 
