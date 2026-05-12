@@ -297,7 +297,7 @@ function calculateCardSlotEffects(user) {
         critMul: 0,
         goldBonus: 0,
         itemDropChance: 0,
-        pnt: 0
+        defReduction: 0
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
@@ -312,7 +312,7 @@ function calculateCardSlotEffects(user) {
         if (cardData.name == '켄시') effects.critMul += value;
         if (cardData.name == '제우스') effects.goldBonus += value;
         if (cardData.name == '타이란트') effects.itemDropChance += value;
-        if (cardData.name == '마쉐비') effects.pnt += value;
+        if (cardData.name == '마쉐비') effects.defReduction += value;
     });
     return effects;
 }
@@ -329,13 +329,13 @@ function formatCardSlotEffectLines(user) {
         ['critMul', '치명타 피해량 증가'],
         ['goldBonus', '골드 획득 증가량'],
         ['itemDropChance', '아이템 드랍 확률'],
-        ['pnt', '방어 관통력']
+        ['defReduction', '방어력 감소']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
         .map(entry => {
             const value = Number(slotEffects[entry[0]] || 0);
-            const display = entry[0] == 'pnt' ? comma(value) : Math.round(value * 1000) / 10 + '%';
+            const display = Math.round(value * 1000) / 10 + '%';
             return '◆ ' + entry[1] + ' ' + display;
         });
 }
@@ -671,7 +671,6 @@ function calculateUserStats(user) {
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
-    stats.pnt = Number(stats.pnt || 0) + slotEffects.pnt;
     return stats;
 }
 
@@ -740,6 +739,11 @@ function findDungeonByName(name) {
 function getDamageAfterDefense(damage, defense, penetration) {
     const finalDefense = Math.max(0, Number(defense || 0) - Number(penetration || 0));
     return Math.floor(Number(damage || 0) * (100 / (100 + finalDefense)));
+}
+
+function getDamageAfterReducedDefense(damage, defense, penetration, defenseReductionRate) {
+    const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
+    return getDamageAfterDefense(damage, reducedDefense, penetration);
 }
 
 function applyCriticalDamage(damage, stats, extra) {
@@ -847,7 +851,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
     const criticalResult = applyCriticalDamage(damageWithSlotBonus, stats, extra);
-    const finalDamage = getDamageAfterDefense(criticalResult.damage, dungeon.def, extra && extra.pnt || stats.pnt);
+    const finalDamage = getDamageAfterReducedDefense(criticalResult.damage, dungeon.def, extra && extra.pnt || stats.pnt, slotEffects.defReduction);
     const killCount = Math.floor(finalDamage / Number(dungeon.hp || 1));
     const fieldDamageBase = Number(dungeon.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
     const fieldDamage = getDamageAfterDefense(fieldDamageBase, stats.def, dungeon.pnt);
@@ -1868,6 +1872,403 @@ class RPGUser {
     }
 }
 
+const tradeRequests = {};
+const activeTrades = {};
+const tradeRequestTimers = {};
+const TRADE_FEE_RATE = 0.05;
+const TRADE_REQUEST_TTL_MS = 5 * 60 * 1000;
+
+function getTradeTicketItemId() {
+    const items = readJson(ITEMS_PATH, []);
+    return items.findIndex(item => item.name == '거래권');
+}
+
+function getCardTicketCost(card) {
+    return Math.max(0, Number(card && card.star || 0) - 3);
+}
+
+function emptyTradeOffer() {
+    return { gold: 0, garnet: 0, cards: [], equipments: [], items: {} };
+}
+
+function createTradeSession(aName, bName) {
+    return {
+        a: aName,
+        b: bName,
+        aOffer: emptyTradeOffer(),
+        bOffer: emptyTradeOffer(),
+        aConfirmed: false,
+        bConfirmed: false
+    };
+}
+
+function getTradeSessionForUser(name) {
+    return activeTrades[name] || null;
+}
+
+function getMyTradeSide(session, name) {
+    if (!session) return null;
+    if (session.a == name) return { offer: session.aOffer, partnerName: session.b, partnerOffer: session.bOffer, isA: true };
+    if (session.b == name) return { offer: session.bOffer, partnerName: session.a, partnerOffer: session.aOffer, isA: false };
+    return null;
+}
+
+function hasAnyTradeInvolvement(name) {
+    if (activeTrades[name]) return true;
+    if (tradeRequests[name]) return true;
+    return Object.keys(tradeRequests).some(key => tradeRequests[key] && tradeRequests[key].target == name);
+}
+
+function clearTradeRequestTimer(name) {
+    if (tradeRequestTimers[name]) {
+        clearTimeout(tradeRequestTimers[name]);
+        delete tradeRequestTimers[name];
+    }
+}
+
+function formatTradeOfferLines(offer) {
+    const items = readJson(ITEMS_PATH, []);
+    const lines = [];
+    if (Number(offer.gold || 0) > 0) lines.push('- 🪙 ' + comma(offer.gold));
+    if (Number(offer.garnet || 0) > 0) lines.push('- 💠 ' + comma(offer.garnet));
+    (offer.equipments || []).forEach(entry => {
+        const data = getEquipmentData(entry.type, entry.id);
+        if (!data) return;
+        const level = Number(entry.level || 0);
+        lines.push('- <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : ''));
+    });
+    (offer.cards || []).forEach(card => lines.push('- ' + formatUserCard(card)));
+    Object.keys(offer.items || {}).forEach(itemId => {
+        const count = Number(offer.items[itemId] || 0);
+        if (count <= 0) return;
+        const data = items[itemId];
+        if (!data) return;
+        lines.push('- ' + data.name + ' x' + comma(count));
+    });
+    return lines;
+}
+
+function formatTradeStatus(session) {
+    const aLines = formatTradeOfferLines(session.aOffer);
+    const bLines = formatTradeOfferLines(session.bOffer);
+    const lines = [];
+    lines.push('[ ' + session.a + '님의 등록 거래 품목 ]');
+    if (aLines.length == 0) lines.push('- 없음');
+    else lines.push(...aLines);
+    lines.push('');
+    lines.push('[ ' + session.b + '님의 등록 거래 품목 ]');
+    if (bLines.length == 0) lines.push('- 없음');
+    else lines.push(...bLines);
+    lines.push('');
+    lines.push('거래를 성사하시려면, 둘 다 아래 명령어를 입력해주세요.');
+    lines.push('/RPGenius 거래성사');
+    lines.push('/RPGenius 거래성사취소');
+    lines.push('');
+    lines.push('거래를 취소하시려면 아래 명령어를 입력해주세요.');
+    lines.push('/RPGenius 거래취소');
+    return lines.join('\n');
+}
+
+function resetTradeConfirmations(session) {
+    session.aConfirmed = false;
+    session.bConfirmed = false;
+}
+
+function refundOfferToUser(user, offer) {
+    if (Number(offer.gold || 0) > 0) user.gold = Number(user.gold || 0) + Number(offer.gold || 0);
+    if (Number(offer.garnet || 0) > 0) user.garnet = Number(user.garnet || 0) + Number(offer.garnet || 0);
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    (offer.cards || []).forEach(card => user.inventory.card.push(card));
+    (offer.equipments || []).forEach(equip => user.inventory.equipment.push(equip));
+    Object.keys(offer.items || {}).forEach(itemId => {
+        const count = Number(offer.items[itemId] || 0);
+        if (count > 0) addInventoryItem(user, Number(itemId), count);
+    });
+}
+
+async function cancelActiveTrade(session, reason, channel) {
+    delete activeTrades[session.a];
+    delete activeTrades[session.b];
+    const aUser = await getRPGUserByName(session.a);
+    const bUser = await getRPGUserByName(session.b);
+    if (aUser) {
+        refundOfferToUser(aUser, session.aOffer);
+        await aUser.save();
+    }
+    if (bUser) {
+        refundOfferToUser(bUser, session.bOffer);
+        await bUser.save();
+    }
+    if (channel && reason) channel.sendChat(reason);
+}
+
+function createTradeRequest(user, targetName, channel) {
+    if (!targetName) return '❌ /RPGenius 거래신청 [닉네임]';
+    if (targetName == user.name) return '❌ 자기 자신에게는 거래를 신청할 수 없습니다.';
+    if (hasAnyTradeInvolvement(user.name)) return '❌ 이미 진행 중인 거래가 있습니다.';
+    if (hasAnyTradeInvolvement(targetName)) return '❌ 상대방이 이미 다른 거래에 참여 중입니다.';
+    tradeRequests[user.name] = { target: targetName, createdAt: Date.now() };
+    clearTradeRequestTimer(user.name);
+    tradeRequestTimers[user.name] = setTimeout(() => {
+        if (tradeRequests[user.name] && tradeRequests[user.name].target == targetName) {
+            delete tradeRequests[user.name];
+            delete tradeRequestTimers[user.name];
+            if (channel) channel.sendChat('⌛ ' + user.name + '님이 ' + targetName + '님에게 보낸 거래 신청이 자동으로 취소되었습니다.');
+        }
+    }, TRADE_REQUEST_TTL_MS);
+    return '✅ ' + targetName + '님에게 거래를 신청했습니다.\n5분 안에 상대방이 /RPGenius 거래수락을 입력하지 않으면 자동으로 취소됩니다.';
+}
+
+function cancelTradeRequest(user) {
+    if (!tradeRequests[user.name]) return '❌ 진행 중인 거래 신청이 없습니다.';
+    const targetName = tradeRequests[user.name].target;
+    delete tradeRequests[user.name];
+    clearTradeRequestTimer(user.name);
+    return '✅ ' + targetName + '님에 대한 거래 신청을 취소했습니다.';
+}
+
+function acceptTradeRequest(user) {
+    const senderName = Object.keys(tradeRequests).find(key => tradeRequests[key] && tradeRequests[key].target == user.name);
+    if (!senderName) return '❌ 수락할 거래 신청이 없습니다.';
+    if (activeTrades[user.name]) return '❌ 이미 진행 중인 거래가 있습니다.';
+    delete tradeRequests[senderName];
+    clearTradeRequestTimer(senderName);
+    const session = createTradeSession(senderName, user.name);
+    activeTrades[senderName] = session;
+    activeTrades[user.name] = session;
+    return '✅ ' + senderName + '님과 ' + user.name + '님의 거래가 시작되었습니다.\n\n' + formatTradeStatus(session);
+}
+
+function parseTradeRegisterArgs(args) {
+    const kind = args[1];
+    if (!kind) return { error: '❌ /RPGenius 거래등록 [골드/가넷/카드/장비/아이템] ...' };
+    if (kind == '골드' || kind == '가넷') {
+        const amount = Number(args[2]);
+        if (!Number.isInteger(amount) || amount < 1) return { error: '❌ 금액은 1 이상의 정수여야 합니다.' };
+        return { kind, amount };
+    }
+    if (kind == '카드' || kind == '장비') {
+        const number = Number(args[2]);
+        if (!Number.isInteger(number) || number < 1) return { error: '❌ 번호는 1 이상의 정수여야 합니다.' };
+        return { kind, number };
+    }
+    if (kind == '아이템') {
+        const rest = args.slice(2);
+        if (rest.length == 0) return { error: '❌ /RPGenius 거래등록 아이템 [아이템명] <갯수>' };
+        const last = rest[rest.length - 1];
+        const hasCount = rest.length > 1 && /^\d+$/.test(last);
+        const count = hasCount ? Number(last) : 1;
+        const itemName = (hasCount ? rest.slice(0, -1) : rest).join(' ');
+        if (count < 1) return { error: '❌ 갯수는 1 이상의 정수여야 합니다.' };
+        return { kind, itemName, count };
+    }
+    return { error: '❌ 지원하지 않는 거래 항목입니다.' };
+}
+
+function registerTradeOffer(user, args) {
+    const session = getTradeSessionForUser(user.name);
+    if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const side = getMyTradeSide(session, user.name);
+    if (!side) return '❌ 거래 세션 오류입니다.';
+    const parsed = parseTradeRegisterArgs(args);
+    if (parsed.error) return parsed.error;
+
+    if (parsed.kind == '골드') {
+        if (Number(user.gold || 0) < parsed.amount) return '❌ 골드가 부족합니다.';
+        user.gold = Number(user.gold || 0) - parsed.amount;
+        side.offer.gold = Number(side.offer.gold || 0) + parsed.amount;
+        resetTradeConfirmations(session);
+        return '✅ ' + comma(parsed.amount) + ' 골드를 등록했습니다.\n\n' + formatTradeStatus(session);
+    }
+    if (parsed.kind == '가넷') {
+        if (Number(user.garnet || 0) < parsed.amount) return '❌ 가넷이 부족합니다.';
+        user.garnet = Number(user.garnet || 0) - parsed.amount;
+        side.offer.garnet = Number(side.offer.garnet || 0) + parsed.amount;
+        resetTradeConfirmations(session);
+        return '✅ ' + comma(parsed.amount) + ' 가넷을 등록했습니다.\n\n' + formatTradeStatus(session);
+    }
+    if (parsed.kind == '카드') {
+        if (!user.inventory || !Array.isArray(user.inventory.card)) return '❌ 인벤토리가 비어있습니다.';
+        const card = user.inventory.card[parsed.number - 1];
+        if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+        user.inventory.card.splice(parsed.number - 1, 1);
+        side.offer.cards.push(card);
+        resetTradeConfirmations(session);
+        return '✅ ' + formatUserCard(card) + ' 캐릭터 카드를 등록했습니다.\n\n' + formatTradeStatus(session);
+    }
+    if (parsed.kind == '장비') {
+        const selected = getEquipmentByNumber(user, parsed.number);
+        if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+        if (selected.source == 'equipped') return '❌ 장착 중인 장비는 거래할 수 없습니다.';
+        const data = getEquipmentData(selected.equip.type || selected.type, selected.equip.id);
+        if (!data) return '❌ 잘못된 장비 데이터입니다.';
+        if (data.no_trade) return '❌ 거래 불가 장비입니다.';
+        const idx = user.inventory.equipment.indexOf(selected.equip);
+        if (idx < 0) return '❌ 장비를 찾을 수 없습니다.';
+        const equipCopy = { type: selected.equip.type || selected.type, id: selected.equip.id, level: Number(selected.equip.level || 0) };
+        user.inventory.equipment.splice(idx, 1);
+        side.offer.equipments.push(equipCopy);
+        resetTradeConfirmations(session);
+        return '✅ <' + data.rarity + '> ' + data.name + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
+    }
+    if (parsed.kind == '아이템') {
+        const items = readJson(ITEMS_PATH, []);
+        const itemId = items.findIndex(item => item.name == parsed.itemName);
+        if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
+        const itemData = items[itemId];
+        if (itemData.no_trade) return '❌ 거래 불가 아이템입니다.';
+        if (getInventoryItemCount(user, itemId) < parsed.count) return '❌ 보유한 아이템이 부족합니다.';
+        removeInventoryItem(user, itemId, parsed.count);
+        side.offer.items[itemId] = Number(side.offer.items[itemId] || 0) + parsed.count;
+        resetTradeConfirmations(session);
+        return '✅ ' + itemData.name + ' 아이템을 ' + comma(parsed.count) + '개 등록했습니다.\n\n' + formatTradeStatus(session);
+    }
+    return '❌ 지원하지 않는 거래 항목입니다.';
+}
+
+function buildTradeGainLines(receivedOffer) {
+    const items = readJson(ITEMS_PATH, []);
+    const lines = [];
+    (receivedOffer.equipments || []).forEach(entry => {
+        const data = getEquipmentData(entry.type, entry.id);
+        if (!data) return;
+        const level = Number(entry.level || 0);
+        lines.push('- <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : ''));
+    });
+    (receivedOffer.cards || []).forEach(card => {
+        const cost = getCardTicketCost(card);
+        lines.push('- ' + formatUserCard(card) + (cost > 0 ? ' (거래권 ' + comma(cost) + '장 소모)' : ''));
+    });
+    Object.keys(receivedOffer.items || {}).forEach(itemId => {
+        const count = Number(receivedOffer.items[itemId] || 0);
+        if (count <= 0) return;
+        const data = items[itemId];
+        if (!data) return;
+        lines.push('- ' + data.name + ' x' + comma(count));
+    });
+    if (Number(receivedOffer.gold || 0) > 0) {
+        const fee = Math.round(receivedOffer.gold * TRADE_FEE_RATE);
+        lines.push('- 🪙 ' + comma(receivedOffer.gold - fee) + ' (수수료 ' + Math.round(TRADE_FEE_RATE * 100) + '% 제외)');
+    }
+    if (Number(receivedOffer.garnet || 0) > 0) {
+        const fee = Math.round(receivedOffer.garnet * TRADE_FEE_RATE);
+        lines.push('- 💠 ' + comma(receivedOffer.garnet - fee) + ' (수수료 ' + Math.round(TRADE_FEE_RATE * 100) + '% 제외)');
+    }
+    return lines;
+}
+
+async function finalizeTrade(session, channel) {
+    const aUser = await getRPGUserByName(session.a);
+    const bUser = await getRPGUserByName(session.b);
+    if (!aUser || !bUser) {
+        if (aUser) { refundOfferToUser(aUser, session.aOffer); await aUser.save(); }
+        if (bUser) { refundOfferToUser(bUser, session.bOffer); await bUser.save(); }
+        delete activeTrades[session.a];
+        delete activeTrades[session.b];
+        if (channel) channel.sendChat('❌ 거래 대상을 찾을 수 없어 거래가 취소되었습니다.');
+        return;
+    }
+    const ticketId = getTradeTicketItemId();
+    const aReceivesCards = session.bOffer.cards || [];
+    const bReceivesCards = session.aOffer.cards || [];
+    const aTicketsNeeded = aReceivesCards.reduce((sum, card) => sum + getCardTicketCost(card), 0);
+    const bTicketsNeeded = bReceivesCards.reduce((sum, card) => sum + getCardTicketCost(card), 0);
+    const aHasTickets = ticketId == -1 ? aTicketsNeeded == 0 : getInventoryItemCount(aUser, ticketId) >= aTicketsNeeded;
+    const bHasTickets = ticketId == -1 ? bTicketsNeeded == 0 : getInventoryItemCount(bUser, ticketId) >= bTicketsNeeded;
+    if (!aHasTickets || !bHasTickets) {
+        refundOfferToUser(aUser, session.aOffer);
+        refundOfferToUser(bUser, session.bOffer);
+        await aUser.save();
+        await bUser.save();
+        delete activeTrades[session.a];
+        delete activeTrades[session.b];
+        const fail = !aHasTickets ? aUser.name : bUser.name;
+        if (channel) channel.sendChat('❌ ' + fail + '님의 거래권이 부족하여 거래가 성사되지 못했습니다.');
+        return;
+    }
+    const aCardSpace = getRemainingCardInventorySpace(aUser);
+    const bCardSpace = getRemainingCardInventorySpace(bUser);
+    if (aCardSpace < aReceivesCards.length || bCardSpace < bReceivesCards.length) {
+        refundOfferToUser(aUser, session.aOffer);
+        refundOfferToUser(bUser, session.bOffer);
+        await aUser.save();
+        await bUser.save();
+        delete activeTrades[session.a];
+        delete activeTrades[session.b];
+        const fail = aCardSpace < aReceivesCards.length ? aUser.name : bUser.name;
+        if (channel) channel.sendChat('❌ ' + fail + '님의 캐릭터 카드 인벤토리가 가득 차서 거래가 성사되지 못했습니다.');
+        return;
+    }
+
+    if (aTicketsNeeded > 0) removeInventoryItem(aUser, ticketId, aTicketsNeeded);
+    if (bTicketsNeeded > 0) removeInventoryItem(bUser, ticketId, bTicketsNeeded);
+
+    const aReceive = {
+        gold: session.bOffer.gold ? session.bOffer.gold - Math.round(session.bOffer.gold * TRADE_FEE_RATE) : 0,
+        garnet: session.bOffer.garnet ? session.bOffer.garnet - Math.round(session.bOffer.garnet * TRADE_FEE_RATE) : 0,
+        cards: session.bOffer.cards,
+        equipments: session.bOffer.equipments,
+        items: session.bOffer.items
+    };
+    const bReceive = {
+        gold: session.aOffer.gold ? session.aOffer.gold - Math.round(session.aOffer.gold * TRADE_FEE_RATE) : 0,
+        garnet: session.aOffer.garnet ? session.aOffer.garnet - Math.round(session.aOffer.garnet * TRADE_FEE_RATE) : 0,
+        cards: session.aOffer.cards,
+        equipments: session.aOffer.equipments,
+        items: session.aOffer.items
+    };
+    refundOfferToUser(aUser, aReceive);
+    refundOfferToUser(bUser, bReceive);
+
+    await aUser.save();
+    await bUser.save();
+    delete activeTrades[session.a];
+    delete activeTrades[session.b];
+
+    const lines = ['✅ 거래가 성사되었습니다!', ''];
+    const aGain = buildTradeGainLines(session.bOffer);
+    const bGain = buildTradeGainLines(session.aOffer);
+    lines.push('[ ' + aUser.name + '님 획득 결과 ]');
+    if (aGain.length == 0) lines.push('- 없음'); else lines.push(...aGain);
+    lines.push('');
+    lines.push('[ ' + bUser.name + '님 획득 결과 ]');
+    if (bGain.length == 0) lines.push('- 없음'); else lines.push(...bGain);
+    if (channel) channel.sendChat(lines.join('\n'));
+}
+
+async function confirmTrade(user, channel) {
+    const session = getTradeSessionForUser(user.name);
+    if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const side = getMyTradeSide(session, user.name);
+    if (!side) return '❌ 거래 세션 오류입니다.';
+    if (side.isA) session.aConfirmed = true;
+    else session.bConfirmed = true;
+    if (session.aConfirmed && session.bConfirmed) {
+        await finalizeTrade(session, channel);
+        return null;
+    }
+    return '✅ ' + user.name + '님이 거래를 성사시키고자 합니다.';
+}
+
+function unconfirmTrade(user) {
+    const session = getTradeSessionForUser(user.name);
+    if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const side = getMyTradeSide(session, user.name);
+    if (!side) return '❌ 거래 세션 오류입니다.';
+    if (side.isA) session.aConfirmed = false;
+    else session.bConfirmed = false;
+    return '🛑 ' + user.name + '님이 거래 성사 요청을 취소했습니다.';
+}
+
+async function cancelTradeByUser(user, channel) {
+    const session = getTradeSessionForUser(user.name);
+    if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    await cancelActiveTrade(session, '⛔ ' + user.name + '님이 거래를 취소했습니다.', channel);
+    return null;
+}
+
 async function getRPGUserById(id) {
     try {
         const res = await queryItems({
@@ -2101,6 +2502,51 @@ async function onChat(data, channel) {
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
         reply(formatCharacterCardList());
+        return true;
+    }
+
+    if (args[0] == '거래신청') {
+        const targetName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        reply(createTradeRequest(user, targetName, channel));
+        return true;
+    }
+
+    if (args[0] == '거래신청취소') {
+        reply(cancelTradeRequest(user));
+        return true;
+    }
+
+    if (args[0] == '거래수락') {
+        reply(acceptTradeRequest(user));
+        return true;
+    }
+
+    if (args[0] == '거래등록') {
+        const result = registerTradeOffer(user, args);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '거래성사') {
+        const result = await confirmTrade(user, channel);
+        if (result) reply(result);
+        return true;
+    }
+
+    if (args[0] == '거래성사취소') {
+        reply(unconfirmTrade(user));
+        return true;
+    }
+
+    if (args[0] == '거래취소') {
+        const result = await cancelTradeByUser(user, channel);
+        if (result) reply(result);
+        return true;
+    }
+
+    if (activeTrades[user.name] && !['내정보', '설명', '인벤토리', '인벤', 'i', '캐릭인벤', 'ci', '장비인벤', 'ei', '스탯'].includes(args[0])) {
+        reply('❌ 거래 진행 중에는 사용할 수 없는 명령어입니다.\n/RPGenius 거래취소');
         return true;
     }
 
