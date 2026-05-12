@@ -152,6 +152,71 @@
                 "goods": "garnet",
                 "amount": 1250
             }
+        },
+        {
+            "type": "아이템",
+            "item_id": 32,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 200
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 33,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 600
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 34,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 1800
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 36,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 80
+            }
+        }
+    ],
+    "마일리지": [
+        {
+            "type": "아이템",
+            "item_id": 1,
+            "count": 1,
+            "price": {
+                "goods": "mileage",
+                "amount": 50
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 36,
+            "count": 1,
+            "price": {
+                "goods": "mileage",
+                "amount": 20
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 21,
+            "count": 1,
+            "price": {
+                "goods": "mileage",
+                "amount": 500
+            }
         }
     ]
 }

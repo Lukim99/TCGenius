@@ -455,10 +455,15 @@ function equipCharacterCardSlot(user, slotArg, numberArg) {
     const slotNumber = Number(slotArg);
     const maxCardSlot = Number(user.maxCardSlot || 5);
     if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
-    const card = getCharacterInventoryCard(user, numberArg);
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
+    if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
+    const card = user.inventory.card[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
+    user.inventory.card.splice(number - 1, 1);
+    if (user.card_slot[slotNumber - 1]) user.inventory.card.push(user.card_slot[slotNumber - 1]);
     user.card_slot[slotNumber - 1] = card;
     return '✅ 카드 슬롯 ' + slotNumber + '번에 장착했습니다: ' + formatUserCard(card);
 }
@@ -469,6 +474,8 @@ function removeCharacterCardSlot(user, slotArg) {
     if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
     if (!Array.isArray(user.card_slot) || !user.card_slot[slotNumber - 1]) return '❌ 해당 슬롯에 장착된 카드가 없습니다.';
     const removed = user.card_slot[slotNumber - 1];
+    if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
+    user.inventory.card.push(removed);
     user.card_slot.splice(slotNumber - 1, 1);
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
 }
@@ -1095,6 +1102,10 @@ function equipItemByNumber(user, numberArg) {
 }
 
 const EQUIPMENT_STONE_ITEM_ID = 0;
+const EQUIPMENT_UPGRADER_ITEM_ID = 2;
+const EQUIPMENT_PROTECT_ITEM_ID = 3;
+const EQUIPMENT_ADVANCED_PROTECT_ITEM_ID = 4;
+const EQUIPMENT_BLESSED_PROTECT_ITEM_ID = 5;
 const EQUIPMENT_UPGRADE_MAX = 15;
 const EQUIPMENT_RARITY_CORRECTION = { '일반': 0.7, '레어': 0.9, '유니크': 1.1, '레전더리': 1.4 };
 const EQUIPMENT_GOLD_RATE = { '일반': 1.0, '레어': 1.5, '유니크': 1.8, '레전더리': 2.1 };
@@ -1145,6 +1156,7 @@ function formatUpgradeRatePercent(value) {
 function formatEquipmentUpgradePreview(user, numberArg) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    if (selected.source == 'equipped') return '❌ 장착 중인 장비는 강화할 수 없습니다.';
     const type = selected.equip.type || selected.type;
     if (type == 'accessory') return '❌ 장신구는 강화할 수 없습니다.';
     const equipment = getEquipmentData(type, selected.equip.id);
@@ -1158,8 +1170,9 @@ function formatEquipmentUpgradePreview(user, numberArg) {
     const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', crit: '치명타 확률', critMul: '치명타 피해량' };
     const rates = EQUIPMENT_UPGRADE_RATES[level];
     const cost = getEquipmentUpgradeCost(equipment, type, level);
+    const hasUpgrader = getInventoryItemCount(user, EQUIPMENT_UPGRADER_ITEM_ID) > 0;
     const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
-    const hasStone = stoneCount >= cost.stone;
+    const hasStone = hasUpgrader || stoneCount >= cost.stone;
     const hasGold = Number(user.gold || 0) >= cost.gold;
     const lines = ['⚒️ ' + equipment.name + ' +' + level + ' -> +' + nextLevel];
     Object.keys(statNames).forEach(key => {
@@ -1169,10 +1182,13 @@ function formatEquipmentUpgradePreview(user, numberArg) {
     lines.push('⏫ 대성공 ' + formatUpgradeRatePercent(rates.great));
     lines.push('🔼 성공 ' + formatUpgradeRatePercent(rates.success));
     lines.push('🔽 하락 ' + formatUpgradeRatePercent(rates.down));
-    lines.push('⏬ 초기화 ' + formatUpgradeRatePercent(rates.reset));
+    lines.push('💥 파괴 ' + formatUpgradeRatePercent(rates.reset));
     lines.push('', '[ 필요 재료 ]');
-    lines.push((hasStone ? '✅ ' : '❌ ') + '강화석 x' + comma(cost.stone));
+    lines.push((hasStone ? '✅ ' : '❌ ') + (hasUpgrader ? '유생의 강화기 x1' : '강화석 x' + comma(cost.stone)));
     lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
+    if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 축복받은 장비 보호권 보유: 파괴/하락 시 유지');
+    else if (getInventoryItemCount(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 고급 장비 보호권 보유: 파괴 시 유지');
+    else if (getInventoryItemCount(user, EQUIPMENT_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 장비 보호권 보유: 파괴 시 0강 초기화');
     if (!hasStone || !hasGold) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다!');
@@ -1191,6 +1207,10 @@ function runEquipmentUpgrade(user) {
         user.pendingAction = null;
         return '❌ 강화할 장비를 찾을 수 없습니다.';
     }
+    if (selected.source == 'equipped') {
+        user.pendingAction = null;
+        return '❌ 장착 중인 장비는 강화할 수 없습니다.';
+    }
     const type = selected.equip.type || selected.type;
     if (type == 'accessory') {
         user.pendingAction = null;
@@ -1203,26 +1223,64 @@ function runEquipmentUpgrade(user) {
         return '❌ 강화할 수 없는 장비입니다.';
     }
     const cost = getEquipmentUpgradeCost(equipment, type, level);
-    if (getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone || Number(user.gold || 0) < cost.gold) {
+    const hasUpgrader = getInventoryItemCount(user, EQUIPMENT_UPGRADER_ITEM_ID) > 0;
+    if ((!hasUpgrader && getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone) || Number(user.gold || 0) < cost.gold) {
         user.pendingAction = null;
         return '❌ 재료가 부족합니다!';
     }
-    removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
+    if (hasUpgrader) removeInventoryItem(user, EQUIPMENT_UPGRADER_ITEM_ID, 1);
+    else removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
     user.gold = Number(user.gold || 0) - cost.gold;
     const rates = EQUIPMENT_UPGRADE_RATES[level];
     const roll = Math.random();
-    let result = 'reset';
+    let result = 'destroy';
     if (roll < rates.great) result = 'great';
     else if (roll < rates.great + rates.success) result = 'success';
     else if (roll < rates.great + rates.success + rates.down) result = 'down';
     const before = level;
+    let protectedResult = null;
     if (result == 'great') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 2);
     if (result == 'success') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 1);
-    if (result == 'down') selected.equip.level = Math.max(0, level - 1);
-    if (result == 'reset') selected.equip.level = 0;
+    if (result == 'down') {
+        if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) {
+            removeInventoryItem(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID, 1);
+            selected.equip.level = level;
+            protectedResult = 'blessedDown';
+        } else {
+            selected.equip.level = Math.max(0, level - 1);
+        }
+    }
+    if (result == 'destroy') {
+        if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) {
+            removeInventoryItem(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID, 1);
+            selected.equip.level = level;
+            protectedResult = 'blessedDestroy';
+        } else if (getInventoryItemCount(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) {
+            removeInventoryItem(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID, 1);
+            selected.equip.level = level;
+            protectedResult = 'advancedDestroy';
+        } else if (getInventoryItemCount(user, EQUIPMENT_PROTECT_ITEM_ID) > 0) {
+            removeInventoryItem(user, EQUIPMENT_PROTECT_ITEM_ID, 1);
+            selected.equip.level = 0;
+            protectedResult = 'protectDestroy';
+        } else {
+            user.inventory.equipment.splice(selected.index, 1);
+        }
+    }
     user.pendingAction = null;
-    const messages = { great: '🌟 강화 대성공!!', success: '✨ 강화 성공!', down: '❌ 강화 실패..', reset: '🟥 초기화...' };
-    return messages[result] + '\n' + equipment.name + ' +' + before + ' -> +' + Number(selected.equip.level || 0);
+    const messages = {
+        great: '🌟 강화 대성공!!',
+        success: '✨ 강화 성공!',
+        down: '❌ 강화 실패..',
+        destroy: '💥 장비가 파괴되었습니다.',
+        blessedDown: '🛡️ 축복받은 장비 보호권으로 하락을 막았습니다.',
+        blessedDestroy: '�️ 축복받은 장비 보호권으로 파괴를 막았습니다.',
+        advancedDestroy: '🛡️ 고급 장비 보호권으로 파괴를 막았습니다.',
+        protectDestroy: '🛡️ 장비 보호권으로 파괴를 막고 0강으로 초기화했습니다.'
+    };
+    const messageKey = protectedResult || result;
+    if (result == 'destroy' && !protectedResult) return messages[messageKey] + '\n' + equipment.name + ' +' + before + ' -> 파괴';
+    return messages[messageKey] + '\n' + equipment.name + ' +' + before + ' -> +' + Number(selected.equip.level || 0);
 }
 
 function addRewardSummary(summary, key, label, count) {
