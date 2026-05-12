@@ -1790,6 +1790,13 @@ function applyUseFunc(user, func, useCount, resultLines) {
         const amount = Math.round(maxMp * Number(func.amount || 0)) * useCount;
         user.mp = Math.min(maxMp, before + amount);
         resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+        return;
+    }
+    if (func.type == '경험치획득') {
+        const amount = Number(func.amount || 0) * useCount;
+        const levelUps = addExperience(user, amount);
+        resultLines.push('- XP +' + comma(amount));
+        if (levelUps > 0) resultLines.push('- 레벨업! Lv. ' + user.level);
     }
 }
 
