@@ -1,0 +1,112 @@
+[
+    {
+        "name": "빵귤",
+        "slot_effect": {
+            "name": "경험치 획득 증가량",
+            "base": 0.01,
+            "per_level": 0.01
+        },
+        "skills": [
+            0
+        ]
+    },
+    {
+        "name": "뭔마",
+        "slot_effect": {
+            "name": "사냥 시 HP 소모량 감소",
+            "base": 0.03,
+            "per_level": 0.01
+        },
+        "skills": [
+            1
+        ]
+    },
+    {
+        "name": "글렌첵",
+        "slot_effect": {
+            "name": "적 처치 시 HP/MP 10% 회복 확률",
+            "base": 0.06,
+            "per_level": 0.02
+        },
+        "skills": [
+            2
+        ]
+    },
+    {
+        "name": "오버라이드",
+        "slot_effect": {
+            "name": "치명타 확률 증가",
+            "base": 0.01,
+            "per_level": 0.01
+        },
+        "skills": [
+            3
+        ]
+    },
+    {
+        "name": "일레이나",
+        "slot_effect": {
+            "name": "사냥 시 MP 소모량 감소",
+            "base": 0.04,
+            "per_level": 0.02
+        },
+        "skills": [
+            4
+        ]
+    },
+    {
+        "name": "진필규",
+        "slot_effect": {
+            "name": "일반 몬스터에게 주는 피해 증가",
+            "base": 0.04,
+            "per_level": 0.01
+        },
+        "skills": [
+            5
+        ]
+    },
+    {
+        "name": "켄시",
+        "slot_effect": {
+            "name": "치명타 피해량 증가",
+            "base": 0.05,
+            "per_level": 0.03
+        },
+        "skills": [
+            6
+        ]
+    },
+    {
+        "name": "제우스",
+        "slot_effect": {
+            "name": "골드 획득 증가량",
+            "base": 0.01,
+            "per_level": 0.01
+        },
+        "skills": [
+            7
+        ]
+    },
+    {
+        "name": "타이란트",
+        "slot_effect": {
+            "name": "아이템 드랍 확률",
+            "base": 0.01,
+            "per_level": 0.005
+        },
+        "skills": [
+            8
+        ]
+    },
+    {
+        "name": "마쉐비",
+        "slot_effect": {
+            "name": "방어 관통력",
+            "base": 0.1,
+            "per_level": 0.01
+        },
+        "skills": [
+            9
+        ]
+    }
+]

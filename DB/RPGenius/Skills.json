@@ -1,0 +1,144 @@
+[
+    {
+        "name": "자인",
+        "desc": "공격력의 ${1}로 공격합니다.",
+        "format": [
+            {
+                "base": 1.2,
+                "per_star": 0.1
+            }
+        ],
+        "mp_cost": 42,
+        "cooltime": 10000
+    },
+    {
+        "name": "시벌론",
+        "desc": "공격력의 ${1}로 공격하고 피해의 ${2}만큼 체력을 흡수합니다.",
+        "format": [
+            {
+                "base": 1.1,
+                "per_star": 0.08
+            },
+            {
+                "base": 0.01,
+                "per_star": 0.003
+            }
+        ],
+        "mp_cost": 56,
+        "cooltime": 11500
+    },
+    {
+        "name": "글버지",
+        "desc": "공격력의 ${1}로 2회 타격합니다.",
+        "format": [
+            {
+                "base": 0.75,
+                "per_star": 0.05
+            }
+        ],
+        "mp_cost": 77,
+        "cooltime": 13000
+    },
+    {
+        "name": "불사조",
+        "desc": "공격력의 ${1}로 공격하지만, 받는 피해가 50% 증가합니다.",
+        "format": [
+            {
+                "base": 1.5,
+                "per_star": 0.15
+            }
+        ],
+        "mp_cost": 81,
+        "cooltime": 9500
+    },
+    {
+        "name": "피아스트",
+        "desc": "공격력의 ${1}로 공격합니다.\n[패시브] 사냥 시 MP가 ${2}만큼 회복됩니다.",
+        "format": [
+            {
+                "base": 1.1,
+                "per_star": 0.08
+            },
+            {
+                "base": 1,
+                "per_star": 1,
+                "type": "flat"
+            }
+        ],
+        "mp_cost": 46,
+        "cooltime": 8000
+    },
+    {
+        "name": "수업끝",
+        "desc": "공격력의 ${1}로 공격합니다.",
+        "format": [
+            {
+                "base": 1.8,
+                "per_star": 0.2
+            }
+        ],
+        "mp_cost": 50,
+        "cooltime": 21000
+    },
+    {
+        "name": "SUPER EASY",
+        "desc": "공격력의 ${1}로 공격합니다. 이 공격은 치명타 피해량이 +${2} 증가합니다.",
+        "format": [
+            {
+                "base": 1.4,
+                "per_star": 0.12
+            },
+            {
+                "base": 0.2,
+                "per_star": 0.05
+            }
+        ],
+        "mp_cost": 44,
+        "cooltime": 12000
+    },
+    {
+        "name": "백억이요",
+        "desc": "공격력의 ${1}로 공격합니다. 이 스킬로 처치 시 골드 획득량이 +${2} 증가합니다.",
+        "format": [
+            {
+                "base": 1,
+                "per_star": 0.07
+            },
+            {
+                "base": 0.01,
+                "per_star": 0.003
+            }
+        ],
+        "mp_cost": 77,
+        "cooltime": 9000
+    },
+    {
+        "name": "건력",
+        "desc": "공격력의 ${1}로 공격합니다.",
+        "format": [
+            {
+                "base": 2.1,
+                "per_star": 0.23
+            }
+        ],
+        "mp_cost": 77,
+        "cooltime": 30000
+    },
+    {
+        "name": "청정수 투척",
+        "desc": "공격력의 ${1}로 공격합니다. 이 공격은 방어 관통이 +${2} 증가합니다.",
+        "format": [
+            {
+                "base": 1.3,
+                "per_star": 0.1
+            },
+            {
+                "base": 5,
+                "per_star": 3,
+                "type": "flat"
+            }
+        ],
+        "mp_cost": 37,
+        "cooltime": 14000
+    }
+]

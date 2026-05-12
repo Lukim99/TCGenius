@@ -1,0 +1,199 @@
+{
+    "일반": [
+        {
+            "type": "아이템",
+            "item_id": 6,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 50
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 7,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 250
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 8,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 500
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 9,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 50
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 10,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 250
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 15,
+            "count": 1,
+            "price": {
+                "goods": "gold",
+                "amount": 500
+            }
+        }
+    ],
+    "포인트": [
+        {
+            "type": "가넷",
+            "count": 400,
+            "price": {
+                "goods": "point",
+                "amount": 1400
+            }
+        },
+        {
+            "type": "가넷",
+            "count": 1000,
+            "price": {
+                "goods": "point",
+                "amount": 3400
+            }
+        },
+        {
+            "type": "가넷",
+            "count": 2000,
+            "price": {
+                "goods": "point",
+                "amount": 6700
+            }
+        },
+        {
+            "type": "가넷",
+            "count": 4000,
+            "price": {
+                "goods": "point",
+                "amount": 13100
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 1,
+            "count": 1,
+            "price": {
+                "goods": "point",
+                "amount": 50
+            }
+        }
+    ],
+    "가넷": [
+        {
+            "type": "골드",
+            "count": 15000,
+            "price": {
+                "goods": "garnet",
+                "amount": 100
+            }
+        },
+        {
+            "type": "골드",
+            "count": 90000,
+            "price": {
+                "goods": "garnet",
+                "amount": 500
+            }
+        },
+        {
+            "type": "골드",
+            "count": 200000,
+            "price": {
+                "goods": "garnet",
+                "amount": 1000
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 2,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 150
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 3,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 420
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 4,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 1490
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 14,
+            "count": 3,
+            "price": {
+                "goods": "garnet",
+                "amount": 90
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 14,
+            "count": 8,
+            "price": {
+                "goods": "garnet",
+                "amount": 200
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 14,
+            "count": 50,
+            "price": {
+                "goods": "garnet",
+                "amount": 900
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 14,
+            "count": 100,
+            "price": {
+                "goods": "garnet",
+                "amount": 1650
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 17,
+            "count": 1,
+            "price": {
+                "goods": "garnet",
+                "amount": 5
+            }
+        }
+    ]
+}

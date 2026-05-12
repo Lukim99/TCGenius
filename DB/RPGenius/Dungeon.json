@@ -1,0 +1,362 @@
+[
+    {
+        "name": "아실리아 숲",
+        "requireLevel": 1,
+        "reward": {
+            "exp": 5,
+            "gold": {
+                "min": 4,
+                "max": 6
+            }
+        },
+        "atk": 10,
+        "pnt": 0,
+        "def": 0,
+        "hp": 15
+    },
+    {
+        "name": "루멘 동굴",
+        "requireLevel": 6,
+        "reward": {
+            "exp": 12,
+            "gold": {
+                "min": 6,
+                "max": 9
+            }
+        },
+        "atk": 20,
+        "pnt": 0,
+        "def": 2,
+        "hp": 25
+    },
+    {
+        "name": "칼록 협곡",
+        "requireLevel": 11,
+        "reward": {
+            "exp": 25,
+            "gold": {
+                "min": 9,
+                "max": 14
+            }
+        },
+        "atk": 35,
+        "pnt": 1,
+        "def": 5,
+        "hp": 40
+    },
+    {
+        "name": "베르마딘 폐광",
+        "requireLevel": 16,
+        "reward": {
+            "exp": 45,
+            "gold": {
+                "min": 14,
+                "max": 21
+            }
+        },
+        "atk": 50,
+        "pnt": 2,
+        "def": 8,
+        "hp": 60
+    },
+    {
+        "name": "세르피엔 숲",
+        "requireLevel": 21,
+        "reward": {
+            "exp": 70,
+            "gold": {
+                "min": 20,
+                "max": 30
+            }
+        },
+        "atk": 70,
+        "pnt": 3,
+        "def": 12,
+        "hp": 85
+    },
+    {
+        "name": "크라우갈 성",
+        "requireLevel": 26,
+        "reward": {
+            "exp": 100,
+            "gold": {
+                "min": 28,
+                "max": 42
+            }
+        },
+        "atk": 90,
+        "pnt": 5,
+        "def": 16,
+        "hp": 115
+    },
+    {
+        "name": "프레이엘 설산",
+        "requireLevel": 31,
+        "reward": {
+            "exp": 140,
+            "gold": {
+                "min": 36,
+                "max": 54
+            }
+        },
+        "atk": 120,
+        "pnt": 8,
+        "def": 20,
+        "hp": 150
+    },
+    {
+        "name": "모르바스 늪",
+        "requireLevel": 36,
+        "reward": {
+            "exp": 190,
+            "gold": {
+                "min": 46,
+                "max": 69
+            }
+        },
+        "atk": 150,
+        "pnt": 10,
+        "def": 25,
+        "hp": 190
+    },
+    {
+        "name": "샤크타르 유적",
+        "requireLevel": 41,
+        "reward": {
+            "exp": 250,
+            "gold": {
+                "min": 57,
+                "max": 86
+            }
+        },
+        "atk": 190,
+        "pnt": 12,
+        "def": 30,
+        "hp": 240
+    },
+    {
+        "name": "라일루스 미궁",
+        "requireLevel": 46,
+        "reward": {
+            "exp": 330,
+            "gold": {
+                "min": 72,
+                "max": 108
+            }
+        },
+        "atk": 230,
+        "pnt": 15,
+        "def": 35,
+        "hp": 300
+    },
+    {
+        "name": "이그나토 화산 지대",
+        "requireLevel": 51,
+        "reward": {
+            "exp": 420,
+            "gold": {
+                "min": 88,
+                "max": 132
+            }
+        },
+        "atk": 280,
+        "pnt": 18,
+        "def": 42,
+        "hp": 370
+    },
+    {
+        "name": "제피렌 고원",
+        "requireLevel": 56,
+        "reward": {
+            "exp": 530,
+            "gold": {
+                "min": 108,
+                "max": 162
+            }
+        },
+        "atk": 340,
+        "pnt": 22,
+        "def": 50,
+        "hp": 450
+    },
+    {
+        "name": "알브리엔 숲",
+        "requireLevel": 61,
+        "reward": {
+            "exp": 660,
+            "gold": {
+                "min": 128,
+                "max": 192
+            }
+        },
+        "atk": 410,
+        "pnt": 26,
+        "def": 60,
+        "hp": 540
+    },
+    {
+        "name": "나크티스 신전",
+        "requireLevel": 66,
+        "reward": {
+            "exp": 810,
+            "gold": {
+                "min": 152,
+                "max": 228
+            }
+        },
+        "atk": 490,
+        "pnt": 30,
+        "def": 70,
+        "hp": 640
+    },
+    {
+        "name": "아에테르나 하늘섬",
+        "requireLevel": 71,
+        "reward": {
+            "exp": 1000,
+            "gold": {
+                "min": 176,
+                "max": 264
+            }
+        },
+        "atk": 580,
+        "pnt": 35,
+        "def": 80,
+        "hp": 750
+    },
+    {
+        "name": "크림슨바이스",
+        "requireLevel": 76,
+        "reward": {
+            "exp": 1220,
+            "gold": {
+                "min": 208,
+                "max": 312
+            }
+        },
+        "atk": 680,
+        "pnt": 40,
+        "def": 90,
+        "hp": 880
+    },
+    {
+        "name": "크로아",
+        "requireLevel": 81,
+        "reward": {
+            "exp": 1480,
+            "gold": {
+                "min": 240,
+                "max": 360
+            }
+        },
+        "atk": 790,
+        "pnt": 45,
+        "def": 100,
+        "hp": 1020
+    },
+    {
+        "name": "레타지아",
+        "requireLevel": 86,
+        "reward": {
+            "exp": 1780,
+            "gold": {
+                "min": 280,
+                "max": 420
+            }
+        },
+        "atk": 910,
+        "pnt": 50,
+        "def": 110,
+        "hp": 1180
+    },
+    {
+        "name": "아바돈",
+        "requireLevel": 91,
+        "reward": {
+            "exp": 2150,
+            "gold": {
+                "min": 320,
+                "max": 480
+            }
+        },
+        "atk": 1040,
+        "pnt": 55,
+        "def": 125,
+        "hp": 1350
+    },
+    {
+        "name": "알카이오스",
+        "requireLevel": 96,
+        "reward": {
+            "exp": 2600,
+            "gold": {
+                "min": 368,
+                "max": 552
+            }
+        },
+        "atk": 1180,
+        "pnt": 60,
+        "def": 140,
+        "hp": 1550
+    },
+    {
+        "name": "바벨론",
+        "requireLevel": 101,
+        "reward": {
+            "exp": 3150,
+            "gold": {
+                "min": 416,
+                "max": 624
+            }
+        },
+        "atk": 1330,
+        "pnt": 66,
+        "def": 155,
+        "hp": 1780
+    },
+    {
+        "name": "에테르카",
+        "requireLevel": 106,
+        "reward": {
+            "exp": 3800,
+            "gold": {
+                "min": 480,
+                "max": 720
+            }
+        },
+        "atk": 1500,
+        "pnt": 72,
+        "def": 170,
+        "hp": 2050
+    },
+    {
+        "name": "네오플럭스",
+        "requireLevel": 111,
+        "reward": {
+            "exp": 4600,
+            "gold": {
+                "min": 544,
+                "max": 816
+            }
+        },
+        "atk": 1680,
+        "pnt": 80,
+        "def": 190,
+        "hp": 2350
+    },
+    {
+        "name": "기간티아",
+        "requireLevel": 116,
+        "reward": {
+            "exp": 5600,
+            "gold": {
+                "min": 624,
+                "max": 936
+            }
+        },
+        "atk": 1880,
+        "pnt": 90,
+        "def": 210,
+        "hp": 2700
+    }
+]

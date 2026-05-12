@@ -1,0 +1,276 @@
+{
+    "weapon": [
+        {
+            "name": "초보자용 검",
+            "desc": "약하지만 가볍고 다루기 쉽다.",
+            "rarity": "일반",
+            "stat": { "atk": 3 },
+            "plusStat": { "atk": 0.01 },
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 5, "pnt": 3, "crit": 0.05 }, "plusStat": { "atk": 0.03 } }
+            ]
+        },
+        {
+            "name": "날카로운 검",
+            "desc": "꽤나 날카로워서 조심해야 할 것 같다.",
+            "rarity": "일반",
+            "stat": { "atk": 8, "crit": 0.02 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 4 } },
+                { "stat": { "atk": 5 } },
+                { "stat": { "atk": 5, "crit": 0.01 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 8 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 10, "crit": 0.02 } },
+                { "stat": { "atk": 12 } },
+                { "stat": { "atk": 14 } },
+                { "stat": { "atk": 14 } },
+                { "stat": { "atk": 20 } },
+                { "stat": { "atk": 20, "pnt": 10, "crit": 0.05 }, "plusStat": { "atk": 0.03 } }
+            ]
+        },
+        {
+            "name": "무식한 대검",
+            "desc": "특출난 건 없지만 매우 강하다.",
+            "rarity": "레어",
+            "stat": { "atk": 21 },
+            "plusStat": { "atk": 0.03 },
+            "upgrade": [
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 4 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 8 } },
+                { "stat": { "atk": 8 }, "plusStat": { "atk": 0.02 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 12 } },
+                { "stat": { "atk": 13 } },
+                { "stat": { "atk": 15 } },
+                { "stat": { "atk": 20 }, "plusStat": { "atk": 0.03 } },
+                { "stat": { "atk": 25 } },
+                { "stat": { "atk": 28 } },
+                { "stat": { "atk": 30 } },
+                { "stat": { "atk": 37 } },
+                { "stat": { "atk": 60, "pnt": 28 }, "plusStat": { "atk": 0.07 } }
+            ]
+        },
+        {
+            "name": "여명의 아이온",
+            "desc": "어둠을 찢고 첫 햇살을 가져오는 영원의 창이다.",
+            "rarity": "유니크",
+            "stat": { "atk": 73, "pnt": 11, "crit": 0.05 },
+            "plusStat": { "atk": 0.1 },
+            "upgrade": [
+                { "stat": { "atk": 7, "pnt": 1 } },
+                { "stat": { "atk": 10, "pnt": 2 } },
+                { "stat": { "atk": 15, "pnt": 2 } },
+                { "stat": { "atk": 17, "pnt": 3 } },
+                { "stat": { "atk": 23, "pnt": 3, "crit": 0.03 } },
+                { "stat": { "atk": 25, "pnt": 4 } },
+                { "stat": { "atk": 30, "pnt": 4 } },
+                { "stat": { "atk": 38, "pnt": 5 } },
+                { "stat": { "atk": 47, "pnt": 6 } },
+                { "stat": { "atk": 56, "pnt": 7, "crit": 0.05 } },
+                { "stat": { "atk": 70, "pnt": 8 } },
+                { "stat": { "atk": 89, "pnt": 8 } },
+                { "stat": { "atk": 113, "pnt": 9 } },
+                { "stat": { "atk": 152, "pnt": 9 } },
+                { "stat": { "atk": 235, "pnt": 18, "crit": 0.07 }, "plusStat": { "atk": 0.1 } }
+            ]
+        },
+        {
+            "name": "마검 파네스",
+            "desc": "우주가 처음 탄생하던 순간의 빛과 열기를 고스란히 벼려낸, 빛의 근원이 되는 검이다.",
+            "rarity": "레전더리",
+            "stat": { "atk": 184, "pnt": 32, "crit": 0.1, "critMul": 0.05 },
+            "plusStat": { "atk": 0.15 },
+            "upgrade": [
+                { "stat": { "atk": 13, "pnt": 2 } },
+                { "stat": { "atk": 18, "pnt": 4 } },
+                { "stat": { "atk": 27, "pnt": 4 } },
+                { "stat": { "atk": 31, "pnt": 5 } },
+                { "stat": { "atk": 41, "pnt": 5, "crit": 0.02, "critMul": 0.05 } },
+                { "stat": { "atk": 45, "pnt": 7 } },
+                { "stat": { "atk": 54, "pnt": 7 } },
+                { "stat": { "atk": 68, "pnt": 9 } },
+                { "stat": { "atk": 85, "pnt": 11 } },
+                { "stat": { "atk": 101, "pnt": 13, "crit": 0.03, "critMul": 0.1 }, "plusStat": { "atk": 0.05 } },
+                { "stat": { "atk": 126, "pnt": 14 } },
+                { "stat": { "atk": 160, "pnt": 14 } },
+                { "stat": { "atk": 203, "pnt": 16 } },
+                { "stat": { "atk": 274, "pnt": 16 } },
+                { "stat": { "atk": 423, "pnt": 32, "crit": 0.05, "critMul": 0.2 }, "plusStat": { "atk": 0.1 } }
+            ]
+        }
+    ],
+    "armor": [
+        {
+            "name": "초보자용 가죽 갑옷",
+            "desc": "든든한 가죽 갑옷이다.",
+            "rarity": "일반",
+            "stat": { "def": 3 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "def": 1 } },
+                { "stat": { "def": 1 } },
+                { "stat": { "def": 1 } },
+                { "stat": { "def": 1 } },
+                { "stat": { "def": 2 } },
+                { "stat": { "def": 2 } },
+                { "stat": { "def": 2 } },
+                { "stat": { "def": 2 } },
+                { "stat": { "def": 2 } },
+                { "stat": { "def": 3, "hp": 50 } },
+                { "stat": { "def": 4 } },
+                { "stat": { "def": 5 } },
+                { "stat": { "def": 6 } },
+                { "stat": { "def": 7 } },
+                { "stat": { "def": 8, "hp": 350 } }
+            ]
+        },
+        {
+            "name": "사슬 갑옷",
+            "desc": "사슬을 엮어 만든 갑옷이다.",
+            "rarity": "일반",
+            "stat": { "def": 2, "hp": 30 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "def": 1, "hp": 10 } },
+                { "stat": { "def": 1, "hp": 11 } },
+                { "stat": { "def": 1, "hp": 12 } },
+                { "stat": { "def": 1, "hp": 13 } },
+                { "stat": { "def": 2, "hp": 24 } },
+                { "stat": { "def": 2, "hp": 25 } },
+                { "stat": { "def": 2, "hp": 26 } },
+                { "stat": { "def": 2, "hp": 27 } },
+                { "stat": { "def": 2, "hp": 28 } },
+                { "stat": { "def": 3, "hp": 30 } },
+                { "stat": { "def": 4, "hp": 45 } },
+                { "stat": { "def": 5, "hp": 59 } },
+                { "stat": { "def": 6, "hp": 60 } },
+                { "stat": { "def": 7, "hp": 70 } },
+                { "stat": { "def": 8, "hp": 188 } }
+            ]
+        },
+        {
+            "name": "흑철 판금 갑옷",
+            "desc": "흑철로 만든 단단한 갑옷이다.",
+            "rarity": "레어",
+            "stat": { "def": 23, "hp": 112 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "def": 2, "hp": 25 } },
+                { "stat": { "def": 2, "hp": 30 } },
+                { "stat": { "def": 3, "hp": 35 } },
+                { "stat": { "def": 3, "hp": 40 } },
+                { "stat": { "def": 4, "hp": 50 } },
+                { "stat": { "def": 4, "hp": 55 } },
+                { "stat": { "def": 4, "hp": 60 } },
+                { "stat": { "def": 5, "hp": 70 } },
+                { "stat": { "def": 5, "hp": 80 } },
+                { "stat": { "def": 6, "hp": 95 } },
+                { "stat": { "def": 7, "hp": 110 } },
+                { "stat": { "def": 8, "hp": 130 } },
+                { "stat": { "def": 9, "hp": 150 } },
+                { "stat": { "def": 11, "hp": 180 } },
+                { "stat": { "def": 15, "hp": 290 } }
+            ]
+        },
+        {
+            "name": "화룡의 비늘 갑주",
+            "desc": "화룡의 비늘로 만들어진, 타오르는 듯한 갑주이다.",
+            "rarity": "유니크",
+            "stat": { "def": 57, "hp": 658 },
+            "plusStat": { "hp": 0.05 },
+            "upgrade": [
+                { "stat": { "def": 4, "hp": 45 } },
+                { "stat": { "def": 4, "hp": 55 } },
+                { "stat": { "def": 5, "hp": 65 } },
+                { "stat": { "def": 6, "hp": 80 } },
+                { "stat": { "def": 7, "hp": 95 }, "plusStat": { "hp": 0.02 } },
+                { "stat": { "def": 8, "hp": 110 } },
+                { "stat": { "def": 9, "hp": 130 } },
+                { "stat": { "def": 10, "hp": 150 } },
+                { "stat": { "def": 11, "hp": 175 } },
+                { "stat": { "def": 13, "hp": 210 }, "plusStat": { "hp": 0.03 } },
+                { "stat": { "def": 15, "hp": 250 } },
+                { "stat": { "def": 17, "hp": 300 } },
+                { "stat": { "def": 20, "hp": 387 } },
+                { "stat": { "def": 24, "hp": 546 } },
+                { "stat": { "def": 30, "hp": 834 }, "plusStat": { "hp": 0.05 } }
+            ]
+        },
+        {
+            "name": "아이기스의 가호",
+            "desc": "어떠한 공격도 막아내는 신의 방패이자 갑옷이다.",
+            "rarity": "레전더리",
+            "stat": { "def": 152, "hp": 1209 },
+            "plusStat": { "hp": 0.1 },
+            "upgrade": [
+                { "stat": { "def": 8, "hp": 140 } },
+                { "stat": { "def": 9, "hp": 170 } },
+                { "stat": { "def": 10, "hp": 200 } },
+                { "stat": { "def": 12, "hp": 240 } },
+                { "stat": { "def": 15, "hp": 290 }, "plusStat": { "hp": 0.04 } },
+                { "stat": { "def": 17, "hp": 350 } },
+                { "stat": { "def": 19, "hp": 420 } },
+                { "stat": { "def": 22, "hp": 500 } },
+                { "stat": { "def": 27, "hp": 600 } },
+                { "stat": { "def": 32, "hp": 720 }, "plusStat": { "hp": 0.06 } },
+                { "stat": { "def": 38, "hp": 860 } },
+                { "stat": { "def": 46, "hp": 1040 } },
+                { "stat": { "def": 56, "hp": 1260 } },
+                { "stat": { "def": 68, "hp": 1520 } },
+                { "stat": { "def": 93, "hp": 1695 }, "plusStat": { "hp": 0.1 } }
+            ]
+        }
+    ],
+    "accessory": [
+        {
+            "name": "방랑자의 팔찌",
+            "desc": "힘이 솟아오르게 하는 팔찌.",
+            "rarity": "일반",
+            "stat": { "hp": 30 },
+            "plusStat": { "atk": 0.05 }
+        },
+        {
+            "name": "방랑자의 반지",
+            "desc": "힘이 솟아오르게 하는 반지.", 
+            "rarity": "일반",
+            "stat": { "crit": 0.03 },
+            "plusStat": { "atk": 0.05 }
+        },
+        {
+            "name": "방랑자의 목걸이",
+            "desc": "힘이 솟아오르게 하는 목걸이.",
+            "rarity": "일반",
+            "stat": { "mp": 72 },
+            "plusStat": { "atk": 0.05 }
+        },
+        {
+            "name": "활력의 펜던트",
+            "desc": "활력을 돋구는 신비한 힘이 깃든 펜던트.",
+            "rarity": "레어",
+            "stat": { "hp": 350 },
+            "plusStat": { "hp": 0.05 }
+        }
+    ]
+}

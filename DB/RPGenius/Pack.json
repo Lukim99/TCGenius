@@ -1,0 +1,31 @@
+[
+    [
+        { "type": "아이템", "item_id": 0, "count": { "min": 100, "max": 500 }, "roll": 0.12 },
+        { "type": "아이템", "item_id": 0, "count": { "min": 300, "max": 1000 }, "roll": 0.1 },
+        { "type": "아이템", "item_id": 0, "count": { "min": 750, "max": 2000 }, "roll": 0.08 },
+        { "type": "아이템", "item_id": 6, "count": { "min": 1, "max": 4 }, "roll": 0.12 },
+        { "type": "아이템", "item_id": 9, "count": { "min": 1, "max": 4 }, "roll": 0.12 },
+        { "type": "아이템", "item_id": 6, "count": { "min": 4, "max": 8 }, "roll": 0.07 },
+        { "type": "아이템", "item_id": 9, "count": { "min": 4, "max": 8 }, "roll": 0.07 },
+        { "type": "아이템", "item_id": 15, "count": { "min": 1, "max": 2 }, "roll": 0.06 },
+        { "type": "아이템", "item_id": 7, "count": { "min": 1, "max": 3 }, "roll": 0.05 },
+        { "type": "아이템", "item_id": 10, "count": { "min": 1, "max": 3 }, "roll": 0.05 },
+        { "type": "아이템", "item_id": 8, "count": { "min": 1, "max": 2 }, "roll": 0.04 },
+        { "type": "아이템", "item_id": 11, "count": { "min": 1, "max": 1 }, "roll": 0.03 },
+        { "type": "아이템", "item_id": 7, "count": { "min": 3, "max": 7 }, "roll": 0.025 },
+        { "type": "아이템", "item_id": 10, "count": { "min": 3, "max": 7 }, "roll": 0.025 },
+        { "type": "아이템", "item_id": 12, "count": { "min": 1, "max": 1 }, "roll": 0.02 },
+        { "type": "아이템", "item_id": 1, "count": { "min": 1, "max": 1 }, "roll": 0.01 },
+        { "type": "아이템", "item_id": 11, "count": { "min": 2, "max": 3 }, "roll": 0.0085 },
+        { "type": "아이템", "item_id": 13, "count": { "min": 1, "max": 1 }, "roll": 0.005 },
+        { "type": "아이템", "item_id": 2, "count": { "min": 1, "max": 2 }, "roll": 0.005 },
+        { "type": "아이템", "item_id": 3, "count": { "min": 1, "max": 1 }, "roll": 0.001 },
+        { "type": "아이템", "item_id": 4, "count": { "min": 1, "max": 1 }, "roll": 0.0004 },
+        { "type": "아이템", "item_id": 5, "count": { "min": 1, "max": 1 }, "roll": 0.00009 },
+        { "type": "아이템", "item_id": 16, "count": { "min": 1, "max": 1 }, "roll": 0.00001 }
+    ],
+    [
+        { "type": "무기", "weapon_id": 3, "roll": 0.5 },
+        { "type": "갑옷", "armor_id": 3, "roll": 0.5 }
+    ]
+]
