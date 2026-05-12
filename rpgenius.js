@@ -132,7 +132,7 @@ function formatCount(count) {
 function formatStatValue(key, value) {
     const number = Number(value || 0);
     const sign = number > 0 ? '+' : '';
-    if (['crit', 'critMul', 'atk%', 'def%', 'hp%'].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
+    if (['crit', 'critMul', 'atk%', 'def%', 'hp%', 'mp%'].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
 
@@ -197,13 +197,15 @@ function formatEquipmentStatLines(equipment) {
         pnt: '방어 관통력',
         def: '방어력',
         hp: '체력',
+        mp: 'MP',
         crit: '치명타 확률',
         critMul: '치명타 피해량'
     };
     const plusStatNames = {
         atk: '최종 공격력',
         def: '최종 방어력',
-        hp: '최종 체력'
+        hp: '최종 체력',
+        mp: '최종 MP'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -266,6 +268,13 @@ function getEquipmentStatsAtLevel(equipment, level) {
     const stats = Object.assign({}, equipment && equipment.stat || {});
     const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
     for (let i = 0; i < max; i++) addStats(stats, equipment.upgrade[i].stat || {});
+    return stats;
+}
+
+function getEquipmentPlusStatsAtLevel(equipment, level) {
+    const stats = Object.assign({}, equipment && equipment.plusStat || {});
+    const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
+    for (let i = 0; i < max; i++) addStats(stats, equipment.upgrade[i].plusStat || {});
     return stats;
 }
 
@@ -523,15 +532,25 @@ function getMaxExpForLevel(level) {
 
 function calculateUserStats(user) {
     const stats = getBaseStat(user.main_card);
+    const plusStats = {};
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
-        if (data) addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
+        if (data) {
+            addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
+            addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
+        }
     });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
         const equip = accessories[key];
         const data = equip && getEquipmentData('accessory', equip.id);
-        if (data) addStats(stats, getEquipmentStatsAtLevel(data, equip.level));
+        if (data) {
+            addStats(stats, getEquipmentStatsAtLevel(data, equip.level));
+            addStats(plusStats, getEquipmentPlusStatsAtLevel(data, equip.level));
+        }
+    });
+    ['atk', 'def', 'hp', 'mp'].forEach(key => {
+        if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
@@ -711,6 +730,12 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         lines.push('', '[ 보상 ]');
         lines.push('- XP ' + comma(expReward));
         lines.push('- 🪙 ' + comma(goldReward));
+        let stoneDropCount = 0;
+        for (let i = 0; i < killCount; i++) if (Math.random() < 0.9) stoneDropCount++;
+        if (stoneDropCount > 0) {
+            addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
+            lines.push('- 강화석 x' + comma(stoneDropCount));
+        }
         if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     }
 
@@ -739,7 +764,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     const passiveMp = getPassiveMpRecovery(user);
-    if (passiveMp > 0) {
+    if (killCount > 0 && passiveMp > 0) {
         const beforeMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
         user.mp = Math.min(Number(stats.mp || 0), beforeMp + passiveMp);
         if (user.mp - beforeMp > 0) lines.push('- MP +' + comma(user.mp - beforeMp));
@@ -1145,10 +1170,7 @@ function getEquipmentByNumber(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return null;
     const all = getAllUserEquipments(user);
-    const ordered = ['weapon', 'armor', 'accessory'];
-    return all
-        .map((entry, index) => Object.assign({ rawNumber: index + 1 }, entry))
-        .sort((a, b) => ordered.indexOf(a.equip.type || a.type) - ordered.indexOf(b.equip.type || b.type) || a.rawNumber - b.rawNumber)[number - 1] || null;
+    return all[number - 1] || null;
 }
 
 function getEquipmentUpgradeCost(equipment, type, level) {
@@ -1195,7 +1217,7 @@ function formatEquipmentUpgradePreview(user, numberArg) {
     const nextLevel = level + 1;
     const currentStats = getEquipmentStatsAtLevel(equipment, level);
     const nextStats = getEquipmentStatsAtLevel(equipment, nextLevel);
-    const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', crit: '치명타 확률', critMul: '치명타 피해량' };
+    const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', crit: '치명타 확률', critMul: '치명타 피해량' };
     const rates = EQUIPMENT_UPGRADE_RATES[level];
     const cost = getEquipmentUpgradeCost(equipment, type, level);
     const hasUpgrader = getInventoryItemCount(user, EQUIPMENT_UPGRADER_ITEM_ID) > 0;
