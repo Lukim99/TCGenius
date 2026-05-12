@@ -652,7 +652,7 @@ async function sendUserMainCardImage(channel, user) {
     const mainCard = user.main_card;
     const card = mainCard && characterCards[mainCard.id];
     if (!card) return;
-    const star = String(Number(mainCard.star || 0)).padStart(2, '0');
+    const star = String(Number(mainCard.star || 0) + 1).padStart(2, '0');
     const fileName = star + ' ' + card.name + '.png';
     const filePath = path.join(CARD_IMAGE_PATH, card.name, fileName);
     if (!fs.existsSync(filePath)) return;
