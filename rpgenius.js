@@ -446,6 +446,75 @@ function runCardCombine(user) {
     return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
 }
 
+function parseCardStarArg(starArg) {
+    const starText = String(starArg || '').trim();
+    const star = starText == '제타' ? 9 : starText == '시그마' ? 10 : starText == '오메가' ? 11 : Number(starText.replace(/성$/, '')) - 1;
+    return Number.isInteger(star) && star >= 0 ? star : null;
+}
+
+function getCardSalePrice(card) {
+    const info = getCardCombineInfo(Number(card && card.star || 0));
+    return info ? Math.floor(Number(info.gold || 0) / 2) : 0;
+}
+
+function getCardSaleSelection(user, numberArgs) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Array.isArray(numberArgs) || numberArgs.length == 0) return { error: '❌ /RPGenius 카드판매 [카드번호1] [카드번호2] [카드번호3] ...' };
+    const numbers = numberArgs.map(arg => Number(arg));
+    if (numbers.some(number => !Number.isInteger(number) || number < 1 || number > cards.length)) return { error: '❌ 존재하지 않는 카드 번호가 있습니다.' };
+    if (new Set(numbers).size != numbers.length) return { error: '❌ 같은 카드를 중복 선택할 수 없습니다.' };
+    const selected = numbers.map(number => cards[number - 1]);
+    const gold = selected.reduce((sum, card) => sum + getCardSalePrice(card), 0);
+    if (gold <= 0) return { error: '❌ 판매할 수 없는 등급의 카드가 포함되어 있습니다.' };
+    return { numbers, selected, gold };
+}
+
+function getRandomCardSaleNumbers(user, starArg, countArg) {
+    const star = parseCardStarArg(starArg);
+    if (star == null) return { error: '❌ /RPGenius 카드일괄판매 [등급] <갯수>' };
+    if (!getCardCombineInfo(star)) return { error: '❌ 해당 등급은 판매할 수 없습니다.' };
+    const count = countArg == null || countArg === '' ? null : Number(countArg);
+    if (count != null && (!Number.isInteger(count) || count < 1)) return { error: '❌ 갯수는 1 이상의 정수여야 합니다.' };
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const numbers = cards
+        .map((card, index) => ({ card, number: index + 1 }))
+        .filter(entry => Number(entry.card.star || 0) == star)
+        .map(entry => entry.number);
+    if (numbers.length == 0) return { error: '❌ 해당 등급의 카드가 없습니다.' };
+    for (let i = numbers.length - 1; i > 0; i--) {
+        const j = randomInt(0, i);
+        const temp = numbers[i];
+        numbers[i] = numbers[j];
+        numbers[j] = temp;
+    }
+    return { numbers: numbers.slice(0, count == null ? numbers.length : Math.min(count, numbers.length)) };
+}
+
+function formatCardSalePreview(user, numberArgs) {
+    const selection = getCardSaleSelection(user, numberArgs);
+    if (selection.error) return selection.error;
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    user.pendingAction = { type: '카드판매', numbers: selection.numbers };
+    const lines = ['[ 카드 판매 ]'];
+    selection.selected.forEach(card => {
+        const data = characterCards[card.id];
+        lines.push('- [' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + (data ? data.name : '알 수 없음'));
+    });
+    lines.push('', '판매 시 획득:', '- 🪙 ' + comma(selection.gold), '', '정말 판매하시겠습니까?', '/RPGenius 판매');
+    return lines.join('\n');
+}
+
+function runCardSale(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '카드판매') return '❌ 진행 중인 카드판매가 없습니다.';
+    const selection = getCardSaleSelection(user, pending.numbers);
+    user.pendingAction = null;
+    if (selection.error) return selection.error;
+    selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
+    user.gold = Number(user.gold || 0) + selection.gold;
+    return '✅ 카드 ' + comma(selection.selected.length) + '장을 판매했습니다.\n[ 획득 결과 ]\n- 🪙 ' + comma(selection.gold);
+}
+
 function equipMainCharacterCard(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
@@ -1114,7 +1183,7 @@ function equipItemByNumber(user, numberArg) {
     if (target.type == 'accessory') {
         if (!user.equipments.accessory || typeof user.equipments.accessory != 'object') user.equipments.accessory = {};
         const accessories = user.equipments.accessory;
-        const maxSlot = 3;
+        const maxSlot = Number(user.maxAccessory || 1);
         let slotKey = null;
         for (let i = 0; i < maxSlot; i++) {
             const key = String(i);
@@ -1676,6 +1745,7 @@ class RPGUser {
         this.mileage = 0;
         this.pendingAction = null;
         this.maxCardLimit = 52;
+        this.maxAccessory = 1;
         this.mail = [];
         this.usedCoupons = [];
     }
@@ -1698,6 +1768,7 @@ class RPGUser {
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
+        if (!this.maxAccessory) this.maxAccessory = 1;
         return this;
     }
 
@@ -1926,6 +1997,19 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '카드판매') {
+        if (args[0] == '판매') {
+            const result = runCardSale(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 카드판매가 취소되었습니다.');
+        return true;
+    }
+
     const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
     if (adminResult !== null) {
         reply(adminResult);
@@ -2048,6 +2132,25 @@ async function onChat(data, channel) {
         }
         const selected = getRandomCardCombineNumbers(user, args[1]);
         const result = selected.error ? selected.error : formatCardCombinePreview(user, selected.numbers);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '카드판매') {
+        const result = formatCardSalePreview(user, args.slice(1));
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '카드일괄판매') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 카드일괄판매 [등급] <갯수>');
+            return true;
+        }
+        const selected = getRandomCardSaleNumbers(user, args[1], args[2]);
+        const result = selected.error ? selected.error : formatCardSalePreview(user, selected.numbers);
         await user.save();
         reply(result);
         return true;
