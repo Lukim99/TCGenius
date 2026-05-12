@@ -497,6 +497,18 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     }
 
+    if (killCount > 0) {
+        const dropChance = 0.03 + Number(slotEffects.itemDropChance || 0);
+        if (Math.random() < dropChance) {
+            const items = readJson(ITEMS_PATH, []);
+            const dropItemId = items.findIndex(item => item.name == '장비 상자');
+            if (dropItemId != -1) {
+                addInventoryItem(user, dropItemId, 1);
+                lines.push('- 🌟 ' + items[dropItemId].name + ' 획득!');
+            }
+        }
+    }
+
     if (killCount > 0 && slotEffects.killRecoveryChance > 0) {
         let recoveryCount = 0;
         for (let i = 0; i < killCount; i++) if (Math.random() < slotEffects.killRecoveryChance) recoveryCount++;
