@@ -14,6 +14,8 @@ const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
+const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
+const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['가챠', '소모품', '티켓', '재료'];
 
@@ -247,8 +249,21 @@ function addStats(target, stats) {
     });
 }
 
+function getBaseStat(card) {
+    const table = readJson(BASE_STAT_PATH, []);
+    const star = Number(card && card.star || 0);
+    const base = table[star] || table[0] || {};
+    return Object.assign({ atk: 0, pnt: 0, def: 0, hp: 0, mp: 0, crit: 0, critMul: 1.4 }, base);
+}
+
+function getMaxExpForLevel(level) {
+    const table = readJson(EXP_TABLE_PATH, []);
+    const value = table[Math.max(1, Number(level || 1)) - 1];
+    return typeof value == 'number' ? value : 0;
+}
+
 function calculateUserStats(user) {
-    const stats = { atk: 0, def: 0, pnt: 0, crit: 0, critMul: 1.4 };
+    const stats = getBaseStat(user.main_card);
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
         if (data) addStats(stats, data.stat);
@@ -265,14 +280,14 @@ function calculateUserStats(user) {
 function formatMyInfo(user) {
     const level = Number(user.level || 1);
     const exp = Number(user.exp || 0);
-    const maxExp = Number(user.max_exp || 100);
-    const maxHp = Number(user.max_hp || 200);
+    const maxExp = getMaxExpForLevel(level);
+    const stats = calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-    const maxMp = Number(user.max_mp || 200);
+    const maxMp = Number(stats.mp || 0);
     const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
     const cardSlots = user.card_slot || [];
     const maxCardSlot = Number(user.maxCardSlot || 5);
-    const stats = calculateUserStats(user);
 
     const lines = [
         '[ ' + user.name + '님의 정보 ]',
