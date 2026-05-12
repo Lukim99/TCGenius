@@ -51,9 +51,15 @@ function formatSkillDesc(skill) {
     });
 }
 
+function formatCooltime(ms) {
+    const seconds = Number(ms || 0) / 1000;
+    return Number.isInteger(seconds) ? seconds + '초' : seconds.toFixed(1).replace(/\.0$/, '') + '초';
+}
+
 function formatCharacterCardList() {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const skills = readJson(SKILLS_PATH, []);
+
     const lines = ['[ 캐릭터 카드 ]', VIEWMORE];
     characterCards.forEach(card => {
         lines.push('{ ' + card.name + ' }');
@@ -61,12 +67,14 @@ function formatCharacterCardList() {
         (card.skills || []).forEach(skillIndex => {
             const skill = skills[skillIndex];
             if (skill) {
-                lines.push('- 스킬: [ ' + skill.name + ' ]');
+                lines.push('- 스킬: [ ' + skill.name + ' ]  MP ' + Number(skill.mp_cost || 0));
                 formatSkillDesc(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
+                lines.push(' ㄴ 쿨타임: ' + formatCooltime(skill.cooltime));
             }
         });
         lines.push('');
     });
+
     lines.push('/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
     return lines.join('\n').trim();
 }
@@ -337,7 +345,7 @@ async function onChat(data, channel) {
         user.inventory.card.push(userCard);
         user.need_character_card_select = false;
         await user.save();
-        reply('✅ 캐릭터 카드 [ ' + characterCard.card.name + ' ]을 선택했습니다.');
+        reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name);
         return true;
     }
 
@@ -349,6 +357,7 @@ async function onChat(data, channel) {
 
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
+        reply(formatCharacterCardList());
         return true;
     }
 

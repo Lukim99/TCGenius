@@ -9,7 +9,7 @@
             }
         ],
         "mp_cost": 42,
-        "cooltime": 10000
+        "cooltime": 8000
     },
     {
         "name": "시벌론",
@@ -25,7 +25,7 @@
             }
         ],
         "mp_cost": 56,
-        "cooltime": 11500
+        "cooltime": 9500
     },
     {
         "name": "글버지",
@@ -37,7 +37,7 @@
             }
         ],
         "mp_cost": 77,
-        "cooltime": 13000
+        "cooltime": 9000
     },
     {
         "name": "불사조",
@@ -49,7 +49,7 @@
             }
         ],
         "mp_cost": 81,
-        "cooltime": 9500
+        "cooltime": 7500
     },
     {
         "name": "피아스트",
@@ -66,7 +66,7 @@
             }
         ],
         "mp_cost": 46,
-        "cooltime": 8000
+        "cooltime": 7000
     },
     {
         "name": "수업끝",
@@ -78,7 +78,7 @@
             }
         ],
         "mp_cost": 50,
-        "cooltime": 21000
+        "cooltime": 14000
     },
     {
         "name": "SUPER EASY",
@@ -94,7 +94,7 @@
             }
         ],
         "mp_cost": 44,
-        "cooltime": 12000
+        "cooltime": 10000
     },
     {
         "name": "백억이요",
@@ -110,7 +110,7 @@
             }
         ],
         "mp_cost": 77,
-        "cooltime": 9000
+        "cooltime": 7000
     },
     {
         "name": "건력",
@@ -122,7 +122,7 @@
             }
         ],
         "mp_cost": 77,
-        "cooltime": 30000
+        "cooltime": 18000
     },
     {
         "name": "청정수 투척",
@@ -139,6 +139,6 @@
             }
         ],
         "mp_cost": 37,
-        "cooltime": 14000
+        "cooltime": 11000
     }
 ]
