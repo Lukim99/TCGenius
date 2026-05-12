@@ -1195,7 +1195,7 @@ function removeInventoryItem(user, itemId, count) {
 
 const fishingTimers = {};
 const fishingChannels = {};
-const FISHING_BAIT_ITEM_ID = 35;
+const FISHING_BAIT_ITEM_ID = 37;
 const FISHING_REWARDS = [
     { id: 38, rate: 600 },
     { id: 39, rate: 250 },
