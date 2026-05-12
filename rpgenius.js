@@ -576,12 +576,6 @@ function convertCharacterCard(user, numberArg) {
     let newId = card.id;
     while (newId == card.id) newId = randomInt(0, characterCards.length - 1);
     card.id = newId;
-    if (user.main_card && user.main_card.id == before.id && user.main_card.star == before.star && user.main_card.type == before.type) user.main_card.id = newId;
-    if (Array.isArray(user.card_slot)) {
-        user.card_slot.forEach(slotCard => {
-            if (slotCard && slotCard.id == before.id && slotCard.star == before.star && slotCard.type == before.type) slotCard.id = newId;
-        });
-    }
     user.pendingAction = null;
     return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
 }
@@ -794,6 +788,21 @@ function addExperience(user, amount) {
     return levelUps;
 }
 
+function getLevelExpMultiplier(userLevel, requireLevel) {
+    const n = Number(userLevel || 1) - Number(requireLevel || 1);
+    if (n <= 1) return 1.2;
+    if (n <= 4) return 1.1;
+    if (n <= 9) return 1.05;
+    if (n == 10) return 1;
+    if (n <= 12) return 0.99;
+    if (n <= 14) return 0.98;
+    if (n <= 16) return 0.97;
+    if (n <= 18) return 0.96;
+    if (n <= 20) return 0.95;
+    if (n <= 39) return Math.max(0.71, 1.1 - n * 0.01);
+    return 0.7;
+}
+
 function investStatPoint(user, statArg, countArg) {
     normalizeStatPointData(user);
     const option = STAT_POINT_OPTIONS[String(statArg || '').trim()];
@@ -873,7 +882,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
     if (killCount > 0) {
-        let expReward = Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * (1 + slotEffects.expBonus));
+        const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
+        let expReward = Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelExpMultiplier * (1 + slotEffects.expBonus));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
         goldReward = Math.round(goldReward * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0)));
@@ -1181,6 +1191,170 @@ function removeInventoryItem(user, itemId, count) {
     item.count = Number(item.count || 0) - count;
     cleanupInventoryItems(user);
     return true;
+}
+
+const fishingTimers = {};
+const fishingChannels = {};
+const FISHING_BAIT_ITEM_ID = 35;
+const FISHING_REWARDS = [
+    { id: 38, rate: 600 },
+    { id: 39, rate: 250 },
+    { id: 40, rate: 90 },
+    { id: 0, rate: 30 },
+    { id: 15, rate: 15 },
+    { id: 18, rate: 10 },
+    { id: 19, rate: 4 },
+    { id: 20, rate: 1 }
+];
+
+function normalizeFishingData(user) {
+    if (!user.fishingNet || typeof user.fishingNet != 'object') user.fishingNet = {};
+    Object.keys(user.fishingNet).forEach(itemId => {
+        user.fishingNet[itemId] = Number(user.fishingNet[itemId] || 0);
+        if (user.fishingNet[itemId] <= 0) delete user.fishingNet[itemId];
+    });
+    if (!user.fishingNetLimit) user.fishingNetLimit = 200;
+    if (typeof user.fishing == 'undefined') user.fishing = false;
+}
+
+function getFishingNetCount(user) {
+    normalizeFishingData(user);
+    return Object.keys(user.fishingNet).reduce((sum, itemId) => sum + Number(user.fishingNet[itemId] || 0), 0);
+}
+
+function getRandomFishingRewardId() {
+    const roll = randomInt(1, 1000);
+    let acc = 0;
+    for (let i = 0; i < FISHING_REWARDS.length; i++) {
+        acc += FISHING_REWARDS[i].rate;
+        if (roll <= acc) return FISHING_REWARDS[i].id;
+    }
+    return FISHING_REWARDS[0].id;
+}
+
+function addFishingNetItem(user, itemId, count) {
+    normalizeFishingData(user);
+    user.fishingNet[itemId] = Number(user.fishingNet[itemId] || 0) + Number(count || 0);
+}
+
+function formatFishingNet(user) {
+    normalizeFishingData(user);
+    const items = readJson(ITEMS_PATH, []);
+    const current = getFishingNetCount(user);
+    const lines = ['🪣 ' + user.name + '님의 살림망 (' + comma(current) + '/' + comma(user.fishingNetLimit) + ')'];
+    Object.keys(user.fishingNet).forEach(itemId => {
+        const data = items[itemId];
+        const count = Number(user.fishingNet[itemId] || 0);
+        if (data && count > 0) lines.push('- ' + data.name + ' x' + comma(count));
+    });
+    if (lines.length == 1) lines.push('- 비어있음');
+    return lines.join('\n');
+}
+
+function clearFishingTimer(name) {
+    if (fishingTimers[name]) {
+        clearTimeout(fishingTimers[name]);
+        delete fishingTimers[name];
+    }
+}
+
+async function stopFishingByName(name, message) {
+    clearFishingTimer(name);
+    const user = await getRPGUserByName(name);
+    if (!user) return;
+    normalizeFishingData(user);
+    user.fishing = false;
+    await user.save();
+    const channel = fishingChannels[name];
+    delete fishingChannels[name];
+    if (channel && message) channel.sendChat(message(user));
+}
+
+function scheduleFishing(user, channel) {
+    clearFishingTimer(user.name);
+    fishingChannels[user.name] = channel;
+    fishingTimers[user.name] = setTimeout(async () => {
+        const latest = await getRPGUserByName(user.name);
+        if (!latest) {
+            clearFishingTimer(user.name);
+            delete fishingChannels[user.name];
+            return;
+        }
+        normalizeFishingData(latest);
+        if (!latest.fishing) {
+            clearFishingTimer(latest.name);
+            delete fishingChannels[latest.name];
+            return;
+        }
+        if (getFishingNetCount(latest) >= Number(latest.fishingNetLimit || 200)) {
+            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            return;
+        }
+        if (getInventoryItemCount(latest, FISHING_BAIT_ITEM_ID) < 1) {
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 떡밥이 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            return;
+        }
+        removeInventoryItem(latest, FISHING_BAIT_ITEM_ID, 1);
+        addFishingNetItem(latest, getRandomFishingRewardId(), 1);
+        await latest.save();
+        if (getFishingNetCount(latest) >= Number(latest.fishingNetLimit || 200)) {
+            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            return;
+        }
+        if (getInventoryItemCount(latest, FISHING_BAIT_ITEM_ID) < 1) {
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 떡밥이 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            return;
+        }
+        scheduleFishing(latest, channel);
+    }, randomInt(30000, 60000));
+}
+
+async function toggleFishing(user, channel) {
+    normalizeFishingData(user);
+    if (user.fishing) {
+        clearFishingTimer(user.name);
+        delete fishingChannels[user.name];
+        user.fishing = false;
+        await user.save();
+        return '✅ 낚시를 중단합니다.\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
+    }
+    if (getFishingNetCount(user) >= Number(user.fishingNetLimit || 200)) return '❌ 살림망이 가득 찼습니다.\n/RPGenius 살림망비우기';
+    if (getInventoryItemCount(user, FISHING_BAIT_ITEM_ID) < 1) return '❌ 일반 떡밥이 없습니다.';
+    user.fishing = true;
+    await user.save();
+    scheduleFishing(user, channel);
+    return '🎣 낚시를 시작합니다..\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
+}
+
+async function stopFishingForCommand(user) {
+    normalizeFishingData(user);
+    if (!user.fishing) return;
+    clearFishingTimer(user.name);
+    delete fishingChannels[user.name];
+    user.fishing = false;
+    await user.save();
+}
+
+async function clearFishingNet(user) {
+    normalizeFishingData(user);
+    const items = readJson(ITEMS_PATH, []);
+    const lines = ['✅ ' + user.name + '님이 살림망을 비웠습니다.', '[ 획득 결과 ]'];
+    let hasItem = false;
+    Object.keys(user.fishingNet).forEach(itemId => {
+        const count = Number(user.fishingNet[itemId] || 0);
+        if (count <= 0) return;
+        addInventoryItem(user, Number(itemId), count);
+        const data = items[itemId];
+        if (data) lines.push('- ' + data.name + ' x' + comma(count));
+        hasItem = true;
+    });
+    if (!hasItem) lines.push('- 없음');
+    user.fishingNet = {};
+    user.fishing = false;
+    clearFishingTimer(user.name);
+    delete fishingChannels[user.name];
+    await user.save();
+    return lines.join('\n');
 }
 
 async function handleAdminCommand(command, adminUser) {
@@ -1828,6 +2002,9 @@ class RPGUser {
         this.mileage = 0;
         this.statPoint = 0;
         this.statPointStats = { atk: 0, hp: 0, mp: 0, def: 0, pnt: 0 };
+        this.fishing = false;
+        this.fishingNet = {};
+        this.fishingNetLimit = 200;
         this.pendingAction = null;
         this.maxCardLimit = 52;
         this.maxAccessory = 1;
@@ -1851,6 +2028,7 @@ class RPGUser {
         if (typeof this.field == 'undefined') this.field = null;
         if (typeof this.mileage == 'undefined') this.mileage = 0;
         normalizeStatPointData(this);
+        normalizeFishingData(this);
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
@@ -2431,8 +2609,9 @@ async function onChat(data, channel) {
             const stats = calculateUserStats(user);
             user.hp = Number(stats.hp || 0);
             user.mp = Number(stats.mp || 0);
+            addInventoryItem(user, 41, 1);
             await user.save();
-            reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name);
+            reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name + '\n\n🎁 초보자 키트를 받았습니다!\n/RPGenius 사용 초보자 키트');
         }
         return true;
     }
@@ -2502,6 +2681,25 @@ async function onChat(data, channel) {
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
         reply(formatCharacterCardList());
+        return true;
+    }
+
+    if (args[0] == '낚시') {
+        const result = await toggleFishing(user, channel);
+        reply(result);
+        return true;
+    }
+
+    if (user.fishing) await stopFishingForCommand(user);
+
+    if (args[0] == '살림망') {
+        reply(formatFishingNet(user));
+        return true;
+    }
+
+    if (args[0] == '살림망비우기') {
+        const result = await clearFishingNet(user);
+        reply(result);
         return true;
     }
 
