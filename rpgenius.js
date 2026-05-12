@@ -433,12 +433,239 @@ function formatShop(shopType) {
 
 const GOODS_FIELD = { gold: 'gold', garnet: 'garnet', point: 'point' };
 
+function cleanupInventoryItems(user) {
+    if (user.inventory && Array.isArray(user.inventory.item)) {
+        user.inventory.item = user.inventory.item.filter(inv => Number(inv.count || 0) > 0);
+    }
+}
+
 function addInventoryItem(user, itemId, count) {
     if (!user.inventory) user.inventory = { card: [], item: [] };
     if (!Array.isArray(user.inventory.item)) user.inventory.item = [];
     const existing = user.inventory.item.find(inv => inv.id == itemId);
     if (existing) existing.count = Number(existing.count || 0) + count;
     else user.inventory.item.push({ id: itemId, count: count });
+    cleanupInventoryItems(user);
+}
+
+function getInventoryItemCount(user, itemId) {
+    if (!user.inventory || !Array.isArray(user.inventory.item)) return 0;
+    const item = user.inventory.item.find(inv => inv.id == itemId);
+    return item ? Number(item.count || 0) : 0;
+}
+
+function removeInventoryItem(user, itemId, count) {
+    if (!user.inventory || !Array.isArray(user.inventory.item)) return false;
+    const item = user.inventory.item.find(inv => inv.id == itemId);
+    if (!item || Number(item.count || 0) < count) return false;
+    item.count = Number(item.count || 0) - count;
+    cleanupInventoryItems(user);
+    return true;
+}
+
+async function handleAdminCommand(command, adminUser) {
+    const adminCommands = ['골드지급', '골드차감', '가넷지급', '가넷차감', '포인트지급', '포인트차감', '아이템지급', '아이템제거'];
+    if (!adminCommands.includes(command.args[0])) return null;
+    if (!adminUser.isAdmin) return '❌ 관리자 전용 명령어입니다.';
+
+    const targetName = command.args[1];
+    if (!targetName) return '❌ 대상 닉네임을 입력해주세요.';
+    const targetUser = await getRPGUserByName(targetName);
+    if (!targetUser) return '❌ 존재하지 않는 사용자입니다.';
+
+    if (['골드지급', '골드차감', '가넷지급', '가넷차감', '포인트지급', '포인트차감'].includes(command.args[0])) {
+        const amount = Number(command.args[2]);
+        if (!Number.isInteger(amount) || amount < 1) return '❌ 금액은 1 이상의 정수여야 합니다.';
+        const field = command.args[0].startsWith('골드') ? 'gold' : command.args[0].startsWith('가넷') ? 'garnet' : 'point';
+        const sign = command.args[0].endsWith('지급') ? 1 : -1;
+        targetUser[field] = Math.max(0, Number(targetUser[field] || 0) + amount * sign);
+        await targetUser.save();
+        const goodsName = field == 'gold' ? '골드' : field == 'garnet' ? '가넷' : '포인트';
+        return '✅ ' + targetUser.name + '님의 ' + goodsName + '를 ' + comma(amount) + (sign > 0 ? ' 지급' : ' 차감') + '했습니다.\n현재 보유: ' + comma(targetUser[field]);
+    }
+
+    const restText = command.raw.substr(command.prefixLength + 1 + command.args[0].length + 1 + targetName.length + 1).trim();
+    if (!restText) return '❌ /RPGenius ' + command.args[0] + ' [닉네임] [아이템] [갯수]';
+    const restArgs = restText.split(' ');
+    const countArg = restArgs.pop();
+    const count = Number(countArg);
+    if (!Number.isInteger(count) || count < 1 || restArgs.length == 0) return '❌ /RPGenius ' + command.args[0] + ' [닉네임] [아이템] [갯수]';
+    const itemName = restArgs.join(' ');
+    const items = readJson(ITEMS_PATH, []);
+    const itemId = items.findIndex(item => item.name == itemName);
+    if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
+
+    if (command.args[0] == '아이템지급') {
+        addInventoryItem(targetUser, itemId, count);
+    } else {
+        if (getInventoryItemCount(targetUser, itemId) < count) return '❌ 대상 사용자의 아이템 수량이 부족합니다.';
+        removeInventoryItem(targetUser, itemId, count);
+    }
+    cleanupInventoryItems(targetUser);
+    await targetUser.save();
+    return '✅ ' + targetUser.name + '님에게 ' + itemName + ' x' + comma(count) + (command.args[0] == '아이템지급' ? ' 지급' : ' 제거') + '했습니다.';
+}
+
+function addEquipmentInventory(user, type, id) {
+    if (!user.inventory) user.inventory = { card: [], item: [] };
+    if (!user.inventory.equipment) user.inventory.equipment = [];
+    user.inventory.equipment.push({ type: type, id: id, level: 0 });
+}
+
+function addRewardSummary(summary, key, label, count) {
+    if (!summary[key]) summary[key] = { label: label, count: 0 };
+    summary[key].count += count;
+}
+
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickPackEntry(pack) {
+    const roll = Math.random();
+    let current = 0;
+    for (const entry of pack) {
+        current += Number(entry.roll || 0);
+        if (roll <= current) return entry;
+    }
+    return pack[pack.length - 1];
+}
+
+function rollCount(count) {
+    if (!count) return 1;
+    if (typeof count == 'number') return count;
+    return randomInt(Number(count.min || 1), Number(count.max || 1));
+}
+
+function grantPackReward(user, reward, summary) {
+    const items = readJson(ITEMS_PATH, []);
+    const equipments = readJson(EQUIPMENT_PATH, {});
+    const count = rollCount(reward.count);
+    if (reward.type == '아이템') {
+        addInventoryItem(user, reward.item_id, count);
+        const item = items[reward.item_id];
+        addRewardSummary(summary, 'item:' + reward.item_id, (item ? item.name : '알 수 없는 아이템'), count);
+        return;
+    }
+    if (reward.type == '골드') {
+        user.gold = Number(user.gold || 0) + count;
+        addRewardSummary(summary, 'gold', '🪙 골드', count);
+        return;
+    }
+    if (reward.type == '가넷') {
+        user.garnet = Number(user.garnet || 0) + count;
+        addRewardSummary(summary, 'garnet', '💠 가넷', count);
+        return;
+    }
+    if (reward.type == '무기') {
+        addEquipmentInventory(user, 'weapon', reward.weapon_id);
+        const equipment = equipments.weapon && equipments.weapon[reward.weapon_id];
+        addRewardSummary(summary, 'weapon:' + reward.weapon_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 무기', 1);
+        return;
+    }
+    if (reward.type == '갑옷') {
+        addEquipmentInventory(user, 'armor', reward.armor_id);
+        const equipment = equipments.armor && equipments.armor[reward.armor_id];
+        addRewardSummary(summary, 'armor:' + reward.armor_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 갑옷', 1);
+    }
+}
+
+function grantCharacterCardPack(user, pack, useCount, summary) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const minStar = Number(pack.range && pack.range.min || 1);
+    const maxStar = Number(pack.range && pack.range.max || minStar);
+    for (let i = 0; i < useCount; i++) {
+        const id = randomInt(0, characterCards.length - 1);
+        const star = randomInt(minStar, maxStar) - 1;
+        const card = { id: id, star: star, type: '일반' };
+        user.inventory.card.push(card);
+        addRewardSummary(summary, 'card:' + id + ':' + star, '[' + formatStar(star) + '] 일반 ' + characterCards[id].name, 1);
+    }
+}
+
+function applyUseFunc(user, func, useCount, resultLines) {
+    const stats = calculateUserStats(user);
+    if (func.type == '체력회복') {
+        const maxHp = Number(stats.hp || 0);
+        const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+        const amount = Number(func.amount || 0) * useCount;
+        user.hp = Math.min(maxHp, before + amount);
+        resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+        return;
+    }
+    if (func.type == '마나회복') {
+        const maxMp = Number(stats.mp || 0);
+        const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+        const amount = Number(func.amount || 0) * useCount;
+        user.mp = Math.min(maxMp, before + amount);
+        resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+        return;
+    }
+    if (func.type == '체력회복%') {
+        const maxHp = Number(stats.hp || 0);
+        const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+        const amount = Math.round(maxHp * Number(func.amount || 0)) * useCount;
+        user.hp = Math.min(maxHp, before + amount);
+        resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+        return;
+    }
+    if (func.type == '마나회복%') {
+        const maxMp = Number(stats.mp || 0);
+        const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+        const amount = Math.round(maxMp * Number(func.amount || 0)) * useCount;
+        user.mp = Math.min(maxMp, before + amount);
+        resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+    }
+}
+
+async function useItem(user, itemName, countArg) {
+    const items = readJson(ITEMS_PATH, []);
+    const itemId = items.findIndex(item => item.name == itemName);
+    const item = items[itemId];
+    if (!item) return '❌ 존재하지 않는 아이템입니다.';
+    if (!['소모품', '가챠'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+
+    const useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
+    if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
+    if (getInventoryItemCount(user, itemId) < useCount) return '❌ 아이템이 부족합니다.';
+
+    const requirements = item.require || [];
+    for (const require of requirements) {
+        const requiredCount = Number(require.count || 0) * useCount;
+        if (getInventoryItemCount(user, require.id) < requiredCount) {
+            const requireItem = items[require.id];
+            return '❌ 필요한 아이템이 부족합니다: ' + (requireItem ? requireItem.name : '알 수 없는 아이템') + ' x' + comma(requiredCount);
+        }
+    }
+
+    removeInventoryItem(user, itemId, useCount);
+    requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
+
+    const lines = ['✅ ' + item.name + ' x' + comma(useCount) + ' 사용'];
+    if (item.type == '소모품') {
+        (item.use_func || []).forEach(func => applyUseFunc(user, func, useCount, lines));
+    }
+    if (item.type == '가챠') {
+        const summary = {};
+        if (typeof item.pack == 'number') {
+            const packs = readJson(PACKS_PATH, []);
+            const pack = packs[item.pack];
+            if (!Array.isArray(pack)) return '❌ 사용할 수 없는 가챠입니다.';
+            const rollCount = Number(item.num || 1) * useCount;
+            for (let i = 0; i < rollCount; i++) grantPackReward(user, pickPackEntry(pack), summary);
+        } else if (item.pack && item.pack.type == '캐릭터 카드팩') {
+            if (!user.inventory) user.inventory = { card: [], item: [] };
+            if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+            grantCharacterCardPack(user, item.pack, useCount, summary);
+        } else {
+            return '❌ 사용할 수 없는 가챠입니다.';
+        }
+        lines.push('[ 획득 결과 ]');
+        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+    }
+
+    await user.save();
+    return lines.join('\n');
 }
 
 async function purchaseShopItem(user, shopType, indexArg, countArg) {
@@ -531,6 +758,7 @@ class RPGUser {
         this._get = 1;
         this.id = id;
         this.name = name;
+        this.isAdmin = false;
         this.code = getRandomString(10).toUpperCase();
         this.logged_in = [id];
         this.main_card = {};
@@ -565,7 +793,9 @@ class RPGUser {
         if (!this.inventory) this.inventory = { card: [], item: [] };
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
+        cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
+        if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         return this;
@@ -757,6 +987,12 @@ async function onChat(data, channel) {
         return true;
     }
 
+    const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
+    if (adminResult !== null) {
+        reply(adminResult);
+        return true;
+    }
+
     if (user.need_character_card_select) {
         reply('❌ 먼저 캐릭터 카드를 선택해야 합니다.\n/RPGenius 캐릭터카드 선택 [캐릭터카드 이름]');
         reply(formatCharacterCardList());
@@ -800,6 +1036,21 @@ async function onChat(data, channel) {
             return true;
         }
         const result = await purchaseShopItem(user, args[1], args[2], args[3]);
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '사용') {
+        const useText = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!useText) {
+            reply('❌ /RPGenius 사용 [아이템] <갯수>');
+            return true;
+        }
+        const useArgs = useText.split(' ');
+        const lastArg = useArgs[useArgs.length - 1];
+        const useCount = /^\d+$/.test(lastArg) && useArgs.length > 1 ? lastArg : null;
+        const itemName = useCount ? useArgs.slice(0, -1).join(' ') : useText;
+        const result = await useItem(user, itemName, useCount);
         reply(result);
         return true;
     }
