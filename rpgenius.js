@@ -452,6 +452,12 @@ function equipMainCharacterCard(user, numberArg) {
     return '✅ 메인 캐릭터 카드를 장착했습니다: ' + formatUserCard(card);
 }
 
+function getRemainingCardInventorySpace(user) {
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+    return Math.max(0, Number(user.maxCardLimit || 52) - user.inventory.card.length);
+}
+
 function equipCharacterCardSlot(user, numberArg) {
     const maxCardSlot = Number(user.maxCardSlot || 5);
     if (Array.isArray(user.card_slot) && user.card_slot.length >= maxCardSlot) return '❌ 카드 슬롯이 가득 찼습니다.';
@@ -462,6 +468,7 @@ function equipCharacterCardSlot(user, numberArg) {
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
+    if (user.card_slot.some(slotCard => slotCard && slotCard.id == card.id)) return '❌ 이미 같은 캐릭터가 카드 슬롯에 장착되어 있습니다.';
     user.inventory.card.splice(number - 1, 1);
     user.card_slot.push(card);
     return '✅ 카드 슬롯에 장착했습니다: ' + formatUserCard(card);
@@ -474,6 +481,7 @@ function removeCharacterCardSlot(user, slotArg) {
     if (!Array.isArray(user.card_slot) || !user.card_slot[slotNumber - 1]) return '❌ 해당 슬롯에 장착된 카드가 없습니다.';
     const removed = user.card_slot[slotNumber - 1];
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
+    if (getRemainingCardInventorySpace(user) < 1) return '❌ 캐릭터 카드 인벤토리가 가득 차서 슬롯에서 제거할 수 없습니다.';
     user.inventory.card.push(removed);
     user.card_slot.splice(slotNumber - 1, 1);
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
@@ -1444,9 +1452,15 @@ async function useItem(user, itemName, countArg) {
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
     if (!['소모품', '가챠', '번들', '마법석'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
 
-    const useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
+    let useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
     if (getInventoryItemCount(user, itemId) < useCount) return '❌ 아이템이 부족합니다.';
+    const requestedUseCount = useCount;
+    if (item.pack && item.pack.type == '캐릭터 카드팩') {
+        const remainingSpace = getRemainingCardInventorySpace(user);
+        if (remainingSpace < 1) return '❌ 캐릭터 카드 인벤토리가 가득 찼습니다.';
+        useCount = Math.min(useCount, remainingSpace);
+    }
 
     const requirements = item.require || [];
     for (const require of requirements) {
@@ -1469,6 +1483,7 @@ async function useItem(user, itemName, countArg) {
     requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
 
     const lines = ['✅ ' + item.name + ' x' + comma(useCount) + ' 사용'];
+    if (requestedUseCount > useCount) lines.push('- 캐릭터 카드 인벤토리 공간 부족으로 ' + comma(requestedUseCount - useCount) + '개는 사용되지 않았습니다.');
     if (item.type == '소모품') {
         (item.use_func || []).forEach(func => applyUseFunc(user, func, useCount, lines));
     }
