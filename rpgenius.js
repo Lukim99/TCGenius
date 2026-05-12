@@ -338,8 +338,13 @@ function getCharacterInventoryCard(user, numberArg) {
 }
 
 function equipMainCharacterCard(user, numberArg) {
-    const card = getCharacterInventoryCard(user, numberArg);
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
+    if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
+    const card = user.inventory.card[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    user.inventory.card.splice(number - 1, 1);
+    if (user.main_card && typeof user.main_card.id != 'undefined') user.inventory.card.push(user.main_card);
     user.main_card = card;
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
@@ -365,7 +370,7 @@ function removeCharacterCardSlot(user, slotArg) {
     if (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > maxCardSlot) return '❌ 슬롯 번호는 1~' + maxCardSlot + ' 사이여야 합니다.';
     if (!Array.isArray(user.card_slot) || !user.card_slot[slotNumber - 1]) return '❌ 해당 슬롯에 장착된 카드가 없습니다.';
     const removed = user.card_slot[slotNumber - 1];
-    user.card_slot[slotNumber - 1] = null;
+    user.card_slot.splice(slotNumber - 1, 1);
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
 }
 
@@ -726,8 +731,7 @@ function formatInventory(user) {
         '[ ' + user.name + '님의 인벤토리 ]',
         '🪙 ' + comma(user.gold),
         '💠 ' + comma(user.garnet),
-        '💵 ' + comma(user.point) + 'P',
-        'Ⓜ️ ' + comma(user.mileage) + '마일리지'
+        '💵 ' + comma(user.point) + 'P | Ⓜ️ ' + comma(user.mileage)
     ];
     const inventoryItems = (user.inventory.item || [])
         .map(inv => ({ data: items[inv.id], count: Number(inv.count || 0) }))
@@ -1074,7 +1078,7 @@ function formatEquipmentUpgradePreview(user, numberArg) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다!');
     } else {
-        user.pendingAction = { type: '장비강화', number: Number(numberArg), source: selected.source, index: selected.index, equipmentType: type };
+        user.pendingAction = { type: '장비강화', number: Number(numberArg), equipmentType: type };
         lines.push('', '/RPGenius 강화');
     }
     return lines.join('\n');
@@ -1431,7 +1435,8 @@ class RPGUser {
         };
         this.inventory = {
             card: [],
-            item: []
+            item: [],
+            equipment: []
         };
         this.gold = 0;
         this.garnet = 0;
@@ -1635,7 +1640,6 @@ async function onChat(data, channel) {
                 type: '일반'
             };
             user.main_card = userCard;
-            user.inventory.card.push(userCard);
             user.need_character_card_select = false;
             const stats = calculateUserStats(user);
             user.hp = Number(stats.hp || 0);
