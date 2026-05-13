@@ -65,5 +65,10 @@
         { "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
         { "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 }, "roll": 0.007 },
         { "type": "아이템", "item_id": 23, "count": { "min": 1, "max": 1 }, "roll": 0.003 }
+    ],
+    [
+        { "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 }, "roll": 0.4 },
+        { "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 }, "roll": 0.35 },
+        { "type": "아이템", "item_id": 23, "count": { "min": 1, "max": 1 }, "roll": 0.25 }
     ]
 ]

@@ -25,6 +25,7 @@ const ITEM_TYPE_ORDER = ['가챠', '번들', '마법석', '소모품', '티켓',
 const ELITE_KILL_REQUIREMENT = 100;
 const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
+const ATTENDANCE_STAMP_ITEM_ID = 71;
 const eliteFieldStates = {};
 
 const dynamoClient = new DynamoDBClient({
@@ -1421,6 +1422,21 @@ function removeInventoryItem(user, itemId, count) {
     return true;
 }
 
+function getKoreanDateKey(date) {
+    const koreaTime = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return koreaTime.toISOString().slice(0, 10);
+}
+
+function checkAttendance(user) {
+    const today = getKoreanDateKey(new Date());
+    if (user.lastAttendanceDate == today) return '❌ 오늘은 이미 출석체크를 완료했습니다.';
+    user.lastAttendanceDate = today;
+    addInventoryItem(user, ATTENDANCE_STAMP_ITEM_ID, 1);
+    const items = readJson(ITEMS_PATH, []);
+    const stamp = items[ATTENDANCE_STAMP_ITEM_ID];
+    return '✅ 출석체크 완료!\n\n[ 획득 물품 ]\n- ' + (stamp ? stamp.name : '출석 도장') + ' x1';
+}
+
 function getRecipeByName(name) {
     const recipes = readJson(RECIPE_PATH, []);
     return recipes.find(recipe => recipe.name == name);
@@ -2355,6 +2371,7 @@ class RPGUser {
         this.maxAccessory = 1;
         this.mail = [];
         this.usedCoupons = [];
+        this.lastAttendanceDate = null;
     }
 
     load(data) {
@@ -2367,6 +2384,7 @@ class RPGUser {
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
+        if (typeof this.lastAttendanceDate == 'undefined') this.lastAttendanceDate = null;
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
         if (!this.exp) this.exp = 0;
@@ -3277,6 +3295,13 @@ async function onChat(data, channel) {
         const shopType = args[1] || '일반';
         const shopDisplay = formatShop(shopType);
         reply(shopDisplay || '❌ 존재하지 않는 상점입니다.');
+        return true;
+    }
+
+    if (args[0] == '출석체크') {
+        const result = checkAttendance(user);
+        await user.save();
+        reply(result);
         return true;
     }
 
