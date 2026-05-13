@@ -1779,7 +1779,7 @@ function equipItemByNumber(user, numberArg) {
 function unequipAccessoryByNumber(user, numberArg) {
     const number = Number(numberArg);
     const maxSlot = Number(user.maxAccessory || 1);
-    if (!Number.isInteger(number) || number < 1 || number > maxSlot) return '❌ 장신구 번호는 1~' + maxSlot + ' 사이여야 합니다.';
+    if (!Number.isInteger(number) || number < 1) return '❌ 장신구 번호를 올바르게 입력해주세요.';
     if (!user.equipments || !user.equipments.accessory || typeof user.equipments.accessory != 'object') return '❌ 장착 중인 장신구가 없습니다.';
     const slotKey = String(number - 1);
     const equipped = user.equipments.accessory[slotKey];

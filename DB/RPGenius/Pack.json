@@ -1,5 +1,7 @@
 [
     [
+        { "type": "아이템", "item_id": 69, "count": { "min": 1, "max": 1 }, "roll": 0.005 },
+        { "type": "아이템", "item_id": 70, "count": { "min": 1, "max": 1 }, "roll": 0.002 },
         { "type": "아이템", "item_id": 11, "count": { "min": 1, "max": 1 }, "roll": 0.175 },
         { "type": "아이템", "item_id": 11, "count": { "min": 3, "max": 3 }, "roll": 0.085 },
         { "type": "아이템", "item_id": 11, "count": { "min": 5, "max": 5 }, "roll": 0.04 },
