@@ -1,6 +1,6 @@
 [
     {
-        "name": "아실리아 숲",
+        "name": "뉴비즈",
         "requireLevel": 1,
         "reward": {
             "exp": 5,
@@ -14,7 +14,7 @@
         "def": 0,
         "hp": 15,
         "elite": {
-            "name": "라이칸",
+            "name": "고인물",
             "atk": 30,
             "pnt": 3,
             "def": 5,
@@ -29,7 +29,7 @@
         }
     },
     {
-        "name": "루멘 동굴",
+        "name": "피지컬텐",
         "requireLevel": 6,
         "reward": {
             "exp": 12,
@@ -43,7 +43,7 @@
         "def": 2,
         "hp": 25,
         "elite": {
-            "name": "수정거미",
+            "name": "피지컬란도",
             "atk": 73,
             "pnt": 8,
             "def": 12,
@@ -58,7 +58,7 @@
         }
     },
     {
-        "name": "칼록 협곡",
+        "name": "극한의농락전",
         "requireLevel": 11,
         "reward": {
             "exp": 25,
@@ -72,7 +72,7 @@
         "def": 5,
         "hp": 40,
         "elite": {
-            "name": "하피",
+            "name": "농락자",
             "atk": 117,
             "pnt": 14,
             "def": 23,
@@ -87,7 +87,7 @@
         }
     },
     {
-        "name": "베르마딘 폐광",
+        "name": "흑백지대",
         "requireLevel": 16,
         "reward": {
             "exp": 45,
@@ -101,7 +101,7 @@
         "def": 8,
         "hp": 60,
         "elite": {
-            "name": "볼바르",
+            "name": "지짐",
             "atk": 165,
             "pnt": 6,
             "def": 36,
@@ -116,10 +116,10 @@
         }
     },
     {
-        "name": "셀린 금광",
+        "name": "황금 광산",
         "requireLevel": 17,
         "reward": {
-            "exp": 2,
+            "exp": 3,
             "gold": {
                 "min": 28,
                 "max": 42
@@ -136,16 +136,16 @@
             "def": 36,
             "hp": 720,
             "reward": [
-                { "type": "경험치", "count": { "min": 20, "max": 30 } },
-                { "type": "골드", "count": { "min": 270, "max": 320 } },
+                { "type": "경험치", "count": { "min": 28, "max": 56 } },
+                { "type": "골드", "count": { "min": 290, "max": 460 } },
                 { "type": "아이템", "item_id": 0, "count": { "min": 18, "max": 40 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1, "max": 1 }, "roll": 0.7 },
                 { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
             ]
         }
     },
     {
-        "name": "세르피엔 숲",
+        "name": "관찰자들의 도시",
         "requireLevel": 21,
         "reward": {
             "exp": 70,
@@ -159,7 +159,7 @@
         "def": 12,
         "hp": 85,
         "elite": {
-            "name": "요정 실베리온",
+            "name": "상일초복귀",
             "atk": 230,
             "pnt": 9,
             "def": 54,
@@ -174,7 +174,7 @@
         }
     },
     {
-        "name": "크라우갈 성",
+        "name": "파산게임장",
         "requireLevel": 26,
         "reward": {
             "exp": 100,
@@ -188,7 +188,7 @@
         "def": 16,
         "hp": 115,
         "elite": {
-            "name": "듀라한",
+            "name": "wt",
             "atk": 295,
             "pnt": 15,
             "def": 72,
@@ -203,7 +203,7 @@
         }
     },
     {
-        "name": "프레이엘 설산",
+        "name": "월도랜드1",
         "requireLevel": 31,
         "reward": {
             "exp": 140,
@@ -217,7 +217,7 @@
         "def": 20,
         "hp": 150,
         "elite": {
-            "name": "웬디고",
+            "name": "장의사",
             "atk": 395,
             "pnt": 24,
             "def": 90,
@@ -232,7 +232,7 @@
         }
     },
     {
-        "name": "모르바스 늪",
+        "name": "월도랜드2",
         "requireLevel": 36,
         "reward": {
             "exp": 190,
@@ -246,7 +246,7 @@
         "def": 25,
         "hp": 190,
         "elite": {
-            "name": "히드라",
+            "name": "일장춘몽",
             "atk": 495,
             "pnt": 30,
             "def": 112,
@@ -261,7 +261,7 @@
         }
     },
     {
-        "name": "샤크타르 유적",
+        "name": "월도랜드3",
         "requireLevel": 41,
         "reward": {
             "exp": 250,
@@ -275,7 +275,7 @@
         "def": 30,
         "hp": 240,
         "elite": {
-            "name": "아크누비",
+            "name": "투자의 신",
             "atk": 625,
             "pnt": 36,
             "def": 135,
@@ -290,7 +290,7 @@
         }
     },
     {
-        "name": "라일루스 미궁",
+        "name": "더지니어서 현장",
         "requireLevel": 46,
         "reward": {
             "exp": 330,
@@ -304,7 +304,7 @@
         "def": 35,
         "hp": 300,
         "elite": {
-            "name": "도플갱어",
+            "name": "3K",
             "atk": 760,
             "pnt": 45,
             "def": 158,
@@ -319,7 +319,7 @@
         }
     },
     {
-        "name": "이그나토 화산 지대",
+        "name": "해고전쟁시대",
         "requireLevel": 51,
         "reward": {
             "exp": 420,
@@ -333,7 +333,7 @@
         "def": 42,
         "hp": 370,
         "elite": {
-            "name": "샐러맨더",
+            "name": "이명박",
             "atk": 925,
             "pnt": 54,
             "def": 189,
@@ -348,7 +348,7 @@
         }
     },
     {
-        "name": "제피렌 고원",
+        "name": "밍닝스플랜",
         "requireLevel": 56,
         "reward": {
             "exp": 530,
@@ -362,7 +362,7 @@
         "def": 50,
         "hp": 450,
         "elite": {
-            "name": "실프",
+            "name": "DEVIL",
             "atk": 1120,
             "pnt": 66,
             "def": 225,
@@ -377,7 +377,7 @@
         }
     },
     {
-        "name": "알브리엔 숲",
+        "name": "로투지",
         "requireLevel": 61,
         "reward": {
             "exp": 660,
@@ -391,7 +391,7 @@
         "def": 60,
         "hp": 540,
         "elite": {
-            "name": "켈피",
+            "name": "십구명",
             "atk": 1350,
             "pnt": 78,
             "def": 270,
@@ -406,7 +406,7 @@
         }
     },
     {
-        "name": "나크티스 신전",
+        "name": "가넷게임",
         "requireLevel": 66,
         "reward": {
             "exp": 810,
@@ -420,7 +420,7 @@
         "def": 70,
         "hp": 640,
         "elite": {
-            "name": "넵투론",
+            "name": "타노스",
             "atk": 1615,
             "pnt": 90,
             "def": 315,
@@ -435,7 +435,7 @@
         }
     },
     {
-        "name": "아에테르나 하늘섬",
+        "name": "예언의결속",
         "requireLevel": 71,
         "reward": {
             "exp": 1000,
@@ -449,7 +449,7 @@
         "def": 80,
         "hp": 750,
         "elite": {
-            "name": "와이번",
+            "name": "예언자",
             "atk": 1915,
             "pnt": 105,
             "def": 360,
@@ -464,7 +464,7 @@
         }
     },
     {
-        "name": "크림슨바이스",
+        "name": "스코어서바이벌",
         "requireLevel": 76,
         "reward": {
             "exp": 1220,
@@ -478,7 +478,7 @@
         "def": 90,
         "hp": 880,
         "elite": {
-            "name": "헬하운드",
+            "name": "스코어리",
             "atk": 2245,
             "pnt": 120,
             "def": 405,
@@ -493,7 +493,7 @@
         }
     },
     {
-        "name": "크로아",
+        "name": "독재자게임장",
         "requireLevel": 81,
         "reward": {
             "exp": 1480,
@@ -507,7 +507,7 @@
         "def": 100,
         "hp": 1020,
         "elite": {
-            "name": "크로노아",
+            "name": "독재자",
             "atk": 2605,
             "pnt": 135,
             "def": 450,
@@ -522,7 +522,7 @@
         }
     },
     {
-        "name": "레타지아",
+        "name": "중달",
         "requireLevel": 86,
         "reward": {
             "exp": 1780,
@@ -536,7 +536,7 @@
         "def": 110,
         "hp": 1180,
         "elite": {
-            "name": "카론",
+            "name": "그래비티",
             "atk": 3005,
             "pnt": 150,
             "def": 495,
@@ -551,7 +551,7 @@
         }
     },
     {
-        "name": "아바돈",
+        "name": "이세계대저택",
         "requireLevel": 91,
         "reward": {
             "exp": 2150,
@@ -565,7 +565,7 @@
         "def": 125,
         "hp": 1350,
         "elite": {
-            "name": "니힐룸",
+            "name": "쿠마가와 미소기",
             "atk": 3430,
             "pnt": 165,
             "def": 563,
@@ -580,7 +580,7 @@
         }
     },
     {
-        "name": "알카이오스",
+        "name": "높동",
         "requireLevel": 96,
         "reward": {
             "exp": 2600,
@@ -594,7 +594,7 @@
         "def": 140,
         "hp": 1550,
         "elite": {
-            "name": "가르간투아",
+            "name": "트리거",
             "atk": 3895,
             "pnt": 180,
             "def": 630,
@@ -609,7 +609,7 @@
         }
     },
     {
-        "name": "바벨론",
+        "name": "마동",
         "requireLevel": 101,
         "reward": {
             "exp": 3150,
@@ -623,7 +623,7 @@
         "def": 155,
         "hp": 1780,
         "elite": {
-            "name": "아르고스",
+            "name": "성준호",
             "atk": 4390,
             "pnt": 198,
             "def": 698,
@@ -638,7 +638,7 @@
         }
     },
     {
-        "name": "에테르카",
+        "name": "빌라",
         "requireLevel": 106,
         "reward": {
             "exp": 3800,
@@ -652,7 +652,7 @@
         "def": 170,
         "hp": 2050,
         "elite": {
-            "name": "페가수스",
+            "name": "카이로스",
             "atk": 4950,
             "pnt": 216,
             "def": 765,
@@ -667,7 +667,7 @@
         }
     },
     {
-        "name": "네오플럭스",
+        "name": "리조트",
         "requireLevel": 111,
         "reward": {
             "exp": 4600,
@@ -681,7 +681,7 @@
         "def": 190,
         "hp": 2350,
         "elite": {
-            "name": "그라비톤",
+            "name": "페이커",
             "atk": 5545,
             "pnt": 240,
             "def": 855,
@@ -696,7 +696,7 @@
         }
     },
     {
-        "name": "기간티아",
+        "name": "더타임모텔",
         "requireLevel": 116,
         "reward": {
             "exp": 5600,
@@ -710,7 +710,7 @@
         "def": 210,
         "hp": 2700,
         "elite": {
-            "name": "마키아",
+            "name": "슈브르즈",
             "atk": 6205,
             "pnt": 270,
             "def": 945,

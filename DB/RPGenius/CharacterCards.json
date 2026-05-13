@@ -24,9 +24,9 @@
     {
         "name": "글렌첵",
         "slot_effect": {
-            "name": "적 처치 시 잃은 HP/MP 10% 회복 확률",
-            "base": 0.06,
-            "per_level": 0.02
+            "name": "적 처치 시 잃은 HP 5% 회복 확률",
+            "base": 0.08,
+            "per_level": 0.01
         },
         "skills": [
             2
