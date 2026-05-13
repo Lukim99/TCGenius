@@ -116,6 +116,35 @@
         }
     },
     {
+        "name": "셀린 금광",
+        "requireLevel": 17,
+        "reward": {
+            "exp": 2,
+            "gold": {
+                "min": 28,
+                "max": 42
+            }
+        },
+        "atk": 50,
+        "pnt": 2,
+        "def": 8,
+        "hp": 60,
+        "elite": {
+            "name": "광부 고블린",
+            "atk": 165,
+            "pnt": 6,
+            "def": 36,
+            "hp": 720,
+            "reward": [
+                { "type": "경험치", "count": { "min": 20, "max": 30 } },
+                { "type": "골드", "count": { "min": 270, "max": 320 } },
+                { "type": "아이템", "item_id": 0, "count": { "min": 18, "max": 40 }, "roll": 0.9 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
+                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
+            ]
+        }
+    },
+    {
         "name": "세르피엔 숲",
         "requireLevel": 21,
         "reward": {

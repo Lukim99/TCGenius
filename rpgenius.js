@@ -576,6 +576,7 @@ function convertCharacterCard(user, numberArg) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
+    if (Number(card.star || 0) >= 9) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
     const before = Object.assign({}, card);
     let newId = card.id;
     while (newId == card.id) newId = randomInt(0, characterCards.length - 1);
@@ -848,16 +849,38 @@ function enterField(user, fieldName) {
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
     user.hp = hp;
-    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, killCount: 0, elite: null };
+    const cooldowns = getFieldCooldowns(user);
+    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
     return '✅ 필드에 입장했습니다: ' + dungeon.name;
 }
 
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
     const fieldName = user.field.name;
+    saveFieldCooldowns(user);
     releaseEliteEncounter(user);
     user.field = null;
     return '✅ 필드에서 퇴장했습니다: ' + fieldName;
+}
+
+function getFieldCooldowns(user) {
+    if (!user.fieldCooldowns || typeof user.fieldCooldowns != 'object') user.fieldCooldowns = {};
+    if (!user.fieldCooldowns.skillCooldowns || typeof user.fieldCooldowns.skillCooldowns != 'object') user.fieldCooldowns.skillCooldowns = {};
+    user.fieldCooldowns.nextActionAt = Number(user.fieldCooldowns.nextActionAt || 0);
+    return user.fieldCooldowns;
+}
+
+function saveFieldCooldowns(user) {
+    if (!user || !user.field) return;
+    const cooldowns = getFieldCooldowns(user);
+    cooldowns.nextActionAt = Number(user.field.nextActionAt || 0);
+    cooldowns.skillCooldowns = user.field.skillCooldowns && typeof user.field.skillCooldowns == 'object' ? user.field.skillCooldowns : {};
+}
+
+function setFieldNextActionAt(user, nextActionAt) {
+    if (!user || !user.field) return;
+    user.field.nextActionAt = nextActionAt;
+    getFieldCooldowns(user).nextActionAt = nextActionAt;
 }
 
 function getEliteState(fieldName) {
@@ -933,7 +956,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         state.owner = null;
         state.defeatedAt = Date.now();
         user.field.elite = null;
-        user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
     }
     user.field.elite.hp = remainHp;
@@ -945,6 +968,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + ' 피해를 입었습니다!');
     if (user.hp <= 0) {
         user.hp = 1;
+        saveFieldCooldowns(user);
         releaseEliteEncounter(user);
         user.field = null;
         lines.push('- 남은 체력: 1/' + comma(maxHp));
@@ -952,7 +976,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         return lines.join('\n');
     }
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
-    user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     return lines.join('\n');
 }
 
@@ -974,6 +998,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     if (user.hp <= 0) {
         user.hp = 1;
+        saveFieldCooldowns(user);
         user.field = null;
         lines.push('- 남은 체력: 1/' + comma(maxHp));
         lines.push('', '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
@@ -1034,7 +1059,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         if (user.mp - beforeMp > 0) lines.push('- MP +' + comma(user.mp - beforeMp));
     }
 
-    user.field.nextActionAt = Date.now() + randomInt(2000, 3000);
+    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
 }
@@ -1081,6 +1106,7 @@ function useSkillInField(user, skillName) {
     if (skillData.skill.name == '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
     const rawDamage = Math.round(Number(stats.atk || 0) * multiplier);
     user.field.skillCooldowns[skillData.skill.name] = now + Number(skillData.skill.cooltime || 0);
+    getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
     if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
     return buildHuntResult(user, dungeon, rawDamage, extra);
 }
@@ -1562,6 +1588,26 @@ function equipItemByNumber(user, numberArg) {
     }
 
     return '❌ 알 수 없는 장비 타입입니다.';
+}
+
+function unequipAccessoryByNumber(user, numberArg) {
+    const number = Number(numberArg);
+    const maxSlot = Number(user.maxAccessory || 1);
+    if (!Number.isInteger(number) || number < 1 || number > maxSlot) return '❌ 장신구 번호는 1~' + maxSlot + ' 사이여야 합니다.';
+    if (!user.equipments || !user.equipments.accessory || typeof user.equipments.accessory != 'object') return '❌ 장착 중인 장신구가 없습니다.';
+    const slotKey = String(number - 1);
+    const equipped = user.equipments.accessory[slotKey];
+    if (!equipped || typeof equipped.id == 'undefined') return '❌ 해당 번호에 장착된 장신구가 없습니다.';
+    const data = getEquipmentData('accessory', equipped.id);
+    if (!data) return '❌ 잘못된 장신구 데이터입니다.';
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    user.inventory.equipment.push({ type: 'accessory', id: equipped.id, level: Number(equipped.level || 0) });
+    delete user.equipments.accessory[slotKey];
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    return '✅ 장신구를 해제했습니다: <' + data.rarity + '> ' + data.name + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
 }
 
 const EQUIPMENT_STONE_ITEM_ID = 0;
@@ -3084,6 +3130,17 @@ async function onChat(data, channel) {
             return true;
         }
         const result = equipItemByNumber(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '장착해제') {
+        if (!args[1]) {
+            reply('❌ /RPGenius 장착해제 [장신구번호]');
+            return true;
+        }
+        const result = unequipAccessoryByNumber(user, args[1]);
         await user.save();
         reply(result);
         return true;
