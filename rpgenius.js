@@ -14,6 +14,7 @@ const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const BUNDLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bundle.json');
+const RECIPE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Recipe.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const COUPON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Coupon.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
@@ -1418,6 +1419,87 @@ function removeInventoryItem(user, itemId, count) {
     item.count = Number(item.count || 0) - count;
     cleanupInventoryItems(user);
     return true;
+}
+
+function getRecipeByName(name) {
+    const recipes = readJson(RECIPE_PATH, []);
+    return recipes.find(recipe => recipe.name == name);
+}
+
+function getRecipeEntryCount(entry) {
+    if (typeof entry.count == 'object') return Number(entry.count.min || 0);
+    return Number(entry.count || 1);
+}
+
+function getCraftMaterialStatus(user, material) {
+    if (material.type == '아이템') {
+        const need = getRecipeEntryCount(material);
+        const have = getInventoryItemCount(user, material.item_id);
+        return { have, need, ok: have >= need };
+    }
+    return { have: 0, need: getRecipeEntryCount(material), ok: false };
+}
+
+function grantCraftEntry(user, entry) {
+    const count = getRecipeEntryCount(entry);
+    if (entry.type == '아이템') {
+        addInventoryItem(user, entry.item_id, count);
+        return;
+    }
+    if (entry.type == '무기') {
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'weapon', entry.weapon_id);
+        return;
+    }
+    if (entry.type == '갑옷') {
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'armor', entry.armor_id);
+        return;
+    }
+    if (entry.type == '장신구') {
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'accessory', entry.accessory_id);
+    }
+}
+
+function formatCraftPreview(user, name) {
+    const recipe = getRecipeByName(name);
+    if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
+    const lines = ['⚒️ ' + recipe.name + ' 제작', '', '- 필요한 재료:'];
+    (recipe.materials || []).forEach(material => {
+        const status = getCraftMaterialStatus(user, material);
+        lines.push((status.ok ? '✅ ' : '❌ ') + formatPackEntry(material).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(status.need)) + ' (' + comma(status.have) + '/' + comma(status.need) + ')');
+    });
+    lines.push('', '- 제작 시 획득 물품:');
+    (recipe.crafted || []).forEach(entry => lines.push(' ㄴ ' + formatPackEntry(entry)));
+    if ((recipe.materials || []).some(material => !getCraftMaterialStatus(user, material).ok)) {
+        user.pendingAction = null;
+        lines.push('', '❌ 재료가 부족합니다.');
+    } else {
+        user.pendingAction = { type: '제작', name: recipe.name };
+        lines.push('', '제작하시겠습니까?', '/RPGenius 제작');
+    }
+    return lines.join('\n');
+}
+
+function runCraft(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '제작') return '❌ 진행 중인 제작이 없습니다.';
+    const recipe = getRecipeByName(pending.name);
+    user.pendingAction = null;
+    if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
+    if ((recipe.materials || []).some(material => !getCraftMaterialStatus(user, material).ok)) return '❌ 재료가 부족합니다.';
+    (recipe.materials || []).forEach(material => {
+        if (material.type == '아이템') removeInventoryItem(user, material.item_id, getRecipeEntryCount(material));
+    });
+    (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
+    const lines = ['✅ \'' + recipe.name + '\' 제작에 성공했습니다.', '', '[ 획득 물품 ]'];
+    (recipe.crafted || []).forEach(entry => lines.push('- ' + formatPackEntry(entry)));
+    return lines.join('\n');
+}
+
+function findItemByName(name) {
+    const items = readJson(ITEMS_PATH, []);
+    const index = items.findIndex(item => item.name == name);
+    if (index == -1) return null;
+    return { index, item: items[index] };
 }
 
 const fishingTimers = {};
@@ -2935,6 +3017,19 @@ async function onChat(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '제작') {
+        if (args[0] == '제작') {
+            const result = runCraft(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 제작이 취소되었습니다.');
+        return true;
+    }
+
     const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
     if (adminResult !== null) {
         reply(adminResult);
@@ -3182,6 +3277,18 @@ async function onChat(data, channel) {
         const shopType = args[1] || '일반';
         const shopDisplay = formatShop(shopType);
         reply(shopDisplay || '❌ 존재하지 않는 상점입니다.');
+        return true;
+    }
+
+    if (args[0] == '제작') {
+        const craftName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!craftName) {
+            reply('❌ /RPGenius 제작 [이름]');
+            return true;
+        }
+        const result = formatCraftPreview(user, craftName);
+        await user.save();
+        reply(result);
         return true;
     }
 
