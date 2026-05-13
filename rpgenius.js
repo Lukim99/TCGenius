@@ -1778,7 +1778,8 @@ function equipItemByNumber(user, numberArg) {
     if (target.type == 'accessory') {
         if (!user.equipments.accessory || typeof user.equipments.accessory != 'object') user.equipments.accessory = {};
         const accessories = user.equipments.accessory;
-        const maxSlot = Number(user.maxAccessory || 1);
+        if (Object.keys(accessories).some(key => accessories[key] && Number(accessories[key].id) == Number(target.id))) return '❌ 같은 종류의 장신구는 중복 장착할 수 없습니다.';
+        const maxSlot = Number(user.maxAccessory || 3);
         let slotKey = null;
         for (let i = 0; i < maxSlot; i++) {
             const key = String(i);
@@ -1799,7 +1800,7 @@ function equipItemByNumber(user, numberArg) {
 
 function unequipAccessoryByNumber(user, numberArg) {
     const number = Number(numberArg);
-    const maxSlot = Number(user.maxAccessory || 1);
+    const maxSlot = Number(user.maxAccessory || 3);
     if (!Number.isInteger(number) || number < 1) return '❌ 장신구 번호를 올바르게 입력해주세요.';
     if (!user.equipments || !user.equipments.accessory || typeof user.equipments.accessory != 'object') return '❌ 장착 중인 장신구가 없습니다.';
     const slotKey = String(number - 1);
@@ -2373,7 +2374,7 @@ class RPGUser {
         this.fishingNetLimit = 200;
         this.pendingAction = null;
         this.maxCardLimit = 52;
-        this.maxAccessory = 1;
+        this.maxAccessory = 3;
         this.mail = [];
         this.usedCoupons = [];
         this.lastAttendanceDate = null;
@@ -2400,7 +2401,7 @@ class RPGUser {
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (!this.maxCardLimit) this.maxCardLimit = 52;
-        if (!this.maxAccessory) this.maxAccessory = 1;
+        if (!this.maxAccessory || Number(this.maxAccessory) < 3) this.maxAccessory = 3;
         return this;
     }
 
