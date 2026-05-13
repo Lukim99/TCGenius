@@ -1046,8 +1046,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         if (recoveryCount > 0) {
             const beforeRecoverHp = Number(user.hp || 0);
             const beforeRecoverMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
-            user.hp = Math.min(maxHp, beforeRecoverHp + Math.round(maxHp * 0.1) * recoveryCount);
-            user.mp = Math.min(Number(stats.mp || 0), beforeRecoverMp + Math.round(Number(stats.mp || 0) * 0.1) * recoveryCount);
+            user.hp = Math.min(maxHp, beforeRecoverHp + Math.round((maxHp - beforeRecoverHp) * 0.1) * recoveryCount);
+            user.mp = Math.min(Number(stats.mp || 0), beforeRecoverMp + Math.round((Number(stats.mp || 0) - beforeRecoverMp) * 0.1) * recoveryCount);
             lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' / MP +' + comma(user.mp - beforeRecoverMp));
         }
     }
