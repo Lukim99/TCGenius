@@ -27,6 +27,11 @@ const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
 const ATTENDANCE_STAMP_ITEM_ID = 71;
 const eliteFieldStates = {};
+const commandQueues = {};
+const commandSpamStates = {};
+const COMMAND_SPAM_WINDOW_MS = 1000;
+const COMMAND_SPAM_LIMIT = 4;
+const COMMAND_SPAM_BLOCK_MS = 10 * 60 * 1000;
 
 const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
@@ -2875,7 +2880,44 @@ async function getRPGUserByCode(code) {
     }
 }
 
-async function onChat(data, channel) {
+function getCommandBlockMessage(senderId) {
+    const now = Date.now();
+    const state = commandSpamStates[senderId] || { times: [], blockedUntil: 0, notifiedUntil: 0 };
+    if (Number(state.blockedUntil || 0) > now) {
+        commandSpamStates[senderId] = state;
+        if (Number(state.notifiedUntil || 0) <= now) {
+            state.notifiedUntil = now + 5000;
+            const remainSeconds = Math.ceil((state.blockedUntil - now) / 1000);
+            return '❌ 명령어 도배로 RPG 관련 명령어 사용이 차단되었습니다.\n- 남은 시간: ' + Math.ceil(remainSeconds / 60) + '분';
+        }
+        return null;
+    }
+    state.times = (state.times || []).filter(time => now - time < COMMAND_SPAM_WINDOW_MS);
+    state.times.push(now);
+    if (state.times.length >= COMMAND_SPAM_LIMIT) {
+        state.times = [];
+        state.blockedUntil = now + COMMAND_SPAM_BLOCK_MS;
+        state.notifiedUntil = now + 5000;
+        commandSpamStates[senderId] = state;
+        return '❌ 1초에 ' + COMMAND_SPAM_LIMIT + '회 이상 RPG 명령어를 입력하여 10분동안 사용이 차단됩니다.';
+    }
+    commandSpamStates[senderId] = state;
+    return false;
+}
+
+function enqueueUserCommand(senderId, task) {
+    const previous = commandQueues[senderId] || Promise.resolve();
+    const next = previous
+        .catch(() => {})
+        .then(task)
+        .finally(() => {
+            if (commandQueues[senderId] === next) delete commandQueues[senderId];
+        });
+    commandQueues[senderId] = next;
+    return next;
+}
+
+async function handleRPGCommand(data, channel) {
     if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
     const msg = (data.text || '').trim();
     if (!msg.startsWith('/')) return false;
@@ -3417,6 +3459,25 @@ async function onChat(data, channel) {
         return true;
     }
 
+    return true;
+}
+
+async function onChat(data, channel) {
+    if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
+    const msg = (data.text || '').trim();
+    if (!msg.startsWith('/')) return false;
+    const cmd = msg.substr(1).trim();
+    if (!(cmd.toLowerCase().startsWith('rpg') || cmd.toLowerCase().startsWith('rpgenius'))) return false;
+    const sender = data.getSenderInfo(channel) || data._chat?.sender;
+    if (!sender || !sender.userId) return true;
+    const senderId = sender.userId + '';
+    const blockMessage = getCommandBlockMessage(senderId);
+    if (blockMessage === null) return true;
+    if (blockMessage) {
+        channel.sendChat(blockMessage);
+        return true;
+    }
+    enqueueUserCommand(senderId, () => handleRPGCommand(data, channel)).catch(error => console.log('RPG command queue error:', error));
     return true;
 }
 
