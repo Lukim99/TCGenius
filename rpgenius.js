@@ -1427,6 +1427,43 @@ function removeInventoryItem(user, itemId, count) {
     return true;
 }
 
+function getRecipeEquipmentType(material) {
+    if (material.type == '무기') return 'weapon';
+    if (material.type == '갑옷') return 'armor';
+    if (material.type == '장신구') return 'accessory';
+    return null;
+}
+
+function getRecipeEquipmentId(material) {
+    if (material.type == '무기') return material.weapon_id;
+    if (material.type == '갑옷') return material.armor_id;
+    if (material.type == '장신구') return material.accessory_id;
+    return null;
+}
+
+function getInventoryEquipmentCount(user, material) {
+    const type = getRecipeEquipmentType(material);
+    const id = getRecipeEquipmentId(material);
+    if (!type || typeof id == 'undefined' || !user.inventory || !Array.isArray(user.inventory.equipment)) return 0;
+    return user.inventory.equipment.filter(equip => equip.type == type && Number(equip.id) == Number(id)).length;
+}
+
+function removeInventoryEquipment(user, material, count) {
+    const type = getRecipeEquipmentType(material);
+    const id = getRecipeEquipmentId(material);
+    if (!type || typeof id == 'undefined' || !user.inventory || !Array.isArray(user.inventory.equipment)) return false;
+    if (getInventoryEquipmentCount(user, material) < count) return false;
+    let remain = count;
+    for (let i = user.inventory.equipment.length - 1; i >= 0 && remain > 0; i--) {
+        const equip = user.inventory.equipment[i];
+        if (equip.type == type && Number(equip.id) == Number(id)) {
+            user.inventory.equipment.splice(i, 1);
+            remain--;
+        }
+    }
+    return remain == 0;
+}
+
 function getKoreanDateKey(date) {
     const koreaTime = new Date(date.getTime() + 9 * 60 * 60 * 1000);
     return koreaTime.toISOString().slice(0, 10);
@@ -1453,12 +1490,56 @@ function getRecipeEntryCount(entry) {
 }
 
 function getCraftMaterialStatus(user, material) {
+    const need = getRecipeEntryCount(material);
     if (material.type == '아이템') {
-        const need = getRecipeEntryCount(material);
         const have = getInventoryItemCount(user, material.item_id);
         return { have, need, ok: have >= need };
     }
-    return { have: 0, need: getRecipeEntryCount(material), ok: false };
+    if (material.type == '골드') {
+        const have = Number(user.gold || 0);
+        return { have, need, ok: have >= need };
+    }
+    if (material.type == '가넷') {
+        const have = Number(user.garnet || 0);
+        return { have, need, ok: have >= need };
+    }
+    if (['무기', '갑옷', '장신구'].includes(material.type)) {
+        const have = getInventoryEquipmentCount(user, material);
+        return { have, need, ok: have >= need };
+    }
+    return { have: 0, need, ok: false };
+}
+
+function consumeCraftMaterial(user, material) {
+    const count = getRecipeEntryCount(material);
+    if (material.type == '아이템') return removeInventoryItem(user, material.item_id, count);
+    if (material.type == '골드') {
+        if (Number(user.gold || 0) < count) return false;
+        user.gold = Number(user.gold || 0) - count;
+        return true;
+    }
+    if (material.type == '가넷') {
+        if (Number(user.garnet || 0) < count) return false;
+        user.garnet = Number(user.garnet || 0) - count;
+        return true;
+    }
+    if (['무기', '갑옷', '장신구'].includes(material.type)) return removeInventoryEquipment(user, material, count);
+    return false;
+}
+
+function canConsumeCraftMaterials(user, materials) {
+    const clone = JSON.parse(JSON.stringify({
+        gold: Number(user.gold || 0),
+        garnet: Number(user.garnet || 0),
+        inventory: user.inventory || {}
+    }));
+    return (materials || []).every(material => consumeCraftMaterial(clone, material));
+}
+
+function formatCraftMaterial(material, need) {
+    const text = formatPackEntry(material);
+    if (['무기', '갑옷', '장신구'].includes(material.type)) return text + ' x' + comma(need);
+    return text.replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(need));
 }
 
 function grantCraftEntry(user, entry) {
@@ -1486,11 +1567,11 @@ function formatCraftPreview(user, name) {
     const lines = ['⚒️ ' + recipe.name + ' 제작', '', '- 필요한 재료:'];
     (recipe.materials || []).forEach(material => {
         const status = getCraftMaterialStatus(user, material);
-        lines.push((status.ok ? '✅ ' : '❌ ') + formatPackEntry(material).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(status.need)) + ' (' + comma(status.have) + '/' + comma(status.need) + ')');
+        lines.push((status.ok ? '✅ ' : '❌ ') + formatCraftMaterial(material, status.need) + ' (' + comma(status.have) + '/' + comma(status.need) + ')');
     });
     lines.push('', '- 제작 시 획득 물품:');
     (recipe.crafted || []).forEach(entry => lines.push(' ㄴ ' + formatPackEntry(entry)));
-    if ((recipe.materials || []).some(material => !getCraftMaterialStatus(user, material).ok)) {
+    if (!canConsumeCraftMaterials(user, recipe.materials || [])) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다.');
     } else {
@@ -1506,10 +1587,8 @@ function runCraft(user) {
     const recipe = getRecipeByName(pending.name);
     user.pendingAction = null;
     if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
-    if ((recipe.materials || []).some(material => !getCraftMaterialStatus(user, material).ok)) return '❌ 재료가 부족합니다.';
-    (recipe.materials || []).forEach(material => {
-        if (material.type == '아이템') removeInventoryItem(user, material.item_id, getRecipeEntryCount(material));
-    });
+    if (!canConsumeCraftMaterials(user, recipe.materials || [])) return '❌ 재료가 부족합니다.';
+    if (!(recipe.materials || []).every(material => consumeCraftMaterial(user, material))) return '❌ 재료 차감 중 오류가 발생했습니다.';
     (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
     const lines = ['✅ \'' + recipe.name + '\' 제작에 성공했습니다.', '', '[ 획득 물품 ]'];
     (recipe.crafted || []).forEach(entry => lines.push('- ' + formatPackEntry(entry)));

@@ -2,7 +2,8 @@
     {
         "name": "청정한 귀걸이",
         "materials": [
-            { "type": "아이템", "item_id": 42, "count": 5 }
+            { "type": "아이템", "item_id": 42, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 3 }
@@ -11,7 +12,8 @@
     {
         "name": "천원지폐뭉치",
         "materials": [
-            { "type": "아이템", "item_id": 43, "count": 5 }
+            { "type": "아이템", "item_id": 43, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 4 }
@@ -20,7 +22,8 @@
     {
         "name": "추파춥스 사탕반지",
         "materials": [
-            { "type": "아이템", "item_id": 44, "count": 5 }
+            { "type": "아이템", "item_id": 44, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 5 }
@@ -29,7 +32,8 @@
     {
         "name": "지짐의 비법노트",
         "materials": [
-            { "type": "아이템", "item_id": 45, "count": 5 }
+            { "type": "아이템", "item_id": 45, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 6 }
@@ -38,7 +42,8 @@
     {
         "name": "컬러체인",
         "materials": [
-            { "type": "아이템", "item_id": 46, "count": 5 }
+            { "type": "아이템", "item_id": 46, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 7 }
@@ -47,7 +52,8 @@
     {
         "name": "빨간딱지",
         "materials": [
-            { "type": "아이템", "item_id": 47, "count": 5 }
+            { "type": "아이템", "item_id": 47, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 8 }
@@ -56,7 +62,8 @@
     {
         "name": "스트레이트 포커",
         "materials": [
-            { "type": "아이템", "item_id": 48, "count": 5 }
+            { "type": "아이템", "item_id": 48, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 9 }
@@ -65,7 +72,8 @@
     {
         "name": "테무산 꿈뭉치",
         "materials": [
-            { "type": "아이템", "item_id": 49, "count": 5 }
+            { "type": "아이템", "item_id": 49, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 10 }
@@ -74,7 +82,8 @@
     {
         "name": "아리랑치기용 각목",
         "materials": [
-            { "type": "아이템", "item_id": 50, "count": 5 }
+            { "type": "아이템", "item_id": 50, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 11 }
@@ -83,7 +92,8 @@
     {
         "name": "'000'",
         "materials": [
-            { "type": "아이템", "item_id": 51, "count": 5 }
+            { "type": "아이템", "item_id": 51, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 12 }
@@ -92,7 +102,8 @@
     {
         "name": "국회의사당 모형",
         "materials": [
-            { "type": "아이템", "item_id": 52, "count": 5 }
+            { "type": "아이템", "item_id": 52, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 13 }
@@ -101,7 +112,8 @@
     {
         "name": "우선순위",
         "materials": [
-            { "type": "아이템", "item_id": 53, "count": 5 }
+            { "type": "아이템", "item_id": 53, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 14 }
@@ -110,7 +122,8 @@
     {
         "name": "썸포 이어링",
         "materials": [
-            { "type": "아이템", "item_id": 54, "count": 5 }
+            { "type": "아이템", "item_id": 54, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 15 }
@@ -119,7 +132,8 @@
     {
         "name": "가넷브레이커",
         "materials": [
-            { "type": "아이템", "item_id": 55, "count": 5 }
+            { "type": "아이템", "item_id": 55, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 16 }
@@ -128,7 +142,8 @@
     {
         "name": "예언자의 결속반지",
         "materials": [
-            { "type": "아이템", "item_id": 56, "count": 5 }
+            { "type": "아이템", "item_id": 56, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 17 }
@@ -137,7 +152,8 @@
     {
         "name": "스코어의 증표",
         "materials": [
-            { "type": "아이템", "item_id": 57, "count": 5 }
+            { "type": "아이템", "item_id": 57, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 18 }
@@ -146,7 +162,8 @@
     {
         "name": "배신의 증표",
         "materials": [
-            { "type": "아이템", "item_id": 58, "count": 5 }
+            { "type": "아이템", "item_id": 58, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 19 }
@@ -155,7 +172,8 @@
     {
         "name": "중력지배",
         "materials": [
-            { "type": "아이템", "item_id": 59, "count": 5 }
+            { "type": "아이템", "item_id": 59, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 20 }
@@ -164,7 +182,8 @@
     {
         "name": "원한",
         "materials": [
-            { "type": "아이템", "item_id": 60, "count": 5 }
+            { "type": "아이템", "item_id": 60, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 21 }
@@ -173,7 +192,8 @@
     {
         "name": "푸른눈의 목걸이",
         "materials": [
-            { "type": "아이템", "item_id": 61, "count": 5 }
+            { "type": "아이템", "item_id": 61, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 22 }
@@ -182,7 +202,8 @@
     {
         "name": "행복한 목걸이",
         "materials": [
-            { "type": "아이템", "item_id": 62, "count": 5 }
+            { "type": "아이템", "item_id": 62, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 23 }
@@ -191,7 +212,8 @@
     {
         "name": "뇌우",
         "materials": [
-            { "type": "아이템", "item_id": 63, "count": 5 }
+            { "type": "아이템", "item_id": 63, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 24 }
@@ -200,7 +222,8 @@
     {
         "name": "시간수급자",
         "materials": [
-            { "type": "아이템", "item_id": 64, "count": 5 }
+            { "type": "아이템", "item_id": 64, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 25 }
@@ -209,7 +232,8 @@
     {
         "name": "데우스 엑스 마키나",
         "materials": [
-            { "type": "아이템", "item_id": 65, "count": 5 }
+            { "type": "아이템", "item_id": 65, "count": 5 },
+            { "type": "골드", "count": 10000 }
         ],
         "crafted": [
             { "type": "장신구", "accessory_id": 26 }

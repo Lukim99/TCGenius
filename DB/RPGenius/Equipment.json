@@ -268,126 +268,126 @@
         {
             "name": "청정한 귀걸이",
             "desc": "매우 말끔한 청정해보이는 귀걸이다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "pnt": 8 }
         },
         {
             "name": "천원지폐뭉치",
             "desc": "이런게... 도움이 될까...?",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "gold": 0.03 }
         },
         {
             "name": "추파춥스 사탕반지",
             "desc": "꽤나 맛나보인다. 실제 돈 280원의 가치.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "hp": 400 }
         },
         {
             "name": "지짐의 비법노트",
             "desc": "리비동 목꺾기...? 이런게 왜 적혀져 있지..?",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "potion": 0.1 }
         },
         {
             "name": "컬러체인",
             "desc": "무척이나 어려워보이는 패턴으로 이루어져 있다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "crit": 0.04, "critMul": 0.05 }
         },
         {
             "name": "빨간딱지",
             "desc": "파산했다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "hp": -100, "mp": 150 }
         },
         {
             "name": "스트레이트 포커",
             "desc": "지목스트레이트 하겠습니다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "afterBasic": 0.05 }
         },
         {
             "name": "테무산 꿈뭉치",
             "desc": "일장춘몽이 꿈꿨던 것은 테무랜드의 우승이었을까.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "avd": 0.01 }
         },
         {
             "name": "아리랑치기용 각목",
             "desc": "통수치기 딱 좋아보인다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "afterSkill": 0.05 }
         },
         {
             "name": "'000'",
             "desc": "K=1000.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "000": 0.1 }
         },
         {
             "name": "국회의사당 모형",
             "desc": "이걸 맛동산으로 어떻게 만든거지...?",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "def": 0.08 }
         },
         {
             "name": "우선순위",
             "desc": "안성재>Myosotis>넛츠.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "exp": 0.015 }
         },
         {
             "name": "썸포 이어링",
             "desc": "썸머포켓츠 듀오 전설의 시작.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "exp": 0.02 },
             "requireLevel": 100
         },
         {
             "name": "가넷브레이커",
             "desc": "마치 5만원을 파괴시켜버린 타노스의 장갑처럼 생겼다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "pnt": 15 },
             "plusStat": { "hp": -0.3, "atk": 0.25 }
         },
         {
             "name": "예언자의 결속반지",
             "desc": "예언도 능력이라면?",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "atk": 0.08, "hp": 0.08 },
             "exactlyStar": 7
         },
         {
             "name": "스코어의 증표",
             "desc": "스코어 서바이벌을 기리는 증표다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "atk": 0.12 }
         },
         {
             "name": "배신의 증표",
             "desc": "독재자가 배신자를 처단한 후 남아있는 증표.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "pnt": 12 },
             "plusStat": { "def": -0.03 }
         },
         {
             "name": "중력지배",
             "desc": "아래로 내려갈수록 강해지는 장신구다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "exp": 0.05 },
             "underLevel": 100
         },
         {
             "name": "원한",
             "desc": "침묵당해 한이 맺혀있는, 강한 어둠이 깃든 장신구.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "eliteDmg": 0.15 }
         },
         {
             "name": "푸른눈의 목걸이",
             "desc": "‘크아아아’라고 적혀져 있다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "crit": 0.1 },
             "require": [
                 { "type": "장신구", "accessory_id": 23 }
@@ -396,7 +396,7 @@
         {
             "name": "행복한 목걸이",
             "desc": "‘행복의 행복한 마동’이라고 적혀져 있다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "critMul": 0.2 },
             "require": [
                 { "type": "장신구", "accessory_id": 22 }
@@ -405,19 +405,19 @@
         {
             "name": "뇌우",
             "desc": "비바람이 몰아친다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "plusStat": { "mpReduce": -0.1 }
         },
         {
             "name": "시간수급자",
             "desc": "기초시간을 수급받아야만 살아남나보다.",
-            "rarity": "레어",
+            "rarity": "고유",
             "stat": { "skillCooldown": -1000 }
         },
         {
             "name": "데우스 엑스 마키나",
             "desc": "DXM.",
-            "rarity": "유니크",
+            "rarity": "고유",
             "stat": { "skillTrueDmg": 888 }
         }
     ]
