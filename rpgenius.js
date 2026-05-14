@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -73,6 +73,10 @@ async function initRpgeniusData() {
             } catch (e) {
                 console.error('[rpgenius_data] ' + key + ' 로드 실패: ' + e.message);
             }
+        }
+        const cachedEliteState = rpgeniusDataCache.EliteState;
+        if (cachedEliteState && typeof cachedEliteState == 'object') {
+            Object.keys(cachedEliteState).forEach(k => { eliteFieldStates[k] = cachedEliteState[k]; });
         }
         console.log('[rpgenius_data] 데이터 로드 완료 (' + Object.keys(rpgeniusDataCache).length + '/' + RPGENIUS_DATA_KEYS.length + ')');
     })();
@@ -1175,10 +1179,19 @@ function getEliteState(fieldName) {
     return eliteFieldStates[fieldName];
 }
 
+let eliteStatePersistTimer = null;
+function persistEliteState() {
+    if (eliteStatePersistTimer) return;
+    eliteStatePersistTimer = setTimeout(() => {
+        eliteStatePersistTimer = null;
+        saveRpgeniusDataEntry('EliteState', eliteFieldStates).catch(e => console.error('EliteState 저장 실패:', e.message));
+    }, 1000);
+}
+
 function releaseEliteEncounter(user) {
     if (!user || !user.field || !user.field.name) return;
     const state = getEliteState(user.field.name);
-    if (state.owner == user.name) state.owner = null;
+    if (state.owner == user.name) { state.owner = null; persistEliteState(); }
 }
 
 function tryEncounterElite(user, dungeon, lines) {
@@ -1188,6 +1201,7 @@ function tryEncounterElite(user, dungeon, lines) {
     if (state.owner || Date.now() - Number(state.defeatedAt || 0) < ELITE_RESPAWN_COOLDOWN) return;
     if (Math.random() >= ELITE_ENCOUNTER_RATE) return;
     state.owner = user.name;
+    persistEliteState();
     user.field.elite = { hp: Number(dungeon.elite.hp || 0), encounteredAt: Date.now() };
     lines.push('', '⚠️ 엘리트 몬스터 조우!');
     lines.push('- ' + dungeon.elite.name + '이(가) 나타났습니다!');
@@ -1251,6 +1265,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         const state = getEliteState(dungeon.name);
         state.owner = null;
         state.defeatedAt = Date.now();
+        persistEliteState();
         user.field.elite = null;
         setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
@@ -2512,7 +2527,7 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
     }
 }
 
-function useCoupon(user, codeArg) {
+async function useCoupon(user, codeArg) {
     const code = String(codeArg || '').trim();
     if (!code) return '❌ /RPGenius 쿠폰 [코드]';
     const coupons = getDataCache('Coupon', []);
@@ -2521,9 +2536,17 @@ function useCoupon(user, codeArg) {
     if (coupon.expired_At != null && Date.now() > Number(new Date(coupon.expired_At).getTime() || 0)) return '❌ 만료된 쿠폰입니다.';
     if (!Array.isArray(user.usedCoupons)) user.usedCoupons = [];
     if (user.usedCoupons.includes(coupon.code)) return '❌ 이미 사용한 쿠폰입니다.';
+    const maxUse = Number(coupon.maxUse || 0);
+    if (maxUse > 0 && Number(coupon.usedCount || 0) >= maxUse) return '❌ 사용 가능 횟수를 모두 소진한 쿠폰입니다.';
     const summary = {};
     (coupon.reward || []).forEach(reward => grantPackReward(user, reward, summary));
     user.usedCoupons.push(coupon.code);
+    coupon.usedCount = Number(coupon.usedCount || 0) + 1;
+    try {
+        await saveRpgeniusDataEntry('Coupon', coupons);
+    } catch (e) {
+        console.error('쿠폰 사용 횟수 저장 실패:', e);
+    }
     const lines = ['✅ 쿠폰 보상을 획득했습니다.', '[ 획득 결과 ]'];
     Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
     return lines.join('\n');
@@ -3951,7 +3974,7 @@ async function handleRPGCommand(data, channel) {
             reply('❌ /RPGenius 쿠폰 [코드]');
             return true;
         }
-        const result = useCoupon(user, args[1]);
+        const result = await useCoupon(user, args[1]);
         await user.save();
         reply(result);
         return true;

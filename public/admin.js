@@ -332,14 +332,21 @@ function renderCoupon() {
         const card = el('div', { class: 'card' });
         const codeIn = el('input', { value: c.code || '', placeholder: '쿠폰 코드', oninput: () => c.code = codeIn.value });
         const expIn = el('input', { value: c.expired_At || '', placeholder: 'YYYY-MM-DDTHH:MM:SS+09:00 또는 비워두면 무기한', oninput: () => c.expired_At = expIn.value || null });
+        const maxUseIn = el('input', { type: 'number', min: 0, value: c.maxUse == null ? '' : c.maxUse, placeholder: '비워두면 무제한', oninput: () => { const v = maxUseIn.value.trim(); c.maxUse = v === '' ? null : Number(v); } });
+        const usedCount = Number(c.usedCount || 0);
+        const usedLabel = (c.maxUse != null && c.maxUse > 0) ? (usedCount + ' / ' + c.maxUse) : (usedCount + ' / ∞');
         card.appendChild(el('div', { class: 'card-head' },
-            el('div', { class: 'card-title' }, '쿠폰 #' + idx),
+            el('div', { class: 'card-title' }, '쿠폰 #' + idx + (c.code ? ' — ' + c.code : ''), el('span', { class: 'tag', style: { marginLeft: '8px' } }, '사용: ' + usedLabel)),
             el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('이 쿠폰을 삭제합니까?')) { couponData.splice(idx, 1); renderCoupon(); } } }, '삭제')
         ));
         const grid = el('div', { class: 'split' });
         grid.appendChild(el('div', null, el('label', null, '코드'), codeIn));
         grid.appendChild(el('div', null, el('label', null, '만료일 (ISO 8601)'), expIn));
+        const grid2 = el('div', { class: 'split', style: { marginTop: '6px' } });
+        grid2.appendChild(el('div', null, el('label', null, '최대 사용 횟수 (maxUse)'), maxUseIn));
+        grid2.appendChild(el('div', null, el('label', null, '현재 사용 횟수 (usedCount, 읽기 전용)'), el('input', { value: String(usedCount), readonly: true, style: { opacity: '.7' } })));
         card.appendChild(grid);
+        card.appendChild(grid2);
         card.appendChild(el('h3', { style: { marginTop: '14px' } }, '보상'));
         const entryList = el('div', { class: 'entry-list' });
         c.reward.forEach((entry, i) => {
