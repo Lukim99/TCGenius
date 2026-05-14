@@ -23,11 +23,18 @@ const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
-const ITEM_TYPE_ORDER = ['가챠', '번들', '마법석', '소모품', '티켓', '재료'];
+const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '재료'];
 const ELITE_KILL_REQUIREMENT = 100;
 const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
 const ATTENDANCE_STAMP_ITEM_ID = 71;
+const ICE_HAMMER_ITEM_ID = 74;
+const ICE_SUMMON_REWARDS = {
+    '소': { chance: 0.9, gold: 5000 },
+    '중': { chance: 0.7, gold: 10000 },
+    '대': { chance: 0.4, gold: 25000 },
+    '특대': { chance: 0.25, gold: 50000 }
+};
 const eliteFieldStates = {};
 const commandQueues = {};
 const commandSpamStates = {};
@@ -1377,6 +1384,12 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
+        if (Math.random() < 0.01) {
+            const items = getDataCache('Item', []);
+            addInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
+            const hammer = items[ICE_HAMMER_ITEM_ID];
+            lines.push('- 🔨 [이벤트]' + (hammer ? hammer.name : '망치') + ' 획득!');
+        }
     }
 
     if (killCount > 0 && slotEffects.killRecoveryChance > 0) {
@@ -1752,6 +1765,27 @@ function removeInventoryItem(user, itemId, count) {
     item.count = Number(item.count || 0) - count;
     cleanupInventoryItems(user);
     return true;
+}
+
+function summonIce(user, sizeArg) {
+    const size = String(sizeArg || '').trim();
+    const config = ICE_SUMMON_REWARDS[size];
+    if (!config) return '❌ /RPGenius 얼음소환 [소|중|대|특대]';
+    const items = getDataCache('Item', []);
+    const hammer = items[ICE_HAMMER_ITEM_ID];
+    const hammerName = hammer ? hammer.name : '망치';
+    if (getInventoryItemCount(user, ICE_HAMMER_ITEM_ID) < 1) return '❌ ' + hammerName + '가 없습니다.';
+    removeInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
+    const success = Math.random() < config.chance;
+    const lines = ['🧊 ' + size + ' 얼음을 소환했습니다.', '- ' + hammerName + ' x1 소모'];
+    if (success) {
+        user.gold = Number(user.gold || 0) + config.gold;
+        lines.push('✅ 얼음을 깨부쉈습니다!');
+        lines.push('- 🪙 ' + comma(config.gold) + ' 획득');
+    } else {
+        lines.push('❌ 얼음을 깨부수지 못했습니다.');
+    }
+    return lines.join('\n');
 }
 
 function getRecipeEquipmentType(material) {
@@ -3711,6 +3745,13 @@ async function handleRPGCommand(data, channel) {
 
     if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '장착정보', '설명', '사용'].includes(args[0])) {
         reply('❌ 필드에서 사용할 수 없는 명령어입니다.\n/RPGenius 필드퇴장');
+        return true;
+    }
+
+    if (args[0] == '얼음소환') {
+        const result = summonIce(user, args[1]);
+        await user.save();
+        reply(result);
         return true;
     }
 
