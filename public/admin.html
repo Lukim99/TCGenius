@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>RPGenius 관리자</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:dark; --bg:#0b0d12; --bg2:#0e1118; --panel:#13161d; --panel2:#171b25; --bd:#1f2330; --bd2:#2a2f3d; --bd3:#3a4055; --fg:#e5e7eb; --mut:#9aa3b2; --pri:#5865f2; --pri2:#4752c4; --ok:#16a34a; --err:#dc2626; --warn:#eab308}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
+header{display:flex;align-items:center;justify-content:space-between;padding:13px 22px;border-bottom:1px solid var(--bd);background:var(--bg2);position:sticky;top:0;z-index:50}
+header h1{margin:0;font-size:16px;font-weight:600}
+header .who{color:var(--mut);font-size:13px;margin-right:12px}
+.btn{background:var(--bd);color:var(--fg);border:1px solid var(--bd2);border-radius:7px;padding:7px 13px;cursor:pointer;font-size:13px;font-family:inherit;transition:.12s}
+.btn:hover{background:var(--bd2);border-color:var(--bd3)}
+.btn.primary{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--pri2);border-color:var(--pri2)}
+.btn.danger{color:#fca5a5;border-color:#7f1d1d}
+.btn.danger:hover{background:#3f1212;color:#fff}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.icon{padding:4px 8px;font-size:13px;line-height:1}
+.tabs{display:flex;gap:2px;padding:12px 22px 0;border-bottom:1px solid var(--bd);background:var(--bg2);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:9px 16px;background:transparent;border:0;color:var(--mut);cursor:pointer;border-radius:7px 7px 0 0;font-size:13px;font-weight:500;font-family:inherit;white-space:nowrap}
+.tab:hover{color:var(--fg)}
+.tab.active{color:var(--fg);background:var(--panel);border:1px solid var(--bd);border-bottom-color:var(--panel);margin-bottom:-1px}
+main{padding:22px;max-width:1280px;margin:0 auto}
+.panel{display:none}
+.panel.active{display:block}
+section{background:var(--panel);border:1px solid var(--bd);border-radius:11px;padding:18px;margin-bottom:16px}
+h2{margin:0 0 14px;font-size:15px;font-weight:600}
+h3{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 4px}
+input,select,textarea{width:100%;padding:8px 11px;background:var(--bg);border:1px solid var(--bd2);border-radius:7px;color:var(--fg);font-size:13px;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:var(--pri)}
+input[type=number]{font-variant-numeric:tabular-nums}
+textarea{font-family:ui-monospace,'Cascadia Code',monospace;min-height:340px;line-height:1.5;font-size:12.5px;tab-size:2;white-space:pre;overflow:auto;resize:vertical}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.row > *{flex:1;min-width:140px}
+.row > .nf{flex:0 0 auto;min-width:auto}
+.muted{color:var(--mut);font-size:12.5px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
+.kv > div{background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px 11px}
+.kv > div b{display:block;font-size:11px;color:var(--mut);font-weight:500;margin-bottom:3px}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.bar > .grow{flex:1;min-width:140px}
+.list{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--panel2);border:1px solid var(--bd);border-radius:9px;padding:13px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.card-title{font-size:13px;font-weight:600}
+.entry-list{display:flex;flex-direction:column;gap:6px}
+.entry{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:7px 9px;flex-wrap:wrap}
+.entry > *{min-width:0}
+.entry select{width:100px;flex:0 0 auto}
+.entry input[type=number]{width:80px;flex:0 0 auto}
+.entry input[type=text]{flex:1;min-width:120px}
+.entry .pickbtn{flex:1;min-width:160px;text-align:left;font-family:inherit;background:var(--bg2);border:1px solid var(--bd2);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12.5px}
+.entry .pickbtn:hover{border-color:var(--bd3)}
+.entry .pickbtn .ph{color:var(--mut)}
+.entry .lab{font-size:11.5px;color:var(--mut);flex:0 0 auto}
+.add-btn{background:transparent;border:1px dashed var(--bd2);color:var(--mut);border-radius:7px;padding:8px;cursor:pointer;font-size:12.5px;width:100%;margin-top:6px;font-family:inherit}
+.add-btn:hover{color:var(--fg);border-color:var(--bd3)}
+.toast{position:fixed;bottom:20px;right:20px;padding:11px 16px;border-radius:8px;background:var(--panel);border:1px solid var(--bd2);color:var(--fg);font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:.2s;pointer-events:none;z-index:200}
+.toast.show{opacity:1}
+.toast.ok{border-color:var(--ok)}
+.toast.err{border-color:var(--err)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--bd2);border-radius:12px;width:min(560px,100%);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.modal h3{margin:0;padding:16px 18px;border-bottom:1px solid var(--bd);font-size:14px;color:var(--fg);text-transform:none;letter-spacing:0}
+.modal .search{padding:12px 14px;border-bottom:1px solid var(--bd)}
+.modal .search input{width:100%}
+.modal .body{overflow:auto;flex:1}
+.modal .item{padding:10px 16px;border-bottom:1px solid var(--bd);cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.modal .item:hover{background:var(--panel2)}
+.modal .item .meta{color:var(--mut);font-size:12px}
+.modal .foot{padding:10px 14px;border-top:1px solid var(--bd);text-align:right}
+.empty{color:var(--mut);text-align:center;padding:30px;font-size:13px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--bd);color:var(--mut);margin-right:5px}
+.tag.r{color:#fca5a5;background:#3f1212}
+.tag.g{color:#86efac;background:#14532d}
+.tag.b{color:#93c5fd;background:#1e3a8a}
+.tag.y{color:#fde68a;background:#713f12}
+.tag.p{color:#d8b4fe;background:#581c87}
+.subtabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.subtab{background:transparent;border:1px solid var(--bd2);color:var(--mut);border-radius:20px;padding:5px 14px;cursor:pointer;font-size:12.5px;font-family:inherit}
+.subtab:hover{color:var(--fg)}
+.subtab.active{background:var(--pri);border-color:var(--pri);color:#fff}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:780px){.split{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ RPGenius 관리자</h1>
+  <div><span class="who">{{ADMIN_NAME}}</span> <button class="btn" id="logout">로그아웃</button></div>
+</header>
+<div class="tabs">
+  <button class="tab active" data-tab="grant">유저 / 재화</button>
+  <button class="tab" data-tab="pack">📦 Pack</button>
+  <button class="tab" data-tab="bundle">🎁 Bundle</button>
+  <button class="tab" data-tab="coupon">🎟️ Coupon</button>
+  <button class="tab" data-tab="shop">🏪 Shop</button>
+  <button class="tab" data-tab="recipe">⚒️ Recipe</button>
+  <button class="tab" data-tab="raw">📄 Raw JSON</button>
+</div>
+<main>
+
+<div class="panel active" data-panel="grant">
+  <section>
+    <h2>유저 검색</h2>
+    <div class="row">
+      <div><label>닉네임</label><input id="searchName" placeholder="닉네임"></div>
+      <div class="nf"><button class="btn primary" id="searchBtn">검색</button></div>
+    </div>
+    <div id="userInfo" class="kv" style="display:none"></div>
+  </section>
+  <section>
+    <h2>재화 / 아이템 지급</h2>
+    <p class="muted">차감하려면 음수를 입력하세요. 예) -100</p>
+    <div class="row">
+      <div><label>대상 닉네임</label><input id="grantName" placeholder="닉네임"></div>
+      <div><label>종류</label><select id="grantKind">
+        <option value="gold">🪙 골드</option><option value="garnet">💠 가넷</option>
+        <option value="point">💰 포인트</option><option value="mileage">Ⓜ️ 마일리지</option>
+        <option value="item">📦 아이템</option>
+      </select></div>
+      <div id="itemNameWrap" style="display:none"><label>아이템</label>
+        <button class="btn pickbtn" id="grantItemPick" style="width:100%;text-align:left"><span class="ph">아이템 선택...</span></button>
+        <input type="hidden" id="grantItemName">
+      </div>
+      <div><label>수량</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
+      <div class="nf"><button class="btn primary" id="grantBtn">지급/차감</button></div>
+    </div>
+  </section>
+</div>
+
+<div class="panel" data-panel="pack"><section><h2>Pack 편집</h2><div class="muted" style="margin-bottom:10px">가챠 팩 — 각 보상은 <code>roll</code>(0~1) 확률로 지급됩니다.</div><div id="packList" class="list"></div><button class="add-btn" id="packAdd">+ 새 Pack 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="packSave">💾 저장</button><button class="btn" id="packReload">↻ 다시 불러오기</button><span class="muted" id="packStatus"></span></div></section></div>
+
+<div class="panel" data-panel="bundle"><section><h2>Bundle 편집</h2><div class="muted" style="margin-bottom:10px">번들 — 모든 보상이 100% 지급됩니다.</div><div id="bundleList" class="list"></div><button class="add-btn" id="bundleAdd">+ 새 Bundle 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="bundleSave">💾 저장</button><button class="btn" id="bundleReload">↻ 다시 불러오기</button><span class="muted" id="bundleStatus"></span></div></section></div>
+
+<div class="panel" data-panel="coupon"><section><h2>Coupon 편집</h2><div id="couponList" class="list"></div><button class="add-btn" id="couponAdd">+ 새 쿠폰 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="couponSave">💾 저장</button><button class="btn" id="couponReload">↻ 다시 불러오기</button><span class="muted" id="couponStatus"></span></div></section></div>
+
+<div class="panel" data-panel="shop"><section><h2>Shop 편집</h2><div class="subtabs" id="shopTypes"></div><div id="shopList" class="list"></div><button class="add-btn" id="shopAdd">+ 새 상품 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="shopSave">💾 저장</button><button class="btn" id="shopReload">↻ 다시 불러오기</button><button class="btn" id="shopAddType">+ 새 상점 종류</button><button class="btn danger" id="shopDelType">현재 종류 삭제</button><span class="muted" id="shopStatus"></span></div></section></div>
+
+<div class="panel" data-panel="recipe"><section><h2>Recipe 편집</h2><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 레시피 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="recipeSave">💾 저장</button><button class="btn" id="recipeReload">↻ 다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
+
+<div class="panel" data-panel="raw"><section>
+  <h2>Raw JSON 에디터</h2><div class="muted" style="margin-bottom:10px">UI 에디터가 없는 키(Item, Equipment 등) 직접 편집용. 잘못 저장하면 게임 로직이 깨질 수 있으니 주의하세요.</div>
+  <div class="bar"><select id="rawKey" class="grow"></select><button class="btn" id="rawReload">불러오기</button><button class="btn" id="rawFormat">정렬</button><button class="btn primary" id="rawSave">저장</button><span class="muted" id="rawStatus"></span></div>
+  <textarea id="rawText" spellcheck="false" placeholder="키를 선택하고 불러오기를 눌러주세요."></textarea>
+</section></div>
+
+</main>
+
+<div class="modal-bg" id="modal"><div class="modal">
+  <h3 id="modalTitle">선택</h3>
+  <div class="search"><input id="modalSearch" placeholder="검색..." autocomplete="off"></div>
+  <div class="body" id="modalBody"></div>
+  <div class="foot"><button class="btn" id="modalClose">취소</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>window.DATA_KEYS={{DATA_KEYS}};</script>
+<script src="/static/admin.js"></script>
+</body>
+</html>
