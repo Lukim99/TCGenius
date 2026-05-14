@@ -16,12 +16,12 @@
         "desc": "공격력의 ${1}로 공격하고 피해의 ${2}만큼 체력을 흡수합니다.",
         "format": [
             {
-                "base": 1.1,
+                "base": 1.25,
                 "per_star": 0.08
             },
             {
                 "base": 0.01,
-                "per_star": 0.003
+                "per_star": 0.004
             }
         ],
         "mp_cost": 56,
@@ -29,15 +29,24 @@
     },
     {
         "name": "글버지",
-        "desc": "공격력의 ${1}로 2회 타격합니다.",
+        "desc": "공격력의 ${1}로 2회 타격하고 ${2} 확률로 HP를 ${3} 회복합니다.",
         "format": [
             {
-                "base": 0.75,
-                "per_star": 0.05
+                "base": 0.65,
+                "per_star": 0.03
+            },
+            {
+                "base": 0.1,
+                "per_star": 0.015
+            },
+            {
+                "base": 10,
+                "per_star": 5,
+                "type": "flat"
             }
         ],
-        "mp_cost": 77,
-        "cooltime": 9000
+        "mp_cost": 82,
+        "cooltime": 10000
     },
     {
         "name": "불사조",
@@ -48,7 +57,7 @@
                 "per_star": 0.15
             }
         ],
-        "mp_cost": 81,
+        "mp_cost": 73,
         "cooltime": 7500
     },
     {
@@ -106,7 +115,7 @@
             },
             {
                 "base": 0.01,
-                "per_star": 0.003
+                "per_star": 0.01
             }
         ],
         "mp_cost": 77,

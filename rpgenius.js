@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -531,7 +531,8 @@ function getCardCombineSelection(user, numberArgs) {
     if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 입력된 카드 3개는 모두 같은 등급이어야 합니다.' };
     const info = getCardCombineInfo(star);
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
-    return { numbers, selected, star, info };
+    const sameCardId = selected.every(card => Number(card.id) == Number(selected[0].id)) ? Number(selected[0].id) : null;
+    return { numbers, selected, star, info, sameCardId };
 }
 
 function getRandomCardCombineNumbers(user, starArg) {
@@ -589,7 +590,7 @@ function runCardCombine(user) {
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
     const success = Math.random() < selection.info.rate;
     const resultCard = {
-        id: randomInt(0, characterCards.length - 1),
+        id: success && selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
         star: success ? selection.star + 1 : selection.star,
         type: '일반'
     };
@@ -1031,6 +1032,33 @@ function applyCriticalDamage(damage, stats, extra) {
     };
 }
 
+function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra) {
+    const hitCount = Math.max(1, Math.floor(Number(extra && extra.hitCount || 1)));
+    const hitDamages = [];
+    let finalDamage = 0;
+    let criticalCount = 0;
+    let bonusTripleZero = 0;
+    for (let i = 0; i < hitCount; i++) {
+        const criticalResult = applyCriticalDamage(rawDamage, stats, extra);
+        let hitDamage = getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, slotEffects.defReduction);
+        if (criticalResult.isCritical) criticalCount++;
+        if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
+            const bonus = [10, 100, 1000][randomInt(0, 2)];
+            bonusTripleZero += bonus;
+            hitDamage += bonus;
+        }
+        if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
+        hitDamages.push(hitDamage);
+        finalDamage += hitDamage;
+    }
+    return { hitCount, hitDamages, finalDamage, criticalCount, bonusTripleZero };
+}
+
+function formatHitResultLine(hitResult) {
+    if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return null;
+    return '- ' + comma(hitResult.hitCount) + '회 타격: ' + hitResult.hitDamages.map(damage => comma(damage)).join(' / ');
+}
+
 function getSkillValue(skill, index, star) {
     const format = skill.format && skill.format[index];
     return Number(format && format.base || 0) + Number(format && format.per_star || 0) * Number(star || 0);
@@ -1052,6 +1080,15 @@ function getPassiveMpRecovery(user) {
     const skillData = getMainCardSkills(user).find(data => data.skill.name == '피아스트');
     if (!skillData) return 0;
     return getSkillValue(skillData.skill, 1, user.main_card && user.main_card.star);
+}
+
+function applySkillRecovery(user, maxHp, extra, lines) {
+    if (!extra || Number(extra.skillRecoveryChance || 0) <= 0 || Number(extra.skillRecoveryAmount || 0) <= 0) return;
+    if (Math.random() >= Number(extra.skillRecoveryChance || 0)) return;
+    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
+    user.hp = Math.min(Number(maxHp || 0), beforeHp + Math.round(Number(extra.skillRecoveryAmount || 0)));
+    const recovered = user.hp - beforeHp;
+    if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
 }
 
 function addExperience(user, amount) {
@@ -1253,21 +1290,18 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const elite = dungeon.elite;
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
-    const criticalResult = applyCriticalDamage(damageWithSlotBonus, stats, extra);
-    let finalDamage = getDamageAfterReducedDefense(criticalResult.damage, elite.def, extra && extra.pnt || stats.pnt, slotEffects.defReduction);
-    let bonusTripleZero = 0;
-    if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
-        bonusTripleZero = [10, 100, 1000][randomInt(0, 2)];
-        finalDamage += bonusTripleZero;
-    }
-    if (extra && Number(extra.skillTrueDmg || 0) > 0) finalDamage += Number(extra.skillTrueDmg);
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra);
+    const finalDamage = hitResult.finalDamage;
     const remainHp = Math.max(0, currentHp - finalDamage);
     const maxHp = Number(stats.hp || 0);
-    const lines = ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    const lines = ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-    if (bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(bonusTripleZero));
+    const hitLine = formatHitResultLine(hitResult);
+    if (hitLine) lines.push(hitLine);
+    if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (remainHp <= 0) {
         lines.push('- ' + elite.name + ' 처치!');
+        applySkillRecovery(user, maxHp, extra, lines);
         applyEliteReward(user, dungeon, slotEffects, extra, lines);
         const state = getEliteState(dungeon.name);
         state.owner = null;
@@ -1286,6 +1320,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     user.hp = Math.max(0, beforeHp - fieldDamage);
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+    applySkillRecovery(user, maxHp, extra, lines);
     if (user.hp <= 0) {
         user.hp = 1;
         saveFieldCooldowns(user);
@@ -1304,14 +1339,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
-    const criticalResult = applyCriticalDamage(damageWithSlotBonus, stats, extra);
-    let finalDamage = getDamageAfterReducedDefense(criticalResult.damage, dungeon.def, extra && extra.pnt || stats.pnt, slotEffects.defReduction);
-    let bonusTripleZero = 0;
-    if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
-        bonusTripleZero = [10, 100, 1000][randomInt(0, 2)];
-        finalDamage += bonusTripleZero;
-    }
-    if (extra && Number(extra.skillTrueDmg || 0) > 0) finalDamage += Number(extra.skillTrueDmg);
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, dungeon.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra);
+    const finalDamage = hitResult.finalDamage;
     const killCount = Math.floor(finalDamage / Number(dungeon.hp || 1));
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const fieldDamageBase = Number(dungeon.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
@@ -1320,11 +1349,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     user.hp = Math.max(0, beforeHp - fieldDamage);
 
-    const lines = ['⚔️ ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- 총 ' + comma(killCount) + '마리 처치'];
+    const lines = ['⚔️ ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- 총 ' + comma(killCount) + '마리 처치'];
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-    if (bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(bonusTripleZero));
+    const hitLine = formatHitResultLine(hitResult);
+    if (hitLine) lines.push(hitLine);
+    if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
     else lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+    applySkillRecovery(user, maxHp, extra, lines);
 
     if (user.hp <= 0) {
         user.hp = 1;
@@ -1450,7 +1482,11 @@ function useSkillInField(user, skillName) {
     extra.mpCost = mpCost;
     extra.mpAfter = user.mp;
     extra.maxMp = maxMp;
-    if (skillData.skill.name == '글버지') multiplier *= 2;
+    if (skillData.skill.name == '글버지') {
+        extra.hitCount = 2;
+        extra.skillRecoveryChance = getSkillValue(skillData.skill, 1, star);
+        extra.skillRecoveryAmount = getSkillValue(skillData.skill, 2, star);
+    }
     if (skillData.skill.name == '불사조') extra.receivedDamageMul = 1.5;
     if (skillData.skill.name == 'SUPER EASY') extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
     if (skillData.skill.name == '백억이요') extra.goldBonus = getSkillValue(skillData.skill, 1, star);
@@ -1769,10 +1805,31 @@ function removeInventoryItem(user, itemId, count) {
     return true;
 }
 
-function summonIce(user, sizeArg) {
+function getIceCount(ices, size) {
+    const entry = ices && ices[size];
+    if (entry && typeof entry == 'object' && typeof entry.N != 'undefined') return Number(entry.N || 0);
+    return Number(entry || 0);
+}
+
+function setIceCount(ices, size, count) {
+    if (ices[size] && typeof ices[size] == 'object' && typeof ices[size].N != 'undefined') ices[size].N = String(count);
+    else ices[size] = count;
+}
+
+function formatRemainingIces(ices) {
+    return ['[ 남은 얼음 ]']
+        .concat(Object.keys(ICE_SUMMON_REWARDS).map(size => '🧊 ' + size + ': ' + comma(getIceCount(ices, size))))
+        .join('\n');
+}
+
+async function summonIce(user, sizeArg) {
     const size = String(sizeArg || '').trim();
     const config = ICE_SUMMON_REWARDS[size];
     if (!config) return '❌ /RPGenius 얼음소환 [소|중|대|특대]';
+    await loadRpgeniusDataEntry('Ices');
+    const ices = getDataCache('Ices', {});
+    const iceCount = getIceCount(ices, size);
+    if (iceCount <= 0) return '❌ ' + size + ' 얼음이 남아있지 않습니다.\n\n' + formatRemainingIces(ices);
     const items = getDataCache('Item', []);
     const hammer = items[ICE_HAMMER_ITEM_ID];
     const hammerName = hammer ? hammer.name : '망치';
@@ -1781,12 +1838,15 @@ function summonIce(user, sizeArg) {
     const success = Math.random() < config.chance;
     const lines = ['🧊 ' + size + ' 얼음을 소환했습니다.', '- ' + hammerName + ' x1 소모'];
     if (success) {
+        setIceCount(ices, size, iceCount - 1);
+        await saveRpgeniusDataEntry('Ices', ices);
         user.gold = Number(user.gold || 0) + config.gold;
         lines.push('✅ 얼음을 깨부쉈습니다!');
         lines.push('- 🪙 ' + comma(config.gold) + ' 획득');
     } else {
         lines.push('❌ 얼음을 깨부수지 못했습니다.');
     }
+    lines.push('', formatRemainingIces(ices));
     return lines.join('\n');
 }
 
@@ -2310,6 +2370,62 @@ function getEquipmentByNumber(user, numberArg) {
     return all[number - 1] || null;
 }
 
+function formatEquipmentName(type, id, level) {
+    const data = getEquipmentData(type, id);
+    if (!data) return '알 수 없는 장비';
+    return '<' + data.rarity + '> ' + data.name + (Number(level || 0) > 0 ? ' +' + Number(level || 0) : '');
+}
+
+function getEquipmentSynthesisSelection(user, numberArgs) {
+    if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ /RPGenius 장비합성 [장비번호1] [장비번호2] [장비번호3]' };
+    const numbers = numberArgs.map(arg => Number(arg));
+    if (numbers.some(number => !Number.isInteger(number) || number < 1)) return { error: '❌ 장비 번호는 1 이상의 정수여야 합니다.' };
+    if (new Set(numbers).size != 3) return { error: '❌ 같은 장비 번호를 중복 선택할 수 없습니다.' };
+    const selected = numbers.map(number => getEquipmentByNumber(user, number));
+    if (selected.some(entry => !entry)) return { error: '❌ 존재하지 않는 장비 번호가 있습니다.' };
+    if (selected.some(entry => entry.source == 'equipped')) return { error: '❌ 장착 중인 장비는 합성할 수 없습니다.' };
+    const first = selected[0].equip;
+    const type = first.type || selected[0].type;
+    const id = Number(first.id);
+    if (selected.some(entry => (entry.equip.type || entry.type) != type || Number(entry.equip.id) != id)) return { error: '❌ 동일한 장비 3개만 합성할 수 있습니다.' };
+    if (selected.some(entry => Number(entry.equip.level || 0) < 10)) return { error: '❌ 합성할 장비는 모두 10강 이상이어야 합니다.' };
+    const equipment = getEquipmentData(type, id);
+    if (!equipment) return { error: '❌ 잘못된 장비 데이터입니다.' };
+    if (typeof equipment.evolution == 'undefined') return { error: '❌ 해당 장비는 합성 진화가 불가능합니다.' };
+    const resultId = Number(equipment.evolution);
+    const resultEquipment = getEquipmentData(type, resultId);
+    if (!resultEquipment) return { error: '❌ 합성 결과 장비 데이터가 없습니다.' };
+    return { numbers, selected, type, id, equipment, resultId, resultEquipment };
+}
+
+function formatEquipmentSynthesisPreview(user, numberArgs) {
+    const selection = getEquipmentSynthesisSelection(user, numberArgs);
+    if (selection.error) return selection.error;
+    user.pendingAction = { type: '장비합성', numbers: selection.numbers };
+    const lines = ['[ 장비 합성 ]'];
+    selection.selected.forEach(entry => {
+        lines.push('- ' + formatEquipmentName(selection.type, selection.id, entry.equip.level));
+    });
+    lines.push('', '[ 합성 결과 ]');
+    lines.push('- <' + selection.resultEquipment.rarity + '> ' + selection.resultEquipment.name);
+    lines.push('', '합성을 진행하시겠습니까?', '/RPGenius 합성');
+    return lines.join('\n');
+}
+
+function runEquipmentSynthesis(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '장비합성') return '❌ 진행 중인 장비 합성이 없습니다.';
+    const selection = getEquipmentSynthesisSelection(user, pending.numbers);
+    user.pendingAction = null;
+    if (selection.error) return selection.error;
+    selection.selected
+        .slice()
+        .sort((a, b) => b.index - a.index)
+        .forEach(entry => user.inventory.equipment.splice(entry.index, 1));
+    addEquipmentInventory(user, selection.type, selection.resultId);
+    return '✅ 장비 합성이 완료되었습니다.\n[ 합성 결과 ]\n- <' + selection.resultEquipment.rarity + '> ' + selection.resultEquipment.name;
+}
+
 function getEquipmentUpgradeCost(equipment, type, level) {
     const targetLevel = Number(level || 0) + 1;
     const rarityCorrection = EQUIPMENT_RARITY_CORRECTION[equipment.rarity] || 1;
@@ -2563,6 +2679,28 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
     }
 }
 
+function grantEquipmentBox(user, pack, useCount, summary) {
+    const equipments = getDataCache('Equipment', {});
+    const rarity = String(pack && pack.rarity || '').trim();
+    const candidates = [];
+    [
+        { type: 'weapon', key: 'weapon' },
+        { type: 'armor', key: 'armor' },
+        { type: 'accessory', key: 'accessory' }
+    ].forEach(group => {
+        (equipments[group.key] || []).forEach((equipment, id) => {
+            if (equipment && equipment.rarity == rarity) candidates.push({ type: group.type, id, equipment });
+        });
+    });
+    if (candidates.length == 0) return false;
+    for (let i = 0; i < useCount; i++) {
+        const selected = candidates[randomInt(0, candidates.length - 1)];
+        addEquipmentInventory(user, selected.type, selected.id);
+        addRewardSummary(summary, selected.type + ':' + selected.id, '<' + selected.equipment.rarity + '> ' + selected.equipment.name, 1);
+    }
+    return true;
+}
+
 async function useCoupon(user, codeArg) {
     const code = String(codeArg || '').trim();
     if (!code) return '❌ /RPGenius 쿠폰 [코드]';
@@ -2663,7 +2801,8 @@ async function useItem(user, itemName, countArg) {
     if (item.type == '마법석') {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 캐릭터 변환석은 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 유생의 강화기는 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use != '캐릭터변환' && itemId != EQUIPMENT_UPGRADER_ITEM_ID) return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 프레스티지 증표는 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use != '캐릭터변환' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -2686,6 +2825,8 @@ async function useItem(user, itemName, countArg) {
             if (!user.inventory) user.inventory = { card: [], item: [] };
             if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
             grantCharacterCardPack(user, item.pack, useCount, summary);
+        } else if (item.pack && item.pack.type == '장비 상자') {
+            if (!grantEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 장비 상자입니다.';
         } else {
             return '❌ 사용할 수 없는 가챠입니다.';
         }
@@ -2712,6 +2853,15 @@ async function useItem(user, itemName, countArg) {
             lines.push('무료로 강화할 장비를 선택해주세요.');
             lines.push('/RPGenius 장비강화 [장비번호]');
             lines.push('', formatEquipmentInventory(user));
+        }
+        if (item.name == '프레스티지 증표') {
+            if (user.prestige === true) {
+                user.mileage = Number(user.mileage || 0) + 20000;
+                lines.push('- 이미 프레스티지가 적용되어 Ⓜ️ 20,000 마일리지를 획득했습니다.');
+            } else {
+                user.prestige = true;
+                lines.push('✨ 프레스티지가 적용되었습니다.');
+            }
         }
     }
 
@@ -3627,7 +3777,18 @@ async function handleRPGCommand(data, channel) {
         user.pendingAction = null;
         await user.save();
         reply('❌ 장비 강화가 취소되었습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
-        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '장비합성') {
+        if (args[0] == '합성') {
+            const result = runEquipmentSynthesis(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 장비 합성이 취소되었습니다.');
     }
 
     if (user.pendingAction && user.pendingAction.type == '카드조합') {
@@ -3640,7 +3801,6 @@ async function handleRPGCommand(data, channel) {
         user.pendingAction = null;
         await user.save();
         reply('❌ 카드조합이 취소되었습니다.');
-        return true;
     }
 
     if (user.pendingAction && user.pendingAction.type == '카드판매') {
@@ -3653,7 +3813,6 @@ async function handleRPGCommand(data, channel) {
         user.pendingAction = null;
         await user.save();
         reply('❌ 카드판매가 취소되었습니다.');
-        return true;
     }
 
     if (user.pendingAction && user.pendingAction.type == '제작') {
@@ -3666,7 +3825,6 @@ async function handleRPGCommand(data, channel) {
         user.pendingAction = null;
         await user.save();
         reply('❌ 제작이 취소되었습니다.');
-        return true;
     }
 
     const adminResult = await handleAdminCommand({ raw: cmd, args: args, prefixLength: cmd.split(' ')[0].length }, user);
@@ -3751,7 +3909,7 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '얼음소환') {
-        const result = summonIce(user, args[1]);
+        const result = await summonIce(user, args[1]);
         await user.save();
         reply(result);
         return true;
@@ -4051,6 +4209,13 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = formatEquipmentUpgradePreview(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '장비합성') {
+        const result = formatEquipmentSynthesisPreview(user, args.slice(1));
         await user.save();
         reply(result);
         return true;

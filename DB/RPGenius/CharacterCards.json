@@ -81,7 +81,7 @@
         "slot_effect": {
             "name": "골드 획득 증가량",
             "base": 0.01,
-            "per_level": 0.01
+            "per_level": 0.003
         },
         "skills": [
             7
