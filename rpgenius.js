@@ -1395,8 +1395,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (killCount > 0 && slotEffects.killRecoveryChance > 0 && Math.random() < slotEffects.killRecoveryChance) {
         const beforeRecoverHp = Number(user.hp || 0);
         const lostHpRecovery = Math.round((maxHp - beforeRecoverHp) * 0.1);
-        const damageCapRecovery = Math.floor(fieldDamage * 0.5);
-        user.hp = Math.min(maxHp, beforeRecoverHp + Math.min(lostHpRecovery, damageCapRecovery));
+        // const damageCapRecovery = Math.floor(fieldDamage * 0.5);
+        user.hp = Math.min(maxHp, beforeRecoverHp + lostHpRecovery);
         if (user.hp - beforeRecoverHp > 0) lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' (' + Math.round(slotEffects.killRecoveryChance * 100) + "% 확률)");
     }
 
