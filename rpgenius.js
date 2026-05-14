@@ -4,7 +4,7 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
+const TARGET_CHANNEL_IDS = ['442097040687921', /*'18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"*/];
 const TABLE_NAME = 'rpgenius_user';
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
