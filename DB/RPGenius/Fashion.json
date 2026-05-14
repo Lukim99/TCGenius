@@ -1,0 +1,12 @@
+[
+    {
+        "name": "수영장 파티",
+        "primary_card": [
+            0
+        ],
+        "option": {
+            "stat": { "skillCooldown": -500 }
+        },
+        "requireStar": 7
+    }
+]

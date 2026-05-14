@@ -66,6 +66,12 @@ function formatValue(format) {
     return Math.round(value * 1000) / 10 + '%';
 }
 
+function formatCurrentValue(format, star) {
+    const value = Number(format && format.base || 0) + Number(format && format.per_star || 0) * Number(star || 0);
+    if (format && format.type == 'flat') return value.toString();
+    return Math.round(value * 1000) / 10 + '%';
+}
+
 function formatIncreaseValue(format) {
     const value = Number(format && (format.per_star || format.per_level) || 0);
     if (format && format.type == 'flat') return value.toString();
@@ -85,6 +91,14 @@ function formatSkillDescWithIncrease(skill) {
     return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
         const format = skill.format && skill.format[Number(index) - 1];
         return formatValue(format) + '(+' + formatIncreaseValue(format) + ')';
+    });
+}
+
+function formatCurrentSkillDesc(skill, star) {
+    if (!skill) return '알 수 없는 스킬입니다.';
+    return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
+        const format = skill.format && skill.format[Number(index) - 1];
+        return formatCurrentValue(format, star);
     });
 }
 
@@ -148,7 +162,7 @@ function formatStatValue(key, value) {
         'crit', 'critMul',
         'atk%', 'def%', 'hp%', 'mp%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
-        'exp%', 'eliteDmg%', 'mpReduce%'
+        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -233,7 +247,8 @@ function formatEquipmentStatLines(equipment) {
         '000': '공격 시 10/100/1000 추가 피해 확률',
         exp: '경험치 획득량',
         eliteDmg: '엘리트 몬스터 대상 추가 피해',
-        mpReduce: 'MP 소모량'
+        mpReduce: 'MP 소모량',
+        itemDropChance: '아이템 획득 확률'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -265,6 +280,14 @@ function formatEquipmentStatLines(equipment) {
         lines.push('- 효과 적용 조건: ' + reqNames.join(', ') + ' 장착');
     }
     return lines.join('\n');
+}
+
+function formatCurrentEquipmentStatLines(equipment, level) {
+    const current = {
+        stat: getEquipmentStatsAtLevel(equipment, level),
+        plusStat: getEquipmentPlusStatsAtLevel(equipment, level)
+    };
+    return formatEquipmentStatLines(current);
 }
 
 function findEquipmentByName(name) {
@@ -991,6 +1014,10 @@ function addExperience(user, amount) {
     return levelUps;
 }
 
+function applyPrestigeExpBonus(user, amount) {
+    return Math.round(Number(amount || 0) * (user && user.prestige === true ? 1.1 : 1));
+}
+
 function getLevelExpMultiplier(userLevel, requireLevel) {
     const n = Number(userLevel || 1) - Number(requireLevel || 1);
     if (n <= 1) return 1.2;
@@ -1132,7 +1159,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
         const count = rollCount(reward.count);
         if (reward.type == '경험치') {
             const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
-            const amount = Math.round(count * levelExpMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0)));
+            const amount = applyPrestigeExpBonus(user, Math.round(count * levelExpMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0))));
             levelUps += addExperience(user, amount);
             rewardLines.push('- XP ' + comma(amount));
             return;
@@ -1172,6 +1199,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const remainHp = Math.max(0, currentHp - finalDamage);
     const maxHp = Number(stats.hp || 0);
     const lines = ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(bonusTripleZero));
     if (remainHp <= 0) {
         lines.push('- ' + elite.name + ' 처치!');
@@ -1227,6 +1255,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     user.hp = Math.max(0, beforeHp - fieldDamage);
 
     const lines = ['⚔️ ' + comma(finalDamage) + (criticalResult.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- 총 ' + comma(killCount) + '마리 처치'];
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(bonusTripleZero));
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
     else lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!');
@@ -1245,7 +1274,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (killCount > 0) {
         user.field.killCount = Number(user.field.killCount || 0) + killCount;
         const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
-        let expReward = Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelExpMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)));
+        let expReward = applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelExpMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
         goldReward = Math.round(goldReward * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
@@ -1344,6 +1373,9 @@ function useSkillInField(user, skillName) {
     const star = Number(user.main_card && user.main_card.star || 0);
     let multiplier = getSkillValue(skillData.skill, 0, star);
     const extra = {};
+    extra.mpCost = mpCost;
+    extra.mpAfter = user.mp;
+    extra.maxMp = maxMp;
     if (skillData.skill.name == '글버지') multiplier *= 2;
     if (skillData.skill.name == '불사조') extra.receivedDamageMul = 1.5;
     if (skillData.skill.name == 'SUPER EASY') extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
@@ -1371,7 +1403,18 @@ async function sendUserMainCardImage(channel, user) {
     const card = mainCard && characterCards[mainCard.id];
     if (!card) return;
     const star = String(Number(mainCard.star || 0) + 1).padStart(2, '0');
-    const fileName = star + ' ' + card.name + '.png';
+    const skin = typeof mainCard.skin == 'string' ? mainCard.skin.trim() : '';
+    const candidates = [];
+    if (skin) {
+        if (user.prestige === true) candidates.push(star + ' 프레스티지 ' + skin + ' ' + card.name + '.png');
+        candidates.push(star + ' ' + skin + ' ' + card.name + '.png');
+        candidates.push(star + ' ' + card.name + '.png');
+    } else {
+        if (user.prestige === true) candidates.push(star + ' 프레스티지 ' + card.name + '.png');
+        candidates.push(star + ' ' + card.name + '.png');
+    }
+    const fileName = candidates.find(candidate => fs.existsSync(path.join(CARD_IMAGE_PATH, card.name, candidate)));
+    if (!fileName) return;
     const filePath = path.join(CARD_IMAGE_PATH, card.name, fileName);
     if (!fs.existsSync(filePath)) return;
     await channel.sendMedia(node_kakao.KnownChatType.PHOTO, { name: fileName, data: fs.readFileSync(filePath), width: 399, height: 515, ext: 'png' });
@@ -1435,9 +1478,8 @@ function formatInventory(user) {
 
 function formatCharacterInventory(user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
-    const cards = user.inventory.card || [];
-    const lines = ['[ ' + user.name + '님의 캐릭터 카드 (' + cards.length + '/' + user.maxCardLimit + ') ]'];
-
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const lines = ['[ ' + user.name + '님의 보유 캐릭터 카드 ]'];
     if (cards.length == 0) {
         lines.push('', '캐릭터 카드가 없습니다.');
         return lines.join('\n');
@@ -1448,6 +1490,63 @@ function formatCharacterInventory(user) {
         const data = characterCards[card.id];
         if (data) lines.push('[' + (index + 1) + '] [' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
     });
+    return lines.join('\n');
+}
+
+function formatEquippedEquipmentDetail(label, type, equip) {
+    const title = formatEquippedEquipment(label, type, equip);
+    if (!equip || typeof equip.id == 'undefined') return title;
+    const data = getEquipmentData(type, equip.id);
+    if (!data) return title;
+    const level = Number(equip.level || 0);
+    const statLines = formatCurrentEquipmentStatLines(data, level);
+    return title + (statLines ? '\n' + statLines : '');
+}
+
+function formatEquipmentInfo(user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const skills = readJson(SKILLS_PATH, []);
+    const mainCard = user.main_card;
+    const cardData = mainCard && characterCards[mainCard.id];
+    const star = Number(mainCard && mainCard.star || 0);
+    const stats = calculateUserStats(user);
+    const lines = [
+        '[ ' + user.name + '님의 장착 정보 ]',
+        VIEWMORE,
+        '〈 캐릭터 카드 〉',
+        '- ' + formatUserCard(mainCard),
+        '',
+        '〈 스킬 〉'
+    ];
+
+    if (cardData && Array.isArray(cardData.skills) && cardData.skills.length > 0) {
+        cardData.skills.forEach(skillIndex => {
+            const skill = skills[skillIndex];
+            if (!skill) return;
+            const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+            lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ] 쿨타임 ' + formatCooltime(cooltime));
+            formatCurrentSkillDesc(skill, star).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
+        });
+    } else {
+        lines.push('- 없음');
+    }
+
+    lines.push('', '〈 장비 〉');
+    lines.push(formatEquippedEquipmentDetail('무기', 'weapon', user.equipments && user.equipments.weapon));
+    lines.push('');
+    lines.push(formatEquippedEquipmentDetail('갑옷', 'armor', user.equipments && user.equipments.armor));
+
+    const accessories = user.equipments && user.equipments.accessory || {};
+    const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
+    if (accessoryKeys.length == 0) {
+        lines.push('', '[장신구] 없음');
+    } else {
+        accessoryKeys.forEach(key => {
+            lines.push('');
+            lines.push(formatEquippedEquipmentDetail('장신구', 'accessory', accessories[key]));
+        });
+    }
+
     return lines.join('\n');
 }
 
@@ -2422,7 +2521,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
         return;
     }
     if (func.type == '경험치획득') {
-        const amount = Number(func.amount || 0) * useCount;
+        const amount = applyPrestigeExpBonus(user, Number(func.amount || 0) * useCount);
         const levelUps = addExperience(user, amount);
         resultLines.push('- XP +' + comma(amount));
         if (levelUps > 0) resultLines.push('- 레벨업! Lv. ' + user.level);
@@ -2620,6 +2719,7 @@ class RPGUser {
         this.logged_in = [id];
         this.main_card = {};
         this.need_character_card_select = true;
+        this.prestige = false;
         this.level = 1;
         this.exp = 0;
         this.hp = 0;
@@ -2684,6 +2784,7 @@ class RPGUser {
         normalizeFishingData(this);
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
+        if (typeof this.prestige == 'undefined') this.prestige = false;
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         if (!this.maxAccessory || Number(this.maxAccessory) < 3) this.maxAccessory = 3;
         return this;
@@ -3536,12 +3637,12 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
-    if (activeTrades[user.name] && !['내정보', '설명', '인벤토리', '인벤', 'i', '캐릭인벤', 'ci', '장비인벤', 'ei', '스탯'].includes(args[0])) {
+    if (activeTrades[user.name] && !['내정보', '장착정보', '설명', '인벤토리', '인벤', 'i', '캐릭인벤', 'ci', '장비인벤', 'ei', '스탯'].includes(args[0])) {
         reply('❌ 거래 진행 중에는 사용할 수 없는 명령어입니다.\n/RPGenius 거래취소');
         return true;
     }
 
-    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '설명', '사용'].includes(args[0])) {
+    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '장착정보', '설명', '사용'].includes(args[0])) {
         reply('❌ 필드에서 사용할 수 없는 명령어입니다.\n/RPGenius 필드퇴장');
         return true;
     }
@@ -3720,6 +3821,11 @@ async function handleRPGCommand(data, channel) {
     if (args[0] == '내정보') {
         await sendUserMainCardImage(channel, user);
         reply(formatMyInfo(user));
+        return true;
+    }
+
+    if (args[0] == '장착정보') {
+        reply(formatEquipmentInfo(user));
         return true;
     }
 

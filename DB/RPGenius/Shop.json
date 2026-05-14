@@ -213,7 +213,7 @@
     "출석": [
         {
             "type": "골드",
-            "count": 10000,
+            "count": 8000,
             "price": {
                 "goods": "item",
                 "item_id": 71,
