@@ -473,7 +473,7 @@ function formatCardSlotEffectLines(user) {
     const effectMap = [
         ['expBonus', '경험치 획득 증가량'],
         ['hpDamageReduction', '사냥 시 HP 소모량 감소'],
-        ['killRecoveryChance', '적 처치 시 잃은 HP 5% 회복 확률'],
+        ['killRecoveryChance', '적 처치 시 잃은 HP 10% 회복 확률'],
         ['crit', '치명타 확률 증가'],
         ['mpCostReduction', '사냥 시 MP 소모량 감소'],
         ['damageBonus', '일반 몬스터에게 주는 피해 증가'],
@@ -1392,10 +1392,12 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
-    if (killCount > 0 && slotEffects.killRecoveryChance > 0) {
+    if (killCount > 0 && slotEffects.killRecoveryChance > 0 && Math.random() < slotEffects.killRecoveryChance) {
         const beforeRecoverHp = Number(user.hp || 0);
-        user.hp = Math.min(maxHp, beforeRecoverHp + Math.round((maxHp - beforeRecoverHp) * 0.05));
-        if (user.hp - beforeRecoverHp > 0) lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp));
+        const lostHpRecovery = Math.round((maxHp - beforeRecoverHp) * 0.1);
+        const damageCapRecovery = Math.floor(fieldDamage * 0.5);
+        user.hp = Math.min(maxHp, beforeRecoverHp + Math.min(lostHpRecovery, damageCapRecovery));
+        if (user.hp - beforeRecoverHp > 0) lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' (' + Math.round(slotEffects.killRecoveryChance * 100) + "% 확률)");
     }
 
     const passiveMp = getPassiveMpRecovery(user);
