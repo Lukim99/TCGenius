@@ -97,8 +97,8 @@
             ]
         },
         {
-            "name": "마검 파네스",
-            "desc": "우주가 처음 탄생하던 순간의 빛과 열기를 고스란히 벼려낸, 빛의 근원이 되는 검이다.",
+            "name": "운명의 아이온",
+            "desc": "운명을 결정짓는 영원의 창이다.",
             "rarity": "레전더리",
             "stat": { "atk": 184, "pnt": 32, "crit": 0.1, "critMul": 0.05 },
             "plusStat": { "atk": 0.15 },
@@ -269,55 +269,61 @@
             "name": "청정한 귀걸이",
             "desc": "매우 말끔한 청정해보이는 귀걸이다.",
             "rarity": "고유",
-            "stat": { "pnt": 8 }
+            "stat": { "pnt": 8 },
+            "plusStat": { "atk": 0.05 }
         },
         {
             "name": "천원지폐뭉치",
             "desc": "이런게... 도움이 될까...?",
             "rarity": "고유",
+            "stat": { "hp": 150 },
             "plusStat": { "gold": 0.03 }
         },
         {
             "name": "추파춥스 사탕반지",
             "desc": "꽤나 맛나보인다. 실제 돈 280원의 가치.",
             "rarity": "고유",
-            "stat": { "hp": 400 }
+            "stat": { "hp": 400 },
+            "plusStat": { "hp": 0.08 }
         },
         {
             "name": "지짐의 비법노트",
             "desc": "리비동 목꺾기...? 이런게 왜 적혀져 있지..?",
             "rarity": "고유",
-            "plusStat": { "potion": 0.1 }
+            "plusStat": { "potion": 0.25 }
         },
         {
             "name": "컬러체인",
             "desc": "무척이나 어려워보이는 패턴으로 이루어져 있다.",
             "rarity": "고유",
-            "stat": { "crit": 0.04, "critMul": 0.05 }
+            "stat": { "atk": 25, "crit": 0.04, "critMul": 0.05 }
         },
         {
             "name": "빨간딱지",
             "desc": "파산했다.",
             "rarity": "고유",
-            "stat": { "hp": -100, "mp": 150 }
+            "stat": { "hp": -100, "mp": 150 },
+            "plusStat": { "atk": 0.06 }
         },
         {
             "name": "스트레이트 포커",
             "desc": "지목스트레이트 하겠습니다.",
             "rarity": "고유",
-            "plusStat": { "afterBasic": 0.05 }
+            "plusStat": { "afterBasic": 0.1 }
         },
         {
             "name": "테무산 꿈뭉치",
             "desc": "일장춘몽이 꿈꿨던 것은 테무랜드의 우승이었을까.",
             "rarity": "고유",
+            "stat": { "crit": 0.05 },
             "plusStat": { "avd": 0.01 }
         },
         {
             "name": "아리랑치기용 각목",
             "desc": "통수치기 딱 좋아보인다.",
             "rarity": "고유",
-            "plusStat": { "afterSkill": 0.05 }
+            "stat": { "skillCooldown": -500 },
+            "plusStat": { "afterBasic": -0.05, "afterSkill": 0.05 }
         },
         {
             "name": "'000'",
@@ -329,19 +335,19 @@
             "name": "국회의사당 모형",
             "desc": "이걸 맛동산으로 어떻게 만든거지...?",
             "rarity": "고유",
-            "plusStat": { "def": 0.08 }
+            "plusStat": { "def": 0.08, "itemDropChance": 0.005 }
         },
         {
             "name": "우선순위",
             "desc": "안성재>Myosotis>넛츠.",
             "rarity": "고유",
-            "plusStat": { "exp": 0.015 }
+            "plusStat": { "atk": 0.05, "exp": 0.015 }
         },
         {
             "name": "썸포 이어링",
             "desc": "썸머포켓츠 듀오 전설의 시작.",
             "rarity": "고유",
-            "plusStat": { "exp": 0.02 },
+            "plusStat": { "atk": 0.05, "exp": 0.02 },
             "requireLevel": 100
         },
         {
@@ -355,6 +361,7 @@
             "name": "예언자의 결속반지",
             "desc": "예언도 능력이라면?",
             "rarity": "고유",
+            "stat": { "crit": 0.08, "critMul": 0.08 },
             "plusStat": { "atk": 0.08, "hp": 0.08 },
             "exactlyStar": 7
         },
@@ -368,7 +375,7 @@
             "name": "배신의 증표",
             "desc": "독재자가 배신자를 처단한 후 남아있는 증표.",
             "rarity": "고유",
-            "stat": { "pnt": 12 },
+            "stat": { "pnt": 30 },
             "plusStat": { "def": -0.03 }
         },
         {
@@ -418,7 +425,8 @@
             "name": "데우스 엑스 마키나",
             "desc": "DXM.",
             "rarity": "고유",
-            "stat": { "skillTrueDmg": 888 }
+            "stat": { "skillTrueDmg": 888 },
+            "plusStat": { "atk": 0.08 }
         }
     ]
 }

@@ -19,5 +19,18 @@
     ],
     [
         { "type": "골드", "count": { "min": 3000, "max": 50000 } }
+    ],
+    [
+        { "type": "골드", "count": { "min": 50000, "max": 50000 } },
+        { "type": "가넷", "count": { "min": 1000, "max": 1000 } },
+        { "type": "아이템", "item_id": 35, "count": { "min": 3, "max": 3 } },
+        { "type": "아이템", "item_id": 21, "count": { "min": 2, "max": 2 } },
+        { "type": "아이템", "item_id": 4, "count": { "min": 1, "max": 1 } }
+    ],
+    [
+        { "type": "골드", "count": { "min": 20000, "max": 20000 } },
+        { "type": "가넷", "count": { "min": 400, "max": 400 } },
+        { "type": "아이템", "item_id": 35, "count": { "min": 2, "max": 2 } },
+        { "type": "아이템", "item_id": 19, "count": { "min": 6, "max": 6 } }
     ]
 ]

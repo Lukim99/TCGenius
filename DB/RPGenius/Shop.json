@@ -209,5 +209,86 @@
                 "amount": 500
             }
         }
+    ],
+    "출석": [
+        {
+            "type": "골드",
+            "count": 10000,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 1
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 16,
+            "count": 2,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 3
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 2,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 5
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 21,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 7
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 3,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 10
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 23,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 14
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 4,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 21
+            }
+        },
+        {
+            "type": "아이템",
+            "item_id": 24,
+            "count": 1,
+            "price": {
+                "goods": "item",
+                "item_id": 71,
+                "amount": 25
+            }
+        }
     ]
 }

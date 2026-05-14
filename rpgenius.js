@@ -4,7 +4,7 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_CHANNEL_IDS = ['442097040687921', /*'18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"*/];
+const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
@@ -227,9 +227,9 @@ function formatEquipmentStatLines(equipment) {
         mp: '최종 MP',
         gold: '골드 획득량',
         potion: '물약 효율',
-        afterBasic: '공격 후 일반 공격 피해',
+        afterBasic: '일반 공격 피해',
         avd: '회피 확률',
-        afterSkill: '공격 후 스킬 공격 피해',
+        afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률',
         exp: '경험치 획득량',
         eliteDmg: '엘리트 몬스터 대상 추가 피해',
@@ -736,7 +736,7 @@ function calculateUserStats(user) {
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -1272,7 +1272,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     if (killCount > 0) {
-        const dropChance = 0.03 + Number(slotEffects.itemDropChance || 0);
+        const dropChance = 0.03 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
         if (Math.random() < dropChance) {
             const items = readJson(ITEMS_PATH, []);
             const dropItemId = items.findIndex(item => item.name == '장비 상자');
@@ -1409,7 +1409,7 @@ function formatInventory(user) {
         '[ ' + user.name + '님의 인벤토리 ]',
         '🪙 ' + comma(user.gold),
         '💠 ' + comma(user.garnet),
-        '💵 ' + comma(user.point) + 'P | Ⓜ️ ' + comma(user.mileage)
+        '💰 ' + comma(user.point) + 'P | Ⓜ️ ' + comma(user.mileage)
     ];
     const inventoryItems = (user.inventory.item || [])
         .map(inv => ({ data: items[inv.id], count: Number(inv.count || 0) }))
@@ -1538,10 +1538,15 @@ function formatShopItem(shopItem) {
 }
 
 function formatPrice(price) {
+    const items = readJson(ITEMS_PATH, []);
     if (price.goods == 'gold') return '🪙 ' + comma(price.amount);
     if (price.goods == 'garnet') return '💠 ' + comma(price.amount);
-    if (price.goods == 'point') return '💵 ' + comma(price.amount) + 'P';
+    if (price.goods == 'point') return '💰 ' + comma(price.amount) + 'P';
     if (price.goods == 'mileage') return 'Ⓜ️ ' + comma(price.amount);
+    if (price.goods == 'item') {
+        const item = items[price.item_id];
+        return (item ? item.name : '알 수 없는 아이템') + ' x' + comma(price.amount);
+    }
     return comma(price.amount);
 }
 
@@ -2524,14 +2529,18 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
 
     const shopItem = shop[index - 1];
-    const field = GOODS_FIELD[shopItem.price.goods];
-    if (!field) return '❌ 알 수 없는 화폐입니다.';
-
     const totalPrice = Number(shopItem.price.amount) * count;
-    const owned = Number(user[field] || 0);
-    if (owned < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + ')';
-
-    user[field] = owned - totalPrice;
+    const field = GOODS_FIELD[shopItem.price.goods];
+    if (shopItem.price.goods == 'item') {
+        if (typeof shopItem.price.item_id == 'undefined') return '❌ 가격 아이템 정보가 잘못되었습니다.';
+        if (getInventoryItemCount(user, shopItem.price.item_id) < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + ')';
+        removeInventoryItem(user, shopItem.price.item_id, totalPrice);
+    } else {
+        if (!field) return '❌ 알 수 없는 화폐입니다.';
+        const owned = Number(user[field] || 0);
+        if (owned < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + ')';
+        user[field] = owned - totalPrice;
+    }
     const mileageEarned = shopItem.price.goods == 'point' ? Math.round(totalPrice * 0.1) : 0;
     if (mileageEarned > 0) user.mileage = Number(user.mileage || 0) + mileageEarned;
 
@@ -2550,7 +2559,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     await user.save();
 
     const rewardItem = { type: shopItem.type, item_id: shopItem.item_id, count: Number(shopItem.count) * count };
-    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
+    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
 }
 
 function formatStar(star) {
