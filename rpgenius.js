@@ -745,6 +745,67 @@ function calculateUserStats(user) {
     return stats;
 }
 
+const CP_WEIGHTS = {
+    OFFENSE_SCALE: 10,
+    DEFENSE_SCALE: 25,
+    AFTER_SKILL_RATIO: 0.6,
+    DAMAGE_BONUS_RATIO: 0.7,
+    ELITE_DMG_RATIO: 0.3,
+    PEN_DIVISOR: 200,
+    DEF_REDUCTION_RATIO: 0.5,
+    TRIPLE_ZERO_RATIO: 0.15,
+    SKILL_TRUE_DMG_RATIO: 0.2,
+    AVOID_CAP: 0.8,
+    MITIGATE_CAP: 0.8,
+    RECOVERY_RATIO: 0.5,
+    MP_DIVISOR: 8,
+    ECON_SCALE: 30,
+    POTION_SCALE: 25,
+    DROP_SCALE: 80
+};
+
+function calculateCombatPower(user) {
+    const stats = calculateUserStats(user);
+    const slot = calculateCardSlotEffects(user);
+    const W = CP_WEIGHTS;
+
+    const atk = Math.max(0, Number(stats.atk || 0));
+    const def = Math.max(0, Number(stats.def || 0));
+    const hp = Math.max(0, Number(stats.hp || 0));
+    const mp = Math.max(0, Number(stats.mp || 0));
+    const crit = Math.max(0, Number(stats.crit || 0));
+    const critMul = Math.max(1, Number(stats.critMul || 1.4));
+    const pnt = Math.max(0, Number(stats.pnt || 0));
+
+    const mAttack = (1 + Number(stats.afterBasic || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
+    const mContext = 1 + Number(slot.damageBonus || 0) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
+    const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
+    const mPen = 1 + pnt / W.PEN_DIVISOR + Number(slot.defReduction || 0) * W.DEF_REDUCTION_RATIO;
+    const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
+                     + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO;
+    const offense = atk * mAttack * mContext * mCrit * mPen * mExtra * W.OFFENSE_SCALE;
+
+    const ehp = hp * (1 + def / 100);
+    const mAvoid = 1 / (1 - Math.min(W.AVOID_CAP, Math.max(0, Number(stats.avd || 0))));
+    const mMitigate = 1 / (1 - Math.min(W.MITIGATE_CAP, Math.max(0, Number(slot.hpDamageReduction || 0))));
+    const mRecover = 1 + Number(slot.killRecoveryChance || 0) * W.RECOVERY_RATIO;
+    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mRecover * W.DEFENSE_SCALE;
+
+    const mMpSave = 1 + Math.min(0.8, Number(stats.mpReduce || 0)) + Math.min(0.8, Number(slot.mpCostReduction || 0));
+    const resourcePower = (mp / W.MP_DIVISOR) * mMpSave;
+    const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
+                       + Number(stats.potion || 0) * W.POTION_SCALE
+                       + Number(slot.itemDropChance || 0) * W.DROP_SCALE;
+    const utility = resourcePower + economyPower;
+
+    return {
+        offense: Math.round(offense),
+        defense: Math.round(defense),
+        utility: Math.round(utility),
+        total: Math.round(offense + defense + utility)
+    };
+}
+
 function formatMyInfo(user) {
     const level = Number(user.level || 1);
     const exp = Number(user.exp || 0);
@@ -786,6 +847,10 @@ function formatMyInfo(user) {
     lines.push('방어 관통력: ' + comma(stats.pnt));
     lines.push('치명타 확률: ' + formatStatValue('crit', stats.crit).replace(/^\+/, ''));
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
+    const cp = calculateCombatPower(user);
+    lines.push('', '〈 전투력 〉');
+    lines.push('⚔️ 총 전투력: ' + comma(cp.total));
+    lines.push('- 공격 ' + comma(cp.offense) + ' / 방어 ' + comma(cp.defense) + ' / 유틸 ' + comma(cp.utility));
     return lines.join('\n');
 }
 
@@ -1323,6 +1388,26 @@ function getAllUserEquipments(user) {
     (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => list.push({ source: 'inventory', index, equip }));
     getEquippedEquipmentRefs(user).forEach(ref => list.push({ source: 'equipped', type: ref.type, equip: ref.equip }));
     return list;
+}
+
+function removeSelectedEquipment(user, selected) {
+    if (selected.source == 'inventory') {
+        user.inventory.equipment.splice(selected.index, 1);
+        return true;
+    }
+    if (selected.source == 'equipped' && selected.type == 'weapon') {
+        user.equipments.weapon = null;
+        return true;
+    }
+    if (selected.source == 'equipped' && selected.type == 'armor') {
+        user.equipments.armor = null;
+        return true;
+    }
+    if (selected.source == 'equipped' && selected.type == 'accessory' && typeof selected.slotKey != 'undefined') {
+        delete user.equipments.accessory[selected.slotKey];
+        return true;
+    }
+    return false;
 }
 
 function getEquipmentTypeLabel(type) {
@@ -1970,7 +2055,6 @@ function formatUpgradeRatePercent(value) {
 function formatEquipmentUpgradePreview(user, numberArg) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
-    if (selected.source == 'equipped') return '❌ 장착 중인 장비는 강화할 수 없습니다.';
     const type = selected.equip.type || selected.type;
     if (type == 'accessory') return '❌ 장신구는 강화할 수 없습니다.';
     const equipment = getEquipmentData(type, selected.equip.id);
@@ -2020,10 +2104,6 @@ function runEquipmentUpgrade(user) {
     if (!selected) {
         user.pendingAction = null;
         return '❌ 강화할 장비를 찾을 수 없습니다.';
-    }
-    if (selected.source == 'equipped') {
-        user.pendingAction = null;
-        return '❌ 장착 중인 장비는 강화할 수 없습니다.';
     }
     const type = selected.equip.type || selected.type;
     if (type == 'accessory') {
@@ -2078,7 +2158,10 @@ function runEquipmentUpgrade(user) {
             selected.equip.level = 0;
             protectedResult = 'protectDestroy';
         } else {
-            user.inventory.equipment.splice(selected.index, 1);
+            removeSelectedEquipment(user, selected);
+            const stats = calculateUserStats(user);
+            user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
+            user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
         }
     }
     user.pendingAction = null;
@@ -2088,7 +2171,7 @@ function runEquipmentUpgrade(user) {
         down: '❌ 강화 실패..',
         destroy: '💥 장비가 파괴되었습니다.',
         blessedDown: '🛡️ 축복받은 장비 보호권으로 하락을 막았습니다.',
-        blessedDestroy: '�️ 축복받은 장비 보호권으로 파괴를 막았습니다.',
+        blessedDestroy: '🔰 축복받은 장비 보호권으로 파괴를 막았습니다.',
         advancedDestroy: '🛡️ 고급 장비 보호권으로 파괴를 막았습니다.',
         protectDestroy: '🛡️ 장비 보호권으로 파괴를 막고 0강으로 초기화했습니다.'
     };
@@ -2466,6 +2549,10 @@ class RPGUser {
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
+        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {} };
+        if (typeof this.equipments.weapon == 'undefined') this.equipments.weapon = null;
+        if (typeof this.equipments.armor == 'undefined') this.equipments.armor = null;
+        if (!this.equipments.accessory || typeof this.equipments.accessory != 'object') this.equipments.accessory = {};
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
@@ -2960,6 +3047,62 @@ async function getRPGUserByCode(code) {
     }
 }
 
+async function getAllRPGUsers() {
+    const users = [];
+    let ExclusiveStartKey = undefined;
+    try {
+        while (true) {
+            const params = {
+                TableName: TABLE_NAME,
+                IndexName: 'getIdx',
+                KeyConditionExpression: '#gsi_partition_key = :gsi_value',
+                ExpressionAttributeNames: { '#gsi_partition_key': '_get' },
+                ExpressionAttributeValues: { ':gsi_value': 1 }
+            };
+            if (ExclusiveStartKey) params.ExclusiveStartKey = ExclusiveStartKey;
+            const res = await queryItems(params);
+            if (!res.success || !res.result[0] || !res.result[0].Items) break;
+            res.result[0].Items.forEach(item => users.push(new RPGUser().load(item)));
+            ExclusiveStartKey = res.result[0].LastEvaluatedKey;
+            if (!ExclusiveStartKey) break;
+        }
+    } catch (e) {
+        console.log('getAllRPGUsers error:', e);
+    }
+    return users;
+}
+
+async function formatCombatPowerRanking(currentUser) {
+    const users = await getAllRPGUsers();
+    if (users.length == 0) return '❌ 랭킹 데이터를 불러올 수 없습니다.';
+    const ranked = users
+        .map(u => ({ name: u.name, level: Number(u.level || 1), cp: calculateCombatPower(u).total }))
+        .sort((a, b) => b.cp - a.cp || b.level - a.level || a.name.localeCompare(b.name));
+
+    const myIndex = ranked.findIndex(entry => entry.name == (currentUser && currentUser.name));
+    const myRank = myIndex >= 0 ? myIndex + 1 : null;
+    const myEntry = myIndex >= 0 ? ranked[myIndex] : null;
+
+    const formatLine = (rank, entry) => {
+        const medal = rank == 1 ? '🥇' : rank == 2 ? '🥈' : rank == 3 ? '🥉' : rank + '위';
+        return medal + ' ' + entry.name + ' (Lv.' + comma(entry.level) + ') - ⚔️ ' + comma(entry.cp);
+    };
+
+    const lines = ['[ 전투력 랭킹 ]'];
+    if (myEntry) lines.push('〈 내 순위 〉 ' + comma(myRank) + '위 / ' + comma(ranked.length) + '명', formatLine(myRank, myEntry));
+    else lines.push('〈 내 순위 〉 순위 없음');
+    lines.push('');
+    lines.push('〈 TOP 3 〉');
+    for (let i = 0; i < Math.min(3, ranked.length); i++) lines.push(formatLine(i + 1, ranked[i]));
+
+    if (ranked.length > 3) {
+        lines.push(VIEWMORE);
+        lines.push('〈 4위 ~ 10위 〉');
+        for (let i = 3; i < Math.min(10, ranked.length); i++) lines.push(formatLine(i + 1, ranked[i]));
+    }
+    return lines.join('\n');
+}
+
 function getCommandBlockMessage(senderId) {
     const now = Date.now();
     const state = commandSpamStates[senderId] || { times: [], blockedUntil: 0, notifiedUntil: 0 };
@@ -3108,8 +3251,14 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (user.pendingAction && user.pendingAction.type == '캐릭터변환') {
+        if (args[0] == '사용취소') {
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 캐릭터 변환석 사용을 취소했습니다.');
+            return true;
+        }
         if (args[0] != '선택') {
-            reply('❌ 캐릭터 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]');
+            reply('❌ 캐릭터 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
             return true;
         }
         const result = convertCharacterCard(user, args[1]);
@@ -3401,6 +3550,11 @@ async function handleRPGCommand(data, channel) {
     if (args[0] == '내정보') {
         await sendUserMainCardImage(channel, user);
         reply(formatMyInfo(user));
+        return true;
+    }
+
+    if (args[0] == '전투력랭킹') {
+        reply(await formatCombatPowerRanking(user));
         return true;
     }
 
