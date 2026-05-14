@@ -765,8 +765,12 @@ const CP_WEIGHTS = {
 };
 
 function calculateCombatPower(user) {
-    const stats = calculateUserStats(user);
-    const slot = calculateCardSlotEffects(user);
+    return computeCombatPowerFromStats(calculateUserStats(user), calculateCardSlotEffects(user));
+}
+
+function computeCombatPowerFromStats(stats, slot) {
+    stats = stats || {};
+    slot = slot || {};
     const W = CP_WEIGHTS;
 
     const atk = Math.max(0, Number(stats.atk || 0));
@@ -818,12 +822,19 @@ function formatMyInfo(user) {
     const cardSlots = user.card_slot || [];
     const maxCardSlot = Number(user.maxCardSlot || 5);
 
+    const cp = calculateCombatPower(user);
     const lines = [
         '[ ' + user.name + '님의 정보 ]',
         VIEWMORE,
         'Lv. ' + level + ' (' + comma(exp) + '/' + comma(maxExp) + ')',
         'HP: ' + comma(hp) + '/' + comma(maxHp),
         'MP: ' + comma(mp) + '/' + comma(maxMp),
+        '',
+        '〈 전투력 〉',
+        '⚔️ 총 전투력: ' + comma(cp.total),
+        '- 공격: ' + comma(cp.offense),
+        '- 방어: ' + comma(cp.defense),
+        '- 유틸: ' + comma(cp.utility),
         '',
         '〈 장착 중인 캐릭터 카드 〉',
         '- ' + formatUserCard(user.main_card),
@@ -847,11 +858,57 @@ function formatMyInfo(user) {
     lines.push('방어 관통력: ' + comma(stats.pnt));
     lines.push('치명타 확률: ' + formatStatValue('crit', stats.crit).replace(/^\+/, ''));
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
-    const cp = calculateCombatPower(user);
-    lines.push('', '〈 전투력 〉');
-    lines.push('⚔️ 총 전투력: ' + comma(cp.total));
-    lines.push('- 공격 ' + comma(cp.offense) + ' / 방어 ' + comma(cp.defense) + ' / 유틸 ' + comma(cp.utility));
     return lines.join('\n');
+}
+
+const RECOMMEND_CP_TUNING = {
+    NORMAL_KILL_HITS: 1,
+    ELITE_KILL_HITS: 25,
+    SURVIVAL_HITS: 10,
+    DEF_RATIO: 0.30,
+    PEN_RATIO: 0.15,
+    BASE_MP: 350,
+    BASE_CRIT: 0.05,
+    BASE_CRIT_MUL: 1.5,
+    SAFE_RATIO: 1.0,
+    CAUTION_RATIO: 0.7
+};
+
+function getDungeonRecommendedCP(dungeon) {
+    if (!dungeon) return 0;
+    const T = RECOMMEND_CP_TUNING;
+    const N = dungeon;
+    const E = dungeon.elite || {};
+    const normalKill = Number(N.hp || 0) * (100 + Number(N.def || 0)) / 100 / Math.max(1, T.NORMAL_KILL_HITS);
+    const eliteKill = Number(E.hp || 0) * (100 + Number(E.def || 0)) / 100 / Math.max(1, T.ELITE_KILL_HITS);
+    const atk = Math.max(normalKill, eliteKill);
+    const def = Number(E.atk || 0) * T.DEF_RATIO;
+    const effDef = Math.max(0, def - Number(E.pnt || 0));
+    const incomingPerHit = Number(E.atk || 0) * 100 / (100 + effDef);
+    const hp = incomingPerHit * T.SURVIVAL_HITS;
+    const pnt = Number(E.def || 0) * T.PEN_RATIO;
+    const stats = {
+        atk, def, hp, pnt,
+        mp: T.BASE_MP,
+        crit: T.BASE_CRIT,
+        critMul: T.BASE_CRIT_MUL
+    };
+    return computeCombatPowerFromStats(stats, {}).total;
+}
+
+function getDungeonCPStatus(userCP, recommendCP) {
+    if (!recommendCP || recommendCP <= 0) return 'safe';
+    const ratio = Number(userCP || 0) / recommendCP;
+    if (ratio >= RECOMMEND_CP_TUNING.SAFE_RATIO) return 'safe';
+    if (ratio >= RECOMMEND_CP_TUNING.CAUTION_RATIO) return 'caution';
+    return 'danger';
+}
+
+function formatDungeonCPLine(userCP, recommendCP) {
+    const status = getDungeonCPStatus(userCP, recommendCP);
+    const prefix = status == 'safe' ? '' : status == 'caution' ? '⚠️ ' : '❌ ';
+    const tag = status == 'safe' ? '' : status == 'caution' ? ' (도전)' : ' (위험)';
+    return prefix + '권장 ⚔️ ' + comma(recommendCP) + tag;
 }
 
 function getAccessibleDungeons(level) {
@@ -862,8 +919,12 @@ function getAccessibleDungeons(level) {
 function formatFieldList(user) {
     const level = Number(user.level || 1);
     const dungeons = getAccessibleDungeons(level);
-    const lines = ['[ 입장 가능한 필드 목록 ]', VIEWMORE];
-    dungeons.forEach(dungeon => lines.push('〈 ' + dungeon.name + ' 〉 권장 Lv. ' + Number(dungeon.requireLevel || 1)));
+    const userCP = calculateCombatPower(user).total;
+    const lines = ['[ 입장 가능한 필드 목록 ]', '내 전투력: ⚔️ ' + comma(userCP), VIEWMORE];
+    dungeons.forEach(dungeon => {
+        const recCP = getDungeonRecommendedCP(dungeon);
+        lines.push('〈 ' + dungeon.name + ' 〉 권장 Lv. ' + Number(dungeon.requireLevel || 1) + ' · ' + formatDungeonCPLine(userCP, recCP));
+    });
     return lines.join('\n');
 }
 
@@ -976,7 +1037,7 @@ function formatStatPointStatus(user) {
     return lines.join('\n');
 }
 
-function enterField(user, fieldName) {
+function enterField(user, fieldName, options) {
     const dungeon = findDungeonByName(fieldName);
     if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
     const level = Number(user.level || 1);
@@ -985,6 +1046,24 @@ function enterField(user, fieldName) {
     const maxHp = Number(stats.hp || 0);
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
+    if (!(options && options.confirmed)) {
+        const userCP = calculateCombatPower(user).total;
+        const recCP = getDungeonRecommendedCP(dungeon);
+        const status = getDungeonCPStatus(userCP, recCP);
+        if (status == 'danger') {
+            user.pendingAction = { type: '필드입장확인', name: dungeon.name };
+            return [
+                '❌ 권장 전투력에 한참 미치지 못합니다.',
+                '- 내 전투력: ⚔️ ' + comma(userCP),
+                '- 권장 전투력: ⚔️ ' + comma(recCP),
+                '',
+                '정말 입장하시겠습니까?',
+                '/RPGenius 입장확인',
+                '/RPGenius 입장취소'
+            ].join('\n');
+        }
+    }
+    if (user.pendingAction && user.pendingAction.type == '필드입장확인') user.pendingAction = null;
     user.hp = hp;
     const cooldowns = getFieldCooldowns(user);
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
@@ -3414,6 +3493,30 @@ async function handleRPGCommand(data, channel) {
         const result = enterField(user, fieldName);
         await user.save();
         reply(result);
+        return true;
+    }
+
+    if (args[0] == '입장확인') {
+        if (!user.pendingAction || user.pendingAction.type != '필드입장확인') {
+            reply('❌ 진행 중인 필드 입장이 없습니다.');
+            return true;
+        }
+        const fieldName = user.pendingAction.name;
+        user.pendingAction = null;
+        const result = enterField(user, fieldName, { confirmed: true });
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '입장취소') {
+        if (!user.pendingAction || user.pendingAction.type != '필드입장확인') {
+            reply('❌ 진행 중인 필드 입장이 없습니다.');
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('✅ 필드 입장을 취소했습니다.');
         return true;
     }
 
