@@ -1,11 +1,13 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
+const DATA_TABLE_NAME = 'rpgenius_data';
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -41,6 +43,48 @@ const dynamoClient = new DynamoDBClient({
     }
 });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
+
+const rpgeniusDataCache = {};
+let rpgeniusDataLoadPromise = null;
+
+async function loadRpgeniusDataEntry(key) {
+    const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
+    if (res && res.Item && typeof res.Item.data != 'undefined') {
+        rpgeniusDataCache[key] = res.Item.data;
+        return true;
+    }
+    return false;
+}
+
+async function saveRpgeniusDataEntry(key, data) {
+    if (!RPGENIUS_DATA_KEYS.includes(key)) throw new Error('허용되지 않은 키: ' + key);
+    await docClient.send(new PutCommand({ TableName: DATA_TABLE_NAME, Item: { key: key, data: data } }));
+    rpgeniusDataCache[key] = data;
+    return true;
+}
+
+async function initRpgeniusData() {
+    if (rpgeniusDataLoadPromise) return rpgeniusDataLoadPromise;
+    rpgeniusDataLoadPromise = (async () => {
+        for (const key of RPGENIUS_DATA_KEYS) {
+            try {
+                const ok = await loadRpgeniusDataEntry(key);
+                if (!ok) console.warn('[rpgenius_data] ' + key + ' × 데이터 없음');
+            } catch (e) {
+                console.error('[rpgenius_data] ' + key + ' 로드 실패: ' + e.message);
+            }
+        }
+        console.log('[rpgenius_data] 데이터 로드 완료 (' + Object.keys(rpgeniusDataCache).length + '/' + RPGENIUS_DATA_KEYS.length + ')');
+    })();
+    return rpgeniusDataLoadPromise;
+}
+
+function getDataCache(key, fallback) {
+    if (typeof rpgeniusDataCache[key] != 'undefined') return rpgeniusDataCache[key];
+    return fallback;
+}
+
+initRpgeniusData();
 
 function getRandomString(len) {
     const chars = '023456789ABCDEFGHJKLMNOPQRSTUVWXTZabcdefghikmnopqrstuvwxyz';
@@ -168,8 +212,8 @@ function formatStatValue(key, value) {
 }
 
 function formatPackEntry(entry) {
-    const items = readJson(ITEMS_PATH, []);
-    const equipments = readJson(EQUIPMENT_PATH, {});
+    const items = getDataCache('Item', []);
+    const equipments = getDataCache('Equipment', {});
     if (entry.type == '아이템') {
         const item = items[entry.item_id];
         return item ? item.name + ' ' + formatCount(entry.count) : '알 수 없는 아이템';
@@ -261,7 +305,7 @@ function formatEquipmentStatLines(equipment) {
     if (typeof equipment.underLevel != 'undefined') lines.push('- 장착 가능 최대 레벨: Lv. ' + Number(equipment.underLevel));
     if (typeof equipment.exactlyStar != 'undefined') lines.push('- 효과 적용 조건: 메인 캐릭터 카드 ' + (Number(equipment.exactlyStar) + 1) + '성');
     if (Array.isArray(equipment.require) && equipment.require.length > 0) {
-        const equipments = readJson(EQUIPMENT_PATH, {});
+        const equipments = getDataCache('Equipment', {});
         const reqNames = equipment.require.map(req => {
             if (req.type == '장신구') {
                 const data = equipments.accessory && equipments.accessory[req.accessory_id];
@@ -291,7 +335,7 @@ function formatCurrentEquipmentStatLines(equipment, level) {
 }
 
 function findEquipmentByName(name) {
-    const equipments = readJson(EQUIPMENT_PATH, {});
+    const equipments = getDataCache('Equipment', {});
     const types = [
         { key: 'weapon', name: '무기' },
         { key: 'armor', name: '갑옷' },
@@ -318,7 +362,7 @@ function formatUserCard(card) {
 }
 
 function getEquipmentData(type, id) {
-    const equipments = readJson(EQUIPMENT_PATH, {});
+    const equipments = getDataCache('Equipment', {});
     const list = equipments[type] || [];
     return list[id];
 }
@@ -1150,7 +1194,7 @@ function tryEncounterElite(user, dungeon, lines) {
 }
 
 function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const stats = calculateUserStats(user);
     const rewardLines = [];
     let levelUps = 0;
@@ -1289,7 +1333,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
             addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
             lines.push('- 강화석 x' + comma(stoneDropCount));
         }
-        const items = readJson(ITEMS_PATH, []);
+        const items = getDataCache('Item', []);
         const baitItemId = items.findIndex(item => item.name == '일반 떡밥');
         let baitDropCount = 0;
         for (let i = 0; i < killCount; i++) if (Math.random() < 0.55) baitDropCount++;
@@ -1303,7 +1347,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (killCount > 0) {
         const dropChance = 0.03 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
         if (Math.random() < dropChance) {
-            const items = readJson(ITEMS_PATH, []);
+            const items = getDataCache('Item', []);
             const dropItemId = items.findIndex(item => item.name == '장비 상자');
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
@@ -1311,7 +1355,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
             }
         }
         if (Math.random() < dropChance) {
-            const items = readJson(ITEMS_PATH, []);
+            const items = getDataCache('Item', []);
             const dropItemId = items.findIndex(item => item.name == '카드팩 상자');
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
@@ -1421,9 +1465,9 @@ async function sendUserMainCardImage(channel, user) {
 }
 
 function formatDescription(name) {
-    const items = readJson(ITEMS_PATH, []);
-    const packs = readJson(PACKS_PATH, []);
-    const bundles = readJson(BUNDLE_PATH, []);
+    const items = getDataCache('Item', []);
+    const packs = getDataCache('Pack', []);
+    const bundles = getDataCache('Bundle', []);
 
     const item = items.find(data => data.name == name);
     if (item) {
@@ -1447,7 +1491,7 @@ function formatDescription(name) {
 }
 
 function formatInventory(user) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const lines = [
         '[ ' + user.name + '님의 인벤토리 ]',
         '🪙 ' + comma(user.gold),
@@ -1624,7 +1668,7 @@ function formatEquipmentInventory(user) {
 }
 
 function formatShopItem(shopItem) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     if (shopItem.type == '아이템') {
         const item = items[shopItem.item_id];
         const itemName = item ? item.name : '알 수 없는 아이템';
@@ -1637,7 +1681,7 @@ function formatShopItem(shopItem) {
 }
 
 function formatPrice(price) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     if (price.goods == 'gold') return '🪙 ' + comma(price.amount);
     if (price.goods == 'garnet') return '💠 ' + comma(price.amount);
     if (price.goods == 'point') return '💰 ' + comma(price.amount) + 'P';
@@ -1650,7 +1694,7 @@ function formatPrice(price) {
 }
 
 function formatShop(shopType) {
-    const shops = readJson(SHOP_PATH, {});
+    const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return null;
     
@@ -1742,13 +1786,13 @@ function checkAttendance(user) {
     if (user.lastAttendanceDate == today) return '❌ 오늘은 이미 출석체크를 완료했습니다.';
     user.lastAttendanceDate = today;
     addInventoryItem(user, ATTENDANCE_STAMP_ITEM_ID, 1);
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const stamp = items[ATTENDANCE_STAMP_ITEM_ID];
     return '✅ 출석체크 완료!\n\n[ 획득 물품 ]\n- ' + (stamp ? stamp.name : '출석 도장') + ' x1';
 }
 
 function getRecipeByName(name) {
-    const recipes = readJson(RECIPE_PATH, []);
+    const recipes = getDataCache('Recipe', []);
     return recipes.find(recipe => recipe.name == name);
 }
 
@@ -1864,7 +1908,7 @@ function runCraft(user) {
 }
 
 function findItemByName(name) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const index = items.findIndex(item => item.name == name);
     if (index == -1) return null;
     return { index, item: items[index] };
@@ -1916,7 +1960,7 @@ function addFishingNetItem(user, itemId, count) {
 
 function formatFishingNet(user) {
     normalizeFishingData(user);
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const current = getFishingNetCount(user);
     const lines = ['🪣 ' + user.name + '님의 살림망 (' + comma(current) + '/' + comma(user.fishingNetLimit) + ')'];
     Object.keys(user.fishingNet).forEach(itemId => {
@@ -2014,7 +2058,7 @@ async function stopFishingForCommand(user) {
 
 async function clearFishingNet(user) {
     normalizeFishingData(user);
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const lines = ['✅ ' + user.name + '님이 살림망을 비웠습니다.', '[ 획득 결과 ]'];
     let hasItem = false;
     Object.keys(user.fishingNet).forEach(itemId => {
@@ -2065,7 +2109,7 @@ async function handleAdminCommand(command, adminUser) {
     const count = Number(countArg);
     if (!Number.isInteger(count) || count < 1 || restArgs.length == 0) return '❌ /RPGenius ' + command.args[0] + ' [닉네임] [아이템] [갯수]';
     const itemName = restArgs.join(' ');
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
 
@@ -2203,7 +2247,7 @@ function refundPendingActionItem(user, pending) {
     const count = Number(pending.consumedItemCount || 1);
     if (count <= 0) return null;
     addInventoryItem(user, pending.consumedItemId, count);
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const item = items[pending.consumedItemId];
     return (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count);
 }
@@ -2412,8 +2456,8 @@ function rollCount(count) {
 }
 
 function grantPackReward(user, reward, summary) {
-    const items = readJson(ITEMS_PATH, []);
-    const equipments = readJson(EQUIPMENT_PATH, {});
+    const items = getDataCache('Item', []);
+    const equipments = getDataCache('Equipment', {});
     const count = rollCount(reward.count);
     if (reward.type == '아이템') {
         addInventoryItem(user, reward.item_id, count);
@@ -2471,7 +2515,7 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
 function useCoupon(user, codeArg) {
     const code = String(codeArg || '').trim();
     if (!code) return '❌ /RPGenius 쿠폰 [코드]';
-    const coupons = readJson(COUPON_PATH, []);
+    const coupons = getDataCache('Coupon', []);
     const coupon = coupons.find(data => String(data.code || '').toUpperCase() == code.toUpperCase());
     if (!coupon) return '❌ 존재하지 않는 쿠폰입니다.';
     if (coupon.expired_At != null && Date.now() > Number(new Date(coupon.expired_At).getTime() || 0)) return '❌ 만료된 쿠폰입니다.';
@@ -2529,7 +2573,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
 }
 
 async function useItem(user, itemName, countArg) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
@@ -2554,7 +2598,7 @@ async function useItem(user, itemName, countArg) {
         }
     }
     if (item.type == '번들') {
-        const bundles = readJson(BUNDLE_PATH, []);
+        const bundles = getDataCache('Bundle', []);
         if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
     }
     if (item.type == '마법석') {
@@ -2574,7 +2618,7 @@ async function useItem(user, itemName, countArg) {
     if (item.type == '가챠') {
         const summary = {};
         if (typeof item.pack == 'number') {
-            const packs = readJson(PACKS_PATH, []);
+            const packs = getDataCache('Pack', []);
             const pack = packs[item.pack];
             if (!Array.isArray(pack)) return '❌ 사용할 수 없는 가챠입니다.';
             const rollCount = Number(item.num || 1) * useCount;
@@ -2590,7 +2634,7 @@ async function useItem(user, itemName, countArg) {
         Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
     }
     if (item.type == '번들') {
-        const bundles = readJson(BUNDLE_PATH, []);
+        const bundles = getDataCache('Bundle', []);
         const bundle = bundles[item.pack];
         const summary = {};
         for (let i = 0; i < useCount; i++) bundle.forEach(reward => grantPackReward(user, reward, summary));
@@ -2617,7 +2661,7 @@ async function useItem(user, itemName, countArg) {
 }
 
 async function purchaseShopItem(user, shopType, indexArg, countArg) {
-    const shops = readJson(SHOP_PATH, {});
+    const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return '❌ 존재하지 않는 상점입니다.';
 
@@ -2811,7 +2855,7 @@ const TRADE_FEE_RATE = 0.05;
 const TRADE_REQUEST_TTL_MS = 5 * 60 * 1000;
 
 function getTradeTicketItemId() {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     return items.findIndex(item => item.name == '거래권');
 }
 
@@ -2859,7 +2903,7 @@ function clearTradeRequestTimer(name) {
 }
 
 function formatTradeOfferLines(offer) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const lines = [];
     if (Number(offer.gold || 0) > 0) lines.push('- 🪙 ' + comma(offer.gold));
     if (Number(offer.garnet || 0) > 0) lines.push('- 💠 ' + comma(offer.garnet));
@@ -3046,7 +3090,7 @@ function registerTradeOffer(user, args) {
         return '✅ <' + data.rarity + '> ' + data.name + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
     }
     if (parsed.kind == '아이템') {
-        const items = readJson(ITEMS_PATH, []);
+        const items = getDataCache('Item', []);
         const itemId = items.findIndex(item => item.name == parsed.itemName);
         if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
         const itemData = items[itemId];
@@ -3061,7 +3105,7 @@ function registerTradeOffer(user, args) {
 }
 
 function buildTradeGainLines(receivedOffer) {
-    const items = readJson(ITEMS_PATH, []);
+    const items = getDataCache('Item', []);
     const lines = [];
     (receivedOffer.equipments || []).forEach(entry => {
         const data = getEquipmentData(entry.type, entry.id);
@@ -3890,7 +3934,7 @@ async function handleRPGCommand(data, channel) {
         const useCount = /^\d+$/.test(lastArg) && useArgs.length > 1 ? lastArg : null;
         const itemName = useCount ? useArgs.slice(0, -1).join(' ') : useText;
         if (user.field && user.field.name) {
-            const items = readJson(ITEMS_PATH, []);
+            const items = getDataCache('Item', []);
             const targetItem = items.find(item => item.name == itemName);
             if (targetItem && targetItem.type != '소모품') {
                 reply('❌ 필드에서는 소모품만 사용할 수 있습니다.');
@@ -3997,5 +4041,14 @@ module.exports = {
     getRPGUserById,
     getRPGUserByName,
     getRPGUserByCode,
-    onChat
+    onChat,
+    initRpgeniusData,
+    loadRpgeniusDataEntry,
+    saveRpgeniusDataEntry,
+    getDataCache,
+    RPGENIUS_DATA_KEYS,
+    addInventoryItem,
+    removeInventoryItem,
+    getInventoryItemCount,
+    cleanupInventoryItems
 };
