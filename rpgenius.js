@@ -600,7 +600,7 @@ function equipMainCharacterCard(user, numberArg) {
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
-    return '✅ 메인 캐릭터 카드를 장착했습니다: ' + formatUserCard(card);
+    return '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
 }
 
 function getRemainingCardInventorySpace(user) {
@@ -622,7 +622,7 @@ function equipCharacterCardSlot(user, numberArg) {
     if (user.card_slot.some(slotCard => slotCard && slotCard.id == card.id)) return '❌ 이미 같은 캐릭터가 카드 슬롯에 장착되어 있습니다.';
     user.inventory.card.splice(number - 1, 1);
     user.card_slot.push(card);
-    return '✅ 카드 슬롯에 장착했습니다: ' + formatUserCard(card);
+    return '✅ 카드 슬롯에 장착했습니다.\n- ' + formatUserCard(card);
 }
 
 function removeCharacterCardSlot(user, slotArg) {
@@ -635,7 +635,7 @@ function removeCharacterCardSlot(user, slotArg) {
     if (getRemainingCardInventorySpace(user) < 1) return '❌ 캐릭터 카드 인벤토리가 가득 차서 슬롯에서 제거할 수 없습니다.';
     user.inventory.card.push(removed);
     user.card_slot.splice(slotNumber - 1, 1);
-    return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다: ' + formatUserCard(removed);
+    return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다.\n- ' + formatUserCard(removed);
 }
 
 function convertCharacterCard(user, numberArg) {
@@ -1067,7 +1067,7 @@ function enterField(user, fieldName, options) {
     user.hp = hp;
     const cooldowns = getFieldCooldowns(user);
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
-    return '✅ 필드에 입장했습니다: ' + dungeon.name;
+    return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
 }
 
 function leaveField(user) {
@@ -1076,7 +1076,7 @@ function leaveField(user) {
     saveFieldCooldowns(user);
     releaseEliteEncounter(user);
     user.field = null;
-    return '✅ 필드에서 퇴장했습니다: ' + fieldName;
+    return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
 }
 
 function getFieldCooldowns(user) {
@@ -1973,7 +1973,7 @@ async function handleAdminCommand(command, adminUser) {
     }
     cleanupInventoryItems(targetUser);
     await targetUser.save();
-    return '✅ ' + targetUser.name + '님에게' + (command.args[0] == '아이템지급' ? '' : '서') + ' 아이템을 ' + (command.args[0] == '아이템지급' ? '지급' : '제거') + '했습니다: ' + itemName + ' x' + comma(count);
+    return '✅ ' + targetUser.name + '님에게' + (command.args[0] == '아이템지급' ? '' : '서') + ' 아이템을 ' + (command.args[0] == '아이템지급' ? '지급' : '제거') + '했습니다.\n- ' + itemName + ' x' + comma(count);
 }
 
 function addEquipmentInventory(user, type, id) {
@@ -2015,7 +2015,7 @@ function equipItemByNumber(user, numberArg) {
         if (prev && typeof prev.id != 'undefined') {
             user.inventory.equipment.push({ type: target.type, id: prev.id, level: Number(prev.level || 0) });
         }
-        return '✅ 장착했습니다: <' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     if (target.type == 'accessory') {
@@ -2035,7 +2035,7 @@ function equipItemByNumber(user, numberArg) {
         if (slotKey == null) return '❌ 장신구 슬롯이 가득 찼습니다. 먼저 다른 장신구를 해제해주세요.';
         accessories[slotKey] = { id: target.id, level: Number(target.level || 0) };
         user.inventory.equipment.splice(invIndex, 1);
-        return '✅ 장착했습니다: <' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     return '❌ 알 수 없는 장비 타입입니다.';
@@ -2058,7 +2058,7 @@ function unequipAccessoryByNumber(user, numberArg) {
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
-    return '✅ 장신구를 해제했습니다: <' + data.rarity + '> ' + data.name + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
+    return '✅ 장신구를 해제했습니다.\n<' + data.rarity + '> ' + data.name + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
 }
 
 const EQUIPMENT_STONE_ITEM_ID = 0;
@@ -2131,7 +2131,7 @@ function formatUpgradeRatePercent(value) {
     return Math.round(Number(value || 0) * 1000) / 10 + '%';
 }
 
-function formatEquipmentUpgradePreview(user, numberArg) {
+function formatEquipmentUpgradePreview(user, numberArg, options) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
     const type = selected.equip.type || selected.type;
@@ -2147,9 +2147,9 @@ function formatEquipmentUpgradePreview(user, numberArg) {
     const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', crit: '치명타 확률', critMul: '치명타 피해량' };
     const rates = EQUIPMENT_UPGRADE_RATES[level];
     const cost = getEquipmentUpgradeCost(equipment, type, level);
-    const hasUpgrader = getInventoryItemCount(user, EQUIPMENT_UPGRADER_ITEM_ID) > 0;
+    const isFreeUpgrade = options && options.free;
     const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
-    const hasStone = hasUpgrader || stoneCount >= cost.stone;
+    const hasStone = stoneCount >= cost.stone;
     const hasGold = Number(user.gold || 0) >= cost.gold;
     const lines = ['⚒️ ' + equipment.name + ' +' + level + ' -> +' + nextLevel];
     Object.keys(statNames).forEach(key => {
@@ -2160,17 +2160,21 @@ function formatEquipmentUpgradePreview(user, numberArg) {
     lines.push('🔼 성공 ' + formatUpgradeRatePercent(rates.success));
     lines.push('🔽 하락 ' + formatUpgradeRatePercent(rates.down));
     lines.push('💥 파괴 ' + formatUpgradeRatePercent(rates.reset));
-    lines.push('', '[ 필요 재료 ]');
-    lines.push((hasStone ? '✅ ' : '❌ ') + (hasUpgrader ? '유생의 강화기 x1' : '강화석 x' + comma(cost.stone)));
-    lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
-    if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 축복받은 장비 보호권 보유: 파괴/하락 시 유지');
-    else if (getInventoryItemCount(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 고급 장비 보호권 보유: 파괴 시 유지');
-    else if (getInventoryItemCount(user, EQUIPMENT_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 장비 보호권 보유: 파괴 시 0강 초기화');
-    if (!hasStone || !hasGold) {
+    if (isFreeUpgrade) {
+        lines.push('', '✨ 유생의 강화기 효과가 적용됩니다.');
+    } else {
+        lines.push('', '[ 필요 재료 ]');
+        lines.push((hasStone ? '✅ ' : '❌ ') + '강화석 x' + comma(cost.stone));
+        lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
+    }
+    if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 축복받은 장비 보호권 보유\n- 파괴/하락 시 유지');
+    else if (getInventoryItemCount(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 고급 장비 보호권 보유\n- 파괴 시 유지');
+    else if (getInventoryItemCount(user, EQUIPMENT_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 장비 보호권 보유\n- 파괴 시 0강 초기화');
+    if (!isFreeUpgrade && (!hasStone || !hasGold)) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다!');
     } else {
-        user.pendingAction = { type: '장비강화', number: Number(numberArg), equipmentType: type };
+        user.pendingAction = { type: '장비강화', number: Number(numberArg), equipmentType: type, free: !!isFreeUpgrade };
         lines.push('', '/RPGenius 강화');
     }
     return lines.join('\n');
@@ -2196,14 +2200,15 @@ function runEquipmentUpgrade(user) {
         return '❌ 강화할 수 없는 장비입니다.';
     }
     const cost = getEquipmentUpgradeCost(equipment, type, level);
-    const hasUpgrader = getInventoryItemCount(user, EQUIPMENT_UPGRADER_ITEM_ID) > 0;
-    if ((!hasUpgrader && getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone) || Number(user.gold || 0) < cost.gold) {
+    const isFreeUpgrade = !!pending.free;
+    if (!isFreeUpgrade && (getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone || Number(user.gold || 0) < cost.gold)) {
         user.pendingAction = null;
         return '❌ 재료가 부족합니다!';
     }
-    if (hasUpgrader) removeInventoryItem(user, EQUIPMENT_UPGRADER_ITEM_ID, 1);
-    else removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
-    user.gold = Number(user.gold || 0) - cost.gold;
+    if (!isFreeUpgrade) {
+        removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
+        user.gold = Number(user.gold || 0) - cost.gold;
+    }
     const rates = EQUIPMENT_UPGRADE_RATES[level];
     const roll = Math.random();
     let result = 'destroy';
@@ -2423,7 +2428,7 @@ async function useItem(user, itemName, countArg) {
         const requiredCount = Number(require.count || 0) * useCount;
         if (getInventoryItemCount(user, require.id) < requiredCount) {
             const requireItem = items[require.id];
-            return '❌ 필요한 아이템이 부족합니다: ' + (requireItem ? requireItem.name : '알 수 없는 아이템') + ' x' + comma(requiredCount);
+            return '❌ 필요한 아이템이 부족합니다.\n- ' + (requireItem ? requireItem.name : '알 수 없는 아이템') + ' x' + comma(requiredCount);
         }
     }
     if (item.type == '번들') {
@@ -2432,7 +2437,8 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '마법석') {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 캐릭터 변환석은 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use != '캐릭터변환') return '❌ 사용할 수 없는 마법석입니다.';
+        if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 유생의 강화기는 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use != '캐릭터변환' && itemId != EQUIPMENT_UPGRADER_ITEM_ID) return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -2475,6 +2481,12 @@ async function useItem(user, itemName, countArg) {
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('', formatCharacterInventory(user));
+        }
+        if (itemId == EQUIPMENT_UPGRADER_ITEM_ID) {
+            user.pendingAction = { type: '무료장비강화' };
+            lines.push('무료로 강화할 장비를 선택해주세요.');
+            lines.push('/RPGenius 장비강화 [장비번호]');
+            lines.push('', formatEquipmentInventory(user));
         }
     }
 
@@ -3236,7 +3248,7 @@ async function handleRPGCommand(data, channel) {
         const nickname = cmd.substr(cmd.split(' ')[0].length + 4).trim();
         const existingById = await getRPGUserById(senderId);
         if (existingById) {
-            reply('❌ 이미 로그인된 상태입니다: ' + existingById.name);
+            reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
         } else {
             const existsByName = await getRPGUserByName(nickname);
             if (existsByName) {
@@ -3259,7 +3271,7 @@ async function handleRPGCommand(data, channel) {
     if (args[0] == '로그인') {
         const existingById = await getRPGUserById(senderId);
         if (existingById) {
-            reply('❌ 이미 로그인된 상태입니다: ' + existingById.name);
+            reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
             return true;
         }
         const code = args[1];
@@ -3318,7 +3330,7 @@ async function handleRPGCommand(data, channel) {
             user.mp = Number(stats.mp || 0);
             addInventoryItem(user, 41, 1);
             await user.save();
-            reply('✅ 캐릭터 카드를 선택했습니다: ' + characterCard.card.name + '\n\n🎁 초보자 키트를 받았습니다!\n/RPGenius 사용 초보자 키트');
+            reply('✅ 캐릭터 카드를 선택했습니다.\n- ' + characterCard.card.name + '\n\n🎁 초보자 키트를 받았습니다!\n/RPGenius 사용 초보자 키트');
         }
         return true;
     }
@@ -3341,6 +3353,27 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = convertCharacterCard(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '무료장비강화') {
+        if (args[0] == '사용취소') {
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 유생의 강화기 사용을 취소했습니다.');
+            return true;
+        }
+        if (args[0] != '장비강화') {
+            reply('❌ 무료로 강화할 장비를 먼저 선택해야 합니다.\n/RPGenius 장비강화 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        if (!args[1]) {
+            reply('❌ /RPGenius 장비강화 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = formatEquipmentUpgradePreview(user, args[1], { free: true });
         await user.save();
         reply(result);
         return true;

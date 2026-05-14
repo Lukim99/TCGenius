@@ -101,15 +101,6 @@
     "가넷": [
         {
             "type": "아이템",
-            "item_id": 2,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 150
-            }
-        },
-        {
-            "type": "아이템",
             "item_id": 3,
             "count": 1,
             "price": {
