@@ -2094,6 +2094,16 @@ const EQUIPMENT_UPGRADE_RATES = [
     { great: 0, success: 0.007, down: 0.193, reset: 0.80 }
 ];
 
+function refundPendingActionItem(user, pending) {
+    if (!pending || typeof pending.consumedItemId == 'undefined') return null;
+    const count = Number(pending.consumedItemCount || 1);
+    if (count <= 0) return null;
+    addInventoryItem(user, pending.consumedItemId, count);
+    const items = readJson(ITEMS_PATH, []);
+    const item = items[pending.consumedItemId];
+    return (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count);
+}
+
 function getEquipmentByNumber(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return null;
@@ -2174,7 +2184,15 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다!');
     } else {
-        user.pendingAction = { type: '장비강화', number: Number(numberArg), equipmentType: type, free: !!isFreeUpgrade };
+        const pending = {
+            type: '장비강화',
+            number: Number(numberArg),
+            equipmentType: type,
+            free: !!isFreeUpgrade
+        };
+        if (options && typeof options.consumedItemId != 'undefined') pending.consumedItemId = options.consumedItemId;
+        if (options && typeof options.consumedItemCount != 'undefined') pending.consumedItemCount = options.consumedItemCount;
+        user.pendingAction = pending;
         lines.push('', '/RPGenius 강화');
     }
     return lines.join('\n');
@@ -2477,13 +2495,13 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '마법석') {
         if (item.use == '캐릭터변환') {
-            user.pendingAction = { type: '캐릭터변환' };
+            user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('', formatCharacterInventory(user));
         }
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID) {
-            user.pendingAction = { type: '무료장비강화' };
+            user.pendingAction = { type: '무료장비강화', consumedItemId: itemId, consumedItemCount: useCount };
             lines.push('무료로 강화할 장비를 선택해주세요.');
             lines.push('/RPGenius 장비강화 [장비번호]');
             lines.push('', formatEquipmentInventory(user));
@@ -3343,9 +3361,10 @@ async function handleRPGCommand(data, channel) {
 
     if (user.pendingAction && user.pendingAction.type == '캐릭터변환') {
         if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
             user.pendingAction = null;
             await user.save();
-            reply('✅ 캐릭터 변환석 사용을 취소했습니다.');
+            reply('✅ 캐릭터 변환석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
             return true;
         }
         if (args[0] != '선택') {
@@ -3360,9 +3379,10 @@ async function handleRPGCommand(data, channel) {
 
     if (user.pendingAction && user.pendingAction.type == '무료장비강화') {
         if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
             user.pendingAction = null;
             await user.save();
-            reply('✅ 유생의 강화기 사용을 취소했습니다.');
+            reply('✅ 유생의 강화기 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
             return true;
         }
         if (args[0] != '장비강화') {
@@ -3373,7 +3393,11 @@ async function handleRPGCommand(data, channel) {
             reply('❌ /RPGenius 장비강화 [장비번호]\n/RPGenius 사용취소');
             return true;
         }
-        const result = formatEquipmentUpgradePreview(user, args[1], { free: true });
+        const result = formatEquipmentUpgradePreview(user, args[1], {
+            free: true,
+            consumedItemId: user.pendingAction.consumedItemId,
+            consumedItemCount: user.pendingAction.consumedItemCount
+        });
         await user.save();
         reply(result);
         return true;
@@ -3386,9 +3410,10 @@ async function handleRPGCommand(data, channel) {
             reply(result);
             return true;
         }
+        const refund = refundPendingActionItem(user, user.pendingAction);
         user.pendingAction = null;
         await user.save();
-        reply('❌ 장비 강화가 취소되었습니다.');
+        reply('❌ 장비 강화가 취소되었습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
         return true;
     }
 
