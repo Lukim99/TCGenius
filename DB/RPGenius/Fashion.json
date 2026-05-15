@@ -7,6 +7,6 @@
         "option": {
             "stat": { "skillCooldown": -500 }
         },
-        "requireStar": 7
+        "requireStar": 6
     }
 ]

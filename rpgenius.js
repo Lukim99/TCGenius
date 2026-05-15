@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -19,6 +19,7 @@ const BUNDLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bundle.json');
 const RECIPE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Recipe.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const COUPON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Coupon.json');
+const FASHION_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Fashion.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
@@ -364,12 +365,57 @@ function formatNameWithTrade(data) {
     return data.name + (data.no_trade ? ' [거래불가]' : '');
 }
 
+function getFashionData() {
+    const cached = getDataCache('Fashion', null);
+    return Array.isArray(cached) ? cached : readJson(FASHION_PATH, []);
+}
+
+function getCardFashion(card) {
+    if (!card || typeof card.skin != 'string' || !card.skin.trim()) return null;
+    const skin = card.skin.trim();
+    return getFashionData().find(fashion => fashion && fashion.name == skin && (fashion.primary_card || []).map(id => Number(id)).includes(Number(card.id))) || null;
+}
+
+function pickFashionForCard(cardId) {
+    const candidates = getFashionData().filter(fashion => fashion && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
+    return candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : null;
+}
+
+function pickRandomFashionCard() {
+    const candidates = getFashionData().filter(fashion => fashion && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0);
+    if (candidates.length == 0) return null;
+    const fashion = candidates[randomInt(0, candidates.length - 1)];
+    const primaryCards = fashion.primary_card.map(id => Number(id)).filter(id => Number.isInteger(id) && id >= 0);
+    if (primaryCards.length == 0) return null;
+    return { fashion, id: primaryCards[randomInt(0, primaryCards.length - 1)] };
+}
+
+function applyFashionRollToCard(card, fixedCardId) {
+    if (!card || Math.random() >= 0.0005) return;
+    const picked = fixedCardId != null ? { fashion: pickFashionForCard(fixedCardId), id: fixedCardId } : pickRandomFashionCard();
+    if (!picked || !picked.fashion) return;
+    card.id = picked.id;
+    if (Number(card.star || 0) >= Number(picked.fashion.requireStar || 0)) card.skin = picked.fashion.name;
+}
+
+function applyPackSkinToCard(card, skinName) {
+    const skin = typeof skinName == 'string' ? skinName.trim() : '';
+    if (!card || !skin) return;
+    const fashion = getFashionData().find(data => data && data.name == skin && Array.isArray(data.primary_card) && data.primary_card.length > 0);
+    if (!fashion) return;
+    const primaryCards = fashion.primary_card.map(id => Number(id)).filter(id => Number.isInteger(id) && id >= 0);
+    if (primaryCards.length == 0) return;
+    card.id = primaryCards[randomInt(0, primaryCards.length - 1)];
+    if (Number(card.star || 0) >= Number(fashion.requireStar || 0)) card.skin = fashion.name;
+}
+
 function formatUserCard(card) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (!card || typeof card.id == 'undefined') return '없음';
     const data = characterCards[card.id];
     if (!data) return '없음';
-    return '[' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + data.name;
+    const fashion = getCardFashion(card);
+    return '[' + formatStar(card.star) + '] ' + (card.type || '일반') + (fashion ? ' ' + fashion.name : '') + ' ' + data.name;
 }
 
 function getEquipmentData(type, id) {
@@ -562,8 +608,7 @@ function formatCardCombinePreview(user, numberArgs) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const lines = ['[ 캐릭터 카드 조합 ]'];
     selection.selected.forEach(card => {
-        const data = characterCards[card.id];
-        lines.push('- [' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + (data ? data.name : '알 수 없음'));
+        lines.push('- ' + formatUserCard(card));
     });
     lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
     lines.push('- 필요 골드: 🪙 ' + comma(selection.info.gold));
@@ -594,6 +639,7 @@ function runCardCombine(user) {
         star: success ? selection.star + 1 : selection.star,
         type: '일반'
     };
+    applyFashionRollToCard(resultCard, success && selection.sameCardId != null ? selection.sameCardId : null);
     user.inventory.card.push(resultCard);
     return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
 }
@@ -649,8 +695,7 @@ function formatCardSalePreview(user, numberArgs) {
     user.pendingAction = { type: '카드판매', numbers: selection.numbers };
     const lines = ['[ 카드 판매 ]'];
     selection.selected.forEach(card => {
-        const data = characterCards[card.id];
-        lines.push('- [' + formatStar(card.star) + '] ' + (card.type || '일반') + ' ' + (data ? data.name : '알 수 없음'));
+        lines.push('- ' + formatUserCard(card));
     });
     lines.push('', '판매 시 획득:', '- 🪙 ' + comma(selection.gold), '', '정말 판매하시겠습니까?', '/RPGenius 판매');
     return lines.join('\n');
@@ -812,10 +857,15 @@ function calculateUserStats(user) {
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, equip.level));
         }
     });
+    const fashion = getCardFashion(user.main_card);
+    if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
+        addStats(stats, fashion.option && fashion.option.stat || {});
+        addStats(plusStats, fashion.option && fashion.option.plusStat || {});
+    }
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'skillCooldown', 'skillTrueDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -838,6 +888,7 @@ const CP_WEIGHTS = {
     MITIGATE_CAP: 0.8,
     RECOVERY_RATIO: 0.5,
     MP_DIVISOR: 8,
+    COOLDOWN_DIVISOR: 10000,
     ECON_SCALE: 30,
     POTION_SCALE: 25,
     DROP_SCALE: 80
@@ -875,7 +926,8 @@ function computeCombatPowerFromStats(stats, slot) {
     const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mRecover * W.DEFENSE_SCALE;
 
     const mMpSave = 1 + Math.min(0.8, Number(stats.mpReduce || 0)) + Math.min(0.8, Number(slot.mpCostReduction || 0));
-    const resourcePower = (mp / W.MP_DIVISOR) * mMpSave;
+    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR;
+    const resourcePower = (mp / W.MP_DIVISOR) * mMpSave * mCooldown;
     const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
                        + Number(stats.potion || 0) * W.POTION_SCALE
                        + Number(slot.itemDropChance || 0) * W.DROP_SCALE;
@@ -1598,7 +1650,7 @@ function formatCharacterInventory(user) {
     lines.push(VIEWMORE);
     cards.forEach((card, index) => {
         const data = characterCards[card.id];
-        if (data) lines.push('[' + (index + 1) + '] [' + formatStar(card.star) + '] ' + card.type + ' ' + data.name);
+        if (data) lines.push('[' + (index + 1) + '] ' + formatUserCard(card));
     });
     return lines.join('\n');
 }
@@ -1624,10 +1676,16 @@ function formatEquipmentInfo(user) {
         '[ ' + user.name + '님의 장착 정보 ]',
         VIEWMORE,
         '〈 캐릭터 카드 〉',
-        '- ' + formatUserCard(mainCard),
-        '',
-        '〈 스킬 〉'
+        '- ' + formatUserCard(mainCard)
     ];
+
+    const fashion = getCardFashion(mainCard);
+    if (fashion && star >= Number(fashion.requireStar || 0)) {
+        const fashionStatLines = formatEquipmentStatLines(fashion.option || {});
+        if (fashionStatLines) lines.push('', '〈 패션 카드 효과 〉', fashionStatLines);
+    }
+
+    lines.push('', '〈 스킬 〉');
 
     if (cardData && Array.isArray(cardData.skills) && cardData.skills.length > 0) {
         cardData.skills.forEach(skillIndex => {
@@ -2674,8 +2732,9 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
         const id = randomInt(0, characterCards.length - 1);
         const star = randomInt(minStar, maxStar) - 1;
         const card = { id: id, star: star, type: '일반' };
+        applyPackSkinToCard(card, pack.skin);
         user.inventory.card.push(card);
-        addRewardSummary(summary, 'card:' + id + ':' + star, '[' + formatStar(star) + '] 일반 ' + characterCards[id].name, 1);
+        addRewardSummary(summary, 'card:' + card.id + ':' + star + ':' + (card.skin || ''), formatUserCard(card), 1);
     }
 }
 
