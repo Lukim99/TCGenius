@@ -120,6 +120,78 @@
                 { "stat": { "atk": 274, "pnt": 16 } },
                 { "stat": { "atk": 423, "pnt": 32, "crit": 0.05, "critMul": 0.2 }, "plusStat": { "atk": 0.1 } }
             ]
+        },
+        {
+            "name": "훈련용 목검",
+            "desc": "살상용으로는 좋지 않지만 훈련에 도움이 된다.",
+            "rarity": "일반",
+            "stat": { "atk": 1 },
+            "plusStat": { "exp": 0.01 },
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 1 }, "plusStat": { "exp": 0.005 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 3 } },
+                { "stat": { "atk": 3 } },
+                { "stat": { "atk": 3, "plusStat": { "exp": 0.005 } } },
+                { "stat": { "atk": 4 } },
+                { "stat": { "atk": 5 } },
+                { "stat": { "atk": 6 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 10 }, "plusStat": { "exp": 0.03 } }
+            ]
+        },
+        {
+            "name": "낡은 단검",
+            "desc": "오래된 단검이다.",
+            "rarity": "일반",
+            "stat": { "atk": 6, "crit": 0.01, "critMul": 0.05 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 4 } },
+                { "stat": { "atk": 5 } },
+                { "stat": { "atk": 5, "crit": 0.01 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 8 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 10, "crit": 0.03, "critMul": 0.05 } },
+                { "stat": { "atk": 12 } },
+                { "stat": { "atk": 14 } },
+                { "stat": { "atk": 14 } },
+                { "stat": { "atk": 20 } },
+                { "stat": { "atk": 20, "pnt": 10, "crit": 0.05, "critMul": 0.2 }, "plusStat": { "atk": 0.03 } }
+            ]
+        },
+        {
+            "name": "도적 나이프",
+            "desc": "왜인지 돈을 잘 뜯을 것 같다.",
+            "rarity": "레어",
+            "stat": { "atk": 16 },
+            "plusStat": { "gold": 0.02 },
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 3 } },
+                { "stat": { "atk": 6 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 8, "crit": 0.01 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 10 } },
+                { "stat": { "atk": 12 } },
+                { "stat": { "atk": 13 } },
+                { "stat": { "atk": 15 } },
+                { "stat": { "atk": 20, "crit": 0.02 }, "plusStat": { "atk": 0.02 } },
+                { "stat": { "atk": 25 } },
+                { "stat": { "atk": 28 }, "plusStat": { "gold": 0.01 } },
+                { "stat": { "atk": 30 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 37 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 60, "pnt": 28 }, "plusStat": { "atk": 0.07, "gold": 0.05 } }
+            ]
         }
     ],
     "armor": [
@@ -242,6 +314,80 @@
                 { "stat": { "def": 56, "hp": 1260 } },
                 { "stat": { "def": 68, "hp": 1520 } },
                 { "stat": { "def": 93, "hp": 1695 }, "plusStat": { "hp": 0.1 } }
+            ]
+        },
+        {
+            "name": "마나 로브",
+            "desc": "대기의 마나를 흡수하는 로브.",
+            "rarity": "일반",
+            "stat": { "def": 2, "mp": 26 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "def": 1, "mp": 10 } },
+                { "stat": { "def": 1, "mp": 11 } },
+                { "stat": { "def": 1, "mp": 12 } },
+                { "stat": { "def": 1, "mp": 13 } },
+                { "stat": { "def": 2, "mp": 24 } },
+                { "stat": { "def": 2, "mp": 25 } },
+                { "stat": { "def": 2, "mp": 26 } },
+                { "stat": { "def": 2, "mp": 27 } },
+                { "stat": { "def": 2, "mp": 28 } },
+                { "stat": { "def": 3, "mp": 30 } },
+                { "stat": { "def": 4, "mp": 45 } },
+                { "stat": { "def": 5, "mp": 59 } },
+                { "stat": { "def": 6, "mp": 60 } },
+                { "stat": { "def": 7, "mp": 70 } },
+                { "stat": { "def": 8, "mp": 188 } }
+            ]
+        },
+        {
+            "name": "가벼운 옷",
+            "desc": "방어는 형편없지만 움직임이 자유로워 공격이 수월하다.",
+            "rarity": "일반",
+            "stat": { "atk": 2, "def": 1 },
+            "plusStat": {},
+            "upgrade": [
+                { "stat": { "atk": 1 } },
+                { "stat": { "atk": 2 } },
+                { "stat": { "atk": 3 } },
+                { "stat": { "atk": 4 } },
+                { "stat": { "atk": 5, "def": 2 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 6 } },
+                { "stat": { "atk": 7 } },
+                { "stat": { "atk": 8 } },
+                { "stat": { "atk": 9 } },
+                { "stat": { "atk": 13, "def": 3 }, "plusStat": { "atk": 0.01 } },
+                { "stat": { "atk": 16 } },
+                { "stat": { "atk": 19 } },
+                { "stat": { "atk": 22 } },
+                { "stat": { "atk": 25 } },
+                { "stat": { "atk": 30, "def": 4 }, "plusStat": { "atk": 0.03 } }
+            ]
+        },
+        {
+            "name": "그림자 망토",
+            "desc": "흐릿하게 보여 공격을 피하기 좋다.",
+            "rarity": "레어",
+            "stat": { "def": 14, "hp": 83 },
+            "plusStat": {
+                "avd": 0.01
+            },
+            "upgrade": [
+                { "stat": { "def": 2, "hp": 22 } },
+                { "stat": { "def": 2, "hp": 27 } },
+                { "stat": { "def": 3, "hp": 33 } },
+                { "stat": { "def": 3, "hp": 39 } },
+                { "stat": { "def": 4, "hp": 50 }, "plusStat": { "avd": 0.005 } },
+                { "stat": { "def": 4, "hp": 55 } },
+                { "stat": { "def": 4, "hp": 60 } },
+                { "stat": { "def": 5, "hp": 70 } },
+                { "stat": { "def": 5, "hp": 80 } },
+                { "stat": { "def": 6, "hp": 95 }, "plusStat": { "avd": 0.005 } },
+                { "stat": { "def": 7, "hp": 110 }, "plusStat": { "avd": 0.005 } },
+                { "stat": { "def": 8, "hp": 130 }, "plusStat": { "avd": 0.005 } },
+                { "stat": { "def": 9, "hp": 150 }, "plusStat": { "avd": 0.01 } },
+                { "stat": { "def": 11, "hp": 180 }, "plusStat": { "avd": 0.01 } },
+                { "stat": { "def": 15, "hp": 290 }, "plusStat": { "avd": 0.05 } }
             ]
         }
     ],

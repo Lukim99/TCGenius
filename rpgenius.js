@@ -415,7 +415,8 @@ function formatUserCard(card) {
     const data = characterCards[card.id];
     if (!data) return '없음';
     const fashion = getCardFashion(card);
-    return '[' + formatStar(card.star) + '] ' + (card.type || '일반') + (fashion ? ' ' + fashion.name : '') + ' ' + data.name;
+    const typeText = card.type && card.type != '일반' ? card.type + ' ' : '';
+    return '[' + formatStar(card.star) + '] ' + typeText + (fashion ? fashion.name + ' ' : '') + data.name;
 }
 
 function getEquipmentData(type, id) {
@@ -4337,6 +4338,14 @@ module.exports = {
     saveRpgeniusDataEntry,
     getDataCache,
     RPGENIUS_DATA_KEYS,
+    calculateUserStats,
+    calculateCombatPower,
+    formatUserCard,
+    formatEquipmentInfo,
+    formatInventory,
+    formatCharacterInventory,
+    formatEquipmentInventory,
+    formatStatValue,
     addInventoryItem,
     removeInventoryItem,
     getInventoryItemCount,
