@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -20,11 +20,12 @@ const RECIPE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Recipe.json');
 const SHOP_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Shop.json');
 const COUPON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Coupon.json');
 const FASHION_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Fashion.json');
+const BAIT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bait.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
-const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '재료'];
+const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '미끼', '재료'];
 const ELITE_KILL_REQUIREMENT = 100;
 const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
@@ -2134,17 +2135,47 @@ function findItemByName(name) {
 
 const fishingTimers = {};
 const fishingChannels = {};
-const FISHING_BAIT_ITEM_ID = 37;
-const FISHING_REWARDS = [
-    { id: 38, rate: 600 },
-    { id: 39, rate: 250 },
-    { id: 40, rate: 90 },
-    { id: 0, rate: 30 },
-    { id: 15, rate: 15 },
-    { id: 18, rate: 10 },
-    { id: 19, rate: 4 },
-    { id: 20, rate: 1 }
-];
+const DEFAULT_BAIT_NAME = '일반 떡밥';
+
+function getBaitData() {
+    const cached = getDataCache('Bait', null);
+    if (Array.isArray(cached)) return cached;
+    return readJson(BAIT_PATH, []);
+}
+
+function getBaitDefinition(name) {
+    const list = getBaitData();
+    if (!Array.isArray(list)) return null;
+    return list.find(b => b && b.name == name) || null;
+}
+
+function getCurrentBaitName(user) {
+    const name = user && user.bait ? String(user.bait) : '';
+    if (name && getBaitDefinition(name)) return name;
+    return DEFAULT_BAIT_NAME;
+}
+
+function getCurrentBaitItemId(user) {
+    const items = getDataCache('Item', []);
+    const name = getCurrentBaitName(user);
+    const id = items.findIndex(item => item && item.name == name);
+    if (id != -1) return id;
+    return items.findIndex(item => item && item.name == DEFAULT_BAIT_NAME);
+}
+
+function pickBaitReward(user) {
+    const def = getBaitDefinition(getCurrentBaitName(user)) || getBaitDefinition(DEFAULT_BAIT_NAME);
+    const rewards = (def && Array.isArray(def.rewards)) ? def.rewards : [];
+    const total = rewards.reduce((s, r) => s + Number(r.rate || 0), 0);
+    if (total <= 0) return null;
+    const roll = Math.random() * total;
+    let acc = 0;
+    for (const r of rewards) {
+        acc += Number(r.rate || 0);
+        if (roll < acc) return Number(r.id);
+    }
+    return Number(rewards[0].id);
+}
 
 function normalizeFishingData(user) {
     if (!user.fishingNet || typeof user.fishingNet != 'object') user.fishingNet = {};
@@ -2154,21 +2185,12 @@ function normalizeFishingData(user) {
     });
     if (!user.fishingNetLimit) user.fishingNetLimit = 200;
     if (typeof user.fishing == 'undefined') user.fishing = false;
+    if (!user.bait || !getBaitDefinition(String(user.bait))) user.bait = DEFAULT_BAIT_NAME;
 }
 
 function getFishingNetCount(user) {
     normalizeFishingData(user);
     return Object.keys(user.fishingNet).reduce((sum, itemId) => sum + Number(user.fishingNet[itemId] || 0), 0);
-}
-
-function getRandomFishingRewardId() {
-    const roll = randomInt(1, 1000);
-    let acc = 0;
-    for (let i = 0; i < FISHING_REWARDS.length; i++) {
-        acc += FISHING_REWARDS[i].rate;
-        if (roll <= acc) return FISHING_REWARDS[i].id;
-    }
-    return FISHING_REWARDS[0].id;
 }
 
 function addFishingNetItem(user, itemId, count) {
@@ -2229,19 +2251,22 @@ function scheduleFishing(user, channel) {
             await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
             return;
         }
-        if (getInventoryItemCount(latest, FISHING_BAIT_ITEM_ID) < 1) {
-            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 떡밥이 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+        const baitId = getCurrentBaitItemId(latest);
+        if (baitId == -1 || getInventoryItemCount(latest, baitId) < 1) {
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
             return;
         }
-        removeInventoryItem(latest, FISHING_BAIT_ITEM_ID, 1);
-        addFishingNetItem(latest, getRandomFishingRewardId(), 1);
+        removeInventoryItem(latest, baitId, 1);
+        const rewardId = pickBaitReward(latest);
+        if (rewardId != null) addFishingNetItem(latest, rewardId, 1);
         await latest.save();
         if (getFishingNetCount(latest) >= Number(latest.fishingNetLimit || 200)) {
             await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
             return;
         }
-        if (getInventoryItemCount(latest, FISHING_BAIT_ITEM_ID) < 1) {
-            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 떡밥이 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+        const remainBaitId = getCurrentBaitItemId(latest);
+        if (remainBaitId == -1 || getInventoryItemCount(latest, remainBaitId) < 1) {
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
             return;
         }
         scheduleFishing(latest, channel);
@@ -2258,7 +2283,8 @@ async function toggleFishing(user, channel) {
         return '✅ 낚시를 중단합니다.\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
     }
     if (getFishingNetCount(user) >= Number(user.fishingNetLimit || 200)) return '❌ 살림망이 가득 찼습니다.\n/RPGenius 살림망비우기';
-    if (getInventoryItemCount(user, FISHING_BAIT_ITEM_ID) < 1) return '❌ 일반 떡밥이 없습니다.';
+    const baitId = getCurrentBaitItemId(user);
+    if (baitId == -1 || getInventoryItemCount(user, baitId) < 1) return '❌ ' + getCurrentBaitName(user) + '이(가) 없습니다.';
     user.fishing = true;
     await user.save();
     scheduleFishing(user, channel);
@@ -2893,7 +2919,14 @@ async function useItem(user, itemName, countArg) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
-    if (!['소모품', '가챠', '번들', '마법석'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+    if (!['소모품', '가챠', '번들', '마법석', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+    if (item.type == '미끼') {
+        if (!getBaitDefinition(item.name)) return '❌ 등록되지 않은 미끼입니다.';
+        if (user.bait == item.name) return '❌ 이미 사용 중인 미끼입니다.';
+        user.bait = item.name;
+        await user.save();
+        return '✅ 낚시 미끼를 ' + item.name + '(으)로 변경했습니다.';
+    }
 
     let useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
@@ -4293,8 +4326,8 @@ async function handleRPGCommand(data, channel) {
         if (user.field && user.field.name) {
             const items = getDataCache('Item', []);
             const targetItem = items.find(item => item.name == itemName);
-            if (targetItem && targetItem.type != '소모품') {
-                reply('❌ 필드에서는 소모품만 사용할 수 있습니다.');
+            if (targetItem && targetItem.type != '소모품' && targetItem.type != '미끼') {
+                reply('❌ 필드에서는 소모품/미끼만 사용할 수 있습니다.');
                 return true;
             }
         }

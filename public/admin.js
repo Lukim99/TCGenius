@@ -607,6 +607,61 @@ $('#recipeSave').onclick = async () => { if (!confirm('Recipe 데이터를 저�
 TAB_LOADERS.recipe = () => $('#recipeReload').click();
 
 // ============================================================================
+// BAIT 에디터  ( data: Array<{name, rewards: Array<{id, rate}>}> )
+// ============================================================================
+let baitData = [];
+function baitRewardRow(reward, onDelete) {
+    const wrap = el('div', { class: 'entry' });
+    const btn = el('button', { class: 'pickbtn', type: 'button' });
+    const refresh = async () => {
+        btn.innerHTML = '';
+        if (typeof reward.id === 'number') {
+            const items = await getItems();
+            const it = items.find(x => x.id === reward.id);
+            btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + reward.id));
+        } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
+    };
+    btn.onclick = () => pickItem(it => { reward.id = it.id; refresh(); });
+    refresh();
+    const target = el('span', { style: { flex: '1', minWidth: '160px', display: 'flex' } }, btn);
+    const rateIn = el('input', { type: 'number', step: '0.001', min: 0, value: Number(reward.rate || 0), oninput: () => reward.rate = Number(rateIn.value) });
+    const rateSlot = el('span', { class: 'nf', style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+        el('span', { class: 'lab' }, 'rate'), rateIn);
+    wrap.appendChild(el('span', { class: 'lab' }, '아이템'));
+    wrap.appendChild(target);
+    wrap.appendChild(rateSlot);
+    wrap.appendChild(el('button', { class: 'btn icon danger', type: 'button', title: '삭제', onclick: () => onDelete() }, '✕'));
+    return wrap;
+}
+function renderBait() {
+    const list = $('#baitList'); list.innerHTML = '';
+    if (!Array.isArray(baitData)) baitData = [];
+    baitData.forEach((b, idx) => {
+        if (!Array.isArray(b.rewards)) b.rewards = [];
+        const card = el('div', { class: 'card' });
+        const nameIn = el('input', { value: b.name || '', placeholder: '미끼 이름 (Item.json의 미끼 아이템 이름과 일치)', oninput: () => b.name = nameIn.value });
+        const total = b.rewards.reduce((s, r) => s + Number(r.rate || 0), 0);
+        card.appendChild(el('div', { class: 'card-head' },
+            el('div', { class: 'card-title' }, '미끼 #' + idx + (b.name ? ' — ' + b.name : ''), el('span', { class: 'tag', style: { marginLeft: '8px' } }, '합계 rate: ' + total)),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('미끼 삭제?')) { baitData.splice(idx, 1); renderBait(); } } }, '삭제')
+        ));
+        card.appendChild(el('div', null, el('label', null, '이름'), nameIn));
+        card.appendChild(el('h3', { style: { marginTop: '12px' } }, '보상'));
+        const entryList = el('div', { class: 'entry-list' });
+        b.rewards.forEach((reward, i) => {
+            entryList.appendChild(baitRewardRow(reward, () => { b.rewards.splice(i, 1); renderBait(); }));
+        });
+        card.appendChild(entryList);
+        card.appendChild(el('button', { class: 'add-btn', type: 'button', onclick: () => { b.rewards.push({ id: 0, rate: 1 }); renderBait(); } }, '+ 보상 추가'));
+        list.appendChild(card);
+    });
+}
+$('#baitAdd').onclick = () => { baitData.push({ name: '', rewards: [] }); renderBait(); };
+$('#baitReload').onclick = async () => { try { baitData = (await loadKey('Bait')) || []; renderBait(); $('#baitStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
+$('#baitSave').onclick = async () => { if (!confirm('Bait 데이터를 저장합니다. 계속?')) return; try { await saveKey('Bait', baitData); toast('✅ Bait 저장 완료'); } catch (e) { toast(e.message, false); } };
+TAB_LOADERS.bait = () => $('#baitReload').click();
+
+// ============================================================================
 // RAW JSON 에디터
 // ============================================================================
 const rawSel = $('#rawKey');

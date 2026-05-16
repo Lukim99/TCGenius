@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
@@ -504,6 +504,26 @@ function getItemIconUrl(item) {
     return getItemImageUrl(String(item.type), String(item.name) + '.png');
 }
 
+function getEquipmentIconUrl(data) {
+    if (!data || !data.name || !data.rarity) return null;
+    return getItemImageUrl('장비', String(data.rarity) + ' ' + String(data.name) + '.png');
+}
+
+function getItemDisplayAssets(item) {
+    if (!item || !item.name) return { frameUrl: getAuctionFrameUrl('item'), iconUrl: null };
+    const m = String(item.name).match(/^(.+)\s장비\s상자$/);
+    if (m) {
+        return {
+            frameUrl: getAuctionFrameUrl('equipment', m[1]),
+            iconUrl: getItemImageUrl('가챠', '개봉 후 장비 상자.png')
+        };
+    }
+    const frameUrl = item.type == '미끼'
+        ? getItemImageUrl('프레임', '미끼.png')
+        : getAuctionFrameUrl('item');
+    return { frameUrl, iconUrl: getItemIconUrl(item) };
+}
+
 function buildSlotEffectInfo(card, data) {
     if (!data || !data.slot_effect) return null;
     const star = Number(card && card.star || 0);
@@ -690,14 +710,16 @@ function serializeAuctionEntry(entry, currentUserName) {
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
+        iconUrl = getEquipmentIconUrl(data);
         if (data) {
             const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0));
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
-        frameUrl = getAuctionFrameUrl('item');
-        iconUrl = getItemIconUrl(item);
+        const assets = getItemDisplayAssets(item);
+        frameUrl = assets.frameUrl;
+        iconUrl = assets.iconUrl;
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
@@ -1030,14 +1052,16 @@ function serializeBuyOrderEntry(entry, currentUserName) {
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
+        iconUrl = getEquipmentIconUrl(data);
         if (data && entry.payload && typeof entry.payload.level == 'number') {
             const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level));
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
-        frameUrl = getAuctionFrameUrl('item');
-        iconUrl = getItemIconUrl(item);
+        const assets = getItemDisplayAssets(item);
+        frameUrl = assets.frameUrl;
+        iconUrl = assets.iconUrl;
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
