@@ -2093,6 +2093,16 @@ function grantCraftEntry(user, entry) {
     }
 }
 
+function formatCraftedEntryWithTotal(entry, total) {
+    const text = formatPackEntry(entry);
+    if (['무기', '갑옷', '장신구', '캐릭터카드'].includes(entry.type)) {
+        if (Number(total) <= 1) return text;
+        return text + ' x' + comma(total);
+    }
+    if (/x[\d,]+(?:~[\d,]+)?$/.test(text)) return text.replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(total));
+    return text + ' x' + comma(total);
+}
+
 function formatCraftPreview(user, name, times) {
     const recipe = getRecipeByName(name);
     if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
@@ -2107,9 +2117,8 @@ function formatCraftPreview(user, name, times) {
     });
     lines.push('', '- 제작 시 획득 물품:');
     (recipe.crafted || []).forEach(entry => {
-        const each = getRecipeEntryCount(entry);
-        const total = each * count;
-        lines.push(' ㄴ ' + formatPackEntry(entry).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(total)));
+        const total = getRecipeEntryCount(entry) * count;
+        lines.push(' ㄴ ' + formatCraftedEntryWithTotal(entry, total));
     });
     if (!canConsumeCraftMaterialsTimes(user, recipe.materials || [], count)) {
         user.pendingAction = null;
@@ -2148,9 +2157,8 @@ function runCraft(user) {
     const header = '✅ \'' + recipe.name + '\' 제작에 성공했습니다.' + (times > 1 ? ' (x' + comma(times) + ')' : '');
     const lines = [header, '', '[ 획득 물품 ]'];
     (recipe.crafted || []).forEach(entry => {
-        const each = getRecipeEntryCount(entry);
-        const total = each * times;
-        lines.push('- ' + formatPackEntry(entry).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(total)));
+        const total = getRecipeEntryCount(entry) * times;
+        lines.push('- ' + formatCraftedEntryWithTotal(entry, total));
     });
     return lines.join('\n');
 }
