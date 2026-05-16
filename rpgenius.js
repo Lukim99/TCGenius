@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -1868,14 +1868,15 @@ function formatPrice(price) {
     return comma(price.amount);
 }
 
-function formatShop(shopType) {
+function formatShop(shopType, user) {
     const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return null;
     
     const lines = ['[ ' + shopType + ' 상점 ]', VIEWMORE];
     shop.forEach((item, index) => {
-        lines.push('│ [' + (index + 1) + '] 〈 ' + formatShopItem(item) + ' 〉');
+        const limitSuffix = user ? formatShopLimitSuffix(user, shopType, index, item) : '';
+        lines.push('│ [' + (index + 1) + '] 〈 ' + formatShopItem(item) + ' 〉' + limitSuffix);
         lines.push('│ 가격: ' + formatPrice(item.price));
         lines.push('');
     });
@@ -1999,6 +2000,102 @@ function removeInventoryEquipment(user, material, count) {
 function getKoreanDateKey(date) {
     const koreaTime = new Date(date.getTime() + 9 * 60 * 60 * 1000);
     return koreaTime.toISOString().slice(0, 10);
+}
+
+function getKoreanWeekKey(date) {
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    const tmp = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()));
+    const day = tmp.getUTCDay() || 7;
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+    return tmp.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
+}
+
+function getKoreanMonthKey(date) {
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 7);
+}
+
+const SHOP_LIMIT_KEYS = ['max', 'daily', 'weekly', 'monthly', 'global'];
+
+function getShopLimits(shopItem) {
+    const out = {};
+    const src = shopItem && shopItem.limits;
+    if (src && typeof src == 'object') {
+        SHOP_LIMIT_KEYS.forEach(k => {
+            const v = Number(src[k]);
+            if (Number.isFinite(v) && v > 0) out[k] = Math.floor(v);
+        });
+    }
+    return out;
+}
+
+function normalizeShopPurchaseRecord(rec, now) {
+    const dateKey = getKoreanDateKey(now);
+    const weekKey = getKoreanWeekKey(now);
+    const monthKey = getKoreanMonthKey(now);
+    if (!rec || typeof rec != 'object') rec = {};
+    if (typeof rec.max != 'number') rec.max = Number(rec.max || 0);
+    if (rec.dailyKey != dateKey) { rec.dailyKey = dateKey; rec.daily = 0; }
+    if (rec.weeklyKey != weekKey) { rec.weeklyKey = weekKey; rec.weekly = 0; }
+    if (rec.monthlyKey != monthKey) { rec.monthlyKey = monthKey; rec.monthly = 0; }
+    rec.daily = Number(rec.daily || 0);
+    rec.weekly = Number(rec.weekly || 0);
+    rec.monthly = Number(rec.monthly || 0);
+    return rec;
+}
+
+function getUserShopRecord(user, shopType, index, now) {
+    if (!user.shopPurchases || typeof user.shopPurchases != 'object') user.shopPurchases = {};
+    if (!user.shopPurchases[shopType] || typeof user.shopPurchases[shopType] != 'object') user.shopPurchases[shopType] = {};
+    const key = String(index);
+    user.shopPurchases[shopType][key] = normalizeShopPurchaseRecord(user.shopPurchases[shopType][key], now || new Date());
+    return user.shopPurchases[shopType][key];
+}
+
+function getShopGlobalCount(shopType, index) {
+    const state = getDataCache('ShopState', {}) || {};
+    const t = state[shopType];
+    if (!t) return 0;
+    const r = t[String(index)];
+    if (!r) return 0;
+    return Number(r.global || 0);
+}
+
+async function addShopGlobalCount(shopType, index, delta) {
+    let state = getDataCache('ShopState', {});
+    if (!state || typeof state != 'object') state = {};
+    if (!state[shopType] || typeof state[shopType] != 'object') state[shopType] = {};
+    const key = String(index);
+    if (!state[shopType][key] || typeof state[shopType][key] != 'object') state[shopType][key] = { global: 0 };
+    state[shopType][key].global = Number(state[shopType][key].global || 0) + Number(delta || 0);
+    await saveRpgeniusDataEntry('ShopState', state);
+}
+
+function getShopRemainingLimits(user, shopType, index, shopItem, now) {
+    const limits = getShopLimits(shopItem);
+    const rec = getUserShopRecord(user, shopType, index, now);
+    const globalCount = getShopGlobalCount(shopType, index);
+    const out = {};
+    if (typeof limits.max == 'number') out.max = Math.max(0, limits.max - rec.max);
+    if (typeof limits.daily == 'number') out.daily = Math.max(0, limits.daily - rec.daily);
+    if (typeof limits.weekly == 'number') out.weekly = Math.max(0, limits.weekly - rec.weekly);
+    if (typeof limits.monthly == 'number') out.monthly = Math.max(0, limits.monthly - rec.monthly);
+    if (typeof limits.global == 'number') out.global = Math.max(0, limits.global - globalCount);
+    return { limits, rec, globalCount, remaining: out };
+}
+
+function formatShopLimitSuffix(user, shopType, index, shopItem) {
+    const { limits, rec, globalCount } = getShopRemainingLimits(user, shopType, index, shopItem, new Date());
+    const parts = [];
+    if (typeof limits.max == 'number') parts.push('누적 ' + comma(rec.max) + '/' + comma(limits.max));
+    if (typeof limits.daily == 'number') parts.push('일 ' + comma(rec.daily) + '/' + comma(limits.daily));
+    if (typeof limits.weekly == 'number') parts.push('주 ' + comma(rec.weekly) + '/' + comma(limits.weekly));
+    if (typeof limits.monthly == 'number') parts.push('월 ' + comma(rec.monthly) + '/' + comma(limits.monthly));
+    if (typeof limits.global == 'number') parts.push('전체 ' + comma(globalCount) + '/' + comma(limits.global));
+    if (parts.length == 0) return '';
+    return ' (' + parts.join(', ') + ')';
 }
 
 function checkAttendance(user) {
@@ -3070,6 +3167,13 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
 
     const shopItem = shop[index - 1];
+    const itemIndex = index - 1;
+    const { limits, remaining } = getShopRemainingLimits(user, shopType, itemIndex, shopItem, new Date());
+    if (typeof limits.max == 'number' && remaining.max < count) return '❌ 누적 구매 제한을 초과합니다. (잔여 ' + comma(remaining.max) + '/' + comma(limits.max) + ')';
+    if (typeof limits.daily == 'number' && remaining.daily < count) return '❌ 오늘의 구매 제한을 초과합니다. (잔여 ' + comma(remaining.daily) + '/' + comma(limits.daily) + ')';
+    if (typeof limits.weekly == 'number' && remaining.weekly < count) return '❌ 이번 주 구매 제한을 초과합니다. (잔여 ' + comma(remaining.weekly) + '/' + comma(limits.weekly) + ')';
+    if (typeof limits.monthly == 'number' && remaining.monthly < count) return '❌ 이번 달 구매 제한을 초과합니다. (잔여 ' + comma(remaining.monthly) + '/' + comma(limits.monthly) + ')';
+    if (typeof limits.global == 'number' && remaining.global < count) return '❌ 전체 구매 제한을 초과합니다. (잔여 ' + comma(remaining.global) + '/' + comma(limits.global) + ')';
     if (shopItem.type == '캐릭터카드') {
         const grantCount = Number(shopItem.count || 1) * count;
         if (!buildCharacterCardReward(shopItem)) return '❌ 처리할 수 없는 상품입니다.';
@@ -3111,7 +3215,16 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
         return '❌ 처리할 수 없는 상품입니다.';
     }
 
+    const rec = getUserShopRecord(user, shopType, itemIndex, new Date());
+    if (typeof limits.max == 'number') rec.max = Number(rec.max || 0) + count;
+    if (typeof limits.daily == 'number') rec.daily = Number(rec.daily || 0) + count;
+    if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
+    if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
+
     await user.save();
+    if (typeof limits.global == 'number') {
+        try { await addShopGlobalCount(shopType, itemIndex, count); } catch (e) { console.error('[shop] global counter 저장 실패: ' + e.message); }
+    }
 
     const rewardItem = Object.assign({}, shopItem, { count: Number(shopItem.count || 1) * count });
     return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
@@ -3213,6 +3326,7 @@ class RPGUser {
         this.maxAccessory = 3;
         this.mail = [];
         this.usedCoupons = [];
+        this.shopPurchases = {};
         this.lastAttendanceDate = null;
     }
 
@@ -3230,6 +3344,7 @@ class RPGUser {
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
+        if (!this.shopPurchases || typeof this.shopPurchases != 'object') this.shopPurchases = {};
         if (typeof this.lastAttendanceDate == 'undefined') this.lastAttendanceDate = null;
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
@@ -4316,7 +4431,7 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '상점') {
         const shopType = args[1] || '일반';
-        const shopDisplay = formatShop(shopType);
+        const shopDisplay = formatShop(shopType, user);
         reply(shopDisplay || '❌ 존재하지 않는 상점입니다.');
         return true;
     }

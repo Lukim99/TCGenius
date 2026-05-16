@@ -526,7 +526,29 @@ function shopEntryRow(entry, onChange, onDelete) {
     priceRow.appendChild(el('span', { class: 'lab' }, '금액')); priceRow.appendChild(amountIn);
     paintPriceTarget();
 
-    wrap.appendChild(head); wrap.appendChild(priceRow);
+    // 구매 제한
+    if (!entry.limits || typeof entry.limits !== 'object') entry.limits = {};
+    const limitRow = el('div', { class: 'entry', style: { marginTop: '6px', flexWrap: 'wrap' } });
+    limitRow.appendChild(el('span', { class: 'lab' }, '제한 (0=무제한)'));
+    const fields = [
+        { key: 'max', label: '누적' },
+        { key: 'daily', label: '일일' },
+        { key: 'weekly', label: '주간' },
+        { key: 'monthly', label: '월간' },
+        { key: 'global', label: '글로벌' }
+    ];
+    fields.forEach(f => {
+        const cur = Number(entry.limits[f.key] || 0);
+        const inp = el('input', { class: 'nf', type: 'number', min: 0, value: cur, style: { width: '90px' }, oninput: () => {
+            const v = Number(inp.value);
+            if (!Number.isFinite(v) || v <= 0) delete entry.limits[f.key];
+            else entry.limits[f.key] = Math.floor(v);
+        } });
+        limitRow.appendChild(el('span', { class: 'lab' }, f.label));
+        limitRow.appendChild(inp);
+    });
+
+    wrap.appendChild(head); wrap.appendChild(priceRow); wrap.appendChild(limitRow);
     return wrap;
 }
 function renderShop() {
