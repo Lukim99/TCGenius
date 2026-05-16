@@ -205,6 +205,7 @@ function formatRoll(value) {
 
 function formatCount(count) {
     if (!count) return 'x1';
+    if (typeof count != 'object') return 'x' + comma(Number(count));
     const min = Number(count.min || 0);
     const max = Number(count.max || 0);
     if (min == max) return 'x' + comma(min);
@@ -2092,37 +2093,65 @@ function grantCraftEntry(user, entry) {
     }
 }
 
-function formatCraftPreview(user, name) {
+function formatCraftPreview(user, name, times) {
     const recipe = getRecipeByName(name);
     if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
-    const lines = ['⚒️ ' + recipe.name + ' 제작', '', '- 필요한 재료:'];
+    const count = Math.max(1, Math.floor(Number(times) || 1));
+    const header = '⚒️ ' + recipe.name + ' 제작' + (count > 1 ? ' x' + comma(count) : '');
+    const lines = [header, '', '- 필요한 재료:'];
     (recipe.materials || []).forEach(material => {
         const status = getCraftMaterialStatus(user, material);
-        lines.push((status.ok ? '✅ ' : '❌ ') + formatCraftMaterial(material, status.need) + ' (' + comma(status.have) + '/' + comma(status.need) + ')');
+        const totalNeed = status.need * count;
+        const ok = status.have >= totalNeed;
+        lines.push((ok ? '✅ ' : '❌ ') + formatCraftMaterial(material, totalNeed) + ' (' + comma(status.have) + '/' + comma(totalNeed) + ')');
     });
     lines.push('', '- 제작 시 획득 물품:');
-    (recipe.crafted || []).forEach(entry => lines.push(' ㄴ ' + formatPackEntry(entry)));
-    if (!canConsumeCraftMaterials(user, recipe.materials || [])) {
+    (recipe.crafted || []).forEach(entry => {
+        const each = getRecipeEntryCount(entry);
+        const total = each * count;
+        lines.push(' ㄴ ' + formatPackEntry(entry).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(total)));
+    });
+    if (!canConsumeCraftMaterialsTimes(user, recipe.materials || [], count)) {
         user.pendingAction = null;
         lines.push('', '❌ 재료가 부족합니다.');
     } else {
-        user.pendingAction = { type: '제작', name: recipe.name };
+        user.pendingAction = { type: '제작', name: recipe.name, times: count };
         lines.push('', '제작하시겠습니까?', '/RPGenius 제작');
     }
     return lines.join('\n');
+}
+
+function canConsumeCraftMaterialsTimes(user, materials, times) {
+    const clone = JSON.parse(JSON.stringify({
+        gold: Number(user.gold || 0),
+        garnet: Number(user.garnet || 0),
+        inventory: user.inventory || {}
+    }));
+    for (let i = 0; i < times; i++) {
+        if (!(materials || []).every(material => consumeCraftMaterial(clone, material))) return false;
+    }
+    return true;
 }
 
 function runCraft(user) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '제작') return '❌ 진행 중인 제작이 없습니다.';
     const recipe = getRecipeByName(pending.name);
+    const times = Math.max(1, Math.floor(Number(pending.times) || 1));
     user.pendingAction = null;
     if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
-    if (!canConsumeCraftMaterials(user, recipe.materials || [])) return '❌ 재료가 부족합니다.';
-    if (!(recipe.materials || []).every(material => consumeCraftMaterial(user, material))) return '❌ 재료 차감 중 오류가 발생했습니다.';
-    (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
-    const lines = ['✅ \'' + recipe.name + '\' 제작에 성공했습니다.', '', '[ 획득 물품 ]'];
-    (recipe.crafted || []).forEach(entry => lines.push('- ' + formatPackEntry(entry)));
+    if (!canConsumeCraftMaterialsTimes(user, recipe.materials || [], times)) return '❌ 재료가 부족합니다.';
+    for (let i = 0; i < times; i++) {
+        if (!(recipe.materials || []).every(material => consumeCraftMaterial(user, material))) return '❌ 재료 차감 중 오류가 발생했습니다.';
+        (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
+    }
+    const header = '✅ \'' + recipe.name + '\' 제작에 성공했습니다.' + (times > 1 ? ' (x' + comma(times) + ')' : '');
+    const lines = [header, '', '[ 획득 물품 ]'];
+    (recipe.crafted || []).forEach(entry => {
+        const each = getRecipeEntryCount(entry);
+        const total = each * times;
+        lines.push('- ' + formatPackEntry(entry).replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(total)));
+    });
     return lines.join('\n');
 }
 
@@ -4292,12 +4321,17 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '제작') {
-        const craftName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
-        if (!craftName) {
-            reply('❌ /RPGenius 제작 [이름]');
+        const craftText = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!craftText) {
+            reply('❌ /RPGenius 제작 [이름] <갯수>');
             return true;
         }
-        const result = formatCraftPreview(user, craftName);
+        const craftArgs = craftText.split(' ');
+        const lastArg = craftArgs[craftArgs.length - 1];
+        const hasCount = /^\d+$/.test(lastArg) && craftArgs.length > 1;
+        const craftName = hasCount ? craftArgs.slice(0, -1).join(' ') : craftText;
+        const craftCount = hasCount ? Math.max(1, parseInt(lastArg, 10)) : 1;
+        const result = formatCraftPreview(user, craftName, craftCount);
         await user.save();
         reply(result);
         return true;
