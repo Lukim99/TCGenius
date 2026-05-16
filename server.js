@@ -212,6 +212,84 @@ server.post('/api/auction/cancel', requireUser, async (req, res) => {
     }
 });
 
+// ===== 삽니다 (구매 등록) =====
+
+server.get('/api/buyorder', requireUser, async (req, res) => {
+    try {
+        const list = await getBuyOrderList();
+        const me = req.session.name;
+        res.json({ items: list.map(entry => serializeBuyOrderEntry(entry, me)) });
+    } catch (e) {
+        console.error('buyorder list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/buyorder/lookups', requireUser, (req, res) => {
+    try {
+        const lookups = buildBuyOrderLookups();
+        const fashion = rpgenius.getDataCache('Fashion', []);
+        lookups.fashion = (fashion || []).map(skin => skin ? {
+            name: skin.name,
+            primary_card: Array.isArray(skin.primary_card) ? skin.primary_card : [],
+            requireStar: Number(skin.requireStar || 0)
+        } : null).filter(Boolean);
+        res.json(lookups);
+    } catch (e) {
+        console.error('buyorder lookups error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/buyorder/fulfillable', requireUser, async (req, res) => {
+    try {
+        const orderId = String(req.query.id || '');
+        if (!orderId) return res.status(400).json({ error: '구매 등록 ID가 비어있습니다.' });
+        const list = await getBuyOrderList();
+        const entry = list.find(item => item.id == orderId);
+        if (!entry) return res.status(404).json({ error: '존재하지 않는 구매 등록입니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildFulfillableAssets(user, entry));
+    } catch (e) {
+        console.error('buyorder fulfillable error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/buyorder/register', requireUser, async (req, res) => {
+    try {
+        const out = await registerBuyOrder(req.session.name, req.body || {});
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json({ ok: true, id: out.id });
+    } catch (e) {
+        console.error('buyorder register error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/buyorder/fulfill', requireUser, async (req, res) => {
+    try {
+        const out = await fulfillBuyOrder(req.session.name, String((req.body && req.body.id) || ''), req.body || {});
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('buyorder fulfill error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/buyorder/cancel', requireUser, async (req, res) => {
+    try {
+        const out = await cancelBuyOrder(req.session.name, String((req.body && req.body.id) || ''));
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('buyorder cancel error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.get('/card-image', requireUser, (req, res) => {
     const name = String(req.query.name || '');
     const file = String(req.query.file || '');
@@ -302,6 +380,20 @@ server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
     const eq = rpgenius.getDataCache('Equipment', {});
     const pack = list => (list || []).map((e, id) => e ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
     res.json({ weapon: pack(eq.weapon), armor: pack(eq.armor), accessory: pack(eq.accessory) });
+});
+
+server.get('/api/lookup/cards', requireAdmin, (req, res) => {
+    const cards = readJson(CHARACTER_CARDS_PATH, []);
+    res.json(cards.map((card, id) => card ? { id, name: card.name } : null).filter(Boolean));
+});
+
+server.get('/api/lookup/fashion', requireAdmin, (req, res) => {
+    const fashion = rpgenius.getDataCache('Fashion', []);
+    res.json((fashion || []).map(skin => skin ? {
+        name: skin.name,
+        primary_card: Array.isArray(skin.primary_card) ? skin.primary_card : [],
+        requireStar: Number(skin.requireStar || 0)
+    } : null).filter(Boolean));
 });
 
 // ===== rpgenius_data 관리 =====
@@ -405,6 +497,29 @@ function buildSlotEffectInfo(card, data) {
     };
 }
 
+function buildSkillInfo(card, user) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+    const data = card && characterCards[card.id];
+    if (!data || !Array.isArray(data.skills)) return [];
+    const stats = rpgenius.calculateUserStats(user);
+    const slotEffects = rpgenius.calculateCardSlotEffects(user);
+    const star = Number(card && card.star || 0);
+    return data.skills.map(skillIndex => {
+        const skill = skills[skillIndex];
+        if (!skill) return null;
+        const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+        const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        return {
+            name: skill.name,
+            mpCost,
+            baseMpCost: Number(skill.mp_cost || 0),
+            cooltimeText: rpgenius.formatCooltime(cooltime),
+            descLines: rpgenius.formatCurrentSkillDesc(skill, star).split('\n').filter(Boolean)
+        };
+    }).filter(Boolean);
+}
+
 function serializeCard(card, user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
@@ -418,7 +533,8 @@ function serializeCard(card, user) {
         name: data.name,
         formatted: rpgenius.formatUserCard(card),
         imageUrl: getCardImageUrl(card, user),
-        slotEffect: buildSlotEffectInfo(card, data)
+        slotEffect: buildSlotEffectInfo(card, data),
+        skills: buildSkillInfo(card, user)
     };
 }
 
@@ -427,7 +543,7 @@ function buildInventoryItems(user) {
     return (user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : [])
         .map(inv => {
             const data = items[inv.id];
-            return data ? { id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0) } : null;
+            return data ? { id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0), noTrade: data.no_trade === true } : null;
         })
         .filter(item => item && item.count > 0);
 }
@@ -461,7 +577,8 @@ function buildInventoryEquipment(user) {
             rarity: data.rarity,
             level,
             equipped: !!equipped,
-            statLines
+            statLines,
+            noTrade: data.no_trade === true
         });
     };
     (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach(equip => add(equip, equip.type, false));
@@ -585,7 +702,7 @@ function buildSellableAssets(user) {
     const equipment = (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : [])
         .map((eq, index) => {
             const data = getEquipmentData(eq.type, eq.id);
-            if (!data) return null;
+            if (!data || data.no_trade === true) return null;
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level);
             return {
@@ -600,7 +717,7 @@ function buildSellableAssets(user) {
             };
         })
         .filter(Boolean);
-    const items = buildInventoryItems(user);
+    const items = buildInventoryItems(user).filter(item => !item.noTrade);
     return { cards, equipment, items };
 }
 
@@ -636,6 +753,8 @@ async function registerAuction(sellerName, body) {
         const equips = (user.inventory && user.inventory.equipment) || [];
         if (!equips[index]) return { error: '존재하지 않는 장비입니다.' };
         const eq = equips[index];
+        const data = getEquipmentData(eq.type, eq.id);
+        if (data && data.no_trade === true) return { error: '거래 불가 장비는 경매장에 등록할 수 없습니다.' };
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         equips.splice(index, 1);
     } else if (kind == 'item') {
@@ -643,6 +762,8 @@ async function registerAuction(sellerName, body) {
         count = Math.floor(Number(body.count || 1));
         if (!Number.isInteger(itemId) || itemId < 0) return { error: '아이템을 선택해주세요.' };
         if (!Number.isInteger(count) || count < 1) return { error: '갯수는 1 이상의 정수여야 합니다.' };
+        const itemData = rpgenius.getDataCache('Item', [])[itemId];
+        if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템은 경매장에 등록할 수 없습니다.' };
         const have = rpgenius.getInventoryItemCount(user, itemId);
         if (have < count) return { error: '보유 수량이 부족합니다. (보유 ' + have + ')' };
         if (!rpgenius.removeInventoryItem(user, itemId, count)) return { error: '아이템 차감에 실패했습니다.' };
@@ -797,6 +918,377 @@ async function cancelAuction(userName, auctionId) {
     return {};
 }
 
+// ===== 삽니다 (구매 등록) 헬퍼 =====
+
+const BUY_ORDER_MAX_PER_USER = 20;
+
+async function getBuyOrderList() {
+    let data = rpgenius.getDataCache('BuyOrder', null);
+    if (!data) {
+        await rpgenius.loadRpgeniusDataEntry('BuyOrder');
+        data = rpgenius.getDataCache('BuyOrder', null);
+    }
+    if (!data || !Array.isArray(data.items)) data = { items: [] };
+    return data.items;
+}
+
+async function saveBuyOrderList(items) {
+    await rpgenius.saveRpgeniusDataEntry('BuyOrder', { items });
+}
+
+function generateBuyOrderId() {
+    return 'buy_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');
+}
+
+function describeBuyOrderPayload(entry) {
+    if (entry.kind == 'card') {
+        const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+        const data = characterCards[entry.payload && entry.payload.id];
+        const name = data ? data.name : '알 수 없는 카드';
+        const star = Number(entry.payload && entry.payload.star || 0);
+        const skin = entry.payload && entry.payload.skin ? String(entry.payload.skin) : '';
+        const type = entry.payload && entry.payload.type ? String(entry.payload.type) : '';
+        const subParts = [(star + 1) + '성'];
+        if (type) subParts.push('타입: ' + type);
+        if (skin) subParts.push('스킨: ' + skin);
+        return { name, sub: subParts.join(' · '), star };
+    }
+    if (entry.kind == 'equipment') {
+        const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
+        const typeLabel = { weapon: '무기', armor: '갑옷', accessory: '장신구' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
+        const subParts = [];
+        if (data) subParts.push(data.rarity);
+        if (typeLabel) subParts.push(typeLabel);
+        const hasLevel = entry.payload && typeof entry.payload.level == 'number';
+        if (hasLevel) subParts.push('강화 +' + Number(entry.payload.level));
+        else subParts.push('강화 무관');
+        return {
+            name: data ? data.name : '알 수 없는 장비',
+            sub: subParts.join(' · '),
+            rarity: data ? data.rarity : '',
+            equipType: entry.payload && entry.payload.type,
+            level: hasLevel ? Number(entry.payload.level) : null
+        };
+    }
+    if (entry.kind == 'item') {
+        const items = rpgenius.getDataCache('Item', []);
+        const data = items[entry.payload && entry.payload.id];
+        return {
+            name: data ? data.name : '알 수 없는 아이템',
+            sub: data ? data.type : '',
+            itemType: data ? data.type : ''
+        };
+    }
+    return { name: '알 수 없음', sub: '' };
+}
+
+function serializeBuyOrderEntry(entry, currentUserName) {
+    const desc = describeBuyOrderPayload(entry);
+    let imageUrl = null;
+    let statLines = null;
+    if (entry.kind == 'card') {
+        imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
+    } else if (entry.kind == 'equipment') {
+        const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
+        if (data && entry.payload && typeof entry.payload.level == 'number') {
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level));
+            statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+        }
+    }
+    const count = Number(entry.count || 1);
+    const unitPrice = Number(entry.price || 0);
+    const ticketCost = entry.kind == 'card' ? rpgenius.getCardTicketCost(entry.payload || {}) : 0;
+    return {
+        id: entry.id,
+        buyerName: entry.buyerName,
+        kind: entry.kind,
+        count,
+        currency: entry.currency,
+        price: unitPrice,
+        unitPrice,
+        totalPrice: unitPrice * count,
+        ticketCost,
+        ticketTotal: ticketCost * count,
+        createdAt: Number(entry.createdAt || 0),
+        mine: entry.buyerName == currentUserName,
+        payload: entry.payload,
+        display: {
+            name: desc.name,
+            sub: desc.sub,
+            rarity: desc.rarity || null,
+            equipType: desc.equipType || null,
+            star: typeof desc.star == 'number' ? desc.star : null,
+            level: typeof desc.level == 'number' ? desc.level : null,
+            imageUrl,
+            statLines
+        }
+    };
+}
+
+function countUserBuyOrders(items, name) {
+    return items.filter(entry => entry.buyerName == name).length;
+}
+
+async function registerBuyOrder(buyerName, body) {
+    const kind = String(body.kind || '');
+    const currency = String(body.currency || '');
+    const price = Math.floor(Number(body.price || 0));
+    const count = Math.floor(Number(body.count || 1));
+    if (!['card', 'equipment', 'item'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (!['gold', 'garnet'].includes(currency)) return { error: '가격 화폐는 골드 또는 가넷이어야 합니다.' };
+    if (!Number.isInteger(price) || price < 1 || price > AUCTION_MAX_PRICE) return { error: '가격은 1 이상의 정수여야 합니다.' };
+    if (!Number.isInteger(count) || count < 1) return { error: '갯수는 1 이상의 정수여야 합니다.' };
+
+    const buyer = await rpgenius.getRPGUserByName(buyerName);
+    if (!buyer) return { error: '유저를 찾을 수 없습니다.' };
+    const list = await getBuyOrderList();
+    if (countUserBuyOrders(list, buyerName) >= BUY_ORDER_MAX_PER_USER) return { error: '구매 등록은 최대 ' + BUY_ORDER_MAX_PER_USER + '건까지 가능합니다.' };
+
+    let payload;
+    let ticketCostPer = 0;
+    if (kind == 'card') {
+        const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+        const cardId = Number(body.cardId);
+        const star = Math.floor(Number(body.star));
+        if (!Number.isInteger(cardId) || cardId < 0 || !characterCards[cardId]) return { error: '존재하지 않는 캐릭터 카드입니다.' };
+        if (!Number.isInteger(star) || star < 0 || star > 11) return { error: '성급이 올바르지 않습니다.' };
+        const skin = body.skin ? String(body.skin).trim() : '';
+        const type = body.type ? String(body.type).trim() : '';
+        payload = { id: cardId, star };
+        if (type) payload.type = type;
+        if (skin) payload.skin = skin;
+        ticketCostPer = rpgenius.getCardTicketCost({ star });
+    } else if (kind == 'equipment') {
+        const equipType = String(body.equipType || '');
+        if (!['weapon', 'armor', 'accessory'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
+        const eqId = Number(body.equipId);
+        const data = getEquipmentData(equipType, eqId);
+        if (!data) return { error: '존재하지 않는 장비입니다.' };
+        if (data.no_trade === true) return { error: '거래 불가 장비는 구매 등록할 수 없습니다.' };
+        payload = { type: equipType, id: eqId };
+        if (body.level !== undefined && body.level !== null && body.level !== '') {
+            const level = Math.floor(Number(body.level));
+            if (!Number.isInteger(level) || level < 0) return { error: '강화 레벨이 올바르지 않습니다.' };
+            payload.level = level;
+        }
+    } else if (kind == 'item') {
+        const itemId = Number(body.itemId);
+        if (!Number.isInteger(itemId) || itemId < 0) return { error: '아이템을 선택해주세요.' };
+        const itemData = rpgenius.getDataCache('Item', [])[itemId];
+        if (!itemData) return { error: '존재하지 않는 아이템입니다.' };
+        if (itemData.no_trade === true) return { error: '거래 불가 아이템은 구매 등록할 수 없습니다.' };
+        payload = { id: itemId };
+    }
+
+    const totalPrice = price * count;
+    if (Number(buyer[currency] || 0) < totalPrice) return { error: getCurrencyLabel(currency) + '이(가) 부족합니다. (필요 ' + comma(totalPrice) + ')' };
+
+    let ticketId = -1;
+    const totalTickets = ticketCostPer * count;
+    if (totalTickets > 0) {
+        ticketId = rpgenius.getTradeTicketItemId();
+        if (ticketId == -1) return { error: '거래권 아이템을 찾을 수 없습니다.' };
+        const have = rpgenius.getInventoryItemCount(buyer, ticketId);
+        if (have < totalTickets) return { error: '거래권이 부족합니다. (필요 ' + totalTickets + '장 / 보유 ' + have + '장)' };
+    }
+
+    buyer[currency] = Number(buyer[currency] || 0) - totalPrice;
+    if (totalTickets > 0 && ticketId != -1) {
+        if (!rpgenius.removeInventoryItem(buyer, ticketId, totalTickets)) return { error: '거래권 차감에 실패했습니다.' };
+    }
+
+    const entry = {
+        id: generateBuyOrderId(),
+        buyerId: buyer.id,
+        buyerName: buyer.name,
+        kind,
+        payload,
+        count,
+        currency,
+        price,
+        ticketCostPer,
+        createdAt: Date.now()
+    };
+    list.push(entry);
+    await saveBuyOrderList(list);
+    await buyer.save();
+    return { id: entry.id };
+}
+
+async function cancelBuyOrder(userName, orderId) {
+    if (!orderId) return { error: '구매 등록 ID가 비어있습니다.' };
+    const list = await getBuyOrderList();
+    const index = list.findIndex(item => item.id == orderId);
+    if (index == -1) return { error: '존재하지 않는 구매 등록입니다.' };
+    const entry = list[index];
+    if (entry.buyerName != userName) return { error: '본인의 구매 등록만 취소할 수 있습니다.' };
+
+    const user = await rpgenius.getRPGUserByName(userName);
+    if (!user) return { error: '유저를 찾을 수 없습니다.' };
+    ensureInventoryShape(user);
+
+    const remainCount = Number(entry.count || 1);
+    user[entry.currency] = Number(user[entry.currency] || 0) + Number(entry.price || 0) * remainCount;
+    const ticketCostPer = Number(entry.ticketCostPer || 0);
+    if (ticketCostPer > 0) {
+        const ticketId = rpgenius.getTradeTicketItemId();
+        if (ticketId != -1) rpgenius.addInventoryItem(user, ticketId, ticketCostPer * remainCount);
+    }
+
+    list.splice(index, 1);
+    await saveBuyOrderList(list);
+    await user.save();
+    return {};
+}
+
+function matchBuyOrderCard(entry, card) {
+    if (!card || entry.kind != 'card') return false;
+    if (Number(card.id) != Number(entry.payload.id)) return false;
+    if (Number(card.star || 0) != Number(entry.payload.star || 0)) return false;
+    if (entry.payload.type && String(card.type || '일반') != String(entry.payload.type)) return false;
+    if (entry.payload.skin && String(card.skin || '') != String(entry.payload.skin)) return false;
+    return true;
+}
+
+function matchBuyOrderEquipment(entry, eq) {
+    if (!eq || entry.kind != 'equipment') return false;
+    if (String(eq.type) != String(entry.payload.type)) return false;
+    if (Number(eq.id) != Number(entry.payload.id)) return false;
+    if (typeof entry.payload.level == 'number' && Number(eq.level || 0) != Number(entry.payload.level)) return false;
+    return true;
+}
+
+async function fulfillBuyOrder(sellerName, orderId, body) {
+    if (!orderId) return { error: '구매 등록 ID가 비어있습니다.' };
+    const list = await getBuyOrderList();
+    const entry = list.find(item => item.id == orderId);
+    if (!entry) return { error: '존재하지 않거나 이미 종료된 구매 등록입니다.' };
+    if (entry.buyerName == sellerName) return { error: '본인의 구매 등록은 이행할 수 없습니다.' };
+
+    const seller = await rpgenius.getRPGUserByName(sellerName);
+    if (!seller) return { error: '유저를 찾을 수 없습니다.' };
+    ensureInventoryShape(seller);
+
+    const buyer = await rpgenius.getRPGUserByName(entry.buyerName);
+    if (!buyer) return { error: '구매자 정보를 찾을 수 없습니다.' };
+    ensureInventoryShape(buyer);
+
+    const stock = Number(entry.count || 1);
+    const unitPrice = Number(entry.price || 0);
+    let sellCount = 1;
+    const cards = (seller.inventory && seller.inventory.card) || [];
+    const equips = (seller.inventory && seller.inventory.equipment) || [];
+
+    if (entry.kind == 'card') {
+        const index = Number(body.index);
+        if (!Number.isInteger(index) || index < 0 || !cards[index]) return { error: '판매할 카드를 선택해주세요.' };
+        if (!matchBuyOrderCard(entry, cards[index])) return { error: '이 카드는 구매 등록 조건에 맞지 않습니다.' };
+        const transferred = cards[index];
+        cards.splice(index, 1);
+        if (rpgenius.getRemainingCardInventorySpace(buyer) < 1) {
+            cards.push(transferred);
+            return { error: '구매자의 카드 인벤토리가 가득 차 있습니다.' };
+        }
+        buyer.inventory.card.push({
+            id: Number(transferred.id),
+            star: Number(transferred.star || 0),
+            type: transferred.type || '일반',
+            skin: transferred.skin || ''
+        });
+    } else if (entry.kind == 'equipment') {
+        const index = Number(body.index);
+        if (!Number.isInteger(index) || index < 0 || !equips[index]) return { error: '판매할 장비를 선택해주세요.' };
+        const eq = equips[index];
+        const eqData = getEquipmentData(eq.type, eq.id);
+        if (eqData && eqData.no_trade === true) return { error: '거래 불가 장비입니다.' };
+        if (!matchBuyOrderEquipment(entry, eq)) return { error: '이 장비는 구매 등록 조건에 맞지 않습니다.' };
+        const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
+        equips.splice(index, 1);
+        buyer.inventory.equipment.push(transferred);
+    } else if (entry.kind == 'item') {
+        sellCount = Math.floor(Number(body.count || 1));
+        if (!Number.isInteger(sellCount) || sellCount < 1) return { error: '판매 갯수는 1 이상의 정수여야 합니다.' };
+        if (sellCount > stock) return { error: '구매 등록에서 요구하는 수량보다 많이 팔 수 없습니다. (남은 수량 ' + stock + ')' };
+        const itemId = Number(entry.payload.id);
+        const itemData = rpgenius.getDataCache('Item', [])[itemId];
+        if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템입니다.' };
+        const have = rpgenius.getInventoryItemCount(seller, itemId);
+        if (have < sellCount) return { error: '판매 수량이 부족합니다. (보유 ' + have + ')' };
+        if (!rpgenius.removeInventoryItem(seller, itemId, sellCount)) return { error: '아이템 차감에 실패했습니다.' };
+        rpgenius.addInventoryItem(buyer, itemId, sellCount);
+    } else {
+        return { error: '알 수 없는 종류입니다.' };
+    }
+
+    const totalPrice = unitPrice * sellCount;
+    const fee = Math.floor(totalPrice * AUCTION_FEE_RATE);
+    const payout = totalPrice - fee;
+    seller[entry.currency] = Number(seller[entry.currency] || 0) + payout;
+
+    const indexNow = list.findIndex(item => item.id == orderId);
+    if (indexNow == -1) return { error: '이미 종료되었거나 취소된 구매 등록입니다.' };
+    if (entry.kind == 'item' && sellCount < stock) {
+        list[indexNow].count = stock - sellCount;
+    } else {
+        list.splice(indexNow, 1);
+    }
+    await saveBuyOrderList(list);
+    await seller.save();
+    await buyer.save();
+    return {};
+}
+
+function buildBuyOrderLookups() {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const equipments = rpgenius.getDataCache('Equipment', {});
+    const items = rpgenius.getDataCache('Item', []);
+    const cardList = characterCards.map((data, id) => data ? { id, name: data.name } : null).filter(Boolean);
+    const pack = list => (list || []).map((e, id) => e && e.no_trade !== true ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
+    const equipmentList = {
+        weapon: pack(equipments.weapon),
+        armor: pack(equipments.armor),
+        accessory: pack(equipments.accessory)
+    };
+    const itemList = items.map((it, id) => it && it.no_trade !== true ? { id, name: it.name, type: it.type } : null).filter(Boolean);
+    return { cards: cardList, equipment: equipmentList, items: itemList };
+}
+
+function buildFulfillableAssets(user, entry) {
+    const result = { cards: [], equipment: [], itemCount: 0 };
+    if (!entry) return result;
+    if (entry.kind == 'card') {
+        const cards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []);
+        cards.forEach((card, index) => {
+            if (!matchBuyOrderCard(entry, card)) return;
+            const serialized = serializeCard(card, user);
+            if (serialized) result.cards.push(Object.assign({ index }, serialized));
+        });
+    } else if (entry.kind == 'equipment') {
+        const equips = (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []);
+        equips.forEach((eq, index) => {
+            if (!matchBuyOrderEquipment(entry, eq)) return;
+            const data = getEquipmentData(eq.type, eq.id);
+            if (!data || data.no_trade === true) return;
+            const level = Number(eq.level || 0);
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level);
+            result.equipment.push({
+                index,
+                type: eq.type,
+                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구' }[eq.type] || eq.type,
+                id: Number(eq.id),
+                name: data.name,
+                rarity: data.rarity,
+                level,
+                statLines: String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''))
+            });
+        });
+    } else if (entry.kind == 'item') {
+        const itemId = Number(entry.payload && entry.payload.id);
+        result.itemCount = rpgenius.getInventoryItemCount(user, itemId);
+    }
+    return result;
+}
+
 function buildUserProfile(user) {
     const level = Number(user.level || 1);
     const exp = Number(user.exp || 0);
@@ -885,7 +1377,7 @@ function renderUserDashboard(sess) {
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(circle at top left,#1e293b,#070910 42%,#05060a);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:18px 24px;background:rgba(7,9,16,.82);backdrop-filter:blur(14px);border-bottom:1px solid rgba(148,163,184,.18)}
-h1{margin:0;font-size:22px}.who{color:#a5b4fc;font-weight:700}.bar{display:flex;gap:8px;align-items:center}.top-left{display:flex;gap:22px;align-items:center}.nav{display:flex;gap:6px}.nav-btn.active{background:#5865f2}
+h1{margin:0;font-size:22px;white-space:nowrap}.who{color:#a5b4fc;font-weight:700;white-space:nowrap}.bar{display:flex;gap:8px;align-items:center}.top-left{display:flex;gap:22px;align-items:center;min-width:0}.nav{display:flex;gap:6px;min-width:0}.nav-btn{white-space:nowrap}.nav-btn.active{background:#5865f2}
 button{border:0;border-radius:10px;padding:10px 13px;background:#1f2937;color:#e5e7eb;font-weight:700;cursor:pointer}button:hover{background:#374151}.primary{background:#5865f2}.primary:hover{background:#4752c4}
 main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.panel{background:rgba(15,23,42,.82);border:1px solid rgba(148,163,184,.16);border-radius:18px;padding:18px;box-shadow:0 16px 50px rgba(0,0,0,.25)}
 h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
@@ -893,8 +1385,10 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:#111827;border:1px solid #334155}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:13px}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid var(--rar,#334155);border-left:5px solid var(--rar,#334155);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid rgba(148,163,184,.25);border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit}.modal input:focus,.modal select:focus{outline:none;border-color:#5865f2}.seg{display:flex;gap:6px;background:rgba(2,6,23,.6);padding:4px;border-radius:12px;flex-wrap:wrap}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap}.seg button.on{background:#5865f2}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(2,6,23,.4);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(15,23,42,.7);border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px}.pick-row:hover{border-color:#5865f2}.pick-row.on{border-color:#5865f2;background:rgba(88,101,242,.18)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
 .auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(2,6,23,.62);border:1px solid rgba(148,163,184,.16);border-radius:14px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4);border-color:#5865f2}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:14px 16px;align-items:flex-start}.top-left{display:grid;gap:10px}.grid{grid-template-columns:1fr}}
+.search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
+@media(max-width:520px){header{padding:12px 10px;gap:8px}h1{font-size:clamp(16px,5vw,20px)}.nav{gap:4px}.nav-btn{padding:8px clamp(7px,2.1vw,10px);font-size:clamp(11px,3.1vw,13px)}.bar{gap:5px}.who{max-width:22vw;overflow:hidden;text-overflow:ellipsis;font-size:12px}#adminLink,#logout{padding:8px 9px;font-size:12px}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
     <section class="panel"><div class="profile-hero"><div id="mainCard" class="profile-card"></div><div class="profile-summary"><div class="name-line"><span id="level">-</span> <span id="profileName">-</span> <span id="exp" style="color:#94a3b8;font-size:15px">-</span></div><div class="status-row"><span>HP</span><div class="meter hp"><div class="meter-fill" id="hpFill"></div></div><b id="hp">-</b></div><div class="status-row"><span>MP</span><div class="meter mp"><div class="meter-fill" id="mpFill"></div></div><b id="mp">-</b></div><div class="power-line">⚔️ <b id="totalPower">-</b></div></div></div></section>
@@ -906,11 +1400,14 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   <div class="page" data-page="inventory">
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
-  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">경매장</h2><div class="actions"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 경매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">경매장</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 경매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 등록</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
 <div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
 <div id="aucRegBg" class="modal-bg"><div class="modal wide" id="aucReg"></div></div>
+<div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
+<div id="boRegBg" class="modal-bg"><div class="modal wide" id="boReg"></div></div>
 <script src="/static/app.js"></script>
 </body></html>`;
 }

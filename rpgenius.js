@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -210,6 +210,35 @@ function formatCount(count) {
     return 'x' + comma(min) + '~' + comma(max);
 }
 
+function getCharacterCardRewardId(entry) {
+    if (entry.card_id != null) return Number(entry.card_id);
+    if (entry.character_card_id != null) return Number(entry.character_card_id);
+    if (entry.id != null) return Number(entry.id);
+    return -1;
+}
+
+function getCharacterCardRewardStar(entry) {
+    if (entry.display_star != null) return Math.max(0, Number(entry.display_star) - 1);
+    if (entry.star_display != null) return Math.max(0, Number(entry.star_display) - 1);
+    if (entry.star && typeof entry.star == 'object') return Math.max(0, rollCount(entry.star) - 1);
+    if (entry.range && typeof entry.range == 'object') return Math.max(0, randomInt(Number(entry.range.min || 1), Number(entry.range.max || entry.range.min || 1)) - 1);
+    return Math.max(0, Number(entry.star || 0));
+}
+
+function buildCharacterCardReward(entry) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    let id = getCharacterCardRewardId(entry);
+    if (!Number.isInteger(id) || id < 0) id = randomInt(0, characterCards.length - 1);
+    if (!characterCards[id]) return null;
+    const card = {
+        id,
+        star: getCharacterCardRewardStar(entry),
+        type: entry.card_type || entry.cardType || '일반'
+    };
+    if (entry.skin) card.skin = String(entry.skin);
+    return card;
+}
+
 function formatStatValue(key, value) {
     const number = Number(value || 0);
     const sign = number > 0 ? '+' : '';
@@ -226,9 +255,16 @@ function formatStatValue(key, value) {
 function formatPackEntry(entry) {
     const items = getDataCache('Item', []);
     const equipments = getDataCache('Equipment', {});
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (entry.type == '아이템') {
         const item = items[entry.item_id];
         return item ? item.name + ' ' + formatCount(entry.count) : '알 수 없는 아이템';
+    }
+    if (entry.type == '캐릭터카드') {
+        const card = buildCharacterCardReward(entry);
+        if (!card) return '알 수 없는 캐릭터카드';
+        const data = characterCards[card.id];
+        return (data ? data.name : '알 수 없는 캐릭터카드') + ' ' + formatStar(card.star) + ' ' + formatCount(entry.count);
     }
     if (entry.type == '무기') {
         const weapon = equipments.weapon && equipments.weapon[entry.weapon_id];
@@ -495,7 +531,8 @@ function calculateCardSlotEffects(user) {
         critMul: 0,
         goldBonus: 0,
         itemDropChance: 0,
-        defReduction: 0
+        defReduction: 0,
+        basicDamageBonus: 0
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
@@ -511,6 +548,7 @@ function calculateCardSlotEffects(user) {
         if (cardData.name == '제우스') effects.goldBonus += value;
         if (cardData.name == '타이란트') effects.itemDropChance += value;
         if (cardData.name == '마쉐비') effects.defReduction += value;
+        if (cardData.name == '딜러장') effects.basicDamageBonus += value;
     });
     return effects;
 }
@@ -527,7 +565,8 @@ function formatCardSlotEffectLines(user) {
         ['critMul', '치명타 피해량 증가'],
         ['goldBonus', '골드 획득 증가량'],
         ['itemDropChance', '아이템 드랍 확률'],
-        ['defReduction', '방어력 관통']
+        ['defReduction', '방어력 관통'],
+        ['basicDamageBonus', '일반 공격 피해량 증가']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
@@ -912,7 +951,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const critMul = Math.max(1, Number(stats.critMul || 1.4));
     const pnt = Math.max(0, Number(stats.pnt || 0));
 
-    const mAttack = (1 + Number(stats.afterBasic || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
+    const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
     const mContext = 1 + Number(slot.damageBonus || 0) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mPen = 1 + pnt / W.PEN_DIVISOR + Number(slot.defReduction || 0) * W.DEF_REDUCTION_RATIO;
@@ -1078,7 +1117,7 @@ function getDamageAfterReducedDefense(damage, defense, penetration, defenseReduc
 function applyCriticalDamage(damage, stats, extra) {
     const critChance = Math.max(0, Number(stats.crit || 0));
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
-    const isCritical = Math.random() < critChance;
+    const isCritical = extra && extra.forceCritical ? true : Math.random() < critChance;
     return {
         damage: isCritical ? Math.round(Number(damage || 0) * critMul) : Number(damage || 0),
         isCritical: isCritical
@@ -1504,7 +1543,8 @@ function useBasicAttackInField(user) {
     const dungeon = findDungeonByName(user.field.name);
     if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const stats = calculateUserStats(user);
-    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0)) * (randomInt(95, 105) / 100));
+    const slotEffects = calculateCardSlotEffects(user);
+    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)) * (randomInt(95, 105) / 100));
     if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, {});
     return buildHuntResult(user, dungeon, rawDamage, {});
 }
@@ -1544,6 +1584,7 @@ function useSkillInField(user, skillName) {
     if (skillData.skill.name == 'SUPER EASY') extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
     if (skillData.skill.name == '백억이요') extra.goldBonus = getSkillValue(skillData.skill, 1, star);
     if (skillData.skill.name == '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '비리') extra.forceCritical = true;
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const rawDamage = Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
     const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
@@ -1794,10 +1835,17 @@ function formatEquipmentInventory(user) {
 
 function formatShopItem(shopItem) {
     const items = getDataCache('Item', []);
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (shopItem.type == '아이템') {
         const item = items[shopItem.item_id];
         const itemName = item ? item.name : '알 수 없는 아이템';
         return itemName + ' x' + comma(shopItem.count);
+    }
+    if (shopItem.type == '캐릭터카드') {
+        const card = buildCharacterCardReward(shopItem);
+        if (!card) return '알 수 없는 캐릭터카드';
+        const data = characterCards[card.id];
+        return (data ? data.name : '알 수 없는 캐릭터카드') + ' ' + formatStar(card.star) + ' x' + comma(shopItem.count || 1);
     }
     if (shopItem.type == '가넷') return '💠 ' + comma(shopItem.count);
     if (shopItem.type == '골드') return '🪙 ' + comma(shopItem.count);
@@ -2691,6 +2739,17 @@ function grantPackReward(user, reward, summary) {
         addRewardSummary(summary, 'item:' + reward.item_id, (item ? item.name : '알 수 없는 아이템'), count);
         return;
     }
+    if (reward.type == '캐릭터카드') {
+        if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+        if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+        for (let i = 0; i < count; i++) {
+            const card = buildCharacterCardReward(reward);
+            if (!card) continue;
+            user.inventory.card.push(card);
+            addRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), formatUserCard(card), 1);
+        }
+        return;
+    }
     if (reward.type == '골드') {
         user.gold = Number(user.gold || 0) + count;
         addRewardSummary(summary, 'gold', '🪙 골드', count);
@@ -2941,6 +3000,11 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
 
     const shopItem = shop[index - 1];
+    if (shopItem.type == '캐릭터카드') {
+        const grantCount = Number(shopItem.count || 1) * count;
+        if (!buildCharacterCardReward(shopItem)) return '❌ 처리할 수 없는 상품입니다.';
+        if (getRemainingCardInventorySpace(user) < grantCount) return '❌ 캐릭터 카드 인벤토리 공간이 부족합니다. (필요 ' + comma(grantCount) + '칸)';
+    }
     const totalPrice = Number(shopItem.price.amount) * count;
     const field = GOODS_FIELD[shopItem.price.goods];
     if (shopItem.price.goods == 'item') {
@@ -2958,6 +3022,15 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
 
     if (shopItem.type == '아이템') {
         addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
+    } else if (shopItem.type == '캐릭터카드') {
+        if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+        if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+        const grantCount = Number(shopItem.count || 1) * count;
+        for (let i = 0; i < grantCount; i++) {
+            const card = buildCharacterCardReward(shopItem);
+            if (!card) return '❌ 처리할 수 없는 상품입니다.';
+            user.inventory.card.push(card);
+        }
     } else if (shopItem.type == '가넷') {
         user.garnet = Number(user.garnet || 0) + Number(shopItem.count) * count;
     } else if (shopItem.type == '골드') {
@@ -2970,7 +3043,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
 
     await user.save();
 
-    const rewardItem = { type: shopItem.type, item_id: shopItem.item_id, count: Number(shopItem.count) * count };
+    const rewardItem = Object.assign({}, shopItem, { count: Number(shopItem.count || 1) * count });
     return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
 }
 
@@ -4355,5 +4428,8 @@ module.exports = {
     cleanupInventoryItems,
     getRemainingCardInventorySpace,
     getTradeTicketItemId,
-    getCardTicketCost
+    getCardTicketCost,
+    formatCurrentSkillDesc,
+    formatCooltime,
+    calculateCardSlotEffects
 };

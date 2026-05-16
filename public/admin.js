@@ -48,9 +48,11 @@ const TAB_LOADERS = {};
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 
 // ---------- 룩업 캐시 ----------
-const LOOKUP = { items: null, equipment: null };
+const LOOKUP = { items: null, equipment: null, cards: null, fashion: null };
 async function getItems() { if (!LOOKUP.items) LOOKUP.items = await api('/api/lookup/items'); return LOOKUP.items; }
 async function getEquipment() { if (!LOOKUP.equipment) LOOKUP.equipment = await api('/api/lookup/equipment'); return LOOKUP.equipment; }
+async function getCards() { if (!LOOKUP.cards) LOOKUP.cards = await api('/api/lookup/cards'); return LOOKUP.cards; }
+async function getFashion() { if (!LOOKUP.fashion) LOOKUP.fashion = await api('/api/lookup/fashion'); return LOOKUP.fashion; }
 
 // ---------- 모달 픽커 ----------
 const modal = $('#modal'), modalBody = $('#modalBody'), modalSearch = $('#modalSearch'), modalTitle = $('#modalTitle');
@@ -101,6 +103,75 @@ async function pickEquipment(slot, onPick) {
         el('div', null, el('span', { class: 'tag ' + rarityClass(e.rarity) }, e.rarity), el('span', { class: 'tag' }, '#' + e.id), e.name),
     ), onPick);
 }
+// 픽커: 캐릭터 카드
+async function pickCard(onPick) {
+    const cards = await getCards();
+    const list = cards.map(card => Object.assign({}, card, { _search: card.name + ' ' + card.id }));
+    openModal('캐릭터 카드 선택', list, card => el('div', null,
+        el('div', null, el('span', { class: 'tag b' }, '#' + card.id), card.name)
+    ), onPick);
+}
+
+function cardTargetControls(entry, onChange) {
+    const wrap = el('span', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', flex: '1' } });
+    const btn = el('button', { class: 'pickbtn', type: 'button', style: { flex: '1', minWidth: '150px' } });
+    const skinSelect = el('select', { style: { width: '130px' }, onchange: () => {
+        if (skinSelect.value) entry.skin = skinSelect.value;
+        else delete entry.skin;
+        onChange && onChange();
+    } });
+    const getSelectedCardId = () => entry.card_id != null ? Number(entry.card_id) : (entry.character_card_id != null ? Number(entry.character_card_id) : (entry.id != null ? Number(entry.id) : -1));
+    const refresh = async () => {
+        const cards = await getCards();
+        const id = getSelectedCardId();
+        const card = cards.find(x => x.id === id);
+        btn.innerHTML = '';
+        btn.appendChild(card ? document.createTextNode('#' + card.id + ' ' + card.name) : el('span', { class: 'ph' }, '캐릭터 카드 선택...'));
+    };
+    const refreshSkins = async () => {
+        const id = getSelectedCardId();
+        const displayStar = entry.display_star != null ? Number(entry.display_star) : (entry.star_display != null ? Number(entry.star_display) : Number(entry.star || 0) + 1);
+        const fashion = await getFashion();
+        const skins = fashion.filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(id) && (!Number(skin.requireStar || 0) || displayStar >= Number(skin.requireStar || 0)));
+        skinSelect.innerHTML = '';
+        skinSelect.appendChild(el('option', { value: '' }, '스킨 없음'));
+        skins.forEach(skin => skinSelect.appendChild(el('option', { value: skin.name }, skin.name)));
+        if (entry.skin && skins.some(skin => skin.name === entry.skin)) skinSelect.value = entry.skin;
+        else {
+            skinSelect.value = '';
+            delete entry.skin;
+        }
+    };
+    btn.onclick = () => pickCard(card => {
+        entry.card_id = card.id;
+        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id'].forEach(k => delete entry[k]);
+        refresh();
+        refreshSkins();
+        onChange && onChange();
+    });
+    const displayStar = entry.display_star != null ? Number(entry.display_star) : (entry.star_display != null ? Number(entry.star_display) : Number(entry.star || 0) + 1);
+    const starIn = el('input', { type: 'number', min: 1, max: 12, value: displayStar || 1, style: { width: '74px' }, title: '표시 성급', oninput: () => {
+        entry.display_star = Number(starIn.value || 1);
+        delete entry.star;
+        delete entry.star_display;
+        delete entry.range;
+        refreshSkins();
+        onChange && onChange();
+    } });
+    const typeIn = el('input', { type: 'text', value: entry.card_type || entry.cardType || '일반', placeholder: '타입', style: { width: '86px' }, oninput: () => {
+        entry.card_type = typeIn.value || '일반';
+        delete entry.cardType;
+        onChange && onChange();
+    } });
+    refresh();
+    refreshSkins();
+    wrap.appendChild(btn);
+    wrap.appendChild(el('span', { class: 'lab', style: { paddingTop: '7px' } }, '성급'));
+    wrap.appendChild(starIn);
+    wrap.appendChild(typeIn);
+    wrap.appendChild(skinSelect);
+    return wrap;
+}
 
 // ---------- 보상/엔트리 행 빌더 ----------
 // kind: 'reward' (Pack/Bundle/Coupon용) | 'material' | 'crafted'
@@ -114,7 +185,7 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '무기', '갑옷', '장신구', '골드', '가넷', '마일리지', '경험치'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '골드', '가넷', '마일리지', '경험치'];
 const MATERIAL_TYPES = ['아이템', '골드', '가넷', '마일리지'];
 const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구'];
 
@@ -146,9 +217,11 @@ function entryRow(entry, opts, onChange, onDelete) {
                     btn.innerHTML = '<span class="ph">아이템 선택...</span>';
                 }
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; delete entry.weapon_id; delete entry.armor_id; delete entry.accessory_id; refresh(); onChange && onChange(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
+        } else if (t === '캐릭터카드') {
+            targetSlot.appendChild(cardTargetControls(entry, onChange));
         } else if (t === '무기' || t === '갑옷' || t === '장신구') {
             const slot = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory' }[t];
             const idKey = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id' }[t];
@@ -160,12 +233,12 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, t + ' 선택...'));
             };
-            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
-            ['item_id', 'weapon_id', 'armor_id', 'accessory_id'].forEach(k => delete entry[k]);
+            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
             targetSlot.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + t + ' 수량 지정)'));
         }
     }
@@ -389,8 +462,8 @@ function shopEntryRow(entry, onChange, onDelete) {
     // 상품
     const head = el('div', { class: 'entry' });
     const sel = el('select');
-    ['아이템', '가넷', '골드', '마일리지'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
-    if (!['아이템', '가넷', '골드', '마일리지'].includes(entry.type)) entry.type = '아이템';
+    ['아이템', '캐릭터카드', '가넷', '골드', '마일리지'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
+    if (!['아이템', '캐릭터카드', '가넷', '골드', '마일리지'].includes(entry.type)) entry.type = '아이템';
     sel.value = entry.type;
     const target = el('span', { style: { flex: '1', minWidth: '180px', display: 'flex' } });
     const cnt = el('input', { class: 'nf', type: 'number', value: entry.count, style: { width: '100px' }, oninput: () => entry.count = Number(cnt.value) });
@@ -407,9 +480,15 @@ function shopEntryRow(entry, onChange, onDelete) {
                     btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + entry.item_id));
                 } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; refresh(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); });
             refresh(); target.appendChild(btn);
-        } else { delete entry.item_id; target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)')); }
+        } else if (entry.type === '캐릭터카드') {
+            delete entry.item_id;
+            target.appendChild(cardTargetControls(entry));
+        } else {
+            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
+            target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)'));
+        }
     }
     sel.onchange = () => { entry.type = sel.value; paintTarget(); };
     head.appendChild(el('span', { class: 'lab' }, '상품'));

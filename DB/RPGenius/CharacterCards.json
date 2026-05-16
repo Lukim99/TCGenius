@@ -108,5 +108,16 @@
         "skills": [
             9
         ]
+    },
+    {
+        "name": "딜러장",
+        "slot_effect": {
+            "name": "일반 공격 피해량 증가",
+            "base": 0.02,
+            "per_level": 0.01
+        },
+        "skills": [
+            10
+        ]
     }
 ]
