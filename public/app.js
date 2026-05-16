@@ -199,19 +199,38 @@ function currencyText(currency, amount) {
     return (currency === 'gold' ? '🪙 ' : '💠 ') + comma(amount);
 }
 
+function currencyInline(currency, amount) {
+    const icon = currency === 'gold'
+        ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png')
+        : '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png');
+    return [el('img', { class: 'currency-img', src: icon, alt: currency === 'gold' ? '골드' : '가넷' }), comma(amount)];
+}
+
+function currencyNode(currency, amount, suffix) {
+    return el('span', null, ...currencyInline(currency, amount), suffix || '');
+}
+
+function auctionThumbEl(entry, options) {
+    const d = entry.display || {};
+    const style = options && options.style ? options.style : null;
+    if (d.imageUrl) return el('div', { class: 'auc-thumb card', style }, el('img', { src: d.imageUrl, alt: d.name }));
+    const foreground = d.iconUrl
+        ? el('img', { class: 'auc-item-img', src: d.iconUrl, alt: d.name })
+        : el('span', { class: 'auc-icon' }, AUCTION_KIND_ICON[entry.kind] || '📦');
+    if (d.frameUrl) return el('div', { class: 'auc-thumb square', style },
+        el('img', { class: 'auc-frame', src: d.frameUrl, alt: '' }),
+        foreground
+    );
+    return el('div', { class: 'auc-thumb square', style }, foreground);
+}
+
 function auctionCardEl(entry) {
     const d = entry.display;
-    const thumb = d.imageUrl
-        ? el('img', { src: d.imageUrl, alt: d.name })
-        : el('span', null, AUCTION_KIND_ICON[entry.kind] || '📦');
-    const priceText = entry.kind === 'item'
-        ? currencyText(entry.currency, entry.unitPrice) + ' / 1개'
-        : currencyText(entry.currency, entry.unitPrice);
     const node = el('div', { class: 'auc-card' + (entry.mine ? ' mine' : ''), onclick: () => openAuctionDetail(entry) },
-        el('div', { class: 'auc-thumb' + (entry.kind === 'card' ? ' card' : '') }, thumb),
+        auctionThumbEl(entry),
         el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')),
         d.sub ? el('div', { class: 'auc-sub' }, d.sub + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : '')) : null,
-        el('div', { class: 'auc-price' }, priceText),
+        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
         el('div', { class: 'auc-seller' }, '판매자: ' + entry.sellerName + (entry.ticketCost > 0 ? ' · 거래권 ' + entry.ticketCost + '장' : ''))
     );
     if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 경매'));
@@ -267,10 +286,10 @@ function openAuctionDetail(entry) {
         el('h3', null, d.name + (entry.count > 1 ? ' (재고 ' + comma(entry.count) + ')' : '')),
         el('div', { class: 'sub' }, AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : '') + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : ''))
     ];
-    if (d.imageUrl) content.push(el('div', { class: 'auc-thumb', style: { aspectRatio: '3/4', maxWidth: '180px', margin: '0 auto 12px' } }, el('img', { src: d.imageUrl, alt: d.name })));
+    content.push(auctionThumbEl(entry, { style: { maxWidth: '180px', margin: '0 auto 12px' } }));
     if (d.statLines && d.statLines.length) d.statLines.forEach(line => content.push(el('div', { class: 'stat-line' }, line)));
     content.push(el('div', { class: 'stat-line' }, '판매자: ' + entry.sellerName));
-    content.push(el('div', { class: 'stat-line' }, (entry.kind === 'item' ? '개당 가격: ' : '가격: ') + currencyText(entry.currency, entry.unitPrice)));
+    content.push(el('div', { class: 'stat-line' }, entry.kind === 'item' ? '개당 가격: ' : '가격: ', currencyNode(entry.currency, entry.unitPrice)));
     if (entry.ticketCost > 0) content.push(el('div', { class: 'stat-line' }, '⚠️ 구매 시 거래권 ' + entry.ticketCost + '장이 소모됩니다.'));
 
     if (entry.mine) {
@@ -291,11 +310,11 @@ function openAuctionDetail(entry) {
         content.push(cancelBtn);
     } else {
         let buyCountInput = null;
-        const totalLine = el('div', { class: 'stat-line', style: { color: '#fbbf24', fontWeight: '800' } }, '총 결제: ' + currencyText(entry.currency, entry.unitPrice));
+        const totalLine = el('div', { class: 'stat-line', style: { color: '#fbbf24', fontWeight: '800' } }, '총 결제: ', currencyNode(entry.currency, entry.unitPrice));
         const updateTotal = (count) => {
             const total = entry.unitPrice * count;
             const fee = Math.floor(total * 0.05);
-            totalLine.textContent = '총 결제: ' + currencyText(entry.currency, total) + '  /  판매자 입금: ' + currencyText(entry.currency, total - fee);
+            totalLine.replaceChildren('총 결제: ', currencyNode(entry.currency, total), '  /  판매자 입금: ', currencyNode(entry.currency, total - fee));
         };
         if (entry.kind === 'item') {
             content.push(el('label', null, '구매 갯수 (재고 ' + comma(entry.count) + ')'));
@@ -485,17 +504,11 @@ let buyOrderState = { all: [], filter: 'all', query: '' };
 
 function buyOrderCardEl(entry) {
     const d = entry.display;
-    const thumb = d.imageUrl
-        ? el('img', { src: d.imageUrl, alt: d.name })
-        : el('span', null, AUCTION_KIND_ICON[entry.kind] || '📦');
-    const priceText = entry.kind === 'item'
-        ? currencyText(entry.currency, entry.unitPrice) + ' / 1개'
-        : currencyText(entry.currency, entry.unitPrice);
     const node = el('div', { class: 'auc-card' + (entry.mine ? ' mine' : ''), onclick: () => openBuyOrderDetail(entry) },
-        el('div', { class: 'auc-thumb' + (entry.kind === 'card' ? ' card' : '') }, thumb),
+        auctionThumbEl(entry),
         el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')),
         d.sub ? el('div', { class: 'auc-sub' }, d.sub) : null,
-        el('div', { class: 'auc-price' }, priceText),
+        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
         el('div', { class: 'auc-seller' }, '구매자: ' + entry.buyerName)
     );
     if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 등록'));
@@ -551,13 +564,13 @@ async function openBuyOrderDetail(entry) {
         el('h3', null, d.name + (entry.count > 1 ? ' (요청 ' + comma(entry.count) + ')' : '')),
         el('div', { class: 'sub' }, AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : ''))
     ];
-    if (d.imageUrl) content.push(el('div', { class: 'auc-thumb', style: { aspectRatio: '3/4', maxWidth: '180px', margin: '0 auto 12px' } }, el('img', { src: d.imageUrl, alt: d.name })));
+    content.push(auctionThumbEl(entry, { style: { maxWidth: '180px', margin: '0 auto 12px' } }));
     if (d.statLines && d.statLines.length) d.statLines.forEach(line => content.push(el('div', { class: 'stat-line' }, line)));
     content.push(el('div', { class: 'stat-line' }, '구매자: ' + entry.buyerName));
-    content.push(el('div', { class: 'stat-line' }, (entry.kind === 'item' ? '개당 가격: ' : '가격: ') + currencyText(entry.currency, entry.unitPrice)));
+    content.push(el('div', { class: 'stat-line' }, entry.kind === 'item' ? '개당 가격: ' : '가격: ', currencyNode(entry.currency, entry.unitPrice)));
     if (entry.mine) {
         const totalRefund = entry.unitPrice * entry.count;
-        content.push(el('div', { class: 'stat-line' }, '취소 시 미체결 분만큼 ' + currencyText(entry.currency, totalRefund) + (entry.ticketCost > 0 ? ' 및 거래권 ' + (entry.ticketCost * entry.count) + '장' : '') + '이 반환됩니다.'));
+        content.push(el('div', { class: 'stat-line' }, '취소 시 미체결 분만큼 ', currencyNode(entry.currency, totalRefund), (entry.ticketCost > 0 ? ' 및 거래권 ' + (entry.ticketCost * entry.count) + '장' : '') + '이 반환됩니다.'));
         const cancelBtn = el('button', { class: 'danger close', onclick: async () => {
             cancelBtn.disabled = true;
             try {
@@ -601,7 +614,7 @@ function renderFulfillSection(entry, fulfillable, content) {
     const updateTotal = (count) => {
         const total = entry.unitPrice * count;
         const fee = Math.floor(total * 0.05);
-        totalLine.textContent = '판매 시 입금: ' + currencyText(entry.currency, total - fee) + ' (수수료 ' + currencyText(entry.currency, fee) + ')';
+        totalLine.replaceChildren('판매 시 입금: ', currencyNode(entry.currency, total - fee), ' (수수료 ', currencyNode(entry.currency, fee), ')');
     };
 
     if (entry.kind === 'card') {
