@@ -2885,9 +2885,10 @@ function getEquipmentUpgradeCost(equipment, type, level) {
     const rarityCorrection = EQUIPMENT_RARITY_CORRECTION[equipment.rarity] || 1;
     const stoneMultiplier = EQUIPMENT_STONE_MULTIPLIERS[level] || 1;
     const armorMultiplier = type == 'armor' ? 0.85 : 1;
-    const stone = Math.floor(((level + 10) * 3 * rarityCorrection) * stoneMultiplier * armorMultiplier);
+    const accessoryMultiplier = type == 'accessory' ? 6 : 1;
+    const stone = Math.floor(((level + 10) * 3 * rarityCorrection) * stoneMultiplier * armorMultiplier * accessoryMultiplier);
     const goldRate = EQUIPMENT_GOLD_RATE[equipment.rarity] || 1;
-    const gold = Math.floor(goldRate * ((Math.pow(targetLevel, 4) / 5) + 1)) * 8;
+    const gold = Math.floor(goldRate * ((Math.pow(targetLevel, 4) / 5) + 1)) * 8 * accessoryMultiplier;
     return { stone, gold };
 }
 
