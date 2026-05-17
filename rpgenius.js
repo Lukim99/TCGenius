@@ -956,6 +956,7 @@ function calculateUserStats(user) {
         if (data && isEquipmentEffectActive(user, data)) {
             addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
+            if (entry[0] == 'weapon' && data.name == DESTINY_AION_NAME) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
         }
     });
     const accessories = user.equipments && user.equipments.accessory || {};
@@ -1233,6 +1234,9 @@ function applyCriticalDamage(damage, stats, extra, defenderStats) {
     };
 }
 
+const DESTINY_AION_NAME = '운명의 아이온';
+const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.2;
+
 function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra, defenderStats) {
     const hitCount = extra && extra.hitCount ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : getComboHitCount(stats);
     const hitDamages = [];
@@ -1240,9 +1244,15 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let finalDamage = 0;
     let criticalCount = 0;
     let bonusTripleZero = 0;
+    let trueDamageCount = 0;
+    const trueChance = Number(stats && stats.trueDamageChance || 0);
     for (let i = 0; i < hitCount; i++) {
         const criticalResult = applyCriticalDamage(rawDamage, stats, extra, defenderStats);
-        let hitDamage = getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, slotEffects.defReduction);
+        const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
+        let hitDamage = isTrueDamage
+            ? Math.max(0, Math.round(Number(criticalResult.damage || 0)))
+            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, slotEffects.defReduction);
+        if (isTrueDamage) trueDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
             const bonus = [10, 100, 1000][randomInt(0, 2)];
@@ -1251,10 +1261,10 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical });
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isTrueDamage });
         finalDamage += hitDamage;
     }
-    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero };
+    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, trueDamageCount };
 }
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
@@ -1266,7 +1276,7 @@ function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, ex
 function formatHitDetailLines(hitResult, prefix, suffix) {
     if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return [];
     const details = Array.isArray(hitResult.hitDetails) ? hitResult.hitDetails : [];
-    return details.map(detail => prefix + comma(detail.damage) + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
+    return details.map(detail => prefix + comma(detail.damage) + (detail.isTrueDamage ? ' 고정' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
 }
 
 function getSkillValue(skill, index, star) {
@@ -1290,6 +1300,32 @@ function getPassiveMpRecovery(user) {
     const skillData = getMainCardSkills(user).find(data => data.skill.name == '피아스트');
     if (!skillData) return 0;
     return getSkillValue(skillData.skill, 1, user.main_card && user.main_card.star);
+}
+
+const IMMORTAL_DRAGON_ARMOR_NAME = '불멸하는 업화의 용갑';
+const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
+const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
+
+function tryImmortalArmorRevive(user, maxHp, lines) {
+    const armor = user.equipments && user.equipments.armor;
+    if (!armor || typeof armor.id == 'undefined') return false;
+    const data = getEquipmentData('armor', armor.id);
+    if (!data || data.name != IMMORTAL_DRAGON_ARMOR_NAME) return false;
+    if (!isEquipmentEffectActive(user, data)) return false;
+    if (!user.equipmentPassiveCd || typeof user.equipmentPassiveCd != 'object') user.equipmentPassiveCd = {};
+    const now = Date.now();
+    const readyAt = Number(user.equipmentPassiveCd.immortalDragonArmor || 0);
+    if (readyAt > now) {
+        const remainMs = readyAt - now;
+        const remainMin = Math.ceil(remainMs / 60000);
+        lines.push('🔥 ' + IMMORTAL_DRAGON_ARMOR_NAME + ' 효과 재사용 대기 중... (' + remainMin + '분 남음)');
+        return false;
+    }
+    const reviveHp = Math.max(1, Math.floor(Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO));
+    user.hp = reviveHp;
+    user.equipmentPassiveCd.immortalDragonArmor = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
+    lines.push('🔥 ' + IMMORTAL_DRAGON_ARMOR_NAME + '의 불멸 효과 발동! HP ' + comma(reviveHp) + ' (' + Math.round(IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO * 100) + '%)로 부활했습니다.');
+    return true;
 }
 
 function applySkillRecovery(user, maxHp, extra, lines) {
@@ -1515,7 +1551,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const maxHp = Number(stats.hp || 0);
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
-        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (remainHp <= 0) {
@@ -1543,7 +1579,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
     }
     applySkillRecovery(user, maxHp, extra, lines);
-    if (user.hp <= 0) {
+    if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
         user.hp = 1;
         saveFieldCooldowns(user);
         releaseEliteEncounter(user);
@@ -1574,7 +1610,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
-        : ['⚔️ ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : ['⚔️ ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
@@ -1585,7 +1621,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
     applySkillRecovery(user, maxHp, extra, lines);
 
-    if (user.hp <= 0) {
+    if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
         user.hp = 1;
         saveFieldCooldowns(user);
         user.field = null;
@@ -2860,9 +2896,9 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
     const type = selected.equip.type || selected.type;
-    if (type == 'accessory') return '❌ 장신구는 강화할 수 없습니다.';
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    if (!Array.isArray(equipment.upgrade) || equipment.upgrade.length == 0) return '❌ 강화할 수 없는 장비입니다.';
     const level = Number(selected.equip.level || 0);
     if (level >= EQUIPMENT_UPGRADE_MAX) return '❌ 이미 최대 강화 단계입니다.';
 
@@ -2922,13 +2958,9 @@ function runEquipmentUpgrade(user) {
         return '❌ 강화할 장비를 찾을 수 없습니다.';
     }
     const type = selected.equip.type || selected.type;
-    if (type == 'accessory') {
-        user.pendingAction = null;
-        return '❌ 장신구는 강화할 수 없습니다.';
-    }
     const equipment = getEquipmentData(type, selected.equip.id);
     const level = Number(selected.equip.level || 0);
-    if (!equipment || level >= EQUIPMENT_UPGRADE_MAX) {
+    if (!equipment || !Array.isArray(equipment.upgrade) || equipment.upgrade.length == 0 || level >= EQUIPMENT_UPGRADE_MAX) {
         user.pendingAction = null;
         return '❌ 강화할 수 없는 장비입니다.';
     }
