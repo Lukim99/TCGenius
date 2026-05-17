@@ -866,16 +866,16 @@ const STAT_POINT_OPTIONS = {
     'MP': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
     'mp': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
     '방어력': { key: 'def', plusKey: 'def', flat: 3, plus: 0.01, label: '방어력', plusLabel: '최종 방어력' },
-    '방어관통력': { key: 'pnt', flat: 1, plus: 0, label: '방어 관통력' },
-    '방어 관통력': { key: 'pnt', flat: 1, plus: 0, label: '방어 관통력' }
+    '방어관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.005, label: '방어 관통력', plusLabel: '방어력 관통' },
+    '방어 관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.005, label: '방어 관통력', plusLabel: '방어력 관통' }
 };
 
 const STAT_POINT_DISPLAY = [
-    { name: '공격력', key: 'atk', plusKey: 'atk', flat: 2 },
-    { name: '체력', key: 'hp', plusKey: 'hp', flat: 10 },
-    { name: 'MP', key: 'mp', plusKey: 'mp', flat: 12 },
-    { name: '방어력', key: 'def', plusKey: 'def', flat: 3 },
-    { name: '방어 관통력', key: 'pnt', flat: 1 }
+    { name: '공격력', key: 'atk', plusKey: 'atk', flat: 2, plus: 1 },
+    { name: '체력', key: 'hp', plusKey: 'hp', flat: 10, plus: 1 },
+    { name: 'MP', key: 'mp', plusKey: 'mp', flat: 12, plus: 1 },
+    { name: '방어력', key: 'def', plusKey: 'def', flat: 3, plus: 1 },
+    { name: '방어 관통력', key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.5 }
 ];
 
 function normalizeStatPointData(user) {
@@ -949,7 +949,10 @@ function calculateUserStats(user) {
             stats.def = Number(stats.def || 0) + count * 3;
             plusStats.def = Number(plusStats.def || 0) + count * 0.01;
         }
-        if (key == 'pnt') stats.pnt = Number(stats.pnt || 0) + count;
+        if (key == 'pnt') {
+            stats.pnt = Number(stats.pnt || 0) + count;
+            plusStats.pnt = Number(plusStats.pnt || 0) + count * 0.005;
+        }
     });
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
@@ -976,6 +979,7 @@ function calculateUserStats(user) {
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
+    stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
     ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
@@ -1251,7 +1255,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
         let hitDamage = isTrueDamage
             ? Math.max(0, Math.round(Number(criticalResult.damage || 0)))
-            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, slotEffects.defReduction);
+            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, Number(slotEffects.defReduction || 0) + Number(stats && stats.pntPercent || 0));
         if (isTrueDamage) trueDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
@@ -3253,7 +3257,8 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 캐릭터 변환석은 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 유생의 강화기는 한 번에 1개만 사용할 수 있습니다.';
         if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 프레스티지 증표는 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use != '캐릭터변환' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.use == '스탯초기화' && useCount != 1) return '❌ 순백의 결정은 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -3304,6 +3309,20 @@ async function useItem(user, itemName, countArg) {
             lines.push('무료로 강화할 장비를 선택해주세요.');
             lines.push('/RPGenius 장비강화 [장비번호]');
             lines.push('', formatEquipmentInventory(user));
+        }
+        if (item.use == '스탯초기화') {
+            normalizeStatPointData(user);
+            let refunded = 0;
+            Object.keys(user.statPointStats).forEach(key => {
+                refunded += Number(user.statPointStats[key] || 0);
+                user.statPointStats[key] = 0;
+            });
+            user.statPoint = Number(user.statPoint || 0) + refunded;
+            const recalcStats = calculateUserStats(user);
+            user.hp = Math.min(typeof user.hp == 'undefined' ? Number(recalcStats.hp || 0) : Number(user.hp || 0), Number(recalcStats.hp || 0));
+            user.mp = Math.min(typeof user.mp == 'undefined' ? Number(recalcStats.mp || 0) : Number(user.mp || 0), Number(recalcStats.mp || 0));
+            lines.push('- 스탯포인트를 초기화했습니다.');
+            lines.push('- 잔여 스탯포인트: ' + comma(user.statPoint));
         }
         if (item.name == '프레스티지 증표') {
             if (user.prestige === true) {
