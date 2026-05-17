@@ -2775,7 +2775,7 @@ const EQUIPMENT_DISASSEMBLE_REWARD = {
     '레전더리': { min: 560, max: 650 }
 };
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
-const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 10];
+const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 11];
 
 function getEquipmentMaxLevel(equipment) {
     return Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0;
