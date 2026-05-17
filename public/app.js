@@ -86,11 +86,18 @@ const SLOT_ICONS = { 'weapon': '⚔️', 'armor': '🛡️', 'accessory': '💍'
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '재료'];
 const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']];
 
+function equipmentThumb(eq) {
+    const wrap = el('div', { class: 'equip-thumb' });
+    if (eq.frameUrl) wrap.appendChild(el('img', { src: eq.frameUrl, class: 'frame', alt: '' }));
+    if (eq.iconUrl) wrap.appendChild(el('img', { src: eq.iconUrl, class: 'icon', alt: '' }));
+    else wrap.appendChild(el('span', { class: 'icon-fallback' }, SLOT_ICONS[eq.type] || '🎒'));
+    return wrap;
+}
+
 function equipmentCard(eq) {
     const color = RARITY_COLORS[eq.rarity] || '#334155';
-    const icon = SLOT_ICONS[eq.type] || '🎒';
     const card = el('div', { class: 'equip-card', onclick: () => openEquipmentModal(eq) },
-        el('div', { class: 'slot-icon' }, icon),
+        equipmentThumb(eq),
         el('div', null,
             el('div', { class: 'equip-name' }, eq.name),
             el('div', { class: 'equip-meta' },
@@ -144,6 +151,9 @@ function openEquipmentModal(eq) {
     const sub = eq.rarity + ' · ' + eq.typeLabel;
     const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
     openModal(title, sub, lines);
+    const thumb = equipmentThumb(eq);
+    thumb.classList.add('modal-equip-thumb');
+    $('#modalBody').prepend(thumb);
 }
 
 function categorySection(title, children) {
