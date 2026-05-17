@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -246,8 +246,8 @@ function formatStatValue(key, value) {
     const sign = number > 0 ? '+' : '';
     if (key == 'skillCooldown') return sign + (Math.round(number / 100) / 10) + '초';
     if ([
-        'crit', 'critMul',
-        'atk%', 'def%', 'hp%', 'mp%',
+        'crit', 'critMul', 'critDef', 'cmb',
+        'atk%', 'def%', 'hp%', 'mp%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
@@ -325,6 +325,9 @@ function formatEquipmentStatLines(equipment) {
         mp: 'MP',
         crit: '치명타 확률',
         critMul: '치명타 피해량',
+        critDef: '치명타 피해 감소율',
+        cmb: '연격 확률',
+        maxCmb: '최대 공격 횟수',
         skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해'
     };
@@ -342,7 +345,11 @@ function formatEquipmentStatLines(equipment) {
         exp: '경험치 획득량',
         eliteDmg: '엘리트 몬스터 대상 추가 피해',
         mpReduce: 'MP 소모량',
-        itemDropChance: '아이템 획득 확률'
+        itemDropChance: '아이템 획득 확률',
+        crit: '치명타 확률',
+        critMul: '치명타 피해량',
+        critDef: '치명타 피해 감소율',
+        cmb: '연격 확률'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -677,11 +684,11 @@ function runCardCombine(user) {
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
     const success = Math.random() < selection.info.rate;
     const resultCard = {
-        id: success && selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
+        id: selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
         star: success ? selection.star + 1 : selection.star,
         type: '일반'
     };
-    applyFashionRollToCard(resultCard, success && selection.sameCardId != null ? selection.sameCardId : null);
+    applyFashionRollToCard(resultCard, selection.sameCardId);
     user.inventory.card.push(resultCard);
     return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
 }
@@ -907,7 +914,7 @@ function calculateUserStats(user) {
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'skillCooldown', 'skillTrueDmg'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -951,21 +958,26 @@ function computeCombatPowerFromStats(stats, slot) {
     const mp = Math.max(0, Number(stats.mp || 0));
     const crit = Math.max(0, Number(stats.crit || 0));
     const critMul = Math.max(1, Number(stats.critMul || 1.4));
+    const critDef = Math.max(0, Math.min(1, Number(stats.critDef || 0)));
+    const cmb = Math.max(0, Math.min(1, Number(stats.cmb || 0)));
+    const maxCmb = Math.max(1, Math.floor(Number(stats.maxCmb || 1)));
     const pnt = Math.max(0, Number(stats.pnt || 0));
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
     const mContext = 1 + Number(slot.damageBonus || 0) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
+    const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
     const mPen = 1 + pnt / W.PEN_DIVISOR + Number(slot.defReduction || 0) * W.DEF_REDUCTION_RATIO;
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
                      + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO;
-    const offense = atk * mAttack * mContext * mCrit * mPen * mExtra * W.OFFENSE_SCALE;
+    const offense = atk * mAttack * mContext * mCrit * mCombo * mPen * mExtra * W.OFFENSE_SCALE;
 
     const ehp = hp * (1 + def / 100);
     const mAvoid = 1 / (1 - Math.min(W.AVOID_CAP, Math.max(0, Number(stats.avd || 0))));
     const mMitigate = 1 / (1 - Math.min(W.MITIGATE_CAP, Math.max(0, Number(slot.hpDamageReduction || 0))));
     const mRecover = 1 + Number(slot.killRecoveryChance || 0) * W.RECOVERY_RATIO;
-    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mRecover * W.DEFENSE_SCALE;
+    const mCritDef = 1 / (1 - Math.min(W.MITIGATE_CAP, critDef));
+    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mRecover * mCritDef * W.DEFENSE_SCALE;
 
     const mMpSave = 1 + Math.min(0.8, Number(stats.mpReduce || 0)) + Math.min(0.8, Number(slot.mpCostReduction || 0));
     const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR;
@@ -1031,6 +1043,9 @@ function formatMyInfo(user) {
     lines.push('방어 관통력: ' + comma(stats.pnt));
     lines.push('치명타 확률: ' + formatStatValue('crit', stats.crit).replace(/^\+/, ''));
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
+    lines.push('치명타 피해 감소율: ' + formatStatValue('crit', stats.critDef).replace(/^\+/, ''));
+    lines.push('연격 확률: ' + formatStatValue('crit', stats.cmb).replace(/^\+/, ''));
+    lines.push('최대 공격 횟수: ' + comma(stats.maxCmb || 1));
     return lines.join('\n');
 }
 
@@ -1050,14 +1065,20 @@ const RECOMMEND_CP_TUNING = {
 function getDungeonRecommendedCP(dungeon) {
     if (!dungeon) return 0;
     const T = RECOMMEND_CP_TUNING;
-    const N = dungeon;
-    const E = dungeon.elite || {};
-    const normalKill = Number(N.hp || 0) * (100 + Number(N.def || 0)) / 100 / Math.max(1, T.NORMAL_KILL_HITS);
-    const eliteKill = Number(E.hp || 0) * (100 + Number(E.def || 0)) / 100 / Math.max(1, T.ELITE_KILL_HITS);
+    const N = getCombatStats(dungeon);
+    const E = getCombatStats(dungeon.elite || {});
+    const normalCritMitigation = 1 + T.BASE_CRIT * (T.BASE_CRIT_MUL - 1) * (1 - Math.max(0, Math.min(1, Number(N.critDef || 0))));
+    const eliteCritMitigation = 1 + T.BASE_CRIT * (T.BASE_CRIT_MUL - 1) * (1 - Math.max(0, Math.min(1, Number(E.critDef || 0))));
+    const normalKill = Number(N.hp || 0) * (100 + Number(N.def || 0)) / 100 / Math.max(1, T.NORMAL_KILL_HITS) / normalCritMitigation;
+    const eliteKill = Number(E.hp || 0) * (100 + Number(E.def || 0)) / 100 / Math.max(1, T.ELITE_KILL_HITS) / eliteCritMitigation;
     const atk = Math.max(normalKill, eliteKill);
     const def = Number(E.atk || 0) * T.DEF_RATIO;
     const effDef = Math.max(0, def - Number(E.pnt || 0));
-    const incomingPerHit = Number(E.atk || 0) * 100 / (100 + effDef);
+    const eliteExpectedCrit = 1 + Math.max(0, Math.min(1, Number(E.crit || 0))) * (Math.max(1, Number(E.critMul || 1.5)) - 1);
+    const eliteMaxCmb = Math.max(1, Math.floor(Number(E.maxCmb || 1)));
+    const eliteCmb = Math.max(0, Math.min(1, Number(E.cmb || 0)));
+    const eliteExpectedCombo = Array.from({ length: eliteMaxCmb }, (_, i) => Math.pow(eliteCmb, i)).reduce((sum, value) => sum + value, 0);
+    const incomingPerHit = Number(E.atk || 0) * eliteExpectedCrit * eliteExpectedCombo * 100 / (100 + effDef);
     const hp = incomingPerHit * T.SURVIVAL_HITS;
     const pnt = Number(E.def || 0) * T.PEN_RATIO;
     const stats = {
@@ -1116,24 +1137,49 @@ function getDamageAfterReducedDefense(damage, defense, penetration, defenseReduc
     return getDamageAfterDefense(damage, reducedDefense, penetration);
 }
 
-function applyCriticalDamage(damage, stats, extra) {
+function getCombatStats(data) {
+    return Object.assign({
+        atk: 0,
+        pnt: 0,
+        def: 0,
+        hp: 0,
+        crit: 0,
+        critMul: 1.5,
+        critDef: 0,
+        cmb: 0,
+        maxCmb: 1
+    }, data || {});
+}
+
+function getComboHitCount(stats) {
+    const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
+    const maxHits = Math.max(1, Math.floor(Number(stats && stats.maxCmb || 1)));
+    let hitCount = 1;
+    while (hitCount < maxHits && Math.random() < chance) hitCount++;
+    return hitCount;
+}
+
+function applyCriticalDamage(damage, stats, extra, defenderStats) {
     const critChance = Math.max(0, Number(stats.crit || 0));
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
+    const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
+    const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
     const isCritical = extra && extra.forceCritical ? true : Math.random() < critChance;
     return {
-        damage: isCritical ? Math.round(Number(damage || 0) * critMul) : Number(damage || 0),
+        damage: isCritical ? Math.round(Number(damage || 0) * finalCritMul) : Number(damage || 0),
         isCritical: isCritical
     };
 }
 
-function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra) {
-    const hitCount = Math.max(1, Math.floor(Number(extra && extra.hitCount || 1)));
+function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra, defenderStats) {
+    const hitCount = extra && extra.hitCount ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : getComboHitCount(stats);
     const hitDamages = [];
+    const hitDetails = [];
     let finalDamage = 0;
     let criticalCount = 0;
     let bonusTripleZero = 0;
     for (let i = 0; i < hitCount; i++) {
-        const criticalResult = applyCriticalDamage(rawDamage, stats, extra);
+        const criticalResult = applyCriticalDamage(rawDamage, stats, extra, defenderStats);
         let hitDamage = getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, slotEffects.defReduction);
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
@@ -1143,14 +1189,22 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
         hitDamages.push(hitDamage);
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical });
         finalDamage += hitDamage;
     }
-    return { hitCount, hitDamages, finalDamage, criticalCount, bonusTripleZero };
+    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero };
 }
 
-function formatHitResultLine(hitResult) {
-    if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return null;
-    return '- ' + comma(hitResult.hitCount) + '회 타격: ' + hitResult.hitDamages.map(damage => comma(damage)).join(' / ');
+function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
+    const monsterStats = getCombatStats(monster);
+    const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0)));
+    return calculateAttackHitResult(fieldDamageBase, defenderStats.def, monsterStats.pnt, monsterStats, { defReduction: 0 }, {}, defenderStats);
+}
+
+function formatHitDetailLines(hitResult, prefix, suffix) {
+    if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return [];
+    const details = Array.isArray(hitResult.hitDetails) ? hitResult.hitDetails : [];
+    return details.map(detail => prefix + comma(detail.damage) + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
 }
 
 function getSkillValue(skill, index, star) {
@@ -1381,17 +1435,17 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
 function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
-    const elite = dungeon.elite;
+    const elite = getCombatStats(dungeon.elite);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra);
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, elite);
     const finalDamage = hitResult.finalDamage;
     const remainHp = Math.max(0, currentHp - finalDamage);
     const maxHp = Number(stats.hp || 0);
-    const lines = ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    const lines = hitResult.hitCount > 1
+        ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
+        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-    const hitLine = formatHitResultLine(hitResult);
-    if (hitLine) lines.push(hitLine);
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (remainHp <= 0) {
         lines.push('- ' + elite.name + ' 처치!');
@@ -1408,12 +1462,15 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     user.field.elite.hp = remainHp;
     lines.push('- ' + elite.name + ' HP: ' + comma(remainHp) + '/' + comma(elite.hp));
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
-    const fieldDamageBase = Number(elite.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
-    const fieldDamage = avoided ? 0 : getDamageAfterDefense(fieldDamageBase, stats.def, elite.pnt);
+    const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(elite, stats, slotEffects, extra);
+    const fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     user.hp = Math.max(0, beforeHp - fieldDamage);
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
-    else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+    else {
+        if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ' + elite.name + '에게 ', '피해를 입었습니다!').forEach(line => lines.push(line));
+        else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
+    }
     applySkillRecovery(user, maxHp, extra, lines);
     if (user.hp <= 0) {
         user.hp = 1;
@@ -1432,24 +1489,29 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
 function buildHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
+    const monster = getCombatStats(dungeon);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, dungeon.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra);
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, monster);
     const finalDamage = hitResult.finalDamage;
-    const killCount = Math.floor(finalDamage / Number(dungeon.hp || 1));
+    const killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
-    const fieldDamageBase = Number(dungeon.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, slotEffects.hpDamageReduction));
-    const fieldDamage = avoided ? 0 : getDamageAfterDefense(fieldDamageBase, stats.def, dungeon.pnt);
+    const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
+    const fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
     const maxHp = Number(stats.hp || 0);
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     user.hp = Math.max(0, beforeHp - fieldDamage);
 
-    const lines = ['⚔️ ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- 총 ' + comma(killCount) + '마리 처치'];
+    const lines = hitResult.hitCount > 1
+        ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
+        : ['⚔️ ' + comma(finalDamage) + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-    const hitLine = formatHitResultLine(hitResult);
-    if (hitLine) lines.push(hitLine);
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
-    else lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!');
+    else {
+        if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ', '피해를 입었습니다!').forEach(line => lines.push(line));
+        else lines.push('❗ ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
+    }
     applySkillRecovery(user, maxHp, extra, lines);
 
     if (user.hp <= 0) {

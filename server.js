@@ -439,6 +439,29 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     }
 });
 
+// ===== 거래 로그 (관리자) =====
+
+server.get('/api/admin/tradelog', requireAdmin, async (req, res) => {
+    try {
+        const list = await getTradeLogList();
+        const limit = Math.min(2000, Math.max(1, Number(req.query.limit || 500)));
+        res.json({ items: list.slice(0, limit), total: list.length });
+    } catch (e) {
+        console.error('tradelog list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.delete('/api/admin/tradelog', requireAdmin, async (req, res) => {
+    try {
+        await saveTradeLogList([]);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('tradelog clear error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== HTML =====
 
 function readJson(filePath, fallback) {
@@ -642,6 +665,75 @@ function buildInventoryEquipment(user) {
 const AUCTION_FEE_RATE = 0.05;
 const AUCTION_MAX_PER_USER = 20;
 const AUCTION_MAX_PRICE = 1_000_000_000_000;
+
+// ===== 거래 로그 =====
+const TRADE_LOG_LIMIT = 2000;
+
+async function getTradeLogList() {
+    let data = rpgenius.getDataCache('TradeLog', null);
+    if (!data) {
+        await rpgenius.loadRpgeniusDataEntry('TradeLog');
+        data = rpgenius.getDataCache('TradeLog', null);
+    }
+    if (!data || !Array.isArray(data.items)) data = { items: [] };
+    return data.items;
+}
+
+async function saveTradeLogList(items) {
+    await rpgenius.saveRpgeniusDataEntry('TradeLog', { items });
+}
+
+function buildTradeLogPayload(entry) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const equipments = rpgenius.getDataCache('Equipment', {});
+    const items = rpgenius.getDataCache('Item', []);
+    if (entry.kind == 'card') {
+        const id = entry.payload && entry.payload.id;
+        const data = characterCards[id];
+        return {
+            kindLabel: '캐릭터 카드',
+            name: data ? data.name : '알 수 없는 카드',
+            payload: Object.assign({}, entry.payload || {})
+        };
+    }
+    if (entry.kind == 'equipment') {
+        const slot = entry.payload && entry.payload.type;
+        const id = entry.payload && entry.payload.id;
+        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : null;
+        const data = slotKey ? (equipments[slotKey] || [])[id] : null;
+        return {
+            kindLabel: slot || '장비',
+            name: data ? data.name : '알 수 없는 장비',
+            rarity: data ? data.rarity : null,
+            payload: Object.assign({}, entry.payload || {})
+        };
+    }
+    if (entry.kind == 'item') {
+        const id = entry.payload && entry.payload.id;
+        const data = items[id];
+        return {
+            kindLabel: '아이템',
+            name: data ? data.name : '알 수 없는 아이템',
+            payload: Object.assign({}, entry.payload || {})
+        };
+    }
+    return { kindLabel: entry.kind || '?', name: '알 수 없음', payload: entry.payload || {} };
+}
+
+async function appendTradeLog(record) {
+    try {
+        const list = await getTradeLogList();
+        const log = Object.assign({
+            id: 'trd_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex'),
+            time: Date.now()
+        }, record);
+        list.unshift(log);
+        if (list.length > TRADE_LOG_LIMIT) list.length = TRADE_LOG_LIMIT;
+        await saveTradeLogList(list);
+    } catch (e) {
+        console.error('[trade-log] 기록 실패:', e);
+    }
+}
 
 async function getAuctionList() {
     let data = rpgenius.getDataCache('Auction', null);
@@ -938,6 +1030,23 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
     }
     await saveAuctionList(list);
     await buyer.save();
+
+    const payloadMeta = buildTradeLogPayload(entry);
+    await appendTradeLog({
+        tradeType: '경매장',
+        buyer: buyerName,
+        seller: entry.sellerName,
+        kind: entry.kind,
+        kindLabel: payloadMeta.kindLabel,
+        itemName: payloadMeta.name,
+        rarity: payloadMeta.rarity || null,
+        payload: payloadMeta.payload,
+        count: buyCount,
+        unitPrice: unitPrice,
+        totalPrice: totalPrice,
+        fee: fee,
+        currency: currency
+    });
     return {};
 }
 
@@ -1297,7 +1406,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
 
     const indexNow = list.findIndex(item => item.id == orderId);
     if (indexNow == -1) return { error: '이미 종료되었거나 취소된 구매 등록입니다.' };
-    if (entry.kind == 'item' && sellCount < stock) {
+    if (sellCount < stock) {
         list[indexNow].count = stock - sellCount;
     } else {
         list.splice(indexNow, 1);
@@ -1305,6 +1414,23 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
     await saveBuyOrderList(list);
     await seller.save();
     await buyer.save();
+
+    const payloadMeta = buildTradeLogPayload(entry);
+    await appendTradeLog({
+        tradeType: '삽니다',
+        buyer: entry.buyerName,
+        seller: sellerName,
+        kind: entry.kind,
+        kindLabel: payloadMeta.kindLabel,
+        itemName: payloadMeta.name,
+        rarity: payloadMeta.rarity || null,
+        payload: payloadMeta.payload,
+        count: sellCount,
+        unitPrice: unitPrice,
+        totalPrice: totalPrice,
+        fee: fee,
+        currency: entry.currency
+    });
     return {};
 }
 

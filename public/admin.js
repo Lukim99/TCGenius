@@ -684,6 +684,856 @@ $('#baitSave').onclick = async () => { if (!confirm('Bait 데이터를 저장합
 TAB_LOADERS.bait = () => $('#baitReload').click();
 
 // ============================================================================
+// 공통: JSON 서브 에디터 (작은 textarea + 파싱)
+// ============================================================================
+function jsonSubEditor(label, getter, setter, placeholder, rows) {
+    const wrap = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', flex: '1', minWidth: '220px' } });
+    const initial = getter();
+    const ta = el('textarea', {
+        spellcheck: false,
+        placeholder: placeholder || '',
+        style: { minHeight: ((rows || 2) * 22) + 'px', fontSize: '12px', fontFamily: 'ui-monospace, monospace' },
+        value: initial == null ? '' : JSON.stringify(initial, null, 2)
+    });
+    const status = el('span', { class: 'muted', style: { fontSize: '11px' } }, '');
+    ta.addEventListener('blur', () => {
+        const text = ta.value.trim();
+        if (text === '') { setter(undefined); status.textContent = '(미설정)'; status.style.color = ''; return; }
+        try {
+            const parsed = JSON.parse(text);
+            setter(parsed);
+            status.textContent = '✓ 적용됨';
+            status.style.color = '#86efac';
+            ta.value = JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            status.textContent = '⚠ JSON 파싱 실패: ' + e.message;
+            status.style.color = '#fca5a5';
+        }
+    });
+    wrap.appendChild(el('label', null, label));
+    wrap.appendChild(ta);
+    wrap.appendChild(status);
+    return wrap;
+}
+
+function invalidateLookupCache(keys) {
+    (keys || []).forEach(k => { LOOKUP[k] = null; });
+}
+
+function sectionTitle(title, _ignoredIcon, hint) {
+    return el('div', { class: 'section-title' },
+        el('span', null, title),
+        hint ? el('span', { class: 'hint' }, hint) : null
+    );
+}
+
+// switchToggle: 이쁨 스위치 토글
+function switchToggle(opts) {
+    const id = opts && opts.id || ('sw_' + Math.random().toString(36).slice(2));
+    const checked = !!(opts && opts.checked);
+    const inp = el('input', { type: 'checkbox', id: id, checked: checked, onchange: e => opts && opts.onChange && opts.onChange(e.target.checked) });
+    const label = el('label', { class: 'switch', for: id, title: opts && opts.title || '' },
+        inp,
+        el('span', { class: 'track' }),
+        opts && opts.label ? el('span', { class: 'switch-label' }, opts.label) : null
+    );
+    return label;
+}
+
+// ============================================================================
+// ITEM 에디터  ( data: Array<{name, type, desc?, no_trade?, pack?, num?, use?, use_func?, require?, ...}> )
+// ============================================================================
+let itemData = [];
+let itemFilterText = '';
+const ITEM_TYPES = ['재료', '가챠', '번들', '마법석', '소모품', '티켓', '미끼', '이벤트'];
+const ITEM_KNOWN_FIELDS = new Set(['name', 'desc', 'type', 'no_trade', 'pack', 'num', 'use', 'use_func', 'require']);
+
+function itemCard(item, index) {
+    const card = el('div', { class: 'card' });
+    const head = el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+            el('span', { class: 'tag b' }, '#' + index),
+            ' ',
+            item.name || '(이름 없음)',
+            item.type ? el('span', { class: 'tag', style: { marginLeft: '8px' } }, item.type) : null,
+            item.no_trade ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '거래불가') : null
+        ),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            if (!confirm('아이템 #' + index + ' (' + (item.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
+            itemData.splice(index, 1);
+            renderItem();
+        } }, '삭제')
+    );
+    card.appendChild(head);
+
+    // 기본 정보
+    card.appendChild(sectionTitle('기본 정보', '📝'));
+    const row1 = el('div', { class: 'row' });
+    row1.appendChild(el('div', null, el('label', null, '이름'),
+        el('input', { value: item.name || '', placeholder: '아이템 이름', oninput: e => item.name = e.target.value })
+    ));
+    const typeSel = el('select');
+    ITEM_TYPES.forEach(t => typeSel.appendChild(el('option', { value: t }, t)));
+    if (item.type && !ITEM_TYPES.includes(item.type)) typeSel.appendChild(el('option', { value: item.type }, item.type + ' (사용자 지정)'));
+    typeSel.value = item.type || '재료';
+    typeSel.onchange = () => item.type = typeSel.value;
+    row1.appendChild(el('div', null, el('label', null, '분류'), typeSel));
+    row1.appendChild(el('div', { class: 'nf', style: { minWidth: '140px' } },
+        el('label', null, '거래 불가'),
+        el('div', { style: { padding: '7px 0' } },
+            switchToggle({
+                id: 'item_nt_' + index,
+                checked: !!item.no_trade,
+                label: item.no_trade ? '거래 제한' : '거래 가능',
+                onChange: v => { if (v) item.no_trade = true; else delete item.no_trade; renderItem(); }
+            })
+        )
+    ));
+    card.appendChild(row1);
+
+    card.appendChild(el('div', null, el('label', null, '설명'),
+        el('textarea', { value: item.desc || '', placeholder: '아이템 설명', style: { minHeight: '50px', fontFamily: 'inherit', fontSize: '13px' }, oninput: e => item.desc = e.target.value })
+    ));
+
+    // 가챠 / 번들 설정
+    card.appendChild(sectionTitle('가챠 / 번들 설정'));
+    const row3 = el('div', { class: 'row' });
+    const packTypeSel = el('select');
+    ['없음', '목록 번호 (Pack/Bundle 인덱스)', '카드팩 / 장비 상자 객체'].forEach(t => packTypeSel.appendChild(el('option', null, t)));
+    const currentPackKind = (typeof item.pack === 'undefined') ? 0 : (typeof item.pack === 'number' ? 1 : 2);
+    packTypeSel.selectedIndex = currentPackKind;
+    const packTarget = el('div', { style: { flex: '1', minWidth: '180px' } });
+    function paintPackTarget() {
+        packTarget.innerHTML = '';
+        const kind = packTypeSel.selectedIndex;
+        if (kind === 0) { delete item.pack; return; }
+        if (kind === 1) {
+            if (typeof item.pack !== 'number') item.pack = 0;
+            packTarget.appendChild(el('input', { type: 'number', min: 0, value: Number(item.pack || 0), oninput: e => item.pack = Number(e.target.value || 0) }));
+            return;
+        }
+        if (kind === 2) {
+            if (!item.pack || typeof item.pack !== 'object') item.pack = { type: '캐릭터 카드팩', range: { min: 1, max: 1 } };
+            packTarget.appendChild(jsonSubEditor('', () => item.pack, v => { if (v == null) delete item.pack; else item.pack = v; }, '예: { "type": "캐릭터 카드팩", "range": { "min": 1, "max": 1 } }', 4));
+        }
+    }
+    packTypeSel.onchange = paintPackTarget;
+    row3.appendChild(el('div', null, el('label', null, '가챠 종류'), packTypeSel));
+    row3.appendChild(packTarget);
+    row3.appendChild(el('div', { class: 'nf' }, el('label', null, '가챠 추첨 횟수'),
+        el('input', { type: 'number', min: 1, value: Number(item.num || 0) || '', placeholder: '기본 1', oninput: e => { const v = Number(e.target.value); if (!v) delete item.num; else item.num = v; } })
+    ));
+    card.appendChild(row3);
+    paintPackTarget();
+
+    // 사용 효과 / 조건
+    card.appendChild(sectionTitle('사용 효과 / 조건', '✨'));
+    const row4 = el('div', { class: 'row' });
+    row4.appendChild(jsonSubEditor('마법석 사용 키 (use)', () => item.use, v => { if (v == null || v === '') delete item.use; else item.use = v; }, '예: "캐릭터변환"', 1));
+    row4.appendChild(jsonSubEditor('소모품 효과 (use_func)', () => item.use_func, v => { if (v == null) delete item.use_func; else item.use_func = v; }, '예: [{ "type": "체력회복", "amount": 100 }]', 4));
+    row4.appendChild(jsonSubEditor('사용 조건 (require)', () => item.require, v => { if (v == null) delete item.require; else item.require = v; }, '예: [{ "id": 17, "count": 3 }]', 3));
+    card.appendChild(row4);
+
+    // 기타 필드
+    const extraKeys = Object.keys(item).filter(k => !ITEM_KNOWN_FIELDS.has(k));
+    if (extraKeys.length > 0) {
+        const extraObj = {};
+        extraKeys.forEach(k => { extraObj[k] = item[k]; });
+        card.appendChild(sectionTitle('기타 필드 (raw JSON)', '⚙️'));
+        card.appendChild(jsonSubEditor('', () => extraObj, v => {
+            extraKeys.forEach(k => delete item[k]);
+            if (v && typeof v === 'object') Object.keys(v).forEach(k => { if (!ITEM_KNOWN_FIELDS.has(k)) item[k] = v[k]; });
+        }, '', 3));
+    }
+    return card;
+}
+
+function renderItem() {
+    const list = $('#itemList'); list.innerHTML = '';
+    if (!Array.isArray(itemData)) itemData = [];
+    const q = (itemFilterText || '').trim().toLowerCase();
+    let shown = 0;
+    itemData.forEach((item, idx) => {
+        if (!item) return;
+        if (q) {
+            const hay = (idx + ' ' + (item.name || '') + ' ' + (item.type || '') + ' ' + (item.desc || '')).toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        list.appendChild(itemCard(item, idx));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '아이템이 없습니다.'));
+}
+$('#itemAdd').onclick = () => { itemData.push({ name: '', type: '재료', desc: '' }); itemFilterText = ''; if ($('#itemFilter')) $('#itemFilter').value = ''; renderItem(); };
+$('#itemReload').onclick = async () => {
+    try { itemData = (await loadKey('Item')) || []; renderItem(); $('#itemStatus').textContent = '로드 완료 (' + itemData.length + '개)'; invalidateLookupCache(['items']); }
+    catch (e) { toast(e.message, false); }
+};
+$('#itemSave').onclick = async () => {
+    if (!confirm('Item 데이터를 저장합니다. 인덱스 변경이 있다면 다른 데이터(Pack/Shop 등)와의 호환성을 다시 확인하세요. 계속할까요?')) return;
+    try { await saveKey('Item', itemData); invalidateLookupCache(['items']); toast('✅ Item 저장 완료'); }
+    catch (e) { toast(e.message, false); }
+};
+if ($('#itemFilter')) $('#itemFilter').addEventListener('input', e => { itemFilterText = e.target.value; renderItem(); });
+TAB_LOADERS.item = () => $('#itemReload').click();
+
+// ============================================================================
+// 공통: 능력치 / 강화 / 요구조건 에디터 (장비 · 패션용)
+// ============================================================================
+
+// 능력치 정의 — formatEquipmentStatLines / formatStatValue 기준
+// kind:
+//   'int'     : 정수, raw 표시
+//   'percent' : 0~1 사이 소수 저장, UI에는 % (×100) 표시
+//   'cooldown': ms 저장, UI에는 ms 그대로 (음수=감소)
+const FLAT_STAT_DEFS = [
+    { key: 'atk', label: '공격력', kind: 'int' },
+    { key: 'def', label: '방어력', kind: 'int' },
+    { key: 'hp', label: '체력', kind: 'int' },
+    { key: 'mp', label: 'MP', kind: 'int' },
+    { key: 'pnt', label: '방어 관통력', kind: 'int' },
+    { key: 'crit', label: '치명타 확률', kind: 'percent' },
+    { key: 'critMul', label: '치명타 피해량', kind: 'percent' },
+    { key: 'critDef', label: '치명타 피해 감소율', kind: 'percent' },
+    { key: 'cmb', label: '연격 확률', kind: 'percent' },
+    { key: 'maxCmb', label: '최대 공격 횟수', kind: 'int' },
+    { key: 'skillCooldown', label: '스킬 쿨타임 (ms, 음수=감소)', kind: 'cooldown' },
+    { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' }
+];
+
+const PLUS_STAT_DEFS = [
+    { key: 'atk', label: '최종 공격력', kind: 'percent' },
+    { key: 'def', label: '최종 방어력', kind: 'percent' },
+    { key: 'hp', label: '최종 체력', kind: 'percent' },
+    { key: 'mp', label: '최종 MP', kind: 'percent' },
+    { key: 'gold', label: '골드 획득량', kind: 'percent' },
+    { key: 'potion', label: '물약 효율', kind: 'percent' },
+    { key: 'afterBasic', label: '일반 공격 피해', kind: 'percent' },
+    { key: 'avd', label: '회피 확률', kind: 'percent' },
+    { key: 'afterSkill', label: '스킬 공격 피해', kind: 'percent' },
+    { key: '000', label: '공격 시 10/100/1000 추가 피해 확률', kind: 'percent' },
+    { key: 'exp', label: '경험치 획득량', kind: 'percent' },
+    { key: 'eliteDmg', label: '엘리트 몬스터 대상 추가 피해', kind: 'percent' },
+    { key: 'mpReduce', label: 'MP 소모량', kind: 'percent' },
+    { key: 'itemDropChance', label: '아이템 획득 확률', kind: 'percent' },
+    { key: 'crit', label: '치명타 확률', kind: 'percent' },
+    { key: 'critMul', label: '치명타 피해량', kind: 'percent' },
+    { key: 'critDef', label: '치명타 피해 감소율', kind: 'percent' },
+    { key: 'cmb', label: '연격 확률', kind: 'percent' }
+];
+
+function statKindUnit(kind) {
+    if (kind === 'percent') return '%';
+    if (kind === 'cooldown') return 'ms';
+    return '';
+}
+
+function statValueToInputValue(kind, raw) {
+    if (raw == null || raw === '') return '';
+    if (kind === 'percent') return Math.round(Number(raw) * 10000) / 100; // 0.05 → 5
+    return Number(raw);
+}
+
+function statInputValueToRaw(kind, str) {
+    if (str === '' || str == null) return undefined;
+    const n = Number(str);
+    if (!Number.isFinite(n)) return undefined;
+    if (kind === 'percent') return Math.round(n * 100) / 10000; // 5 → 0.05
+    if (kind === 'int') return Math.round(n);
+    return n;
+}
+
+// statEditor: 객체 obj의 능력치를 정의(defs) 기반 폼으로 편집
+function statEditor(title, _ignoredIcon, obj, defs) {
+    const wrap = el('div', { class: 'section', style: { marginTop: 0 } });
+    if (title) {
+        wrap.appendChild(el('div', { class: 'section-title' },
+            el('span', null, title)
+        ));
+    }
+    const list = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '5px' } });
+    wrap.appendChild(list);
+
+    function repaint() {
+        list.innerHTML = '';
+        if (!obj || typeof obj !== 'object') return;
+        const definedKeys = new Set(defs.map(d => d.key));
+        const definedDefs = defs.filter(d => Object.prototype.hasOwnProperty.call(obj, d.key));
+        const extraKeys = Object.keys(obj).filter(k => !definedKeys.has(k));
+
+        if (definedDefs.length === 0 && extraKeys.length === 0) {
+            list.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', padding: '4px 0' } }, '설정된 능력치가 없습니다.'));
+        } else {
+            definedDefs.forEach(def => list.appendChild(buildRow(def, false)));
+            extraKeys.forEach(key => list.appendChild(buildRow({ key, label: key, kind: 'int' }, true)));
+        }
+
+        const remaining = defs.filter(d => !Object.prototype.hasOwnProperty.call(obj, d.key));
+        const addRow = el('div', { class: 'stat-add' });
+        const sel = el('select');
+        sel.appendChild(el('option', { value: '' }, '+ 능력치 추가...'));
+        remaining.forEach(d => sel.appendChild(el('option', { value: d.key }, d.label)));
+        sel.onchange = () => {
+            if (!sel.value) return;
+            const def = defs.find(d => d.key === sel.value);
+            if (!def) return;
+            obj[def.key] = 0;
+            repaint();
+        };
+        const customBtn = el('button', { class: 'btn sm', type: 'button', title: '임의 키 추가 (고급)', onclick: () => {
+            const k = prompt('커스텀 키:');
+            if (!k) return;
+            if (Object.prototype.hasOwnProperty.call(obj, k)) return toast('이미 존재하는 키', false);
+            obj[k] = 0; repaint();
+        } }, '➕');
+        addRow.appendChild(sel);
+        addRow.appendChild(customBtn);
+        list.appendChild(addRow);
+    }
+
+    function buildRow(def, isCustom) {
+        const row = el('div', { class: 'stat-row' });
+        const nameCell = el('div', { class: 'name', title: def.key },
+            def.label,
+            isCustom ? el('span', { class: 'field-name' }, def.key) : null
+        );
+        const inputVal = statValueToInputValue(def.kind, obj[def.key]);
+        const inp = el('input', { type: 'number', step: def.kind === 'percent' ? '0.01' : (def.kind === 'cooldown' ? '100' : '1'), value: inputVal, oninput: () => {
+            const raw = statInputValueToRaw(def.kind, inp.value);
+            if (typeof raw === 'undefined') delete obj[def.key];
+            else obj[def.key] = raw;
+        } });
+        const unit = el('div', { class: 'unit' }, statKindUnit(def.kind) || '–');
+        const delBtn = el('button', { class: 'btn icon danger', type: 'button', title: '제거', onclick: () => { delete obj[def.key]; repaint(); } }, '✕');
+        row.appendChild(nameCell);
+        row.appendChild(inp);
+        row.appendChild(unit);
+        row.appendChild(delBtn);
+        return row;
+    }
+
+    repaint();
+    return wrap;
+}
+
+// upgradeEditor: 강화 단계 배열을 편집. 각 단계는 { stat?, plusStat? } — 접을 수 있는 패널
+function upgradeStepSummary(step) {
+    const parts = [];
+    function describe(obj, defs, isPlus) {
+        Object.keys(obj || {}).forEach(k => {
+            const def = defs.find(d => d.key === k) || { key: k, label: k, kind: isPlus ? 'percent' : 'int' };
+            const v = obj[k];
+            if (v == null || v === 0) return;
+            const sign = Number(v) > 0 ? '+' : '';
+            if (def.kind === 'percent') parts.push(def.label + ' ' + sign + (Math.round(Number(v) * 1000) / 10) + '%');
+            else if (def.kind === 'cooldown') parts.push(def.label + ' ' + sign + (Math.round(Number(v) / 100) / 10) + '초');
+            else parts.push(def.label + ' ' + sign + v);
+        });
+    }
+    describe(step.stat, FLAT_STAT_DEFS, false);
+    describe(step.plusStat, PLUS_STAT_DEFS, true);
+    return parts.length ? parts.join(' · ') : '설정 없음';
+}
+
+function upgradeEditor(getter, setter) {
+    const wrap = el('div');
+    const list = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } });
+    wrap.appendChild(list);
+
+    function arr() {
+        let v = getter();
+        if (!Array.isArray(v)) { v = []; setter(v); }
+        return v;
+    }
+
+    function repaint() {
+        list.innerHTML = '';
+        const items = arr();
+        if (items.length === 0) {
+            list.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', padding: '4px 0' } }, '강화 단계가 없습니다.'));
+        } else {
+            items.forEach((step, i) => {
+                if (!step || typeof step !== 'object') { items[i] = step = {}; }
+                if (!step.stat || typeof step.stat !== 'object') step.stat = {};
+                if (!step.plusStat || typeof step.plusStat !== 'object') step.plusStat = {};
+
+                const det = el('details', { class: 'collapsible' });
+                const sum = el('summary');
+                sum.appendChild(el('span', { style: { fontWeight: '600' } }, '+' + (i + 1)));
+                sum.appendChild(el('span', { class: 'summary-meta' }, upgradeStepSummary(step)));
+                const actions = el('span', { class: 'actions' });
+                const stop = e => { e.preventDefault(); e.stopPropagation(); };
+                actions.appendChild(el('button', { class: 'btn sm', type: 'button', title: '위로', onclick: e => { stop(e); if (i === 0) return; const t = items[i]; items[i] = items[i - 1]; items[i - 1] = t; repaint(); } }, '↑'));
+                actions.appendChild(el('button', { class: 'btn sm', type: 'button', title: '아래로', onclick: e => { stop(e); if (i === items.length - 1) return; const t = items[i]; items[i] = items[i + 1]; items[i + 1] = t; repaint(); } }, '↓'));
+                actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: e => { stop(e); if (!confirm('+' + (i + 1) + ' 단계를 삭제할까요?')) return; items.splice(i, 1); repaint(); } }, '삭제'));
+                sum.appendChild(actions);
+                det.appendChild(sum);
+
+                const body = el('div', { class: 'body' });
+                const inner = el('div', { class: 'split' });
+                inner.appendChild(statEditor('기본 능력치', '⚔️', step.stat, FLAT_STAT_DEFS));
+                inner.appendChild(statEditor('비율 증가', '📈', step.plusStat, PLUS_STAT_DEFS));
+                body.appendChild(inner);
+                det.appendChild(body);
+                list.appendChild(det);
+            });
+        }
+        const bar = el('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } });
+        bar.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => { items.push({ stat: {}, plusStat: {} }); repaint(); } }, '+ 단계 추가'));
+        if (items.length > 0) bar.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
+            list.querySelectorAll('details.collapsible').forEach(d => d.open = true);
+        } }, '모두 펼치기'));
+        if (items.length > 0) bar.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
+            list.querySelectorAll('details.collapsible').forEach(d => d.open = false);
+        } }, '모두 접기'));
+        list.appendChild(bar);
+    }
+
+    repaint();
+    return wrap;
+}
+
+// equipmentRequireEditor: 장비 require 편집
+//   format: [{ type: '무기'|'갑옷'|'장신구', weapon_id|armor_id|accessory_id: number }, ...]
+function equipmentRequireEditor(getter, setter) {
+    const wrap = el('div');
+    const list = el('div', { class: 'entry-list' });
+    wrap.appendChild(list);
+
+    function arr() {
+        let v = getter();
+        if (!Array.isArray(v)) { v = []; setter(v); }
+        return v;
+    }
+
+    const TYPE_TO_SLOT = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory' };
+    const TYPE_TO_KEY = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id' };
+
+    function repaint() {
+        list.innerHTML = '';
+        const items = arr();
+        items.forEach((req, i) => {
+            const row = el('div', { class: 'entry' });
+            const typeSel = el('select', { style: { width: '90px', flex: '0 0 auto' } });
+            ['무기', '갑옷', '장신구'].forEach(t => typeSel.appendChild(el('option', { value: t }, t)));
+            if (!req.type || !TYPE_TO_SLOT[req.type]) req.type = '장신구';
+            typeSel.value = req.type;
+            const idDisplay = el('button', { class: 'pickbtn', type: 'button', style: { flex: '1' } });
+            const refresh = async () => {
+                idDisplay.innerHTML = '';
+                const slot = TYPE_TO_SLOT[req.type];
+                const idKey = TYPE_TO_KEY[req.type];
+                const idVal = req[idKey];
+                if (typeof idVal === 'number') {
+                    const eq = await getEquipment();
+                    const found = (eq[slot] || []).find(x => x.id === idVal);
+                    idDisplay.appendChild(found ? document.createTextNode('#' + found.id + ' [' + (found.rarity || '') + '] ' + found.name) : el('span', { class: 'ph' }, '없는 장비 #' + idVal));
+                } else idDisplay.innerHTML = '<span class="ph">' + req.type + ' 선택...</span>';
+            };
+            idDisplay.onclick = () => pickEquipment(TYPE_TO_SLOT[req.type], picked => {
+                ['weapon_id', 'armor_id', 'accessory_id'].forEach(k => delete req[k]);
+                req[TYPE_TO_KEY[req.type]] = picked.id;
+                refresh();
+            });
+            typeSel.onchange = () => {
+                req.type = typeSel.value;
+                ['weapon_id', 'armor_id', 'accessory_id'].forEach(k => delete req[k]);
+                refresh();
+            };
+            const delBtn = el('button', { class: 'btn icon danger', type: 'button', onclick: () => { items.splice(i, 1); repaint(); } }, '✕');
+            row.appendChild(typeSel);
+            row.appendChild(idDisplay);
+            row.appendChild(delBtn);
+            list.appendChild(row);
+            refresh();
+        });
+        list.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => { items.push({ type: '장신구' }); repaint(); } }, '+ 조건 추가'));
+        if (items.length === 0) list.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', padding: '4px' } }, '효과 발동에 필요한 다른 장비가 없습니다.'));
+    }
+
+    repaint();
+    return wrap;
+}
+
+// ============================================================================
+// EQUIPMENT 에디터  ( data: { weapon: [...], armor: [...], accessory: [...] } )
+// ============================================================================
+let equipData = { weapon: [], armor: [], accessory: [] };
+let equipCurrentSlot = 'weapon';
+let equipFilterText = '';
+const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
+const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'no_trade']);
+
+function renderEquipTypes() {
+    const wrap = $('#equipTypes'); wrap.innerHTML = '';
+    [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']].forEach(([k, label]) => {
+        const arr = (equipData && equipData[k]) || [];
+        const b = el('button', { class: 'subtab' + (equipCurrentSlot === k ? ' active' : ''), type: 'button',
+            onclick: () => { equipCurrentSlot = k; renderEquipTypes(); renderEquip(); } }, label + ' (' + arr.length + ')');
+        wrap.appendChild(b);
+    });
+}
+
+function equipCard(eq, index) {
+    const card = el('div', { class: 'card' });
+    const rarityClass = ({ '일반': '', '레어': 'b', '에픽': 'p', '유니크': 'y', '레전더리': 'y', '신화': 'r', '고유': 'g' })[eq.rarity] || '';
+    const head = el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+            el('span', { class: 'tag b' }, '#' + index),
+            ' ',
+            eq.name || '(이름 없음)',
+            eq.rarity ? el('span', { class: 'tag ' + rarityClass, style: { marginLeft: '8px' } }, eq.rarity) : null,
+            eq.no_trade ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '거래불가') : null
+        ),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            if (!confirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
+            equipData[equipCurrentSlot].splice(index, 1);
+            renderEquipTypes(); renderEquip();
+        } }, '삭제')
+    );
+    card.appendChild(head);
+
+    // 기본 정보
+    card.appendChild(sectionTitle('기본 정보', '📝'));
+    const row1 = el('div', { class: 'row' });
+    row1.appendChild(el('div', null, el('label', null, '이름'),
+        el('input', { value: eq.name || '', placeholder: '장비 이름', oninput: e => eq.name = e.target.value })
+    ));
+    const raritySel = el('select');
+    EQUIP_RARITIES.forEach(r => raritySel.appendChild(el('option', { value: r }, r)));
+    if (eq.rarity && !EQUIP_RARITIES.includes(eq.rarity)) raritySel.appendChild(el('option', { value: eq.rarity }, eq.rarity + ' (사용자 지정)'));
+    raritySel.value = eq.rarity || '일반';
+    raritySel.onchange = () => eq.rarity = raritySel.value;
+    row1.appendChild(el('div', null, el('label', null, '등급'), raritySel));
+    row1.appendChild(el('div', { class: 'nf', style: { minWidth: '140px' } },
+        el('label', null, '거래 불가'),
+        el('div', { style: { padding: '7px 0' } },
+            switchToggle({
+                id: 'eq_nt_' + index,
+                checked: !!eq.no_trade,
+                label: eq.no_trade ? '거래 제한' : '거래 가능',
+                onChange: v => { if (v) eq.no_trade = true; else delete eq.no_trade; renderEquip(); }
+            })
+        )
+    ));
+    card.appendChild(row1);
+
+    card.appendChild(el('div', null, el('label', null, '설명'),
+        el('textarea', { value: eq.desc || '', placeholder: '장비 설명', style: { minHeight: '40px', fontFamily: 'inherit', fontSize: '13px' }, oninput: e => eq.desc = e.target.value })
+    ));
+
+    // 장착 조건
+    card.appendChild(sectionTitle('장착 조건', '🔒'));
+    const row3 = el('div', { class: 'row' });
+    function numField(label, key, placeholder) {
+        const inp = el('input', { type: 'number', value: typeof eq[key] === 'number' ? eq[key] : '', placeholder: placeholder || '',
+            oninput: e => { const v = e.target.value; if (v === '') delete eq[key]; else eq[key] = Number(v); } });
+        return el('div', { class: 'nf' }, el('label', null, label), inp);
+    }
+    row3.appendChild(numField('장착 필요 레벨', 'requireLevel', '예: 10'));
+    row3.appendChild(numField('장착 가능 최대 레벨', 'underLevel', '예: 30'));
+    row3.appendChild(numField('메인카드 성급 조건', 'exactlyStar', '0=1성, 5=6성'));
+    row3.appendChild(numField('진화 단계', 'evolution', '예: 4'));
+    card.appendChild(row3);
+
+    // 기본 능력치 / 비율 증가
+    card.appendChild(sectionTitle('능력치', '✨'));
+    if (!eq.stat || typeof eq.stat !== 'object') eq.stat = {};
+    if (!eq.plusStat || typeof eq.plusStat !== 'object') eq.plusStat = {};
+    const row4 = el('div', { class: 'split' });
+    row4.appendChild(statEditor('기본 능력치', '⚔️', eq.stat, FLAT_STAT_DEFS));
+    row4.appendChild(statEditor('비율 증가', '📈', eq.plusStat, PLUS_STAT_DEFS));
+    card.appendChild(row4);
+
+    // 강화 단계
+    card.appendChild(sectionTitle('강화 단계', '🔨'));
+    card.appendChild(upgradeEditor(() => eq.upgrade, v => { if (v == null) delete eq.upgrade; else eq.upgrade = v; }));
+
+    // 동시 장착 조건
+    card.appendChild(sectionTitle('동시 장착 조건', '🔗'));
+    card.appendChild(equipmentRequireEditor(() => eq.require, v => { if (v == null) delete eq.require; else eq.require = v; }));
+
+    // 기타 필드
+    const extraKeys = Object.keys(eq).filter(k => !EQUIP_KNOWN_FIELDS.has(k));
+    if (extraKeys.length > 0) {
+        const extraObj = {};
+        extraKeys.forEach(k => { extraObj[k] = eq[k]; });
+        card.appendChild(sectionTitle('기타 필드 (raw JSON)', '⚙️'));
+        card.appendChild(jsonSubEditor('', () => extraObj, v => {
+            extraKeys.forEach(k => delete eq[k]);
+            if (v && typeof v === 'object') Object.keys(v).forEach(k => { if (!EQUIP_KNOWN_FIELDS.has(k)) eq[k] = v[k]; });
+        }, '', 3));
+    }
+    return card;
+}
+
+function renderEquip() {
+    const list = $('#equipList'); list.innerHTML = '';
+    if (!equipData || typeof equipData !== 'object') equipData = { weapon: [], armor: [], accessory: [] };
+    ['weapon', 'armor', 'accessory'].forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
+    const arr = equipData[equipCurrentSlot] || [];
+    const q = (equipFilterText || '').trim().toLowerCase();
+    let shown = 0;
+    arr.forEach((eq, idx) => {
+        if (!eq) return;
+        if (q) {
+            const hay = (idx + ' ' + (eq.name || '') + ' ' + (eq.rarity || '')).toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        list.appendChild(equipCard(eq, idx));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '장비가 없습니다.'));
+}
+$('#equipAdd').onclick = () => {
+    if (!equipData[equipCurrentSlot]) equipData[equipCurrentSlot] = [];
+    equipData[equipCurrentSlot].push({ name: '', desc: '', rarity: '일반', stat: {}, plusStat: {} });
+    equipFilterText = ''; if ($('#equipFilter')) $('#equipFilter').value = '';
+    renderEquipTypes(); renderEquip();
+};
+$('#equipReload').onclick = async () => {
+    try {
+        const data = (await loadKey('Equipment')) || {};
+        equipData = { weapon: Array.isArray(data.weapon) ? data.weapon : [], armor: Array.isArray(data.armor) ? data.armor : [], accessory: Array.isArray(data.accessory) ? data.accessory : [] };
+        renderEquipTypes(); renderEquip();
+        $('#equipStatus').textContent = '로드 완료 (무기 ' + equipData.weapon.length + ' / 갑옷 ' + equipData.armor.length + ' / 장신구 ' + equipData.accessory.length + ')';
+        invalidateLookupCache(['equipment']);
+    } catch (e) { toast(e.message, false); }
+};
+$('#equipSave').onclick = async () => {
+    if (!confirm('Equipment 데이터를 저장합니다. 계속?')) return;
+    try { await saveKey('Equipment', equipData); invalidateLookupCache(['equipment']); toast('✅ Equipment 저장 완료'); }
+    catch (e) { toast(e.message, false); }
+};
+if ($('#equipFilter')) $('#equipFilter').addEventListener('input', e => { equipFilterText = e.target.value; renderEquip(); });
+TAB_LOADERS.equipment = () => $('#equipReload').click();
+
+// ============================================================================
+// FASHION 에디터  ( data: Array<{name, primary_card:[ids], requireStar?, option?:{stat?,plusStat?}}> )
+// ============================================================================
+let fashionData = [];
+let fashionFilterText = '';
+const FASHION_KNOWN_FIELDS = new Set(['name', 'primary_card', 'requireStar', 'option']);
+
+function fashionPrimaryCardRow(skin) {
+    const wrap = el('div', { class: 'tag-list' });
+    if (!Array.isArray(skin.primary_card)) skin.primary_card = [];
+    function repaint() {
+        wrap.innerHTML = '';
+        if (skin.primary_card.length === 0) wrap.appendChild(el('span', { class: 'muted', style: { fontSize: '12px' } }, '아직 설정되지 않았습니다.'));
+        skin.primary_card.forEach((cardId, i) => {
+            const pill = el('span', { class: 'tag-pill' });
+            const labelNode = el('span', null, '#' + cardId);
+            pill.appendChild(labelNode);
+            getCards().then(cards => {
+                const c = cards.find(x => x.id === Number(cardId));
+                if (c) labelNode.textContent = c.name + ' #' + cardId;
+            }).catch(() => {});
+            pill.appendChild(el('button', { type: 'button', title: '제거', onclick: () => { skin.primary_card.splice(i, 1); repaint(); } }, '✕'));
+            wrap.appendChild(pill);
+        });
+        wrap.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => pickCard(card => { if (!skin.primary_card.includes(card.id)) skin.primary_card.push(card.id); repaint(); }) }, '+ 카드 추가'));
+    }
+    repaint();
+    return wrap;
+}
+
+function fashionCard(skin, index) {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+            el('span', { class: 'tag b' }, '#' + index),
+            ' ',
+            skin.name || '(이름 없음)'
+        ),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            if (!confirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?')) return;
+            fashionData.splice(index, 1);
+            renderFashion();
+        } }, '삭제')
+    ));
+
+    card.appendChild(sectionTitle('기본 정보', '📝'));
+    const row1 = el('div', { class: 'row' });
+    row1.appendChild(el('div', null, el('label', null, '이름'),
+        el('input', { value: skin.name || '', placeholder: '스킨 이름', oninput: e => skin.name = e.target.value })
+    ));
+    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '필요 표시 성급 (1–12)'),
+        el('input', { type: 'number', min: 0, max: 12, value: typeof skin.requireStar === 'number' ? skin.requireStar : '', placeholder: '예: 6',
+            oninput: e => { const v = e.target.value; if (v === '') delete skin.requireStar; else skin.requireStar = Number(v); } })
+    ));
+    card.appendChild(row1);
+
+    card.appendChild(sectionTitle('적용 가능한 캐릭터 카드', '🎭'));
+    card.appendChild(fashionPrimaryCardRow(skin));
+
+    card.appendChild(sectionTitle('능력치 옵션', '✨'));
+    if (!skin.option || typeof skin.option !== 'object') skin.option = {};
+    if (!skin.option.stat || typeof skin.option.stat !== 'object') skin.option.stat = {};
+    if (!skin.option.plusStat || typeof skin.option.plusStat !== 'object') skin.option.plusStat = {};
+    const row3 = el('div', { class: 'split' });
+    row3.appendChild(statEditor('기본 능력치', '⚔️', skin.option.stat, FLAT_STAT_DEFS));
+    row3.appendChild(statEditor('비율 증가', '📈', skin.option.plusStat, PLUS_STAT_DEFS));
+    card.appendChild(row3);
+
+    const extraKeys = Object.keys(skin).filter(k => !FASHION_KNOWN_FIELDS.has(k));
+    if (extraKeys.length > 0) {
+        const extraObj = {};
+        extraKeys.forEach(k => { extraObj[k] = skin[k]; });
+        card.appendChild(sectionTitle('기타 필드 (raw JSON)', '⚙️'));
+        card.appendChild(jsonSubEditor('', () => extraObj, v => {
+            extraKeys.forEach(k => delete skin[k]);
+            if (v && typeof v === 'object') Object.keys(v).forEach(k => { if (!FASHION_KNOWN_FIELDS.has(k)) skin[k] = v[k]; });
+        }, '', 3));
+    }
+    return card;
+}
+
+function renderFashion() {
+    const list = $('#fashionList'); list.innerHTML = '';
+    if (!Array.isArray(fashionData)) fashionData = [];
+    const q = (fashionFilterText || '').trim().toLowerCase();
+    let shown = 0;
+    fashionData.forEach((skin, idx) => {
+        if (!skin) return;
+        if (q && !((skin.name || '') + ' ' + idx).toLowerCase().includes(q)) return;
+        list.appendChild(fashionCard(skin, idx));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '스킨이 없습니다.'));
+}
+$('#fashionAdd').onclick = () => { fashionData.push({ name: '', primary_card: [], option: {} }); fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = ''; renderFashion(); };
+$('#fashionReload').onclick = async () => {
+    try { fashionData = (await loadKey('Fashion')) || []; renderFashion(); $('#fashionStatus').textContent = '로드 완료 (' + fashionData.length + '개)'; invalidateLookupCache(['fashion']); }
+    catch (e) { toast(e.message, false); }
+};
+$('#fashionSave').onclick = async () => {
+    if (!confirm('Fashion 데이터를 저장합니다. 계속?')) return;
+    try { await saveKey('Fashion', fashionData); invalidateLookupCache(['fashion']); toast('✅ Fashion 저장 완료'); }
+    catch (e) { toast(e.message, false); }
+};
+if ($('#fashionFilter')) $('#fashionFilter').addEventListener('input', e => { fashionFilterText = e.target.value; renderFashion(); });
+TAB_LOADERS.fashion = () => $('#fashionReload').click();
+
+// ============================================================================
+// 거래 로그 (TradeLog)
+// ============================================================================
+let tradeLogData = [];
+let tradeLogFilter = { q: '', tradeType: '', kind: '' };
+
+const TRADE_TYPE_CLASS = { '경매장': 't-auction', '삽니다': 't-buyorder' };
+const KIND_CLASS = { card: 'k-card', equipment: 'k-equipment', item: 'k-item' };
+const KIND_LABEL_FALLBACK = { card: '캐릭터 카드', equipment: '장비', item: '아이템' };
+const CURRENCY_CLASS = { gold: 'cur-gold', garnet: 'cur-garnet' };
+const CURRENCY_LABEL = { gold: '골드', garnet: '가넷' };
+
+function formatTradeLogTime(ms) {
+    if (!ms) return '-';
+    const d = new Date(Number(ms) + 9 * 60 * 60 * 1000); // KST 환산
+    const pad = n => String(n).padStart(2, '0');
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate())
+        + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+}
+
+function comma(n) { return Number(n || 0).toLocaleString('ko-KR'); }
+
+function tradeLogItemMeta(log) {
+    const parts = [];
+    const p = log.payload || {};
+    if (log.kind === 'card') {
+        if (typeof p.star === 'number') parts.push((p.star + 1) + '성');
+        if (p.type) parts.push(p.type);
+        if (p.skin) parts.push('스킨: ' + p.skin);
+    } else if (log.kind === 'equipment') {
+        if (log.rarity) parts.push('<' + log.rarity + '>');
+        if (typeof p.level === 'number' && p.level > 0) parts.push('+' + p.level);
+    }
+    if (log.fee && Number(log.fee) > 0) parts.push('수수료 ' + comma(log.fee));
+    return parts.join(' · ');
+}
+
+function tradeLogRow(log) {
+    const row = el('div', { class: 'log-row' });
+    row.appendChild(el('div', { class: 'col-time', title: log.id }, formatTradeLogTime(log.time)));
+
+    const tags = el('div', { class: 'col-tags' });
+    tags.appendChild(el('span', { class: 'tag ' + (TRADE_TYPE_CLASS[log.tradeType] || '') }, log.tradeType || '?'));
+    tags.appendChild(el('span', { class: 'tag ' + (KIND_CLASS[log.kind] || '') }, log.kindLabel || KIND_LABEL_FALLBACK[log.kind] || log.kind || '?'));
+    row.appendChild(tags);
+
+    const itemCell = el('div', { class: 'col-item' });
+    itemCell.appendChild(el('div', { class: 'iname' }, log.itemName || '-'));
+    const meta = tradeLogItemMeta(log);
+    if (meta) itemCell.appendChild(el('div', { class: 'imeta' }, meta));
+    row.appendChild(itemCell);
+
+    row.appendChild(el('div', { class: 'col-count' }, 'x' + comma(log.count || 1)));
+
+    const priceCell = el('div', { class: 'col-price' });
+    const curClass = CURRENCY_CLASS[log.currency] || '';
+    const curLabel = CURRENCY_LABEL[log.currency] || log.currency || '?';
+    priceCell.appendChild(el('div', { class: 'total' }, comma(log.totalPrice || 0), ' ', el('span', { class: 'tag ' + curClass, style: { marginLeft: '4px' } }, curLabel)));
+    if (Number(log.count || 1) > 1) priceCell.appendChild(el('span', { class: 'unit' }, '단가 ' + comma(log.unitPrice || 0)));
+    row.appendChild(priceCell);
+
+    const parties = el('div', { class: 'col-parties' });
+    parties.appendChild(el('div', { class: 'party' },
+        el('span', { class: 'role' }, '구매'),
+        el('span', { class: 'name' }, log.buyer || '-')
+    ));
+    parties.appendChild(el('div', { class: 'party' },
+        el('span', { class: 'role' }, '판매'),
+        el('span', { class: 'name' }, log.seller || '-')
+    ));
+    row.appendChild(parties);
+
+    return row;
+}
+
+function renderTradeLog() {
+    const list = $('#tradeLogList'); list.innerHTML = '';
+    const q = (tradeLogFilter.q || '').trim().toLowerCase();
+    const tt = tradeLogFilter.tradeType;
+    const kk = tradeLogFilter.kind;
+    let shown = 0;
+    tradeLogData.forEach(log => {
+        if (tt && log.tradeType !== tt) return;
+        if (kk && log.kind !== kk) return;
+        if (q) {
+            const hay = ((log.buyer || '') + ' ' + (log.seller || '') + ' ' + (log.itemName || '')).toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        list.appendChild(tradeLogRow(log));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, tradeLogData.length === 0 ? '아직 기록된 거래가 없습니다.' : '검색 결과가 없습니다.'));
+}
+
+async function loadTradeLog() {
+    $('#tradeLogStatus').textContent = '불러오는 중...';
+    try {
+        const data = await api('/api/admin/tradelog?limit=2000');
+        tradeLogData = data.items || [];
+        $('#tradeLogStatus').textContent = '총 ' + tradeLogData.length + '건';
+        renderTradeLog();
+    } catch (e) {
+        $('#tradeLogStatus').textContent = '';
+        toast(e.message, false);
+    }
+}
+
+if ($('#tradeLogReload')) $('#tradeLogReload').onclick = loadTradeLog;
+if ($('#tradeLogClear')) $('#tradeLogClear').onclick = async () => {
+    if (!confirm('거래 로그 전체를 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+    try { await api('/api/admin/tradelog', { method: 'DELETE' }); tradeLogData = []; renderTradeLog(); $('#tradeLogStatus').textContent = '삭제 완료'; toast('거래 로그를 삭제했습니다.'); }
+    catch (e) { toast(e.message, false); }
+};
+if ($('#tradeLogFilter')) $('#tradeLogFilter').addEventListener('input', e => { tradeLogFilter.q = e.target.value; renderTradeLog(); });
+if ($('#tradeLogType')) $('#tradeLogType').onchange = e => { tradeLogFilter.tradeType = e.target.value; renderTradeLog(); };
+if ($('#tradeLogKind')) $('#tradeLogKind').onchange = e => { tradeLogFilter.kind = e.target.value; renderTradeLog(); };
+TAB_LOADERS.tradelog = loadTradeLog;
+
+// ============================================================================
 // RAW JSON 에디터
 // ============================================================================
 const rawSel = $('#rawKey');

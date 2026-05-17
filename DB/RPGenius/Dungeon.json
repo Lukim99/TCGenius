@@ -20,13 +20,59 @@
             "def": 5,
             "hp": 130,
             "reward": [
-                { "type": "경험치", "count": { "min": 65, "max": 70 } },
-                { "type": "골드", "count": { "min": 50, "max": 75 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 10, "max": 25 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 42, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 65,
+                        "max": 70
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 50,
+                        "max": 75
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 10,
+                        "max": 25
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 42,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "피지컬텐",
@@ -49,13 +95,59 @@
             "def": 12,
             "hp": 275,
             "reward": [
-                { "type": "경험치", "count": { "min": 115, "max": 135 } },
-                { "type": "골드", "count": { "min": 60, "max": 95 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 12, "max": 27 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 43, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 115,
+                        "max": 135
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 60,
+                        "max": 95
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 12,
+                        "max": 27
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 43,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "극한의농락전",
@@ -78,13 +170,59 @@
             "def": 23,
             "hp": 493,
             "reward": [
-                { "type": "경험치", "count": { "min": 240, "max": 265 } },
-                { "type": "골드", "count": { "min": 90, "max": 145 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 15, "max": 34 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 44, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 240,
+                        "max": 265
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 90,
+                        "max": 145
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 15,
+                        "max": 34
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 44,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "흑백지대",
@@ -107,13 +245,59 @@
             "def": 36,
             "hp": 720,
             "reward": [
-                { "type": "경험치", "count": { "min": 430, "max": 470 } },
-                { "type": "골드", "count": { "min": 150, "max": 220 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 18, "max": 40 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 45, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 430,
+                        "max": 470
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 150,
+                        "max": 220
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 18,
+                        "max": 40
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 45,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "황금 광산",
@@ -136,13 +320,59 @@
             "def": 36,
             "hp": 720,
             "reward": [
-                { "type": "경험치", "count": { "min": 28, "max": 56 } },
-                { "type": "골드", "count": { "min": 290, "max": 460 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 18, "max": 40 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1, "max": 1 }, "roll": 0.7 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 28,
+                        "max": 56
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 290,
+                        "max": 460
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 18,
+                        "max": 40
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 67,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.7
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "관찰자들의 도시",
@@ -165,13 +395,59 @@
             "def": 54,
             "hp": 1020,
             "reward": [
-                { "type": "경험치", "count": { "min": 680, "max": 730 } },
-                { "type": "골드", "count": { "min": 210, "max": 310 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 22, "max": 46 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 46, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 680,
+                        "max": 730
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 210,
+                        "max": 310
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 22,
+                        "max": 46
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 46,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "파산게임장",
@@ -194,13 +470,59 @@
             "def": 72,
             "hp": 1380,
             "reward": [
-                { "type": "경험치", "count": { "min": 970, "max": 1050 } },
-                { "type": "골드", "count": { "min": 300, "max": 440 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 26, "max": 54 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 47, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 970,
+                        "max": 1050
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 300,
+                        "max": 440
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 26,
+                        "max": 54
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 47,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "월도랜드1",
@@ -223,13 +545,59 @@
             "def": 90,
             "hp": 1800,
             "reward": [
-                { "type": "경험치", "count": { "min": 1360, "max": 1470 } },
-                { "type": "골드", "count": { "min": 380, "max": 570 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 30, "max": 62 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 48, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 1360,
+                        "max": 1470
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 380,
+                        "max": 570
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 30,
+                        "max": 62
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 48,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "월도랜드2",
@@ -252,13 +620,59 @@
             "def": 112,
             "hp": 2280,
             "reward": [
-                { "type": "경험치", "count": { "min": 1850, "max": 2000 } },
-                { "type": "골드", "count": { "min": 490, "max": 720 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 34, "max": 70 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 49, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 1850,
+                        "max": 2000
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 490,
+                        "max": 720
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 34,
+                        "max": 70
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 49,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "월도랜드3",
@@ -281,13 +695,59 @@
             "def": 135,
             "hp": 2880,
             "reward": [
-                { "type": "경험치", "count": { "min": 2430, "max": 2620 } },
-                { "type": "골드", "count": { "min": 600, "max": 900 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 38, "max": 78 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 50, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 2430,
+                        "max": 2620
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 600,
+                        "max": 900
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 38,
+                        "max": 78
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 50,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "더지니어서 현장",
@@ -310,13 +770,59 @@
             "def": 158,
             "hp": 3600,
             "reward": [
-                { "type": "경험치", "count": { "min": 3200, "max": 3460 } },
-                { "type": "골드", "count": { "min": 760, "max": 1130 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 42, "max": 86 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 51, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 3200,
+                        "max": 3460
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 760,
+                        "max": 1130
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 42,
+                        "max": 86
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 51,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "해고전쟁시대",
@@ -339,13 +845,59 @@
             "def": 189,
             "hp": 4440,
             "reward": [
-                { "type": "경험치", "count": { "min": 4080, "max": 4400 } },
-                { "type": "골드", "count": { "min": 930, "max": 1380 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 46, "max": 94 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 52, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 4080,
+                        "max": 4400
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 930,
+                        "max": 1380
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 46,
+                        "max": 94
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 52,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "밍닝스플랜",
@@ -368,13 +920,59 @@
             "def": 225,
             "hp": 5400,
             "reward": [
-                { "type": "경험치", "count": { "min": 5150, "max": 5550 } },
-                { "type": "골드", "count": { "min": 1130, "max": 1700 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 50, "max": 102 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 53, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 5150,
+                        "max": 5550
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 1130,
+                        "max": 1700
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 50,
+                        "max": 102
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 53,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "로투지",
@@ -397,13 +995,59 @@
             "def": 270,
             "hp": 6480,
             "reward": [
-                { "type": "경험치", "count": { "min": 6420, "max": 6920 } },
-                { "type": "골드", "count": { "min": 1350, "max": 2020 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 54, "max": 110 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 54, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 6420,
+                        "max": 6920
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 1350,
+                        "max": 2020
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 54,
+                        "max": 110
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 54,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "가넷게임",
@@ -426,13 +1070,59 @@
             "def": 315,
             "hp": 7680,
             "reward": [
-                { "type": "경험치", "count": { "min": 7880, "max": 8490 } },
-                { "type": "골드", "count": { "min": 1600, "max": 2400 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 58, "max": 118 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 55, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 7880,
+                        "max": 8490
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 1600,
+                        "max": 2400
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 58,
+                        "max": 118
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 55,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "예언의결속",
@@ -455,13 +1145,59 @@
             "def": 360,
             "hp": 9000,
             "reward": [
-                { "type": "경험치", "count": { "min": 9730, "max": 10470 } },
-                { "type": "골드", "count": { "min": 1860, "max": 2770 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 62, "max": 126 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 56, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 9730,
+                        "max": 10470
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 1860,
+                        "max": 2770
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 62,
+                        "max": 126
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 56,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "스코어서바이벌",
@@ -484,13 +1220,59 @@
             "def": 405,
             "hp": 10560,
             "reward": [
-                { "type": "경험치", "count": { "min": 11870, "max": 12780 } },
-                { "type": "골드", "count": { "min": 2200, "max": 3280 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 66, "max": 134 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 57, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 11870,
+                        "max": 12780
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 2200,
+                        "max": 3280
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 66,
+                        "max": 134
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 57,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "독재자게임장",
@@ -513,13 +1295,59 @@
             "def": 450,
             "hp": 12240,
             "reward": [
-                { "type": "경험치", "count": { "min": 14400, "max": 15500 } },
-                { "type": "골드", "count": { "min": 2540, "max": 3780 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 70, "max": 142 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 58, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 14400,
+                        "max": 15500
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 2540,
+                        "max": 3780
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 70,
+                        "max": 142
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 58,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "중달",
@@ -542,13 +1370,59 @@
             "def": 495,
             "hp": 14160,
             "reward": [
-                { "type": "경험치", "count": { "min": 17320, "max": 18640 } },
-                { "type": "골드", "count": { "min": 2960, "max": 4410 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 74, "max": 150 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 59, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 17320,
+                        "max": 18640
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 2960,
+                        "max": 4410
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 74,
+                        "max": 150
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 59,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "이세계대저택",
@@ -571,13 +1445,59 @@
             "def": 563,
             "hp": 16200,
             "reward": [
-                { "type": "경험치", "count": { "min": 20920, "max": 22520 } },
-                { "type": "골드", "count": { "min": 3380, "max": 5040 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 78, "max": 158 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 60, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 20920,
+                        "max": 22520
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 3380,
+                        "max": 5040
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 78,
+                        "max": 158
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 60,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "높동",
@@ -600,13 +1520,59 @@
             "def": 630,
             "hp": 18600,
             "reward": [
-                { "type": "경험치", "count": { "min": 25300, "max": 27230 } },
-                { "type": "골드", "count": { "min": 3900, "max": 5800 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 82, "max": 166 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 61, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 25300,
+                        "max": 27230
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 3900,
+                        "max": 5800
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 82,
+                        "max": 166
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 61,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "마동",
@@ -629,13 +1595,59 @@
             "def": 698,
             "hp": 21360,
             "reward": [
-                { "type": "경험치", "count": { "min": 30650, "max": 32990 } },
-                { "type": "골드", "count": { "min": 4400, "max": 6550 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 86, "max": 174 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 62, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 30650,
+                        "max": 32990
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 4400,
+                        "max": 6550
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 86,
+                        "max": 174
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 62,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "빌라",
@@ -658,13 +1670,59 @@
             "def": 765,
             "hp": 24600,
             "reward": [
-                { "type": "경험치", "count": { "min": 36980, "max": 39790 } },
-                { "type": "골드", "count": { "min": 5080, "max": 7560 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 90, "max": 182 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 63, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 36980,
+                        "max": 39790
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 5080,
+                        "max": 7560
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 90,
+                        "max": 182
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 63,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "리조트",
@@ -687,13 +1745,59 @@
             "def": 855,
             "hp": 28200,
             "reward": [
-                { "type": "경험치", "count": { "min": 44760, "max": 48160 } },
-                { "type": "골드", "count": { "min": 5760, "max": 8570 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 94, "max": 190 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 64, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 44760,
+                        "max": 48160
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 5760,
+                        "max": 8570
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 94,
+                        "max": 190
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 64,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     },
     {
         "name": "더타임모텔",
@@ -716,12 +1820,58 @@
             "def": 945,
             "hp": 32400,
             "reward": [
-                { "type": "경험치", "count": { "min": 54490, "max": 58630 } },
-                { "type": "골드", "count": { "min": 6610, "max": 9810 } },
-                { "type": "아이템", "item_id": 0, "count": { "min": 98, "max": 198 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 65, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1, "max": 1 }, "roll": 0.4 }
-            ]
-        }
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 54490,
+                        "max": 58630
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 6610,
+                        "max": 9810
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 98,
+                        "max": 198
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 65,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0,
+            "critMul": 1.5,
+            "critDef": 0,
+            "cmb": 0,
+            "maxCmb": 1
+        },
+        "crit": 0,
+        "critMul": 1.5,
+        "critDef": 0,
+        "cmb": 0,
+        "maxCmb": 1
     }
 ]
