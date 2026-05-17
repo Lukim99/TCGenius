@@ -21,7 +21,25 @@ const api = async url => {
     if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
     return x;
 };
-const comma = n => Number(n || 0).toLocaleString('ko-KR');
+const KOREAN_BIG_UNITS = ['', '만', '억', '조', '경', '해', '자', '양', '구', '간', '정', '재', '극'];
+const comma = value => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return String(value);
+    const abs = Math.abs(n);
+    if (abs < 1_000_000_000) return n.toLocaleString('ko-KR');
+    const sign = n < 0 ? '-' : '';
+    const groups = [];
+    let remaining = Math.trunc(abs);
+    while (remaining > 0) {
+        groups.push(remaining % 10000);
+        remaining = Math.floor(remaining / 10000);
+    }
+    let topIndex = groups.length - 1;
+    while (topIndex > 0 && groups[topIndex] === 0) topIndex--;
+    const parts = [String(groups[topIndex]) + KOREAN_BIG_UNITS[topIndex]];
+    if (topIndex > 0 && groups[topIndex - 1] > 0) parts.push(String(groups[topIndex - 1]) + KOREAN_BIG_UNITS[topIndex - 1]);
+    return sign + parts.join(' ');
+};
 const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value || 0) / Number(max || 0)) * 100 : 0));
 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };

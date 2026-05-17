@@ -194,8 +194,28 @@ function findCharacterCardByName(name) {
     return { index, card: characterCards[index] };
 }
 
+const KOREAN_BIG_UNITS = ['', '만', '억', '조', '경', '해', '자', '양', '구', '간', '정', '재', '극'];
+
 function comma(value) {
-    return Number(value || 0).toLocaleString('ko-KR');
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return String(value);
+    const abs = Math.abs(n);
+    if (abs < 1_000_000_000) return n.toLocaleString('ko-KR');
+    const sign = n < 0 ? '-' : '';
+    const groups = [];
+    let remaining = Math.trunc(abs);
+    while (remaining > 0) {
+        groups.push(remaining % 10000);
+        remaining = Math.floor(remaining / 10000);
+    }
+    let topIndex = groups.length - 1;
+    while (topIndex > 0 && groups[topIndex] === 0) topIndex--;
+    const parts = [];
+    parts.push(String(groups[topIndex]) + KOREAN_BIG_UNITS[topIndex]);
+    if (topIndex > 0 && groups[topIndex - 1] > 0) {
+        parts.push(String(groups[topIndex - 1]) + KOREAN_BIG_UNITS[topIndex - 1]);
+    }
+    return sign + parts.join(' ');
 }
 
 function formatRoll(value) {
