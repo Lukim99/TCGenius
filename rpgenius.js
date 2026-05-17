@@ -327,7 +327,7 @@ function formatEquipmentStatLines(equipment) {
         critMul: '치명타 피해량',
         critDef: '치명타 피해 감소율',
         cmb: '연격 확률',
-        maxCmb: '최대 공격 횟수',
+        maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해'
     };
@@ -960,7 +960,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const critMul = Math.max(1, Number(stats.critMul || 1.4));
     const critDef = Math.max(0, Math.min(1, Number(stats.critDef || 0)));
     const cmb = Math.max(0, Math.min(1, Number(stats.cmb || 0)));
-    const maxCmb = Math.max(1, Math.floor(Number(stats.maxCmb || 1)));
+    const maxCmb = 1 + Math.max(1, Math.floor(Number(stats.maxCmb || 0)));
     const pnt = Math.max(0, Number(stats.pnt || 0));
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
@@ -1045,7 +1045,7 @@ function formatMyInfo(user) {
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
     lines.push('치명타 피해 감소율: ' + formatStatValue('crit', stats.critDef).replace(/^\+/, ''));
     lines.push('연격 확률: ' + formatStatValue('crit', stats.cmb).replace(/^\+/, ''));
-    lines.push('최대 공격 횟수: ' + comma(stats.maxCmb || 1));
+    lines.push('최대 공격 횟수: ' + comma(1 + Math.max(1, Math.floor(Number(stats.maxCmb || 0)))));
     return lines.join('\n');
 }
 
@@ -1075,7 +1075,7 @@ function getDungeonRecommendedCP(dungeon) {
     const def = Number(E.atk || 0) * T.DEF_RATIO;
     const effDef = Math.max(0, def - Number(E.pnt || 0));
     const eliteExpectedCrit = 1 + Math.max(0, Math.min(1, Number(E.crit || 0))) * (Math.max(1, Number(E.critMul || 1.5)) - 1);
-    const eliteMaxCmb = Math.max(1, Math.floor(Number(E.maxCmb || 1)));
+    const eliteMaxCmb = 1 + Math.max(1, Math.floor(Number(E.maxCmb || 0)));
     const eliteCmb = Math.max(0, Math.min(1, Number(E.cmb || 0)));
     const eliteExpectedCombo = Array.from({ length: eliteMaxCmb }, (_, i) => Math.pow(eliteCmb, i)).reduce((sum, value) => sum + value, 0);
     const incomingPerHit = Number(E.atk || 0) * eliteExpectedCrit * eliteExpectedCombo * 100 / (100 + effDef);
@@ -1153,7 +1153,8 @@ function getCombatStats(data) {
 
 function getComboHitCount(stats) {
     const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
-    const maxHits = Math.max(1, Math.floor(Number(stats && stats.maxCmb || 1)));
+    const additional = Math.max(1, Math.floor(Number(stats && stats.maxCmb || 0)));
+    const maxHits = 1 + additional;
     let hitCount = 1;
     while (hitCount < maxHits && Math.random() < chance) hitCount++;
     return hitCount;

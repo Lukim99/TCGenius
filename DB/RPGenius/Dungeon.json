@@ -137,7 +137,7 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
+            "crit": 0.05,
             "critMul": 1.5,
             "critDef": 0,
             "cmb": 0,
@@ -218,7 +218,7 @@
             "cmb": 0,
             "maxCmb": 1
         },
-        "crit": 0,
+        "crit": 0.05,
         "critMul": 1.5,
         "critDef": 0,
         "cmb": 0,
@@ -287,7 +287,7 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
+            "crit": 0.1,
             "critMul": 1.5,
             "critDef": 0,
             "cmb": 0,
@@ -362,7 +362,7 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
+            "crit": 0.1,
             "critMul": 1.5,
             "critDef": 0,
             "cmb": 0,
@@ -437,13 +437,13 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.15,
+            "critMul": 1.55,
             "critDef": 0,
             "cmb": 0,
             "maxCmb": 1
         },
-        "crit": 0,
+        "crit": 0.05,
         "critMul": 1.5,
         "critDef": 0,
         "cmb": 0,
@@ -512,13 +512,13 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.15,
+            "critMul": 1.6,
             "critDef": 0,
             "cmb": 0,
             "maxCmb": 1
         },
-        "crit": 0,
+        "crit": 0.05,
         "critMul": 1.5,
         "critDef": 0,
         "cmb": 0,
@@ -587,13 +587,13 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.2,
+            "critMul": 1.7,
             "critDef": 0,
             "cmb": 0,
             "maxCmb": 1
         },
-        "crit": 0,
+        "crit": 0.05,
         "critMul": 1.5,
         "critDef": 0,
         "cmb": 0,
@@ -662,13 +662,13 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.2,
+            "critMul": 1.7,
             "critDef": 0,
             "cmb": 0,
             "maxCmb": 1
         },
-        "crit": 0,
+        "crit": 0.1,
         "critMul": 1.5,
         "critDef": 0,
         "cmb": 0,
@@ -737,17 +737,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.2,
+            "critMul": 1.7,
             "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "cmb": 0.05,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.1,
+        "critMul": 1.55,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.05,
+        "maxCmb": 0
     },
     {
         "name": "더지니어서 현장",
@@ -812,17 +812,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.2,
+            "critMul": 1.7,
             "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "cmb": 0.05,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.1,
+        "critMul": 1.55,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.05,
+        "maxCmb": 0
     },
     {
         "name": "해고전쟁시대",
@@ -887,17 +887,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.25,
+            "critMul": 1.7,
             "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "cmb": 0.05,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.05,
+        "maxCmb": 0
     },
     {
         "name": "밍닝스플랜",
@@ -962,17 +962,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
+            "crit": 0.25,
+            "critMul": 1.7,
             "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "cmb": 0.05,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.05,
+        "maxCmb": 0
     },
     {
         "name": "로투지",
@@ -1037,17 +1037,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.25,
+            "critMul": 1.7,
+            "critDef": 0.1,
+            "cmb": 0.1,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.05,
+        "maxCmb": 0
     },
     {
         "name": "가넷게임",
@@ -1112,17 +1112,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.25,
+            "critMul": 1.8,
+            "critDef": 0.1,
+            "cmb": 0.1,
+            "maxCmb": 0
         },
-        "crit": 0,
+        "crit": 0.15,
         "critMul": 1.5,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.1,
+        "maxCmb": 0
     },
     {
         "name": "예언의결속",
@@ -1187,17 +1187,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.25,
+            "critMul": 1.8,
+            "critDef": 0.1,
+            "cmb": 0.1,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.1,
+        "maxCmb": 0
     },
     {
         "name": "스코어서바이벌",
@@ -1262,17 +1262,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.25,
+            "critMul": 1.8,
+            "critDef": 0.1,
+            "cmb": 0.1,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.1,
+        "maxCmb": 0
     },
     {
         "name": "독재자게임장",
@@ -1337,17 +1337,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.25,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.1,
+        "maxCmb": 0
     },
     {
         "name": "중달",
@@ -1412,17 +1412,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "이세계대저택",
@@ -1487,17 +1487,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "높동",
@@ -1562,17 +1562,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "마동",
@@ -1637,17 +1637,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "빌라",
@@ -1712,17 +1712,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "리조트",
@@ -1787,17 +1787,17 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     },
     {
         "name": "더타임모텔",
@@ -1862,16 +1862,16 @@
                     "roll": 0.4
                 }
             ],
-            "crit": 0,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
         },
-        "crit": 0,
-        "critMul": 1.5,
+        "crit": 0.15,
+        "critMul": 1.6,
         "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "cmb": 0.15,
+        "maxCmb": 0
     }
 ]

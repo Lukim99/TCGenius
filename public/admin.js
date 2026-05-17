@@ -896,7 +896,7 @@ const FLAT_STAT_DEFS = [
     { key: 'critMul', label: '치명타 피해량', kind: 'percent' },
     { key: 'critDef', label: '치명타 피해 감소율', kind: 'percent' },
     { key: 'cmb', label: '연격 확률', kind: 'percent' },
-    { key: 'maxCmb', label: '최대 공격 횟수', kind: 'int' },
+    { key: 'maxCmb', label: '추가 공격 횟수', kind: 'int' },
     { key: 'skillCooldown', label: '스킬 쿨타임 (ms, 음수=감소)', kind: 'cooldown' },
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' }
 ];
