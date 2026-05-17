@@ -141,6 +141,60 @@ server.get('/api/profile', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/profile/:name', requireUser, async (req, res) => {
+    try {
+        const name = String(req.params.name || '').trim();
+        if (!name) return res.status(400).json({ error: '닉네임이 비어있습니다.' });
+        const user = await rpgenius.getRPGUserByName(name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const profile = buildUserProfile(user);
+        profile.viewerName = req.session.name;
+        profile.isOwn = (user.name == req.session.name);
+        res.json(profile);
+    } catch (e) {
+        console.error('profile-by-name error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/ranking', requireUser, async (req, res) => {
+    try {
+        const users = await rpgenius.getAllRPGUsers();
+        const rows = users.map(u => {
+            const level = Number(u.level || 1);
+            const exp = Number(u.exp || 0);
+            let totalExp = exp;
+            for (let lv = 1; lv < level; lv++) totalExp += Number(rpgenius.getMaxExpForLevel(lv) || 0);
+            return {
+                name: u.name,
+                level,
+                cp: rpgenius.calculateCombatPower(u).total,
+                totalExp
+            };
+        });
+        const cp = rows.slice().sort((a, b) => b.cp - a.cp || b.level - a.level || a.name.localeCompare(b.name, 'ko-KR'))
+            .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.cp }));
+        const exp = rows.slice().sort((a, b) => b.totalExp - a.totalExp || a.name.localeCompare(b.name, 'ko-KR'))
+            .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.totalExp }));
+        const me = req.session.name;
+        const myCp = cp.find(r => r.name == me) || null;
+        const myExp = exp.find(r => r.name == me) || null;
+        res.json({ cp, exp, total: rows.length, me: { name: me, cp: myCp, exp: myExp } });
+    } catch (e) {
+        console.error('ranking error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/dex/equipment', requireUser, (req, res) => {
+    try {
+        res.json(buildEquipmentDex());
+    } catch (e) {
+        console.error('dex error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.get('/api/inventory/:kind', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -658,6 +712,108 @@ function buildInventoryEquipment(user) {
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => add(accessories[key], 'accessory', true));
     return result;
+}
+
+const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
+
+function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
+    if (!data) return null;
+    const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
+    const baseLines = String(rpgenius.formatCurrentEquipmentStatLines(data, 0) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+    const upgradeLines = upgrades.map((_, i) => {
+        const lvl = i + 1;
+        const lines = String(rpgenius.formatCurrentEquipmentStatLines(data, lvl) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+        return { level: lvl, statLines: lines };
+    });
+    let evolution = null;
+    if (typeof data.evolution != 'undefined') {
+        const targetId = Number(data.evolution);
+        const targetData = getEquipmentData(type, targetId);
+        evolution = {
+            targetType: type,
+            targetTypeLabel: typeLabel,
+            targetId,
+            targetName: targetData ? targetData.name : '알 수 없음',
+            targetRarity: targetData ? targetData.rarity : null,
+            targetIconUrl: targetData ? getEquipmentIconUrl(targetData) : null,
+            targetFrameUrl: targetData ? getAuctionFrameUrl('equipment', targetData.rarity) : null,
+            requireLevel: 10,
+            requireCount: 3
+        };
+    }
+    const recipeKey = type + ':' + id;
+    const recipe = recipeIndex[recipeKey] || null;
+    return {
+        type,
+        typeLabel,
+        id,
+        name: data.name,
+        rarity: data.rarity,
+        desc: data.desc || '',
+        noTrade: data.no_trade === true,
+        iconUrl: getEquipmentIconUrl(data),
+        frameUrl: getAuctionFrameUrl('equipment', data.rarity),
+        baseStatLines: baseLines,
+        upgrades: upgradeLines,
+        maxUpgradeLevel: upgrades.length,
+        evolution,
+        recipe
+    };
+}
+
+function buildRecipeIndex() {
+    const items = rpgenius.getDataCache('Item', []);
+    const recipes = rpgenius.getDataCache('Recipe', []);
+    const index = {};
+    (recipes || []).forEach(recipe => {
+        if (!recipe || !Array.isArray(recipe.crafted)) return;
+        recipe.crafted.forEach(crafted => {
+            if (!crafted || !crafted.type) return;
+            const slotKey = crafted.type == '무기' ? 'weapon' : crafted.type == '갑옷' ? 'armor' : crafted.type == '장신구' ? 'accessory' : null;
+            if (!slotKey) return;
+            const targetId = Number(crafted.weapon_id != null ? crafted.weapon_id : crafted.armor_id != null ? crafted.armor_id : crafted.accessory_id);
+            if (!Number.isFinite(targetId)) return;
+            const materials = (recipe.materials || []).map(mat => {
+                if (!mat) return null;
+                if (mat.type == '아이템') {
+                    const itemData = items[mat.item_id];
+                    return {
+                        type: 'item',
+                        typeLabel: '아이템',
+                        name: itemData ? itemData.name : '알 수 없음',
+                        count: Number(mat.count || 0),
+                        iconUrl: itemData ? getItemIconUrl(itemData) : null,
+                        frameUrl: itemData ? getAuctionFrameUrl('item') : null
+                    };
+                }
+                if (mat.type == '골드') return { type: 'gold', typeLabel: '골드', name: '골드', count: Number(mat.count || 0) };
+                if (mat.type == '가넷') return { type: 'garnet', typeLabel: '가넷', name: '가넷', count: Number(mat.count || 0) };
+                return { type: 'unknown', typeLabel: String(mat.type || ''), name: String(mat.type || ''), count: Number(mat.count || 0) };
+            }).filter(Boolean);
+            index[slotKey + ':' + targetId] = { name: recipe.name, materials };
+        });
+    });
+    return index;
+}
+
+function buildEquipmentDex() {
+    const eq = rpgenius.getDataCache('Equipment', {});
+    const recipeIndex = buildRecipeIndex();
+    const sortByRarity = (a, b) => {
+        const ai = RARITY_ORDER.indexOf(a.rarity);
+        const bi = RARITY_ORDER.indexOf(b.rarity);
+        const ax = ai < 0 ? 999 : ai;
+        const bx = bi < 0 ? 999 : bi;
+        if (ax != bx) return ax - bx;
+        return a.id - b.id;
+    };
+    const pack = (list, type, label) => (list || []).map((data, id) => buildEquipmentDexEntry(type, label, id, data, recipeIndex)).filter(Boolean).sort(sortByRarity);
+    return {
+        weapon: pack(eq.weapon, 'weapon', '무기'),
+        armor: pack(eq.armor, 'armor', '갑옷'),
+        accessory: pack(eq.accessory, 'accessory', '장신구'),
+        rarityOrder: RARITY_ORDER
+    };
 }
 
 // ===== 경매장 헬퍼 =====
@@ -1579,14 +1735,33 @@ main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{di
 h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}.card-tile{background:rgba(2,6,23,.58);border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:10px;text-align:center}.card-tile img{width:100%;border-radius:12px;display:block;box-shadow:0 10px 24px rgba(0,0,0,.35)}.card-tile.compact{padding:8px}.card-name{margin-top:8px;font-size:13px;font-weight:700}.no-img,.empty-card{min-height:180px;display:grid;place-items:center;color:#94a3b8;border:1px dashed #334155;border-radius:12px}.card-tile.compact .no-img,.card-tile.compact .empty-card{min-height:120px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:#111827;border:1px solid #334155}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:13px}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid var(--rar,#334155);border-left:5px solid var(--rar,#334155);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid rgba(148,163,184,.25);border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit}.modal input:focus,.modal select:focus{outline:none;border-color:#5865f2}.seg{display:flex;gap:6px;background:rgba(2,6,23,.6);padding:4px;border-radius:12px;flex-wrap:wrap}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap}.seg button.on{background:#5865f2}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(2,6,23,.4);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(15,23,42,.7);border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px}.pick-row:hover{border-color:#5865f2}.pick-row.on{border-color:#5865f2;background:rgba(88,101,242,.18)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
+.profile-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(251,191,36,.18),rgba(88,101,242,.18));border:1px solid rgba(251,191,36,.4);border-radius:14px;color:#fde68a;font-weight:700}.profile-banner button{padding:8px 12px;font-size:13px}
+.rank-section{display:grid;gap:14px}.rank-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.rank-tab{padding:9px 14px;border-radius:10px;background:#1f2937;color:#cbd5e1;cursor:pointer;font-weight:700;font-size:13px;border:1px solid transparent}.rank-tab.active{background:#5865f2;color:#fff;border-color:#5865f2}
+.rank-me{padding:14px 16px;background:linear-gradient(135deg,rgba(88,101,242,.18),rgba(15,23,42,.6));border:1px solid rgba(88,101,242,.45);border-radius:14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;font-weight:700}.rank-me .rk{font-size:22px;color:#a5b4fc}.rank-me .nm{font-size:15px;color:#f8fafc}.rank-me .lv{font-size:12px;color:#94a3b8}.rank-me .vl{font-size:18px;color:#fbbf24;font-variant-numeric:tabular-nums}
+.rank-list{display:grid;gap:8px}.rank-row{display:grid;grid-template-columns:60px 1fr auto;align-items:center;gap:12px;padding:12px 14px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.12);border-radius:12px;cursor:pointer;transition:transform .12s,border-color .12s,background .12s}.rank-row:hover{transform:translateX(4px);border-color:#5865f2;background:rgba(88,101,242,.12)}.rank-row.me{border-color:#fbbf24;background:rgba(251,191,36,.08)}.rank-row .rk{font-size:16px;font-weight:800;color:#a5b4fc;text-align:center}.rank-row .rk.gold{color:#fbbf24;font-size:22px}.rank-row .rk.silver{color:#cbd5e1;font-size:20px}.rank-row .rk.bronze{color:#d97706;font-size:18px}.rank-row .nm{font-weight:700;color:#f1f5f9}.rank-row .lv{font-size:12px;color:#94a3b8;margin-left:6px}.rank-row .vl{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums;font-size:15px}
+.dex-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.dex-tab{padding:9px 14px;border-radius:10px;background:#1f2937;color:#cbd5e1;cursor:pointer;font-weight:700;font-size:13px;border:1px solid transparent}.dex-tab.active{background:#5865f2;color:#fff;border-color:#5865f2}
+.dex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.dex-card{display:grid;gap:12px;padding:14px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid var(--rar,#334155);border-left:5px solid var(--rar,#334155);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.dex-head{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center}
+.dex-thumb{position:relative;width:72px;height:72px;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;overflow:hidden}.dex-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-thumb .icon{position:relative;z-index:2;width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,.55))}.dex-thumb .icon-fallback{position:relative;z-index:2;font-size:32px}
+.dex-name{font-weight:800;font-size:16px;color:#f8fafc}.dex-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}.dex-desc{color:#94a3b8;font-size:13px;line-height:1.5}
+.dex-stat-block{padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.12);border-radius:10px;display:grid;gap:4px;font-size:13px;color:#cbd5e1}.dex-stat-title{font-weight:800;color:#f1f5f9;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+.dex-collapse{background:rgba(2,6,23,.4);border:1px solid rgba(148,163,184,.12);border-radius:10px}.dex-collapse>summary{cursor:pointer;padding:10px 12px;font-weight:700;color:#e5e7eb;font-size:13px;list-style:none}.dex-collapse>summary::-webkit-details-marker{display:none}.dex-collapse>summary::before{content:'▶';display:inline-block;margin-right:8px;transition:transform .15s;color:#94a3b8;font-size:10px}.dex-collapse[open]>summary::before{transform:rotate(90deg)}.dex-upgrade-list{display:grid;gap:6px;padding:0 12px 12px}
+.dex-upgrade-row{display:grid;grid-template-columns:46px 1fr;gap:8px;padding:8px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.1);border-radius:8px;font-size:12px}.dex-upgrade-row .lvl{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}.dex-upgrade-row .lines{display:grid;gap:2px;color:#cbd5e1}
+.dex-evol,.dex-recipe{display:grid;gap:8px;padding:10px 12px;background:rgba(88,101,242,.08);border:1px solid rgba(88,101,242,.3);border-radius:10px}.dex-recipe{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.3)}
+.dex-evol-title,.dex-recipe-title{font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#a5b4fc}.dex-recipe-title{color:#86efac}
+.dex-evol-target,.dex-recipe-mat{display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:6px 8px;background:rgba(2,6,23,.55);border-radius:8px;font-size:13px}
+.dex-evol-thumb,.dex-mat-thumb{position:relative;width:42px;height:42px;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:8px;overflow:hidden}.dex-evol-thumb .frame,.dex-mat-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-evol-thumb .icon,.dex-mat-thumb .icon{position:relative;z-index:2;width:62%;height:62%;object-fit:contain}.dex-evol-thumb .icon-fallback,.dex-mat-thumb .icon-fallback{position:relative;z-index:2;font-size:18px}
+.dex-mat-count{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
 .auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(2,6,23,.62);border:1px solid rgba(148,163,184,.16);border-radius:14px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4);border-color:#5865f2}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb.square{aspect-ratio:1/1;position:relative;background:transparent}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.auc-icon,.auc-item-img{position:relative;z-index:2}.auc-icon{font-size:64px;line-height:1;text-shadow:0 4px 14px rgba(0,0,0,.6)}.auc-item-img{width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}.currency-img{width:20px;height:20px;object-fit:contain;vertical-align:-4px;margin-right:5px}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:14px 16px;align-items:flex-start}.top-left{display:grid;gap:10px}.grid{grid-template-columns:1fr}}
 .search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
 @media(max-width:520px){header{padding:12px 10px;gap:8px}h1{font-size:clamp(16px,5vw,20px)}.nav{gap:4px}.nav-btn{padding:8px clamp(7px,2.1vw,10px);font-size:clamp(11px,3.1vw,13px)}.bar{gap:5px}.who{max-width:22vw;overflow:hidden;text-overflow:ellipsis;font-size:12px}#adminLink,#logout{padding:8px 9px;font-size:12px}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
+    <div id="profileBanner" class="profile-banner" style="display:none"><span id="profileBannerText"></span><button id="profileBackBtn" class="primary">내 정보로 돌아가기</button></div>
     <section class="panel"><div class="profile-hero"><div id="mainCard" class="profile-card"></div><div class="profile-summary"><div class="name-line"><span id="level">-</span> <span id="profileName">-</span> <span id="exp" style="color:#94a3b8;font-size:15px">-</span></div><div class="status-row"><span>HP</span><div class="meter hp"><div class="meter-fill" id="hpFill"></div></div><b id="hp">-</b></div><div class="status-row"><span>MP</span><div class="meter mp"><div class="meter-fill" id="mpFill"></div></div><b id="mp">-</b></div><div class="power-line">⚔️ <b id="totalPower">-</b></div></div></div></section>
     <section class="panel"><h2>장착 중인 카드 슬롯</h2><div id="slotCards" class="cards"></div></section>
     <section class="panel"><h2>재화</h2><div id="goods" class="grid"></div></section>
@@ -1597,6 +1772,8 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">경매장</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 경매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 등록</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>

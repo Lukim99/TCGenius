@@ -26,15 +26,23 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => location.href = '/admin';
+function activatePage(name) {
+    $$('.nav-btn').forEach(item => item.classList.toggle('active', item.dataset.page === name));
+    $$('.page').forEach(page => page.classList.toggle('active', page.dataset.page === name));
+}
 $$('.nav-btn').forEach(btn => btn.onclick = () => {
-    $$('.nav-btn').forEach(item => item.classList.toggle('active', item === btn));
-    $$('.page').forEach(page => page.classList.toggle('active', page.dataset.page === btn.dataset.page));
+    activatePage(btn.dataset.page);
+    if (btn.dataset.page === 'info') {
+        if (currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
+    }
     if (btn.dataset.page === 'inventory' && !btn.dataset.loaded) {
         btn.dataset.loaded = '1';
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (btn.dataset.page === 'auction') loadAuctions();
     if (btn.dataset.page === 'buyorder') loadBuyOrders();
+    if (btn.dataset.page === 'ranking') loadRanking();
+    if (btn.dataset.page === 'dex') loadDex();
 });
 
 function cardNode(card, compact, onClick) {
@@ -124,8 +132,19 @@ function categorySection(title, children) {
     return el('div', { class: 'cat' }, el('div', { class: 'cat-title' }, title), ...children);
 }
 
+let myName = null;
+let currentProfileName = null;
+
 function renderProfile(data) {
-    $('#who').textContent = data.user.name;
+    currentProfileName = data.user.name;
+    if (myName == null) myName = data.user.name;
+    const banner = $('#profileBanner');
+    if (banner) {
+        const isOther = data.user.name !== myName;
+        banner.style.display = isOther ? 'flex' : 'none';
+        if (isOther) $('#profileBannerText').textContent = data.user.name + '님의 정보를 보고 있습니다';
+    }
+    $('#who').textContent = myName;
     $('#profileName').textContent = data.user.name;
     $('#level').textContent = 'Lv. ' + comma(data.user.level);
     $('#exp').textContent = '(' + comma(data.user.exp) + '/' + comma(data.user.maxExp) + ')';
@@ -874,6 +893,194 @@ async function submitBoRegister() {
 
 if ($('#boNew')) $('#boNew').onclick = openBoRegisterModal;
 
-api('/api/profile').then(renderProfile).catch(e => {
-    $('#app').replaceChildren(el('section', { class: 'panel' }, el('h2', null, '오류'), el('p', { class: 'err' }, e.message)));
+async function loadProfile(name) {
+    const url = name && name !== myName ? '/api/profile/' + encodeURIComponent(name) : '/api/profile';
+    const data = await api(url);
+    activatePage('info');
+    renderProfile(data);
+}
+
+if ($('#profileBackBtn')) $('#profileBackBtn').onclick = () => {
+    if (myName) loadProfile(myName).catch(e => alert(e.message));
+};
+
+// ===== 랭킹 =====
+let rankingData = null;
+let rankingTab = 'cp';
+
+function rankRow(entry, isMe, valueFormatter) {
+    const rk = entry.rank;
+    const rkClass = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
+    const medal = rk === 1 ? '🥇' : rk === 2 ? '🥈' : rk === 3 ? '🥉' : rk + '위';
+    return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => alert(e.message)) },
+        el('div', { class: 'rk ' + rkClass }, medal),
+        el('div', { class: 'nm' }, entry.name, el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
+        el('div', { class: 'vl' }, valueFormatter(entry.value))
+    );
+}
+
+function renderRanking() {
+    if (!rankingData) return;
+    const list = rankingTab === 'cp' ? rankingData.cp : rankingData.exp;
+    const me = rankingTab === 'cp' ? rankingData.me.cp : rankingData.me.exp;
+    const valueFormatter = rankingTab === 'cp' ? v => '⚔️ ' + comma(v) : v => 'XP ' + comma(v);
+    const meBox = $('#rankMe');
+    meBox.innerHTML = '';
+    if (me) {
+        meBox.className = 'rank-me';
+        meBox.appendChild(el('div', { class: 'rk' }, comma(me.rank) + '위'));
+        meBox.appendChild(el('div', { class: 'nm' }, me.name, ' ', el('span', { class: 'lv' }, 'Lv. ' + comma(me.level))));
+        meBox.appendChild(el('div', null, '/ ' + comma(rankingData.total) + '명'));
+        meBox.appendChild(el('div', { class: 'vl' }, valueFormatter(me.value)));
+    } else {
+        meBox.className = '';
+    }
+    const listEl = $('#rankList');
+    listEl.innerHTML = '';
+    if (!list.length) {
+        listEl.appendChild(el('div', { class: 'empty' }, '랭킹 데이터가 없습니다.'));
+        return;
+    }
+    list.forEach(entry => listEl.appendChild(rankRow(entry, me && entry.name === me.name, valueFormatter)));
+}
+
+async function loadRanking() {
+    if (!rankingData) {
+        $('#rankList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+        try { rankingData = await api('/api/ranking'); }
+        catch (e) { $('#rankList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+    }
+    renderRanking();
+}
+
+$$('.rank-tab').forEach(btn => btn.onclick = () => {
+    rankingTab = btn.dataset.tab;
+    $$('.rank-tab').forEach(b => b.classList.toggle('active', b === btn));
+    renderRanking();
 });
+
+// ===== 도감 =====
+let dexData = null;
+let dexTab = 'weapon';
+
+function dexThumb(iconUrl, frameUrl, fallback, sizeClass) {
+    const wrap = el('div', { class: sizeClass || 'dex-thumb' });
+    if (frameUrl) wrap.appendChild(el('img', { src: frameUrl, class: 'frame', alt: '' }));
+    if (iconUrl) wrap.appendChild(el('img', { src: iconUrl, class: 'icon', alt: '' }));
+    else wrap.appendChild(el('span', { class: 'icon-fallback' }, fallback || '⚙️'));
+    return wrap;
+}
+
+const CURRENCY_ICON = { gold: '🪙', garnet: '💠' };
+
+function dexCard(entry) {
+    const color = RARITY_COLORS[entry.rarity] || '#334155';
+    const card = el('div', { class: 'dex-card' });
+    card.style.setProperty('--rar', color);
+
+    const head = el('div', { class: 'dex-head' });
+    head.appendChild(dexThumb(entry.iconUrl, entry.frameUrl, SLOT_ICONS[entry.type] || '⚙️'));
+    head.appendChild(el('div', null,
+        el('div', { class: 'dex-name' }, entry.name),
+        el('div', { class: 'dex-meta' },
+            el('span', { class: 'tag rarity' }, entry.rarity),
+            el('span', { class: 'tag' }, entry.typeLabel),
+            entry.noTrade ? el('span', { class: 'tag' }, '거래 불가') : null
+        )
+    ));
+    card.appendChild(head);
+
+    if (entry.desc) card.appendChild(el('div', { class: 'dex-desc' }, entry.desc));
+
+    if (entry.baseStatLines && entry.baseStatLines.length) {
+        const block = el('div', { class: 'dex-stat-block' });
+        block.appendChild(el('div', { class: 'dex-stat-title' }, '기본 능력치'));
+        entry.baseStatLines.forEach(line => block.appendChild(el('div', null, line)));
+        card.appendChild(block);
+    }
+
+    if (entry.upgrades && entry.upgrades.length) {
+        const det = el('details', { class: 'dex-collapse' });
+        det.appendChild(el('summary', null, '강화 단계 (+1 ~ +' + entry.maxUpgradeLevel + ')'));
+        const list = el('div', { class: 'dex-upgrade-list' });
+        entry.upgrades.forEach(up => {
+            list.appendChild(el('div', { class: 'dex-upgrade-row' },
+                el('div', { class: 'lvl' }, '+' + up.level),
+                el('div', { class: 'lines' }, ...(up.statLines.length ? up.statLines.map(l => el('div', null, l)) : [el('div', { style: { color: '#64748b' } }, '변화 없음')]))
+            ));
+        });
+        det.appendChild(list);
+        card.appendChild(det);
+    }
+
+    if (entry.evolution) {
+        const evol = el('div', { class: 'dex-evol' });
+        evol.appendChild(el('div', { class: 'dex-evol-title' }, '합성 진화'));
+        const target = el('div', { class: 'dex-evol-target' });
+        target.appendChild(dexThumb(entry.evolution.targetIconUrl, entry.evolution.targetFrameUrl, SLOT_ICONS[entry.evolution.targetType] || '⚙️', 'dex-evol-thumb'));
+        target.appendChild(el('div', null,
+            el('div', { style: { fontWeight: 800, color: '#f8fafc' } }, entry.evolution.targetName),
+            el('div', { style: { fontSize: '11px', color: '#94a3b8' } }, entry.evolution.targetRarity || '')
+        ));
+        target.appendChild(el('div', { style: { fontSize: '11px', color: '#a5b4fc' } }, '+' + entry.evolution.requireLevel + ' x' + entry.evolution.requireCount));
+        evol.appendChild(target);
+        card.appendChild(evol);
+    }
+
+    if (entry.recipe) {
+        const recipe = el('div', { class: 'dex-recipe' });
+        recipe.appendChild(el('div', { class: 'dex-recipe-title' }, '제작 레시피 · ' + entry.recipe.name));
+        entry.recipe.materials.forEach(mat => {
+            const row = el('div', { class: 'dex-recipe-mat' });
+            const fallback = CURRENCY_ICON[mat.type] || '📦';
+            row.appendChild(dexThumb(mat.iconUrl, mat.frameUrl, fallback, 'dex-mat-thumb'));
+            row.appendChild(el('div', null,
+                el('div', { style: { fontWeight: 700, color: '#f8fafc' } }, mat.name),
+                el('div', { style: { fontSize: '11px', color: '#94a3b8' } }, mat.typeLabel)
+            ));
+            row.appendChild(el('div', { class: 'dex-mat-count' }, 'x' + comma(mat.count)));
+            recipe.appendChild(row);
+        });
+        card.appendChild(recipe);
+    }
+
+    return card;
+}
+
+function renderDex() {
+    if (!dexData) return;
+    const list = dexData[dexTab] || [];
+    const grid = $('#dexList');
+    grid.innerHTML = '';
+    if (!list.length) {
+        grid.appendChild(el('div', { class: 'empty' }, '데이터가 없습니다.'));
+        return;
+    }
+    list.forEach(entry => grid.appendChild(dexCard(entry)));
+}
+
+async function loadDex() {
+    if (!dexData) {
+        $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+        try { dexData = await api('/api/dex/equipment'); }
+        catch (e) { $('#dexList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+    }
+    renderDex();
+}
+
+$$('.dex-tab').forEach(btn => btn.onclick = () => {
+    dexTab = btn.dataset.tab;
+    $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
+    renderDex();
+});
+
+(async () => {
+    try {
+        const me = await api('/api/me');
+        myName = me.name;
+        const profile = await api('/api/profile');
+        renderProfile(profile);
+    } catch (e) {
+        $('#app').replaceChildren(el('section', { class: 'panel' }, el('h2', null, '오류'), el('p', { class: 'err' }, e.message)));
+    }
+})();

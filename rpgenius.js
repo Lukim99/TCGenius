@@ -864,6 +864,47 @@ function normalizeStatPointData(user) {
         user.statPointStats[key] = Number(user.statPointStats[key] || 0);
     });
     user.statPoint = Number(user.statPoint || 0);
+    user.statPointBuyCount = Math.max(0, Math.floor(Number(user.statPointBuyCount || 0)));
+}
+
+const STAT_POINT_BUY_BASE_A = 500;
+const STAT_POINT_BUY_BASE_B = 800;
+
+function getStatPointBuyPrice(n) {
+    const idx = Math.max(1, Math.floor(Number(n || 1)));
+    if (idx == 1) return STAT_POINT_BUY_BASE_A;
+    let a = STAT_POINT_BUY_BASE_A;
+    let b = STAT_POINT_BUY_BASE_B;
+    if (idx == 2) return b;
+    for (let i = 3; i <= idx; i++) {
+        const c = a + b;
+        a = b;
+        b = c;
+    }
+    return b;
+}
+
+function getStatPointBuyTotalPrice(currentCount, buyCount) {
+    let total = 0;
+    for (let i = 1; i <= buyCount; i++) total += getStatPointBuyPrice(currentCount + i);
+    return total;
+}
+
+function buyStatPoint(user, countArg) {
+    normalizeStatPointData(user);
+    const count = typeof countArg == 'undefined' ? 1 : Number(countArg);
+    if (!Number.isInteger(count) || count < 1) return '❌ 숫자는 1 이상의 정수여야 합니다.';
+    const currentCount = Number(user.statPointBuyCount || 0);
+    const totalPrice = getStatPointBuyTotalPrice(currentCount, count);
+    if (Number(user.gold || 0) < totalPrice) {
+        const nextPrice = getStatPointBuyPrice(currentCount + 1);
+        return '❌ 골드가 부족합니다.\n- ' + comma(count) + '개 구매 필요 골드: 🪙 ' + comma(totalPrice) + '\n- 다음 1개 가격: 🪙 ' + comma(nextPrice) + ')';
+    }
+    user.gold = Number(user.gold || 0) - totalPrice;
+    user.statPoint = Number(user.statPoint || 0) + count;
+    user.statPointBuyCount = currentCount + count;
+    const nextPrice = getStatPointBuyPrice(user.statPointBuyCount + 1);
+    return '✅ ' + comma(count) + ' 스탯포인트를 🪙 ' + comma(totalPrice) + ' 골드에 구매했습니다.\n- 누적 구매 횟수: ' + comma(user.statPointBuyCount) + '회\n- 다음 1개 가격: 🪙 ' + comma(nextPrice) + '\n- 잔여 스탯포인트: ' + comma(user.statPoint);
 }
 
 function calculateUserStats(user) {
@@ -1274,6 +1315,8 @@ function getLevelExpMultiplier(userLevel, requireLevel) {
     return 0.7;
 }
 
+const STAT_POINT_PER_STAT_LIMIT = 100;
+
 function investStatPoint(user, statArg, countArg) {
     normalizeStatPointData(user);
     const option = STAT_POINT_OPTIONS[String(statArg || '').trim()];
@@ -1281,8 +1324,12 @@ function investStatPoint(user, statArg, countArg) {
     const count = typeof countArg == 'undefined' ? 1 : Number(countArg);
     if (!Number.isInteger(count) || count < 1) return '❌ 숫자는 1 이상의 정수여야 합니다.';
     if (Number(user.statPoint || 0) < count) return '❌ 잔여 스탯포인트가 부족합니다.';
+    const invested = Number(user.statPointStats[option.key] || 0);
+    const remaining = Math.max(0, STAT_POINT_PER_STAT_LIMIT - invested);
+    if (remaining <= 0) return '❌ ' + option.label + '에는 이미 최대 ' + comma(STAT_POINT_PER_STAT_LIMIT) + '까지 투자했습니다.';
+    if (count > remaining) return '❌ ' + option.label + '에는 최대 ' + comma(remaining) + '까지만 추가 투자할 수 있습니다. (현재 ' + comma(invested) + ' / ' + comma(STAT_POINT_PER_STAT_LIMIT) + ')';
     user.statPoint -= count;
-    user.statPointStats[option.key] = Number(user.statPointStats[option.key] || 0) + count;
+    user.statPointStats[option.key] = invested + count;
     const flatValue = option.flat * count;
     const plusValue = option.plus * count;
     const stats = calculateUserStats(user);
@@ -1298,10 +1345,13 @@ function formatStatPointStatus(user) {
     STAT_POINT_DISPLAY.forEach(stat => {
         const count = Number(user.statPointStats[stat.key] || 0);
         const flat = count * stat.flat;
-        if (stat.plusKey) lines.push('- ' + stat.name + ' +' + comma(flat) + ' / +' + (Math.round(count * 10) / 10) + '%');
-        else lines.push('- ' + stat.name + ' +' + comma(flat));
+        const progress = ' [' + comma(count) + '/' + comma(STAT_POINT_PER_STAT_LIMIT) + ']';
+        if (stat.plusKey) lines.push('- ' + stat.name + ' +' + comma(flat) + ' / +' + (Math.round(count * 10) / 10) + '%' + progress);
+        else lines.push('- ' + stat.name + ' +' + comma(flat) + progress);
     });
     lines.push('', '잔여 스탯포인트: ' + comma(user.statPoint || 0));
+    const nextPrice = getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1);
+    lines.push('누적 구매: ' + comma(user.statPointBuyCount || 0) + '회 / 다음 1개 가격: 🪙 ' + comma(nextPrice));
     return lines.join('\n');
 }
 
@@ -3381,6 +3431,7 @@ class RPGUser {
         this.mileage = 0;
         this.statPoint = 0;
         this.statPointStats = { atk: 0, hp: 0, mp: 0, def: 0, pnt: 0 };
+        this.statPointBuyCount = 0;
         this.fishing = false;
         this.fishingNet = {};
         this.fishingNetLimit = 200;
@@ -4385,7 +4436,14 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '스탯포인트') {
         if (!args[1]) {
-            reply('❌ /RPGenius 스탯포인트 [공격력|체력|MP|방어력|방어 관통력] <숫자>');
+            reply('❌ /RPGenius 스탯포인트 [공격력|체력|MP|방어력|방어 관통력] <숫자>\n❌ /RPGenius 스탯포인트 구매 <숫자>');
+            return true;
+        }
+        if (args[1] == '구매') {
+            const countArg = typeof args[2] == 'undefined' ? 1 : args[2];
+            const result = buyStatPoint(user, countArg);
+            await user.save();
+            reply(result);
             return true;
         }
         const statName = args[1] == '방어' && args[2] == '관통력' ? '방어 관통력' : args[1];
@@ -4658,6 +4716,8 @@ module.exports = {
     getRPGUserById,
     getRPGUserByName,
     getRPGUserByCode,
+    getAllRPGUsers,
+    getMaxExpForLevel,
     onChat,
     initRpgeniusData,
     loadRpgeniusDataEntry,
