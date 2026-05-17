@@ -2924,7 +2924,23 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const nextLevel = level + 1;
     const currentStats = getEquipmentStatsAtLevel(equipment, level);
     const nextStats = getEquipmentStatsAtLevel(equipment, nextLevel);
-    const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', crit: '치명타 확률', critMul: '치명타 피해량' };
+    const currentPlus = getEquipmentPlusStatsAtLevel(equipment, level);
+    const nextPlus = getEquipmentPlusStatsAtLevel(equipment, nextLevel);
+    const statNames = {
+        atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP',
+        crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
+        cmb: '연격 확률', maxCmb: '추가 공격 횟수',
+        skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해'
+    };
+    const plusStatNames = {
+        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
+        avd: '회피 확률', afterSkill: '스킬 공격 피해',
+        '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
+        eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+        itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
+        critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률'
+    };
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
     const isFreeUpgrade = options && options.free;
@@ -2934,6 +2950,9 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const lines = ['⚒️ ' + equipment.name + ' +' + level + ' -> +' + nextLevel];
     Object.keys(statNames).forEach(key => {
         if (Number(currentStats[key] || 0) != Number(nextStats[key] || 0)) lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, currentStats[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key, nextStats[key] || 0).replace(/^\+/, ''));
+    });
+    Object.keys(plusStatNames).forEach(key => {
+        if (Number(currentPlus[key] || 0) != Number(nextPlus[key] || 0)) lines.push('- ' + plusStatNames[key] + ' ' + formatStatValue(key + '%', currentPlus[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key + '%', nextPlus[key] || 0).replace(/^\+/, ''));
     });
     lines.push('', '[ 강화 확률 ]');
     lines.push('⏫ 대성공 ' + formatUpgradeRatePercent(rates.great));
