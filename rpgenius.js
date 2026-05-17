@@ -1515,18 +1515,18 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
     const stats = calculateUserStats(user);
     const rewardLines = [];
     let levelUps = 0;
+    const levelMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
     (dungeon.elite.reward || []).forEach(reward => {
-        if (reward.roll != null && Math.random() >= Number(reward.roll || 0)) return;
+        if (reward.roll != null && Math.random() >= Number(reward.roll || 0) * levelMultiplier) return;
         const count = rollCount(reward.count);
         if (reward.type == '경험치') {
-            const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
-            const amount = applyPrestigeExpBonus(user, Math.round(count * levelExpMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0))));
+            const amount = applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0))));
             levelUps += addExperience(user, amount);
             rewardLines.push('- XP ' + comma(amount));
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round(count * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
+            const amount = Math.round(count * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -1636,20 +1636,20 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
+    const levelMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
     if (killCount > 0) {
         user.field.killCount = Number(user.field.killCount || 0) + killCount;
-        const levelExpMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
-        let expReward = applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelExpMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0))));
+        let expReward = applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
-        goldReward = Math.round(goldReward * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
+        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
         lines.push('', '[ 보상 ]');
         lines.push('- XP ' + comma(expReward));
         lines.push('- 🪙 ' + comma(goldReward));
         let stoneDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.2) stoneDropCount++;
+        for (let i = 0; i < killCount; i++) if (Math.random() < 0.2 * levelMultiplier) stoneDropCount++;
         if (stoneDropCount > 0) {
             addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
             lines.push('- 강화석 x' + comma(stoneDropCount));
@@ -1657,7 +1657,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const items = getDataCache('Item', []);
         const baitItemId = items.findIndex(item => item.name == '일반 떡밥');
         let baitDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.55) baitDropCount++;
+        for (let i = 0; i < killCount; i++) if (Math.random() < 0.55 * levelMultiplier) baitDropCount++;
         if (baitItemId != -1 && baitDropCount > 0) {
             addInventoryItem(user, baitItemId, baitDropCount);
             lines.push('- 일반 떡밥 x' + comma(baitDropCount));
@@ -1666,7 +1666,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     if (killCount > 0) {
-        const dropChance = 0.03 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
+        const dropChance = (0.03 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0)) * levelMultiplier;
         if (Math.random() < dropChance) {
             const items = getDataCache('Item', []);
             const dropItemId = items.findIndex(item => item.name == '장비 상자');
@@ -1683,7 +1683,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        if (Math.random() < 0.01) {
+        if (Math.random() < 0.01 * levelMultiplier) {
             const items = getDataCache('Item', []);
             addInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
             const hammer = items[ICE_HAMMER_ITEM_ID];
@@ -2775,6 +2775,20 @@ const EQUIPMENT_DISASSEMBLE_REWARD = {
     '레전더리': { min: 560, max: 650 }
 };
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
+const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 10];
+
+function getEquipmentMaxLevel(equipment) {
+    return Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0;
+}
+
+function getEquipmentUpgradeRates(type, level) {
+    if (type == 'accessory') {
+        const idx = ACCESSORY_UPGRADE_RATE_INDEX[level];
+        return EQUIPMENT_UPGRADE_RATES[typeof idx == 'number' ? idx : level];
+    }
+    return EQUIPMENT_UPGRADE_RATES[level];
+}
+
 const EQUIPMENT_UPGRADE_RATES = [
     { great: 0.10, success: 0.90, down: 0, reset: 0 },
     { great: 0.08, success: 0.91, down: 0.01, reset: 0 },
@@ -2904,13 +2918,14 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
     if (!Array.isArray(equipment.upgrade) || equipment.upgrade.length == 0) return '❌ 강화할 수 없는 장비입니다.';
     const level = Number(selected.equip.level || 0);
-    if (level >= EQUIPMENT_UPGRADE_MAX) return '❌ 이미 최대 강화 단계입니다.';
+    const maxLevel = getEquipmentMaxLevel(equipment);
+    if (level >= maxLevel) return '❌ 이미 최대 강화 단계입니다.';
 
     const nextLevel = level + 1;
     const currentStats = getEquipmentStatsAtLevel(equipment, level);
     const nextStats = getEquipmentStatsAtLevel(equipment, nextLevel);
     const statNames = { atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', crit: '치명타 확률', critMul: '치명타 피해량' };
-    const rates = EQUIPMENT_UPGRADE_RATES[level];
+    const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
     const isFreeUpgrade = options && options.free;
     const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
@@ -2964,7 +2979,8 @@ function runEquipmentUpgrade(user) {
     const type = selected.equip.type || selected.type;
     const equipment = getEquipmentData(type, selected.equip.id);
     const level = Number(selected.equip.level || 0);
-    if (!equipment || !Array.isArray(equipment.upgrade) || equipment.upgrade.length == 0 || level >= EQUIPMENT_UPGRADE_MAX) {
+    const maxLevel = getEquipmentMaxLevel(equipment);
+    if (!equipment || maxLevel == 0 || level >= maxLevel) {
         user.pendingAction = null;
         return '❌ 강화할 수 없는 장비입니다.';
     }
@@ -2978,7 +2994,7 @@ function runEquipmentUpgrade(user) {
         removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
         user.gold = Number(user.gold || 0) - cost.gold;
     }
-    const rates = EQUIPMENT_UPGRADE_RATES[level];
+    const rates = getEquipmentUpgradeRates(type, level);
     const roll = Math.random();
     let result = 'destroy';
     if (roll < rates.great) result = 'great';
@@ -2986,8 +3002,8 @@ function runEquipmentUpgrade(user) {
     else if (roll < rates.great + rates.success + rates.down) result = 'down';
     const before = level;
     let protectedResult = null;
-    if (result == 'great') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 2);
-    if (result == 'success') selected.equip.level = Math.min(EQUIPMENT_UPGRADE_MAX, level + 1);
+    if (result == 'great') selected.equip.level = Math.min(maxLevel, level + 2);
+    if (result == 'success') selected.equip.level = Math.min(maxLevel, level + 1);
     if (result == 'down') {
         if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) {
             removeInventoryItem(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID, 1);

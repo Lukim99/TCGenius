@@ -305,8 +305,8 @@
         "reward": {
             "exp": 3,
             "gold": {
-                "min": 28,
-                "max": 42
+                "min": 27,
+                "max": 40
             }
         },
         "atk": 50,
@@ -350,7 +350,7 @@
                         "min": 1,
                         "max": 1
                     },
-                    "roll": 0.7
+                    "roll": 0.3
                 },
                 {
                     "type": "아이템",
@@ -890,6 +890,81 @@
             "crit": 0.25,
             "critMul": 1.7,
             "critDef": 0,
+            "cmb": 0.05,
+            "maxCmb": 0
+        },
+        "crit": 0.15,
+        "critMul": 1.6,
+        "critDef": 0,
+        "cmb": 0.05,
+        "maxCmb": 0
+    },
+    {
+        "name": "보물 성지",
+        "requireLevel": 53,
+        "reward": {
+            "exp": 115,
+            "gold": {
+                "min": 166,
+                "max": 212
+            }
+        },
+        "atk": 340,
+        "pnt": 23,
+        "def": 52,
+        "hp": 415,
+        "elite": {
+            "name": "보물 고블린",
+            "atk": 1155,
+            "pnt": 66,
+            "def": 201,
+            "hp": 5150,
+            "reward": [
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 1180,
+                        "max": 1200
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 1800,
+                        "max": 2740
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 46,
+                        "max": 94
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 52,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 91,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0.35,
+            "critMul": 1.95,
+            "critDef": 0.3,
             "cmb": 0.05,
             "maxCmb": 0
         },
