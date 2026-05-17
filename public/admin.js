@@ -130,9 +130,9 @@ function cardTargetControls(entry, onChange) {
     };
     const refreshSkins = async () => {
         const id = getSelectedCardId();
-        const displayStar = entry.display_star != null ? Number(entry.display_star) : (entry.star_display != null ? Number(entry.star_display) : Number(entry.star || 0) + 1);
+        const rawStar = Number(entry.star || 0);
         const fashion = await getFashion();
-        const skins = fashion.filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(id) && (!Number(skin.requireStar || 0) || displayStar >= Number(skin.requireStar || 0)));
+        const skins = fashion.filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(id) && rawStar >= Number(skin.requireStar || 0));
         skinSelect.innerHTML = '';
         skinSelect.appendChild(el('option', { value: '' }, '스킨 없음'));
         skins.forEach(skin => skinSelect.appendChild(el('option', { value: skin.name }, skin.name)));
@@ -1358,8 +1358,8 @@ function fashionCard(skin, index) {
     row1.appendChild(el('div', null, el('label', null, '이름'),
         el('input', { value: skin.name || '', placeholder: '스킨 이름', oninput: e => skin.name = e.target.value })
     ));
-    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '필요 표시 성급 (1–12)'),
-        el('input', { type: 'number', min: 0, max: 12, value: typeof skin.requireStar === 'number' ? skin.requireStar : '', placeholder: '예: 6',
+    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '필요 성급'),
+        el('input', { type: 'number', min: 0, max: 11, value: typeof skin.requireStar === 'number' ? skin.requireStar : '', placeholder: '예: 5 (표시 6성)',
             oninput: e => { const v = e.target.value; if (v === '') delete skin.requireStar; else skin.requireStar = Number(v); } })
     ));
     card.appendChild(row1);

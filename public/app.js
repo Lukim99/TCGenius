@@ -767,11 +767,11 @@ function renderBoRegisterModal() {
             el('option', { value: '일반', selected: boRegState.type === '일반' ? 'selected' : null }, '일반')
         );
         content.push(typeSelect);
-        content.push(el('label', null, '스킨 (선택 사항)'));
-        const displayStar = Number(boRegState.star || 0) + 1;
-        const skins = (data.fashion || []).filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(Number(boRegState.cardId)) && (!Number(skin.requireStar || 0) || displayStar >= Number(skin.requireStar || 0)));
+        content.push(el('label', null, '패션 (선택 사항)'));
+        const rawStar = Number(boRegState.star || 0);
+        const skins = (data.fashion || []).filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(skin.requireStar || 0));
         const skinSelect = el('select', { onchange: e => { boRegState.skin = e.target.value; } },
-            el('option', { value: '' }, '스킨 무관'),
+            el('option', { value: '' }, '패션 무관'),
             ...skins.map(skin => el('option', { value: skin.name, selected: boRegState.skin === skin.name ? 'selected' : null }, skin.name))
         );
         if (boRegState.skin && !skins.some(skin => skin.name === boRegState.skin)) boRegState.skin = '';
