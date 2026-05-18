@@ -1396,7 +1396,7 @@ function investStatPoint(user, statArg, countArg) {
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
     if (plusValue > 0) return '✅ ' + option.label + '에 스탯포인트 ' + comma(count) + '을 투자해 ' + option.label + '이 ' + comma(flatValue) + ', ' + option.plusLabel + '이 +' + (Math.round(plusValue * 1000) / 10) + '% 증가했습니다.';
-    return '✅ ' + option.label + '에 스탯포인트 ' + comma(count) + '을 투자해 ' + option.label + '이 ' + comma(flatValue) + ' 증가했습니다.';
+    return '✅ ' + option.label + '에 스탯포인트를 ' + comma(count) + ' 투자해 ' + option.label + '이 ' + comma(flatValue) + ' 증가했습니다.';
 }
 
 function formatStatPointStatus(user) {
@@ -1411,7 +1411,7 @@ function formatStatPointStatus(user) {
     });
     lines.push('', '잔여 스탯포인트: ' + comma(user.statPoint || 0));
     const nextPrice = getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1);
-    lines.push('누적 구매: ' + comma(user.statPointBuyCount || 0) + '회 / 다음 1개 가격: 🪙 ' + comma(nextPrice));
+    lines.push('누적 구매: ' + comma(user.statPointBuyCount || 0) + '회', '다음 1개 가격: 🪙 ' + comma(nextPrice));
     return lines.join('\n');
 }
 
