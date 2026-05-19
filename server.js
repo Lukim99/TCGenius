@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
@@ -191,6 +191,81 @@ server.get('/api/dex/equipment', requireUser, (req, res) => {
         res.json(buildEquipmentDex());
     } catch (e) {
         console.error('dex error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/patchnotes', requireUser, async (req, res) => {
+    try {
+        const notes = await getPatchnoteList();
+        const users = await rpgenius.getAllRPGUsers();
+        res.json({ items: serializePatchnotes(notes, users), admin: !!req.session.admin });
+    } catch (e) {
+        console.error('patchnote list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/patchnotes', requireAdmin, async (req, res) => {
+    try {
+        const title = String((req.body && req.body.title) || '').trim();
+        const textbody = String((req.body && req.body.textbody) || '').trim();
+        const inputDate = String((req.body && req.body.date) || '').trim();
+        if (!title) return res.status(400).json({ error: '제목을 입력해주세요.' });
+        if (!textbody) return res.status(400).json({ error: '본문을 입력해주세요.' });
+        const notes = await getPatchnoteList();
+        const now = new Date().toISOString();
+        notes.unshift({
+            id: createPatchnoteId(),
+            title,
+            date: inputDate || now,
+            textbody,
+            replies: [],
+            createdAt: now,
+            updatedAt: now
+        });
+        await savePatchnoteList(notes);
+        const users = await rpgenius.getAllRPGUsers();
+        res.json({ ok: true, items: serializePatchnotes(notes, users) });
+    } catch (e) {
+        console.error('patchnote create error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/patchnotes/:id/replies', requireUser, async (req, res) => {
+    try {
+        const noteId = String(req.params.id || '').trim();
+        const parentId = String((req.body && req.body.parentId) || '').trim();
+        const textbody = String((req.body && req.body.textbody) || '').trim();
+        if (!textbody) return res.status(400).json({ error: '댓글 내용을 입력해주세요.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const notes = await getPatchnoteList();
+        const note = notes.find(item => item && item.id == noteId);
+        if (!note) return res.status(404).json({ error: '패치노트를 찾을 수 없습니다.' });
+        if (!Array.isArray(note.replies)) note.replies = [];
+        const reply = {
+            id: createPatchnoteId(),
+            userId: String(user.id),
+            textbody,
+            date: new Date().toISOString(),
+            replies: []
+        };
+        if (parentId) {
+            const parent = findPatchnoteReply(note.replies, parentId);
+            if (!parent) return res.status(404).json({ error: '상위 댓글을 찾을 수 없습니다.' });
+            if (!Array.isArray(parent.replies)) parent.replies = [];
+            parent.replies.push(reply);
+        } else {
+            note.replies.push(reply);
+        }
+        note.updatedAt = new Date().toISOString();
+        await savePatchnoteList(notes);
+        const users = await rpgenius.getAllRPGUsers();
+        res.json({ ok: true, items: serializePatchnotes(notes, users) });
+    } catch (e) {
+        console.error('patchnote reply error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -820,6 +895,68 @@ function buildEquipmentDex() {
         support: pack(eq.support, 'support', '보조'),
         rarityOrder: RARITY_ORDER
     };
+}
+
+async function getPatchnoteList() {
+    let data = rpgenius.getDataCache('Patchnote', null);
+    if (!data) {
+        await rpgenius.loadRpgeniusDataEntry('Patchnote');
+        data = rpgenius.getDataCache('Patchnote', null);
+    }
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.items)) return data.items;
+    if (data && typeof data == 'object' && (data.title || data.textbody)) return [Object.assign({ id: 'main', replies: [] }, data)];
+    return [];
+}
+
+async function savePatchnoteList(items) {
+    await rpgenius.saveRpgeniusDataEntry('Patchnote', items);
+}
+
+function createPatchnoteId() {
+    return Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+}
+
+function buildPatchnoteUserMap(users) {
+    const map = {};
+    (users || []).forEach(user => {
+        if (!user || typeof user.id == 'undefined') return;
+        map[String(user.id)] = { name: user.name || '알 수 없음', level: Number(user.level || 1) };
+    });
+    return map;
+}
+
+function serializePatchnoteReply(reply, userMap) {
+    const user = userMap[String(reply && reply.userId)] || { name: '알 수 없음', level: 1 };
+    return {
+        id: String(reply && reply.id || ''),
+        userId: String(reply && reply.userId || ''),
+        authorName: user.name,
+        authorLevel: user.level,
+        textbody: String(reply && reply.textbody || ''),
+        date: String(reply && reply.date || ''),
+        replies: (Array.isArray(reply && reply.replies) ? reply.replies : []).map(child => serializePatchnoteReply(child, userMap))
+    };
+}
+
+function serializePatchnotes(notes, users) {
+    const userMap = buildPatchnoteUserMap(users);
+    return (Array.isArray(notes) ? notes : []).map(note => ({
+        id: String(note && note.id || ''),
+        title: String(note && note.title || ''),
+        date: String(note && note.date || ''),
+        textbody: String(note && note.textbody || ''),
+        replies: (Array.isArray(note && note.replies) ? note.replies : []).map(reply => serializePatchnoteReply(reply, userMap))
+    })).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function findPatchnoteReply(replies, id) {
+    for (const reply of (Array.isArray(replies) ? replies : [])) {
+        if (reply && reply.id == id) return reply;
+        const found = findPatchnoteReply(reply && reply.replies, id);
+        if (found) return found;
+    }
+    return null;
 }
 
 // ===== 경매장 헬퍼 =====
@@ -1762,10 +1899,11 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .dex-mat-count{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
 .auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(2,6,23,.62);border:1px solid rgba(148,163,184,.16);border-radius:14px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4);border-color:#5865f2}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb.square{aspect-ratio:1/1;position:relative;background:transparent}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.auc-icon,.auc-item-img{position:relative;z-index:2}.auc-icon{font-size:64px;line-height:1;text-shadow:0 4px 14px rgba(0,0,0,.6)}.auc-item-img{width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}.currency-img{width:20px;height:20px;object-fit:contain;vertical-align:-4px;margin-right:5px}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:14px 16px;align-items:flex-start}.top-left{display:grid;gap:10px}.grid{grid-template-columns:1fr}}
+.patch-wrap{display:grid;gap:14px}.patch-editor{display:none;gap:8px;padding:14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.14);border-radius:14px}.patch-editor.active{display:grid}.patch-editor input,.patch-editor textarea,.reply-box textarea{width:100%;padding:10px 12px;background:#0b0d12;border:1px solid #334155;border-radius:10px;color:#e5e7eb;outline:none}.patch-editor textarea,.reply-box textarea{min-height:140px;resize:vertical;line-height:1.5}.patch-list{display:grid;gap:14px}.patch-card{display:grid;gap:12px;padding:16px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid rgba(148,163,184,.16);border-radius:14px}.patch-title{font-size:18px;font-weight:900;color:#f8fafc}.patch-date{font-size:12px;color:#94a3b8}.markdown-body{line-height:1.65;color:#dbeafe;word-break:break-word}.markdown-body h1,.markdown-body h2,.markdown-body h3{color:#f8fafc;margin:14px 0 8px}.markdown-body p{margin:8px 0}.markdown-body ul,.markdown-body ol{padding-left:22px}.markdown-body code{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.18);border-radius:6px;padding:1px 5px}.markdown-body pre{background:#020617;border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:12px;overflow:auto}.reply-list{display:grid;gap:8px}.reply-item{display:grid;gap:7px;padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px}.reply-item.child{margin-left:22px}.reply-meta{font-size:12px;color:#94a3b8}.reply-meta b{color:#f8fafc}.reply-text{white-space:pre-wrap;line-height:1.5}.reply-box{display:grid;gap:8px}.reply-box textarea{min-height:70px}
 .search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
 @media(max-width:520px){header{padding:12px 10px;gap:8px}h1{font-size:clamp(16px,5vw,20px)}.nav{gap:4px}.nav-btn{padding:8px clamp(7px,2.1vw,10px);font-size:clamp(11px,3.1vw,13px)}.bar{gap:5px}.who{max-width:22vw;overflow:hidden;text-overflow:ellipsis;font-size:12px}#adminLink,#logout{padding:8px 9px;font-size:12px}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
     <div id="profileBanner" class="profile-banner" style="display:none"><span id="profileBannerText"></span><button id="profileBackBtn" class="primary">내 정보로 돌아가기</button></div>
@@ -1782,6 +1920,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
   <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 등록</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
 <div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
