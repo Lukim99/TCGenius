@@ -906,6 +906,7 @@ const PLUS_STAT_DEFS = [
     { key: 'def', label: '최종 방어력', kind: 'percent' },
     { key: 'hp', label: '최종 체력', kind: 'percent' },
     { key: 'mp', label: '최종 MP', kind: 'percent' },
+    { key: 'pnt', label: '방어력 관통', kind: 'percent' },
     { key: 'gold', label: '골드 획득량', kind: 'percent' },
     { key: 'potion', label: '물약 효율', kind: 'percent' },
     { key: 'afterBasic', label: '일반 공격 피해', kind: 'percent' },
@@ -919,7 +920,12 @@ const PLUS_STAT_DEFS = [
     { key: 'crit', label: '치명타 확률', kind: 'percent' },
     { key: 'critMul', label: '치명타 피해량', kind: 'percent' },
     { key: 'critDef', label: '치명타 피해 감소율', kind: 'percent' },
-    { key: 'cmb', label: '연격 확률', kind: 'percent' }
+    { key: 'cmb', label: '연격 확률', kind: 'percent' },
+    { key: 'maxCmb', label: '추가 공격 횟수', kind: 'int' },
+    { key: 'skillCooldown', label: '스킬 쿨타임 (ms, 음수=감소)', kind: 'cooldown' },
+    { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
+    { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
+    { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' }
 ];
 
 function statKindUnit(kind) {
