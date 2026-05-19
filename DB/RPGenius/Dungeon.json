@@ -300,79 +300,88 @@
         "maxCmb": 1
     },
     {
-        "name": "황금 광산",
-        "requireLevel": 17,
-        "reward": {
-            "exp": 3,
-            "gold": {
-                "min": 34,
-                "max": 52
-            }
-        },
-        "atk": 50,
-        "pnt": 2,
-        "def": 8,
-        "hp": 60,
+        "name": "버려진 황금 광산",
+        "requireLevel": 1,
+        "maxLevel": 50,
+        "goldMineLevel": 0,
+        "reward": { "exp": 3, "gold": { "min": 34, "max": 52 } },
+        "atk": 50, "pnt": 2, "def": 8, "hp": 60,
         "elite": {
             "name": "광부 고블린",
-            "atk": 165,
-            "pnt": 6,
-            "def": 36,
-            "hp": 720,
+            "atk": 165, "pnt": 6, "def": 36, "hp": 720,
             "reward": [
-                {
-                    "type": "경험치",
-                    "count": {
-                        "min": 28,
-                        "max": 56
-                    }
-                },
-                {
-                    "type": "골드",
-                    "count": {
-                        "min": 290,
-                        "max": 460
-                    }
-                },
-                {
-                    "type": "아이템",
-                    "item_id": 0,
-                    "count": {
-                        "min": 18,
-                        "max": 40
-                    },
-                    "roll": 0.9
-                },
-                {
-                    "type": "아이템",
-                    "item_id": 67,
-                    "count": {
-                        "min": 1,
-                        "max": 1
-                    },
-                    "roll": 0.3
-                },
-                {
-                    "type": "아이템",
-                    "item_id": 66,
-                    "count": {
-                        "min": 1,
-                        "max": 1
-                    },
-                    "roll": 0.4
-                }
+                { "type": "경험치", "count": { "min": 28, "max": 56 } },
+                { "type": "골드",   "count": { "min": 290, "max": 460 } },
+                { "type": "아이템", "item_id": 0,  "count": { "min": 18, "max": 40 }, "roll": 0.9 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1,  "max": 1  }, "roll": 0.3 },
+                { "type": "아이템", "item_id": 66, "count": { "min": 1,  "max": 1  }, "roll": 0.4 }
             ],
-            "crit": 0.1,
-            "critMul": 1.5,
-            "critDef": 0,
-            "cmb": 0,
-            "maxCmb": 1
+            "crit": 0.1, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
         },
-        "crit": 0,
-        "critMul": 1.5,
-        "critDef": 0,
-        "cmb": 0,
-        "maxCmb": 1
+        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+    },
+    {
+        "name": "희미한 황금 광산",
+        "requireLevel": 51,
+        "maxLevel": 100,
+        "goldMineLevel": 1,
+        "reward": { "exp": 9, "gold": { "min": 102, "max": 156 } },
+        "atk": 150, "pnt": 6, "def": 24, "hp": 180,
+        "elite": {
+            "name": "광부 고블린 전사",
+            "atk": 495, "pnt": 18, "def": 108, "hp": 2160,
+            "reward": [
+                { "type": "경험치", "count": { "min": 84, "max": 168 } },
+                { "type": "골드",   "count": { "min": 870, "max": 1380 } },
+                { "type": "아이템", "item_id": 0,  "count": { "min": 54, "max": 120 }, "roll": 0.9 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1,  "max": 1  }, "roll": 0.4 },
+                { "type": "아이템", "item_id": 66, "count": { "min": 1,  "max": 1  }, "roll": 0.45 }
+            ],
+            "crit": 0.1, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+        },
+        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+    },
+    {
+        "name": "저주받은 황금 광산",
+        "requireLevel": 101,
+        "maxLevel": 150,
+        "goldMineLevel": 2,
+        "reward": { "exp": 18, "gold": { "min": 204, "max": 312 } },
+        "atk": 300, "pnt": 12, "def": 48, "hp": 360,
+        "elite": {
+            "name": "저주받은 광부 고블린",
+            "atk": 990, "pnt": 36, "def": 216, "hp": 4320,
+            "reward": [
+                { "type": "경험치", "count": { "min": 168, "max": 336 } },
+                { "type": "골드",   "count": { "min": 1740, "max": 2760 } },
+                { "type": "아이템", "item_id": 0,  "count": { "min": 108, "max": 240 }, "roll": 0.9 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1,   "max": 1   }, "roll": 0.5 },
+                { "type": "아이템", "item_id": 66, "count": { "min": 1,   "max": 1   }, "roll": 0.5 }
+            ],
+            "crit": 0.15, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+        },
+        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+    },
+    {
+        "name": "찬란한 황금 광산",
+        "requireLevel": 151,
+        "maxLevel": 200,
+        "goldMineLevel": 3,
+        "reward": { "exp": 30, "gold": { "min": 340, "max": 520 } },
+        "atk": 500, "pnt": 20, "def": 80, "hp": 600,
+        "elite": {
+            "name": "찬란한 광부 고블린",
+            "atk": 1650, "pnt": 60, "def": 360, "hp": 7200,
+            "reward": [
+                { "type": "경험치", "count": { "min": 280, "max": 560 } },
+                { "type": "골드",   "count": { "min": 2900, "max": 4600 } },
+                { "type": "아이템", "item_id": 0,  "count": { "min": 180, "max": 400 }, "roll": 0.9 },
+                { "type": "아이템", "item_id": 67, "count": { "min": 1,   "max": 1   }, "roll": 0.6 },
+                { "type": "아이템", "item_id": 66, "count": { "min": 1,   "max": 1   }, "roll": 0.55 }
+            ],
+            "crit": 0.2, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
+        },
+        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
     },
     {
         "name": "관찰자들의 도시",

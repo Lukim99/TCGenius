@@ -576,5 +576,127 @@
             "stat": { "skillTrueDmg": 888 },
             "plusStat": { "atk": 0.08 }
         }
+    ],
+    "support": [
+        {
+            "name": "전투 장갑",
+            "desc": "전투할 때 사용할 만한 장갑이다.",
+            "rarity": "레어",
+            "stat": { "atk": 50 },
+            "statRange": { "atk": 5 }
+        },
+        {
+            "name": "헌팅 글러브",
+            "desc": "사냥꾼이 쓰는 장갑이다.",
+            "rarity": "유니크",
+            "stat": { "atk": 45, "pnt": 15 },
+            "statRange": { "atk": 5, "pnt": 5 }
+        },
+        {
+            "name": "월야의 와인잔",
+            "desc": "월야가 비운 와인잔이다.",
+            "rarity": "레전더리",
+            "stat": { "atk": 60, "crit": 0.03 },
+            "statRange": { "atk": 35, "crit": 0.03 }
+        },
+        {
+            "name": "파이널리스트",
+            "desc": "글버지의 시초.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "afterSkill": 0.05 },
+            "requireMainCard": [2]
+        },
+        {
+            "name": "자장면 기프티콘",
+            "desc": "미니게임으로 뿌려진 증표로 보인다.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "critMul": 0.15 },
+            "requireMainCard": [10]
+        },
+        {
+            "name": "등급 피라미드",
+            "desc": "많은 이름들이 쓰여져 있는 피라미드.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "dynamicBonus": { "mainCardStar": { "5": 0.03, "6": 0.05, "7": 0.07, "8": 0.09, "9": 0.12, "10": 0.12, "11": 0.12 } },
+            "requireMainCard": [9]
+        },
+        {
+            "name": "맨손",
+            "desc": "뭣도 없는 맨손이다.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "takenDamage": 0.15, "pnt": 0.20 },
+            "requireMainCard": [1]
+        },
+        {
+            "name": "한라봉",
+            "desc": "상큼해보인다.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "crit": 0.10 },
+            "requireMainCard": [0]
+        },
+        {
+            "name": "부화뇌동",
+            "desc": "걷어찬 끝에 있었던 부화뇌동.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "pnt": 0.10 },
+            "requireMainCard": [3]
+        },
+        {
+            "name": "표고버섯",
+            "desc": "종이 한 장 차이.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "hp": -0.20, "mp": 0.20 },
+            "requireMainCard": [4]
+        },
+        {
+            "name": "징수의 총",
+            "desc": "죽음과 세금.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "gold": 0.04 },
+            "requireMainCard": [7]
+        },
+        {
+            "name": "야구 글러브",
+            "desc": "많이 헤진 글러브다.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "damageBonus": 0.10 },
+            "requireMainCard": [5]
+        },
+        {
+            "name": "프리텐더",
+            "desc": "토테모 키레이다.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "crit": 0.15, "critMul": -0.30 },
+            "requireMainCard": [6]
+        },
+        {
+            "name": "나침반",
+            "desc": "건마의 나침반 가리켜 우승만.",
+            "rarity": "고유",
+            "stat": { "atk": 85 },
+            "statRange": { "atk": 25 },
+            "plusStat": { "atk": 0.02, "crit": 0.02, "critMul": 0.02, "pnt": 0.02 },
+            "requireMainCard": [8]
+        }
     ]
 }

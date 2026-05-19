@@ -27,6 +27,61 @@ const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '미끼', '재료'];
 const ELITE_KILL_REQUIREMENT = 100;
+const GOLD_MINE_ORE_DROPS = {
+    1: { name: '희미한 금광석', chance: 0.005 },
+    2: { name: '저주받은 금광석', chance: 0.003 },
+    3: { name: '찬란한 금광석', chance: 0.002 }
+};
+const BIG_LEVEL_DIFF_THRESHOLD = 30;
+const BIG_LEVEL_DIFF_KILL_CAP = 50;
+const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
+const FRAGMENT_TIERS = {
+    low: {
+        name: '하급 편린',
+        chance: 0.005,
+        minLevel: 1, maxLevel: 46,
+        rewards: [
+            { weight: 40, type: 'gold', amount: 10000 },
+            { weight: 20, type: 'gold', amount: 20000 },
+            { weight: 10, type: 'gold', amount: 50000 },
+            { weight: 5,  type: 'gold', amount: 100000 },
+            { weight: 5,  type: 'item', name: '5성 카드팩', count: 1 },
+            { weight: 5,  type: 'item', name: '6성 카드팩', count: 1 },
+            { weight: 15, type: 'item', name: '강화석', count: 1000 }
+        ]
+    },
+    mid: {
+        name: '중급 편린',
+        chance: 0.003,
+        minLevel: 51, maxLevel: 96,
+        rewards: [
+            { weight: 60,  type: 'gold', amount: 100000 },
+            { weight: 25,  type: 'gold', amount: 200000 },
+            { weight: 5,   type: 'gold', amount: 300000 },
+            { weight: 1,   type: 'gold', amount: 500000 },
+            { weight: 5,   type: 'item', name: '7성 카드팩', count: 1 },
+            { weight: 1,   type: 'item', name: '8성 카드팩', count: 1 },
+            { weight: 2.5, type: 'item', name: '지니어스의 열쇠', count: 10 },
+            { weight: 0.5, type: 'item', name: '지니어스의 열쇠', count: 30 }
+        ]
+    },
+    high: {
+        name: '상급 편린',
+        chance: 0.002,
+        minLevel: 101, maxLevel: 146,
+        rewards: [
+            { weight: 70,  type: 'gold', amount: 200000 },
+            { weight: 10,  type: 'item', name: '강화석', count: 3000 },
+            { weight: 10,  type: 'gold', amount: 400000 },
+            { weight: 3,   type: 'item', name: '지니어스의 열쇠', count: 10 },
+            { weight: 2,   type: 'gold', amount: 600000 },
+            { weight: 1,   type: 'item', name: '지니어스의 열쇠', count: 30 },
+            { weight: 1,   type: 'gold', amount: 1000000 },
+            { weight: 1.5, type: 'item', name: '8성 카드팩', count: 1 },
+            { weight: 0.5, type: 'item', name: '9성 카드팩', count: 1 }
+        ]
+    }
+};
 const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
 const ATTENDANCE_STAMP_ITEM_ID = 71;
@@ -269,7 +324,8 @@ function formatStatValue(key, value) {
         'crit', 'critMul', 'critDef', 'cmb',
         'atk%', 'def%', 'hp%', 'mp%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
-        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%'
+        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%',
+        'takenDamage%', 'damageBonus%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -299,6 +355,10 @@ function formatPackEntry(entry) {
     if (entry.type == '장신구') {
         const accessory = equipments.accessory && equipments.accessory[entry.accessory_id];
         return accessory ? '<' + accessory.rarity + '> ' + accessory.name : '알 수 없는 장신구';
+    }
+    if (entry.type == '보조') {
+        const support = equipments.support && equipments.support[entry.support_id];
+        return support ? '<' + support.rarity + '> ' + support.name : '알 수 없는 보조 장비';
     }
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
@@ -369,7 +429,9 @@ function formatEquipmentStatLines(equipment) {
         crit: '치명타 확률',
         critMul: '치명타 피해량',
         critDef: '치명타 피해 감소율',
-        cmb: '연격 확률'
+        cmb: '연격 확률',
+        takenDamage: '받는 피해 증가',
+        damageBonus: '일반 몬스터에게 주는 피해 증가'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -403,12 +465,103 @@ function formatEquipmentStatLines(equipment) {
     return lines.join('\n');
 }
 
-function formatCurrentEquipmentStatLines(equipment, level) {
-    const current = {
-        stat: getEquipmentStatsAtLevel(equipment, level),
-        plusStat: getEquipmentPlusStatsAtLevel(equipment, level)
-    };
-    return formatEquipmentStatLines(current);
+function formatEquipmentBaseStatLines(equipment, level) {
+    if (!equipment) return '';
+    const lvl = Number(level || 0);
+    const stat = getEquipmentStatsAtLevel(equipment, lvl);
+    const plusStat = getEquipmentPlusStatsAtLevel(equipment, lvl);
+    const rangeStat = getEquipmentStatRangeAtLevel(equipment, lvl);
+    const rangePlus = getEquipmentPlusStatRangeAtLevel(equipment, lvl);
+    const statKeys = Object.keys(SUPPORT_STAT_LABELS_OR_FALLBACK());
+    const plusKeys = Object.keys(SUPPORT_PLUS_STAT_LABELS_OR_FALLBACK());
+    const lines = [];
+    statKeys.forEach(key => {
+        const hasBase = stat && typeof stat[key] != 'undefined';
+        const range = Number(rangeStat[key] || 0);
+        if (!hasBase && range == 0) return;
+        const base = Number(stat[key] || 0);
+        const label = SUPPORT_STAT_LABELS[key] || key;
+        if (range > 0) lines.push('- ' + label + ' ' + formatStatValue(key, base) + ' ~ ' + formatStatValue(key, base + range));
+        else lines.push('- ' + label + ' ' + formatStatValue(key, base));
+    });
+    plusKeys.forEach(key => {
+        const hasBase = plusStat && typeof plusStat[key] != 'undefined';
+        const range = Number(rangePlus[key] || 0);
+        if (!hasBase && range == 0) return;
+        const base = Number(plusStat[key] || 0);
+        const label = SUPPORT_PLUS_STAT_LABELS[key] || key;
+        if (range > 0) lines.push('- ' + label + ' ' + formatStatValue(key + '%', base) + ' ~ ' + formatStatValue(key + '%', base + range));
+        else lines.push('- ' + label + ' ' + formatStatValue(key + '%', base));
+    });
+    if (typeof equipment.requireLevel != 'undefined') lines.push('- 장착 필요 레벨: Lv. ' + Number(equipment.requireLevel));
+    if (typeof equipment.underLevel != 'undefined') lines.push('- 장착 가능 최대 레벨: Lv. ' + Number(equipment.underLevel));
+    if (typeof equipment.exactlyStar != 'undefined') lines.push('- 효과 적용 조건: 메인 캐릭터 카드 ' + (Number(equipment.exactlyStar) + 1) + '성');
+    if (Array.isArray(equipment.require) && equipment.require.length > 0) {
+        const equipments = getDataCache('Equipment', {});
+        const reqNames = equipment.require.map(req => {
+            if (req.type == '장신구') {
+                const data = equipments.accessory && equipments.accessory[req.accessory_id];
+                return data ? '<' + data.rarity + '> ' + data.name : '알 수 없는 장신구';
+            }
+            if (req.type == '무기') {
+                const data = equipments.weapon && equipments.weapon[req.weapon_id];
+                return data ? '<' + data.rarity + '> ' + data.name : '알 수 없는 무기';
+            }
+            if (req.type == '갑옷') {
+                const data = equipments.armor && equipments.armor[req.armor_id];
+                return data ? '<' + data.rarity + '> ' + data.name : '알 수 없는 갑옷';
+            }
+            return '알 수 없음';
+        });
+        lines.push('- 효과 적용 조건: ' + reqNames.join(', ') + ' 장착');
+    }
+    if (Array.isArray(equipment.requireMainCard) && equipment.requireMainCard.length > 0) {
+        const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+        const names = equipment.requireMainCard.map(id => {
+            const card = characterCards[Number(id)];
+            return card ? card.name : ('#' + id);
+        });
+        lines.push('- 장착 가능 메인 카드: ' + names.join(', '));
+    }
+    const dyn = getEquipmentDynamicBonusAtLevel(equipment, lvl);
+    const stars = Object.keys(dyn).sort((a, b) => Number(a) - Number(b));
+    stars.forEach(starKey => {
+        const entry = dyn[starKey];
+        const parts = [];
+        Object.keys(entry.stat || {}).forEach(k => {
+            if (Number(entry.stat[k] || 0) == 0) return;
+            parts.push((SUPPORT_STAT_LABELS[k] || k) + ' ' + formatStatValue(k, entry.stat[k]));
+        });
+        Object.keys(entry.plusStat || {}).forEach(k => {
+            if (Number(entry.plusStat[k] || 0) == 0) return;
+            parts.push((SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', entry.plusStat[k]));
+        });
+        if (parts.length == 0) return;
+        lines.push('[ ' + (Number(starKey) + 1) + '성 보너스 ]');
+        parts.forEach(p => lines.push('- ' + p));
+    });
+    return lines.join('\n');
+}
+
+// 라벨 맵을 늦은 시점에 참조하기 위한 헬퍼 (순환 참조 방지용)
+function SUPPORT_STAT_LABELS_OR_FALLBACK() { return typeof SUPPORT_STAT_LABELS != 'undefined' ? SUPPORT_STAT_LABELS : {}; }
+function SUPPORT_PLUS_STAT_LABELS_OR_FALLBACK() { return typeof SUPPORT_PLUS_STAT_LABELS != 'undefined' ? SUPPORT_PLUS_STAT_LABELS : {}; }
+
+function formatCurrentEquipmentStatLines(equipment, level, rolled, context) {
+    const stat = getEquipmentStatsAtLevel(equipment, level);
+    const plusStat = getEquipmentPlusStatsAtLevel(equipment, level);
+    const resolved = resolveRolledStats(equipment, level, rolled);
+    addStats(stat, resolved.stat);
+    addStats(plusStat, resolved.plusStat);
+    if (context && context.mainCardStar != null) {
+        const dyn = getEquipmentDynamicBonusAtLevel(equipment, level);
+        const entry = dyn[String(context.mainCardStar)];
+        if (entry) {
+            addStats(stat, entry.stat || {});
+            addStats(plusStat, entry.plusStat || {});
+        }
+    }
+    return formatEquipmentStatLines({ stat, plusStat });
 }
 
 function findEquipmentByName(name) {
@@ -416,7 +569,8 @@ function findEquipmentByName(name) {
     const types = [
         { key: 'weapon', name: '무기' },
         { key: 'armor', name: '갑옷' },
-        { key: 'accessory', name: '장신구' }
+        { key: 'accessory', name: '장신구' },
+        { key: 'support', name: '보조' }
     ];
     for (const type of types) {
         const list = equipments[type.key] || [];
@@ -511,6 +665,65 @@ function getEquipmentStatsAtLevel(equipment, level) {
     return stats;
 }
 
+const SUPPORT_PERCENT_STATS = new Set(['crit', 'critMul', 'critDef', 'cmb']);
+
+function getEquipmentStatRangeAtLevel(equipment, level) {
+    const result = Object.assign({}, equipment && equipment.statRange || {});
+    const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
+    for (let i = 0; i < max; i++) addStats(result, equipment.upgrade[i].statRange || {});
+    return result;
+}
+
+function getEquipmentPlusStatRangeAtLevel(equipment, level) {
+    const result = Object.assign({}, equipment && equipment.plusStatRange || {});
+    const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
+    for (let i = 0; i < max; i++) addStats(result, equipment.upgrade[i].plusStatRange || {});
+    return result;
+}
+
+function normalizeMainCardStarEntry(entry) {
+    if (entry == null) return { stat: {}, plusStat: {} };
+    if (typeof entry == 'number') return { stat: {}, plusStat: { atk: Number(entry) || 0 } };
+    return { stat: Object.assign({}, entry.stat || {}), plusStat: Object.assign({}, entry.plusStat || {}) };
+}
+
+function getEquipmentDynamicBonusAtLevel(equipment, level) {
+    const result = {};
+    const merge = (src) => {
+        Object.keys(src || {}).forEach(starKey => {
+            const norm = normalizeMainCardStarEntry(src[starKey]);
+            if (!result[starKey]) result[starKey] = { stat: {}, plusStat: {} };
+            addStats(result[starKey].stat, norm.stat);
+            addStats(result[starKey].plusStat, norm.plusStat);
+        });
+    };
+    merge(equipment && equipment.dynamicBonus && equipment.dynamicBonus.mainCardStar);
+    const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
+    for (let i = 0; i < max; i++) {
+        merge(equipment.upgrade[i].dynamicBonus && equipment.upgrade[i].dynamicBonus.mainCardStar);
+    }
+    return result;
+}
+
+function resolveRolledStats(equipment, level, rolled) {
+    const result = { stat: {}, plusStat: {} };
+    if (!rolled) return result;
+    const rangeStat = getEquipmentStatRangeAtLevel(equipment, level);
+    const rangePlus = getEquipmentPlusStatRangeAtLevel(equipment, level);
+    Object.keys(rolled.stat || {}).forEach(key => {
+        const ratio = Math.min(1, Math.max(0, Number(rolled.stat[key] || 0)));
+        const range = Number(rangeStat[key] || 0);
+        if (SUPPORT_PERCENT_STATS.has(key)) result.stat[key] = Math.round(ratio * range * 10000) / 10000;
+        else result.stat[key] = Math.round(ratio * range);
+    });
+    Object.keys(rolled.plusStat || {}).forEach(key => {
+        const ratio = Math.min(1, Math.max(0, Number(rolled.plusStat[key] || 0)));
+        const range = Number(rangePlus[key] || 0);
+        result.plusStat[key] = Math.round(ratio * range * 10000) / 10000;
+    });
+    return result;
+}
+
 function getEquipmentPlusStatsAtLevel(equipment, level) {
     const stats = Object.assign({}, equipment && equipment.plusStat || {});
     const max = Math.min(Number(level || 0), Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0);
@@ -523,6 +736,10 @@ function isEquipmentEffectActive(user, data) {
     if (typeof data.exactlyStar != 'undefined') {
         const star = Number(user.main_card && user.main_card.star || 0);
         if (star != Number(data.exactlyStar)) return false;
+    }
+    if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
+        const mainId = user.main_card && typeof user.main_card.id != 'undefined' ? Number(user.main_card.id) : null;
+        if (mainId == null || !data.requireMainCard.map(Number).includes(mainId)) return false;
     }
     if (Array.isArray(data.require) && data.require.length > 0) {
         const accessories = user.equipments && user.equipments.accessory || {};
@@ -713,6 +930,54 @@ function runCardCombine(user) {
     return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
 }
 
+function getCardPackNameByStar(starIndex) {
+    if (!Number.isInteger(starIndex) || starIndex < 0 || starIndex > 11) return null;
+    if (starIndex == 9) return '제타 카드팩';
+    if (starIndex == 10) return '시그마 카드팩';
+    if (starIndex == 11) return '오메가 카드팩';
+    return (starIndex + 1) + '성 카드팩';
+}
+
+function combineCardPacks(user, starArg, countArg) {
+    const star = parseCardStarArg(starArg);
+    if (star == null) return '❌ /RPGenius 카드팩조합 [등급] <횟수>';
+    const info = getCardCombineInfo(star);
+    if (!info) return '❌ 해당 등급의 카드팩은 더 이상 조합할 수 없습니다.';
+    let times = 1;
+    if (countArg != null && countArg !== '') {
+        times = Number(countArg);
+        if (!Number.isInteger(times) || times < 1) return '❌ 횟수는 1 이상의 정수여야 합니다.';
+    }
+    const inputPackName = getCardPackNameByStar(star);
+    const outputPackName = getCardPackNameByStar(star + 1);
+    if (!inputPackName || !outputPackName) return '❌ 해당 등급의 카드팩은 더 이상 조합할 수 없습니다.';
+    const items = getDataCache('Item', []);
+    const inputItemId = items.findIndex(it => it.name == inputPackName);
+    const outputItemId = items.findIndex(it => it.name == outputPackName);
+    if (inputItemId == -1) return '❌ 사용 가능한 카드팩이 없습니다: ' + inputPackName;
+    if (outputItemId == -1) return '❌ 결과 카드팩 데이터를 찾을 수 없습니다: ' + outputPackName;
+    const requiredPacks = times * 3;
+    const havePacks = getInventoryItemCount(user, inputItemId);
+    if (havePacks < requiredPacks) return '❌ ' + inputPackName + '이(가) 부족합니다. (' + comma(havePacks) + '/' + comma(requiredPacks) + ')';
+    const totalGold = info.gold * times;
+    if (Number(user.gold || 0) < totalGold) return '❌ 골드가 부족합니다. (필요 🪙 ' + comma(totalGold) + ')';
+    if (!removeInventoryItem(user, inputItemId, requiredPacks)) return '❌ 카드팩 차감에 실패했습니다.';
+    user.gold = Number(user.gold || 0) - totalGold;
+    let successCount = 0;
+    for (let i = 0; i < times; i++) if (Math.random() < info.rate) successCount++;
+    const failCount = times - successCount;
+    if (successCount > 0) addInventoryItem(user, outputItemId, successCount);
+    if (failCount > 0) addInventoryItem(user, inputItemId, failCount);
+    cleanupInventoryItems(user);
+    const lines = ['✅ ' + inputPackName + ' x' + comma(requiredPacks) + ' 조합 완료 (' + comma(times) + '회)'];
+    lines.push('- 성공 확률: ' + formatRatePercent(info.rate));
+    lines.push('- 소모 🪙 ' + comma(totalGold));
+    lines.push('', '[ 결과 ]');
+    lines.push('- ' + outputPackName + ' x' + comma(successCount));
+    if (failCount > 0) lines.push('- ' + inputPackName + ' x' + comma(failCount) + ' 반환');
+    return lines.join('\n');
+}
+
 function parseCardStarArg(starArg) {
     const starText = String(starArg || '').trim();
     const star = starText == '제타' ? 9 : starText == '시그마' ? 10 : starText == '오메가' ? 11 : Number(starText.replace(/성$/, '')) - 1;
@@ -790,10 +1055,13 @@ function equipMainCharacterCard(user, numberArg) {
     user.inventory.card.splice(number - 1, 1);
     if (user.main_card && typeof user.main_card.id != 'undefined') user.inventory.card.push(user.main_card);
     user.main_card = card;
+    const removed = autoUnequipInvalidSupport(user);
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
-    return '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
+    let msg = '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
+    if (removed) msg += '\n⚠️ 메인 카드 변경으로 보조 장비 <' + removed.rarity + '> ' + removed.name + ' 가 자동 해제되었습니다.';
+    return msg;
 }
 
 function getRemainingCardInventorySpace(user) {
@@ -971,6 +1239,24 @@ function calculateUserStats(user) {
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, equip.level));
         }
     });
+    const support = user.equipments && user.equipments.support;
+    if (support && typeof support.id != 'undefined') {
+        const data = getEquipmentData('support', support.id);
+        if (data && isEquipmentEffectActive(user, data)) {
+            const level = Number(support.level || 0);
+            addStats(stats, getEquipmentStatsAtLevel(data, level));
+            addStats(plusStats, getEquipmentPlusStatsAtLevel(data, level));
+            const resolved = resolveRolledStats(data, level, support.rolled);
+            addStats(stats, resolved.stat);
+            addStats(plusStats, resolved.plusStat);
+            const dyn = getEquipmentDynamicBonusAtLevel(data, level);
+            const star = String(Number(user.main_card && user.main_card.star || 0));
+            if (dyn[star]) {
+                addStats(stats, dyn[star].stat || {});
+                addStats(plusStats, dyn[star].plusStat || {});
+            }
+        }
+    }
     const fashion = getCardFashion(user.main_card);
     if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
@@ -980,7 +1266,7 @@ function calculateUserStats(user) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -1103,6 +1389,7 @@ function formatMyInfo(user) {
     const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
     if (accessoryKeys.length == 0) lines.push('[장신구] 없음');
     accessoryKeys.forEach(key => lines.push(formatEquippedEquipment('장신구', 'accessory', accessories[key])));
+    lines.push(formatEquippedEquipment('보조', 'support', user.equipments && user.equipments.support));
     lines.push('', '〈 스탯 〉');
     lines.push('공격력: ' + comma(stats.atk));
     lines.push('방어력: ' + comma(stats.def));
@@ -1173,7 +1460,18 @@ function formatDungeonCPLine(userCP, recommendCP) {
 
 function getAccessibleDungeons(level) {
     const dungeons = readJson(DUNGEON_PATH, []);
-    return dungeons.filter(dungeon => Number(dungeon.requireLevel || 1) <= Number(level || 1));
+    const lvl = Number(level || 1);
+    return dungeons.filter(dungeon => {
+        if (lvl < Number(dungeon.requireLevel || 1)) return false;
+        if (typeof dungeon.maxLevel != 'undefined' && lvl > Number(dungeon.maxLevel)) return false;
+        return true;
+    });
+}
+
+function formatDungeonLevelRange(dungeon) {
+    const min = Number(dungeon.requireLevel || 1);
+    if (typeof dungeon.maxLevel != 'undefined') return 'Lv. ' + min + ' ~ ' + Number(dungeon.maxLevel);
+    return 'Lv. ' + min;
 }
 
 function formatFieldList(user) {
@@ -1183,7 +1481,7 @@ function formatFieldList(user) {
     const lines = ['[ 입장 가능한 필드 목록 ]', '내 전투력: ⚔️ ' + comma(userCP), VIEWMORE];
     dungeons.forEach(dungeon => {
         const recCP = getDungeonRecommendedCP(dungeon);
-        lines.push('〈 ' + dungeon.name + ' 〉 권장 Lv. ' + Number(dungeon.requireLevel || 1) + ' · ' + formatDungeonCPLine(userCP, recCP));
+        lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
     });
     return lines.join('\n');
 }
@@ -1420,6 +1718,7 @@ function enterField(user, fieldName, options) {
     if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
     const level = Number(user.level || 1);
     if (level < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
+    if (typeof dungeon.maxLevel != 'undefined' && level > Number(dungeon.maxLevel)) return '❌ 입장 가능한 최대 레벨을 초과했습니다. (Lv. ' + Number(dungeon.maxLevel) + ' 이하만 입장 가능)';
     const stats = calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
@@ -1604,7 +1903,29 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
     const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, monster);
     const finalDamage = hitResult.finalDamage;
-    const killCount = Math.floor(finalDamage / Number(monster.hp || 1));
+    let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
+    const requireLevel = Number(dungeon.requireLevel || 1);
+    const levelDiff = Number(user.level || 1) - requireLevel;
+    const overLeveledCap = levelDiff >= BIG_LEVEL_DIFF_THRESHOLD;
+    let killCapNote = null;
+    if (overLeveledCap && killCount > BIG_LEVEL_DIFF_KILL_CAP) {
+        killCount = BIG_LEVEL_DIFF_KILL_CAP
+    }
+    let goldMineCapNote = null;
+    let goldMineLimitReached = false;
+    if (typeof dungeon.goldMineLevel != 'undefined') {
+        const today = getKoreanDateKey(new Date());
+        if (!user.goldMineDaily || user.goldMineDaily.date != today) user.goldMineDaily = { date: today, count: 0 };
+        const used = Number(user.goldMineDaily.count || 0);
+        const remaining = Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - used);
+        if (remaining <= 0) {
+            killCount = 0;
+            goldMineLimitReached = true;
+        } else if (killCount > remaining) {
+            killCount = remaining;
+            goldMineCapNote = '- ⛏️ 황금 광산 일일 처치 한도(' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리) 도달. ' + comma(remaining) + '마리만 처치되었습니다.';
+        }
+    }
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
     const fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
@@ -1616,6 +1937,9 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
         : ['⚔️ ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
+    if (killCapNote) lines.push(killCapNote);
+    if (goldMineCapNote) lines.push(goldMineCapNote);
+    if (goldMineLimitReached) lines.push('- ⛏️ 오늘은 황금 광산에서 더 이상 사냥할 수 없습니다. (일일 한도 ' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리 도달)');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
@@ -1639,6 +1963,9 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const levelMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
     if (killCount > 0) {
         user.field.killCount = Number(user.field.killCount || 0) + killCount;
+        if (typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily) {
+            user.goldMineDaily.count = Number(user.goldMineDaily.count || 0) + killCount;
+        }
         let expReward = applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
@@ -1648,8 +1975,9 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         lines.push('', '[ 보상 ]');
         lines.push('- XP ' + comma(expReward));
         lines.push('- 🪙 ' + comma(goldReward));
+        const dropMultiplier = 1 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
         let stoneDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.2 * levelMultiplier) stoneDropCount++;
+        for (let i = 0; i < killCount; i++) if (Math.random() < 0.2 * dropMultiplier * levelMultiplier) stoneDropCount++;
         if (stoneDropCount > 0) {
             addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
             lines.push('- 강화석 x' + comma(stoneDropCount));
@@ -1657,7 +1985,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const items = getDataCache('Item', []);
         const baitItemId = items.findIndex(item => item.name == '일반 떡밥');
         let baitDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.55 * levelMultiplier) baitDropCount++;
+        for (let i = 0; i < killCount; i++) if (Math.random() < 0.35 * dropMultiplier * levelMultiplier) baitDropCount++;
         if (baitItemId != -1 && baitDropCount > 0) {
             addInventoryItem(user, baitItemId, baitDropCount);
             lines.push('- 일반 떡밥 x' + comma(baitDropCount));
@@ -1666,10 +1994,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     if (killCount > 0) {
-        const dropChance = (0.03 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0)) * levelMultiplier;
+        const dropMultiplier = 1 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
+        const dropChance = 0.03 * dropMultiplier * levelMultiplier;
         if (Math.random() < dropChance) {
             const items = getDataCache('Item', []);
-            const dropItemId = items.findIndex(item => item.name == '장비 상자');
+            const equipBoxName = Number(dungeon.requireLevel || 0) >= 71
+                ? (Math.random() < 0.7 ? '중급 장비 상자' : '보조 장비 상자')
+                : '장비 상자';
+            const dropItemId = items.findIndex(item => item.name == equipBoxName);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
@@ -1683,11 +2015,24 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        if (Math.random() < 0.01 * levelMultiplier) {
+        if (Math.random() < 0.01 * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
             addInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
             const hammer = items[ICE_HAMMER_ITEM_ID];
             lines.push('- 🔨 [이벤트]' + (hammer ? hammer.name : '망치') + ' 획득!');
+        }
+        const oreInfo = GOLD_MINE_ORE_DROPS[Number(dungeon.goldMineLevel || 0)];
+        if (oreInfo) {
+            const items = getDataCache('Item', []);
+            const oreItemId = items.findIndex(item => item.name == oreInfo.name);
+            if (oreItemId != -1) {
+                let oreDropCount = 0;
+                for (let i = 0; i < killCount; i++) if (Math.random() < oreInfo.chance * dropMultiplier * levelMultiplier) oreDropCount++;
+                if (oreDropCount > 0) {
+                    addInventoryItem(user, oreItemId, oreDropCount);
+                    lines.push('- ⛏️ ' + oreInfo.name + ' x' + comma(oreDropCount));
+                }
+            }
         }
     }
 
@@ -1707,8 +2052,31 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (killCount > 0) tryEncounterFragment(user, dungeon, lines);
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
+}
+
+function getFragmentTierForDungeon(dungeon) {
+    if (!dungeon || typeof dungeon.goldMineLevel != 'undefined') return null;
+    const lvl = Number(dungeon.requireLevel || 0);
+    if (!lvl) return null;
+    for (const tier of ['low', 'mid', 'high']) {
+        const cfg = FRAGMENT_TIERS[tier];
+        if (lvl >= cfg.minLevel && lvl <= cfg.maxLevel) return tier;
+    }
+    return null;
+}
+
+function tryEncounterFragment(user, dungeon, lines) {
+    if (user.pendingFragment) return;
+    const tier = getFragmentTierForDungeon(dungeon);
+    if (!tier) return;
+    const cfg = FRAGMENT_TIERS[tier];
+    if (Math.random() >= cfg.chance) return;
+    user.pendingFragment = tier;
+    lines.push('', '✨ ' + cfg.name + '이(가) 등장했습니다!');
+    lines.push('🔓 /RPGenius 편린 명령어로 사용해야 다른 명령을 사용할 수 있습니다.');
 }
 
 function useBasicAttackInField(user) {
@@ -1807,6 +2175,7 @@ function formatDescription(name) {
     const item = items.find(data => data.name == name);
     if (item) {
         const lines = ['《 ' + formatNameWithTrade(item) + ' 》 [' + item.type + ']', '- ' + item.desc];
+        if (typeof item.sellPrice != 'undefined' && Number(item.sellPrice) > 0) lines.push('- 판매가: 🪙 ' + comma(Number(item.sellPrice)));
         if (item.type == '가챠' && typeof item.pack == 'number' && packs[item.pack]) lines.push(VIEWMORE, formatPack(packs[item.pack]));
         if (item.type == '번들' && typeof item.pack == 'number' && bundles[item.pack]) lines.push(VIEWMORE, formatBundle(bundles[item.pack]));
         return lines.join('\n');
@@ -1819,7 +2188,7 @@ function formatDescription(name) {
 
     const equipment = findEquipmentByName(name);
     if (equipment) {
-        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentStatLines(equipment.equipment)].join('\n');
+        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentBaseStatLines(equipment.equipment, 0)].join('\n');
     }
 
     return null;
@@ -1872,14 +2241,50 @@ function formatCharacterInventory(user) {
     return lines.join('\n');
 }
 
-function formatEquippedEquipmentDetail(label, type, equip) {
+const SUPPORT_STAT_LABELS = {
+    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력',
+    crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
+    cmb: '연격 확률', maxCmb: '추가 공격 횟수',
+    skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해'
+};
+
+const SUPPORT_PLUS_STAT_LABELS = {
+    atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+    gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
+    avd: '회피 확률', afterSkill: '스킬 공격 피해',
+    '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
+    eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+    itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
+    critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
+    takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가'
+};
+
+function formatEquippedEquipmentDetail(label, type, equip, user) {
     const title = formatEquippedEquipment(label, type, equip);
     if (!equip || typeof equip.id == 'undefined') return title;
     const data = getEquipmentData(type, equip.id);
     if (!data) return title;
     const level = Number(equip.level || 0);
-    const statLines = formatCurrentEquipmentStatLines(data, level);
-    return title + (statLines ? '\n' + statLines : '');
+    const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
+    let out = title + (statLines ? '\n' + statLines : '');
+    if (type == 'support' && user && user.main_card) {
+        const star = Number(user.main_card.star || 0);
+        const dyn = getEquipmentDynamicBonusAtLevel(data, level);
+        const entry = dyn[String(star)];
+        if (entry) {
+            const bonusLines = [];
+            Object.keys(entry.stat || {}).forEach(k => {
+                if (Number(entry.stat[k] || 0) == 0) return;
+                bonusLines.push('- ' + (SUPPORT_STAT_LABELS[k] || k) + ' ' + formatStatValue(k, entry.stat[k]));
+            });
+            Object.keys(entry.plusStat || {}).forEach(k => {
+                if (Number(entry.plusStat[k] || 0) == 0) return;
+                bonusLines.push('- ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', entry.plusStat[k]));
+            });
+            if (bonusLines.length > 0) out += '\n[ ' + (star + 1) + '성 보너스 ]\n' + bonusLines.join('\n');
+        }
+    }
+    return out;
 }
 
 function formatEquipmentInfo(user) {
@@ -1917,9 +2322,9 @@ function formatEquipmentInfo(user) {
     }
 
     lines.push('', '〈 장비 〉');
-    lines.push(formatEquippedEquipmentDetail('무기', 'weapon', user.equipments && user.equipments.weapon));
+    lines.push(formatEquippedEquipmentDetail('무기', 'weapon', user.equipments && user.equipments.weapon, user));
     lines.push('');
-    lines.push(formatEquippedEquipmentDetail('갑옷', 'armor', user.equipments && user.equipments.armor));
+    lines.push(formatEquippedEquipmentDetail('갑옷', 'armor', user.equipments && user.equipments.armor, user));
 
     const accessories = user.equipments && user.equipments.accessory || {};
     const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
@@ -1928,9 +2333,12 @@ function formatEquipmentInfo(user) {
     } else {
         accessoryKeys.forEach(key => {
             lines.push('');
-            lines.push(formatEquippedEquipmentDetail('장신구', 'accessory', accessories[key]));
+            lines.push(formatEquippedEquipmentDetail('장신구', 'accessory', accessories[key], user));
         });
     }
+
+    lines.push('');
+    lines.push(formatEquippedEquipmentDetail('보조', 'support', user.equipments && user.equipments.support, user));
 
     return lines.join('\n');
 }
@@ -1941,8 +2349,9 @@ function getEquippedEquipmentRefs(user) {
     if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') refs.push({ type: 'armor', equip: user.equipments.armor });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
-        if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: accessories[key] });
+        if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: accessories[key], slotKey: key });
     });
+    if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') refs.push({ type: 'support', equip: user.equipments.support });
     return refs;
 }
 
@@ -1970,6 +2379,10 @@ function removeSelectedEquipment(user, selected) {
         delete user.equipments.accessory[selected.slotKey];
         return true;
     }
+    if (selected.source == 'equipped' && selected.type == 'support') {
+        user.equipments.support = null;
+        return true;
+    }
     return false;
 }
 
@@ -1977,6 +2390,7 @@ function getEquipmentTypeLabel(type) {
     if (type == 'weapon') return '무기';
     if (type == 'armor') return '갑옷';
     if (type == 'accessory') return '장신구';
+    if (type == 'support') return '보조';
     return type;
 }
 
@@ -1984,13 +2398,14 @@ function formatEquipmentInventoryLine(number, entry) {
     const data = getEquipmentData(entry.equip.type || entry.type, entry.equip.id);
     if (!data) return null;
     const level = Number(entry.equip.level || 0);
-    return '[' + number + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '');
+    const lockMark = entry.equip.locked ? ' 🔒' : '';
+    return '[' + number + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '') + lockMark;
 }
 
 function formatEquipmentInventory(user) {
     const lines = ['[ ' + user.name + '님의 보유 장비 ]', VIEWMORE];
     const all = getAllUserEquipments(user);
-    const types = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']];
+    const types = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']];
     let hasEquipment = false;
     types.forEach(type => {
         const filtered = all
@@ -2360,12 +2775,16 @@ function grantCraftEntry(user, entry) {
     }
     if (entry.type == '장신구') {
         for (let i = 0; i < count; i++) addEquipmentInventory(user, 'accessory', entry.accessory_id);
+        return;
+    }
+    if (entry.type == '보조') {
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'support', entry.support_id);
     }
 }
 
 function formatCraftedEntryWithTotal(entry, total) {
     const text = formatPackEntry(entry);
-    if (['무기', '갑옷', '장신구', '캐릭터카드'].includes(entry.type)) {
+    if (['무기', '갑옷', '장신구', '보조', '캐릭터카드'].includes(entry.type)) {
         if (Number(total) <= 1) return text;
         return text + ' x' + comma(total);
     }
@@ -2430,6 +2849,71 @@ function runCraft(user) {
         const total = getRecipeEntryCount(entry) * times;
         lines.push('- ' + formatCraftedEntryWithTotal(entry, total));
     });
+    return lines.join('\n');
+}
+
+function parseItemSaleArgs(args) {
+    if (!Array.isArray(args) || args.length == 0) return { error: '❌ /RPGenius 아이템판매 [아이템명] <갯수>' };
+    const last = args[args.length - 1];
+    const hasCount = args.length > 1 && /^\d+$/.test(last);
+    const count = hasCount ? Number(last) : 1;
+    const name = (hasCount ? args.slice(0, -1) : args).join(' ').trim();
+    if (!name) return { error: '❌ 아이템명이 비어 있습니다.' };
+    if (!Number.isInteger(count) || count < 1) return { error: '❌ 갯수는 1 이상의 정수여야 합니다.' };
+    return { name, count };
+}
+
+function sellItemByName(user, args) {
+    const parsed = parseItemSaleArgs(args);
+    if (parsed.error) return parsed.error;
+    const items = getDataCache('Item', []);
+    const itemId = items.findIndex(item => item.name == parsed.name);
+    if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
+    const item = items[itemId];
+    if (!item || typeof item.sellPrice == 'undefined') return '❌ 판매할 수 없는 아이템입니다.';
+    const unitPrice = Number(item.sellPrice || 0);
+    if (unitPrice <= 0) return '❌ 판매할 수 없는 아이템입니다.';
+    if (getInventoryItemCount(user, itemId) < parsed.count) return '❌ 보유한 아이템이 부족합니다.';
+    if (!removeInventoryItem(user, itemId, parsed.count)) return '❌ 아이템 판매에 실패했습니다.';
+    cleanupInventoryItems(user);
+    const total = unitPrice * parsed.count;
+    user.gold = Number(user.gold || 0) + total;
+    return '✅ ' + item.name + ' x' + comma(parsed.count) + '을(를) 판매했습니다.\n- 🪙 +' + comma(total);
+}
+
+function consumeFragment(user) {
+    if (!user.pendingFragment) return '❌ 사용 가능한 편린이 없습니다.';
+    const tier = String(user.pendingFragment);
+    const cfg = FRAGMENT_TIERS[tier];
+    if (!cfg) { user.pendingFragment = null; return '❌ 알 수 없는 편린입니다. 데이터를 초기화했습니다.'; }
+    const totalWeight = cfg.rewards.reduce((sum, r) => sum + Number(r.weight || 0), 0);
+    if (totalWeight <= 0) { user.pendingFragment = null; return '❌ 편린 보상 데이터가 잘못되었습니다.'; }
+    let roll = Math.random() * totalWeight;
+    let chosen = cfg.rewards[cfg.rewards.length - 1];
+    for (const r of cfg.rewards) {
+        roll -= Number(r.weight || 0);
+        if (roll <= 0) { chosen = r; break; }
+    }
+    const lines = ['✨ ' + cfg.name + '을(를) 사용했습니다.', '', '[ 획득 보상 ]'];
+    if (chosen.type == 'gold') {
+        const amount = Number(chosen.amount || 0);
+        user.gold = Number(user.gold || 0) + amount;
+        lines.push('- 🪙 +' + comma(amount));
+    } else if (chosen.type == 'item') {
+        const items = getDataCache('Item', []);
+        const itemId = items.findIndex(it => it.name == chosen.name);
+        if (itemId == -1) {
+            user.pendingFragment = null;
+            return '❌ 보상 아이템 \'' + chosen.name + '\'을(를) 찾을 수 없습니다.';
+        }
+        const count = Number(chosen.count || 1);
+        addInventoryItem(user, itemId, count);
+        lines.push('- ' + chosen.name + ' x' + comma(count));
+    } else {
+        user.pendingFragment = null;
+        return '❌ 알 수 없는 보상 형식입니다.';
+    }
+    user.pendingFragment = null;
     return lines.join('\n');
 }
 
@@ -2675,10 +3159,49 @@ async function handleAdminCommand(command, adminUser) {
     return '✅ ' + targetUser.name + '님에게' + (command.args[0] == '아이템지급' ? '' : '서') + ' 아이템을 ' + (command.args[0] == '아이템지급' ? '지급' : '제거') + '했습니다.\n- ' + itemName + ' x' + comma(count);
 }
 
+function rollSupportEquipmentStats(data) {
+    const rolled = { stat: {}, plusStat: {} };
+    const collect = (src, target) => {
+        Object.keys(src || {}).forEach(k => { if (!(k in target)) target[k] = Math.round(Math.random() * 10000) / 10000; });
+    };
+    collect(data && data.statRange, rolled.stat);
+    collect(data && data.plusStatRange, rolled.plusStat);
+    (data && Array.isArray(data.upgrade) ? data.upgrade : []).forEach(u => {
+        collect(u && u.statRange, rolled.stat);
+        collect(u && u.plusStatRange, rolled.plusStat);
+    });
+    return rolled;
+}
+
 function addEquipmentInventory(user, type, id) {
     if (!user.inventory) user.inventory = { card: [], item: [] };
     if (!user.inventory.equipment) user.inventory.equipment = [];
-    user.inventory.equipment.push({ type: type, id: id, level: 0 });
+    const entry = { type: type, id: id, level: 0 };
+    if (type == 'support') {
+        const data = getEquipmentData('support', id);
+        if (data) entry.rolled = rollSupportEquipmentStats(data);
+    }
+    user.inventory.equipment.push(entry);
+}
+
+function autoUnequipInvalidSupport(user) {
+    const sup = user.equipments && user.equipments.support;
+    if (!sup || typeof sup.id == 'undefined') return null;
+    const data = getEquipmentData('support', sup.id);
+    if (!data) return null;
+    if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
+        const mainId = user.main_card && typeof user.main_card.id != 'undefined' ? Number(user.main_card.id) : null;
+        if (mainId == null || !data.requireMainCard.map(Number).includes(mainId)) {
+            if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+            if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+            const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
+            if (sup.rolled) entry.rolled = sup.rolled;
+            user.inventory.equipment.push(entry);
+            user.equipments.support = null;
+            return data;
+        }
+    }
+    return null;
 }
 
 function equipItemByNumber(user, numberArg) {
@@ -2705,7 +3228,27 @@ function equipItemByNumber(user, numberArg) {
         return '❌ 장착 가능 최대 레벨을 초과했습니다. (Lv. ' + Number(data.underLevel) + ' 이하)';
     }
 
-    if (!user.equipments) user.equipments = { weapon: {}, armor: {}, accessory: {} };
+    if (!user.equipments) user.equipments = { weapon: {}, armor: {}, accessory: {}, support: null };
+
+    if (target.type == 'support') {
+        if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
+            const mainId = user.main_card && typeof user.main_card.id != 'undefined' ? Number(user.main_card.id) : null;
+            if (mainId == null || !data.requireMainCard.map(Number).includes(mainId)) {
+                return '❌ 해당 보조 장비를 장착할 수 있는 캐릭터 카드가 아닙니다.';
+            }
+        }
+        const prev = user.equipments.support;
+        const equipEntry = { id: target.id, level: Number(target.level || 0) };
+        if (target.rolled) equipEntry.rolled = target.rolled;
+        user.equipments.support = equipEntry;
+        user.inventory.equipment.splice(invIndex, 1);
+        if (prev && typeof prev.id != 'undefined') {
+            const back = { type: 'support', id: Number(prev.id), level: Number(prev.level || 0) };
+            if (prev.rolled) back.rolled = prev.rolled;
+            user.inventory.equipment.push(back);
+        }
+        return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+    }
 
     if (target.type == 'weapon' || target.type == 'armor') {
         const prev = user.equipments[target.type];
@@ -2740,6 +3283,26 @@ function equipItemByNumber(user, numberArg) {
     return '❌ 알 수 없는 장비 타입입니다.';
 }
 
+function unequipSupport(user) {
+    if (!user.equipments || !user.equipments.support || typeof user.equipments.support.id == 'undefined') return '❌ 장착 중인 보조 장비가 없습니다.';
+    const sup = user.equipments.support;
+    const data = getEquipmentData('support', sup.id);
+    if (!data) {
+        user.equipments.support = null;
+        return '❌ 잘못된 보조 장비 데이터입니다.';
+    }
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
+    if (sup.rolled) entry.rolled = sup.rolled;
+    user.inventory.equipment.push(entry);
+    user.equipments.support = null;
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    return '✅ 보조 장비를 해제했습니다.\n<' + data.rarity + '> ' + data.name + (Number(sup.level || 0) > 0 ? ' +' + sup.level : '');
+}
+
 function unequipAccessoryByNumber(user, numberArg) {
     const number = Number(numberArg);
     const maxSlot = Number(user.maxAccessory || 3);
@@ -2772,7 +3335,8 @@ const EQUIPMENT_DISASSEMBLE_REWARD = {
     '일반': { min: 120, max: 230 },
     '레어': { min: 270, max: 330 },
     '유니크': { min: 350, max: 430 },
-    '레전더리': { min: 560, max: 650 }
+    '레전더리': { min: 560, max: 650 },
+    '고유': { min: 800, max: 950 }
 };
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
 const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 11];
@@ -2892,19 +3456,104 @@ function getEquipmentUpgradeCost(equipment, type, level) {
     return { stone, gold };
 }
 
-function disassembleEquipment(user, numberArg) {
+function parseDisassembleSelection(user, numberArgs) {
+    if (!Array.isArray(numberArgs) || numberArgs.length == 0) return { error: '❌ /RPGenius 분해 [장비번호1] [장비번호2]...' };
+    const numbers = numberArgs.map(arg => Number(arg));
+    if (numbers.some(n => !Number.isInteger(n) || n < 1)) return { error: '❌ 장비 번호는 1 이상의 정수여야 합니다.' };
+    if (new Set(numbers).size != numbers.length) return { error: '❌ 같은 장비 번호를 중복 선택할 수 없습니다.' };
+    const all = getAllUserEquipments(user);
+    const entries = [];
+    for (const number of numbers) {
+        const entry = all[number - 1];
+        if (!entry) return { error: '❌ 존재하지 않는 장비 번호가 있습니다: ' + number };
+        if (entry.source == 'equipped') return { error: '❌ 장착 중인 장비는 분해할 수 없습니다: [' + number + ']' };
+        if (entry.equip.locked) return { error: '❌ 잠긴 장비는 분해할 수 없습니다: [' + number + ']' };
+        const type = entry.equip.type || entry.type;
+        const equipment = getEquipmentData(type, entry.equip.id);
+        if (!equipment) return { error: '❌ 잘못된 장비 데이터입니다: [' + number + ']' };
+        const rewardRange = EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
+        if (!rewardRange) return { error: '❌ 분해할 수 없는 등급(' + equipment.rarity + ')이 포함되어 있습니다: [' + number + ']' };
+        entries.push({ number, entry, equipment, rewardRange });
+    }
+    return { numbers, entries };
+}
+
+function formatDisassemblePreview(user, numberArgs) {
+    const parsed = parseDisassembleSelection(user, numberArgs);
+    if (parsed.error) { user.pendingAction = null; return parsed.error; }
+    user.pendingAction = { type: '장비분해', numbers: parsed.numbers };
+    const lines = ['[ 장비 분해 ]'];
+    let minTotal = 0;
+    let maxTotal = 0;
+    parsed.entries.forEach(e => {
+        const lvl = Number(e.entry.equip.level || 0);
+        lines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(e.rewardRange.min) + '~' + comma(e.rewardRange.max) + ')');
+        minTotal += e.rewardRange.min;
+        maxTotal += e.rewardRange.max;
+    });
+    lines.push('', '[ 예상 획득 ]');
+    lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
+    lines.push('', '분해하시겠습니까?', '/RPGenius 분해확인');
+    return lines.join('\n');
+}
+
+function runDisassemble(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '장비분해') return '❌ 진행 중인 분해 작업이 없습니다.';
+    user.pendingAction = null;
+    const parsed = parseDisassembleSelection(user, pending.numbers);
+    if (parsed.error) return parsed.error;
+    const entries = parsed.entries.slice().sort((a, b) => b.entry.index - a.entry.index);
+    let totalStone = 0;
+    const dismantledLines = [];
+    entries.forEach(e => {
+        const stone = randomInt(e.rewardRange.min, e.rewardRange.max);
+        totalStone += stone;
+        user.inventory.equipment.splice(e.entry.index, 1);
+        const lvl = Number(e.entry.equip.level || 0);
+        dismantledLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone));
+    });
+    addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
+    const lines = ['✅ 장비 ' + comma(entries.length) + '개를 분해했습니다.', '', '[ 분해 장비 ]'];
+    dismantledLines.forEach(l => lines.push(l));
+    lines.push('', '[ 획득 결과 ]', '- 강화석 x' + comma(totalStone));
+    return lines.join('\n');
+}
+
+function formatBulkDisassemblePreview(user, rarityArg, countArg) {
+    const rarity = String(rarityArg || '').trim();
+    if (!rarity) return '❌ /RPGenius 일괄분해 [등급] <갯수>';
+    if (!EQUIPMENT_DISASSEMBLE_REWARD[rarity]) return '❌ 분해할 수 없는 등급입니다: ' + rarity;
+    let count = null;
+    if (countArg != null && countArg !== '') {
+        count = Number(countArg);
+        if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
+    }
+    const all = getAllUserEquipments(user);
+    const eligibleNumbers = [];
+    all.forEach((entry, i) => {
+        if (entry.source != 'inventory') return;
+        if (entry.equip.locked) return;
+        const type = entry.equip.type || entry.type;
+        const equipment = getEquipmentData(type, entry.equip.id);
+        if (!equipment || equipment.rarity != rarity) return;
+        eligibleNumbers.push(i + 1);
+    });
+    if (eligibleNumbers.length == 0) return '❌ 분해 가능한 ' + rarity + ' 등급 장비가 없습니다.';
+    const finalCount = count == null ? eligibleNumbers.length : Math.min(count, eligibleNumbers.length);
+    return formatDisassemblePreview(user, eligibleNumbers.slice(0, finalCount));
+}
+
+function toggleEquipmentLock(user, numberArg) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
-    if (selected.source == 'equipped') return '❌ 장착 중인 장비는 분해할 수 없습니다.';
     const type = selected.equip.type || selected.type;
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
-    const rewardRange = EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
-    if (!rewardRange) return '❌ 분해할 수 없는 장비 등급입니다.';
-    const stoneCount = randomInt(rewardRange.min, rewardRange.max);
-    user.inventory.equipment.splice(selected.index, 1);
-    addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneCount);
-    return '✅ 장비를 분해했습니다.\n[ 분해 장비 ]\n- <' + equipment.rarity + '> ' + equipment.name + '\n[ 획득 결과 ]\n- 강화석 x' + comma(stoneCount);
+    selected.equip.locked = !selected.equip.locked;
+    const lvl = Number(selected.equip.level || 0);
+    const status = selected.equip.locked ? '🔒 잠금' : '🔓 잠금 해제';
+    return '✅ <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' ' + status;
 }
 
 function formatUpgradeRatePercent(value) {
@@ -2914,6 +3563,7 @@ function formatUpgradeRatePercent(value) {
 function formatEquipmentUpgradePreview(user, numberArg, options) {
     const selected = getEquipmentByNumber(user, numberArg);
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    if (selected.equip.locked) return '❌ 잠긴 장비는 강화할 수 없습니다. (/RPGenius 잠금 ' + numberArg + ')';
     const type = selected.equip.type || selected.type;
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
@@ -2927,6 +3577,15 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const nextStats = getEquipmentStatsAtLevel(equipment, nextLevel);
     const currentPlus = getEquipmentPlusStatsAtLevel(equipment, level);
     const nextPlus = getEquipmentPlusStatsAtLevel(equipment, nextLevel);
+    const rolled = selected.equip && selected.equip.rolled;
+    if (rolled) {
+        const curResolved = resolveRolledStats(equipment, level, rolled);
+        const nxtResolved = resolveRolledStats(equipment, nextLevel, rolled);
+        addStats(currentStats, curResolved.stat);
+        addStats(nextStats, nxtResolved.stat);
+        addStats(currentPlus, curResolved.plusStat);
+        addStats(nextPlus, nxtResolved.plusStat);
+    }
     const statNames = {
         atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP',
         crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
@@ -2955,6 +3614,27 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     Object.keys(plusStatNames).forEach(key => {
         if (Number(currentPlus[key] || 0) != Number(nextPlus[key] || 0)) lines.push('- ' + plusStatNames[key] + ' ' + formatStatValue(key + '%', currentPlus[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key + '%', nextPlus[key] || 0).replace(/^\+/, ''));
     });
+    if (type == 'support') {
+        const curDyn = getEquipmentDynamicBonusAtLevel(equipment, level);
+        const nextDyn = getEquipmentDynamicBonusAtLevel(equipment, nextLevel);
+        const stars = new Set([...Object.keys(curDyn), ...Object.keys(nextDyn)]);
+        Array.from(stars).sort((a, b) => Number(a) - Number(b)).forEach(starKey => {
+            const cur = curDyn[starKey] || { stat: {}, plusStat: {} };
+            const nxt = nextDyn[starKey] || { stat: {}, plusStat: {} };
+            const statKeys = new Set([...Object.keys(cur.stat || {}), ...Object.keys(nxt.stat || {})]);
+            statKeys.forEach(k => {
+                const a = Number((cur.stat || {})[k] || 0);
+                const b = Number((nxt.stat || {})[k] || 0);
+                if (a != b) lines.push('- [' + (Number(starKey) + 1) + '성] ' + (SUPPORT_STAT_LABELS[k] || k) + ' ' + formatStatValue(k, a).replace(/^\+/, '') + ' -> ' + formatStatValue(k, b).replace(/^\+/, ''));
+            });
+            const plusKeys = new Set([...Object.keys(cur.plusStat || {}), ...Object.keys(nxt.plusStat || {})]);
+            plusKeys.forEach(k => {
+                const a = Number((cur.plusStat || {})[k] || 0);
+                const b = Number((nxt.plusStat || {})[k] || 0);
+                if (a != b) lines.push('- [' + (Number(starKey) + 1) + '성] ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', a).replace(/^\+/, '') + ' -> ' + formatStatValue(k + '%', b).replace(/^\+/, ''));
+            });
+        });
+    }
     lines.push('', '[ 강화 확률 ]');
     lines.push('⏫ 대성공 ' + formatUpgradeRatePercent(rates.great));
     lines.push('🔼 성공 ' + formatUpgradeRatePercent(rates.success));
@@ -3146,6 +3826,12 @@ function grantPackReward(user, reward, summary) {
         addEquipmentInventory(user, 'accessory', reward.accessory_id);
         const equipment = equipments.accessory && equipments.accessory[reward.accessory_id];
         addRewardSummary(summary, 'accessory:' + reward.accessory_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 장신구', 1);
+        return;
+    }
+    if (reward.type == '보조') {
+        addEquipmentInventory(user, 'support', reward.support_id);
+        const equipment = equipments.support && equipments.support[reward.support_id];
+        addRewardSummary(summary, 'support:' + reward.support_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 보조 장비', 1);
     }
 }
 
@@ -3175,6 +3861,22 @@ function grantEquipmentBox(user, pack, useCount, summary) {
         (equipments[group.key] || []).forEach((equipment, id) => {
             if (equipment && equipment.rarity == rarity) candidates.push({ type: group.type, id, equipment });
         });
+    });
+    if (candidates.length == 0) return false;
+    for (let i = 0; i < useCount; i++) {
+        const selected = candidates[randomInt(0, candidates.length - 1)];
+        addEquipmentInventory(user, selected.type, selected.id);
+        addRewardSummary(summary, selected.type + ':' + selected.id, '<' + selected.equipment.rarity + '> ' + selected.equipment.name, 1);
+    }
+    return true;
+}
+
+function grantSupportEquipmentBox(user, pack, useCount, summary) {
+    const equipments = getDataCache('Equipment', {});
+    const rarity = String(pack && pack.rarity || '').trim();
+    const candidates = [];
+    (equipments.support || []).forEach((equipment, id) => {
+        if (equipment && equipment.rarity == rarity) candidates.push({ type: 'support', id, equipment });
     });
     if (candidates.length == 0) return false;
     for (let i = 0; i < useCount; i++) {
@@ -3319,6 +4021,8 @@ async function useItem(user, itemName, countArg) {
             grantCharacterCardPack(user, item.pack, useCount, summary);
         } else if (item.pack && item.pack.type == '장비 상자') {
             if (!grantEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 장비 상자입니다.';
+        } else if (item.pack && item.pack.type == '보조 장비 상자') {
+            if (!grantSupportEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 보조 장비 상자입니다.';
         } else {
             return '❌ 사용할 수 없는 가챠입니다.';
         }
@@ -3524,7 +4228,8 @@ class RPGUser {
                 id: 0,
                 level: 0
             },
-            accessory: {}
+            accessory: {},
+            support: null
         };
         this.inventory = {
             card: [],
@@ -3543,6 +4248,8 @@ class RPGUser {
         this.fishingNet = {};
         this.fishingNetLimit = 200;
         this.pendingAction = null;
+        this.pendingFragment = null;
+        this.goldMineDaily = null;
         this.maxCardLimit = 52;
         this.maxAccessory = 3;
         this.mail = [];
@@ -3558,10 +4265,11 @@ class RPGUser {
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
-        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {} };
+        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {}, support: null };
         if (typeof this.equipments.weapon == 'undefined') this.equipments.weapon = null;
         if (typeof this.equipments.armor == 'undefined') this.equipments.armor = null;
         if (!this.equipments.accessory || typeof this.equipments.accessory != 'object') this.equipments.accessory = {};
+        if (typeof this.equipments.support == 'undefined') this.equipments.support = null;
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
@@ -3575,6 +4283,8 @@ class RPGUser {
         normalizeStatPointData(this);
         normalizeFishingData(this);
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
+        if (typeof this.pendingFragment == 'undefined') this.pendingFragment = null;
+        if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;
         if (!this.maxCardLimit) this.maxCardLimit = 52;
@@ -4261,6 +4971,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingFragment) {
+        if (args[0] == '편린') {
+            const result = consumeFragment(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        const cfg = FRAGMENT_TIERS[user.pendingFragment];
+        const tierName = cfg ? cfg.name : '편린';
+        reply('❌ ' + tierName + '을(를) 먼저 사용해야 합니다.\n/RPGenius 편린');
+        return true;
+    }
+
+    if (args[0] == '편린') {
+        reply('❌ 사용 가능한 편린이 없습니다.');
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '캐릭터변환') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -4340,6 +5068,18 @@ async function handleRPGCommand(data, channel) {
         user.pendingAction = null;
         await user.save();
         reply('❌ 카드조합이 취소되었습니다.');
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '장비분해') {
+        if (args[0] == '분해확인') {
+            const result = runDisassemble(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        user.pendingAction = null;
+        await user.save();
+        reply('❌ 장비 분해가 취소되었습니다.');
     }
 
     if (user.pendingAction && user.pendingAction.type == '카드판매') {
@@ -4601,6 +5341,13 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '카드팩조합') {
+        const result = combineCardPacks(user, args[1], args[2]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '랜덤카드조합') {
         if (!args[1]) {
             reply('❌ /RPGenius 랜덤카드조합 [등급]');
@@ -4615,6 +5362,13 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '카드판매') {
         const result = formatCardSalePreview(user, args.slice(1));
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '아이템판매') {
+        const result = sellItemByName(user, args.slice(1));
         await user.save();
         reply(result);
         return true;
@@ -4754,6 +5508,13 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '보조해제') {
+        const result = unequipSupport(user);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '장비강화') {
         if (!args[1]) {
             reply('❌ /RPGenius 장비강화 [장비번호]');
@@ -4773,11 +5534,25 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '분해') {
+        const result = formatDisassemblePreview(user, args.slice(1));
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '일괄분해') {
+        const result = formatBulkDisassemblePreview(user, args[1], args[2]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '잠금') {
         if (!args[1]) {
-            reply('❌ /RPGenius 분해 [장비번호]');
+            reply('❌ /RPGenius 잠금 [장비번호]');
             return true;
         }
-        const result = disassembleEquipment(user, args[1]);
+        const result = toggleEquipmentLock(user, args[1]);
         await user.save();
         reply(result);
         return true;

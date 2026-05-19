@@ -444,7 +444,7 @@ server.get('/api/lookup/items', requireAdmin, (req, res) => {
 server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
     const eq = rpgenius.getDataCache('Equipment', {});
     const pack = list => (list || []).map((e, id) => e ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
-    res.json({ weapon: pack(eq.weapon), armor: pack(eq.armor), accessory: pack(eq.accessory) });
+    res.json({ weapon: pack(eq.weapon), armor: pack(eq.armor), accessory: pack(eq.accessory), support: pack(eq.support) });
 });
 
 server.get('/api/lookup/cards', requireAdmin, (req, res) => {
@@ -687,12 +687,12 @@ function getEquipmentData(type, id) {
 
 function buildInventoryEquipment(user) {
     const result = [];
-    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구' };
+    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
     const add = (equip, type, equipped) => {
         const data = equip && getEquipmentData(equip.type || type, equip.id);
         if (!data) return;
         const level = Number(equip.level || 0);
-        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level);
+        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
         result.push({
             type: equip.type || type,
@@ -703,6 +703,8 @@ function buildInventoryEquipment(user) {
             level,
             equipped: !!equipped,
             statLines,
+            rolled: equip && equip.rolled || null,
+            requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
             noTrade: data.no_trade === true,
             iconUrl: getEquipmentIconUrl(data),
             frameUrl: getAuctionFrameUrl('equipment', data.rarity)
@@ -713,6 +715,7 @@ function buildInventoryEquipment(user) {
     if (user.equipments && user.equipments.armor) add(user.equipments.armor, 'armor', true);
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => add(accessories[key], 'accessory', true));
+    if (user.equipments && user.equipments.support) add(user.equipments.support, 'support', true);
     return result;
 }
 
@@ -721,10 +724,10 @@ const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영�
 function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
     if (!data) return null;
     const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
-    const baseLines = String(rpgenius.formatCurrentEquipmentStatLines(data, 0) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+    const baseLines = String(rpgenius.formatEquipmentBaseStatLines(data, 0) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
     const upgradeLines = upgrades.map((_, i) => {
         const lvl = i + 1;
-        const lines = String(rpgenius.formatCurrentEquipmentStatLines(data, lvl) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+        const lines = String(rpgenius.formatEquipmentBaseStatLines(data, lvl) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
         return { level: lvl, statLines: lines };
     });
     let evolution = null;
@@ -814,6 +817,7 @@ function buildEquipmentDex() {
         weapon: pack(eq.weapon, 'weapon', '무기'),
         armor: pack(eq.armor, 'armor', '갑옷'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
+        support: pack(eq.support, 'support', '보조'),
         rarityOrder: RARITY_ORDER
     };
 }
@@ -857,7 +861,7 @@ function buildTradeLogPayload(entry) {
     if (entry.kind == 'equipment') {
         const slot = entry.payload && entry.payload.type;
         const id = entry.payload && entry.payload.id;
-        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : null;
+        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : slot == '보조' ? 'support' : null;
         const data = slotKey ? (equipments[slotKey] || [])[id] : null;
         return {
             kindLabel: slot || '장비',
@@ -931,7 +935,7 @@ function describeAuctionPayload(entry) {
         const level = Number(entry.payload && entry.payload.level || 0);
         return {
             name: data ? data.name : '알 수 없는 장비',
-            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', armor: '갑옷', accessory: '장신구' }[entry.payload.type] || entry.payload.type)) : '',
+            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[entry.payload.type] || entry.payload.type)) : '',
             rarity: data ? data.rarity : '',
             equipType: entry.payload && entry.payload.type,
             level
@@ -962,7 +966,7 @@ function serializeAuctionEntry(entry, currentUserName) {
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
         if (data) {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0));
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled);
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
         }
     } else if (entry.kind == 'item') {
@@ -1013,11 +1017,11 @@ function buildSellableAssets(user) {
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return null;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level);
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
             return {
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: data.name,
                 rarity: data.rarity,
@@ -1065,6 +1069,7 @@ async function registerAuction(sellerName, body) {
         const data = getEquipmentData(eq.type, eq.id);
         if (data && data.no_trade === true) return { error: '거래 불가 장비는 경매장에 등록할 수 없습니다.' };
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
+        if (eq.rolled) payload.rolled = eq.rolled;
         equips.splice(index, 1);
     } else if (kind == 'item') {
         const itemId = Number(body.itemId);
@@ -1151,11 +1156,9 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
             if (!rpgenius.removeInventoryItem(buyer, ticketId, ticketCost)) return { error: '거래권 차감에 실패했습니다.' };
         }
     } else if (entry.kind == 'equipment') {
-        buyer.inventory.equipment.push({
-            type: entry.payload.type,
-            id: Number(entry.payload.id),
-            level: Number(entry.payload.level || 0)
-        });
+        const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
+        if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
+        buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
     } else {
@@ -1229,11 +1232,9 @@ async function cancelAuction(userName, auctionId) {
             skin: entry.payload.skin || ''
         });
     } else if (entry.kind == 'equipment') {
-        user.inventory.equipment.push({
-            type: entry.payload.type,
-            id: Number(entry.payload.id),
-            level: Number(entry.payload.level || 0)
-        });
+        const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
+        if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
+        user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
     }
@@ -1281,7 +1282,7 @@ function describeBuyOrderPayload(entry) {
     }
     if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
-        const typeLabel = { weapon: '무기', armor: '갑옷', accessory: '장신구' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
+        const typeLabel = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
         const subParts = [];
         if (data) subParts.push(data.rarity);
         if (typeLabel) subParts.push(typeLabel);
@@ -1397,7 +1398,7 @@ async function registerBuyOrder(buyerName, body) {
         ticketCostPer = rpgenius.getCardTicketCost({ star });
     } else if (kind == 'equipment') {
         const equipType = String(body.equipType || '');
-        if (!['weapon', 'armor', 'accessory'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
+        if (!['weapon', 'armor', 'accessory', 'support'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
         const eqId = Number(body.equipId);
         const data = getEquipmentData(equipType, eqId);
         if (!data) return { error: '존재하지 않는 장비입니다.' };
@@ -1540,6 +1541,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         if (eqData && eqData.no_trade === true) return { error: '거래 불가 장비입니다.' };
         if (!matchBuyOrderEquipment(entry, eq)) return { error: '이 장비는 구매 등록 조건에 맞지 않습니다.' };
         const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
+        if (eq.rolled) transferred.rolled = eq.rolled;
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
     } else if (entry.kind == 'item') {
@@ -1601,7 +1603,8 @@ function buildBuyOrderLookups() {
     const equipmentList = {
         weapon: pack(equipments.weapon),
         armor: pack(equipments.armor),
-        accessory: pack(equipments.accessory)
+        accessory: pack(equipments.accessory),
+        support: pack(equipments.support)
     };
     const itemList = items.map((it, id) => it && it.no_trade !== true ? { id, name: it.name, type: it.type } : null).filter(Boolean);
     return { cards: cardList, equipment: equipmentList, items: itemList };
@@ -1624,11 +1627,11 @@ function buildFulfillableAssets(user, entry) {
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level);
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
             result.equipment.push({
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: data.name,
                 rarity: data.rarity,
@@ -1777,7 +1780,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">경매장</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 경매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 등록</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>

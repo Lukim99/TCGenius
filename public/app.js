@@ -82,9 +82,9 @@ function textLines(text) {
 }
 
 const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '신화': '#ef4444', '고유': '#ec4899' };
-const SLOT_ICONS = { 'weapon': '⚔️', 'armor': '🛡️', 'accessory': '💍' };
+const SLOT_ICONS = { 'weapon': '⚔️', 'armor': '🛡️', 'accessory': '💍', 'support': '🔧' };
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '재료'];
-const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']];
+const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']];
 
 function equipmentThumb(eq) {
     const wrap = el('div', { class: 'equip-thumb' });
@@ -830,7 +830,7 @@ function renderBoRegisterModal() {
     } else if (boRegState.kind === 'equipment') {
         content.push(el('label', null, '장비 종류'));
         const typeSeg = el('div', { class: 'seg' },
-            ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']].map(([k, label]) => el('button', {
+            ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].map(([k, label]) => el('button', {
                 class: boRegState.equipType === k ? 'on' : '',
                 onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; renderBoRegisterModal(); }
             }, label))

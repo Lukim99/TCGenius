@@ -97,7 +97,7 @@ async function pickItem(onPick, filterType) {
 async function pickEquipment(slot, onPick) {
     const eq = await getEquipment();
     const list = (eq[slot] || []).map(e => Object.assign({}, e, { _search: e.name + ' ' + e.rarity + ' ' + e.id }));
-    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구' };
+    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
     const rarityClass = r => ({ '일반': '', '고급': 'g', '희귀': 'b', '영웅': 'p', '전설': 'y', '신화': 'r' }[r] || '');
     openModal(labels[slot] + ' 선택', list, e => el('div', null,
         el('div', null, el('span', { class: 'tag ' + rarityClass(e.rarity) }, e.rarity), el('span', { class: 'tag' }, '#' + e.id), e.name),
@@ -144,7 +144,7 @@ function cardTargetControls(entry, onChange) {
     };
     btn.onclick = () => pickCard(card => {
         entry.card_id = card.id;
-        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id'].forEach(k => delete entry[k]);
+        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id'].forEach(k => delete entry[k]);
         refresh();
         refreshSkins();
         onChange && onChange();
@@ -185,9 +185,9 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '골드', '가넷', '마일리지', '경험치'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '골드', '가넷', '마일리지', '경험치'];
 const MATERIAL_TYPES = ['아이템', '골드', '가넷', '마일리지'];
-const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구'];
+const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조'];
 
 function entryRow(entry, opts, onChange, onDelete) {
     // opts: { types, withRoll, countAsObject }
@@ -217,14 +217,14 @@ function entryRow(entry, opts, onChange, onDelete) {
                     btn.innerHTML = '<span class="ph">아이템 선택...</span>';
                 }
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '캐릭터카드') {
             targetSlot.appendChild(cardTargetControls(entry, onChange));
-        } else if (t === '무기' || t === '갑옷' || t === '장신구') {
-            const slot = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory' }[t];
-            const idKey = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id' }[t];
+        } else if (t === '무기' || t === '갑옷' || t === '장신구' || t === '보조') {
+            const slot = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory', '보조': 'support' }[t];
+            const idKey = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id' }[t];
             const btn = el('button', { class: 'pickbtn', type: 'button' });
             const refresh = async () => {
                 const eq = await getEquipment();
@@ -233,12 +233,12 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, t + ' 선택...'));
             };
-            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
-            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
+            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
             targetSlot.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + t + ' 수량 지정)'));
         }
     }
@@ -246,12 +246,12 @@ function entryRow(entry, opts, onChange, onDelete) {
     function paintCount() {
         countSlot.innerHTML = '';
         // 무기/갑옷/장신구는 보통 count=1 고정 (장비는 1개씩 지급되도록)
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구') && opts.types !== CRAFTED_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types !== CRAFTED_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
             if (opts.countAsObject) entry.count = { min: 1, max: 1 }; else entry.count = 1;
             return;
         }
-        if (entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구') {
+        if (entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') {
             // crafted (단일 지급)
             delete entry.count;
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
@@ -1035,10 +1035,11 @@ function upgradeStepSummary(step) {
     return parts.length ? parts.join(' · ') : '설정 없음';
 }
 
-function upgradeEditor(getter, setter) {
+function upgradeEditor(getter, setter, options) {
     const wrap = el('div');
     const list = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } });
     wrap.appendChild(list);
+    const includeSupport = !!(options && options.support);
 
     function arr() {
         let v = getter();
@@ -1071,9 +1072,18 @@ function upgradeEditor(getter, setter) {
 
                 const body = el('div', { class: 'body' });
                 const inner = el('div', { class: 'split' });
-                inner.appendChild(statEditor('기본 능력치', '⚔️', step.stat, FLAT_STAT_DEFS));
+                inner.appendChild(statEditor('기본 능력치 증가', '⚔️', step.stat, FLAT_STAT_DEFS));
                 inner.appendChild(statEditor('비율 증가', '📈', step.plusStat, PLUS_STAT_DEFS));
                 body.appendChild(inner);
+                if (includeSupport) {
+                    if (!step.statRange || typeof step.statRange !== 'object') step.statRange = {};
+                    if (!step.plusStatRange || typeof step.plusStatRange !== 'object') step.plusStatRange = {};
+                    const innerRange = el('div', { class: 'split' });
+                    innerRange.appendChild(statEditor('무작위 범위 증가 (기본)', '🎲', step.statRange, FLAT_STAT_DEFS));
+                    innerRange.appendChild(statEditor('무작위 범위 증가 (비율)', '🎲', step.plusStatRange, PLUS_STAT_DEFS));
+                    body.appendChild(innerRange);
+                    body.appendChild(dynamicBonusEditor(() => step.dynamicBonus, v => { if (v == null) delete step.dynamicBonus; else step.dynamicBonus = v; }, { titleSuffix: ' 증가' }));
+                }
                 det.appendChild(body);
                 list.appendChild(det);
             });
@@ -1086,6 +1096,108 @@ function upgradeEditor(getter, setter) {
         if (items.length > 0) bar.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
             list.querySelectorAll('details.collapsible').forEach(d => d.open = false);
         } }, '모두 접기'));
+        list.appendChild(bar);
+    }
+
+    repaint();
+    return wrap;
+}
+
+// requireMainCardEditor: 보조 장비의 requireMainCard 편집 (캐릭터 카드 id 배열)
+function requireMainCardEditor(getter, setter) {
+    const wrap = el('div', { class: 'tag-list' });
+    function arr() {
+        let v = getter();
+        if (!Array.isArray(v)) { v = []; setter(v); }
+        return v;
+    }
+    function repaint() {
+        wrap.innerHTML = '';
+        const items = arr();
+        if (items.length === 0) wrap.appendChild(el('span', { class: 'muted', style: { fontSize: '12px' } }, '제한 없음 (모든 메인 카드에서 효과 발동).'));
+        items.forEach((cardId, i) => {
+            const pill = el('span', { class: 'tag-pill' });
+            const labelNode = el('span', null, '#' + cardId);
+            pill.appendChild(labelNode);
+            getCards().then(cards => {
+                const c = cards.find(x => x.id === Number(cardId));
+                if (c) labelNode.textContent = c.name + ' #' + cardId;
+            }).catch(() => {});
+            pill.appendChild(el('button', { type: 'button', title: '제거', onclick: () => { items.splice(i, 1); repaint(); } }, '✕'));
+            wrap.appendChild(pill);
+        });
+        wrap.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => pickCard(card => { if (!items.includes(card.id)) items.push(card.id); repaint(); }) }, '+ 카드 추가'));
+    }
+    repaint();
+    return wrap;
+}
+
+// dynamicBonusEditor: data.dynamicBonus.mainCardStar[star] = { stat, plusStat }
+function dynamicBonusEditor(getter, setter, options) {
+    const wrap = el('div');
+    const list = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } });
+    wrap.appendChild(list);
+    const titleSuffix = (options && options.titleSuffix) || '';
+
+    function obj() {
+        let v = getter();
+        if (!v || typeof v !== 'object') { v = {}; setter(v); }
+        if (!v.mainCardStar || typeof v.mainCardStar !== 'object') v.mainCardStar = {};
+        return v;
+    }
+
+    function repaint() {
+        list.innerHTML = '';
+        const root = obj();
+        const map = root.mainCardStar;
+        // 마이그레이션: 숫자값은 { plusStat: { atk: n } } 으로 자동 변환
+        Object.keys(map).forEach(starKey => {
+            const v = map[starKey];
+            if (typeof v === 'number') map[starKey] = { stat: {}, plusStat: { atk: v } };
+            else if (!v || typeof v !== 'object') map[starKey] = { stat: {}, plusStat: {} };
+            else {
+                if (!v.stat || typeof v.stat !== 'object') v.stat = {};
+                if (!v.plusStat || typeof v.plusStat !== 'object') v.plusStat = {};
+            }
+        });
+        const stars = Object.keys(map).sort((a, b) => Number(a) - Number(b));
+        if (stars.length === 0) {
+            list.appendChild(el('div', { class: 'muted', style: { fontSize: '12px', padding: '4px 0' } }, '메인 카드 성급 보너스가 없습니다.'));
+        }
+        stars.forEach(starKey => {
+            const entry = map[starKey];
+            const det = el('details', { class: 'collapsible' });
+            const sum = el('summary');
+            sum.appendChild(el('span', { style: { fontWeight: '600' } }, (Number(starKey) + 1) + '성'));
+            sum.appendChild(el('span', { class: 'summary-meta' }, upgradeStepSummary(entry)));
+            const actions = el('span', { class: 'actions' });
+            const stop = e => { e.preventDefault(); e.stopPropagation(); };
+            actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: e => { stop(e); if (!confirm((Number(starKey) + 1) + '성 보너스를 삭제할까요?')) return; delete map[starKey]; repaint(); } }, '삭제'));
+            sum.appendChild(actions);
+            det.appendChild(sum);
+            const body = el('div', { class: 'body' });
+            const inner = el('div', { class: 'split' });
+            inner.appendChild(statEditor('기본 능력치' + titleSuffix, '⚔️', entry.stat, FLAT_STAT_DEFS));
+            inner.appendChild(statEditor('비율 증가' + titleSuffix, '📈', entry.plusStat, PLUS_STAT_DEFS));
+            body.appendChild(inner);
+            det.appendChild(body);
+            list.appendChild(det);
+        });
+        const bar = el('div', { style: { display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' } });
+        const starIn = el('input', { type: 'number', min: 0, max: 11, value: '', placeholder: '성급(0=1성)', style: { width: '120px' } });
+        bar.appendChild(el('span', { class: 'lab' }, '추가 성급'));
+        bar.appendChild(starIn);
+        bar.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
+            const raw = String(starIn.value || '').trim();
+            if (raw === '') return;
+            const s = Number(raw);
+            if (!Number.isInteger(s) || s < 0) { alert('0 이상의 정수를 입력하세요.'); return; }
+            const key = String(s);
+            if (map[key]) { alert('이미 존재하는 성급입니다.'); return; }
+            map[key] = { stat: {}, plusStat: {} };
+            starIn.value = '';
+            repaint();
+        } }, '+ 성급 보너스 추가'));
         list.appendChild(bar);
     }
 
@@ -1158,15 +1270,15 @@ function equipmentRequireEditor(getter, setter) {
 // ============================================================================
 // EQUIPMENT 에디터  ( data: { weapon: [...], armor: [...], accessory: [...] } )
 // ============================================================================
-let equipData = { weapon: [], armor: [], accessory: [] };
+let equipData = { weapon: [], armor: [], accessory: [], support: [] };
 let equipCurrentSlot = 'weapon';
 let equipFilterText = '';
 const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
-const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'no_trade']);
+const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade']);
 
 function renderEquipTypes() {
     const wrap = $('#equipTypes'); wrap.innerHTML = '';
-    [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구']].forEach(([k, label]) => {
+    [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].forEach(([k, label]) => {
         const arr = (equipData && equipData[k]) || [];
         const b = el('button', { class: 'subtab' + (equipCurrentSlot === k ? ' active' : ''), type: 'button',
             onclick: () => { equipCurrentSlot = k; renderEquipTypes(); renderEquip(); } }, label + ' (' + arr.length + ')');
@@ -1245,9 +1357,29 @@ function equipCard(eq, index) {
     row4.appendChild(statEditor('비율 증가', '📈', eq.plusStat, PLUS_STAT_DEFS));
     card.appendChild(row4);
 
+    const isSupport = equipCurrentSlot === 'support';
+    if (isSupport) {
+        // 무작위 능력치 범위
+        card.appendChild(sectionTitle('무작위 능력치 범위', '🎲'));
+        if (!eq.statRange || typeof eq.statRange !== 'object') eq.statRange = {};
+        if (!eq.plusStatRange || typeof eq.plusStatRange !== 'object') eq.plusStatRange = {};
+        const rangeRow = el('div', { class: 'split' });
+        rangeRow.appendChild(statEditor('기본 능력치 범위', '⚔️', eq.statRange, FLAT_STAT_DEFS));
+        rangeRow.appendChild(statEditor('비율 증가 범위', '📈', eq.plusStatRange, PLUS_STAT_DEFS));
+        card.appendChild(rangeRow);
+
+        // 메인 카드 성급 보너스
+        card.appendChild(sectionTitle('메인 카드 성급 보너스 (dynamicBonus)', '⭐'));
+        card.appendChild(dynamicBonusEditor(() => eq.dynamicBonus, v => { if (v == null) delete eq.dynamicBonus; else eq.dynamicBonus = v; }));
+
+        // 장착 가능 메인 카드
+        card.appendChild(sectionTitle('장착 가능 메인 카드 (requireMainCard)', '🃏'));
+        card.appendChild(requireMainCardEditor(() => eq.requireMainCard, v => { if (v == null) delete eq.requireMainCard; else eq.requireMainCard = v; }));
+    }
+
     // 강화 단계
     card.appendChild(sectionTitle('강화 단계', '🔨'));
-    card.appendChild(upgradeEditor(() => eq.upgrade, v => { if (v == null) delete eq.upgrade; else eq.upgrade = v; }));
+    card.appendChild(upgradeEditor(() => eq.upgrade, v => { if (v == null) delete eq.upgrade; else eq.upgrade = v; }, { support: isSupport }));
 
     // 동시 장착 조건
     card.appendChild(sectionTitle('동시 장착 조건', '🔗'));
@@ -1269,8 +1401,8 @@ function equipCard(eq, index) {
 
 function renderEquip() {
     const list = $('#equipList'); list.innerHTML = '';
-    if (!equipData || typeof equipData !== 'object') equipData = { weapon: [], armor: [], accessory: [] };
-    ['weapon', 'armor', 'accessory'].forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
+    if (!equipData || typeof equipData !== 'object') equipData = { weapon: [], armor: [], accessory: [], support: [] };
+    ['weapon', 'armor', 'accessory', 'support'].forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
     const arr = equipData[equipCurrentSlot] || [];
     const q = (equipFilterText || '').trim().toLowerCase();
     let shown = 0;
@@ -1294,9 +1426,9 @@ $('#equipAdd').onclick = () => {
 $('#equipReload').onclick = async () => {
     try {
         const data = (await loadKey('Equipment')) || {};
-        equipData = { weapon: Array.isArray(data.weapon) ? data.weapon : [], armor: Array.isArray(data.armor) ? data.armor : [], accessory: Array.isArray(data.accessory) ? data.accessory : [] };
+        equipData = { weapon: Array.isArray(data.weapon) ? data.weapon : [], armor: Array.isArray(data.armor) ? data.armor : [], accessory: Array.isArray(data.accessory) ? data.accessory : [], support: Array.isArray(data.support) ? data.support : [] };
         renderEquipTypes(); renderEquip();
-        $('#equipStatus').textContent = '로드 완료 (무기 ' + equipData.weapon.length + ' / 갑옷 ' + equipData.armor.length + ' / 장신구 ' + equipData.accessory.length + ')';
+        $('#equipStatus').textContent = '로드 완료 (무기 ' + equipData.weapon.length + ' / 갑옷 ' + equipData.armor.length + ' / 장신구 ' + equipData.accessory.length + ' / 보조 ' + equipData.support.length + ')';
         invalidateLookupCache(['equipment']);
     } catch (e) { toast(e.message, false); }
 };
