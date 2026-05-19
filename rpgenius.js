@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -322,12 +322,17 @@ function formatStatValue(key, value) {
     if (key == 'skillCooldown') return sign + (Math.round(number / 100) / 10) + '초';
     if ([
         'crit', 'critMul', 'critDef', 'cmb',
-        'atk%', 'def%', 'hp%', 'mp%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
+        'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%',
         'takenDamage%', 'damageBonus%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
+}
+
+function formatPlusStatValue(key, value) {
+    if (key == 'skillCooldown' || key == 'maxCmb' || key == 'skillTrueDmg') return formatStatValue(key, value);
+    return formatStatValue(key + '%', value);
 }
 
 function formatPackEntry(entry) {
@@ -416,6 +421,7 @@ function formatEquipmentStatLines(equipment) {
         def: '최종 방어력',
         hp: '최종 체력',
         mp: '최종 MP',
+        pnt: '방어 관통력 비율',
         gold: '골드 획득량',
         potion: '물약 효율',
         afterBasic: '일반 공격 피해',
@@ -430,6 +436,9 @@ function formatEquipmentStatLines(equipment) {
         critMul: '치명타 피해량',
         critDef: '치명타 피해 감소율',
         cmb: '연격 확률',
+        maxCmb: '추가 공격 횟수',
+        skillCooldown: '스킬 쿨타임',
+        skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가',
         damageBonus: '일반 몬스터에게 주는 피해 증가'
     };
@@ -438,7 +447,7 @@ function formatEquipmentStatLines(equipment) {
         if (equipment.stat && typeof equipment.stat[key] != 'undefined') lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, equipment.stat[key]));
     });
     Object.keys(plusStatNames).forEach(key => {
-        if (equipment.plusStat && typeof equipment.plusStat[key] != 'undefined') lines.push('- ' + plusStatNames[key] + ' ' + formatStatValue(key + '%', equipment.plusStat[key]));
+        if (equipment.plusStat && typeof equipment.plusStat[key] != 'undefined') lines.push('- ' + plusStatNames[key] + ' ' + formatPlusStatValue(key, equipment.plusStat[key]));
     });
     if (typeof equipment.requireLevel != 'undefined') lines.push('- 장착 필요 레벨: Lv. ' + Number(equipment.requireLevel));
     if (typeof equipment.underLevel != 'undefined') lines.push('- 장착 가능 최대 레벨: Lv. ' + Number(equipment.underLevel));
@@ -490,8 +499,8 @@ function formatEquipmentBaseStatLines(equipment, level) {
         if (!hasBase && range == 0) return;
         const base = Number(plusStat[key] || 0);
         const label = SUPPORT_PLUS_STAT_LABELS[key] || key;
-        if (range > 0) lines.push('- ' + label + ' ' + formatStatValue(key + '%', base) + ' ~ ' + formatStatValue(key + '%', base + range));
-        else lines.push('- ' + label + ' ' + formatStatValue(key + '%', base));
+        if (range > 0) lines.push('- ' + label + ' ' + formatPlusStatValue(key, base) + ' ~ ' + formatPlusStatValue(key, base + range));
+        else lines.push('- ' + label + ' ' + formatPlusStatValue(key, base));
     });
     if (typeof equipment.requireLevel != 'undefined') lines.push('- 장착 필요 레벨: Lv. ' + Number(equipment.requireLevel));
     if (typeof equipment.underLevel != 'undefined') lines.push('- 장착 가능 최대 레벨: Lv. ' + Number(equipment.underLevel));
@@ -534,7 +543,7 @@ function formatEquipmentBaseStatLines(equipment, level) {
         });
         Object.keys(entry.plusStat || {}).forEach(k => {
             if (Number(entry.plusStat[k] || 0) == 0) return;
-            parts.push((SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', entry.plusStat[k]));
+            parts.push((SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatPlusStatValue(k, entry.plusStat[k]));
         });
         if (parts.length == 0) return;
         lines.push('[ ' + (Number(starKey) + 1) + '성 보너스 ]');
@@ -2250,12 +2259,15 @@ const SUPPORT_STAT_LABELS = {
 
 const SUPPORT_PLUS_STAT_LABELS = {
     atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+    pnt: '방어 관통력 비율',
     gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
     eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
     critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
+    maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
+    skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가'
 };
 
@@ -2279,7 +2291,7 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
             });
             Object.keys(entry.plusStat || {}).forEach(k => {
                 if (Number(entry.plusStat[k] || 0) == 0) return;
-                bonusLines.push('- ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', entry.plusStat[k]));
+                bonusLines.push('- ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatPlusStatValue(k, entry.plusStat[k]));
             });
             if (bonusLines.length > 0) out += '\n[ ' + (star + 1) + '성 보너스 ]\n' + bonusLines.join('\n');
         }
@@ -3606,12 +3618,16 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     };
     const plusStatNames = {
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        pnt: '방어 관통력 비율',
         gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
         eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
         itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
-        critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률'
+        critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
+        maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
+        skillTrueDmg: '스킬 사용 시 추가 고정 피해',
+        takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가'
     };
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
@@ -3624,7 +3640,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         if (Number(currentStats[key] || 0) != Number(nextStats[key] || 0)) lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, currentStats[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key, nextStats[key] || 0).replace(/^\+/, ''));
     });
     Object.keys(plusStatNames).forEach(key => {
-        if (Number(currentPlus[key] || 0) != Number(nextPlus[key] || 0)) lines.push('- ' + plusStatNames[key] + ' ' + formatStatValue(key + '%', currentPlus[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key + '%', nextPlus[key] || 0).replace(/^\+/, ''));
+        if (Number(currentPlus[key] || 0) != Number(nextPlus[key] || 0)) lines.push('- ' + plusStatNames[key] + ' ' + formatPlusStatValue(key, currentPlus[key] || 0).replace(/^\+/, '') + ' -> ' + formatPlusStatValue(key, nextPlus[key] || 0).replace(/^\+/, ''));
     });
     if (type == 'support') {
         const curDyn = getEquipmentDynamicBonusAtLevel(equipment, level);
@@ -3643,7 +3659,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
             plusKeys.forEach(k => {
                 const a = Number((cur.plusStat || {})[k] || 0);
                 const b = Number((nxt.plusStat || {})[k] || 0);
-                if (a != b) lines.push('- [' + (Number(starKey) + 1) + '성] ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatStatValue(k + '%', a).replace(/^\+/, '') + ' -> ' + formatStatValue(k + '%', b).replace(/^\+/, ''));
+                if (a != b) lines.push('- [' + (Number(starKey) + 1) + '성] ' + (SUPPORT_PLUS_STAT_LABELS[k] || k) + ' ' + formatPlusStatValue(k, a).replace(/^\+/, '') + ' -> ' + formatPlusStatValue(k, b).replace(/^\+/, ''));
             });
         });
     }
