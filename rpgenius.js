@@ -3196,6 +3196,7 @@ function autoUnequipInvalidSupport(user) {
             if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
             const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
             if (sup.rolled) entry.rolled = sup.rolled;
+            if (sup.locked) entry.locked = true;
             user.inventory.equipment.push(entry);
             user.equipments.support = null;
             return data;
@@ -3240,11 +3241,13 @@ function equipItemByNumber(user, numberArg) {
         const prev = user.equipments.support;
         const equipEntry = { id: target.id, level: Number(target.level || 0) };
         if (target.rolled) equipEntry.rolled = target.rolled;
+        if (target.locked) equipEntry.locked = true;
         user.equipments.support = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
             const back = { type: 'support', id: Number(prev.id), level: Number(prev.level || 0) };
             if (prev.rolled) back.rolled = prev.rolled;
+            if (prev.locked) back.locked = true;
             user.inventory.equipment.push(back);
         }
         return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
@@ -3252,10 +3255,14 @@ function equipItemByNumber(user, numberArg) {
 
     if (target.type == 'weapon' || target.type == 'armor') {
         const prev = user.equipments[target.type];
-        user.equipments[target.type] = { id: target.id, level: Number(target.level || 0) };
+        const equipEntry = { id: target.id, level: Number(target.level || 0) };
+        if (target.locked) equipEntry.locked = true;
+        user.equipments[target.type] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
-            user.inventory.equipment.push({ type: target.type, id: prev.id, level: Number(prev.level || 0) });
+            const back = { type: target.type, id: prev.id, level: Number(prev.level || 0) };
+            if (prev.locked) back.locked = true;
+            user.inventory.equipment.push(back);
         }
         return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
@@ -3275,7 +3282,9 @@ function equipItemByNumber(user, numberArg) {
             }
         }
         if (slotKey == null) return '❌ 장신구 슬롯이 가득 찼습니다. 먼저 다른 장신구를 해제해주세요.';
-        accessories[slotKey] = { id: target.id, level: Number(target.level || 0) };
+        const equipEntry = { id: target.id, level: Number(target.level || 0) };
+        if (target.locked) equipEntry.locked = true;
+        accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
@@ -3295,6 +3304,7 @@ function unequipSupport(user) {
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
     const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
     if (sup.rolled) entry.rolled = sup.rolled;
+    if (sup.locked) entry.locked = true;
     user.inventory.equipment.push(entry);
     user.equipments.support = null;
     const stats = calculateUserStats(user);
@@ -3315,7 +3325,9 @@ function unequipAccessoryByNumber(user, numberArg) {
     if (!data) return '❌ 잘못된 장신구 데이터입니다.';
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
-    user.inventory.equipment.push({ type: 'accessory', id: equipped.id, level: Number(equipped.level || 0) });
+    const entry = { type: 'accessory', id: equipped.id, level: Number(equipped.level || 0) };
+    if (equipped.locked) entry.locked = true;
+    user.inventory.equipment.push(entry);
     delete user.equipments.accessory[slotKey];
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
@@ -5613,6 +5625,7 @@ module.exports = {
     formatInventory,
     formatCharacterInventory,
     formatEquipmentInventory,
+    formatEquipmentBaseStatLines,
     formatStatValue,
     formatValue,
     formatCurrentEquipmentStatLines,
