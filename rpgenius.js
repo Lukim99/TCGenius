@@ -1488,7 +1488,18 @@ function formatFieldList(user) {
     const dungeons = getAccessibleDungeons(level);
     const userCP = calculateCombatPower(user).total;
     const lines = ['[ 입장 가능한 필드 목록 ]', '내 전투력: ⚔️ ' + comma(userCP), VIEWMORE];
-    dungeons.forEach(dungeon => {
+    const goldMineDungeons = dungeons.filter(dungeon => typeof dungeon.goldMineLevel != 'undefined');
+    const normalDungeons = dungeons.filter(dungeon => typeof dungeon.goldMineLevel == 'undefined');
+    if (goldMineDungeons.length > 0) {
+        lines.push('', '[ 황금 광산 ]');
+        goldMineDungeons.forEach(dungeon => {
+            const recCP = getDungeonRecommendedCP(dungeon);
+            lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
+        });
+    }
+
+    lines.push('', '[ 던전 ]');
+    normalDungeons.forEach(dungeon => {
         const recCP = getDungeonRecommendedCP(dungeon);
         lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
     });
@@ -2370,7 +2381,7 @@ function getEquippedEquipmentRefs(user) {
 function getAllUserEquipments(user) {
     const list = [];
     (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => list.push({ source: 'inventory', index, equip }));
-    getEquippedEquipmentRefs(user).forEach(ref => list.push({ source: 'equipped', type: ref.type, equip: ref.equip }));
+    getEquippedEquipmentRefs(user).forEach(ref => list.push(Object.assign({ source: 'equipped' }, ref)));
     return list;
 }
 

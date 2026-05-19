@@ -91,8 +91,8 @@
         "name": "타이란트",
         "slot_effect": {
             "name": "아이템 드랍 확률",
-            "base": 0.01,
-            "per_level": 0.005
+            "base": 0.1,
+            "per_level": 0.03
         },
         "skills": [
             8
