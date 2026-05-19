@@ -21,6 +21,12 @@ const api = async url => {
     if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
     return x;
 };
+const postApi = async (url, body) => {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const x = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
+    return x;
+};
 const KOREAN_BIG_UNITS = ['', '만', '억', '조', '경', '해', '자', '양', '구', '간', '정', '재', '극'];
 const comma = value => {
     const n = Number(value || 0);
@@ -61,6 +67,7 @@ $$('.nav-btn').forEach(btn => btn.onclick = () => {
     if (btn.dataset.page === 'buyorder') loadBuyOrders();
     if (btn.dataset.page === 'ranking') loadRanking();
     if (btn.dataset.page === 'dex') loadDex();
+    if (btn.dataset.page === 'patchnotes') loadPatchnotes();
 });
 
 function cardNode(card, compact, onClick) {
@@ -1101,6 +1108,173 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
     renderDex();
 });
+
+let patchnoteData = null;
+let patchnoteAdmin = false;
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('ko-KR');
+}
+
+function escapeMarkdownHtml(text) {
+    return String(text || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderInlineMarkdown(text) {
+    return escapeMarkdownHtml(text)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function markdownToHtml(text) {
+    const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let inCode = false;
+    let codeLines = [];
+    let list = null;
+    const closeList = () => {
+        if (list) {
+            out.push('</' + list + '>');
+            list = null;
+        }
+    };
+    lines.forEach(line => {
+        if (line.trim().startsWith('```')) {
+            if (inCode) {
+                out.push('<pre><code>' + escapeMarkdownHtml(codeLines.join('\n')) + '</code></pre>');
+                codeLines = [];
+                inCode = false;
+            } else {
+                closeList();
+                inCode = true;
+            }
+            return;
+        }
+        if (inCode) {
+            codeLines.push(line);
+            return;
+        }
+        if (/^###\s+/.test(line)) { closeList(); out.push('<h3>' + renderInlineMarkdown(line.replace(/^###\s+/, '')) + '</h3>'); return; }
+        if (/^##\s+/.test(line)) { closeList(); out.push('<h2>' + renderInlineMarkdown(line.replace(/^##\s+/, '')) + '</h2>'); return; }
+        if (/^#\s+/.test(line)) { closeList(); out.push('<h1>' + renderInlineMarkdown(line.replace(/^#\s+/, '')) + '</h1>'); return; }
+        if (/^\s*[-*]\s+/.test(line)) {
+            if (list !== 'ul') { closeList(); list = 'ul'; out.push('<ul>'); }
+            out.push('<li>' + renderInlineMarkdown(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
+            return;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {
+            if (list !== 'ol') { closeList(); list = 'ol'; out.push('<ol>'); }
+            out.push('<li>' + renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, '')) + '</li>');
+            return;
+        }
+        closeList();
+        if (line.trim()) out.push('<p>' + renderInlineMarkdown(line) + '</p>');
+    });
+    closeList();
+    if (inCode) out.push('<pre><code>' + escapeMarkdownHtml(codeLines.join('\n')) + '</code></pre>');
+    return out.join('');
+}
+
+function replyForm(noteId, parentId) {
+    const ta = el('textarea', { placeholder: parentId ? '대댓글 작성...' : '댓글 작성...' });
+    const btn = el('button', { class: 'primary', onclick: async () => {
+        const textbody = ta.value.trim();
+        if (!textbody) return alert('내용을 입력해주세요.');
+        btn.disabled = true;
+        try {
+            const data = await postApi('/api/patchnotes/' + encodeURIComponent(noteId) + '/replies', { parentId, textbody });
+            patchnoteData = data.items || [];
+            renderPatchnotes();
+        } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+        }
+    } }, parentId ? '대댓글 등록' : '댓글 등록');
+    return el('div', { class: 'reply-box' }, ta, el('div', { class: 'actions' }, btn));
+}
+
+function renderPatchReplies(noteId, replies, depth) {
+    const wrap = el('div', { class: 'reply-list' });
+    (replies || []).forEach(reply => {
+        const row = el('div', { class: 'reply-item ' + (depth > 0 ? 'child' : '') },
+            el('div', { class: 'reply-meta' }, el('b', null, reply.authorName || '알 수 없음'), ' Lv. ' + comma(reply.authorLevel || 1) + ' · ' + formatDateTime(reply.date)),
+            el('div', { class: 'reply-text' }, reply.textbody || ''),
+            replyForm(noteId, reply.id)
+        );
+        if (reply.replies && reply.replies.length) row.appendChild(renderPatchReplies(noteId, reply.replies, depth + 1));
+        wrap.appendChild(row);
+    });
+    return wrap;
+}
+
+function patchnoteCard(note) {
+    const body = el('div', { class: 'markdown-body' });
+    body.innerHTML = markdownToHtml(note.textbody || '');
+    return el('article', { class: 'patch-card' },
+        el('div', null, el('div', { class: 'patch-title' }, note.title || '(제목 없음)'), el('div', { class: 'patch-date' }, formatDateTime(note.date))),
+        body,
+        el('div', { class: 'reply-list' },
+            el('h3', { style: { margin: '4px 0' } }, '댓글'),
+            renderPatchReplies(note.id, note.replies || [], 0),
+            replyForm(note.id, null)
+        )
+    );
+}
+
+function renderPatchnotes() {
+    const list = $('#patchList');
+    if (!list) return;
+    list.innerHTML = '';
+    if ($('#patchNew')) $('#patchNew').style.display = patchnoteAdmin ? '' : 'none';
+    if (!patchnoteData || patchnoteData.length === 0) {
+        list.appendChild(el('div', { class: 'empty' }, '등록된 패치노트가 없습니다.'));
+        return;
+    }
+    patchnoteData.forEach(note => list.appendChild(patchnoteCard(note)));
+}
+
+async function loadPatchnotes() {
+    const list = $('#patchList');
+    if (!list) return;
+    list.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        const data = await api('/api/patchnotes');
+        patchnoteData = data.items || [];
+        patchnoteAdmin = !!data.admin;
+        renderPatchnotes();
+    } catch (e) {
+        list.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+if ($('#patchNew')) $('#patchNew').onclick = () => $('#patchEditor').classList.add('active');
+if ($('#patchCancel')) $('#patchCancel').onclick = () => $('#patchEditor').classList.remove('active');
+if ($('#patchSubmit')) $('#patchSubmit').onclick = async () => {
+    const title = $('#patchTitle').value.trim();
+    const date = $('#patchDate').value.trim();
+    const textbody = $('#patchBody').value.trim();
+    if (!title) return alert('제목을 입력해주세요.');
+    if (!textbody) return alert('본문을 입력해주세요.');
+    $('#patchSubmit').disabled = true;
+    try {
+        const data = await postApi('/api/patchnotes', { title, date, textbody });
+        patchnoteData = data.items || [];
+        $('#patchTitle').value = '';
+        $('#patchDate').value = '';
+        $('#patchBody').value = '';
+        $('#patchEditor').classList.remove('active');
+        renderPatchnotes();
+    } catch (e) {
+        alert(e.message);
+    } finally {
+        $('#patchSubmit').disabled = false;
+    }
+};
 
 (async () => {
     try {
