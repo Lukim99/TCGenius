@@ -101,7 +101,7 @@
     {
         "name": "마쉐비",
         "slot_effect": {
-            "name": "방어 관통력",
+            "name": "방어력 관통",
             "base": 0.1,
             "per_level": 0.01
         },

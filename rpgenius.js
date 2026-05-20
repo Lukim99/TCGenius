@@ -421,7 +421,7 @@ function formatEquipmentStatLines(equipment) {
         def: '최종 방어력',
         hp: '최종 체력',
         mp: '최종 MP',
-        pnt: '방어 관통력 비율',
+        pnt: '방어력 관통',
         gold: '골드 획득량',
         potion: '물약 효율',
         afterBasic: '일반 공격 피해',
@@ -1113,6 +1113,7 @@ function equipMainCharacterCard(user, numberArg) {
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
     const card = user.inventory.card[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    if (Array.isArray(user.card_slot) && user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id))) return '❌ 같은 캐릭터가 카드 슬롯에 장착되어 있어 메인 카드로 장착할 수 없습니다.';
     user.inventory.card.splice(number - 1, 1);
     if (user.main_card && typeof user.main_card.id != 'undefined') user.inventory.card.push(user.main_card);
     user.main_card = card;
@@ -1121,7 +1122,7 @@ function equipMainCharacterCard(user, numberArg) {
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
     let msg = '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
-    if (removed) msg += '\n⚠️ 메인 카드 변경으로 보조 장비 <' + removed.rarity + '> ' + removed.name + ' 가 자동 해제되었습니다.';
+    if (removed) msg += '\n⚠️ 메인 카드 변경으로 보조 장비 <' + removed.rarity + '> ' + removed.name + '(이)가 장착 해제되었습니다.';
     return msg;
 }
 
@@ -1141,6 +1142,7 @@ function equipCharacterCardSlot(user, numberArg) {
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
+    if (user.main_card && typeof user.main_card.id != 'undefined' && Number(user.main_card.id) == Number(card.id)) return '❌ 메인 카드와 같은 캐릭터는 카드 슬롯에 장착할 수 없습니다.';
     if (user.card_slot.some(slotCard => slotCard && slotCard.id == card.id)) return '❌ 이미 같은 캐릭터가 카드 슬롯에 장착되어 있습니다.';
     user.inventory.card.splice(number - 1, 1);
     user.card_slot.push(card);
@@ -1195,8 +1197,8 @@ const STAT_POINT_OPTIONS = {
     'MP': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
     'mp': { key: 'mp', plusKey: 'mp', flat: 12, plus: 0.01, label: 'MP', plusLabel: '최종 MP' },
     '방어력': { key: 'def', plusKey: 'def', flat: 3, plus: 0.01, label: '방어력', plusLabel: '최종 방어력' },
-    '방어관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.005, label: '방어 관통력', plusLabel: '방어력 관통' },
-    '방어 관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.005, label: '방어 관통력', plusLabel: '방어력 관통' }
+    '방어관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.003, label: '방어 관통력', plusLabel: '방어력 관통' },
+    '방어 관통력': { key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.003, label: '방어 관통력', plusLabel: '방어력 관통' }
 };
 
 const STAT_POINT_DISPLAY = [
@@ -1204,7 +1206,7 @@ const STAT_POINT_DISPLAY = [
     { name: '체력', key: 'hp', plusKey: 'hp', flat: 10, plus: 1 },
     { name: 'MP', key: 'mp', plusKey: 'mp', flat: 12, plus: 1 },
     { name: '방어력', key: 'def', plusKey: 'def', flat: 3, plus: 1 },
-    { name: '방어 관통력', key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.5 }
+    { name: '방어 관통력', key: 'pnt', plusKey: 'pnt', flat: 1, plus: 0.3 }
 ];
 
 function normalizeStatPointData(user) {
@@ -1230,7 +1232,7 @@ function getStatPointBuyPrice(n) {
         a = b;
         b = c;
     }
-    return b;
+    return idx >= 21 ? Math.round(b * Math.pow(0.75, idx - 20)) : b;
 }
 
 function getStatPointBuyTotalPrice(currentCount, buyCount) {
@@ -1280,7 +1282,7 @@ function calculateUserStats(user) {
         }
         if (key == 'pnt') {
             stats.pnt = Number(stats.pnt || 0) + count;
-            plusStats.pnt = Number(plusStats.pnt || 0) + count * 0.005;
+            plusStats.pnt = Number(plusStats.pnt || 0) + count * 0.003;
         }
     });
     [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
@@ -1360,6 +1362,10 @@ function calculateCombatPower(user) {
     return computeCombatPowerFromStats(calculateUserStats(user), calculateCardSlotEffects(user));
 }
 
+function getTotalDefenseReductionRate(stats, slotEffects) {
+    return Math.max(0, Math.min(1, Number(stats && stats.pntPercent || 0) + Number(slotEffects && slotEffects.defReduction || 0)));
+}
+
 function computeCombatPowerFromStats(stats, slot) {
     stats = stats || {};
     slot = slot || {};
@@ -1375,12 +1381,13 @@ function computeCombatPowerFromStats(stats, slot) {
     const cmb = Math.max(0, Math.min(1, Number(stats.cmb || 0)));
     const maxCmb = 1 + Math.max(1, Math.floor(Number(stats.maxCmb || 0)));
     const pnt = Math.max(0, Number(stats.pnt || 0));
+    const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
     const mContext = 1 + Number(slot.damageBonus || 0) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
-    const mPen = 1 + pnt / W.PEN_DIVISOR + Number(slot.defReduction || 0) * W.DEF_REDUCTION_RATIO;
+    const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
                      + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO;
     const offense = atk * mAttack * mContext * mCrit * mCombo * mPen * mExtra * W.OFFENSE_SCALE;
@@ -1608,6 +1615,10 @@ function applyCriticalDamage(damage, stats, extra, defenderStats) {
     };
 }
 
+function applyDamageVariance(damage) {
+    return Math.max(0, Math.round(Number(damage || 0) * (randomInt(98, 102) / 100)));
+}
+
 const DESTINY_AION_NAME = '운명의 아이온';
 const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.2;
 
@@ -1625,7 +1636,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
         let hitDamage = isTrueDamage
             ? Math.max(0, Math.round(Number(criticalResult.damage || 0)))
-            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, Number(slotEffects.defReduction || 0) + Number(stats && stats.pntPercent || 0));
+            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects));
         if (isTrueDamage) trueDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
@@ -1634,6 +1645,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             hitDamage += bonus;
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
+        hitDamage = applyDamageVariance(hitDamage);
         hitDamages.push(hitDamage);
         hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isTrueDamage });
         finalDamage += hitDamage;
@@ -1730,6 +1742,11 @@ function applyPrestigeExpBonus(user, amount) {
     return Math.round(Number(amount || 0) * (user && user.prestige === true ? 1.1 : 1));
 }
 
+function applyLowLevelExpBonus(user, amount) {
+    const level = Number(user && user.level || 1);
+    return Math.round(Number(amount || 0) * (level >= 1 && level <= 30 ? 1.5 : 1));
+}
+
 function getLevelExpMultiplier(userLevel, requireLevel) {
     const n = Number(userLevel || 1) - Number(requireLevel || 1);
     if (n <= 1) return 1.2;
@@ -1776,7 +1793,7 @@ function formatStatPointStatus(user) {
         const count = Number(user.statPointStats[stat.key] || 0);
         const flat = count * stat.flat;
         const progress = ' [' + comma(count) + '/' + comma(STAT_POINT_PER_STAT_LIMIT) + ']';
-        if (stat.plusKey) lines.push('- ' + stat.name + ' +' + comma(flat) + ' / +' + (Math.round(count * 10) / 10) + '%' + progress);
+        if (stat.plusKey) lines.push('- ' + stat.name + ' +' + comma(flat) + ' / +' + (Math.round(count * stat.plus * 10) / 10) + '%' + progress);
         else lines.push('- ' + stat.name + ' +' + comma(flat) + progress);
     });
     lines.push('', '잔여 스탯포인트: ' + comma(user.statPoint || 0));
@@ -1891,7 +1908,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
         if (reward.roll != null && Math.random() >= Number(reward.roll || 0) * levelMultiplier) return;
         const count = rollCount(reward.count);
         if (reward.type == '경험치') {
-            const amount = applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0))));
+            const amount = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0)))));
             levelUps += addExperience(user, amount);
             rewardLines.push('- XP ' + comma(amount));
             return;
@@ -2038,7 +2055,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         if (typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily) {
             user.goldMineDaily.count = Number(user.goldMineDaily.count || 0) + killCount;
         }
-        let expReward = applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0))));
+        let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
         goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
@@ -2159,7 +2176,7 @@ function useBasicAttackInField(user) {
     if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
-    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)) * (randomInt(95, 105) / 100));
+    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
     if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, {});
     return buildHuntResult(user, dungeon, rawDamage, {});
 }
@@ -2322,7 +2339,7 @@ const SUPPORT_STAT_LABELS = {
 
 const SUPPORT_PLUS_STAT_LABELS = {
     atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
-    pnt: '방어 관통력 비율',
+    pnt: '방어력 관통',
     gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
@@ -3468,6 +3485,38 @@ function refundPendingActionItem(user, pending) {
     return (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count);
 }
 
+function getAccessoryChoiceCandidates(rarity) {
+    const equipments = getDataCache('Equipment', {});
+    return (equipments.accessory || [])
+        .map((equipment, id) => ({ id, equipment }))
+        .filter(entry => entry.equipment && entry.equipment.rarity == rarity && entry.equipment.name != '데우스 엑스 마키나');
+}
+
+function formatAccessoryChoiceList(candidates) {
+    const lines = ['[ 장신구 선택 ]'];
+    candidates.forEach((entry, index) => {
+        lines.push((index + 1) + '. <' + entry.equipment.rarity + '> ' + entry.equipment.name);
+    });
+    return lines.join('\n');
+}
+
+function selectAccessoryChoice(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '장신구선택권') return '❌ 진행 중인 장신구 선택이 없습니다.';
+    const candidates = getAccessoryChoiceCandidates(pending.rarity);
+    if (candidates.length == 0) {
+        const refund = refundPendingActionItem(user, pending);
+        user.pendingAction = null;
+        return '❌ 선택 가능한 장신구가 없습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : '');
+    }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1 || number > candidates.length) return '❌ 존재하지 않는 장신구 번호입니다.\n/RPGenius 선택 [번호]';
+    const selected = candidates[number - 1];
+    addEquipmentInventory(user, 'accessory', selected.id);
+    user.pendingAction = null;
+    return '✅ 장신구를 선택했습니다.\n[ 획득 결과 ]\n- <' + selected.equipment.rarity + '> ' + selected.equipment.name;
+}
+
 function getEquipmentByNumber(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return null;
@@ -3681,7 +3730,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     };
     const plusStatNames = {
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
-        pnt: '방어 관통력 비율',
+        pnt: '방어력 관통',
         gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
@@ -4039,7 +4088,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
         return;
     }
     if (func.type == '경험치획득') {
-        const amount = applyPrestigeExpBonus(user, Number(func.amount || 0) * useCount);
+        const amount = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Number(func.amount || 0) * useCount));
         const levelUps = addExperience(user, amount);
         resultLines.push('- XP +' + comma(amount));
         if (levelUps > 0) resultLines.push('- 레벨업! Lv. ' + user.level);
@@ -4087,7 +4136,9 @@ async function useItem(user, itemName, countArg) {
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 유생의 강화기는 한 번에 1개만 사용할 수 있습니다.';
         if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 프레스티지 증표는 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '스탯초기화' && useCount != 1) return '❌ 순백의 결정은 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.use == '장신구선택권' && useCount != 1) return '❌ 장신구 선택권은 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
+        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && item.use != '장신구선택권' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -4154,6 +4205,19 @@ async function useItem(user, itemName, countArg) {
             user.mp = Math.min(typeof user.mp == 'undefined' ? Number(recalcStats.mp || 0) : Number(user.mp || 0), Number(recalcStats.mp || 0));
             lines.push('- 스탯포인트를 초기화했습니다.');
             lines.push('- 잔여 스탯포인트: ' + comma(user.statPoint));
+        }
+        if (item.use == '장신구선택권') {
+            const candidates = getAccessoryChoiceCandidates(item.rarity);
+            if (candidates.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 선택 가능한 장신구가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '장신구선택권', rarity: item.rarity, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('획득할 장신구를 선택해주세요.');
+                lines.push('/RPGenius 선택 [번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatAccessoryChoiceList(candidates));
+            }
         }
         if (item.name == '프레스티지 증표') {
             if (user.prestige === true) {
@@ -5122,6 +5186,24 @@ async function handleRPGCommand(data, channel) {
             consumedItemId: user.pendingAction.consumedItemId,
             consumedItemCount: user.pendingAction.consumedItemCount
         });
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '장신구선택권') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 장신구 선택권 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 획득할 장신구를 먼저 선택해야 합니다.\n/RPGenius 선택 [번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = selectAccessoryChoice(user, args[1]);
         await user.save();
         reply(result);
         return true;
