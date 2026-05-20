@@ -853,8 +853,46 @@ const CARD_COMBINE_TABLE = [
     { rate: 0.15, gold: 512000 }
 ];
 
+const CARD_COMBINE_GUARANTEE_COUNTS = {
+    4: 10,
+    5: 10,
+    6: 10,
+    7: 20
+};
+
 function getCardCombineInfo(star) {
     return CARD_COMBINE_TABLE[Number(star || 0)] || null;
+}
+
+function normalizeCardCombineCounts(user) {
+    if (!user.cardCombineCounts || typeof user.cardCombineCounts != 'object') user.cardCombineCounts = {};
+    if (!user.cardPackCombineCounts || typeof user.cardPackCombineCounts != 'object') user.cardPackCombineCounts = {};
+}
+
+function getCardCombineGuaranteeCount(star) {
+    return CARD_COMBINE_GUARANTEE_COUNTS[Number(star)];
+}
+
+function getCardCombineCount(user, kind, star) {
+    normalizeCardCombineCounts(user);
+    const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
+    return Number(target[String(star)] || 0);
+}
+
+function rollCardCombineSuccess(user, kind, star, rate) {
+    normalizeCardCombineCounts(user);
+    const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
+    const key = String(star);
+    const guarantee = getCardCombineGuaranteeCount(star);
+    if (!guarantee) return { success: Math.random() < Number(rate || 0), guaranteed: false, count: 0, guarantee: 0 };
+    const nextCount = Number(target[key] || 0) + 1;
+    if (nextCount >= guarantee) {
+        target[key] = 0;
+        return { success: true, guaranteed: true, count: 0, guarantee };
+    }
+    const success = Math.random() < Number(rate || 0);
+    target[key] = success ? 0 : nextCount;
+    return { success, guaranteed: false, count: Number(target[key] || 0), guarantee };
 }
 
 function formatRatePercent(rate) {
@@ -906,6 +944,8 @@ function formatCardCombinePreview(user, numberArgs) {
         lines.push('- ' + formatUserCard(card));
     });
     lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
+    const guarantee = getCardCombineGuaranteeCount(selection.star);
+    if (guarantee) lines.push('- 보정 카운트: ' + comma(getCardCombineCount(user, 'card', selection.star)) + '/' + comma(guarantee));
     lines.push('- 필요 골드: 🪙 ' + comma(selection.info.gold));
     if (Number(user.gold || 0) < selection.info.gold) {
         user.pendingAction = null;
@@ -928,7 +968,8 @@ function runCardCombine(user) {
     if (characterCards.length == 0) return '❌ 캐릭터 카드 데이터가 없습니다.';
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
-    const success = Math.random() < selection.info.rate;
+    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate);
+    const success = combineRoll.success;
     const resultCard = {
         id: selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
         star: success ? selection.star + 1 : selection.star,
@@ -936,7 +977,9 @@ function runCardCombine(user) {
     };
     applyFashionRollToCard(resultCard, selection.sameCardId);
     user.inventory.card.push(resultCard);
-    return (success ? '🌟 카드 3장을 조합했습니다!' : '✅ 카드 3장을 조합했습니다.') + '\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
+    const lines = [(success ? (combineRoll.guaranteed ? '⚜️ 카드 3장을 확정 조합했습니다!' : '🌟 카드 3장을 조합했습니다!') : '✅ 카드 3장을 조합했습니다.')];
+    lines.push('[ 획득 결과 ]', '- ' + formatUserCard(resultCard));
+    return lines.join('\n');
 }
 
 function getCardPackNameByStar(starIndex) {
@@ -973,13 +1016,22 @@ function combineCardPacks(user, starArg, countArg) {
     if (!removeInventoryItem(user, inputItemId, requiredPacks)) return '❌ 카드팩 차감에 실패했습니다.';
     user.gold = Number(user.gold || 0) - totalGold;
     let successCount = 0;
-    for (let i = 0; i < times; i++) if (Math.random() < info.rate) successCount++;
+    let guaranteedCount = 0;
+    let lastRoll = null;
+    for (let i = 0; i < times; i++) {
+        const roll = rollCardCombineSuccess(user, 'pack', star, info.rate);
+        if (roll.success) successCount++;
+        if (roll.guaranteed) guaranteedCount++;
+        lastRoll = roll;
+    }
     const failCount = times - successCount;
     if (successCount > 0) addInventoryItem(user, outputItemId, successCount);
     if (failCount > 0) addInventoryItem(user, inputItemId, failCount);
     cleanupInventoryItems(user);
     const lines = ['✅ ' + inputPackName + ' x' + comma(requiredPacks) + ' 조합 완료 (' + comma(times) + '회)'];
     lines.push('- 성공 확률: ' + formatRatePercent(info.rate));
+    if (guaranteedCount > 0) lines.push('- 보정 카운트 확정 성공: ' + comma(guaranteedCount) + '회');
+    else if (lastRoll && lastRoll.guarantee > 0) lines.push('- 보정 카운트: ' + comma(lastRoll.count) + '/' + comma(lastRoll.guarantee));
     lines.push('- 소모 🪙 ' + comma(totalGold));
     lines.push('', '[ 결과 ]');
     lines.push('- ' + outputPackName + ' x' + comma(successCount));
@@ -4289,6 +4341,8 @@ class RPGUser {
         this.pendingAction = null;
         this.pendingFragment = null;
         this.goldMineDaily = null;
+        this.cardCombineCounts = {};
+        this.cardPackCombineCounts = {};
         this.maxCardLimit = 52;
         this.maxAccessory = 3;
         this.mail = [];
@@ -4324,6 +4378,7 @@ class RPGUser {
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.pendingFragment == 'undefined') this.pendingFragment = null;
         if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
+        normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;
         if (!this.maxCardLimit) this.maxCardLimit = 52;
