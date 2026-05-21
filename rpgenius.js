@@ -3518,6 +3518,46 @@ function selectAccessoryChoice(user, numberArg) {
     return '✅ 장신구를 선택했습니다.\n[ 획득 결과 ]\n- <' + selected.equipment.rarity + '> ' + selected.equipment.name;
 }
 
+function getSupportRerollTargets(user) {
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            if (type != 'support') return null;
+            const equipment = getEquipmentData('support', entry.equip.id);
+            if (!equipment) return null;
+            return { number: index + 1, entry, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatSupportRerollList(targets) {
+    const lines = ['[ 보조 장비 선택 ]', VIEWMORE];
+    targets.forEach(target => {
+        const lvl = Number(target.entry.equip.level || 0);
+        const lockMark = target.entry.equip.locked ? ' 🔒' : '';
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+    });
+    return lines.join('\n');
+}
+
+function rerollSupportEquipment(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '보조장비리롤') return '❌ 진행 중인 보조 장비 재설정이 없습니다.';
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    if (type != 'support') return '❌ 보조 장비만 선택할 수 있습니다.';
+    const equipment = getEquipmentData('support', selected.equip.id);
+    if (!equipment) return '❌ 잘못된 보조 장비 데이터입니다.';
+    selected.equip.rolled = rollSupportEquipmentStats(equipment);
+    user.pendingAction = null;
+    const lvl = Number(selected.equip.level || 0);
+    return '✅ 보조 장비 스탯을 재설정했습니다.\n- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : '') + '\n' + formatCurrentEquipmentStatLines(equipment, lvl, selected.equip.rolled);
+}
+
 function getEquipmentByNumber(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return null;
@@ -4171,13 +4211,14 @@ async function useItem(user, itemName, countArg) {
         if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
     }
     if (item.type == '마법석') {
-        if (item.use == '캐릭터변환' && useCount != 1) return '❌ 캐릭터 변환석은 한 번에 1개만 사용할 수 있습니다.';
-        if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 유생의 강화기는 한 번에 1개만 사용할 수 있습니다.';
-        if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 프레스티지 증표는 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use == '스탯초기화' && useCount != 1) return '❌ 순백의 결정은 한 번에 1개만 사용할 수 있습니다.';
-        if (item.use == '장신구선택권' && useCount != 1) return '❌ 장신구 선택권은 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '스탯초기화' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && item.use != '장신구선택권' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -4256,6 +4297,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatAccessoryChoiceList(candidates));
+            }
+        }
+        if (item.use == '보조장비리롤') {
+            const targets = getSupportRerollTargets(user);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 보조 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '보조장비리롤', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('스탯을 재설정할 보조 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatSupportRerollList(targets));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -5243,6 +5297,24 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = selectAccessoryChoice(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '보조장비리롤') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 보조 장비 스탯 재설정을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 스탯을 재설정할 보조 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = rerollSupportEquipment(user, args[1]);
         await user.save();
         reply(result);
         return true;
