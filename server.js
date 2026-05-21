@@ -342,6 +342,7 @@ server.post('/api/auction/buy', requireUser, async (req, res) => {
     try {
         const out = await buyAuction(req.session.name, String((req.body && req.body.id) || ''), req.body && req.body.count);
         if (out.error) return res.status(400).json({ error: out.error });
+        if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
     } catch (e) {
         console.error('auction buy error:', e);
@@ -421,6 +422,7 @@ server.post('/api/buyorder/fulfill', requireUser, async (req, res) => {
     try {
         const out = await fulfillBuyOrder(req.session.name, String((req.body && req.body.id) || ''), req.body || {});
         if (out.error) return res.status(400).json({ error: out.error });
+        if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true });
     } catch (e) {
         console.error('buyorder fulfill error:', e);
@@ -1047,7 +1049,29 @@ function buildAuctionRegisterNotice(type, entry) {
         '- 등록자: ' + owner,
         '- 종류: ' + payloadMeta.kindLabel,
         '- 물품: ' + payloadMeta.name + (count > 1 ? ' x' + comma(count) : ''),
-        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(entry.price) + (entry.kind == 'item' ? ' / 1개' : '')
+        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(entry.price) + (entry.kind == 'item' ? ' / 1개' : ''),
+        '\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr'
+    ];
+    if (entry.kind == 'card') {
+        const ticketCost = rpgenius.getCardTicketCost(entry.payload || {});
+        if (ticketCost > 0) lines.push('- 거래권: ' + comma(ticketCost) + '장');
+    }
+    return lines.join('\n');
+}
+
+function buildAuctionTradeNotice(type, entry, actorName, count) {
+    const payloadMeta = buildTradeLogPayload(entry);
+    const tradeCount = Number(count || 1);
+    const unitPrice = Number(entry.price || 0);
+    const totalPrice = unitPrice * tradeCount;
+    const lines = [
+        '[ RPGenius ' + type + ' 체결 ]',
+        '- 구매자: ' + (type == '팝니다' ? actorName : entry.buyerName),
+        '- 판매자: ' + (type == '팝니다' ? entry.sellerName : actorName),
+        '- 종류: ' + payloadMeta.kindLabel,
+        '- 물품: ' + payloadMeta.name + (tradeCount > 1 ? ' x' + comma(tradeCount) : ''),
+        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(totalPrice) + (entry.kind == 'item' && tradeCount > 1 ? ' (개당 ' + comma(unitPrice) + ')' : ''),
+        '\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr'
     ];
     if (entry.kind == 'card') {
         const ticketCost = rpgenius.getCardTicketCost(entry.payload || {});
@@ -1367,6 +1391,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
     await buyer.save();
 
     const payloadMeta = buildTradeLogPayload(entry);
+    const notice = buildAuctionTradeNotice('팝니다', entry, buyerName, buyCount);
     await appendTradeLog({
         tradeType: '경매장',
         buyer: buyerName,
@@ -1382,7 +1407,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         fee: fee,
         currency: currency
     });
-    return {};
+    return { notice };
 }
 
 async function cancelAuction(userName, auctionId) {
@@ -1750,6 +1775,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
     await buyer.save();
 
     const payloadMeta = buildTradeLogPayload(entry);
+    const notice = buildAuctionTradeNotice('삽니다', entry, sellerName, sellCount);
     await appendTradeLog({
         tradeType: '삽니다',
         buyer: entry.buyerName,
@@ -1765,7 +1791,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         fee: fee,
         currency: entry.currency
     });
-    return {};
+    return { notice };
 }
 
 function buildBuyOrderLookups() {
