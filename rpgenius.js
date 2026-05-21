@@ -854,10 +854,10 @@ const CARD_COMBINE_TABLE = [
 ];
 
 const CARD_COMBINE_GUARANTEE_COUNTS = {
-    4: 10,
-    5: 10,
-    6: 10,
-    7: 20
+    4: 5,
+    5: 5,
+    6: 5,
+    7: 10
 };
 
 function getCardCombineInfo(star) {
