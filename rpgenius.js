@@ -1359,13 +1359,17 @@ const CP_WEIGHTS = {
     DEF_REDUCTION_RATIO: 0.5,
     TRIPLE_ZERO_RATIO: 0.15,
     SKILL_TRUE_DMG_RATIO: 0.2,
+    TRUE_DAMAGE_RATIO: 0.25,
     AVOID_CAP: 0.8,
     MITIGATE_CAP: 0.8,
+    TAKEN_DAMAGE_CAP: 0.8,
     RECOVERY_RATIO: 0.5,
+    RECOVERY_EFFICIENCY_RATIO: 0.25,
     MP_DIVISOR: 8,
     COOLDOWN_DIVISOR: 10000,
     ECON_SCALE: 30,
     POTION_SCALE: 25,
+    PLUS_GOLD_DIVISOR: 1000,
     DROP_SCALE: 80
 };
 
@@ -1395,27 +1399,30 @@ function computeCombatPowerFromStats(stats, slot) {
     const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
-    const mContext = 1 + Number(slot.damageBonus || 0) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
+    const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
     const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
-                     + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO;
+                     + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO
+                     + Math.min(1, Number(stats.trueDamageChance || 0)) * W.TRUE_DAMAGE_RATIO;
     const offense = atk * mAttack * mContext * mCrit * mCombo * mPen * mExtra * W.OFFENSE_SCALE;
 
     const ehp = hp * (1 + def / 100);
     const mAvoid = 1 / (1 - Math.min(W.AVOID_CAP, Math.max(0, Number(stats.avd || 0))));
     const mMitigate = 1 / (1 - Math.min(W.MITIGATE_CAP, Math.max(0, Number(slot.hpDamageReduction || 0))));
-    const mRecover = 1 + Number(slot.killRecoveryChance || 0) * W.RECOVERY_RATIO;
+    const mTakenDamage = 1 / Math.max(1 - W.TAKEN_DAMAGE_CAP, 1 + Number(stats.takenDamage || 0));
+    const mRecover = 1 + (Number(slot.killRecoveryChance || 0) + Number(stats.recoveryEfficiency || 0) * W.RECOVERY_EFFICIENCY_RATIO) * W.RECOVERY_RATIO;
     const mCritDef = 1 / (1 - Math.min(W.MITIGATE_CAP, critDef));
-    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mRecover * mCritDef * W.DEFENSE_SCALE;
+    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * W.DEFENSE_SCALE;
 
-    const mMpSave = 1 + Math.min(0.8, Number(stats.mpReduce || 0)) + Math.min(0.8, Number(slot.mpCostReduction || 0));
+    const mMpSave = 1 + Math.min(0.8, Math.max(0, -Number(stats.mpReduce || 0))) + Math.min(0.8, Number(slot.mpCostReduction || 0));
     const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR;
     const resourcePower = (mp / W.MP_DIVISOR) * mMpSave * mCooldown;
     const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
                        + Number(stats.potion || 0) * W.POTION_SCALE
-                       + Number(slot.itemDropChance || 0) * W.DROP_SCALE;
+                       + Number(stats.plusGold || 0) / W.PLUS_GOLD_DIVISOR * W.ECON_SCALE
+                       + (Number(stats.itemDropChance || 0) + Number(slot.itemDropChance || 0)) * W.DROP_SCALE;
     const utility = resourcePower + economyPower;
 
     return {
@@ -4442,6 +4449,20 @@ async function putItem(table, item) {
     }
 }
 
+async function putNewItem(table, item) {
+    try {
+        const command = new PutCommand({
+            TableName: table,
+            Item: item,
+            ConditionExpression: 'attribute_not_exists(id)'
+        });
+        const response = await docClient.send(command);
+        return { success: true, result: [response] };
+    } catch (error) {
+        return { success: false, result: [error] };
+    }
+}
+
 async function updateItem(table, id, data) {
     try {
         const keys = Object.keys(data).filter(d => d != 'id');
@@ -5190,13 +5211,28 @@ async function handleRPGCommand(data, channel) {
 
     if (pendingChecks[senderId] && args[0] == '확인') {
         if (pendingChecks[senderId].type == 'rpg등록') {
-            const user = new RPGUser(pendingChecks[senderId].arg.name, senderId);
-            const res = await putItem(TABLE_NAME, user);
+            const nickname = pendingChecks[senderId].arg.name;
+            const existingById = await getRPGUserById(senderId);
+            if (existingById) {
+                reply('❌ 이미 등록된 계정이 있습니다.\n- ' + existingById.name);
+                delete pendingChecks[senderId];
+                return true;
+            }
+            const existsByName = await getRPGUserByName(nickname);
+            if (existsByName) {
+                reply('❌ 이미 존재하는 이름입니다.');
+                delete pendingChecks[senderId];
+                return true;
+            }
+            const user = new RPGUser(nickname, senderId);
+            const res = await putNewItem(TABLE_NAME, user);
             if (res.success) {
                 reply('✅ 성공적으로 등록되셨습니다!\n환영합니다, ' + user.name + '님!\n캐릭터 카드를 선택해주세요.');
                 reply(formatCharacterCardList());
             } else {
-                reply('❌ 등록 과정에서 오류가 발생했습니다.\n' + VIEWMORE + '\n' + (res.result && res.result[0] && (res.result[0].message || res.result[0].Message) || 'Unknown Error'));
+                const errorName = res.result && res.result[0] && res.result[0].name;
+                if (errorName == 'ConditionalCheckFailedException') reply('❌ 이미 등록된 계정이 있습니다.');
+                else reply('❌ 등록 과정에서 오류가 발생했습니다.\n' + VIEWMORE + '\n' + (res.result && res.result[0] && (res.result[0].message || res.result[0].Message) || 'Unknown Error'));
             }
         }
         delete pendingChecks[senderId];

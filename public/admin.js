@@ -1674,6 +1674,121 @@ if ($('#tradeLogKind')) $('#tradeLogKind').onchange = e => { tradeLogFilter.kind
 TAB_LOADERS.tradelog = loadTradeLog;
 
 // ============================================================================
+// PITR 복원 / 마이그레이션
+// ============================================================================
+function pitrTable() {
+    return $('#pitrTable').value;
+}
+
+function pitrPrint(data) {
+    $('#pitrPreview').textContent = JSON.stringify(data, null, 2);
+}
+
+function pitrStatusBox(data) {
+    const box = $('#pitrStatus');
+    box.innerHTML = '';
+    const pitr = data.pitr || {};
+    const live = data.live || {};
+    [
+        ['테이블', data.table || '-'],
+        ['PITR 상태', pitr.status || '-'],
+        ['복원 가능 시작', pitr.earliest ? new Date(pitr.earliest).toLocaleString() : '-'],
+        ['최신 복원 가능 시점', pitr.latest ? new Date(pitr.latest).toLocaleString() : '-'],
+        ['운영 테이블 상태', live.status || '-'],
+        ['운영 항목 수', comma(live.itemCount || 0)]
+    ].forEach(([k, v]) => box.appendChild(el('div', null, el('b', null, k), String(v))));
+}
+
+async function loadPitrStatus() {
+    try {
+        const data = await api('/api/admin/pitr/status?table=' + encodeURIComponent(pitrTable()));
+        pitrStatusBox(data);
+        toast('PITR 상태를 불러왔습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+async function loadPitrLive() {
+    try {
+        const data = await api('/api/admin/pitr/live?table=' + encodeURIComponent(pitrTable()) + '&limit=10');
+        pitrPrint(data);
+        toast('운영 최신 데이터를 불러왔습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+async function createPitrRestore() {
+    const restoreTime = $('#pitrTime').value;
+    if (!restoreTime && !confirm('복원 시점이 비어있습니다. 최신 복원 가능 시점으로 복원 테이블을 만들까요?')) return;
+    if (!confirm('PITR 복원 테이블을 새로 생성합니다. AWS 비용이 발생할 수 있습니다. 계속할까요?')) return;
+    try {
+        const data = await api('/api/admin/pitr/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: pitrTable(), restoreTime, useLatest: !restoreTime })
+        });
+        $('#pitrJobId').value = data.job.id;
+        pitrPrint(data);
+        toast('복원 테이블 생성을 시작했습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+async function loadPitrJob() {
+    const id = $('#pitrJobId').value.trim();
+    if (!id) return toast('작업 ID를 입력하세요.', false);
+    try {
+        const data = await api('/api/admin/pitr/jobs/' + encodeURIComponent(id) + '?limit=10');
+        pitrPrint(data);
+        toast('복원 작업 상태를 불러왔습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+async function migratePitrJob() {
+    const id = $('#pitrJobId').value.trim();
+    if (!id) return toast('작업 ID를 입력하세요.', false);
+    const confirmText = prompt('복원 테이블 데이터를 운영 테이블에 덮어씁니다.\n운영에만 있는 항목은 삭제하지 않습니다.\n진행하려면 "마이그레이션"을 입력하세요.');
+    if (confirmText !== '마이그레이션') return;
+    try {
+        const data = await api('/api/admin/pitr/jobs/' + encodeURIComponent(id) + '/migrate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: confirmText })
+        });
+        pitrPrint(data);
+        toast('마이그레이션이 완료되었습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+async function deletePitrTable() {
+    const id = $('#pitrJobId').value.trim();
+    if (!id) return toast('작업 ID를 입력하세요.', false);
+    if (!confirm('복원용 임시 테이블을 삭제합니다. 계속할까요?')) return;
+    try {
+        const data = await api('/api/admin/pitr/jobs/' + encodeURIComponent(id) + '/table', { method: 'DELETE' });
+        pitrPrint(data);
+        toast('복원 테이블 삭제를 요청했습니다.');
+    } catch (e) {
+        toast(e.message, false);
+    }
+}
+
+if ($('#pitrStatusBtn')) $('#pitrStatusBtn').onclick = loadPitrStatus;
+if ($('#pitrLiveBtn')) $('#pitrLiveBtn').onclick = loadPitrLive;
+if ($('#pitrRestoreBtn')) $('#pitrRestoreBtn').onclick = createPitrRestore;
+if ($('#pitrJobBtn')) $('#pitrJobBtn').onclick = loadPitrJob;
+if ($('#pitrMigrateBtn')) $('#pitrMigrateBtn').onclick = migratePitrJob;
+if ($('#pitrDeleteBtn')) $('#pitrDeleteBtn').onclick = deletePitrTable;
+TAB_LOADERS.pitr = loadPitrStatus;
+
+// ============================================================================
 // RAW JSON 에디터
 // ============================================================================
 const rawSel = $('#rawKey');

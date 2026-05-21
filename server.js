@@ -2,6 +2,8 @@
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
 
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'rpgenius-default-secret-change-me';
 const SESSION_COOKIE = 'rpg_admin';
@@ -15,6 +17,19 @@ server.use('/static', express.static(path.join(__dirname, 'public')));
 
 const AUCTION_NOTIFY_CHANNEL_ID = '18470462260425659';
 let kakaoClient = null;
+const PITR_TABLES = {
+    rpgenius_user: { key: 'id', label: '유저 데이터' },
+    rpgenius_data: { key: 'key', label: '게임 데이터' }
+};
+const pitrJobs = {};
+const dynamoClient = new DynamoDBClient({
+    region: 'ap-northeast-2',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+    }
+});
+const dynamoDocClient = DynamoDBDocumentClient.from(dynamoClient);
 
 function setKakaoClient(client) {
     kakaoClient = client || null;
@@ -612,6 +627,189 @@ server.delete('/api/admin/tradelog', requireAdmin, async (req, res) => {
     }
 });
 
+// ===== PITR 복원 / 마이그레이션 (관리자) =====
+
+function getPitrTableInfo(table) {
+    const name = String(table || '').trim();
+    if (!PITR_TABLES[name]) throw new Error('허용되지 않은 테이블입니다.');
+    return { name, ...PITR_TABLES[name] };
+}
+
+function serializeTableDescription(desc) {
+    if (!desc) return null;
+    return {
+        name: desc.TableName,
+        status: desc.TableStatus,
+        itemCount: desc.ItemCount || 0,
+        sizeBytes: desc.TableSizeBytes || 0,
+        createdAt: desc.CreationDateTime
+    };
+}
+
+async function describeDynamoTable(tableName) {
+    try {
+        const out = await dynamoClient.send(new DescribeTableCommand({ TableName: tableName }));
+        return serializeTableDescription(out.Table);
+    } catch (e) {
+        if (e && e.name == 'ResourceNotFoundException') return null;
+        throw e;
+    }
+}
+
+async function scanTableSample(tableName, limit) {
+    const out = await dynamoDocClient.send(new ScanCommand({ TableName: tableName, Limit: Math.min(25, Math.max(1, Number(limit || 10))) }));
+    return out.Items || [];
+}
+
+async function batchWriteAll(tableName, items) {
+    let written = 0;
+    for (let i = 0; i < items.length; i += 25) {
+        let requestItems = {
+            [tableName]: items.slice(i, i + 25).map(item => ({ PutRequest: { Item: item } }))
+        };
+        while (requestItems[tableName] && requestItems[tableName].length > 0) {
+            const out = await dynamoDocClient.send(new BatchWriteCommand({ RequestItems: requestItems }));
+            requestItems = out.UnprocessedItems || {};
+            if (requestItems[tableName] && requestItems[tableName].length > 0) await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        written += items.slice(i, i + 25).length;
+    }
+    return written;
+}
+
+async function copyTableItems(sourceTable, targetTable) {
+    let ExclusiveStartKey = null;
+    let total = 0;
+    do {
+        const out = await dynamoDocClient.send(new ScanCommand({ TableName: sourceTable, ExclusiveStartKey }));
+        const items = out.Items || [];
+        if (items.length > 0) total += await batchWriteAll(targetTable, items);
+        ExclusiveStartKey = out.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+    return total;
+}
+
+server.get('/api/admin/pitr/status', requireAdmin, async (req, res) => {
+    try {
+        const table = getPitrTableInfo(req.query.table || 'rpgenius_user');
+        const backups = await dynamoClient.send(new DescribeContinuousBackupsCommand({ TableName: table.name }));
+        const pitr = backups.ContinuousBackupsDescription && backups.ContinuousBackupsDescription.PointInTimeRecoveryDescription || {};
+        const live = await describeDynamoTable(table.name);
+        res.json({
+            table: table.name,
+            label: table.label,
+            live,
+            pitr: {
+                status: pitr.PointInTimeRecoveryStatus || 'UNKNOWN',
+                earliest: pitr.EarliestRestorableDateTime || null,
+                latest: pitr.LatestRestorableDateTime || null
+            }
+        });
+    } catch (e) {
+        console.error('pitr status error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+server.get('/api/admin/pitr/live', requireAdmin, async (req, res) => {
+    try {
+        const table = getPitrTableInfo(req.query.table || 'rpgenius_user');
+        res.json({ table: table.name, info: await describeDynamoTable(table.name), sample: await scanTableSample(table.name, req.query.limit || 10) });
+    } catch (e) {
+        console.error('pitr live preview error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+server.post('/api/admin/pitr/restore', requireAdmin, async (req, res) => {
+    try {
+        const table = getPitrTableInfo(req.body && req.body.table || 'rpgenius_user');
+        const useLatest = !!(req.body && req.body.useLatest);
+        const restoreTimeRaw = String(req.body && req.body.restoreTime || '').trim();
+        if (!useLatest && !restoreTimeRaw) return res.status(400).json({ error: '복원 시점을 입력해주세요.' });
+        const restoreDate = useLatest ? null : new Date(restoreTimeRaw);
+        if (!useLatest && Number.isNaN(restoreDate.getTime())) return res.status(400).json({ error: '복원 시점 형식이 올바르지 않습니다.' });
+
+        const backups = await dynamoClient.send(new DescribeContinuousBackupsCommand({ TableName: table.name }));
+        const pitr = backups.ContinuousBackupsDescription && backups.ContinuousBackupsDescription.PointInTimeRecoveryDescription || {};
+        if (pitr.PointInTimeRecoveryStatus != 'ENABLED') return res.status(400).json({ error: table.name + ' PITR이 활성화되어 있지 않습니다.' });
+        if (!useLatest) {
+            const earliest = new Date(pitr.EarliestRestorableDateTime);
+            const latest = new Date(pitr.LatestRestorableDateTime);
+            if (restoreDate < earliest || restoreDate > latest) return res.status(400).json({ error: '복원 가능 범위를 벗어난 시점입니다.' });
+        }
+
+        const jobId = crypto.randomBytes(8).toString('hex');
+        const targetTable = table.name + '_restore_' + Date.now();
+        const params = {
+            SourceTableName: table.name,
+            TargetTableName: targetTable,
+            UseLatestRestorableTime: useLatest
+        };
+        if (!useLatest) params.RestoreDateTime = restoreDate;
+        await dynamoClient.send(new RestoreTableToPointInTimeCommand(params));
+        pitrJobs[jobId] = {
+            id: jobId,
+            sourceTable: table.name,
+            targetTable,
+            restoreTime: useLatest ? 'latest' : restoreDate.toISOString(),
+            createdAt: new Date().toISOString(),
+            migratedAt: null,
+            migratedCount: 0
+        };
+        res.json({ ok: true, job: pitrJobs[jobId] });
+    } catch (e) {
+        console.error('pitr restore error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+server.get('/api/admin/pitr/jobs/:id', requireAdmin, async (req, res) => {
+    try {
+        const job = pitrJobs[String(req.params.id || '')];
+        if (!job) return res.status(404).json({ error: '복원 작업을 찾을 수 없습니다.' });
+        const info = await describeDynamoTable(job.targetTable);
+        const sample = info && info.status == 'ACTIVE' ? await scanTableSample(job.targetTable, req.query.limit || 10) : [];
+        res.json({ job, info, sample });
+    } catch (e) {
+        console.error('pitr job status error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+server.post('/api/admin/pitr/jobs/:id/migrate', requireAdmin, async (req, res) => {
+    try {
+        const job = pitrJobs[String(req.params.id || '')];
+        if (!job) return res.status(404).json({ error: '복원 작업을 찾을 수 없습니다.' });
+        if (String(req.body && req.body.confirm || '').trim() != '마이그레이션') return res.status(400).json({ error: '확인 문구가 올바르지 않습니다.' });
+        const info = await describeDynamoTable(job.targetTable);
+        if (!info || info.status != 'ACTIVE') return res.status(400).json({ error: '복원 테이블이 아직 ACTIVE 상태가 아닙니다.' });
+        const count = await copyTableItems(job.targetTable, job.sourceTable);
+        job.migratedAt = new Date().toISOString();
+        job.migratedCount = count;
+        if (job.sourceTable == 'rpgenius_data') {
+            for (const key of rpgenius.RPGENIUS_DATA_KEYS) await rpgenius.loadRpgeniusDataEntry(key).catch(() => null);
+        }
+        res.json({ ok: true, job });
+    } catch (e) {
+        console.error('pitr migrate error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+server.delete('/api/admin/pitr/jobs/:id/table', requireAdmin, async (req, res) => {
+    try {
+        const job = pitrJobs[String(req.params.id || '')];
+        if (!job) return res.status(404).json({ error: '복원 작업을 찾을 수 없습니다.' });
+        await dynamoClient.send(new DeleteTableCommand({ TableName: job.targetTable }));
+        job.deletedAt = new Date().toISOString();
+        res.json({ ok: true, job });
+    } catch (e) {
+        console.error('pitr delete table error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
 // ===== HTML =====
 
 function readJson(filePath, fallback) {
@@ -1049,13 +1247,13 @@ function buildAuctionRegisterNotice(type, entry) {
         '- 등록자: ' + owner,
         '- 종류: ' + payloadMeta.kindLabel,
         '- 물품: ' + payloadMeta.name + (count > 1 ? ' x' + comma(count) : ''),
-        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(entry.price) + (entry.kind == 'item' ? ' / 1개' : ''),
-        '\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr'
+        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(entry.price) + (entry.kind == 'item' ? ' / 1개' : '')
     ];
     if (entry.kind == 'card') {
         const ticketCost = rpgenius.getCardTicketCost(entry.payload || {});
         if (ticketCost > 0) lines.push('- 거래권: ' + comma(ticketCost) + '장');
     }
+    lines.push('\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr');
     return lines.join('\n');
 }
 
@@ -1071,12 +1269,12 @@ function buildAuctionTradeNotice(type, entry, actorName, count) {
         '- 종류: ' + payloadMeta.kindLabel,
         '- 물품: ' + payloadMeta.name + (tradeCount > 1 ? ' x' + comma(tradeCount) : ''),
         '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(totalPrice) + (entry.kind == 'item' && tradeCount > 1 ? ' (개당 ' + comma(unitPrice) + ')' : ''),
-        '\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr'
     ];
     if (entry.kind == 'card') {
         const ticketCost = rpgenius.getCardTicketCost(entry.payload || {});
         if (ticketCost > 0) lines.push('- 거래권: ' + comma(ticketCost) + '장');
     }
+    lines.push('\n웹버전에서 확인할 수 있습니다.\nhttps://rpgenius.kro.kr');
     return lines.join('\n');
 }
 
