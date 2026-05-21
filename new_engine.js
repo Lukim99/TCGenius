@@ -91,6 +91,7 @@ const DEVICE_NAME = "uDevice";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 let client = new node_kakao.TalkClient();
+if (keepAlive && typeof keepAlive.setKakaoClient == 'function') keepAlive.setKakaoClient(client);
 
 function read(path) {
     try {

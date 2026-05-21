@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
@@ -11,7 +11,24 @@ const fs = require('fs');
 
 const server = express();
 server.use(express.json({ limit: '5mb' }));
-server.use(express.urlencoded({ extended: false }));
+server.use('/static', express.static(path.join(__dirname, 'public')));
+
+const AUCTION_NOTIFY_CHANNEL_ID = '18470462260425659';
+let kakaoClient = null;
+
+function setKakaoClient(client) {
+    kakaoClient = client || null;
+}
+
+function sendAuctionKakaoNotice(message) {
+    try {
+        if (!kakaoClient || !kakaoClient.channelList) return;
+        const channel = kakaoClient.channelList.get(AUCTION_NOTIFY_CHANNEL_ID);
+        if (channel && typeof channel.sendChat == 'function') channel.sendChat(message);
+    } catch (e) {
+        console.error('auction kakao notice error:', e);
+    }
+}
 
 const ADMIN_HTML_PATH = path.join(__dirname, 'public', 'admin.html');
 const ADMIN_JS_PATH = path.join(__dirname, 'public', 'admin.js');
@@ -313,6 +330,7 @@ server.post('/api/auction/register', requireUser, async (req, res) => {
     try {
         const out = await registerAuction(req.session.name, req.body || {});
         if (out.error) return res.status(400).json({ error: out.error });
+        if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true, id: out.id });
     } catch (e) {
         console.error('auction register error:', e);
@@ -391,6 +409,7 @@ server.post('/api/buyorder/register', requireUser, async (req, res) => {
     try {
         const out = await registerBuyOrder(req.session.name, req.body || {});
         if (out.error) return res.status(400).json({ error: out.error });
+        if (out.notice) sendAuctionKakaoNotice(out.notice);
         res.json({ ok: true, id: out.id });
     } catch (e) {
         console.error('buyorder register error:', e);
@@ -998,10 +1017,10 @@ function buildTradeLogPayload(entry) {
     if (entry.kind == 'equipment') {
         const slot = entry.payload && entry.payload.type;
         const id = entry.payload && entry.payload.id;
-        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : slot == '보조' ? 'support' : null;
+        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : slot == '보조' ? 'support' : ['weapon', 'armor', 'accessory', 'support'].includes(slot) ? slot : null;
         const data = slotKey ? (equipments[slotKey] || [])[id] : null;
         return {
-            kindLabel: slot || '장비',
+            kindLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[slotKey] || slot || '장비',
             name: data ? data.name : '알 수 없는 장비',
             rarity: data ? data.rarity : null,
             payload: Object.assign({}, entry.payload || {})
@@ -1017,6 +1036,24 @@ function buildTradeLogPayload(entry) {
         };
     }
     return { kindLabel: entry.kind || '?', name: '알 수 없음', payload: entry.payload || {} };
+}
+
+function buildAuctionRegisterNotice(type, entry) {
+    const payloadMeta = buildTradeLogPayload(entry);
+    const owner = type == '팝니다' ? entry.sellerName : entry.buyerName;
+    const count = Number(entry.count || 1);
+    const lines = [
+        '[ RPGenius ' + type + ' 등록 ]',
+        '- 등록자: ' + owner,
+        '- 종류: ' + payloadMeta.kindLabel,
+        '- 물품: ' + payloadMeta.name + (count > 1 ? ' x' + comma(count) : ''),
+        '- 가격: ' + getCurrencyLabel(entry.currency) + ' ' + comma(entry.price) + (entry.kind == 'item' ? ' / 1개' : '')
+    ];
+    if (entry.kind == 'card') {
+        const ticketCost = rpgenius.getCardTicketCost(entry.payload || {});
+        if (ticketCost > 0) lines.push('- 거래권: ' + comma(ticketCost) + '장');
+    }
+    return lines.join('\n');
 }
 
 async function appendTradeLog(record) {
@@ -1204,7 +1241,7 @@ async function registerAuction(sellerName, body) {
         if (!equips[index]) return { error: '존재하지 않는 장비입니다.' };
         const eq = equips[index];
         const data = getEquipmentData(eq.type, eq.id);
-        if (data && data.no_trade === true) return { error: '거래 불가 장비는 경매장에 등록할 수 없습니다.' };
+        if (data && data.no_trade === true) return { error: '거래 불가 장비는 판매 등록할 수 없습니다.' };
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         if (eq.rolled) payload.rolled = eq.rolled;
         equips.splice(index, 1);
@@ -1214,7 +1251,7 @@ async function registerAuction(sellerName, body) {
         if (!Number.isInteger(itemId) || itemId < 0) return { error: '아이템을 선택해주세요.' };
         if (!Number.isInteger(count) || count < 1) return { error: '갯수는 1 이상의 정수여야 합니다.' };
         const itemData = rpgenius.getDataCache('Item', [])[itemId];
-        if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템은 경매장에 등록할 수 없습니다.' };
+        if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템은 판매 등록할 수 없습니다.' };
         const have = rpgenius.getInventoryItemCount(user, itemId);
         if (have < count) return { error: '보유 수량이 부족합니다. (보유 ' + have + ')' };
         if (!rpgenius.removeInventoryItem(user, itemId, count)) return { error: '아이템 차감에 실패했습니다.' };
@@ -1235,7 +1272,7 @@ async function registerAuction(sellerName, body) {
     list.push(entry);
     await saveAuctionList(list);
     await user.save();
-    return { id: entry.id };
+    return { id: entry.id, notice: buildAuctionRegisterNotice('팝니다', entry) };
 }
 
 function ensureInventoryShape(user) {
@@ -1587,7 +1624,7 @@ async function registerBuyOrder(buyerName, body) {
     list.push(entry);
     await saveBuyOrderList(list);
     await buyer.save();
-    return { id: entry.id };
+    return { id: entry.id, notice: buildAuctionRegisterNotice('삽니다', entry) };
 }
 
 async function cancelBuyOrder(userName, orderId) {
@@ -1903,7 +1940,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
 @media(max-width:520px){header{padding:12px 10px;gap:8px}h1{font-size:clamp(16px,5vw,20px)}.nav{gap:4px}.nav-btn{padding:8px clamp(7px,2.1vw,10px);font-size:clamp(11px,3.1vw,13px)}.bar{gap:5px}.who{max-width:22vw;overflow:hidden;text-overflow:ellipsis;font-size:12px}#adminLink,#logout{padding:8px 9px;font-size:12px}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">경매장</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">팝니다</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
     <div id="profileBanner" class="profile-banner" style="display:none"><span id="profileBannerText"></span><button id="profileBackBtn" class="primary">내 정보로 돌아가기</button></div>
@@ -1916,10 +1953,10 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   <div class="page" data-page="inventory">
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
-  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">경매장</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 경매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
   <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
-  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 등록</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
@@ -1948,5 +1985,7 @@ function keepAlive() {
 }
 
 if (require.main === module) keepAlive();
+
+keepAlive.setKakaoClient = setKakaoClient;
 
 module.exports = keepAlive;

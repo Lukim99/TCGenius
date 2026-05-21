@@ -287,7 +287,7 @@ function auctionCardEl(entry) {
         el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
         el('div', { class: 'auc-seller' }, '판매자: ' + entry.sellerName + (entry.ticketCost > 0 ? ' · 거래권 ' + entry.ticketCost + '장' : ''))
     );
-    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 경매'));
+    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 판매'));
     return node;
 }
 
@@ -304,7 +304,7 @@ function renderAuctionList() {
         return true;
     }).sort((a, b) => b.createdAt - a.createdAt);
     if (filtered.length === 0) {
-        $('#auctionList').replaceChildren(el('div', { class: 'empty' }, query ? '검색 결과가 없습니다.' : '등록된 경매가 없습니다.'));
+        $('#auctionList').replaceChildren(el('div', { class: 'empty' }, query ? '검색 결과가 없습니다.' : '등록된 판매가 없습니다.'));
         return;
     }
     $('#auctionList').replaceChildren(...filtered.map(auctionCardEl));
@@ -360,7 +360,7 @@ function openAuctionDetail(entry) {
                 alert(e.message);
                 cancelBtn.disabled = false;
             }
-        } }, '경매 취소');
+        } }, '판매 취소');
         content.push(cancelBtn);
     } else {
         let buyCountInput = null;
@@ -484,7 +484,7 @@ function renderRegisterModal() {
     const cancelBtn = el('button', { onclick: closeRegister }, '취소');
 
     const content = [
-        el('h3', null, '경매 등록'),
+        el('h3', null, '판매 등록'),
         el('div', { class: 'sub' }, '수수료 5%를 제외하고 판매자에게 입금됩니다.'),
         el('label', null, '종류'),
         kindSeg,
@@ -565,7 +565,7 @@ function buyOrderCardEl(entry) {
         el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
         el('div', { class: 'auc-seller' }, '구매자: ' + entry.buyerName)
     );
-    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 등록'));
+    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 구매'));
     return node;
 }
 
