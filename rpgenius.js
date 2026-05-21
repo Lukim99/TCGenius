@@ -3442,6 +3442,7 @@ const EQUIPMENT_DISASSEMBLE_REWARD = {
     '레전더리': { min: 560, max: 650 },
     '고유': { min: 800, max: 950 }
 };
+const SUPPORT_DISASSEMBLE_BLACK_FIRE_REWARD = { '일반': 1, '레어': 2, '유니크': 5, '레전더리': 10 };
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
 const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 11];
 
@@ -3592,6 +3593,30 @@ function getEquipmentUpgradeCost(equipment, type, level) {
     return { stone, gold };
 }
 
+function getBlackFireItemId() {
+    return getDataCache('Item', []).findIndex(item => item && item.name == '검은 불');
+}
+
+function getDisassembleStoneAmount(rewardRange, type) {
+    const stone = randomInt(rewardRange.min, rewardRange.max);
+    return type == 'support' ? Math.floor(stone * 0.5) : stone;
+}
+
+function getDisassembleRewardRange(rewardRange, type) {
+    if (type != 'support') return rewardRange;
+    return { min: Math.floor(rewardRange.min * 0.5), max: Math.floor(rewardRange.max * 0.5) };
+}
+
+function getSupportDisassembleBlackFireCount(equipment, type) {
+    return type == 'support' ? Number(SUPPORT_DISASSEMBLE_BLACK_FIRE_REWARD[equipment.rarity] || 0) : 0;
+}
+
+function pushLimitedEquipmentLines(lines, equipmentLines) {
+    const visibleLines = equipmentLines.slice(0, 10);
+    visibleLines.forEach(line => lines.push(line));
+    if (equipmentLines.length > 10) lines.push('...(총 ' + comma(equipmentLines.length) + '개)');
+}
+
 function parseDisassembleSelection(user, numberArgs) {
     if (!Array.isArray(numberArgs) || numberArgs.length == 0) return { error: '❌ /RPGenius 분해 [장비번호1] [장비번호2]...' };
     const numbers = numberArgs.map(arg => Number(arg));
@@ -3609,7 +3634,7 @@ function parseDisassembleSelection(user, numberArgs) {
         if (!equipment) return { error: '❌ 잘못된 장비 데이터입니다: [' + number + ']' };
         const rewardRange = EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
         if (!rewardRange) return { error: '❌ 분해할 수 없는 등급(' + equipment.rarity + ')이 포함되어 있습니다: [' + number + ']' };
-        entries.push({ number, entry, equipment, rewardRange });
+        entries.push({ number, entry, type, equipment, rewardRange });
     }
     return { numbers, entries };
 }
@@ -3621,14 +3646,21 @@ function formatDisassemblePreview(user, numberArgs) {
     const lines = ['[ 장비 분해 ]'];
     let minTotal = 0;
     let maxTotal = 0;
+    let blackFireTotal = 0;
+    const equipmentLines = [];
     parsed.entries.forEach(e => {
         const lvl = Number(e.entry.equip.level || 0);
-        lines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(e.rewardRange.min) + '~' + comma(e.rewardRange.max) + ')');
-        minTotal += e.rewardRange.min;
-        maxTotal += e.rewardRange.max;
+        const range = getDisassembleRewardRange(e.rewardRange, e.type);
+        const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
+        equipmentLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + ')');
+        minTotal += range.min;
+        maxTotal += range.max;
+        blackFireTotal += blackFire;
     });
+    pushLimitedEquipmentLines(lines, equipmentLines);
     lines.push('', '[ 예상 획득 ]');
     lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
+    if (blackFireTotal > 0) lines.push('- 검은 불 x' + comma(blackFireTotal));
     lines.push('', '분해하시겠습니까?', '/RPGenius 분해확인');
     return lines.join('\n');
 }
@@ -3640,19 +3672,26 @@ function runDisassemble(user) {
     const parsed = parseDisassembleSelection(user, pending.numbers);
     if (parsed.error) return parsed.error;
     const entries = parsed.entries.slice().sort((a, b) => b.entry.index - a.entry.index);
+    const blackFireItemId = entries.some(e => getSupportDisassembleBlackFireCount(e.equipment, e.type) > 0) ? getBlackFireItemId() : -1;
+    if (entries.some(e => getSupportDisassembleBlackFireCount(e.equipment, e.type) > 0) && blackFireItemId == -1) return '❌ 검은 불 아이템 데이터를 찾을 수 없습니다.';
     let totalStone = 0;
+    let totalBlackFire = 0;
     const dismantledLines = [];
     entries.forEach(e => {
-        const stone = randomInt(e.rewardRange.min, e.rewardRange.max);
+        const stone = getDisassembleStoneAmount(e.rewardRange, e.type);
+        const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
         totalStone += stone;
+        totalBlackFire += blackFire;
         user.inventory.equipment.splice(e.entry.index, 1);
         const lvl = Number(e.entry.equip.level || 0);
-        dismantledLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone));
+        dismantledLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : ''));
     });
-    addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
+    if (totalStone > 0) addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
+    if (totalBlackFire > 0) addInventoryItem(user, blackFireItemId, totalBlackFire);
     const lines = ['✅ 장비 ' + comma(entries.length) + '개를 분해했습니다.', '', '[ 분해 장비 ]'];
-    dismantledLines.forEach(l => lines.push(l));
+    pushLimitedEquipmentLines(lines, dismantledLines);
     lines.push('', '[ 획득 결과 ]', '- 강화석 x' + comma(totalStone));
+    if (totalBlackFire > 0) lines.push('- 검은 불 x' + comma(totalBlackFire));
     return lines.join('\n');
 }
 
