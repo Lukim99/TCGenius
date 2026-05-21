@@ -84,6 +84,8 @@ const FRAGMENT_TIERS = {
 };
 const ELITE_ENCOUNTER_RATE = 0.1;
 const ELITE_RESPAWN_COOLDOWN = 60 * 60 * 1000;
+const TAXATION_GUN_NAME = '징수의 총';
+const TAXATION_GUN_EXECUTE_THRESHOLD = 0.05;
 const ATTENDANCE_STAMP_ITEM_ID = 71;
 const ICE_HAMMER_ITEM_ID = 74;
 const ICE_SUMMON_REWARDS = {
@@ -324,7 +326,7 @@ function formatStatValue(key, value) {
         'crit', 'critMul', 'critDef', 'cmb',
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
-        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%',
+        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
         'takenDamage%', 'damageBonus%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
@@ -408,6 +410,7 @@ function formatEquipmentStatLines(equipment) {
         def: '방어력',
         hp: '체력',
         mp: 'MP',
+        plusGold: '처치 당 골드',
         crit: '치명타 확률',
         critMul: '치명타 피해량',
         critDef: '치명타 피해 감소율',
@@ -432,6 +435,7 @@ function formatEquipmentStatLines(equipment) {
         eliteDmg: '엘리트 몬스터 대상 추가 피해',
         mpReduce: 'MP 소모량',
         itemDropChance: '아이템 획득 확률',
+        recoveryEfficiency: '회복 효율',
         crit: '치명타 확률',
         critMul: '치명타 피해량',
         critDef: '치명타 피해 감소율',
@@ -571,6 +575,13 @@ function formatCurrentEquipmentStatLines(equipment, level, rolled, context) {
         }
     }
     return formatEquipmentStatLines({ stat, plusStat });
+}
+
+function hasActiveSupportEquipment(user, name) {
+    const support = user.equipments && user.equipments.support;
+    if (!support || typeof support.id == 'undefined') return false;
+    const data = getEquipmentData('support', support.id);
+    return !!(data && data.name == name && isEquipmentEffectActive(user, data));
 }
 
 function findEquipmentByName(name) {
@@ -1329,7 +1340,7 @@ function calculateUserStats(user) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -1718,9 +1729,14 @@ function applySkillRecovery(user, maxHp, extra, lines) {
     if (!extra || Number(extra.skillRecoveryChance || 0) <= 0 || Number(extra.skillRecoveryAmount || 0) <= 0) return;
     if (Math.random() >= Number(extra.skillRecoveryChance || 0)) return;
     const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
-    user.hp = Math.min(Number(maxHp || 0), beforeHp + Math.round(Number(extra.skillRecoveryAmount || 0)));
+    user.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(extra.skillRecoveryAmount, user));
     const recovered = user.hp - beforeHp;
     if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
+}
+
+function applyRecoveryEfficiency(amount, user, stats) {
+    const currentStats = stats || calculateUserStats(user);
+    return Math.round(Number(amount || 0) * (1 + Number(currentStats.recoveryEfficiency || 0)));
 }
 
 function addExperience(user, amount) {
@@ -1914,7 +1930,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round(count * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
+            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -1939,13 +1955,16 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
     const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, elite);
     const finalDamage = hitResult.finalDamage;
-    const remainHp = Math.max(0, currentHp - finalDamage);
+    let remainHp = Math.max(0, currentHp - finalDamage);
+    const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
+    if (executedByTaxationGun) remainHp = 0;
     const maxHp = Number(stats.hp || 0);
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
         : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
+    if (executedByTaxationGun) lines.push('- ❌ ' + TAXATION_GUN_NAME + ' 효과: ' + elite.name + ' 처형!');
     if (remainHp <= 0) {
         lines.push('- ' + elite.name + ' 처치!');
         applySkillRecovery(user, maxHp, extra, lines);
@@ -2057,7 +2076,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
         let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
         let goldReward = 0;
-        for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0));
+        for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
         goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
@@ -2127,7 +2146,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     if (killCount > 0 && slotEffects.killRecoveryChance > 0 && Math.random() < slotEffects.killRecoveryChance) {
         const beforeRecoverHp = Number(user.hp || 0);
-        const lostHpRecovery = Math.round((maxHp - beforeRecoverHp) * 0.1);
+        const lostHpRecovery = applyRecoveryEfficiency((maxHp - beforeRecoverHp) * 0.1, user, stats);
         // const damageCapRecovery = Math.floor(fieldDamage * 0.5);
         user.hp = Math.min(maxHp, beforeRecoverHp + lostHpRecovery);
         if (user.hp - beforeRecoverHp > 0) lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' (' + Math.round(slotEffects.killRecoveryChance * 100) + "% 확률)");
@@ -2136,7 +2155,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const passiveMp = getPassiveMpRecovery(user);
     if (killCount > 0 && passiveMp > 0) {
         const beforeMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
-        user.mp = Math.min(Number(stats.mp || 0), beforeMp + passiveMp);
+        user.mp = Math.min(Number(stats.mp || 0), beforeMp + applyRecoveryEfficiency(passiveMp, user, stats));
         if (user.mp - beforeMp > 0) lines.push('- MP +' + comma(user.mp - beforeMp));
     }
 
@@ -2331,7 +2350,7 @@ function formatCharacterInventory(user) {
 }
 
 const SUPPORT_STAT_LABELS = {
-    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력',
+    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력', plusGold: '처치 당 골드',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해'
@@ -2340,7 +2359,7 @@ const SUPPORT_STAT_LABELS = {
 const SUPPORT_PLUS_STAT_LABELS = {
     atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
     pnt: '방어력 관통',
-    gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
+    gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
     eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
@@ -3802,7 +3821,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         addStats(nextPlus, nxtResolved.plusStat);
     }
     const statNames = {
-        atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP',
+        atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', plusGold: '처치 당 골드',
         crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
         cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해'
@@ -3810,7 +3829,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const plusStatNames = {
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통',
-        gold: '골드 획득량', potion: '물약 효율', afterBasic: '일반 공격 피해',
+        gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
         eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
@@ -4137,7 +4156,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
     if (func.type == '체력회복') {
         const maxHp = Number(stats.hp || 0);
         const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-        const amount = Math.round(Number(func.amount || 0) * potionMul) * useCount;
+        const amount = applyRecoveryEfficiency(Number(func.amount || 0) * potionMul, user, stats) * useCount;
         user.hp = Math.min(maxHp, before + amount);
         resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
         return;
@@ -4145,7 +4164,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
     if (func.type == '마나회복') {
         const maxMp = Number(stats.mp || 0);
         const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-        const amount = Math.round(Number(func.amount || 0) * potionMul) * useCount;
+        const amount = applyRecoveryEfficiency(Number(func.amount || 0) * potionMul, user, stats) * useCount;
         user.mp = Math.min(maxMp, before + amount);
         resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
         return;
@@ -4153,7 +4172,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
     if (func.type == '체력회복%') {
         const maxHp = Number(stats.hp || 0);
         const before = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-        const amount = Math.round(maxHp * Number(func.amount || 0) * potionMul) * useCount;
+        const amount = applyRecoveryEfficiency(maxHp * Number(func.amount || 0) * potionMul, user, stats) * useCount;
         user.hp = Math.min(maxHp, before + amount);
         resultLines.push('- HP +' + comma(user.hp - before) + ' (' + comma(user.hp) + '/' + comma(maxHp) + ')');
         return;
@@ -4161,7 +4180,7 @@ function applyUseFunc(user, func, useCount, resultLines) {
     if (func.type == '마나회복%') {
         const maxMp = Number(stats.mp || 0);
         const before = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-        const amount = Math.round(maxMp * Number(func.amount || 0) * potionMul) * useCount;
+        const amount = applyRecoveryEfficiency(maxMp * Number(func.amount || 0) * potionMul, user, stats) * useCount;
         user.mp = Math.min(maxMp, before + amount);
         resultLines.push('- MP +' + comma(user.mp - before) + ' (' + comma(user.mp) + '/' + comma(maxMp) + ')');
         return;
