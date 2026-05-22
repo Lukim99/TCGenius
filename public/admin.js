@@ -577,6 +577,37 @@ $('#shopDelType').onclick = () => {
 };
 $('#shopReload').onclick = async () => { try { shopData = (await loadKey('Shop')) || {}; shopCurrentType = null; renderShopTypes(); renderShop(); $('#shopStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
 $('#shopSave').onclick = async () => { if (!confirm('Shop 데이터를 저장합니다. 계속?')) return; try { await saveKey('Shop', shopData); toast('✅ Shop 저장 완료'); } catch (e) { toast(e.message, false); } };
+if ($('#shopLimitResetScope')) $('#shopLimitResetScope').onchange = () => {
+    const scope = $('#shopLimitResetScope').value;
+    $('#shopLimitResetIndexWrap').style.display = scope === 'item' ? '' : 'none';
+};
+if ($('#shopLimitResetBtn')) $('#shopLimitResetBtn').onclick = async () => {
+    const scope = $('#shopLimitResetScope').value;
+    if ((scope === 'shop' || scope === 'item') && !shopCurrentType) return toast('상점을 먼저 선택하세요.', false);
+    const body = { scope, shopType: shopCurrentType || '' };
+    let targetText = scope === 'all' ? '모든 상점' : "'" + shopCurrentType + "' 상점 전체";
+    if (scope === 'item') {
+        const displayIndex = Number($('#shopLimitResetIndex').value);
+        if (!Number.isInteger(displayIndex) || displayIndex < 1) return toast('상품 번호를 입력하세요.', false);
+        const arr = shopData[shopCurrentType] || [];
+        if (displayIndex > arr.length) return toast('존재하지 않는 상품 번호입니다.', false);
+        body.index = displayIndex - 1;
+        targetText = "'" + shopCurrentType + "' 상점 " + displayIndex + '번 상품';
+    }
+    if (!confirm(targetText + '의 구매 제한 기록을 초기화합니다.\n유저별 기록과 전체 제한 기록이 함께 삭제됩니다. 계속?')) return;
+    try {
+        const result = await api('/api/admin/shop-limits/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const msg = '초기화 완료: 유저 ' + result.userUpdated + '명, 전체 제한 ' + result.globalUpdated + '건';
+        $('#shopLimitResetStatus').textContent = msg;
+        toast('✅ ' + msg);
+    } catch (e) {
+        toast(e.message, false);
+    }
+};
 TAB_LOADERS.shop = () => $('#shopReload').click();
 
 // ============================================================================

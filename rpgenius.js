@@ -630,7 +630,7 @@ function pickRandomFashionCard() {
 }
 
 function applyFashionRollToCard(card, fixedCardId) {
-    if (!card || Math.random() >= 0.0005) return;
+    if (!card || Math.random() >= 0.1) return;
     const picked = fixedCardId != null ? { fashion: pickFashionForCard(fixedCardId), id: fixedCardId } : pickRandomFashionCard();
     if (!picked || !picked.fashion) return;
     card.id = picked.id;
@@ -2870,13 +2870,13 @@ function getShopRemainingLimits(user, shopType, index, shopItem, now) {
 function formatShopLimitSuffix(user, shopType, index, shopItem) {
     const { limits, rec, globalCount } = getShopRemainingLimits(user, shopType, index, shopItem, new Date());
     const parts = [];
-    if (typeof limits.max == 'number') parts.push('누적 ' + comma(rec.max) + '/' + comma(limits.max));
-    if (typeof limits.daily == 'number') parts.push('일 ' + comma(rec.daily) + '/' + comma(limits.daily));
-    if (typeof limits.weekly == 'number') parts.push('주 ' + comma(rec.weekly) + '/' + comma(limits.weekly));
-    if (typeof limits.monthly == 'number') parts.push('월 ' + comma(rec.monthly) + '/' + comma(limits.monthly));
-    if (typeof limits.global == 'number') parts.push('전체 ' + comma(globalCount) + '/' + comma(limits.global));
+    if (typeof limits.max == 'number') parts.push('전체 ' + comma(rec.max) + '/' + comma(limits.max));
+    if (typeof limits.daily == 'number') parts.push('일일 ' + comma(rec.daily) + '/' + comma(limits.daily));
+    if (typeof limits.weekly == 'number') parts.push('주간 ' + comma(rec.weekly) + '/' + comma(limits.weekly));
+    if (typeof limits.monthly == 'number') parts.push('월간 ' + comma(rec.monthly) + '/' + comma(limits.monthly));
+    if (typeof limits.global == 'number') parts.push('선착순 ' + comma(globalCount) + '/' + comma(limits.global));
     if (parts.length == 0) return '';
-    return ' (' + parts.join(', ') + ')';
+    return '\n│ 구매 제한\n├ ' + parts.join('\n├ ');
 }
 
 function checkAttendance(user) {

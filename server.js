@@ -604,6 +604,70 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     }
 });
 
+server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
+    const scope = String((req.body && req.body.scope) || '').trim();
+    const shopType = String((req.body && req.body.shopType) || '').trim();
+    const index = Number(req.body && req.body.index);
+    if (!['all', 'shop', 'item'].includes(scope)) return res.status(400).json({ error: '초기화 범위가 올바르지 않습니다.' });
+    if ((scope == 'shop' || scope == 'item') && !shopType) return res.status(400).json({ error: '상점 종류를 선택해주세요.' });
+    if (scope == 'item' && (!Number.isInteger(index) || index < 0)) return res.status(400).json({ error: '상품 번호가 올바르지 않습니다.' });
+    try {
+        const users = await rpgenius.getAllRPGUsers();
+        let userUpdated = 0;
+        for (const user of users) {
+            if (!user.shopPurchases || typeof user.shopPurchases != 'object') continue;
+            let changed = false;
+            if (scope == 'all') {
+                if (Object.keys(user.shopPurchases).length > 0) {
+                    delete user.shopPurchases;
+                    changed = true;
+                }
+            } else if (scope == 'shop') {
+                if (user.shopPurchases[shopType]) {
+                    delete user.shopPurchases[shopType];
+                    changed = true;
+                }
+            } else if (scope == 'item') {
+                const key = String(index);
+                if (user.shopPurchases[shopType] && user.shopPurchases[shopType][key]) {
+                    delete user.shopPurchases[shopType][key];
+                    if (Object.keys(user.shopPurchases[shopType]).length == 0) delete user.shopPurchases[shopType];
+                    changed = true;
+                }
+            }
+            if (changed) {
+                await user.save();
+                userUpdated++;
+            }
+        }
+        await rpgenius.loadRpgeniusDataEntry('ShopState');
+        const state = rpgenius.getDataCache('ShopState', {}) || {};
+        let globalUpdated = 0;
+        if (scope == 'all') {
+            globalUpdated = Object.keys(state).length;
+            await rpgenius.saveRpgeniusDataEntry('ShopState', {});
+        } else if (scope == 'shop') {
+            if (state[shopType]) {
+                globalUpdated = Object.keys(state[shopType]).length;
+                delete state[shopType];
+                await rpgenius.saveRpgeniusDataEntry('ShopState', state);
+            }
+        } else if (scope == 'item') {
+            const key = String(index);
+            if (state[shopType] && state[shopType][key]) {
+                delete state[shopType][key];
+                if (Object.keys(state[shopType]).length == 0) delete state[shopType];
+                globalUpdated = 1;
+                await rpgenius.saveRpgeniusDataEntry('ShopState', state);
+            }
+        }
+        res.json({ ok: true, scope, shopType, index, userUpdated, globalUpdated });
+    } catch (e) {
+        console.error('shop limit reset error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
 // ===== 거래 로그 (관리자) =====
 
 server.get('/api/admin/tradelog', requireAdmin, async (req, res) => {
