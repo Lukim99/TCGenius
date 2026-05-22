@@ -25,7 +25,7 @@ const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
-const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '마법석', '소모품', '티켓', '미끼', '재료'];
+const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
 const ELITE_KILL_REQUIREMENT = 100;
 const GOLD_MINE_ORE_DROPS = {
     1: { name: '희미한 금광석', chance: 0.005 },
@@ -953,9 +953,9 @@ function formatRatePercent(rate) {
     return Math.round(Number(rate || 0) * 1000) / 10 + '%';
 }
 
-function getProtectCardItemId() {
+function getProtectItemIdForCardStar(user, star) {
     const items = getDataCache('Item', []);
-    return items.findIndex(item => item && item.name == '보호 카드');
+    return items.findIndex((item, id) => item && item.protect && Number(item.protect.star) == Number(star) && getInventoryItemCount(user, id) > 0);
 }
 
 function getCardCombineSelection(user, numberArgs) {
@@ -976,14 +976,14 @@ function getCardCombineSelection(user, numberArgs) {
 function setCardCombineProtection(user, indexArg) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '카드조합') return '❌ 진행 중인 카드조합이 없습니다.';
-    const protectItemId = getProtectCardItemId();
-    if (protectItemId == -1) return '❌ 보호 카드 아이템 데이터를 찾을 수 없습니다.';
-    if (getInventoryItemCount(user, protectItemId) < 1) return '❌ 보호 카드가 없습니다.';
     const index = Number(indexArg);
     if (!Number.isInteger(index) || index < 1 || index > 3) return '❌ /RPGenius 보호카드사용 [1/2/3]';
     const selection = getCardCombineSelection(user, pending.numbers);
     if (selection.error) return selection.error;
+    const protectItemId = getProtectItemIdForCardStar(user, selection.star);
+    if (protectItemId == -1) return '❌ 해당 등급에 사용할 수 있는 보호 아이템이 없습니다.';
     pending.protectIndex = index - 1;
+    pending.protectItemId = protectItemId;
     return '🛡️ 보호 카드 사용 대상이 변경되었습니다.\n- 보호 대상: ' + formatUserCard(selection.selected[index - 1]);
 }
 
@@ -1025,8 +1025,8 @@ function formatCardCombinePreview(user, numberArgs) {
         lines.push('', '❌ 골드가 부족합니다.');
     } else {
         user.pendingAction = { type: '카드조합', numbers: selection.numbers };
-        const protectItemId = getProtectCardItemId();
-        if (protectItemId != -1 && getInventoryItemCount(user, protectItemId) > 0) {
+        const protectItemId = getProtectItemIdForCardStar(user, selection.star);
+        if (protectItemId != -1) {
             lines.push('', '🛡️ 보호 카드를 사용할 수 있습니다.', '/RPGenius 보호카드사용 [1/2/3]');
         }
         lines.push('', '/RPGenius 조합');
@@ -1043,9 +1043,9 @@ function runCardCombine(user) {
     if (Number(user.gold || 0) < selection.info.gold) return '❌ 골드가 부족합니다.';
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length == 0) return '❌ 캐릭터 카드 데이터가 없습니다.';
-    const protectItemId = getProtectCardItemId();
     const protectIndex = Number(pending.protectIndex);
     const useProtection = Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3;
+    const protectItemId = useProtection ? getProtectItemIdForCardStar(user, selection.star) : -1;
     if (useProtection && (protectItemId == -1 || getInventoryItemCount(user, protectItemId) < 1)) return '❌ 보호 카드가 부족합니다.';
     const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
     user.gold = Number(user.gold || 0) - selection.info.gold;
@@ -4280,7 +4280,7 @@ async function useItem(user, itemName, countArg) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
-    if (!['소모품', '가챠', '번들', '마법석', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+    if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '미끼') {
         if (!getBaitDefinition(item.name)) return '❌ 등록되지 않은 미끼입니다.';
         if (user.bait == item.name) return '❌ 이미 사용 중인 미끼입니다.';
@@ -4311,7 +4311,7 @@ async function useItem(user, itemName, countArg) {
         const bundles = getDataCache('Bundle', []);
         if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
     }
-    if (item.type == '마법석') {
+    if (item.type == '사용') {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if ((item.use == '패션적용' || item.use == '고급패션적용') && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -4320,7 +4320,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -4361,7 +4361,7 @@ async function useItem(user, itemName, countArg) {
         lines.push('[ 획득 결과 ]');
         Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
     }
-    if (item.type == '마법석') {
+    if (item.type == '사용') {
         if (item.use == '캐릭터변환') {
             user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
             lines.push('변환할 캐릭터 카드를 선택해주세요.');

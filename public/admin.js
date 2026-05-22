@@ -745,8 +745,8 @@ function switchToggle(opts) {
 // ============================================================================
 let itemData = [];
 let itemFilterText = '';
-const ITEM_TYPES = ['재료', '가챠', '번들', '마법석', '소모품', '티켓', '미끼', '이벤트'];
-const ITEM_KNOWN_FIELDS = new Set(['name', 'desc', 'type', 'no_trade', 'pack', 'num', 'use', 'use_func', 'require']);
+const ITEM_TYPES = ['재료', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '이벤트'];
+const ITEM_KNOWN_FIELDS = new Set(['name', 'desc', 'type', 'no_trade', 'pack', 'num', 'use', 'use_func', 'require', 'protect']);
 
 function itemCard(item, index) {
     const card = el('div', { class: 'card' });
@@ -829,9 +829,10 @@ function itemCard(item, index) {
     // 사용 효과 / 조건
     card.appendChild(sectionTitle('사용 효과 / 조건', '✨'));
     const row4 = el('div', { class: 'row' });
-    row4.appendChild(jsonSubEditor('마법석 사용 키 (use)', () => item.use, v => { if (v == null || v === '') delete item.use; else item.use = v; }, '예: "캐릭터변환"', 1));
+    row4.appendChild(jsonSubEditor('사용 키 (use)', () => item.use, v => { if (v == null || v === '') delete item.use; else item.use = v; }, '예: "캐릭터변환"', 1));
     row4.appendChild(jsonSubEditor('소모품 효과 (use_func)', () => item.use_func, v => { if (v == null) delete item.use_func; else item.use_func = v; }, '예: [{ "type": "체력회복", "amount": 100 }]', 4));
     row4.appendChild(jsonSubEditor('사용 조건 (require)', () => item.require, v => { if (v == null) delete item.require; else item.require = v; }, '예: [{ "id": 17, "count": 3 }]', 3));
+    row4.appendChild(jsonSubEditor('카드 보호 (protect)', () => item.protect, v => { if (v == null) delete item.protect; else item.protect = v; }, '예: { "star": 5 }', 2));
     card.appendChild(row4);
 
     // 기타 필드
