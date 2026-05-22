@@ -326,7 +326,7 @@
         "maxLevel": 100,
         "goldMineLevel": 1,
         "reward": { "exp": 9, "gold": { "min": 150, "max": 208 } },
-        "atk": 150, "pnt": 6, "def": 24, "hp": 180,
+        "atk": 38, "pnt": 6, "def": 24, "hp": 50,
         "elite": {
             "name": "광부 고블린",
             "atk": 495, "pnt": 18, "def": 108, "hp": 2160,
@@ -347,7 +347,7 @@
         "maxLevel": 150,
         "goldMineLevel": 2,
         "reward": { "exp": 18, "gold": { "min": 323, "max": 454 } },
-        "atk": 300, "pnt": 12, "def": 48, "hp": 360,
+        "atk": 46, "pnt": 12, "def": 48, "hp": 60,
         "elite": {
             "name": "감염된 광부 고블린",
             "atk": 990, "pnt": 36, "def": 216, "hp": 4320,
@@ -368,7 +368,7 @@
         "maxLevel": 200,
         "goldMineLevel": 3,
         "reward": { "exp": 30, "gold": { "min": 646, "max": 908 } },
-        "atk": 500, "pnt": 20, "def": 80, "hp": 600,
+        "atk": 61, "pnt": 20, "def": 68, "hp": 78,
         "elite": {
             "name": "금광의 수호자",
             "atk": 1650, "pnt": 60, "def": 360, "hp": 7200,

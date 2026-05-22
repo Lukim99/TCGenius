@@ -616,12 +616,12 @@ function getCardFashion(card) {
 }
 
 function pickFashionForCard(cardId) {
-    const candidates = getFashionData().filter(fashion => fashion && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
     return candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : null;
 }
 
 function pickRandomFashionCard() {
-    const candidates = getFashionData().filter(fashion => fashion && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0);
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0);
     if (candidates.length == 0) return null;
     const fashion = candidates[randomInt(0, candidates.length - 1)];
     const primaryCards = fashion.primary_card.map(id => Number(id)).filter(id => Number.isInteger(id) && id >= 0);
@@ -646,6 +646,49 @@ function applyPackSkinToCard(card, skinName) {
     if (primaryCards.length == 0) return;
     card.id = primaryCards[randomInt(0, primaryCards.length - 1)];
     if (Number(card.star || 0) >= Number(fashion.requireStar || 0)) card.skin = fashion.name;
+}
+
+function getApplicableFashionsForCard(card, highOnly) {
+    if (!card || typeof card.id == 'undefined' || (typeof card.skin == 'string' && card.skin.trim())) return [];
+    if (Number(card.star || 0) < 6) return [];
+    return getFashionData().filter(fashion => {
+        if (!fashion || !Array.isArray(fashion.primary_card)) return false;
+        if (!!fashion.isHigh !== !!highOnly) return false;
+        if (!fashion.primary_card.map(id => Number(id)).includes(Number(card.id))) return false;
+        return Number(card.star || 0) >= Number(fashion.requireStar || 0);
+    });
+}
+
+function getFashionApplyTargets(user, highOnly) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards
+        .map((card, index) => ({ number: index + 1, card, fashions: getApplicableFashionsForCard(card, highOnly) }))
+        .filter(entry => entry.fashions.length > 0);
+}
+
+function formatFashionApplyTargetList(user, highOnly) {
+    const targets = getFashionApplyTargets(user, highOnly);
+    const lines = [highOnly ? '[ 고급 패션 적용 대상 ]' : '[ 패션 적용 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        lines.push('[' + target.number + '] ' + formatUserCard(target.card) + ' → ' + target.fashions.map(fashion => fashion.name).join(', '));
+    });
+    return lines.join('\n');
+}
+
+function applyFashionStoneToCard(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '패션적용') return '❌ 진행 중인 패션 적용이 없습니다.';
+    const number = Number(numberArg);
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
+    const card = cards[number - 1];
+    const fashions = getApplicableFashionsForCard(card, pending.highOnly);
+    if (fashions.length == 0) return '❌ 해당 카드에 적용 가능한 패션이 없습니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
+    const before = Object.assign({}, card);
+    const fashion = fashions[randomInt(0, fashions.length - 1)];
+    card.skin = fashion.name;
+    user.pendingAction = null;
+    return '✅ 패션을 적용했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 적용: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
 }
 
 function formatUserCard(card) {
@@ -910,6 +953,11 @@ function formatRatePercent(rate) {
     return Math.round(Number(rate || 0) * 1000) / 10 + '%';
 }
 
+function getProtectCardItemId() {
+    const items = getDataCache('Item', []);
+    return items.findIndex(item => item && item.name == '보호 카드');
+}
+
 function getCardCombineSelection(user, numberArgs) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ /RPGenius 카드조합 [카드번호1] [카드번호2] [카드번호3]' };
@@ -923,6 +971,20 @@ function getCardCombineSelection(user, numberArgs) {
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
     const sameCardId = selected.every(card => Number(card.id) == Number(selected[0].id)) ? Number(selected[0].id) : null;
     return { numbers, selected, star, info, sameCardId };
+}
+
+function setCardCombineProtection(user, indexArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '카드조합') return '❌ 진행 중인 카드조합이 없습니다.';
+    const protectItemId = getProtectCardItemId();
+    if (protectItemId == -1) return '❌ 보호 카드 아이템 데이터를 찾을 수 없습니다.';
+    if (getInventoryItemCount(user, protectItemId) < 1) return '❌ 보호 카드가 없습니다.';
+    const index = Number(indexArg);
+    if (!Number.isInteger(index) || index < 1 || index > 3) return '❌ /RPGenius 보호카드사용 [1/2/3]';
+    const selection = getCardCombineSelection(user, pending.numbers);
+    if (selection.error) return selection.error;
+    pending.protectIndex = index - 1;
+    return '🛡️ 보호 카드 사용 대상이 변경되었습니다.\n- 보호 대상: ' + formatUserCard(selection.selected[index - 1]);
 }
 
 function getRandomCardCombineNumbers(user, starArg) {
@@ -963,6 +1025,10 @@ function formatCardCombinePreview(user, numberArgs) {
         lines.push('', '❌ 골드가 부족합니다.');
     } else {
         user.pendingAction = { type: '카드조합', numbers: selection.numbers };
+        const protectItemId = getProtectCardItemId();
+        if (protectItemId != -1 && getInventoryItemCount(user, protectItemId) > 0) {
+            lines.push('', '🛡️ 보호 카드를 사용할 수 있습니다.', '/RPGenius 보호카드사용 [1/2/3]');
+        }
         lines.push('', '/RPGenius 조합');
     }
     return lines.join('\n');
@@ -977,10 +1043,17 @@ function runCardCombine(user) {
     if (Number(user.gold || 0) < selection.info.gold) return '❌ 골드가 부족합니다.';
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length == 0) return '❌ 캐릭터 카드 데이터가 없습니다.';
+    const protectItemId = getProtectCardItemId();
+    const protectIndex = Number(pending.protectIndex);
+    const useProtection = Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3;
+    if (useProtection && (protectItemId == -1 || getInventoryItemCount(user, protectItemId) < 1)) return '❌ 보호 카드가 부족합니다.';
+    const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
     const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate);
     const success = combineRoll.success;
+    if (useProtection) removeInventoryItem(user, protectItemId, 1);
+    if (!success && protectedCard) user.inventory.card.push(protectedCard);
     const resultCard = {
         id: selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
         star: success ? selection.star + 1 : selection.star,
@@ -989,6 +1062,7 @@ function runCardCombine(user) {
     applyFashionRollToCard(resultCard, selection.sameCardId);
     user.inventory.card.push(resultCard);
     const lines = [(success ? (combineRoll.guaranteed ? '⚜️ 카드 3장을 확정 조합했습니다!' : '🌟 카드 3장을 조합했습니다!') : '✅ 카드 3장을 조합했습니다.')];
+    if (useProtection) lines.push(success ? '🛡️ 조합에 성공해 보호 카드는 소모되었지만 재료 카드는 보존되지 않았습니다.' : '🛡️ 보호 카드 효과로 재료 카드 1장을 보존했습니다.\n- ' + formatUserCard(protectedCard));
     lines.push('[ 획득 결과 ]', '- ' + formatUserCard(resultCard));
     return lines.join('\n');
 }
@@ -1181,6 +1255,7 @@ function convertCharacterCard(user, numberArg) {
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
     if (Number(card.star || 0) >= 9) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
+    if (typeof card.skin == 'string' && card.skin.trim()) return '❌ 패션이 적용된 캐릭터 카드는 캐릭터 변환석을 사용할 수 없습니다.';
     const before = Object.assign({}, card);
     let newId = card.id;
     while (newId == card.id) newId = randomInt(0, characterCards.length - 1);
@@ -4238,13 +4313,14 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '마법석') {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if ((item.use == '패션적용' || item.use == '고급패션적용') && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '스탯초기화' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 마법석입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -4290,7 +4366,22 @@ async function useItem(user, itemName, countArg) {
             user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
+            lines.push('/RPGenius 사용취소');
             lines.push('', formatCharacterInventory(user));
+        }
+        if (item.use == '패션적용' || item.use == '고급패션적용') {
+            const highOnly = item.use == '고급패션적용';
+            const targets = getFashionApplyTargets(user, highOnly);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 적용 가능한 캐릭터 카드가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '패션적용', highOnly, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('패션을 적용할 캐릭터 카드를 선택해주세요.');
+                lines.push('/RPGenius 선택 [카드번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatFashionApplyTargetList(user, highOnly));
+            }
         }
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID) {
             user.pendingAction = { type: '무료장비강화', consumedItemId: itemId, consumedItemCount: useCount };
@@ -5313,6 +5404,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '패션적용') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 패션 적용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 패션을 적용할 캐릭터 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = applyFashionStoneToCard(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '무료장비강화') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -5401,6 +5510,12 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (user.pendingAction && user.pendingAction.type == '카드조합') {
+        if (args[0] == '보호카드사용') {
+            const result = setCardCombineProtection(user, args[1]);
+            await user.save();
+            reply(result);
+            return true;
+        }
         if (args[0] == '조합') {
             const result = runCardCombine(user);
             await user.save();

@@ -1449,11 +1449,11 @@ if ($('#equipFilter')) $('#equipFilter').addEventListener('input', e => { equipF
 TAB_LOADERS.equipment = () => $('#equipReload').click();
 
 // ============================================================================
-// FASHION 에디터  ( data: Array<{name, primary_card:[ids], requireStar?, option?:{stat?,plusStat?}}> )
+// FASHION 에디터  ( data: Array<{name, primary_card:[ids], requireStar?, isHigh?, option?:{stat?,plusStat?}}> )
 // ============================================================================
 let fashionData = [];
 let fashionFilterText = '';
-const FASHION_KNOWN_FIELDS = new Set(['name', 'primary_card', 'requireStar', 'option']);
+const FASHION_KNOWN_FIELDS = new Set(['name', 'primary_card', 'requireStar', 'isHigh', 'option']);
 
 function fashionPrimaryCardRow(skin) {
     const wrap = el('div', { class: 'tag-list' });
@@ -1501,6 +1501,13 @@ function fashionCard(skin, index) {
     row1.appendChild(el('div', { class: 'nf' }, el('label', null, '필요 성급'),
         el('input', { type: 'number', min: 0, max: 11, value: typeof skin.requireStar === 'number' ? skin.requireStar : '', placeholder: '예: 5 (표시 6성)',
             oninput: e => { const v = e.target.value; if (v === '') delete skin.requireStar; else skin.requireStar = Number(v); } })
+    ));
+    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '고급 여부'),
+        el('label', { class: 'switch', style: { marginTop: '8px' } },
+            el('input', { type: 'checkbox', checked: skin.isHigh === true, onchange: e => { if (e.target.checked) skin.isHigh = true; else delete skin.isHigh; } }),
+            el('span', { class: 'track' }),
+            el('span', null, '고급')
+        )
     ));
     card.appendChild(row1);
 
