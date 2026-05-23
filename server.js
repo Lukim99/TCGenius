@@ -958,10 +958,17 @@ function getItemDisplayAssets(item) {
             iconUrl: getItemImageUrl('가챠', '개봉 후 장비 상자.png')
         };
     }
-    const frameUrl = item.type == '미끼'
-        ? getItemImageUrl('프레임', '미끼.png')
-        : getAuctionFrameUrl('item');
-    return { frameUrl, iconUrl: getItemIconUrl(item) };
+    let frameUrl;
+    if (item.type == '미끼') frameUrl = getItemImageUrl('프레임', '미끼.png');
+    else if (item.use == '패션적용' || item.use == '고급패션적용') frameUrl = getItemImageUrl('프레임', '특수.png');
+    else frameUrl = getAuctionFrameUrl('item');
+    let iconUrl;
+    if (/^\d+프로\s\+9\s장비\s강화권$/.test(String(item.name))) {
+        iconUrl = getItemImageUrl(String(item.type || '사용'), '9강 장비강화권.png');
+    } else {
+        iconUrl = getItemIconUrl(item);
+    }
+    return { frameUrl, iconUrl };
 }
 
 function buildSlotEffectInfo(card, data) {
@@ -1058,6 +1065,11 @@ function buildInventoryEquipment(user) {
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
         const potentialLines = equip && equip.potential ? rpgenius.formatPotentialLines(equip.potential) : [];
+        const potentialDisplay = equip && equip.potential ? {
+            tierKey: rpgenius.getPotentialRarityKey(equip.potential.rarity),
+            tierLabel: rpgenius.getPotentialRarityLabel(equip.potential.rarity),
+            entries: rpgenius.formatPotentialOptionEntries(equip.potential)
+        } : null;
         result.push({
             type: equip.type || type,
             typeLabel: labels[equip.type || type] || (equip.type || type),
@@ -1068,6 +1080,7 @@ function buildInventoryEquipment(user) {
             equipped: !!equipped,
             statLines,
             potentialLines,
+            potentialDisplay,
             potential: equip && equip.potential || null,
             rolled: equip && equip.rolled || null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
@@ -1540,8 +1553,8 @@ async function registerAuction(sellerName, body) {
         const data = getEquipmentData(eq.type, eq.id);
         if (data && data.no_trade === true) return { error: '거래 불가 장비는 판매 등록할 수 없습니다.' };
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
-        if (eq.rolled) payload.rolled = eq.rolled;
-        if (eq.potential) payload.potential = eq.potential;
+        if (eq.rolled) payload.rolled = JSON.parse(JSON.stringify(eq.rolled));
+        if (eq.potential) payload.potential = JSON.parse(JSON.stringify(eq.potential));
         equips.splice(index, 1);
     } else if (kind == 'item') {
         const itemId = Number(body.itemId);
@@ -1629,8 +1642,8 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         }
     } else if (entry.kind == 'equipment') {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
-        if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
-        if (entry.payload.potential) eqEntry.potential = entry.payload.potential;
+        if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
+        if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
@@ -1707,8 +1720,8 @@ async function cancelAuction(userName, auctionId) {
         });
     } else if (entry.kind == 'equipment') {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
-        if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
-        if (entry.payload.potential) eqEntry.potential = entry.payload.potential;
+        if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
+        if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
         user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
@@ -2017,8 +2030,8 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         if (eqData && eqData.no_trade === true) return { error: '거래 불가 장비입니다.' };
         if (!matchBuyOrderEquipment(entry, eq)) return { error: '이 장비는 구매 등록 조건에 맞지 않습니다.' };
         const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
-        if (eq.rolled) transferred.rolled = eq.rolled;
-        if (eq.potential) transferred.potential = eq.potential;
+        if (eq.rolled) transferred.rolled = JSON.parse(JSON.stringify(eq.rolled));
+        if (eq.potential) transferred.potential = JSON.parse(JSON.stringify(eq.potential));
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
     } else if (entry.kind == 'item') {
@@ -2222,6 +2235,17 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:#111827;border:1px solid #334155}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:13px}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid var(--rar,#334155);border-left:5px solid var(--rar,#334155);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid rgba(148,163,184,.25);border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit}.modal input:focus,.modal select:focus{outline:none;border-color:#5865f2}.seg{display:flex;gap:6px;background:rgba(2,6,23,.6);padding:4px;border-radius:12px;flex-wrap:wrap}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap}.seg button.on{background:#5865f2}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(2,6,23,.4);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(15,23,42,.7);border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px}.pick-row:hover{border-color:#5865f2}.pick-row.on{border-color:#5865f2;background:rgba(88,101,242,.18)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
 .equip-thumb{position:relative;width:48px;height:48px;background:rgba(15,23,42,.7);border-radius:12px;overflow:visible}.equip-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.equip-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.equip-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:24px;line-height:1}
 .modal-equip-thumb{width:120px!important;height:120px!important;margin:6px auto 16px;border-radius:16px}.modal-equip-thumb .icon-fallback{font-size:80px}
+.pot-block{margin-top:12px;padding:12px 14px;background:rgba(2,6,23,.5);border:2px solid var(--pot-tier,#94a3b8);border-radius:12px;box-shadow:0 0 14px -4px var(--pot-tier,#94a3b8) inset}
+.pot-title{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--pot-tier,#e5e7eb);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.pot-title .pot-tier-label{padding:2px 8px;background:rgba(255,255,255,.06);border:1px solid var(--pot-tier,#94a3b8);border-radius:999px;font-size:11px;color:var(--pot-tier,#e5e7eb)}
+.pot-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;color:#e5e7eb}
+.pot-row+.pot-row{border-top:1px dashed rgba(148,163,184,.18)}
+.pot-grade{flex-shrink:0;display:inline-block;min-width:54px;text-align:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.04em;background:var(--grade-bg,#334155);color:var(--grade-fg,#fff);border:1px solid var(--grade-border,transparent)}
+.pot-grade.bronze{--grade-bg:rgba(199,122,58,.18);--grade-fg:#e0a675;--grade-border:rgba(199,122,58,.55)}
+.pot-grade.silver{--grade-bg:rgba(203,213,225,.16);--grade-fg:#e2e8f0;--grade-border:rgba(203,213,225,.55)}
+.pot-grade.gold{--grade-bg:rgba(251,191,36,.18);--grade-fg:#fde68a;--grade-border:rgba(251,191,36,.6)}
+.pot-grade.platinum{--grade-bg:rgba(103,232,249,.16);--grade-fg:#a5f3fc;--grade-border:rgba(103,232,249,.6)}
+.pot-text{flex:1;line-height:1.4}
 .profile-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(251,191,36,.18),rgba(88,101,242,.18));border:1px solid rgba(251,191,36,.4);border-radius:14px;color:#fde68a;font-weight:700}.profile-banner button{padding:8px 12px;font-size:13px}
 .rank-section{display:grid;gap:14px}.rank-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.rank-tab{padding:9px 14px;border-radius:10px;background:#1f2937;color:#cbd5e1;cursor:pointer;font-weight:700;font-size:13px;border:1px solid transparent}.rank-tab.active{background:#5865f2;color:#fff;border-color:#5865f2}
 .rank-me{padding:14px 16px;background:linear-gradient(135deg,rgba(88,101,242,.18),rgba(15,23,42,.6));border:1px solid rgba(88,101,242,.45);border-radius:14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;font-weight:700}.rank-me .rk{font-size:22px;color:#a5b4fc}.rank-me .nm{font-size:15px;color:#f8fafc}.rank-me .lv{font-size:12px;color:#94a3b8}.rank-me .vl{font-size:18px;color:#fbbf24;font-variant-numeric:tabular-nums}

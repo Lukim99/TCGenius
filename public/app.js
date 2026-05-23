@@ -153,15 +153,35 @@ function openCardSlotModal(card) {
     openModal(card.formatted, '카드 슬롯 효과', lines);
 }
 
+const POTENTIAL_TIER_COLORS = { rare: '#ffffff', epic: '#86efac', unique: '#c084fc', legendary: '#fbbf24' };
+
+function potentialBlockNode(display) {
+    if (!display || !Array.isArray(display.entries) || display.entries.length == 0) return null;
+    const color = POTENTIAL_TIER_COLORS[display.tierKey] || '#94a3b8';
+    const block = el('div', { class: 'pot-block' },
+        el('div', { class: 'pot-title' },
+            el('span', null, '잠재능력'),
+            el('span', { class: 'pot-tier-label' }, display.tierLabel || '')
+        ),
+        ...display.entries.map(entry => el('div', { class: 'pot-row' },
+            el('span', { class: 'pot-grade ' + (entry.grade || 'bronze') }, entry.gradeLabel || ''),
+            el('span', { class: 'pot-text' }, entry.text || '')
+        ))
+    );
+    block.style.setProperty('--pot-tier', color);
+    return block;
+}
+
 function openEquipmentModal(eq) {
     const title = eq.name + (eq.level > 0 ? ' +' + eq.level : '');
     const sub = eq.rarity + ' · ' + eq.typeLabel;
     const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
-    (eq.potentialLines || []).forEach(line => lines.push(line.replace(/^-\s*/, '')));
     openModal(title, sub, lines);
     const thumb = equipmentThumb(eq);
     thumb.classList.add('modal-equip-thumb');
     $('#modalBody').prepend(thumb);
+    const potBlock = potentialBlockNode(eq.potentialDisplay);
+    if (potBlock) $('#modalBody').appendChild(potBlock);
 }
 
 function categorySection(title, children) {

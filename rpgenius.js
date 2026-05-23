@@ -662,11 +662,87 @@ function rollEquipmentPotential(type, rarity) {
     const options = [];
     const tier = getPotentialRarityKey(rarity);
     for (let i = 0; i < 3; i++) {
-        const rolled = rollPotentialOption(type, getPotentialOptionPoolKey(tier, i));
+        const poolKey = getPotentialOptionPoolKey(tier, i);
+        const rolled = rollPotentialOption(type, poolKey);
         if (!rolled) return null;
+        rolled.grade = poolKey;
         options.push(rolled);
     }
     return { rarity: getPotentialRarityLabel(tier), option: options, failCount: 0 };
+}
+
+function getPotentialDefaultGradeKey(rarity) {
+    return { rare: 'bronze', epic: 'bronze', unique: 'silver', legendary: 'gold' }[getPotentialRarityKey(rarity)] || 'bronze';
+}
+
+function getPotentialGradeLabel(grade) {
+    return { bronze: '브론즈', silver: '실버', gold: '골드', platinum: '플레티넘' }[grade] || '브론즈';
+}
+
+function formatPotentialOptionEntries(potential) {
+    if (!potential || !Array.isArray(potential.option)) return [];
+    const fallback = getPotentialDefaultGradeKey(potential.rarity);
+    return potential.option.map(opt => {
+        const text = formatEquipmentStatLines({ stat: opt && opt.stat || {}, plusStat: opt && opt.plusStat || {} });
+        const lines = String(text || '').split('\n').filter(Boolean).map(l => l.replace(/^-\s*/, ''));
+        const grade = (opt && opt.grade) || fallback;
+        return { grade, gradeLabel: getPotentialGradeLabel(grade), text: lines.join(', ') };
+    });
+}
+
+function getUpgradeTicketTargets(user, ugLevel) {
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            const equipment = getEquipmentData(type, entry.equip.id);
+            if (!equipment) return null;
+            const maxLevel = Array.isArray(equipment.upgrade) ? equipment.upgrade.length : 0;
+            if (maxLevel < ugLevel) return null;
+            if (Number(entry.equip.level || 0) >= ugLevel) return null;
+            return { number: index + 1, entry, type, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatUpgradeTicketTargetList(targets, ugLevel) {
+    const lines = ['[ +' + ugLevel + ' 강화 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const lvl = Number(target.entry.equip.level || 0);
+        const lockMark = target.entry.equip.locked ? ' 🔒' : '';
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+    });
+    return lines.join('\n');
+}
+
+function applyUpgradeTicket(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '장비강화권') return '❌ 진행 중인 장비 강화권 사용이 없습니다.';
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    const ugLevel = Number(pending.ugLevel || 0);
+    const ugRoll = Number(pending.ugRoll || 0);
+    const maxLevel = Array.isArray(equipment.upgrade) ? equipment.upgrade.length : 0;
+    if (maxLevel < ugLevel) return '❌ +' + ugLevel + ' 강화가 불가능한 장비입니다.';
+    if (Number(selected.equip.level || 0) >= ugLevel) return '❌ 이미 +' + ugLevel + ' 이상으로 강화된 장비입니다.';
+    user.pendingAction = null;
+    const beforeLevel = Number(selected.equip.level || 0);
+    const success = Math.random() < ugRoll;
+    const lines = ['[ +' + ugLevel + ' 장비 강화권 ]'];
+    lines.push('- 대상: <' + equipment.rarity + '> ' + equipment.name + (beforeLevel > 0 ? ' +' + beforeLevel : ''));
+    lines.push('- 성공 확률: ' + (Math.round(ugRoll * 10000) / 100) + '%');
+    if (success) {
+        selected.equip.level = ugLevel;
+        lines.push('✨ +' + ugLevel + ' 강화 성공!\n' + equipment.name + ' +' + beforeLevel + ' -> +' + ugLevel);
+    } else {
+        lines.push('❌ +' + ugLevel + ' 강화 실패..');
+    }
+    return lines.join('\n');
 }
 
 function getPotentialAwakenTargets(user) {
@@ -5350,8 +5426,10 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -5471,6 +5549,21 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatPotentialAwakenTargetList(targets));
+            }
+        }
+        if (item.use == '장비강화권') {
+            const ugLevel = Number(item.ug && item.ug.level || 0);
+            const ugRoll = Number(item.ug && item.ug.roll || 0);
+            const targets = getUpgradeTicketTargets(user, ugLevel);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ +' + ugLevel + ' 강화 가능한 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '장비강화권', ugLevel, ugRoll, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('+' + ugLevel + '으로 강화할 장비를 선택해주세요. (성공 확률 ' + (Math.round(ugRoll * 10000) / 100) + '%)');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatUpgradeTicketTargetList(targets, ugLevel));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -6548,6 +6641,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '장비강화권') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 장비 강화권 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 강화할 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = applyUpgradeTicket(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '장비강화') {
         if (args[0] == '강화') {
             const result = runEquipmentUpgrade(user);
@@ -7168,6 +7279,9 @@ module.exports = {
     formatValue,
     formatCurrentEquipmentStatLines,
     formatPotentialLines,
+    formatPotentialOptionEntries,
+    getPotentialRarityKey,
+    getPotentialRarityLabel,
     getCardSlotEffectValue,
     addInventoryItem,
     removeInventoryItem,
