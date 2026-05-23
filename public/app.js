@@ -409,6 +409,12 @@ function openAuctionDetail(entry) {
     ];
     content.push(auctionThumbEl(entry, { style: { maxWidth: '180px', margin: '0 auto 12px' } }));
     if (d.statLines && d.statLines.length) d.statLines.forEach(line => content.push(el('div', { class: 'stat-line' }, line)));
+    if (d.soul && d.soul.expiredAt) {
+        const soulText = formatSoulRemaining(d.soul.expiredAt);
+        if (soulText) content.push(el('div', { class: 'stat-line', style: 'opacity:0.85;font-style:italic' }, soulText));
+    }
+    const aucPotBlock = potentialBlockNode(d.potentialDisplay);
+    if (aucPotBlock) content.push(aucPotBlock);
     content.push(el('div', { class: 'stat-line' }, '판매자: ' + entry.sellerName));
     content.push(el('div', { class: 'stat-line' }, entry.kind === 'item' ? '개당 가격: ' : '가격: ', currencyNode(entry.currency, entry.unitPrice)));
     if (entry.ticketCost > 0) content.push(el('div', { class: 'stat-line' }, '⚠️ 구매 시 거래권 ' + entry.ticketCost + '장이 소모됩니다.'));

@@ -599,10 +599,10 @@ function getPotentialRarityKey(label) {
 }
 
 const POTENTIAL_REROLL_COST = {
-    weapon: { rare: 120000, epic: 200000, unique: 360000, legendary: 600000 },
-    armor: { rare: 80000, epic: 140000, unique: 260000, legendary: 440000 },
-    accessory: { rare: 100000, epic: 170000, unique: 310000, legendary: 520000 },
-    support: { rare: 120000, epic: 200000, unique: 360000, legendary: 600000 }
+    weapon: { rare: 80000, epic: 200000, unique: 680000, legendary: 1400000 },
+    armor: { rare: 60000, epic: 150000, unique: 520000, legendary: 1070000 },
+    accessory: { rare: 70000, epic: 180000, unique: 600000, legendary: 1240000 },
+    support: { rare: 80000, epic: 200000, unique: 680000, legendary: 1400000 }
 };
 
 const POTENTIAL_UPGRADE = {
@@ -611,6 +611,9 @@ const POTENTIAL_UPGRADE = {
     unique: { next: 'legendary', rate: 0.007, guarantee: 214 }
 };
 const POTENTIAL_JEWEL_ITEM_NAME = '쥬얼';
+const POTENTIAL_WHITE_JEWEL_ITEM_NAME = '화이트 쥬얼';
+const POTENTIAL_JEWEL_DISCOUNT = 0.3;
+const POTENTIAL_WHITE_JEWEL_DISCOUNT = 0.6;
 
 function addPotentialStats(stat, plusStat, potential) {
     (potential && Array.isArray(potential.option) ? potential.option : []).forEach(option => {
@@ -869,15 +872,21 @@ function rerollEquipmentPotential(user, numberArg) {
     const currentTier = getPotentialRarityKey(selected.equip.potential.rarity);
     const baseCost = getPotentialRerollCost(type, currentTier);
     if (baseCost <= 0) return '❌ 잠재능력 재설정 비용 정보를 찾을 수 없습니다.';
+    const whiteJewelItemId = getItemIdByName(POTENTIAL_WHITE_JEWEL_ITEM_NAME);
+    const hasWhiteJewel = whiteJewelItemId != -1 && getInventoryItemCount(user, whiteJewelItemId) > 0;
     const jewelItemId = getItemIdByName(POTENTIAL_JEWEL_ITEM_NAME);
-    const useJewel = jewelItemId != -1 && getInventoryItemCount(user, jewelItemId) > 0;
-    const cost = useJewel ? Math.floor(baseCost / 2) : baseCost;
+    const hasJewel = !hasWhiteJewel && jewelItemId != -1 && getInventoryItemCount(user, jewelItemId) > 0;
+    const useJewel = hasWhiteJewel || hasJewel;
+    const usedJewelItemId = hasWhiteJewel ? whiteJewelItemId : (hasJewel ? jewelItemId : -1);
+    const usedJewelName = hasWhiteJewel ? POTENTIAL_WHITE_JEWEL_ITEM_NAME : POTENTIAL_JEWEL_ITEM_NAME;
+    const discountRate = hasWhiteJewel ? POTENTIAL_WHITE_JEWEL_DISCOUNT : (hasJewel ? POTENTIAL_JEWEL_DISCOUNT : 0);
+    const cost = Math.max(0, Math.floor(baseCost * (1 - discountRate)));
     if (Number(user.gold || 0) < cost) return '❌ 골드가 부족합니다.\n- 필요 골드: 🪙 ' + comma(cost) + '\n- 보유 골드: 🪙 ' + comma(user.gold || 0);
 
     user.gold = Number(user.gold || 0) - cost;
-    if (useJewel && !removeInventoryItem(user, jewelItemId, 1)) {
+    if (useJewel && !removeInventoryItem(user, usedJewelItemId, 1)) {
         user.gold = Number(user.gold || 0) + cost;
-        return '❌ ' + POTENTIAL_JEWEL_ITEM_NAME + ' 소모에 실패했습니다.';
+        return '❌ ' + usedJewelName + ' 소모에 실패했습니다.';
     }
     let nextTier = currentTier;
     let upgraded = false;
@@ -894,22 +903,68 @@ function rerollEquipmentPotential(user, numberArg) {
     const potential = rollEquipmentPotential(type, nextTier);
     if (!potential) {
         user.gold = Number(user.gold || 0) + cost;
-        if (useJewel) addInventoryItem(user, jewelItemId, 1);
+        if (useJewel) addInventoryItem(user, usedJewelItemId, 1);
         return '❌ 잠재능력 데이터를 찾을 수 없어 골드를 반환했습니다.';
     }
     potential.failCount = upgrade && !upgraded ? previousFailCount + failIncrement : 0;
-    selected.equip.potential = potential;
+    const oldPotential = JSON.parse(JSON.stringify(selected.equip.potential));
+    user.pendingAction = {
+        type: '잠재능력재설정확인',
+        number: number,
+        oldPotential: oldPotential,
+        newPotential: potential,
+        cost: cost,
+        useJewel: useJewel,
+        currentTier: currentTier,
+        nextTier: nextTier,
+        upgraded: upgraded,
+        guaranteed: guaranteed
+    };
     const lvl = Number(selected.equip.level || 0);
     const lines = [
-        '✅ 잠재능력을 재설정했습니다.',
+        '[ 잠재능력 재설정 미리보기 ]',
         '- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : ''),
         '- 소모 골드: 🪙 ' + comma(cost)
     ];
-    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? '\n ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : '\n ㄴ 골드 소모 50% 감소'));
+    if (useJewel) {
+        const discountText = ' ㄴ 골드 소모 ' + Math.round(discountRate * 100) + '% 감소';
+        lines.push('- ' + usedJewelName + ' x1 소모' + (jewelUpgradeBonus ? '\n' + discountText + '\n ㄴ 승급 확률/카운트 2배' : '\n' + discountText));
+    }
     if (upgraded) lines.push('- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier) + (guaranteed ? ' (확정)' : ''));
     else if (upgrade) lines.push('- 승급 확정까지: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
-    lines.push('', ...formatPotentialLines(potential));
+    lines.push('', '[ 이전 잠재능력 ]');
+    formatPotentialLines(oldPotential).forEach(line => lines.push(line));
+    lines.push('', '[ 새로운 잠재능력 ]');
+    formatPotentialLines(potential).forEach(line => lines.push(line));
+    lines.push('', '적용하시겠습니까?\n소모된 골드/' + usedJewelName + '은 반환되지 않습니다.\n');
+    lines.push('/RPGenius 재설정확인');
+    lines.push('/RPGenius 재설정포기');
     return lines.join('\n');
+}
+
+function confirmPotentialReroll(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '잠재능력재설정확인') return '❌ 진행 중인 잠재능력 재설정이 없습니다.';
+    const selected = getAllUserEquipments(user)[Number(pending.number) - 1];
+    if (!selected) { user.pendingAction = null; return '❌ 대상 장비를 찾을 수 없습니다.'; }
+    const equipment = getEquipmentData(selected.equip.type || selected.type, selected.equip.id);
+    if (!equipment) { user.pendingAction = null; return '❌ 잘못된 장비 데이터입니다.'; }
+    selected.equip.potential = pending.newPotential;
+    const lvl = Number(selected.equip.level || 0);
+    const lines = [
+        '✅ 잠재능력을 재설정했습니다.',
+        '- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : '')
+    ];
+    lines.push('', ...formatPotentialLines(pending.newPotential));
+    user.pendingAction = null;
+    return lines.join('\n');
+}
+
+function cancelPotentialReroll(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '잠재능력재설정확인') return '❌ 진행 중인 잠재능력 재설정이 없습니다.';
+    user.pendingAction = null;
+    return '✅ 잠재능력 재설정을 취소했습니다. 기존 잠재능력이 유지됩니다.\n(소모된 골드 및 ' + POTENTIAL_JEWEL_ITEM_NAME + '은 반환되지 않습니다.)';
 }
 
 function formatPotentialLines(potential) {
@@ -7327,11 +7382,31 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '잠재능력' && args[1] == '재설정') {
+        if (user.pendingAction && user.pendingAction.type == '잠재능력재설정확인') {
+            const result = cancelPotentialReroll(user);
+            await user.save();
+            reply(result);
+            return true;
+        }
         if (!args[2]) {
             reply('❌ /RPGenius 잠재능력 재설정 [장비번호]');
             return true;
         }
         const result = rerollEquipmentPotential(user, args[2]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '재설정확인') {
+        const result = confirmPotentialReroll(user);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '재설정포기') {
+        const result = cancelPotentialReroll(user);
         await user.save();
         reply(result);
         return true;

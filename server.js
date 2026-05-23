@@ -1460,6 +1460,8 @@ function serializeAuctionEntry(entry, currentUserName) {
     let frameUrl = null;
     let iconUrl = null;
     let statLines = null;
+    let potentialDisplay = null;
+    let soul = null;
     if (entry.kind == 'card') {
         imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
     } else if (entry.kind == 'equipment') {
@@ -1469,7 +1471,18 @@ function serializeAuctionEntry(entry, currentUserName) {
         if (data) {
             const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
-            if (entry.payload && entry.payload.potential) rpgenius.formatPotentialLines(entry.payload.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
+        }
+        const potential = entry.payload && entry.payload.potential;
+        if (potential) {
+            potentialDisplay = {
+                tierKey: rpgenius.getPotentialRarityKey(potential.rarity),
+                tierLabel: rpgenius.getPotentialRarityLabel(potential.rarity),
+                entries: rpgenius.formatPotentialOptionEntries(potential)
+            };
+        }
+        const soulPayload = entry.payload && entry.payload.soul;
+        if (soulPayload && !rpgenius.isSoulExpired(soulPayload)) {
+            soul = { name: soulPayload.name || '', expiredAt: Number(soulPayload.expired_at || 0) };
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
@@ -1502,7 +1515,9 @@ function serializeAuctionEntry(entry, currentUserName) {
             imageUrl,
             frameUrl,
             iconUrl,
-            statLines
+            statLines,
+            potentialDisplay,
+            soul
         }
     };
 }
