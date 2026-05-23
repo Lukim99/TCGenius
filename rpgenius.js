@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -24,6 +24,12 @@ const BAIT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bait.json');
 const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
+const EXTRA_SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExtraSkills.json');
+const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json');
+const WORLD_BOSS_DAILY_LIMIT = 2;
+const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
+const WORLD_BOSS_RESPAWN_DAYS = 2;
+const WORLD_BOSS_SKILL_INTERVAL = 7000;
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
 const ELITE_KILL_REQUIREMENT = 100;
@@ -95,6 +101,9 @@ const ICE_SUMMON_REWARDS = {
     '특대': { chance: 0.25, gold: 50000 }
 };
 const eliteFieldStates = {};
+const worldBossStates = {};
+const worldBossSkillTimers = {};
+const worldBossChannels = {};
 const commandQueues = {};
 const commandSpamStates = {};
 const COMMAND_SPAM_WINDOW_MS = 1000;
@@ -143,6 +152,10 @@ async function initRpgeniusData() {
         const cachedEliteState = rpgeniusDataCache.EliteState;
         if (cachedEliteState && typeof cachedEliteState == 'object') {
             Object.keys(cachedEliteState).forEach(k => { eliteFieldStates[k] = cachedEliteState[k]; });
+        }
+        const cachedWorldBossState = rpgeniusDataCache.WorldBossState;
+        if (cachedWorldBossState && typeof cachedWorldBossState == 'object') {
+            Object.keys(cachedWorldBossState).forEach(k => { worldBossStates[k] = cachedWorldBossState[k]; });
         }
         console.log('[rpgenius_data] 데이터 로드 완료 (' + Object.keys(rpgeniusDataCache).length + '/' + RPGENIUS_DATA_KEYS.length + ')');
     })();
@@ -1661,7 +1674,36 @@ function formatFieldList(user) {
         const recCP = getDungeonRecommendedCP(dungeon);
         lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
     });
+    const bosses = getWorldBossList();
+    if (bosses.length > 0) {
+        lines.push('', '[ 월드보스 ]');
+        bosses.forEach(boss => {
+            const state = getWorldBossState(boss.name);
+            const aliveHp = Number(state.hp || 0);
+            if (aliveHp > 0) {
+                const ratio = Math.max(0, Math.min(1, aliveHp / Number(boss.hp || 1)));
+                lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(aliveHp) + '/' + comma(Number(boss.hp || 0)) + ' (' + (Math.round(ratio * 1000) / 10) + '%)');
+            } else {
+                const respawnAt = getWorldBossRespawnTimestamp(state);
+                if (Date.now() >= respawnAt) {
+                    lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(Number(boss.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
+                } else {
+                    lines.push('〈 ' + boss.name + ' 〉 ❌ 부활 대기 (' + formatTimestampLocal(respawnAt) + ')');
+                }
+            }
+        });
+    }
     return lines.join('\n');
+}
+
+function formatTimestampLocal(ts) {
+    if (!ts) return '-';
+    const kst = new Date(Number(ts) + 9 * 60 * 60 * 1000);
+    const month = kst.getUTCMonth() + 1;
+    const day = kst.getUTCDate();
+    const hour = String(kst.getUTCHours()).padStart(2, '0');
+    const min = String(kst.getUTCMinutes()).padStart(2, '0');
+    return month + '/' + day + ' ' + hour + ':' + min;
 }
 
 function findDungeonByName(name) {
@@ -1933,6 +1975,8 @@ function formatStatPointStatus(user) {
 }
 
 function enterField(user, fieldName, options) {
+    const worldBoss = findWorldBossByName(fieldName);
+    if (worldBoss) return enterWorldBossField(user, worldBoss, options);
     const dungeon = findDungeonByName(fieldName);
     if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
     const level = Number(user.level || 1);
@@ -1968,11 +2012,118 @@ function enterField(user, fieldName, options) {
 
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
+    if (user.field.worldBoss) return '❌ 월드보스 전투 중에는 퇴장할 수 없습니다.';
     const fieldName = user.field.name;
     saveFieldCooldowns(user);
     releaseEliteEncounter(user);
     user.field = null;
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
+}
+
+function enterWorldBossField(user, boss, options) {
+    if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
+    const stats = calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const maxMp = Number(stats.mp || 0);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
+    ensureWorldBossRevived(boss);
+    const state = getWorldBossState(boss.name);
+    if (Number(state.hp || 0) <= 0) {
+        const respawnAt = getWorldBossRespawnTimestamp(state);
+        return '❌ ' + boss.name + '은(는) 현재 처치된 상태입니다.\n- 부활: ' + formatTimestampLocal(respawnAt);
+    }
+    const daily = getWorldBossDailyState(user);
+    const useToken = Number(daily.count || 0) >= WORLD_BOSS_DAILY_LIMIT;
+    if (useToken) {
+        const tokenId = getValorTokenItemId();
+        if (tokenId == -1 || getInventoryItemCount(user, tokenId) < 1) return '❌ 오늘의 입장 횟수를 모두 사용했습니다. (' + comma(daily.count) + '/' + comma(WORLD_BOSS_DAILY_LIMIT) + ')\n- ' + WORLD_BOSS_VALOR_TOKEN_NAME + '가 있으면 추가 입장할 수 있습니다.';
+    }
+    const pool = (boss.skillPool || []).map(id => ({ id: Number(id), skill: getExtraSkillById(id) })).filter(entry => entry.skill);
+    if (pool.length < 3) return '❌ 스킬이 부족합니다.';
+    const candidates = [];
+    const used = new Set();
+    while (candidates.length < 3 && used.size < pool.length) {
+        const idx = randomInt(0, pool.length - 1);
+        if (used.has(idx)) continue;
+        used.add(idx);
+        candidates.push(pool[idx].id);
+    }
+    user.pendingAction = { type: '월드보스스킬선택', boss: boss.name, candidates: candidates, useToken: useToken };
+    const lines = ['[ 월드보스 ] ' + boss.name];
+    lines.push('HP ' + comma(Number(state.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
+    lines.push('', '입장 시 사용할 스킬을 선택해주세요.');
+    candidates.forEach((id, i) => {
+        const skill = getExtraSkillById(id);
+        const star = Number(user.main_card && user.main_card.star || 0);
+        lines.push('');
+        lines.push((i + 1) + '. ' + skill.name + ' [ MP ' + comma(Number(skill.mp_cost || 0)) + ' ] 쿨타임 ' + (Number(skill.cooltime || 0) / 1000) + '초');
+        lines.push(' ㄴ ' + formatSkillDesc(skill, star));
+    });
+    lines.push('', '/RPGenius 월드보스선택 [1/2/3]');
+    if (useToken) lines.push('* ' + WORLD_BOSS_VALOR_TOKEN_NAME + ' 1개를 사용해 입장합니다.');
+    else lines.push('* 오늘 남은 입장: ' + comma(WORLD_BOSS_DAILY_LIMIT - Number(daily.count || 0)) + '/' + comma(WORLD_BOSS_DAILY_LIMIT));
+    return lines.join('\n');
+}
+
+function confirmWorldBossSkill(user, indexArg, channel) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '월드보스스킬선택') return '❌ 진행 중인 월드보스 입장이 없습니다.';
+    const index = Number(indexArg);
+    if (!Number.isInteger(index) || index < 1 || index > (pending.candidates || []).length) return '❌ /RPGenius 월드보스선택 [1/2/3]';
+    const skillId = Number(pending.candidates[index - 1]);
+    const skill = getExtraSkillById(skillId);
+    if (!skill) return '❌ 선택한 스킬 데이터를 찾을 수 없습니다.';
+    const boss = findWorldBossByName(pending.boss);
+    if (!boss) return '❌ 월드보스 데이터를 찾을 수 없습니다.';
+    ensureWorldBossRevived(boss);
+    const state = getWorldBossState(boss.name);
+    if (Number(state.hp || 0) <= 0) {
+        user.pendingAction = null;
+        return '❌ 보스가 이미 사망 상태입니다.';
+    }
+    if (pending.useToken) {
+        const tokenId = getValorTokenItemId();
+        if (tokenId == -1 || getInventoryItemCount(user, tokenId) < 1) {
+            user.pendingAction = null;
+            return '❌ ' + WORLD_BOSS_VALOR_TOKEN_NAME + '가 부족합니다.';
+        }
+        removeInventoryItem(user, tokenId, 1);
+    } else {
+        const daily = getWorldBossDailyState(user);
+        daily.count = Number(daily.count || 0) + 1;
+    }
+    user.pendingAction = null;
+    const stats = calculateUserStats(user);
+    user.hp = Number(stats.hp || 0);
+    user.mp = Number(stats.mp || 0);
+    const passiveDamageReduction = skill.name == '000' ? Number(getSkillValue(skill, 3, 0) || 0) : 0;
+    user.field = {
+        name: boss.name,
+        worldBoss: true,
+        enteredAt: Date.now(),
+        nextActionAt: 0,
+        skillCooldowns: {},
+        bossSkillCooldowns: {},
+        chosenSkillId: skillId,
+        chosenSkillName: skill.name,
+        buffs: {},
+        karmaStack: 0,
+        passiveDamageReduction: passiveDamageReduction
+    };
+    if (channel) startWorldBossSkillTimer(user, boss, channel);
+    const lines = ['⚔️ 월드보스 ' + boss.name + ' 전투 시작!'];
+    lines.push('- 선택 스킬: ' + skill.name);
+    lines.push('- 보스 HP ' + comma(Number(state.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
+    lines.push('- 내 HP ' + comma(user.hp) + ' / MP ' + comma(user.mp));
+    lines.push('* 보스는 ' + (WORLD_BOSS_SKILL_INTERVAL / 1000) + '초마다 스킬을 사용합니다.');
+    return lines.join('\n');
+}
+
+function forceLeaveWorldBoss(user) {
+    if (!user || !user.field || !user.field.worldBoss) return;
+    clearWorldBossSkillTimer(user.name);
+    user.field = null;
 }
 
 function getFieldCooldowns(user) {
@@ -2029,6 +2180,94 @@ function releaseEliteEncounter(user) {
     if (!user || !user.field || !user.field.name) return;
     const state = getEliteState(user.field.name);
     if (state.owner == user.name) { state.owner = null; persistEliteState(); }
+}
+
+function getExtraSkills() {
+    return readJson(EXTRA_SKILLS_PATH, []);
+}
+
+function getExtraSkillById(id) {
+    const skills = getExtraSkills();
+    return skills[Number(id)] || null;
+}
+
+function findExtraSkillIdByName(name) {
+    const skills = getExtraSkills();
+    const idx = skills.findIndex(skill => skill && skill.name == name);
+    return idx == -1 ? null : idx;
+}
+
+function getWorldBossList() {
+    return readJson(WORLD_BOSS_PATH, []);
+}
+
+function findWorldBossByName(name) {
+    return getWorldBossList().find(boss => boss && boss.name == name) || null;
+}
+
+function getWorldBossState(bossName) {
+    if (!worldBossStates[bossName]) {
+        const boss = findWorldBossByName(bossName);
+        worldBossStates[bossName] = {
+            hp: boss ? Number(boss.hp || 0) : 0,
+            defeatedAt: 0,
+            defeatedBy: null,
+            contributions: {},
+            claimedRewards: {}
+        };
+    }
+    const state = worldBossStates[bossName];
+    if (!state.contributions || typeof state.contributions != 'object') state.contributions = {};
+    if (!state.claimedRewards || typeof state.claimedRewards != 'object') state.claimedRewards = {};
+    return state;
+}
+
+let worldBossStatePersistTimer = null;
+function persistWorldBossState() {
+    if (worldBossStatePersistTimer) return;
+    worldBossStatePersistTimer = setTimeout(() => {
+        worldBossStatePersistTimer = null;
+        saveRpgeniusDataEntry('WorldBossState', worldBossStates).catch(e => console.error('WorldBossState 저장 실패:', e.message));
+    }, 1000);
+}
+
+function getWorldBossRespawnTimestamp(state) {
+    if (!state || !state.defeatedAt) return 0;
+    const defeated = new Date(Number(state.defeatedAt));
+    const respawnDate = new Date(defeated.getTime() + 9 * 60 * 60 * 1000);
+    respawnDate.setUTCHours(0, 0, 0, 0);
+    respawnDate.setUTCDate(respawnDate.getUTCDate() + WORLD_BOSS_RESPAWN_DAYS);
+    return respawnDate.getTime() - 9 * 60 * 60 * 1000;
+}
+
+function isWorldBossAlive(boss) {
+    const state = getWorldBossState(boss.name);
+    if (Number(state.hp || 0) > 0) return true;
+    return Date.now() >= getWorldBossRespawnTimestamp(state);
+}
+
+function ensureWorldBossRevived(boss) {
+    const state = getWorldBossState(boss.name);
+    if (Number(state.hp || 0) > 0) return state;
+    if (Date.now() < getWorldBossRespawnTimestamp(state)) return state;
+    state.hp = Number(boss.hp || 0);
+    state.defeatedAt = 0;
+    state.defeatedBy = null;
+    state.contributions = {};
+    state.claimedRewards = {};
+    persistWorldBossState();
+    return state;
+}
+
+function getWorldBossDailyState(user) {
+    const today = getKoreanDateKey(new Date());
+    if (!user.worldBossDaily || user.worldBossDaily.date != today) user.worldBossDaily = { date: today, count: 0 };
+    return user.worldBossDaily;
+}
+
+function getValorTokenItemId() {
+    const items = getDataCache('Item', []);
+    return items.findIndex(item => item && item.name == WORLD_BOSS_VALOR_TOKEN_NAME);
 }
 
 function tryEncounterElite(user, dungeon, lines) {
@@ -2320,10 +2559,14 @@ function tryEncounterFragment(user, dungeon, lines) {
     lines.push('🔓 /RPGenius 편린 명령어로 사용해야 다른 명령을 사용할 수 있습니다.');
 }
 
-function useBasicAttackInField(user) {
+function useBasicAttackInField(user, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
+    if (user.field.worldBoss) {
+        ensureWorldBossSkillTimer(user, channel);
+        return useWorldBossBasicAttack(user);
+    }
     const dungeon = findDungeonByName(user.field.name);
     if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const stats = calculateUserStats(user);
@@ -2340,8 +2583,12 @@ function useBasicAttackInField(user) {
     return buildHuntResult(user, dungeon, rawDamage, extra);
 }
 
-function useSkillInField(user, skillName) {
+function useSkillInField(user, skillName, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    if (user.field.worldBoss) {
+        ensureWorldBossSkillTimer(user, channel);
+        return useWorldBossChosenSkill(user, skillName);
+    }
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
     if (!user.field.skillCooldowns) user.field.skillCooldowns = {};
@@ -2412,6 +2659,362 @@ function useSkillInField(user, skillName) {
     getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
     if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
     return buildHuntResult(user, dungeon, rawDamage, extra);
+}
+
+function setWorldBossNextActionAt(user) {
+    let cooldown = randomInt(2000, 3000);
+    const buffs = getFieldBuffs(user);
+    const buff = buffs.actionCooldownReduction;
+    if (buff && Number(buff.expired_at || 0) > Date.now()) {
+        cooldown = Math.max(500, cooldown - Number(buff.value || 0));
+    } else if (buffs.actionCooldownReduction) {
+        delete buffs.actionCooldownReduction;
+    }
+    setFieldNextActionAt(user, Date.now() + cooldown);
+}
+
+function getWorldBossDefenderStats(boss) {
+    return {
+        def: Number(boss.def || 0),
+        critDef: Number(boss.critDef || 0),
+        crit: 0,
+        critMul: 1,
+        cmb: 0,
+        maxCmb: 1
+    };
+}
+
+function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const extra = Object.assign({}, opts || {});
+    const defenderStats = getWorldBossDefenderStats(boss);
+    let finalDamage = 0;
+    let isCritical = false;
+    let trueDamageCount = 0;
+    let bonusTripleZero = 0;
+    let hitResult = null;
+    if (extra.trueDamage) {
+        finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
+        trueDamageCount = 1;
+    } else {
+        hitResult = calculateAttackHitResult(rawDamage, boss.def, stats.pnt, stats, slotEffects, extra, defenderStats);
+        finalDamage = Math.max(0, Math.round(Number(hitResult.finalDamage || 0)));
+        isCritical = Number(hitResult.criticalCount || 0) > 0;
+        trueDamageCount = Number(hitResult.trueDamageCount || 0);
+        bonusTripleZero = Number(hitResult.bonusTripleZero || 0);
+    }
+    const state = ensureWorldBossRevived(boss);
+    const before = Number(state.hp || 0);
+    const dealt = Math.min(before, finalDamage);
+    state.hp = Math.max(0, before - finalDamage);
+    state.contributions[user.name] = Number(state.contributions[user.name] || 0) + dealt;
+    persistWorldBossState();
+    return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp };
+}
+
+function formatWorldBossDamageLines(boss, result, prefix) {
+    const head = prefix || '⚔️ ';
+    const target = boss.name + '에게 ';
+    if (result.hitResult && Number(result.hitResult.hitCount || 1) > 1) {
+        return formatHitDetailLines(result.hitResult, head + target, '피해를 입혔습니다!');
+    }
+    return [head + target + comma(result.damage) + (Number(result.trueDamageCount || 0) > 0 ? ' 고정' : '') + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+}
+
+function useWorldBossBasicAttack(user) {
+    const boss = findWorldBossByName(user.field.name);
+    if (!boss) return '❌ 월드보스 데이터를 찾을 수 없습니다.';
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const buffs = getFieldBuffs(user);
+    const nextBasicBuff = buffs.nextBasicDamageBonus;
+    const nextBasicBonus = nextBasicBuff && Number(nextBasicBuff.value || 0) > 0 ? Number(nextBasicBuff.value || 0) : 0;
+    if (nextBasicBuff) delete buffs.nextBasicDamageBonus;
+    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus));
+    const result = dealDamageToWorldBoss(user, boss, rawDamage, {});
+    const lines = formatWorldBossDamageLines(boss, result, '⚔️ ');
+    if (Number(result.bonusTripleZero || 0) > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(result.bonusTripleZero));
+    if (nextBasicBonus > 0) lines.push('- 자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%');
+    appendWorldBossStatusLines(lines, user, boss, result);
+    if (Number(result.after) <= 0) finalizeWorldBossDefeat(user, boss, lines);
+    setWorldBossNextActionAt(user);
+    return lines.join('\n');
+}
+
+function useWorldBossChosenSkill(user, skillName) {
+    const boss = findWorldBossByName(user.field.name);
+    if (!boss) return '❌ 월드보스 데이터를 찾을 수 없습니다.';
+    const skillId = Number(user.field.chosenSkillId);
+    const skill = getExtraSkillById(skillId);
+    if (!skill) return '❌ 선택된 스킬 데이터를 찾을 수 없습니다.';
+    if (skillName && skillName != skill.name) return '❌ 이 보스전에서는 ' + skill.name + '만 사용할 수 있습니다.';
+    const now = Date.now();
+    const isAcceleration = skill.name == '가속';
+    if (!isAcceleration && now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
+    if (!user.field.skillCooldowns) user.field.skillCooldowns = {};
+    const cooldownEnd = Number(user.field.skillCooldowns[skill.name] || 0);
+    if (now < cooldownEnd) return '❌ 스킬 쿨타임입니다. (' + Math.ceil((cooldownEnd - now) / 1000) + '초)';
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const maxMp = Number(stats.mp || 0);
+    const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0))));
+    if (mp < mpCost) return '❌ MP가 부족합니다.';
+    user.mp = mp - mpCost;
+    const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+    user.field.skillCooldowns[skill.name] = now + cooltime;
+    const lines = [];
+    let dealtSomething = false;
+    let result = null;
+    if (skill.name == '빙결') {
+        const raw = Math.round(getSkillValue(skill, 0, 0) + Number(stats.atk || 0) * getSkillValue(skill, 1, 0));
+        result = dealDamageToWorldBoss(user, boss, raw, {});
+        user.field.bossSkipNext = true;
+        formatWorldBossDamageLines(boss, result, '❄️ 빙결! ').forEach(l => lines.push(l));
+        dealtSomething = true;
+    } else if (skill.name == '피의 맛') {
+        const raw = Math.round(getSkillValue(skill, 0, 0) + Number(stats.atk || 0) * getSkillValue(skill, 1, 0));
+        result = dealDamageToWorldBoss(user, boss, raw, {});
+        const heal = Number(result.dealt || 0) * getSkillValue(skill, 2, 0);
+        formatWorldBossDamageLines(boss, result, '🩸 피의 맛! ').forEach(l => lines.push(l));
+        applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
+        dealtSomething = true;
+    } else if (skill.name == '가속') {
+        const dur = getSkillValue(skill, 0, 0) * 1000;
+        const reduce = getSkillValue(skill, 1, 0) * 1000;
+        getFieldBuffs(user).actionCooldownReduction = { value: reduce, expired_at: now + dur };
+        lines.push('⏩ 가속! ' + (dur / 1000) + '초 동안 행동 쿨타임이 ' + (reduce / 1000) + '초 감소합니다.');
+    } else if (skill.name == '카운터') {
+        const dur = getSkillValue(skill, 0, 0) * 1000;
+        const reduceRate = getSkillValue(skill, 1, 0);
+        const flat = getSkillValue(skill, 2, 0);
+        const mul = getSkillValue(skill, 3, 0);
+        getFieldBuffs(user).counterReady = { expired_at: now + dur, reduceRate: reduceRate, flat: flat, mul: mul };
+        lines.push('🛡️ 카운터 준비! ' + (dur / 1000) + '초 동안 보스 스킬을 ' + (Math.round(reduceRate * 100)) + '% 감소시키고 반격합니다.');
+    } else if (skill.name == '000') {
+        const flat = getSkillValue(skill, 0, 0);
+        const critChance = getSkillValue(skill, 1, 0);
+        const critFlat = getSkillValue(skill, 2, 0);
+        const damage = Math.random() < critChance ? critFlat : flat;
+        result = dealDamageToWorldBoss(user, boss, damage, { trueDamage: true });
+        lines.push('0️⃣ 000! ' + boss.name + '에게 ' + comma(result.damage) + ' 고정 피해를 입혔습니다!');
+        dealtSomething = true;
+    } else if (skill.name == '럭키펀치') {
+        if (Math.random() < getSkillValue(skill, 0, 0)) {
+            const raw = Math.round(getSkillValue(skill, 1, 0) + Number(stats.atk || 0) * getSkillValue(skill, 2, 0));
+            result = dealDamageToWorldBoss(user, boss, raw, {});
+            formatWorldBossDamageLines(boss, result, '🍀 럭키펀치 적중! ').forEach(l => lines.push(l));
+            dealtSomething = true;
+        } else {
+            lines.push('💢 럭키펀치 빗나감!');
+        }
+    } else if (skill.name == '갈취') {
+        const raw = Math.round(Number(stats.atk || 0) * getSkillValue(skill, 0, 0));
+        result = dealDamageToWorldBoss(user, boss, raw, {});
+        const goldMin = getSkillValue(skill, 1, 0);
+        const goldMax = getSkillValue(skill, 2, 0);
+        const gained = randomInt(Math.round(goldMin), Math.round(goldMax));
+        user.gold = Number(user.gold || 0) + gained;
+        formatWorldBossDamageLines(boss, result, '💰 갈취! ').forEach(l => lines.push(l));
+        lines.push('- 🪙 ' + comma(gained) + ' 획득');
+        dealtSomething = true;
+    } else if (skill.name == '카르마') {
+        const stack = Math.round(Number(user.field.karmaStack || 0));
+        if (stack <= 0) {
+            lines.push('💢 카르마! 누적된 피해가 없습니다.');
+        } else {
+            result = dealDamageToWorldBoss(user, boss, stack, { trueDamage: true });
+            user.field.karmaStack = 0;
+            lines.push('🌀 카르마! ' + boss.name + '에게 ' + comma(result.damage) + ' 고정 피해를 입혔습니다!');
+            dealtSomething = true;
+        }
+    } else {
+        lines.unshift('✨ ' + skill.name + '을(를) 사용했습니다.');
+    }
+    lines.push('- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+    if (result) appendWorldBossStatusLines(lines, user, boss, result);
+    else lines.push('- 💧 ' + comma(user.mp) + '/' + comma(maxMp) + ' / ❤️ ' + comma(user.hp));
+    if (result && Number(result.after) <= 0) finalizeWorldBossDefeat(user, boss, lines);
+    else if (!isAcceleration) setWorldBossNextActionAt(user);
+    return lines.join('\n');
+}
+
+function appendWorldBossStatusLines(lines, user, boss, result) {
+    const state = getWorldBossState(boss.name);
+    lines.push('- 보스 HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
+    const stats = calculateUserStats(user);
+    lines.push('- 내 HP ' + comma(Math.max(0, Number(user.hp || 0))) + '/' + comma(Number(stats.hp || 0)));
+}
+
+function finalizeWorldBossDefeat(user, boss, lines) {
+    const state = getWorldBossState(boss.name);
+    state.hp = 0;
+    state.defeatedAt = Date.now();
+    state.defeatedBy = user.name;
+    persistWorldBossState();
+    clearWorldBossSkillTimer(user.name);
+    user.field = null;
+    lines.push('', '🎉 ' + boss.name + ' 처치!');
+    lines.push('- 처치자: ' + user.name);
+    lines.push('- /RPGenius 월드보스보상 명령어로 보상을 수령하세요.');
+}
+
+function startWorldBossSkillTimer(user, boss, channel) {
+    clearWorldBossSkillTimer(user.name);
+    if (channel) worldBossChannels[user.name] = channel;
+    const userName = user.name;
+    const bossName = boss.name;
+    worldBossSkillTimers[userName] = setInterval(() => runWorldBossSkillTick(userName, bossName).catch(e => console.error('[worldboss tick]', e.message)), WORLD_BOSS_SKILL_INTERVAL);
+}
+
+function ensureWorldBossSkillTimer(user, channel) {
+    if (!user || !user.field || !user.field.worldBoss) return;
+    if (channel) worldBossChannels[user.name] = channel;
+    if (worldBossSkillTimers[user.name]) return;
+    const boss = findWorldBossByName(user.field.name);
+    if (!boss) return;
+    startWorldBossSkillTimer(user, boss, channel || worldBossChannels[user.name]);
+}
+
+function clearWorldBossSkillTimer(name) {
+    if (worldBossSkillTimers[name]) {
+        clearInterval(worldBossSkillTimers[name]);
+        delete worldBossSkillTimers[name];
+    }
+    delete worldBossChannels[name];
+}
+
+async function runWorldBossSkillTick(userName, bossName) {
+    const channel = worldBossChannels[userName];
+    const latest = await getRPGUserByName(userName);
+    if (!latest) { clearWorldBossSkillTimer(userName); return; }
+    if (!latest.field || !latest.field.worldBoss || latest.field.name != bossName) {
+        clearWorldBossSkillTimer(userName);
+        return;
+    }
+    const boss = findWorldBossByName(bossName);
+    if (!boss) { clearWorldBossSkillTimer(userName); return; }
+    const state = getWorldBossState(bossName);
+    if (Number(state.hp || 0) <= 0) {
+        clearWorldBossSkillTimer(userName);
+        latest.field = null;
+        await latest.save();
+        return;
+    }
+    if (latest.field.bossSkipNext) {
+        latest.field.bossSkipNext = false;
+        await latest.save();
+        if (channel) channel.sendChat('❄️ ' + boss.name + '의 스킬이 봉인되어 시전되지 못했습니다.');
+        return;
+    }
+    const skillIds = (boss.skills || []).map(id => Number(id)).filter(id => getExtraSkillById(id));
+    if (skillIds.length == 0) return;
+    const now = Date.now();
+    if (!latest.field.bossSkillCooldowns) latest.field.bossSkillCooldowns = {};
+    const ready = skillIds.filter(id => Number(latest.field.bossSkillCooldowns[id] || 0) <= now);
+    if (ready.length == 0) return;
+    const skillId = ready[randomInt(0, ready.length - 1)];
+    const skill = getExtraSkillById(skillId);
+    latest.field.bossSkillCooldowns[skillId] = now + Number(skill.cooltime || WORLD_BOSS_SKILL_INTERVAL);
+    const userStats = calculateUserStats(latest);
+    const slotEffects = calculateCardSlotEffects(latest);
+    const flat = getSkillValue(skill, 0, 0);
+    const mul = getSkillValue(skill, 1, 0);
+    const baseDamage = Number(flat || 0) + Number(userStats.atk || 0) * 0;
+    const rawDamage = Number(flat || 0) + Number(boss.atk || 0) * Number(mul || 0);
+    let receivedReduction = Number(latest.field.passiveDamageReduction || 0) + Number(slotEffects.hpDamageReduction || 0);
+    receivedReduction = Math.max(0, Math.min(0.95, receivedReduction));
+    const buffs = getFieldBuffs(latest);
+    const counterBuff = buffs.counterReady;
+    const counterActive = counterBuff && Number(counterBuff.expired_at || 0) > now;
+    const counterReduction = counterActive ? Number(counterBuff.reduceRate || 0) : 0;
+    const reducedDamage = rawDamage * (1 - receivedReduction) * (1 - counterReduction);
+    const finalDamage = Math.max(0, Math.round(getDamageAfterDefense(reducedDamage, userStats.def, boss.pnt)));
+    const beforeHp = typeof latest.hp == 'undefined' ? Number(userStats.hp || 0) : Number(latest.hp || 0);
+    latest.hp = Math.max(0, beforeHp - finalDamage);
+    const tickLines = ['💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!'];
+    latest.field.karmaStack = Number(latest.field.karmaStack || 0) + finalDamage * 0.30;
+    if (counterActive) {
+        const counterRaw = Math.round(Number(counterBuff.flat || 0) + Number(userStats.atk || 0) * Number(counterBuff.mul || 0));
+        const counterResult = dealDamageToWorldBoss(latest, boss, counterRaw, {});
+        delete buffs.counterReady;
+        formatWorldBossDamageLines(boss, counterResult, '🛡️ 카운터! ').forEach(l => tickLines.push(l));
+        if (Number(counterResult.after) <= 0) {
+            finalizeWorldBossDefeat(latest, boss, tickLines);
+            await latest.save();
+            if (channel) channel.sendChat(tickLines.join('\n'));
+            return;
+        }
+    }
+    tickLines.push('- 보스 HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
+    if (latest.hp <= 0) {
+        const reviveLines = [];
+        const revived = tryImmortalArmorRevive(latest, Number(userStats.hp || 0), reviveLines);
+        if (revived) {
+            reviveLines.forEach(line => tickLines.push(line));
+            tickLines.push('- 내 HP ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
+        } else {
+            clearWorldBossSkillTimer(userName);
+            latest.field = null;
+            latest.hp = 1;
+            tickLines.push('- 내 HP 0/' + comma(Number(userStats.hp || 0)));
+            tickLines.push('', '💀 ' + boss.name + '에게 패배했습니다.');
+        }
+    } else {
+        tickLines.push('- 내 HP ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
+    }
+    await latest.save();
+    if (channel) channel.sendChat(tickLines.join('\n'));
+}
+
+function claimWorldBossRewards(user) {
+    const bosses = getWorldBossList();
+    if (bosses.length == 0) return '❌ 월드보스 데이터가 없습니다.';
+    const items = getDataCache('Item', []);
+    const lines = [];
+    let totalRewards = 0;
+    bosses.forEach(boss => {
+        const state = getWorldBossState(boss.name);
+        if (Number(state.hp || 0) > 0) return;
+        const contributed = Number(state.contributions && state.contributions[user.name] || 0);
+        if (contributed <= 0) return;
+        const claimedMax = Number(state.claimedRewards && state.claimedRewards[user.name] || 0);
+        const newRewards = (boss.rewards || []).filter(r => Number(r.threshold || 0) > claimedMax && contributed >= Number(r.threshold || 0));
+        if (newRewards.length == 0) return;
+        lines.push('[ ' + boss.name + ' 보상 ]');
+        lines.push('- 누적 피해: ' + comma(contributed));
+        let highestThreshold = claimedMax;
+        newRewards.forEach(reward => {
+            (reward.items || []).forEach(it => {
+                const cmin = Number(it.count && it.count.min || 0);
+                const cmax = Number(it.count && it.count.max || cmin);
+                const count = cmin == cmax ? cmin : randomInt(cmin, cmax);
+                if (it.type == '골드') {
+                    user.gold = Number(user.gold || 0) + count;
+                    lines.push('- 🪙 ' + comma(count));
+                } else if (it.type == '가넷') {
+                    user.garnet = Number(user.garnet || 0) + count;
+                    lines.push('- 💠 ' + comma(count));
+                } else if (it.type == '아이템') {
+                    const itemId = Number(it.item_id);
+                    const item = items[itemId];
+                    if (!item) {
+                        lines.push('- (아이템 누락) item_id=' + itemId);
+                    } else {
+                        addInventoryItem(user, itemId, count);
+                        lines.push('- ' + item.name + ' x' + comma(count));
+                    }
+                }
+            });
+            if (Number(reward.threshold || 0) > highestThreshold) highestThreshold = Number(reward.threshold || 0);
+            totalRewards++;
+        });
+        state.claimedRewards[user.name] = highestThreshold;
+        persistWorldBossState();
+    });
+    if (totalRewards == 0) return '❌ 수령할 수 있는 월드보스 보상이 없습니다.';
+    return '✅ 월드보스 보상을 수령했습니다.\n' + lines.join('\n');
 }
 
 async function sendCharacterCardCoverImage(channel, card) {
@@ -5779,6 +6382,20 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '월드보스선택') {
+        const result = confirmWorldBossSkill(user, args[1], channel);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '월드보스보상') {
+        const result = claimWorldBossRewards(user);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '필드퇴장') {
         const result = leaveField(user);
         await user.save();
@@ -5787,7 +6404,7 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '공격') {
-        const result = useBasicAttackInField(user);
+        const result = useBasicAttackInField(user, channel);
         await user.save();
         reply(result);
         return true;
@@ -5795,11 +6412,11 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '스킬') {
         const skillName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
-        if (!skillName) {
+        if (!skillName && !(user.field && user.field.worldBoss)) {
             reply('❌ /RPGenius 스킬 [스킬명]');
             return true;
         }
-        const result = useSkillInField(user, skillName);
+        const result = useSkillInField(user, skillName, channel);
         await user.save();
         reply(result);
         return true;
@@ -6006,6 +6623,10 @@ async function handleRPGCommand(data, channel) {
         const lastArg = useArgs[useArgs.length - 1];
         const useCount = /^\d+$/.test(lastArg) && useArgs.length > 1 ? lastArg : null;
         const itemName = useCount ? useArgs.slice(0, -1).join(' ') : useText;
+        if (user.field && user.field.worldBoss) {
+            reply('❌ 월드보스 전투 중에는 아이템을 사용할 수 없습니다.');
+            return true;
+        }
         if (user.field && user.field.name) {
             const items = getDataCache('Item', []);
             const targetItem = items.find(item => item.name == itemName);
