@@ -2109,9 +2109,7 @@ function confirmWorldBossSkill(user, indexArg, channel) {
     if (channel) startWorldBossSkillTimer(user, boss, channel);
     const lines = ['⚔️ 월드보스 ' + boss.name + ' 전투 시작!'];
     lines.push('- 선택 스킬: ' + skill.name);
-    lines.push('- 보스 HP ' + comma(Number(state.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
-    lines.push('- 내 HP ' + comma(user.hp) + ' / MP ' + comma(user.mp));
-    lines.push('* 보스는 ' + (WORLD_BOSS_SKILL_INTERVAL / 1000) + '초마다 스킬을 사용합니다.');
+    lines.push('- ' + boss.name + ' HP: ' + comma(Number(state.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
     return lines.join('\n');
 }
 
@@ -2881,7 +2879,7 @@ function appendWorldBossStatusLines(lines, user, boss, result) {
     const state = getWorldBossState(boss.name);
     lines.push('- ' + boss.name + ' HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
     const stats = calculateUserStats(user);
-    lines.push('- 남은 체력' + comma(Math.max(0, Number(user.hp || 0))) + '/' + comma(Number(stats.hp || 0)));
+    lines.push('- 남은 체력: ' + comma(Math.max(0, Number(user.hp || 0))) + '/' + comma(Number(stats.hp || 0)));
 }
 
 function finalizeWorldBossDefeat(user, boss, lines) {
@@ -2984,22 +2982,22 @@ async function runWorldBossSkillTick(userName, bossName) {
             return;
         }
     }
-    tickLines.push('- 보스 HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
+    tickLines.push('- ' + boss.name + ' HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
     if (latest.hp <= 0) {
         const reviveLines = [];
         const revived = tryImmortalArmorRevive(latest, Number(userStats.hp || 0), reviveLines);
         if (revived) {
             reviveLines.forEach(line => tickLines.push(line));
-            tickLines.push('- 내 HP ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
+            tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
         } else {
             clearWorldBossSkillTimer(userName);
             latest.field = null;
             latest.hp = 1;
-            tickLines.push('- 내 HP 1/' + comma(Number(userStats.hp || 0)));
+            tickLines.push('- 남은 체력: 1/' + comma(Number(userStats.hp || 0)));
             tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
         }
     } else {
-        tickLines.push('- 내 HP ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
+        tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
     }
     await latest.save();
     if (channel) channel.sendChat(tickLines.join('\n'));
