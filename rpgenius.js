@@ -2746,7 +2746,7 @@ function executeMainCardSkillInField(user, skillName) {
 }
 
 function setWorldBossNextActionAt(user) {
-    let cooldown = randomInt(2000, 3000);
+    let cooldown = 2500;
     const buffs = getFieldBuffs(user);
     const buff = buffs.actionCooldownReduction;
     if (buff && Number(buff.expired_at || 0) > Date.now()) {
@@ -2928,7 +2928,7 @@ function startWorldBossSkillTimer(user, boss, channel) {
     if (channel) worldBossChannels[user.name] = channel;
     const userName = user.name;
     const bossName = boss.name;
-    worldBossSkillTimers[userName] = setInterval(() => runWorldBossSkillTick(userName, bossName).catch(e => console.error('[worldboss tick]', e.message)), WORLD_BOSS_SKILL_INTERVAL);
+    scheduleNextWorldBossSkillTimer(user, boss);
 }
 
 function ensureWorldBossSkillTimer(user, channel) {
@@ -2940,9 +2940,36 @@ function ensureWorldBossSkillTimer(user, channel) {
     startWorldBossSkillTimer(user, boss, channel || worldBossChannels[user.name]);
 }
 
+function getWorldBossSkillIds(boss) {
+    return (boss.skills || []).map(id => Number(id)).filter(id => getExtraSkillById(id));
+}
+
+function getNextWorldBossSkillDelay(user, boss, now) {
+    const skillIds = getWorldBossSkillIds(boss);
+    if (skillIds.length == 0 || !user.field) return null;
+    if (!user.field.bossSkillCooldowns) user.field.bossSkillCooldowns = {};
+    skillIds.forEach(id => {
+        if (typeof user.field.bossSkillCooldowns[id] == 'undefined') {
+            const skill = getExtraSkillById(id);
+            user.field.bossSkillCooldowns[id] = now + Number(skill.cooltime || WORLD_BOSS_SKILL_INTERVAL);
+        }
+    });
+    const nextAt = Math.min.apply(null, skillIds.map(id => Number(user.field.bossSkillCooldowns[id] || 0)));
+    return Math.max(0, nextAt - now);
+}
+
+function scheduleNextWorldBossSkillTimer(user, boss) {
+    const delay = getNextWorldBossSkillDelay(user, boss, Date.now());
+    if (delay === null) return;
+    const userName = user.name;
+    const bossName = boss.name;
+    if (worldBossSkillTimers[userName]) clearTimeout(worldBossSkillTimers[userName]);
+    worldBossSkillTimers[userName] = setTimeout(() => runWorldBossSkillTick(userName, bossName).catch(e => console.error('[worldboss tick]', e.message)), delay);
+}
+
 function clearWorldBossSkillTimer(name) {
     if (worldBossSkillTimers[name]) {
-        clearInterval(worldBossSkillTimers[name]);
+        clearTimeout(worldBossSkillTimers[name]);
         delete worldBossSkillTimers[name];
     }
     delete worldBossChannels[name];
@@ -2965,21 +2992,32 @@ async function runWorldBossSkillTick(userName, bossName) {
         await latest.save();
         return;
     }
-    if (latest.field.bossSkipNext) {
-        latest.field.bossSkipNext = false;
-        await latest.save();
-        if (channel) channel.sendChat('❄️ ' + boss.name + '의 스킬이 봉인되어 시전되지 못했습니다.');
-        return;
-    }
-    const skillIds = (boss.skills || []).map(id => Number(id)).filter(id => getExtraSkillById(id));
+    const skillIds = getWorldBossSkillIds(boss);
     if (skillIds.length == 0) return;
     const now = Date.now();
     if (!latest.field.bossSkillCooldowns) latest.field.bossSkillCooldowns = {};
+    skillIds.forEach(id => {
+        if (typeof latest.field.bossSkillCooldowns[id] == 'undefined') {
+            const data = getExtraSkillById(id);
+            latest.field.bossSkillCooldowns[id] = now + Number(data.cooltime || WORLD_BOSS_SKILL_INTERVAL);
+        }
+    });
     const ready = skillIds.filter(id => Number(latest.field.bossSkillCooldowns[id] || 0) <= now);
-    if (ready.length == 0) return;
+    if (ready.length == 0) {
+        scheduleNextWorldBossSkillTimer(latest, boss);
+        await latest.save();
+        return;
+    }
     const skillId = ready[randomInt(0, ready.length - 1)];
     const skill = getExtraSkillById(skillId);
     latest.field.bossSkillCooldowns[skillId] = now + Number(skill.cooltime || WORLD_BOSS_SKILL_INTERVAL);
+    if (latest.field.bossSkipNext) {
+        latest.field.bossSkipNext = false;
+        await latest.save();
+        scheduleNextWorldBossSkillTimer(latest, boss);
+        if (channel) channel.sendChat('❄️ ' + boss.name + '이(가) 얼어붙어 공격하지 못했습니다.');
+        return;
+    }
     const userStats = calculateUserStats(latest);
     const slotEffects = calculateCardSlotEffects(latest);
     const flat = getSkillValue(skill, 0, 0);
@@ -3032,6 +3070,7 @@ async function runWorldBossSkillTick(userName, bossName) {
     } else {
         tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
     }
+    if (latest.field && latest.field.worldBoss) scheduleNextWorldBossSkillTimer(latest, boss);
     await latest.save();
     if (channel) channel.sendChat(tickLines.join('\n'));
 }
