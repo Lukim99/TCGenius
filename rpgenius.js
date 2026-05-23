@@ -906,7 +906,7 @@ function rerollEquipmentPotential(user, numberArg) {
         if (useJewel) addInventoryItem(user, usedJewelItemId, 1);
         return '❌ 잠재능력 데이터를 찾을 수 없어 골드를 반환했습니다.';
     }
-    potential.failCount = upgrade && !upgraded ? previousFailCount + failIncrement : 0;
+    selected.equip.potential.failCount = upgrade && !upgraded ? previousFailCount + failIncrement : 0;
     const oldPotential = JSON.parse(JSON.stringify(selected.equip.potential));
     user.pendingAction = {
         type: '잠재능력재설정확인',
@@ -922,7 +922,7 @@ function rerollEquipmentPotential(user, numberArg) {
     };
     const lvl = Number(selected.equip.level || 0);
     const lines = [
-        '[ 잠재능력 재설정 미리보기 ]',
+        '[ 잠재능력 재설정 ]',
         '- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : ''),
         '- 소모 골드: 🪙 ' + comma(cost)
     ];
@@ -931,11 +931,11 @@ function rerollEquipmentPotential(user, numberArg) {
         lines.push('- ' + usedJewelName + ' x1 소모' + (jewelUpgradeBonus ? '\n' + discountText + '\n ㄴ 승급 확률/카운트 2배' : '\n' + discountText));
     }
     if (upgraded) lines.push('- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier) + (guaranteed ? ' (확정)' : ''));
-    else if (upgrade) lines.push('- 승급 확정까지: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
+    else if (upgrade) lines.push('- 승급 확정까지: ' + comma(selected.equip.potential.failCount) + '/' + comma(upgrade.guarantee));
     lines.push('', '[ 이전 잠재능력 ]');
-    formatPotentialLines(oldPotential).forEach(line => lines.push(line));
+    formatPotentialLines(oldPotential).forEach(line => { if (! line.startsWith("[잠재능력]")) lines.push(line) });
     lines.push('', '[ 새로운 잠재능력 ]');
-    formatPotentialLines(potential).forEach(line => lines.push(line));
+    formatPotentialLines(potential).forEach(line => { if (! line.startsWith("[잠재능력]")) lines.push(line) });
     lines.push('', '적용하시겠습니까?\n소모된 골드/' + usedJewelName + '은 반환되지 않습니다.\n');
     lines.push('/RPGenius 재설정확인');
     lines.push('/RPGenius 재설정포기');
@@ -964,7 +964,7 @@ function cancelPotentialReroll(user) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '잠재능력재설정확인') return '❌ 진행 중인 잠재능력 재설정이 없습니다.';
     user.pendingAction = null;
-    return '✅ 잠재능력 재설정을 취소했습니다. 기존 잠재능력이 유지됩니다.\n(소모된 골드 및 ' + POTENTIAL_JEWEL_ITEM_NAME + '은 반환되지 않습니다.)';
+    return '✅ 잠재능력이 유지됩니다.';
 }
 
 function formatPotentialLines(potential) {
