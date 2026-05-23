@@ -2127,6 +2127,7 @@ function confirmWorldBossSkill(user, indexArg, channel) {
         nextActionAt: 0,
         skillCooldowns: {},
         bossSkillCooldowns: {},
+        bossSkillUseCounts: {},
         chosenSkillId: skillId,
         chosenSkillName: skill.name,
         buffs: {},
@@ -2984,7 +2985,11 @@ async function runWorldBossSkillTick(userName, bossName) {
     const flat = getSkillValue(skill, 0, 0);
     const mul = getSkillValue(skill, 1, 0);
     const baseDamage = Number(flat || 0) + Number(userStats.atk || 0) * 0;
-    const rawDamage = Number(flat || 0) + Number(boss.atk || 0) * Number(mul || 0);
+    if (!latest.field.bossSkillUseCounts) latest.field.bossSkillUseCounts = {};
+    const bossSkillUseCount = Number(latest.field.bossSkillUseCounts[skill.name] || 0);
+    const rawDamageMultiplier = skill.name == '정권' ? 1 + bossSkillUseCount * 0.15 : 1;
+    latest.field.bossSkillUseCounts[skill.name] = bossSkillUseCount + 1;
+    const rawDamage = (Number(flat || 0) + Number(boss.atk || 0) * Number(mul || 0)) * rawDamageMultiplier;
     let receivedReduction = Number(latest.field.passiveDamageReduction || 0) + Number(slotEffects.hpDamageReduction || 0);
     receivedReduction = Math.max(0, Math.min(0.95, receivedReduction));
     const buffs = getFieldBuffs(latest);
