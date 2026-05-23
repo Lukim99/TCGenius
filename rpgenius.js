@@ -745,6 +745,64 @@ function applyUpgradeTicket(user, numberArg) {
     return lines.join('\n');
 }
 
+function getSoulTargets(user) {
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            if (type != 'weapon' && type != 'armor') return null;
+            if (entry.equip.soul && !isSoulExpired(entry.equip.soul)) return null;
+            const equipment = getEquipmentData(type, entry.equip.id);
+            if (!equipment) return null;
+            return { number: index + 1, entry, type, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatSoulTargetList(targets) {
+    const lines = ['[ 영혼 부여 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const lvl = Number(target.entry.equip.level || 0);
+        const lockMark = target.entry.equip.locked ? ' 🔒' : '';
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+    });
+    return lines.join('\n');
+}
+
+function applySoulToEquipment(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '영혼부여') return '❌ 진행 중인 영혼석 사용이 없습니다.';
+    const soulData = pending.soul;
+    if (!soulData || typeof soulData != 'object') { user.pendingAction = null; return '❌ 영혼석 데이터가 잘못되었습니다.'; }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    if (type != 'weapon' && type != 'armor') return '❌ 영혼은 무기 또는 갑옷에만 부여할 수 있습니다.';
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    if (selected.equip.soul && !isSoulExpired(selected.equip.soul)) return '❌ 이미 영혼이 깃든 장비입니다.';
+    const slot = soulData[type];
+    if (!slot || typeof slot != 'object') return '❌ 해당 장비 부위에 부여할 수 있는 영혼 정보가 없습니다.';
+    const days = Number(soulData.date || 0);
+    const expiresAt = days > 0 ? Date.now() + days * 86400000 : 0;
+    selected.equip.soul = {
+        name: soulData.name || '',
+        expired_at: expiresAt,
+        stat: Object.assign({}, slot.stat || {}),
+        plusStat: Object.assign({}, slot.plusStat || {})
+    };
+    user.pendingAction = null;
+    const lvl = Number(selected.equip.level || 0);
+    const lines = ['✨ ' + (soulData.name || '') + '의 영혼이 깃들었습니다.'];
+    lines.push('- 대상: <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : ''));
+    if (expiresAt > 0) lines.push('- 유지 기간: ' + days + '일 (만료: ' + new Date(expiresAt).toLocaleString('ko-KR') + ')');
+    const soulStatText = formatEquipmentStatLines({ stat: slot.stat || {}, plusStat: slot.plusStat || {} });
+    if (soulStatText) lines.push('', '[ 영혼 효과 ]', ...String(soulStatText).split('\n').filter(Boolean));
+    return lines.join('\n');
+}
+
 function getPotentialAwakenTargets(user) {
     return getAllUserEquipments(user)
         .map((entry, index) => {
@@ -845,8 +903,7 @@ function rerollEquipmentPotential(user, numberArg) {
     const lines = [
         '✅ 잠재능력을 재설정했습니다.',
         '- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : ''),
-        '- 소모 골드: 🪙 ' + comma(cost),
-        '- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier)
+        '- 소모 골드: 🪙 ' + comma(cost)
     ];
     if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? '\n ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : '\n ㄴ 골드 소모 50% 감소'));
     if (upgraded) lines.push('- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier) + (guaranteed ? ' (확정)' : ''));
@@ -1012,12 +1069,60 @@ function getEquipmentData(type, id) {
     return list[id];
 }
 
+function isSoulExpired(soul) {
+    return !!(soul && soul.expired_at && Date.now() >= Number(soul.expired_at));
+}
+
+function formatSoulRemainingText(soul) {
+    if (!soul || !soul.expired_at || isSoulExpired(soul)) return null;
+    const diff = Number(soul.expired_at) - Date.now();
+    let value, unit;
+    if (diff >= 86400000) { value = Math.floor(diff / 86400000); unit = '일'; }
+    else if (diff >= 3600000) { value = Math.floor(diff / 3600000); unit = '시간'; }
+    else if (diff >= 60000) { value = Math.floor(diff / 60000); unit = '분'; }
+    else if (diff >= 1000) { value = Math.floor(diff / 1000); unit = '초'; }
+    else return null;
+    return '영혼이 ' + value + unit + ' 후 빠져나갑니다.';
+}
+
+function getEquipmentDisplayName(data, equip) {
+    const baseName = (data && data.name) || '';
+    const soul = equip && equip.soul;
+    if (soul && !isSoulExpired(soul) && soul.name) return soul.name + '의 영혼이 깃든 ' + baseName;
+    return baseName;
+}
+
+function addSoulStats(stat, plusStat, soul) {
+    if (!soul || isSoulExpired(soul)) return;
+    addStats(stat, soul.stat || {});
+    addStats(plusStat, soul.plusStat || {});
+}
+
+function cleanupExpiredSouls(user) {
+    let changed = false;
+    const strip = equip => {
+        if (equip && equip.soul && isSoulExpired(equip.soul)) {
+            delete equip.soul;
+            changed = true;
+        }
+    };
+    (user && user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach(strip);
+    if (user && user.equipments) {
+        strip(user.equipments.weapon);
+        strip(user.equipments.armor);
+        strip(user.equipments.support);
+        const accessories = user.equipments.accessory || {};
+        Object.keys(accessories).forEach(key => strip(accessories[key]));
+    }
+    return changed;
+}
+
 function formatEquippedEquipment(label, type, equip) {
     if (!equip || typeof equip.id == 'undefined') return '[' + label + '] 없음';
     const data = getEquipmentData(type, equip.id);
     if (!data) return '[' + label + '] 없음';
     const level = Number(equip.level || 0);
-    return '[' + label + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '');
+    return '[' + label + '] <' + data.rarity + '> ' + getEquipmentDisplayName(data, equip) + (level > 0 ? ' +' + level : '');
 }
 
 function addStats(target, stats) {
@@ -1682,6 +1787,7 @@ function calculateUserStats(user) {
             addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
             addPotentialStats(stats, plusStats, entry[1].potential);
+            addSoulStats(stats, plusStats, entry[1].soul);
             if (entry[0] == 'weapon' && data.name == DESTINY_AION_NAME) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
         }
     });
@@ -3556,6 +3662,8 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
     const level = Number(equip.level || 0);
     const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
     let out = title + (statLines ? '\n' + statLines : '');
+    const soulRemaining = formatSoulRemainingText(equip && equip.soul);
+    if (soulRemaining) out += '\n' + soulRemaining;
     const potentialLines = formatPotentialLines(equip && equip.potential);
     if (potentialLines.length > 0) out += '\n' + potentialLines.join('\n');
     if (type == 'support' && user && user.main_card) {
@@ -3690,7 +3798,7 @@ function formatEquipmentInventoryLine(number, entry) {
     if (!data) return null;
     const level = Number(entry.equip.level || 0);
     const lockMark = entry.equip.locked ? ' 🔒' : '';
-    return '[' + number + '] <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '') + lockMark;
+    return '[' + number + '] <' + data.rarity + '> ' + getEquipmentDisplayName(data, entry.equip) + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '') + lockMark;
 }
 
 function formatEquipmentInventory(user) {
@@ -5442,9 +5550,11 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -5579,6 +5689,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatUpgradeTicketTargetList(targets, ugLevel));
+            }
+        }
+        if (item.use == '영혼석') {
+            const targets = getSoulTargets(user);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 영혼을 깃들일 수 있는 무기/갑옷이 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '영혼부여', soul: item.soul, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push((item.soul && item.soul.name ? item.soul.name : '') + '의 영혼을 깃들일 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatSoulTargetList(targets));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -5819,6 +5942,7 @@ class RPGUser {
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.pendingFragment == 'undefined') this.pendingFragment = null;
         if (!this.fragmentCounts || typeof this.fragmentCounts != 'object') this.fragmentCounts = {};
+        cleanupExpiredSouls(this);
         if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
@@ -6676,6 +6800,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '영혼부여') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 영혼석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 영혼을 깃들일 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = applySoulToEquipment(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '장비강화') {
         if (args[0] == '강화') {
             const result = runEquipmentUpgrade(user);
@@ -7299,6 +7441,8 @@ module.exports = {
     formatPotentialOptionEntries,
     getPotentialRarityKey,
     getPotentialRarityLabel,
+    getEquipmentDisplayName,
+    isSoulExpired,
     getCardSlotEffectValue,
     addInventoryItem,
     removeInventoryItem,

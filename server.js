@@ -1087,11 +1087,13 @@ function buildInventoryEquipment(user) {
             tierLabel: rpgenius.getPotentialRarityLabel(equip.potential.rarity),
             entries: rpgenius.formatPotentialOptionEntries(equip.potential)
         } : null;
+        const soulActive = equip && equip.soul && !rpgenius.isSoulExpired(equip.soul) ? equip.soul : null;
         result.push({
             type: equip.type || type,
             typeLabel: labels[equip.type || type] || (equip.type || type),
             id: Number(equip.id),
-            name: data.name,
+            name: rpgenius.getEquipmentDisplayName(data, equip),
+            baseName: data.name,
             rarity: data.rarity,
             level,
             equipped: !!equipped,
@@ -1100,6 +1102,7 @@ function buildInventoryEquipment(user) {
             potentialDisplay,
             potential: equip && equip.potential || null,
             rolled: equip && equip.rolled || null,
+            soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0), stat: soulActive.stat || {}, plusStat: soulActive.plusStat || {} } : null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
             noTrade: data.no_trade === true,
             iconUrl: getEquipmentIconUrl(data),

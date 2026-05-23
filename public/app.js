@@ -176,6 +176,16 @@ function potentialBlockNode(display) {
     return block;
 }
 
+function formatSoulRemaining(expiredAt) {
+    const diff = Number(expiredAt || 0) - Date.now();
+    if (diff <= 0) return null;
+    if (diff >= 86400000) return '영혼이 ' + Math.floor(diff / 86400000) + '일 후 빠져나갑니다.';
+    if (diff >= 3600000) return '영혼이 ' + Math.floor(diff / 3600000) + '시간 후 빠져나갑니다.';
+    if (diff >= 60000) return '영혼이 ' + Math.floor(diff / 60000) + '분 후 빠져나갑니다.';
+    if (diff >= 1000) return '영혼이 ' + Math.floor(diff / 1000) + '초 후 빠져나갑니다.';
+    return null;
+}
+
 function openEquipmentModal(eq) {
     const title = eq.name + (eq.level > 0 ? ' +' + eq.level : '');
     const sub = eq.rarity + ' · ' + eq.typeLabel;
@@ -184,6 +194,10 @@ function openEquipmentModal(eq) {
     const thumb = equipmentThumb(eq);
     thumb.classList.add('modal-equip-thumb');
     $('#modalBody').prepend(thumb);
+    if (eq.soul) {
+        const soulText = formatSoulRemaining(eq.soul.expiredAt);
+        if (soulText) $('#modalBody').appendChild(el('div', { class: 'stat-line', style: 'opacity:0.85;font-style:italic' }, soulText));
+    }
     const potBlock = potentialBlockNode(eq.potentialDisplay);
     if (potBlock) $('#modalBody').appendChild(potBlock);
 }
