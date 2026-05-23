@@ -1974,9 +1974,9 @@ function formatStatPointStatus(user) {
     return lines.join('\n');
 }
 
-function enterField(user, fieldName, options) {
+function enterField(user, fieldName, options, channel) {
     const worldBoss = findWorldBossByName(fieldName);
-    if (worldBoss) return enterWorldBossField(user, worldBoss, options);
+    if (worldBoss) return enterWorldBossField(user, worldBoss, options, channel);
     const dungeon = findDungeonByName(fieldName);
     if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
     const level = Number(user.level || 1);
@@ -2020,8 +2020,30 @@ function leaveField(user) {
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
 }
 
-function enterWorldBossField(user, boss, options) {
+function getWorldBossChannelId(channel) {
+    if (!channel) return null;
+    return typeof channel.channelId != 'undefined' ? String(channel.channelId) : null;
+}
+
+function getActiveWorldBossUserInChannel(channel, currentUserName) {
+    const channelId = getWorldBossChannelId(channel);
+    if (!channelId) return null;
+    for (const userName of Object.keys(worldBossChannels)) {
+        if (currentUserName && userName == currentUserName) continue;
+        if (!worldBossSkillTimers[userName]) continue;
+        if (getWorldBossChannelId(worldBossChannels[userName]) == channelId) return userName;
+    }
+    return null;
+}
+
+function formatWorldBossChannelBusyMessage(userName) {
+    return '❌ 이 채널에서는 이미 ' + userName + '님이 월드보스를 진행 중입니다.';
+}
+
+function enterWorldBossField(user, boss, options, channel) {
     if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
+    const activeUser = getActiveWorldBossUserInChannel(channel, user.name);
+    if (activeUser) return formatWorldBossChannelBusyMessage(activeUser);
     ensureWorldBossRevived(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
@@ -2064,6 +2086,11 @@ function enterWorldBossField(user, boss, options) {
 function confirmWorldBossSkill(user, indexArg, channel) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '월드보스스킬선택') return '❌ 진행 중인 월드보스 입장이 없습니다.';
+    const activeUser = getActiveWorldBossUserInChannel(channel, user.name);
+    if (activeUser) {
+        user.pendingAction = null;
+        return formatWorldBossChannelBusyMessage(activeUser);
+    }
     const index = Number(indexArg);
     if (!Number.isInteger(index) || index < 1 || index > (pending.candidates || []).length) return '❌ /RPGenius 월드보스선택 [1/2/3]';
     const skillId = Number(pending.candidates[index - 1]);
@@ -6387,7 +6414,7 @@ async function handleRPGCommand(data, channel) {
             reply('❌ /RPGenius 필드입장 [필드명]');
             return true;
         }
-        const result = enterField(user, fieldName);
+        const result = enterField(user, fieldName, null, channel);
         await user.save();
         reply(result);
         return true;
@@ -6400,7 +6427,7 @@ async function handleRPGCommand(data, channel) {
         }
         const fieldName = user.pendingAction.name;
         user.pendingAction = null;
-        const result = enterField(user, fieldName, { confirmed: true });
+        const result = enterField(user, fieldName, { confirmed: true }, channel);
         await user.save();
         reply(result);
         return true;
