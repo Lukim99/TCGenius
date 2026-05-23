@@ -2834,7 +2834,6 @@ function useWorldBossChosenSkill(user, skillName) {
     }
     lines.push('- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')');
     if (result) appendWorldBossStatusLines(lines, user, boss, result);
-    else lines.push('- 💧 ' + comma(user.mp) + '/' + comma(maxMp) + ' / ❤️ ' + comma(user.hp));
     if (result && Number(result.after) <= 0) finalizeWorldBossDefeat(user, boss, lines);
     else if (!isAcceleration) setWorldBossNextActionAt(user);
     return lines.join('\n');
@@ -2842,9 +2841,9 @@ function useWorldBossChosenSkill(user, skillName) {
 
 function appendWorldBossStatusLines(lines, user, boss, result) {
     const state = getWorldBossState(boss.name);
-    lines.push('- 보스 HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
+    lines.push('- ' + boss.name + ' HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
     const stats = calculateUserStats(user);
-    lines.push('- 내 HP ' + comma(Math.max(0, Number(user.hp || 0))) + '/' + comma(Number(stats.hp || 0)));
+    lines.push('- 남은 체력' + comma(Math.max(0, Number(user.hp || 0))) + '/' + comma(Number(stats.hp || 0)));
 }
 
 function finalizeWorldBossDefeat(user, boss, lines) {
