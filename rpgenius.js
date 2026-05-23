@@ -62,14 +62,14 @@ const FRAGMENT_TIERS = {
         chance: 0.003,
         minLevel: 51, maxLevel: 96,
         rewards: [
-            { weight: 60,  type: 'gold', amount: 100000 },
-            { weight: 25,  type: 'gold', amount: 200000 },
-            { weight: 5,   type: 'gold', amount: 300000 },
-            { weight: 1,   type: 'gold', amount: 500000 },
-            { weight: 5,   type: 'item', name: '7성 카드팩', count: 1 },
-            { weight: 1,   type: 'item', name: '8성 카드팩', count: 1 },
-            { weight: 2.5, type: 'item', name: '지니어스의 열쇠', count: 10 },
-            { weight: 0.5, type: 'item', name: '지니어스의 열쇠', count: 30 }
+            { weight: 120,  type: 'gold', amount: 100000 },
+            { weight: 50,  type: 'gold', amount: 200000 },
+            { weight: 10,   type: 'gold', amount: 300000 },
+            { weight: 2,   type: 'gold', amount: 500000 },
+            { weight: 10,   type: 'item', name: '7성 카드팩', count: 1 },
+            { weight: 2,   type: 'item', name: '8성 카드팩', count: 1 },
+            { weight: 5, type: 'item', name: '지니어스의 열쇠', count: 10 },
+            { weight: 1, type: 'item', name: '지니어스의 열쇠', count: 30 }
         ]
     },
     high: {
@@ -77,15 +77,15 @@ const FRAGMENT_TIERS = {
         chance: 0.002,
         minLevel: 101, maxLevel: 146,
         rewards: [
-            { weight: 70,  type: 'gold', amount: 200000 },
-            { weight: 10,  type: 'item', name: '강화석', count: 3000 },
-            { weight: 10,  type: 'gold', amount: 400000 },
-            { weight: 3,   type: 'item', name: '지니어스의 열쇠', count: 10 },
-            { weight: 2,   type: 'gold', amount: 600000 },
-            { weight: 1,   type: 'item', name: '지니어스의 열쇠', count: 30 },
-            { weight: 1,   type: 'gold', amount: 1000000 },
-            { weight: 1.5, type: 'item', name: '8성 카드팩', count: 1 },
-            { weight: 0.5, type: 'item', name: '9성 카드팩', count: 1 }
+            { weight: 140,  type: 'gold', amount: 200000 },
+            { weight: 20,  type: 'item', name: '강화석', count: 3000 },
+            { weight: 20,  type: 'gold', amount: 400000 },
+            { weight: 12,   type: 'item', name: '지니어스의 열쇠', count: 10 },
+            { weight: 4,   type: 'gold', amount: 600000 },
+            { weight: 2,   type: 'item', name: '지니어스의 열쇠', count: 30 },
+            { weight: 2,   type: 'gold', amount: 1000000 },
+            { weight: 3, type: 'item', name: '8성 카드팩', count: 1 },
+            { weight: 1, type: 'item', name: '9성 카드팩', count: 1 }
         ]
     }
 };
@@ -848,9 +848,9 @@ function rerollEquipmentPotential(user, numberArg) {
         '- 소모 골드: 🪙 ' + comma(cost),
         '- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier)
     ];
-    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? ' (골드 50%, 승급 확률/실패 누적 2배)' : ' (골드 50%)'));
-    if (upgraded) lines.push('- 티어 상승' + (guaranteed ? ' (확정)' : ''));
-    else if (upgrade) lines.push('- 승급 실패 누적: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
+    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? ' ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : ' ㄴ 골드 소모 50% 감소'));
+    if (upgraded) lines.push('- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier) + (guaranteed ? ' (확정)' : ''));
+    else if (upgrade) lines.push('- 승급 확정까지: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
     lines.push('', ...formatPotentialLines(potential));
     return lines.join('\n');
 }
@@ -4177,14 +4177,29 @@ function consumeFragment(user) {
     const tier = String(user.pendingFragment);
     const cfg = FRAGMENT_TIERS[tier];
     if (!cfg) { user.pendingFragment = null; return '❌ 알 수 없는 편린입니다. 데이터를 초기화했습니다.'; }
-    const totalWeight = cfg.rewards.reduce((sum, r) => sum + Number(r.weight || 0), 0);
+    if (!user.fragmentCounts || typeof user.fragmentCounts != 'object') user.fragmentCounts = {};
+    if (!Array.isArray(user.fragmentCounts[tier])) user.fragmentCounts[tier] = [];
+    const counts = user.fragmentCounts[tier];
+    while (counts.length < cfg.rewards.length) counts.push(0);
+    const computeEffective = () => cfg.rewards.map((r, i) => Math.max(0, Number(r.weight || 0) - Number(counts[i] || 0)));
+    let effective = computeEffective();
+    let totalWeight = effective.reduce((a, b) => a + b, 0);
+    if (totalWeight <= 0) {
+        for (let i = 0; i < counts.length; i++) counts[i] = 0;
+        effective = computeEffective();
+        totalWeight = effective.reduce((a, b) => a + b, 0);
+    }
     if (totalWeight <= 0) { user.pendingFragment = null; return '❌ 편린 보상 데이터가 잘못되었습니다.'; }
     let roll = Math.random() * totalWeight;
-    let chosen = cfg.rewards[cfg.rewards.length - 1];
-    for (const r of cfg.rewards) {
-        roll -= Number(r.weight || 0);
-        if (roll <= 0) { chosen = r; break; }
+    let chosenIdx = effective.length - 1;
+    for (let i = 0; i < effective.length; i++) {
+        roll -= effective[i];
+        if (roll <= 0) { chosenIdx = i; break; }
     }
+    const chosen = cfg.rewards[chosenIdx];
+    counts[chosenIdx] = Number(counts[chosenIdx] || 0) + 1;
+    const remaining = computeEffective().reduce((a, b) => a + b, 0);
+    if (remaining <= 0) for (let i = 0; i < counts.length; i++) counts[i] = 0;
     const lines = ['✨ ' + cfg.name + '을(를) 사용했습니다.', '', '[ 획득 보상 ]'];
     if (chosen.type == 'gold') {
         const amount = Number(chosen.amount || 0);
@@ -5765,6 +5780,7 @@ class RPGUser {
         this.fishingNetLimit = 200;
         this.pendingAction = null;
         this.pendingFragment = null;
+        this.fragmentCounts = {};
         this.goldMineDaily = null;
         this.cardCombineCounts = {};
         this.cardPackCombineCounts = {};
@@ -5802,6 +5818,7 @@ class RPGUser {
         normalizeFishingData(this);
         if (typeof this.pendingAction == 'undefined') this.pendingAction = null;
         if (typeof this.pendingFragment == 'undefined') this.pendingFragment = null;
+        if (!this.fragmentCounts || typeof this.fragmentCounts != 'object') this.fragmentCounts = {};
         if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
