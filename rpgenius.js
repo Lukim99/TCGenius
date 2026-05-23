@@ -2022,11 +2022,6 @@ function leaveField(user) {
 
 function enterWorldBossField(user, boss, options) {
     if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
-    const stats = calculateUserStats(user);
-    const maxHp = Number(stats.hp || 0);
-    const maxMp = Number(stats.mp || 0);
-    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-    if (hp <= 1) return '❌ 체력이 1 이하일 때는 필드에 입장할 수 없습니다.';
     ensureWorldBossRevived(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
@@ -2563,12 +2558,9 @@ function useBasicAttackInField(user, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
-    if (user.field.worldBoss) {
-        ensureWorldBossSkillTimer(user, channel);
-        return useWorldBossBasicAttack(user);
-    }
-    const dungeon = findDungeonByName(user.field.name);
-    if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
+    const context = getFieldCombatContext(user);
+    if (context.error) return context.error;
+    if (context.type == 'worldBoss') ensureWorldBossSkillTimer(user, channel);
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const buffs = getFieldBuffs(user);
@@ -2579,16 +2571,62 @@ function useBasicAttackInField(user, channel) {
     const extra = {};
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     if (nextBasicBonus > 0) extra.notice = '자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%';
-    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
-    return buildHuntResult(user, dungeon, rawDamage, extra);
+    return applyFieldDamageAction(user, context, rawDamage, extra, 'basic', null);
+}
+
+function getFieldCombatContext(user) {
+    if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
+    if (user.field.worldBoss) {
+        const boss = findWorldBossByName(user.field.name);
+        if (!boss) return { error: '❌ 월드보스 데이터를 찾을 수 없습니다.' };
+        return { type: 'worldBoss', boss: boss };
+    }
+    const dungeon = findDungeonByName(user.field.name);
+    if (!dungeon) return { error: '❌ 현재 필드를 찾을 수 없습니다.' };
+    return { type: user.field.elite ? 'elite' : 'normal', dungeon: dungeon };
+}
+
+function applyFieldDamageAction(user, context, rawDamage, extra, actionType, skill) {
+    if (context.type == 'worldBoss') return applyWorldBossDamageAction(user, context.boss, rawDamage, extra, actionType, skill);
+    if (context.type == 'elite') return buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
+    return buildHuntResult(user, context.dungeon, rawDamage, extra);
+}
+
+function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionType, skill) {
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const damage = actionType == 'skill' ? Number(rawDamage || 0) * (1 + Number(slotEffects.damageBonus || 0)) : rawDamage;
+    const result = dealDamageToWorldBoss(user, boss, damage, extra || {});
+    const prefix = actionType == 'skill' && skill ? '✨ ' + skill.name + '! ' : '⚔️ ';
+    const lines = formatWorldBossDamageLines(boss, result, prefix);
+    if (extra && extra.notice) lines.push('- ' + extra.notice);
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (Number(result.bonusTripleZero || 0) > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(result.bonusTripleZero));
+    if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, Number(stats.hp || 0), damage * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
+    if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, Number(stats.hp || 0), Number(extra.skillHpRecovery || 0), stats, lines);
+    if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
+    if (!extra || !extra.skipPassiveMpRecovery) {
+        const passiveMp = actionType == 'skill' ? getPassiveMpRecovery(user) : 0;
+        if (passiveMp > 0) applySkillMpRecovery(user, Number(stats.mp || 0), passiveMp, stats, lines);
+    }
+    appendWorldBossStatusLines(lines, user, boss, result);
+    if (Number(result.after) <= 0) finalizeWorldBossDefeat(user, boss, lines);
+    setWorldBossNextActionAt(user);
+    return lines.join('\n');
 }
 
 function useSkillInField(user, skillName, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     if (user.field.worldBoss) {
         ensureWorldBossSkillTimer(user, channel);
+        if (skillName && findUsableSkill(user, skillName)) return executeMainCardSkillInField(user, skillName);
         return useWorldBossChosenSkill(user, skillName);
     }
+    return executeMainCardSkillInField(user, skillName);
+}
+
+function executeMainCardSkillInField(user, skillName) {
+    if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
     if (!user.field.skillCooldowns) user.field.skillCooldowns = {};
@@ -2597,6 +2635,11 @@ function useSkillInField(user, skillName, channel) {
     const cooldownEnd = Number(user.field.skillCooldowns[skillData.skill.name] || 0);
     if (now < cooldownEnd) return '❌ 스킬 쿨타임입니다. (' + Math.ceil((cooldownEnd - now) / 1000) + '초)';
 
+    const context = getFieldCombatContext(user);
+    if (context.error) return context.error;
+    const isWorldBoss = context.type == 'worldBoss';
+    const dungeon = context.dungeon;
+    const boss = context.boss;
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const maxMp = Number(stats.mp || 0);
@@ -2605,8 +2648,6 @@ function useSkillInField(user, skillName, channel) {
     if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.mp = mp - mpCost;
 
-    const dungeon = findDungeonByName(user.field.name);
-    if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const star = Number(user.main_card && user.main_card.star || 0);
     let multiplier = getSkillValue(skillData.skill, 0, star);
     const extra = {};
@@ -2620,8 +2661,9 @@ function useSkillInField(user, skillName, channel) {
         applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
         const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
         user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
-        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
     }
     if (skillData.skill.name == '자인') getFieldBuffs(user).nextBasicDamageBonus = { value: getSkillValue(skillData.skill, 1, star) };
@@ -2656,9 +2698,8 @@ function useSkillInField(user, skillName, channel) {
         : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
     const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
     user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-    getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
-    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
-    return buildHuntResult(user, dungeon, rawDamage, extra);
+    if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+    return applyFieldDamageAction(user, context, rawDamage, extra, 'skill', skillData.skill);
 }
 
 function setWorldBossNextActionAt(user) {
@@ -2720,26 +2761,6 @@ function formatWorldBossDamageLines(boss, result, prefix) {
         return formatHitDetailLines(result.hitResult, head + target, '피해를 입혔습니다!');
     }
     return [head + target + comma(result.damage) + (Number(result.trueDamageCount || 0) > 0 ? ' 고정' : '') + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
-}
-
-function useWorldBossBasicAttack(user) {
-    const boss = findWorldBossByName(user.field.name);
-    if (!boss) return '❌ 월드보스 데이터를 찾을 수 없습니다.';
-    const stats = calculateUserStats(user);
-    const slotEffects = calculateCardSlotEffects(user);
-    const buffs = getFieldBuffs(user);
-    const nextBasicBuff = buffs.nextBasicDamageBonus;
-    const nextBasicBonus = nextBasicBuff && Number(nextBasicBuff.value || 0) > 0 ? Number(nextBasicBuff.value || 0) : 0;
-    if (nextBasicBuff) delete buffs.nextBasicDamageBonus;
-    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus));
-    const result = dealDamageToWorldBoss(user, boss, rawDamage, {});
-    const lines = formatWorldBossDamageLines(boss, result, '⚔️ ');
-    if (Number(result.bonusTripleZero || 0) > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(result.bonusTripleZero));
-    if (nextBasicBonus > 0) lines.push('- 자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%');
-    appendWorldBossStatusLines(lines, user, boss, result);
-    if (Number(result.after) <= 0) finalizeWorldBossDefeat(user, boss, lines);
-    setWorldBossNextActionAt(user);
-    return lines.join('\n');
 }
 
 function useWorldBossChosenSkill(user, skillName) {
@@ -2957,8 +2978,8 @@ async function runWorldBossSkillTick(userName, bossName) {
             clearWorldBossSkillTimer(userName);
             latest.field = null;
             latest.hp = 1;
-            tickLines.push('- 내 HP 0/' + comma(Number(userStats.hp || 0)));
-            tickLines.push('', '💀 ' + boss.name + '에게 패배했습니다.');
+            tickLines.push('- 내 HP 1/' + comma(Number(userStats.hp || 0)));
+            tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
         }
     } else {
         tickLines.push('- 내 HP ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
