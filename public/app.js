@@ -956,16 +956,16 @@ function rankRow(entry, isMe, valueFormatter) {
 
 function renderRanking() {
     if (!rankingData) return;
-    const list = rankingTab === 'cp' ? rankingData.cp : rankingData.exp;
-    const me = rankingTab === 'cp' ? rankingData.me.cp : rankingData.me.exp;
-    const valueFormatter = rankingTab === 'cp' ? v => '⚔️ ' + comma(v) : v => 'XP ' + comma(v);
+    const list = rankingTab === 'cp' ? rankingData.cp : rankingTab === 'exp' ? rankingData.exp : rankingData.worldBoss;
+    const me = rankingTab === 'cp' ? rankingData.me.cp : rankingTab === 'exp' ? rankingData.me.exp : rankingData.me.worldBoss;
+    const valueFormatter = rankingTab === 'cp' ? v => '⚔️ ' + comma(v) : rankingTab === 'exp' ? v => 'XP ' + comma(v) : v => '피해 ' + comma(v);
     const meBox = $('#rankMe');
     meBox.innerHTML = '';
     if (me) {
         meBox.className = 'rank-me';
         meBox.appendChild(el('div', { class: 'rk' }, comma(me.rank) + '위'));
         meBox.appendChild(el('div', { class: 'nm' }, me.name, ' ', el('span', { class: 'lv' }, 'Lv. ' + comma(me.level))));
-        meBox.appendChild(el('div', null, '/ ' + comma(rankingData.total) + '명'));
+        meBox.appendChild(el('div', null, '/ ' + comma(rankingTab === 'worldBoss' ? list.length : rankingData.total) + '명'));
         meBox.appendChild(el('div', { class: 'vl' }, valueFormatter(me.value)));
     } else {
         meBox.className = '';

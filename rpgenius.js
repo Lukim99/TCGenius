@@ -2254,6 +2254,23 @@ function ensureWorldBossRevived(boss) {
     return state;
 }
 
+function getWorldBossContributionRanking() {
+    const totals = {};
+    getWorldBossList().forEach(boss => {
+        const state = ensureWorldBossRevived(boss);
+        Object.entries(state.contributions || {}).forEach(([name, damage]) => {
+            const value = Number(damage || 0);
+            if (value <= 0) return;
+            totals[name] = Number(totals[name] || 0) + value;
+        });
+    });
+    return Object.entries(totals)
+        .map(([name, value]) => ({ name, value }))
+        .filter(entry => Number(entry.value || 0) > 0)
+        .sort((a, b) => Number(b.value || 0) - Number(a.value || 0) || a.name.localeCompare(b.name, 'ko-KR'))
+        .map((entry, i) => ({ rank: i + 1, name: entry.name, value: Math.round(Number(entry.value || 0)) }));
+}
+
 function getWorldBossDailyState(user) {
     const today = getKoreanDateKey(new Date());
     if (!user.worldBossDaily || user.worldBossDaily.date != today) user.worldBossDaily = { date: today, count: 0 };
@@ -6812,5 +6829,6 @@ module.exports = {
     getCardTicketCost,
     formatCurrentSkillDesc,
     formatCooltime,
+    getWorldBossContributionRanking,
     calculateCardSlotEffects
 };
