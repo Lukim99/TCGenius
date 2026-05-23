@@ -14,6 +14,7 @@ const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCa
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
+const POTENTIAL_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Potential.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const BUNDLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Bundle.json');
 const RECIPE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Recipe.json');
@@ -187,6 +188,10 @@ function readJson(filePath, fallback) {
     }
 }
 
+function clonePlain(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function formatValue(format) {
     const value = Number(format && format.base || 0);
     if (format && format.type == 'flat') return value.toString();
@@ -346,7 +351,7 @@ function formatStatValue(key, value) {
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
-        'takenDamage%', 'damageBonus%'
+        'takenDamage%', 'damageBonus%', 'finalDamage%', 'bossDmg%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -436,7 +441,11 @@ function formatEquipmentStatLines(equipment) {
         cmb: '연격 확률',
         maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임',
-        skillTrueDmg: '스킬 사용 시 추가 고정 피해'
+        skillTrueDmg: '스킬 사용 시 추가 고정 피해',
+        cardStarAtk: '카드 1성당 공격력',
+        attackHpRecovery: '공격 시 10% 확률로 HP 회복',
+        attackMpRecovery: '공격 시 10% 확률로 MP 회복',
+        level9Atk: '레벨 9당 공격력'
     };
     const plusStatNames = {
         atk: '최종 공격력',
@@ -463,7 +472,9 @@ function formatEquipmentStatLines(equipment) {
         skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가',
-        damageBonus: '일반 몬스터에게 주는 피해 증가'
+        damageBonus: '일반 몬스터에게 주는 피해 증가',
+        finalDamage: '최종 피해',
+        bossDmg: '보스 몬스터에게 주는 피해 증가'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -579,12 +590,211 @@ function formatEquipmentBaseStatLines(equipment, level) {
 function SUPPORT_STAT_LABELS_OR_FALLBACK() { return typeof SUPPORT_STAT_LABELS != 'undefined' ? SUPPORT_STAT_LABELS : {}; }
 function SUPPORT_PLUS_STAT_LABELS_OR_FALLBACK() { return typeof SUPPORT_PLUS_STAT_LABELS != 'undefined' ? SUPPORT_PLUS_STAT_LABELS : {}; }
 
+function getPotentialRarityLabel(rarity) {
+    return { rare: '레어', epic: '에픽', unique: '유니크', legendary: '레전더리', bronze: '브론즈', silver: '실버', gold: '골드', platinum: '플레티넘' }[rarity] || rarity || '레어';
+}
+
+function getPotentialRarityKey(label) {
+    return { '레어': 'rare', '에픽': 'epic', '유니크': 'unique', '레전더리': 'legendary', rare: 'rare', epic: 'epic', unique: 'unique', legendary: 'legendary' }[label] || 'rare';
+}
+
+const POTENTIAL_REROLL_COST = {
+    weapon: { rare: 220000, epic: 440000, unique: 880000, legendary: 1760000 },
+    armor: { rare: 180000, epic: 360000, unique: 720000, legendary: 1440000 },
+    accessory: { rare: 200000, epic: 400000, unique: 800000, legendary: 1600000 },
+    support: { rare: 220000, epic: 440000, unique: 880000, legendary: 1760000 }
+};
+
+const POTENTIAL_UPGRADE = {
+    rare: { next: 'epic', rate: 0.02381, guarantee: 62 },
+    epic: { next: 'unique', rate: 0.009804, guarantee: 152 },
+    unique: { next: 'legendary', rate: 0.007, guarantee: 214 }
+};
+const POTENTIAL_JEWEL_ITEM_NAME = '쥬얼';
+
+function addPotentialStats(stat, plusStat, potential) {
+    (potential && Array.isArray(potential.option) ? potential.option : []).forEach(option => {
+        addStats(stat, option && option.stat || {});
+        addStats(plusStat, option && option.plusStat || {});
+    });
+}
+
+function applyPotentialDerivedStats(stats, user) {
+    if (Number(stats.cardStarAtk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.cardStarAtk || 0) * (Number(user.main_card && user.main_card.star || 0) + 1);
+    if (Number(stats.level9Atk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.level9Atk || 0) * Math.floor(Number(user.level || 1) / 9);
+}
+
+function getPotentialData() {
+    return readJson(POTENTIAL_PATH, {});
+}
+
+function pickPotentialGroup(type, rarity) {
+    const data = getPotentialData();
+    const table = data[type];
+    const groups = table && Array.isArray(table[rarity]) ? table[rarity] : [];
+    if (groups.length == 0) return null;
+    const total = groups.reduce((sum, group) => sum + Number(group.rate || 0), 0);
+    let roll = Math.random() * total;
+    for (const group of groups) {
+        roll -= Number(group.rate || 0);
+        if (roll < 0) return group;
+    }
+    return groups[groups.length - 1];
+}
+
+function getPotentialOptionPoolKey(rarity, index) {
+    const key = getPotentialRarityKey(rarity);
+    if (key == 'rare') return 'bronze';
+    if (key == 'epic') return index == 0 || Math.random() < 0.047 ? 'silver' : 'bronze';
+    if (key == 'unique') return index == 0 || Math.random() < 0.019 ? 'gold' : 'silver';
+    if (key == 'legendary') return index == 0 || Math.random() < 0.005 ? 'platinum' : 'gold';
+    return 'bronze';
+}
+
+function rollPotentialOption(type, poolKey) {
+    const group = pickPotentialGroup(type, poolKey);
+    const rolls = Array.isArray(group && group.roll) ? group.roll : [];
+    if (rolls.length == 0) return null;
+    return clonePlain(rolls[randomInt(0, rolls.length - 1)]);
+}
+
+function rollEquipmentPotential(type, rarity) {
+    const options = [];
+    const tier = getPotentialRarityKey(rarity);
+    for (let i = 0; i < 3; i++) {
+        const rolled = rollPotentialOption(type, getPotentialOptionPoolKey(tier, i));
+        if (!rolled) return null;
+        options.push(rolled);
+    }
+    return { rarity: getPotentialRarityLabel(tier), option: options, failCount: 0 };
+}
+
+function getPotentialAwakenTargets(user) {
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            const equipment = getEquipmentData(type, entry.equip.id);
+            if (!equipment || entry.equip.potential) return null;
+            if (!getPotentialData()[type]) return null;
+            return { number: index + 1, entry, type, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatPotentialAwakenTargetList(targets) {
+    const lines = ['[ 잠재능력 부여 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const lvl = Number(target.entry.equip.level || 0);
+        const lockMark = target.entry.equip.locked ? ' 🔒' : '';
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+    });
+    return lines.join('\n');
+}
+
+function awakenEquipmentPotential(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '잠재능력부여') return '❌ 진행 중인 잠재능력 부여가 없습니다.';
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    if (selected.equip.potential) return '❌ 이미 잠재능력이 부여된 장비입니다.';
+    if (!getPotentialData()[type]) return '❌ 해당 장비 타입에는 잠재능력을 부여할 수 없습니다.';
+    const potential = rollEquipmentPotential(type);
+    if (!potential) return '❌ 잠재능력 데이터를 찾을 수 없습니다.';
+    selected.equip.potential = potential;
+    user.pendingAction = null;
+    const lvl = Number(selected.equip.level || 0);
+    return ['✅ 잠재능력을 부여했습니다.', '- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : ''), '', ...formatPotentialLines(potential)].join('\n');
+}
+
+function getPotentialRerollCost(type, rarity) {
+    const tier = getPotentialRarityKey(rarity);
+    return Number(POTENTIAL_REROLL_COST[type] && POTENTIAL_REROLL_COST[type][tier] || 0);
+}
+
+function getItemIdByName(name) {
+    const items = getDataCache('Item', []);
+    return items.findIndex(item => item && item.name == name);
+}
+
+function rerollEquipmentPotential(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 잠재능력 재설정 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    if (!selected.equip.potential) return '❌ 잠재능력이 부여된 장비만 재설정할 수 있습니다.';
+    if (!getPotentialData()[type]) return '❌ 해당 장비 타입에는 잠재능력을 재설정할 수 없습니다.';
+    const currentTier = getPotentialRarityKey(selected.equip.potential.rarity);
+    const baseCost = getPotentialRerollCost(type, currentTier);
+    if (baseCost <= 0) return '❌ 잠재능력 재설정 비용 정보를 찾을 수 없습니다.';
+    const jewelItemId = getItemIdByName(POTENTIAL_JEWEL_ITEM_NAME);
+    const useJewel = jewelItemId != -1 && getInventoryItemCount(user, jewelItemId) > 0;
+    const cost = useJewel ? Math.floor(baseCost / 2) : baseCost;
+    if (Number(user.gold || 0) < cost) return '❌ 골드가 부족합니다.\n- 필요 골드: 🪙 ' + comma(cost) + '\n- 보유 골드: 🪙 ' + comma(user.gold || 0);
+
+    user.gold = Number(user.gold || 0) - cost;
+    if (useJewel && !removeInventoryItem(user, jewelItemId, 1)) {
+        user.gold = Number(user.gold || 0) + cost;
+        return '❌ ' + POTENTIAL_JEWEL_ITEM_NAME + ' 소모에 실패했습니다.';
+    }
+    let nextTier = currentTier;
+    let upgraded = false;
+    let guaranteed = false;
+    const upgrade = POTENTIAL_UPGRADE[currentTier];
+    const previousFailCount = Number(selected.equip.potential.failCount || 0);
+    const jewelUpgradeBonus = useJewel && currentTier != 'unique';
+    const failIncrement = jewelUpgradeBonus ? 2 : 1;
+    if (upgrade) {
+        guaranteed = previousFailCount + failIncrement >= Number(upgrade.guarantee || 0);
+        upgraded = guaranteed || Math.random() < Number(upgrade.rate || 0) * (jewelUpgradeBonus ? 2 : 1);
+        if (upgraded) nextTier = upgrade.next;
+    }
+    const potential = rollEquipmentPotential(type, nextTier);
+    if (!potential) {
+        user.gold = Number(user.gold || 0) + cost;
+        if (useJewel) addInventoryItem(user, jewelItemId, 1);
+        return '❌ 잠재능력 데이터를 찾을 수 없어 골드를 반환했습니다.';
+    }
+    potential.failCount = upgrade && !upgraded ? previousFailCount + failIncrement : 0;
+    selected.equip.potential = potential;
+    const lvl = Number(selected.equip.level || 0);
+    const lines = [
+        '✅ 잠재능력을 재설정했습니다.',
+        '- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : ''),
+        '- 소모 골드: 🪙 ' + comma(cost),
+        '- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier)
+    ];
+    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? ' (골드 50%, 승급 확률/실패 누적 2배)' : ' (골드 50%)'));
+    if (upgraded) lines.push('- 티어 상승' + (guaranteed ? ' (확정)' : ''));
+    else if (upgrade) lines.push('- 승급 실패 누적: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
+    lines.push('', ...formatPotentialLines(potential));
+    return lines.join('\n');
+}
+
+function formatPotentialLines(potential) {
+    if (!potential || !Array.isArray(potential.option) || potential.option.length == 0) return [];
+    const text = formatEquipmentStatLines({
+        stat: potential.option.reduce((acc, option) => { addStats(acc, option && option.stat || {}); return acc; }, {}),
+        plusStat: potential.option.reduce((acc, option) => { addStats(acc, option && option.plusStat || {}); return acc; }, {})
+    });
+    return ['[잠재능력] ' + getPotentialRarityLabel(potential.rarity)].concat(String(text || '').split('\n').filter(Boolean));
+}
+
 function formatCurrentEquipmentStatLines(equipment, level, rolled, context) {
     const stat = getEquipmentStatsAtLevel(equipment, level);
     const plusStat = getEquipmentPlusStatsAtLevel(equipment, level);
     const resolved = resolveRolledStats(equipment, level, rolled);
     addStats(stat, resolved.stat);
     addStats(plusStat, resolved.plusStat);
+    addPotentialStats(stat, plusStat, context && context.potential);
     if (context && context.mainCardStar != null) {
         const dyn = getEquipmentDynamicBonusAtLevel(equipment, level);
         const entry = dyn[String(context.mainCardStar)];
@@ -1395,6 +1605,7 @@ function calculateUserStats(user) {
         if (data && isEquipmentEffectActive(user, data)) {
             addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
+            addPotentialStats(stats, plusStats, entry[1].potential);
             if (entry[0] == 'weapon' && data.name == DESTINY_AION_NAME) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
         }
     });
@@ -1405,6 +1616,7 @@ function calculateUserStats(user) {
         if (data && isEquipmentEffectActive(user, data)) {
             addStats(stats, getEquipmentStatsAtLevel(data, equip.level));
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, equip.level));
+            addPotentialStats(stats, plusStats, equip.potential);
         }
     });
     const support = user.equipments && user.equipments.support;
@@ -1417,6 +1629,7 @@ function calculateUserStats(user) {
             const resolved = resolveRolledStats(data, level, support.rolled);
             addStats(stats, resolved.stat);
             addStats(plusStats, resolved.plusStat);
+            addPotentialStats(stats, plusStats, support.potential);
             const dyn = getEquipmentDynamicBonusAtLevel(data, level);
             const star = String(Number(user.main_card && user.main_card.star || 0));
             if (dyn[star]) {
@@ -1430,11 +1643,12 @@ function calculateUserStats(user) {
         addStats(stats, fashion.option && fashion.option.stat || {});
         addStats(plusStats, fashion.option && fashion.option.plusStat || {});
     }
+    applyPotentialDerivedStats(stats, user);
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -1449,6 +1663,8 @@ const CP_WEIGHTS = {
     AFTER_SKILL_RATIO: 0.6,
     DAMAGE_BONUS_RATIO: 0.7,
     ELITE_DMG_RATIO: 0.3,
+    BOSS_DMG_RATIO: 0.3,
+    FINAL_DAMAGE_RATIO: 0.9,
     PEN_DIVISOR: 200,
     DEF_REDUCTION_RATIO: 0.5,
     TRIPLE_ZERO_RATIO: 0.15,
@@ -1493,7 +1709,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
-    const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO;
+    const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
     const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
@@ -1506,7 +1722,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const mAvoid = 1 / (1 - Math.min(W.AVOID_CAP, Math.max(0, Number(stats.avd || 0))));
     const mMitigate = 1 / (1 - Math.min(W.MITIGATE_CAP, Math.max(0, Number(slot.hpDamageReduction || 0))));
     const mTakenDamage = 1 / Math.max(1 - W.TAKEN_DAMAGE_CAP, 1 + Number(stats.takenDamage || 0));
-    const mRecover = 1 + (Number(slot.killRecoveryChance || 0) + Number(stats.recoveryEfficiency || 0) * W.RECOVERY_EFFICIENCY_RATIO) * W.RECOVERY_RATIO;
+    const mRecover = 1 + (Number(slot.killRecoveryChance || 0) + Number(stats.recoveryEfficiency || 0) * W.RECOVERY_EFFICIENCY_RATIO + (Number(stats.attackHpRecovery || 0) / Math.max(hp, 1) + Number(stats.attackMpRecovery || 0) / Math.max(mp, 1)) * 0.1) * W.RECOVERY_RATIO;
     const mCritDef = 1 / (1 - Math.min(W.MITIGATE_CAP, critDef));
     const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * W.DEFENSE_SCALE;
 
@@ -1774,7 +1990,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let trueDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     for (let i = 0; i < hitCount; i++) {
-        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0));
+        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
         const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
         let hitDamage = isTrueDamage
@@ -1888,6 +2104,11 @@ function applySkillMpRecovery(user, maxMp, amount, stats, lines) {
     user.mp = Math.min(Number(maxMp || 0), beforeMp + applyRecoveryEfficiency(amount, user, stats));
     const recovered = user.mp - beforeMp;
     if (recovered > 0) lines.push('- MP +' + comma(recovered));
+}
+
+function applyAttackPotentialRecovery(user, stats, lines) {
+    if (Math.random() < 0.1 && Number(stats.attackHpRecovery || 0) > 0) applyFlatSkillRecovery(user, Number(stats.hp || 0), Number(stats.attackHpRecovery || 0), stats, lines);
+    if (Math.random() < 0.1 && Number(stats.attackMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(stats.attackMpRecovery || 0), stats, lines);
 }
 
 function applyRecoveryEfficiency(amount, user, stats) {
@@ -2372,6 +2593,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
+    applyAttackPotentialRecovery(user, stats, lines);
     if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
     if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
     if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
@@ -2424,7 +2646,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
-    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus);
+    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
     const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, monster);
     const finalDamage = hitResult.finalDamage;
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
@@ -2467,6 +2689,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (goldMineLimitReached) lines.push('- ⛏️ 오늘은 황금 광산에서 더 이상 사냥할 수 없습니다. (일일 한도 ' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리 도달)');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
+    applyAttackPotentialRecovery(user, stats, lines);
     if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
     if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
     if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
@@ -2782,7 +3005,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
         trueDamageCount = 1;
     } else {
-        hitResult = calculateAttackHitResult(rawDamage, boss.def, stats.pnt, stats, slotEffects, extra, defenderStats);
+        hitResult = calculateAttackHitResult(Number(rawDamage || 0) * (1 + Number(stats.bossDmg || 0)), boss.def, stats.pnt, stats, slotEffects, extra, defenderStats);
         finalDamage = Math.max(0, Math.round(Number(hitResult.finalDamage || 0)));
         isCritical = Number(hitResult.criticalCount || 0) > 0;
         trueDamageCount = Number(hitResult.trueDamageCount || 0);
@@ -3257,6 +3480,8 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
     const level = Number(equip.level || 0);
     const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
     let out = title + (statLines ? '\n' + statLines : '');
+    const potentialLines = formatPotentialLines(equip && equip.potential);
+    if (potentialLines.length > 0) out += '\n' + potentialLines.join('\n');
     if (type == 'support' && user && user.main_card) {
         const star = Number(user.main_card.star || 0);
         const dyn = getEquipmentDynamicBonusAtLevel(data, level);
@@ -4186,6 +4411,7 @@ function autoUnequipInvalidSupport(user) {
             if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
             const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
             if (sup.rolled) entry.rolled = sup.rolled;
+            if (sup.potential) entry.potential = clonePlain(sup.potential);
             if (sup.locked) entry.locked = true;
             user.inventory.equipment.push(entry);
             user.equipments.support = null;
@@ -4231,12 +4457,14 @@ function equipItemByNumber(user, numberArg) {
         const prev = user.equipments.support;
         const equipEntry = { id: target.id, level: Number(target.level || 0) };
         if (target.rolled) equipEntry.rolled = target.rolled;
+        if (target.potential) equipEntry.potential = clonePlain(target.potential);
         if (target.locked) equipEntry.locked = true;
         user.equipments.support = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
             const back = { type: 'support', id: Number(prev.id), level: Number(prev.level || 0) };
             if (prev.rolled) back.rolled = prev.rolled;
+            if (prev.potential) back.potential = clonePlain(prev.potential);
             if (prev.locked) back.locked = true;
             user.inventory.equipment.push(back);
         }
@@ -4246,11 +4474,13 @@ function equipItemByNumber(user, numberArg) {
     if (target.type == 'weapon' || target.type == 'armor') {
         const prev = user.equipments[target.type];
         const equipEntry = { id: target.id, level: Number(target.level || 0) };
+        if (target.potential) equipEntry.potential = clonePlain(target.potential);
         if (target.locked) equipEntry.locked = true;
         user.equipments[target.type] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
             const back = { type: target.type, id: prev.id, level: Number(prev.level || 0) };
+            if (prev.potential) back.potential = clonePlain(prev.potential);
             if (prev.locked) back.locked = true;
             user.inventory.equipment.push(back);
         }
@@ -4273,6 +4503,7 @@ function equipItemByNumber(user, numberArg) {
         }
         if (slotKey == null) return '❌ 장신구 슬롯이 가득 찼습니다. 먼저 다른 장신구를 해제해주세요.';
         const equipEntry = { id: target.id, level: Number(target.level || 0) };
+        if (target.potential) equipEntry.potential = clonePlain(target.potential);
         if (target.locked) equipEntry.locked = true;
         accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
@@ -4294,6 +4525,7 @@ function unequipSupport(user) {
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
     const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
     if (sup.rolled) entry.rolled = sup.rolled;
+    if (sup.potential) entry.potential = clonePlain(sup.potential);
     if (sup.locked) entry.locked = true;
     user.inventory.equipment.push(entry);
     user.equipments.support = null;
@@ -4316,6 +4548,7 @@ function unequipAccessoryByNumber(user, numberArg) {
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
     const entry = { type: 'accessory', id: equipped.id, level: Number(equipped.level || 0) };
+    if (equipped.potential) entry.potential = clonePlain(equipped.potential);
     if (equipped.locked) entry.locked = true;
     user.inventory.equipment.push(entry);
     delete user.equipments.accessory[slotKey];
@@ -5116,8 +5349,9 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '스탯초기화' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -5224,6 +5458,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatSupportRerollList(targets));
+            }
+        }
+        if (item.use == '잠재능력부여') {
+            const targets = getPotentialAwakenTargets(user);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 잠재능력을 부여할 수 있는 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '잠재능력부여', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('잠재능력을 부여할 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatPotentialAwakenTargetList(targets));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -5594,7 +5841,7 @@ function refundOfferToUser(user, offer) {
     if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
     (offer.cards || []).forEach(card => user.inventory.card.push(card));
-    (offer.equipments || []).forEach(equip => user.inventory.equipment.push(equip));
+    (offer.equipments || []).forEach(equip => user.inventory.equipment.push(JSON.parse(JSON.stringify(equip))));
     Object.keys(offer.items || {}).forEach(itemId => {
         const count = Number(offer.items[itemId] || 0);
         if (count > 0) addInventoryItem(user, Number(itemId), count);
@@ -5721,6 +5968,8 @@ function registerTradeOffer(user, args) {
         const idx = user.inventory.equipment.indexOf(selected.equip);
         if (idx < 0) return '❌ 장비를 찾을 수 없습니다.';
         const equipCopy = { type: selected.equip.type || selected.type, id: selected.equip.id, level: Number(selected.equip.level || 0) };
+        if (selected.equip.rolled) equipCopy.rolled = JSON.parse(JSON.stringify(selected.equip.rolled));
+        if (selected.equip.potential) equipCopy.potential = JSON.parse(JSON.stringify(selected.equip.potential));
         user.inventory.equipment.splice(idx, 1);
         side.offer.equipments.push(equipCopy);
         resetTradeConfirmations(session);
@@ -6281,6 +6530,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '잠재능력부여') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 잠재능력 부여를 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 잠재능력을 부여할 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = awakenEquipmentPotential(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '장비강화') {
         if (args[0] == '강화') {
             const result = runEquipmentUpgrade(user);
@@ -6769,6 +7036,17 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '잠재능력' && args[1] == '재설정') {
+        if (!args[2]) {
+            reply('❌ /RPGenius 잠재능력 재설정 [장비번호]');
+            return true;
+        }
+        const result = rerollEquipmentPotential(user, args[2]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '장착해제') {
         if (!args[1]) {
             reply('❌ /RPGenius 장착해제 [장신구번호]');
@@ -6889,6 +7167,7 @@ module.exports = {
     formatStatValue,
     formatValue,
     formatCurrentEquipmentStatLines,
+    formatPotentialLines,
     getCardSlotEffectValue,
     addInventoryItem,
     removeInventoryItem,

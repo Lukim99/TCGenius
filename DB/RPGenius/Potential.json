@@ -1,0 +1,1612 @@
+{
+    "weapon": {
+        "bronze": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 50
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 10
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 5
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 3
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.03
+                        }
+                    }
+                ]
+            }
+        ],
+        "silver": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 15
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 10
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.03
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 5
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.06
+                        }
+                    }
+                ]
+            }
+        ],
+        "gold": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 125
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 20
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.06
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 7
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.06
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "bossDmg": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "eliteDmg": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "damageBonus": 0.1
+                        }
+                    }
+                ]
+            }
+        ],
+        "platinum": [
+            {
+                "rate": 65,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 25
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 20,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 20
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.09
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 10
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.12
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.12
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 5,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.12
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.02
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 20
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 6
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "bossDmg": 0.2
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "eliteDmg": 0.2
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "damageBonus": 0.2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "level9Atk": 1
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "armor": {
+        "bronze": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 20
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.015
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 1
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.005
+                        }
+                    }
+                ]
+            }
+        ],
+        "silver": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 125
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 25
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 8
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.035
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.035
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 3
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.01
+                        }
+                    }
+                ]
+            }
+        ],
+        "gold": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 130
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 30
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 12
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.07
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.07
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 5
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.025
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critDef": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 15
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 5
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "recoveryEfficiency": 0.1
+                        }
+                    }
+                ]
+            }
+        ],
+        "platinum": [
+            {
+                "rate": 65,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 200
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 180
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 40
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 25,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 8
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.08
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critDef": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.02
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 30
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 10
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "recoveryEfficiency": 0.25
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "accessory": {
+        "bronze": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 20
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.015
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 1
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.005
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.005
+                        }
+                    }
+                ]
+            }
+        ],
+        "silver": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 125
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 25
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 8
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.035
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.035
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 3
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.01
+                        }
+                    }
+                ]
+            }
+        ],
+        "gold": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 130
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 30
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 25,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 12
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.07
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.07
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 5
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.025
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.015
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.05
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 0.5
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 15
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 5
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 5,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "itemDropChance": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "gold": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "exp": 0.05
+                        }
+                    }
+                ]
+            }
+        ],
+        "platinum": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 200
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 180
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 40
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 25,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 8
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.08
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.02
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 30
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 10
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 5,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "itemDropChance": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "gold": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "exp": 0.1
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "support": {
+        "bronze": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 50
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 10
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 5
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 3
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.01
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.03
+                        }
+                    }
+                ]
+            }
+        ],
+        "silver": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 75
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 15
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 10
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.03
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 5
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.02
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.06
+                        }
+                    }
+                ]
+            }
+        ],
+        "gold": [
+            {
+                "rate": 60,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 125
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 100
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 20
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 30,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.06
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 7
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.03
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.04
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.06
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.01
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "bossDmg": 0.08
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "eliteDmg": 0.08
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "damageBonus": 0.08
+                        }
+                    }
+                ]
+            }
+        ],
+        "platinum": [
+            {
+                "rate": 65,
+                "roll": [
+                    {
+                        "stat": {
+                            "hp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "mp": 150
+                        }
+                    },
+                    {
+                        "stat": {
+                            "def": 25
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 20,
+                "roll": [
+                    {
+                        "stat": {
+                            "atk": 20
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "hp": 0.09
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mp": 0.09
+                        }
+                    },
+                    {
+                        "stat": {
+                            "pnt": 10
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 10,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "pnt": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "crit": 0.05
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "critMul": 0.12
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "finalDamage": 0.06
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "atk": 0.12
+                        }
+                    }
+                ]
+            },
+            {
+                "rate": 5,
+                "roll": [
+                    {
+                        "plusStat": {
+                            "afterBasic": 0.1
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "afterSkill": 0.12
+                        }
+                    },
+                    {
+                        "stat": {
+                            "cardStarAtk": 3
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "mpReduce": -0.02
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackHpRecovery": 20
+                        }
+                    },
+                    {
+                        "stat": {
+                            "attackMpRecovery": 6
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "bossDmg": 0.15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "eliteDmg": 0.15
+                        }
+                    },
+                    {
+                        "plusStat": {
+                            "damageBonus": 0.15
+                        }
+                    },
+                    {
+                        "stat": {
+                            "skillCooldown": -300
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}

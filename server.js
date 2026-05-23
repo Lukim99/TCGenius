@@ -1057,6 +1057,7 @@ function buildInventoryEquipment(user) {
         const level = Number(equip.level || 0);
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
+        const potentialLines = equip && equip.potential ? rpgenius.formatPotentialLines(equip.potential) : [];
         result.push({
             type: equip.type || type,
             typeLabel: labels[equip.type || type] || (equip.type || type),
@@ -1066,6 +1067,8 @@ function buildInventoryEquipment(user) {
             level,
             equipped: !!equipped,
             statLines,
+            potentialLines,
+            potential: equip && equip.potential || null,
             rolled: equip && equip.rolled || null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
             noTrade: data.no_trade === true,
@@ -1433,6 +1436,7 @@ function serializeAuctionEntry(entry, currentUserName) {
         if (data) {
             const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled);
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            if (entry.payload && entry.payload.potential) rpgenius.formatPotentialLines(entry.payload.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
@@ -1483,6 +1487,8 @@ function buildSellableAssets(user) {
             if (!data || data.no_trade === true) return null;
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
+            const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             return {
                 index,
                 type: eq.type,
@@ -1491,7 +1497,7 @@ function buildSellableAssets(user) {
                 name: data.name,
                 rarity: data.rarity,
                 level,
-                statLines: String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''))
+                statLines
             };
         })
         .filter(Boolean);
@@ -1535,6 +1541,7 @@ async function registerAuction(sellerName, body) {
         if (data && data.no_trade === true) return { error: '거래 불가 장비는 판매 등록할 수 없습니다.' };
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         if (eq.rolled) payload.rolled = eq.rolled;
+        if (eq.potential) payload.potential = eq.potential;
         equips.splice(index, 1);
     } else if (kind == 'item') {
         const itemId = Number(body.itemId);
@@ -1623,6 +1630,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
     } else if (entry.kind == 'equipment') {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
         if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
+        if (entry.payload.potential) eqEntry.potential = entry.payload.potential;
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
@@ -1700,6 +1708,7 @@ async function cancelAuction(userName, auctionId) {
     } else if (entry.kind == 'equipment') {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
         if (entry.payload.rolled) eqEntry.rolled = entry.payload.rolled;
+        if (entry.payload.potential) eqEntry.potential = entry.payload.potential;
         user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
@@ -1788,8 +1797,9 @@ function serializeBuyOrderEntry(entry, currentUserName) {
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
         if (data && entry.payload && typeof entry.payload.level == 'number') {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level));
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level), entry.payload.rolled);
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            if (entry.payload.potential) rpgenius.formatPotentialLines(entry.payload.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
@@ -2008,6 +2018,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         if (!matchBuyOrderEquipment(entry, eq)) return { error: '이 장비는 구매 등록 조건에 맞지 않습니다.' };
         const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         if (eq.rolled) transferred.rolled = eq.rolled;
+        if (eq.potential) transferred.potential = eq.potential;
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
     } else if (entry.kind == 'item') {
@@ -2095,6 +2106,8 @@ function buildFulfillableAssets(user, entry) {
             if (!data || data.no_trade === true) return;
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
+            const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             result.equipment.push({
                 index,
                 type: eq.type,
@@ -2103,7 +2116,7 @@ function buildFulfillableAssets(user, entry) {
                 name: data.name,
                 rarity: data.rarity,
                 level,
-                statLines: String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''))
+                statLines
             });
         });
     } else if (entry.kind == 'item') {

@@ -157,6 +157,7 @@ function openEquipmentModal(eq) {
     const title = eq.name + (eq.level > 0 ? ' +' + eq.level : '');
     const sub = eq.rarity + ' · ' + eq.typeLabel;
     const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
+    (eq.potentialLines || []).forEach(line => lines.push(line.replace(/^-\s*/, '')));
     openModal(title, sub, lines);
     const thumb = equipmentThumb(eq);
     thumb.classList.add('modal-equip-thumb');
