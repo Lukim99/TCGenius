@@ -1521,7 +1521,12 @@ function buildSellableAssets(user) {
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
-            if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
+            const potentialDisplay = eq.potential ? {
+                tierKey: rpgenius.getPotentialRarityKey(eq.potential.rarity),
+                tierLabel: rpgenius.getPotentialRarityLabel(eq.potential.rarity),
+                entries: rpgenius.formatPotentialOptionEntries(eq.potential)
+            } : null;
+            const soulActive = eq.soul && !rpgenius.isSoulExpired(eq.soul) ? eq.soul : null;
             return {
                 index,
                 type: eq.type,
@@ -1530,7 +1535,9 @@ function buildSellableAssets(user) {
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
                 level,
-                statLines
+                statLines,
+                potentialDisplay,
+                soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0) } : null
             };
         })
         .filter(Boolean);

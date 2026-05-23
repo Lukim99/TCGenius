@@ -521,12 +521,22 @@ function renderRegisterModal() {
     } else if (regState.kind === 'equipment') {
         pickList = data.equipment.length === 0
             ? el('div', { class: 'empty' }, '판매 가능한 장비가 없습니다.\n(인벤토리 미장착 장비만 등록 가능)')
-            : el('div', { class: 'pick-list' }, ...data.equipment.map(eq => el('div', {
-                class: 'pick-row' + (regState.selectedIndex === eq.index ? ' on' : ''),
-                onclick: () => { regState.selectedIndex = eq.index; renderRegisterModal(); }
-            },
-                el('div', null, el('b', null, eq.name + (eq.level > 0 ? ' +' + eq.level : '')), el('div', { class: 'meta' }, eq.rarity + ' · ' + eq.typeLabel))
-            )));
+            : el('div', { class: 'pick-list' }, ...data.equipment.map(eq => {
+                const info = el('div', { style: { flex: '1' } },
+                    el('b', null, eq.name + (eq.level > 0 ? ' +' + eq.level : '')),
+                    el('div', { class: 'meta' }, eq.rarity + ' · ' + eq.typeLabel)
+                );
+                if (eq.soul && eq.soul.expiredAt) {
+                    const soulText = formatSoulRemaining(eq.soul.expiredAt);
+                    if (soulText) info.appendChild(el('div', { class: 'meta', style: 'opacity:0.85;font-style:italic' }, soulText));
+                }
+                const potBlock = potentialBlockNode(eq.potentialDisplay);
+                if (potBlock) info.appendChild(potBlock);
+                return el('div', {
+                    class: 'pick-row' + (regState.selectedIndex === eq.index ? ' on' : ''),
+                    onclick: () => { regState.selectedIndex = eq.index; renderRegisterModal(); }
+                }, info);
+            }));
     } else {
         pickList = data.items.length === 0
             ? el('div', { class: 'empty' }, '판매 가능한 아이템이 없습니다.')
