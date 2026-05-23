@@ -13,9 +13,9 @@
     {
         "name": "뭔마",
         "slot_effect": {
-            "name": "사냥 시 HP 소모량 감소",
-            "base": 0.03,
-            "per_level": 0.01
+            "name": "받는 피해량",
+            "base": -0.05,
+            "per_level": -0.013
         },
         "skills": [
             1
@@ -24,9 +24,9 @@
     {
         "name": "글렌첵",
         "slot_effect": {
-            "name": "적 처치 시 잃은 HP 10% 회복 확률",
+            "name": "받은 피해의 20%만큼 모든 아군 체력 회복 확률",
             "base": 0.08,
-            "per_level": 0.01
+            "per_level": 0.015
         },
         "skills": [
             2
@@ -46,9 +46,9 @@
     {
         "name": "일레이나",
         "slot_effect": {
-            "name": "사냥 시 MP 소모량 감소",
-            "base": 0.04,
-            "per_level": 0.02
+            "name": "MP 소모량",
+            "base": -0.04,
+            "per_level": -0.02
         },
         "skills": [
             4
@@ -57,9 +57,9 @@
     {
         "name": "진필규",
         "slot_effect": {
-            "name": "일반 몬스터에게 주는 피해 증가",
+            "name": "일반 몬스터 대상 피해",
             "base": 0.04,
-            "per_level": 0.01
+            "per_level": 0.012
         },
         "skills": [
             5
@@ -102,8 +102,8 @@
         "name": "마쉐비",
         "slot_effect": {
             "name": "방어력 관통",
-            "base": 0.1,
-            "per_level": 0.01
+            "base": 0.08,
+            "per_level": 0.015
         },
         "skills": [
             9
@@ -112,9 +112,9 @@
     {
         "name": "딜러장",
         "slot_effect": {
-            "name": "일반 공격 피해량 증가",
-            "base": 0.02,
-            "per_level": 0.01
+            "name": "일반 공격 피해",
+            "base": 0.03,
+            "per_level": 0.012
         },
         "skills": [
             10

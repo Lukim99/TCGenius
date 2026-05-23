@@ -192,6 +192,12 @@ function formatIncreaseValue(format) {
     return Math.round(value * 1000) / 10 + '%';
 }
 
+function formatIncreaseText(format) {
+    const value = Number(format && (format.per_star || format.per_level) || 0);
+    const text = formatIncreaseValue(format);
+    return value > 0 ? '+' + text : text;
+}
+
 function formatSkillDesc(skill) {
     if (!skill) return '알 수 없는 스킬입니다.';
     return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
@@ -204,7 +210,7 @@ function formatSkillDescWithIncrease(skill) {
     if (!skill) return '알 수 없는 스킬입니다.';
     return skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
         const format = skill.format && skill.format[Number(index) - 1];
-        return formatValue(format) + '(+' + formatIncreaseValue(format) + ')';
+        return formatValue(format) + '(' + formatIncreaseText(format) + ')';
     });
 }
 
@@ -389,7 +395,7 @@ function formatCharacterCardDetail(card) {
     if (card.slot_effect) {
         lines.push('[ 5성 이상 / 카드 슬롯 효과 ]');
         lines.push('- ' + card.slot_effect.name + ' ' + formatValue(card.slot_effect));
-        lines.push(' ㄴ 5성 이후 등급마다 +' + formatIncreaseValue(card.slot_effect));
+        lines.push(' ㄴ 5성 이후 등급마다 ' + formatIncreaseText(card.slot_effect));
         lines.push('');
     }
     lines.push('[ 스킬 ]');
@@ -846,12 +852,12 @@ function calculateCardSlotEffects(user) {
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
         const value = getCardSlotEffectValue(card, cardData);
-        if (value <= 0) return;
+        if (value == 0) return;
         if (cardData.name == '빵귤') effects.expBonus += value;
-        if (cardData.name == '뭔마') effects.hpDamageReduction += value;
+        if (cardData.name == '뭔마') effects.hpDamageReduction += Math.abs(value);
         if (cardData.name == '글렌첵') effects.killRecoveryChance += value;
         if (cardData.name == '오버라이드') effects.crit += value;
-        if (cardData.name == '일레이나') effects.mpCostReduction += value;
+        if (cardData.name == '일레이나') effects.mpCostReduction += Math.abs(value);
         if (cardData.name == '진필규') effects.damageBonus += value;
         if (cardData.name == '켄시') effects.critMul += value;
         if (cardData.name == '제우스') effects.goldBonus += value;
@@ -866,16 +872,16 @@ function formatCardSlotEffectLines(user) {
     const slotEffects = calculateCardSlotEffects(user);
     const effectMap = [
         ['expBonus', '경험치 획득 증가량'],
-        ['hpDamageReduction', '사냥 시 HP 소모량 감소'],
-        ['killRecoveryChance', '적 처치 시 잃은 HP 10% 회복 확률'],
+        ['hpDamageReduction', '받는 피해량 감소'],
+        ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
         ['crit', '치명타 확률 증가'],
-        ['mpCostReduction', '사냥 시 MP 소모량 감소'],
-        ['damageBonus', '일반 몬스터에게 주는 피해 증가'],
+        ['mpCostReduction', 'MP 소모량 감소'],
+        ['damageBonus', '일반 몬스터 대상 피해'],
         ['critMul', '치명타 피해량 증가'],
         ['goldBonus', '골드 획득 증가량'],
         ['itemDropChance', '아이템 드랍 확률'],
         ['defReduction', '방어력 관통'],
-        ['basicDamageBonus', '일반 공격 피해량 증가']
+        ['basicDamageBonus', '일반 공격 피해']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
@@ -1697,7 +1703,8 @@ function getComboHitCount(stats) {
 }
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
-    const critChance = Math.max(0, Number(stats.crit || 0));
+    if (extra && extra.disableCritical) return { damage: Number(damage || 0), isCritical: false };
+    const critChance = Math.max(0, Number(stats.crit || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1);
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
@@ -1725,7 +1732,8 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let trueDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     for (let i = 0; i < hitCount; i++) {
-        const criticalResult = applyCriticalDamage(rawDamage, stats, extra, defenderStats);
+        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0));
+        const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
         const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
         let hitDamage = isTrueDamage
             ? Math.max(0, Math.round(Number(criticalResult.damage || 0)))
@@ -1748,7 +1756,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
     const monsterStats = getCombatStats(monster);
-    const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0)));
+    const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0))) * (1 - Math.min(1, Number(extra && extra.receivedDamageReduction || 0)));
     return calculateAttackHitResult(fieldDamageBase, defenderStats.def, monsterStats.pnt, monsterStats, { defReduction: 0 }, {}, defenderStats);
 }
 
@@ -1814,6 +1822,30 @@ function applySkillRecovery(user, maxHp, extra, lines) {
     user.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(extra.skillRecoveryAmount, user));
     const recovered = user.hp - beforeHp;
     if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
+}
+
+function applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines) {
+    if (Number(fieldDamage || 0) <= 0 || Number(slotEffects && slotEffects.killRecoveryChance || 0) <= 0) return;
+    if (Math.random() >= Number(slotEffects.killRecoveryChance || 0)) return;
+    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
+    const recovery = applyRecoveryEfficiency(Number(fieldDamage || 0) * 0.2, user, stats);
+    user.hp = Math.min(Number(maxHp || 0), beforeHp + recovery);
+    const recovered = user.hp - beforeHp;
+    if (recovered > 0) lines.push('- 피해 회복: HP +' + comma(recovered) + ' (' + Math.round(Number(slotEffects.killRecoveryChance || 0) * 1000) / 10 + '% 확률)');
+}
+
+function applyFlatSkillRecovery(user, maxHp, amount, stats, lines) {
+    const beforeHp = typeof user.hp == 'undefined' ? Number(maxHp || 0) : Number(user.hp || 0);
+    user.hp = Math.min(Number(maxHp || 0), beforeHp + applyRecoveryEfficiency(amount, user, stats));
+    const recovered = user.hp - beforeHp;
+    if (recovered > 0) lines.push('- HP +' + comma(recovered) + ' 회복');
+}
+
+function applySkillMpRecovery(user, maxMp, amount, stats, lines) {
+    const beforeMp = typeof user.mp == 'undefined' ? Number(maxMp || 0) : Number(user.mp || 0);
+    user.mp = Math.min(Number(maxMp || 0), beforeMp + applyRecoveryEfficiency(amount, user, stats));
+    const recovered = user.mp - beforeMp;
+    if (recovered > 0) lines.push('- MP +' + comma(recovered));
 }
 
 function applyRecoveryEfficiency(amount, user, stats) {
@@ -1963,6 +1995,22 @@ function setFieldNextActionAt(user, nextActionAt) {
     getFieldCooldowns(user).nextActionAt = nextActionAt;
 }
 
+function getFieldBuffs(user) {
+    if (!user.field || typeof user.field != 'object') return {};
+    if (!user.field.buffs || typeof user.field.buffs != 'object') user.field.buffs = {};
+    return user.field.buffs;
+}
+
+function getActiveFieldDamageReduction(user) {
+    const buffs = getFieldBuffs(user);
+    const buff = buffs.receivedDamageReduction;
+    if (!buff || Number(buff.expired_at || 0) <= Date.now()) {
+        if (buffs.receivedDamageReduction) delete buffs.receivedDamageReduction;
+        return 0;
+    }
+    return Number(buff.value || 0);
+}
+
 function getEliteState(fieldName) {
     if (!eliteFieldStates[fieldName]) eliteFieldStates[fieldName] = { owner: null, defeatedAt: 0 };
     return eliteFieldStates[fieldName];
@@ -2044,8 +2092,16 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
         : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
+    if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
+    if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
+    if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
+    if (!extra || !extra.skipPassiveMpRecovery) {
+        const passiveMp = getPassiveMpRecovery(user);
+        if (passiveMp > 0) applySkillMpRecovery(user, Number(stats.mp || 0), passiveMp, stats, lines);
+    }
     if (executedByTaxationGun) lines.push('- ❌ ' + TAXATION_GUN_NAME + ' 효과: ' + elite.name + ' 처형!');
     if (remainHp <= 0) {
         lines.push('- ' + elite.name + ' 처치!');
@@ -2071,6 +2127,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ' + elite.name + '에게 ', '피해를 입었습니다!').forEach(line => lines.push(line));
         else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
     }
+    applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
     if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
         user.hp = 1;
@@ -2126,17 +2183,26 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
         : ['⚔️ ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    if (extra && extra.notice) lines.push('- ' + extra.notice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
     if (goldMineCapNote) lines.push(goldMineCapNote);
     if (goldMineLimitReached) lines.push('- ⛏️ 오늘은 황금 광산에서 더 이상 사냥할 수 없습니다. (일일 한도 ' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리 도달)');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
+    if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
+    if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
+    if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
+    if (!extra || !extra.skipPassiveMpRecovery) {
+        const passiveMp = getPassiveMpRecovery(user);
+        if (passiveMp > 0) applySkillMpRecovery(user, Number(stats.mp || 0), passiveMp, stats, lines);
+    }
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
     else {
         if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ', '피해를 입었습니다!').forEach(line => lines.push(line));
         else lines.push('❗ ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
     }
+    applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
 
     if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
@@ -2226,21 +2292,6 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
-    if (killCount > 0 && slotEffects.killRecoveryChance > 0 && Math.random() < slotEffects.killRecoveryChance) {
-        const beforeRecoverHp = Number(user.hp || 0);
-        const lostHpRecovery = applyRecoveryEfficiency((maxHp - beforeRecoverHp) * 0.1, user, stats);
-        // const damageCapRecovery = Math.floor(fieldDamage * 0.5);
-        user.hp = Math.min(maxHp, beforeRecoverHp + lostHpRecovery);
-        if (user.hp - beforeRecoverHp > 0) lines.push('- 처치 회복: HP +' + comma(user.hp - beforeRecoverHp) + ' (' + Math.round(slotEffects.killRecoveryChance * 100) + "% 확률)");
-    }
-
-    const passiveMp = getPassiveMpRecovery(user);
-    if (killCount > 0 && passiveMp > 0) {
-        const beforeMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
-        user.mp = Math.min(Number(stats.mp || 0), beforeMp + applyRecoveryEfficiency(passiveMp, user, stats));
-        if (user.mp - beforeMp > 0) lines.push('- MP +' + comma(user.mp - beforeMp));
-    }
-
     setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     if (killCount > 0) tryEncounterFragment(user, dungeon, lines);
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
@@ -2277,9 +2328,16 @@ function useBasicAttackInField(user) {
     if (!dungeon) return '❌ 현재 필드를 찾을 수 없습니다.';
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
-    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
-    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, {});
-    return buildHuntResult(user, dungeon, rawDamage, {});
+    const buffs = getFieldBuffs(user);
+    const nextBasicBuff = buffs.nextBasicDamageBonus;
+    const nextBasicBonus = nextBasicBuff && Number(nextBasicBuff.value || 0) > 0 ? Number(nextBasicBuff.value || 0) : 0;
+    if (nextBasicBuff) delete buffs.nextBasicDamageBonus;
+    const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus));
+    const extra = {};
+    extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
+    if (nextBasicBonus > 0) extra.notice = '자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%';
+    if (user.field.elite) return buildEliteHuntResult(user, dungeon, rawDamage, extra);
+    return buildHuntResult(user, dungeon, rawDamage, extra);
 }
 
 function useSkillInField(user, skillName) {
@@ -2308,18 +2366,47 @@ function useSkillInField(user, skillName) {
     extra.mpCost = mpCost;
     extra.mpAfter = user.mp;
     extra.maxMp = maxMp;
+    extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     if (skillData.skill.name == '글버지') {
-        extra.hitCount = 2;
-        extra.skillRecoveryChance = getSkillValue(skillData.skill, 1, star);
-        extra.skillRecoveryAmount = getSkillValue(skillData.skill, 2, star);
+        const heal = getSkillValue(skillData.skill, 0, star) + Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star);
+        const lines = ['✨ 글버지를 사용했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
+        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
+        getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        return lines.join('\n');
     }
-    if (skillData.skill.name == '불사조') extra.receivedDamageMul = 1.5;
-    if (skillData.skill.name == 'SUPER EASY') extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '자인') getFieldBuffs(user).nextBasicDamageBonus = { value: getSkillValue(skillData.skill, 1, star) };
+    if (skillData.skill.name == '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '불사조') {
+        extra.damageBonusMul = Number(stats.crit || 0) * 0.5;
+        extra.receivedDamageMul = 1.5;
+    }
+    if (skillData.skill.name == '피아스트') {
+        extra.skillMpRecovery = getSkillValue(skillData.skill, 1, star);
+        extra.skipPassiveMpRecovery = true;
+    }
+    if (skillData.skill.name == '수업끝') {
+        extra.disableCritical = true;
+        extra.receivedDamageReduction = 0.3;
+        getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 3000 };
+        extra.notice = '수업끝 효과: 3초 동안 받는 피해 30% 감소';
+    }
+    if (skillData.skill.name == 'SUPER EASY') {
+        extra.critChanceMul = 0.5;
+        extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
+    }
     if (skillData.skill.name == '백억이요') extra.goldBonus = getSkillValue(skillData.skill, 1, star);
     if (skillData.skill.name == '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
-    if (skillData.skill.name == '비리') extra.forceCritical = true;
+    if (skillData.skill.name == '비리') {
+        extra.forceCritical = true;
+        extra.basicAttackSkill = true;
+    }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
-    const rawDamage = Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
+    const rawDamage = extra.basicAttackSkill
+        ? Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)))
+        : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
     const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
     user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
     getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
