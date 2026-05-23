@@ -3001,6 +3001,7 @@ async function runWorldBossSkillTick(userName, bossName) {
     const beforeHp = typeof latest.hp == 'undefined' ? Number(userStats.hp || 0) : Number(latest.hp || 0);
     latest.hp = Math.max(0, beforeHp - finalDamage);
     const tickLines = ['💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!'];
+    applyDamageTakenSlotRecovery(latest, Number(userStats.hp || 0), finalDamage, slotEffects, userStats, tickLines);
     latest.field.karmaStack = Number(latest.field.karmaStack || 0) + finalDamage * 0.30;
     if (counterActive) {
         const counterRaw = Math.round(Number(counterBuff.flat || 0) + Number(userStats.atk || 0) * Number(counterBuff.mul || 0));
