@@ -857,11 +857,11 @@ function rerollEquipmentPotential(user, numberArg) {
 
 function formatPotentialLines(potential) {
     if (!potential || !Array.isArray(potential.option) || potential.option.length == 0) return [];
-    const text = formatEquipmentStatLines({
-        stat: potential.option.reduce((acc, option) => { addStats(acc, option && option.stat || {}); return acc; }, {}),
-        plusStat: potential.option.reduce((acc, option) => { addStats(acc, option && option.plusStat || {}); return acc; }, {})
+    const lines = ['[잠재능력] ' + getPotentialRarityLabel(potential.rarity)];
+    formatPotentialOptionEntries(potential).forEach(entry => {
+        lines.push({'브론즈':'🟤','실버':'⚪','골드':'🟡','플레티넘':'🟢'}[entry.gradeLabel] + ' ' + entry.text);
     });
-    return ['[잠재능력] ' + getPotentialRarityLabel(potential.rarity)].concat(String(text || '').split('\n').filter(Boolean));
+    return lines;
 }
 
 function formatCurrentEquipmentStatLines(equipment, level, rolled, context) {
