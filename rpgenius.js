@@ -599,10 +599,10 @@ function getPotentialRarityKey(label) {
 }
 
 const POTENTIAL_REROLL_COST = {
-    weapon: { rare: 220000, epic: 440000, unique: 880000, legendary: 1760000 },
-    armor: { rare: 180000, epic: 360000, unique: 720000, legendary: 1440000 },
-    accessory: { rare: 200000, epic: 400000, unique: 800000, legendary: 1600000 },
-    support: { rare: 220000, epic: 440000, unique: 880000, legendary: 1760000 }
+    weapon: { rare: 120000, epic: 200000, unique: 360000, legendary: 600000 },
+    armor: { rare: 80000, epic: 140000, unique: 260000, legendary: 440000 },
+    accessory: { rare: 100000, epic: 170000, unique: 310000, legendary: 520000 },
+    support: { rare: 120000, epic: 200000, unique: 360000, legendary: 600000 }
 };
 
 const POTENTIAL_UPGRADE = {
@@ -710,7 +710,7 @@ function formatUpgradeTicketTargetList(targets, ugLevel) {
         const lvl = Number(target.entry.equip.level || 0);
         const lockMark = target.entry.equip.locked ? ' 🔒' : '';
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
-        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, target.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
     });
     return lines.join('\n');
 }
@@ -734,11 +734,11 @@ function applyUpgradeTicket(user, numberArg) {
     const beforeLevel = Number(selected.equip.level || 0);
     const success = Math.random() < ugRoll;
     const lines = ['[ +' + ugLevel + ' 장비 강화권 ]'];
-    lines.push('- 대상: <' + equipment.rarity + '> ' + equipment.name + (beforeLevel > 0 ? ' +' + beforeLevel : ''));
+    lines.push('- 대상: <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (beforeLevel > 0 ? ' +' + beforeLevel : ''));
     lines.push('- 성공 확률: ' + (Math.round(ugRoll * 10000) / 100) + '%');
     if (success) {
         selected.equip.level = ugLevel;
-        lines.push('✨ +' + ugLevel + ' 강화 성공!\n' + equipment.name + ' +' + beforeLevel + ' -> +' + ugLevel);
+        lines.push('✨ +' + ugLevel + ' 강화 성공!\n' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + beforeLevel + ' -> +' + ugLevel);
     } else {
         lines.push('❌ +' + ugLevel + ' 강화 실패..');
     }
@@ -764,7 +764,7 @@ function formatSoulTargetList(targets) {
         const lvl = Number(target.entry.equip.level || 0);
         const lockMark = target.entry.equip.locked ? ' 🔒' : '';
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
-        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, target.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
     });
     return lines.join('\n');
 }
@@ -821,7 +821,7 @@ function formatPotentialAwakenTargetList(targets) {
         const lvl = Number(target.entry.equip.level || 0);
         const lockMark = target.entry.equip.locked ? ' 🔒' : '';
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
-        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, target.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
     });
     return lines.join('\n');
 }
@@ -843,7 +843,7 @@ function awakenEquipmentPotential(user, numberArg) {
     selected.equip.potential = potential;
     user.pendingAction = null;
     const lvl = Number(selected.equip.level || 0);
-    return ['✅ 잠재능력을 부여했습니다.', '- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : ''), '', ...formatPotentialLines(potential)].join('\n');
+    return ['✅ 잠재능력을 부여했습니다.', '- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : ''), '', ...formatPotentialLines(potential)].join('\n');
 }
 
 function getPotentialRerollCost(type, rarity) {
@@ -902,7 +902,7 @@ function rerollEquipmentPotential(user, numberArg) {
     const lvl = Number(selected.equip.level || 0);
     const lines = [
         '✅ 잠재능력을 재설정했습니다.',
-        '- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : ''),
+        '- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : ''),
         '- 소모 골드: 🪙 ' + comma(cost)
     ];
     if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? '\n ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : '\n ㄴ 골드 소모 50% 감소'));
@@ -1089,7 +1089,7 @@ function formatSoulRemainingText(soul) {
 function getEquipmentDisplayName(data, equip) {
     const baseName = (data && data.name) || '';
     const soul = equip && equip.soul;
-    if (soul && !isSoulExpired(soul) && soul.name) return soul.name + '의 영혼이 깃든 ' + baseName;
+    if (soul && !isSoulExpired(soul) && soul.name) return soul.name + '의 ' + baseName;
     return baseName;
 }
 
@@ -4668,7 +4668,7 @@ function equipItemByNumber(user, numberArg) {
             if (prev.locked) back.locked = true;
             user.inventory.equipment.push(back);
         }
-        return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     if (target.type == 'weapon' || target.type == 'armor') {
@@ -4684,7 +4684,7 @@ function equipItemByNumber(user, numberArg) {
             if (prev.locked) back.locked = true;
             user.inventory.equipment.push(back);
         }
-        return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     if (target.type == 'accessory') {
@@ -4707,7 +4707,7 @@ function equipItemByNumber(user, numberArg) {
         if (target.locked) equipEntry.locked = true;
         accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
-        return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + data.name + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     return '❌ 알 수 없는 장비 타입입니다.';
@@ -4732,7 +4732,7 @@ function unequipSupport(user) {
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
-    return '✅ 보조 장비를 해제했습니다.\n<' + data.rarity + '> ' + data.name + (Number(sup.level || 0) > 0 ? ' +' + sup.level : '');
+    return '✅ 보조 장비를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, sup) + (Number(sup.level || 0) > 0 ? ' +' + sup.level : '');
 }
 
 function unequipAccessoryByNumber(user, numberArg) {
@@ -4755,7 +4755,7 @@ function unequipAccessoryByNumber(user, numberArg) {
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
     user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
-    return '✅ 장신구를 해제했습니다.\n<' + data.rarity + '> ' + data.name + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
+    return '✅ 장신구를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, equipped) + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
 }
 
 const EQUIPMENT_STONE_ITEM_ID = 0;
@@ -4867,7 +4867,7 @@ function formatSupportRerollList(targets) {
         const lvl = Number(target.entry.equip.level || 0);
         const lockMark = target.entry.equip.locked ? ' 🔒' : '';
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
-        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + target.equipment.name + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, target.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark);
     });
     return lines.join('\n');
 }
@@ -4886,7 +4886,7 @@ function rerollSupportEquipment(user, numberArg) {
     selected.equip.rolled = rollSupportEquipmentStats(equipment);
     user.pendingAction = null;
     const lvl = Number(selected.equip.level || 0);
-    return '✅ 보조 장비 스탯을 재설정했습니다.\n- <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : '') + '\n' + formatCurrentEquipmentStatLines(equipment, lvl, selected.equip.rolled);
+    return '✅ 보조 장비 스탯을 재설정했습니다.\n- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : '') + '\n' + formatCurrentEquipmentStatLines(equipment, lvl, selected.equip.rolled, { soul: selected.equip.soul });
 }
 
 function getEquipmentByNumber(user, numberArg) {
@@ -4896,10 +4896,10 @@ function getEquipmentByNumber(user, numberArg) {
     return all[number - 1] || null;
 }
 
-function formatEquipmentName(type, id, level) {
+function formatEquipmentName(type, id, level, equip) {
     const data = getEquipmentData(type, id);
     if (!data) return '알 수 없는 장비';
-    return '<' + data.rarity + '> ' + data.name + (Number(level || 0) > 0 ? ' +' + Number(level || 0) : '');
+    return '<' + data.rarity + '> ' + getEquipmentDisplayName(data, equip) + (Number(level || 0) > 0 ? ' +' + Number(level || 0) : '');
 }
 
 function getEquipmentSynthesisSelection(user, numberArgs) {
@@ -4930,7 +4930,7 @@ function formatEquipmentSynthesisPreview(user, numberArgs) {
     user.pendingAction = { type: '장비합성', numbers: selection.numbers };
     const lines = ['[ 장비 합성 ]'];
     selection.selected.forEach(entry => {
-        lines.push('- ' + formatEquipmentName(selection.type, selection.id, entry.equip.level));
+        lines.push('- ' + formatEquipmentName(selection.type, selection.id, entry.equip.level, entry.equip));
     });
     lines.push('', '[ 합성 결과 ]');
     lines.push('- <' + selection.resultEquipment.rarity + '> ' + selection.resultEquipment.name);
@@ -5023,7 +5023,7 @@ function formatDisassemblePreview(user, numberArgs) {
         const lvl = Number(e.entry.equip.level || 0);
         const range = getDisassembleRewardRange(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
-        equipmentLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + ')');
+        equipmentLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + ')');
         minTotal += range.min;
         maxTotal += range.max;
         blackFireTotal += blackFire;
@@ -5055,7 +5055,7 @@ function runDisassemble(user) {
         totalBlackFire += blackFire;
         user.inventory.equipment.splice(e.entry.index, 1);
         const lvl = Number(e.entry.equip.level || 0);
-        dismantledLines.push('- <' + e.equipment.rarity + '> ' + e.equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : ''));
+        dismantledLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : ''));
     });
     if (totalStone > 0) addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
     if (totalBlackFire > 0) addInventoryItem(user, blackFireItemId, totalBlackFire);
@@ -5099,7 +5099,7 @@ function toggleEquipmentLock(user, numberArg) {
     selected.equip.locked = !selected.equip.locked;
     const lvl = Number(selected.equip.level || 0);
     const status = selected.equip.locked ? '🔒 잠금' : '🔓 잠금 해제';
-    return '✅ <' + equipment.rarity + '> ' + equipment.name + (lvl > 0 ? ' +' + lvl : '') + ' ' + status;
+    return '✅ <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : '') + ' ' + status;
 }
 
 function formatUpgradeRatePercent(value) {
@@ -5157,7 +5157,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
     const hasStone = stoneCount >= cost.stone;
     const hasGold = Number(user.gold || 0) >= cost.gold;
-    const lines = ['⚒️ ' + equipment.name + ' +' + level + ' -> +' + nextLevel];
+    const lines = ['⚒️ ' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + level + ' -> +' + nextLevel];
     Object.keys(statNames).forEach(key => {
         if (Number(currentStats[key] || 0) != Number(nextStats[key] || 0)) lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, currentStats[key] || 0).replace(/^\+/, '') + ' -> ' + formatStatValue(key, nextStats[key] || 0).replace(/^\+/, ''));
     });
@@ -5295,8 +5295,8 @@ function runEquipmentUpgrade(user) {
         protectDestroy: '🛡️ 장비 보호권으로 파괴를 막고 0강으로 초기화했습니다.'
     };
     const messageKey = protectedResult || result;
-    if (result == 'destroy' && !protectedResult) return messages[messageKey] + '\n' + equipment.name + ' +' + before + ' -> 파괴';
-    return messages[messageKey] + '\n' + equipment.name + ' +' + before + ' -> +' + Number(selected.equip.level || 0);
+    if (result == 'destroy' && !protectedResult) return messages[messageKey] + '\n' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + before + ' -> 파괴';
+    return messages[messageKey] + '\n' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + before + ' -> +' + Number(selected.equip.level || 0);
 }
 
 function addRewardSummary(summary, key, label, count) {
@@ -6030,7 +6030,7 @@ function formatTradeOfferLines(offer) {
         const data = getEquipmentData(entry.type, entry.id);
         if (!data) return;
         const level = Number(entry.level || 0);
-        lines.push('- <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : ''));
+        lines.push('- <' + data.rarity + '> ' + getEquipmentDisplayName(data, entry) + (level > 0 ? ' +' + level : ''));
     });
     (offer.cards || []).forEach(card => lines.push('- ' + formatUserCard(card)));
     Object.keys(offer.items || {}).forEach(itemId => {
@@ -6205,10 +6205,11 @@ function registerTradeOffer(user, args) {
         const equipCopy = { type: selected.equip.type || selected.type, id: selected.equip.id, level: Number(selected.equip.level || 0) };
         if (selected.equip.rolled) equipCopy.rolled = JSON.parse(JSON.stringify(selected.equip.rolled));
         if (selected.equip.potential) equipCopy.potential = JSON.parse(JSON.stringify(selected.equip.potential));
+        if (selected.equip.soul && !isSoulExpired(selected.equip.soul)) equipCopy.soul = JSON.parse(JSON.stringify(selected.equip.soul));
         user.inventory.equipment.splice(idx, 1);
         side.offer.equipments.push(equipCopy);
         resetTradeConfirmations(session);
-        return '✅ <' + data.rarity + '> ' + data.name + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
+        return '✅ <' + data.rarity + '> ' + getEquipmentDisplayName(data, selected.equip) + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
     }
     if (parsed.kind == '아이템') {
         const items = getDataCache('Item', []);

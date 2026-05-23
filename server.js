@@ -1435,7 +1435,7 @@ function describeAuctionPayload(entry) {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         const level = Number(entry.payload && entry.payload.level || 0);
         return {
-            name: data ? data.name : '알 수 없는 장비',
+            name: data ? rpgenius.getEquipmentDisplayName(data, entry.payload) : '알 수 없는 장비',
             sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[entry.payload.type] || entry.payload.type)) : '',
             rarity: data ? data.rarity : '',
             equipType: entry.payload && entry.payload.type,
@@ -1467,7 +1467,7 @@ function serializeAuctionEntry(entry, currentUserName) {
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
         if (data) {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled);
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             if (entry.payload && entry.payload.potential) rpgenius.formatPotentialLines(entry.payload.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         }
@@ -1519,7 +1519,7 @@ function buildSellableAssets(user) {
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return null;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             return {
@@ -1527,7 +1527,7 @@ function buildSellableAssets(user) {
                 type: eq.type,
                 typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
-                name: data.name,
+                name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
                 level,
                 statLines
@@ -1575,6 +1575,7 @@ async function registerAuction(sellerName, body) {
         payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         if (eq.rolled) payload.rolled = JSON.parse(JSON.stringify(eq.rolled));
         if (eq.potential) payload.potential = JSON.parse(JSON.stringify(eq.potential));
+        if (eq.soul && !rpgenius.isSoulExpired(eq.soul)) payload.soul = JSON.parse(JSON.stringify(eq.soul));
         equips.splice(index, 1);
     } else if (kind == 'item') {
         const itemId = Number(body.itemId);
@@ -1664,6 +1665,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
         if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
         if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
+        if (entry.payload.soul && !rpgenius.isSoulExpired(entry.payload.soul)) eqEntry.soul = JSON.parse(JSON.stringify(entry.payload.soul));
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
@@ -1742,6 +1744,7 @@ async function cancelAuction(userName, auctionId) {
         const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
         if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
         if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
+        if (entry.payload.soul && !rpgenius.isSoulExpired(entry.payload.soul)) eqEntry.soul = JSON.parse(JSON.stringify(entry.payload.soul));
         user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
@@ -2052,6 +2055,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
         if (eq.rolled) transferred.rolled = JSON.parse(JSON.stringify(eq.rolled));
         if (eq.potential) transferred.potential = JSON.parse(JSON.stringify(eq.potential));
+        if (eq.soul && !rpgenius.isSoulExpired(eq.soul)) transferred.soul = JSON.parse(JSON.stringify(eq.soul));
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
     } else if (entry.kind == 'item') {
@@ -2138,7 +2142,7 @@ function buildFulfillableAssets(user, entry) {
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled);
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             result.equipment.push({
@@ -2146,7 +2150,7 @@ function buildFulfillableAssets(user, entry) {
                 type: eq.type,
                 typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
-                name: data.name,
+                name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
                 level,
                 statLines
