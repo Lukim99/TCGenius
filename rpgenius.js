@@ -848,7 +848,7 @@ function rerollEquipmentPotential(user, numberArg) {
         '- 소모 골드: 🪙 ' + comma(cost),
         '- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier)
     ];
-    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? ' ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : ' ㄴ 골드 소모 50% 감소'));
+    if (useJewel) lines.push('- ' + POTENTIAL_JEWEL_ITEM_NAME + ' x1 소모' + (jewelUpgradeBonus ? '\n ㄴ 골드 소모 50% 감소\n ㄴ 승급 확률/카운트 2배' : '\n ㄴ 골드 소모 50% 감소'));
     if (upgraded) lines.push('- 잠재능력 티어: ' + getPotentialRarityLabel(currentTier) + ' → ' + getPotentialRarityLabel(nextTier) + (guaranteed ? ' (확정)' : ''));
     else if (upgrade) lines.push('- 승급 확정까지: ' + comma(potential.failCount) + '/' + comma(upgrade.guarantee));
     lines.push('', ...formatPotentialLines(potential));

@@ -322,6 +322,23 @@ server.get('/api/inventory/:kind', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
+    try {
+        const name = String(req.params.name || '').trim();
+        if (!name) return res.status(400).json({ error: '닉네임이 비어있습니다.' });
+        const user = await rpgenius.getRPGUserByName(name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const kind = String(req.params.kind || '');
+        if (kind == 'items') return res.json({ items: buildInventoryItems(user) });
+        if (kind == 'cards') return res.json({ cards: buildInventoryCards(user) });
+        if (kind == 'equipment') return res.json({ equipment: buildInventoryEquipment(user) });
+        return res.status(400).json({ error: '알 수 없는 인벤토리 종류입니다.' });
+    } catch (e) {
+        console.error('inventory-by-name error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 경매장 =====
 
 server.get('/api/auction', requireUser, async (req, res) => {
@@ -2279,8 +2296,10 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
     <section class="panel"><h2>재화</h2><div id="goods" class="grid"></div></section>
     <section class="panel"><h2>스탯</h2><div id="stats" class="grid"></div></section>
     <section class="panel"><h2>장착 장비</h2><div id="equippedGear" class="equip-grid"></div></section>
+    <button id="viewInventoryBtn" class="primary" style="display:none;justify-self:center;padding:12px 22px;font-size:15px">인벤토리 보기</button>
   </div>
   <div class="page" data-page="inventory">
+    <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>

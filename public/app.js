@@ -59,8 +59,12 @@ $$('.nav-btn').forEach(btn => btn.onclick = () => {
     if (btn.dataset.page === 'info') {
         if (currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
     }
-    if (btn.dataset.page === 'inventory' && !btn.dataset.loaded) {
-        btn.dataset.loaded = '1';
+    if (btn.dataset.page === 'inventory') {
+        if (currentInventoryName && myName && currentInventoryName !== myName) {
+            currentInventoryName = myName;
+            updateInventoryBanner();
+        }
+        if (!btn.dataset.loaded) btn.dataset.loaded = '1';
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (btn.dataset.page === 'auction') loadAuctions();
@@ -190,6 +194,15 @@ function categorySection(title, children) {
 
 let myName = null;
 let currentProfileName = null;
+let currentInventoryName = null;
+
+function updateInventoryBanner() {
+    const banner = $('#inventoryBanner');
+    if (!banner) return;
+    const isOther = currentInventoryName && myName && currentInventoryName !== myName;
+    banner.style.display = isOther ? 'flex' : 'none';
+    if (isOther) $('#inventoryBannerText').textContent = currentInventoryName + '님의 인벤토리를 보고 있습니다';
+}
 
 function renderProfile(data) {
     currentProfileName = data.user.name;
@@ -225,8 +238,24 @@ function renderProfile(data) {
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
     $('#slotCards').replaceChildren(...data.cardSlots.map(card => cardNode(card, true, openCardSlotModal)));
     $('#equippedGear').replaceChildren(...(data.equippedEquipment.length ? data.equippedEquipment.map(equipmentCard) : [el('div', { class: 'empty' }, '장착 중인 장비가 없습니다.')]));
+    const viewInvBtn = $('#viewInventoryBtn');
+    if (viewInvBtn) viewInvBtn.style.display = data.user.name !== myName ? '' : 'none';
     if (data.user.isAdmin) $('#adminLink').style.display = '';
 }
+
+if ($('#viewInventoryBtn')) $('#viewInventoryBtn').onclick = () => {
+    if (!currentProfileName) return;
+    currentInventoryName = currentProfileName;
+    updateInventoryBanner();
+    activatePage('inventory');
+    loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
+};
+
+if ($('#inventoryBackBtn')) $('#inventoryBackBtn').onclick = () => {
+    currentInventoryName = myName;
+    updateInventoryBanner();
+    loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
+};
 
 function itemRow(item) {
     return el('div', { class: 'inv-row' },
@@ -237,7 +266,10 @@ function itemRow(item) {
 
 async function loadInventory(kind) {
     $('#viewer').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
-    const data = await api('/api/inventory/' + kind);
+    const url = currentInventoryName && myName && currentInventoryName !== myName
+        ? '/api/inventory/' + kind + '/' + encodeURIComponent(currentInventoryName)
+        : '/api/inventory/' + kind;
+    const data = await api(url);
     if (kind === 'items') {
         $('#viewerTitle').textContent = '인벤토리';
         const sections = [];
