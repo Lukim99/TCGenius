@@ -4439,7 +4439,7 @@ async function stopFishingByName(name, message) {
 
 function scheduleFishing(user, channel) {
     clearFishingTimer(user.name);
-    fishingChannels[user.name] = channel;
+    if (channel) fishingChannels[user.name] = channel;
     fishingTimers[user.name] = setTimeout(async () => {
         const latest = await getRPGUserByName(user.name);
         if (!latest) {
@@ -4492,9 +4492,27 @@ async function toggleFishing(user, channel) {
     const baitId = getCurrentBaitItemId(user);
     if (baitId == -1 || getInventoryItemCount(user, baitId) < 1) return '❌ ' + getCurrentBaitName(user) + '이(가) 없습니다.';
     user.fishing = true;
+    if (channel && channel.channelId) user.fishingChannelId = String(channel.channelId);
     await user.save();
     scheduleFishing(user, channel);
     return '🎣 낚시를 시작합니다..\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
+}
+
+async function resumeAllFishing(getChannelById) {
+    try {
+        const users = await getAllRPGUsers();
+        let resumed = 0;
+        for (const user of users) {
+            if (!user || !user.fishing) continue;
+            const channelId = user.fishingChannelId ? String(user.fishingChannelId) : null;
+            const channel = channelId && typeof getChannelById == 'function' ? getChannelById(channelId) : null;
+            scheduleFishing(user, channel);
+            resumed++;
+        }
+        if (resumed > 0) console.log('[rpgenius] Resumed fishing for ' + resumed + ' user(s).');
+    } catch (e) {
+        console.error('[rpgenius] resumeAllFishing error:', e);
+    }
 }
 
 async function stopFishingForCommand(user) {
@@ -7424,6 +7442,7 @@ module.exports = {
     getMaxExpForLevel,
     onChat,
     initRpgeniusData,
+    resumeAllFishing,
     loadRpgeniusDataEntry,
     saveRpgeniusDataEntry,
     getDataCache,

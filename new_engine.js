@@ -11250,6 +11250,12 @@ async function login() {
         } else {
             token = `${loginData.result.accessToken}-${loginData.result.deviceUUID}`;
             console.log(`Login Success!`);
+            try {
+                await rpgenius.initRpgeniusData();
+                await rpgenius.resumeAllFishing(id => { try { return client.channelList.get(id); } catch (e) { return null; } });
+            } catch (e) {
+                console.error('[rpgenius] resume on login error:', e);
+            }
         }
     }
 }
