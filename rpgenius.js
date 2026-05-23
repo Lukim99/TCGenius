@@ -928,6 +928,7 @@ function formatCurrentEquipmentStatLines(equipment, level, rolled, context) {
     addStats(stat, resolved.stat);
     addStats(plusStat, resolved.plusStat);
     addPotentialStats(stat, plusStat, context && context.potential);
+    addSoulStats(stat, plusStat, context && context.soul);
     if (context && context.mainCardStar != null) {
         const dyn = getEquipmentDynamicBonusAtLevel(equipment, level);
         const entry = dyn[String(context.mainCardStar)];
@@ -3660,7 +3661,7 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
     const data = getEquipmentData(type, equip.id);
     if (!data) return title;
     const level = Number(equip.level || 0);
-    const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
+    const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
     let out = title + (statLines ? '\n' + statLines : '');
     const soulRemaining = formatSoulRemainingText(equip && equip.soul);
     if (soulRemaining) out += '\n' + soulRemaining;

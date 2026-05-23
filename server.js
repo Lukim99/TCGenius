@@ -1079,7 +1079,7 @@ function buildInventoryEquipment(user) {
         const data = equip && getEquipmentData(equip.type || type, equip.id);
         if (!data) return;
         const level = Number(equip.level || 0);
-        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled);
+        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
         const potentialLines = equip && equip.potential ? rpgenius.formatPotentialLines(equip.potential) : [];
         const potentialDisplay = equip && equip.potential ? {
