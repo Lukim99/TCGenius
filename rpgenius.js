@@ -960,9 +960,19 @@ function confirmPotentialReroll(user) {
     return lines.join('\n');
 }
 
-function cancelPotentialReroll(user) {
+function cancelPotentialReroll(user, force) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '잠재능력재설정확인') return '❌ 진행 중인 잠재능력 재설정이 없습니다.';
+    if (pending.upgraded && !force) {
+        return [
+            '❗ 잠재능력 티어가 승급합니다.',
+            '- ' + getPotentialRarityLabel(pending.currentTier) + ' → ' + getPotentialRarityLabel(pending.nextTier) + (pending.guaranteed ? ' (확정)' : ''),
+            '취소하면 이 승급도 함께 사라지며, 소모된 골드' + (pending.useJewel ? '/쥬얼은' : '는') + ' 반환되지 않습니다.',
+            '',
+            '정말 포기하시려면 아래 명령어를 입력해주세요.',
+            '/RPGenius 재설정포기확정'
+        ].join('\n');
+    }
     user.pendingAction = null;
     return '✅ 잠재능력이 유지됩니다.';
 }
@@ -7383,7 +7393,7 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '잠재능력' && args[1] == '재설정') {
         if (user.pendingAction && user.pendingAction.type == '잠재능력재설정확인') {
-            const result = cancelPotentialReroll(user);
+            const result = cancelPotentialReroll(user, false);
             await user.save();
             reply(result);
             return true;
@@ -7406,7 +7416,14 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '재설정포기') {
-        const result = cancelPotentialReroll(user);
+        const result = cancelPotentialReroll(user, false);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (args[0] == '재설정포기확정') {
+        const result = cancelPotentialReroll(user, true);
         await user.save();
         reply(result);
         return true;
