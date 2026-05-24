@@ -907,6 +907,7 @@ function rerollEquipmentPotential(user, numberArg) {
         return '❌ 잠재능력 데이터를 찾을 수 없어 골드를 반환했습니다.';
     }
     selected.equip.potential.failCount = upgrade && !upgraded ? previousFailCount + failIncrement : 0;
+    potential.failCount = selected.equip.potential.failCount;
     const oldPotential = JSON.parse(JSON.stringify(selected.equip.potential));
     user.pendingAction = {
         type: '잠재능력재설정확인',
