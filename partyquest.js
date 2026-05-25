@@ -430,6 +430,7 @@ function serializeMonster(mon) {
         hp: Math.max(0, Math.round(mon.hp)),
         hpMax: Math.round(mon.hpMax),
         gauge: Math.max(0, Math.min(100, Math.round(mon.gauge || 0))),
+        stunRemain: Math.max(0, Math.round(Number(mon.stunRemain || 0) * 10) / 10),
         nextPattern: mon.nextPattern || null
     };
 }
@@ -454,6 +455,11 @@ function createPhaseMonster(phase) {
     const stats = mergeMonsterStats(monDef);
     const hp = Math.max(1, Math.round(Number(stats.hp || 1)));
     const mp = Math.max(0, Math.round(Number(stats.mp || 0)));
+    const patterns = monDef.patterns || [];
+    const findPattern = type => patterns.find(p => p && p.type === type) || {};
+    const fixedAoe = findPattern('fixedAoe');
+    const regenBelowHp = findPattern('regenBelowHp');
+    const selfBuff = findPattern('selfBuff');
     return {
         name: monDef.name || phase.name || '몬스터',
         hp,
@@ -469,8 +475,21 @@ function createPhaseMonster(phase) {
         type: phase.type,
         tauntTarget: null,
         tauntRemain: 0,
+        stunRemain: 0,
+        bossState: phase.type === 'boss' && monDef.name === '흑화 호두' ? {
+            revived: false,
+            disabled: false,
+            phase50Started: false,
+            phase10Started: false,
+            healActive: false,
+            shockTimer: Number(fixedAoe.interval || 20),
+            healTimer: Number(regenBelowHp.interval || 5),
+            buffTimer: Number(selfBuff.interval || 30),
+            buffRemain: 0,
+            casting: null
+        } : null,
         stackCounters: {},
-        patterns: monDef.patterns || [],
+        patterns,
         skills: monDef.skills || [],
         patternCooldowns: {},
         nextPattern: null
@@ -998,6 +1017,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
         target: room.killTarget,
         damage: damage,
         fixedDamage: Number(result && result.fixedDamage || 0),
+        destinyDamage: Number(result && result.destinyDamage || 0),
         hitDetails: Array.isArray(result && result.hitDetails) ? result.hitDetails : [],
         kills: kills,
         crit: !!(result && result.isCrit),
@@ -1005,7 +1025,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
         skill: skillName || null
     };
     broadcast(room, 'kill', payload);
-    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 잡몹 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' ✦' : ''), type || 'attack');
+    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' ✦' : ''), type || 'attack');
     applyAttackPotentialRecovery(room, attacker);
     if (room.sharedKillCount >= room.killTarget) {
         room.sharedKillCount = room.killTarget;
@@ -1061,6 +1081,8 @@ function stepRoom(room) {
     }
     const mon = room.monster;
     if (mon) {
+        if (mon.stunRemain > 0) mon.stunRemain = Math.max(0, mon.stunRemain - dt);
+        if (mon.bossState && mon.bossState.buffRemain > 0) mon.bossState.buffRemain = Math.max(0, mon.bossState.buffRemain - dt);
         if (mon.tauntRemain > 0) mon.tauntRemain = Math.max(0, mon.tauntRemain - dt);
         for (const k of Object.keys(mon.patternCooldowns || {})) {
             mon.patternCooldowns[k] = Math.max(0, mon.patternCooldowns[k] - dt);
@@ -1073,11 +1095,28 @@ function stepRoom(room) {
             }
         }
 
-        // 몬스터 게이지 누적
-        mon.gauge += (100 / Math.max(0.4, mon.actionInterval)) * dt;
-        if (mon.gauge >= 100) {
-            mon.gauge -= 100;
-            performMonsterAction(room);
+        if (mon.stunRemain <= 0) {
+            const patternConsumed = stepBlackHoduBoss(room, mon, dt);
+            if (room.state !== 'inProgress' || room.monster !== mon) return;
+            if (patternConsumed) {
+                broadcast(room, 'tick', {
+                    members: room.members.map(serializeMember),
+                    monster: serializeMonster(mon),
+                    tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
+                    tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10)
+                });
+                return;
+            }
+            // 몬스터 게이지 누적
+            mon.gauge += (100 / Math.max(0.4, mon.actionInterval)) * dt;
+            if (mon.gauge >= 100) {
+                mon.gauge -= 100;
+                performMonsterAction(room);
+            }
+        } else if (mon.bossState && mon.bossState.casting) {
+            pushCombat(room, mon.name + ' [' + mon.bossState.casting.name + '] 캐스팅 중단', 'buff');
+            mon.bossState.casting = null;
+            mon.nextPattern = null;
         }
     }
 
@@ -1137,6 +1176,10 @@ function getFinalDamageMul(attacker) {
 
 function getMonsterDealtDmgMul(monster) {
     let mul = 1;
+    if (monster && monster.bossState && Number(monster.bossState.buffRemain || 0) > 0) {
+        const pattern = getMonsterPattern(monster, 'selfBuff');
+        mul *= Number(pattern.buff && pattern.buff.dealtDmg || 1.15);
+    }
     if (monster && Array.isArray(monster.debuffs)) {
         for (const d of monster.debuffs) {
             if (d.type === 'dealtDmg') mul *= (1 + Number(d.value || 0));
@@ -1147,6 +1190,10 @@ function getMonsterDealtDmgMul(monster) {
 
 function getMonsterTakenDmgMul(monster) {
     let mul = 1;
+    if (monster && monster.bossState && Number(monster.bossState.buffRemain || 0) > 0) {
+        const pattern = getMonsterPattern(monster, 'selfBuff');
+        mul *= Number(pattern.buff && pattern.buff.takenDmg || 0.85);
+    }
     if (monster && Array.isArray(monster.debuffs)) {
         for (const d of monster.debuffs) {
             if (d.type === 'takenDamage') mul *= (1 + Number(d.value || 0));
@@ -1174,8 +1221,7 @@ function randomInt(min, max) {
 
 function getComboHitCount(stats) {
     const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
-    const additional = Math.max(1, Math.floor(Number(stats && stats.maxCmb || 0)));
-    const maxHits = 1 + additional;
+    const maxHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
     let hitCount = 1;
     while (hitCount < maxHits && Math.random() < chance) hitCount++;
     return hitCount;
@@ -1185,10 +1231,32 @@ function getReducedDefenseRate(stats, slotEffects, extraRate) {
     return Math.max(0, Math.min(1, Number(stats && stats.pntPercent || 0) + Number(slotEffects && slotEffects.defReduction || 0) + Number(extraRate || 0)));
 }
 
+function getPositionStatMul(room, member, key) {
+    const quest = getQuestById(room && room.questId) || {};
+    const posDef = (quest.positions && member && quest.positions[member.position]) || {};
+    return posDef && posDef.stats && posDef.stats[key] != null ? Number(posDef.stats[key]) : 1;
+}
+
 function getDamageAfterDefense(damage, defense, penetration, defenseReductionRate) {
     const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
     const finalDefense = Math.max(0, reducedDefense - Number(penetration || 0));
     return Math.floor(Number(damage || 0) * (100 / (100 + finalDefense)));
+}
+
+function getFixedDamageAgainstMonster(damage, monster, penetration, defenseReductionRate) {
+    return Math.max(0, Math.round(Number(damage || 0)));
+}
+
+function getDestinyDamageAgainstMonster(damage, monster, penetration, defenseReductionRate) {
+    const reducedDefense = Number(monster && monster.def || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
+    const penetratedDefense = Math.max(0, reducedDefense - Number(penetration || 0));
+    return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
+}
+
+function getDestinyDamageAfterDefense(damage, defense, penetration, defenseReductionRate) {
+    const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
+    const penetratedDefense = Math.max(0, reducedDefense - Number(penetration || 0));
+    return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
 }
 
 function applyDamageVariance(damage) {
@@ -1237,6 +1305,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (runtime.trueDamageOnCritNext) runtime.trueDamageOnCritNext = false;
     let damage = 0;
     let fixedDamage = 0;
+    let destinyDamage = 0;
     let criticalCount = 0;
     const hitDamages = [];
     const hitDetails = [];
@@ -1245,6 +1314,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     for (let i = 0; i < totalHits; i++) {
         let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0)) * dealtDmgMul * getFinalDamageMul(attacker);
         let fixedHitDamage = 0;
+        let destinyHitDamage = 0;
         const isCrit = extra && extra.disableCritical ? false : (extra && extra.forceCritical ? true : Math.random() < Math.max(0, crit));
         if (isCrit) {
             hitDamage = Math.round(hitDamage * Math.max(1, Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0) - Number(monsterStats.critDef || 0)));
@@ -1252,35 +1322,40 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             if (extra && extra.extraOnCrit && totalHits < maxHits) totalHits++;
         }
         hitDamage *= Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
-        if ((trueDamageOnCrit && isCrit) || (Number(stats.trueDamageChance || 0) > 0 && Math.random() < Number(stats.trueDamageChance || 0))) {
-            hitDamage = Math.max(0, Math.round(hitDamage));
+        if (trueDamageOnCrit && isCrit) {
+            hitDamage = getFixedDamageAgainstMonster(hitDamage, monster, penetration, defenseReductionRate);
             fixedHitDamage += hitDamage;
+        } else if (Number(stats.trueDamageChance || 0) > 0 && Math.random() < Number(stats.trueDamageChance || 0)) {
+            hitDamage = getDestinyDamageAgainstMonster(hitDamage, monster, penetration, defenseReductionRate);
+            destinyHitDamage += hitDamage;
         } else {
             hitDamage = getDamageAfterDefense(hitDamage, monster && monster.def, penetration, defenseReductionRate);
         }
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
-            const bonus = [10, 100, 1000][randomInt(0, 2)];
+            const bonus = getFixedDamageAgainstMonster([10, 100, 1000][randomInt(0, 2)], monster, penetration, defenseReductionRate);
             hitDamage += bonus;
             fixedHitDamage += bonus;
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) {
-            const bonus = Number(extra.skillTrueDmg || 0);
+            const bonus = getFixedDamageAgainstMonster(Number(extra.skillTrueDmg || 0), monster, penetration, defenseReductionRate);
             hitDamage += bonus;
             fixedHitDamage += bonus;
         }
         fixedDamage += fixedHitDamage;
+        destinyDamage += destinyHitDamage;
         const finalHitDamage = applyDamageVariance(hitDamage);
         hitDamages.push(finalHitDamage);
-        hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), crit: !!isCrit });
+        hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit });
         damage += finalHitDamage;
     }
-    return { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, criticalCount, hitDamages, hitDetails };
+    return { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), destinyDamage: Math.max(0, Math.round(destinyDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, criticalCount, hitDamages, hitDetails };
 }
 
 function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
     if (!room.monster) return { damage: 0, isCrit: false };
     const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra || {});
     room.monster.hp = Math.max(0, room.monster.hp - result.damage);
+    applyBlackHoduCritReflect(room, attacker, result);
     return result;
 }
 
@@ -1291,12 +1366,14 @@ function performBasicAttack(room, attacker) {
     mon.hp = Math.max(0, mon.hp - r.damage);
     applyAttackPotentialRecovery(room, attacker);
     applyMainCardPassiveMpRecovery(room, attacker);
+    applyBlackHoduCritReflect(room, attacker, r);
     pushCombat(room, attacker.name + ' → ' + mon.name + ' [-' + r.damage + (r.isCrit ? ' 치명' : '') + ']', 'attack');
     broadcast(room, 'hit', {
         by: attacker.name,
         type: 'attack',
         damage: r.damage,
         fixedDamage: r.fixedDamage || 0,
+        destinyDamage: r.destinyDamage || 0,
         crit: !!r.isCrit,
         hitCount: r.hitCount || 1,
         hitDetails: r.hitDetails || [],
@@ -1361,6 +1438,155 @@ function applyMonsterAttackRecovery(mon) {
     if (Math.random() < 0.1 && Number(stats.attackMpRecovery || 0) > 0) mon.mp = Math.min(mon.mpMax || 0, Number(mon.mp || 0) + Math.round(Number(stats.attackMpRecovery || 0) * recoveryMul));
 }
 
+function getAliveMembers(room) {
+    return room.members.filter(m => m.runtime && !m.runtime.dead);
+}
+
+function pickTauntOrNull(room, mon) {
+    const tauntName = room.tauntRemain > 0 && room.tauntTarget ? room.tauntTarget : (mon && mon.tauntRemain > 0 && mon.tauntTarget ? mon.tauntTarget : null);
+    if (!tauntName) return null;
+    const target = findMember(room, tauntName);
+    return target && target.runtime && !target.runtime.dead ? target : null;
+}
+
+function applyFixedDamageToMember(room, member, amount, source) {
+    if (!member || !member.runtime || member.runtime.dead) return 0;
+    const before = member.runtime.hp;
+    applyDamageToMember(room, member, Math.max(0, Math.round(Number(amount || 0))), source);
+    return Math.max(0, before - member.runtime.hp);
+}
+
+function getMonsterPattern(mon, type) {
+    return mon && Array.isArray(mon.patterns) ? (mon.patterns.find(p => p && p.type === type) || {}) : {};
+}
+
+function executeMember(room, member, source) {
+    if (!member || !member.runtime || member.runtime.dead) return;
+    member.runtime.hp = 0;
+    if (tryPartyImmortalArmorRevive(room, member)) return;
+    member.runtime.dead = true;
+    pushCombat(room, source + ' → ' + member.name + ' [즉사]', 'damage');
+    pushNotice(room, '☠ ' + member.name + ' 전투불능', 'danger', 3500);
+    if (room.members.every(m => m.runtime.dead)) endQuest(room, false, '파티 전멸');
+}
+
+function startBlackHoduCast(room, mon, id, name, duration) {
+    const st = mon && mon.bossState;
+    if (!st || st.disabled || st.casting) return;
+    st.casting = { id, name, remain: Number(duration || 0) };
+    mon.nextPattern = name + ' ' + Number(duration || 0).toFixed(1) + 's';
+    pushCombat(room, mon.name + ' [' + name + '] 캐스팅 시작', 'danger');
+}
+
+function finishBlackHoduCast(room, mon, cast) {
+    const st = mon && mon.bossState;
+    if (!st || !cast) return;
+    mon.nextPattern = null;
+    if (cast.id === 'half') {
+        const pattern = getMonsterPattern(mon, 'hpThresholdCast');
+        const pct = Number(pattern.damageTargetMaxHpPct || 0.5);
+        let healed = 0;
+        for (const m of getAliveMembers(room)) {
+            healed += applyFixedDamageToMember(room, m, Math.ceil(Number(m.runtime.hpMax || 0) * pct), mon.name + ' [' + (pattern.name || '파멸의 정화') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon || st.disabled) return;
+        }
+        if (healed > 0) mon.hp = Math.min(mon.hpMax, mon.hp + healed);
+        pushCombat(room, mon.name + ' [' + (pattern.name || '파멸의 정화') + '] 피해 흡수 [+' + comma(healed) + ']', 'heal');
+    }
+    if (cast.id === 'execute') {
+        const pattern = getMonsterPattern(mon, 'executePositionCast');
+        const order = Array.isArray(pattern.targetPriority) && pattern.targetPriority.length ? pattern.targetPriority : ['메인딜러', '서브딜러', '브루저', '탱커', '서포터'];
+        let target = null;
+        for (const pos of order) {
+            target = room.members.find(m => m.position === pos && m.runtime && !m.runtime.dead);
+            if (target) break;
+        }
+        if (target) executeMember(room, target, mon.name + ' [' + (pattern.name || '종언') + ']');
+    }
+}
+
+function stepBlackHoduBoss(room, mon, dt) {
+    const st = mon && mon.bossState;
+    if (!st || st.disabled) return false;
+    if (st.casting) {
+        st.casting.remain = Math.max(0, Number(st.casting.remain || 0) - dt);
+        mon.nextPattern = st.casting.name + ' ' + st.casting.remain.toFixed(1) + 's';
+        if (st.casting.remain <= 0) {
+            const cast = st.casting;
+            st.casting = null;
+            finishBlackHoduCast(room, mon, cast);
+        }
+        return true;
+    }
+    const hpRatio = mon.hpMax > 0 ? mon.hp / mon.hpMax : 1;
+    const halfPattern = getMonsterPattern(mon, 'hpThresholdCast');
+    const executePattern = getMonsterPattern(mon, 'executePositionCast');
+    const halfThreshold = Number(halfPattern.threshold || 0.5);
+    const executeThreshold = Number(executePattern.threshold || 0.1);
+    if (!st.phase50Started && hpRatio <= halfThreshold) {
+        st.phase50Started = true;
+        startBlackHoduCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2));
+        return true;
+    }
+    if (!st.phase10Started && hpRatio <= executeThreshold) {
+        st.phase10Started = true;
+        startBlackHoduCast(room, mon, 'execute', executePattern.name || '종언', Number(executePattern.castTime || 3));
+        return true;
+    }
+    const regenPattern = getMonsterPattern(mon, 'regenBelowHp');
+    if (hpRatio <= Number(regenPattern.threshold || 0.3)) st.healActive = true;
+    st.shockTimer = Math.max(0, Number(st.shockTimer || 0) - dt);
+    if (st.shockTimer <= 0) {
+        const pattern = getMonsterPattern(mon, 'fixedAoe');
+        const amount = Number(pattern.fixedDamage || 1000);
+        st.shockTimer += Number(pattern.interval || 20);
+        const alive = getAliveMembers(room);
+        const taunted = pickTauntOrNull(room, mon);
+        if (taunted) {
+            applyFixedDamageToMember(room, taunted, amount * alive.length, mon.name + ' [' + (pattern.name || '어둠 폭발') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon || st.disabled) return true;
+        } else {
+            for (const m of alive) {
+                applyFixedDamageToMember(room, m, amount, mon.name + ' [' + (pattern.name || '어둠 폭발') + ']');
+                if (room.state !== 'inProgress' || room.monster !== mon || st.disabled) return true;
+            }
+        }
+        if (room.state !== 'inProgress') return true;
+        return true;
+    }
+    if (st.healActive) {
+        st.healTimer = Math.max(0, Number(st.healTimer || 0) - dt);
+        if (st.healTimer <= 0) {
+            st.healTimer += Number(regenPattern.interval || 5);
+            const amount = Math.max(1, Math.round(mon.hpMax * Number(regenPattern.healMaxHpPct || 0.05)));
+            mon.hp = Math.min(mon.hpMax, mon.hp + amount);
+            pushCombat(room, mon.name + ' [' + (regenPattern.name || '재생') + '] +' + comma(amount), 'heal');
+        }
+    }
+    st.buffTimer = Math.max(0, Number(st.buffTimer || 0) - dt);
+    if (st.buffTimer <= 0) {
+        const pattern = getMonsterPattern(mon, 'selfBuff');
+        st.buffTimer += Number(pattern.interval || 30);
+        st.buffRemain = Number(pattern.duration || 15);
+        pushCombat(room, mon.name + ' [' + (pattern.name || '흑화 증폭') + '] 공격력 증가 / 받는 피해 감소', 'buff');
+        return true;
+    }
+    return false;
+}
+
+function applyBlackHoduCritReflect(room, attacker, result) {
+    const mon = room && room.monster;
+    const st = mon && mon.bossState;
+    if (!st || st.disabled || Number(mon.hp || 0) <= 0 || Number(mon.stunRemain || 0) > 0 || !result || !result.isCrit) return;
+    const pattern = getMonsterPattern(mon, 'critReflect');
+    const details = Array.isArray(result.hitDetails) ? result.hitDetails : [];
+    const critDamage = details.length ? details.filter(h => h && h.crit).reduce((sum, h) => sum + Number(h.damage || 0), 0) : Number(result.damage || 0);
+    const reflect = Math.max(1, Math.round(critDamage * Number(pattern.reflectPct || 0.15)));
+    const target = pickTauntOrNull(room, mon) || attacker;
+    if (!target || !target.runtime || target.runtime.dead) return;
+    applyFixedDamageToMember(room, target, reflect, mon.name + ' [치명 반사]');
+}
+
 function computeMonsterDamage(room, mon, target) {
     const quest = getQuestById(room.questId);
     const posDef = quest.positions[target.position];
@@ -1383,7 +1609,7 @@ function computeMonsterDamage(room, mon, target) {
         const isCrit = Math.random() < Math.max(0, Number(monStats.crit || 0));
         if (isCrit) hitDamage = Math.round(hitDamage * Math.max(1, Number(monStats.critMul || 1.4) - Number(targetStats.critDef || 0)));
         if (Number(monStats.trueDamageChance || 0) > 0 && Math.random() < Number(monStats.trueDamageChance || 0)) {
-            hitDamage = Math.max(0, Math.round(hitDamage));
+            hitDamage = getDestinyDamageAfterDefense(hitDamage, defense, penetration, defenseReductionRate);
         } else {
             hitDamage = getDamageAfterDefense(hitDamage, defense, penetration, defenseReductionRate);
         }
@@ -1527,6 +1753,21 @@ function applyDamageTakenSlotRecovery(room, damaged, damage) {
 }
 
 function onMonsterDefeated(room) {
+    const mon = room.monster;
+    if (mon && mon.bossState && !mon.bossState.revived) {
+        const pattern = getMonsterPattern(mon, 'reviveOnce');
+        mon.bossState.revived = true;
+        mon.bossState.disabled = true;
+        mon.bossState.casting = null;
+        mon.bossState.buffRemain = 0;
+        mon.nextPattern = null;
+        mon.hp = Math.max(1, Math.round(mon.hpMax * Number(pattern.reviveHpPct || 0.3)));
+        mon.gauge = 0;
+        mon.debuffs = [];
+        pushNotice(room, '🔥 ' + mon.name + ' 부활! 패턴이 사라지고 기본 공격만 사용합니다.', 'danger', 4500);
+        pushCombat(room, mon.name + ' 최대 체력의 30%로 부활', 'danger');
+        return;
+    }
     pushNotice(room, '🏆 ' + (room.monster ? room.monster.name : '적') + ' 처치!', 'success', 4000);
     room.monster = null;
     endPhase(room);
@@ -1587,7 +1828,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const quest = getQuestById(room.questId);
     const posDef = quest.positions[caster.position];
-    const dealtDmgMul = (posDef && posDef.stats && posDef.stats.dealtDmg) || 1;
+    const finalAtkMul = (posDef && posDef.stats && posDef.stats.finalAtk) || 1;
     let skillDmgMul = (posDef && posDef.stats && posDef.stats.skillDmg) || 1;
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     if (def.countAsBasic) skillDmgMul = 1;
@@ -1595,7 +1836,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
     if (def.hits) extra.hitCount = Number(def.hits || 1);
     if (def.extraOnCrit) extra.extraOnCrit = def.extraOnCrit;
     const ctx = {
-        atk: Number(stats.atk || 100) * (1 + (caster.runtime.atkBuff || 0)),
+        atk: Number(stats.atk || 100) * finalAtkMul * (1 + (caster.runtime.atkBuff || 0)),
         def: Number(stats.def || 50),
         targetMaxHp: room.monster ? room.monster.hpMax : 0
     };
@@ -1603,7 +1844,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
     if (def.damage && (room.monster || (phase && phase.type === 'mob'))) {
         const targetMonster = room.monster || createPhaseMonster(phase);
         ctx.targetMaxHp = targetMonster.hpMax || ctx.targetMaxHp;
-        let dmg = evalFormula(def.damage, ctx) * dealtDmgMul * skillDmgMul * getFinalDamageMul(caster);
+        let dmg = evalFormula(def.damage, ctx) * skillDmgMul * getFinalDamageMul(caster);
         if (def.countAsBasic) dmg *= (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0));
         // 스택형 (낙뢰)
         if (def.stack && def.stack.key) {
@@ -1634,10 +1875,16 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
             pushCombat(room, '💥 ' + room.monster.name + ' 받는 피해 증가 +' + Math.round(Number(def.debuff.takenDmg || 0) * 100) + '%', 'buff');
         }
         if (def.stun && def.stun > 0) {
-            // 몬스터 행동 게이지 일부 감소로 표현
-            room.monster.gauge = Math.max(0, room.monster.gauge - Number(def.stun) * 30);
+            room.monster.stunRemain = Math.max(Number(room.monster.stunRemain || 0), Number(def.stun || 0));
+            if (room.monster.bossState && room.monster.bossState.casting) {
+                pushCombat(room, room.monster.name + ' [' + room.monster.bossState.casting.name + '] 캐스팅 중단', 'buff');
+                room.monster.bossState.casting = null;
+                room.monster.nextPattern = null;
+            }
             pushNotice(room, room.monster.name + ' 기절! (' + def.stun + 's)', 'info', 2500);
         }
+        applyBlackHoduCritReflect(room, caster, result);
+        if (room.state !== 'inProgress' || !room.monster) return;
         if (def.mpRefundPctOfDealt) caster.runtime.mp = Math.min(caster.runtime.mpMax, caster.runtime.mp + Math.round(damage * Number(def.mpRefundPctOfDealt)));
         if (def.lifesteal && def.lifesteal.byMissingHp) healMember(caster, Math.round(Math.max(0, caster.runtime.hpMax - caster.runtime.hp) * Number(def.lifesteal.byMissingHp || 0)));
         if (def.selfDodgeNext) caster.runtime.dodgeNext = true;
@@ -1649,6 +1896,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
             skill: skillName,
             damage: damage,
             fixedDamage: result.fixedDamage || 0,
+            destinyDamage: result.destinyDamage || 0,
             crit: !!result.isCrit,
             hitDetails: result.hitDetails || [],
             monster: serializeMonster(room.monster)
@@ -1732,11 +1980,15 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     const star = Number(def.star || 0);
     const stats = caster.baseSnapshot.stats || {};
     const slotEffects = caster.baseSnapshot.slotEffects || {};
+    const finalAtkMul = getPositionStatMul(room, caster, 'finalAtk');
+    const finalAtk = Number(stats.atk || 0) * finalAtkMul;
+    let skillDmgMul = getPositionStatMul(room, caster, 'skillDmg');
+    if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     const multiplier = getSkillValue(skill, 0, star);
     const extra = {};
-    let rawDamage = Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
+    let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0)) * skillDmgMul);
     if (skillName === '글버지') {
-        const amount = Math.max(1, Math.round(getSkillValue(skill, 0, star) + Number(stats.atk || 0) * getSkillValue(skill, 1, star)));
+        const amount = Math.max(1, Math.round(getSkillValue(skill, 0, star) + finalAtk * getSkillValue(skill, 1, star)));
         for (const m of room.members) if (m.runtime && !m.runtime.dead) m.runtime.hp = Math.min(m.runtime.hpMax, m.runtime.hp + amount);
         pushCombat(room, caster.name + ' [글버지] → 파티 전체 [+' + amount + ']', 'heal');
         return;
@@ -1761,7 +2013,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (skillName === '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skill, 1, star);
     if (skillName === '비리') {
         extra.forceCritical = true;
-        rawDamage = Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
+        rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
     }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const quest = getQuestById(room.questId);
@@ -1787,6 +2039,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         skill: skillName,
         damage: result.damage,
         fixedDamage: result.fixedDamage || 0,
+        destinyDamage: result.destinyDamage || 0,
         crit: !!result.isCrit,
         hitDetails: result.hitDetails || [],
         monster: serializeMonster(room.monster)

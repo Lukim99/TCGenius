@@ -593,6 +593,7 @@
                 setTimeout(() => showSingleDamagePop(Object.assign({}, payload, {
                     damage: hit.damage,
                     fixedDamage: hit.fixedDamage || 0,
+                    destinyDamage: hit.destinyDamage || 0,
                     crit: !!hit.crit,
                     kills: index === details.length - 1 ? payload.kills : 0,
                     skill: index === details.length - 1 ? payload.skill : null,
@@ -610,7 +611,8 @@
         if (!host) return;
         const isMe = payload.by === me;
         const hasFixed = Number(payload.fixedDamage || 0) > 0;
-        const cls = 'pq-dmg-pop' + (payload.crit ? ' crit' : '') + (hasFixed ? ' fixed' : '') + (isMe ? '' : ' other');
+        const hasDestiny = Number(payload.destinyDamage || 0) > 0;
+        const cls = 'pq-dmg-pop' + (payload.crit ? ' crit' : '') + ((hasFixed || hasDestiny) ? ' fixed' : '') + (isMe ? '' : ' other');
         const pop = el('div', { class: cls });
         if (!isMe) pop.append(el('span', { class: 'by' }, payload.by));
         const main = document.createElement('span');
@@ -620,6 +622,7 @@
         if (payload.kills > 1) pop.append(el('span', { class: 'sub' }, '×' + payload.kills.toLocaleString() + ' 처치'));
         else if (payload.skill) pop.append(el('span', { class: 'sub' }, payload.skill));
         if (hasFixed) pop.append(el('span', { class: 'sub fixed-label' }, '고정 ' + Number(payload.fixedDamage || 0).toLocaleString()));
+        if (hasDestiny) pop.append(el('span', { class: 'sub fixed-label' }, '운명 ' + Number(payload.destinyDamage || 0).toLocaleString()));
         const offsetX = 50 + (Math.random() * 30 - 15);
         pop.style.left = offsetX + '%';
         host.append(pop);
@@ -643,7 +646,7 @@
         const wrap = el('div', { id: 'pqBossStage', class: 'pq-mob-stage' });
         const boss = el('div', { class: 'pq-boss' });
         boss.append(el('div', { class: 'pq-boss-head' },
-            el('div', { class: 'pq-boss-name' }, m.name),
+            el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : '')),
             el('div', { id: 'pqBossHpVal', class: 'pq-boss-hpval' }, m.hp + ' / ' + m.hpMax)
         ));
         const hpBar = el('div', { class: 'pq-prog hp' }, el('div', { id: 'pqBossHpFill', class: 'fill' }));
@@ -652,6 +655,7 @@
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
         boss.append(gBar);
+        boss.append(el('div', { id: 'pqBossPattern', style: m.nextPattern ? 'color:#fbbf24;font-size:12px;font-weight:800;text-align:center' : 'display:none' }, m.nextPattern || ''));
         const btn = el('button', {
             id: 'pqAttackBtn',
             class: 'pq-attack-btn',
@@ -667,9 +671,20 @@
         const hpVal = document.getElementById('pqBossHpVal');
         const hpFill = document.getElementById('pqBossHpFill');
         const gaugeFill = document.getElementById('pqBossGaugeFill');
+        const stun = document.getElementById('pqBossStun');
+        const pattern = document.getElementById('pqBossPattern');
         if (hpVal) hpVal.textContent = monster.hp + ' / ' + monster.hpMax;
         if (hpFill) hpFill.style.width = (monster.hpMax > 0 ? (monster.hp / monster.hpMax * 100) : 0) + '%';
         if (gaugeFill) gaugeFill.style.width = (monster.gauge || 0) + '%';
+        if (stun) {
+            const remain = Number(monster.stunRemain || 0);
+            stun.style.display = remain > 0 ? '' : 'none';
+            stun.textContent = remain > 0 ? ('기절 ' + remain.toFixed(1) + 's') : '';
+        }
+        if (pattern) {
+            pattern.style.display = monster.nextPattern ? '' : 'none';
+            pattern.textContent = monster.nextPattern || '';
+        }
     }
 
     function renderPlayMembers(snap) {

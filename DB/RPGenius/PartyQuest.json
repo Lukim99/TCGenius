@@ -10,10 +10,10 @@
       "phases": [
         {
           "type": "mob",
-          "name": "잡몹 소탕",
+          "name": "정화 작업",
           "killTarget": 1000,
           "monster": {
-            "name": "잡몹",
+            "name": "어둠",
             "hp": 360,
             "atk": 800,
             "def": 20,
@@ -26,11 +26,16 @@
           "name": "엘리트",
           "monster": {
             "name": "흑화한 호두 부하",
-            "hp": 6800,
-            "atk": 7540,
+            "hp": 138000,
+            "atk": 940,
             "def": 680,
             "actionInterval": 2.5,
-            "skills": []
+            "skills": [],
+            "stat": {
+              "pnt": 420,
+              "crit": 0.5,
+              "critMul": 1.75
+            }
           }
         },
         {
@@ -38,11 +43,75 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
-            "hp": 16300,
-            "atk": 12300,
-            "def": 910,
+            "hp": 363000,
+            "atk": 1370,
+            "def": 1070,
             "actionInterval": 2.0,
-            "patterns": []
+            "patterns": [
+              {
+                "name": "치명 반사",
+                "type": "critReflect",
+                "reflectPct": 0.15,
+                "taunt": true,
+                "disabledWhileStunned": true
+              },
+              {
+                "name": "어둠 폭발",
+                "type": "fixedAoe",
+                "interval": 20,
+                "fixedDamage": 1000,
+                "tauntStackToTarget": true,
+                "delayWhileStunned": true
+              },
+              {
+                "name": "파멸의 정화",
+                "type": "hpThresholdCast",
+                "threshold": 0.5,
+                "castTime": 2,
+                "damageTargetMaxHpPct": 0.5,
+                "healByDamage": true,
+                "interruptByStun": true,
+                "once": true
+              },
+              {
+                "name": "재생",
+                "type": "regenBelowHp",
+                "threshold": 0.3,
+                "interval": 5,
+                "healMaxHpPct": 0.05,
+                "delayWhileStunned": true
+              },
+              {
+                "name": "흑화 증폭",
+                "type": "selfBuff",
+                "interval": 30,
+                "duration": 15,
+                "buff": {
+                  "dealtDmg": 1.15,
+                  "takenDmg": 0.85
+                }
+              },
+              {
+                "name": "종언",
+                "type": "executePositionCast",
+                "threshold": 0.1,
+                "castTime": 3,
+                "targetPriority": ["메인딜러", "서브딜러", "브루저", "탱커", "서포터"],
+                "interruptByStun": true,
+                "once": true
+              },
+              {
+                "name": "흑화 부활",
+                "type": "reviveOnce",
+                "reviveHpPct": 0.3,
+                "disablePatternsAfterRevive": true
+              }
+            ],
+            "stat": {
+              "pnt": 690,
+              "crit": 0.65,
+              "critMul": 2.25
+            }
           }
         }
       ],

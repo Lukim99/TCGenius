@@ -64,8 +64,7 @@ server.get('/static/app.js', (req, res) => {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.send(fs.readFileSync(APP_JS_PATH, 'utf8'));
 });
-server.get('/static/party.js', (req, res) => {
-    if (!getSession(req)) return res.status(401).end();
+server.get('/static/party.js', requirePartyQuest, (req, res) => {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.send(fs.readFileSync(PARTY_JS_PATH, 'utf8'));
 });
@@ -131,6 +130,27 @@ function requireUser(req, res, next) {
     next();
 }
 
+async function requirePartyQuest(req, res, next) {
+    const sess = getSession(req);
+    if (!sess || !sess.name) {
+        if (req.path === '/party') return res.redirect('/');
+        return res.status(401).json({ error: '로그인이 필요합니다.' });
+    }
+    try {
+        const user = await rpgenius.getRPGUserByName(sess.name);
+        if (!user || !user.canPartyQuest) {
+            if (req.path === '/party') return res.redirect('/');
+            return res.status(403).json({ error: '파티 퀘스트가 활성화되지 않았습니다.' });
+        }
+        req.session = Object.assign({}, sess, { canPartyQuest: true });
+        next();
+    } catch (e) {
+        console.error('party auth error:', e);
+        if (req.path === '/party') return res.redirect('/');
+        return res.status(500).json({ error: '서버 오류' });
+    }
+}
+
 server.get('/', async (req, res) => {
     const sess = getSession(req);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -155,10 +175,9 @@ server.get('/admin', (req, res) => {
     return res.send(renderAdminDashboard(sess));
 });
 
-server.get('/party', (req, res) => {
-    const sess = getSession(req);
+server.get('/party', requirePartyQuest, (req, res) => {
+    const sess = req.session;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    if (!sess || !sess.name) return res.redirect('/');
     return res.send(renderPartyApp(sess));
 });
 
@@ -504,19 +523,19 @@ server.post('/api/buyorder/cancel', requireUser, async (req, res) => {
 
 // ===== 파티 퀘스트 =====
 
-server.get('/api/party/quests', requireUser, (req, res) => {
+server.get('/api/party/quests', requirePartyQuest, (req, res) => {
     res.json({ quests: partyquest.listQuestSummaries() });
 });
 
-server.get('/api/party/rooms', requireUser, (req, res) => {
+server.get('/api/party/rooms', requirePartyQuest, (req, res) => {
     res.json({ rooms: partyquest.publicRoomList(), my: partyquest.getMyRoomSnapshot(req.session.name) });
 });
 
-server.get('/api/party/me', requireUser, (req, res) => {
+server.get('/api/party/me', requirePartyQuest, (req, res) => {
     res.json({ room: partyquest.getMyRoomSnapshot(req.session.name) });
 });
 
-server.post('/api/party/rooms', requireUser, (req, res) => {
+server.post('/api/party/rooms', requirePartyQuest, (req, res) => {
     const questId = String((req.body && req.body.questId) || '').trim();
     const password = String((req.body && req.body.password) || '');
     const out = partyquest.createRoom(req.session.name, questId, password);
@@ -524,31 +543,31 @@ server.post('/api/party/rooms', requireUser, (req, res) => {
     res.json(out);
 });
 
-server.post('/api/party/rooms/:id/join', requireUser, (req, res) => {
+server.post('/api/party/rooms/:id/join', requirePartyQuest, (req, res) => {
     const out = partyquest.joinRoom(String(req.params.id || ''), req.session.name, String((req.body && req.body.password) || ''));
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.post('/api/party/leave', requireUser, (req, res) => {
+server.post('/api/party/leave', requirePartyQuest, (req, res) => {
     res.json(partyquest.leaveRoom(req.session.name));
 });
 
-server.post('/api/party/position', requireUser, (req, res) => {
+server.post('/api/party/position', requirePartyQuest, (req, res) => {
     const position = String((req.body && req.body.position) || '').trim();
     const out = partyquest.setPosition(req.session.name, position || null);
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.post('/api/party/ready', requireUser, (req, res) => {
+server.post('/api/party/ready', requirePartyQuest, (req, res) => {
     const ready = !!(req.body && req.body.ready);
     const out = partyquest.setReady(req.session.name, ready);
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.post('/api/party/potions', requireUser, async (req, res) => {
+server.post('/api/party/potions', requirePartyQuest, async (req, res) => {
     try {
         const items = (req.body && req.body.items) || [];
         const out = await partyquest.setPotions(req.session.name, items);
@@ -560,7 +579,7 @@ server.post('/api/party/potions', requireUser, async (req, res) => {
     }
 });
 
-server.get('/api/party/potions/available', requireUser, async (req, res) => {
+server.get('/api/party/potions/available', requirePartyQuest, async (req, res) => {
     try {
         const list = await partyquest.getAvailablePotions(req.session.name);
         res.json({ potions: list });
@@ -570,7 +589,7 @@ server.get('/api/party/potions/available', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/party/use-potion', requireUser, async (req, res) => {
+server.post('/api/party/use-potion', requirePartyQuest, async (req, res) => {
     try {
         const name = String((req.body && req.body.name) || '').trim();
         const out = await partyquest.usePotion(req.session.name, name);
@@ -582,7 +601,7 @@ server.post('/api/party/use-potion', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/party/start', requireUser, async (req, res) => {
+server.post('/api/party/start', requirePartyQuest, async (req, res) => {
     try {
         const out = await partyquest.start(req.session.name);
         if (out.error) return res.status(400).json({ error: out.error });
@@ -593,13 +612,13 @@ server.post('/api/party/start', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/party/attack', requireUser, (req, res) => {
+server.post('/api/party/attack', requirePartyQuest, (req, res) => {
     const out = partyquest.attackMobPhase(req.session.name);
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.post('/api/party/skill', requireUser, (req, res) => {
+server.post('/api/party/skill', requirePartyQuest, (req, res) => {
     const skill = String((req.body && req.body.skill) || '').trim();
     const target = req.body && req.body.target ? String(req.body.target) : null;
     const out = partyquest.useSkill(req.session.name, skill, target);
@@ -607,21 +626,21 @@ server.post('/api/party/skill', requireUser, (req, res) => {
     res.json(out);
 });
 
-server.post('/api/party/pick-skill', requireUser, (req, res) => {
+server.post('/api/party/pick-skill', requirePartyQuest, (req, res) => {
     const skill = String((req.body && req.body.skill) || '').trim();
     const out = partyquest.pickRandomSkill(req.session.name, skill);
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.post('/api/party/chat', requireUser, (req, res) => {
+server.post('/api/party/chat', requirePartyQuest, (req, res) => {
     const text = String((req.body && req.body.text) || '');
     const out = partyquest.chat(req.session.name, text);
     if (out.error) return res.status(400).json({ error: out.error });
     res.json(out);
 });
 
-server.get('/api/party/stream', requireUser, (req, res) => {
+server.get('/api/party/stream', requirePartyQuest, (req, res) => {
     partyquest.attachStream(req.session.name, res);
 });
 
@@ -1631,6 +1650,11 @@ function serializeAuctionEntry(entry, currentUserName) {
         if (soulPayload && !rpgenius.isSoulExpired(soulPayload)) {
             soul = { name: soulPayload.name || '', expiredAt: Number(soulPayload.expired_at || 0) };
         }
+        const tradeLimit = rpgenius.getEquipmentTradeLimitInfo(entry.payload || {});
+        if (tradeLimit) {
+            statLines = statLines || [];
+            statLines.push('남은 거래 가능 횟수: ' + comma(tradeLimit.remaining) + '/' + comma(tradeLimit.max));
+        }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
         const assets = getItemDisplayAssets(item);
@@ -1680,6 +1704,7 @@ function buildSellableAssets(user) {
         .map((eq, index) => {
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return null;
+            if (rpgenius.getEquipmentTradeBlockReason(eq, user.name)) return null;
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
@@ -1697,6 +1722,8 @@ function buildSellableAssets(user) {
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
                 level,
+                boundOwner: rpgenius.isEquipmentBindingEnabled() ? (eq.boundOwner || null) : null,
+                tradeCount: Number(eq.tradeCount || 0),
                 statLines,
                 potentialDisplay,
                 soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0) } : null
@@ -1741,10 +1768,9 @@ async function registerAuction(sellerName, body) {
         const eq = equips[index];
         const data = getEquipmentData(eq.type, eq.id);
         if (data && data.no_trade === true) return { error: '거래 불가 장비는 판매 등록할 수 없습니다.' };
-        payload = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
-        if (eq.rolled) payload.rolled = JSON.parse(JSON.stringify(eq.rolled));
-        if (eq.potential) payload.potential = JSON.parse(JSON.stringify(eq.potential));
-        if (eq.soul && !rpgenius.isSoulExpired(eq.soul)) payload.soul = JSON.parse(JSON.stringify(eq.soul));
+        const tradeBlockReason = rpgenius.getEquipmentTradeBlockReason(eq, sellerName);
+        if (tradeBlockReason) return { error: tradeBlockReason };
+        payload = rpgenius.cloneEquipmentInstance(eq, eq.type);
         equips.splice(index, 1);
     } else if (kind == 'item') {
         const itemId = Number(body.itemId);
@@ -1818,6 +1844,10 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
             if (have < ticketCost) return { error: '거래권이 부족합니다. (필요 ' + ticketCost + '장 / 보유 ' + have + '장)' };
         }
     }
+    if (entry.kind == 'equipment') {
+        const tradeBlockReason = rpgenius.getEquipmentTradeBlockReason(entry.payload, entry.sellerName);
+        if (tradeBlockReason) return { error: tradeBlockReason };
+    }
 
     if (entry.kind == 'card') {
         if (rpgenius.getRemainingCardInventorySpace(buyer) < 1) return { error: '카드 인벤토리에 빈 칸이 없습니다.' };
@@ -1831,10 +1861,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
             if (!rpgenius.removeInventoryItem(buyer, ticketId, ticketCost)) return { error: '거래권 차감에 실패했습니다.' };
         }
     } else if (entry.kind == 'equipment') {
-        const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
-        if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
-        if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
-        if (entry.payload.soul && !rpgenius.isSoulExpired(entry.payload.soul)) eqEntry.soul = JSON.parse(JSON.stringify(entry.payload.soul));
+        const eqEntry = rpgenius.markEquipmentTraded(rpgenius.cloneEquipmentInstance(entry.payload, entry.payload.type));
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
@@ -1910,10 +1937,7 @@ async function cancelAuction(userName, auctionId) {
             skin: entry.payload.skin || ''
         });
     } else if (entry.kind == 'equipment') {
-        const eqEntry = { type: entry.payload.type, id: Number(entry.payload.id), level: Number(entry.payload.level || 0) };
-        if (entry.payload.rolled) eqEntry.rolled = JSON.parse(JSON.stringify(entry.payload.rolled));
-        if (entry.payload.potential) eqEntry.potential = JSON.parse(JSON.stringify(entry.payload.potential));
-        if (entry.payload.soul && !rpgenius.isSoulExpired(entry.payload.soul)) eqEntry.soul = JSON.parse(JSON.stringify(entry.payload.soul));
+        const eqEntry = rpgenius.cloneEquipmentInstance(entry.payload, entry.payload.type);
         user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
@@ -2220,11 +2244,10 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const eq = equips[index];
         const eqData = getEquipmentData(eq.type, eq.id);
         if (eqData && eqData.no_trade === true) return { error: '거래 불가 장비입니다.' };
+        const tradeBlockReason = rpgenius.getEquipmentTradeBlockReason(eq, sellerName);
+        if (tradeBlockReason) return { error: tradeBlockReason };
         if (!matchBuyOrderEquipment(entry, eq)) return { error: '이 장비는 구매 등록 조건에 맞지 않습니다.' };
-        const transferred = { type: eq.type, id: Number(eq.id), level: Number(eq.level || 0) };
-        if (eq.rolled) transferred.rolled = JSON.parse(JSON.stringify(eq.rolled));
-        if (eq.potential) transferred.potential = JSON.parse(JSON.stringify(eq.potential));
-        if (eq.soul && !rpgenius.isSoulExpired(eq.soul)) transferred.soul = JSON.parse(JSON.stringify(eq.soul));
+        const transferred = rpgenius.markEquipmentTraded(rpgenius.cloneEquipmentInstance(eq, eq.type));
         equips.splice(index, 1);
         buyer.inventory.equipment.push(transferred);
     } else if (entry.kind == 'item') {
@@ -2310,6 +2333,7 @@ function buildFulfillableAssets(user, entry) {
             if (!matchBuyOrderEquipment(entry, eq)) return;
             const data = getEquipmentData(eq.type, eq.id);
             if (!data || data.no_trade === true) return;
+            if (rpgenius.getEquipmentTradeBlockReason(eq, user.name)) return;
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
@@ -2322,6 +2346,8 @@ function buildFulfillableAssets(user, entry) {
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
                 level,
+                boundOwner: rpgenius.isEquipmentBindingEnabled() ? (eq.boundOwner || null) : null,
+                tradeCount: Number(eq.tradeCount || 0),
                 statLines
             });
         });

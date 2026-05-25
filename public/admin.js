@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // RPGenius 관리자 대시보드 클라이언트 스크립트
 // ============================================================================
 
@@ -186,7 +186,7 @@ function ensureCount(entry, asObject) {
 }
 
 const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '골드', '가넷', '마일리지', '경험치'];
-const MATERIAL_TYPES = ['아이템', '골드', '가넷', '마일리지'];
+const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '골드', '가넷', '마일리지'];
 const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조'];
 
 function entryRow(entry, opts, onChange, onDelete) {
@@ -245,13 +245,13 @@ function entryRow(entry, opts, onChange, onDelete) {
 
     function paintCount() {
         countSlot.innerHTML = '';
-        // 무기/갑옷/장신구는 보통 count=1 고정 (장비는 1개씩 지급되도록)
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types !== CRAFTED_TYPES) {
+        // 보상 장비는 보통 count=1 고정 (제작 재료 장비는 수량 입력 허용)
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
             if (opts.countAsObject) entry.count = { min: 1, max: 1 }; else entry.count = 1;
             return;
         }
-        if (entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types === CRAFTED_TYPES) {
             // crafted (단일 지급)
             delete entry.count;
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
@@ -1314,7 +1314,7 @@ let equipData = { weapon: [], armor: [], accessory: [], support: [] };
 let equipCurrentSlot = 'weapon';
 let equipFilterText = '';
 const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
-const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade']);
+const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade', 'category', 'isRaid']);
 
 function renderEquipTypes() {
     const wrap = $('#equipTypes'); wrap.innerHTML = '';
@@ -1335,7 +1335,9 @@ function equipCard(eq, index) {
             ' ',
             eq.name || '(이름 없음)',
             eq.rarity ? el('span', { class: 'tag ' + rarityClass, style: { marginLeft: '8px' } }, eq.rarity) : null,
-            eq.no_trade ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '거래불가') : null
+            eq.no_trade ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '거래불가') : null,
+            eq.isRaid ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '레이드') : null,
+            eq.category ? el('span', { class: 'tag', style: { marginLeft: '4px' } }, String(eq.category)) : null
         ),
         el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
             if (!confirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
@@ -1357,6 +1359,9 @@ function equipCard(eq, index) {
     raritySel.value = eq.rarity || '일반';
     raritySel.onchange = () => eq.rarity = raritySel.value;
     row1.appendChild(el('div', null, el('label', null, '등급'), raritySel));
+    row1.appendChild(el('div', null, el('label', null, '분류(category)'),
+        el('input', { value: eq.category || '', placeholder: '예: 반지, 목걸이', oninput: e => { const v = e.target.value.trim(); if (v) eq.category = v; else delete eq.category; } })
+    ));
     row1.appendChild(el('div', { class: 'nf', style: { minWidth: '140px' } },
         el('label', null, '거래 불가'),
         el('div', { style: { padding: '7px 0' } },
@@ -1365,6 +1370,17 @@ function equipCard(eq, index) {
                 checked: !!eq.no_trade,
                 label: eq.no_trade ? '거래 제한' : '거래 가능',
                 onChange: v => { if (v) eq.no_trade = true; else delete eq.no_trade; renderEquip(); }
+            })
+        )
+    ));
+    row1.appendChild(el('div', { class: 'nf', style: { minWidth: '140px' } },
+        el('label', null, '레이드 장비'),
+        el('div', { style: { padding: '7px 0' } },
+            switchToggle({
+                id: 'eq_raid_' + equipCurrentSlot + '_' + index,
+                checked: !!eq.isRaid,
+                label: eq.isRaid ? '레이드' : '일반',
+                onChange: v => { if (v) eq.isRaid = true; else delete eq.isRaid; renderEquip(); }
             })
         )
     ));

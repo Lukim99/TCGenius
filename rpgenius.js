@@ -1,4 +1,4 @@
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+﻿const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
@@ -387,7 +387,7 @@ function formatPackEntry(entry) {
         const accessory = equipments.accessory && equipments.accessory[entry.accessory_id];
         return accessory ? '<' + accessory.rarity + '> ' + accessory.name : '알 수 없는 장신구';
     }
-    if (entry.type == '보조') {
+    if (entry.type == '보조' || entry.type == '보조무기') {
         const support = equipments.support && equipments.support[entry.support_id];
         return support ? '<' + support.rarity + '> ' + support.name : '알 수 없는 보조 장비';
     }
@@ -1918,7 +1918,7 @@ const CP_WEIGHTS = {
     DEF_REDUCTION_RATIO: 0.5,
     TRIPLE_ZERO_RATIO: 0.15,
     SKILL_TRUE_DMG_RATIO: 0.2,
-    TRUE_DAMAGE_RATIO: 0.25,
+    TRUE_DAMAGE_RATIO: 0.125,
     AVOID_CAP: 0.8,
     MITIGATE_CAP: 0.8,
     TAKEN_DAMAGE_CAP: 0.8,
@@ -1953,7 +1953,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const critMul = Math.max(1, Number(stats.critMul || 1.4));
     const critDef = Math.max(0, Math.min(1, Number(stats.critDef || 0)));
     const cmb = Math.max(0, Math.min(1, Number(stats.cmb || 0)));
-    const maxCmb = 1 + Math.max(1, Math.floor(Number(stats.maxCmb || 0)));
+    const maxCmb = 2 + Math.max(0, Math.floor(Number(stats.maxCmb || 0)));
     const pnt = Math.max(0, Number(stats.pnt || 0));
     const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
@@ -2043,7 +2043,7 @@ function formatMyInfo(user) {
     lines.push('치명타 피해량: ' + formatStatValue('critMul', stats.critMul).replace(/^\+/, ''));
     lines.push('치명타 피해 감소율: ' + formatStatValue('crit', stats.critDef).replace(/^\+/, ''));
     lines.push('연격 확률: ' + formatStatValue('crit', stats.cmb).replace(/^\+/, ''));
-    lines.push('최대 공격 횟수: ' + comma(1 + Math.max(1, Math.floor(Number(stats.maxCmb || 0)))));
+    lines.push('최대 공격 횟수: ' + comma(2 + Math.max(0, Math.floor(Number(stats.maxCmb || 0)))));
     return lines.join('\n');
 }
 
@@ -2073,7 +2073,7 @@ function getDungeonRecommendedCP(dungeon) {
     const def = Number(E.atk || 0) * T.DEF_RATIO;
     const effDef = Math.max(0, def - Number(E.pnt || 0));
     const eliteExpectedCrit = 1 + Math.max(0, Math.min(1, Number(E.crit || 0))) * (Math.max(1, Number(E.critMul || 1.5)) - 1);
-    const eliteMaxCmb = 1 + Math.max(1, Math.floor(Number(E.maxCmb || 0)));
+    const eliteMaxCmb = 2 + Math.max(0, Math.floor(Number(E.maxCmb || 0)));
     const eliteCmb = Math.max(0, Math.min(1, Number(E.cmb || 0)));
     const eliteExpectedCombo = Array.from({ length: eliteMaxCmb }, (_, i) => Math.pow(eliteCmb, i)).reduce((sum, value) => sum + value, 0);
     const incomingPerHit = Number(E.atk || 0) * eliteExpectedCrit * eliteExpectedCombo * 100 / (100 + effDef);
@@ -2186,6 +2186,12 @@ function getDamageAfterReducedDefense(damage, defense, penetration, defenseReduc
     return getDamageAfterDefense(damage, reducedDefense, penetration);
 }
 
+function getDamageAfterDestinyDefense(damage, defense, penetration, defenseReductionRate) {
+    const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
+    const penetratedDefense = Math.max(0, reducedDefense - Number(penetration || 0));
+    return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
+}
+
 function getCombatStats(data) {
     return Object.assign({
         atk: 0,
@@ -2196,14 +2202,13 @@ function getCombatStats(data) {
         critMul: 1.5,
         critDef: 0,
         cmb: 0,
-        maxCmb: 1
+        maxCmb: 0
     }, data || {});
 }
 
 function getComboHitCount(stats) {
     const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
-    const additional = Math.max(1, Math.floor(Number(stats && stats.maxCmb || 0)));
-    const maxHits = 1 + additional;
+    const maxHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
     let hitCount = 1;
     while (hitCount < maxHits && Math.random() < chance) hitCount++;
     return hitCount;
@@ -2227,7 +2232,7 @@ function applyDamageVariance(damage) {
 }
 
 const DESTINY_AION_NAME = '운명의 아이온';
-const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.2;
+const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.25;
 
 function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra, defenderStats) {
     const hitCount = extra && extra.hitCount ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : getComboHitCount(stats);
@@ -2236,16 +2241,16 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let finalDamage = 0;
     let criticalCount = 0;
     let bonusTripleZero = 0;
-    let trueDamageCount = 0;
+    let destinyDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     for (let i = 0; i < hitCount; i++) {
         const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
-        const isTrueDamage = trueChance > 0 && Math.random() < trueChance;
-        let hitDamage = isTrueDamage
-            ? Math.max(0, Math.round(Number(criticalResult.damage || 0)))
+        const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;
+        let hitDamage = isDestinyDamage
+            ? getDamageAfterDestinyDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects))
             : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects));
-        if (isTrueDamage) trueDamageCount++;
+        if (isDestinyDamage) destinyDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
             const bonus = [10, 100, 1000][randomInt(0, 2)];
@@ -2255,10 +2260,10 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
         hitDamage = applyDamageVariance(hitDamage);
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isTrueDamage });
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage });
         finalDamage += hitDamage;
     }
-    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, trueDamageCount };
+    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount };
 }
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
@@ -2270,7 +2275,7 @@ function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, ex
 function formatHitDetailLines(hitResult, prefix, suffix) {
     if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return [];
     const details = Array.isArray(hitResult.hitDetails) ? hitResult.hitDetails : [];
-    return details.map(detail => prefix + comma(detail.damage) + (detail.isTrueDamage ? ' 고정' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
+    return details.map(detail => prefix + comma(detail.damage) + (detail.isDestinyDamage ? ' 운명' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
 }
 
 function getSkillValue(skill, index, star) {
@@ -2838,7 +2843,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const maxHp = Number(stats.hp || 0);
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
-        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
@@ -2930,7 +2935,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
-        : ['⚔️ ' + comma(finalDamage) + (hitResult.trueDamageCount > 0 ? ' 고정' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : ['⚔️ ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
@@ -3236,7 +3241,7 @@ function getWorldBossDefenderStats(boss) {
         crit: 0,
         critMul: 1,
         cmb: 0,
-        maxCmb: 1
+        maxCmb: 0
     };
 }
 
@@ -3248,6 +3253,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     let finalDamage = 0;
     let isCritical = false;
     let trueDamageCount = 0;
+    let destinyDamageCount = 0;
     let bonusTripleZero = 0;
     let hitResult = null;
     if (extra.trueDamage) {
@@ -3258,6 +3264,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         finalDamage = Math.max(0, Math.round(Number(hitResult.finalDamage || 0)));
         isCritical = Number(hitResult.criticalCount || 0) > 0;
         trueDamageCount = Number(hitResult.trueDamageCount || 0);
+        destinyDamageCount = Number(hitResult.destinyDamageCount || 0);
         bonusTripleZero = Number(hitResult.bonusTripleZero || 0);
     }
     const state = ensureWorldBossRevived(boss);
@@ -3266,7 +3273,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     state.hp = Math.max(0, before - finalDamage);
     state.contributions[user.name] = Number(state.contributions[user.name] || 0) + dealt;
     persistWorldBossState();
-    return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp };
+    return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, destinyDamageCount: destinyDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp };
 }
 
 function formatWorldBossDamageLines(boss, result, prefix) {
@@ -3275,7 +3282,8 @@ function formatWorldBossDamageLines(boss, result, prefix) {
     if (result.hitResult && Number(result.hitResult.hitCount || 1) > 1) {
         return formatHitDetailLines(result.hitResult, head + target, '피해를 입혔습니다!');
     }
-    return [head + target + comma(result.damage) + (Number(result.trueDamageCount || 0) > 0 ? ' 고정' : '') + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    const damageLabel = Number(result.destinyDamageCount || 0) > 0 ? ' 운명' : (Number(result.trueDamageCount || 0) > 0 ? ' 고정' : '');
+    return [head + target + comma(result.damage) + damageLabel + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
 }
 
 function useWorldBossChosenSkill(user, skillName) {
@@ -3811,13 +3819,13 @@ function formatEquipmentInfo(user) {
 
 function getEquippedEquipmentRefs(user) {
     const refs = [];
-    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') refs.push({ type: 'weapon', equip: user.equipments.weapon });
-    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') refs.push({ type: 'armor', equip: user.equipments.armor });
+    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') refs.push({ type: 'weapon', equip: bindEquipmentToUser(user.equipments.weapon, user) });
+    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') refs.push({ type: 'armor', equip: bindEquipmentToUser(user.equipments.armor, user) });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
-        if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: accessories[key], slotKey: key });
+        if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: bindEquipmentToUser(accessories[key], user), slotKey: key });
     });
-    if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') refs.push({ type: 'support', equip: user.equipments.support });
+    if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') refs.push({ type: 'support', equip: bindEquipmentToUser(user.equipments.support, user) });
     return refs;
 }
 
@@ -3858,6 +3866,110 @@ function getEquipmentTypeLabel(type) {
     if (type == 'accessory') return '장신구';
     if (type == 'support') return '보조';
     return type;
+}
+
+const EQUIPMENT_TRADE_MAX_COUNT = 5;
+const EQUIPMENT_BINDING_ENABLED = false;
+const EQUIPMENT_TRADE_RARITY_ORDER = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
+
+function isEquipmentTradeCountLimited(rarity) {
+    const index = EQUIPMENT_TRADE_RARITY_ORDER.indexOf(String(rarity || ''));
+    const uniqueIndex = EQUIPMENT_TRADE_RARITY_ORDER.indexOf('유니크');
+    return index >= uniqueIndex && uniqueIndex >= 0;
+}
+
+function isEquipmentBindingEnabled() {
+    return EQUIPMENT_BINDING_ENABLED === true;
+}
+
+function cloneEquipmentInstance(equip, fallbackType) {
+    const entry = { type: equip.type || fallbackType, id: Number(equip.id), level: Number(equip.level || 0) };
+    if (equip.rolled) entry.rolled = clonePlain(equip.rolled);
+    if (equip.potential) entry.potential = clonePlain(equip.potential);
+    if (equip.soul && !isSoulExpired(equip.soul)) entry.soul = clonePlain(equip.soul);
+    if (equip.locked) entry.locked = true;
+    if (equip.boundOwner) entry.boundOwner = equip.boundOwner;
+    if (typeof equip.tradeCount != 'undefined') entry.tradeCount = Number(equip.tradeCount || 0);
+    return entry;
+}
+
+function getEquipmentTradeBlockReason(equip, ownerName) {
+    const type = equip && equip.type;
+    const data = getEquipmentData(type, equip && equip.id);
+    if (!data) return '잘못된 장비 데이터입니다.';
+    if (data.no_trade) return '거래 불가 장비입니다.';
+    if (isEquipmentBindingEnabled() && equip.boundOwner) return '귀속된 장비입니다. 가위 아이템으로 귀속을 해제해야 거래할 수 있습니다.';
+    if (isEquipmentTradeCountLimited(data.rarity) && Number(equip.tradeCount || 0) >= EQUIPMENT_TRADE_MAX_COUNT) return '거래 횟수가 ' + EQUIPMENT_TRADE_MAX_COUNT + '회에 도달한 장비입니다.';
+    return null;
+}
+
+function markEquipmentTraded(equip) {
+    const data = getEquipmentData(equip && equip.type, equip && equip.id);
+    if (data && isEquipmentTradeCountLimited(data.rarity)) equip.tradeCount = Number(equip.tradeCount || 0) + 1;
+    delete equip.boundOwner;
+    return equip;
+}
+
+function getEquipmentTradeLimitInfo(equip) {
+    const data = getEquipmentData(equip && equip.type, equip && equip.id);
+    if (!data || !isEquipmentTradeCountLimited(data.rarity)) return null;
+    const max = EQUIPMENT_TRADE_MAX_COUNT;
+    const count = Math.max(0, Number(equip.tradeCount || 0));
+    return { count, max, remaining: Math.max(0, max - count) };
+}
+
+function bindEquipmentToUser(equip, user) {
+    if (!isEquipmentBindingEnabled()) return equip;
+    if (equip && user && user.name && !equip.boundOwner) equip.boundOwner = user.name;
+    return equip;
+}
+
+function getBoundEquipmentScissorTargets(user) {
+    if (!isEquipmentBindingEnabled()) return [];
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const equip = entry.equip;
+            if (!equip || !equip.boundOwner) return null;
+            const type = equip.type || entry.type;
+            const equipment = getEquipmentData(type, equip.id);
+            if (!equipment) return null;
+            const tradeLimit = getEquipmentTradeLimitInfo(Object.assign({ type }, equip));
+            if (tradeLimit && Number(tradeLimit.remaining || 0) <= 0) return null;
+            return { number: index + 1, entry, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatBoundEquipmentScissorList(targets) {
+    const lines = ['[ 귀속 해제 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const equip = target.entry.equip;
+        const lvl = Number(equip.level || 0);
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        const tradeCount = Number(equip.tradeCount || 0);
+        const tradeText = isEquipmentTradeCountLimited(target.equipment.rarity) ? ' · 거래 ' + comma(tradeCount) + '/' + comma(EQUIPMENT_TRADE_MAX_COUNT) + '회' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + ' · 귀속: ' + equip.boundOwner + tradeText);
+    });
+    return lines.join('\n');
+}
+
+function releaseBoundEquipment(user, numberArg) {
+    if (!isEquipmentBindingEnabled()) return '❌ 현재 장비 귀속 시스템이 비활성화되어 있습니다.';
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '귀속해제') return '❌ 진행 중인 귀속 해제가 없습니다.';
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected || !selected.equip || !selected.equip.boundOwner) return '❌ 귀속된 장비 번호가 아닙니다.';
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    const tradeLimit = getEquipmentTradeLimitInfo(Object.assign({ type }, selected.equip));
+    if (tradeLimit && Number(tradeLimit.remaining || 0) <= 0) return '❌ 남은 거래 가능 횟수가 0인 장비는 귀속을 해제할 수 없습니다.';
+    delete selected.equip.boundOwner;
+    user.pendingAction = null;
+    const lvl = Number(selected.equip.level || 0);
+    return '✅ 장비 귀속을 해제했습니다.\n- <' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : '');
 }
 
 function formatEquipmentInventoryLine(number, entry) {
@@ -4018,6 +4130,7 @@ function getRecipeEquipmentType(material) {
     if (material.type == '무기') return 'weapon';
     if (material.type == '갑옷') return 'armor';
     if (material.type == '장신구') return 'accessory';
+    if (material.type == '보조' || material.type == '보조무기') return 'support';
     return null;
 }
 
@@ -4025,6 +4138,7 @@ function getRecipeEquipmentId(material) {
     if (material.type == '무기') return material.weapon_id;
     if (material.type == '갑옷') return material.armor_id;
     if (material.type == '장신구') return material.accessory_id;
+    if (material.type == '보조' || material.type == '보조무기') return material.support_id;
     return null;
 }
 
@@ -4186,7 +4300,7 @@ function getCraftMaterialStatus(user, material) {
         const have = Number(user.garnet || 0);
         return { have, need, ok: have >= need };
     }
-    if (['무기', '갑옷', '장신구'].includes(material.type)) {
+    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) {
         const have = getInventoryEquipmentCount(user, material);
         return { have, need, ok: have >= need };
     }
@@ -4206,7 +4320,7 @@ function consumeCraftMaterial(user, material) {
         user.garnet = Number(user.garnet || 0) - count;
         return true;
     }
-    if (['무기', '갑옷', '장신구'].includes(material.type)) return removeInventoryEquipment(user, material, count);
+    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) return removeInventoryEquipment(user, material, count);
     return false;
 }
 
@@ -4221,7 +4335,7 @@ function canConsumeCraftMaterials(user, materials) {
 
 function formatCraftMaterial(material, need) {
     const text = formatPackEntry(material);
-    if (['무기', '갑옷', '장신구'].includes(material.type)) return text + ' x' + comma(need);
+    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) return text + ' x' + comma(need);
     return text.replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(need));
 }
 
@@ -4693,10 +4807,7 @@ function autoUnequipInvalidSupport(user) {
         if (mainId == null || !data.requireMainCard.map(Number).includes(mainId)) {
             if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
             if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
-            const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
-            if (sup.rolled) entry.rolled = sup.rolled;
-            if (sup.potential) entry.potential = clonePlain(sup.potential);
-            if (sup.locked) entry.locked = true;
+            const entry = cloneEquipmentInstance(sup, 'support');
             user.inventory.equipment.push(entry);
             user.equipments.support = null;
             return data;
@@ -4739,17 +4850,11 @@ function equipItemByNumber(user, numberArg) {
             }
         }
         const prev = user.equipments.support;
-        const equipEntry = { id: target.id, level: Number(target.level || 0) };
-        if (target.rolled) equipEntry.rolled = target.rolled;
-        if (target.potential) equipEntry.potential = clonePlain(target.potential);
-        if (target.locked) equipEntry.locked = true;
+        const equipEntry = bindEquipmentToUser(cloneEquipmentInstance(target, 'support'), user);
         user.equipments.support = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
-            const back = { type: 'support', id: Number(prev.id), level: Number(prev.level || 0) };
-            if (prev.rolled) back.rolled = prev.rolled;
-            if (prev.potential) back.potential = clonePlain(prev.potential);
-            if (prev.locked) back.locked = true;
+            const back = cloneEquipmentInstance(prev, 'support');
             user.inventory.equipment.push(back);
         }
         return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
@@ -4757,15 +4862,11 @@ function equipItemByNumber(user, numberArg) {
 
     if (target.type == 'weapon' || target.type == 'armor') {
         const prev = user.equipments[target.type];
-        const equipEntry = { id: target.id, level: Number(target.level || 0) };
-        if (target.potential) equipEntry.potential = clonePlain(target.potential);
-        if (target.locked) equipEntry.locked = true;
+        const equipEntry = bindEquipmentToUser(cloneEquipmentInstance(target, target.type), user);
         user.equipments[target.type] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         if (prev && typeof prev.id != 'undefined') {
-            const back = { type: target.type, id: prev.id, level: Number(prev.level || 0) };
-            if (prev.potential) back.potential = clonePlain(prev.potential);
-            if (prev.locked) back.locked = true;
+            const back = cloneEquipmentInstance(prev, target.type);
             user.inventory.equipment.push(back);
         }
         return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
@@ -4775,6 +4876,13 @@ function equipItemByNumber(user, numberArg) {
         if (!user.equipments.accessory || typeof user.equipments.accessory != 'object') user.equipments.accessory = {};
         const accessories = user.equipments.accessory;
         if (Object.keys(accessories).some(key => accessories[key] && Number(accessories[key].id) == Number(target.id))) return '❌ 같은 종류의 장신구는 중복 장착할 수 없습니다.';
+        const category = typeof data.category != 'undefined' ? String(data.category).trim() : '';
+        if (category && Object.keys(accessories).some(key => {
+            const equipped = accessories[key];
+            if (!equipped || typeof equipped.id == 'undefined') return false;
+            const equippedData = getEquipmentData('accessory', equipped.id);
+            return equippedData && typeof equippedData.category != 'undefined' && String(equippedData.category).trim() == category;
+        })) return '❌ 같은 분류의 장신구는 중복 장착할 수 없습니다. (' + category + ')';
         const maxSlot = Number(user.maxAccessory || 3);
         let slotKey = null;
         for (let i = 0; i < maxSlot; i++) {
@@ -4786,9 +4894,7 @@ function equipItemByNumber(user, numberArg) {
             }
         }
         if (slotKey == null) return '❌ 장신구 슬롯이 가득 찼습니다. 먼저 다른 장신구를 해제해주세요.';
-        const equipEntry = { id: target.id, level: Number(target.level || 0) };
-        if (target.potential) equipEntry.potential = clonePlain(target.potential);
-        if (target.locked) equipEntry.locked = true;
+        const equipEntry = bindEquipmentToUser(cloneEquipmentInstance(target, 'accessory'), user);
         accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
@@ -4807,10 +4913,7 @@ function unequipSupport(user) {
     }
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
-    const entry = { type: 'support', id: Number(sup.id), level: Number(sup.level || 0) };
-    if (sup.rolled) entry.rolled = sup.rolled;
-    if (sup.potential) entry.potential = clonePlain(sup.potential);
-    if (sup.locked) entry.locked = true;
+    const entry = cloneEquipmentInstance(sup, 'support');
     user.inventory.equipment.push(entry);
     user.equipments.support = null;
     const stats = calculateUserStats(user);
@@ -4831,9 +4934,7 @@ function unequipAccessoryByNumber(user, numberArg) {
     if (!data) return '❌ 잘못된 장신구 데이터입니다.';
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
-    const entry = { type: 'accessory', id: equipped.id, level: Number(equipped.level || 0) };
-    if (equipped.potential) entry.potential = clonePlain(equipped.potential);
-    if (equipped.locked) entry.locked = true;
+    const entry = cloneEquipmentInstance(equipped, 'accessory');
     user.inventory.equipment.push(entry);
     delete user.equipments.accessory[slotKey];
     const stats = calculateUserStats(user);
@@ -5066,6 +5167,10 @@ function getSupportDisassembleBlackFireCount(equipment, type) {
     return type == 'support' ? Number(SUPPORT_DISASSEMBLE_BLACK_FIRE_REWARD[equipment.rarity] || 0) : 0;
 }
 
+function getDarkPieceDisassembleCount(equipment) {
+    return equipment && String(equipment.category || '').trim() == '핏빛 분장' ? 1 : 0;
+}
+
 function pushLimitedEquipmentLines(lines, equipmentLines) {
     const visibleLines = equipmentLines.slice(0, 10);
     visibleLines.forEach(line => lines.push(line));
@@ -5102,20 +5207,24 @@ function formatDisassemblePreview(user, numberArgs) {
     let minTotal = 0;
     let maxTotal = 0;
     let blackFireTotal = 0;
+    let darkPieceTotal = 0;
     const equipmentLines = [];
     parsed.entries.forEach(e => {
         const lvl = Number(e.entry.equip.level || 0);
         const range = getDisassembleRewardRange(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
-        equipmentLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + ')');
+        const darkPiece = getDarkPieceDisassembleCount(e.equipment);
+        equipmentLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 ' + comma(darkPiece) : '') + ')');
         minTotal += range.min;
         maxTotal += range.max;
         blackFireTotal += blackFire;
+        darkPieceTotal += darkPiece;
     });
     pushLimitedEquipmentLines(lines, equipmentLines);
     lines.push('', '[ 예상 획득 ]');
     lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
     if (blackFireTotal > 0) lines.push('- 검은 불 x' + comma(blackFireTotal));
+    if (darkPieceTotal > 0) lines.push('- 어둠 조각 x' + comma(darkPieceTotal));
     lines.push('', '분해하시겠습니까?', '/RPGenius 분해확인');
     return lines.join('\n');
 }
@@ -5129,24 +5238,31 @@ function runDisassemble(user) {
     const entries = parsed.entries.slice().sort((a, b) => b.entry.index - a.entry.index);
     const blackFireItemId = entries.some(e => getSupportDisassembleBlackFireCount(e.equipment, e.type) > 0) ? getBlackFireItemId() : -1;
     if (entries.some(e => getSupportDisassembleBlackFireCount(e.equipment, e.type) > 0) && blackFireItemId == -1) return '❌ 검은 불 아이템 데이터를 찾을 수 없습니다.';
+    const darkPieceItemId = entries.some(e => getDarkPieceDisassembleCount(e.equipment) > 0) ? getItemIdByName('어둠 조각') : -1;
+    if (entries.some(e => getDarkPieceDisassembleCount(e.equipment) > 0) && darkPieceItemId == -1) return '❌ 어둠 조각 아이템 데이터를 찾을 수 없습니다.';
     let totalStone = 0;
     let totalBlackFire = 0;
+    let totalDarkPiece = 0;
     const dismantledLines = [];
     entries.forEach(e => {
         const stone = getDisassembleStoneAmount(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
+        const darkPiece = getDarkPieceDisassembleCount(e.equipment);
         totalStone += stone;
         totalBlackFire += blackFire;
+        totalDarkPiece += darkPiece;
         user.inventory.equipment.splice(e.entry.index, 1);
         const lvl = Number(e.entry.equip.level || 0);
-        dismantledLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : ''));
+        dismantledLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 x' + comma(darkPiece) : ''));
     });
     if (totalStone > 0) addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
     if (totalBlackFire > 0) addInventoryItem(user, blackFireItemId, totalBlackFire);
+    if (totalDarkPiece > 0) addInventoryItem(user, darkPieceItemId, totalDarkPiece);
     const lines = ['✅ 장비 ' + comma(entries.length) + '개를 분해했습니다.', '', '[ 분해 장비 ]'];
     pushLimitedEquipmentLines(lines, dismantledLines);
     lines.push('', '[ 획득 결과 ]', '- 강화석 x' + comma(totalStone));
     if (totalBlackFire > 0) lines.push('- 검은 불 x' + comma(totalBlackFire));
+    if (totalDarkPiece > 0) lines.push('- 어둠 조각 x' + comma(totalDarkPiece));
     return lines.join('\n');
 }
 
@@ -5493,6 +5609,7 @@ function grantEquipmentBox(user, pack, useCount, summary) {
         { type: 'accessory', key: 'accessory' }
     ].forEach(group => {
         (equipments[group.key] || []).forEach((equipment, id) => {
+            if (rarity == '유니크' && equipment && equipment.isRaid === true) return;
             if (equipment && equipment.rarity == rarity) candidates.push({ type: group.type, id, equipment });
         });
     });
@@ -5636,10 +5753,11 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -5787,6 +5905,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatSoulTargetList(targets));
+            }
+        }
+        if (item.use == '가위') {
+            const targets = getBoundEquipmentScissorTargets(user);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 귀속 해제할 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '귀속해제', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('귀속을 해제할 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatBoundEquipmentScissorList(targets));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -6283,13 +6414,11 @@ function registerTradeOffer(user, args) {
         if (selected.source == 'equipped') return '❌ 장착 중인 장비는 거래할 수 없습니다.';
         const data = getEquipmentData(selected.equip.type || selected.type, selected.equip.id);
         if (!data) return '❌ 잘못된 장비 데이터입니다.';
-        if (data.no_trade) return '❌ 거래 불가 장비입니다.';
+        const tradeBlockReason = getEquipmentTradeBlockReason(selected.equip, user.name);
+        if (tradeBlockReason) return '❌ ' + tradeBlockReason;
         const idx = user.inventory.equipment.indexOf(selected.equip);
         if (idx < 0) return '❌ 장비를 찾을 수 없습니다.';
-        const equipCopy = { type: selected.equip.type || selected.type, id: selected.equip.id, level: Number(selected.equip.level || 0) };
-        if (selected.equip.rolled) equipCopy.rolled = JSON.parse(JSON.stringify(selected.equip.rolled));
-        if (selected.equip.potential) equipCopy.potential = JSON.parse(JSON.stringify(selected.equip.potential));
-        if (selected.equip.soul && !isSoulExpired(selected.equip.soul)) equipCopy.soul = JSON.parse(JSON.stringify(selected.equip.soul));
+        const equipCopy = cloneEquipmentInstance(selected.equip, selected.type);
         user.inventory.equipment.splice(idx, 1);
         side.offer.equipments.push(equipCopy);
         resetTradeConfirmations(session);
@@ -6391,14 +6520,14 @@ async function finalizeTrade(session, channel) {
         gold: session.bOffer.gold ? session.bOffer.gold - Math.round(session.bOffer.gold * TRADE_FEE_RATE) : 0,
         garnet: session.bOffer.garnet ? session.bOffer.garnet - Math.round(session.bOffer.garnet * TRADE_FEE_RATE) : 0,
         cards: session.bOffer.cards,
-        equipments: session.bOffer.equipments,
+        equipments: (session.bOffer.equipments || []).map(equip => markEquipmentTraded(equip)),
         items: session.bOffer.items
     };
     const bReceive = {
         gold: session.aOffer.gold ? session.aOffer.gold - Math.round(session.aOffer.gold * TRADE_FEE_RATE) : 0,
         garnet: session.aOffer.garnet ? session.aOffer.garnet - Math.round(session.aOffer.garnet * TRADE_FEE_RATE) : 0,
         cards: session.aOffer.cards,
-        equipments: session.aOffer.equipments,
+        equipments: (session.aOffer.equipments || []).map(equip => markEquipmentTraded(equip)),
         items: session.aOffer.items
     };
     refundOfferToUser(aUser, aReceive);
@@ -6734,6 +6863,17 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '파티퀘스트') {
+        if (Number(user.level || 1) >= 71 && !user.canPartyQuest) {
+            user.canPartyQuest = true;
+            await user.save();
+            reply('✅ 파티 퀘스트가 활성화되었습니다.\n웹버전에서 이용할 수 있습니다.\nhttps://rpgenius.kro.kr');
+        } else if (Number(user.level || 1) < 71) {
+            reply('❌ 해당 기능은 71레벨 이상부터 활성화됩니다.');
+        }
+        return true;
+    }
+
     if (user.pendingFragment) {
         if (args[0] == '편린') {
             const result = consumeFragment(user);
@@ -6899,6 +7039,24 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = applySoulToEquipment(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '귀속해제') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 귀속 해제를 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 귀속을 해제할 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = releaseBoundEquipment(user, args[1]);
         await user.save();
         reply(result);
         return true;
@@ -7565,6 +7723,11 @@ module.exports = {
     getRemainingCardInventorySpace,
     getTradeTicketItemId,
     getCardTicketCost,
+    cloneEquipmentInstance,
+    getEquipmentTradeBlockReason,
+    markEquipmentTraded,
+    getEquipmentTradeLimitInfo,
+    isEquipmentBindingEnabled,
     formatCurrentSkillDesc,
     formatCooltime,
     getWorldBossContributionRanking,
