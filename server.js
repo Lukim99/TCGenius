@@ -2727,12 +2727,11 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
         <div style="font-size:11px;color:#94a3b8;letter-spacing:.06em;font-weight:800;text-transform:uppercase" id="pqPhaseLabel">PHASE</div>
         <div style="color:#a5b4fc;font-weight:800;font-size:13px" id="pqPhaseName">-</div>
       </div>
-      <div id="pqPhaseStage"></div>
-      <div id="pqCombatLog" class="pq-combat-log"></div>
       <div class="pq-panel" style="padding:10px;gap:8px">
         <div class="pq-section-title" style="margin:0">파티원</div>
         <div id="pqPlayMembers" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
+      <div id="pqPhaseStage"></div>
       <div class="pq-panel" style="padding:10px;gap:8px">
         <div class="pq-section-title" style="margin:0">내 스킬</div>
         <div id="pqSkillBar" class="pq-skill-bar"></div>
@@ -2749,6 +2748,7 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
           <button type="submit" class="pq-btn primary" style="height:38px">전송</button>
         </form>
       </div>
+      <div id="pqCombatLog" class="pq-combat-log"></div>
       <div class="pq-actions">
         <button class="pq-btn danger" id="pqPlayLeave">파티 나가기</button>
       </div>

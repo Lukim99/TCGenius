@@ -857,7 +857,7 @@ function setupPhase(room) {
     room.tauntRemain = 0;
     if (phase.type === 'mob') {
         room.monster = null;
-        stopTick(room);
+        startTick(room);
         pushNotice(room, '🎯 ' + phase.name + ' (목표 ' + phase.killTarget + '마리)', 'big', 4500);
     } else {
         room.monster = createPhaseMonster(phase);
@@ -1037,7 +1037,7 @@ function stopTick(room) {
 }
 
 function stepRoom(room) {
-    if (room.state !== 'inProgress' || !room.monster) { stopTick(room); return; }
+    if (room.state !== 'inProgress') { stopTick(room); return; }
     if (room.awaitingChoices) return;
     const dt = TICK_MS / 1000;
 
@@ -1060,23 +1060,25 @@ function stepRoom(room) {
         if (room.tauntRemain <= 0) room.tauntTarget = null;
     }
     const mon = room.monster;
-    if (mon.tauntRemain > 0) mon.tauntRemain = Math.max(0, mon.tauntRemain - dt);
-    for (const k of Object.keys(mon.patternCooldowns || {})) {
-        mon.patternCooldowns[k] = Math.max(0, mon.patternCooldowns[k] - dt);
-    }
-    // 몬스터 디버프 (잔류 전격 등)
-    if (mon.debuffs && mon.debuffs.length) {
-        for (let i = mon.debuffs.length - 1; i >= 0; i--) {
-            mon.debuffs[i].remain -= dt;
-            if (mon.debuffs[i].remain <= 0) mon.debuffs.splice(i, 1);
+    if (mon) {
+        if (mon.tauntRemain > 0) mon.tauntRemain = Math.max(0, mon.tauntRemain - dt);
+        for (const k of Object.keys(mon.patternCooldowns || {})) {
+            mon.patternCooldowns[k] = Math.max(0, mon.patternCooldowns[k] - dt);
         }
-    }
+        // 몬스터 디버프 (잔류 전격 등)
+        if (mon.debuffs && mon.debuffs.length) {
+            for (let i = mon.debuffs.length - 1; i >= 0; i--) {
+                mon.debuffs[i].remain -= dt;
+                if (mon.debuffs[i].remain <= 0) mon.debuffs.splice(i, 1);
+            }
+        }
 
-    // 몬스터 게이지 누적
-    mon.gauge += (100 / Math.max(0.4, mon.actionInterval)) * dt;
-    if (mon.gauge >= 100) {
-        mon.gauge -= 100;
-        performMonsterAction(room);
+        // 몬스터 게이지 누적
+        mon.gauge += (100 / Math.max(0.4, mon.actionInterval)) * dt;
+        if (mon.gauge >= 100) {
+            mon.gauge -= 100;
+            performMonsterAction(room);
+        }
     }
 
     // 스냅샷 푸시 (가벼운 tick)
@@ -1102,6 +1104,18 @@ function getActiveBuffValue(runtime, id, fallback) {
     if (id === 'atkBuff' || id === 'absorbAlly') return Math.max(...matches.map(b => Number(b.value || 0)));
     if (id === 'actCdMul' || id === 'takenDmgSelf') return Math.min(...matches.map(b => Number(b.value || fallback)));
     return Number(matches[matches.length - 1].value || fallback);
+}
+
+function upsertMemberBuff(member, buff) {
+    if (!member || !member.runtime || !buff || !buff.id) return;
+    if (!Array.isArray(member.runtime.buffs)) member.runtime.buffs = [];
+    const exist = member.runtime.buffs.find(b => b.id === buff.id && b.label === buff.label);
+    if (exist) {
+        exist.remain = Number(buff.remain || 0);
+        if (typeof buff.value !== 'undefined') exist.value = buff.value;
+    } else {
+        member.runtime.buffs.push(buff);
+    }
 }
 
 // ===== 데미지 계산 =====
@@ -1674,25 +1688,25 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
         const target = pickAllyTarget(room, caster, targetName) || caster;
         if (def.buff.atkMul) {
             target.runtime.atkBuff = Number(def.buff.atkMul) - 1;
-            target.runtime.buffs.push({ id: 'atkBuff', label: skillName + ' (공+)', value: target.runtime.atkBuff, remain: Number(def.buff.duration || 5) });
+            upsertMemberBuff(target, { id: 'atkBuff', label: skillName + ' (공+)', value: target.runtime.atkBuff, remain: Number(def.buff.duration || 5) });
         }
     }
     if (def.self) {
         if (def.self.actCdMul) {
             caster.runtime.actCdMul = Number(def.self.actCdMul);
-            caster.runtime.buffs.push({ id: 'actCdMul', label: skillName + ' (가속)', value: caster.runtime.actCdMul, remain: Number(def.duration || 5) });
+            upsertMemberBuff(caster, { id: 'actCdMul', label: skillName + ' (가속)', value: caster.runtime.actCdMul, remain: Number(def.duration || 5) });
         }
         if (def.self.atkMul) {
             caster.runtime.atkBuff = Number(def.self.atkMul) - 1;
-            caster.runtime.buffs.push({ id: 'atkBuff', label: skillName + ' (공+)', value: caster.runtime.atkBuff, remain: Number(def.duration || 5) });
+            upsertMemberBuff(caster, { id: 'atkBuff', label: skillName + ' (공+)', value: caster.runtime.atkBuff, remain: Number(def.duration || 5) });
         }
         if (def.self.takenDmg) {
             caster.runtime.takenDmgMul = Number(def.self.takenDmg);
-            caster.runtime.buffs.push({ id: 'takenDmgSelf', label: skillName + ' (방+)', value: caster.runtime.takenDmgMul, remain: Number(def.duration || 5) });
+            upsertMemberBuff(caster, { id: 'takenDmgSelf', label: skillName + ' (방+)', value: caster.runtime.takenDmgMul, remain: Number(def.duration || 5) });
         }
         if (def.absorbAlly) {
             caster.runtime.absorbAlly = Number(def.absorbAlly || 0);
-            caster.runtime.buffs.push({ id: 'absorbAlly', label: skillName + ' (보호)', value: caster.runtime.absorbAlly, remain: Number(def.duration || 5) });
+            upsertMemberBuff(caster, { id: 'absorbAlly', label: skillName + ' (보호)', value: caster.runtime.absorbAlly, remain: Number(def.duration || 5) });
         }
     }
     if (def.effect === 'taunt') {
@@ -1732,13 +1746,13 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (skillName === '불사조') {
         extra.damageBonusMul = Number(stats.crit || 0) * 0.5;
         caster.runtime.takenDmgMul = 1.5;
-        caster.runtime.buffs.push({ id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: 4 });
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: 4 });
     }
     if (skillName === '피아스트') extra.skillMpRecovery = getSkillValue(skill, 1, star);
     if (skillName === '수업끝') {
         extra.disableCritical = true;
         caster.runtime.takenDmgMul = 0.7;
-        caster.runtime.buffs.push({ id: 'takenDmgSelf', label: '수업끝 (피해감소)', value: caster.runtime.takenDmgMul, remain: 3 });
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '수업끝 (피해감소)', value: caster.runtime.takenDmgMul, remain: 3 });
     }
     if (skillName === 'SUPER EASY') {
         extra.critChanceMul = 0.5;
