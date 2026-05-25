@@ -1259,6 +1259,39 @@ function getDestinyDamageAfterDefense(damage, defense, penetration, defenseReduc
     return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
 }
 
+function calculateNormalDamageToMonster(attacker, monster, room, rawDamage) {
+    const snapshot = (attacker && attacker.baseSnapshot) || {};
+    const stats = snapshot.stats || {};
+    const slotEffects = snapshot.slotEffects || {};
+    const quest = getQuestById(room && room.questId) || {};
+    const posDef = (quest.positions && attacker && quest.positions[attacker.position]) || {};
+    const monsterStats = (monster && monster.stats) || {};
+    const defenseReductionRate = getReducedDefenseRate(stats, slotEffects, posDef && posDef.stats && posDef.stats.armorPen);
+    const penetration = Number(stats.pnt || 0);
+    let damage = Number(rawDamage || 0);
+    damage *= Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
+    damage = getDamageAfterDefense(damage, monster && monster.def, penetration, defenseReductionRate);
+    return Math.max(0, applyDamageVariance(damage));
+}
+
+function calculateNormalDamageToMember(room, mon, target, rawDamage) {
+    const quest = getQuestById(room.questId);
+    const posDef = quest.positions[target.position];
+    const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
+    const targetStats = target.baseSnapshot.stats || {};
+    const targetSlotEffects = target.baseSnapshot.slotEffects || {};
+    const monStats = mon.stats || {};
+    const monDealtMul = getMonsterDealtDmgMul(mon);
+    const mitigation = 1 - Math.min(1, Number(targetSlotEffects.hpDamageReduction || 0));
+    const targetTakenMul = Math.max(0, 1 + Number(targetStats.takenDamage || 0)) * (target.runtime.takenDmgMul || 1);
+    const defense = Number(targetStats.def || 50) * finalDefMul;
+    const defenseReductionRate = Math.max(0, Math.min(1, Number(monStats.pntPercent || 0)));
+    const penetration = Number(monStats.pnt || mon.pnt || 0);
+    let damage = Number(rawDamage || 0) * monDealtMul * mitigation * targetTakenMul;
+    damage = getDamageAfterDefense(damage, defense, penetration, defenseReductionRate);
+    return Math.max(0, applyDamageVariance(damage));
+}
+
 function applyDamageVariance(damage) {
     return Math.max(0, Math.round(Number(damage || 0) * (randomInt(98, 102) / 100)));
 }
@@ -1584,7 +1617,7 @@ function applyBlackHoduCritReflect(room, attacker, result) {
     const reflect = Math.max(1, Math.round(critDamage * Number(pattern.reflectPct || 0.15)));
     const target = pickTauntOrNull(room, mon) || attacker;
     if (!target || !target.runtime || target.runtime.dead) return;
-    applyFixedDamageToMember(room, target, reflect, mon.name + ' [치명 반사]');
+    applyDamageToMember(room, target, calculateNormalDamageToMember(room, mon, target, reflect), mon.name + ' [치명 반사]');
 }
 
 function computeMonsterDamage(room, mon, target) {
@@ -1673,7 +1706,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const quest = getQuestById(room.questId);
         const posDef = quest.positions[member.position];
         const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
-        const reflect = Math.max(1, Math.round(Number(stats.def || 50) * finalDefMul * 0.20));
+        const reflect = Math.max(1, calculateNormalDamageToMonster(member, room.monster, room, Math.round(Number(stats.def || 50) * finalDefMul * 0.20)));
         room.monster.hp = Math.max(0, room.monster.hp - reflect);
         pushCombat(room, '🪞 가시 갑옷 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
