@@ -48,13 +48,33 @@ const comma = value => {
 };
 const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value || 0) / Number(max || 0)) * 100 : 0));
 
-$('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
-if ($('#adminLink')) $('#adminLink').onclick = () => location.href = '/admin';
+$('#logout').onclick = async () => { closeTopNav(); await fetch('/api/logout', { method: 'POST' }); location.reload(); };
+if ($('#adminLink')) $('#adminLink').onclick = () => { closeTopNav(); location.href = '/admin'; };
+const topNav = $('#topNav');
+const navToggle = $('#navToggle');
+function closeTopNav() {
+    if (!topNav || !navToggle) return;
+    topNav.classList.remove('open');
+    navToggle.setAttribute('aria-expanded', 'false');
+}
+if (navToggle && topNav) {
+    navToggle.onclick = () => {
+        const open = topNav.classList.toggle('open');
+        navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    document.addEventListener('click', e => {
+        if (!topNav.classList.contains('open')) return;
+        if (topNav.contains(e.target) || navToggle.contains(e.target)) return;
+        closeTopNav();
+    });
+}
 function activatePage(name) {
     $$('.nav-btn').forEach(item => item.classList.toggle('active', item.dataset.page === name));
     $$('.page').forEach(page => page.classList.toggle('active', page.dataset.page === name));
 }
 $$('.nav-btn').forEach(btn => btn.onclick = () => {
+    closeTopNav();
+    if (btn.dataset.page === 'party') { location.href = '/party'; return; }
     activatePage(btn.dataset.page);
     if (btn.dataset.page === 'info') {
         if (currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
@@ -220,6 +240,7 @@ function updateInventoryBanner() {
 
 function renderProfile(data) {
     currentProfileName = data.user.name;
+    const isInitialOwnProfile = myName == null;
     if (myName == null) myName = data.user.name;
     const banner = $('#profileBanner');
     if (banner) {
@@ -255,6 +276,8 @@ function renderProfile(data) {
     const viewInvBtn = $('#viewInventoryBtn');
     if (viewInvBtn) viewInvBtn.style.display = data.user.name !== myName ? '' : 'none';
     if (data.user.isAdmin) $('#adminLink').style.display = '';
+    const partyNav = document.querySelector('.nav-btn[data-page="party"]');
+    if (isInitialOwnProfile && partyNav && !data.user.canPartyQuest) partyNav.remove();
 }
 
 if ($('#viewInventoryBtn')) $('#viewInventoryBtn').onclick = () => {

@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const partyquest = require('./partyquest.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
 
@@ -48,6 +49,7 @@ function sendAuctionKakaoNotice(message) {
 const ADMIN_HTML_PATH = path.join(__dirname, 'public', 'admin.html');
 const ADMIN_JS_PATH = path.join(__dirname, 'public', 'admin.js');
 const APP_JS_PATH = path.join(__dirname, 'public', 'app.js');
+const PARTY_JS_PATH = path.join(__dirname, 'public', 'party.js');
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'itemImage');
@@ -61,6 +63,11 @@ server.get('/static/app.js', (req, res) => {
     if (!getSession(req)) return res.status(401).end();
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.send(fs.readFileSync(APP_JS_PATH, 'utf8'));
+});
+server.get('/static/party.js', (req, res) => {
+    if (!getSession(req)) return res.status(401).end();
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.send(fs.readFileSync(PARTY_JS_PATH, 'utf8'));
 });
 
 function sign(payload) {
@@ -124,10 +131,20 @@ function requireUser(req, res, next) {
     next();
 }
 
-server.get('/', (req, res) => {
+server.get('/', async (req, res) => {
     const sess = getSession(req);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    if (sess && sess.name) return res.send(renderUserDashboard(sess));
+    if (sess && sess.name) {
+        try {
+            const user = await rpgenius.getRPGUserByName(sess.name);
+            return res.send(renderUserDashboard(Object.assign({}, sess, {
+                admin: user ? !!user.isAdmin : !!sess.admin,
+                canPartyQuest: user ? !!user.canPartyQuest : !!sess.canPartyQuest
+            })));
+        } catch (_) {
+            return res.send(renderUserDashboard(sess));
+        }
+    }
     return res.send(renderLogin());
 });
 
@@ -138,6 +155,13 @@ server.get('/admin', (req, res) => {
     return res.send(renderAdminDashboard(sess));
 });
 
+server.get('/party', (req, res) => {
+    const sess = getSession(req);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    if (!sess || !sess.name) return res.redirect('/');
+    return res.send(renderPartyApp(sess));
+});
+
 server.post('/api/login', async (req, res) => {
     const code = String((req.body && req.body.code) || '').trim();
     if (!code) return res.status(400).json({ error: '코드를 입력해주세요.' });
@@ -145,7 +169,7 @@ server.post('/api/login', async (req, res) => {
         const user = await rpgenius.getRPGUserByCode(code);
         if (!user) return res.status(401).json({ error: '존재하지 않는 코드입니다.' });
         if (typeof user.changeCode == 'function') await user.changeCode();
-        setSession(res, { name: user.name, admin: !!user.isAdmin, exp: Date.now() + SESSION_TTL_MS });
+        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
         res.json({ ok: true, name: user.name });
     } catch (e) {
         console.error('login error:', e);
@@ -476,6 +500,129 @@ server.post('/api/buyorder/cancel', requireUser, async (req, res) => {
         console.error('buyorder cancel error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
+});
+
+// ===== 파티 퀘스트 =====
+
+server.get('/api/party/quests', requireUser, (req, res) => {
+    res.json({ quests: partyquest.listQuestSummaries() });
+});
+
+server.get('/api/party/rooms', requireUser, (req, res) => {
+    res.json({ rooms: partyquest.publicRoomList(), my: partyquest.getMyRoomSnapshot(req.session.name) });
+});
+
+server.get('/api/party/me', requireUser, (req, res) => {
+    res.json({ room: partyquest.getMyRoomSnapshot(req.session.name) });
+});
+
+server.post('/api/party/rooms', requireUser, (req, res) => {
+    const questId = String((req.body && req.body.questId) || '').trim();
+    const password = String((req.body && req.body.password) || '');
+    const out = partyquest.createRoom(req.session.name, questId, password);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/rooms/:id/join', requireUser, (req, res) => {
+    const out = partyquest.joinRoom(String(req.params.id || ''), req.session.name, String((req.body && req.body.password) || ''));
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/leave', requireUser, (req, res) => {
+    res.json(partyquest.leaveRoom(req.session.name));
+});
+
+server.post('/api/party/position', requireUser, (req, res) => {
+    const position = String((req.body && req.body.position) || '').trim();
+    const out = partyquest.setPosition(req.session.name, position || null);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/ready', requireUser, (req, res) => {
+    const ready = !!(req.body && req.body.ready);
+    const out = partyquest.setReady(req.session.name, ready);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/potions', requireUser, async (req, res) => {
+    try {
+        const items = (req.body && req.body.items) || [];
+        const out = await partyquest.setPotions(req.session.name, items);
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json(out);
+    } catch (e) {
+        console.error('party potions error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/party/potions/available', requireUser, async (req, res) => {
+    try {
+        const list = await partyquest.getAvailablePotions(req.session.name);
+        res.json({ potions: list });
+    } catch (e) {
+        console.error('party potions available error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/party/use-potion', requireUser, async (req, res) => {
+    try {
+        const name = String((req.body && req.body.name) || '').trim();
+        const out = await partyquest.usePotion(req.session.name, name);
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json(out);
+    } catch (e) {
+        console.error('party use-potion error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/party/start', requireUser, async (req, res) => {
+    try {
+        const out = await partyquest.start(req.session.name);
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json(out);
+    } catch (e) {
+        console.error('party start error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/party/attack', requireUser, (req, res) => {
+    const out = partyquest.attackMobPhase(req.session.name);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/skill', requireUser, (req, res) => {
+    const skill = String((req.body && req.body.skill) || '').trim();
+    const target = req.body && req.body.target ? String(req.body.target) : null;
+    const out = partyquest.useSkill(req.session.name, skill, target);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/pick-skill', requireUser, (req, res) => {
+    const skill = String((req.body && req.body.skill) || '').trim();
+    const out = partyquest.pickRandomSkill(req.session.name, skill);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/chat', requireUser, (req, res) => {
+    const text = String((req.body && req.body.text) || '');
+    const out = partyquest.chat(req.session.name, text);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.get('/api/party/stream', requireUser, (req, res) => {
+    partyquest.attachStream(req.session.name, res);
 });
 
 server.get('/card-image', requireUser, (req, res) => {
@@ -2211,7 +2358,8 @@ function buildUserProfile(user) {
             garnet: Number(user.garnet || 0),
             point: Number(user.point || 0),
             mileage: Number(user.mileage || 0),
-            isAdmin: !!user.isAdmin
+            isAdmin: !!user.isAdmin,
+            canPartyQuest: !!user.canPartyQuest
         },
         combatPower: cp,
         stats: {
@@ -2273,7 +2421,7 @@ function renderUserDashboard(sess) {
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(circle at top left,#1e293b,#070910 42%,#05060a);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:18px 24px;background:rgba(7,9,16,.82);backdrop-filter:blur(14px);border-bottom:1px solid rgba(148,163,184,.18)}
-h1{margin:0;font-size:22px;white-space:nowrap}.who{color:#a5b4fc;font-weight:700;white-space:nowrap}.bar{display:flex;gap:8px;align-items:center}.top-left{display:flex;gap:22px;align-items:center;min-width:0}.nav{display:flex;gap:6px;min-width:0}.nav-btn{white-space:nowrap}.nav-btn.active{background:#5865f2}
+h1{margin:0;font-size:22px;white-space:nowrap}.who{color:#a5b4fc;font-weight:700;white-space:nowrap;min-width:0}.bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0}.top-left{display:flex;gap:22px;align-items:center;min-width:0}.nav{display:flex;gap:6px;min-width:0}.nav-btn{white-space:nowrap}.nav-btn.active{background:#5865f2}.nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:22px;line-height:1}
 button{border:0;border-radius:10px;padding:10px 13px;background:#1f2937;color:#e5e7eb;font-weight:700;cursor:pointer}button:hover{background:#374151}.primary{background:#5865f2}.primary:hover{background:#4752c4}
 main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.panel{background:rgba(15,23,42,.82);border:1px solid rgba(148,163,184,.16);border-radius:18px;padding:18px;box-shadow:0 16px 50px rgba(0,0,0,.25)}
 h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
@@ -2311,12 +2459,12 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .dex-evol-thumb,.dex-mat-thumb{position:relative;width:42px;height:42px;background:rgba(15,23,42,.7);border-radius:8px;overflow:visible}.dex-evol-thumb .frame,.dex-mat-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-evol-thumb .icon,.dex-mat-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.dex-evol-thumb .icon-fallback,.dex-mat-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:32px;line-height:1}
 .dex-mat-count{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
 .auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(2,6,23,.62);border:1px solid rgba(148,163,184,.16);border-radius:14px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4);border-color:#5865f2}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb.square{aspect-ratio:1/1;position:relative;background:transparent}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.auc-icon,.auc-item-img{position:relative;z-index:2}.auc-icon{font-size:64px;line-height:1;text-shadow:0 4px 14px rgba(0,0,0,.6)}.auc-item-img{width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}.currency-img{width:20px;height:20px;object-fit:contain;vertical-align:-4px;margin-right:5px}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-@media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:14px 16px;align-items:flex-start}.top-left{display:grid;gap:10px}.grid{grid-template-columns:1fr}}
+@media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:12px 14px;align-items:center;gap:10px}.top-left{flex:1 1 auto;min-width:0}.bar{flex:0 0 auto;gap:8px}.nav-toggle{display:flex;order:2}.nav{position:absolute;left:12px;right:12px;top:calc(100% + 6px);display:none;flex-direction:column;gap:6px;padding:10px;background:rgba(15,23,42,.98);border:1px solid rgba(148,163,184,.22);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);backdrop-filter:blur(14px)}.nav.open{display:flex}.nav-btn,.nav-action{width:100%;text-align:left}.nav-action{display:block;border:1px solid rgba(148,163,184,.14);background:#111827}.nav-action.primary{background:#5865f2}.who{max-width:36vw;text-align:right;font-size:13px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}.grid{grid-template-columns:1fr}}
 .patch-wrap{display:grid;gap:14px}.patch-editor{display:none;gap:8px;padding:14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.14);border-radius:14px}.patch-editor.active{display:grid}.patch-editor input,.patch-editor textarea,.reply-box textarea{width:100%;padding:10px 12px;background:#0b0d12;border:1px solid #334155;border-radius:10px;color:#e5e7eb;outline:none}.patch-editor textarea,.reply-box textarea{min-height:140px;resize:vertical;line-height:1.5}.patch-list{display:grid;gap:14px}.patch-card{display:grid;gap:12px;padding:16px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid rgba(148,163,184,.16);border-radius:14px}.patch-title{font-size:18px;font-weight:900;color:#f8fafc}.patch-date{font-size:12px;color:#94a3b8}.markdown-body{line-height:1.65;color:#dbeafe;word-break:break-word}.markdown-body h1,.markdown-body h2,.markdown-body h3{color:#f8fafc;margin:14px 0 8px}.markdown-body p{margin:8px 0}.markdown-body ul,.markdown-body ol{padding-left:22px}.markdown-body code{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.18);border-radius:6px;padding:1px 5px}.markdown-body pre{background:#020617;border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:12px;overflow:auto}.reply-list{display:grid;gap:8px}.reply-item{display:grid;gap:7px;padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px}.reply-item.child{margin-left:22px}.reply-meta{font-size:12px;color:#94a3b8}.reply-meta b{color:#f8fafc}.reply-text{white-space:pre-wrap;line-height:1.5}.reply-box{display:grid;gap:8px}.reply-box textarea{min-height:70px}
 .search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
-@media(max-width:520px){header{padding:12px 10px;gap:8px}h1{font-size:clamp(16px,5vw,20px)}.nav{gap:4px}.nav-btn{padding:8px clamp(7px,2.1vw,10px);font-size:clamp(11px,3.1vw,13px)}.bar{gap:5px}.who{max-width:22vw;overflow:hidden;text-overflow:ellipsis;font-size:12px}#adminLink,#logout{padding:8px 9px;font-size:12px}.search-input{flex:1;min-width:0}}
+@media(max-width:520px){header{padding:10px 8px;gap:6px}h1{font-size:clamp(16px,5vw,20px)}.top-left{gap:6px}.nav{left:8px;right:8px}.nav-btn,.nav-action{padding:10px 12px;font-size:13px}.nav-toggle{width:36px;height:36px;font-size:20px}.bar{gap:6px}.who{max-width:34vw;font-size:clamp(10px,2.8vw,12px)}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">팝니다</button><button class="nav-btn" data-page="buyorder">삽니다</button><button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none">관리자</button><button id="logout">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav" id="topNav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">팝니다</button><button class="nav-btn" data-page="buyorder">삽니다</button>${sess.canPartyQuest ? '<button class="nav-btn" data-page="party">파티 퀘스트</button>' : ''}<button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button><button id="adminLink" class="nav-action primary" style="display:none">관리자</button><button id="logout" class="nav-action">로그아웃</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button class="nav-toggle" id="navToggle" aria-label="메뉴" aria-expanded="false">☰</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
     <div id="profileBanner" class="profile-banner" style="display:none"><span id="profileBannerText"></span><button id="profileBackBtn" class="primary">내 정보로 돌아가기</button></div>
@@ -2343,6 +2491,341 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 <div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
 <div id="boRegBg" class="modal-bg"><div class="modal wide" id="boReg"></div></div>
 <script src="/static/app.js"></script>
+</body></html>`;
+}
+
+function renderPartyApp(sess) {
+    return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>파티 퀘스트 · RPGenius</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+:root{color-scheme:dark;--frame-w:440px;--frame-h:900px}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:grid;place-items:center}
+.frame{position:relative;width:min(var(--frame-w),100vw);height:min(var(--frame-h),100dvh);background:radial-gradient(circle at 30% 0%,#1e293b,#070910 55%,#05060a);border-radius:24px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(148,163,184,.1) inset;display:flex;flex-direction:column}
+@media(max-width:520px),(max-height:920px){.frame{width:100vw;height:100dvh;border-radius:0;box-shadow:none}}
+.pq-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(7,9,16,.65);backdrop-filter:blur(10px)}
+.pq-header h1{flex:1;margin:0;font-size:16px;font-weight:800;letter-spacing:.02em;color:#f8fafc}
+.pq-header .me{font-size:12px;color:#a5b4fc;font-weight:700}
+.pq-icon-btn{width:36px;height:36px;border:0;border-radius:10px;background:#1f2937;color:#e5e7eb;font-size:18px;cursor:pointer;display:grid;place-items:center}
+.pq-icon-btn:hover{background:#374151}
+.pq-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
+.pq-screen{display:none;flex-direction:column;gap:12px;animation:pqfade .18s ease}
+.pq-screen.active{display:flex}
+@keyframes pqfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.pq-room-card{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:14px;background:rgba(2,6,23,.62);border:1px solid rgba(148,163,184,.16);border-radius:14px;cursor:pointer;transition:transform .12s,border-color .12s}
+.pq-room-card:hover{transform:translateY(-1px);border-color:#5865f2}
+.pq-room-card .pq-room-title{font-weight:800;color:#f8fafc;font-size:15px}
+.pq-room-card .pq-room-quest{font-size:12px;color:#a5b4fc;font-weight:700}
+.pq-room-card .pq-room-meta{font-size:12px;color:#94a3b8;grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap}
+.pq-room-card .pq-pill{padding:2px 8px;background:rgba(88,101,242,.15);border:1px solid rgba(88,101,242,.4);color:#c7d2fe;border-radius:999px;font-size:11px;font-weight:700}
+.pq-room-card .pq-pill.lock{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.45);color:#fde68a}
+.pq-empty{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px;background:rgba(2,6,23,.4);border:1px dashed rgba(148,163,184,.18);border-radius:14px}
+.pq-fab{position:absolute;right:16px;bottom:18px;height:54px;padding:0 22px;border:0;border-radius:999px;background:linear-gradient(135deg,#5865f2,#7c3aed);color:#fff;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 14px 36px rgba(88,101,242,.55)}
+.pq-fab:hover{filter:brightness(1.08)}
+.pq-section-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin:6px 2px}
+.pq-panel{padding:14px;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.16);border-radius:14px;display:flex;flex-direction:column;gap:10px}
+.pq-row{display:flex;gap:8px;align-items:center}
+.pq-input,.pq-select{flex:1;padding:10px 12px;background:#0b0d12;border:1px solid #334155;border-radius:10px;color:#e5e7eb;font-size:14px;outline:none}
+.pq-input:focus,.pq-select:focus{border-color:#5865f2}
+.pq-btn{display:inline-flex;align-items:center;justify-content:center;line-height:1;height:40px;padding:0 14px;border:0;border-radius:10px;background:#1f2937;color:#e5e7eb;font-weight:700;cursor:pointer;font-size:14px;text-align:center}
+.pq-btn:hover{background:#374151}
+.pq-btn.primary{background:#5865f2}
+.pq-btn.primary:hover{background:#4752c4}
+.pq-btn.danger{background:#7f1d1d;color:#fecaca}
+.pq-btn.danger:hover{background:#991b1b}
+.pq-btn.gold{background:#b45309;color:#fef3c7}
+.pq-btn.gold:hover{background:#d97706}
+.pq-btn:disabled{opacity:.5;cursor:not-allowed}
+.pq-member{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:12px}
+.pq-member.host{border-color:rgba(251,191,36,.55)}
+.pq-member.me{box-shadow:0 0 0 2px rgba(88,101,242,.45) inset}
+.pq-avatar{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#1e293b,#0f172a);display:grid;place-items:center;font-weight:800;color:#a5b4fc}
+.pq-name{font-weight:800;color:#f1f5f9;font-size:14px;display:flex;align-items:center;gap:6px}
+.pq-tag{font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;background:#334155;color:#cbd5e1}
+.pq-tag.host{background:rgba(251,191,36,.18);color:#fde68a}
+.pq-tag.ready{background:rgba(34,197,94,.18);color:#bbf7d0}
+.pq-tag.off{background:rgba(239,68,68,.16);color:#fecaca}
+.pq-pos{font-size:12px;color:#94a3b8}
+.pq-pos.set{color:#a5b4fc;font-weight:700}
+.pq-position-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.pq-position-btn{padding:10px 8px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(2,6,23,.55);color:#cbd5e1;font-weight:700;cursor:pointer;text-align:center;font-size:13px;transition:all .12s}
+.pq-position-btn:hover{border-color:#5865f2}
+.pq-position-btn.active{background:linear-gradient(135deg,#5865f2,#7c3aed);color:#fff;border-color:transparent}
+.pq-position-btn.taken{opacity:.4;cursor:not-allowed}
+.pq-stat-list{display:grid;gap:4px;font-size:12px;color:#cbd5e1;padding:8px 10px;background:rgba(2,6,23,.4);border-radius:10px;margin-top:6px}
+.pq-chat{display:flex;flex-direction:column;gap:6px;height:120px;overflow-y:auto;padding:10px;background:rgba(2,6,23,.45);border:1px solid rgba(148,163,184,.14);border-radius:12px;font-size:13px;scrollbar-width:thin}
+.pq-chat::-webkit-scrollbar{width:6px}.pq-chat::-webkit-scrollbar-thumb{background:rgba(148,163,184,.3);border-radius:3px}
+.pq-chat-line{line-height:1.45}
+.pq-chat-line .from{font-weight:800;color:#a5b4fc;margin-right:4px}
+.pq-chat-line.system{color:#94a3b8;font-size:12px;font-style:italic}
+.pq-chat-form{display:flex;gap:6px}
+.pq-chat-form .pq-input{height:38px}
+.pq-quest-info{font-size:12px;color:#cbd5e1;line-height:1.5}
+.pq-quest-info b{color:#f8fafc}
+.pq-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:30;padding:18px;backdrop-filter:blur(4px)}
+.pq-modal-bg.active{display:flex}
+.pq-modal{width:100%;max-width:380px;background:#0f172a;border:1px solid rgba(148,163,184,.25);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.pq-modal h3{margin:0;font-size:16px;color:#f8fafc}
+.pq-toast{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);background:rgba(15,23,42,.95);border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:10px 14px;color:#fecaca;font-size:13px;font-weight:700;display:none;z-index:40;max-width:90%;text-align:center}
+.pq-toast.active{display:block}
+/* 휘발성 알림 (전투 진행) */
+.pq-notice-stack{position:absolute;left:0;right:0;top:62px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:25;padding:0 14px}
+.pq-notice{pointer-events:none;background:rgba(15,23,42,.92);border:1px solid rgba(148,163,184,.28);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;color:#e5e7eb;box-shadow:0 10px 30px rgba(0,0,0,.45);animation:pqnotice .3s ease;max-width:92%;text-align:center}
+.pq-notice.big{font-size:14px;padding:10px 18px;background:linear-gradient(135deg,rgba(124,58,237,.85),rgba(88,101,242,.85));border-color:transparent;color:#fff}
+.pq-notice.success{background:linear-gradient(135deg,rgba(22,163,74,.85),rgba(5,150,105,.85));border-color:transparent;color:#ecfdf5}
+.pq-notice.warn{background:rgba(180,83,9,.85);border-color:transparent;color:#fef3c7}
+.pq-notice.danger{background:rgba(127,29,29,.92);border-color:rgba(239,68,68,.6);color:#fecaca}
+@keyframes pqnotice{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+/* 전투 진행 로그 */
+.pq-combat-log{height:86px;overflow-y:auto;overflow-x:hidden;font-size:11.5px;color:#cbd5e1;line-height:1.35;display:flex;flex-direction:column;gap:2px;padding:6px 10px;background:rgba(0,0,0,.35);border-radius:10px;border:1px solid rgba(148,163,184,.12);scrollbar-width:thin}
+.pq-combat-log .ln{white-space:normal;overflow-wrap:anywhere;animation:pqfade .25s ease}
+.pq-combat-log .ln.attack{color:#fde68a}
+.pq-combat-log .ln.skill{color:#a5b4fc}
+.pq-combat-log .ln.heal{color:#86efac}
+.pq-combat-log .ln.damage{color:#fecaca}
+.pq-combat-log .ln.buff{color:#c7d2fe}
+/* 전투 화면 */
+.pq-boss{display:flex;flex-direction:column;gap:8px;padding:14px;background:linear-gradient(180deg,rgba(127,29,29,.35),rgba(2,6,23,.7));border:1px solid rgba(239,68,68,.35);border-radius:14px}
+.pq-boss-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pq-boss-name{font-weight:900;font-size:16px;color:#fecaca;letter-spacing:.02em}
+.pq-boss-hpval{font-variant-numeric:tabular-nums;font-size:12px;color:#fecaca}
+.pq-prog{position:relative;height:14px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.18)}
+.pq-prog .fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:999px;transition:width .15s linear}
+.pq-prog.hp .fill{background:linear-gradient(90deg,#dc2626,#f97316)}
+.pq-prog.mp .fill{background:linear-gradient(90deg,#0ea5e9,#6366f1)}
+.pq-prog.gauge{height:6px}
+.pq-prog.gauge .fill{background:linear-gradient(90deg,#facc15,#f59e0b)}
+.pq-prog.shield .fill{background:linear-gradient(90deg,#22d3ee,#67e8f9)}
+.pq-mob-stage{position:relative;display:flex;flex-direction:column;gap:10px}
+.pq-mob-counter{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px;background:radial-gradient(circle at 50% 0%,rgba(124,58,237,.25),rgba(2,6,23,.7));border:1px solid rgba(148,163,184,.2);border-radius:18px}
+.pq-dmg-pop{position:absolute;left:50%;top:38%;transform:translate(-50%,0);pointer-events:none;font-size:32px;font-weight:900;color:#fde047;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 18px rgba(251,191,36,.55);letter-spacing:.02em;animation:pqDmgPop 950ms cubic-bezier(.22,.61,.36,1) forwards;white-space:nowrap;z-index:5}
+.pq-dmg-pop.crit{color:#fca5a5;font-size:42px;text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 22px rgba(220,38,38,.75)}
+.pq-dmg-pop.fixed{color:#67e8f9;text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 22px rgba(6,182,212,.75)}
+.pq-dmg-pop.other{font-size:22px;color:#cbd5e1;opacity:.85}
+.pq-dmg-pop .by{display:block;font-size:11px;color:#94a3b8;font-weight:700;letter-spacing:.04em;margin-bottom:2px;text-shadow:none}
+.pq-dmg-pop .sub{display:block;font-size:11px;color:#a5b4fc;font-weight:700;letter-spacing:.04em;margin-top:2px;text-shadow:none}
+.pq-dmg-pop .sub.combo-label{color:#fef08a}
+.pq-dmg-pop .sub.fixed-label{display:inline-block;color:#a5f3fc;border:1px solid rgba(103,232,249,.45);background:rgba(8,145,178,.18);border-radius:999px;padding:1px 7px}
+@keyframes pqDmgPop{0%{transform:translate(-50%,10px) scale(.6);opacity:0}15%{transform:translate(-50%,-12px) scale(1.2);opacity:1}40%{transform:translate(-50%,-32px) scale(1);opacity:1}100%{transform:translate(-50%,-90px) scale(.95);opacity:0}}
+.pq-attack-btn{position:relative}
+.pq-attack-btn::after{content:'';position:absolute;inset:0;border-radius:18px;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 60%);opacity:0;transition:opacity .15s}
+.pq-attack-btn.flash::after{opacity:1;transition:opacity 0s}
+.pq-mob-counter .n{font-size:34px;font-weight:900;color:#f8fafc;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.pq-mob-counter .lbl{font-size:11px;color:#94a3b8;letter-spacing:.1em;text-transform:uppercase;font-weight:800}
+.pq-attack-btn{width:100%;height:64px;border:0;border-radius:18px;background:linear-gradient(135deg,#dc2626,#7c2d12);color:#fff;font-weight:900;font-size:18px;letter-spacing:.04em;cursor:pointer;box-shadow:0 14px 30px rgba(220,38,38,.4);transition:transform .08s}
+.pq-attack-btn:active{transform:scale(.97)}
+.pq-attack-btn:disabled{opacity:.5;cursor:not-allowed}
+.pq-party-row{display:flex;flex-direction:column;gap:6px;padding:10px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:12px}
+.pq-party-row.dead{opacity:.45;filter:grayscale(.7)}
+.pq-party-row.taunt{border-color:rgba(251,191,36,.55)}
+.pq-party-row .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
+.pq-party-row .ph .nm{font-weight:800;color:#f1f5f9}
+.pq-party-row .ph .pos{font-size:11px;color:#a5b4fc;font-weight:700}
+.pq-party-row .vals{font-size:11px;color:#94a3b8;display:flex;gap:8px;font-variant-numeric:tabular-nums}
+.pq-buff-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.pq-buff-chip{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background:rgba(99,102,241,.16);border:1px solid rgba(129,140,248,.35);color:#c7d2fe;font-size:10px;font-weight:800}
+.pq-skill-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:6px}
+.pq-skill-btn{position:relative;padding:8px 8px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.55);color:#e5e7eb;font-weight:700;font-size:11px;cursor:pointer;text-align:center;line-height:1.25;min-height:54px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;transition:border-color .12s}
+.pq-skill-btn:hover{border-color:#5865f2}
+.pq-skill-btn:disabled{opacity:.55;cursor:not-allowed}
+.pq-skill-btn .mp{font-size:10px;color:#7dd3fc;font-weight:800}
+.pq-skill-btn .cd{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);border-radius:10px;color:#fde68a;font-weight:900;font-size:14px;pointer-events:none}
+.pq-target-list{display:flex;flex-direction:column;gap:6px}
+.pq-target-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:10px;cursor:pointer}
+.pq-target-row:hover{border-color:#5865f2}
+.pq-choice-grid{display:grid;gap:8px}
+.pq-choice{padding:12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18);border-radius:12px;cursor:pointer;display:flex;flex-direction:column;gap:4px;text-align:left}
+.pq-choice:hover{border-color:#5865f2;transform:translateY(-1px)}
+.pq-choice .ttl{font-weight:800;color:#f8fafc;font-size:14px}
+.pq-choice .desc{font-size:12px;color:#cbd5e1;line-height:1.4}
+.pq-result{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center}
+.pq-result .big{font-size:24px;font-weight:900;letter-spacing:.04em}
+.pq-result.cleared .big{color:#bbf7d0}
+.pq-result.failed .big{color:#fecaca}
+.pq-reward-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto}
+.pq-reward-row{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:center;padding:9px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:12px}
+.pq-reward-thumb{position:relative;width:54px;height:54px;display:grid;place-items:center}
+.pq-reward-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+.pq-reward-thumb .icon{position:relative;width:72%;height:72%;object-fit:contain;z-index:2}
+.pq-reward-thumb .fallback{position:relative;z-index:2;font-size:28px}
+.pq-reward-row .owner{font-size:12px;font-weight:900;color:#f8fafc}
+.pq-reward-row .item{font-size:12px;font-weight:800;color:#fde68a}
+.pq-reward-row .meta{font-size:11px;color:#94a3b8;margin-top:2px}
+.pq-potion-row{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;padding:10px 12px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:10px}
+.pq-potion-row .nm{font-weight:800;color:#f1f5f9;font-size:13px}
+.pq-potion-row .ef{font-size:11px;color:#a5b4fc;grid-column:1/-1}
+.pq-potion-row .own{font-size:11px;color:#94a3b8}
+.pq-potion-stepper{display:flex;gap:4px;align-items:center}
+.pq-potion-stepper button{width:28px;height:28px;border:0;border-radius:8px;background:#1f2937;color:#e5e7eb;font-weight:800;cursor:pointer;font-size:14px}
+.pq-potion-stepper button:hover{background:#374151}
+.pq-potion-stepper input{width:48px;padding:4px 6px;background:#0b0d12;border:1px solid #334155;border-radius:6px;color:#e5e7eb;text-align:center;font-weight:800;font-size:13px}
+.pq-potion-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.35);border-radius:999px;color:#bbf7d0;font-size:11px;font-weight:700;margin:2px 4px 2px 0}
+.pq-back{background:transparent;color:#94a3b8;border:0;font-weight:700;padding:6px 4px;cursor:pointer;font-size:13px}
+.pq-back:hover{color:#e5e7eb}
+.pq-bar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pq-actions{display:flex;gap:8px;flex-wrap:wrap}
+</style></head><body>
+<div class="frame" id="frame">
+  <div class="pq-header">
+    <button class="pq-icon-btn" id="pqHome" title="홈으로">←</button>
+    <h1 id="pqTitle">파티 퀘스트</h1>
+    <span class="me">${escapeHtml(sess.name)}</span>
+  </div>
+  <div class="pq-body" id="pqBody">
+
+    <section class="pq-screen active" data-screen="lobby">
+      <div class="pq-bar">
+        <div class="pq-section-title" style="margin:0">파티 퀘스트</div>
+        <button class="pq-btn" id="pqRefresh" style="height:32px;padding:0 12px;font-size:12px">새로고침</button>
+      </div>
+      <div id="pqRoomList" class="pq-screen" style="display:flex;gap:10px"></div>
+    </section>
+
+    <section class="pq-screen" data-screen="room">
+      <button class="pq-back" id="pqLeave">← 파티 나가기</button>
+      <div class="pq-panel">
+        <div class="pq-bar">
+          <div class="pq-section-title" style="margin:0">퀘스트</div>
+          <span id="pqRoomQuestName" style="font-weight:800;color:#a5b4fc"></span>
+        </div>
+        <div id="pqQuestInfo" class="pq-quest-info"></div>
+      </div>
+      <div class="pq-panel">
+        <div class="pq-section-title" style="margin:0">파티원</div>
+        <div id="pqMemberList" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div class="pq-panel">
+        <div class="pq-section-title" style="margin:0">포지션 선택</div>
+        <div id="pqPositionGrid" class="pq-position-grid"></div>
+        <div id="pqPositionDetail" class="pq-stat-list" style="display:none"></div>
+      </div>
+      <div class="pq-panel">
+        <div class="pq-section-title" style="margin:0">채팅</div>
+        <div id="pqChat" class="pq-chat"></div>
+        <form id="pqChatForm" class="pq-chat-form">
+          <input id="pqChatInput" class="pq-input" placeholder="메시지..." autocomplete="off" maxlength="500">
+          <button type="submit" class="pq-btn primary" style="height:38px">전송</button>
+        </form>
+      </div>
+      <div class="pq-panel">
+        <div class="pq-bar">
+          <div class="pq-section-title" style="margin:0">휴대 물약</div>
+          <button class="pq-btn" id="pqOpenPotion" type="button" style="height:32px;padding:0 12px;font-size:12px">선택</button>
+        </div>
+        <div id="pqPotionSummary" style="font-size:12px;color:#cbd5e1;line-height:1.5"></div>
+      </div>
+      <div class="pq-actions">
+        <button class="pq-btn" id="pqReadyBtn">준비</button>
+        <button class="pq-btn primary" id="pqStartBtn" style="display:none">퀘스트 시작</button>
+      </div>
+    </section>
+
+    <section class="pq-screen" data-screen="play">
+      <div id="pqPhaseTop" class="pq-bar" style="margin-top:-2px">
+        <div style="font-size:11px;color:#94a3b8;letter-spacing:.06em;font-weight:800;text-transform:uppercase" id="pqPhaseLabel">PHASE</div>
+        <div style="color:#a5b4fc;font-weight:800;font-size:13px" id="pqPhaseName">-</div>
+      </div>
+      <div id="pqPhaseStage"></div>
+      <div id="pqCombatLog" class="pq-combat-log"></div>
+      <div class="pq-panel" style="padding:10px;gap:8px">
+        <div class="pq-section-title" style="margin:0">파티원</div>
+        <div id="pqPlayMembers" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div class="pq-panel" style="padding:10px;gap:8px">
+        <div class="pq-section-title" style="margin:0">내 스킬</div>
+        <div id="pqSkillBar" class="pq-skill-bar"></div>
+      </div>
+      <div class="pq-panel" style="padding:10px;gap:8px">
+        <div class="pq-section-title" style="margin:0">휴대 물약</div>
+        <div id="pqPotionBar" class="pq-skill-bar"></div>
+      </div>
+      <div class="pq-panel" style="padding:10px;gap:8px">
+        <div class="pq-section-title" style="margin:0">채팅</div>
+        <div id="pqPlayChat" class="pq-chat"></div>
+        <form id="pqPlayChatForm" class="pq-chat-form">
+          <input id="pqPlayChatInput" class="pq-input" placeholder="메시지..." autocomplete="off" maxlength="500">
+          <button type="submit" class="pq-btn primary" style="height:38px">전송</button>
+        </form>
+      </div>
+      <div class="pq-actions">
+        <button class="pq-btn danger" id="pqPlayLeave">파티 나가기</button>
+      </div>
+    </section>
+
+  </div>
+
+  <button class="pq-fab" id="pqCreateFab" style="display:none">＋ 파티 생성</button>
+
+  <div class="pq-modal-bg" id="pqCreateBg">
+    <div class="pq-modal">
+      <h3>파티 생성</h3>
+      <label class="pq-section-title">퀘스트 선택</label>
+      <select id="pqCreateQuest" class="pq-select"></select>
+      <label class="pq-section-title">비밀번호 (선택)</label>
+      <input id="pqCreatePw" class="pq-input" type="text" placeholder="비워두면 공개">
+      <div class="pq-actions">
+        <button class="pq-btn" id="pqCreateCancel" type="button">취소</button>
+        <button class="pq-btn primary" id="pqCreateConfirm" type="button">생성</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqJoinBg">
+    <div class="pq-modal">
+      <h3 id="pqJoinTitle">파티 입장</h3>
+      <div id="pqJoinSub" style="font-size:12px;color:#94a3b8"></div>
+      <input id="pqJoinPw" class="pq-input" type="text" placeholder="비밀번호">
+      <div class="pq-actions">
+        <button class="pq-btn" id="pqJoinCancel" type="button">취소</button>
+        <button class="pq-btn primary" id="pqJoinConfirm" type="button">입장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqChoiceBg">
+    <div class="pq-modal">
+      <h3>스킬 선택</h3>
+      <div style="font-size:12px;color:#94a3b8">페이즈 보상으로 1개를 습득합니다.</div>
+      <div id="pqChoiceList" class="pq-choice-grid"></div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqPotionBg">
+    <div class="pq-modal" style="max-width:420px">
+      <h3>물약 휴대 설정</h3>
+      <div style="font-size:12px;color:#94a3b8" id="pqPotionLimitInfo">최대 0개</div>
+      <div id="pqPotionListEditor" style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto"></div>
+      <div class="pq-actions">
+        <button class="pq-btn" id="pqPotionCancel" type="button">취소</button>
+        <button class="pq-btn primary" id="pqPotionSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqTargetBg">
+    <div class="pq-modal">
+      <h3 id="pqTargetTitle">대상 선택</h3>
+      <div id="pqTargetList" class="pq-target-list"></div>
+      <div class="pq-actions"><button class="pq-btn" id="pqTargetCancel" type="button">취소</button></div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqRewardBg">
+    <div class="pq-modal" style="max-width:460px">
+      <h3>파티 보상</h3>
+      <div style="font-size:12px;color:#94a3b8">파티원별 획득 아이템</div>
+      <div id="pqRewardList" class="pq-reward-list"></div>
+      <div class="pq-actions"><button class="pq-btn primary" id="pqRewardClose" type="button">확인</button></div>
+    </div>
+  </div>
+
+  <div class="pq-notice-stack" id="pqNoticeStack"></div>
+  <div class="pq-toast" id="pqToast"></div>
+</div>
+<script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
+<script src="/static/party.js"></script>
 </body></html>`;
 }
 

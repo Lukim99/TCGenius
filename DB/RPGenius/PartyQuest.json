@@ -1,0 +1,100 @@
+{
+  "quests": [
+    {
+      "id": "blackHodu",
+      "name": "흑화 호두",
+      "description": "타락한 호두를 정화하기 위한 협력 토벌전.",
+      "minPlayers": 1,
+      "maxPlayers": 5,
+      "potionLimit": 10,
+      "phases": [
+        {
+          "type": "mob",
+          "name": "잡몹 소탕",
+          "killTarget": 1000,
+          "monster": {
+            "name": "잡몹",
+            "hp": 360,
+            "atk": 800,
+            "def": 20,
+            "expReward": 0,
+            "goldReward": 0
+          }
+        },
+        {
+          "type": "elite",
+          "name": "엘리트",
+          "monster": {
+            "name": "흑화한 호두 부하",
+            "hp": 6800,
+            "atk": 7540,
+            "def": 680,
+            "actionInterval": 2.5,
+            "skills": []
+          }
+        },
+        {
+          "type": "boss",
+          "name": "보스",
+          "monster": {
+            "name": "흑화 호두",
+            "hp": 16300,
+            "atk": 12300,
+            "def": 910,
+            "actionInterval": 2.0,
+            "patterns": []
+          }
+        }
+      ],
+      "positions": {
+        "탱커":   { "stats": { "finalHp": 1.30, "finalDef": 1.30, "dealtDmg": 0.50 }, "baseSkill": "도발" },
+        "브루저": { "stats": { "finalHp": 1.05, "finalDef": 1.05, "finalAtk": 1.05 }, "baseSkill": "깎아내기" },
+        "메인딜러": { "stats": { "finalHp": 0.50, "finalDef": 0.50, "finalAtk": 1.10, "dealtDmg": 1.65, "armorPen": 0.30 }, "baseSkill": "폭주" },
+        "서브딜러": { "stats": { "finalHp": 0.70, "finalDef": 0.70, "dealtDmg": 1.15, "skillDmg": 1.30, "finalMp": 1.20 }, "baseSkill": "낙뢰" },
+        "서포터":  { "stats": { "mpCost": 0.75, "skillCd": 0.70, "dealtDmg": 0.25 }, "baseSkill": "힐" }
+      },
+      "skills": {
+        "도발":     { "type": "active", "mp": 35, "cd": 9,  "effect": "taunt", "duration": 5, "target": "enemy", "desc": "5초동안 공격 타겟이 자신이 되도록 상대를 도발합니다." },
+        "깎아내기": { "type": "active", "mp": 57, "cd": 12, "damage": "450 + atk*0.95", "debuff": { "def": -4 }, "target": "enemy", "desc": "450 + 공격력의 95% 피해를 입히고 방어력을 4 감소시킵니다." },
+        "폭주":     { "type": "active", "mp": 87, "cd": 26, "self": { "actCdMul": 0.5, "atkMul": 1.15 }, "duration": 12, "target": "self", "desc": "12초동안 행동 쿨타임이 절반으로 줄어들고 공격력이 15% 증가합니다." },
+        "낙뢰":     { "type": "active", "mp": 52, "cd": 4,  "damage": "110 + atk*1.05", "stack": { "key": "낙뢰", "incPerUse": 0.05 }, "target": "enemy", "desc": "번개를 떨궈 110 + 공격력의 105% 피해를 입힙니다. 사용할 때마다 피해량이 5% 증가합니다." },
+        "힐":       { "type": "active", "mp": 79, "cd": 7,  "heal": "90 + atk*0.10", "target": "ally", "desc": "지정한 아군의 체력을 90 + 공격력의 10%만큼 회복시킵니다." }
+      },
+      "randomSkillPool": {
+        "탱커":   ["방패 타격", "가시 갑옷", "결속"],
+        "브루저": ["휠윈드", "복수의 칼날", "약점 파악"],
+        "메인딜러": ["백스텝", "연쇄 공격", "집중"],
+        "서브딜러": ["마력 역류", "과부하", "잔류 전격"],
+        "서포터":  ["빛의 장막", "천상의 축복", "찬란한 구원"]
+      },
+      "extraSkills": {
+        "방패 타격": { "type": "active",  "mp": 89, "cd": 16, "damage": "def*1.50", "stun": 2, "target": "enemy", "desc": "방어력의 150% 피해를 입히고 2초동안 대상을 기절시킵니다." },
+        "가시 갑옷": { "type": "passive", "reflectFromDef": 0.20, "desc": "피격 시 방어력의 20%만큼 피해를 반사합니다." },
+        "결속":     { "type": "active",  "mp": 76, "cd": 20, "duration": 10, "self": { "takenDmg": 0.70 }, "absorbAlly": 0.20, "target": "self", "desc": "10초동안 받는 피해가 30% 감소하고, 아군이 받는 피해의 20%를 대신 받습니다." },
+        "휠윈드":   { "type": "active",  "mp": 65, "cd": 6,  "damage": "atk*0.90 + targetMaxHp*0.02", "lifesteal": { "byMissingHp": 0.07 }, "target": "enemy", "desc": "공격력의 90% + 대상 최대 체력의 2% 피해를 입히고 잃은 체력의 7%를 회복합니다." },
+        "복수의 칼날": { "type": "passive", "finalDmgPerMissing10pct": 0.04, "desc": "잃은 체력 10% 당 최종 피해가 +4% 증가합니다." },
+        "약점 파악": { "type": "active",  "mp": 102, "cd": 27, "damage": "270 + atk*0.80", "debuff": { "takenDmg": 0.15, "duration": 12 }, "target": "enemy", "desc": "270 + 공격력의 80% 피해를 입히고 12초동안 대상이 받는 피해를 +15% 증가시킵니다." },
+        "백스텝":   { "type": "active",  "mp": 74, "cd": 13, "damage": "atk*1.05", "countAsBasic": true, "selfDodgeNext": true, "target": "enemy", "desc": "공격력의 105%로 공격하고, 공격을 회피합니다. 이 공격은 일반 공격으로 간주됩니다." },
+        "연쇄 공격": { "type": "active",  "mp": 98, "cd": 16, "damage": "atk*0.65", "hits": 2, "extraOnCrit": { "max": 5 }, "countAsBasic": true, "target": "enemy", "desc": "공격력의 65%로 2회 타격합니다. 치명타가 적용될 때마다 추가 타격하여 최대 5회까지 타격합니다. 일반 공격으로 간주됩니다." },
+        "집중":     { "type": "active",  "mp": 43, "cd": 8,  "buffNextBasic": { "critAdd": 0.25, "trueDamageOnCrit": true }, "target": "self", "desc": "다음 일반 공격의 치명타 확률이 25% 증가합니다. 치명타 적중 시 고정 피해로 입힙니다." },
+        "마력 역류": { "type": "active",  "mp": 40, "cd": 12, "damage": "atk*1.20", "mpRefundPctOfDealt": 0.05, "target": "enemy", "desc": "공격력의 120% 피해를 입히고 입힌 피해량의 5%만큼 MP를 회복합니다." },
+        "과부하":   { "type": "passive", "mpCostMul": 1.20, "skillDmgMul": 1.25, "desc": "MP 소모량이 20% 증가하지만, 스킬 공격 피해가 25% 증가합니다." },
+        "잔류 전격": { "type": "passive", "onSkillHit": { "chance": 0.75, "debuff": { "dealtDmg": -0.15, "duration": 3 } }, "desc": "스킬 공격 시 75% 확률로 대상을 감전시켜 3초동안 입히는 피해량을 15% 감소시킵니다." },
+        "빛의 장막": { "type": "active",  "mp": 76, "cd": 13, "shield": "180 + atk*0.25", "shieldHits": 2, "target": "ally", "desc": "지정한 아군에게 180 + 공격력의 25%만큼 피해를 흡수하는 보호막을 부여합니다. 보호막은 2회 피격 시 파괴됩니다." },
+        "천상의 축복": { "type": "active",  "mp": 81, "cd": 12, "buff": { "atkMul": 1.15, "duration": 10, "stack": false }, "target": "ally", "desc": "지정한 아군의 공격력을 10초 동안 15% 상승시킵니다. 이 효과는 중첩되지 않습니다." },
+        "찬란한 구원": { "type": "active",  "mp": 132, "cd": 26, "heal": "130 + atk*0.21", "target": "allAllies", "desc": "모든 아군의 체력을 130 + 공격력의 21%만큼 회복시킵니다." }
+      },
+      "rewards": {
+        "exp": 20000,
+        "gold": {
+          "min": 290000,
+          "max": 350000
+        },
+        "reward": [
+          { "roll": 0.95, "pack": 17 },
+          { "roll": 0.05, "pack": 18 }
+        ]
+      }
+    }
+  ]
+}
