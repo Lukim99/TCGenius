@@ -1527,8 +1527,7 @@ function runCardCombine(user) {
     const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
-    const combineRate = user.name == '월야환담' && Number(selection.star) == 8 ? 1 : selection.info.rate;
-    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, combineRate);
+    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate);
     const success = combineRoll.success;
     if (useProtection) removeInventoryItem(user, protectItemId, 1);
     if (!success && protectedCard) user.inventory.card.push(protectedCard);

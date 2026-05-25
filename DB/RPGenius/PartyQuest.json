@@ -29,7 +29,7 @@
             "hp": 138000,
             "atk": 940,
             "def": 680,
-            "actionInterval": 2.5,
+            "actionInterval": 4.5,
             "skills": [],
             "stat": {
               "pnt": 420,
@@ -44,9 +44,9 @@
           "monster": {
             "name": "흑화 호두",
             "hp": 363000,
-            "atk": 1370,
-            "def": 1070,
-            "actionInterval": 2.0,
+            "atk": 1170,
+            "def": 970,
+            "actionInterval": 3.5,
             "patterns": [
               {
                 "name": "치명 반사",
@@ -127,7 +127,7 @@
         "깎아내기": { "type": "active", "mp": 57, "cd": 12, "damage": "450 + atk*0.95", "debuff": { "def": -4 }, "target": "enemy", "desc": "450 + 공격력의 95% 피해를 입히고 방어력을 4 감소시킵니다." },
         "폭주":     { "type": "active", "mp": 87, "cd": 26, "self": { "actCdMul": 0.5, "atkMul": 1.15 }, "duration": 12, "target": "self", "desc": "12초동안 행동 쿨타임이 절반으로 줄어들고 공격력이 15% 증가합니다." },
         "낙뢰":     { "type": "active", "mp": 52, "cd": 4,  "damage": "110 + atk*1.05", "stack": { "key": "낙뢰", "incPerUse": 0.05 }, "target": "enemy", "desc": "번개를 떨궈 110 + 공격력의 105% 피해를 입힙니다. 사용할 때마다 피해량이 5% 증가합니다." },
-        "힐":       { "type": "active", "mp": 79, "cd": 7,  "heal": "90 + atk*0.10", "target": "ally", "desc": "지정한 아군의 체력을 90 + 공격력의 10%만큼 회복시킵니다." }
+        "힐":       { "type": "active", "mp": 79, "cd": 7,  "heal": "380 + atk*0.45", "target": "ally", "desc": "지정한 아군의 체력을 380 + 공격력의 45%만큼 회복시킵니다." }
       },
       "randomSkillPool": {
         "탱커":   ["방패 타격", "가시 갑옷", "결속"],
@@ -151,7 +151,7 @@
         "잔류 전격": { "type": "passive", "onSkillHit": { "chance": 0.75, "debuff": { "dealtDmg": -0.15, "duration": 3 } }, "desc": "스킬 공격 시 75% 확률로 대상을 감전시켜 3초동안 입히는 피해량을 15% 감소시킵니다." },
         "빛의 장막": { "type": "active",  "mp": 76, "cd": 13, "shield": "180 + atk*0.25", "shieldHits": 2, "target": "ally", "desc": "지정한 아군에게 180 + 공격력의 25%만큼 피해를 흡수하는 보호막을 부여합니다. 보호막은 2회 피격 시 파괴됩니다." },
         "천상의 축복": { "type": "active",  "mp": 81, "cd": 12, "buff": { "atkMul": 1.15, "duration": 10, "stack": false }, "target": "ally", "desc": "지정한 아군의 공격력을 10초 동안 15% 상승시킵니다. 이 효과는 중첩되지 않습니다." },
-        "찬란한 구원": { "type": "active",  "mp": 132, "cd": 26, "heal": "130 + atk*0.21", "target": "allAllies", "desc": "모든 아군의 체력을 130 + 공격력의 21%만큼 회복시킵니다." }
+        "찬란한 구원": { "type": "active",  "mp": 132, "cd": 26, "heal": "880 + atk*1.21", "target": "allAllies", "desc": "모든 아군의 체력을 880 + 공격력의 121%만큼 회복시킵니다." }
       },
       "rewards": {
         "exp": 20000,
