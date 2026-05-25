@@ -1527,7 +1527,8 @@ function runCardCombine(user) {
     const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
-    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate);
+    const combineRate = user.name == '월야환담' && Number(selection.star) == 8 ? 1 : selection.info.rate;
+    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, combineRate);
     const success = combineRoll.success;
     if (useProtection) removeInventoryItem(user, protectItemId, 1);
     if (!success && protectedCard) user.inventory.card.push(protectedCard);
@@ -3024,12 +3025,6 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 addInventoryItem(user, dropItemId, 1);
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
-        }
-        if (Math.random() < 0.01 * dropMultiplier * levelMultiplier) {
-            const items = getDataCache('Item', []);
-            addInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
-            const hammer = items[ICE_HAMMER_ITEM_ID];
-            lines.push('- 🔨 [이벤트]' + (hammer ? hammer.name : '망치') + ' 획득!');
         }
         const oreInfo = GOLD_MINE_ORE_DROPS[Number(dungeon.goldMineLevel || 0)];
         if (oreInfo) {
