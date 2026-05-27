@@ -3863,7 +3863,7 @@ function getEquipmentTypeLabel(type) {
 }
 
 const EQUIPMENT_TRADE_MAX_COUNT = 5;
-const EQUIPMENT_BINDING_ENABLED = false;
+const EQUIPMENT_BINDING_ENABLED = true;
 const EQUIPMENT_TRADE_RARITY_ORDER = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
 
 function isEquipmentTradeCountLimited(rarity) {
