@@ -2764,6 +2764,19 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-party-row .ph .nm{font-weight:800;color:#f1f5f9}
 .pq-party-row .ph .pos{font-size:11px;color:#a5b4fc;font-weight:700}
 .pq-party-row .vals{font-size:11px;color:#94a3b8;display:flex;gap:8px;font-variant-numeric:tabular-nums}
+.pq-combat-hud{position:sticky;top:0;z-index:30;padding:8px;background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.14);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
+.pq-party-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.pq-party-mini{padding:6px;gap:4px;border-radius:9px;min-width:0}
+.pq-party-mini .ph{font-size:10px}
+.pq-party-mini .ph .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pq-party-mini .vals{font-size:9px;gap:3px;justify-content:space-between}
+.pq-my-hp{margin-top:7px;padding:9px;background:rgba(2,6,23,.62);border:1px solid rgba(34,197,94,.26);border-radius:12px}
+.pq-my-hp .top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:900;color:#f8fafc}
+.pq-my-hp .vals{margin-top:5px;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between}
+.pq-target-hp{min-width:126px;text-align:right}
+.pq-target-hp .txt{color:#e2e8f0;font-size:12px;font-weight:800}
+.pq-target-hp .pct{color:#94a3b8;font-size:10px;margin-top:2px}
+.pq-target-hp .pq-prog{margin-top:5px;height:6px}
 .pq-buff-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
 .pq-buff-chip{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background:rgba(99,102,241,.16);border:1px solid rgba(129,140,248,.35);color:#c7d2fe;font-size:10px;font-weight:800}
 .pq-skill-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:6px}
@@ -2867,8 +2880,7 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
         <div style="font-size:11px;color:#94a3b8;letter-spacing:.06em;font-weight:800;text-transform:uppercase" id="pqPhaseLabel">PHASE</div>
         <div style="color:#a5b4fc;font-weight:800;font-size:13px" id="pqPhaseName">-</div>
       </div>
-      <div class="pq-panel" style="padding:10px;gap:8px">
-        <div class="pq-section-title" style="margin:0">파티원</div>
+      <div class="pq-combat-hud">
         <div id="pqPlayMembers" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
       <div id="pqPhaseStage"></div>

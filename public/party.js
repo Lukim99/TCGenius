@@ -586,6 +586,16 @@
         updateAttackBtn();
     }
 
+    function hpPct(r) {
+        return r && r.hpMax > 0 ? Math.max(0, Math.min(100, r.hp / r.hpMax * 100)) : 0;
+    }
+
+    function makeHpBar(r, className) {
+        const hp = el('div', { class: 'pq-prog hp' + (className ? ' ' + className : '') }, el('div', { class: 'fill' }));
+        hp.firstChild.style.width = hpPct(r) + '%';
+        return hp;
+    }
+
     function showDamagePop(payload) {
         const details = Array.isArray(payload.hitDetails) ? payload.hitDetails.filter(h => Number(h && h.damage || 0) > 0) : [];
         if (details.length > 1) {
@@ -691,11 +701,12 @@
         const root = $('#pqPlayMembers');
         if (!root) return;
         root.replaceChildren();
+        const grid = el('div', { class: 'pq-party-mini-grid' });
         for (const m of snap.members) {
             const r = m.runtime;
             const isTaunt = (snap.monster && snap.monster.tauntTarget === m.name) || (snap.tauntTarget === m.name && Number(snap.tauntRemain || 0) > 0);
             const row = el('div', {
-                class: 'pq-party-row' + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : ''),
+                class: 'pq-party-row pq-party-mini' + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : ''),
                 'data-member': m.name
             });
             row.append(el('div', { class: 'ph' },
@@ -703,15 +714,13 @@
                 el('div', { class: 'pos' }, m.position || '-')
             ));
             if (r) {
-                const hp = el('div', { class: 'pq-prog hp' }, el('div', { class: 'fill' }));
-                hp.firstChild.style.width = (r.hpMax > 0 ? (r.hp / r.hpMax * 100) : 0) + '%';
-                row.append(hp);
+                row.append(makeHpBar(r));
                 const mp = el('div', { class: 'pq-prog mp' }, el('div', { class: 'fill' }));
                 mp.firstChild.style.width = (r.mpMax > 0 ? (r.mp / r.mpMax * 100) : 0) + '%';
                 row.append(mp);
                 row.append(el('div', { class: 'vals' },
-                    el('span', null, '체력 ' + r.hp + '/' + r.hpMax),
-                    el('span', null, 'MP ' + r.mp + '/' + r.mpMax),
+                    el('span', null, r.hp + '/' + r.hpMax),
+                    el('span', null, r.mp + '/' + r.mpMax),
                     r.shield > 0 ? el('span', null, '🛡 ' + r.shield) : null
                 ));
                 const buffs = [];
@@ -729,7 +738,16 @@
                     })
                 ));
             }
-            root.append(row);
+            grid.append(row);
+        }
+        root.append(grid);
+        const mine = snap.members.find(m => m.name === me);
+        if (mine && mine.runtime) {
+            root.append(el('div', { class: 'pq-my-hp' },
+                el('div', { class: 'top' }, el('span', null, '내 체력'), el('span', null, hpPct(mine.runtime).toFixed(1) + '%')),
+                makeHpBar(mine.runtime),
+                el('div', { class: 'vals' }, el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax), el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax))
+            ));
         }
     }
 
@@ -951,9 +969,15 @@
             };
             for (const m of snap.members) {
                 if (m.runtime && m.runtime.dead) continue;
+                const r = m.runtime;
+                const pct = hpPct(r);
                 const row = el('div', { class: 'pq-target-row', onClick: () => choose(m.name) },
                     el('div', null, m.name + (m.name === me ? ' (나)' : '')),
-                    el('div', { style: 'color:#94a3b8;font-size:12px' }, m.runtime ? (m.runtime.hp + '/' + m.runtime.hpMax) : '')
+                    el('div', { class: 'pq-target-hp' },
+                        el('div', { class: 'txt' }, r ? (r.hp + ' / ' + r.hpMax) : ''),
+                        el('div', { class: 'pct' }, r ? pct.toFixed(1) + '%' : ''),
+                        r ? makeHpBar(r) : null
+                    )
                 );
                 list.append(row);
             }

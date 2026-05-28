@@ -1387,7 +1387,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
 function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
     if (!room.monster) return { damage: 0, isCrit: false };
     const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra || {});
-    room.monster.hp = Math.max(0, room.monster.hp - result.damage);
+    const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
+    if (invincible) result.damage = 0;
+    else room.monster.hp = Math.max(0, room.monster.hp - result.damage);
     applyBlackHoduCritReflect(room, attacker, result);
     return result;
 }
@@ -1396,7 +1398,9 @@ function performBasicAttack(room, attacker) {
     const mon = room.monster;
     if (!mon) return null;
     const r = computeBasicDamage(attacker, mon, room);
-    mon.hp = Math.max(0, mon.hp - r.damage);
+    const invincible = !!(mon.bossState && mon.bossState.casting);
+    if (invincible) r.damage = 0;
+    else mon.hp = Math.max(0, mon.hp - r.damage);
     applyAttackPotentialRecovery(room, attacker);
     applyMainCardPassiveMpRecovery(room, attacker);
     applyBlackHoduCritReflect(room, attacker, r);
@@ -1902,8 +1906,10 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
             return;
         }
         const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage }));
+        const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
+        if (invincible) result.damage = 0;
         const damage = result.damage;
-        room.monster.hp = Math.max(0, room.monster.hp - damage);
+        if (!invincible) room.monster.hp = Math.max(0, room.monster.hp - damage);
         pushCombat(room, caster.name + ' [' + skillName + '] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
         if (def.debuff && def.debuff.def) room.monster.def = Math.max(0, Number(room.monster.def || 0) + Number(def.debuff.def));
         if (def.debuff && def.debuff.takenDmg) {
