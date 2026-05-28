@@ -1340,15 +1340,23 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
 
 function buildRecipeIndex() {
     const items = rpgenius.getDataCache('Item', []);
+    const equipments = rpgenius.getDataCache('Equipment', {});
     const recipes = rpgenius.getDataCache('Recipe', []);
     const index = {};
+    const equipmentTypeMap = {
+        '무기': { slotKey: 'weapon', idKey: 'weapon_id', label: '무기' },
+        '갑옷': { slotKey: 'armor', idKey: 'armor_id', label: '갑옷' },
+        '장신구': { slotKey: 'accessory', idKey: 'accessory_id', label: '장신구' },
+        '보조': { slotKey: 'support', idKey: 'support_id', label: '보조' }
+    };
     (recipes || []).forEach(recipe => {
         if (!recipe || !Array.isArray(recipe.crafted)) return;
         recipe.crafted.forEach(crafted => {
             if (!crafted || !crafted.type) return;
-            const slotKey = crafted.type == '무기' ? 'weapon' : crafted.type == '갑옷' ? 'armor' : crafted.type == '장신구' ? 'accessory' : null;
+            const craftedType = equipmentTypeMap[crafted.type];
+            const slotKey = craftedType ? craftedType.slotKey : null;
             if (!slotKey) return;
-            const targetId = Number(crafted.weapon_id != null ? crafted.weapon_id : crafted.armor_id != null ? crafted.armor_id : crafted.accessory_id);
+            const targetId = Number(crafted[craftedType.idKey]);
             if (!Number.isFinite(targetId)) return;
             const materials = (recipe.materials || []).map(mat => {
                 if (!mat) return null;
@@ -1365,6 +1373,19 @@ function buildRecipeIndex() {
                 }
                 if (mat.type == '골드') return { type: 'gold', typeLabel: '골드', name: '골드', count: Number(mat.count || 0) };
                 if (mat.type == '가넷') return { type: 'garnet', typeLabel: '가넷', name: '가넷', count: Number(mat.count || 0) };
+                const matType = equipmentTypeMap[mat.type];
+                if (matType) {
+                    const equipId = Number(mat[matType.idKey]);
+                    const equipData = equipments[matType.slotKey] && equipments[matType.slotKey][equipId];
+                    return {
+                        type: 'equipment',
+                        typeLabel: matType.label,
+                        name: equipData ? equipData.name : '알 수 없음',
+                        count: Number(mat.count || 0),
+                        iconUrl: equipData ? getEquipmentIconUrl(equipData) : null,
+                        frameUrl: equipData ? getAuctionFrameUrl('equipment', equipData.rarity) : null
+                    };
+                }
                 return { type: 'unknown', typeLabel: String(mat.type || ''), name: String(mat.type || ''), count: Number(mat.count || 0) };
             }).filter(Boolean);
             index[slotKey + ':' + targetId] = { name: recipe.name, materials };
