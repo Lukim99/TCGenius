@@ -382,12 +382,23 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
     }
 });
 
+function getEquipmentActionBlockedReason(user) {
+    if (user && user.field && user.field.name) {
+        return user.field.worldBoss ? '월드보스 전투 중에는 장비를 변경할 수 없습니다.' : '사냥 중에는 장비를 변경할 수 없습니다.';
+    }
+    const room = partyquest.getMyRoomSnapshot(user && user.name);
+    if (room && room.state == 'inProgress') return '파티퀘스트 진행 중에는 장비를 변경할 수 없습니다.';
+    return null;
+}
+
 server.post('/api/inventory/equipment/equip', requireUser, async (req, res) => {
     try {
         const number = Number(req.body && req.body.number);
         if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user);
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
         const result = rpgenius.equipItemByNumber(user, number);
         if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
         await user.save();
@@ -404,6 +415,8 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
         if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user);
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
         const result = rpgenius.unequipEquipmentByNumber(user, number);
         if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
         await user.save();
