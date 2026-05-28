@@ -220,6 +220,27 @@ function openEquipmentModal(eq) {
     }
     const potBlock = potentialBlockNode(eq.potentialDisplay);
     if (potBlock) $('#modalBody').appendChild(potBlock);
+    const inventoryPageActive = document.querySelector('.page[data-page="inventory"]') && document.querySelector('.page[data-page="inventory"]').classList.contains('active');
+    const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
+    if (inventoryPageActive && ownInventory && Number(eq.number || 0) > 0) {
+        const action = eq.equipped ? 'unequip' : 'equip';
+        const btn = el('button', { class: eq.equipped ? 'close' : 'primary', onclick: e => handleEquipmentAction(eq, action, e) }, eq.equipped ? '장착 해제' : '장착');
+        $('#modalBody').appendChild(btn);
+    }
+}
+
+async function handleEquipmentAction(eq, action, event) {
+    const btn = event && event.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+        const data = await postApi('/api/inventory/equipment/' + action, { number: eq.number });
+        closeModal();
+        if (data.profile) renderProfile(data.profile);
+        await loadInventory('equipment');
+    } catch (e) {
+        alert(e.message);
+        if (btn) btn.disabled = false;
+    }
 }
 
 function categorySection(title, children) {

@@ -5071,6 +5071,28 @@ function unequipAccessoryByNumber(user, numberArg) {
     return '✅ 장신구를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, equipped) + (Number(equipped.level || 0) > 0 ? ' +' + equipped.level : '');
 }
 
+function unequipEquipmentByNumber(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 장비 번호를 올바르게 입력해주세요.';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected || selected.source != 'equipped' || !selected.equip || typeof selected.equip.id == 'undefined') return '❌ 장착 중인 장비 번호가 아닙니다.';
+    const type = selected.equip.type || selected.type;
+    const data = getEquipmentData(type, selected.equip.id);
+    if (!data) return '❌ 잘못된 장비 데이터입니다.';
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    if (type != 'weapon' && type != 'armor' && type != 'support' && !(type == 'accessory' && typeof selected.slotKey != 'undefined')) return '❌ 알 수 없는 장비 타입입니다.';
+    user.inventory.equipment.push(cloneEquipmentInstance(selected.equip, type));
+    if (type == 'weapon') user.equipments.weapon = null;
+    else if (type == 'armor') user.equipments.armor = null;
+    else if (type == 'support') user.equipments.support = null;
+    else if (type == 'accessory') delete user.equipments.accessory[selected.slotKey];
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    return '✅ ' + getEquipmentTypeLabel(type) + ' 장비를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, selected.equip) + (Number(selected.equip.level || 0) > 0 ? ' +' + selected.equip.level : '');
+}
+
 const EQUIPMENT_STONE_ITEM_ID = 0;
 const EQUIPMENT_UPGRADER_ITEM_ID = 2;
 const EQUIPMENT_PROTECT_ITEM_ID = 3;
@@ -7862,6 +7884,8 @@ module.exports = {
     getTradeTicketItemId,
     getCardTicketCost,
     cloneEquipmentInstance,
+    equipItemByNumber,
+    unequipEquipmentByNumber,
     getEquipmentTradeBlockReason,
     markEquipmentTraded,
     getEquipmentTradeLimitInfo,

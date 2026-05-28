@@ -382,6 +382,38 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
     }
 });
 
+server.post('/api/inventory/equipment/equip', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.equipItemByNumber(user, number);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('equipment equip error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.unequipEquipmentByNumber(user, number);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('equipment unequip error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 경매장 =====
 
 server.get('/api/auction', requireUser, async (req, res) => {
@@ -1248,8 +1280,10 @@ function getEquipmentData(type, id) {
 function buildInventoryEquipment(user) {
     const result = [];
     const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
-    const add = (equip, type, equipped) => {
+    let number = 1;
+    const add = (equip, type, equipped, meta) => {
         const data = equip && getEquipmentData(equip.type || type, equip.id);
+        const itemNumber = number++;
         if (!data) return;
         const level = Number(equip.level || 0);
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
@@ -1265,6 +1299,10 @@ function buildInventoryEquipment(user) {
             type: equip.type || type,
             typeLabel: labels[equip.type || type] || (equip.type || type),
             id: Number(equip.id),
+            number: itemNumber,
+            source: meta && meta.source || (equipped ? 'equipped' : 'inventory'),
+            index: meta && typeof meta.index != 'undefined' ? Number(meta.index) : null,
+            slotKey: meta && typeof meta.slotKey != 'undefined' ? String(meta.slotKey) : null,
             name: rpgenius.getEquipmentDisplayName(data, equip),
             baseName: data.name,
             rarity: data.rarity,
@@ -1282,12 +1320,14 @@ function buildInventoryEquipment(user) {
             frameUrl: getAuctionFrameUrl('equipment', data.rarity)
         });
     };
-    (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach(equip => add(equip, equip.type, false));
-    if (user.equipments && user.equipments.weapon) add(user.equipments.weapon, 'weapon', true);
-    if (user.equipments && user.equipments.armor) add(user.equipments.armor, 'armor', true);
+    (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => add(equip, equip.type, false, { source: 'inventory', index }));
+    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') add(user.equipments.weapon, 'weapon', true, { source: 'equipped' });
+    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') add(user.equipments.armor, 'armor', true, { source: 'equipped' });
     const accessories = user.equipments && user.equipments.accessory || {};
-    Object.keys(accessories).forEach(key => add(accessories[key], 'accessory', true));
-    if (user.equipments && user.equipments.support) add(user.equipments.support, 'support', true);
+    Object.keys(accessories).forEach(key => {
+        if (accessories[key] && typeof accessories[key].id != 'undefined') add(accessories[key], 'accessory', true, { source: 'equipped', slotKey: key });
+    });
+    if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') add(user.equipments.support, 'support', true, { source: 'equipped' });
     return result;
 }
 
