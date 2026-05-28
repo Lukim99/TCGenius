@@ -1188,6 +1188,52 @@ function dexCard(entry) {
     return card;
 }
 
+function dexCharacterCard(entry) {
+    const card = el('div', { class: 'dex-card' });
+    card.style.setProperty('--rar', '#5865f2');
+    if (entry.coverUrl) {
+        card.appendChild(el('div', { style: { margin: '-14px -14px 0', aspectRatio: '16 / 9', borderRadius: '14px 14px 8px 8px', overflow: 'hidden', background: '#020617' } },
+            el('img', { src: entry.coverUrl, alt: entry.name, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
+        ));
+    }
+    const head = el('div', { style: { display: 'grid', gap: '4px' } });
+    head.appendChild(el('div', null,
+        el('div', { class: 'dex-name' }, entry.name),
+        el('div', { class: 'dex-meta' },
+            el('span', { class: 'tag rarity' }, entry.typeLabel || '캐릭터 카드')
+        )
+    ));
+    card.appendChild(head);
+
+    if (entry.slotEffect) {
+        const eff = entry.slotEffect;
+        const block = el('div', { class: 'dex-stat-block' });
+        block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'));
+        block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
+        if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0) block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
+        card.appendChild(block);
+    }
+
+    if (entry.skills && entry.skills.length) {
+        const det = el('details', { class: 'dex-collapse', open: true });
+        det.appendChild(el('summary', null, '스킬'));
+        const list = el('div', { class: 'dex-upgrade-list' });
+        entry.skills.forEach(skill => {
+            list.appendChild(el('div', { class: 'dex-upgrade-row' },
+                el('div', { class: 'lvl' }, skill.name),
+                el('div', { class: 'lines' },
+                    el('div', { style: { fontWeight: 800, color: '#f8fafc' } }, 'MP ' + comma(skill.mpCost) + ' · ' + skill.cooltimeText),
+                    ...(skill.descLines || []).map(line => el('div', null, line))
+                )
+            ));
+        });
+        det.appendChild(list);
+        card.appendChild(det);
+    }
+
+    return card;
+}
+
 function renderDex() {
     if (!dexData) return;
     const list = dexData[dexTab] || [];
@@ -1197,7 +1243,7 @@ function renderDex() {
         grid.appendChild(el('div', { class: 'empty' }, '데이터가 없습니다.'));
         return;
     }
-    list.forEach(entry => grid.appendChild(dexCard(entry)));
+    list.forEach(entry => grid.appendChild(dexTab === 'character' ? dexCharacterCard(entry) : dexCard(entry)));
 }
 
 async function loadDex() {

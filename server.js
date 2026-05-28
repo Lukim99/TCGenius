@@ -1110,6 +1110,13 @@ function getCardImageUrl(card, user) {
     return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
 }
 
+function getCharacterCoverImageUrl(data) {
+    if (!data || !data.name) return null;
+    const file = '캐릭터표지.png';
+    if (!fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, file))) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
+}
+
 function getItemImageUrl(dir, file) {
     const filePath = path.join(ITEM_IMAGE_PATH, dir, file);
     if (!fs.existsSync(filePath)) return null;
@@ -1366,6 +1373,38 @@ function buildRecipeIndex() {
     return index;
 }
 
+function buildCharacterDex() {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+    return characterCards.map((data, id) => {
+        if (!data) return null;
+        const baseCard = { id, star: 0, type: '일반' };
+        const slotEffect = buildSlotEffectInfo({ id, star: 4 }, data);
+        return {
+            kind: 'character',
+            type: 'character',
+            typeLabel: '캐릭터 카드',
+            id,
+            name: data.name,
+            formatted: rpgenius.formatUserCard(baseCard),
+            imageUrl: getCardImageUrl(baseCard, { prestige: false }),
+            coverUrl: getCharacterCoverImageUrl(data),
+            slotEffect,
+            skills: Array.isArray(data.skills) ? data.skills.map(skillId => {
+                const skill = skills[Number(skillId)];
+                if (!skill) return null;
+                return {
+                    id: Number(skillId),
+                    name: skill.name,
+                    mpCost: Number(skill.mp_cost || 0),
+                    cooltimeText: rpgenius.formatCooltime(Number(skill.cooltime || 0)),
+                    descLines: rpgenius.formatSkillDescWithIncrease(skill).split('\n').filter(Boolean)
+                };
+            }).filter(Boolean) : []
+        };
+    }).filter(Boolean);
+}
+
 function buildEquipmentDex() {
     const eq = rpgenius.getDataCache('Equipment', {});
     const recipeIndex = buildRecipeIndex();
@@ -1383,6 +1422,7 @@ function buildEquipmentDex() {
         armor: pack(eq.armor, 'armor', '갑옷'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
+        character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
     };
 }
@@ -2507,7 +2547,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">장비 도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="character">캐릭터 카드</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>

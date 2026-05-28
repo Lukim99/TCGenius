@@ -25,20 +25,20 @@
         "format": [
             { "base": 550, "type": "flat" },
             { "base": 1.80 },
-            { "base": 0.05 }
+            { "base": 0.1 }
         ],
         "mp_cost": 78,
         "cooltime": 12000
     },
     {
         "name": "가속",
-        "desc": "${1}초동안 행동 쿨타임이 ${2}초 감소합니다. 이 스킬은 행동 쿨타임에 영향을 받지 않습니다.",
+        "desc": "${1}초동안 행동 쿨타임이 ${2}초 감소합니다.",
         "format": [
-            { "base": 7, "type": "flat" },
-            { "base": 1, "type": "flat" }
+            { "base": 10, "type": "flat" },
+            { "base": 0.75, "type": "flat" }
         ],
         "mp_cost": 91,
-        "cooltime": 15000
+        "cooltime": 17000
     },
     {
         "name": "카운터",
@@ -47,7 +47,7 @@
             { "base": 1, "type": "flat" },
             { "base": 0.5 },
             { "base": 800, "type": "flat" },
-            { "base": 1.85 }
+            { "base": 2.85 }
         ],
         "mp_cost": 57,
         "cooltime": 12000
@@ -80,8 +80,8 @@
         "desc": "공격력의 ${1}로 공격하고 ${2}~${3}골드를 획득합니다.",
         "format": [
             { "base": 1.0 },
-            { "base": 300, "type": "flat" },
-            { "base": 800, "type": "flat" }
+            { "base": 800, "type": "flat" },
+            { "base": 1800, "type": "flat" }
         ],
         "mp_cost": 36,
         "cooltime": 3000

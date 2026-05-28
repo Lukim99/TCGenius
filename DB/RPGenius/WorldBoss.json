@@ -1,14 +1,13 @@
 [
     {
         "name": "독재자",
-        "hp": 1500000,
-        "atk": 300,
-        "def": 650,
-        "pnt": 280,
+        "hp": 10000000,
+        "atk": 580,
+        "def": 750,
+        "pnt": 440,
         "critDef": 0.3,
         "skills": [0],
         "skillPool": [1, 2, 3, 4, 5, 6, 7, 8],
-        "respawnDays": 2,
         "rewards": [
             { "threshold": 1000, "items": [{ "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 } }] },
             { "threshold": 5000, "items": [{ "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 } }] },
@@ -18,6 +17,11 @@
             { "threshold": 100000, "items": [{ "type": "아이템", "item_id": 122, "count": { "min": 3, "max": 3 } }] },
             { "threshold": 500000, "items": [{ "type": "가넷", "count": { "min": 400, "max": 400 } }] },
             { "threshold": 1000000, "items": [{ "type": "아이템", "item_id": 121, "count": { "min": 1, "max": 1 } }] }
+        ],
+        "rankRewards": [
+            { "rank": 1, "items": [{ "type": "아이템", "item_id": 93, "count": { "min": 10, "max": 10 } }] },
+            { "minRank": 2, "maxRank": 3, "items": [{ "type": "아이템", "item_id": 93, "count": { "min": 5, "max": 5 } }] },
+            { "minRank": 4, "maxRank": 10, "items": [{ "type": "골드", "count": { "min": 300000, "max": 1000000 } }] }
         ]
     }
 ]
