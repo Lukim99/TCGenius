@@ -1567,7 +1567,10 @@ function stepBlackHoduBoss(room, mon, dt) {
         return true;
     }
     const regenPattern = getMonsterPattern(mon, 'regenBelowHp');
-    if (hpRatio <= Number(regenPattern.threshold || 0.3)) st.healActive = true;
+    const regenInterval = Number(regenPattern.interval || 5);
+    const regenActive = !!regenPattern.type && hpRatio <= Number(regenPattern.threshold || 0.3);
+    st.healActive = regenActive;
+    if (!regenActive) st.healTimer = regenInterval;
     st.shockTimer = Math.max(0, Number(st.shockTimer || 0) - dt);
     if (st.shockTimer <= 0) {
         const pattern = getMonsterPattern(mon, 'fixedAoe');
@@ -1590,7 +1593,7 @@ function stepBlackHoduBoss(room, mon, dt) {
     if (st.healActive) {
         st.healTimer = Math.max(0, Number(st.healTimer || 0) - dt);
         if (st.healTimer <= 0) {
-            st.healTimer += Number(regenPattern.interval || 5);
+            st.healTimer += regenInterval;
             const amount = Math.max(1, Math.round(mon.hpMax * Number(regenPattern.healMaxHpPct || 0.05)));
             mon.hp = Math.min(mon.hpMax, mon.hp + amount);
             pushCombat(room, mon.name + ' [' + (regenPattern.name || '재생') + '] +' + comma(amount), 'heal');
