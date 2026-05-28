@@ -2672,6 +2672,16 @@ function getActiveFieldDamageReduction(user) {
     return Number(buff.value || 0);
 }
 
+function getActiveFieldDamageMultiplier(user) {
+    const buffs = getFieldBuffs(user);
+    const buff = buffs.receivedDamageMultiplier;
+    if (!buff || Number(buff.expired_at || 0) <= Date.now()) {
+        if (buffs.receivedDamageMultiplier) delete buffs.receivedDamageMultiplier;
+        return 1;
+    }
+    return Math.max(0, Number(buff.value || 1));
+}
+
 function getEliteState(fieldName) {
     if (!eliteFieldStates[fieldName]) eliteFieldStates[fieldName] = { owner: null, defeatedAt: 0 };
     return eliteFieldStates[fieldName];
@@ -3330,6 +3340,7 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '불사조') {
         extra.damageBonusMul = Number(stats.crit || 0) * 0.5;
         extra.receivedDamageMul = 1.5;
+        if (isWorldBoss) getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Date.now() + 8000 };
     }
     if (skillData.skill.name == '피아스트') {
         extra.skillMpRecovery = getSkillValue(skillData.skill, 1, star);
@@ -3662,11 +3673,13 @@ async function runWorldBossSkillTick(userName, bossName) {
     const rawDamage = (Number(flat || 0) + Number(boss.atk || 0) * Number(mul || 0)) * rawDamageMultiplier;
     let receivedReduction = Number(latest.field.passiveDamageReduction || 0) + Number(slotEffects.hpDamageReduction || 0);
     receivedReduction = Math.max(0, Math.min(0.95, receivedReduction));
+    const activeReceivedReduction = Math.max(0, Math.min(0.95, getActiveFieldDamageReduction(latest)));
+    const activeReceivedMultiplier = getActiveFieldDamageMultiplier(latest);
     const buffs = getFieldBuffs(latest);
     const counterBuff = buffs.counterReady;
     const counterActive = counterBuff && Number(counterBuff.expired_at || 0) > now;
     const counterReduction = counterActive ? Number(counterBuff.reduceRate || 0) : 0;
-    const reducedDamage = rawDamage * (1 - receivedReduction) * (1 - counterReduction);
+    const reducedDamage = rawDamage * activeReceivedMultiplier * (1 - receivedReduction) * (1 - activeReceivedReduction) * (1 - counterReduction);
     const finalDamage = Math.max(0, Math.round(getDamageAfterDefense(reducedDamage, userStats.def, boss.pnt)));
     const beforeHp = typeof latest.hp == 'undefined' ? Number(userStats.hp || 0) : Number(latest.hp || 0);
     latest.hp = Math.max(0, beforeHp - finalDamage);
