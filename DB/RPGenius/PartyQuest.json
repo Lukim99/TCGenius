@@ -44,7 +44,7 @@
           "monster": {
             "name": "흑화 호두",
             "hp": 363000,
-            "atk": 1170,
+            "atk": 1370,
             "def": 970,
             "actionInterval": 3.5,
             "patterns": [
@@ -94,9 +94,9 @@
               {
                 "name": "종언",
                 "type": "executePositionCast",
-                "threshold": 0.1,
+                "threshold": 0.15,
                 "castTime": 3,
-                "targetPriority": ["메인딜러", "서브딜러", "브루저", "탱커", "서포터"],
+                "targetPriority": ["메인딜러", "서브딜러", "탱커", "브루저", "서포터"],
                 "interruptByStun": true,
                 "once": true
               },
@@ -149,9 +149,9 @@
         "마력 역류": { "type": "active",  "mp": 40, "cd": 12, "damage": "atk*1.20", "mpRefundPctOfDealt": 0.05, "target": "enemy", "desc": "공격력의 120% 피해를 입히고 입힌 피해량의 5%만큼 MP를 회복합니다." },
         "과부하":   { "type": "passive", "mpCostMul": 1.20, "skillDmgMul": 1.25, "desc": "MP 소모량이 20% 증가하지만, 스킬 공격 피해가 25% 증가합니다." },
         "잔류 전격": { "type": "passive", "onSkillHit": { "chance": 0.75, "debuff": { "dealtDmg": -0.15, "duration": 3 } }, "desc": "스킬 공격 시 75% 확률로 대상을 감전시켜 3초동안 입히는 피해량을 15% 감소시킵니다." },
-        "빛의 장막": { "type": "active",  "mp": 76, "cd": 13, "shield": "180 + atk*0.25", "shieldHits": 2, "target": "ally", "desc": "지정한 아군에게 980 + 공격력의 55%만큼 피해를 흡수하는 보호막을 부여합니다. 보호막은 2회 피격 시 파괴됩니다." },
+        "빛의 장막": { "type": "active",  "mp": 76, "cd": 13, "shield": "960 + atk*0.55", "shieldHits": 2, "target": "ally", "desc": "지정한 아군에게 960 + 공격력의 55%만큼 피해를 흡수하는 보호막을 부여합니다. 보호막은 2회 피격 시 파괴됩니다." },
         "천상의 축복": { "type": "active",  "mp": 81, "cd": 12, "buff": { "atkMul": 1.15, "duration": 10, "stack": false }, "target": "ally", "desc": "지정한 아군의 공격력을 10초 동안 15% 상승시킵니다. 이 효과는 중첩되지 않습니다." },
-        "찬란한 구원": { "type": "active",  "mp": 132, "cd": 26, "heal": "880 + atk*1.21", "target": "allAllies", "desc": "모든 아군의 체력을 780 + 공격력의 85%만큼 회복시킵니다." }
+        "찬란한 구원": { "type": "active",  "mp": 132, "cd": 26, "heal": "780 + atk*0.91", "target": "allAllies", "desc": "모든 아군의 체력을 780 + 공격력의 91%만큼 회복시킵니다." }
       },
       "rewards": {
         "exp": 20000,

@@ -2767,8 +2767,9 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-combat-hud{position:sticky;top:0;z-index:30;padding:8px;background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.14);border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
 .pq-party-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
 .pq-party-mini{padding:6px;gap:4px;border-radius:9px;min-width:0}
-.pq-party-mini .ph{font-size:10px}
+.pq-party-mini .ph{font-size:clamp(7px,2.2vw,10px);gap:3px}
 .pq-party-mini .ph .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pq-party-mini .ph .pos{font-size:clamp(7px,2vw,10px);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pq-party-mini .vals{font-size:9px;gap:3px;justify-content:space-between}
 .pq-my-hp{margin-top:7px;padding:9px;background:rgba(2,6,23,.62);border:1px solid rgba(34,197,94,.26);border-radius:12px}
 .pq-my-hp .top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:900;color:#f8fafc}

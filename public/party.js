@@ -703,6 +703,7 @@
         root.replaceChildren();
         const grid = el('div', { class: 'pq-party-mini-grid' });
         for (const m of snap.members) {
+            if (m.name === me) continue;
             const r = m.runtime;
             const isTaunt = (snap.monster && snap.monster.tauntTarget === m.name) || (snap.tauntTarget === m.name && Number(snap.tauntRemain || 0) > 0);
             const row = el('div', {
@@ -718,25 +719,6 @@
                 const mp = el('div', { class: 'pq-prog mp' }, el('div', { class: 'fill' }));
                 mp.firstChild.style.width = (r.mpMax > 0 ? (r.mp / r.mpMax * 100) : 0) + '%';
                 row.append(mp);
-                row.append(el('div', { class: 'vals' },
-                    el('span', null, r.hp + '/' + r.hpMax),
-                    el('span', null, r.mp + '/' + r.mpMax),
-                    r.shield > 0 ? el('span', null, '🛡 ' + r.shield) : null
-                ));
-                const buffs = [];
-                if (isTaunt || (snap.tauntTarget === m.name && Number(snap.tauntRemain || 0) > 0)) buffs.push({ label: '도발', remain: snap.tauntRemain || (snap.monster && snap.monster.tauntRemain) || 0 });
-                (r.buffs || []).forEach(b => buffs.push(b));
-                if (buffs.length) row.append(el('div', { class: 'pq-buff-row' },
-                    ...buffs.map(b => {
-                        const label = b.label || b.id || '버프';
-                        return el('span', {
-                            class: 'pq-buff-chip',
-                            'data-member': m.name,
-                            'data-buff-id': b.id === 'taunt' || label === '도발' ? 'taunt' : String(b.id || b.label || ''),
-                            'data-label': label
-                        }, label + (Number(b.remain || 0) > 0 ? ' ' + Number(b.remain || 0).toFixed(1) + 's' : ''));
-                    })
-                ));
             }
             grid.append(row);
         }
