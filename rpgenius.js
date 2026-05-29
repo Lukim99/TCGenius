@@ -3179,7 +3179,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
         if (extra && extra.isBotAutoAttack) {
             user.field.iktaeBot.hp -= fieldDamage;
-            lines.push('- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
+            lines.push('- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(fieldDamage) + ')');
             fieldDamage = 0;
             if (user.field.iktaeBot.hp <= 0) {
                 user.field.iktaeBot = null;
