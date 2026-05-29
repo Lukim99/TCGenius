@@ -106,6 +106,58 @@ const eliteFieldStates = {};
 const worldBossStates = {};
 const worldBossSkillTimers = {};
 const worldBossChannels = {};
+const activeFieldChannels = {};
+const fieldIktaeBotTimers = {};
+
+function startFieldIktaeBot(userName) {
+    clearFieldIktaeBot(userName);
+    fieldIktaeBotTimers[userName] = setInterval(() => runFieldIktaeBotTick(userName).catch(e => console.error('[iktaebot tick]', e.message)), 4000);
+}
+
+function ensureFieldIktaeBotTimer(user, channel) {
+    if (!user || !user.field || !user.field.iktaeBot) return;
+    if (channel) activeFieldChannels[user.name] = channel;
+    if (fieldIktaeBotTimers[user.name]) return;
+    startFieldIktaeBot(user.name);
+}
+
+function clearFieldIktaeBot(userName) {
+    if (fieldIktaeBotTimers[userName]) {
+        clearInterval(fieldIktaeBotTimers[userName]);
+        delete fieldIktaeBotTimers[userName];
+    }
+}
+
+async function runFieldIktaeBotTick(userName) {
+    const user = await getRPGUserByName(userName);
+    if (!user || !user.field || !user.field.iktaeBot) { clearFieldIktaeBot(userName); return; }
+    if (Date.now() > user.field.iktaeBot.expired_at || user.field.iktaeBot.hp <= 0) {
+        user.field.iktaeBot = null;
+        clearFieldIktaeBot(userName);
+        await user.save();
+        return;
+    }
+    const context = getFieldCombatContext(user);
+    if (context.error) return;
+    const stats = calculateUserStats(user);
+    const botDamage = Math.max(1, Math.round(Number(stats.atk || 0) * user.field.iktaeBot.atkMul));
+    const extra = { isSkill: true };
+    const lines = [];
+    if (context.type == 'worldBoss') {
+        const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
+        lines.push('🤖 익테봇 자동 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
+        if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+    } else if (context.type == 'elite') {
+        const result = buildEliteHuntResult(user, context.dungeon, botDamage, extra);
+        lines.push(result);
+    } else {
+        const result = buildHuntResult(user, context.dungeon, botDamage, extra);
+        lines.push(result);
+    }
+    await user.save();
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
+    if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
+}
 const commandQueues = {};
 const commandSpamStates = {};
 const COMMAND_SPAM_WINDOW_MS = 1000;
@@ -1319,7 +1371,8 @@ function calculateCardSlotEffects(user) {
         goldBonus: 0,
         itemDropChance: 0,
         defReduction: 0,
-        basicDamageBonus: 0
+        basicDamageBonus: 0,
+        skillDamageBonus: 0
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
@@ -1336,6 +1389,7 @@ function calculateCardSlotEffects(user) {
         if (cardData.name == '타이란트') effects.itemDropChance += value;
         if (cardData.name == '마쉐비') effects.defReduction += value;
         if (cardData.name == '딜러장') effects.basicDamageBonus += value;
+        if (cardData.name == '이익태') effects.skillDamageBonus += value;
     });
     return effects;
 }
@@ -1353,7 +1407,8 @@ function formatCardSlotEffectLines(user) {
         ['goldBonus', '골드 획득 증가량'],
         ['itemDropChance', '아이템 드랍 확률'],
         ['defReduction', '방어력 관통'],
-        ['basicDamageBonus', '일반 공격 피해']
+        ['basicDamageBonus', '일반 공격 피해'],
+        ['skillDamageBonus', '스킬 공격 피해']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
@@ -1964,7 +2019,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const pnt = Math.max(0, Number(stats.pnt || 0));
     const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
-    const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + Number(stats.afterSkill || 0) * W.AFTER_SKILL_RATIO);
+    const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + (Number(stats.afterSkill || 0) + Number(slot.skillDamageBonus || 0)) * W.AFTER_SKILL_RATIO);
     const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
@@ -2468,6 +2523,7 @@ function formatStatPointStatus(user) {
 }
 
 async function enterField(user, fieldName, options, channel) {
+    if (channel) activeFieldChannels[user.name] = channel;
     const worldBoss = findWorldBossByName(fieldName);
     if (worldBoss) return await enterWorldBossField(user, worldBoss, options, channel);
     const dungeon = findDungeonByName(fieldName);
@@ -2509,6 +2565,8 @@ function leaveField(user) {
     const fieldName = user.field.name;
     saveFieldCooldowns(user);
     releaseEliteEncounter(user);
+    clearFieldIktaeBot(user.name);
+    delete activeFieldChannels[user.name];
     user.field = null;
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
 }
@@ -3029,8 +3087,21 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     lines.push('- ' + elite.name + ' HP: ' + comma(remainHp) + '/' + comma(elite.hp));
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(elite, stats, slotEffects, extra);
-    const fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
+    let fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    
+    if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
+        const absorb = Math.round(fieldDamage * 0.3);
+        fieldDamage -= absorb;
+        user.field.iktaeBot.hp -= absorb;
+        lines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
+        if (user.field.iktaeBot.hp <= 0) {
+            user.field.iktaeBot = null;
+            lines.push('💥 익테봇이 파괴되었습니다!');
+            clearFieldIktaeBot(user.name);
+        }
+    }
+
     user.hp = Math.max(0, beforeHp - fieldDamage);
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else {
@@ -3085,14 +3156,27 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
-    const fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
+    let fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
     const maxHp = Number(stats.hp || 0);
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
-    user.hp = Math.max(0, beforeHp - fieldDamage);
 
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
         : ['⚔️ ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+
+    if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
+        const absorb = Math.round(fieldDamage * 0.3);
+        fieldDamage -= absorb;
+        user.field.iktaeBot.hp -= absorb;
+        lines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
+        if (user.field.iktaeBot.hp <= 0) {
+            user.field.iktaeBot = null;
+            lines.push('💥 익테봇이 파괴되었습니다!');
+            clearFieldIktaeBot(user.name);
+        }
+    }
+
+    user.hp = Math.max(0, beforeHp - fieldDamage);
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
@@ -3227,6 +3311,8 @@ function tryEncounterFragment(user, dungeon, lines) {
 
 function useBasicAttackInField(user, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    if (channel) activeFieldChannels[user.name] = channel;
+    if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
     const context = getFieldCombatContext(user);
@@ -3301,6 +3387,8 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
 
 function useSkillInField(user, skillName, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    if (channel) activeFieldChannels[user.name] = channel;
+    if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.worldBoss) {
         ensureWorldBossSkillTimer(user, channel);
         if (skillName && findUsableSkill(user, skillName)) return executeMainCardSkillInField(user, skillName);
@@ -3367,6 +3455,20 @@ function executeMainCardSkillInField(user, skillName) {
         getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 3000 };
         extra.notice = '수업끝 효과: 3초 동안 받는 피해 30% 감소';
     }
+    if (skillData.skill.name == '익테봇 소환') {
+        const hpRatio = getSkillValue(skillData.skill, 0, star);
+        const atkMul = getSkillValue(skillData.skill, 1, star);
+        const botHp = Math.round(Number(stats.hp || 0) * hpRatio);
+        user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + 20000 };
+        const lines = ['✨ 익테봇을 소환했습니다! (체력: ' + comma(botHp) + ', 20초간 유지)', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
+        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        startFieldIktaeBot(user.name);
+        return lines.join('\n');
+    }
     if (skillData.skill.name == 'SUPER EASY') {
         extra.critChanceMul = 0.5;
         extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
@@ -3380,7 +3482,7 @@ function executeMainCardSkillInField(user, skillName) {
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const rawDamage = extra.basicAttackSkill
         ? Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)))
-        : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0)));
+        : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
     const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
     user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
     if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
@@ -3695,10 +3797,22 @@ async function runWorldBossSkillTick(userName, bossName) {
     const counterActive = counterBuff && Number(counterBuff.expired_at || 0) > now;
     const counterReduction = counterActive ? Number(counterBuff.reduceRate || 0) : 0;
     const reducedDamage = rawDamage * activeReceivedMultiplier * (1 - receivedReduction) * (1 - activeReceivedReduction) * (1 - counterReduction);
-    const finalDamage = Math.max(0, Math.round(getDamageAfterDefense(reducedDamage, userStats.def, boss.pnt)));
+    let finalDamage = Math.max(0, Math.round(getDamageAfterDefense(reducedDamage, userStats.def, boss.pnt)));
     const beforeHp = typeof latest.hp == 'undefined' ? Number(userStats.hp || 0) : Number(latest.hp || 0);
+    const tickLines = [];
+    if (latest.field.iktaeBot && latest.field.iktaeBot.hp > 0 && Date.now() < latest.field.iktaeBot.expired_at) {
+        const absorb = Math.round(finalDamage * 0.3);
+        finalDamage -= absorb;
+        latest.field.iktaeBot.hp -= absorb;
+        tickLines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
+        if (latest.field.iktaeBot.hp <= 0) {
+            latest.field.iktaeBot = null;
+            tickLines.push('💥 익테봇이 파괴되었습니다!');
+            clearFieldIktaeBot(userName);
+        }
+    }
     latest.hp = Math.max(0, beforeHp - finalDamage);
-    const tickLines = ['💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!'];
+    tickLines.unshift('💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!');
     applyDamageTakenSlotRecovery(latest, Number(userStats.hp || 0), finalDamage, slotEffects, userStats, tickLines);
     latest.field.karmaStack = Number(latest.field.karmaStack || 0) + finalDamage * 0.30;
     if (counterActive) {

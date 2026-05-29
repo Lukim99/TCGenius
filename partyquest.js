@@ -1074,6 +1074,29 @@ function stepRoom(room) {
                 r.buffs.splice(i, 1);
             }
         }
+        if (r.iktaeBot) {
+            const now = Date.now();
+            if (now > r.iktaeBot.expired_at) {
+                r.iktaeBot = null;
+                pushCombat(room, '💥 ' + m.name + '의 익테봇 지속시간이 만료되었습니다.', 'buff');
+            } else if (now >= r.iktaeBot.nextAttackAt) {
+                r.iktaeBot.nextAttackAt = now + 4000;
+                let targetMon = room.monster;
+                const quest = getQuestById(room.questId);
+                const phase = quest && quest.phases[room.phaseIndex];
+                if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
+                if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
+                    const botDamage = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.iktaeBot.atkMul));
+                    const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true });
+                    const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
+                    if (invincible) res.damage = 0;
+                    if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
+                    else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '익테봇 소환', false);
+                    pushCombat(room, '🤖 ' + m.name + '의 익테봇 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
+                    if (room.monster) applyBlackHoduCritReflect(room, m, res);
+                }
+            }
+        }
     }
     if (room.tauntRemain > 0) {
         room.tauntRemain = Math.max(0, room.tauntRemain - dt);
@@ -1714,6 +1737,18 @@ function applyDamageToMember(room, member, dmg, source) {
             return;
         }
     }
+    if (r.iktaeBot) {
+        const absorbed = Math.round(dmg * 0.3);
+        if (absorbed > 0) {
+            dmg = Math.max(0, dmg - absorbed);
+            r.iktaeBot.hp -= absorbed;
+            pushCombat(room, '🤖 익테봇 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
+            if (r.iktaeBot.hp <= 0) {
+                r.iktaeBot = null;
+                pushCombat(room, '💥 ' + member.name + '의 익테봇이 파괴되었습니다.', 'buff');
+            }
+        }
+    }
     r.hp = Math.max(0, r.hp - dmg);
     pushCombat(room, source + ' → ' + member.name + ' [-' + dmg + ']', 'damage');
     applyDamageTakenSlotRecovery(room, member, dmg);
@@ -2038,7 +2073,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     const multiplier = getSkillValue(skill, 0, star);
     const extra = {};
-    let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0)) * skillDmgMul);
+    let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)) * skillDmgMul);
     if (skillName === '글버지') {
         const amount = Math.max(1, Math.round(getSkillValue(skill, 0, star) + finalAtk * getSkillValue(skill, 1, star)));
         for (const m of room.members) if (m.runtime && !m.runtime.dead) m.runtime.hp = Math.min(m.runtime.hpMax, m.runtime.hp + amount);
@@ -2057,6 +2092,13 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         extra.disableCritical = true;
         caster.runtime.takenDmgMul = 0.7;
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '수업끝 (피해감소)', value: caster.runtime.takenDmgMul, remain: 3 });
+    }
+    if (skillName === '익테봇 소환') {
+        const hpRatio = getSkillValue(skill, 0, star);
+        const atkMul = getSkillValue(skill, 1, star);
+        caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio), atkMul: atkMul, expired_at: Date.now() + 20000, nextAttackAt: Date.now() + 4000 };
+        pushCombat(room, '✨ ' + caster.name + '님이 익테봇을 소환했습니다!', 'buff');
+        return;
     }
     if (skillName === 'SUPER EASY') {
         extra.critChanceMul = 0.5;

@@ -119,5 +119,16 @@
         "skills": [
             10
         ]
+    },
+    {
+        "name": "이익태",
+        "slot_effect": {
+            "name": "스킬 공격 피해",
+            "base": 0.02,
+            "per_level": 0.01
+        },
+        "skills": [
+            11
+        ]
     }
 ]
