@@ -2774,6 +2774,8 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-my-hp{margin-top:7px;padding:9px;background:rgba(2,6,23,.62);border:1px solid rgba(34,197,94,.26);border-radius:12px}
 .pq-my-hp .top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:900;color:#f8fafc}
 .pq-my-hp .vals{margin-top:5px;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between}
+.pq-my-hp .pq-prog.mp{margin-top:5px}
+.pq-my-buffs{margin-top:6px}
 .pq-target-hp{min-width:126px;text-align:right}
 .pq-target-hp .txt{color:#e2e8f0;font-size:12px;font-weight:800}
 .pq-target-hp .pct{color:#94a3b8;font-size:10px;margin-top:2px}

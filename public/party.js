@@ -11,6 +11,8 @@
     let lastTickAt = 0;
     let shownRewardRoomId = null;
     let localBuffTickAt = 0;
+    let skillBarSig = '';
+    let potionBarSig = '';
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
     let localCdTimer = null;
@@ -144,7 +146,8 @@
             const m = currentRoom.members.find(mm => mm.name === memberName);
             let remain = 0;
             if (buffId === 'taunt') {
-                remain = currentRoom.tauntTarget === memberName ? Number(currentRoom.tauntRemain || 0) : 0;
+                const taunted = currentRoom.tauntTarget === memberName || (currentRoom.monster && currentRoom.monster.tauntTarget === memberName);
+                remain = taunted ? Number(currentRoom.tauntRemain || (currentRoom.monster && currentRoom.monster.tauntRemain) || 0) : 0;
             } else if (m && m.runtime && Array.isArray(m.runtime.buffs)) {
                 const b = m.runtime.buffs.find(bb => String(bb.id || bb.label || '') === buffId);
                 remain = Number(b && b.remain || 0);
@@ -596,6 +599,12 @@
         return hp;
     }
 
+    function makeMpBar(r, className) {
+        const mp = el('div', { class: 'pq-prog mp' + (className ? ' ' + className : '') }, el('div', { class: 'fill' }));
+        mp.firstChild.style.width = (r && r.mpMax > 0 ? Math.max(0, Math.min(100, r.mp / r.mpMax * 100)) : 0) + '%';
+        return mp;
+    }
+
     function showDamagePop(payload) {
         const details = Array.isArray(payload.hitDetails) ? payload.hitDetails.filter(h => Number(h && h.damage || 0) > 0) : [];
         if (details.length > 1) {
@@ -725,10 +734,25 @@
         root.append(grid);
         const mine = snap.members.find(m => m.name === me);
         if (mine && mine.runtime) {
+            const buffs = [];
+            if ((snap.monster && snap.monster.tauntTarget === me) || (snap.tauntTarget === me && Number(snap.tauntRemain || 0) > 0)) buffs.push({ id: 'taunt', label: '도발', remain: snap.tauntRemain || (snap.monster && snap.monster.tauntRemain) || 0 });
+            (mine.runtime.buffs || []).forEach(b => buffs.push(b));
             root.append(el('div', { class: 'pq-my-hp' },
                 el('div', { class: 'top' }, el('span', null, '내 체력'), el('span', null, hpPct(mine.runtime).toFixed(1) + '%')),
                 makeHpBar(mine.runtime),
-                el('div', { class: 'vals' }, el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax), el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax))
+                el('div', { class: 'vals' }, el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax), el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax)),
+                makeMpBar(mine.runtime),
+                buffs.length ? el('div', { class: 'pq-buff-row pq-my-buffs' },
+                    ...buffs.map(b => {
+                        const label = b.label || b.id || '버프';
+                        return el('span', {
+                            class: 'pq-buff-chip',
+                            'data-member': me,
+                            'data-buff-id': b.id === 'taunt' || label === '도발' ? 'taunt' : String(b.id || b.label || ''),
+                            'data-label': label
+                        }, label + (Number(b.remain || 0) > 0 ? ' ' + Number(b.remain || 0).toFixed(1) + 's' : ''));
+                    })
+                ) : null
             ));
         }
     }
@@ -841,9 +865,12 @@
     function renderPotionBar(snap) {
         const bar = $('#pqPotionBar');
         if (!bar) return;
-        bar.replaceChildren();
         const myMember = snap.members.find(m => m.name === me);
         const list = (myMember && myMember.potions) || [];
+        const sig = list.map(p => p.name + ':' + p.count).join('|');
+        if (potionBarSig === sig && bar.childElementCount) { updateSkillPotionButtons(); return; }
+        potionBarSig = sig;
+        bar.replaceChildren();
         if (!list.length) {
             bar.append(el('div', { style: 'color:#94a3b8;font-size:12px;padding:8px' }, '휴대 물약 없음'));
             return;
@@ -873,14 +900,23 @@
     function renderSkillBar(snap) {
         const bar = $('#pqSkillBar');
         if (!bar) return;
-        bar.replaceChildren();
         const myMember = snap.members.find(m => m.name === me);
         if (!myMember || !(myMember.skills || []).length) {
+            if (skillBarSig === 'empty' && bar.childElementCount) return;
+            skillBarSig = 'empty';
+            bar.replaceChildren();
             bar.append(el('div', { style: 'color:#94a3b8;font-size:12px;padding:8px' }, '스킬 없음'));
             return;
         }
         const def = snap.questDef || {};
         const skillDefs = Object.assign({}, def.skills || {}, def.extraSkills || {}, myMember.skillDefs || {});
+        const sig = (myMember.skills || []).map(skillName => {
+            const sd = skillDefs[skillName] || {};
+            return skillName + ':' + (sd.type || '') + ':' + (sd.mp || '') + ':' + (sd.cd || '') + ':' + (sd.target || '');
+        }).join('|');
+        if (skillBarSig === sig && bar.childElementCount) { updateSkillPotionButtons(); return; }
+        skillBarSig = sig;
+        bar.replaceChildren();
         const cooldowns = (myMember.runtime && myMember.runtime.cooldowns) || {};
         const acd = (myMember.runtime && myMember.runtime.actionCdRemain) || 0;
         for (const skillName of myMember.skills) {
@@ -1046,8 +1082,7 @@
                         if ((currentRoom.phaseType === 'elite' || currentRoom.phaseType === 'boss') && document.getElementById('pqBossStage')) {
                             updateBossMonster(currentRoom.monster);
                             renderPlayMembers(currentRoom);
-                            renderSkillBar(currentRoom);
-                            renderPotionBar(currentRoom);
+                            updateSkillPotionButtons();
                             updateAttackBtn();
                         } else {
                             renderPlayUI();
@@ -1092,6 +1127,8 @@
         closeStream();
         stopLocalCdTimer();
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
+        skillBarSig = '';
+        potionBarSig = '';
         localBuffTickAt = 0;
         currentRoom = null;
         await loadLobby();
