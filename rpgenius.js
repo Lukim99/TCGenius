@@ -141,7 +141,7 @@ async function runFieldIktaeBotTick(userName) {
     if (context.error) return;
     const stats = calculateUserStats(user);
     const botDamage = Math.max(1, Math.round(Number(stats.atk || 0) * user.field.iktaeBot.atkMul));
-    const extra = { isSkill: true };
+    const extra = { isSkill: true, isBotAutoAttack: true };
     const lines = [];
     if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
@@ -3092,14 +3092,25 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
     
     if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
-        const absorb = Math.round(fieldDamage * 0.3);
-        fieldDamage -= absorb;
-        user.field.iktaeBot.hp -= absorb;
-        lines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익태봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
-        if (user.field.iktaeBot.hp <= 0) {
-            user.field.iktaeBot = null;
-            lines.push('💥 익테봇이 파괴되었습니다!');
-            clearFieldIktaeBot(user.name);
+        if (extra && extra.isBotAutoAttack) {
+            user.field.iktaeBot.hp -= fieldDamage;
+            lines.push('- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(fieldDamage) + ')');
+            fieldDamage = 0;
+            if (user.field.iktaeBot.hp <= 0) {
+                user.field.iktaeBot = null;
+                lines.push('💥 익테봇이 파괴되었습니다!');
+                clearFieldIktaeBot(user.name);
+            }
+        } else {
+            const absorb = Math.round(fieldDamage * 0.3);
+            fieldDamage -= absorb;
+            user.field.iktaeBot.hp -= absorb;
+            lines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
+            if (user.field.iktaeBot.hp <= 0) {
+                user.field.iktaeBot = null;
+                lines.push('💥 익테봇이 파괴되었습니다!');
+                clearFieldIktaeBot(user.name);
+            }
         }
     }
 
@@ -3166,14 +3177,25 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         : ['⚔️ ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
 
     if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
-        const absorb = Math.round(fieldDamage * 0.3);
-        fieldDamage -= absorb;
-        user.field.iktaeBot.hp -= absorb;
-        lines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
-        if (user.field.iktaeBot.hp <= 0) {
-            user.field.iktaeBot = null;
-            lines.push('💥 익테봇이 파괴되었습니다!');
-            clearFieldIktaeBot(user.name);
+        if (extra && extra.isBotAutoAttack) {
+            user.field.iktaeBot.hp -= fieldDamage;
+            lines.push('- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
+            fieldDamage = 0;
+            if (user.field.iktaeBot.hp <= 0) {
+                user.field.iktaeBot = null;
+                lines.push('💥 익테봇이 파괴되었습니다!');
+                clearFieldIktaeBot(user.name);
+            }
+        } else {
+            const absorb = Math.round(fieldDamage * 0.3);
+            fieldDamage -= absorb;
+            user.field.iktaeBot.hp -= absorb;
+            lines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
+            if (user.field.iktaeBot.hp <= 0) {
+                user.field.iktaeBot = null;
+                lines.push('💥 익테봇이 파괴되었습니다!');
+                clearFieldIktaeBot(user.name);
+            }
         }
     }
 
@@ -3815,7 +3837,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         const absorb = Math.round(finalDamage * 0.3);
         finalDamage -= absorb;
         latest.field.iktaeBot.hp -= absorb;
-        tickLines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
+        tickLines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익테봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
         if (latest.field.iktaeBot.hp <= 0) {
             latest.field.iktaeBot = null;
             tickLines.push('💥 익테봇이 파괴되었습니다!');
