@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -3279,6 +3279,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 }
             }
         }
+        if (Math.random() < 0.01 * dropMultiplier * levelMultiplier) {
+            const items = getDataCache('Item', []);
+            const dropItemId = items.findIndex(item => item.name == '투표 용지');
+            if (dropItemId != -1) {
+                addInventoryItem(user, dropItemId, 1);
+                lines.push('- 📃 [이벤트]' + items[dropItemId].name + ' 획득!');
+            }
+        }
     }
 
     setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
@@ -4368,31 +4376,56 @@ function formatRemainingIces(ices) {
         .join('\n');
 }
 
-async function summonIce(user, sizeArg) {
-    const size = String(sizeArg || '').trim();
-    const config = ICE_SUMMON_REWARDS[size];
-    if (!config) return '❌ /RPGenius 얼음소환 [소|중|대|특대]';
-    await loadRpgeniusDataEntry('Ices');
-    const ices = getDataCache('Ices', {});
-    const iceCount = getIceCount(ices, size);
-    if (iceCount <= 0) return '❌ ' + size + ' 얼음이 남아있지 않습니다.\n\n' + formatRemainingIces(ices);
-    const items = getDataCache('Item', []);
-    const hammer = items[ICE_HAMMER_ITEM_ID];
-    const hammerName = hammer ? hammer.name : '망치';
-    if (getInventoryItemCount(user, ICE_HAMMER_ITEM_ID) < 1) return '❌ ' + hammerName + '가 없습니다.';
-    removeInventoryItem(user, ICE_HAMMER_ITEM_ID, 1);
-    const success = Math.random() < config.chance;
-    const lines = ['🧊 ' + size + ' 얼음을 소환했습니다.', '- ' + hammerName + ' x1 소모'];
-    if (success) {
-        setIceCount(ices, size, iceCount - 1);
-        await saveRpgeniusDataEntry('Ices', ices);
-        user.gold = Number(user.gold || 0) + config.gold;
-        lines.push('✅ 얼음을 깨부쉈습니다!');
-        lines.push('- 🪙 ' + comma(config.gold) + ' 획득');
-    } else {
-        lines.push('❌ 얼음을 깨부수지 못했습니다.');
+async function voteCandidate(user, candidateArg) {
+    const candidateIdx = parseInt(candidateArg);
+    if (![1, 2, 3].includes(candidateIdx)) {
+        return '❌ /RPGenius 투표 [1/2/3]\n1번 후보: 오치원생\n2번 후보: 루이킴\n3번 후보: 부랑도';
     }
-    lines.push('', formatRemainingIces(ices));
+
+    const candidates = ['오치원생', '루이킴', '부랑도'];
+    const candidateName = candidates[candidateIdx - 1];
+
+    const items = getDataCache('Item', []);
+    const paperId = items.findIndex(item => item.name == '투표 용지');
+    if (paperId == -1 || getInventoryItemCount(user, paperId) < 1) {
+        return '❌ 투표 용지가 부족합니다.';
+    }
+
+    removeInventoryItem(user, paperId, 1);
+
+    await loadRpgeniusDataEntry('VoteState');
+    let votes = getDataCache('VoteState', {});
+    if (!votes || typeof votes !== 'object') votes = {};
+    for (const name of candidates) {
+        if (typeof votes[name] === 'undefined') votes[name] = 0;
+    }
+
+    votes[candidateName]++;
+    await saveRpgeniusDataEntry('VoteState', votes);
+
+    const lines = [];
+    lines.push(`🗳️ ${candidateName} 후보를 투표했습니다.`);
+    lines.push('');
+    lines.push('[ 투표 현황 ]');
+    for (let i = 0; i < candidates.length; i++) {
+        const name = candidates[i];
+        lines.push(`${i + 1}️⃣ ${name}: ${comma(votes[name] || 0)}표`);
+    }
+    lines.push('');
+    lines.push('[ 투표 보너스 ]');
+
+    // open pack 20
+    const packId = 20;
+    const packs = getDataCache('Pack', []);
+    const pack = packs[packId];
+    if (!Array.isArray(pack)) {
+        lines.push('- (설정 오류: 투표 보상 팩을 찾을 수 없습니다)');
+    } else {
+        const summary = {};
+        grantPackReward(user, pickPackEntry(pack), summary);
+        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+    }
+
     return lines.join('\n');
 }
 
@@ -7524,8 +7557,8 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
-    if (args[0] == '얼음소환') {
-        const result = await summonIce(user, args[1]);
+    if (args[0] == '투표') {
+        const result = await voteCandidate(user, args[1]);
         await user.save();
         reply(result);
         return true;
