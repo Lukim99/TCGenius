@@ -2096,8 +2096,10 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (skillName === '익테봇 소환') {
         const hpRatio = getSkillValue(skill, 0, star);
         const atkMul = getSkillValue(skill, 1, star);
-        caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio), atkMul: atkMul, expired_at: Date.now() + 20000, nextAttackAt: Date.now() + 4000 };
-        pushCombat(room, '✨ ' + caster.name + '님이 익테봇을 소환했습니다!', 'buff');
+        const summonDurationBonus = 1 + Number(caster.baseSnapshot.stats.summonDuration || 0) / 100;
+        const durationMs = Math.round(20000 * summonDurationBonus);
+        caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio), atkMul: atkMul, expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 4000 };
+        pushCombat(room, '✨ ' + caster.name + '님이 익테봇을 소환했습니다! (' + (durationMs / 1000).toFixed(1) + '초간 유지)', 'buff');
         return;
     }
     if (skillName === 'SUPER EASY') {

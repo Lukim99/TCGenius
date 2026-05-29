@@ -527,7 +527,8 @@ function formatEquipmentStatLines(equipment) {
         takenDamage: '받는 피해 증가',
         damageBonus: '일반 몬스터에게 주는 피해 증가',
         finalDamage: '최종 피해',
-        bossDmg: '보스 몬스터에게 주는 피해 증가'
+        bossDmg: '보스 몬스터에게 주는 피해 증가',
+        summonDuration: '소환 지속시간'
     };
     const lines = [];
     Object.keys(statNames).forEach(key => {
@@ -3094,7 +3095,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         const absorb = Math.round(fieldDamage * 0.3);
         fieldDamage -= absorb;
         user.field.iktaeBot.hp -= absorb;
-        lines.push('🤖 익테봇이 피해를 대신 받았습니다! (-' + comma(absorb) + ')');
+        lines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익태봇 체력: ' + user.field.iktaeBot.hp + '(-' + comma(absorb) + ')');
         if (user.field.iktaeBot.hp <= 0) {
             user.field.iktaeBot = null;
             lines.push('💥 익테봇이 파괴되었습니다!');
@@ -3467,8 +3468,10 @@ function executeMainCardSkillInField(user, skillName) {
         const hpRatio = getSkillValue(skillData.skill, 0, star);
         const atkMul = getSkillValue(skillData.skill, 1, star);
         const botHp = Math.round(Number(stats.hp || 0) * hpRatio);
-        user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + 20000 };
-        const lines = ['✨ 익테봇을 소환했습니다! (체력: ' + comma(botHp) + ', 20초간 유지)', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const summonDurationBonus = 1 + Number(stats.summonDuration || 0) / 100;
+        const durationMs = Math.round(20000 * summonDurationBonus);
+        user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + durationMs };
+        const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
         user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
         if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
@@ -4004,7 +4007,8 @@ const SUPPORT_PLUS_STAT_LABELS = {
     critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
-    takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가'
+    takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
+    summonDuration: '소환 지속시간'
 };
 
 function formatEquippedEquipmentDetail(label, type, equip, user) {
