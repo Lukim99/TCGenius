@@ -1308,7 +1308,7 @@ function computeBasicDamage(attacker, monster, room) {
     const nextBasicBonus = Number(runtime.nextBasicDamageBonus || 0);
     if (runtime.nextBasicDamageBonus) runtime.nextBasicDamageBonus = 0;
     const rawDamage = Math.round(Number(stats.atk || 100) * finalAtkMul * (1 + (runtime.atkBuff || 0)) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus));
-    return calculateOutgoingDamage(attacker, monster, room, rawDamage, {});
+    return calculateOutgoingDamage(attacker, monster, room, rawDamage, { isBasic: true });
 }
 
 function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
@@ -1353,7 +1353,15 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             hitDamage = Math.round(hitDamage * Math.max(1, Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0) - Number(monsterStats.critDef || 0)));
             criticalCount++;
             if (extra && extra.extraOnCrit && totalHits < maxHits) totalHits++;
+            if (stats && stats.hasAbyssDoom && extra && extra.isBasic && totalHits < 999 && Math.random() < 0.3) {
+                totalHits++;
+            }
         }
+        
+        if (stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
+            fixedHitDamage += Math.round(hitDamage * 0.15);
+        }
+
         hitDamage *= Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
         if (trueDamageOnCrit && isCrit) {
             hitDamage = getFixedDamageAgainstMonster(hitDamage, monster, penetration, defenseReductionRate);
@@ -1385,8 +1393,10 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
 }
 
 function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
+    extra = extra || {};
+    extra.isSkill = true;
     if (!room.monster) return { damage: 0, isCrit: false };
-    const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra || {});
+    const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra);
     const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
     if (invincible) result.damage = 0;
     else room.monster.hp = Math.max(0, room.monster.hp - result.damage);
@@ -1896,7 +1906,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
         const fixedDamage = Math.max(0, Math.round(Number(stats.skillTrueDmg || 0)));
         const rawDamage = Math.max(1, Math.round(dmg));
         if (phase && phase.type === 'mob' && !room.monster) {
-            const result = calculateOutgoingDamage(caster, targetMonster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage }));
+            const result = calculateOutgoingDamage(caster, targetMonster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic }));
             const damage = result.damage;
             applyMobPhaseDamage(room, caster, targetMonster, result, 'skill', skillName, true);
             if (def.mpRefundPctOfDealt) caster.runtime.mp = Math.min(caster.runtime.mpMax, caster.runtime.mp + Math.round(damage * Number(def.mpRefundPctOfDealt)));
@@ -1905,7 +1915,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
             applyMainCardPassiveMpRecovery(room, caster);
             return;
         }
-        const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage }));
+        const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic }));
         const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
         if (invincible) result.damage = 0;
         const damage = result.damage;

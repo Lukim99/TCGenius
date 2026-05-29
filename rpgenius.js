@@ -1861,6 +1861,8 @@ function calculateUserStats(user) {
             addPotentialStats(stats, plusStats, entry[1].potential);
             addSoulStats(stats, plusStats, entry[1].soul);
             if (entry[0] == 'weapon' && data.name == DESTINY_AION_NAME) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
+            if (entry[0] == 'weapon' && data.name == '심연의 종말') stats.hasAbyssDoom = true;
+            if (entry[0] == 'weapon' && data.name == '셀레스티아') stats.hasCelestia = true;
         }
     });
     const accessories = user.equipments && user.equipments.accessory || {};
@@ -2249,13 +2251,23 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let bonusTripleZero = 0;
     let destinyDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
-    for (let i = 0; i < hitCount; i++) {
+    let totalHits = hitCount;
+    for (let i = 0; i < totalHits; i++) {
         const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
+        if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && totalHits < 999 && Math.random() < 0.3) {
+            totalHits++;
+        }
+        let hitDamage = 0;
         const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;
-        let hitDamage = isDestinyDamage
+        hitDamage = isDestinyDamage
             ? getDamageAfterDestinyDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects))
             : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects));
+        
+        if (stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
+            hitDamage += Math.round(criticalResult.damage * 0.15);
+        }
+
         if (isDestinyDamage) destinyDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
@@ -3246,6 +3258,9 @@ function getFieldCombatContext(user) {
 }
 
 function applyFieldDamageAction(user, context, rawDamage, extra, actionType, skill) {
+    extra = extra || {};
+    if (actionType === 'skill') extra.isSkill = true;
+    if (actionType === 'basic') extra.isBasic = true;
     if (context.type == 'worldBoss') return applyWorldBossDamageAction(user, context.boss, rawDamage, extra, actionType, skill);
     if (context.type == 'elite') return buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
     return buildHuntResult(user, context.dungeon, rawDamage, extra);
@@ -3472,13 +3487,13 @@ async function useWorldBossChosenSkill(user, skillName) {
     let result = null;
     if (skill.name == '빙결') {
         const raw = Math.round(getSkillValue(skill, 0, 0) + Number(stats.atk || 0) * getSkillValue(skill, 1, 0));
-        result = dealDamageToWorldBoss(user, boss, raw, {});
+        result = dealDamageToWorldBoss(user, boss, raw, { isSkill: true });
         user.field.bossSkipNext = true;
         formatWorldBossDamageLines(boss, result, '❄️ 빙결! ').forEach(l => lines.push(l));
         dealtSomething = true;
     } else if (skill.name == '피의 맛') {
         const raw = Math.round(getSkillValue(skill, 0, 0) + Number(stats.atk || 0) * getSkillValue(skill, 1, 0));
-        result = dealDamageToWorldBoss(user, boss, raw, {});
+        result = dealDamageToWorldBoss(user, boss, raw, { isSkill: true });
         const heal = Number(result.dealt || 0) * getSkillValue(skill, 2, 0);
         formatWorldBossDamageLines(boss, result, '🩸 피의 맛! ').forEach(l => lines.push(l));
         applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
@@ -3500,13 +3515,13 @@ async function useWorldBossChosenSkill(user, skillName) {
         const critChance = getSkillValue(skill, 1, 0);
         const critFlat = getSkillValue(skill, 2, 0);
         const damage = Math.random() < critChance ? critFlat : flat;
-        result = dealDamageToWorldBoss(user, boss, damage, { trueDamage: true });
+        result = dealDamageToWorldBoss(user, boss, damage, { trueDamage: true, isSkill: true });
         lines.push('0️⃣ 000! ' + boss.name + '에게 ' + comma(result.damage) + ' 고정 피해를 입혔습니다!');
         dealtSomething = true;
     } else if (skill.name == '럭키펀치') {
         if (Math.random() < getSkillValue(skill, 0, 0)) {
             const raw = Math.round(getSkillValue(skill, 1, 0) + Number(stats.atk || 0) * getSkillValue(skill, 2, 0));
-            result = dealDamageToWorldBoss(user, boss, raw, {});
+            result = dealDamageToWorldBoss(user, boss, raw, { isSkill: true });
             formatWorldBossDamageLines(boss, result, '🍀 럭키펀치 적중! ').forEach(l => lines.push(l));
             dealtSomething = true;
         } else {
@@ -3514,7 +3529,7 @@ async function useWorldBossChosenSkill(user, skillName) {
         }
     } else if (skill.name == '갈취') {
         const raw = Math.round(Number(stats.atk || 0) * getSkillValue(skill, 0, 0));
-        result = dealDamageToWorldBoss(user, boss, raw, {});
+        result = dealDamageToWorldBoss(user, boss, raw, { isSkill: true });
         const goldMin = getSkillValue(skill, 1, 0);
         const goldMax = getSkillValue(skill, 2, 0);
         const gained = randomInt(Math.round(goldMin), Math.round(goldMax));
@@ -3527,7 +3542,7 @@ async function useWorldBossChosenSkill(user, skillName) {
         if (stack <= 0) {
             lines.push('💢 카르마! 누적된 피해가 없습니다.');
         } else {
-            result = dealDamageToWorldBoss(user, boss, stack, { trueDamage: true });
+            result = dealDamageToWorldBoss(user, boss, stack, { trueDamage: true, isSkill: true });
             user.field.karmaStack = 0;
             lines.push('🌀 카르마! ' + boss.name + '에게 ' + comma(result.damage) + ' 고정 피해를 입혔습니다!');
             dealtSomething = true;
