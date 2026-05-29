@@ -959,7 +959,8 @@ const PLUS_STAT_DEFS = [
     { key: 'skillCooldown', label: '스킬 쿨타임 (ms, 음수=감소)', kind: 'cooldown' },
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
-    { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' }
+    { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
+    { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' }
 ];
 
 function statKindUnit(kind) {
