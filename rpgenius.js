@@ -6163,7 +6163,8 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '사용') {
         if (item.use == '캐릭터변환') {
-            user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount, can: item.can };
+            user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+            if (item.can) user.pendingAction.can = item.can;
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('/RPGenius 사용취소');
