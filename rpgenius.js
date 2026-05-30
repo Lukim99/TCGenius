@@ -1781,14 +1781,17 @@ function removeCharacterCardSlot(user, slotArg) {
     return '✅ 카드 슬롯 ' + slotNumber + '번에서 제거했습니다.\n- ' + formatUserCard(removed);
 }
 
-function convertCharacterCard(user, numberArg, confirmedFashion) {
+const CHARACTER_CONVERT_MAX_STAR = { '제타': 10, '시그마': 11, '오메가': 12 };
+
+function convertCharacterCard(user, numberArg, confirmedFashion, can) {
     const number = Number(numberArg);
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
-    if (Number(card.star || 0) >= 9) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
+    const maxStar = CHARACTER_CONVERT_MAX_STAR[can] || 9;
+    if (Number(card.star || 0) >= maxStar) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
     if (typeof card.skin == 'string' && card.skin.trim() && !confirmedFashion) {
         user.pendingAction.cardNumber = number;
         return '❗ 패션 카드를 변환하시겠습니까?\n\n적용된 패션이 사라지고 일반 카드로 변환됩니다.\n/RPGenius 확인\n/RPGenius 사용취소';
@@ -4402,10 +4405,15 @@ function formatRemainingIces(ices) {
         .join('\n');
 }
 
-async function voteCandidate(user, candidateArg) {
+async function voteCandidate(user, candidateArg, countArg) {
     const candidateIdx = parseInt(candidateArg);
     if (![1, 2, 3].includes(candidateIdx)) {
-        return '❌ /RPGenius 투표 [1/2/3]\n1번 후보: 오치원생\n2번 후보: 루이킴\n3번 후보: 부랑도';
+        return '❌ /RPGenius 투표 [1/2/3] (횟수)\n1번 후보: 오치원생\n2번 후보: 루이킴\n3번 후보: 부랑도';
+    }
+
+    let count = typeof countArg === 'undefined' ? 1 : parseInt(countArg);
+    if (isNaN(count) || count < 1) {
+        return '❌ 투표 횟수는 1 이상의 숫자여야 합니다.';
     }
 
     const candidates = ['오치원생', '루이킴', '부랑도'];
@@ -4413,11 +4421,13 @@ async function voteCandidate(user, candidateArg) {
 
     const items = getDataCache('Item', []);
     const paperId = items.findIndex(item => item.name == '투표 용지');
-    if (paperId == -1 || getInventoryItemCount(user, paperId) < 1) {
+    const paperCount = paperId == -1 ? 0 : getInventoryItemCount(user, paperId);
+    if (paperCount < 1) {
         return '❌ 투표 용지가 부족합니다.';
     }
+    if (paperCount < count) count = paperCount;
 
-    removeInventoryItem(user, paperId, 1);
+    removeInventoryItem(user, paperId, count);
 
     await loadRpgeniusDataEntry('VoteState');
     let votes = getDataCache('VoteState', {});
@@ -4426,11 +4436,11 @@ async function voteCandidate(user, candidateArg) {
         if (typeof votes[name] === 'undefined') votes[name] = 0;
     }
 
-    votes[candidateName]++;
+    votes[candidateName] += count;
     await saveRpgeniusDataEntry('VoteState', votes);
 
     const lines = [];
-    lines.push(`🗳️ ${candidateName} 후보를 투표했습니다.`);
+    lines.push(`🗳️ ${candidateName} 후보를 ${comma(count)}표 투표했습니다.`);
     lines.push('');
     lines.push('[ 투표 현황 ]');
     for (let i = 0; i < candidates.length; i++) {
@@ -4448,7 +4458,9 @@ async function voteCandidate(user, candidateArg) {
         lines.push('- (설정 오류: 투표 보상 팩을 찾을 수 없습니다)');
     } else {
         const summary = {};
-        grantPackReward(user, pickPackEntry(pack), summary);
+        for (let i = 0; i < count; i++) {
+            grantPackReward(user, pickPackEntry(pack), summary);
+        }
         Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
     }
 
@@ -6151,7 +6163,7 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '사용') {
         if (item.use == '캐릭터변환') {
-            user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+            user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount, can: item.can };
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('/RPGenius 사용취소');
@@ -7256,7 +7268,7 @@ async function handleRPGCommand(data, channel) {
                 reply('❌ 캐릭터 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
                 return true;
             }
-            const result = convertCharacterCard(user, user.pendingAction.cardNumber, true);
+            const result = convertCharacterCard(user, user.pendingAction.cardNumber, true, user.pendingAction.can);
             await user.save();
             reply(result);
             return true;
@@ -7265,7 +7277,7 @@ async function handleRPGCommand(data, channel) {
             reply('❌ 캐릭터 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
             return true;
         }
-        const result = convertCharacterCard(user, args[1]);
+        const result = convertCharacterCard(user, args[1], false, user.pendingAction.can);
         await user.save();
         reply(result);
         return true;
@@ -7584,7 +7596,7 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '투표') {
-        const result = await voteCandidate(user, args[1]);
+        const result = await voteCandidate(user, args[1], args[2]);
         await user.save();
         reply(result);
         return true;
