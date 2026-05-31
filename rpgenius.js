@@ -27,6 +27,7 @@ const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const EXTRA_SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExtraSkills.json');
 const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json');
+const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -1948,6 +1949,12 @@ function calculateUserStats(user) {
         if (!data) return;
         addStats(stats, getEquipmentStatsAtLevel(data, pet.level));
         addStats(plusStats, getEquipmentPlusStatsAtLevel(data, pet.level));
+    });
+    getActivePetSetEffects(user).forEach(set => {
+        set.applied.forEach(a => {
+            addStats(stats, a.effect.stat || {});
+            addStats(plusStats, a.effect.plusStat || {});
+        });
     });
     const support = user.equipments && user.equipments.support;
     if (support && typeof support.id != 'undefined') {
@@ -4152,6 +4159,29 @@ function formatEquipmentInfo(user) {
     lines.push('');
     lines.push(formatEquippedEquipmentDetail('보조', 'support', user.equipments && user.equipments.support, user));
 
+    const equippedPets = getEquippedPets(user);
+    const petSets = getActivePetSetEffects(user);
+    if (equippedPets.length > 0 || petSets.length > 0) {
+        lines.push('', '〈 펫 〉');
+        if (equippedPets.length == 0) {
+            lines.push('- 없음');
+        } else {
+            equippedPets.forEach(pet => {
+                const d = getPetData(pet.id);
+                const expired = isPetExpired(pet);
+                lines.push('- <' + (d ? d.rarity : '?') + '> ' + (d ? d.name : '알 수 없는 펫') + (d && d.set ? ' [' + d.set + ']' : '') + (expired ? ' (기한만료)' : ''));
+            });
+        }
+        petSets.forEach(set => {
+            lines.push('', '《 ' + set.name + ' 세트 (' + set.count + '/' + set.total + ') 》');
+            set.applied.forEach(a => {
+                const statText = formatEquipmentStatLines(a.effect) || '';
+                const inline = statText.split('\n').filter(Boolean).map(l => l.replace(/^-\s*/, '')).join(', ');
+                lines.push('- ' + a.tier + '세트: ' + (inline || '효과 없음'));
+            });
+        });
+    }
+
     return lines.join('\n');
 }
 
@@ -4524,6 +4554,43 @@ function grantRandomPetByRarity(user, rarity, count, summary) {
         addRewardSummary(summary, 'pet:' + selected.id, '<' + selected.pet.rarity + '> ' + selected.pet.name + ' (펫)', 1);
     }
     return true;
+}
+
+function getPetSetData() {
+    const data = readJson(PETSET_PATH, {});
+    return data && typeof data == 'object' ? data : {};
+}
+
+// 장착 중인(만료되지 않은) 펫들을 set 이름별로 집계
+function getActivePetSetCounts(user) {
+    const counts = {};
+    getEquippedPets(user).forEach(pet => {
+        if (!isPetEffectActive(pet)) return;
+        const data = getPetData(pet.id);
+        if (!data || !data.set) return;
+        const name = String(data.set);
+        counts[name] = (counts[name] || 0) + 1;
+    });
+    return counts;
+}
+
+// 활성화된 세트 효과 목록. PetSet.json 인덱스 0 = 1개 장착 효과, 1 = 2개 장착 효과 ...
+// N개 장착 시 인덱스 0..N-1 의 효과가 누적 적용된다.
+function getActivePetSetEffects(user) {
+    const sets = getPetSetData();
+    const counts = getActivePetSetCounts(user);
+    const result = [];
+    Object.keys(counts).forEach(name => {
+        const tiers = sets[name];
+        if (!Array.isArray(tiers)) return;
+        const count = counts[name];
+        const applied = [];
+        for (let i = 0; i < Math.min(count, tiers.length); i++) {
+            if (tiers[i] && typeof tiers[i] == 'object') applied.push({ tier: i + 1, effect: tiers[i] });
+        }
+        if (applied.length) result.push({ name, count, total: tiers.length, applied });
+    });
+    return result;
 }
 
 function getActivePetSpecials(user) {

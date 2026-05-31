@@ -1524,7 +1524,7 @@ TAB_LOADERS.equipment = () => $('#equipReload').click();
 // ============================================================================
 let petData = [];
 let petFilterText = '';
-const PET_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'upgrade', 'special', 'requireLevel']);
+const PET_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'upgrade', 'special', 'requireLevel', 'set']);
 const PET_SPECIAL_NUM_DEFS = [
     { key: 'fishingSpeed', label: '낚시 속도 증가', frac: true, hint: '0.1 = 10%' },
     { key: 'fishBasket', label: '살림망 크기 증가', frac: false, hint: '칸 수' },
@@ -1593,6 +1593,8 @@ function petCard(pet, index) {
     row1.appendChild(el('div', { class: 'nf' }, el('label', null, '장착 필요 레벨'),
         el('input', { type: 'number', value: typeof pet.requireLevel === 'number' ? pet.requireLevel : '', placeholder: '예: 10',
             oninput: e => { const v = e.target.value; if (v === '') delete pet.requireLevel; else pet.requireLevel = Number(v); } })));
+    row1.appendChild(el('div', null, el('label', null, '세트 이름 (set)'),
+        el('input', { value: pet.set || '', placeholder: 'PetSet.json의 세트 이름', oninput: e => { const v = e.target.value.trim(); if (v) pet.set = v; else delete pet.set; } })));
     card.appendChild(row1);
 
     card.appendChild(el('div', null, el('label', null, '설명'),
