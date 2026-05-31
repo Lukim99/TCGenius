@@ -445,6 +445,13 @@ function formatPackEntry(entry) {
         const support = equipments.support && equipments.support[entry.support_id];
         return support ? '<' + support.rarity + '> ' + support.name : '알 수 없는 보조 장비';
     }
+    if (entry.type == '펫') {
+        if (typeof entry.pet_id != 'undefined') {
+            const pet = getPetData(entry.pet_id);
+            return pet ? '<' + pet.rarity + '> ' + pet.name + ' (펫)' : '알 수 없는 펫';
+        }
+        return '<' + (entry.rarity || '?') + '> 랜덤 펫';
+    }
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
     if (entry.type == '마일리지') return 'Ⓜ️ ' + formatCount(entry.count) + '마일리지';
@@ -4482,6 +4489,43 @@ function getAllUserPets(user) {
     return list;
 }
 
+const PET_TRADE_DEFAULT_COUNT = 1;
+
+function addPetInventory(user, id) {
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+    user.inventory.pet.push({ id: Number(id), level: 0, tradeCount: PET_TRADE_DEFAULT_COUNT });
+}
+
+function getInventoryPetCount(user, id) {
+    if (!user.inventory || !Array.isArray(user.inventory.pet)) return 0;
+    return user.inventory.pet.filter(p => p && Number(p.id) == Number(id)).length;
+}
+
+function removeInventoryPet(user, id, count) {
+    if (!user.inventory || !Array.isArray(user.inventory.pet)) return false;
+    if (getInventoryPetCount(user, id) < count) return false;
+    let remain = count;
+    for (let i = user.inventory.pet.length - 1; i >= 0 && remain > 0; i--) {
+        if (Number(user.inventory.pet[i].id) == Number(id)) { user.inventory.pet.splice(i, 1); remain--; }
+    }
+    return remain == 0;
+}
+
+function grantRandomPetByRarity(user, rarity, count, summary) {
+    const pets = getDataCache('Pet', []);
+    const target = String(rarity || '').trim();
+    const candidates = [];
+    (Array.isArray(pets) ? pets : []).forEach((pet, id) => { if (pet && pet.rarity == target) candidates.push({ id, pet }); });
+    if (candidates.length == 0) return false;
+    for (let i = 0; i < Math.max(1, Number(count || 1)); i++) {
+        const selected = candidates[randomInt(0, candidates.length - 1)];
+        addPetInventory(user, selected.id);
+        addRewardSummary(summary, 'pet:' + selected.id, '<' + selected.pet.rarity + '> ' + selected.pet.name + ' (펫)', 1);
+    }
+    return true;
+}
+
 function getActivePetSpecials(user) {
     const result = { fishingSpeed: 0, fishBasket: 0, autoFragment: 0, hpRegenRate: 0, mpRegenRate: 0, autoAttend: false, canShortcut: 0 };
     getEquippedPets(user).forEach(pet => {
@@ -4913,6 +4957,10 @@ function getCraftMaterialStatus(user, material) {
         const have = getInventoryEquipmentCount(user, material);
         return { have, need, ok: have >= need };
     }
+    if (material.type == '펫') {
+        const have = getInventoryPetCount(user, material.pet_id);
+        return { have, need, ok: have >= need };
+    }
     return { have: 0, need, ok: false };
 }
 
@@ -4930,6 +4978,7 @@ function consumeCraftMaterial(user, material) {
         return true;
     }
     if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) return removeInventoryEquipment(user, material, count);
+    if (material.type == '펫') return removeInventoryPet(user, material.pet_id, count);
     return false;
 }
 
@@ -4944,7 +4993,7 @@ function canConsumeCraftMaterials(user, materials) {
 
 function formatCraftMaterial(material, need) {
     const text = formatPackEntry(material);
-    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) return text + ' x' + comma(need);
+    if (['무기', '갑옷', '장신구', '보조', '보조무기', '펫'].includes(material.type)) return text + ' x' + comma(need);
     return text.replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(need));
 }
 
@@ -4968,12 +5017,16 @@ function grantCraftEntry(user, entry) {
     }
     if (entry.type == '보조') {
         for (let i = 0; i < count; i++) addEquipmentInventory(user, 'support', entry.support_id);
+        return;
+    }
+    if (entry.type == '펫') {
+        for (let i = 0; i < count; i++) addPetInventory(user, entry.pet_id);
     }
 }
 
 function formatCraftedEntryWithTotal(entry, total) {
     const text = formatPackEntry(entry);
-    if (['무기', '갑옷', '장신구', '보조', '캐릭터카드'].includes(entry.type)) {
+    if (['무기', '갑옷', '장신구', '보조', '캐릭터카드', '펫'].includes(entry.type)) {
         if (Number(total) <= 1) return text;
         return text + ' x' + comma(total);
     }
@@ -6218,6 +6271,16 @@ function grantPackReward(user, reward, summary) {
         addEquipmentInventory(user, 'support', reward.support_id);
         const equipment = equipments.support && equipments.support[reward.support_id];
         addRewardSummary(summary, 'support:' + reward.support_id, equipment ? '<' + equipment.rarity + '> ' + equipment.name : '알 수 없는 보조 장비', 1);
+        return;
+    }
+    if (reward.type == '펫') {
+        if (typeof reward.pet_id != 'undefined') {
+            const pet = getPetData(reward.pet_id);
+            addPetInventory(user, reward.pet_id);
+            addRewardSummary(summary, 'pet:' + reward.pet_id, pet ? '<' + pet.rarity + '> ' + pet.name + ' (펫)' : '알 수 없는 펫', 1);
+        } else {
+            grantRandomPetByRarity(user, reward.rarity, 1, summary);
+        }
     }
 }
 
@@ -6421,6 +6484,8 @@ async function useItem(user, itemName, countArg) {
             if (!grantEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 장비 상자입니다.';
         } else if (item.pack && item.pack.type == '보조 장비 상자') {
             if (!grantSupportEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 보조 장비 상자입니다.';
+        } else if (item.pack && item.pack.type == '펫') {
+            if (!grantRandomPetByRarity(user, item.pack.rarity, useCount, summary)) return '❌ 해당 등급의 펫이 없습니다.';
         } else {
             return '❌ 사용할 수 없는 가챠입니다.';
         }

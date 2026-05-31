@@ -796,6 +796,11 @@ server.get('/api/lookup/cards', requireAdmin, (req, res) => {
     res.json(cards.map((card, id) => card ? { id, name: card.name } : null).filter(Boolean));
 });
 
+server.get('/api/lookup/pet', requireAdmin, (req, res) => {
+    const pets = rpgenius.getDataCache('Pet', []);
+    res.json((Array.isArray(pets) ? pets : []).map((p, id) => p ? { id, name: p.name, rarity: p.rarity } : null).filter(Boolean));
+});
+
 server.get('/api/lookup/fashion', requireAdmin, (req, res) => {
     const fashion = rpgenius.getDataCache('Fashion', []);
     res.json((fashion || []).map(skin => skin ? {

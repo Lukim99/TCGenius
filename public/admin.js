@@ -48,11 +48,12 @@ const TAB_LOADERS = {};
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 
 // ---------- 룩업 캐시 ----------
-const LOOKUP = { items: null, equipment: null, cards: null, fashion: null };
+const LOOKUP = { items: null, equipment: null, cards: null, fashion: null, pet: null };
 async function getItems() { if (!LOOKUP.items) LOOKUP.items = await api('/api/lookup/items'); return LOOKUP.items; }
 async function getEquipment() { if (!LOOKUP.equipment) LOOKUP.equipment = await api('/api/lookup/equipment'); return LOOKUP.equipment; }
 async function getCards() { if (!LOOKUP.cards) LOOKUP.cards = await api('/api/lookup/cards'); return LOOKUP.cards; }
 async function getFashion() { if (!LOOKUP.fashion) LOOKUP.fashion = await api('/api/lookup/fashion'); return LOOKUP.fashion; }
+async function getPets() { if (!LOOKUP.pet) LOOKUP.pet = await api('/api/lookup/pet'); return LOOKUP.pet; }
 
 // ---------- 모달 픽커 ----------
 const modal = $('#modal'), modalBody = $('#modalBody'), modalSearch = $('#modalSearch'), modalTitle = $('#modalTitle');
@@ -103,6 +104,15 @@ async function pickEquipment(slot, onPick) {
         el('div', null, el('span', { class: 'tag ' + rarityClass(e.rarity) }, e.rarity), el('span', { class: 'tag' }, '#' + e.id), e.name),
     ), onPick);
 }
+// 픽커: 펫
+async function pickPet(onPick) {
+    const pets = await getPets();
+    const list = pets.map(p => Object.assign({}, p, { _search: p.name + ' ' + p.rarity + ' ' + p.id }));
+    const rarityClass = r => ({ '일반': '', '레어': 'b', '에픽': 'p', '유니크': 'y', '레전더리': 'y', '신화': 'r', '고유': 'g' }[r] || '');
+    openModal('펫 선택', list, p => el('div', null,
+        el('div', null, el('span', { class: 'tag ' + rarityClass(p.rarity) }, p.rarity), el('span', { class: 'tag' }, '#' + p.id), p.name)
+    ), onPick);
+}
 // 픽커: 캐릭터 카드
 async function pickCard(onPick) {
     const cards = await getCards();
@@ -144,7 +154,7 @@ function cardTargetControls(entry, onChange) {
     };
     btn.onclick = () => pickCard(card => {
         entry.card_id = card.id;
-        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id'].forEach(k => delete entry[k]);
+        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'pet_id'].forEach(k => delete entry[k]);
         refresh();
         refreshSkins();
         onChange && onChange();
@@ -185,9 +195,9 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '골드', '가넷', '마일리지', '경험치'];
-const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '골드', '가넷', '마일리지'];
-const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지', '경험치'];
+const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지'];
+const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫'];
 
 function entryRow(entry, opts, onChange, onDelete) {
     // opts: { types, withRoll, countAsObject }
@@ -217,7 +227,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                     btn.innerHTML = '<span class="ph">아이템 선택...</span>';
                 }
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '캐릭터카드') {
@@ -233,12 +243,24 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, t + ' 선택...'));
             };
-            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            refresh();
+            targetSlot.appendChild(btn);
+        } else if (t === '펫') {
+            const btn = el('button', { class: 'pickbtn', type: 'button' });
+            const refresh = async () => {
+                const pets = await getPets();
+                const cur = pets.find(x => x.id === entry.pet_id);
+                btn.innerHTML = '';
+                if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
+                else btn.appendChild(el('span', { class: 'ph' }, '펫 선택...'));
+            };
+            btn.onclick = () => pickPet(p => { entry.pet_id = p.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
-            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
+            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]);
             targetSlot.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + t + ' 수량 지정)'));
         }
     }
@@ -246,12 +268,12 @@ function entryRow(entry, opts, onChange, onDelete) {
     function paintCount() {
         countSlot.innerHTML = '';
         // 보상 장비는 보통 count=1 고정 (제작 재료 장비는 수량 입력 허용)
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
             if (opts.countAsObject) entry.count = { min: 1, max: 1 }; else entry.count = 1;
             return;
         }
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조') && opts.types === CRAFTED_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫') && opts.types === CRAFTED_TYPES) {
             // crafted (단일 지급)
             delete entry.count;
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
@@ -480,13 +502,13 @@ function shopEntryRow(entry, onChange, onDelete) {
                     btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + entry.item_id));
                 } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]); refresh(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]); refresh(); });
             refresh(); target.appendChild(btn);
         } else if (entry.type === '캐릭터카드') {
             delete entry.item_id;
             target.appendChild(cardTargetControls(entry));
         } else {
-            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin'].forEach(k => delete entry[k]);
+            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]);
             target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)'));
         }
     }
@@ -845,7 +867,7 @@ function itemCard(item, index) {
         }
         if (kind === 2) {
             if (!item.pack || typeof item.pack !== 'object') item.pack = { type: '캐릭터 카드팩', range: { min: 1, max: 1 } };
-            packTarget.appendChild(jsonSubEditor('', () => item.pack, v => { if (v == null) delete item.pack; else item.pack = v; }, '예: { "type": "캐릭터 카드팩", "range": { "min": 1, "max": 1 } }', 4));
+            packTarget.appendChild(jsonSubEditor('', () => item.pack, v => { if (v == null) delete item.pack; else item.pack = v; }, '예: { "type": "캐릭터 카드팩", "range": { "min": 1, "max": 1 } }\n펫 상자: { "type": "펫", "rarity": "레어" }', 4));
         }
     }
     packTypeSel.onchange = paintPackTarget;
@@ -1630,12 +1652,13 @@ $('#petReload').onclick = async () => {
         const data = await loadKey('Pet');
         petData = Array.isArray(data) ? data : [];
         renderPet();
+        invalidateLookupCache(['pet']);
         $('#petStatus').textContent = '로드 완료 (펫 ' + petData.length + '종)' + (data == null ? ' · 저장 시 Pet 데이터가 새로 생성됩니다' : '');
     } catch (e) { toast(e.message, false); }
 };
 $('#petSave').onclick = async () => {
     if (!confirm('Pet 데이터를 저장합니다. 계속?')) return;
-    try { await saveKey('Pet', Array.isArray(petData) ? petData : []); toast('✅ Pet 저장 완료'); }
+    try { await saveKey('Pet', Array.isArray(petData) ? petData : []); invalidateLookupCache(['pet']); toast('✅ Pet 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
 if ($('#petFilter')) $('#petFilter').addEventListener('input', e => { petFilterText = e.target.value; renderPet(); });
