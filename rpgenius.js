@@ -3084,7 +3084,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         state.defeatedAt = Date.now();
         persistEliteState();
         user.field.elite = null;
-        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
     }
     user.field.elite.hp = remainHp;
@@ -3135,7 +3135,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         return lines.join('\n');
     }
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
-    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     return lines.join('\n');
 }
 
@@ -3315,7 +3315,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
-    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     if (killCount > 0) tryEncounterFragment(user, dungeon, lines);
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
