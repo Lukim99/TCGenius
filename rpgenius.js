@@ -4732,6 +4732,7 @@ function equipPetByNumber(user, numberArg) {
     if (!data) return '❌ 잘못된 펫 데이터입니다.';
     const userLevel = Number(user.level || 1);
     if (typeof data.requireLevel != 'undefined' && userLevel < Number(data.requireLevel)) return '❌ 장착 필요 레벨이 부족합니다. (Lv. ' + Number(data.requireLevel) + ' 이상)';
+    if (getEquippedPets(user).some(pet => Number(pet.id) == Number(target.id))) return '❌ 같은 종류의 펫은 중복 장착할 수 없습니다.';
     if (getEquippedPets(user).length >= PET_SLOT_MAX) return '❌ 펫 슬롯이 가득 찼습니다. (최대 ' + PET_SLOT_MAX + '마리) 먼저 다른 펫을 해제해주세요.';
     const entry = clonePetInstance(target);
     if (typeof entry.expireAt == 'undefined') entry.expireAt = Date.now() + PET_DURATION_MS;
