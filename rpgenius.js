@@ -8313,6 +8313,7 @@ async function handleRPGCommand(data, channel) {
             if (!args[2]) { reply('❌ /RPGenius 펫 장착 [번호]'); return true; }
             const result = equipPetByNumber(user, args[2]);
             await user.save();
+            petShortcutCache[senderId] = getActivePetShortcutMap(user);
             reply(result);
             return true;
         }
@@ -8320,6 +8321,7 @@ async function handleRPGCommand(data, channel) {
             if (!args[2]) { reply('❌ /RPGenius 펫 장착해제 [번호]'); return true; }
             const result = unequipPetByNumber(user, args[2]);
             await user.save();
+            petShortcutCache[senderId] = getActivePetShortcutMap(user);
             reply(result);
             return true;
         }
