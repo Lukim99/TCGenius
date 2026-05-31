@@ -3840,7 +3840,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         const absorb = Math.round(finalDamage * 0.3);
         finalDamage -= absorb;
         latest.field.iktaeBot.hp -= absorb;
-        tickLines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익테봇 체력: ' + comma(user.field.iktaeBot.hp) + '(-' + comma(absorb) + ')');
+        tickLines.push('🤖 익테봇이 피해를 대신 받았습니다!\n- 익테봇 체력: ' + comma(latest.field.iktaeBot.hp) + '(-' + comma(absorb) + ')');
         if (latest.field.iktaeBot.hp <= 0) {
             latest.field.iktaeBot = null;
             tickLines.push('💥 익테봇이 파괴되었습니다!');
