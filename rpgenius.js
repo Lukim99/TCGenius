@@ -4795,6 +4795,41 @@ function unequipPetByNumber(user, numberArg) {
     return '✅ 펫을 해제했습니다.\n<' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '알 수 없는 펫');
 }
 
+const PET_EXTRACT_ITEM_ID = 155; // 2024올스타즈 생명체 숨결
+const PET_EXTRACT_YIELD = { '레어': 15, '유니크': 35, '레전더리': 80 };
+
+function extractPetsByNumbers(user, numberArgs) {
+    if (!Array.isArray(numberArgs) || numberArgs.length == 0) return '❌ /RPGenius 추출 [펫 번호1] [펫 번호2] ...';
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+    const all = getAllUserPets(user);
+    const seen = new Set();
+    const targets = [];
+    for (const arg of numberArgs) {
+        const number = Number(arg);
+        if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호는 1 이상의 정수여야 합니다: ' + arg;
+        if (seen.has(number)) return '❌ 중복된 펫 번호입니다: ' + number;
+        seen.add(number);
+        const selected = all[number - 1];
+        if (!selected) return '❌ 존재하지 않는 펫 번호입니다: ' + number;
+        if (selected.source != 'inventory') return '❌ 장착 중인 펫은 추출할 수 없습니다. 먼저 장착 해제해주세요: ' + number;
+        const data = getPetData(selected.pet.id);
+        if (!data) return '❌ 잘못된 펫 데이터입니다: ' + number;
+        const amount = PET_EXTRACT_YIELD[data.rarity];
+        if (!amount) return '❌ 추출할 수 없는 등급입니다: <' + data.rarity + '> ' + data.name;
+        targets.push({ invIndex: selected.index, data, amount });
+    }
+    targets.slice().sort((a, b) => b.invIndex - a.invIndex).forEach(t => user.inventory.pet.splice(t.invIndex, 1));
+    const totalAmount = targets.reduce((sum, t) => sum + t.amount, 0);
+    addInventoryItem(user, PET_EXTRACT_ITEM_ID, totalAmount);
+    const items = getDataCache('Item', []);
+    const itemName = (items[PET_EXTRACT_ITEM_ID] && items[PET_EXTRACT_ITEM_ID].name) || '2024올스타즈 생명체 숨결';
+    const lines = ['✅ 펫 추출 완료 (' + targets.length + '마리)'];
+    targets.forEach(t => lines.push('- <' + t.data.rarity + '> ' + t.data.name + ' → ' + itemName + ' x' + comma(t.amount)));
+    lines.push('', '[ 획득 결과 ]' + itemName + ' x' + comma(totalAmount));
+    return lines.join('\n');
+}
+
 function setPetShortcut(user, key, phrase) {
     if (!key) return '❌ /RPGenius 단축키설정 [단축키] [문구]';
     if (!/^[0-9A-Za-z가-힣]+$/.test(key)) return '❌ 단축키는 공백 없이 한글/영어/숫자로만 입력해주세요.';
@@ -8371,6 +8406,13 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         reply(formatPetInventory(user));
+        return true;
+    }
+
+    if (args[0] == '추출') {
+        const result = extractPetsByNumbers(user, args.slice(1));
+        if (!result.startsWith('❌')) await user.save();
+        reply(result);
         return true;
     }
 
