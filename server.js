@@ -1503,6 +1503,52 @@ function buildCharacterDex() {
     }).filter(Boolean);
 }
 
+function dexStatLines(text) {
+    return String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+}
+
+function buildPetDexEntry(id, data) {
+    if (!data) return null;
+    const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
+    const upgradeLines = upgrades.map((_, i) => ({ level: i + 1, statLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, i + 1)) }));
+    const specialLines = (rpgenius.formatPetSpecialLines(rpgenius.normalizePetSpecial(data)) || []).map(l => l.replace(/^-\s*/, ''));
+    let set = null;
+    if (data.set) {
+        const tiers = rpgenius.getPetSetData()[data.set];
+        set = {
+            name: String(data.set),
+            tiers: Array.isArray(tiers) ? tiers.map((eff, i) => ({ tier: i + 1, lines: dexStatLines(rpgenius.formatEquipmentStatLines(eff || {})) })) : []
+        };
+    }
+    return {
+        type: 'pet',
+        typeLabel: '펫',
+        id,
+        name: data.name,
+        rarity: data.rarity,
+        desc: data.desc || '',
+        iconUrl: getPetIconUrl(data),
+        frameUrl: getAuctionFrameUrl('equipment', data.rarity),
+        baseStatLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, 0)),
+        upgrades: upgradeLines,
+        maxUpgradeLevel: upgrades.length,
+        specialLines,
+        set
+    };
+}
+
+function buildPetDex() {
+    const pets = rpgenius.getDataCache('Pet', []);
+    return (Array.isArray(pets) ? pets : [])
+        .map((data, id) => buildPetDexEntry(id, data))
+        .filter(Boolean)
+        .sort((a, b) => {
+            const ax = RARITY_ORDER.indexOf(a.rarity) < 0 ? 999 : RARITY_ORDER.indexOf(a.rarity);
+            const bx = RARITY_ORDER.indexOf(b.rarity) < 0 ? 999 : RARITY_ORDER.indexOf(b.rarity);
+            return ax != bx ? ax - bx : a.id - b.id;
+        });
+}
+
 function buildEquipmentDex() {
     const eq = rpgenius.getDataCache('Equipment', {});
     const recipeIndex = buildRecipeIndex();
@@ -1520,6 +1566,7 @@ function buildEquipmentDex() {
         armor: pack(eq.armor, 'armor', '갑옷'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
+        pet: buildPetDex(),
         character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
     };
@@ -2646,7 +2693,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="character">캐릭터 카드</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character">캐릭터 카드</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>

@@ -1172,6 +1172,24 @@ function dexCard(entry) {
         card.appendChild(block);
     }
 
+    if (entry.specialLines && entry.specialLines.length) {
+        const block = el('div', { class: 'dex-stat-block' });
+        block.appendChild(el('div', { class: 'dex-stat-title' }, '특수 효과'));
+        entry.specialLines.forEach(line => block.appendChild(el('div', null, line)));
+        card.appendChild(block);
+    }
+
+    if (entry.set) {
+        const block = el('div', { class: 'dex-stat-block' });
+        block.appendChild(el('div', { class: 'dex-stat-title' }, '세트 효과 · ' + entry.set.name));
+        if (entry.set.tiers && entry.set.tiers.length) {
+            entry.set.tiers.forEach(t => block.appendChild(el('div', null, t.tier + '세트: ' + (t.lines && t.lines.length ? t.lines.join(', ') : '효과 없음'))));
+        } else {
+            block.appendChild(el('div', { style: { color: '#64748b' } }, 'PetSet.json에 효과가 정의되지 않음'));
+        }
+        card.appendChild(block);
+    }
+
     if (entry.upgrades && entry.upgrades.length) {
         const det = el('details', { class: 'dex-collapse' });
         det.appendChild(el('summary', null, '강화 단계 (+1 ~ +' + entry.maxUpgradeLevel + ')'));
