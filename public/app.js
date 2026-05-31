@@ -125,17 +125,55 @@ function equipmentThumb(eq) {
     return wrap;
 }
 
-function petThumb(pet) {
-    const thumb = el('div', { class: 'pet-thumb' + (pet.expired ? ' expired' : '') });
-    if (pet.frameUrl) thumb.appendChild(el('img', { src: pet.frameUrl, class: 'frame', alt: '' }));
-    if (pet.iconUrl) thumb.appendChild(el('img', { src: pet.iconUrl, class: 'icon', alt: '' }));
-    else thumb.appendChild(el('span', { class: 'icon-fallback' }, '🐾'));
+function petCardThumb(pet) {
+    const wrap = el('div', { class: 'equip-thumb' + (pet.expired ? ' pet-expired' : '') });
+    if (pet.frameUrl) wrap.appendChild(el('img', { src: pet.frameUrl, class: 'frame', alt: '' }));
+    if (pet.iconUrl) wrap.appendChild(el('img', { src: pet.iconUrl, class: 'icon', alt: '' }));
+    else wrap.appendChild(el('span', { class: 'icon-fallback' }, '🐾'));
+    return wrap;
+}
+
+function petCard(pet) {
+    const color = RARITY_COLORS[pet.rarity] || '#334155';
     const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
-    const label = pet.name + (expText ? ' (' + expText + ')' : '');
-    return el('div', { class: 'pet-item' + (pet.expired ? ' expired' : ''), title: '<' + pet.rarity + '> ' + pet.name },
-        thumb,
-        el('div', { class: 'pet-name' }, label)
+    const card = el('div', { class: 'equip-card', onclick: () => openPetModal(pet) },
+        petCardThumb(pet),
+        el('div', null,
+            el('div', { class: 'equip-name' }, pet.name),
+            el('div', { class: 'equip-meta' },
+                el('span', { class: 'tag rarity' }, pet.rarity),
+                pet.equipped ? el('span', { class: 'tag on' }, '장착') : null,
+                expText ? el('span', { class: 'tag' }, expText) : null
+            )
+        ),
+        pet.level > 0 ? el('span', { class: 'level' }, '+' + pet.level) : el('span')
     );
+    card.style.setProperty('--rar', color);
+    return card;
+}
+
+function openPetModal(pet) {
+    const title = pet.name + (pet.level > 0 ? ' +' + pet.level : '');
+    const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
+    const sub = pet.rarity + ' · 펫' + (expText ? ' · ' + expText : '');
+    openModal(title, sub, pet.statLines || []);
+    const thumb = petCardThumb(pet);
+    thumb.classList.add('modal-equip-thumb');
+    $('#modalBody').prepend(thumb);
+    if (pet.specialLines && pet.specialLines.length) {
+        $('#modalBody').appendChild(el('div', { class: 'pet-special-title' }, '특수 효과'));
+        pet.specialLines.forEach(line => $('#modalBody').appendChild(el('div', { class: 'stat-line' }, line)));
+    }
+    const se = pet.setEffect;
+    if (se && Array.isArray(se.tiers) && se.tiers.length) {
+        $('#modalBody').appendChild(el('div', { class: 'pet-set-block' },
+            el('div', { class: 'pet-set-title' }, '세트 효과 · ' + se.name + ' (' + se.count + '/' + se.total + ')'),
+            ...se.tiers.map(tier => el('div', { class: 'pet-set-tier' },
+                el('span', { class: 'pet-set-tier-label' }, tier.tier + '세트'),
+                el('div', { class: 'pet-set-tier-lines' }, ...tier.lines.map(line => el('div', null, line)))
+            ))
+        ));
+    }
 }
 
 function equipmentCard(eq) {
@@ -292,7 +330,7 @@ function renderProfile(data) {
     $('#mpFill').style.width = ratio(data.user.mp, data.user.maxMp) + '%';
     $('#totalPower').textContent = comma(data.combatPower.total);
     const petRow = $('#petRow');
-    if (petRow) petRow.replaceChildren(...((data.equippedPets || []).map(petThumb)));
+    if (petRow) petRow.replaceChildren(...(data.equippedPets || []).map(petCard));
     $('#goods').replaceChildren(
         kv('🪙 골드', comma(data.user.gold)),
         kv('💠 가넷', comma(data.user.garnet)),
@@ -364,6 +402,10 @@ async function loadInventory(kind) {
             if (filtered.length) sections.push(categorySection('《 ' + label + ' 》', [el('div', { class: 'equip-grid' }, filtered.map(equipmentCard))]));
         });
         $('#viewer').replaceChildren(...(sections.length ? sections : [el('div', { class: 'empty' }, '보유 장비가 없습니다.')]));
+    }
+    if (kind === 'pet') {
+        $('#viewerTitle').textContent = '보유 펫';
+        $('#viewer').replaceChildren(data.pet.length ? el('div', { class: 'equip-grid' }, data.pet.map(petCard)) : el('div', { class: 'empty' }, '보유 펫이 없습니다.'));
     }
 }
 

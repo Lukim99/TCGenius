@@ -358,6 +358,7 @@ server.get('/api/inventory/:kind', requireUser, async (req, res) => {
         if (kind == 'items') return res.json({ items: buildInventoryItems(user) });
         if (kind == 'cards') return res.json({ cards: buildInventoryCards(user) });
         if (kind == 'equipment') return res.json({ equipment: buildInventoryEquipment(user) });
+        if (kind == 'pet') return res.json({ pet: buildInventoryPets(user) });
         return res.status(400).json({ error: '알 수 없는 인벤토리 종류입니다.' });
     } catch (e) {
         console.error('inventory error:', e);
@@ -375,6 +376,7 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
         if (kind == 'items') return res.json({ items: buildInventoryItems(user) });
         if (kind == 'cards') return res.json({ cards: buildInventoryCards(user) });
         if (kind == 'equipment') return res.json({ equipment: buildInventoryEquipment(user) });
+        if (kind == 'pet') return res.json({ pet: buildInventoryPets(user) });
         return res.status(400).json({ error: '알 수 없는 인벤토리 종류입니다.' });
     } catch (e) {
         console.error('inventory-by-name error:', e);
@@ -1206,18 +1208,51 @@ function formatPetRemainText(pet) {
     return (mins > 0 ? mins + '분' : '1시간 미만') + ' 남음';
 }
 
-function serializeEquippedPet(pet) {
-    const data = rpgenius.getPetData(pet.id);
-    if (!data) return null;
+function buildPetSetEffectForUser(data, activeSets) {
+    if (!data || !data.set) return null;
+    const found = (activeSets || []).find(s => s.name === String(data.set));
+    if (!found) return null;
     return {
-        name: data.name,
-        rarity: data.rarity,
-        level: Number(pet.level || 0),
-        frameUrl: getAuctionFrameUrl('equipment', data.rarity),
-        iconUrl: getPetIconUrl(data),
-        expired: rpgenius.isPetExpired(pet),
-        expiryText: formatPetRemainText(pet)
+        name: found.name,
+        count: found.count,
+        total: found.total,
+        tiers: found.applied.map(a => ({ tier: a.tier, lines: dexStatLines(rpgenius.formatEquipmentStatLines(a.effect || {})) }))
     };
+}
+
+function buildInventoryPets(user) {
+    const activeSets = rpgenius.getActivePetSetEffects(user);
+    const result = [];
+    let number = 1;
+    const add = (pet, equipped, meta) => {
+        const data = rpgenius.getPetData(pet.id);
+        const itemNumber = number++;
+        if (!data) return;
+        const level = Number(pet.level || 0);
+        result.push({
+            type: 'pet',
+            typeLabel: '펫',
+            id: Number(pet.id),
+            number: itemNumber,
+            source: meta && meta.source || (equipped ? 'equipped' : 'inventory'),
+            index: meta && typeof meta.index != 'undefined' ? Number(meta.index) : null,
+            name: data.name,
+            rarity: data.rarity,
+            level,
+            equipped: !!equipped,
+            expired: rpgenius.isPetExpired(pet),
+            expiryText: formatPetRemainText(pet),
+            tradeCount: Number(pet.tradeCount || 0),
+            statLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, level)),
+            specialLines: (rpgenius.formatPetSpecialLines(rpgenius.normalizePetSpecial(data)) || []).map(l => l.replace(/^-\s*/, '')),
+            setEffect: buildPetSetEffectForUser(data, activeSets),
+            iconUrl: getPetIconUrl(data),
+            frameUrl: getAuctionFrameUrl('equipment', data.rarity)
+        });
+    };
+    (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : []).forEach((pet, index) => add(pet, false, { source: 'inventory', index }));
+    rpgenius.getEquippedPets(user).forEach(pet => add(pet, true, { source: 'equipped' }));
+    return result;
 }
 
 function getItemDisplayAssets(item) {
@@ -2710,7 +2745,7 @@ function buildUserProfile(user) {
         mainCard: serializeCard(user.main_card, user),
         cardSlots: slots,
         equippedEquipment: buildInventoryEquipment(user).filter(equipment => equipment.equipped),
-        equippedPets: rpgenius.getEquippedPets(user).map(serializeEquippedPet).filter(Boolean),
+        equippedPets: buildInventoryPets(user).filter(pet => pet.equipped),
         equipmentInfoText: rpgenius.formatEquipmentInfo(user)
     };
 }
@@ -2768,6 +2803,13 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:#111827;border:1px solid #334155}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(2,6,23,.52);border:1px solid rgba(148,163,184,.12);border-radius:13px}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7));border:1px solid var(--rar,#334155);border-left:5px solid var(--rar,#334155);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.4)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(4px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:#0f172a;border:1px solid rgba(148,163,184,.25);border-radius:18px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit}.modal input:focus,.modal select:focus{outline:none;border-color:#5865f2}.seg{display:flex;gap:6px;background:rgba(2,6,23,.6);padding:4px;border-radius:12px;flex-wrap:wrap}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap}.seg button.on{background:#5865f2}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(2,6,23,.4);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(15,23,42,.7);border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px}.pick-row:hover{border-color:#5865f2}.pick-row.on{border-color:#5865f2;background:rgba(88,101,242,.18)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
 .equip-thumb{position:relative;width:48px;height:48px;background:rgba(15,23,42,.7);border-radius:12px;overflow:visible}.equip-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.equip-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.equip-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:24px;line-height:1}
 .modal-equip-thumb{width:120px!important;height:120px!important;margin:6px auto 16px;border-radius:16px}.modal-equip-thumb .icon-fallback{font-size:80px}
+.pet-special-title{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a5f3fc}
+.pet-set-block{margin-top:14px;padding:12px 14px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.35);border-radius:12px;display:grid;gap:10px}
+.pet-set-title{font-size:13px;font-weight:800;color:#86efac}
+.pet-set-tier{display:grid;grid-template-columns:54px 1fr;gap:10px;align-items:start;font-size:13px}
+.pet-set-tier-label{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
+.pet-set-tier-lines{display:grid;gap:2px;color:#dcfce7}
+.equip-thumb.pet-expired .icon{filter:grayscale(1) brightness(.6)}
 .pot-block{margin-top:12px;padding:12px 14px;background:rgba(2,6,23,.5);border:2px solid var(--pot-tier,#94a3b8);border-radius:12px;box-shadow:0 0 14px -4px var(--pot-tier,#94a3b8) inset}
 .pot-title{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--pot-tier,#e5e7eb);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .pot-title .pot-tier-label{padding:2px 8px;background:rgba(255,255,255,.06);border:1px solid var(--pot-tier,#94a3b8);border-radius:999px;font-size:11px;color:var(--pot-tier,#e5e7eb)}
@@ -2816,7 +2858,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   </div>
   <div class="page" data-page="inventory">
     <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
-    <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
+    <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button><button class="view-btn" data-kind="pet">보유 펫</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
