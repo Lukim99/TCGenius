@@ -1498,6 +1498,150 @@ if ($('#equipFilter')) $('#equipFilter').addEventListener('input', e => { equipF
 TAB_LOADERS.equipment = () => $('#equipReload').click();
 
 // ============================================================================
+// PET 에디터  ( data: Array<{name, rarity, desc, stat, plusStat, upgrade?, special?, requireLevel?}> )
+// ============================================================================
+let petData = [];
+let petFilterText = '';
+const PET_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'upgrade', 'special', 'requireLevel']);
+const PET_SPECIAL_NUM_DEFS = [
+    { key: 'fishingSpeed', label: '낚시 속도 증가', frac: true, hint: '0.1 = 10%' },
+    { key: 'fishBasket', label: '살림망 크기 증가', frac: false, hint: '칸 수' },
+    { key: 'autoFragment', label: '편린 자동 사용 확률', frac: true, hint: '0.1 = 10%' },
+    { key: 'hpRegen', label: 'HP 자동 회복 주기', frac: false, hint: 'N초마다 최대 체력 1%' },
+    { key: 'mpRegen', label: 'MP 자동 회복 주기', frac: false, hint: 'N초마다 최대 MP 1%' },
+    { key: 'canShortcut', label: '단축키 저장 슬롯', frac: false, hint: '개수' }
+];
+
+function petSpecialEditor(getter, setter) {
+    let special = getter();
+    if (Array.isArray(special)) {
+        const merged = {};
+        special.forEach(o => { if (o && typeof o === 'object') Object.keys(o).forEach(k => { merged[k] = o[k]; }); });
+        special = merged; setter(special);
+    } else if (!special || typeof special !== 'object') {
+        special = {}; setter(special);
+    }
+    const wrap = el('div', { class: 'section', style: { marginTop: 0 } });
+    const list = el('div', { class: 'row' });
+    wrap.appendChild(list);
+    PET_SPECIAL_NUM_DEFS.forEach(def => {
+        const has = Object.prototype.hasOwnProperty.call(special, def.key);
+        const inp = el('input', { type: 'number', step: def.frac ? '0.01' : '1',
+            value: has && typeof special[def.key] === 'number' ? special[def.key] : '',
+            placeholder: def.hint || '',
+            oninput: e => { const v = e.target.value; if (v === '') delete special[def.key]; else special[def.key] = Number(v); } });
+        list.appendChild(el('div', { class: 'nf' }, el('label', null, def.label), inp, el('div', { class: 'muted', style: { fontSize: '11px' } }, def.hint || '')));
+    });
+    list.appendChild(el('div', { class: 'nf', style: { minWidth: '160px' } },
+        el('label', null, '자동 출석체크'),
+        el('div', { style: { padding: '7px 0' } },
+            switchToggle({ id: 'pet_autoattend_' + Math.random().toString(36).slice(2), checked: !!special.autoAttend, label: '오늘 미출석 시 자동',
+                onChange: v => { if (v) special.autoAttend = true; else delete special.autoAttend; } })
+        )
+    ));
+    return wrap;
+}
+
+function petCard(pet, index) {
+    const card = el('div', { class: 'card' });
+    const rarityClass = ({ '일반': '', '레어': 'b', '에픽': 'p', '유니크': 'y', '레전더리': 'y', '신화': 'r', '고유': 'g' })[pet.rarity] || '';
+    const head = el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+            el('span', { class: 'tag b' }, '#' + index), ' ',
+            pet.name || '(이름 없음)',
+            pet.rarity ? el('span', { class: 'tag ' + rarityClass, style: { marginLeft: '8px' } }, pet.rarity) : null
+        ),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            if (!confirm('펫 #' + index + ' (' + (pet.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
+            petData.splice(index, 1); renderPet();
+        } }, '삭제')
+    );
+    card.appendChild(head);
+
+    card.appendChild(sectionTitle('기본 정보', '📝'));
+    const row1 = el('div', { class: 'row' });
+    row1.appendChild(el('div', null, el('label', null, '이름'),
+        el('input', { value: pet.name || '', placeholder: '펫 이름', oninput: e => pet.name = e.target.value })));
+    const raritySel = el('select');
+    EQUIP_RARITIES.forEach(r => raritySel.appendChild(el('option', { value: r }, r)));
+    if (pet.rarity && !EQUIP_RARITIES.includes(pet.rarity)) raritySel.appendChild(el('option', { value: pet.rarity }, pet.rarity + ' (사용자 지정)'));
+    raritySel.value = pet.rarity || '일반';
+    raritySel.onchange = () => pet.rarity = raritySel.value;
+    row1.appendChild(el('div', null, el('label', null, '등급'), raritySel));
+    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '장착 필요 레벨'),
+        el('input', { type: 'number', value: typeof pet.requireLevel === 'number' ? pet.requireLevel : '', placeholder: '예: 10',
+            oninput: e => { const v = e.target.value; if (v === '') delete pet.requireLevel; else pet.requireLevel = Number(v); } })));
+    card.appendChild(row1);
+
+    card.appendChild(el('div', null, el('label', null, '설명'),
+        el('textarea', { value: pet.desc || '', placeholder: '펫 설명', style: { minHeight: '40px', fontFamily: 'inherit', fontSize: '13px' }, oninput: e => pet.desc = e.target.value })));
+
+    card.appendChild(sectionTitle('능력치', '✨'));
+    if (!pet.stat || typeof pet.stat !== 'object') pet.stat = {};
+    if (!pet.plusStat || typeof pet.plusStat !== 'object') pet.plusStat = {};
+    const row4 = el('div', { class: 'split' });
+    row4.appendChild(statEditor('기본 능력치', '⚔️', pet.stat, FLAT_STAT_DEFS));
+    row4.appendChild(statEditor('비율 증가', '📈', pet.plusStat, PLUS_STAT_DEFS));
+    card.appendChild(row4);
+
+    card.appendChild(sectionTitle('특수 효과 (special)', '🐾'));
+    card.appendChild(petSpecialEditor(() => pet.special, v => { if (v == null) delete pet.special; else pet.special = v; }));
+
+    card.appendChild(sectionTitle('강화 단계', '🔨'));
+    card.appendChild(upgradeEditor(() => pet.upgrade, v => { if (v == null) delete pet.upgrade; else pet.upgrade = v; }, {}));
+
+    const extraKeys = Object.keys(pet).filter(k => !PET_KNOWN_FIELDS.has(k));
+    if (extraKeys.length > 0) {
+        const extraObj = {};
+        extraKeys.forEach(k => { extraObj[k] = pet[k]; });
+        card.appendChild(sectionTitle('기타 필드 (raw JSON)', '⚙️'));
+        card.appendChild(jsonSubEditor('', () => extraObj, v => {
+            extraKeys.forEach(k => delete pet[k]);
+            if (v && typeof v === 'object') Object.keys(v).forEach(k => { if (!PET_KNOWN_FIELDS.has(k)) pet[k] = v[k]; });
+        }, '', 3));
+    }
+    return card;
+}
+
+function renderPet() {
+    const list = $('#petList'); list.innerHTML = '';
+    if (!Array.isArray(petData)) petData = [];
+    const q = (petFilterText || '').trim().toLowerCase();
+    let shown = 0;
+    petData.forEach((pet, idx) => {
+        if (!pet) return;
+        if (q) {
+            const hay = (idx + ' ' + (pet.name || '') + ' ' + (pet.rarity || '')).toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        list.appendChild(petCard(pet, idx));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '펫이 없습니다. "+ 새 펫 추가"로 만들어 보세요.'));
+}
+$('#petAdd').onclick = () => {
+    if (!Array.isArray(petData)) petData = [];
+    petData.push({ name: '', desc: '', rarity: '일반', stat: {}, plusStat: {}, special: {} });
+    petFilterText = ''; if ($('#petFilter')) $('#petFilter').value = '';
+    renderPet();
+};
+$('#petReload').onclick = async () => {
+    try {
+        const data = await loadKey('Pet');
+        petData = Array.isArray(data) ? data : [];
+        renderPet();
+        $('#petStatus').textContent = '로드 완료 (펫 ' + petData.length + '종)' + (data == null ? ' · 저장 시 Pet 데이터가 새로 생성됩니다' : '');
+    } catch (e) { toast(e.message, false); }
+};
+$('#petSave').onclick = async () => {
+    if (!confirm('Pet 데이터를 저장합니다. 계속?')) return;
+    try { await saveKey('Pet', Array.isArray(petData) ? petData : []); toast('✅ Pet 저장 완료'); }
+    catch (e) { toast(e.message, false); }
+};
+if ($('#petFilter')) $('#petFilter').addEventListener('input', e => { petFilterText = e.target.value; renderPet(); });
+TAB_LOADERS.pet = () => $('#petReload').click();
+
+// ============================================================================
 // FASHION 에디터  ( data: Array<{name, primary_card:[ids], requireStar?, isHigh?, option?:{stat?,plusStat?}}> )
 // ============================================================================
 let fashionData = [];

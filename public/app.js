@@ -125,6 +125,15 @@ function equipmentThumb(eq) {
     return wrap;
 }
 
+function petThumb(pet) {
+    const wrap = el('div', { class: 'pet-thumb' + (pet.expired ? ' expired' : ''), title: '<' + pet.rarity + '> ' + pet.name + (pet.expiryText ? ' · ' + pet.expiryText : '') });
+    if (pet.frameUrl) wrap.appendChild(el('img', { src: pet.frameUrl, class: 'frame', alt: '' }));
+    if (pet.iconUrl) wrap.appendChild(el('img', { src: pet.iconUrl, class: 'icon', alt: '' }));
+    else wrap.appendChild(el('span', { class: 'icon-fallback' }, '🐾'));
+    wrap.appendChild(el('div', { class: 'pet-exp' }, pet.expired ? '만료' : (pet.expiryText || '')));
+    return wrap;
+}
+
 function equipmentCard(eq) {
     const color = RARITY_COLORS[eq.rarity] || '#334155';
     const card = el('div', { class: 'equip-card', onclick: () => openEquipmentModal(eq) },
@@ -278,6 +287,8 @@ function renderProfile(data) {
     $('#mp').textContent = comma(data.user.mp) + ' / ' + comma(data.user.maxMp);
     $('#mpFill').style.width = ratio(data.user.mp, data.user.maxMp) + '%';
     $('#totalPower').textContent = comma(data.combatPower.total);
+    const petRow = $('#petRow');
+    if (petRow) petRow.replaceChildren(...((data.equippedPets || []).map(petThumb)));
     $('#goods').replaceChildren(
         kv('🪙 골드', comma(data.user.gold)),
         kv('💠 가넷', comma(data.user.garnet)),

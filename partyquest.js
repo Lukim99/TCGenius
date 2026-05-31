@@ -824,9 +824,19 @@ async function start(hostName) {
         const finalMpMul = posDef && posDef.stats && posDef.stats.finalMp != null ? Number(posDef.stats.finalMp) : 1;
         const baseHp = Math.max(100, Math.round(Number(m.baseSnapshot.stats.hp || 1000) * finalHpMul));
         const baseMp = Math.max(50, Math.round(Number(m.baseSnapshot.stats.mp || 500) * finalMpMul));
+        let petHpRegenRate = 0, petMpRegenRate = 0;
+        try {
+            const petUser = userMap.get(m.name) || await rpgenius.getRPGUserByName(m.name);
+            if (petUser && typeof rpgenius.getActivePetSpecials === 'function') {
+                const sp = rpgenius.getActivePetSpecials(petUser);
+                petHpRegenRate = Number(sp.hpRegenRate || 0);
+                petMpRegenRate = Number(sp.mpRegenRate || 0);
+            }
+        } catch (_) {}
         m.runtime = {
             hp: baseHp, hpMax: baseHp,
             mp: baseMp, mpMax: baseMp,
+            petHpRegenRate, petMpRegenRate,
             gauge: 0,
             cooldowns: {}, // (deprecated, kept for compat)
             cooldownsUntil: {}, // skillName -> epoch ms
@@ -1065,6 +1075,10 @@ function stepRoom(room) {
     for (const m of room.members) {
         const r = m.runtime;
         if (!r) continue;
+        if (!r.dead) {
+            if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax) r.hp = Math.min(r.hpMax, r.hp + r.hpMax * r.petHpRegenRate * dt);
+            if (r.petMpRegenRate > 0 && r.mp < r.mpMax) r.mp = Math.min(r.mpMax, r.mp + r.mpMax * r.petMpRegenRate * dt);
+        }
         if (r.tauntRemain > 0) r.tauntRemain = Math.max(0, r.tauntRemain - dt);
         if (r.stunRemain > 0) r.stunRemain = Math.max(0, r.stunRemain - dt);
         for (let i = r.buffs.length - 1; i >= 0; i--) {

@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -159,6 +159,7 @@ async function runFieldIktaeBotTick(userName) {
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const commandQueues = {};
+const petShortcutCache = {};
 const commandSpamStates = {};
 const COMMAND_SPAM_WINDOW_MS = 1000;
 const COMMAND_SPAM_LIMIT = 4;
@@ -1934,6 +1935,13 @@ function calculateUserStats(user) {
             addPotentialStats(stats, plusStats, equip.potential);
         }
     });
+    getEquippedPets(user).forEach(pet => {
+        if (!isPetEffectActive(pet)) return;
+        const data = getPetData(pet.id);
+        if (!data) return;
+        addStats(stats, getEquipmentStatsAtLevel(data, pet.level));
+        addStats(plusStats, getEquipmentPlusStatsAtLevel(data, pet.level));
+    });
     const support = user.equipments && user.equipments.support;
     if (support && typeof support.id != 'undefined') {
         const data = getEquipmentData('support', support.id);
@@ -3050,6 +3058,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
 
 function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
+    applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
@@ -3141,6 +3150,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
 
 function buildHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
+    applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
@@ -3339,6 +3349,13 @@ function tryEncounterFragment(user, dungeon, lines) {
     const cfg = FRAGMENT_TIERS[tier];
     if (Math.random() >= cfg.chance) return;
     user.pendingFragment = tier;
+    const autoChance = getActivePetSpecials(user).autoFragment;
+    if (autoChance > 0 && Math.random() < autoChance) {
+        lines.push('', '✨ ' + cfg.name + '이(가) 등장했습니다!');
+        lines.push('🐾 펫 효과로 자동 사용했습니다.');
+        lines.push(consumeFragment(user));
+        return;
+    }
     lines.push('', '✨ ' + cfg.name + '이(가) 등장했습니다!');
     lines.push('🔓 /RPGenius 편린 명령어로 사용해야 다른 명령을 사용할 수 있습니다.');
 }
@@ -3388,6 +3405,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 
 async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionType, skill) {
     const stats = calculateUserStats(user);
+    applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     forceDefeatExpiredWorldBoss(boss);
     const state = getWorldBossState(boss.name);
@@ -3815,6 +3833,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         return;
     }
     const userStats = calculateUserStats(latest);
+    applyPetRegen(latest, userStats, null);
     const slotEffects = calculateCardSlotEffects(latest);
     const flat = getSkillValue(skill, 0, 0);
     const mul = getSkillValue(skill, 1, 0);
@@ -3962,6 +3981,11 @@ function formatDescription(name) {
     const equipment = findEquipmentByName(name);
     if (equipment) {
         return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentBaseStatLines(equipment.equipment, 0)].join('\n');
+    }
+
+    const pet = findPetByName(name);
+    if (pet) {
+        return ['《 ' + pet.pet.name + ' 》 [' + pet.pet.rarity + ' 펫]', '- ' + (pet.pet.desc || ''), VIEWMORE, formatPetStatLines(pet.pet)].join('\n');
     }
 
     return null;
@@ -4403,6 +4427,250 @@ function formatRemainingIces(ices) {
     return ['[ 남은 얼음 ]']
         .concat(Object.keys(ICE_SUMMON_REWARDS).map(size => '🧊 ' + size + ': ' + comma(getIceCount(ices, size))))
         .join('\n');
+}
+
+// ===================== PET SYSTEM =====================
+const PET_SLOT_MAX = 3;
+const PET_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
+function getPetData(id) {
+    const pets = getDataCache('Pet', []);
+    return Array.isArray(pets) ? pets[id] : undefined;
+}
+
+function findPetByName(name) {
+    const pets = getDataCache('Pet', []);
+    if (!Array.isArray(pets)) return null;
+    const id = pets.findIndex(p => p && p.name == name);
+    if (id == -1) return null;
+    return { id, pet: pets[id] };
+}
+
+function normalizePetSpecial(petData) {
+    const out = {};
+    const src = petData && petData.special;
+    if (!src) return out;
+    const arr = Array.isArray(src) ? src : [src];
+    arr.forEach(o => { if (o && typeof o == 'object') Object.keys(o).forEach(k => { out[k] = o[k]; }); });
+    return out;
+}
+
+function clonePetInstance(pet) {
+    const entry = { id: Number(pet.id), level: Number(pet.level || 0), tradeCount: Number(pet.tradeCount || 0) };
+    if (typeof pet.expireAt != 'undefined') entry.expireAt = Number(pet.expireAt);
+    if (pet.shortcuts && typeof pet.shortcuts == 'object') entry.shortcuts = clonePlain(pet.shortcuts);
+    return entry;
+}
+
+function isPetExpired(pet) {
+    return !!(pet && pet.expireAt && Date.now() >= Number(pet.expireAt));
+}
+
+function isPetEffectActive(pet) {
+    return !!pet && !isPetExpired(pet);
+}
+
+function getEquippedPets(user) {
+    if (!user.equipments || !Array.isArray(user.equipments.pet)) return [];
+    return user.equipments.pet.filter(pet => pet && typeof pet.id != 'undefined');
+}
+
+function getAllUserPets(user) {
+    const list = [];
+    (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : []).forEach((pet, index) => list.push({ source: 'inventory', index, pet }));
+    getEquippedPets(user).forEach(pet => list.push({ source: 'equipped', pet }));
+    return list;
+}
+
+function getActivePetSpecials(user) {
+    const result = { fishingSpeed: 0, fishBasket: 0, autoFragment: 0, hpRegenRate: 0, mpRegenRate: 0, autoAttend: false, canShortcut: 0 };
+    getEquippedPets(user).forEach(pet => {
+        if (!isPetEffectActive(pet)) return;
+        const data = getPetData(pet.id);
+        if (!data) return;
+        const sp = normalizePetSpecial(data);
+        result.fishingSpeed += Number(sp.fishingSpeed || 0);
+        result.fishBasket += Number(sp.fishBasket || 0);
+        result.autoFragment += Number(sp.autoFragment || 0);
+        result.canShortcut += Number(sp.canShortcut || 0);
+        if (Number(sp.hpRegen || 0) > 0) result.hpRegenRate += 0.01 / Number(sp.hpRegen);
+        if (Number(sp.mpRegen || 0) > 0) result.mpRegenRate += 0.01 / Number(sp.mpRegen);
+        if (sp.autoAttend) result.autoAttend = true;
+    });
+    return result;
+}
+
+function getActivePetShortcutMap(user) {
+    const map = {};
+    getEquippedPets(user).forEach(pet => {
+        if (!isPetEffectActive(pet)) return;
+        if (pet.shortcuts && typeof pet.shortcuts == 'object') {
+            Object.keys(pet.shortcuts).forEach(k => { if (typeof map[k] == 'undefined') map[k] = pet.shortcuts[k]; });
+        }
+    });
+    return map;
+}
+
+function getEffectiveFishingNetLimit(user) {
+    const base = Number(user.fishingNetLimit || 200);
+    return base + Math.max(0, Math.round(getActivePetSpecials(user).fishBasket));
+}
+
+function applyPetRegen(user, stats, lines) {
+    if (!user.field) return;
+    const specials = getActivePetSpecials(user);
+    if (specials.hpRegenRate <= 0 && specials.mpRegenRate <= 0) return;
+    const now = Date.now();
+    if (typeof user.field.petRegenAt == 'undefined') { user.field.petRegenAt = now; return; }
+    const elapsedSec = Math.max(0, (now - Number(user.field.petRegenAt)) / 1000);
+    if (elapsedSec <= 0) return;
+    const maxHp = Number(stats.hp || 0);
+    const maxMp = Number(stats.mp || 0);
+    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const hpHeal = (specials.hpRegenRate > 0 && beforeHp < maxHp) ? Math.floor(maxHp * specials.hpRegenRate * elapsedSec) : 0;
+    const mpHeal = (specials.mpRegenRate > 0 && beforeMp < maxMp) ? Math.floor(maxMp * specials.mpRegenRate * elapsedSec) : 0;
+    if (hpHeal <= 0 && mpHeal <= 0) return;
+    user.field.petRegenAt = now;
+    if (hpHeal > 0) {
+        user.hp = Math.min(maxHp, beforeHp + hpHeal);
+        if (lines) lines.push('🐾 펫 회복: HP +' + comma(user.hp - beforeHp));
+    }
+    if (mpHeal > 0) {
+        user.mp = Math.min(maxMp, beforeMp + mpHeal);
+        if (lines) lines.push('🐾 펫 회복: MP +' + comma(user.mp - beforeMp));
+    }
+}
+
+function formatPetExpiry(pet) {
+    if (!pet || !pet.expireAt) return '미장착';
+    const diff = Number(pet.expireAt) - Date.now();
+    if (diff <= 0) return '기한 만료';
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    if (days > 0) return '잔여 ' + days + '일 ' + hours + '시간';
+    if (hours > 0) return '잔여 ' + hours + '시간';
+    return '잔여 1시간 미만';
+}
+
+function formatPetSpecialLines(sp) {
+    const pct = v => (Math.round(Number(v) * 1000) / 10) + '%';
+    const lines = [];
+    if (Number(sp.fishingSpeed || 0)) lines.push('- 낚시 속도 +' + pct(sp.fishingSpeed));
+    if (Number(sp.fishBasket || 0)) lines.push('- 살림망 크기 +' + comma(Number(sp.fishBasket)));
+    if (Number(sp.autoFragment || 0)) lines.push('- 편린 자동 사용 확률 ' + pct(sp.autoFragment));
+    if (Number(sp.hpRegen || 0)) lines.push('- ' + Number(sp.hpRegen) + '초마다 최대 체력 1% 회복');
+    if (Number(sp.mpRegen || 0)) lines.push('- ' + Number(sp.mpRegen) + '초마다 최대 MP 1% 회복');
+    if (sp.autoAttend) lines.push('- 자동 출석체크');
+    if (Number(sp.canShortcut || 0)) lines.push('- 단축키 저장 슬롯 ' + comma(Number(sp.canShortcut)) + '개');
+    return lines;
+}
+
+function formatPetStatLines(petData) {
+    const parts = [];
+    const baseStats = formatEquipmentBaseStatLines(petData, 0);
+    if (baseStats) parts.push(baseStats);
+    const specialLines = formatPetSpecialLines(normalizePetSpecial(petData));
+    if (specialLines.length) parts.push('[ 특수 효과 ]\n' + specialLines.join('\n'));
+    return parts.join('\n');
+}
+
+function formatPetInventory(user) {
+    const lines = ['[ ' + user.name + '님의 보유 펫 ]', VIEWMORE];
+    const all = getAllUserPets(user);
+    let shown = 0;
+    all.forEach((entry, index) => {
+        const data = getPetData(entry.pet.id);
+        if (!data) return;
+        shown++;
+        const lvl = Number(entry.pet.level || 0);
+        let suffix = '';
+        if (entry.source == 'equipped') suffix = isPetExpired(entry.pet) ? ' (장착·기한만료)' : ' (장착)';
+        const remain = entry.pet.expireAt ? ' · ' + formatPetExpiry(entry.pet) : '';
+        lines.push('[' + (index + 1) + '] <' + data.rarity + '> ' + data.name + (lvl > 0 ? ' +' + lvl : '') + suffix + remain);
+    });
+    if (shown == 0) lines.push('', '보유 중인 펫이 없습니다.');
+    return lines.join('\n');
+}
+
+function equipPetByNumber(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호는 1 이상의 정수여야 합니다.';
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+    if (!user.equipments) user.equipments = { weapon: null, armor: null, accessory: {}, support: null, pet: [] };
+    if (!Array.isArray(user.equipments.pet)) user.equipments.pet = [];
+    const all = getAllUserPets(user);
+    const selected = all[number - 1];
+    if (!selected) return '❌ 존재하지 않는 펫 번호입니다.';
+    if (selected.source == 'equipped') return '❌ 이미 장착 중인 펫입니다.';
+    const target = user.inventory.pet[selected.index];
+    const data = getPetData(target.id);
+    if (!data) return '❌ 잘못된 펫 데이터입니다.';
+    const userLevel = Number(user.level || 1);
+    if (typeof data.requireLevel != 'undefined' && userLevel < Number(data.requireLevel)) return '❌ 장착 필요 레벨이 부족합니다. (Lv. ' + Number(data.requireLevel) + ' 이상)';
+    if (getEquippedPets(user).length >= PET_SLOT_MAX) return '❌ 펫 슬롯이 가득 찼습니다. (최대 ' + PET_SLOT_MAX + '마리) 먼저 다른 펫을 해제해주세요.';
+    const entry = clonePetInstance(target);
+    if (typeof entry.expireAt == 'undefined') entry.expireAt = Date.now() + PET_DURATION_MS;
+    entry.tradeCount = 0;
+    if (!entry.shortcuts) entry.shortcuts = {};
+    user.equipments.pet.push(entry);
+    user.inventory.pet.splice(selected.index, 1);
+    return '✅ 펫을 장착했습니다.\n<' + data.rarity + '> ' + data.name + '\n- ' + formatPetExpiry(entry);
+}
+
+function unequipPetByNumber(user, numberArg) {
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호를 올바르게 입력해주세요.';
+    const all = getAllUserPets(user);
+    const selected = all[number - 1];
+    if (!selected) return '❌ 존재하지 않는 펫 번호입니다.';
+    if (selected.source != 'equipped') return '❌ 장착 중인 펫이 아닙니다.';
+    const data = getPetData(selected.pet.id);
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+    const idx = user.equipments.pet.indexOf(selected.pet);
+    if (idx == -1) return '❌ 장착 중인 펫이 아닙니다.';
+    user.equipments.pet.splice(idx, 1);
+    user.inventory.pet.push(clonePetInstance(selected.pet));
+    const stats = calculateUserStats(user);
+    user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
+    user.mp = Math.min(typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), Number(stats.mp || 0));
+    return '✅ 펫을 해제했습니다.\n<' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '알 수 없는 펫');
+}
+
+function setPetShortcut(user, key, phrase) {
+    if (!key) return '❌ /RPGenius 단축키설정 [단축키] [문구]';
+    if (!/^[0-9A-Za-z가-힣]+$/.test(key)) return '❌ 단축키는 공백 없이 한글/영어/숫자로만 입력해주세요.';
+    if (!phrase) return '❌ /RPGenius 단축키설정 [단축키] [문구]';
+    const equipped = getEquippedPets(user).filter(isPetEffectActive);
+    if (equipped.length == 0) return '❌ 단축키를 저장할 수 있는 펫이 없습니다. (단축키 슬롯이 있는 펫을 장착하세요)';
+    if (equipped.some(pet => pet.shortcuts && typeof pet.shortcuts[key] != 'undefined')) return '❌ 이미 사용 중인 단축키입니다. (단축키는 변경할 수 없습니다)';
+    let target = null;
+    for (const pet of equipped) {
+        const cap = Number(normalizePetSpecial(getPetData(pet.id)).canShortcut || 0);
+        if (cap <= 0) continue;
+        if (!pet.shortcuts || typeof pet.shortcuts != 'object') pet.shortcuts = {};
+        if (Object.keys(pet.shortcuts).length < cap) { target = pet; break; }
+    }
+    if (!target) return '❌ 단축키 저장 슬롯이 남아있는 펫이 없습니다.';
+    target.shortcuts[key] = phrase;
+    const data = getPetData(target.id);
+    return '✅ 단축키를 저장했습니다. (변경 불가)\n- ' + key + ' → ' + phrase + '\n- 귀속: <' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '');
+}
+
+function extendPetExpiry(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '생명수') return '❌ 진행 중인 생명수 사용이 없습니다.';
+    const number = Number(numberArg);
+    const all = getAllUserPets(user);
+    if (!Number.isInteger(number) || number < 1 || number > all.length) return '❌ 존재하지 않는 펫 번호입니다.\n/RPGenius 선택 [번호]';
+    const target = all[number - 1].pet;
+    const data = getPetData(target.id);
+    if (!data) return '❌ 잘못된 펫 데이터입니다.';
+    target.expireAt = Math.max(Number(target.expireAt || 0), Date.now()) + PET_DURATION_MS;
+    user.pendingAction = null;
+    return '✅ ' + data.name + ' 펫의 기한을 30일 연장했습니다.\n- ' + formatPetExpiry(target);
 }
 
 async function voteCandidate(user, candidateArg, countArg) {
@@ -4929,7 +5197,7 @@ function formatFishingNet(user) {
     normalizeFishingData(user);
     const items = getDataCache('Item', []);
     const current = getFishingNetCount(user);
-    const lines = ['🪣 ' + user.name + '님의 살림망 (' + comma(current) + '/' + comma(user.fishingNetLimit) + ')'];
+    const lines = ['🪣 ' + user.name + '님의 살림망 (' + comma(current) + '/' + comma(getEffectiveFishingNetLimit(user)) + ')'];
     Object.keys(user.fishingNet).forEach(itemId => {
         const data = items[itemId];
         const count = Number(user.fishingNet[itemId] || 0);
@@ -4974,30 +5242,35 @@ function scheduleFishing(user, channel) {
             delete fishingChannels[latest.name];
             return;
         }
-        if (getFishingNetCount(latest) >= Number(latest.fishingNetLimit || 200)) {
-            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+        if (getFishingNetCount(latest) >= getEffectiveFishingNetLimit(latest)) {
+            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
             return;
         }
         const baitId = getCurrentBaitItemId(latest);
         if (baitId == -1 || getInventoryItemCount(latest, baitId) < 1) {
-            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
             return;
         }
         removeInventoryItem(latest, baitId, 1);
         const rewardId = pickBaitReward(latest);
         if (rewardId != null) addFishingNetItem(latest, rewardId, 1);
         await latest.save();
-        if (getFishingNetCount(latest) >= Number(latest.fishingNetLimit || 200)) {
-            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+        if (getFishingNetCount(latest) >= getEffectiveFishingNetLimit(latest)) {
+            await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
             return;
         }
         const remainBaitId = getCurrentBaitItemId(latest);
         if (remainBaitId == -1 || getInventoryItemCount(latest, remainBaitId) < 1) {
-            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(stoppedUser.fishingNetLimit));
+            await stopFishingByName(latest.name, stoppedUser => '🪱 ' + stoppedUser.name + '님의 ' + getCurrentBaitName(stoppedUser) + '이(가) 모두 소모되었습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
             return;
         }
         scheduleFishing(latest, channel);
-    }, randomInt(30000, 60000));
+    }, getFishingInterval(user));
+}
+
+function getFishingInterval(user) {
+    const speed = Math.min(0.9, Math.max(0, getActivePetSpecials(user).fishingSpeed));
+    return Math.round(randomInt(30000, 60000) * (1 - speed));
 }
 
 async function toggleFishing(user, channel) {
@@ -5007,16 +5280,16 @@ async function toggleFishing(user, channel) {
         delete fishingChannels[user.name];
         user.fishing = false;
         await user.save();
-        return '✅ 낚시를 중단합니다.\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
+        return '✅ 낚시를 중단합니다.\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(getEffectiveFishingNetLimit(user));
     }
-    if (getFishingNetCount(user) >= Number(user.fishingNetLimit || 200)) return '❌ 살림망이 가득 찼습니다.\n/RPGenius 살림망비우기';
+    if (getFishingNetCount(user) >= getEffectiveFishingNetLimit(user)) return '❌ 살림망이 가득 찼습니다.\n/RPGenius 살림망비우기';
     const baitId = getCurrentBaitItemId(user);
     if (baitId == -1 || getInventoryItemCount(user, baitId) < 1) return '❌ ' + getCurrentBaitName(user) + '이(가) 없습니다.';
     user.fishing = true;
     if (channel && channel.channelId) user.fishingChannelId = String(channel.channelId);
     await user.save();
     scheduleFishing(user, channel);
-    return '🎣 낚시를 시작합니다..\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(user.fishingNetLimit);
+    return '🎣 낚시를 시작합니다..\n- 현재 살림망: ' + comma(getFishingNetCount(user)) + '/' + comma(getEffectiveFishingNetLimit(user));
 }
 
 async function resumeAllFishing(getChannelById) {
@@ -6117,10 +6390,11 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -6282,6 +6556,18 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatBoundEquipmentScissorList(targets));
+            }
+        }
+        if (item.use == '생명수') {
+            if (getAllUserPets(user).length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 기한을 연장할 펫이 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '생명수', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('기한을 30일 연장할 펫을 선택해주세요.');
+                lines.push('/RPGenius 선택 [번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatPetInventory(user));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -6463,12 +6749,14 @@ class RPGUser {
                 level: 0
             },
             accessory: {},
-            support: null
+            support: null,
+            pet: []
         };
         this.inventory = {
             card: [],
             item: [],
-            equipment: []
+            equipment: [],
+            pet: []
         };
         this.gold = 0;
         this.garnet = 0;
@@ -6502,11 +6790,13 @@ class RPGUser {
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
-        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {}, support: null };
+        if (!Array.isArray(this.inventory.pet)) this.inventory.pet = [];
+        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {}, support: null, pet: [] };
         if (typeof this.equipments.weapon == 'undefined') this.equipments.weapon = null;
         if (typeof this.equipments.armor == 'undefined') this.equipments.armor = null;
         if (!this.equipments.accessory || typeof this.equipments.accessory != 'object') this.equipments.accessory = {};
         if (typeof this.equipments.support == 'undefined') this.equipments.support = null;
+        if (!Array.isArray(this.equipments.pet)) this.equipments.pet = [];
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
@@ -7227,6 +7517,17 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    petShortcutCache[senderId] = getActivePetShortcutMap(user);
+
+    if (!user.need_character_card_select && getActivePetSpecials(user).autoAttend) {
+        const today = getKoreanDateKey(new Date());
+        if (user.lastAttendanceDate != today) {
+            const attendResult = checkAttendance(user);
+            await user.save();
+            reply('🐾 ' + attendResult);
+        }
+    }
+
     if (args[0] == '파티퀘스트') {
         if (Number(user.level || 1) >= 71 && !user.canPartyQuest) {
             user.canPartyQuest = true;
@@ -7431,6 +7732,24 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = releaseBoundEquipment(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '생명수') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 생명수 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 기한을 연장할 펫을 먼저 선택해야 합니다.\n/RPGenius 선택 [번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = extendPetExpiry(user, args[1]);
         await user.save();
         reply(result);
         return true;
@@ -7834,6 +8153,35 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '펫') {
+        if (args[1] == '장착') {
+            if (!args[2]) { reply('❌ /RPGenius 펫 장착 [번호]'); return true; }
+            const result = equipPetByNumber(user, args[2]);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        if (args[1] == '장착해제') {
+            if (!args[2]) { reply('❌ /RPGenius 펫 장착해제 [번호]'); return true; }
+            const result = unequipPetByNumber(user, args[2]);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        reply(formatPetInventory(user));
+        return true;
+    }
+
+    if (args[0] == '단축키설정') {
+        const key = args[1];
+        const phrase = key ? cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1 + key.length + 1).trim() : '';
+        const result = setPetShortcut(user, key, phrase);
+        await user.save();
+        petShortcutCache[senderId] = getActivePetShortcutMap(user);
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '상점') {
         const shopType = args[1] || '일반';
         const shopDisplay = formatShop(shopType, user);
@@ -8038,9 +8386,29 @@ async function handleRPGCommand(data, channel) {
     return true;
 }
 
+function expandPetShortcut(rawText, senderId) {
+    if (!rawText || rawText.length > 40) return null;
+    const tokens = rawText.split(/\s+/);
+    if (tokens.length < 1 || tokens.length > 8) return null;
+    if (!tokens.every(t => /^[0-9A-Za-z가-힣]+$/.test(t))) return null;
+    const map = petShortcutCache[senderId];
+    if (!map || Object.keys(map).length == 0) return null;
+    if (!tokens.every(t => typeof map[t] != 'undefined')) return null;
+    return tokens.map(t => map[t]).join(' ');
+}
+
 async function onChat(data, channel) {
     if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
-    const msg = (data.text || '').trim();
+    const rawMsg = (data.text || '').trim();
+    let workingText = data.text;
+    if (!rawMsg.startsWith('/')) {
+        const sender = data.getSenderInfo(channel) || data._chat?.sender;
+        if (!sender || !sender.userId) return false;
+        const expanded = expandPetShortcut(rawMsg, sender.userId + '');
+        if (expanded == null) return false;
+        workingText = expanded;
+    }
+    const msg = (workingText || '').trim();
     if (!msg.startsWith('/')) return false;
     const cmd = msg.substr(1).trim();
     if (!(cmd.toLowerCase().startsWith('rpg') || cmd.toLowerCase().startsWith('rpgenius'))) return false;
@@ -8053,7 +8421,8 @@ async function onChat(data, channel) {
         channel.sendChat(blockMessage);
         return true;
     }
-    enqueueUserCommand(senderId, () => handleRPGCommand(data, channel)).catch(error => console.log('RPG command queue error:', error));
+    const finalData = workingText === data.text ? data : { text: workingText, getSenderInfo: c => data.getSenderInfo(c), _chat: data._chat };
+    enqueueUserCommand(senderId, () => handleRPGCommand(finalData, channel)).catch(error => console.log('RPG command queue error:', error));
     return true;
 }
 
@@ -8074,6 +8443,14 @@ module.exports = {
     RPGENIUS_DATA_KEYS,
     calculateUserStats,
     calculateCombatPower,
+    getEquippedPets,
+    getPetData,
+    isPetEffectActive,
+    isPetExpired,
+    getActivePetSpecials,
+    formatPetExpiry,
+    normalizePetSpecial,
+    applyPetRegen,
     formatUserCard,
     formatEquipmentInfo,
     formatInventory,
