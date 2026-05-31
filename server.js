@@ -1216,7 +1216,7 @@ function buildPetSetEffectForUser(data, activeSets) {
         name: found.name,
         count: found.count,
         total: found.total,
-        tiers: found.applied.map(a => ({ tier: a.tier, lines: dexStatLines(rpgenius.formatEquipmentStatLines(a.effect || {})) }))
+        tiers: found.applied.map(a => ({ tier: a.tier, lines: rpgenius.formatPetSetEffectLines(a.effect).map(l => l.replace(/^-\s*/, '')) }))
     };
 }
 
@@ -1244,7 +1244,7 @@ function buildInventoryPets(user) {
             expiryText: formatPetRemainText(pet),
             tradeCount: Number(pet.tradeCount || 0),
             statLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, level)),
-            specialLines: (rpgenius.formatPetSpecialLines(rpgenius.normalizePetSpecial(data)) || []).map(l => l.replace(/^-\s*/, '')),
+            specialLines: rpgenius.collectPetSpecialObjects(data, level).flatMap(sp => rpgenius.formatPetSpecialLines(sp) || []).map(l => l.replace(/^-\s*/, '')),
             setEffect: buildPetSetEffectForUser(data, activeSets),
             iconUrl: getPetIconUrl(data),
             frameUrl: getAuctionFrameUrl('equipment', data.rarity)
@@ -1557,14 +1557,18 @@ function dexStatLines(text) {
 function buildPetDexEntry(id, data) {
     if (!data) return null;
     const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
-    const upgradeLines = upgrades.map((_, i) => ({ level: i + 1, statLines: dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, i + 1)) }));
+    const upgradeLines = upgrades.map((step, i) => {
+        const statLines = dexStatLines(rpgenius.formatEquipmentBaseStatLines(data, i + 1));
+        (rpgenius.formatPetSpecialLines(rpgenius.normalizeSpecialObject(step && step.special)) || []).forEach(l => statLines.push(l.replace(/^-\s*/, '')));
+        return { level: i + 1, statLines };
+    });
     const specialLines = (rpgenius.formatPetSpecialLines(rpgenius.normalizePetSpecial(data)) || []).map(l => l.replace(/^-\s*/, ''));
     let set = null;
     if (data.set) {
         const tiers = rpgenius.getPetSetData()[data.set];
         set = {
             name: String(data.set),
-            tiers: Array.isArray(tiers) ? tiers.map((eff, i) => ({ tier: i + 1, lines: dexStatLines(rpgenius.formatEquipmentStatLines(eff || {})) })) : []
+            tiers: Array.isArray(tiers) ? tiers.map((eff, i) => ({ tier: i + 1, lines: rpgenius.formatPetSetEffectLines(eff).map(l => l.replace(/^-\s*/, '')) })) : []
         };
     }
     return {

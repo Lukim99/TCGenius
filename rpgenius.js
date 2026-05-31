@@ -4175,8 +4175,7 @@ function formatEquipmentInfo(user) {
         petSets.forEach(set => {
             lines.push('', '《 ' + set.name + ' 세트 (' + set.count + '/' + set.total + ') 》');
             set.applied.forEach(a => {
-                const statText = formatEquipmentStatLines(a.effect) || '';
-                const inline = statText.split('\n').filter(Boolean).map(l => l.replace(/^-\s*/, '')).join(', ');
+                const inline = formatPetSetEffectLines(a.effect).map(l => l.replace(/^-\s*/, '')).join(', ');
                 lines.push('- ' + a.tier + '세트: ' + (inline || '효과 없음'));
             });
         });
@@ -4483,13 +4482,47 @@ function findPetByName(name) {
     return { id, pet: pets[id] };
 }
 
-function normalizePetSpecial(petData) {
+function normalizeSpecialObject(src) {
     const out = {};
-    const src = petData && petData.special;
     if (!src) return out;
     const arr = Array.isArray(src) ? src : [src];
     arr.forEach(o => { if (o && typeof o == 'object') Object.keys(o).forEach(k => { out[k] = o[k]; }); });
     return out;
+}
+
+function normalizePetSpecial(petData) {
+    return normalizeSpecialObject(petData && petData.special);
+}
+
+// 펫의 기본 special + 현재 강화 레벨까지의 강화 단계 special 목록 (각각 별도 소스로 누적)
+function collectPetSpecialObjects(petData, level) {
+    const list = [];
+    const base = normalizePetSpecial(petData);
+    if (Object.keys(base).length) list.push(base);
+    const max = Math.min(Number(level || 0), Array.isArray(petData && petData.upgrade) ? petData.upgrade.length : 0);
+    for (let i = 0; i < max; i++) {
+        const sp = normalizeSpecialObject(petData.upgrade[i] && petData.upgrade[i].special);
+        if (Object.keys(sp).length) list.push(sp);
+    }
+    return list;
+}
+
+function accumulatePetSpecial(result, sp) {
+    result.fishingSpeed += Number(sp.fishingSpeed || 0);
+    result.fishBasket += Number(sp.fishBasket || 0);
+    result.autoFragment += Number(sp.autoFragment || 0);
+    result.canShortcut += Number(sp.canShortcut || 0);
+    if (Number(sp.hpRegen || 0) > 0) result.hpRegenRate += 0.01 / Number(sp.hpRegen);
+    if (Number(sp.mpRegen || 0) > 0) result.mpRegenRate += 0.01 / Number(sp.mpRegen);
+    if (sp.autoAttend) result.autoAttend = true;
+}
+
+// 세트 효과 단계의 효과 라인 (능력치 + special) — 각 라인은 '- ' 접두사 포함
+function formatPetSetEffectLines(effect) {
+    const lines = [];
+    String(formatEquipmentStatLines(effect || {}) || '').split('\n').filter(Boolean).forEach(l => lines.push(l));
+    formatPetSpecialLines(normalizeSpecialObject(effect && effect.special)).forEach(l => lines.push(l));
+    return lines;
 }
 
 function clonePetInstance(pet) {
@@ -4611,14 +4644,13 @@ function getActivePetSpecials(user) {
         if (!isPetEffectActive(pet)) return;
         const data = getPetData(pet.id);
         if (!data) return;
-        const sp = normalizePetSpecial(data);
-        result.fishingSpeed += Number(sp.fishingSpeed || 0);
-        result.fishBasket += Number(sp.fishBasket || 0);
-        result.autoFragment += Number(sp.autoFragment || 0);
-        result.canShortcut += Number(sp.canShortcut || 0);
-        if (Number(sp.hpRegen || 0) > 0) result.hpRegenRate += 0.01 / Number(sp.hpRegen);
-        if (Number(sp.mpRegen || 0) > 0) result.mpRegenRate += 0.01 / Number(sp.mpRegen);
-        if (sp.autoAttend) result.autoAttend = true;
+        collectPetSpecialObjects(data, pet.level).forEach(sp => accumulatePetSpecial(result, sp));
+    });
+    getActivePetSetEffects(user).forEach(set => {
+        set.applied.forEach(a => {
+            const sp = normalizeSpecialObject(a.effect && a.effect.special);
+            if (Object.keys(sp).length) accumulatePetSpecial(result, sp);
+        });
     });
     return result;
 }
@@ -8631,6 +8663,9 @@ module.exports = {
     getPetSetData,
     getActivePetSetEffects,
     formatEquipmentStatLines,
+    formatPetSetEffectLines,
+    normalizeSpecialObject,
+    collectPetSpecialObjects,
     applyPetRegen,
     clonePetInstance,
     addPetInventory,

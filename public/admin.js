@@ -1095,6 +1095,15 @@ function upgradeStepSummary(step) {
     }
     describe(step.stat, FLAT_STAT_DEFS, false);
     describe(step.plusStat, PLUS_STAT_DEFS, true);
+    let sp = step.special;
+    if (Array.isArray(sp)) { const m = {}; sp.forEach(o => { if (o && typeof o === 'object') Object.keys(o).forEach(k => m[k] = o[k]); }); sp = m; }
+    if (sp && typeof sp === 'object') {
+        PET_SPECIAL_NUM_DEFS.forEach(def => {
+            const v = sp[def.key];
+            if (typeof v === 'number' && v !== 0) parts.push(def.label + ' ' + (def.frac ? (Math.round(v * 1000) / 10) + '%' : v));
+        });
+        if (sp.autoAttend) parts.push('자동 출석');
+    }
     return parts.length ? parts.join(' · ') : '설정 없음';
 }
 
@@ -1146,6 +1155,10 @@ function upgradeEditor(getter, setter, options) {
                     innerRange.appendChild(statEditor('무작위 범위 증가 (비율)', '🎲', step.plusStatRange, PLUS_STAT_DEFS));
                     body.appendChild(innerRange);
                     body.appendChild(dynamicBonusEditor(() => step.dynamicBonus, v => { if (v == null) delete step.dynamicBonus; else step.dynamicBonus = v; }, { titleSuffix: ' 증가' }));
+                }
+                if (options && options.allowSpecial) {
+                    body.appendChild(sectionTitle('특수 효과 (special)', '🐾'));
+                    body.appendChild(petSpecialEditor(() => step.special, v => { if (v == null) delete step.special; else step.special = v; }));
                 }
                 det.appendChild(body);
                 list.appendChild(det);
@@ -1612,7 +1625,7 @@ function petCard(pet, index) {
     card.appendChild(petSpecialEditor(() => pet.special, v => { if (v == null) delete pet.special; else pet.special = v; }));
 
     card.appendChild(sectionTitle('강화 단계', '🔨'));
-    card.appendChild(upgradeEditor(() => pet.upgrade, v => { if (v == null) delete pet.upgrade; else pet.upgrade = v; }, {}));
+    card.appendChild(upgradeEditor(() => pet.upgrade, v => { if (v == null) delete pet.upgrade; else pet.upgrade = v; }, { allowSpecial: true }));
 
     const extraKeys = Object.keys(pet).filter(k => !PET_KNOWN_FIELDS.has(k));
     if (extraKeys.length > 0) {
