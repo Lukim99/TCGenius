@@ -4770,6 +4770,29 @@ function setPetShortcut(user, key, phrase) {
     return '✅ 단축키를 저장했습니다. (변경 불가)\n- ' + key + ' → ' + phrase + '\n- 귀속: <' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '');
 }
 
+function formatPetShortcuts(user) {
+    const equipped = getEquippedPets(user);
+    const lines = ['[ ' + user.name + '님의 단축키 ]'];
+    let any = false;
+    equipped.forEach(pet => {
+        const data = getPetData(pet.id);
+        const cap = Number(normalizePetSpecial(data).canShortcut || 0);
+        const sc = (pet.shortcuts && typeof pet.shortcuts == 'object') ? pet.shortcuts : {};
+        const keys = Object.keys(sc);
+        if (cap <= 0 && keys.length == 0) return;
+        any = true;
+        const expiredMark = isPetEffectActive(pet) ? '' : ' (기한만료·비활성)';
+        lines.push('', '〈 <' + (data ? data.rarity : '?') + '> ' + (data ? data.name : '?') + ' 〉 (' + keys.length + '/' + cap + ')' + expiredMark);
+        if (keys.length == 0) lines.push('- (등록된 단축키 없음)');
+        else keys.forEach(k => lines.push('- ' + k + ' → ' + sc[k]));
+    });
+    if (!any) {
+        lines.push('', '등록된 단축키가 없습니다.');
+        lines.push('단축키 슬롯이 있는 펫을 장착한 뒤 /RPGenius 단축키설정 [단축키] [문구]');
+    }
+    return lines.join('\n');
+}
+
 function extendPetExpiry(user, numberArg) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '생명수') return '❌ 진행 중인 생명수 사용이 없습니다.';
@@ -8304,6 +8327,11 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '단축키목록') {
+        reply(formatPetShortcuts(user));
+        return true;
+    }
+
     if (args[0] == '단축키설정') {
         const key = args[1];
         const phrase = key ? cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1 + key.length + 1).trim() : '';
@@ -8519,14 +8547,16 @@ async function handleRPGCommand(data, channel) {
 }
 
 function expandPetShortcut(rawText, senderId) {
-    if (!rawText || rawText.length > 40) return null;
-    const tokens = rawText.split(/\s+/);
-    if (tokens.length < 1 || tokens.length > 8) return null;
-    if (!tokens.every(t => /^[0-9A-Za-z가-힣]+$/.test(t))) return null;
+    if (!rawText || rawText.length > 200) return null;
     const map = petShortcutCache[senderId];
     if (!map || Object.keys(map).length == 0) return null;
-    if (!tokens.every(t => typeof map[t] != 'undefined')) return null;
-    return tokens.map(t => map[t]).join(' ');
+    const tokens = rawText.split(/\s+/);
+    if (tokens.length == 0 || typeof map[tokens[0]] == 'undefined') return null; // 단축키로 시작할 때만 치환
+    const parts = [];
+    let i = 0;
+    while (i < tokens.length && typeof map[tokens[i]] != 'undefined') parts.push(map[tokens[i++]]);
+    for (; i < tokens.length; i++) parts.push(tokens[i]);
+    return parts.join(' ');
 }
 
 async function onChat(data, channel) {

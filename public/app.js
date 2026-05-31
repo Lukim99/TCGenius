@@ -126,12 +126,16 @@ function equipmentThumb(eq) {
 }
 
 function petThumb(pet) {
-    const wrap = el('div', { class: 'pet-thumb' + (pet.expired ? ' expired' : ''), title: '<' + pet.rarity + '> ' + pet.name + (pet.expiryText ? ' · ' + pet.expiryText : '') });
-    if (pet.frameUrl) wrap.appendChild(el('img', { src: pet.frameUrl, class: 'frame', alt: '' }));
-    if (pet.iconUrl) wrap.appendChild(el('img', { src: pet.iconUrl, class: 'icon', alt: '' }));
-    else wrap.appendChild(el('span', { class: 'icon-fallback' }, '🐾'));
-    wrap.appendChild(el('div', { class: 'pet-exp' }, pet.expired ? '만료' : (pet.expiryText || '')));
-    return wrap;
+    const thumb = el('div', { class: 'pet-thumb' + (pet.expired ? ' expired' : '') });
+    if (pet.frameUrl) thumb.appendChild(el('img', { src: pet.frameUrl, class: 'frame', alt: '' }));
+    if (pet.iconUrl) thumb.appendChild(el('img', { src: pet.iconUrl, class: 'icon', alt: '' }));
+    else thumb.appendChild(el('span', { class: 'icon-fallback' }, '🐾'));
+    const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
+    const label = pet.name + (expText ? ' (' + expText + ')' : '');
+    return el('div', { class: 'pet-item' + (pet.expired ? ' expired' : ''), title: '<' + pet.rarity + '> ' + pet.name },
+        thumb,
+        el('div', { class: 'pet-name' }, label)
+    );
 }
 
 function equipmentCard(eq) {
