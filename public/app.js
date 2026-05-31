@@ -371,8 +371,8 @@ $$('.view-btn').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kin
 
 // ===== 경매장 =====
 
-const AUCTION_KIND_ICON = { 'card': '🃏', 'equipment': '⚔️', 'item': '📦' };
-const AUCTION_KIND_LABEL = { 'card': '카드', 'equipment': '장비', 'item': '아이템' };
+const AUCTION_KIND_ICON = { 'card': '🃏', 'equipment': '⚔️', 'item': '📦', 'pet': '🐾' };
+const AUCTION_KIND_LABEL = { 'card': '카드', 'equipment': '장비', 'item': '아이템', 'pet': '펫' };
 let auctionState = { all: [], filter: 'all', me: null, query: '' };
 
 function currencyText(currency, amount) {
@@ -566,14 +566,26 @@ function closeRegister() { $('#aucRegBg').classList.remove('active'); }
 function renderRegisterModal() {
     const data = regState.sellable;
     const kindSeg = el('div', { class: 'seg' },
-        ...['card', 'equipment', 'item'].map(k => el('button', {
+        ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
             class: regState.kind === k ? 'on' : '',
             onclick: () => { regState.kind = k; regState.selectedIndex = -1; regState.selectedItemId = -1; renderRegisterModal(); }
         }, AUCTION_KIND_LABEL[k]))
     );
 
     let pickList;
-    if (regState.kind === 'card') {
+    if (regState.kind === 'pet') {
+        pickList = (!data.pets || data.pets.length === 0)
+            ? el('div', { class: 'empty' }, '판매 가능한 펫이 없습니다.\n(거래 가능 횟수가 1 이상인 펫만 등록 가능)')
+            : el('div', { class: 'pick-list' }, ...data.pets.map(pet => el('div', {
+                class: 'pick-row' + (regState.selectedIndex === pet.index ? ' on' : ''),
+                onclick: () => { regState.selectedIndex = pet.index; renderRegisterModal(); }
+            },
+                el('div', { style: { flex: '1' } },
+                    el('b', null, pet.name + (pet.level > 0 ? ' +' + pet.level : '')),
+                    el('div', { class: 'meta' }, pet.rarity + ' · 거래 가능 ' + comma(pet.tradeCount) + '회')
+                )
+            )));
+    } else if (regState.kind === 'card') {
         pickList = data.cards.length === 0
             ? el('div', { class: 'empty' }, '판매 가능한 카드가 없습니다.\n(인벤토리 보유 카드만 등록 가능)')
             : el('div', { class: 'pick-list' }, ...data.cards.map(card => el('div', {
@@ -652,7 +664,7 @@ async function submitRegister() {
     const price = Number($('#regPrice').value || 0);
     if (!Number.isInteger(price) || price < 1) return alert('가격은 1 이상의 정수여야 합니다.');
     const body = { kind, currency, price };
-    if (kind === 'card' || kind === 'equipment') {
+    if (kind === 'card' || kind === 'equipment' || kind === 'pet') {
         if (regState.selectedIndex < 0) return alert(AUCTION_KIND_LABEL[kind] + '를 선택해주세요.');
         body.index = regState.selectedIndex;
     } else {
@@ -860,6 +872,29 @@ function renderFulfillSection(entry, fulfillable, content) {
         content.push(pick);
         updateTotal(1);
         content.push(totalLine);
+    } else if (entry.kind === 'pet') {
+        if (!fulfillable.pets || !fulfillable.pets.length) {
+            content.push(el('div', { class: 'empty' }, '조건에 맞는 보유 펫이 없습니다.\n(거래 가능 횟수가 1 이상이어야 합니다)'));
+            return;
+        }
+        const pick = el('div', { class: 'pick-list' });
+        fulfillable.pets.forEach(pet => {
+            const row = el('div', {
+                class: 'pick-row',
+                onclick: () => {
+                    selectedIndex = pet.index;
+                    Array.from(pick.children).forEach(c => c.classList.remove('on'));
+                    row.classList.add('on');
+                }
+            },
+                el('div', null, el('b', null, pet.name + (pet.level > 0 ? ' +' + pet.level : '')), el('div', { class: 'meta' }, pet.rarity + ' · 거래 가능 ' + comma(pet.tradeCount) + '회'))
+            );
+            pick.appendChild(row);
+        });
+        content.push(el('label', null, '판매할 펫 선택'));
+        content.push(pick);
+        updateTotal(1);
+        content.push(totalLine);
     } else if (entry.kind === 'item') {
         if (fulfillable.itemCount < 1) {
             content.push(el('div', { class: 'empty' }, '판매 가능한 수량이 없습니다.'));
@@ -910,10 +945,10 @@ function renderFulfillSection(entry, fulfillable, content) {
 
 // ===== 구매 등록 모달 =====
 
-let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, count: 1 };
+let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
 
 async function openBoRegisterModal() {
-    boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, count: 1 };
+    boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
     $('#boReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#boRegBg').classList.add('active');
     try {
@@ -929,7 +964,7 @@ function closeBoRegister() { $('#boRegBg').classList.remove('active'); }
 function renderBoRegisterModal() {
     const data = boRegState.lookups;
     const kindSeg = el('div', { class: 'seg' },
-        ...['card', 'equipment', 'item'].map(k => el('button', {
+        ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
             class: boRegState.kind === k ? 'on' : '',
             onclick: () => { boRegState.kind = k; renderBoRegisterModal(); }
         }, AUCTION_KIND_LABEL[k]))
@@ -1005,6 +1040,17 @@ function renderBoRegisterModal() {
         const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
         countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
         content.push(countInput);
+    } else if (boRegState.kind === 'pet') {
+        content.push(el('label', null, '펫'));
+        const petSelect = el('select', { onchange: e => { boRegState.petId = Number(e.target.value); } },
+            el('option', { value: -1 }, '펫 선택...'),
+            ...((data.pets || []).map(p => el('option', { value: p.id, selected: boRegState.petId === p.id ? 'selected' : null }, p.name + ' (' + p.rarity + ')')))
+        );
+        content.push(petSelect);
+        content.push(el('label', null, '갯수'));
+        const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
+        countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
+        content.push(countInput);
     } else {
         content.push(el('label', null, '아이템'));
         const itemSelect = el('select', { onchange: e => { boRegState.itemId = Number(e.target.value); } },
@@ -1052,6 +1098,9 @@ async function submitBoRegister() {
         body.equipType = boRegState.equipType;
         body.equipId = boRegState.equipId;
         if (boRegState.levelSpecified) body.level = boRegState.level;
+    } else if (kind === 'pet') {
+        if (boRegState.petId < 0) return alert('펫을 선택해주세요.');
+        body.petId = boRegState.petId;
     } else {
         if (boRegState.itemId < 0) return alert('아이템을 선택해주세요.');
         body.itemId = boRegState.itemId;

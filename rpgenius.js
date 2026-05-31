@@ -4503,6 +4503,18 @@ function isPetExpired(pet) {
     return !!(pet && pet.expireAt && Date.now() >= Number(pet.expireAt));
 }
 
+function isPetTradable(pet) {
+    return !!pet && Number(pet.tradeCount || 0) > 0;
+}
+
+function markPetTraded(pet) {
+    if (pet) {
+        pet.tradeCount = Math.max(0, Number(pet.tradeCount || 0) - 1);
+        delete pet.shortcuts;
+    }
+    return pet;
+}
+
 function isPetEffectActive(pet) {
     return !!pet && !isPetExpired(pet);
 }
@@ -8619,6 +8631,10 @@ module.exports = {
     getActivePetSetEffects,
     formatEquipmentStatLines,
     applyPetRegen,
+    clonePetInstance,
+    addPetInventory,
+    isPetTradable,
+    markPetTraded,
     formatUserCard,
     formatEquipmentInfo,
     formatInventory,

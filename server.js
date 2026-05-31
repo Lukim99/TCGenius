@@ -1703,6 +1703,15 @@ function buildTradeLogPayload(entry) {
             payload: Object.assign({}, entry.payload || {})
         };
     }
+    if (entry.kind == 'pet') {
+        const data = rpgenius.getPetData(entry.payload && entry.payload.id);
+        return {
+            kindLabel: '펫',
+            name: data ? data.name : '알 수 없는 펫',
+            rarity: data ? data.rarity : null,
+            payload: Object.assign({}, entry.payload || {})
+        };
+    }
     return { kindLabel: entry.kind || '?', name: '알 수 없음', payload: entry.payload || {} };
 }
 
@@ -1814,6 +1823,14 @@ function describeAuctionPayload(entry) {
             itemType: data ? data.type : ''
         };
     }
+    if (entry.kind == 'pet') {
+        const data = rpgenius.getPetData(entry.payload && entry.payload.id);
+        return {
+            name: data ? data.name : '알 수 없는 펫',
+            sub: data ? (data.rarity + ' · 펫') : '펫',
+            rarity: data ? data.rarity : ''
+        };
+    }
     return { name: '알 수 없음', sub: '' };
 }
 
@@ -1857,6 +1874,11 @@ function serializeAuctionEntry(entry, currentUserName) {
         const assets = getItemDisplayAssets(item);
         frameUrl = assets.frameUrl;
         iconUrl = assets.iconUrl;
+    } else if (entry.kind == 'pet') {
+        const data = rpgenius.getPetData(entry.payload && entry.payload.id);
+        frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
+        iconUrl = getPetIconUrl(data);
+        if (data) statLines = buildPetTradeDisplay(data, entry.payload || {});
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
@@ -1928,7 +1950,23 @@ function buildSellableAssets(user) {
         })
         .filter(Boolean);
     const items = buildInventoryItems(user).filter(item => !item.noTrade);
-    return { cards, equipment, items };
+    const pets = (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : [])
+        .map((pet, index) => {
+            if (!rpgenius.isPetTradable(pet)) return null;
+            const data = rpgenius.getPetData(pet.id);
+            if (!data) return null;
+            return {
+                index,
+                id: Number(pet.id),
+                name: data.name,
+                rarity: data.rarity,
+                level: Number(pet.level || 0),
+                tradeCount: Number(pet.tradeCount || 0),
+                statLines: buildPetTradeDisplay(data, pet)
+            };
+        })
+        .filter(Boolean);
+    return { cards, equipment, items, pets };
 }
 
 function countUserAuctions(items, name) {
@@ -1939,12 +1977,13 @@ async function registerAuction(sellerName, body) {
     const kind = String(body.kind || '');
     const currency = String(body.currency || '');
     const price = Math.floor(Number(body.price || 0));
-    if (!['card', 'equipment', 'item'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (!['card', 'equipment', 'item', 'pet'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
     if (!['gold', 'garnet'].includes(currency)) return { error: '가격 화폐는 골드 또는 가넷이어야 합니다.' };
     if (!Number.isInteger(price) || price < 1 || price > AUCTION_MAX_PRICE) return { error: '가격은 1 이상의 정수여야 합니다.' };
 
     const user = await rpgenius.getRPGUserByName(sellerName);
     if (!user) return { error: '유저를 찾을 수 없습니다.' };
+    ensureInventoryShape(user);
     const list = await getAuctionList();
     if (countUserAuctions(list, sellerName) >= AUCTION_MAX_PER_USER) return { error: '경매 등록은 최대 ' + AUCTION_MAX_PER_USER + '건까지 가능합니다.' };
 
@@ -1980,6 +2019,17 @@ async function registerAuction(sellerName, body) {
         if (have < count) return { error: '보유 수량이 부족합니다. (보유 ' + have + ')' };
         if (!rpgenius.removeInventoryItem(user, itemId, count)) return { error: '아이템 차감에 실패했습니다.' };
         payload = { id: itemId };
+    } else if (kind == 'pet') {
+        const index = Number(body.index);
+        if (!Number.isInteger(index) || index < 0) return { error: '펫을 선택해주세요.' };
+        const pets = (user.inventory && user.inventory.pet) || [];
+        if (!pets[index]) return { error: '존재하지 않는 펫입니다.' };
+        const pet = pets[index];
+        if (!rpgenius.getPetData(pet.id)) return { error: '잘못된 펫 데이터입니다.' };
+        if (!rpgenius.isPetTradable(pet)) return { error: '거래 가능 횟수가 0인 펫은 판매 등록할 수 없습니다.' };
+        payload = rpgenius.clonePetInstance(pet);
+        delete payload.shortcuts;
+        pets.splice(index, 1);
     }
 
     const entry = {
@@ -2000,10 +2050,20 @@ async function registerAuction(sellerName, body) {
 }
 
 function ensureInventoryShape(user) {
-    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
     if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
     if (!Array.isArray(user.inventory.item)) user.inventory.item = [];
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+}
+
+function buildPetTradeDisplay(petData, pet) {
+    const statText = rpgenius.formatEquipmentBaseStatLines(petData, Number(pet && pet.level || 0));
+    const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+    (rpgenius.formatPetSpecialLines(rpgenius.normalizePetSpecial(petData)) || []).forEach(l => statLines.push(l.replace(/^-\s*/, '')));
+    if (petData && petData.set) statLines.push('세트: ' + petData.set);
+    if (pet && typeof pet.tradeCount != 'undefined') statLines.push('남은 거래 가능 횟수: ' + comma(Number(pet.tradeCount || 0)));
+    return statLines;
 }
 
 async function buyAuction(buyerName, auctionId, buyCountArg) {
@@ -2062,6 +2122,9 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
+    } else if (entry.kind == 'pet') {
+        const petEntry = rpgenius.markPetTraded(rpgenius.clonePetInstance(entry.payload));
+        buyer.inventory.pet.push(petEntry);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -2138,6 +2201,8 @@ async function cancelAuction(userName, auctionId) {
         user.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
+    } else if (entry.kind == 'pet') {
+        user.inventory.pet.push(rpgenius.clonePetInstance(entry.payload));
     }
 
     list.splice(index, 1);
@@ -2207,6 +2272,14 @@ function describeBuyOrderPayload(entry) {
             itemType: data ? data.type : ''
         };
     }
+    if (entry.kind == 'pet') {
+        const data = rpgenius.getPetData(entry.payload && entry.payload.id);
+        return {
+            name: data ? data.name : '알 수 없는 펫',
+            sub: data ? (data.rarity + ' · 펫') : '펫',
+            rarity: data ? data.rarity : ''
+        };
+    }
     return { name: '알 수 없음', sub: '' };
 }
 
@@ -2232,6 +2305,10 @@ function serializeBuyOrderEntry(entry, currentUserName) {
         const assets = getItemDisplayAssets(item);
         frameUrl = assets.frameUrl;
         iconUrl = assets.iconUrl;
+    } else if (entry.kind == 'pet') {
+        const data = rpgenius.getPetData(entry.payload && entry.payload.id);
+        frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
+        iconUrl = getPetIconUrl(data);
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
@@ -2274,7 +2351,7 @@ async function registerBuyOrder(buyerName, body) {
     const currency = String(body.currency || '');
     const price = Math.floor(Number(body.price || 0));
     const count = Math.floor(Number(body.count || 1));
-    if (!['card', 'equipment', 'item'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (!['card', 'equipment', 'item', 'pet'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
     if (!['gold', 'garnet'].includes(currency)) return { error: '가격 화폐는 골드 또는 가넷이어야 합니다.' };
     if (!Number.isInteger(price) || price < 1 || price > AUCTION_MAX_PRICE) return { error: '가격은 1 이상의 정수여야 합니다.' };
     if (!Number.isInteger(count) || count < 1) return { error: '갯수는 1 이상의 정수여야 합니다.' };
@@ -2318,6 +2395,10 @@ async function registerBuyOrder(buyerName, body) {
         if (!itemData) return { error: '존재하지 않는 아이템입니다.' };
         if (itemData.no_trade === true) return { error: '거래 불가 아이템은 구매 등록할 수 없습니다.' };
         payload = { id: itemId };
+    } else if (kind == 'pet') {
+        const petId = Number(body.petId);
+        if (!Number.isInteger(petId) || petId < 0 || !rpgenius.getPetData(petId)) return { error: '존재하지 않는 펫입니다.' };
+        payload = { id: petId };
     }
 
     const totalPrice = price * count;
@@ -2398,6 +2479,13 @@ function matchBuyOrderEquipment(entry, eq) {
     return true;
 }
 
+function matchBuyOrderPet(entry, pet) {
+    if (!pet || entry.kind != 'pet') return false;
+    if (Number(pet.id) != Number(entry.payload.id)) return false;
+    if (!rpgenius.isPetTradable(pet)) return false;
+    return true;
+}
+
 async function fulfillBuyOrder(sellerName, orderId, body) {
     if (!orderId) return { error: '구매 등록 ID가 비어있습니다.' };
     const list = await getBuyOrderList();
@@ -2458,6 +2546,15 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         if (have < sellCount) return { error: '판매 수량이 부족합니다. (보유 ' + have + ')' };
         if (!rpgenius.removeInventoryItem(seller, itemId, sellCount)) return { error: '아이템 차감에 실패했습니다.' };
         rpgenius.addInventoryItem(buyer, itemId, sellCount);
+    } else if (entry.kind == 'pet') {
+        const pets = (seller.inventory && seller.inventory.pet) || [];
+        const index = Number(body.index);
+        if (!Number.isInteger(index) || index < 0 || !pets[index]) return { error: '판매할 펫을 선택해주세요.' };
+        const pet = pets[index];
+        if (!matchBuyOrderPet(entry, pet)) return { error: '이 펫은 구매 등록 조건에 맞지 않거나 거래 가능 횟수가 0입니다.' };
+        const transferred = rpgenius.markPetTraded(rpgenius.clonePetInstance(pet));
+        pets.splice(index, 1);
+        buyer.inventory.pet.push(transferred);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -2511,11 +2608,13 @@ function buildBuyOrderLookups() {
         support: pack(equipments.support)
     };
     const itemList = items.map((it, id) => it && it.no_trade !== true ? { id, name: it.name, type: it.type } : null).filter(Boolean);
-    return { cards: cardList, equipment: equipmentList, items: itemList };
+    const pets = rpgenius.getDataCache('Pet', []);
+    const petList = (Array.isArray(pets) ? pets : []).map((p, id) => p ? { id, name: p.name, rarity: p.rarity } : null).filter(Boolean);
+    return { cards: cardList, equipment: equipmentList, items: itemList, pets: petList };
 }
 
 function buildFulfillableAssets(user, entry) {
-    const result = { cards: [], equipment: [], itemCount: 0 };
+    const result = { cards: [], equipment: [], itemCount: 0, pets: [] };
     if (!entry) return result;
     if (entry.kind == 'card') {
         const cards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []);
@@ -2551,6 +2650,22 @@ function buildFulfillableAssets(user, entry) {
     } else if (entry.kind == 'item') {
         const itemId = Number(entry.payload && entry.payload.id);
         result.itemCount = rpgenius.getInventoryItemCount(user, itemId);
+    } else if (entry.kind == 'pet') {
+        const pets = (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : []);
+        pets.forEach((pet, index) => {
+            if (!matchBuyOrderPet(entry, pet)) return;
+            const data = rpgenius.getPetData(pet.id);
+            if (!data) return;
+            result.pets.push({
+                index,
+                id: Number(pet.id),
+                name: data.name,
+                rarity: data.rarity,
+                level: Number(pet.level || 0),
+                tradeCount: Number(pet.tradeCount || 0),
+                statLines: buildPetTradeDisplay(data, pet)
+            });
+        });
     }
     return result;
 }
@@ -2703,10 +2818,10 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
     <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button></div></div><div id="viewer" class="viewer"></div></section>
   </div>
-  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
   <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character">캐릭터 카드</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
-  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
+  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
