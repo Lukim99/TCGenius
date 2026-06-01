@@ -3816,7 +3816,7 @@ client.on('chat', async (data, channel) => {
                 channel.sendChat('✅ 코드 인식 정상');
                 try {
                     const { data: wolyadice } = await supabase
-                        .from('wolyadice')
+                        .from('wolyadice_user')
                         .select('wait')
                         .single();
                     if (!wolyadice?.wait) return;
