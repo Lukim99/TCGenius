@@ -3818,7 +3818,7 @@ client.on('chat', async (data, channel) => {
                         .from('wolyadice_user')
                         .select('id, code')
                         .eq('code', msg)
-                        .gt('wait_expired', new Date().toISOString());
+                        .gt('code_expires_at', new Date().toISOString());
                     if (!error && users && users.length > 0) {
                         const user = users[0];
                         await supabase
