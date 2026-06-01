@@ -3813,13 +3813,20 @@ client.on('chat', async (data, channel) => {
 
         if (channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
-                channel.sendChat('✅ 코드 인식 정상');
                 try {
-                    const { data: wolyadice } = await supabase
+                    const { data: wolyadice, error } = await supabase
                         .from('wolyadice_user')
                         .select('wait')
                         .single();
-                    if (!wolyadice?.wait) return;
+                    if (error) {
+                        console.error('wolyadice 인증 오류:', error);
+                        channel.sendChat('❌ 서버 오류가 발생했습니다.');
+                        return;
+                    }
+                    if (!wolyadice?.wait) {
+                        channel.sendChat('❌ 현재 인증이 불가능한 상태입니다.');
+                        return;
+                    }
                     const { data: users, error } = await supabase
                         .from('wolyadice_user')
                         .select('id, code')
