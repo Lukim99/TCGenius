@@ -4265,7 +4265,7 @@ function getEquipmentTradeBlockReason(equip, ownerName) {
     const data = getEquipmentData(type, equip && equip.id);
     if (!data) return '잘못된 장비 데이터입니다.';
     if (data.no_trade) return '거래 불가 장비입니다.';
-    if (isEquipmentBindingEnabled() && equip.boundOwner) return '귀속된 장비입니다. 가위 아이템으로 귀속을 해제해야 거래할 수 있습니다.';
+    if (isEquipmentBindingEnabled() && equip.boundOwner) return '귀속된 장비입니다. 귀속 해제의 주문서로 귀속을 해제해야 거래할 수 있습니다.';
     if (isEquipmentTradeCountLimited(data.rarity) && Number(equip.tradeCount || 0) >= EQUIPMENT_TRADE_MAX_COUNT) return '거래 횟수가 ' + EQUIPMENT_TRADE_MAX_COUNT + '회에 도달한 장비입니다.';
     return null;
 }
