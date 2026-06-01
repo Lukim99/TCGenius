@@ -3825,6 +3825,10 @@ client.on('chat', async (data, channel) => {
                             .update({ authorized: true, code: generateCode() })
                             .eq('id', user.id);
                         channel.sendChat('✅ 월야의 주사위 인증이 완료되었습니다. 페이지로 돌아가세요.');
+                    } else if (error) {
+                        console.log('wolyadice 인증 오류:', error);
+                    } else {
+                        console.log('wolyadice 인증 실패: 코드가 유효하지 않음');
                     }
                 } catch (e) {
                     console.log('wolyadice 인증 오류:', e);
