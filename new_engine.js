@@ -3814,23 +3814,11 @@ client.on('chat', async (data, channel) => {
         if (channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
                 try {
-                    const { data: wolyadice, werror } = await supabase
-                        .from('wolyadice_user')
-                        .select('wait')
-                        .single();
-                    if (werror) {
-                        console.error('wolyadice 인증 오류:', werror);
-                        channel.sendChat('❌ 서버 오류가 발생했습니다.');
-                        return;
-                    }
-                    if (!wolyadice?.wait) {
-                        channel.sendChat('❌ 현재 인증이 불가능한 상태입니다.');
-                        return;
-                    }
                     const { data: users, error } = await supabase
                         .from('wolyadice_user')
                         .select('id, code')
-                        .eq('code', msg);
+                        .eq('code', msg)
+                        .gt('wait_expired', new Date().toISOString());
                     if (!error && users && users.length > 0) {
                         const user = users[0];
                         await supabase
