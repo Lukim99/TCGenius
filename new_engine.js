@@ -3814,6 +3814,11 @@ client.on('chat', async (data, channel) => {
         if (channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
                 try {
+                    const { data: wolyadice } = await supabase
+                        .from('wolyadice')
+                        .select('wait')
+                        .single();
+                    if (!wolyadice?.wait) return;
                     const { data: users, error } = await supabase
                         .from('wolyadice_user')
                         .select('id, code')
