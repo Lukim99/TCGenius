@@ -3814,12 +3814,12 @@ client.on('chat', async (data, channel) => {
         if (channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
                 try {
-                    const { data: wolyadice, error } = await supabase
+                    const { data: wolyadice, werror } = await supabase
                         .from('wolyadice_user')
                         .select('wait')
                         .single();
-                    if (error) {
-                        console.error('wolyadice 인증 오류:', error);
+                    if (werror) {
+                        console.error('wolyadice 인증 오류:', werror);
                         channel.sendChat('❌ 서버 오류가 발생했습니다.');
                         return;
                     }
