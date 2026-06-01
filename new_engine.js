@@ -23,6 +23,7 @@ const supabase = createClient(
 const keepAlive = require('./server.js');
 const { TalkClient, AuthApiClient, xvc, KnownAuthStatusCode, util, AttachmentApi } = require("node-kakao");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const generateCode = () => Array.from({length: 6}, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 36)]).join('');
 const VIEWMORE = ('\u200e'.repeat(500));
 
 const PROXY_CONFIG = {
@@ -3807,6 +3808,27 @@ client.on('chat', async (data, channel) => {
                 });
             } catch (e) {
                 console.error(e);
+            }
+        }
+
+        if (channel.channelId + '' === '18436121437302863') {
+            if (/^[A-Z0-9]{6}$/.test(msg)) {
+                try {
+                    const { data: users, error } = await supabase
+                        .from('wolyadice_user')
+                        .select('id, code')
+                        .eq('code', msg);
+                    if (!error && users && users.length > 0) {
+                        const user = users[0];
+                        await supabase
+                            .from('wolyadice_user')
+                            .update({ authorized: true, code: generateCode() })
+                            .eq('id', user.id);
+                        channel.sendChat('✅ 월야의 주사위 인증이 완료되었습니다. 페이지로 돌아가세요.');
+                    }
+                } catch (e) {
+                    console.log('wolyadice 인증 오류:', e);
+                }
             }
         }
 
