@@ -3813,6 +3813,7 @@ client.on('chat', async (data, channel) => {
 
         if (channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
+                channel.sendChat('✅ 코드 인식 정상');
                 try {
                     const { data: wolyadice } = await supabase
                         .from('wolyadice')
