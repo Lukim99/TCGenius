@@ -384,6 +384,47 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/combine/cards', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json({ cards: buildCombineCards(user), meta: buildCombineMeta(user) });
+    } catch (e) {
+        console.error('combine cards error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/combine', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(n => Number(n)) : [];
+        const protectIndex = req.body && req.body.protectIndex != null ? Number(req.body.protectIndex) : null;
+        const selection = rpgenius.getCardCombineSelection(user, numbers);
+        if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
+        const pending = { type: '카드조합', numbers: selection.numbers };
+        if (Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3) {
+            if (rpgenius.getProtectItemIdForCardStar(user, selection.star) == -1) return res.status(400).json({ error: '사용할 수 있는 보호 카드가 없습니다.' });
+            pending.protectIndex = protectIndex;
+        }
+        user.pendingAction = pending;
+        const message = rpgenius.runCardCombine(user);
+        if (typeof message == 'string' && message.startsWith('❌')) {
+            user.pendingAction = null;
+            return res.status(400).json({ error: message.replace(/^❌\s*/, '') });
+        }
+        const cardsArr = user.inventory.card;
+        const resultCard = serializeCard(cardsArr[cardsArr.length - 1], user);
+        const success = !!(resultCard && Number(resultCard.star) > Number(selection.star));
+        await user.save();
+        res.json({ ok: true, message, success, resultCard, cards: buildCombineCards(user), meta: buildCombineMeta(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('combine error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 function getEquipmentActionBlockedReason(user) {
     if (user && user.field && user.field.name) {
         return user.field.worldBoss ? '월드보스 전투 중에는 장비를 변경할 수 없습니다.' : '사냥 중에는 장비를 변경할 수 없습니다.';
@@ -707,6 +748,16 @@ server.get('/item-image', requireUser, (req, res) => {
     const dirPath = path.join(ITEM_IMAGE_PATH, dir);
     const filePath = path.join(dirPath, file);
     if (!filePath.startsWith(dirPath) || !fs.existsSync(filePath)) return res.status(404).end();
+    res.sendFile(filePath);
+});
+
+const COMBINE_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '조합');
+
+server.get('/combine-ui', requireUser, (req, res) => {
+    const file = String(req.query.file || '');
+    if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
+    const filePath = path.join(COMBINE_UI_PATH, file);
+    if (!filePath.startsWith(COMBINE_UI_PATH) || !fs.existsSync(filePath)) return res.status(404).end();
     res.sendFile(filePath);
 });
 
@@ -1353,6 +1404,42 @@ function buildInventoryCards(user) {
     return (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [])
         .map(card => serializeCard(card, user))
         .filter(Boolean);
+}
+
+function buildCombineCards(user) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards.map((card, i) => {
+        const s = serializeCard(card, user);
+        if (!s) return null;
+        const star = Number(card.star || 0);
+        return {
+            number: i + 1,
+            id: s.id,
+            star,
+            starText: s.starText,
+            name: s.name,
+            formatted: s.formatted,
+            imageUrl: s.imageUrl,
+            combinable: !!rpgenius.getCardCombineInfo(star)
+        };
+    }).filter(Boolean).sort((a, b) => b.star - a.star || a.id - b.id);
+}
+
+function buildCombineMeta(user) {
+    const table = {};
+    const protect = {};
+    for (let star = 0; star <= 11; star++) {
+        const info = rpgenius.getCardCombineInfo(star);
+        if (!info) continue;
+        table[star] = {
+            rate: info.rate,
+            gold: info.gold,
+            guarantee: rpgenius.getCardCombineGuaranteeCount(star) || 0,
+            count: rpgenius.getCardCombineCount(user, 'card', star)
+        };
+        protect[star] = rpgenius.getProtectItemIdForCardStar(user, star) != -1;
+    }
+    return { table, protect, gold: Number(user.gold || 0) };
 }
 
 function getEquipmentData(type, id) {
@@ -2814,6 +2901,36 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .pet-set-tier-label{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
 .pet-set-tier-lines{display:grid;gap:2px;color:#dcfce7}
 .equip-thumb.pet-expired .icon{filter:grayscale(1) brightness(.6)}
+.combine-board{position:sticky;top:74px;z-index:1;align-self:start}
+@media(min-width:900px){.page[data-page="combine"]{grid-template-columns:minmax(340px,520px) 1fr;align-items:start}}
+.combine-wrap{display:grid;gap:14px;justify-items:center}
+.combine-stage{position:relative;width:min(560px,96%);aspect-ratio:878/898;background-size:contain;background-repeat:no-repeat;background-position:center}
+.combine-slot{position:absolute;cursor:pointer}
+.combine-slot .slot-card{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+.combine-slot.lucky{left:38.5%;top:2.2%;width:21.7%;height:29%}
+.combine-slot.result{left:38.5%;top:31.27%;width:21.7%;height:29%}
+.combine-slot.m0{left:8.8%;top:52.1%;width:21.7%;height:29%}
+.combine-slot.m1{left:38.4%;top:60.5%;width:21.7%;height:29%}
+.combine-slot.m2{left:68.4%;top:52.1%;width:21.7%;height:29%}
+.combine-slot.empty .slot-card{display:none}
+.combine-slot.clickable:hover .slot-card{filter:brightness(1.12) drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+.combine-btn{position:absolute;left:37.7%;top:91.6%;width:23.4%;height:8%;border:0;background:transparent;background-size:contain;background-repeat:no-repeat;background-position:center;cursor:pointer;padding:0}
+.combine-btn:disabled{opacity:.45;cursor:not-allowed}
+.combine-btn:hover{background-color:transparent;background-size:contain;background-repeat:no-repeat;background-position:center}
+.combine-effect{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:10;pointer-events:none}
+.combine-info{font-size:13px;color:#cbd5e1;text-align:center;min-height:20px;line-height:1.6;display:flex;flex-direction:column;align-items:center;gap:4px}
+.combine-result{display:inline-flex;flex-direction:column;align-items:center;gap:8px;padding:14px 22px;border-radius:16px;border:1px solid;animation:combinePop .3s ease}
+.combine-result.ok{background:linear-gradient(135deg,rgba(251,191,36,.2),rgba(88,101,242,.16));border-color:rgba(251,191,36,.55);box-shadow:0 8px 30px rgba(251,191,36,.18);color:#fde68a}
+.combine-result.fail{background:rgba(2,6,23,.55);border-color:rgba(148,163,184,.28);color:#cbd5e1}
+.combine-result-head{font-size:17px;font-weight:900;letter-spacing:.02em}
+.combine-result-card{display:flex;align-items:center;gap:10px}
+.combine-result-img{width:46px;aspect-ratio:3/4;object-fit:cover;border-radius:6px;border:2px solid rgba(2,6,23,.6);box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.combine-result-name{font-size:14px;font-weight:800;color:#f8fafc}
+.combine-result-note{font-size:12px;color:#94a3b8;line-height:1.4}
+@keyframes combinePop{from{opacity:0;transform:translateY(8px) scale(.95)}to{opacity:1;transform:none}}
+.combine-pool-card{cursor:pointer;position:relative}
+.combine-pool-card.disabled{opacity:.32;filter:grayscale(.7);cursor:not-allowed}
+.combine-pool-card.selected{outline:2px solid #fbbf24;border-radius:14px}
 .pot-block{margin-top:12px;padding:12px 14px;background:rgba(2,6,23,.5);border:2px solid var(--pot-tier,#94a3b8);border-radius:12px;box-shadow:0 0 14px -4px var(--pot-tier,#94a3b8) inset}
 .pot-title{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--pot-tier,#e5e7eb);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 .pot-title .pot-tier-label{padding:2px 8px;background:rgba(255,255,255,.06);border:1px solid var(--pot-tier,#94a3b8);border-radius:999px;font-size:11px;color:var(--pot-tier,#e5e7eb)}
@@ -2849,7 +2966,7 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
 .search-input{padding:8px 10px;background:#0b0d12;border:1px solid #334155;border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px}.search-input:focus{border-color:#5865f2}
 @media(max-width:520px){header{padding:10px 8px;gap:6px}h1{font-size:clamp(16px,5vw,20px)}.top-left{gap:6px}.nav{left:8px;right:8px}.nav-btn,.nav-action{padding:10px 12px;font-size:13px}.nav-toggle{width:36px;height:36px;font-size:20px}.bar{gap:6px}.who{max-width:34vw;font-size:clamp(10px,2.8vw,12px)}.search-input{flex:1;min-width:0}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="nav" id="topNav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="auction">팝니다</button><button class="nav-btn" data-page="buyorder">삽니다</button>${sess.canPartyQuest ? '<button class="nav-btn" data-page="party">파티 퀘스트</button>' : ''}<button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button><button id="adminLink" class="nav-action primary" style="display:none">관리자</button><button id="logout" class="nav-action">로그아웃</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button class="nav-toggle" id="navToggle" aria-label="메뉴" aria-expanded="false">☰</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="nav" id="topNav"><button class="nav-btn active" data-page="info">정보</button><button class="nav-btn" data-page="inventory">인벤토리</button><button class="nav-btn" data-page="combine">조합</button><button class="nav-btn" data-page="auction">팝니다</button><button class="nav-btn" data-page="buyorder">삽니다</button>${sess.canPartyQuest ? '<button class="nav-btn" data-page="party">파티 퀘스트</button>' : ''}<button class="nav-btn" data-page="ranking">랭킹</button><button class="nav-btn" data-page="dex">도감</button><button class="nav-btn" data-page="patchnotes">패치노트</button><button id="adminLink" class="nav-action primary" style="display:none">관리자</button><button id="logout" class="nav-action">로그아웃</button></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button class="nav-toggle" id="navToggle" aria-label="메뉴" aria-expanded="false">☰</button></div></header>
 <main id="app">
   <div class="page active" data-page="info">
     <div id="profileBanner" class="profile-banner" style="display:none"><span id="profileBannerText"></span><button id="profileBackBtn" class="primary">내 정보로 돌아가기</button></div>
@@ -2863,6 +2980,15 @@ h2{margin:0 0 14px;font-size:17px}.grid{display:grid;grid-template-columns:repea
   <div class="page" data-page="inventory">
     <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
     <section class="panel"><div class="bar" style="justify-content:space-between;margin-bottom:14px"><h2 id="viewerTitle" style="margin:0">인벤토리</h2><div class="actions"><button class="view-btn" data-kind="items">인벤토리</button><button class="view-btn" data-kind="cards">보유 캐릭터 카드</button><button class="view-btn" data-kind="equipment">보유 장비</button><button class="view-btn" data-kind="pet">보유 펫</button></div></div><div id="viewer" class="viewer"></div></section>
+  </div>
+  <div class="page" data-page="combine">
+    <section class="panel combine-board">
+      <div class="combine-wrap">
+        <div class="combine-stage" id="combineStage"></div>
+        <div class="combine-info" id="combineInfo"></div>
+      </div>
+    </section>
+    <section class="panel"><h2>보유 캐릭터 카드</h2><div id="combinePool" class="card-grid"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>

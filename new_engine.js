@@ -3819,7 +3819,7 @@ client.on('chat', async (data, channel) => {
                         .select('id, code')
                         .eq('code', msg)
                         .gt('code_expires_at', new Date().toISOString());
-                    console.log('wolyadice 쿼리 결과:', JSON.stringify({ users, error }));
+                    console.log('wolyadice 쿼리 결과:', JSON.stringify({ users, error, msg, msgLen: msg.length, msgCodes: [...msg].map(c => c.charCodeAt(0)) }));
                     if (!error && users && users.length > 0) {
                         const user = users[0];
                         await supabase

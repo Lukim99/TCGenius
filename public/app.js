@@ -87,6 +87,7 @@ $$('.nav-btn').forEach(btn => btn.onclick = () => {
         if (!btn.dataset.loaded) btn.dataset.loaded = '1';
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
+    if (btn.dataset.page === 'combine') loadCombine();
     if (btn.dataset.page === 'auction') loadAuctions();
     if (btn.dataset.page === 'buyorder') loadBuyOrders();
     if (btn.dataset.page === 'ranking') loadRanking();
@@ -410,6 +411,223 @@ async function loadInventory(kind) {
 }
 
 $$('.view-btn').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
+
+// ===== 조합 =====
+
+let combineState = { cards: [], meta: { table: {}, protect: {}, gold: 0 }, slots: [null, null, null], protectIndex: null, result: null, busy: false, built: false, slotEls: null };
+
+function combineUi(file) { return '/combine-ui?file=' + encodeURIComponent(file); }
+
+function combineGrade() {
+    const filled = combineState.slots.find(Boolean);
+    return filled ? filled.star : null;
+}
+
+function buildCombineStage() {
+    const stage = $('#combineStage');
+    if (!stage) return;
+    stage.style.backgroundImage = 'url(' + combineUi('원본.png') + ')';
+    const mkSlot = (cls) => el('div', { class: 'combine-slot ' + cls + ' empty' },
+        el('img', { class: 'slot-card', alt: '' })
+    );
+    const lucky = mkSlot('lucky');
+    const result = mkSlot('result');
+    const m = [mkSlot('m0'), mkSlot('m1'), mkSlot('m2')];
+    lucky.classList.add('clickable');
+    lucky.onclick = onLuckyClick;
+    m.forEach((slot, i) => slot.onclick = () => removeFromSlotByIndex(i));
+    const btn = el('button', { class: 'combine-btn', id: 'combineBtn', onclick: submitCombine });
+    btn.style.backgroundImage = 'url(' + combineUi('조합버튼.png') + ')';
+    const effect = el('img', { class: 'combine-effect', id: 'combineEffect', alt: '', style: 'display:none' });
+    stage.replaceChildren(lucky, result, m[0], m[1], m[2], btn, effect);
+    combineState.slotEls = { lucky, result, m };
+    combineState.built = true;
+}
+
+function renderCombineStage() {
+    if (!combineState.built) buildCombineStage();
+    const els = combineState.slotEls;
+    if (!els) return;
+    combineState.slots.forEach((card, i) => {
+        const slot = els.m[i];
+        const img = slot.querySelector('.slot-card');
+        slot.classList.add('clickable');
+        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); }
+        else { img.removeAttribute('src'); slot.classList.add('empty'); }
+    });
+    const limg = els.lucky.querySelector('.slot-card');
+    if (combineState.protectIndex != null && combineState.slots[combineState.protectIndex]) {
+        limg.src = combineUi((combineState.slots[combineState.protectIndex].star + 1) + '성 보호카드.png');
+        els.lucky.classList.remove('empty');
+    } else { limg.removeAttribute('src'); els.lucky.classList.add('empty'); }
+    const rimg = els.result.querySelector('.slot-card');
+    if (combineState.result) { rimg.src = combineState.result.imageUrl; els.result.classList.remove('empty'); }
+    else { rimg.removeAttribute('src'); els.result.classList.add('empty'); }
+    const btn = $('#combineBtn');
+    if (btn) btn.disabled = !(combineState.slots.every(Boolean) && !combineState.busy);
+    renderCombineInfo();
+    renderCombinePool();
+}
+
+function renderCombineInfo() {
+    const info = $('#combineInfo');
+    if (!info) return;
+    const grade = combineGrade();
+    const filled = combineState.slots.filter(Boolean).length;
+    if (grade == null) { info.textContent = '같은 등급의 캐릭터 카드 3장을 선택하세요.'; return; }
+    const t = combineState.meta.table[grade];
+    const lines = [];
+    if (t) {
+        let s = (grade + 1) + '성 조합 · 성공 확률 ' + (Math.round(t.rate * 1000) / 10) + '% · 필요 골드 🪙 ' + comma(t.gold);
+        if (t.guarantee) s += ' · 보정 ' + comma(t.count) + '/' + comma(t.guarantee);
+        lines.push(s);
+    } else lines.push('이 등급은 조합할 수 없습니다.');
+    lines.push('선택 ' + filled + '/3' + (combineState.protectIndex != null ? ' · 🛡️ ' + (combineState.protectIndex + 1) + '번째 재료 보호' : ''));
+    info.replaceChildren(...lines.map(l => el('div', null, l)));
+}
+
+function renderCombinePool() {
+    const pool = $('#combinePool');
+    if (!pool) return;
+    if (!combineState.cards.length) { pool.replaceChildren(el('div', { class: 'empty' }, '보유한 캐릭터 카드가 없습니다.')); return; }
+    const grade = combineGrade();
+    const used = new Set(combineState.slots.filter(Boolean).map(c => c.number));
+    pool.replaceChildren(...combineState.cards.map(card => {
+        const selected = used.has(card.number);
+        const disabled = !selected && (!card.combinable || (grade != null && card.star != grade));
+        const node = cardNode(card, true, null);
+        node.classList.add('combine-pool-card');
+        if (selected) node.classList.add('selected');
+        else if (disabled) node.classList.add('disabled');
+        node.onclick = () => {
+            if (combineState.busy) return;
+            if (selected) removeFromSlotByNumber(card.number);
+            else if (!disabled) addCardToSlot(card);
+        };
+        return node;
+    }));
+}
+
+function addCardToSlot(card) {
+    const grade = combineGrade();
+    if (!card.combinable) { alert('이 등급은 조합할 수 없습니다.'); return; }
+    if (grade != null && card.star != grade) { alert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (combineState.slots.some(c => c && c.number === card.number)) return;
+    const idx = combineState.slots.findIndex(c => !c);
+    if (idx === -1) { alert('재료 슬롯이 가득 찼습니다.'); return; }
+    combineState.slots[idx] = card;
+    combineState.result = null;
+    renderCombineStage();
+}
+
+function removeFromSlotByIndex(i) {
+    if (combineState.busy || !combineState.slots[i]) return;
+    combineState.slots[i] = null;
+    if (combineState.protectIndex === i) combineState.protectIndex = null;
+    combineState.result = null;
+    renderCombineStage();
+}
+
+function removeFromSlotByNumber(number) {
+    const idx = combineState.slots.findIndex(c => c && c.number === number);
+    if (idx !== -1) removeFromSlotByIndex(idx);
+}
+
+function onLuckyClick() {
+    if (combineState.busy) return;
+    if (!combineState.slots.every(Boolean)) { alert('재료 카드 3장을 먼저 선택하세요.'); return; }
+    const grade = combineGrade();
+    if (!combineState.meta.protect[grade]) { alert('이 등급에 사용할 수 있는 보호 카드가 없습니다.'); return; }
+    openProtectModal(grade);
+}
+
+function openProtectModal(grade) {
+    openModal('보호 카드 사용', (grade + 1) + '성 · 조합 실패 시 보존할 재료를 선택하세요', []);
+    const body = $('#modalBody');
+    body.replaceChildren(el('img', { src: combineUi((grade + 1) + '성 보호카드.png'), alt: '', style: 'width:96px;display:block;margin:0 auto 14px' }));
+    combineState.slots.forEach((card, i) => {
+        const row = el('div', { class: 'stat-line', style: 'cursor:pointer;display:flex;align-items:center;gap:10px' },
+            card.imageUrl ? el('img', { src: card.imageUrl, alt: '', style: 'width:34px;border-radius:4px' }) : null,
+            el('span', null, (i + 1) + '번째 재료 · ' + card.formatted)
+        );
+        if (combineState.protectIndex === i) row.style.borderColor = '#fbbf24';
+        row.onclick = () => { combineState.protectIndex = i; closeModal(); renderCombineStage(); };
+        body.appendChild(row);
+    });
+    body.appendChild(el('button', { class: 'close', onclick: () => { combineState.protectIndex = null; closeModal(); renderCombineStage(); } }, '보호 사용 안 함'));
+}
+
+function playCombineEffect() {
+    const eff = $('#combineEffect');
+    if (!eff) return;
+    eff.src = combineUi('조합-이펙트.gif') + '&t=' + Date.now();
+    eff.style.display = '';
+    setTimeout(() => { eff.style.display = 'none'; }, 1500);
+}
+
+async function submitCombine() {
+    if (combineState.busy || !combineState.slots.every(Boolean)) return;
+    combineState.busy = true;
+    const btn = $('#combineBtn');
+    if (btn) btn.disabled = true;
+    const payload = { numbers: combineState.slots.map(c => c.number) };
+    if (combineState.protectIndex != null) payload.protectIndex = combineState.protectIndex;
+    try {
+        const data = await postApi('/api/combine', payload);
+        playCombineEffect();
+        setTimeout(() => {
+            combineState.cards = data.cards || [];
+            combineState.meta = data.meta || combineState.meta;
+            combineState.slots = [null, null, null];
+            combineState.protectIndex = null;
+            combineState.result = data.resultCard || null;
+            combineState.busy = false;
+            renderCombineStage();
+            if (data.profile) renderProfile(data.profile);
+            renderCombineResult(data);
+        }, 1500);
+    } catch (e) {
+        combineState.busy = false;
+        renderCombineStage();
+        alert(e.message);
+    }
+}
+
+function renderCombineResult(data) {
+    const info = $('#combineInfo');
+    if (!info) return;
+    const success = !!data.success;
+    const msg = typeof data.message === 'string' ? data.message : '';
+    const guaranteed = msg.indexOf('확정') !== -1;
+    const rc = data.resultCard;
+    const headline = guaranteed ? '⚜️ 확정 조합 성공!' : (success ? '🌟 조합 성공!' : '조합 완료');
+    const notes = msg.split('\n').filter(l => l.indexOf('🛡️') !== -1).map(l => l.replace(/^[-\s]*/, ''));
+    info.replaceChildren(el('div', { class: 'combine-result ' + (success ? 'ok' : 'fail') },
+        el('div', { class: 'combine-result-head' }, headline),
+        rc ? el('div', { class: 'combine-result-card' },
+            rc.imageUrl ? el('img', { class: 'combine-result-img', src: rc.imageUrl, alt: rc.formatted || rc.name }) : null,
+            el('div', { class: 'combine-result-name' }, rc.formatted || rc.name || '')
+        ) : null,
+        ...notes.map(n => el('div', { class: 'combine-result-note' }, n))
+    ));
+}
+
+async function loadCombine() {
+    try {
+        const data = await api('/api/combine/cards');
+        combineState.cards = data.cards || [];
+        combineState.meta = data.meta || { table: {}, protect: {}, gold: 0 };
+        combineState.slots = [null, null, null];
+        combineState.protectIndex = null;
+        combineState.result = null;
+        combineState.busy = false;
+        renderCombineStage();
+    } catch (e) {
+        combineState.built = false;
+        const stage = $('#combineStage');
+        if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
 
 // ===== 경매장 =====
 
