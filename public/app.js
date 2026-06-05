@@ -1591,7 +1591,7 @@ function renderHotDeal(data, body, tabRow) {
         el('div', { class: 'hd-header' },
             el('div', { class: 'hd-title' }, el('span', { class: 'hd-title-fire' }, '🔥'), '핫딜 SHOP', el('span', { class: 'hd-title-fire2' }, '🔥')),
             el('div', { class: 'hd-meta' },
-                el('div', { class: 'hd-sector-badge' }, data.sectorName),
+
                 el('div', { class: 'hd-countdown' }, countdownEl)
             )
         ),
