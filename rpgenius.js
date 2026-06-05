@@ -2624,7 +2624,6 @@ async function enterWorldBossField(user, boss, options, channel) {
     ensureWorldBossRevived(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
-        if (!state.rankRewardsDistributed) await grantWorldBossRankRewards(user, boss, state, null);
         const respawnAt = getWorldBossRespawnTimestamp(state);
         return '❌ ' + boss.name + '은(는) 현재 처치된 상태입니다.\n- 부활: ' + formatTimestampLocal(respawnAt);
     }
@@ -2902,7 +2901,8 @@ function ensureWorldBossRevived(boss) {
 function getWorldBossContributionRanking() {
     const totals = {};
     getWorldBossList().forEach(boss => {
-        const state = ensureWorldBossRevived(boss);
+        forceDefeatExpiredWorldBoss(boss);
+        const state = getWorldBossState(boss.name);
         Object.entries(state.contributions || {}).forEach(([name, damage]) => {
             const value = Number(damage || 0);
             if (value <= 0) return;
@@ -3019,8 +3019,10 @@ async function grantWorldBossRankRewards(defeater, boss, state, lines) {
         }
         grantedUsers++;
     }
-    state.rankRewardsDistributed = true;
-    persistWorldBossState();
+    if (grantedUsers > 0) {
+        state.rankRewardsDistributed = true;
+        persistWorldBossState();
+    }
     return grantedUsers;
 }
 
@@ -3424,11 +3426,9 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
     forceDefeatExpiredWorldBoss(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
-        const lines = ['❌ ' + boss.name + '은(는) 이미 사망 상태입니다.'];
-        if (!state.rankRewardsDistributed) await grantWorldBossRankRewards(user, boss, state, lines);
         clearWorldBossSkillTimer(user.name);
         user.field = null;
-        return lines.join('\n');
+        return '❌ ' + boss.name + '은(는) 이미 사망 상태입니다.';
     }
     const damage = actionType == 'skill' ? Number(rawDamage || 0) * (1 + Number(slotEffects.damageBonus || 0)) : rawDamage;
     const result = dealDamageToWorldBoss(user, boss, damage, extra || {});
@@ -3627,11 +3627,9 @@ async function useWorldBossChosenSkill(user, skillName) {
     forceDefeatExpiredWorldBoss(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
-        const lines = ['❌ ' + boss.name + '은(는) 이미 사망 상태입니다.'];
-        if (!state.rankRewardsDistributed) await grantWorldBossRankRewards(user, boss, state, lines);
         clearWorldBossSkillTimer(user.name);
         user.field = null;
-        return lines.join('\n');
+        return '❌ ' + boss.name + '은(는) 이미 사망 상태입니다.';
     }
     const skillId = Number(user.field.chosenSkillId);
     const skill = getExtraSkillById(skillId);
@@ -3745,8 +3743,7 @@ async function finalizeWorldBossDefeat(user, boss, lines) {
     user.field = null;
     lines.push('', '🎉 ' + boss.name + ' 처치!');
     lines.push('- 처치자: ' + state.defeatedBy);
-    const rankRewardUsers = await grantWorldBossRankRewards(user, boss, state, lines);
-    if (rankRewardUsers > 0) lines.push('- 딜기여 랭킹 보상 지급 완료: ' + comma(rankRewardUsers) + '명');
+    lines.push('- /RPGenius 월드보스보상 으로 딜기여 랭킹 보상을 수령하세요.');
 }
 
 function startWorldBossSkillTimer(user, boss, channel) {
@@ -3814,7 +3811,6 @@ async function runWorldBossSkillTick(userName, bossName) {
     forceDefeatExpiredWorldBoss(boss);
     const state = getWorldBossState(bossName);
     if (Number(state.hp || 0) <= 0) {
-        if (!state.rankRewardsDistributed) await grantWorldBossRankRewards(latest, boss, state, null);
         clearWorldBossSkillTimer(userName);
         latest.field = null;
         await latest.save();
@@ -3930,13 +3926,38 @@ async function claimWorldBossRewards(user) {
         if (Number(state.hp || 0) > 0) continue;
         const contributed = Number(state.contributions && state.contributions[user.name] || 0);
         if (contributed <= 0) continue;
-        const before = lines.length;
+        // 딜량(threshold) 보상
         totalRewards += grantWorldBossThresholdRewards(user, boss, state, lines, '[ ' + boss.name + ' 딜량 보상 ]');
-        if (!state.rankRewardsDistributed) totalRewards += await grantWorldBossRankRewards(user, boss, state, lines);
-        if (lines.length == before && state.rankRewards && state.rankRewards[user.name]) {
-            const rank = state.rankRewards[user.name];
+        // 딜기여 랭킹 보상 — 개인별 클레임
+        if (!state.rankRewards) state.rankRewards = {};
+        if (state.rankRewards[user.name]) {
+            const r = state.rankRewards[user.name];
             lines.push('[ ' + boss.name + ' 딜기여 랭킹 보상 ]');
-            lines.push('- 이미 지급됨: ' + rank.rank + '위 / 피해 ' + comma(rank.damage));
+            lines.push('- ' + r.rank + '위 / 피해 ' + comma(r.damage) + ' (이미 수령함)');
+            totalRewards++;
+        } else {
+            const rankings = Object.entries(state.contributions || {})
+                .map(([name, value]) => ({ name, value: Number(value || 0) }))
+                .filter(e => e.value > 0)
+                .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'ko-KR'));
+            const myIdx = rankings.findIndex(e => e.name == user.name);
+            if (myIdx >= 0) {
+                const rank = myIdx + 1;
+                const rewards = getWorldBossRankRewardForRank(boss, rank);
+                if (rewards.length > 0) {
+                    const rewardLines = [];
+                    let granted = 0;
+                    rewards.forEach(reward => { granted += grantWorldBossRewardItems(user, reward.items || [], rewardLines); });
+                    if (granted > 0) {
+                        state.rankRewards[user.name] = { rank, damage: Math.round(rankings[myIdx].value), claimedAt: Date.now() };
+                        persistWorldBossState();
+                        lines.push('[ ' + boss.name + ' 딜기여 랭킹 보상 ]');
+                        lines.push('- 순위: ' + rank + '위 / 피해: ' + comma(rankings[myIdx].value));
+                        rewardLines.forEach(l => lines.push(l));
+                        totalRewards++;
+                    }
+                }
+            }
         }
     }
     if (totalRewards == 0) return '❌ 수령할 수 있는 월드보스 보상이 없습니다.';

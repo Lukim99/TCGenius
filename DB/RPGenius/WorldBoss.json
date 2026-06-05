@@ -19,9 +19,9 @@
             { "threshold": 1000000, "items": [{ "type": "아이템", "item_id": 121, "count": { "min": 1, "max": 1 } }] }
         ],
         "rankRewards": [
-            { "rank": 1, "items": [{ "type": "아이템", "item_id": 93, "count": { "min": 10, "max": 10 } }] },
-            { "minRank": 2, "maxRank": 3, "items": [{ "type": "아이템", "item_id": 93, "count": { "min": 5, "max": 5 } }] },
-            { "minRank": 4, "maxRank": 10, "items": [{ "type": "골드", "count": { "min": 300000, "max": 1000000 } }] }
+            { "rank": 1, "items": [{ "type": "아이템", "item_id": 158, "count": { "min": 1, "max": 1 } }] },
+            { "minRank": 2, "maxRank": 3, "items": [{ "type": "아이템", "item_id": 159, "count": { "min": 1, "max": 1 } }] },
+            { "minRank": 4, "maxRank": 10, "items": [{ "type": "아이템", "item_id": 160, "count": { "min": 1, "max": 1 } }] }
         ]
     }
 ]
