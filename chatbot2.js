@@ -710,16 +710,14 @@ async function removeShopItem(channelId, name) {
 }
 
 async function getBagItem(channelId, userId, name) {
-    const normalizedName = (name || '').trim().toLowerCase();
-    const { data: rows, error } = await supabase
-        .from('chatbot2_bag_items')
-        .select('*')
-        .eq('channel_id', channelId + '')
-        .eq('user_id', userId + '')
-        .eq('item_key', normalizedName)
-        .limit(1);
+    const key = bagItemKey(channelId, userId, name);
+    const { data, error } = await supabase.from('chatbot2_bag_items').select('*').eq('id', key).maybeSingle();
     if (error) throw error;
-    return rows?.[0] || null;
+    if (!data) {
+        const { data: all } = await supabase.from('chatbot2_bag_items').select('id,item_key,item_name,quantity').eq('channel_id', channelId + '').eq('user_id', userId + '');
+        console.log('[chatbot2] getBagItem miss. looking for:', key, '/ actual rows:', JSON.stringify(all));
+    }
+    return data || null;
 }
 
 async function listBagItems(channelId, userId) {
@@ -738,28 +736,17 @@ async function addBagItem(channelId, userId, item, quantity) {
     const existing = await getBagItem(channelId, userId, item.item_key || item.name);
     const timestamp = nowIso();
     const nextQuantity = Number(existing?.quantity || 0) + Number(quantity || 0);
-    if (existing) {
-        const { data, error } = await supabase
-            .from('chatbot2_bag_items')
-            .update({ quantity: nextQuantity, updated_at: timestamp })
-            .eq('id', existing.id)
-            .select('*')
-            .single();
-        if (error) throw error;
-        return data;
-    }
-    const normalizedName = (item.item_key || (item.name || '')).trim().toLowerCase();
     const payload = {
-        id: bagItemKey(channelId, userId, normalizedName),
+        id: bagItemKey(channelId, userId, item.item_key || item.name),
         channel_id: channelId + '',
         user_id: userId + '',
-        item_key: normalizedName,
-        item_name: item.name || normalizedName,
+        item_key: item.item_key || (item.name || '').trim().toLowerCase(),
+        item_name: item.name || existing?.item_name || '',
         quantity: nextQuantity,
-        created_at: timestamp,
+        created_at: existing?.created_at || timestamp,
         updated_at: timestamp
     };
-    const { data, error } = await supabase.from('chatbot2_bag_items').insert(payload).select('*').single();
+    const { data, error } = await supabase.from('chatbot2_bag_items').upsert(payload, { onConflict: 'id' }).select('*').single();
     if (error) throw error;
     return data;
 }
