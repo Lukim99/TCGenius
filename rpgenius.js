@@ -3183,10 +3183,10 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
     const levelDiff = Number(user.level || 1) - requireLevel;
-    const overLeveledCap = levelDiff >= BIG_LEVEL_DIFF_THRESHOLD;
+    const overLeveledCap = levelDiff >= BIG_LEVEL_DIFF_THRESHOLD && typeof dungeon.goldMineLevel == 'undefined';
     let killCapNote = null;
     if (overLeveledCap && killCount > BIG_LEVEL_DIFF_KILL_CAP) {
-        killCount = BIG_LEVEL_DIFF_KILL_CAP
+        killCount = BIG_LEVEL_DIFF_KILL_CAP;
     }
     let goldMineCapNote = null;
     let goldMineLimitReached = false;
@@ -4088,7 +4088,9 @@ const SUPPORT_STAT_LABELS = {
     atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력', plusGold: '처치 당 골드',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
-    skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해'
+    skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
+    cardStarAtk: '카드 1성당 공격력', level9Atk: '레벨 9당 공격력',
+    atkPerMillionGold: '보유 골드 100만 당 공격력'
 };
 
 const SUPPORT_PLUS_STAT_LABELS = {
