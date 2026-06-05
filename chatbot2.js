@@ -195,9 +195,15 @@ function cmdCtx(data, channel) {
     const argLine = index === -1 ? '' : line.slice(index + 1).trim();
     const mentionIds = mentions(data);
     const mentionUsers = mentionedUsers(channel, mentionIds);
-    const stripped = argLine.replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+    // Remove @mentions including nicknames with spaces (e.g. "@여 아린")
+    let stripped = argLine;
+    for (const u of mentionUsers) {
+        const nick = (u.nickname || '').trim();
+        if (nick) stripped = stripped.replace('@' + nick, ' ');
+    }
+    stripped = stripped.replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
     const args = stripped ? stripped.split(' ').filter(Boolean) : [];
-    return { body, command, argLine, args, mentionIds, mentionUsers, firstMention: mentionUsers[0] || null };
+    return { body, command, argLine, stripped, args, mentionIds, mentionUsers, firstMention: mentionUsers[0] || null };
 }
 
 function choseong(word) {
@@ -575,6 +581,18 @@ async function getChatStats(channelId, userId) {
 
 async function getChatRanking(channel, periodKey, limit = 50) {
     const currentChannelId = channel.channelId + '';
+    const users = await getAllUsers(channel);
+    const nameMap = new Map(users.map(user => [user.user_id + '', displayName(user)]));
+    const memberIds = new Set(users.map(user => user.user_id + ''));
+
+    if (periodKey === '전체') {
+        return users
+            .filter(u => Number(u.total_chat_count || 0) > 0)
+            .sort((a, b) => Number(b.total_chat_count || 0) - Number(a.total_chat_count || 0) || (displayName(a) || '').localeCompare(displayName(b) || '', 'ko'))
+            .slice(0, limit)
+            .map(u => ({ user_id: u.user_id, nickname: displayName(u), count: Number(u.total_chat_count || 0) }));
+    }
+
     const range = getChatPeriodRange(periodKey);
     if (!range) return [];
     let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname').eq('channel_id', currentChannelId);
@@ -582,16 +600,12 @@ async function getChatRanking(channel, periodKey, limit = 50) {
     if (range.endIso) query = query.lt('created_at', range.endIso);
     const { data, error } = await query.limit(100000);
     if (error) throw error;
-    const users = await getAllUsers(channel);
-    const nameMap = new Map(users.map(user => [user.user_id + '', displayName(user)]));
-    const memberIds = new Set(users.map(user => user.user_id + ''));
     const rankingMap = new Map();
     for (const row of data || []) {
         const userId = row.user_id + '';
         if (!memberIds.has(userId)) continue;
         const current = rankingMap.get(userId) || { user_id: userId, nickname: nameMap.get(userId) || row.nickname || '알 수 없음', count: 0 };
         current.count += 1;
-        if (!nameMap.has(userId) && row.nickname) current.nickname = row.nickname;
         rankingMap.set(userId, current);
     }
     return Array.from(rankingMap.values())
@@ -713,10 +727,6 @@ async function getBagItem(channelId, userId, name) {
     const key = bagItemKey(channelId, userId, name);
     const { data, error } = await supabase.from('chatbot2_bag_items').select('*').eq('id', key).maybeSingle();
     if (error) throw error;
-    if (!data) {
-        const { data: all } = await supabase.from('chatbot2_bag_items').select('id,item_key,item_name,quantity').eq('channel_id', channelId + '').eq('user_id', userId + '');
-        console.log('[chatbot2] getBagItem miss. looking for:', key, '/ actual rows:', JSON.stringify(all));
-    }
     return data || null;
 }
 
@@ -1024,7 +1034,7 @@ async function handleCommand(data, channel, sender) {
 
     if (cmd === '아이템선물') {
         const target = ctx.firstMention;
-        const name = (ctx.argLine || '').replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+        const name = ctx.stripped;
         if (!target || !name) {
             channel.sendChat('❌ 사용법: /아이템선물 [아이템] @멘션');
             return true;
@@ -1073,7 +1083,7 @@ async function handleCommand(data, channel, sender) {
             return true;
         }
         const target = ctx.firstMention;
-        const name = (ctx.argLine || '').replace(/@\S+/g, ' ').replace(/\s+/g, ' ').trim();
+        const name = ctx.stripped;
         if (!target || !name) {
             channel.sendChat('❌ 사용법: /사용 [아이템 이름] @멘션');
             return true;
