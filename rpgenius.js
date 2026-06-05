@@ -401,6 +401,7 @@ function formatStatValue(key, value) {
     const number = Number(value || 0);
     const sign = number > 0 ? '+' : '';
     if (key == 'skillCooldown') return sign + (Math.round(number / 100) / 10) + '초';
+    if (key == 'pntPercent') return sign + (Math.round(number * 1000) / 10) + '%';
     if ([
         'crit', 'critMul', 'critDef', 'cmb',
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
@@ -689,7 +690,7 @@ function addPotentialStats(stat, plusStat, potential) {
 function applyPotentialDerivedStats(stats, user) {
     if (Number(stats.cardStarAtk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.cardStarAtk || 0) * (Number(user.main_card && user.main_card.star || 0) + 1);
     if (Number(stats.level9Atk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.level9Atk || 0) * Math.floor(Number(user.level || 1) / 9);
-    if (Number(stats.atkPerMillionGold || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.atkPerMillionGold || 0) * Math.floor(Number(user.gold || 0) / 1000000);
+    if (Number(stats.atkPerMillionGold || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.atkPerMillionGold || 0) * Math.min(10, Math.floor(Number(user.gold || 0) / 1000000));
 }
 
 function getPotentialData() {
@@ -2004,7 +2005,7 @@ const CP_WEIGHTS = {
     ELITE_DMG_RATIO: 0.3,
     BOSS_DMG_RATIO: 0.3,
     FINAL_DAMAGE_RATIO: 0.9,
-    PEN_DIVISOR: 200,
+    PEN_DIVISOR: 280,
     DEF_REDUCTION_RATIO: 0.5,
     TRIPLE_ZERO_RATIO: 0.15,
     SKILL_TRUE_DMG_RATIO: 0.2,
@@ -2052,9 +2053,12 @@ function computeCombatPowerFromStats(stats, slot) {
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
     const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
+    const abyssDoomBonus = stats.hasAbyssDoom ? Math.min(1, crit) * 0.3 / (1 - Math.min(0.9, Math.min(1, crit) * 0.3)) : 0;
+    const celestiaBonus = stats.hasCelestia ? 0.03 : 0;
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
                      + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO
-                     + Math.min(1, Number(stats.trueDamageChance || 0)) * W.TRUE_DAMAGE_RATIO;
+                     + Math.min(1, Number(stats.trueDamageChance || 0)) * W.TRUE_DAMAGE_RATIO
+                     + abyssDoomBonus + celestiaBonus;
     const offense = atk * mAttack * mContext * mCrit * mCombo * mPen * mExtra * W.OFFENSE_SCALE;
 
     const ehp = hp * (1 + def / 100);
@@ -2138,9 +2142,8 @@ function formatMyInfo(user) {
 }
 
 const RECOMMEND_CP_TUNING = {
-    NORMAL_KILL_HITS: 1,
-    ELITE_KILL_HITS: 25,
-    SURVIVAL_HITS: 10,
+    NORMAL_KILL_COUNT: 2,   // 일반 몹을 한 번에 이 수 이상 잡을 수 있어야 함
+    SURVIVAL_HITS: 50,      // 일반 몹 피해를 이 횟수 이상 버틸 수 있어야 함
     DEF_RATIO: 0.30,
     PEN_RATIO: 0.15,
     BASE_MP: 350,
@@ -2154,21 +2157,19 @@ function getDungeonRecommendedCP(dungeon) {
     if (!dungeon) return 0;
     const T = RECOMMEND_CP_TUNING;
     const N = getCombatStats(dungeon);
-    const E = getCombatStats(dungeon.elite || {});
     const normalCritMitigation = 1 + T.BASE_CRIT * (T.BASE_CRIT_MUL - 1) * (1 - Math.max(0, Math.min(1, Number(N.critDef || 0))));
-    const eliteCritMitigation = 1 + T.BASE_CRIT * (T.BASE_CRIT_MUL - 1) * (1 - Math.max(0, Math.min(1, Number(E.critDef || 0))));
-    const normalKill = Number(N.hp || 0) * (100 + Number(N.def || 0)) / 100 / Math.max(1, T.NORMAL_KILL_HITS) / normalCritMitigation;
-    const eliteKill = Number(E.hp || 0) * (100 + Number(E.def || 0)) / 100 / Math.max(1, T.ELITE_KILL_HITS) / eliteCritMitigation;
-    const atk = Math.max(normalKill, eliteKill);
-    const def = Number(E.atk || 0) * T.DEF_RATIO;
-    const effDef = Math.max(0, def - Number(E.pnt || 0));
-    const eliteExpectedCrit = 1 + Math.max(0, Math.min(1, Number(E.crit || 0))) * (Math.max(1, Number(E.critMul || 1.5)) - 1);
-    const eliteMaxCmb = 2 + Math.max(0, Math.floor(Number(E.maxCmb || 0)));
-    const eliteCmb = Math.max(0, Math.min(1, Number(E.cmb || 0)));
-    const eliteExpectedCombo = Array.from({ length: eliteMaxCmb }, (_, i) => Math.pow(eliteCmb, i)).reduce((sum, value) => sum + value, 0);
-    const incomingPerHit = Number(E.atk || 0) * eliteExpectedCrit * eliteExpectedCombo * 100 / (100 + effDef);
+    // 공격력: 일반 몹 N마리를 한 번에 처치할 수 있는 수준
+    const atk = Number(N.hp || 0) * (100 + Number(N.def || 0)) / 100 * T.NORMAL_KILL_COUNT / normalCritMitigation;
+    // 방어/HP: 일반 몹으로부터 50대 버틸 수 있는 수준
+    const def = Number(N.atk || 0) * T.DEF_RATIO;
+    const effDef = Math.max(0, def - Number(N.pnt || 0));
+    const normalExpectedCrit = 1 + Math.max(0, Math.min(1, Number(N.crit || 0))) * (Math.max(1, Number(N.critMul || 1.5)) - 1);
+    const normalMaxCmb = 2 + Math.max(0, Math.floor(Number(N.maxCmb || 0)));
+    const normalCmb = Math.max(0, Math.min(1, Number(N.cmb || 0)));
+    const normalExpectedCombo = Array.from({ length: normalMaxCmb }, (_, i) => Math.pow(normalCmb, i)).reduce((sum, v) => sum + v, 0);
+    const incomingPerHit = Number(N.atk || 0) * normalExpectedCrit * normalExpectedCombo * 100 / (100 + effDef);
     const hp = incomingPerHit * T.SURVIVAL_HITS;
-    const pnt = Number(E.def || 0) * T.PEN_RATIO;
+    const pnt = Number(N.def || 0) * T.PEN_RATIO;
     const stats = {
         atk, def, hp, pnt,
         mp: T.BASE_MP,
@@ -2287,6 +2288,7 @@ function getCombatStats(data) {
     return Object.assign({
         atk: 0,
         pnt: 0,
+        pntPercent: 0,
         def: 0,
         hp: 0,
         crit: 0,
@@ -2370,7 +2372,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
     const monsterStats = getCombatStats(monster);
     const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0))) * (1 - Math.min(1, Number(extra && extra.receivedDamageReduction || 0)));
-    return calculateAttackHitResult(fieldDamageBase, defenderStats.def, monsterStats.pnt, monsterStats, { defReduction: 0 }, {}, defenderStats);
+    return calculateAttackHitResult(fieldDamageBase, defenderStats.def, monsterStats.pnt, monsterStats, { defReduction: Math.min(1, Math.max(0, Number(monsterStats.pntPercent || 0))) }, {}, defenderStats);
 }
 
 function formatHitDetailLines(hitResult, prefix, suffix) {
@@ -4085,7 +4087,7 @@ function formatCharacterInventory(user) {
 }
 
 const SUPPORT_STAT_LABELS = {
-    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력', plusGold: '처치 당 골드',
+    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력', pntPercent: '방어력 감소율', plusGold: '처치 당 골드',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
