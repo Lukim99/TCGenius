@@ -425,12 +425,13 @@ server.post('/api/combine', requireUser, async (req, res) => {
     }
 });
 
-function getEquipmentActionBlockedReason(user) {
+function getEquipmentActionBlockedReason(user, action) {
+    const verb = action || '변경';
     if (user && user.field && user.field.name) {
-        return user.field.worldBoss ? '월드보스 전투 중에는 장비를 변경할 수 없습니다.' : '사냥 중에는 장비를 변경할 수 없습니다.';
+        return user.field.worldBoss ? '월드보스 전투 중에는 장비를 ' + verb + '할 수 없습니다.' : '사냥 중에는 장비를 ' + verb + '할 수 없습니다.';
     }
     const room = partyquest.getMyRoomSnapshot(user && user.name);
-    if (room && room.state == 'inProgress') return '파티퀘스트 진행 중에는 장비를 변경할 수 없습니다.';
+    if (room && room.state == 'inProgress') return '파티퀘스트 진행 중에는 장비를 ' + verb + '할 수 없습니다.';
     return null;
 }
 
@@ -469,6 +470,180 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
         res.status(500).json({ error: '서버 오류' });
     }
 });
+
+// ===== 장비 강화 =====
+
+server.get('/api/equipment/upgrade/preview/:number', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.params.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '강화');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        res.json(buildEquipmentUpgradePreview(user, number));
+    } catch (e) {
+        console.error('upgrade preview error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/equipment/upgrade/run', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '강화');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        // set pendingAction then run
+        const preview = buildEquipmentUpgradePreview(user, number);
+        if (preview.error) return res.status(400).json({ error: preview.error });
+        if (!preview.canUpgrade) return res.status(400).json({ error: preview.blockReason || '강화할 수 없습니다.' });
+        // manually set pendingAction
+        const selected = rpgenius.getEquipmentByNumber(user, number);
+        const type = selected.equip.type || selected.type;
+        // capture pre-upgrade state to compute the actual applied stat changes
+        const beforeEquip = rpgenius.getEquipmentData(type, selected.equip.id);
+        const beforeLevel = Number(selected.equip.level || 0);
+        const beforeStats = rpgenius.getEquipmentStatsAtLevel(beforeEquip, beforeLevel);
+        const beforePlus = rpgenius.getEquipmentPlusStatsAtLevel(beforeEquip, beforeLevel);
+        const beforeId = selected.equip.id;
+        user.pendingAction = { type: '장비강화', number, equipmentType: type, free: false };
+        const result = rpgenius.runEquipmentUpgrade(user);
+        await user.save();
+        const resultKind = getUpgradeResultKind(result);
+        // compute actual stat changes that were applied (skip when item was destroyed/lost)
+        let appliedDiffs = [];
+        if (resultKind !== 'destroy') {
+            const afterSel = rpgenius.getEquipmentByNumber(user, number);
+            if (afterSel && afterSel.equip.id === beforeId) {
+                const afterLevel = Number(afterSel.equip.level || 0);
+                const afterStats = rpgenius.getEquipmentStatsAtLevel(beforeEquip, afterLevel);
+                const afterPlus = rpgenius.getEquipmentPlusStatsAtLevel(beforeEquip, afterLevel);
+                appliedDiffs = buildStatDiffs(beforeStats, afterStats, beforePlus, afterPlus);
+            }
+        }
+        res.json({
+            ok: true,
+            message: result,
+            resultKind,
+            appliedDiffs,
+            equipment: buildInventoryEquipment(user),
+            profile: buildUserProfile(user),
+            preview: buildEquipmentUpgradePreview(user, number)
+        });
+    } catch (e) {
+        console.error('upgrade run error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+function getUpgradeResultKind(msg) {
+    if (!msg) return 'unknown';
+    if (msg.includes('막았습니다') || msg.includes('보호권으로')) return 'protected';
+    if (msg.includes('대성공')) return 'great';
+    if (msg.includes('성공')) return 'success';
+    if (msg.includes('파괴')) return 'destroy';
+    if (msg.includes('실패') || msg.includes('하락')) return 'down';
+    return 'fail';
+}
+
+function buildEquipmentUpgradePreview(user, number) {
+    const selected = rpgenius.getEquipmentByNumber(user, number);
+    if (!selected) return { error: '존재하지 않는 장비 번호입니다.' };
+    if (selected.equip.locked) return { error: '잠긴 장비는 강화할 수 없습니다.' };
+    const type = selected.equip.type || selected.type;
+    const equipment = rpgenius.getEquipmentData(type, selected.equip.id);
+    if (!equipment) return { error: '잘못된 장비 데이터입니다.' };
+    if (!Array.isArray(equipment.upgrade) || equipment.upgrade.length === 0) return { error: '강화할 수 없는 장비입니다.' };
+    const level = Number(selected.equip.level || 0);
+    const maxLevel = rpgenius.getEquipmentMaxLevel(equipment);
+    if (level >= maxLevel) return { error: '이미 최대 강화 단계입니다.' };
+    const nextLevel = level + 1;
+    const currentStats = rpgenius.getEquipmentStatsAtLevel(equipment, level);
+    const nextStats = rpgenius.getEquipmentStatsAtLevel(equipment, nextLevel);
+    const currentPlus = rpgenius.getEquipmentPlusStatsAtLevel(equipment, level);
+    const nextPlus = rpgenius.getEquipmentPlusStatsAtLevel(equipment, nextLevel);
+    const rates = rpgenius.getEquipmentUpgradeRates(type, level);
+    const cost = rpgenius.getEquipmentUpgradeCost(equipment, type, level);
+    const stoneCount = rpgenius.getInventoryItemCount(user, rpgenius.EQUIPMENT_STONE_ITEM_ID);
+    const gold = Number(user.gold || 0);
+    const hasStone = stoneCount >= cost.stone;
+    const hasGold = gold >= cost.gold;
+    const statDiffs = buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus);
+    const protectInfo = buildProtectInfo(user);
+    return {
+        number,
+        name: rpgenius.getEquipmentDisplayName(equipment, selected.equip),
+        rarity: equipment.rarity,
+        type,
+        level,
+        nextLevel,
+        maxLevel,
+        iconUrl: getEquipmentIconUrl(equipment),
+        frameUrl: getAuctionFrameUrl('equipment', equipment.rarity),
+        rates: { great: rates.great, success: rates.success, down: rates.down, reset: rates.reset },
+        cost,
+        stoneCount,
+        gold,
+        hasStone,
+        hasGold,
+        canUpgrade: hasStone && hasGold,
+        statDiffs,
+        protectInfo
+    };
+}
+
+function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
+    const STAT_LABELS = {
+        atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력',
+        plusGold: '처치 당 골드', crit: '치명타 확률', critMul: '치명타 피해량',
+        critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
+        skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
+        cardStarAtk: '카드 1성당 공격력', level9Atk: '레벨 9당 공격력',
+        atkPerMillionGold: '골드 100만 당 공격력'
+    };
+    const PLUS_LABELS = {
+        atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
+        pnt: '방어력 관통', gold: '골드 획득량', potion: '물약 효율',
+        afterBasic: '일반 공격 피해', avd: '회피 확률', afterSkill: '스킬 공격 피해',
+        '000': '추가 피해 확률', exp: '경험치 획득량', eliteDmg: '엘리트 추가 피해',
+        mpReduce: 'MP 소모량', itemDropChance: '아이템 획득 확률',
+        recoveryEfficiency: '회복 효율', crit: '치명타 확률', critMul: '치명타 피해량',
+        critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
+        skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
+        takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
+        finalDamage: '최종 피해', bossDmg: '보스 추가 피해'
+    };
+    // 값이 낮을수록(감소할수록) 이득인 스탯
+    const LOWER_IS_BETTER = new Set(['skillCooldown', 'mpReduce', 'takenDamage']);
+    const isImproved = (k, before, after) => LOWER_IS_BETTER.has(k) ? after < before : after > before;
+    const diffs = [];
+    Object.keys(STAT_LABELS).forEach(k => {
+        const before = Number(currentStats[k] || 0);
+        const after = Number(nextStats[k] || 0);
+        if (before !== after) diffs.push({ key: k, label: STAT_LABELS[k], before: rpgenius.formatStatValue(k, before), after: rpgenius.formatStatValue(k, after), delta: rpgenius.formatStatValue(k, after - before), improved: isImproved(k, before, after) });
+    });
+    Object.keys(PLUS_LABELS).forEach(k => {
+        const before = Number(currentPlus[k] || 0);
+        const after = Number(nextPlus[k] || 0);
+        if (before !== after) {
+            const fmt = v => rpgenius.formatStatValue(k + '%', v);
+            diffs.push({ key: k, label: PLUS_LABELS[k], before: fmt(before), after: fmt(after), delta: fmt(after - before), improved: isImproved(k, before, after) });
+        }
+    });
+    return diffs;
+}
+
+function buildProtectInfo(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    const iconFor = id => { const d = items[id]; return d ? getItemIconUrl(d) : null; };
+    if (rpgenius.getInventoryItemCount(user, rpgenius.EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) return { label: '축복받은 장비 보호권', detail: '파괴/하락 시 유지', level: 'blessed', iconUrl: iconFor(rpgenius.EQUIPMENT_BLESSED_PROTECT_ITEM_ID) };
+    if (rpgenius.getInventoryItemCount(user, rpgenius.EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) return { label: '고급 장비 보호권', detail: '파괴 시 유지', level: 'advanced', iconUrl: iconFor(rpgenius.EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) };
+    if (rpgenius.getInventoryItemCount(user, rpgenius.EQUIPMENT_PROTECT_ITEM_ID) > 0) return { label: '장비 보호권', detail: '파괴 시 0강 초기화', level: 'basic', iconUrl: iconFor(rpgenius.EQUIPMENT_PROTECT_ITEM_ID) };
+    return null;
+}
 
 // ===== 경매장 =====
 
@@ -773,6 +948,16 @@ server.get('/item-image', requireUser, (req, res) => {
     const dirPath = path.join(ITEM_IMAGE_PATH, dir);
     const filePath = path.join(dirPath, file);
     if (!filePath.startsWith(dirPath) || !fs.existsSync(filePath)) return res.status(404).end();
+    res.sendFile(filePath);
+});
+
+const RPG_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui');
+
+server.get('/rpg-ui', requireUser, (req, res) => {
+    const file = String(req.query.file || '');
+    if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
+    const filePath = path.join(RPG_UI_PATH, file);
+    if (!filePath.startsWith(RPG_UI_PATH) || !fs.existsSync(filePath)) return res.status(404).end();
     res.sendFile(filePath);
 });
 
@@ -3059,6 +3244,23 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:rgba(10,15,28,.8);border:1px solid rgba(255,255,255,.1)}.inv-kind-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;padding-bottom:2px}.inv-kind-tabs::-webkit-scrollbar{display:none}.inv-kind-tab{flex-shrink:0;white-space:nowrap;background:rgba(10,15,28,.8);border:1px solid rgba(255,255,255,.1);font-size:13px;padding:7px 14px}.inv-kind-tab.active{background:rgba(88,101,242,.22);border-color:rgba(99,102,241,.5);color:#e0e7ff}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(4,6,18,.6);border:1px solid rgba(255,255,255,.06);border-radius:13px}.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}.inv-cell{position:relative;background:rgba(4,6,18,.7);border:1px solid rgba(255,255,255,.09);border-radius:10px;cursor:pointer;transition:border-color .15s,transform .12s,box-shadow .12s;overflow:hidden}.inv-cell:hover{border-color:rgba(99,102,241,.5);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.4)}.inv-cell-img{aspect-ratio:1/1;position:relative;display:grid;place-items:center;background:rgba(15,23,42,.5)}.inv-cell-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.inv-cell-icon{position:relative;z-index:2;width:65%;height:65%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.55))}.inv-cell-count{position:absolute;bottom:3px;right:5px;font-size:11px;font-weight:900;color:#f8fafc;text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,1);line-height:1;z-index:3}.inv-cell-name{padding:3px 4px 5px;font-size:10px;font-weight:700;color:#94a3b8;text-align:center;line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(4,6,18,.9),rgba(8,12,26,.75));border:1px solid var(--rar,rgba(255,255,255,.08));border-left:4px solid var(--rar,rgba(255,255,255,.15));border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.3)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.45),0 0 0 1px rgba(99,102,241,.2)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:rgba(7,10,20,.97);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03) inset}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(4,6,18,.85);color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit;transition:border-color .15s}.modal input:focus,.modal select:focus{outline:none;border-color:rgba(99,102,241,.6);box-shadow:0 0 0 3px rgba(99,102,241,.1)}.seg{display:flex;gap:6px;background:rgba(4,6,18,.7);padding:4px;border-radius:12px;flex-wrap:wrap;border:1px solid rgba(255,255,255,.06)}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap;color:#94a3b8;transition:all .15s}.seg button:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.seg button.on{background:linear-gradient(135deg,#5865f2,#4338ca);color:#fff;box-shadow:0 2px 8px rgba(88,101,242,.35)}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(4,6,18,.5);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(10,15,30,.7);border:1px solid rgba(255,255,255,.06);border-radius:10px;cursor:pointer;font-size:13px;transition:border-color .15s,background .15s}.pick-row:hover{border-color:rgba(99,102,241,.5)}.pick-row.on{border-color:rgba(99,102,241,.55);background:rgba(88,101,242,.16)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
 .equip-thumb{position:relative;width:48px;height:48px;background:rgba(15,23,42,.7);border-radius:12px;overflow:visible}.equip-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.equip-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.equip-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:24px;line-height:1}
 .modal-equip-thumb{width:120px!important;height:120px!important;margin:6px auto 16px;border-radius:16px}.modal-equip-thumb .icon-fallback{font-size:80px}
+.enhance-overlay{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:12px 8px}.enhance-overlay.active{display:flex}.enhance-wrap{position:relative;width:min(340px,100%);display:flex;flex-direction:column;max-height:90vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;background:linear-gradient(180deg,#0c1118,#06090e);border:1px solid rgba(90,130,150,.22);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.65),inset 0 1px 0 rgba(180,220,235,.06)}.enhance-window{position:relative;width:100%;aspect-ratio:641/666;background:url('/rpg-ui?file=%EA%B0%95%ED%99%94.png') center/100% 100% no-repeat;flex-shrink:0;overflow:hidden}.enhance-close-btn{position:absolute;top:1.5%;right:1.5%;background:rgba(0,0,0,.55);border:0;color:rgba(255,255,255,.8);font-size:12px;cursor:pointer;z-index:2;line-height:1;padding:2px 6px;border-radius:4px}.enhance-close-btn:hover{color:#fff;background:rgba(0,0,0,.8)}.enhance-item-zone{position:absolute;top:9%;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;z-index:1}.enhance-item-zone .auc-thumb.square{width:60px!important;height:60px!important}.enhance-item-level{font-size:11px;font-weight:700;color:#f1f5f9;text-shadow:0 1px 6px rgba(0,0,0,.95),0 0 14px rgba(0,0,0,.95);background:rgba(0,0,0,.6);border-radius:5px;padding:2px 7px;white-space:nowrap}.enhance-before-content{position:absolute;top:56%;left:3%;width:44%;bottom:6%;overflow-y:auto;scrollbar-width:none;display:flex;flex-direction:column;gap:2px;padding:2px 4px}.enhance-after-content{position:absolute;top:56%;left:52%;width:45%;bottom:6%;overflow-y:auto;scrollbar-width:none;display:flex;flex-direction:column;gap:2px;padding:2px 4px}.enhance-stat-row{display:flex;justify-content:space-between;gap:2px;align-items:baseline}.enhance-stat-label{font-size:9px;color:#94a3b8;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}.enhance-stat-val{font-size:9px;font-weight:800;color:#e2e8f0;font-variant-numeric:tabular-nums;white-space:nowrap}.enhance-stat-val.better{color:#86efac}.enhance-stat-delta{font-size:8px;font-weight:700;color:#fbbf24;opacity:.85}.enhance-empty-stat{font-size:9px;color:#475569;padding:2px 0}.enhance-info{padding:10px 12px 2px;display:flex;flex-direction:column;gap:8px;flex-shrink:0}.enhance-section-label{font-size:10px;font-weight:800;color:#7dd3fc;letter-spacing:.08em;text-transform:uppercase;margin-bottom:-2px;display:flex;align-items:center;gap:6px}.enhance-section-label::before{content:'';width:3px;height:11px;background:linear-gradient(180deg,#22d3ee,#0891b2);border-radius:2px;box-shadow:0 0 6px rgba(34,211,238,.6)}.enhance-rates-row{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.enhance-rate-chip{padding:7px 2px;background:linear-gradient(180deg,rgba(24,32,40,.92),rgba(10,14,20,.96));border:1px solid rgba(120,160,180,.14);border-radius:8px;text-align:center;box-shadow:inset 0 1px 0 rgba(180,220,235,.06)}.enhance-rate-chip .rate-label{font-size:9px;color:#94a3b8;font-weight:700}.enhance-rate-chip .rate-val{font-size:11px;font-weight:900;margin-top:2px;font-variant-numeric:tabular-nums}.enhance-rate-chip.great{border-color:rgba(251,191,36,.3);box-shadow:inset 0 1px 0 rgba(251,191,36,.14),0 0 10px rgba(251,191,36,.08)}.enhance-rate-chip.great .rate-val{color:#fbbf24}.enhance-rate-chip.success{border-color:rgba(134,239,172,.28)}.enhance-rate-chip.success .rate-val{color:#86efac}.enhance-rate-chip.down{border-color:rgba(251,146,60,.28)}.enhance-rate-chip.down .rate-val{color:#fdba74}.enhance-rate-chip.destroy{border-color:rgba(239,68,68,.3)}.enhance-rate-chip.destroy .rate-val{color:#ef4444}.enhance-cost-row{display:flex;gap:5px}.enhance-cost-item{flex:1;display:flex;align-items:center;gap:6px;padding:8px 10px;background:linear-gradient(180deg,rgba(24,32,40,.92),rgba(10,14,20,.96));border:1px solid rgba(120,160,180,.14);border-radius:9px;box-shadow:inset 0 1px 0 rgba(180,220,235,.06)}.enhance-cost-item.ok{border-color:rgba(134,239,172,.28)}.enhance-cost-item.lack{border-color:rgba(252,165,165,.35);box-shadow:inset 0 1px 0 rgba(180,220,235,.06),0 0 10px rgba(239,68,68,.08)}.enhance-cost-text{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}.enhance-cost-name{font-size:10px;color:#94a3b8;font-weight:700}.enhance-cost-val{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums}.enhance-cost-item.ok .enhance-cost-val{color:#86efac}.enhance-cost-item.lack .enhance-cost-val{color:#fca5a5}.enhance-protect{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;border:1px solid;position:relative;overflow:hidden}.enhance-protect-icon,.enhance-protect-text,.enhance-protect-badge{position:relative;z-index:1}.enhance-protect-icon{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:15px;line-height:1;overflow:hidden}.enhance-protect-img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}.enhance-protect-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}.enhance-protect-name{font-size:12px;font-weight:800;line-height:1.2}.enhance-protect-detail{font-size:10px;font-weight:600;opacity:.85;line-height:1.2}.enhance-protect-badge{font-size:9px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;letter-spacing:.04em}
+.enhance-protect.basic{background:linear-gradient(180deg,rgba(100,116,139,.16),rgba(51,65,85,.12));border-color:rgba(148,163,184,.32)}.enhance-protect.basic .enhance-protect-icon{background:rgba(148,163,184,.18);color:#cbd5e1;box-shadow:inset 0 0 0 1px rgba(203,213,225,.25)}.enhance-protect.basic .enhance-protect-name{color:#e2e8f0}.enhance-protect.basic .enhance-protect-detail{color:#cbd5e1}.enhance-protect.basic .enhance-protect-badge{background:rgba(148,163,184,.2);color:#e2e8f0}
+.enhance-protect.advanced{background:linear-gradient(180deg,rgba(34,211,238,.13),rgba(8,145,178,.1));border-color:rgba(34,211,238,.42);box-shadow:0 0 18px rgba(34,211,238,.1)}.enhance-protect.advanced .enhance-protect-icon{background:rgba(34,211,238,.18);color:#67e8f9;box-shadow:inset 0 0 0 1px rgba(103,232,249,.35)}.enhance-protect.advanced .enhance-protect-name{color:#a5f3fc}.enhance-protect.advanced .enhance-protect-detail{color:#7dd3fc}.enhance-protect.advanced .enhance-protect-badge{background:rgba(34,211,238,.22);color:#cffafe}
+.enhance-protect.blessed{background:linear-gradient(180deg,rgba(251,191,36,.15),rgba(180,83,9,.1));border-color:rgba(251,191,36,.45);box-shadow:0 0 22px rgba(251,191,36,.15)}.enhance-protect.blessed::before{content:'';position:absolute;inset:0;z-index:0;background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.2) 50%,transparent 68%);animation:enhBlessShimmer 3.2s linear infinite}@keyframes enhBlessShimmer{0%{transform:translateX(-120%)}100%{transform:translateX(120%)}}.enhance-protect.blessed .enhance-protect-icon{background:rgba(251,191,36,.2);color:#fde68a;box-shadow:inset 0 0 0 1px rgba(253,230,138,.4)}.enhance-protect.blessed .enhance-protect-name{color:#fde68a}.enhance-protect.blessed .enhance-protect-detail{color:#fcd34d}.enhance-protect.blessed .enhance-protect-badge{background:rgba(251,191,36,.25);color:#fffbeb}.enhance-footer{padding:10px 12px;background:linear-gradient(180deg,rgba(14,19,26,.5),rgba(6,9,14,.98));border-top:1px solid rgba(90,130,150,.18);display:grid;grid-template-columns:1fr 2fr;gap:8px;flex-shrink:0}.enhance-cancel-btn{background:linear-gradient(180deg,rgba(34,44,56,.92),rgba(16,22,30,.96));border:1px solid rgba(120,160,180,.18);border-radius:8px;color:#cbd5e1;font-weight:700;font-size:13px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(180,220,235,.06);transition:filter .15s,transform .1s}.enhance-cancel-btn:hover{filter:brightness(1.18)}.enhance-cancel-btn:active{transform:scale(.97)}.enhance-confirm-btn{background:url('/rpg-ui?file=%EA%B0%95%ED%99%94%EB%B2%84%ED%8A%BC.png') center/contain no-repeat;background-color:transparent!important;border:0!important;box-shadow:none!important;min-height:44px;color:transparent!important;cursor:pointer;transition:opacity .15s,transform .1s;border-radius:6px}.enhance-confirm-btn:hover{opacity:.85}.enhance-confirm-btn:active{transform:scale(.96)}.enhance-confirm-btn:disabled{opacity:.35;cursor:not-allowed}.enhance-result-overlay{position:absolute;inset:0;z-index:5;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:rgba(0,0,0,.86);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:20px;text-align:center;overflow-y:auto;scrollbar-width:none}.enhance-result-overlay.active{display:flex}.enhance-result-msg{font-size:24px;font-weight:900;letter-spacing:.02em;line-height:1.3}.enhance-result-msg.great{color:#fbbf24;text-shadow:0 0 24px rgba(251,191,36,.6)}.enhance-result-msg.success{color:#86efac;text-shadow:0 0 20px rgba(134,239,172,.5)}.enhance-result-msg.fail{color:#fca5a5}.enhance-result-msg.destroy{color:#ef4444;text-shadow:0 0 24px rgba(239,68,68,.5)}.enhance-result-msg.protected{color:#a5b4fc}.enhance-result-sub{font-size:13px;color:#94a3b8;font-weight:600;max-width:280px;word-break:break-word}
+.enh-fx{position:relative;width:170px;height:170px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-bottom:4px}.enh-fx-weapon{position:relative;z-index:3;width:96px;height:96px}.enh-fx-weapon .auc-thumb.square{width:96px!important;height:96px!important}.enh-fx-aura{position:absolute;inset:-18%;z-index:1;border-radius:50%;opacity:0}.enh-fx-rays{position:absolute;inset:-28%;z-index:2;width:156%;height:156%;pointer-events:none;overflow:visible}.enh-fx-sparkles,.enh-fx-shards{position:absolute;inset:-28%;z-index:4;width:156%;height:156%;pointer-events:none;overflow:visible}
+.enh-sparkle{opacity:0;animation:enhSparkle 1.1s ease-out forwards}@keyframes enhSparkle{0%{opacity:0;transform:scale(.2) rotate(0)}30%{opacity:1;transform:scale(1.3) rotate(40deg)}100%{opacity:0;transform:scale(.4) rotate(90deg)}}
+@keyframes enhPop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}@keyframes enhAuraFade{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.3)}}@keyframes enhAuraFade2{0%{opacity:0;transform:scale(.5)}30%{opacity:.9;transform:scale(1)}100%{opacity:.4;transform:scale(1.15)}}@keyframes enhRayBurst{0%{opacity:0;transform:scale(.2)}50%{opacity:1;transform:scale(1.05)}100%{opacity:0;transform:scale(1.2)}}@keyframes enhRaySpin{to{transform:rotate(360deg)}}@keyframes enhRainbowSpin{to{transform:rotate(360deg)}}
+.enh-fx.success .enh-fx-weapon{animation:enhPop .5s cubic-bezier(.2,1.4,.4,1) both,enhShineBlue 1.4s ease-in-out .3s}.enh-fx.success .enh-fx-aura{background:radial-gradient(circle,rgba(186,230,253,.5),transparent 65%);animation:enhAuraFade 1.3s ease-out forwards}.enh-fx.success .enh-rays-spin{animation:enhRayBurst 1s ease-out forwards}@keyframes enhShineBlue{0%,100%{filter:drop-shadow(0 0 0 rgba(186,230,253,0))}50%{filter:drop-shadow(0 0 16px rgba(186,230,253,.95)) brightness(1.3)}}
+.enh-fx.great .enh-fx-weapon{animation:enhPop .5s cubic-bezier(.2,1.4,.4,1) both,enhGoldRainbow 2.4s ease-in-out .3s forwards}.enh-fx.great .enh-fx-aura{background:conic-gradient(from 0deg,#f87171,#fbbf24,#86efac,#22d3ee,#818cf8,#e879f9,#f87171);filter:blur(9px);animation:enhRainbowSpin 3s linear infinite,enhAuraFade2 2.6s ease-out forwards}.enh-fx.great .enh-rays-spin{animation:enhRayBurst 1.1s ease-out forwards,enhRaySpin 3s linear .6s infinite}@keyframes enhGoldRainbow{0%{filter:drop-shadow(0 0 0 rgba(251,191,36,0))}22%{filter:drop-shadow(0 0 24px rgba(251,191,36,1)) brightness(1.6) saturate(1.4)}55%{filter:drop-shadow(0 0 18px rgba(251,191,36,.8)) hue-rotate(0deg) brightness(1.3)}100%{filter:drop-shadow(0 0 14px rgba(255,255,255,.6)) hue-rotate(360deg) brightness(1.15)}}
+.enh-fx.down .enh-fx-weapon,.enh-fx.fail .enh-fx-weapon{animation:enhSink 1.2s ease-in forwards}.enh-fx.down .enh-fx-aura,.enh-fx.fail .enh-fx-aura{background:radial-gradient(circle,rgba(239,68,68,.45),transparent 65%);animation:enhAuraFade 1.2s ease-out forwards}@keyframes enhSink{0%{transform:translateY(0);filter:drop-shadow(0 0 0 rgba(239,68,68,0))}22%{transform:translate(-3px,-3px)}34%{transform:translateX(3px)}46%{transform:translateX(-2px)}56%{transform:translateX(0)}100%{transform:translateY(15px);filter:drop-shadow(0 6px 10px rgba(239,68,68,.6)) brightness(.6) saturate(.7)}}
+.enh-fx.destroy .enh-fx-weapon{animation:enhShatter 1.1s ease-in forwards}.enh-fx.destroy .enh-fx-aura{background:radial-gradient(circle,rgba(239,68,68,.6),transparent 60%);animation:enhExplode 1.1s ease-out forwards}@keyframes enhShatter{0%{transform:translate(0,0) rotate(0)}8%{transform:translate(-4px,0) rotate(-3deg)}16%{transform:translate(4px,0) rotate(3deg)}24%{transform:translate(-4px,0) rotate(-3deg)}32%{transform:translate(4px,0) rotate(3deg)}40%{transform:translate(-3px,0) rotate(-2deg)}48%{transform:translate(3px,0) rotate(2deg);opacity:1}55%{transform:scale(1.18);opacity:1;filter:brightness(2)}60%,100%{opacity:0;transform:scale(1.3)}}.enh-shard{opacity:0;animation:enhShardFly 1s ease-out .5s forwards}@keyframes enhShardFly{0%{opacity:0;transform:translate(0,0) rotate(0)}10%{opacity:1}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}}@keyframes enhExplode{0%{opacity:0;transform:scale(.3)}40%{opacity:0}55%{opacity:1;transform:scale(.6)}70%{opacity:.8;transform:scale(1.1)}100%{opacity:0;transform:scale(1.4)}}
+.enh-fx.protected .enh-fx-weapon{animation:enhPop .5s cubic-bezier(.2,1.4,.4,1) both}.enh-fx.protected .enh-fx-aura{background:radial-gradient(circle,rgba(129,140,248,.45),transparent 62%);box-shadow:0 0 0 2px rgba(165,180,252,.4) inset;animation:enhShieldPulse 1.3s ease-out forwards}@keyframes enhShieldPulse{0%{opacity:0;transform:scale(.6)}40%{opacity:1;transform:scale(1)}70%{opacity:.7;transform:scale(1.08)}100%{opacity:0;transform:scale(1.15)}}
+.enh-result-headline{font-size:24px;font-weight:900;letter-spacing:.02em;line-height:1.3;opacity:0;animation:enhHeadline .5s ease-out .2s forwards}@keyframes enhHeadline{0%{opacity:0;transform:translateY(8px) scale(.9)}100%{opacity:1;transform:none}}.enh-result-headline.great{color:#fbbf24;text-shadow:0 0 24px rgba(251,191,36,.6)}.enh-result-headline.success{color:#86efac;text-shadow:0 0 20px rgba(134,239,172,.5)}.enh-result-headline.down,.enh-result-headline.fail{color:#fca5a5}.enh-result-headline.destroy{color:#ef4444;text-shadow:0 0 24px rgba(239,68,68,.5)}.enh-result-headline.protected{color:#a5b4fc}
+.enh-result-stats{display:flex;flex-direction:column;gap:5px;width:100%;max-width:280px;margin-top:2px}.enh-result-stat-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:6px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:9px;opacity:0;animation:enhStatIn .45s cubic-bezier(.2,.8,.3,1) forwards}.enh-result-stat-row.down{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.18)}@keyframes enhStatIn{0%{opacity:0;transform:translateX(-14px)}100%{opacity:1;transform:none}}.enh-result-stat-label{font-size:12px;color:#94a3b8;font-weight:600}.enh-result-stat-val{font-size:13px;font-weight:800;color:#86efac;font-variant-numeric:tabular-nums;white-space:nowrap}.enh-result-stat-row.down .enh-result-stat-val{color:#fca5a5}.enh-result-stat-delta{font-size:11px;font-weight:700;color:#fbbf24;opacity:.9}.enh-result-stat-row.down .enh-result-stat-delta{color:#f87171}
+.enh-result-confirm{min-width:130px;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#e5e7eb;opacity:0;animation:enhHeadline .4s ease-out forwards;margin-top:4px}.enh-result-confirm.great,.enh-result-confirm.success{background:linear-gradient(135deg,#6366f1,#8b5cf6);border-color:transparent;color:#fff}.enh-result-confirm:hover{filter:brightness(1.1)}.enh-result-confirm:active{transform:scale(.96)}
+.enh-warn-icon{font-size:40px;line-height:1;filter:drop-shadow(0 0 16px rgba(251,146,60,.5))}.enh-warn-title{font-size:18px;font-weight:900;color:#fdba74;text-shadow:0 0 18px rgba(251,146,60,.4)}.enh-warn-sub{font-size:13px;color:#cbd5e1;font-weight:600;max-width:260px;line-height:1.5;word-break:keep-all}.enh-warn-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:260px;margin-top:6px}.enh-warn-confirm{padding:11px 18px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid rgba(251,146,60,.4);background:linear-gradient(135deg,#ea580c,#dc2626);color:#fff;box-shadow:0 0 18px rgba(234,88,12,.3)}.enh-warn-confirm:hover{filter:brightness(1.12)}.enh-warn-confirm:active{transform:scale(.96)}.enh-warn-actions .enhance-cancel-btn{padding:11px 18px}
+@media(max-width:400px){.enhance-rates-row{grid-template-columns:repeat(2,1fr)}}
 .pet-special-title{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a5f3fc}
 .pet-set-block{margin-top:14px;padding:12px 14px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.35);border-radius:12px;display:grid;gap:10px}
 .pet-set-title{font-size:13px;font-weight:800;color:#86efac}
@@ -3258,6 +3460,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
+<div id="enhanceOverlay" class="enhance-overlay"><div class="enhance-wrap"><div id="enhanceContent"></div><div id="enhanceResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
 <div id="aucRegBg" class="modal-bg"><div class="modal wide" id="aucReg"></div></div>
 <div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>

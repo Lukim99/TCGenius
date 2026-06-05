@@ -507,7 +507,8 @@ function formatEquipmentStatLines(equipment) {
         cardStarAtk: '카드 1성당 공격력',
         attackHpRecovery: '공격 시 10% 확률로 HP 회복',
         attackMpRecovery: '공격 시 10% 확률로 MP 회복',
-        level9Atk: '레벨 9당 공격력'
+        level9Atk: '레벨 9당 공격력',
+        atkPerMillionGold: '보유 골드 100만 당 공격력'
     };
     const plusStatNames = {
         atk: '최종 공격력',
@@ -688,6 +689,7 @@ function addPotentialStats(stat, plusStat, potential) {
 function applyPotentialDerivedStats(stats, user) {
     if (Number(stats.cardStarAtk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.cardStarAtk || 0) * (Number(user.main_card && user.main_card.star || 0) + 1);
     if (Number(stats.level9Atk || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.level9Atk || 0) * Math.floor(Number(user.level || 1) / 9);
+    if (Number(stats.atkPerMillionGold || 0) != 0) stats.atk = Number(stats.atk || 0) + Number(stats.atkPerMillionGold || 0) * Math.floor(Number(user.gold || 0) / 1000000);
 }
 
 function getPotentialData() {
@@ -2013,7 +2015,7 @@ const CP_WEIGHTS = {
     RECOVERY_RATIO: 0.5,
     RECOVERY_EFFICIENCY_RATIO: 0.25,
     MP_DIVISOR: 8,
-    COOLDOWN_DIVISOR: 10000,
+    COOLDOWN_DIVISOR: 8000,
     ECON_SCALE: 30,
     POTION_SCALE: 25,
     PLUS_GOLD_DIVISOR: 1000,
@@ -2550,6 +2552,7 @@ function formatStatPointStatus(user) {
 
 async function enterField(user, fieldName, options, channel) {
     if (channel) activeFieldChannels[user.name] = channel;
+    if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
     const worldBoss = findWorldBossByName(fieldName);
     if (worldBoss) return await enterWorldBossField(user, worldBoss, options, channel);
     const dungeon = findDungeonByName(fieldName);
@@ -2587,6 +2590,11 @@ async function enterField(user, fieldName, options, channel) {
 
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
+    if (user.field.worldBoss && user.field.skillSelecting) {
+        user.pendingAction = null;
+        user.field = null;
+        return '✅ 월드보스 입장을 취소했습니다.';
+    }
     if (user.field.worldBoss) return '❌ 월드보스 전투 중에는 퇴장할 수 없습니다.';
     const fieldName = user.field.name;
     saveFieldCooldowns(user);
@@ -2618,7 +2626,6 @@ function formatWorldBossChannelBusyMessage(userName) {
 }
 
 async function enterWorldBossField(user, boss, options, channel) {
-    if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
     const activeUser = getActiveWorldBossUserInChannel(channel, user.name);
     if (activeUser) return formatWorldBossChannelBusyMessage(activeUser);
     ensureWorldBossRevived(boss);
@@ -2644,6 +2651,7 @@ async function enterWorldBossField(user, boss, options, channel) {
         used.add(idx);
         candidates.push(pool[idx].id);
     }
+    user.field = { name: boss.name, worldBoss: true, skillSelecting: true };
     user.pendingAction = { type: '월드보스스킬선택', boss: boss.name, candidates: candidates, useToken: useToken };
     const lines = ['[ 월드보스 ] ' + boss.name];
     lines.push('HP ' + comma(Number(state.hp || 0)) + '/' + comma(Number(boss.hp || 0)));
@@ -3378,6 +3386,7 @@ function tryEncounterFragment(user, dungeon, lines) {
 
 function useBasicAttackInField(user, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    if (user.field.skillSelecting) return '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])';
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     const now = Date.now();
@@ -3400,6 +3409,7 @@ function useBasicAttackInField(user, channel) {
 
 function getFieldCombatContext(user) {
     if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
+    if (user.field.skillSelecting) return { error: '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])' };
     if (user.field.worldBoss) {
         const boss = findWorldBossByName(user.field.name);
         if (!boss) return { error: '❌ 월드보스 데이터를 찾을 수 없습니다.' };
@@ -3756,6 +3766,7 @@ function startWorldBossSkillTimer(user, boss, channel) {
 
 function ensureWorldBossSkillTimer(user, channel) {
     if (!user || !user.field || !user.field.worldBoss) return;
+    if (user.field.skillSelecting) return;
     if (channel) worldBossChannels[user.name] = channel;
     if (worldBossSkillTimers[user.name]) return;
     const boss = findWorldBossByName(user.field.name);
@@ -3802,7 +3813,7 @@ async function runWorldBossSkillTick(userName, bossName) {
     const channel = worldBossChannels[userName];
     const latest = await getRPGUserByName(userName);
     if (!latest) { clearWorldBossSkillTimer(userName); return; }
-    if (!latest.field || !latest.field.worldBoss || latest.field.name != bossName) {
+    if (!latest.field || !latest.field.worldBoss || latest.field.name != bossName || latest.field.skillSelecting) {
         clearWorldBossSkillTimer(userName);
         return;
     }
@@ -8776,5 +8787,18 @@ module.exports = {
     getWorldBossContributionRanking,
     calculateCardSlotEffects,
     getShopRemainingLimits,
-    purchaseShopItem
+    purchaseShopItem,
+    formatEquipmentUpgradePreview,
+    runEquipmentUpgrade,
+    getEquipmentUpgradeRates,
+    getEquipmentUpgradeCost,
+    getEquipmentMaxLevel,
+    getEquipmentStatsAtLevel,
+    getEquipmentPlusStatsAtLevel,
+    getEquipmentByNumber,
+    getEquipmentData,
+    EQUIPMENT_STONE_ITEM_ID,
+    EQUIPMENT_PROTECT_ITEM_ID,
+    EQUIPMENT_ADVANCED_PROTECT_ITEM_ID,
+    EQUIPMENT_BLESSED_PROTECT_ITEM_ID
 };

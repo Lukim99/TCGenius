@@ -331,8 +331,10 @@ function openEquipmentModal(eq) {
     const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
     if (inventoryPageActive && ownInventory && Number(eq.number || 0) > 0) {
         const action = eq.equipped ? 'unequip' : 'equip';
-        const btn = el('button', { class: eq.equipped ? 'close' : 'primary', onclick: e => handleEquipmentAction(eq, action, e) }, eq.equipped ? '장착 해제' : '장착');
-        $('#modalBody').appendChild(btn);
+        const row = el('div', { class: 'row' });
+        row.appendChild(el('button', { class: eq.equipped ? 'close' : 'primary', onclick: e => handleEquipmentAction(eq, action, e) }, eq.equipped ? '장착 해제' : '장착'));
+        row.appendChild(el('button', { onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
+        $('#modalBody').appendChild(row);
     }
 }
 
@@ -503,6 +505,304 @@ function combineUi(file) { return '/combine-ui?file=' + encodeURIComponent(file)
 function combineGrade() {
     const filled = combineState.slots.find(Boolean);
     return filled ? filled.star : null;
+}
+
+// ===== 장비 강화 =====
+let enhanceState = { preview: null, busy: false };
+
+
+function openEnhanceModal(eq) {
+    if (!Number(eq.number || 0)) return;
+    $('#enhanceOverlay').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    loadEnhancePreview(eq.number);
+}
+
+async function loadEnhancePreview(number) {
+    $('#enhanceContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
+    $('#enhanceResultOverlay').classList.remove('active');
+    try {
+        const data = await api('/api/equipment/upgrade/preview/' + number);
+        if (data.error) { $('#enhanceContent').replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0' }, data.error)); return; }
+        enhanceState.preview = data;
+        renderEnhancePreview(data);
+    } catch (e) {
+        $('#enhanceContent').replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0' }, e.message));
+    }
+}
+
+function renderEnhancePreview(data) {
+    const thumbParts = [];
+    if (data.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: data.frameUrl, alt: '' }));
+    if (data.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: data.iconUrl, alt: data.name }));
+
+    const beforeContent = el('div', { class: 'enhance-before-content' });
+    const afterContent = el('div', { class: 'enhance-after-content' });
+    if (data.statDiffs && data.statDiffs.length) {
+        data.statDiffs.forEach(d => {
+            beforeContent.appendChild(el('div', { class: 'enhance-stat-row' },
+                el('span', { class: 'enhance-stat-label' }, d.label),
+                el('span', { class: 'enhance-stat-val' }, d.before)
+            ));
+            afterContent.appendChild(el('div', { class: 'enhance-stat-row' },
+                el('span', { class: 'enhance-stat-label' }, d.label),
+                el('span', { class: 'enhance-stat-val better' }, d.after,
+                    el('span', { class: 'enhance-stat-delta' }, ' (' + d.delta + ')'))
+            ));
+        });
+    } else {
+        beforeContent.appendChild(el('div', { class: 'enhance-empty-stat' }, '—'));
+        afterContent.appendChild(el('div', { class: 'enhance-empty-stat' }, '—'));
+    }
+
+    const win = el('div', { class: 'enhance-window' },
+        el('button', { class: 'enhance-close-btn', onclick: closeEnhanceModal }, '✕'),
+        el('div', { class: 'enhance-item-zone' },
+            el('div', { class: 'auc-thumb square' }, ...thumbParts),
+            el('div', { class: 'enhance-item-level' }, data.name + '  +' + data.level + ' → +' + data.nextLevel)
+        ),
+        beforeContent,
+        afterContent
+    );
+
+    const confirmBtn = el('button', { class: 'enhance-confirm-btn', id: 'enhanceConfirmBtn', onclick: () => {
+        if (Number(data.rates.reset || 0) > 0 && !data.protectInfo) showEnhanceWarning(() => runEnhancement(data.number));
+        else runEnhancement(data.number);
+    } }, '강화');
+    if (!data.canUpgrade) confirmBtn.disabled = true;
+
+    const protectNodes = data.protectInfo
+        ? [el('div', { class: 'enhance-protect ' + (data.protectInfo.level || 'basic') },
+            el('div', { class: 'enhance-protect-icon' },
+                data.protectInfo.iconUrl
+                    ? el('img', { class: 'enhance-protect-img', src: data.protectInfo.iconUrl, alt: '' })
+                    : '🛡'),
+            el('div', { class: 'enhance-protect-text' },
+                el('div', { class: 'enhance-protect-name' }, data.protectInfo.label),
+                el('div', { class: 'enhance-protect-detail' }, data.protectInfo.detail)
+            ),
+            el('div', { class: 'enhance-protect-badge' }, '보유 중')
+          )]
+        : [];
+
+    $('#enhanceContent').replaceChildren(
+        win,
+        el('div', { class: 'enhance-info' },
+            el('div', { class: 'enhance-section-label' }, '강화 확률'),
+            el('div', { class: 'enhance-rates-row' },
+                enhRateChip('great', '대성공', data.rates.great),
+                enhRateChip('success', '성공', data.rates.success),
+                enhRateChip('down', '하락', data.rates.down),
+                enhRateChip('destroy', '파괴', data.rates.reset)
+            ),
+            el('div', { class: 'enhance-section-label' }, '필요 재료'),
+            el('div', { class: 'enhance-cost-row' },
+                enhCostItem('강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개 보유', data.hasStone),
+                enhCostItem('🪙 골드', comma(data.cost.gold), comma(data.gold) + ' 보유', data.hasGold)
+            ),
+            ...protectNodes
+        ),
+        el('div', { class: 'enhance-footer' },
+            el('button', { class: 'enhance-cancel-btn', onclick: closeEnhanceModal }, '닫기'),
+            confirmBtn
+        )
+    );
+}
+
+function enhRateChip(kind, label, value) {
+    return el('div', { class: 'enhance-rate-chip ' + kind },
+        el('div', { class: 'rate-label' }, label),
+        el('div', { class: 'rate-val' }, Math.round(value * 1000) / 10 + '%')
+    );
+}
+
+function enhCostItem(name, need, have, ok) {
+    return el('div', { class: 'enhance-cost-item ' + (ok ? 'ok' : 'lack') },
+        el('div', { class: 'enhance-cost-text' },
+            el('div', { class: 'enhance-cost-name' }, name),
+            el('div', { class: 'enhance-cost-val' }, need)
+        ),
+        el('div', { style: 'font-size:10px;color:' + (ok ? '#86efac' : '#fca5a5') + ';font-weight:700;white-space:nowrap' }, have)
+    );
+}
+
+async function runEnhancement(number) {
+    if (enhanceState.busy) return;
+    enhanceState.busy = true;
+    const btn = $('#enhanceConfirmBtn');
+    if (btn) btn.disabled = true;
+    const itemInfo = enhanceState.preview ? { name: enhanceState.preview.name, iconUrl: enhanceState.preview.iconUrl, frameUrl: enhanceState.preview.frameUrl } : {};
+    try {
+        const data = await postApi('/api/equipment/upgrade/run', { number });
+        enhanceState.busy = false;
+        if (data.profile) renderProfile(data.profile);
+        showEnhanceResult(data.resultKind, data.message, number, data.preview, data.appliedDiffs || [], itemInfo);
+    } catch (e) {
+        enhanceState.busy = false;
+        if (btn) { btn.disabled = false; }
+        alert(e.message);
+    }
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs, ...children) {
+    const e = document.createElementNS(SVG_NS, tag);
+    if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+    children.forEach(c => { if (c != null) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return e;
+}
+
+const SPARKLE_PATH = 'M0,-10 L2.2,-2.2 L10,0 L2.2,2.2 L0,10 L-2.2,2.2 L-10,0 L-2.2,-2.2 Z';
+
+// 무기 둘레로 흩뿌려지는 반짝임 파티클 SVG 레이어
+function buildSparkleLayer(count, colors) {
+    const svg = svgEl('svg', { class: 'enh-fx-sparkles', viewBox: '0 0 200 200', preserveAspectRatio: 'xMidYMid meet' });
+    for (let i = 0; i < count; i++) {
+        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.6;
+        const dist = 46 + Math.random() * 38;
+        const x = 100 + Math.cos(ang) * dist;
+        const y = 100 + Math.sin(ang) * dist;
+        const sc = 0.5 + Math.random() * 0.9;
+        const color = colors[i % colors.length];
+        const g = svgEl('g', { class: 'enh-sparkle', style: 'transform-origin:' + x + 'px ' + y + 'px;animation-delay:' + (Math.random() * 0.9).toFixed(2) + 's' });
+        g.appendChild(svgEl('path', { d: SPARKLE_PATH, fill: color, transform: 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') scale(' + sc.toFixed(2) + ')' }));
+        svg.appendChild(g);
+    }
+    return svg;
+}
+
+// 중심에서 방사형으로 터지는 광선 SVG (성공/대성공)
+function buildRayLayer(count, color) {
+    const svg = svgEl('svg', { class: 'enh-fx-rays', viewBox: '0 0 200 200', preserveAspectRatio: 'xMidYMid meet' });
+    const grp = svgEl('g', { class: 'enh-rays-spin', style: 'transform-origin:100px 100px' });
+    for (let i = 0; i < count; i++) {
+        const ang = (Math.PI * 2 * i) / count;
+        const x2 = 100 + Math.cos(ang) * 96;
+        const y2 = 100 + Math.sin(ang) * 96;
+        grp.appendChild(svgEl('line', { x1: 100, y1: 100, x2: x2.toFixed(1), y2: y2.toFixed(1), stroke: color, 'stroke-width': (1 + (i % 2)).toString(), 'stroke-linecap': 'round', opacity: '0.85' }));
+    }
+    svg.appendChild(grp);
+    return svg;
+}
+
+// 무기가 부서질 때 사방으로 튀는 파편 SVG (파괴)
+function buildShardLayer(count) {
+    const svg = svgEl('svg', { class: 'enh-fx-shards', viewBox: '0 0 200 200', preserveAspectRatio: 'xMidYMid meet' });
+    for (let i = 0; i < count; i++) {
+        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+        const dist = 70 + Math.random() * 50;
+        const dx = (Math.cos(ang) * dist).toFixed(1);
+        const dy = (Math.sin(ang) * dist).toFixed(1);
+        const rot = (Math.random() * 540 - 270).toFixed(0);
+        const s = 5 + Math.random() * 7;
+        const shade = ['#94a3b8', '#cbd5e1', '#64748b', '#e2e8f0'][i % 4];
+        const poly = svgEl('polygon', { points: '0,' + (-s).toFixed(1) + ' ' + (s * 0.8).toFixed(1) + ',' + (s * 0.6).toFixed(1) + ' ' + (-s * 0.7).toFixed(1) + ',' + (s * 0.7).toFixed(1), fill: shade });
+        const g = svgEl('g', { class: 'enh-shard', style: '--dx:' + dx + 'px;--dy:' + dy + 'px;--rot:' + rot + 'deg;transform-origin:100px 100px;animation-delay:' + (Math.random() * 0.12).toFixed(2) + 's' });
+        g.appendChild(svgEl('g', { transform: 'translate(100 100)' }, poly));
+        svg.appendChild(g);
+    }
+    return svg;
+}
+
+function showEnhanceWarning(onConfirm) {
+    const ov = $('#enhanceResultOverlay');
+    ov.replaceChildren(
+        el('div', { class: 'enh-warn-icon' }, '⚠️'),
+        el('div', { class: 'enh-warn-title' }, '장비가 파괴될 수 있습니다'),
+        el('div', { class: 'enh-warn-sub' }, '보호권 없이 강화하면 실패 시 장비가 사라집니다. 진행하시겠습니까?'),
+        el('div', { class: 'enh-warn-actions' },
+            el('button', { class: 'enhance-cancel-btn', onclick: () => ov.classList.remove('active') }, '취소'),
+            el('button', { class: 'enh-warn-confirm', onclick: () => { ov.classList.remove('active'); onConfirm(); } }, '진행')
+        )
+    );
+    ov.classList.add('active');
+}
+
+function showEnhanceResult(kind, message, number, nextPreview, appliedDiffs, itemInfo) {
+    const lines = (message || '').split('\n');
+    let headline = lines[0] || '';
+    const sub = lines.slice(1).join('  ').trim();
+    if (kind === 'protected') {
+        if (message.includes('초기화')) headline = '파괴 방어 초기화';
+        else if (message.includes('파괴')) headline = '파괴 방어';
+        else if (message.includes('하락')) headline = '하락 방어';
+    }
+    const resultOverlay = $('#enhanceResultOverlay');
+    const info = itemInfo || {};
+
+    // 무기 썸네일
+    const thumbParts = [];
+    if (info.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: info.frameUrl, alt: '' }));
+    if (info.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: info.iconUrl, alt: info.name || '' }));
+    const weapon = el('div', { class: 'enh-fx-weapon' }, el('div', { class: 'auc-thumb square' }, ...thumbParts));
+
+    // 결과 종류별 이펙트 레이어 구성
+    const fxLayers = [el('div', { class: 'enh-fx-aura' })];
+    if (kind === 'great') {
+        fxLayers.push(buildRayLayer(16, '#fde68a'));
+        fxLayers.push(weapon);
+        fxLayers.push(buildSparkleLayer(16, ['#fde68a', '#fca5a5', '#86efac', '#93c5fd', '#f0abfc', '#fbbf24']));
+    } else if (kind === 'success') {
+        fxLayers.push(buildRayLayer(12, 'rgba(186,230,253,.7)'));
+        fxLayers.push(weapon);
+        fxLayers.push(buildSparkleLayer(11, ['#e0f2fe', '#bae6fd', '#ffffff']));
+    } else if (kind === 'destroy') {
+        fxLayers.push(weapon);
+        fxLayers.push(buildShardLayer(14));
+    } else if (kind === 'protected') {
+        fxLayers.push(weapon);
+        fxLayers.push(buildSparkleLayer(8, ['#a5b4fc', '#c7d2fe', '#e0e7ff']));
+    } else { // down / fail
+        fxLayers.push(weapon);
+        fxLayers.push(buildSparkleLayer(6, ['#fca5a5', '#fecaca']));
+    }
+    const fxStage = el('div', { class: 'enh-fx ' + kind }, ...fxLayers);
+
+    // 차례차례 등장하는 스탯 변화
+    const diffs = Array.isArray(appliedDiffs) ? appliedDiffs : [];
+    const FX_DURATION = 1.25; // 이펙트 후 스탯 등장 시작 (초)
+    const STEP = 0.28;
+    const statsBox = el('div', { class: 'enh-result-stats' });
+    diffs.forEach((d, i) => {
+        const row = el('div', { class: 'enh-result-stat-row ' + (d.improved ? 'up' : 'down'), style: 'animation-delay:' + (FX_DURATION + i * STEP).toFixed(2) + 's' },
+            el('span', { class: 'enh-result-stat-label' }, d.label),
+            el('span', { class: 'enh-result-stat-val' }, d.after,
+                el('span', { class: 'enh-result-stat-delta' }, ' (' + d.delta + ')'))
+        );
+        statsBox.appendChild(row);
+    });
+
+    const btnDelay = (FX_DURATION + diffs.length * STEP + 0.15).toFixed(2);
+    const confirmBtn = el('button', {
+        class: 'enh-result-confirm ' + kind,
+        style: 'animation-delay:' + btnDelay + 's',
+        onclick: () => {
+            resultOverlay.classList.remove('active');
+            if (nextPreview && !nextPreview.error) {
+                enhanceState.preview = nextPreview;
+                renderEnhancePreview(nextPreview);
+            } else {
+                closeEnhanceModal();
+            }
+        }
+    }, '확인');
+
+    resultOverlay.replaceChildren(
+        fxStage,
+        el('div', { class: 'enh-result-headline ' + kind }, headline),
+        ...(sub ? [el('div', { class: 'enhance-result-sub' }, sub)] : []),
+        statsBox,
+        confirmBtn
+    );
+    resultOverlay.classList.add('active');
+}
+
+function closeEnhanceModal() {
+    $('#enhanceOverlay').classList.remove('active');
+    document.body.style.overflow = '';
+    enhanceState.preview = null;
+    enhanceState.busy = false;
+    loadInventory('equipment').catch(() => {});
 }
 
 function buildCombineStage() {
