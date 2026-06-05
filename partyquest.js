@@ -1881,6 +1881,7 @@ function useSkill(name, skillName, targetName) {
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
+    if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (!me.skills.includes(skillName)) return { error: '습득하지 않은 스킬입니다.' };
     const def = resolveSkillDef(room, skillName, me);
     if (!def) return { error: '존재하지 않는 스킬입니다.' };

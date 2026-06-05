@@ -495,7 +495,8 @@
             if (!document.getElementById('pqMobStage')) stage.replaceChildren(renderMobStage(snap));
             else updateMobStage(snap);
         } else if (snap.phaseType === 'elite' || snap.phaseType === 'boss') {
-            if (!document.getElementById('pqBossStage')) stage.replaceChildren(renderBossStage(snap));
+            if (!snap.monster) { stage.replaceChildren(); }
+            else if (!document.getElementById('pqBossStage')) stage.replaceChildren(renderBossStage(snap));
             else updateBossStage(snap);
         } else {
             stage.replaceChildren();
@@ -692,6 +693,13 @@
         const gaugeFill = document.getElementById('pqBossGaugeFill');
         const stun = document.getElementById('pqBossStun');
         const pattern = document.getElementById('pqBossPattern');
+        const bossNameEl = document.querySelector('.pq-boss-name');
+        if (bossNameEl) {
+            // 이름 텍스트만 교체 (pqBossStun span은 보존)
+            const stunSpan = document.getElementById('pqBossStun');
+            bossNameEl.textContent = monster.name;
+            if (stunSpan) bossNameEl.appendChild(stunSpan);
+        }
         if (hpVal) hpVal.textContent = monster.hp + ' / ' + monster.hpMax;
         if (hpFill) hpFill.style.width = (monster.hpMax > 0 ? (monster.hp / monster.hpMax * 100) : 0) + '%';
         if (gaugeFill) gaugeFill.style.width = (monster.gauge || 0) + '%';
