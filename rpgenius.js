@@ -5570,11 +5570,12 @@ async function resumeAllFishing(getChannelById) {
 
 async function stopFishingForCommand(user) {
     normalizeFishingData(user);
-    if (!user.fishing) return;
+    if (!user.fishing) return false;
     clearFishingTimer(user.name);
     delete fishingChannels[user.name];
     user.fishing = false;
     await user.save();
+    return true;
 }
 
 async function clearFishingNet(user) {
@@ -8123,7 +8124,7 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
-    if (user.fishing) await stopFishingForCommand(user);
+    if (user.fishing && await stopFishingForCommand(user)) reply('🎣 낚시를 중단합니다.');
 
     if (args[0] == '살림망') {
         reply(formatFishingNet(user));
@@ -8182,7 +8183,7 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '장착정보', '설명', '사용', '월드보스선택'].includes(args[0])) {
-        reply('❌ 필드에서 사용할 수 없는 명령어입니다.\n/RPGenius 필드퇴장');
+        reply('❌ 필드에서 사용할 수 없습니다.\n/RPGenius 필드퇴장');
         return true;
     }
 
