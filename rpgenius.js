@@ -8181,7 +8181,7 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
-    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '장착정보', '설명', '사용'].includes(args[0])) {
+    if (user.field && user.field.name && !['필드퇴장', '공격', '스킬', '내정보', '장착정보', '설명', '사용', '월드보스선택'].includes(args[0])) {
         reply('❌ 필드에서 사용할 수 없는 명령어입니다.\n/RPGenius 필드퇴장');
         return true;
     }

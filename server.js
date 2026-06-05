@@ -1326,6 +1326,51 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     }
 });
 
+server.get('/api/admin/hotdeal/preview', requireAdmin, (req, res) => {
+    try {
+        const { date, seg } = req.query;
+        // Build a range: if date given, return that day's 4 segments; if date+seg, return just that one
+        const items = rpgenius.getDataCache('Item', []);
+        const itemName = id => (items[id] && items[id].name) ? items[id].name : (id === 0 ? '강화석' : `아이템#${id}`);
+        const itemIcon = id => { const d = items[id]; return d ? getItemIconUrl(d) : null; };
+        const formatHotdealResult = (periodKey) => {
+            const d = generateHotDeal(periodKey);
+            return {
+                periodKey,
+                sectorName: d.sectorName,
+                slots: d.picks.map(p => ({
+                    itemId: p.id,
+                    name: itemName(p.id),
+                    iconUrl: itemIcon(p.id),
+                    count: p.count,
+                    goods: p.goods,
+                    amount: p.amount,
+                })),
+            };
+        };
+        if (date && seg != null) {
+            const segN = Number(seg);
+            if (!date.match(/^\d{4}-\d{2}-\d{2}$/) || segN < 0 || segN > 3) return res.status(400).json({ error: '잘못된 파라미터' });
+            return res.json(formatHotdealResult(`${date}-${segN}`));
+        }
+        if (date) {
+            if (!date.match(/^\d{4}-\d{2}-\d{2}$/)) return res.status(400).json({ error: '잘못된 날짜' });
+            return res.json([0, 1, 2, 3].map(s => formatHotdealResult(`${date}-${s}`)));
+        }
+        // default: return today (KST) all 4 segments
+        const now = new Date();
+        const kstMs = now.getTime() + 9 * 3600000;
+        const kst = new Date(kstMs);
+        const y = kst.getUTCFullYear();
+        const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(kst.getUTCDate()).padStart(2, '0');
+        const today = `${y}-${m}-${day}`;
+        return res.json([0, 1, 2, 3].map(s => formatHotdealResult(`${today}-${s}`)));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
     const scope = String((req.body && req.body.scope) || '').trim();
     const shopType = String((req.body && req.body.shopType) || '').trim();

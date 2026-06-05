@@ -2048,3 +2048,66 @@ $('#rawSave').onclick = async () => {
     try { await saveKey(k, data); toast('✅ ' + k + ' 저장 완료'); } catch (e) { toast(e.message, false); }
 };
 TAB_LOADERS.raw = () => rawLoad();
+
+// ============================================================================
+// 핫딜 미리보기
+// ============================================================================
+const GOODS_LABEL = { gold: '골드', garnet: '가넷' };
+const SEG_LABEL = ['00:00–06:00', '06:00–12:00', '12:00–18:00', '18:00–24:00'];
+
+function renderHdSlot(slot, slotIdx) {
+    const wrap = el('div', { class: 'hd-prev-slot ' + (slotIdx === 0 ? 'fire' : 'lightning') });
+    if (slot.iconUrl) wrap.appendChild(el('img', { class: 'hd-prev-icon', src: slot.iconUrl, alt: '' }));
+    const nameRow = el('div', { class: 'hd-prev-name' }, slot.name + (slot.count > 1 ? ` ×${slot.count}` : ''));
+    const priceRow = el('div', { class: 'hd-prev-price' },
+        GOODS_LABEL[slot.goods] || slot.goods,
+        ' ',
+        Number(slot.amount).toLocaleString()
+    );
+    wrap.appendChild(nameRow);
+    wrap.appendChild(priceRow);
+    return wrap;
+}
+
+function renderHdPeriod(item) {
+    const seg = Number(item.periodKey.split('-')[3]);
+    const card = el('div', { class: 'hd-prev-card' });
+    card.appendChild(el('div', { class: 'hd-prev-header' },
+        el('span', { class: 'hd-prev-time' }, SEG_LABEL[seg] || item.periodKey),
+        el('span', { class: 'hd-prev-sector' }, item.sectorName)
+    ));
+    const slots = el('div', { class: 'hd-prev-slots' });
+    item.slots.forEach((s, i) => slots.appendChild(renderHdSlot(s, i)));
+    card.appendChild(slots);
+    return card;
+}
+
+async function loadHdPreview() {
+    const date = $('#hdDate').value;
+    const seg = $('#hdSeg').value;
+    const result = $('#hdResult');
+    result.innerHTML = '<div class="muted">불러오는 중...</div>';
+    try {
+        let url = '/api/admin/hotdeal/preview';
+        if (date) { url += '?date=' + encodeURIComponent(date); if (seg !== '') url += '&seg=' + seg; }
+        const data = await api(url);
+        result.innerHTML = '';
+        if (Array.isArray(data)) {
+            const grid = el('div', { class: 'hd-prev-grid' });
+            data.forEach(item => grid.appendChild(renderHdPeriod(item)));
+            result.appendChild(grid);
+        } else {
+            result.appendChild(renderHdPeriod(data));
+        }
+    } catch (e) {
+        result.innerHTML = '<div class="muted err">' + e.message + '</div>';
+    }
+}
+
+// set default date to today (local)
+const _hdTodayLocal = new Date();
+$('#hdDate').value = _hdTodayLocal.getFullYear() + '-' + String(_hdTodayLocal.getMonth() + 1).padStart(2, '0') + '-' + String(_hdTodayLocal.getDate()).padStart(2, '0');
+
+$('#hdPreviewBtn').onclick = loadHdPreview;
+TAB_LOADERS.hotdealpreview = () => loadHdPreview();
+TAB_LOADERS.raw = () => rawLoad();
