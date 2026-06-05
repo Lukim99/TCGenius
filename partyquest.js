@@ -1855,16 +1855,22 @@ function onMonsterDefeated(room) {
     const mon = room.monster;
     if (mon && mon.bossState && !mon.bossState.revived) {
         const pattern = getMonsterPattern(mon, 'reviveOnce');
+        const disablePatterns = pattern.disablePatternsAfterRevive !== false;
+        const reviveHpPct = Number(pattern.reviveHpPct || 0.3);
         mon.bossState.revived = true;
-        mon.bossState.disabled = true;
+        mon.bossState.disabled = disablePatterns;
         mon.bossState.casting = null;
         mon.bossState.buffRemain = 0;
         mon.nextPattern = null;
-        mon.hp = Math.max(1, Math.round(mon.hpMax * Number(pattern.reviveHpPct || 0.3)));
+        mon.hp = Math.max(1, Math.round(mon.hpMax * reviveHpPct));
         mon.gauge = 0;
         mon.debuffs = [];
-        pushNotice(room, '🔥 ' + mon.name + ' 부활! 패턴이 사라지고 기본 공격만 사용합니다.', 'danger', 4500);
-        pushCombat(room, mon.name + ' 최대 체력의 30%로 부활', 'danger');
+        const pctLabel = Math.round(reviveHpPct * 100) + '%';
+        const noticeMsg = disablePatterns
+            ? '🔥 ' + mon.name + ' 부활! 패턴이 사라지고 기본 공격만 사용합니다.'
+            : '🔥 ' + mon.name + ' 부활!';
+        pushNotice(room, noticeMsg, 'danger', 4500);
+        pushCombat(room, mon.name + ' 최대 체력의 ' + pctLabel + '로 부활', 'danger');
         return;
     }
     pushNotice(room, '🏆 ' + (room.monster ? room.monster.name : '적') + ' 처치!', 'success', 4000);

@@ -43,7 +43,7 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
-            "hp": 254100,
+            "hp": 314100,
             "atk": 1270,
             "def": 970,
             "actionInterval": 3.5,
@@ -78,7 +78,7 @@
                 "type": "regenBelowHp",
                 "threshold": 0.3,
                 "interval": 5,
-                "healMaxHpPct": 0.05,
+                "healMaxHpPct": 0.06,
                 "delayWhileStunned": true
               },
               {
@@ -103,8 +103,8 @@
               {
                 "name": "흑화 부활",
                 "type": "reviveOnce",
-                "reviveHpPct": 0.3,
-                "disablePatternsAfterRevive": true
+                "reviveHpPct": 0.4,
+                "disablePatternsAfterRevive": false
               }
             ],
             "stat": {
