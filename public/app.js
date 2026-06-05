@@ -424,14 +424,39 @@ if ($('#inventoryBackBtn')) $('#inventoryBackBtn').onclick = () => {
     loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
 };
 
-function itemRow(item) {
-    return el('div', { class: 'inv-row' },
-        el('b', null, item.name),
-        el('strong', null, 'x' + comma(item.count))
+function invItemCell(item) {
+    const imgParts = [];
+    if (item.iconUrl) {
+        if (item.frameUrl) imgParts.push(el('img', { class: 'inv-cell-frame', src: item.frameUrl, alt: '' }));
+        imgParts.push(el('img', { class: 'inv-cell-icon', src: item.iconUrl, alt: item.name }));
+    }
+    if (item.count > 1) imgParts.push(el('span', { class: 'inv-cell-count' }, comma(item.count)));
+    return el('div', { class: 'inv-cell', onclick: () => openInvItemModal(item) },
+        el('div', { class: 'inv-cell-img' }, ...imgParts),
+        el('div', { class: 'inv-cell-name' }, item.name)
     );
 }
 
+function openInvItemModal(item) {
+    const thumbParts = [];
+    if (item.iconUrl) {
+        if (item.frameUrl) thumbParts.push(el('img', { class: 'inv-cell-frame', src: item.frameUrl, alt: '' }));
+        thumbParts.push(el('img', { class: 'inv-cell-icon', src: item.iconUrl, alt: item.name }));
+    }
+    const bodyNodes = [
+        el('div', { class: 'inv-cell-img', style: 'width:96px;height:96px;margin:0 auto 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1)' }, ...thumbParts),
+        el('div', { class: 'kv' }, el('span', null, '종류'), el('b', null, item.type || '-')),
+        el('div', { class: 'kv' }, el('span', null, '보유 수량'), el('b', null, comma(item.count) + '개')),
+    ];
+    if (item.desc) bodyNodes.push(el('div', { style: 'padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px;font-size:13px;color:#cbd5e1;line-height:1.6;margin-top:4px' }, item.desc));
+    $('#modalTitle').textContent = item.name;
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(...bodyNodes);
+    $('#modalBg').classList.add('active');
+}
+
 async function loadInventory(kind) {
+    $$('.inv-kind-tab').forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
     $('#viewer').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     const url = currentInventoryName && myName && currentInventoryName !== myName
         ? '/api/inventory/' + kind + '/' + encodeURIComponent(currentInventoryName)
@@ -442,8 +467,10 @@ async function loadInventory(kind) {
         const sections = [];
         ITEM_TYPE_ORDER.forEach(type => {
             const filtered = data.items.filter(item => item.type === type).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
-            if (filtered.length) sections.push(categorySection('《 ' + type + ' 》', filtered.map(itemRow)));
+            if (filtered.length) sections.push(categorySection('《 ' + type + ' 》', [el('div', { class: 'inv-grid' }, ...filtered.map(invItemCell))]));
         });
+        const unknown = data.items.filter(item => !ITEM_TYPE_ORDER.includes(item.type)).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+        if (unknown.length) sections.push(categorySection('《 기타 》', [el('div', { class: 'inv-grid' }, ...unknown.map(invItemCell))]));
         $('#viewer').replaceChildren(...(sections.length ? sections : [el('div', { class: 'empty' }, '보유 아이템이 없습니다.')]));
     }
     if (kind === 'cards') {
@@ -465,7 +492,7 @@ async function loadInventory(kind) {
     }
 }
 
-$$('.view-btn').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
+$$('.inv-kind-tab').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
 
 // ===== 조합 =====
 

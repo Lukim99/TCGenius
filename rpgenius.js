@@ -1451,8 +1451,8 @@ const CARD_COMBINE_TABLE = [
 ];
 
 const CARD_COMBINE_GUARANTEE_COUNTS = {
-    4: 2,
-    5: 2,
+    4: 3,
+    5: 3,
     6: 5,
     7: 5
 };
@@ -5865,11 +5865,11 @@ const EQUIPMENT_UPGRADE_RATES = [
     { great: 0.015, success: 0.60, down: 0.385, reset: 0 },
     { great: 0.012, success: 0.50, down: 0.388, reset: 0.10 },
     { great: 0.01, success: 0.30, down: 0.54, reset: 0.15 },
-    { great: 0.005, success: 0.15, down: 0.545, reset: 0.30 },
-    { great: 0, success: 0.10, down: 0.50, reset: 0.40 },
-    { great: 0, success: 0.03, down: 0.47, reset: 0.50 },
-    { great: 0, success: 0.015, down: 0.335, reset: 0.65 },
-    { great: 0, success: 0.007, down: 0.193, reset: 0.80 }
+    { great: 0.005, success: 0.2, down: 0.495, reset: 0.30 },
+    { great: 0, success: 0.15, down: 0.45, reset: 0.40 },
+    { great: 0, success: 0.06, down: 0.44, reset: 0.50 },
+    { great: 0, success: 0.03, down: 0.32, reset: 0.65 },
+    { great: 0, success: 0.01, down: 0.19, reset: 0.80 }
 ];
 
 function refundPendingActionItem(user, pending) {
