@@ -6349,9 +6349,11 @@ function runEquipmentUpgrade(user) {
     let protectedResult = null;
     if (result == 'great') selected.equip.level = Math.min(maxLevel, level + 2);
     if (result == 'success') selected.equip.level = Math.min(maxLevel, level + 1);
+    const protectLevel = pending.protectLevel; // 'none'|'basic'|'advanced'|'blessed'|undefined(auto)
+    const tryUse = id => { if (getInventoryItemCount(user, id) > 0) { removeInventoryItem(user, id, 1); return true; } return false; };
+    const wantLevel = lvl => !protectLevel || protectLevel === lvl; // auto or exact match
     if (result == 'down') {
-        if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) {
-            removeInventoryItem(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID, 1);
+        if (wantLevel('blessed') && tryUse(EQUIPMENT_BLESSED_PROTECT_ITEM_ID)) {
             selected.equip.level = level;
             protectedResult = 'blessedDown';
         } else {
@@ -6359,19 +6361,17 @@ function runEquipmentUpgrade(user) {
         }
     }
     if (result == 'destroy') {
-        if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) {
-            removeInventoryItem(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID, 1);
-            selected.equip.level = level;
-            protectedResult = 'blessedDestroy';
-        } else if (getInventoryItemCount(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID) > 0) {
-            removeInventoryItem(user, EQUIPMENT_ADVANCED_PROTECT_ITEM_ID, 1);
-            selected.equip.level = level;
-            protectedResult = 'advancedDestroy';
-        } else if (getInventoryItemCount(user, EQUIPMENT_PROTECT_ITEM_ID) > 0) {
-            removeInventoryItem(user, EQUIPMENT_PROTECT_ITEM_ID, 1);
-            selected.equip.level = 0;
-            protectedResult = 'protectDestroy';
-        } else {
+        let didProtect = false;
+        if (!didProtect && wantLevel('blessed') && tryUse(EQUIPMENT_BLESSED_PROTECT_ITEM_ID)) {
+            selected.equip.level = level; protectedResult = 'blessedDestroy'; didProtect = true;
+        }
+        if (!didProtect && wantLevel('advanced') && tryUse(EQUIPMENT_ADVANCED_PROTECT_ITEM_ID)) {
+            selected.equip.level = level; protectedResult = 'advancedDestroy'; didProtect = true;
+        }
+        if (!didProtect && wantLevel('basic') && tryUse(EQUIPMENT_PROTECT_ITEM_ID)) {
+            selected.equip.level = 0; protectedResult = 'protectDestroy'; didProtect = true;
+        }
+        if (!didProtect) {
             removeSelectedEquipment(user, selected);
             const stats = calculateUserStats(user);
             user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));

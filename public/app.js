@@ -513,7 +513,7 @@ function combineGrade() {
 }
 
 // ===== 장비 강화 =====
-let enhanceState = { preview: null, busy: false };
+let enhanceState = { preview: null, busy: false, selectedProtectLevel: 'auto' };
 
 
 function openEnhanceModal(eq) {
@@ -570,24 +570,48 @@ function renderEnhancePreview(data) {
         afterContent
     );
 
+    const getEffectiveProtect = () => {
+        const opts = data.protectOptions || [];
+        const sel = enhanceState.selectedProtectLevel;
+        if (sel === 'none') return null;
+        if (!sel || sel === 'auto') return opts[0] || null;
+        return opts.find(o => o.level === sel) || null;
+    };
+
+    const buildProtectCard = () => {
+        const opts = data.protectOptions || [];
+        const effective = getEffectiveProtect();
+        const canPick = opts.length > 0;
+        const cardClass = 'enhance-protect ' + (effective ? (effective.level || 'basic') : 'none') + (canPick ? ' clickable' : '');
+        const card = el('div', { class: cardClass, onclick: canPick ? () => openProtectPicker(data) : null });
+        if (effective) {
+            card.appendChild(el('div', { class: 'enhance-protect-icon' },
+                effective.iconUrl ? el('img', { class: 'enhance-protect-img', src: effective.iconUrl, alt: '' }) : '🛡'));
+            card.appendChild(el('div', { class: 'enhance-protect-text' },
+                el('div', { class: 'enhance-protect-name' }, effective.label),
+                el('div', { class: 'enhance-protect-detail' }, effective.detail)
+            ));
+            card.appendChild(el('div', { class: 'enhance-protect-badge' }, '보유 ' + effective.count + '개'));
+        } else {
+            card.appendChild(el('div', { class: 'enhance-protect-icon' }, '⊘'));
+            card.appendChild(el('div', { class: 'enhance-protect-text' },
+                el('div', { class: 'enhance-protect-name' }, '보호 없음'),
+                el('div', { class: 'enhance-protect-detail' }, opts.length ? '클릭하여 보호권 선택' : '보호권 미보유')
+            ));
+        }
+        if (canPick) card.appendChild(el('div', { class: 'enhance-protect-pick-arrow' }, '▾'));
+        return card;
+    };
+
     const confirmBtn = el('button', { class: 'enhance-confirm-btn', id: 'enhanceConfirmBtn', onclick: () => {
-        if (Number(data.rates.reset || 0) > 0 && !data.protectInfo) showEnhanceWarning(() => runEnhancement(data.number));
+        const effective = getEffectiveProtect();
+        if (Number(data.rates.reset || 0) > 0 && !effective) showEnhanceWarning(() => runEnhancement(data.number));
         else runEnhancement(data.number);
     } }, '강화');
     if (!data.canUpgrade) confirmBtn.disabled = true;
 
-    const protectNodes = data.protectInfo
-        ? [el('div', { class: 'enhance-protect ' + (data.protectInfo.level || 'basic') },
-            el('div', { class: 'enhance-protect-icon' },
-                data.protectInfo.iconUrl
-                    ? el('img', { class: 'enhance-protect-img', src: data.protectInfo.iconUrl, alt: '' })
-                    : '🛡'),
-            el('div', { class: 'enhance-protect-text' },
-                el('div', { class: 'enhance-protect-name' }, data.protectInfo.label),
-                el('div', { class: 'enhance-protect-detail' }, data.protectInfo.detail)
-            ),
-            el('div', { class: 'enhance-protect-badge' }, '보유 중')
-          )]
+    const protectNodes = (data.protectOptions != null)
+        ? [buildProtectCard()]
         : [];
 
     $('#enhanceContent').replaceChildren(
@@ -631,14 +655,62 @@ function enhCostItem(name, need, have, ok) {
     );
 }
 
+function openProtectPicker(previewData) {
+    const opts = previewData.protectOptions || [];
+    const cur = enhanceState.selectedProtectLevel;
+
+    const body = el('div', { class: 'protect-picker' });
+    const makeRow = (level, label, detail, iconUrl, count, isCur) => {
+        const row = el('div', {
+            class: 'protect-pick-row' + (isCur ? ' selected' : ''),
+            onclick: () => {
+                enhanceState.selectedProtectLevel = level;
+                closeModal();
+                renderEnhancePreview(previewData);
+            }
+        });
+        const icon = el('div', { class: 'protect-pick-icon' });
+        if (iconUrl) icon.appendChild(el('img', { src: iconUrl, alt: '' }));
+        else icon.textContent = level === 'none' ? '⊘' : '🛡';
+        row.appendChild(icon);
+        const txt = el('div', { class: 'protect-pick-text' });
+        txt.appendChild(el('div', { class: 'protect-pick-name' }, label));
+        txt.appendChild(el('div', { class: 'protect-pick-detail' }, detail));
+        row.appendChild(txt);
+        if (count != null) row.appendChild(el('div', { class: 'protect-pick-count' }, count + '개'));
+        if (isCur) row.appendChild(el('div', { class: 'protect-pick-check' }, '✓'));
+        return row;
+    };
+
+    const isNone = cur === 'none';
+    const isAuto = !cur || cur === 'auto';
+    body.appendChild(makeRow('none', '보호 없음', '보호권을 사용하지 않습니다', null, null, isNone));
+    opts.forEach(opt => {
+        const isCur = isAuto ? opt === opts[0] : cur === opt.level;
+        body.appendChild(makeRow(opt.level, opt.label, opt.detail, opt.iconUrl, opt.count, isCur));
+    });
+
+    $('#modalTitle').textContent = '보호권 선택';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(body);
+    $('#modalBg').classList.add('active');
+}
+
 async function runEnhancement(number) {
     if (enhanceState.busy) return;
     enhanceState.busy = true;
     const btn = $('#enhanceConfirmBtn');
     if (btn) btn.disabled = true;
     const itemInfo = enhanceState.preview ? { name: enhanceState.preview.name, iconUrl: enhanceState.preview.iconUrl, frameUrl: enhanceState.preview.frameUrl } : {};
+    // resolve effective protectLevel
+    const opts = enhanceState.preview && enhanceState.preview.protectOptions || [];
+    const sel = enhanceState.selectedProtectLevel;
+    let protectLevel;
+    if (sel === 'none') protectLevel = 'none';
+    else if (!sel || sel === 'auto') protectLevel = opts[0] ? opts[0].level : 'none';
+    else protectLevel = sel;
     try {
-        const data = await postApi('/api/equipment/upgrade/run', { number });
+        const data = await postApi('/api/equipment/upgrade/run', { number, protectLevel });
         enhanceState.busy = false;
         if (data.profile) renderProfile(data.profile);
         showEnhanceResult(data.resultKind, data.message, number, data.preview, data.appliedDiffs || [], itemInfo);
@@ -807,6 +879,7 @@ function closeEnhanceModal() {
     document.body.style.overflow = '';
     enhanceState.preview = null;
     enhanceState.busy = false;
+    enhanceState.selectedProtectLevel = 'auto';
     loadInventory('equipment').catch(() => {});
 }
 
