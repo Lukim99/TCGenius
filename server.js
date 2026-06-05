@@ -781,9 +781,17 @@ function hotdealWeightedPick(pool, rng) {
     return pool[pool.length - 1];
 }
 
+function hotdealPeriodIndex(periodKey) {
+    // periodKey: "YYYY-MM-DD-N"
+    const [y, m, d, seg] = periodKey.split('-').map(Number);
+    const epoch = Date.UTC(y, m - 1, d) / 86400000;
+    return epoch * 4 + seg;
+}
+
 function generateHotDeal(periodKey) {
     const rng = hotdealRng(hotdealPeriodSeed(periodKey));
-    const sector = HOTDEAL_SECTORS[Math.floor(rng() * HOTDEAL_SECTORS.length)];
+    const sectorIdx = hotdealPeriodIndex(periodKey) % HOTDEAL_SECTORS.length;
+    const sector = HOTDEAL_SECTORS[sectorIdx];
     const firstIdx = sector.items.indexOf(hotdealWeightedPick(sector.items, rng));
     const pool2 = sector.items.filter((_, i) => i !== firstIdx);
     const second = hotdealWeightedPick(pool2, rng);
