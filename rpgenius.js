@@ -2593,9 +2593,7 @@ async function enterField(user, fieldName, options, channel) {
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
     if (user.field.worldBoss && user.field.skillSelecting) {
-        user.pendingAction = null;
-        user.field = null;
-        return '✅ 월드보스 입장을 취소했습니다.';
+        return '❌ 월드보스에서는 퇴장할 수 없습니다.\n스킬을 선택해주세요.\n\n/RPGenius 월드보스선택 [1/2/3]';
     }
     if (user.field.worldBoss) return '❌ 월드보스 전투 중에는 퇴장할 수 없습니다.';
     const fieldName = user.field.name;
