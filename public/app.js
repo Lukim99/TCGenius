@@ -128,11 +128,16 @@ function navigatePage(pageId) {
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'info' && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
     if (pageId === 'inventory') {
-        if (currentInventoryName && myName && currentInventoryName !== myName) { currentInventoryName = myName; updateInventoryBanner(); }
+        if (currentProfileName && myName && currentProfileName !== myName) {
+            currentInventoryName = currentProfileName;
+        } else {
+            currentInventoryName = myName;
+        }
+        updateInventoryBanner();
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (pageId === 'combine') loadCombine();
-    if (pageId === 'shop') loadShop();
+    if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'ranking') loadRanking();
@@ -1316,8 +1321,14 @@ function renderShop(data, tab) {
 
     const tabRow = el('div', { class: 'shop-tabs' });
     data.tabs.forEach(t => {
-        tabRow.appendChild(el('button', { class: 'shop-tab' + (t === shopTab ? ' active' : ''), onclick: () => renderShop(data, t) }, t));
+        const isHot = t === '핫딜샵';
+        tabRow.appendChild(el('button', {
+            class: 'shop-tab' + (t === shopTab ? ' active' : '') + (isHot ? ' hotdeal' : ''),
+            onclick: () => { if (isHot) { shopTab = '핫딜샵'; renderShopTabs(data, body, tabRow); loadHotDeal(body, tabRow); } else renderShop(data, t); }
+        }, t));
     });
+
+    if (shopTab === '핫딜샵') { body.appendChild(tabRow); loadHotDeal(body, tabRow); return; }
 
     const currBar = el('div', { class: 'shop-currency-bar' });
     [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }, { key: 'point', label: '포인트' }, { key: 'mileage', label: '마일리지' }].forEach(({ key, label }) => {
@@ -1474,6 +1485,165 @@ function openShopBuyModal(item) {
     content.appendChild(footer);
 
     $('#modalTitle').textContent = d.name + ' 구매';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+function renderShopTabs(data, body, tabRow) {
+    tabRow.querySelectorAll('.shop-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent === shopTab);
+    });
+}
+
+let hotdealCountdownTimer = null;
+function stopHotdealCountdown() { if (hotdealCountdownTimer) { clearInterval(hotdealCountdownTimer); hotdealCountdownTimer = null; } }
+
+async function loadHotDeal(body, tabRow) {
+    stopHotdealCountdown();
+    const existing = body.querySelector('.hd-root');
+    if (!existing) body.appendChild(el('div', { class: 'hd-root' }, el('div', { class: 'loading', style: 'padding:40px 0;text-align:center' }, '불러오는 중...')));
+    try {
+        const data = await api('/api/hotdeal');
+        if (shopTab !== '핫딜샵') return;
+        renderHotDeal(data, body, tabRow);
+    } catch (e) {
+        if (shopTab !== '핫딜샵') return;
+        const root = body.querySelector('.hd-root') || body;
+        root.replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0;text-align:center' }, e.message));
+    }
+}
+
+function renderHotDeal(data, body, tabRow) {
+    stopHotdealCountdown();
+
+    const currencyBar = el('div', { class: 'hd-currency-bar' });
+    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }].forEach(({ key, label }) => {
+        if (data.currencies[key] == null) return;
+        const chip = el('div', { class: 'shop-currency-chip' });
+        chip.appendChild(shopCurrNode(key, 18));
+        chip.appendChild(el('span', { style: 'color:#94a3b8;font-size:12px;margin-right:2px' }, label));
+        chip.appendChild(el('span', {}, comma(data.currencies[key])));
+        currencyBar.appendChild(chip);
+    });
+
+    const countdownEl = el('span');
+    function updateCountdown() {
+        const rem = Math.max(0, data.nextRefreshAt - Date.now());
+        const h = String(Math.floor(rem / 3600000)).padStart(2, '0');
+        const m = String(Math.floor((rem % 3600000) / 60000)).padStart(2, '0');
+        const s = String(Math.floor((rem % 60000) / 1000)).padStart(2, '0');
+        countdownEl.replaceChildren('다음 교체까지 ', el('span', null, h + ':' + m + ':' + s));
+        if (rem <= 0) { stopHotdealCountdown(); loadHotDeal(body, tabRow); }
+    }
+    updateCountdown();
+    hotdealCountdownTimer = setInterval(updateCountdown, 1000);
+
+    const slots = el('div', { class: 'hd-slots' });
+    data.items.forEach(item => {
+        const isLightning = item.slot === 1;
+        const slot = el('div', { class: 'hd-slot ' + (isLightning ? 'lightning' : 'fire') });
+
+        // 불꽃/번개 파티클 요소
+        if (isLightning) {
+            for (let i = 0; i < 3; i++) slot.appendChild(el('div', { class: 'hd-slot-spark' }));
+        } else {
+            const embers = [['4px','-28px'], ['-3px','-35px'], ['5px','-30px']];
+            embers.forEach(([ex, ey]) => {
+                const e2 = el('div', { class: 'hd-slot-ember' });
+                e2.style.setProperty('--ex', ex);
+                e2.style.setProperty('--ey', ey);
+                slot.appendChild(e2);
+            });
+        }
+
+        const inner = el('div', { class: 'hd-slot-inner' });
+
+        // 썸네일
+        const thumb = el('div', { class: 'hd-item-thumb auc-thumb square' });
+        if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
+        if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
+        if (item.purchased) {
+            const sold = el('div', { class: 'hd-sold' });
+            sold.appendChild(el('div', { class: 'hd-sold-text' }, '구매 완료'));
+            thumb.appendChild(sold);
+        }
+        inner.appendChild(thumb);
+        inner.appendChild(el('div', { class: 'hd-item-name' }, item.name));
+
+        const priceRow = el('div', { class: 'hd-price-row' });
+        if (item.price.imgUrl) priceRow.appendChild(el('img', { class: 'hd-price-img', src: item.price.imgUrl, alt: item.price.goods }));
+        priceRow.appendChild(el('div', { class: 'hd-price-val' }, comma(item.price.amount) + (item.price.goods === 'garnet' ? ' 가넷' : ' 골드')));
+        inner.appendChild(priceRow);
+
+        const btn = el('button', {
+            class: 'hd-buy-btn',
+            disabled: item.purchased,
+            onclick: item.purchased ? null : () => openHotDealBuyModal(item, data, body, tabRow)
+        }, item.purchased ? '구매 완료' : '구매');
+        inner.appendChild(btn);
+
+        slot.appendChild(inner);
+        slots.appendChild(slot);
+    });
+
+    const root = el('div', { class: 'hd-root' },
+        el('div', { class: 'hd-header' },
+            el('div', { class: 'hd-title' }, el('span', { class: 'hd-title-fire' }, '🔥'), '핫딜 SHOP', el('span', { class: 'hd-title-fire2' }, '🔥')),
+            el('div', { class: 'hd-meta' },
+                el('div', { class: 'hd-sector-badge' }, data.sectorName),
+                el('div', { class: 'hd-countdown' }, countdownEl)
+            )
+        ),
+        currencyBar,
+        slots
+    );
+
+    body.replaceChildren(tabRow, root);
+}
+
+function openHotDealBuyModal(item, hdData, body, tabRow) {
+    const p = item.price;
+    const bal = hdData.currencies[p.goods] || 0;
+    const after = bal - p.amount;
+
+    const content = el('div', { class: 'shop-buy-modal' });
+    const itemRow = el('div', { class: 'shop-buy-item-row' });
+    const thumb = el('div', { class: 'shop-buy-thumb' });
+    if (item.frameUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-frame', src: item.frameUrl, alt: '' }));
+    if (item.iconUrl) thumb.appendChild(el('img', { class: 'shop-card-thumb-icon', src: item.iconUrl, alt: item.name }));
+    itemRow.appendChild(thumb);
+    const info = el('div', { style: 'flex:1;min-width:0' });
+    info.appendChild(el('div', { class: 'shop-buy-name' }, item.name));
+    info.appendChild(el('div', { class: 'shop-buy-meta' }, '핫딜 1회 한정'));
+    itemRow.appendChild(info);
+    content.appendChild(itemRow);
+
+    const receipt = el('div', { class: 'shop-receipt' });
+    const pFull = { goods: p.goods, amount: p.amount, imgUrl: p.imgUrl };
+    receipt.appendChild(buildReceiptRow('현재 보유', pFull, bal));
+    receipt.appendChild(buildReceiptRow('소모', pFull, p.amount, 'deduct'));
+    receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
+    receipt.appendChild(buildReceiptRow('구매 후 잔액', pFull, after, after < 0 ? 'neg' : 'result'));
+    content.appendChild(receipt);
+
+    const footer = el('div', { class: 'shop-buy-footer' });
+    footer.appendChild(el('button', { onclick: closeModal }, '취소'));
+    const buyBtn = el('button', { class: 'primary', onclick: async () => {
+        buyBtn.disabled = true; buyBtn.textContent = '처리 중...';
+        try {
+            const res = await postApi('/api/hotdeal/buy', { slot: item.slot });
+            closeModal();
+            renderHotDeal(res.hotdeal, body, tabRow);
+        } catch (e) {
+            buyBtn.disabled = false; buyBtn.textContent = '구매';
+            alert(e.message);
+        }
+    }}, '구매');
+    footer.appendChild(buyBtn);
+    content.appendChild(footer);
+
+    $('#modalTitle').textContent = item.name + ' 구매';
     $('#modalSub').style.display = 'none';
     $('#modalBody').replaceChildren(content);
     $('#modalBg').classList.add('active');
@@ -1924,10 +2094,10 @@ function renderFulfillSection(entry, fulfillable, content) {
 
 // ===== 구매 등록 모달 =====
 
-let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
+let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1, search: '' };
 
 async function openBoRegisterModal() {
-    boRegState = { kind: 'card', currency: 'gold', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
+    boRegState = { kind: 'card', currency: 'gold', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1, search: '' };
     $('#boReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#boRegBg').classList.add('active');
     try {
@@ -1948,7 +2118,7 @@ function renderBoRegisterModal() {
     const kindRow = el('div', { class: 'reg-kind-row' },
         ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
             class: 'reg-kind-btn' + (kind === k ? ' active' : ''),
-            onclick: () => { boRegState.kind = k; renderBoRegisterModal(); }
+            onclick: () => { boRegState.kind = k; boRegState.search = ''; renderBoRegisterModal(); }
         }, svgIcon(REG_ICONS[k]), AUCTION_KIND_LABEL[k]))
     );
 
@@ -1967,37 +2137,87 @@ function renderBoRegisterModal() {
         return el('div', { class: 'reg-count-row' }, inp, el('span', { class: 'reg-count-hint' }, '개'));
     };
 
+    const makeItemGrid = (items, selectedId, onSelect, renderThumb) => {
+        const wrap = el('div', { class: 'bo-img-wrap' });
+        const inp = el('input', { type: 'search', class: 'bo-search-inp', placeholder: '이름으로 검색...', value: boRegState.search });
+        const grid = el('div', { class: 'bo-img-grid' });
+
+        const filterGrid = q => {
+            const lower = q.toLowerCase();
+            let visible = 0;
+            grid.querySelectorAll('.bo-img-cell').forEach(cell => {
+                const show = !lower || cell.dataset.name.toLowerCase().includes(lower);
+                cell.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+            let empty = grid.querySelector('.bo-img-empty');
+            if (!visible) {
+                if (!empty) { empty = el('div', { class: 'bo-img-empty' }, '검색 결과 없음'); grid.appendChild(empty); }
+            } else {
+                if (empty) empty.remove();
+            }
+        };
+
+        inp.oninput = e => { boRegState.search = e.target.value; filterGrid(e.target.value); };
+
+        items.forEach(item => {
+            const isSelected = item.id === selectedId;
+            const cell = el('div', {
+                class: 'bo-img-cell' + (isSelected ? ' selected' : ''),
+                onclick: () => { onSelect(item.id); renderBoRegisterModal(); }
+            });
+            cell.dataset.name = item.name;
+            const thumb = el('div', { class: 'bo-img-thumb' });
+            renderThumb(thumb, item);
+            cell.appendChild(thumb);
+            cell.appendChild(el('div', { class: 'bo-img-name' }, item.name));
+            grid.appendChild(cell);
+        });
+        if (!items.length) grid.appendChild(el('div', { class: 'bo-img-empty' }, '항목 없음'));
+
+        wrap.appendChild(inp);
+        wrap.appendChild(grid);
+        filterGrid(boRegState.search);
+        // 렌더 후 포커스 복원
+        requestAnimationFrame(() => { if (boRegState.search) inp.focus(); });
+        return wrap;
+    };
+
     if (kind === 'card') {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '캐릭터 카드'));
-        content.push(el('select', { onchange: e => { boRegState.cardId = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } },
-            el('option', { value: -1 }, '카드 선택...'),
-            ...data.cards.map(c => el('option', { value: c.id, selected: boRegState.cardId === c.id ? 'selected' : null }, c.name))
-        ));
-        content.push(el('div', { class: 'reg-section-label' }, '상세 조건'));
-        const detailGrid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px' });
-        const starSel = el('select', { onchange: e => { boRegState.star = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } });
-        for (let i = 0; i <= 11; i++) {
-            const opt = el('option', { value: i }, (i + 1) + '성' + (i >= 4 ? ' (거래권 ' + Math.max(0, i - 3) + '장)' : ''));
-            if (boRegState.star === i) opt.selected = true;
-            starSel.appendChild(opt);
-        }
-        const typeSel = el('select', { onchange: e => { boRegState.type = e.target.value; } },
-            el('option', { value: '' }, '타입 무관'),
-            el('option', { value: '일반', selected: boRegState.type === '일반' ? 'selected' : null }, '일반')
-        );
-        const starWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '성급 (정확 일치)'), starSel);
-        const typeWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '타입'), typeSel);
-        detailGrid.appendChild(starWrap); detailGrid.appendChild(typeWrap);
-        content.push(detailGrid);
-        const rawStar = Number(boRegState.star || 0);
-        const skins = (data.fashion || []).filter(s => Array.isArray(s.primary_card) && s.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(s.requireStar || 0));
-        if (boRegState.skin && !skins.some(s => s.name === boRegState.skin)) boRegState.skin = '';
+        content.push(makeItemGrid(data.cards, boRegState.cardId, id => { boRegState.cardId = id; boRegState.skin = ''; }, (thumb, c) => {
+            if (c.imageUrl) thumb.appendChild(el('img', { src: c.imageUrl, alt: c.name }));
+            else thumb.appendChild(el('span', { class: 'bo-img-fallback' }, c.name[0]));
+        }));
+
         if (boRegState.cardId >= 0) {
-            content.push(el('div', { class: 'reg-section-label' }, '패션 (선택)'));
-            content.push(el('select', { onchange: e => { boRegState.skin = e.target.value; } },
-                el('option', { value: '' }, '패션 무관'),
-                ...skins.map(s => el('option', { value: s.name, selected: boRegState.skin === s.name ? 'selected' : null }, s.name))
-            ));
+            content.push(el('div', { class: 'reg-section-label' }, '상세 조건'));
+            const detailGrid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px' });
+            const starSel = el('select', { onchange: e => { boRegState.star = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } });
+            for (let i = 0; i <= 11; i++) {
+                const opt = el('option', { value: i }, (i + 1) + '성' + (i >= 4 ? ' (거래권 ' + Math.max(0, i - 3) + '장)' : ''));
+                if (boRegState.star === i) opt.selected = true;
+                starSel.appendChild(opt);
+            }
+            const typeSel = el('select', { onchange: e => { boRegState.type = e.target.value; } },
+                el('option', { value: '' }, '타입 무관'),
+                el('option', { value: '일반', selected: boRegState.type === '일반' ? 'selected' : null }, '일반')
+            );
+            const starWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '성급 (정확 일치)'), starSel);
+            const typeWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '타입'), typeSel);
+            detailGrid.appendChild(starWrap); detailGrid.appendChild(typeWrap);
+            content.push(detailGrid);
+
+            const rawStar = Number(boRegState.star || 0);
+            const skins = (data.fashion || []).filter(s => Array.isArray(s.primary_card) && s.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(s.requireStar || 0));
+            if (boRegState.skin && !skins.some(s => s.name === boRegState.skin)) boRegState.skin = '';
+            if (skins.length > 0) {
+                content.push(el('div', { class: 'reg-section-label' }, '패션 (선택)'));
+                content.push(el('select', { onchange: e => { boRegState.skin = e.target.value; } },
+                    el('option', { value: '' }, '패션 무관'),
+                    ...skins.map(s => el('option', { value: s.name, selected: boRegState.skin === s.name ? 'selected' : null }, s.name))
+                ));
+            }
         }
         content.push(el('div', { class: 'reg-section-label' }, '갯수'));
         content.push(makeCountInput());
@@ -2007,17 +2227,19 @@ function renderBoRegisterModal() {
         const equipTypeRow = el('div', { class: 'reg-equip-row' },
             ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].map(([k, label]) =>
                 el('button', { class: 'reg-equip-btn' + (boRegState.equipType === k ? ' active' : ''),
-                    onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; renderBoRegisterModal(); }
+                    onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; boRegState.search = ''; renderBoRegisterModal(); }
                 }, svgIcon(REG_SLOT_SVGS[k]), label)
             )
         );
         content.push(equipTypeRow);
         content.push(el('div', { class: 'reg-section-label' }, '장비'));
-        const list = data.equipment[boRegState.equipType] || [];
-        content.push(el('select', { onchange: e => { boRegState.equipId = Number(e.target.value); } },
-            el('option', { value: -1 }, '장비 선택...'),
-            ...list.map(eq => el('option', { value: eq.id, selected: boRegState.equipId === eq.id ? 'selected' : null }, eq.name + ' (' + eq.rarity + ')'))
-        ));
+        const eqList = data.equipment[boRegState.equipType] || [];
+        content.push(makeItemGrid(eqList, boRegState.equipId, id => { boRegState.equipId = id; }, (thumb, eq) => {
+            if (eq.frameUrl) thumb.appendChild(el('img', { class: 'bo-img-frame', src: eq.frameUrl, alt: '' }));
+            if (eq.iconUrl) thumb.appendChild(el('img', { class: 'bo-img-icon', src: eq.iconUrl, alt: eq.name }));
+            else if (!eq.frameUrl) thumb.appendChild(el('span', { class: 'bo-img-fallback' }, eq.name[0]));
+        }));
+
         const lvToggle = el('label', { class: 'reg-level-toggle' },
             el('input', { type: 'checkbox', checked: boRegState.levelSpecified ? 'checked' : null,
                 onchange: e => { boRegState.levelSpecified = e.target.checked; renderBoRegisterModal(); } }),
@@ -2035,19 +2257,21 @@ function renderBoRegisterModal() {
 
     } else if (kind === 'pet') {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '펫'));
-        content.push(el('select', { onchange: e => { boRegState.petId = Number(e.target.value); } },
-            el('option', { value: -1 }, '펫 선택...'),
-            ...(data.pets || []).map(p => el('option', { value: p.id, selected: boRegState.petId === p.id ? 'selected' : null }, p.name + ' (' + p.rarity + ')'))
-        ));
+        content.push(makeItemGrid(data.pets || [], boRegState.petId, id => { boRegState.petId = id; }, (thumb, p) => {
+            if (p.frameUrl) thumb.appendChild(el('img', { class: 'bo-img-frame', src: p.frameUrl, alt: '' }));
+            if (p.iconUrl) thumb.appendChild(el('img', { class: 'bo-img-icon', src: p.iconUrl, alt: p.name }));
+            else if (!p.frameUrl) thumb.appendChild(el('span', { class: 'bo-img-fallback' }, p.name[0]));
+        }));
         content.push(el('div', { class: 'reg-section-label' }, '갯수'));
         content.push(makeCountInput());
 
     } else {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '아이템'));
-        content.push(el('select', { onchange: e => { boRegState.itemId = Number(e.target.value); } },
-            el('option', { value: -1 }, '아이템 선택...'),
-            ...data.items.map(it => el('option', { value: it.id, selected: boRegState.itemId === it.id ? 'selected' : null }, '[' + it.type + '] ' + it.name))
-        ));
+        content.push(makeItemGrid(data.items, boRegState.itemId, id => { boRegState.itemId = id; }, (thumb, it) => {
+            if (it.frameUrl) thumb.appendChild(el('img', { class: 'bo-img-frame', src: it.frameUrl, alt: '' }));
+            if (it.iconUrl) thumb.appendChild(el('img', { class: 'bo-img-icon', src: it.iconUrl, alt: it.name }));
+            else if (!it.frameUrl) thumb.appendChild(el('span', { class: 'bo-img-fallback' }, it.name[0]));
+        }));
         content.push(el('div', { class: 'reg-section-label' }, '갯수'));
         content.push(makeCountInput());
     }

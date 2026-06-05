@@ -645,6 +645,220 @@ function buildProtectInfo(user) {
     return null;
 }
 
+// ===== 핫딜샵 =====
+
+const HOTDEAL_SECTORS = [
+    { name: '강화 섹터', items: [
+        { id: 3,   count: 1,     goods: 'gold',   amount: 1200000,  weight: 1.5 },
+        { id: 3,   count: 1,     goods: 'gold',   amount: 2000000,  weight: 2   },
+        { id: 3,   count: 1,     goods: 'garnet', amounts: [280,320,380], weight: 30  },
+        { id: 4,   count: 1,     goods: 'gold',   amount: 9500000,  weight: 0.5 },
+        { id: 4,   count: 1,     goods: 'gold',   amount: 12000000, weight: 1.5 },
+        { id: 4,   count: 1,     goods: 'garnet', amounts: [850,1000,1150], weight: 20 },
+        { id: 5,   count: 1,     goods: 'gold',   amount: 100000000,weight: 0.5 },
+        { id: 5,   count: 1,     goods: 'garnet', amount: 3500,     weight: 2   },
+        { id: 0,   count: 5000,  goods: 'gold',   amount: 300000,   weight: 2   },
+        { id: 0,   count: 5000,  goods: 'garnet', amount: 100,      weight: 19  },
+        { id: 0,   count: 10000, goods: 'gold',   amount: 600000,   weight: 2   },
+        { id: 0,   count: 10000, goods: 'garnet', amount: 180,      weight: 19  },
+    ]},
+    { name: '쥬얼 섹터', items: [
+        { id: 124, count: 5,  goods: 'garnet', amount: 40,  weight: 24  },
+        { id: 124, count: 10, goods: 'garnet', amount: 78,  weight: 15  },
+        { id: 124, count: 20, goods: 'garnet', amount: 154, weight: 10  },
+        { id: 124, count: 30, goods: 'garnet', amount: 228, weight: 5   },
+        { id: 124, count: 50, goods: 'garnet', amount: 370, weight: 3   },
+        { id: 133, count: 3,  goods: 'gold',   amount: 200000, weight: 1.5 },
+        { id: 133, count: 5,  goods: 'garnet', amount: 65,  weight: 24  },
+        { id: 133, count: 10, goods: 'garnet', amount: 105, weight: 10  },
+        { id: 133, count: 20, goods: 'garnet', amount: 180, weight: 5   },
+        { id: 133, count: 30, goods: 'garnet', amount: 270, weight: 2.5 },
+    ]},
+    { name: '보호 카드 섹터', items: [
+        { id: 107, count: 1, goods: 'gold',   amount: 100000,  weight: 0.3    },
+        { id: 107, count: 1, goods: 'gold',   amount: 300000,  weight: 3      },
+        { id: 107, count: 1, goods: 'garnet', amount: 80,      weight: 10     },
+        { id: 107, count: 1, goods: 'garnet', amount: 120,     weight: 40     },
+        { id: 108, count: 1, goods: 'gold',   amount: 250000,  weight: 0.1    },
+        { id: 108, count: 1, goods: 'gold',   amount: 450000,  weight: 2      },
+        { id: 108, count: 1, goods: 'garnet', amount: 150,     weight: 5      },
+        { id: 108, count: 1, goods: 'garnet', amount: 210,     weight: 20     },
+        { id: 109, count: 1, goods: 'gold',   amount: 1000000, weight: 0.076  },
+        { id: 109, count: 1, goods: 'gold',   amount: 1500000, weight: 0.5    },
+        { id: 109, count: 1, goods: 'garnet', amount: 360,     weight: 2      },
+        { id: 109, count: 1, goods: 'garnet', amount: 480,     weight: 12     },
+        { id: 110, count: 1, goods: 'gold',   amount: 10000000,weight: 0.001  },
+        { id: 110, count: 1, goods: 'gold',   amount: 20000000,weight: 0.02   },
+        { id: 110, count: 1, goods: 'garnet', amount: 860,     weight: 0.8    },
+        { id: 110, count: 1, goods: 'garnet', amount: 1020,    weight: 3      },
+        { id: 111, count: 1, goods: 'gold',   amount: 55000000,weight: 0.0005 },
+        { id: 111, count: 1, goods: 'gold',   amount: 75000000,weight: 0.0025 },
+        { id: 111, count: 1, goods: 'garnet', amount: 1800,    weight: 0.2    },
+        { id: 111, count: 1, goods: 'garnet', amount: 2200,    weight: 1      },
+    ]},
+    { name: '카드팩 섹터', items: [
+        { id: 21, count: 1, goods: 'gold',   amount: 200000,  weight: 6    },
+        { id: 21, count: 1, goods: 'garnet', amount: 100,     weight: 10   },
+        { id: 21, count: 1, goods: 'garnet', amount: 160,     weight: 30   },
+        { id: 22, count: 1, goods: 'gold',   amount: 500000,  weight: 2    },
+        { id: 22, count: 1, goods: 'garnet', amount: 200,     weight: 10   },
+        { id: 22, count: 1, goods: 'garnet', amount: 320,     weight: 30   },
+        { id: 23, count: 1, goods: 'gold',   amount: 2200000, weight: 1    },
+        { id: 23, count: 1, goods: 'garnet', amount: 400,     weight: 2    },
+        { id: 23, count: 1, goods: 'garnet', amount: 550,     weight: 8    },
+        { id: 24, count: 1, goods: 'gold',   amount: 6000000, weight: 0.05 },
+        { id: 24, count: 1, goods: 'garnet', amount: 800,     weight: 0.35 },
+        { id: 24, count: 1, goods: 'garnet', amount: 1100,    weight: 0.5  },
+        { id: 25, count: 1, goods: 'gold',   amount: 30000000,weight: 0.02 },
+        { id: 25, count: 1, goods: 'garnet', amount: 2600,    weight: 0.08 },
+    ]},
+    { name: '캐시템 섹터', items: [
+        { id: 144, count: 10, goods: 'gold',   amount: 200000,  weight: 30   },
+        { id: 144, count: 10, goods: 'garnet', amount: 20,      weight: 30   },
+        { id: 144, count: 50, goods: 'gold',   amount: 950000,  weight: 10   },
+        { id: 144, count: 50, goods: 'garnet', amount: 95,      weight: 10   },
+        { id: 84,  count: 10, goods: 'gold',   amount: 200000,  weight: 30   },
+        { id: 84,  count: 10, goods: 'garnet', amount: 20,      weight: 30   },
+        { id: 84,  count: 50, goods: 'gold',   amount: 950000,  weight: 10   },
+        { id: 84,  count: 50, goods: 'garnet', amount: 95,      weight: 10   },
+        { id: 17,  count: 10, goods: 'gold',   amount: 1500000, weight: 1.5  },
+        { id: 17,  count: 10, goods: 'garnet', amount: 90,      weight: 10   },
+        { id: 17,  count: 50, goods: 'gold',   amount: 7000000, weight: 0.25 },
+        { id: 17,  count: 50, goods: 'garnet', amount: 540,     weight: 4    },
+        { id: 112, count: 10, goods: 'gold',   amount: 5500000, weight: 0.25 },
+        { id: 112, count: 10, goods: 'garnet', amount: 750,     weight: 4    },
+    ]},
+];
+
+function getHotDealPeriodKey(date) {
+    const d = date || new Date();
+    const kstMs = d.getTime() + 9 * 3600000;
+    const kst = new Date(kstMs);
+    const y = kst.getUTCFullYear();
+    const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(kst.getUTCDate()).padStart(2, '0');
+    const seg = Math.floor(kst.getUTCHours() / 6);
+    return y + '-' + m + '-' + day + '-' + seg;
+}
+
+function getNextHotDealRefreshMs(date) {
+    const d = date || new Date();
+    const kstMs = d.getTime() + 9 * 3600000;
+    const kst = new Date(kstMs);
+    const seg = Math.floor(kst.getUTCHours() / 6);
+    const nextHour = (seg + 1) * 6;
+    const next = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), nextHour, 0, 0));
+    return next.getTime() - 9 * 3600000;
+}
+
+function hotdealPeriodSeed(key) {
+    let h = 0x811C9DC5;
+    for (let i = 0; i < key.length; i++) { h = Math.imul(h ^ key.charCodeAt(i), 0x01000193) | 0; }
+    return h >>> 0;
+}
+
+function hotdealRng(seed) {
+    let s = seed >>> 0;
+    return function() {
+        s = Math.imul(s + 0x6D2B79F5, s ^ (s >>> 16)) | 0;
+        let t = Math.imul(s ^ s >>> 15, 1 | s);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+function hotdealWeightedPick(pool, rng) {
+    const total = pool.reduce((s, e) => s + e.weight, 0);
+    let r = rng() * total;
+    for (const e of pool) { r -= e.weight; if (r <= 0) return e; }
+    return pool[pool.length - 1];
+}
+
+function generateHotDeal(periodKey) {
+    const rng = hotdealRng(hotdealPeriodSeed(periodKey));
+    const sector = HOTDEAL_SECTORS[Math.floor(rng() * HOTDEAL_SECTORS.length)];
+    const firstIdx = sector.items.indexOf(hotdealWeightedPick(sector.items, rng));
+    const pool2 = sector.items.filter((_, i) => i !== firstIdx);
+    const second = hotdealWeightedPick(pool2, rng);
+    const picks = [sector.items[firstIdx], second].map(item => ({
+        ...item,
+        amount: item.amounts ? item.amounts[Math.floor(rng() * item.amounts.length)] : item.amount,
+    }));
+    return { sectorName: sector.name, picks };
+}
+
+function buildHotDealData(user) {
+    const now = new Date();
+    const periodKey = getHotDealPeriodKey(now);
+    const deal = generateHotDeal(periodKey);
+    const items = rpgenius.getDataCache('Item', []);
+    const purchases = ((user.hotDealPurchases || {})[periodKey]) || [];
+    return {
+        periodKey,
+        sectorName: deal.sectorName,
+        nextRefreshAt: getNextHotDealRefreshMs(now),
+        currencies: { gold: Number(user.gold || 0), garnet: Number(user.garnet || 0) },
+        items: deal.picks.map((pick, slot) => {
+            const itemData = items[pick.id];
+            const assets = itemData ? getItemDisplayAssets(itemData) : { iconUrl: null, frameUrl: null };
+            return {
+                slot,
+                name: itemData ? (itemData.name + (pick.count > 1 ? ' x' + pick.count : '')) : '알 수 없음',
+                count: pick.count,
+                itemId: pick.id,
+                iconUrl: assets.iconUrl,
+                frameUrl: assets.frameUrl,
+                price: { goods: pick.goods, amount: pick.amount, imgUrl: SHOP_CURR_IMG[pick.goods] || null },
+                purchased: purchases.includes(slot),
+            };
+        }),
+    };
+}
+
+server.get('/api/hotdeal', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildHotDealData(user));
+    } catch (e) {
+        console.error('hotdeal error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/hotdeal/buy', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        if (slot !== 0 && slot !== 1) return res.status(400).json({ error: '슬롯이 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        ensureInventoryShape(user);
+        const now = new Date();
+        const periodKey = getHotDealPeriodKey(now);
+        const deal = generateHotDeal(periodKey);
+        const pick = deal.picks[slot];
+        if (!user.hotDealPurchases) user.hotDealPurchases = {};
+        if (!user.hotDealPurchases[periodKey]) user.hotDealPurchases[periodKey] = [];
+        if (user.hotDealPurchases[periodKey].includes(slot)) return res.status(400).json({ error: '이미 구매한 항목입니다.' });
+        if (pick.goods === 'gold') {
+            if (Number(user.gold || 0) < pick.amount) return res.status(400).json({ error: '골드가 부족합니다.' });
+            user.gold = Number(user.gold || 0) - pick.amount;
+        } else if (pick.goods === 'garnet') {
+            if (Number(user.garnet || 0) < pick.amount) return res.status(400).json({ error: '가넷이 부족합니다.' });
+            user.garnet = Number(user.garnet || 0) - pick.amount;
+        }
+        rpgenius.addInventoryItem(user, pick.id, pick.count);
+        user.hotDealPurchases[periodKey].push(slot);
+        // 이전 섹터 기록 정리
+        Object.keys(user.hotDealPurchases).forEach(k => { if (k !== periodKey) delete user.hotDealPurchases[k]; });
+        await user.save();
+        res.json({ ok: true, hotdeal: buildHotDealData(user) });
+    } catch (e) {
+        console.error('hotdeal buy error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 경매장 =====
 
 server.get('/api/auction', requireUser, async (req, res) => {
@@ -2076,7 +2290,7 @@ function buildShopData(user) {
         });
     }
     return {
-        tabs,
+        tabs: ['핫딜샵', ...tabs],
         shop,
         currencies: {
             gold: Number(user.gold || 0),
@@ -3074,17 +3288,32 @@ function buildBuyOrderLookups() {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const equipments = rpgenius.getDataCache('Equipment', {});
     const items = rpgenius.getDataCache('Item', []);
-    const cardList = characterCards.map((data, id) => data ? { id, name: data.name } : null).filter(Boolean);
-    const pack = list => (list || []).map((e, id) => e && e.no_trade !== true ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
+    const cardList = characterCards.map((data, id) => {
+        if (!data) return null;
+        return { id, name: data.name, imageUrl: getCardImageUrl({ id, star: 0 }, { prestige: false }) };
+    }).filter(Boolean);
+    const pack = (list, type) => (list || []).map((e, id) => {
+        if (!e || e.no_trade === true) return null;
+        const iconUrl = getEquipmentIconUrl(e);
+        const frameUrl = getAuctionFrameUrl('equipment', e.rarity);
+        return { id, name: e.name, rarity: e.rarity, iconUrl, frameUrl };
+    }).filter(Boolean);
     const equipmentList = {
-        weapon: pack(equipments.weapon),
-        armor: pack(equipments.armor),
-        accessory: pack(equipments.accessory),
-        support: pack(equipments.support)
+        weapon: pack(equipments.weapon, 'weapon'),
+        armor: pack(equipments.armor, 'armor'),
+        accessory: pack(equipments.accessory, 'accessory'),
+        support: pack(equipments.support, 'support')
     };
-    const itemList = items.map((it, id) => it && it.no_trade !== true ? { id, name: it.name, type: it.type } : null).filter(Boolean);
+    const itemList = items.map((it, id) => {
+        if (!it || it.no_trade === true) return null;
+        const assets = getItemDisplayAssets(it);
+        return { id, name: it.name, type: it.type, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
+    }).filter(Boolean);
     const pets = rpgenius.getDataCache('Pet', []);
-    const petList = (Array.isArray(pets) ? pets : []).map((p, id) => p ? { id, name: p.name, rarity: p.rarity } : null).filter(Boolean);
+    const petList = (Array.isArray(pets) ? pets : []).map((p, id) => {
+        if (!p) return null;
+        return { id, name: p.name, rarity: p.rarity, iconUrl: getPetIconUrl(p), frameUrl: getAuctionFrameUrl('equipment', p.rarity) };
+    }).filter(Boolean);
     return { cards: cardList, equipment: equipmentList, items: itemList, pets: petList };
 }
 
@@ -3261,6 +3490,16 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .enh-result-confirm{min-width:130px;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#e5e7eb;opacity:0;animation:enhHeadline .4s ease-out forwards;margin-top:4px}.enh-result-confirm.great,.enh-result-confirm.success{background:linear-gradient(135deg,#6366f1,#8b5cf6);border-color:transparent;color:#fff}.enh-result-confirm:hover{filter:brightness(1.1)}.enh-result-confirm:active{transform:scale(.96)}
 .enh-warn-icon{font-size:40px;line-height:1;filter:drop-shadow(0 0 16px rgba(251,146,60,.5))}.enh-warn-title{font-size:18px;font-weight:900;color:#fdba74;text-shadow:0 0 18px rgba(251,146,60,.4)}.enh-warn-sub{font-size:13px;color:#cbd5e1;font-weight:600;max-width:260px;line-height:1.5;word-break:keep-all}.enh-warn-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:260px;margin-top:6px}.enh-warn-confirm{padding:11px 18px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid rgba(251,146,60,.4);background:linear-gradient(135deg,#ea580c,#dc2626);color:#fff;box-shadow:0 0 18px rgba(234,88,12,.3)}.enh-warn-confirm:hover{filter:brightness(1.12)}.enh-warn-confirm:active{transform:scale(.96)}.enh-warn-actions .enhance-cancel-btn{padding:11px 18px}
 @media(max-width:400px){.enhance-rates-row{grid-template-columns:repeat(2,1fr)}}
+.shop-tab.hotdeal{background:linear-gradient(135deg,rgba(234,88,12,.18),rgba(6,182,212,.14));border-color:rgba(251,146,60,.45);color:#fdba74;font-weight:800}.shop-tab.hotdeal.active{background:linear-gradient(135deg,rgba(234,88,12,.32),rgba(6,182,212,.22));border-color:rgba(251,146,60,.8);color:#fde68a;box-shadow:0 0 12px rgba(251,146,60,.3)}
+.hd-root{display:flex;flex-direction:column;gap:14px;padding:2px 0}.hd-header{position:relative;text-align:center;padding:8px 0 4px}.hd-title{font-size:28px;font-weight:900;letter-spacing:.04em;background:linear-gradient(135deg,#f97316 0%,#fbbf24 35%,#67e8f9 70%,#22d3ee 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:none;line-height:1.1}.hd-title-fire{display:inline-block;font-size:22px;-webkit-text-fill-color:initial;margin-right:4px;animation:hdFireFlicker 1.4s ease-in-out infinite}.hd-title-fire2{display:inline-block;font-size:22px;-webkit-text-fill-color:initial;margin-left:4px;animation:hdFireFlicker 1.4s ease-in-out infinite .7s}@keyframes hdFireFlicker{0%,100%{transform:scaleY(1) rotate(-2deg);opacity:1}50%{transform:scaleY(1.15) rotate(2deg);opacity:.85}}.hd-meta{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;flex-wrap:wrap}.hd-sector-badge{padding:3px 12px;border-radius:999px;background:linear-gradient(135deg,rgba(234,88,12,.22),rgba(6,182,212,.18));border:1px solid rgba(251,146,60,.45);color:#fde68a;font-size:11px;font-weight:800;letter-spacing:.06em}.hd-countdown{font-size:12px;color:#7dd3fc;font-weight:700;font-variant-numeric:tabular-nums}.hd-countdown span{color:#e0f2fe;font-weight:900}
+.hd-slots{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:480px){.hd-slots{grid-template-columns:1fr}}
+.hd-slot{position:relative;border-radius:14px;padding:3px;overflow:visible}.hd-slot-inner{border-radius:12px;background:linear-gradient(160deg,#061218,#04090e);overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:18px 14px 14px;gap:10px;min-height:200px;position:relative;z-index:1}
+.hd-slot.fire{background:linear-gradient(135deg,#f97316,#ea580c,#fbbf24,#f97316);background-size:200% 200%;animation:hdFireBorder 3s ease infinite;box-shadow:0 0 22px rgba(234,88,12,.5),0 0 45px rgba(249,115,22,.2)}.hd-slot.fire .hd-slot-inner::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(234,88,12,.12),transparent 65%);pointer-events:none}@keyframes hdFireBorder{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hd-slot.lightning{background:linear-gradient(135deg,#06b6d4,#0891b2,#22d3ee,#0284c7,#06b6d4);background-size:200% 200%;animation:hdLightningBorder 2.4s ease infinite;box-shadow:0 0 22px rgba(6,182,212,.55),0 0 45px rgba(34,211,238,.18)}.hd-slot.lightning .hd-slot-inner::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(6,182,212,.12),transparent 65%);pointer-events:none}@keyframes hdLightningBorder{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.hd-slot-spark{position:absolute;width:2px;height:10px;border-radius:1px;background:#22d3ee;opacity:0;animation:hdSpark 1.8s linear infinite;pointer-events:none;z-index:2}.hd-slot.lightning .hd-slot-spark:nth-child(1){top:18%;right:-1px;animation-delay:0s}.hd-slot.lightning .hd-slot-spark:nth-child(2){top:55%;right:-1px;animation-delay:.6s}.hd-slot.lightning .hd-slot-spark:nth-child(3){bottom:22%;left:-1px;animation-delay:1.1s}@keyframes hdSpark{0%{opacity:0;transform:scaleY(1) translateY(0)}20%{opacity:1;transform:scaleY(1.6) translateY(-3px)}40%{opacity:.6;transform:scaleY(.8) translateY(2px)}60%{opacity:1;transform:scaleY(1.4) translateY(-2px)}80%{opacity:.3}100%{opacity:0}}
+.hd-slot-ember{position:absolute;width:3px;height:3px;border-radius:50%;background:#f97316;opacity:0;animation:hdEmber 2.2s ease-out infinite;pointer-events:none;z-index:2}.hd-slot.fire .hd-slot-ember:nth-child(1){bottom:10%;left:20%;animation-delay:0s}.hd-slot.fire .hd-slot-ember:nth-child(2){bottom:10%;left:50%;animation-delay:.7s}.hd-slot.fire .hd-slot-ember:nth-child(3){bottom:10%;right:20%;animation-delay:1.4s}@keyframes hdEmber{0%{opacity:0;transform:translate(0,0) scale(1)}30%{opacity:1}70%{opacity:.7;transform:translate(var(--ex,4px),var(--ey,-28px)) scale(.6)}100%{opacity:0;transform:translate(var(--ex,4px),var(--ey,-40px)) scale(.2)}}
+.hd-item-thumb{position:relative;width:80px;height:80px;flex-shrink:0}.hd-item-thumb .auc-frame,.hd-item-thumb .auc-item-img{position:absolute}.hd-sold{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);border-radius:8px;z-index:3}.hd-sold-text{font-size:14px;font-weight:900;color:#94a3b8;letter-spacing:.1em;transform:rotate(-12deg)}
+.hd-item-name{font-size:14px;font-weight:800;color:#f1f5f9;text-align:center;line-height:1.3}.hd-price-row{display:flex;align-items:center;justify-content:center;gap:6px}.hd-price-img{width:20px;height:20px;object-fit:contain}.hd-price-val{font-size:15px;font-weight:900;font-variant-numeric:tabular-nums;color:#e2e8f0}.hd-buy-btn{margin-top:2px;padding:9px 24px;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;border:0;transition:filter .15s,transform .1s;width:100%;box-shadow:0 4px 14px rgba(0,0,0,.3)}.hd-slot.fire .hd-buy-btn{background:linear-gradient(135deg,#ea580c,#f97316);color:#fff}.hd-slot.lightning .hd-buy-btn{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff}.hd-buy-btn:disabled{background:rgba(71,85,105,.5)!important;color:#64748b;box-shadow:none;cursor:not-allowed}.hd-buy-btn:not(:disabled):hover{filter:brightness(1.15)}.hd-buy-btn:not(:disabled):active{transform:scale(.97)}.hd-currency-bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .pet-special-title{margin:14px 0 4px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a5f3fc}
 .pet-set-block{margin-top:14px;padding:12px 14px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.35);border-radius:12px;display:grid;gap:10px}
 .pet-set-title{font-size:13px;font-weight:800;color:#86efac}
@@ -3335,6 +3574,8 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .reg-pick-scroll{display:grid;gap:6px;max-height:236px;overflow-y:auto;padding:2px;scrollbar-width:thin;scrollbar-color:rgba(99,102,241,.3) transparent}.reg-pick-scroll::-webkit-scrollbar{width:4px}.reg-pick-scroll::-webkit-scrollbar-thumb{background:rgba(99,102,241,.3);border-radius:2px}.reg-pick-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(4,6,18,.6);cursor:pointer;transition:all .12s}.reg-pick-row:hover{border-color:rgba(99,102,241,.4);background:rgba(88,101,242,.08)}.reg-pick-row.selected{border-color:rgba(99,102,241,.6);background:rgba(88,101,242,.14);box-shadow:0 0 0 1px rgba(99,102,241,.14) inset}.reg-thumb{width:57px;height:76px;border-radius:8px;overflow:hidden;background:rgba(2,6,23,.8);display:grid;place-items:center;flex-shrink:0;position:relative}.reg-thumb.sq{height:57px}.reg-thumb img.reg-card-img{width:100%;height:100%;object-fit:cover}.reg-thumb-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.reg-thumb-icon{position:relative;z-index:2;width:90%;height:90%;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}.reg-thumb svg{width:28px;height:28px;display:block;opacity:.7;position:relative;z-index:2}.reg-item-name{font-weight:700;font-size:13px;color:#f1f5f9;line-height:1.3}.reg-item-meta{font-size:11px;color:#64748b;margin-top:2px;line-height:1.4;white-space:pre-line}.reg-check{width:20px;height:20px;border-radius:50%;border:1.5px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}.reg-check.sel{background:#6366f1;border-color:#6366f1}.reg-check svg{width:11px;height:11px}
 .reg-currency-row{display:flex;gap:6px}.reg-curr-btn{flex:1;padding:11px 8px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(4,6,18,.6);color:#94a3b8;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px}.reg-curr-btn img{width:20px;height:20px;object-fit:contain;display:block;flex-shrink:0}.reg-curr-btn:hover{border-color:rgba(255,255,255,.2);color:#e5e7eb}.reg-curr-btn.gold.active{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.55);color:#fde68a;box-shadow:0 0 8px rgba(251,191,36,.12)}.reg-curr-btn.garnet.active{background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.55);color:#ddd6fe;box-shadow:0 0 8px rgba(167,139,250,.12)}
 .reg-price-wrap{display:flex;align-items:center;gap:10px;padding:0 14px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:11px;transition:border-color .15s,box-shadow .15s}.reg-price-wrap:focus-within{border-color:rgba(99,102,241,.6);box-shadow:0 0 0 3px rgba(99,102,241,.1)}.reg-price-icon{flex-shrink:0;display:flex;align-items:center}.reg-price-icon img{width:22px;height:22px;object-fit:contain;display:block}.reg-price-field{flex:1;min-width:0;padding:14px 0;background:transparent;border:0;outline:none;color:#f8fafc;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.bo-img-wrap{display:flex;flex-direction:column;gap:6px}.bo-search-inp{width:100%;box-sizing:border-box;padding:9px 13px;background:rgba(4,6,18,.8);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#e5e7eb;font-size:13px;font-weight:600;outline:none;transition:border-color .15s}.bo-search-inp:focus{border-color:rgba(99,102,241,.6);box-shadow:0 0 0 2px rgba(99,102,241,.1)}.bo-search-inp::placeholder{color:#475569}.bo-search-inp::-webkit-search-cancel-button{cursor:pointer}
+.bo-img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;max-height:260px;overflow-y:auto;padding:2px;scrollbar-width:thin;scrollbar-color:rgba(99,102,241,.3) transparent}.bo-img-grid::-webkit-scrollbar{width:4px}.bo-img-grid::-webkit-scrollbar-thumb{background:rgba(99,102,241,.3);border-radius:2px}.bo-img-cell{display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 4px 8px;border:1.5px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(4,6,18,.6);cursor:pointer;transition:all .12s;text-align:center}.bo-img-cell:hover{border-color:rgba(99,102,241,.4);background:rgba(88,101,242,.08)}.bo-img-cell.selected{border-color:rgba(99,102,241,.7);background:rgba(88,101,242,.18);box-shadow:0 0 0 1px rgba(99,102,241,.18) inset}.bo-img-thumb{width:52px;height:52px;position:relative;flex-shrink:0;display:grid;place-items:center;border-radius:8px;overflow:hidden;background:rgba(2,6,23,.6)}.bo-img-thumb img{position:absolute;inset:0;width:100%;height:100%}.bo-img-thumb .bo-img-frame{object-fit:contain;z-index:1}.bo-img-thumb .bo-img-icon{object-fit:contain;z-index:2}.bo-img-thumb img:only-child{object-fit:cover;position:static;width:100%;height:100%;object-fit:contain}.bo-img-fallback{font-size:18px;font-weight:900;color:#475569;line-height:1}.bo-img-name{font-size:10px;font-weight:700;color:#94a3b8;line-height:1.3;word-break:keep-all;max-width:100%;overflow-wrap:anywhere}.bo-img-cell.selected .bo-img-name{color:#e2e8f0}.bo-img-empty{grid-column:1/-1;text-align:center;padding:20px 0;color:#475569;font-size:12px}
 .reg-section-label{font-size:11px;font-weight:800;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin:12px 0 6px}.reg-divider{height:1px;background:rgba(255,255,255,.06);margin:14px 0}.reg-count-row{display:flex;align-items:center;gap:8px}.reg-count-row input{flex:1;padding:10px 12px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#e5e7eb;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;outline:none;transition:border-color .15s}.reg-count-row input:focus{border-color:rgba(99,102,241,.6)}.reg-count-hint{font-size:12px;color:#64748b;flex-shrink:0;white-space:nowrap}.reg-inline-err{font-size:12px;color:#fca5a5;padding:8px 12px;background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.3);border-radius:8px;display:none;margin-top:6px}.reg-inline-err.visible{display:block}.reg-footer{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:14px}
 .reg-equip-row{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.reg-equip-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(4,6,18,.6);color:#64748b;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}.reg-equip-btn svg{width:16px;height:16px;display:block;flex-shrink:0}.reg-equip-btn:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.reg-equip-btn.active{background:rgba(88,101,242,.2);border-color:rgba(99,102,241,.4);color:#e5e7eb}.reg-equip-btn.active svg{filter:drop-shadow(0 0 3px rgba(129,140,248,.5))}.reg-level-toggle{display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(4,6,18,.5);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:#94a3b8;transition:all .15s;user-select:none}.reg-level-toggle:hover{color:#e5e7eb;border-color:rgba(255,255,255,.14)}.reg-level-toggle input[type=checkbox]{accent-color:#6366f1;width:15px;height:15px;cursor:pointer}
 /* ── 상점 ── */
