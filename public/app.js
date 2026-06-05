@@ -15,6 +15,11 @@ const el = (tag, props, ...children) => {
     });
     return e;
 };
+function svgIcon(svgHtml) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = svgHtml;
+    return tmp.firstElementChild;
+}
 const api = async url => {
     const r = await fetch(url);
     const x = await r.json().catch(() => ({}));
@@ -48,52 +53,102 @@ const comma = value => {
 };
 const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value || 0) / Number(max || 0)) * 100 : 0));
 
-$('#logout').onclick = async () => { closeTopNav(); await fetch('/api/logout', { method: 'POST' }); location.reload(); };
-if ($('#adminLink')) $('#adminLink').onclick = () => { closeTopNav(); location.href = '/admin'; };
-const topNav = $('#topNav');
-const navToggle = $('#navToggle');
-function closeTopNav() {
-    if (!topNav || !navToggle) return;
-    topNav.classList.remove('open');
-    navToggle.setAttribute('aria-expanded', 'false');
+$('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
+if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
+
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', combine: '조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const ICONS = {
+    me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
+    content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+    market:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
+    party:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg>`,
+    community: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`,
+};
+const GROUPS = [
+    { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['combine', 'dex'] },
+    { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
+    ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
+    { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
+];
+
+let activePage = 'info';
+
+function getGroupForPage(pageId) {
+    return GROUPS.find(g => g.pages.includes(pageId)) || GROUPS[0];
 }
-if (navToggle && topNav) {
-    navToggle.onclick = () => {
-        const open = topNav.classList.toggle('open');
-        navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    };
-    document.addEventListener('click', e => {
-        if (!topNav.classList.contains('open')) return;
-        if (topNav.contains(e.target) || navToggle.contains(e.target)) return;
-        closeTopNav();
+
+function buildNav() {
+    const groupTabsEl = $('#groupTabs');
+    const bottomTabsEl = $('#bottomTabs');
+    GROUPS.forEach(g => {
+        const handler = () => activateGroup(g.id);
+        if (groupTabsEl) groupTabsEl.appendChild(
+            el('button', { class: 'group-tab', 'data-group': g.id, onclick: handler }, svgIcon(g.iconSvg), g.label)
+        );
+        if (bottomTabsEl) bottomTabsEl.appendChild(
+            el('button', { class: 'bottom-tab', 'data-group': g.id, onclick: handler },
+                el('span', { class: 'tab-icon-wrap' }, svgIcon(g.iconSvg)),
+                el('span', { class: 'tab-label' }, g.label))
+        );
     });
+    const initGroup = getGroupForPage(activePage);
+    syncGroupActive(initGroup.id);
+    buildSubNav(initGroup);
 }
-function activatePage(name) {
-    $$('.nav-btn').forEach(item => item.classList.toggle('active', item.dataset.page === name));
-    $$('.page').forEach(page => page.classList.toggle('active', page.dataset.page === name));
+
+function syncGroupActive(groupId) {
+    $$('.group-tab, .bottom-tab').forEach(t => t.classList.toggle('active', t.dataset.group === groupId));
 }
-$$('.nav-btn').forEach(btn => btn.onclick = () => {
-    closeTopNav();
-    if (btn.dataset.page === 'party') { location.href = '/party'; return; }
-    activatePage(btn.dataset.page);
-    if (btn.dataset.page === 'info') {
-        if (currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
-    }
-    if (btn.dataset.page === 'inventory') {
-        if (currentInventoryName && myName && currentInventoryName !== myName) {
-            currentInventoryName = myName;
-            updateInventoryBanner();
-        }
-        if (!btn.dataset.loaded) btn.dataset.loaded = '1';
+
+function buildSubNav(group) {
+    const bar = $('#subNavBar');
+    if (!bar) return;
+    const pages = group.pages.filter(p => p !== 'party');
+    if (pages.length <= 1) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    bar.replaceChildren(...pages.map(pageId =>
+        el('button', { class: 'subnav-tab' + (pageId === activePage ? ' active' : ''), 'data-page': pageId,
+            onclick: () => navigatePage(pageId) }, PAGE_LABELS[pageId] || pageId)
+    ));
+}
+
+function activateGroup(groupId) {
+    const group = GROUPS.find(g => g.id === groupId);
+    if (!group) return;
+    if (group.pages[0] === 'party') { location.href = '/party'; return; }
+    syncGroupActive(groupId);
+    buildSubNav(group);
+    navigatePage(group.pages[0]);
+}
+
+function navigatePage(pageId) {
+    activePage = pageId;
+    $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
+    $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
+    if (pageId === 'info' && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
+    if (pageId === 'inventory') {
+        if (currentInventoryName && myName && currentInventoryName !== myName) { currentInventoryName = myName; updateInventoryBanner(); }
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
-    if (btn.dataset.page === 'combine') loadCombine();
-    if (btn.dataset.page === 'auction') loadAuctions();
-    if (btn.dataset.page === 'buyorder') loadBuyOrders();
-    if (btn.dataset.page === 'ranking') loadRanking();
-    if (btn.dataset.page === 'dex') loadDex();
-    if (btn.dataset.page === 'patchnotes') loadPatchnotes();
-});
+    if (pageId === 'combine') loadCombine();
+    if (pageId === 'shop') loadShop();
+    if (pageId === 'auction') loadAuctions();
+    if (pageId === 'buyorder') loadBuyOrders();
+    if (pageId === 'ranking') loadRanking();
+    if (pageId === 'dex') loadDex();
+    if (pageId === 'patchnotes') loadPatchnotes();
+}
+
+function activatePage(name) {
+    if (name === 'party') { location.href = '/party'; return; }
+    const group = getGroupForPage(name);
+    syncGroupActive(group.id);
+    buildSubNav(group);
+    navigatePage(name);
+}
+
+buildNav();
 
 function cardNode(card, compact, onClick) {
     if (!card || !card.name) return el('div', { class: 'empty-card' }, '카드 없음');
@@ -351,8 +406,8 @@ function renderProfile(data) {
     const viewInvBtn = $('#viewInventoryBtn');
     if (viewInvBtn) viewInvBtn.style.display = data.user.name !== myName ? '' : 'none';
     if (data.user.isAdmin) $('#adminLink').style.display = '';
-    const partyNav = document.querySelector('.nav-btn[data-page="party"]');
-    if (isInitialOwnProfile && partyNav && !data.user.canPartyQuest) partyNav.remove();
+    if (isInitialOwnProfile && !data.user.canPartyQuest)
+        $$('.group-tab[data-group="party"], .bottom-tab[data-group="party"]').forEach(t => t.remove());
 }
 
 if ($('#viewInventoryBtn')) $('#viewInventoryBtn').onclick = () => {
@@ -805,12 +860,348 @@ function openAuctionDetail(entry) {
     showDetail(content);
 }
 
+// ===== 상점 =====
+
+const SHOP_CURR_IMGS = {
+    gold:   '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png'),
+    garnet: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png'),
+    point:  '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('포인트.png'),
+};
+const SHOP_CURR_LABELS = { gold: '골드', garnet: '가넷', point: '포인트', mileage: '마일리지', item: '아이템' };
+
+let shopData = null;
+let shopTab = null;
+
+function shopCurrNode(goods, size) {
+    const sz = size || 18;
+    if (goods === 'mileage') return el('span', { style: 'font-size:' + Math.round(sz * 0.9) + 'px;line-height:1;flex-shrink:0;display:block;font-style:normal' }, 'Ⓜ️');
+    if (SHOP_CURR_IMGS[goods]) return el('img', { src: SHOP_CURR_IMGS[goods], alt: goods, style: 'width:' + sz + 'px;height:' + sz + 'px;object-fit:contain;display:block;flex-shrink:0' });
+    return el('span', { style: 'font-size:' + sz + 'px;flex-shrink:0' }, '💰');
+}
+
+function buildShopThumb(display, cls) {
+    const wrap = el('div', { class: cls || 'shop-card-thumb' });
+    if (display.isCurrency && display.iconUrl) {
+        wrap.appendChild(el('img', { class: 'shop-card-thumb-curr', src: display.iconUrl, alt: '' }));
+    } else if (display.frameUrl || display.iconUrl) {
+        if (display.frameUrl) wrap.appendChild(el('img', { class: 'shop-card-thumb-frame', src: display.frameUrl, alt: '' }));
+        if (display.iconUrl) wrap.appendChild(el('img', { class: 'shop-card-thumb-icon', src: display.iconUrl, alt: '' }));
+    } else {
+        const fb = svgIcon(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`);
+        fb.style.cssText = 'width:32px;height:32px;display:block;opacity:.6;position:relative;z-index:2;color:#818cf8';
+        wrap.appendChild(fb);
+    }
+    return wrap;
+}
+
+function priceItemImg(price, size) {
+    const sz = size || 20;
+    if (!price.iconUrl) return null;
+    return el('img', { src: price.iconUrl, alt: '', style: 'width:' + sz + 'px;height:' + sz + 'px;object-fit:contain;display:block;flex-shrink:0' });
+}
+
+function buildPriceNode(price) {
+    const wrap = el('div', { class: 'shop-card-price' });
+    if (price.goods === 'item') {
+        const img = priceItemImg(price, 20);
+        if (img) wrap.appendChild(img);
+        wrap.appendChild(el('span', {}, String(price.amount).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
+    } else {
+        wrap.appendChild(shopCurrNode(price.goods, 18));
+        wrap.appendChild(el('span', {}, String(price.amount).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
+    }
+    return wrap;
+}
+
+function buildReceiptRow(label, price, amount, variant) {
+    const row = el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') });
+    row.appendChild(el('span', { class: 'shop-receipt-label' }, label));
+    const val = el('div', { class: 'shop-receipt-val' });
+    if (price.goods === 'item') {
+        const img = priceItemImg(price, 16);
+        if (img) val.appendChild(img);
+        val.appendChild(el('span', {}, String(Math.abs(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
+    } else {
+        val.appendChild(shopCurrNode(price.goods, 16));
+        val.appendChild(el('span', {}, String(Math.abs(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
+    }
+    row.appendChild(val);
+    return row;
+}
+
+// rpgenius.js formatShopLimitSuffix와 동일한 방식으로 제한 정보 구성
+function buildLimitRows(limitInfo) {
+    if (!limitInfo) return [];
+    const { limits, rec, globalCount } = limitInfo;
+    const rows = [];
+    if (typeof limits.max === 'number')     rows.push({ label: '전체',  used: rec.max,    limit: limits.max    });
+    if (typeof limits.daily === 'number')   rows.push({ label: '일일',  used: rec.daily,   limit: limits.daily  });
+    if (typeof limits.weekly === 'number')  rows.push({ label: '주간',  used: rec.weekly,  limit: limits.weekly });
+    if (typeof limits.monthly === 'number') rows.push({ label: '월간',  used: rec.monthly, limit: limits.monthly });
+    if (typeof limits.global === 'number')  rows.push({ label: '선착순', used: globalCount, limit: limits.global, isGlobal: true });
+    return rows;
+}
+
+function buildLimitBadge(limitInfo) {
+    const rows = buildLimitRows(limitInfo);
+    if (rows.length === 0) return el('span', {});
+    const wrap = el('div', { class: 'shop-limit-badge' });
+    rows.forEach(r => {
+        const remaining = r.limit - r.used;
+        const exhausted = remaining <= 0;
+        const row = el('div', { class: 'shop-limit-row' + (exhausted ? ' exhausted' : '') });
+        row.appendChild(el('span', { class: 'shop-limit-label' }, r.label));
+        row.appendChild(el('span', { class: 'shop-limit-val' },
+            comma(r.used) + ' / ' + comma(r.limit)
+        ));
+        wrap.appendChild(row);
+    });
+    return wrap;
+}
+
+function buildLimitDetail(limitInfo) {
+    const rows = buildLimitRows(limitInfo);
+    if (rows.length === 0) return null;
+    const section = el('div', { class: 'shop-limit-detail' });
+    section.appendChild(el('div', { class: 'shop-bundle-label' }, '구매 제한'));
+    rows.forEach(r => {
+        const remaining = r.limit - r.used;
+        const exhausted = remaining <= 0;
+        const row = el('div', { class: 'shop-limit-detail-row' + (exhausted ? ' exhausted' : '') });
+        row.appendChild(el('span', { class: 'shop-limit-detail-label' }, r.label));
+        const bar = el('div', { class: 'shop-limit-bar-wrap' });
+        const pct = Math.min(100, Math.round((r.used / r.limit) * 100));
+        bar.appendChild(el('div', { class: 'shop-limit-bar', style: '--pct:' + pct + '%' }));
+        row.appendChild(bar);
+        row.appendChild(el('span', { class: 'shop-limit-detail-val' + (exhausted ? ' exhausted' : '') },
+            comma(r.used) + ' / ' + comma(r.limit)
+        ));
+        section.appendChild(row);
+    });
+    return section;
+}
+
+function renderShop(data, tab) {
+    shopData = data;
+    shopTab = tab || data.tabs[0];
+    const body = $('#shopBody');
+    body.replaceChildren();
+
+    const tabRow = el('div', { class: 'shop-tabs' });
+    data.tabs.forEach(t => {
+        tabRow.appendChild(el('button', { class: 'shop-tab' + (t === shopTab ? ' active' : ''), onclick: () => renderShop(data, t) }, t));
+    });
+
+    const currBar = el('div', { class: 'shop-currency-bar' });
+    [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }, { key: 'point', label: '포인트' }, { key: 'mileage', label: '마일리지' }].forEach(({ key, label }) => {
+        if (data.currencies[key] == null) return;
+        const chip = el('div', { class: 'shop-currency-chip' });
+        chip.appendChild(shopCurrNode(key, 18));
+        chip.appendChild(el('span', { style: 'color:#94a3b8;font-size:12px;margin-right:2px' }, label));
+        chip.appendChild(el('span', {}, String(data.currencies[key]).replace(/\B(?=(\d{3})+(?!\d))/g, ',')));
+        currBar.appendChild(chip);
+    });
+    const grid = el('div', { class: 'shop-grid' });
+    (data.shop[shopTab] || []).forEach(item => {
+        const card = el('div', { class: 'shop-card' + (item.soldOut ? ' sold-out' : '') });
+        card.appendChild(buildShopThumb(item.display));
+        card.appendChild(el('div', { class: 'shop-card-name' }, item.display.name));
+        card.appendChild(buildPriceNode(item.price));
+        if (item.limitInfo) {
+            card.appendChild(buildLimitBadge(item.limitInfo));
+        }
+        card.appendChild(el('button', { class: 'shop-card-btn', onclick: e => { e.stopPropagation(); openShopBuyModal(item); } }, item.soldOut ? '품절' : '구매'));
+        if (item.soldOut) card.appendChild(el('span', { class: 'shop-sold-badge' }, '품절'));
+        card.onclick = () => { if (!item.soldOut) openShopBuyModal(item); };
+        grid.appendChild(card);
+    });
+    if ((data.shop[shopTab] || []).length === 0) grid.appendChild(el('div', { class: 'empty' }, '상품이 없습니다.'));
+
+    body.appendChild(tabRow);
+    body.appendChild(currBar);
+    body.appendChild(grid);
+}
+
+function openShopBuyModal(item) {
+    const d = item.display;
+    const p = item.price;
+    const li = item.limitInfo;
+    const isPackage = shopTab === '패키지';
+
+    // 최대 구매 가능 수량 계산 (모든 제한 타입 반영)
+    let maxQty = 999;
+    if (li && li.remaining) {
+        const r = li.remaining;
+        ['max', 'global', 'daily', 'weekly', 'monthly'].forEach(k => {
+            if (typeof r[k] === 'number') maxQty = Math.min(maxQty, r[k]);
+        });
+    }
+    if (p.goods !== 'item' && shopData) {
+        const bal = shopData.currencies[p.goods] || 0;
+        if (p.amount > 0) maxQty = Math.min(maxQty, Math.floor(bal / p.amount));
+    } else if (p.goods === 'item') {
+        const have = item.priceItemCount || 0;
+        if (p.amount > 0) maxQty = Math.min(maxQty, Math.floor(have / p.amount));
+    }
+    maxQty = Math.max(0, maxQty);
+
+    let qty = Math.min(1, maxQty || 1);
+    const content = el('div', { class: 'shop-buy-modal' });
+
+    // 아이템 미리보기
+    const itemRow = el('div', { class: 'shop-buy-item-row' });
+    itemRow.appendChild(buildShopThumb(d, 'shop-buy-thumb'));
+    const info = el('div', { style: 'flex:1;min-width:0' });
+    info.appendChild(el('div', { class: 'shop-buy-name' }, d.name));
+    if (p.goods === 'item') {
+        const have = item.priceItemCount ?? 0;
+        info.appendChild(el('div', { class: 'shop-buy-meta' }, '보유: ' + comma(have) + '개'));
+    }
+    itemRow.appendChild(info);
+    content.appendChild(itemRow);
+
+    // 구매 제한 (rpgenius.js formatShopLimitSuffix 방식)
+    if (li) {
+        const det = buildLimitDetail(li);
+        if (det) content.appendChild(det);
+    }
+
+    // 패키지 번들 내용
+    if (isPackage && d.bundleContents && d.bundleContents.length > 0) {
+        const sec = el('div', { class: 'shop-bundle-section' });
+        sec.appendChild(el('div', { class: 'shop-bundle-label' }, '구성품'));
+        const list = el('div', { class: 'shop-bundle-list' });
+        d.bundleContents.forEach(bc => {
+            const row = el('div', { class: 'shop-bundle-row' });
+            const mini = el('div', { class: 'shop-bundle-mini' });
+            if (bc.imgUrl) {
+                mini.appendChild(el('img', { src: bc.imgUrl, style: 'width:100%;height:100%;object-fit:contain' }));
+            } else {
+                if (bc.frameUrl) mini.appendChild(el('img', { src: bc.frameUrl, style: 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1' }));
+                if (bc.iconUrl) mini.appendChild(el('img', { src: bc.iconUrl, style: 'width:75%;height:75%;object-fit:contain;position:relative;z-index:2' }));
+            }
+            row.appendChild(mini);
+            row.appendChild(el('span', { class: 'shop-bundle-name' }, bc.name));
+            row.appendChild(el('span', { class: 'shop-bundle-count' }, '×' + bc.count));
+            list.appendChild(row);
+        });
+        sec.appendChild(list);
+        content.appendChild(sec);
+    }
+
+    // 수량 입력
+    const qtyRow = el('div', { class: 'shop-qty-row' });
+    qtyRow.appendChild(el('span', { class: 'shop-qty-label' }, '구매 수량'));
+    const qtyMinus = el('button', { class: 'shop-qty-btn', onclick: () => { qty = Math.max(1, qty - 1); qtyInput.value = qty; updateReceipt(); } }, '−');
+    const qtyInput = el('input', { type: 'number', class: 'shop-qty-input', value: String(qty), min: '1', max: String(maxQty > 0 ? maxQty : 1) });
+    qtyInput.oninput = () => { qty = Math.max(1, Math.min(maxQty || 1, parseInt(qtyInput.value) || 1)); qtyInput.value = qty; updateReceipt(); };
+    const qtyPlus = el('button', { class: 'shop-qty-btn', onclick: () => { qty = Math.min(maxQty > 0 ? maxQty : 1, qty + 1); qtyInput.value = qty; updateReceipt(); } }, '+');
+    qtyRow.appendChild(qtyMinus);
+    qtyRow.appendChild(qtyInput);
+    qtyRow.appendChild(qtyPlus);
+    qtyRow.appendChild(el('span', { class: 'shop-qty-max' }, '최대 ' + (maxQty > 0 ? maxQty : '-')));
+    content.appendChild(qtyRow);
+
+    // 계산서
+    const receipt = el('div', { class: 'shop-receipt' });
+    content.appendChild(receipt);
+
+    function updateReceipt() {
+        receipt.replaceChildren();
+        const totalCost = p.amount * qty;
+        let bal;
+        if (p.goods === 'item') {
+            bal = item.priceItemCount || 0;
+        } else {
+            bal = (shopData && shopData.currencies[p.goods]) || 0;
+        }
+        const after = bal - totalCost;
+        receipt.appendChild(buildReceiptRow('현재 보유', p, bal));
+        receipt.appendChild(buildReceiptRow('소모', p, totalCost, 'deduct'));
+        receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
+        receipt.appendChild(buildReceiptRow('구매 후 잔액', p, after, after < 0 ? 'neg' : 'result'));
+    }
+    updateReceipt();
+
+    // 버튼
+    const footer = el('div', { class: 'shop-buy-footer' });
+    footer.appendChild(el('button', { onclick: closeModal }, '취소'));
+    const buyBtn = el('button', { class: 'primary', onclick: async () => {
+        if (qty < 1) return;
+        buyBtn.disabled = true;
+        buyBtn.textContent = '처리 중...';
+        try {
+            const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: shopTab, index: item.index, count: qty }) });
+            const res = await r.json();
+            if (!r.ok) throw new Error(res.error || '구매 실패');
+            if (shopData) shopData.currencies = res.currencies;
+            closeModal();
+            await loadShop();
+        } catch (e) {
+            buyBtn.disabled = false;
+            buyBtn.textContent = '구매';
+            alert(e.message);
+        }
+    }}, '구매');
+    footer.appendChild(buyBtn);
+    content.appendChild(footer);
+
+    $('#modalTitle').textContent = d.name + ' 구매';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+async function loadShop() {
+    const body = $('#shopBody');
+    body.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        const r = await fetch('/api/shop');
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || '오류');
+        renderShop(data, shopTab && (data.shop[shopTab] ? shopTab : null));
+    } catch (e) {
+        body.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
 // ===== 경매 등록 =====
 
-let regState = { kind: 'card', selectedIndex: -1, selectedItemId: -1, sellable: null };
+const REG_ICONS = {
+    card:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="14" height="19" rx="2"/><path d="M7 7h6"/><path d="M7 11h6"/><path d="M7 15h4"/><path d="M18 8v13a2 2 0 0 1-2 2H6"/></svg>`,
+    equipment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    item:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg>`,
+    pet:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg>`,
+};
+const REG_CHK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const REG_SLOT_SVGS = {
+    weapon:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg>`,
+    armor:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    accessory: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>`,
+    support:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
+};
+function regCurrImg(c) {
+    const file = c === 'gold' ? '골드.png' : '가넷.png';
+    return el('img', { src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(file), alt: c, style: 'width:22px;height:22px;object-fit:contain;display:block;flex-shrink:0' });
+}
+function buildRegItemThumb(item, kind) {
+    if (kind === 'card') {
+        return el('div', { class: 'reg-thumb' }, item.imageUrl ? el('img', { class: 'reg-card-img', src: item.imageUrl, alt: '' }) : svgIcon(REG_ICONS.card));
+    }
+    const wrap = el('div', { class: 'reg-thumb sq' });
+    if (item.frameUrl) wrap.appendChild(el('img', { class: 'reg-thumb-frame', src: item.frameUrl, alt: '' }));
+    if (item.iconUrl) wrap.appendChild(el('img', { class: 'reg-thumb-icon', src: item.iconUrl, alt: '' }));
+    else {
+        const fallback = kind === 'pet' ? REG_ICONS.pet : kind === 'equipment' ? (REG_SLOT_SVGS[item.type] || REG_SLOT_SVGS.weapon) : REG_ICONS.item;
+        wrap.appendChild(svgIcon(fallback));
+    }
+    return wrap;
+}
+
+let regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, sellable: null };
 
 async function openRegisterModal() {
-    regState = { kind: 'card', selectedIndex: -1, selectedItemId: -1, sellable: null };
+    regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, sellable: null };
     $('#aucReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#aucRegBg').classList.add('active');
     try {
@@ -825,112 +1216,113 @@ function closeRegister() { $('#aucRegBg').classList.remove('active'); }
 
 function renderRegisterModal() {
     const data = regState.sellable;
-    const kindSeg = el('div', { class: 'seg' },
+    if (!data) return;
+    const kind = regState.kind;
+
+    const kindRow = el('div', { class: 'reg-kind-row' },
         ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
-            class: regState.kind === k ? 'on' : '',
+            class: 'reg-kind-btn' + (kind === k ? ' active' : ''),
             onclick: () => { regState.kind = k; regState.selectedIndex = -1; regState.selectedItemId = -1; renderRegisterModal(); }
-        }, AUCTION_KIND_LABEL[k]))
+        }, svgIcon(REG_ICONS[k]), AUCTION_KIND_LABEL[k]))
     );
 
-    let pickList;
-    if (regState.kind === 'pet') {
-        pickList = (!data.pets || data.pets.length === 0)
-            ? el('div', { class: 'empty' }, '판매 가능한 펫이 없습니다.\n(거래 가능 횟수가 1 이상인 펫만 등록 가능)')
-            : el('div', { class: 'pick-list' }, ...data.pets.map(pet => el('div', {
-                class: 'pick-row' + (regState.selectedIndex === pet.index ? ' on' : ''),
-                onclick: () => { regState.selectedIndex = pet.index; renderRegisterModal(); }
-            },
-                el('div', { style: { flex: '1' } },
-                    el('b', null, pet.name + (pet.level > 0 ? ' +' + pet.level : '')),
-                    el('div', { class: 'meta' }, pet.rarity + ' · 거래 가능 ' + comma(pet.tradeCount) + '회')
-                )
-            )));
-    } else if (regState.kind === 'card') {
-        pickList = data.cards.length === 0
-            ? el('div', { class: 'empty' }, '판매 가능한 카드가 없습니다.\n(인벤토리 보유 카드만 등록 가능)')
-            : el('div', { class: 'pick-list' }, ...data.cards.map(card => el('div', {
-                class: 'pick-row' + (regState.selectedIndex === card.index ? ' on' : ''),
-                onclick: () => { regState.selectedIndex = card.index; renderRegisterModal(); }
-            },
-                el('div', null, el('b', null, card.formatted), el('div', { class: 'meta' }, card.starText)),
-                card.imageUrl ? el('img', { src: card.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null
-            )));
-    } else if (regState.kind === 'equipment') {
-        pickList = data.equipment.length === 0
-            ? el('div', { class: 'empty' }, '판매 가능한 장비가 없습니다.\n(인벤토리 미장착 장비만 등록 가능)')
-            : el('div', { class: 'pick-list' }, ...data.equipment.map(eq => {
-                const info = el('div', { style: { flex: '1' } },
-                    el('b', null, eq.name + (eq.level > 0 ? ' +' + eq.level : '')),
-                    el('div', { class: 'meta' }, eq.rarity + ' · ' + eq.typeLabel)
-                );
-                if (eq.soul && eq.soul.expiredAt) {
-                    const soulText = formatSoulRemaining(eq.soul.expiredAt);
-                    if (soulText) info.appendChild(el('div', { class: 'meta', style: 'opacity:0.85;font-style:italic' }, soulText));
-                }
-                const potBlock = potentialBlockNode(eq.potentialDisplay);
-                if (potBlock) info.appendChild(potBlock);
-                return el('div', {
-                    class: 'pick-row' + (regState.selectedIndex === eq.index ? ' on' : ''),
-                    onclick: () => { regState.selectedIndex = eq.index; renderRegisterModal(); }
-                }, info);
-            }));
-    } else {
-        pickList = data.items.length === 0
-            ? el('div', { class: 'empty' }, '판매 가능한 아이템이 없습니다.')
-            : el('div', { class: 'pick-list' }, ...data.items.map(item => el('div', {
-                class: 'pick-row' + (regState.selectedItemId === item.id ? ' on' : ''),
-                onclick: () => { regState.selectedItemId = item.id; renderRegisterModal(); }
-            },
-                el('div', null, el('b', null, item.name), el('div', { class: 'meta' }, item.type)),
-                el('strong', null, '보유 ' + comma(item.count))
-            )));
-    }
+    let pool, emptyMsg;
+    if (kind === 'card') { pool = data.cards; emptyMsg = '판매 가능한 카드가 없습니다.'; }
+    else if (kind === 'equipment') { pool = data.equipment; emptyMsg = '판매 가능한 장비가 없습니다.\n(미장착 장비만 등록 가능)'; }
+    else if (kind === 'pet') { pool = data.pets || []; emptyMsg = '판매 가능한 펫이 없습니다.\n(거래 가능 횟수 1 이상만 등록 가능)'; }
+    else { pool = data.items; emptyMsg = '판매 가능한 아이템이 없습니다.'; }
 
-    const itemSelected = regState.kind === 'item' ? data.items.find(i => i.id === regState.selectedItemId) : null;
-    const countInput = regState.kind === 'item' ? el('input', { type: 'number', id: 'regCount', value: 1, min: 1, max: itemSelected ? itemSelected.count : 1 }) : null;
-    const currencySelect = el('select', { id: 'regCurrency' },
-        el('option', { value: 'gold' }, '🪙 골드'),
-        el('option', { value: 'garnet' }, '💠 가넷')
-    );
-    const priceInput = el('input', { type: 'number', id: 'regPrice', placeholder: '예: 10000', min: 1 });
-
-    const submitBtn = el('button', { class: 'primary', style: { flex: '2' }, onclick: submitRegister }, '등록');
-    const cancelBtn = el('button', { onclick: closeRegister }, '취소');
+    const pickList = !pool.length
+        ? el('div', { class: 'empty', style: 'padding:16px 0' }, emptyMsg)
+        : el('div', { class: 'reg-pick-scroll' }, ...pool.map(item => {
+            const isSel = kind === 'item' ? regState.selectedItemId === item.id : regState.selectedIndex === item.index;
+            let thumbEl, nameText, metaText;
+            thumbEl = buildRegItemThumb(item, kind);
+            if (kind === 'card') {
+                nameText = item.formatted; metaText = item.starText || '';
+            } else if (kind === 'equipment') {
+                nameText = item.name + (item.level > 0 ? ' +' + item.level : '');
+                metaText = item.rarity + ' · ' + item.typeLabel;
+                const st = item.soul && item.soul.expiredAt ? formatSoulRemaining(item.soul.expiredAt) : null;
+                if (st) metaText += '\n' + st;
+            } else if (kind === 'pet') {
+                nameText = item.name + (item.level > 0 ? ' +' + item.level : '');
+                metaText = item.rarity + ' · 거래 가능 ' + comma(item.tradeCount) + '회';
+            } else {
+                nameText = item.name; metaText = item.type + ' · 보유 ' + comma(item.count) + '개';
+            }
+            const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, nameText), el('div', { class: 'reg-item-meta' }, metaText));
+            if (kind === 'equipment' && item.potentialDisplay) {
+                const pb = potentialBlockNode(item.potentialDisplay);
+                if (pb) infoEl.appendChild(pb);
+            }
+            const checkEl = el('div', { class: 'reg-check' + (isSel ? ' sel' : '') }, isSel ? svgIcon(REG_CHK_SVG) : null);
+            return el('div', {
+                class: 'reg-pick-row' + (isSel ? ' selected' : ''),
+                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else regState.selectedIndex = item.index; renderRegisterModal(); }
+            }, thumbEl, infoEl, checkEl);
+        }));
 
     const content = [
         el('h3', null, '판매 등록'),
         el('div', { class: 'sub' }, '수수료 5%를 제외하고 판매자에게 입금됩니다.'),
-        el('label', null, '종류'),
-        kindSeg,
-        el('label', null, '판매할 ' + AUCTION_KIND_LABEL[regState.kind]),
-        pickList
+        el('div', { class: 'reg-divider' }),
+        el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '종류'),
+        kindRow,
+        el('div', { class: 'reg-section-label' }, '판매할 ' + AUCTION_KIND_LABEL[kind]),
+        pickList,
     ];
-    if (regState.kind === 'item' && itemSelected) {
-        content.push(el('label', null, '갯수 (보유 ' + comma(itemSelected.count) + ')'));
-        content.push(countInput);
+
+    if (kind === 'item') {
+        const itemSel = data.items.find(i => i.id === regState.selectedItemId);
+        if (itemSel) {
+            content.push(el('div', { class: 'reg-section-label' }, '갯수'));
+            content.push(el('div', { class: 'reg-count-row' },
+                el('input', { type: 'number', id: 'regCount', value: 1, min: 1, max: itemSel.count }),
+                el('span', { class: 'reg-count-hint' }, '최대 ' + comma(itemSel.count) + '개')
+            ));
+        }
     }
-    content.push(el('label', null, '화폐'));
-    content.push(currencySelect);
-    content.push(el('label', null, regState.kind === 'item' ? '개당 가격' : '가격'));
-    content.push(priceInput);
-    content.push(el('div', { class: 'row' }, cancelBtn, submitBtn));
+
+    content.push(el('div', { class: 'reg-divider' }));
+    content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '결제 수단'));
+    content.push(el('div', { class: 'reg-currency-row' },
+        ...['gold', 'garnet'].map(c => el('button', {
+            class: 'reg-curr-btn ' + c + (regState.currency === c ? ' active' : ''),
+            onclick: () => { regState.currency = c; renderRegisterModal(); }
+        }, regCurrImg(c), c === 'gold' ? '골드' : '가넷'))
+    ));
+    content.push(el('div', { class: 'reg-section-label' }, kind === 'item' ? '개당 가격' : '가격'));
+    content.push(el('div', { class: 'reg-price-wrap' },
+        el('span', { class: 'reg-price-icon' }, regCurrImg(regState.currency)),
+        el('input', { type: 'number', id: 'regPrice', class: 'reg-price-field', placeholder: '0', min: 1 })
+    ));
+    content.push(el('div', { class: 'reg-inline-err', id: 'regErr' }));
+    content.push(el('div', { class: 'reg-footer' },
+        el('button', { onclick: closeRegister }, '취소'),
+        el('button', { class: 'primary', onclick: submitRegister }, '등록하기')
+    ));
 
     $('#aucReg').replaceChildren(...content);
 }
 
+function showRegErr(msg) {
+    const d = $('#regErr');
+    if (d) { d.textContent = msg; d.classList.add('visible'); }
+}
 async function submitRegister() {
     const kind = regState.kind;
-    const currency = $('#regCurrency').value;
+    const currency = regState.currency || 'gold';
     const price = Number($('#regPrice').value || 0);
-    if (!Number.isInteger(price) || price < 1) return alert('가격은 1 이상의 정수여야 합니다.');
+    if (!Number.isInteger(price) || price < 1) { showRegErr('가격은 1 이상의 정수여야 합니다.'); return; }
     const body = { kind, currency, price };
     if (kind === 'card' || kind === 'equipment' || kind === 'pet') {
-        if (regState.selectedIndex < 0) return alert(AUCTION_KIND_LABEL[kind] + '를 선택해주세요.');
+        if (regState.selectedIndex < 0) { showRegErr(AUCTION_KIND_LABEL[kind] + '를 선택해주세요.'); return; }
         body.index = regState.selectedIndex;
     } else {
-        if (regState.selectedItemId < 0) return alert('아이템을 선택해주세요.');
-        const count = Number($('#regCount').value || 0);
-        if (!Number.isInteger(count) || count < 1) return alert('갯수는 1 이상의 정수여야 합니다.');
+        if (regState.selectedItemId < 0) { showRegErr('아이템을 선택해주세요.'); return; }
+        const count = Number($('#regCount') ? $('#regCount').value : 1);
+        if (!Number.isInteger(count) || count < 1) { showRegErr('갯수는 1 이상의 정수여야 합니다.'); return; }
         body.itemId = regState.selectedItemId;
         body.count = count;
     }
@@ -942,7 +1334,7 @@ async function submitRegister() {
         await loadAuctions();
         api('/api/profile').then(renderProfile).catch(() => {});
     } catch (e) {
-        alert(e.message);
+        showRegErr(e.message);
     }
 }
 
@@ -1208,7 +1600,7 @@ function renderFulfillSection(entry, fulfillable, content) {
 let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
 
 async function openBoRegisterModal() {
-    boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
+    boRegState = { kind: 'card', currency: 'gold', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1 };
     $('#boReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#boRegBg').classList.add('active');
     try {
@@ -1223,146 +1615,162 @@ function closeBoRegister() { $('#boRegBg').classList.remove('active'); }
 
 function renderBoRegisterModal() {
     const data = boRegState.lookups;
-    const kindSeg = el('div', { class: 'seg' },
+    if (!data) return;
+    const kind = boRegState.kind;
+
+    const kindRow = el('div', { class: 'reg-kind-row' },
         ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
-            class: boRegState.kind === k ? 'on' : '',
+            class: 'reg-kind-btn' + (kind === k ? ' active' : ''),
             onclick: () => { boRegState.kind = k; renderBoRegisterModal(); }
-        }, AUCTION_KIND_LABEL[k]))
+        }, svgIcon(REG_ICONS[k]), AUCTION_KIND_LABEL[k]))
     );
 
     const content = [
         el('h3', null, '구매 등록'),
         el('div', { class: 'sub' }, '등록 시 가격이 선결제되며, 취소 시 미체결 분이 반환됩니다.'),
-        el('label', null, '종류'),
-        kindSeg
+        el('div', { class: 'reg-divider' }),
+        el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '종류'),
+        kindRow,
+        el('div', { class: 'reg-divider' }),
     ];
 
-    if (boRegState.kind === 'card') {
-        content.push(el('label', null, '캐릭터 카드'));
-        const cardSelect = el('select', { onchange: e => { boRegState.cardId = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } },
+    const makeCountInput = () => {
+        const inp = el('input', { type: 'number', value: boRegState.count, min: 1 });
+        inp.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (v < 1) v = 1; boRegState.count = v; e.target.value = v; };
+        return el('div', { class: 'reg-count-row' }, inp, el('span', { class: 'reg-count-hint' }, '개'));
+    };
+
+    if (kind === 'card') {
+        content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '캐릭터 카드'));
+        content.push(el('select', { onchange: e => { boRegState.cardId = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } },
             el('option', { value: -1 }, '카드 선택...'),
             ...data.cards.map(c => el('option', { value: c.id, selected: boRegState.cardId === c.id ? 'selected' : null }, c.name))
-        );
-        content.push(cardSelect);
-        content.push(el('label', null, '성급 (정확 일치)'));
-        const starSelect = el('select', { onchange: e => { boRegState.star = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } });
+        ));
+        content.push(el('div', { class: 'reg-section-label' }, '상세 조건'));
+        const detailGrid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px' });
+        const starSel = el('select', { onchange: e => { boRegState.star = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } });
         for (let i = 0; i <= 11; i++) {
-            const opt = el('option', { value: i }, (i + 1) + '성' + (i >= 4 ? ' · 거래권 ' + Math.max(0, i - 3) + '장' : ''));
+            const opt = el('option', { value: i }, (i + 1) + '성' + (i >= 4 ? ' (거래권 ' + Math.max(0, i - 3) + '장)' : ''));
             if (boRegState.star === i) opt.selected = true;
-            starSelect.appendChild(opt);
+            starSel.appendChild(opt);
         }
-        content.push(starSelect);
-        content.push(el('label', null, '타입 (선택 사항)'));
-        const typeSelect = el('select', { onchange: e => { boRegState.type = e.target.value; } },
+        const typeSel = el('select', { onchange: e => { boRegState.type = e.target.value; } },
             el('option', { value: '' }, '타입 무관'),
             el('option', { value: '일반', selected: boRegState.type === '일반' ? 'selected' : null }, '일반')
         );
-        content.push(typeSelect);
-        content.push(el('label', null, '패션 (선택 사항)'));
+        const starWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '성급 (정확 일치)'), starSel);
+        const typeWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '타입'), typeSel);
+        detailGrid.appendChild(starWrap); detailGrid.appendChild(typeWrap);
+        content.push(detailGrid);
         const rawStar = Number(boRegState.star || 0);
-        const skins = (data.fashion || []).filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(skin.requireStar || 0));
-        const skinSelect = el('select', { onchange: e => { boRegState.skin = e.target.value; } },
-            el('option', { value: '' }, '패션 무관'),
-            ...skins.map(skin => el('option', { value: skin.name, selected: boRegState.skin === skin.name ? 'selected' : null }, skin.name))
+        const skins = (data.fashion || []).filter(s => Array.isArray(s.primary_card) && s.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(s.requireStar || 0));
+        if (boRegState.skin && !skins.some(s => s.name === boRegState.skin)) boRegState.skin = '';
+        if (boRegState.cardId >= 0) {
+            content.push(el('div', { class: 'reg-section-label' }, '패션 (선택)'));
+            content.push(el('select', { onchange: e => { boRegState.skin = e.target.value; } },
+                el('option', { value: '' }, '패션 무관'),
+                ...skins.map(s => el('option', { value: s.name, selected: boRegState.skin === s.name ? 'selected' : null }, s.name))
+            ));
+        }
+        content.push(el('div', { class: 'reg-section-label' }, '갯수'));
+        content.push(makeCountInput());
+
+    } else if (kind === 'equipment') {
+        content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '장비 종류'));
+        const equipTypeRow = el('div', { class: 'reg-equip-row' },
+            ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].map(([k, label]) =>
+                el('button', { class: 'reg-equip-btn' + (boRegState.equipType === k ? ' active' : ''),
+                    onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; renderBoRegisterModal(); }
+                }, svgIcon(REG_SLOT_SVGS[k]), label)
+            )
         );
-        if (boRegState.skin && !skins.some(skin => skin.name === boRegState.skin)) boRegState.skin = '';
-        content.push(skinSelect);
-        content.push(el('label', null, '갯수'));
-        const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
-        countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
-        content.push(countInput);
-    } else if (boRegState.kind === 'equipment') {
-        content.push(el('label', null, '장비 종류'));
-        const typeSeg = el('div', { class: 'seg' },
-            ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].map(([k, label]) => el('button', {
-                class: boRegState.equipType === k ? 'on' : '',
-                onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; renderBoRegisterModal(); }
-            }, label))
-        );
-        content.push(typeSeg);
-        content.push(el('label', null, '장비'));
-        const list = (data.equipment[boRegState.equipType] || []);
-        const eqSelect = el('select', { onchange: e => { boRegState.equipId = Number(e.target.value); } },
+        content.push(equipTypeRow);
+        content.push(el('div', { class: 'reg-section-label' }, '장비'));
+        const list = data.equipment[boRegState.equipType] || [];
+        content.push(el('select', { onchange: e => { boRegState.equipId = Number(e.target.value); } },
             el('option', { value: -1 }, '장비 선택...'),
             ...list.map(eq => el('option', { value: eq.id, selected: boRegState.equipId === eq.id ? 'selected' : null }, eq.name + ' (' + eq.rarity + ')'))
+        ));
+        const lvToggle = el('label', { class: 'reg-level-toggle' },
+            el('input', { type: 'checkbox', checked: boRegState.levelSpecified ? 'checked' : null,
+                onchange: e => { boRegState.levelSpecified = e.target.checked; renderBoRegisterModal(); } }),
+            '강화 레벨 지정'
         );
-        content.push(eqSelect);
-        const levelRow = el('div', { class: 'row', style: { alignItems: 'center' } },
-            el('label', { style: { margin: 0 } }, el('input', { type: 'checkbox', checked: boRegState.levelSpecified ? 'checked' : null, onchange: e => { boRegState.levelSpecified = e.target.checked; renderBoRegisterModal(); } }), ' 강화 레벨 지정')
-        );
-        content.push(levelRow);
+        content.push(lvToggle);
         if (boRegState.levelSpecified) {
-            const levelInput = el('input', { type: 'number', value: boRegState.level, min: 0, max: 15 });
-            levelInput.oninput = e => { let v = Math.floor(Number(e.target.value || 0)); if (!Number.isInteger(v) || v < 0) v = 0; if (v > 15) v = 15; boRegState.level = v; e.target.value = v; };
-            content.push(levelInput);
+            content.push(el('div', { class: 'reg-section-label' }, '강화 레벨 (0~15)'));
+            const lvInp = el('input', { type: 'number', value: boRegState.level, min: 0, max: 15, style: 'width:100%;padding:10px 12px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#e5e7eb;font-size:15px;font-weight:700;outline:none' });
+            lvInp.oninput = e => { let v = Math.max(0, Math.min(15, Math.floor(Number(e.target.value || 0)))); boRegState.level = v; e.target.value = v; };
+            content.push(lvInp);
         }
-        content.push(el('label', null, '갯수'));
-        const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
-        countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
-        content.push(countInput);
-    } else if (boRegState.kind === 'pet') {
-        content.push(el('label', null, '펫'));
-        const petSelect = el('select', { onchange: e => { boRegState.petId = Number(e.target.value); } },
+        content.push(el('div', { class: 'reg-section-label' }, '갯수'));
+        content.push(makeCountInput());
+
+    } else if (kind === 'pet') {
+        content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '펫'));
+        content.push(el('select', { onchange: e => { boRegState.petId = Number(e.target.value); } },
             el('option', { value: -1 }, '펫 선택...'),
-            ...((data.pets || []).map(p => el('option', { value: p.id, selected: boRegState.petId === p.id ? 'selected' : null }, p.name + ' (' + p.rarity + ')')))
-        );
-        content.push(petSelect);
-        content.push(el('label', null, '갯수'));
-        const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
-        countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
-        content.push(countInput);
+            ...(data.pets || []).map(p => el('option', { value: p.id, selected: boRegState.petId === p.id ? 'selected' : null }, p.name + ' (' + p.rarity + ')'))
+        ));
+        content.push(el('div', { class: 'reg-section-label' }, '갯수'));
+        content.push(makeCountInput());
+
     } else {
-        content.push(el('label', null, '아이템'));
-        const itemSelect = el('select', { onchange: e => { boRegState.itemId = Number(e.target.value); } },
+        content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '아이템'));
+        content.push(el('select', { onchange: e => { boRegState.itemId = Number(e.target.value); } },
             el('option', { value: -1 }, '아이템 선택...'),
             ...data.items.map(it => el('option', { value: it.id, selected: boRegState.itemId === it.id ? 'selected' : null }, '[' + it.type + '] ' + it.name))
-        );
-        content.push(itemSelect);
-        content.push(el('label', null, '갯수'));
-        const countInput = el('input', { type: 'number', value: boRegState.count, min: 1 });
-        countInput.oninput = e => { let v = Math.floor(Number(e.target.value || 1)); if (!Number.isInteger(v) || v < 1) v = 1; boRegState.count = v; e.target.value = v; };
-        content.push(countInput);
+        ));
+        content.push(el('div', { class: 'reg-section-label' }, '갯수'));
+        content.push(makeCountInput());
     }
 
-    content.push(el('label', null, '화폐'));
-    const currencySelect = el('select', { id: 'boRegCurrency' },
-        el('option', { value: 'gold' }, '🪙 골드'),
-        el('option', { value: 'garnet' }, '💠 가넷')
-    );
-    content.push(currencySelect);
-    content.push(el('label', null, boRegState.kind === 'item' ? '개당 가격' : '개당 가격'));
-    const priceInput = el('input', { type: 'number', id: 'boRegPrice', placeholder: '예: 10000', min: 1 });
-    content.push(priceInput);
-
-    const submitBtn = el('button', { class: 'primary', style: { flex: '2' }, onclick: submitBoRegister }, '등록');
-    const cancelBtn = el('button', { onclick: closeBoRegister }, '취소');
-    content.push(el('div', { class: 'row' }, cancelBtn, submitBtn));
+    content.push(el('div', { class: 'reg-divider' }));
+    content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '결제 수단'));
+    content.push(el('div', { class: 'reg-currency-row' },
+        ...['gold', 'garnet'].map(c => el('button', {
+            class: 'reg-curr-btn ' + c + (boRegState.currency === c ? ' active' : ''),
+            onclick: () => { boRegState.currency = c; renderBoRegisterModal(); }
+        }, regCurrImg(c), c === 'gold' ? '골드' : '가넷'))
+    ));
+    content.push(el('div', { class: 'reg-section-label' }, '개당 가격'));
+    content.push(el('div', { class: 'reg-price-wrap' },
+        el('span', { class: 'reg-price-icon' }, regCurrImg(boRegState.currency)),
+        el('input', { type: 'number', id: 'boRegPrice', class: 'reg-price-field', placeholder: '0', min: 1 })
+    ));
+    content.push(el('div', { class: 'reg-inline-err', id: 'boRegErr' }));
+    content.push(el('div', { class: 'reg-footer' },
+        el('button', { onclick: closeBoRegister }, '취소'),
+        el('button', { class: 'primary', onclick: submitBoRegister }, '등록하기')
+    ));
 
     $('#boReg').replaceChildren(...content);
 }
 
+function showBoRegErr(msg) {
+    const d = $('#boRegErr');
+    if (d) { d.textContent = msg; d.classList.add('visible'); }
+}
 async function submitBoRegister() {
     const kind = boRegState.kind;
-    const currency = $('#boRegCurrency').value;
+    const currency = boRegState.currency || 'gold';
     const price = Number($('#boRegPrice').value || 0);
-    if (!Number.isInteger(price) || price < 1) return alert('가격은 1 이상의 정수여야 합니다.');
+    if (!Number.isInteger(price) || price < 1) { showBoRegErr('가격은 1 이상의 정수여야 합니다.'); return; }
     const body = { kind, currency, price, count: boRegState.count };
     if (kind === 'card') {
-        if (boRegState.cardId < 0) return alert('카드를 선택해주세요.');
-        body.cardId = boRegState.cardId;
-        body.star = boRegState.star;
+        if (boRegState.cardId < 0) { showBoRegErr('카드를 선택해주세요.'); return; }
+        body.cardId = boRegState.cardId; body.star = boRegState.star;
         if (boRegState.type) body.type = boRegState.type;
         if (boRegState.skin && boRegState.skin.trim()) body.skin = boRegState.skin.trim();
     } else if (kind === 'equipment') {
-        if (boRegState.equipId < 0) return alert('장비를 선택해주세요.');
-        body.equipType = boRegState.equipType;
-        body.equipId = boRegState.equipId;
+        if (boRegState.equipId < 0) { showBoRegErr('장비를 선택해주세요.'); return; }
+        body.equipType = boRegState.equipType; body.equipId = boRegState.equipId;
         if (boRegState.levelSpecified) body.level = boRegState.level;
     } else if (kind === 'pet') {
-        if (boRegState.petId < 0) return alert('펫을 선택해주세요.');
+        if (boRegState.petId < 0) { showBoRegErr('펫을 선택해주세요.'); return; }
         body.petId = boRegState.petId;
     } else {
-        if (boRegState.itemId < 0) return alert('아이템을 선택해주세요.');
+        if (boRegState.itemId < 0) { showBoRegErr('아이템을 선택해주세요.'); return; }
         body.itemId = boRegState.itemId;
     }
     try {
@@ -1373,7 +1781,7 @@ async function submitBoRegister() {
         await loadBuyOrders();
         api('/api/profile').then(renderProfile).catch(() => {});
     } catch (e) {
-        alert(e.message);
+        showBoRegErr(e.message);
     }
 }
 

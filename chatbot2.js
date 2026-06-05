@@ -309,13 +309,14 @@ async function touchChat(sender, msg, channelId) {
         updated_at: timestamp,
         last_seen_at: timestamp
     });
-    await supabase.from('chatbot2_chat_logs').insert({
+    const { error: logError } = await supabase.from('chatbot2_chat_logs').insert({
         channel_id: channelId + '',
         user_id: sender.userId + '',
         nickname: next.display_nickname || sender.nickname || '',
         message: (msg || '').slice(0, 1500),
         created_at: timestamp
     });
+    if (logError) console.log('[chatbot2] chat log insert error:', logError);
     return { user: next, reward };
 }
 
@@ -517,14 +518,31 @@ async function getUsersByPoints(channelId, limit = 15) {
     return users.sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, limit);
 }
 
-async function getAllUsers(channelId) {
-    const channel = channelId;
+async function getAllUsers(channel) {
     const currentChannelId = channel.channelId + '';
     const members = Array.from(channel.getAllUserInfo() || []);
+    if (!members.length) return [];
+    const { data: existing, error } = await supabase
+        .from('chatbot2_users')
+        .select('*')
+        .eq('channel_id', currentChannelId);
+    if (error) throw error;
+    const existingMap = new Map((existing || []).map(u => [u.user_id + '', u]));
     const result = [];
+    const newUsers = [];
     for (const member of members) {
-        const user = await ensureUser(member, currentChannelId);
-        result.push(user);
+        const uid = member.userId + '';
+        const old = existingMap.get(uid);
+        if (old) {
+            result.push(old);
+        } else {
+            const newUser = baseUser(member.userId, member.nickname, currentChannelId, {});
+            newUsers.push(newUser);
+            result.push(newUser);
+        }
+    }
+    if (newUsers.length) {
+        await supabase.from('chatbot2_users').upsert(newUsers, { onConflict: 'id' });
     }
     return result;
 }
@@ -555,15 +573,14 @@ async function getChatStats(channelId, userId) {
     return { today, yesterday, week, lastWeek, month, total };
 }
 
-async function getChatRanking(channelId, periodKey, limit = 50) {
-    const channel = channelId;
+async function getChatRanking(channel, periodKey, limit = 50) {
     const currentChannelId = channel.channelId + '';
     const range = getChatPeriodRange(periodKey);
     if (!range) return [];
-    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname, created_at').eq('channel_id', currentChannelId);
+    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname').eq('channel_id', currentChannelId);
     if (range.startIso) query = query.gte('created_at', range.startIso);
     if (range.endIso) query = query.lt('created_at', range.endIso);
-    const { data, error } = await query;
+    const { data, error } = await query.limit(100000);
     if (error) throw error;
     const users = await getAllUsers(channel);
     const nameMap = new Map(users.map(user => [user.user_id + '', displayName(user)]));
@@ -737,7 +754,7 @@ async function useBagItem(channelId, userId, name, quantity = 1) {
         return { ok: false, reason: 'not_found' };
     }
     const { data, error } = await supabase.from('chatbot2_bag_items').update({ quantity: Number(existing.quantity || 0) - amount, updated_at: nowIso() }).eq('id', existing.id).select('*').single();
-    if (error) throw error;
+    if (error) return { ok: false, reason: 'error' };
     return { ok: true, item: data, quantity: amount };
 }
 
@@ -749,17 +766,21 @@ async function giftBagItem(channelId, fromUserId, toUserId, name, quantity = 1) 
     }
     const used = await useBagItem(channelId, fromUserId, name, amount);
     if (!used.ok) return used;
-    const bagItem = await addBagItem(channelId, toUserId, {
-        item_key: existing.item_key || name,
-        name: existing.item_name || name
-    }, amount);
-    return {
-        ok: true,
-        quantity: amount,
-        itemName: existing.item_name || name,
-        fromItem: used.item,
-        toItem: bagItem
-    };
+    const itemRef = { item_key: existing.item_key || name, name: existing.item_name || name };
+    try {
+        const bagItem = await addBagItem(channelId, toUserId, itemRef, amount);
+        return {
+            ok: true,
+            quantity: amount,
+            itemName: existing.item_name || name,
+            fromItem: used.item,
+            toItem: bagItem
+        };
+    } catch (e) {
+        // 수신자 지급 실패 시 발신자에게 아이템 복구
+        await addBagItem(channelId, fromUserId, itemRef, amount).catch(() => {});
+        return { ok: false, reason: 'error' };
+    }
 }
 
 async function addPoints(userInfo, channelId, amount) {
@@ -1010,7 +1031,7 @@ async function handleCommand(data, channel, sender) {
         }
         const result = await giftBagItem(channelId, sender.userId + '', target.userId + '', name, 1);
         if (!result.ok) {
-            channel.sendChat('❌ 보유한 아이템이 없거나 수량이 부족합니다.');
+            channel.sendChat(result.reason === 'not_found' ? '❌ 보유한 아이템이 없거나 수량이 부족합니다.' : '❌ 아이템 선물 중 오류가 발생했습니다.');
             return true;
         }
         channel.sendChat(`✅ ${displayName(null, sender.nickname)}님이 ${displayName(null, target.nickname)}님에게 '${result.itemName}' 아이템을 선물했습니다.`);
@@ -1055,10 +1076,10 @@ async function handleCommand(data, channel, sender) {
         }
         const result = await useBagItem(channelId, target.userId + '', name, 1);
         if (!result.ok) {
-            channel.sendChat('❌ 해당 유저가 보유한 아이템이 없습니다.');
+            channel.sendChat(result.reason === 'not_found' ? '❌ 해당 유저가 보유한 아이템이 없습니다.' : '❌ 아이템 사용 중 오류가 발생했습니다.');
             return true;
         }
-        channel.sendChat(`✅ ${displayName(null, target.nickname)}님의 '${name}' 아이템을 사용했습니다.`);
+        channel.sendChat(`✅ ${displayName(null, target.nickname)}님의 '${result.item.item_name || name}' 아이템을 사용했습니다.`);
         return true;
     }
 
@@ -1110,7 +1131,10 @@ async function onChat(data, channel) {
     if (!sender) return false;
     const msg = (data.text || '').trim();
     try {
-        if (msg) await touchChat(sender, msg, channel.channelId + '');
+        if (msg) {
+            try { await touchChat(sender, msg, channel.channelId + ''); }
+            catch (e) { console.log('[chatbot2] touchChat error:', e); }
+        }
         if (ATTENDANCE_KEYWORDS.has(msg)) return attendance(sender, channel);
         if (await catchUpdown(msg, sender, channel)) return true;
         if (await catchChoseong(msg, sender, channel)) return true;

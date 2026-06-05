@@ -8753,5 +8753,7 @@ module.exports = {
     formatCurrentSkillDesc,
     formatCooltime,
     getWorldBossContributionRanking,
-    calculateCardSlotEffects
+    calculateCardSlotEffects,
+    getShopRemainingLimits,
+    purchaseShopItem
 };
