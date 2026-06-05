@@ -1441,20 +1441,20 @@ const CARD_COMBINE_TABLE = [
     { rate: 0.90, gold: 800 },
     { rate: 0.90, gold: 1600 },
     { rate: 0.85, gold: 3200 },
-    { rate: 0.75, gold: 6400 },
-    { rate: 0.65, gold: 12800 },
-    { rate: 0.55, gold: 25600 },
-    { rate: 0.45, gold: 51200 },
-    { rate: 0.35, gold: 128000 },
-    { rate: 0.25, gold: 256000 },
-    { rate: 0.15, gold: 512000 }
+    { rate: 0.80, gold: 6400 },
+    { rate: 0.70, gold: 12800 },
+    { rate: 0.60, gold: 25600 },
+    { rate: 0.50, gold: 51200 },
+    { rate: 0.40, gold: 128000 },
+    { rate: 0.30, gold: 256000 },
+    { rate: 0.20, gold: 512000 }
 ];
 
 const CARD_COMBINE_GUARANTEE_COUNTS = {
-    4: 5,
-    5: 5,
+    4: 2,
+    5: 2,
     6: 5,
-    7: 10
+    7: 5
 };
 
 function getCardCombineInfo(star) {

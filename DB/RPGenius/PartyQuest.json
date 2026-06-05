@@ -26,7 +26,7 @@
           "name": "엘리트",
           "monster": {
             "name": "흑화한 호두 부하",
-            "hp": 138000,
+            "hp": 96600,
             "atk": 940,
             "def": 680,
             "actionInterval": 4.5,
@@ -43,8 +43,8 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
-            "hp": 363000,
-            "atk": 1370,
+            "hp": 254100,
+            "atk": 1270,
             "def": 970,
             "actionInterval": 3.5,
             "patterns": [
