@@ -78,7 +78,7 @@
                 "type": "regenBelowHp",
                 "threshold": 0.3,
                 "interval": 5,
-                "healMaxHpPct": 0.06,
+                "healMaxHpPct": 0.05,
                 "delayWhileStunned": true
               },
               {
@@ -103,7 +103,7 @@
               {
                 "name": "흑화 부활",
                 "type": "reviveOnce",
-                "reviveHpPct": 0.4,
+                "reviveHpPct": 0.3,
                 "disablePatternsAfterRevive": false
               }
             ],

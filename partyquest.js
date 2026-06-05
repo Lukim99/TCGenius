@@ -2020,17 +2020,18 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
         if (room.monster.hp <= 0) onMonsterDefeated(room);
     }
     if (def.heal) {
-        const target = pickAllyTarget(room, caster, targetName);
-        if (target) {
-            const amount = Math.max(1, Math.round(evalFormula(def.heal, ctx)));
-            target.runtime.hp = Math.min(target.runtime.hpMax, target.runtime.hp + amount);
-            pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' [+' + amount + ']', 'heal');
-        } else if (def.target === 'allAllies') {
-            const amount = Math.max(1, Math.round(evalFormula(def.heal, ctx)));
+        const amount = Math.max(1, Math.round(evalFormula(def.heal, ctx)));
+        if (def.target === 'allAllies') {
             for (const m of room.members) {
                 if (!m.runtime.dead) m.runtime.hp = Math.min(m.runtime.hpMax, m.runtime.hp + amount);
             }
             pushCombat(room, caster.name + ' [' + skillName + '] → 파티 전체 [+' + amount + ']', 'heal');
+        } else {
+            const target = pickAllyTarget(room, caster, targetName);
+            if (target) {
+                target.runtime.hp = Math.min(target.runtime.hpMax, target.runtime.hp + amount);
+                pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' [+' + amount + ']', 'heal');
+            }
         }
     }
     if (def.shield) {
