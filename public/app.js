@@ -523,16 +523,25 @@ function openEnhanceModal(eq) {
     loadEnhancePreview(eq.number);
 }
 
+function showEnhanceError(msg) {
+    $('#enhanceContent').replaceChildren(
+        el('div', { class: 'enhance-error-wrap' },
+            el('div', { class: 'empty err' }, msg),
+            el('button', { class: 'enhance-cancel-btn', style: 'margin-top:12px;width:100%', onclick: closeEnhanceModal }, '닫기')
+        )
+    );
+}
+
 async function loadEnhancePreview(number) {
     $('#enhanceContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
     $('#enhanceResultOverlay').classList.remove('active');
     try {
         const data = await api('/api/equipment/upgrade/preview/' + number);
-        if (data.error) { $('#enhanceContent').replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0' }, data.error)); return; }
+        if (data.error) { showEnhanceError(data.error); return; }
         enhanceState.preview = data;
         renderEnhancePreview(data);
     } catch (e) {
-        $('#enhanceContent').replaceChildren(el('div', { class: 'empty err', style: 'padding:40px 0' }, e.message));
+        showEnhanceError(e.message);
     }
 }
 
