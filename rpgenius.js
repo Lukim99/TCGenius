@@ -5897,7 +5897,7 @@ function getAccessoryChoiceCandidates(rarity) {
     const equipments = getDataCache('Equipment', {});
     return (equipments.accessory || [])
         .map((equipment, id) => ({ id, equipment }))
-        .filter(entry => entry.equipment && entry.equipment.rarity == rarity && entry.equipment.name != '신규 장신구');
+        .filter(entry => entry.equipment && entry.equipment.rarity == rarity && entry.equipment.name != '100억');
 }
 
 function formatAccessoryChoiceList(candidates) {

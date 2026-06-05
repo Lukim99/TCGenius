@@ -1948,5 +1948,80 @@
         "critDef": 0,
         "cmb": 0.15,
         "maxCmb": 0
+    },
+    {
+        "name": "월도랜드4",
+        "requireLevel": 121,
+        "reward": {
+            "exp": 9300,
+            "gold": {
+                "min": 3605,
+                "max": 4857
+            }
+        },
+        "atk": 2450,
+        "pnt": 120,
+        "def": 260,
+        "hp": 3600,
+        "elite": {
+            "name": "클래식 마라토너",
+            "atk": 8105,
+            "pnt": 325,
+            "def": 1245,
+            "hp": 41000,
+            "reward": [
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 104490,
+                        "max": 118630
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 16610,
+                        "max": 29810
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 198,
+                        "max": 298
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 167,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
+        },
+        "crit": 0.15,
+        "critMul": 1.6,
+        "critDef": 0,
+        "cmb": 0.15,
+        "maxCmb": 0
     }
 ]
