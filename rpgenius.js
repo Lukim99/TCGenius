@@ -1984,7 +1984,6 @@ function formatTitleList(user) {
         lines.push('', '《 미보유 칭호 》');
         lockedDefs.forEach(t => lines.push('🔒 ' + t.name + '\n- 획득 방법: ' + (t.description || '')));
     }
-    lines.push('', '※ /RPGenius 칭호장착 [칭호명] 으로 장착 (해제: 칭호장착 해제)');
     return lines.join('\n');
 }
 
