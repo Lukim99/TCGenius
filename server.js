@@ -282,15 +282,23 @@ server.get('/api/titles', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const unlocked = rpgenius.getUnlockedTitles(user);
         const equipped = user.equippedTitle || null;
-        const titles = rpgenius.getTitleDefs().map(t => ({
-            id: t.id,
-            name: t.name,
-            description: t.description || '',
-            statLines: dexStatLines(rpgenius.formatTitleStatLines(t)),
-            imageUrl: rpgenius.getTitleImageUrl(t.name),
-            unlocked: unlocked.includes(t.id),
-            equipped: equipped === t.id
-        }));
+        const prog = rpgenius.getTitleProgress(user);
+        const titles = rpgenius.getTitleDefs().map(t => {
+            const c = t.condition || {};
+            const target = Number(c.count || 0);
+            const isUnlocked = unlocked.includes(t.id);
+            const current = isUnlocked ? target : Math.min(target, Number(prog[c.progressKey] || 0));
+            return {
+                id: t.id,
+                name: t.name,
+                description: t.description || '',
+                statLines: dexStatLines(rpgenius.formatTitleStatLines(t)),
+                imageUrl: rpgenius.getTitleImageUrl(t.name),
+                unlocked: isUnlocked,
+                equipped: equipped === t.id,
+                progress: { current, target }
+            };
+        });
         res.json({ titles, equipped });
     } catch (e) {
         console.error('titles error:', e);
@@ -3691,6 +3699,10 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .dex-title-stats{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#86efac;font-weight:700;line-height:1.4}
 .dex-title-cond{font-size:11px;color:#94a3b8;line-height:1.4}
 .dex-title-status.locked{font-size:12px;color:#f87171;font-weight:700;margin-top:2px}
+.dex-title-prog{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:2px}
+.dex-title-prog-bar{position:relative;height:8px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.18)}
+.dex-title-prog-bar .fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:999px;background:linear-gradient(90deg,#5865f2,#7c3aed);transition:width .2s}
+.dex-title-prog-text{font-size:11px;color:#94a3b8;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
 .dex-title-btn{margin-top:4px;padding:8px 16px;border:1px solid rgba(88,101,242,.5);border-radius:9px;background:rgba(88,101,242,.15);color:#c7d2fe;font-weight:800;font-size:13px;cursor:pointer;transition:all .15s}
 .dex-title-btn:hover{background:rgba(88,101,242,.3)}
 .dex-title-btn.on{border-color:#fbbf24;background:rgba(251,191,36,.15);color:#fde68a}

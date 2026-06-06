@@ -2660,7 +2660,14 @@ function dexTitleCard(entry) {
     }
     card.appendChild(el('div', { class: 'dex-title-cond' }, '획득: ' + entry.description));
     if (!entry.unlocked) {
-        card.appendChild(el('div', { class: 'dex-title-status locked' }, '🔒 미획득'));
+        const p = entry.progress || { current: 0, target: 0 };
+        const pct = p.target > 0 ? Math.min(100, Math.round(p.current / p.target * 100)) : 0;
+        const prog = el('div', { class: 'dex-title-prog' });
+        const bar = el('div', { class: 'dex-title-prog-bar' }, el('div', { class: 'fill' }));
+        bar.firstChild.style.width = pct + '%';
+        prog.appendChild(bar);
+        prog.appendChild(el('div', { class: 'dex-title-prog-text' }, '🔒 ' + comma(p.current) + ' / ' + comma(p.target) + ' (' + pct + '%)'));
+        card.appendChild(prog);
     } else {
         const btn = el('button', { class: 'dex-title-btn' + (entry.equipped ? ' on' : ''), type: 'button' }, entry.equipped ? '✓ 장착 중 (해제)' : '장착');
         btn.onclick = async () => {
