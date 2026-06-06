@@ -694,7 +694,7 @@
         boss.append(el('div', { id: 'pqBossPattern', style: m.nextPattern ? 'color:#fbbf24;font-size:12px;font-weight:800;text-align:center' : 'display:none' }, m.nextPattern || ''));
         if (hasIllust) {
             const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-boss-illust-wrap' });
-            const img = el('img', { class: 'pq-boss-illust', src: '/ui/흑화 호두.png', alt: '흑화 호두', draggable: 'false' });
+            const img = el('img', { class: 'pq-boss-illust', src: '../DB/RPGenius/ui/흑화 호두.png', alt: '흑화 호두', draggable: 'false' });
             illustWrap.append(img);
             boss.append(illustWrap);
         }
