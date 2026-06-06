@@ -294,6 +294,12 @@ function grantPartyQuestClearRewards(room) {
                         itemReward.pack = Number(selected.entry.pack);
                     }
                 }
+                // 칭호 진행 추적 (흑화 호두)
+                if (room.questId === 'blackHodu') {
+                    const prog = rpgenius.getTitleProgress(user);
+                    prog.hoduClears = Number(prog.hoduClears || 0) + 1;
+                    rpgenius.checkAndUnlockTitles(user);
+                }
                 await user.save();
                 results.push({
                     name: member.name,
@@ -322,7 +328,10 @@ function listQuestSummaries() {
         minPlayers: q.minPlayers || 1,
         maxPlayers: q.maxPlayers || 5,
         potionLimit: q.potionLimit || 0,
-        positions: POSITION_LIST.slice()
+        positions: POSITION_LIST.slice(),
+        minLevel: q.minLevel || null,
+        recommendedPower: q.recommendedPower || null,
+        coverImage: q.coverImage || null
     }));
 }
 
@@ -354,6 +363,8 @@ function publicRoomList() {
 function serializeMember(m) {
     return {
         name: m.name,
+        level: Number(m.level || 1),
+        title: m.title || null,
         position: m.position || null,
         ready: !!m.ready,
         potions: m.potions.slice(),
@@ -593,10 +604,23 @@ function findMember(room, name) {
     return room.members.find(m => m.name === name) || null;
 }
 
-function createRoom(hostName, questId, password) {
+function buildMemberTitle(user) {
+    const def = rpgenius.getEquippedTitleDef(user);
+    if (!def) return null;
+    return { name: def.name, imageUrl: rpgenius.getTitleImageUrl(def.name) };
+}
+
+async function createRoom(hostName, questId, password) {
     if (memberIndex.has(hostName)) return { error: '이미 참여 중인 파티가 있습니다.' };
     const quest = getQuestById(questId);
     if (!quest) return { error: '존재하지 않는 파티 퀘스트입니다.' };
+    let hostInfo = null;
+    try {
+        const user = await rpgenius.getRPGUserByName(hostName);
+        const level = user ? Number(user.level || 1) : 1;
+        if (quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
+        if (user) hostInfo = { level, title: buildMemberTitle(user) };
+    } catch (_) {}
     const id = newRoomId();
     const room = {
         id,
@@ -620,11 +644,11 @@ function createRoom(hostName, questId, password) {
         createdAt: Date.now()
     };
     rooms.set(id, room);
-    addMember(room, hostName);
+    addMember(room, hostName, hostInfo);
     return { roomId: id };
 }
 
-function addMember(room, name) {
+function addMember(room, name, info) {
     if (!findMember(room, name)) {
         room.members.push({
             name,
@@ -636,13 +660,15 @@ function addMember(room, name) {
             skillDefs: {},
             runtime: null,
             pendingChoices: null,
+            level: info && info.level || 1,
+            title: info && info.title || null,
             joinedAt: Date.now()
         });
     }
     memberIndex.set(name, room.id);
 }
 
-function joinRoom(roomId, name, password) {
+async function joinRoom(roomId, name, password) {
     if (memberIndex.has(name)) {
         const existingId = memberIndex.get(name);
         if (existingId === roomId) return { ok: true, roomId };
@@ -653,7 +679,15 @@ function joinRoom(roomId, name, password) {
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '입장할 수 없는 상태입니다.' };
     if (room.members.length >= room.maxPlayers) return { error: '파티가 가득 찼습니다.' };
     if (room.password && String(password || '') !== room.password) return { error: '비밀번호가 일치하지 않습니다.' };
-    addMember(room, name);
+    const quest = getQuestById(room.questId);
+    let joinInfo = null;
+    try {
+        const user = await rpgenius.getRPGUserByName(name);
+        const level = user ? Number(user.level || 1) : 1;
+        if (quest && quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
+        if (user) joinInfo = { level, title: buildMemberTitle(user) };
+    } catch (_) {}
+    addMember(room, name, joinInfo);
     pushNotice(room, name + '님이 입장했습니다.', 'info', 3500);
     broadcastRoom(room);
     return { ok: true, roomId };

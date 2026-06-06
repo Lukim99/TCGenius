@@ -49,6 +49,12 @@
         toast._t = setTimeout(() => t.classList.remove('active'), 2400);
     }
 
+    // 칭호 이미지 뱃지. title: { name, imageUrl } | null
+    function titleImg(title) {
+        if (!title || !title.imageUrl) return null;
+        return el('img', { class: 'title-badge', src: title.imageUrl, alt: title.name || '', title: title.name || '' });
+    }
+
     function showNotice(text, kind, ttl) {
         const stack = $('#pqNoticeStack');
         const node = el('div', { class: 'pq-notice ' + (kind || 'info') }, text);
@@ -288,12 +294,37 @@
         }
     }
 
-    function populateQuestSelect() {
-        const sel = $('#pqCreateQuest');
-        sel.replaceChildren();
-        for (const q of questDefs) {
-            sel.append(el('option', { value: q.id }, q.name));
+    let questPickerIdx = 0;
+
+    function renderQuestCard() {
+        const q = questDefs[questPickerIdx];
+        if (!q) return;
+        const imgWrap = $('#pqQuestCardImg');
+        imgWrap.replaceChildren();
+        if (q.coverImage) {
+            imgWrap.append(el('img', { src: '/rpg-ui?file=' + encodeURIComponent(q.coverImage), alt: q.name }));
+        } else {
+            imgWrap.append(el('div', { class: 'pq-quest-no-img' }, '⚔'));
         }
+        $('#pqQuestCardName').textContent = q.name;
+        const meta = $('#pqQuestCardMeta');
+        meta.replaceChildren();
+        if (q.minLevel) meta.append(el('span', null, 'Lv.' + q.minLevel + ' 이상'));
+        if (q.recommendedPower) meta.append(el('span', null, '권장 ' + Number(q.recommendedPower).toLocaleString()));
+        meta.append(el('span', null, q.minPlayers + '~' + q.maxPlayers + '인'));
+        const prev = $('#pqQuestPrev');
+        const next = $('#pqQuestNext');
+        if (prev) prev.disabled = questPickerIdx === 0;
+        if (next) next.disabled = questPickerIdx === questDefs.length - 1;
+    }
+
+    function populateQuestSelect() {
+        questPickerIdx = 0;
+        renderQuestCard();
+        const prev = $('#pqQuestPrev');
+        const next = $('#pqQuestNext');
+        if (prev) prev.onclick = () => { if (questPickerIdx > 0) { questPickerIdx--; renderQuestCard(); } };
+        if (next) next.onclick = () => { if (questPickerIdx < questDefs.length - 1) { questPickerIdx++; renderQuestCard(); } };
     }
 
     function attemptJoin(r) {
@@ -380,7 +411,7 @@
             },
                 el('div', { class: 'pq-avatar' }, (m.name || '?').slice(0, 1)),
                 el('div', null,
-                    el('div', { class: 'pq-name' }, m.name, tags),
+                    el('div', { class: 'pq-name' }, titleImg(m.title), el('span', { class: 'pq-lv' }, 'Lv.' + (m.level || 1) + ' '), m.name, tags),
                     el('div', { class: 'pq-pos' + (m.position ? ' set' : '') }, m.position || '포지션 미선택')
                 ),
                 el('div', null)
@@ -694,7 +725,7 @@
         boss.append(el('div', { id: 'pqBossPattern', style: m.nextPattern ? 'color:#fbbf24;font-size:12px;font-weight:800;text-align:center' : 'display:none' }, m.nextPattern || ''));
         if (hasIllust) {
             const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-boss-illust-wrap' });
-            const img = el('img', { class: 'pq-boss-illust', src: '../DB/RPGenius/ui/흑화 호두.png', alt: '흑화 호두', draggable: 'false' });
+            const img = el('img', { class: 'pq-boss-illust', src: '/rpg-ui?file=' + encodeURIComponent('흑화 호두.png'), alt: '흑화 호두', draggable: 'false' });
             illustWrap.append(img);
             boss.append(illustWrap);
         }
@@ -750,7 +781,7 @@
                 'data-member': m.name
             });
             row.append(el('div', { class: 'ph' },
-                el('div', { class: 'nm' }, m.name + (m.name === me ? ' (나)' : '')),
+                el('div', { class: 'nm' }, titleImg(m.title), m.name + (m.name === me ? ' (나)' : '')),
                 el('div', { class: 'pos' }, m.position || '-')
             ));
             if (r) {
@@ -1133,11 +1164,12 @@
 
     $('#pqCreateFab').onclick = () => {
         $('#pqCreatePw').value = '';
+        renderQuestCard();
         $('#pqCreateBg').classList.add('active');
     };
     $('#pqCreateCancel').onclick = () => $('#pqCreateBg').classList.remove('active');
     $('#pqCreateConfirm').onclick = async () => {
-        const questId = $('#pqCreateQuest').value;
+        const questId = questDefs[questPickerIdx] && questDefs[questPickerIdx].id;
         const password = $('#pqCreatePw').value;
         try {
             await api('/api/party/rooms', { method: 'POST', body: JSON.stringify({ questId, password }) });

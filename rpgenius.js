@@ -26,6 +26,8 @@ const BASE_STAT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'BaseStat.json');
 const EXP_TABLE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExpTable.json');
 const DUNGEON_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Dungeon.json');
 const EXTRA_SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ExtraSkills.json');
+const TITLES_PATH = path.join(__dirname, 'DB', 'RPGenius', 'titles.json');
+const TITLE_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '칭호');
 const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json');
 const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
 const WORLD_BOSS_DAILY_LIMIT = 2;
@@ -490,57 +492,60 @@ function formatCharacterCardDetail(card) {
     return lines.join('\n').trim();
 }
 
+const EQUIP_STAT_LABELS = {
+    atk: '공격력',
+    pnt: '방어 관통력',
+    def: '방어력',
+    hp: '체력',
+    mp: 'MP',
+    plusGold: '처치 당 골드',
+    crit: '치명타 확률',
+    critMul: '치명타 피해량',
+    critDef: '치명타 피해 감소율',
+    cmb: '연격 확률',
+    maxCmb: '추가 공격 횟수',
+    skillCooldown: '스킬 쿨타임',
+    skillTrueDmg: '스킬 사용 시 추가 고정 피해',
+    cardStarAtk: '카드 1성당 공격력',
+    attackHpRecovery: '공격 시 10% 확률로 HP 회복',
+    attackMpRecovery: '공격 시 10% 확률로 MP 회복',
+    level9Atk: '레벨 9당 공격력',
+    atkPerMillionGold: '보유 골드 100만 당 공격력'
+};
+const EQUIP_PLUSSTAT_LABELS = {
+    atk: '최종 공격력',
+    def: '최종 방어력',
+    hp: '최종 체력',
+    mp: '최종 MP',
+    pnt: '방어력 관통',
+    gold: '골드 획득량',
+    potion: '물약 효율',
+    afterBasic: '일반 공격 피해',
+    avd: '회피 확률',
+    afterSkill: '스킬 공격 피해',
+    '000': '공격 시 10/100/1000 추가 피해 확률',
+    exp: '경험치 획득량',
+    eliteDmg: '엘리트 몬스터 대상 추가 피해',
+    mpReduce: 'MP 소모량',
+    itemDropChance: '아이템 획득 확률',
+    recoveryEfficiency: '회복 효율',
+    crit: '치명타 확률',
+    critMul: '치명타 피해량',
+    critDef: '치명타 피해 감소율',
+    cmb: '연격 확률',
+    maxCmb: '추가 공격 횟수',
+    skillCooldown: '스킬 쿨타임',
+    skillTrueDmg: '스킬 사용 시 추가 고정 피해',
+    takenDamage: '받는 피해 증가',
+    damageBonus: '일반 몬스터에게 주는 피해 증가',
+    finalDamage: '최종 피해',
+    bossDmg: '보스 몬스터에게 주는 피해 증가',
+    summonDuration: '소환 지속시간'
+};
+
 function formatEquipmentStatLines(equipment) {
-    const statNames = {
-        atk: '공격력',
-        pnt: '방어 관통력',
-        def: '방어력',
-        hp: '체력',
-        mp: 'MP',
-        plusGold: '처치 당 골드',
-        crit: '치명타 확률',
-        critMul: '치명타 피해량',
-        critDef: '치명타 피해 감소율',
-        cmb: '연격 확률',
-        maxCmb: '추가 공격 횟수',
-        skillCooldown: '스킬 쿨타임',
-        skillTrueDmg: '스킬 사용 시 추가 고정 피해',
-        cardStarAtk: '카드 1성당 공격력',
-        attackHpRecovery: '공격 시 10% 확률로 HP 회복',
-        attackMpRecovery: '공격 시 10% 확률로 MP 회복',
-        level9Atk: '레벨 9당 공격력',
-        atkPerMillionGold: '보유 골드 100만 당 공격력'
-    };
-    const plusStatNames = {
-        atk: '최종 공격력',
-        def: '최종 방어력',
-        hp: '최종 체력',
-        mp: '최종 MP',
-        pnt: '방어력 관통',
-        gold: '골드 획득량',
-        potion: '물약 효율',
-        afterBasic: '일반 공격 피해',
-        avd: '회피 확률',
-        afterSkill: '스킬 공격 피해',
-        '000': '공격 시 10/100/1000 추가 피해 확률',
-        exp: '경험치 획득량',
-        eliteDmg: '엘리트 몬스터 대상 추가 피해',
-        mpReduce: 'MP 소모량',
-        itemDropChance: '아이템 획득 확률',
-        recoveryEfficiency: '회복 효율',
-        crit: '치명타 확률',
-        critMul: '치명타 피해량',
-        critDef: '치명타 피해 감소율',
-        cmb: '연격 확률',
-        maxCmb: '추가 공격 횟수',
-        skillCooldown: '스킬 쿨타임',
-        skillTrueDmg: '스킬 사용 시 추가 고정 피해',
-        takenDamage: '받는 피해 증가',
-        damageBonus: '일반 몬스터에게 주는 피해 증가',
-        finalDamage: '최종 피해',
-        bossDmg: '보스 몬스터에게 주는 피해 증가',
-        summonDuration: '소환 지속시간'
-    };
+    const statNames = EQUIP_STAT_LABELS;
+    const plusStatNames = EQUIP_PLUSSTAT_LABELS;
     const lines = [];
     Object.keys(statNames).forEach(key => {
         if (equipment.stat && typeof equipment.stat[key] != 'undefined') lines.push('- ' + statNames[key] + ' ' + formatStatValue(key, equipment.stat[key]));
@@ -1897,6 +1902,105 @@ function buyStatPoint(user, countArg) {
     return '✅ ' + comma(count) + ' 스탯포인트를 🪙 ' + comma(totalPrice) + ' 골드에 구매했습니다.\n- 누적 구매 횟수: ' + comma(user.statPointBuyCount) + '회\n- 다음 1개 가격: 🪙 ' + comma(nextPrice) + '\n- 잔여 스탯포인트: ' + comma(user.statPoint);
 }
 
+// ===== 칭호 시스템 =====
+let _titlesCache = null;
+function getTitleDefs() {
+    if (!_titlesCache) {
+        try { _titlesCache = JSON.parse(fs.readFileSync(TITLES_PATH, 'utf8')).titles || []; }
+        catch (_) { _titlesCache = []; }
+    }
+    return _titlesCache;
+}
+
+function getTitleById(id) { return getTitleDefs().find(t => t.id === id) || null; }
+
+function getTitleProgress(user) {
+    if (!user.titleProgress) user.titleProgress = {};
+    return user.titleProgress;
+}
+
+function getUnlockedTitles(user) {
+    if (!Array.isArray(user.titles)) user.titles = [];
+    return user.titles;
+}
+
+function unlockTitle(user, id) {
+    if (!Array.isArray(user.titles)) user.titles = [];
+    if (user.titles.includes(id)) return false;
+    user.titles.push(id);
+    return true;
+}
+
+function checkAndUnlockTitles(user) {
+    const prog = getTitleProgress(user);
+    const unlocked = [];
+    for (const t of getTitleDefs()) {
+        const c = t.condition;
+        if (!c || !c.progressKey) continue;
+        if (Number(prog[c.progressKey] || 0) >= Number(c.count || 0) && unlockTitle(user, t.id)) {
+            unlocked.push(t.id);
+        }
+    }
+    return unlocked;
+}
+
+function getEquippedTitleDef(user) {
+    if (!user.equippedTitle) return null;
+    return getTitleById(user.equippedTitle);
+}
+
+function getTitleImageUrl(titleName) {
+    return '/rpg-ui-title?file=' + encodeURIComponent(titleName + '.png');
+}
+
+// 칭호 스탯을 장비와 동일한 라벨·포맷으로 표시 (stat: formatStatValue, plusStat: formatPlusStatValue)
+function formatTitleStatLines(title) {
+    if (!title) return '';
+    const lines = [];
+    Object.keys(EQUIP_STAT_LABELS).forEach(key => {
+        if (title.stat && typeof title.stat[key] != 'undefined') lines.push('- ' + EQUIP_STAT_LABELS[key] + ' ' + formatStatValue(key, title.stat[key]));
+    });
+    Object.keys(EQUIP_PLUSSTAT_LABELS).forEach(key => {
+        if (title.plusStat && typeof title.plusStat[key] != 'undefined') lines.push('- ' + EQUIP_PLUSSTAT_LABELS[key] + ' ' + formatPlusStatValue(key, title.plusStat[key]));
+    });
+    return lines.join('\n');
+}
+
+function formatTitleList(user) {
+    const defs = getTitleDefs();
+    const owned = getUnlockedTitles(user);
+    const equipped = user.equippedTitle || null;
+    const equippedDef = equipped ? getTitleById(equipped) : null;
+    const lines = ['[ ' + user.name + '님의 칭호 ]'];
+    lines.push('보유 ' + owned.length + ' / 전체 ' + defs.length);
+    lines.push('✅ 장착 중: ' + (equippedDef ? equippedDef.name : '없음'), VIEWMORE);
+    const ownedDefs = defs.filter(t => owned.includes(t.id));
+    const lockedDefs = defs.filter(t => !owned.includes(t.id));
+    if (ownedDefs.length) {
+        lines.push('', '《 보유 칭호 》');
+        ownedDefs.forEach(t => lines.push((t.id === equipped ? '▶ ' : '- ') + t.name));
+    }
+    if (lockedDefs.length) {
+        lines.push('', '《 미보유 칭호 》');
+        lockedDefs.forEach(t => lines.push('🔒 ' + t.name + '\n- 획득 방법: ' + (t.description || '')));
+    }
+    lines.push('', '※ /RPGenius 칭호장착 [칭호명] 으로 장착 (해제: 칭호장착 해제)');
+    return lines.join('\n');
+}
+
+function equipTitleByName(user, name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed || trimmed === '해제' || trimmed === '없음') {
+        user.equippedTitle = null;
+        return '✅ 칭호를 해제했습니다.';
+    }
+    const title = getTitleDefs().find(t => t.name === trimmed);
+    if (!title) return '❌ 존재하지 않는 칭호입니다.';
+    if (!getUnlockedTitles(user).includes(title.id)) return '❌ 아직 획득하지 않은 칭호입니다.';
+    user.equippedTitle = title.id;
+    return '✅ 칭호 「' + title.name + '」을(를) 장착했습니다.';
+}
+
 function calculateUserStats(user) {
     const stats = getBaseStat(user.main_card);
     const plusStats = {};
@@ -1982,6 +2086,12 @@ function calculateUserStats(user) {
     if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
         addStats(plusStats, fashion.option && fashion.option.plusStat || {});
+    }
+    // 칭호 스탯 (장비와 동일하게 stat/plusStat 누적 → 아래 마무리 연산에서 처리)
+    const titleDef = getEquippedTitleDef(user);
+    if (titleDef) {
+        addStats(stats, titleDef.stat || {});
+        addStats(plusStats, titleDef.plusStat || {});
     }
     applyPotentialDerivedStats(stats, user);
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
@@ -2710,6 +2820,12 @@ function confirmWorldBossSkill(user, indexArg, channel) {
         daily.count = Number(daily.count || 0) + 1;
     }
     user.pendingAction = null;
+    // 독재자 참여 횟수 칭호 추적
+    if (boss.name === '독재자') {
+        const prog = getTitleProgress(user);
+        prog.dictatorParticipations = Number(prog.dictatorParticipations || 0) + 1;
+        checkAndUnlockTitles(user);
+    }
     const stats = calculateUserStats(user);
     user.hp = Number(stats.hp || 0);
     user.mp = Number(stats.mp || 0);
@@ -3279,6 +3395,11 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         if (typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily) {
             user.goldMineDaily.count = Number(user.goldMineDaily.count || 0) + killCount;
         }
+        if (dungeon.name && String(dungeon.name).includes('뉴비즈')) {
+            const prog = getTitleProgress(user);
+            prog.newbieKills = Math.min(1000, Number(prog.newbieKills || 0) + killCount);
+            checkAndUnlockTitles(user);
+        }
         let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
@@ -3620,6 +3741,11 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     state.hp = Math.max(0, before - finalDamage);
     state.contributions[user.name] = Number(state.contributions[user.name] || 0) + dealt;
     persistWorldBossState();
+    if (boss.name === '독재자' && dealt > 0) {
+        const prog = getTitleProgress(user);
+        prog.dictatorDamage = Number(prog.dictatorDamage || 0) + dealt;
+        checkAndUnlockTitles(user);
+    }
     return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, destinyDamageCount: destinyDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp };
 }
 
@@ -4034,6 +4160,14 @@ function formatDescription(name) {
     const pet = findPetByName(name);
     if (pet) {
         return ['《 ' + pet.pet.name + ' 》 [' + pet.pet.rarity + ' 펫]', '- ' + (pet.pet.desc || ''), VIEWMORE, formatPetStatLines(pet.pet)].join('\n');
+    }
+
+    const title = getTitleDefs().find(t => t.name == name);
+    if (title) {
+        const lines = ['《 ' + title.name + ' 》 [칭호]', '- 획득 조건: ' + (title.description || '')];
+        const statLines = formatTitleStatLines(title);
+        if (statLines) lines.push(VIEWMORE, statLines);
+        return lines.join('\n');
     }
 
     return null;
@@ -4669,7 +4803,14 @@ function getActivePetSetEffects(user) {
         for (let i = 0; i < Math.min(count, tiers.length); i++) {
             if (tiers[i] && typeof tiers[i] == 'object') applied.push({ tier: i + 1, effect: tiers[i] });
         }
-        if (applied.length) result.push({ name, count, total: tiers.length, applied });
+        if (applied.length) {
+            result.push({ name, count, total: tiers.length, applied });
+            // 2024올스타 칭호: 2024 베스티스 3세트 효과 발동
+            if (name === '2024 베스티스' && count >= 3 && user && !getUnlockedTitles(user).includes('allStar2024')) {
+                getTitleProgress(user).allStarTriggered = 1;
+                checkAndUnlockTitles(user);
+            }
+        }
     });
     return result;
 }
@@ -8453,6 +8594,20 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '칭호') {
+        reply(formatTitleList(user));
+        return true;
+    }
+
+    if (args[0] == '칭호장착') {
+        const name = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
+        if (!name) { reply('❌ /RPGenius 칭호장착 [칭호명] (해제: 칭호장착 해제)'); return true; }
+        const result = equipTitleByName(user, name);
+        if (!result.startsWith('❌')) await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '단축키목록') {
         reply(formatPetShortcuts(user));
         return true;
@@ -8805,5 +8960,15 @@ module.exports = {
     EQUIPMENT_STONE_ITEM_ID,
     EQUIPMENT_PROTECT_ITEM_ID,
     EQUIPMENT_ADVANCED_PROTECT_ITEM_ID,
-    EQUIPMENT_BLESSED_PROTECT_ITEM_ID
+    EQUIPMENT_BLESSED_PROTECT_ITEM_ID,
+    getTitleDefs,
+    getTitleById,
+    getTitleProgress,
+    getUnlockedTitles,
+    unlockTitle,
+    checkAndUnlockTitles,
+    getEquippedTitleDef,
+    getTitleImageUrl,
+    formatTitleStatLines,
+    TITLE_IMAGE_PATH
 };

@@ -20,6 +20,11 @@ function svgIcon(svgHtml) {
     tmp.innerHTML = svgHtml;
     return tmp.firstElementChild;
 }
+// 칭호 이미지 뱃지 (닉네임 앞에 표시). title: { name, imageUrl } | null
+function titleImg(title) {
+    if (!title || !title.imageUrl) return null;
+    return el('img', { src: title.imageUrl, class: 'title-badge', alt: title.name || '', title: title.name || '' });
+}
 const api = async url => {
     const r = await fetch(url);
     const x = await r.json().catch(() => ({}));
@@ -385,6 +390,8 @@ function renderProfile(data) {
     }
     $('#who').textContent = myName;
     $('#profileName').textContent = data.user.name;
+    const pTitle = $('#profileTitle');
+    if (pTitle) { const img = titleImg(data.user.title); pTitle.replaceChildren(...(img ? [img] : [])); }
     $('#level').textContent = 'Lv. ' + comma(data.user.level);
     $('#exp').textContent = '(' + comma(data.user.exp) + '/' + comma(data.user.maxExp) + ')';
     $('#hp').textContent = comma(data.user.hp) + ' / ' + comma(data.user.maxHp);
@@ -2441,7 +2448,7 @@ function rankRow(entry, isMe, valueFormatter) {
     const medal = rk === 1 ? '🥇' : rk === 2 ? '🥈' : rk === 3 ? '🥉' : rk + '위';
     return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => alert(e.message)) },
         el('div', { class: 'rk ' + rkClass }, medal),
-        el('div', { class: 'nm' }, entry.name, el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
+        el('div', { class: 'nm' }, titleImg(entry.title), el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level)), entry.name),
         el('div', { class: 'vl' }, valueFormatter(entry.value))
     );
 }
@@ -2456,7 +2463,7 @@ function renderRanking() {
     if (me) {
         meBox.className = 'rank-me';
         meBox.appendChild(el('div', { class: 'rk' }, comma(me.rank) + '위'));
-        meBox.appendChild(el('div', { class: 'nm' }, me.name, ' ', el('span', { class: 'lv' }, 'Lv. ' + comma(me.level))));
+        meBox.appendChild(el('div', { class: 'nm' }, titleImg(me.title), el('span', { class: 'lv' }, 'Lv. ' + comma(me.level)), me.name));
         meBox.appendChild(el('div', null, '/ ' + comma(rankingTab === 'worldBoss' ? list.length : rankingData.total) + '명'));
         meBox.appendChild(el('div', { class: 'vl' }, valueFormatter(me.value)));
     } else {
@@ -2638,10 +2645,51 @@ function dexCharacterCard(entry) {
     return card;
 }
 
+let titlesData = null;
+
+function dexTitleCard(entry) {
+    const card = el('div', { class: 'dex-title-card' + (entry.unlocked ? '' : ' locked') + (entry.equipped ? ' equipped' : '') });
+    const thumb = el('div', { class: 'dex-title-thumb' });
+    thumb.appendChild(el('img', { src: entry.imageUrl, alt: entry.name, onerror: function () { this.style.display = 'none'; } }));
+    card.appendChild(thumb);
+    card.appendChild(el('div', { class: 'dex-title-name' }, entry.name));
+    if (entry.statLines && entry.statLines.length) {
+        const block = el('div', { class: 'dex-title-stats' });
+        entry.statLines.forEach(line => block.appendChild(el('div', null, line)));
+        card.appendChild(block);
+    }
+    card.appendChild(el('div', { class: 'dex-title-cond' }, '획득: ' + entry.description));
+    if (!entry.unlocked) {
+        card.appendChild(el('div', { class: 'dex-title-status locked' }, '🔒 미획득'));
+    } else {
+        const btn = el('button', { class: 'dex-title-btn' + (entry.equipped ? ' on' : ''), type: 'button' }, entry.equipped ? '✓ 장착 중 (해제)' : '장착');
+        btn.onclick = async () => {
+            btn.disabled = true;
+            try {
+                await postApi('/api/titles/equip', { id: entry.equipped ? null : entry.id });
+                titlesData = await api('/api/titles');
+                renderDex();
+            } catch (e) { alert(e.message); btn.disabled = false; }
+        };
+        card.appendChild(btn);
+    }
+    return card;
+}
+
 function renderDex() {
+    const grid = $('#dexList');
+    if (dexTab === 'title') {
+        if (!titlesData) return;
+        grid.className = 'dex-grid dex-title-grid';
+        grid.innerHTML = '';
+        const list = titlesData.titles || [];
+        if (!list.length) { grid.appendChild(el('div', { class: 'empty' }, '칭호가 없습니다.')); return; }
+        list.forEach(entry => grid.appendChild(dexTitleCard(entry)));
+        return;
+    }
+    grid.className = 'dex-grid';
     if (!dexData) return;
     const list = dexData[dexTab] || [];
-    const grid = $('#dexList');
     grid.innerHTML = '';
     if (!list.length) {
         grid.appendChild(el('div', { class: 'empty' }, '데이터가 없습니다.'));
@@ -2651,6 +2699,15 @@ function renderDex() {
 }
 
 async function loadDex() {
+    if (dexTab === 'title') {
+        if (!titlesData) {
+            $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+            try { titlesData = await api('/api/titles'); }
+            catch (e) { $('#dexList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+        }
+        renderDex();
+        return;
+    }
     if (!dexData) {
         $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
         try { dexData = await api('/api/dex/equipment'); }
@@ -2662,7 +2719,7 @@ async function loadDex() {
 $$('.dex-tab').forEach(btn => btn.onclick = () => {
     dexTab = btn.dataset.tab;
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
-    renderDex();
+    loadDex();
 });
 
 let patchnoteData = null;
@@ -2758,7 +2815,7 @@ function renderPatchReplies(noteId, replies, depth) {
     const wrap = el('div', { class: 'reply-list' });
     (replies || []).forEach(reply => {
         const row = el('div', { class: 'reply-item ' + (depth > 0 ? 'child' : '') },
-            el('div', { class: 'reply-meta' }, el('b', null, reply.authorName || '알 수 없음'), ' Lv. ' + comma(reply.authorLevel || 1) + ' · ' + formatDateTime(reply.date)),
+            el('div', { class: 'reply-meta' }, titleImg(reply.authorTitle), el('b', null, reply.authorName || '알 수 없음'), ' Lv. ' + comma(reply.authorLevel || 1) + ' · ' + formatDateTime(reply.date)),
             el('div', { class: 'reply-text' }, reply.textbody || ''),
             replyForm(noteId, reply.id)
         );

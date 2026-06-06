@@ -1,0 +1,49 @@
+{
+  "titles": [
+    {
+      "id": "newbieSlayer",
+      "name": "뉴비즈 학살자",
+      "description": "뉴비즈 1,000마리 사냥",
+      "condition": { "progressKey": "newbieKills", "count": 1000 },
+      "stat": { "atk": 10 },
+      "plusStat": { "exp": 0.01 }
+    },
+    {
+      "id": "allStar2024",
+      "name": "2024올스타",
+      "description": "2024 베스티스 3세트 효과 발동 시 획득",
+      "condition": { "progressKey": "allStarTriggered", "count": 1 },
+      "plusStat": { "hp": 0.01, "mp": 0.01 }
+    },
+    {
+      "id": "dictatorBane",
+      "name": "독재자 타도",
+      "description": "월드보스 '독재자' 참여 30회 달성",
+      "condition": { "progressKey": "dictatorParticipations", "count": 30 },
+      "plusStat": { "bossDmg": 0.03 }
+    },
+    {
+      "id": "dictatorConqueror",
+      "name": "독재자 정복자",
+      "description": "월드보스 '독재자' 누적 피해 30,000,000 달성",
+      "condition": { "progressKey": "dictatorDamage", "count": 30000000 },
+      "plusStat": { "bossDmg": 0.05 }
+    },
+    {
+      "id": "hoduFriend",
+      "name": "호두의 친구",
+      "description": "흑화 호두 파티 퀘스트 1회 클리어",
+      "condition": { "progressKey": "hoduClears", "count": 1 },
+      "stat": { "atk": 10 },
+      "plusStat": { "bossDmg": 0.01 }
+    },
+    {
+      "id": "bloodPurifier",
+      "name": "핏빛정화조",
+      "description": "흑화 호두 파티 퀘스트 10회 클리어",
+      "condition": { "progressKey": "hoduClears", "count": 10 },
+      "stat": { "atk": 30 },
+      "plusStat": { "bossDmg": 0.04 }
+    }
+  ]
+}
