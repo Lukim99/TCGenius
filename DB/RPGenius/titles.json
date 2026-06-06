@@ -44,6 +44,55 @@
       "condition": { "progressKey": "hoduClears", "count": 10 },
       "stat": { "atk": 30 },
       "plusStat": { "bossDmg": 0.04 }
+    },
+    {
+      "id": "level200",
+      "name": "200",
+      "description": "플레이어 레벨 200 달성",
+      "condition": { "progressKey": "playerLevel", "count": 200 },
+      "stat": { "atk": 5, "hp": 100 }
+    },
+    {
+      "id": "level300",
+      "name": "300",
+      "description": "플레이어 레벨 300 달성",
+      "condition": { "progressKey": "playerLevel", "count": 300 },
+      "stat": { "atk": 10, "hp": 300 }
+    },
+    {
+      "id": "enhanceMaster",
+      "name": "강화의 달인",
+      "description": "장비 강화 12강 성공",
+      "condition": { "progressKey": "maxEnhanceLevel", "count": 12 },
+      "specialEffect": { "type": "atkPerEnhanceLevel", "value": 1 }
+    },
+    {
+      "id": "enhanceGrandmaster",
+      "name": "강화의 대가",
+      "description": "장비 강화 13강 성공",
+      "condition": { "progressKey": "maxEnhanceLevel", "count": 13 },
+      "specialEffect": { "type": "atkPerEnhanceLevel", "value": 2 }
+    },
+    {
+      "id": "enhanceGod",
+      "name": "강화의 신",
+      "description": "장비 강화 15강 성공",
+      "condition": { "progressKey": "maxEnhanceLevel", "count": 15 },
+      "specialEffect": { "type": "atkPerEnhanceLevel", "value": 5 }
+    },
+    {
+      "id": "sigmaBoy",
+      "name": "시그마보이",
+      "description": "시그마 카드조합 성공",
+      "condition": { "progressKey": "sigmaCombines", "count": 1 },
+      "specialEffect": { "type": "atkPctIfCardStar", "minStar": 8, "value": 0.01 }
+    },
+    {
+      "id": "omega3",
+      "name": "오메가쓰리",
+      "description": "오메가 카드조합 3회 성공",
+      "condition": { "progressKey": "omegaCombines", "count": 3 },
+      "specialEffect": { "type": "atkPctIfCardStar", "minStar": 11, "value": 0.05 }
     }
   ]
 }

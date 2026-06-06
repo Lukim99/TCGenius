@@ -812,6 +812,7 @@ function applyUpgradeTicket(user, numberArg) {
     lines.push('- 성공 확률: ' + (Math.round(ugRoll * 10000) / 100) + '%');
     if (success) {
         selected.equip.level = ugLevel;
+        recordEnhanceSuccess(user, ugLevel);
         lines.push('✨ +' + ugLevel + ' 강화 성공!\n' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + beforeLevel + ' -> +' + ugLevel);
     } else {
         lines.push('❌ +' + ugLevel + ' 강화 실패..');
@@ -1612,6 +1613,12 @@ function runCardCombine(user) {
     };
     applyFashionRollToCard(resultCard, selection.sameCardId);
     user.inventory.card.push(resultCard);
+    if (success) {
+        const prog = getTitleProgress(user);
+        if (resultCard.star == 10) prog.sigmaCombines = Number(prog.sigmaCombines || 0) + 1; // 시그마 생성
+        if (resultCard.star == 11) prog.omegaCombines = Number(prog.omegaCombines || 0) + 1; // 오메가 생성
+        if (resultCard.star == 10 || resultCard.star == 11) checkAndUnlockTitles(user);
+    }
     const lines = [(success ? (combineRoll.guaranteed ? '⚜️ 카드 3장을 확정 조합했습니다!' : '🌟 카드 3장을 조합했습니다!') : '✅ 카드 3장을 조합했습니다.')];
     if (useProtection) lines.push(success ? '🛡️ 조합에 성공해 보호 카드는 소모되었지만 재료 카드는 보존되지 않았습니다.' : '🛡️ 보호 카드 효과로 재료 카드 1장을 보존했습니다.\n- ' + formatUserCard(protectedCard));
     lines.push('[ 획득 결과 ]', '- ' + formatUserCard(resultCard));
@@ -1933,6 +1940,8 @@ function unlockTitle(user, id) {
 
 function checkAndUnlockTitles(user) {
     const prog = getTitleProgress(user);
+    // 유저 상태에서 즉시 도출되는 진행도 동기화
+    prog.playerLevel = Number(user.level || 1);
     const unlocked = [];
     for (const t of getTitleDefs()) {
         const c = t.condition;
@@ -1942,6 +1951,35 @@ function checkAndUnlockTitles(user) {
         }
     }
     return unlocked;
+}
+
+// 현재 장착 중인 모든 장비(무기/갑옷/장신구/보조)의 강화 레벨 합산
+function getTotalEquippedEnhanceLevel(user) {
+    const eq = user.equipments || {};
+    let sum = 0;
+    if (eq.weapon) sum += Number(eq.weapon.level || 0);
+    if (eq.armor) sum += Number(eq.armor.level || 0);
+    if (eq.accessory && typeof eq.accessory == 'object') {
+        Object.values(eq.accessory).forEach(a => { if (a) sum += Number(a.level || 0); });
+    }
+    if (eq.support) sum += Number(eq.support.level || 0);
+    return sum;
+}
+
+// 강화 성공 시 도달 최고 강화 레벨 기록 (강화 달인/대가/신 칭호 조건)
+function recordEnhanceSuccess(user, level) {
+    const prog = getTitleProgress(user);
+    if (Number(level || 0) > Number(prog.maxEnhanceLevel || 0)) prog.maxEnhanceLevel = Number(level || 0);
+    checkAndUnlockTitles(user);
+}
+
+// 카드 등급(star) 표시명 (0-index)
+function cardStarLabel(star) {
+    const s = Number(star || 0);
+    if (s == 9) return '제타';
+    if (s == 10) return '시그마';
+    if (s == 11) return '오메가';
+    return (s + 1) + '성';
 }
 
 function getEquippedTitleDef(user) {
@@ -1963,6 +2001,11 @@ function formatTitleStatLines(title) {
     Object.keys(EQUIP_PLUSSTAT_LABELS).forEach(key => {
         if (title.plusStat && typeof title.plusStat[key] != 'undefined') lines.push('- ' + EQUIP_PLUSSTAT_LABELS[key] + ' ' + formatPlusStatValue(key, title.plusStat[key]));
     });
+    const se = title.specialEffect;
+    if (se) {
+        if (se.type == 'atkPerEnhanceLevel') lines.push('- 장착 장비 강화 1강 당 공격력 +' + comma(Number(se.value || 0)));
+        else if (se.type == 'atkPctIfCardStar') lines.push('- ' + cardStarLabel(se.minStar) + ' 이상 캐릭터 카드 장착 시 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
+    }
     return lines.join('\n');
 }
 
@@ -2103,6 +2146,16 @@ function calculateUserStats(user) {
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
+    // 칭호 특수 효과 (동적/조건부 — 최종 공격력에 적용)
+    if (titleDef && titleDef.specialEffect) {
+        const se = titleDef.specialEffect;
+        if (se.type == 'atkPerEnhanceLevel') {
+            stats.atk = Number(stats.atk || 0) + Number(se.value || 0) * getTotalEquippedEnhanceLevel(user);
+        } else if (se.type == 'atkPctIfCardStar') {
+            const star = Number(user.main_card && user.main_card.star || 0);
+            if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
+        }
+    }
     return stats;
 }
 
@@ -2596,6 +2649,7 @@ function addExperience(user, amount) {
         need = getMaxExpForLevel(user.level);
     }
     if (levelUps > 0) user.statPoint = Number(user.statPoint || 0) + levelUps;
+    if (levelUps > 0) checkAndUnlockTitles(user);
     return levelUps;
 }
 
@@ -6490,6 +6544,7 @@ function runEquipmentUpgrade(user) {
     let protectedResult = null;
     if (result == 'great') selected.equip.level = Math.min(maxLevel, level + 2);
     if (result == 'success') selected.equip.level = Math.min(maxLevel, level + 1);
+    if (result == 'great' || result == 'success') recordEnhanceSuccess(user, Number(selected.equip.level || 0));
     const protectLevel = pending.protectLevel; // 'none'|'basic'|'advanced'|'blessed'|undefined(auto)
     const tryUse = id => { if (getInventoryItemCount(user, id) > 0) { removeInventoryItem(user, id, 1); return true; } return false; };
     const wantLevel = lvl => !protectLevel || protectLevel === lvl; // auto or exact match

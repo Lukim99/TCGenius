@@ -280,6 +280,8 @@ server.get('/api/titles', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const newly = rpgenius.checkAndUnlockTitles(user); // 진행도 동기화 + 자가 해금
+        if (newly.length) await user.save();
         const unlocked = rpgenius.getUnlockedTitles(user);
         const equipped = user.equippedTitle || null;
         const prog = rpgenius.getTitleProgress(user);
