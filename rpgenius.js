@@ -2337,11 +2337,13 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let destinyDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     let totalHits = hitCount;
+    let abyssDoomUsed = false;
     for (let i = 0; i < totalHits; i++) {
         const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
-        if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && totalHits < 999 && Math.random() < 0.3) {
+        if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
+            abyssDoomUsed = true;
         }
         let hitDamage = 0;
         const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;

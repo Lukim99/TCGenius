@@ -972,6 +972,34 @@ function endQuest(room, cleared, reason) {
     broadcastRoom(room);
 }
 
+function restartQuest(hostName) {
+    const room = getRoomOf(hostName);
+    if (!room) return { error: '참여 중인 파티가 없습니다.' };
+    if (room.hostName !== hostName) return { error: '공대장만 다시 시작할 수 있습니다.' };
+    if (room.state !== 'cleared' && room.state !== 'failed') return { error: '퀘스트가 종료된 후에만 사용할 수 있습니다.' };
+    stopTick(room);
+    room.state = 'lobby';
+    room.phaseIndex = -1;
+    room.sharedKillCount = 0;
+    room.killTarget = 0;
+    room.monster = null;
+    room.awaitingChoices = false;
+    room.tauntTarget = null;
+    room.tauntRemain = 0;
+    room.result = null;
+    for (const m of room.members) {
+        m.ready = false;
+        m.potions = [];
+        m.runtime = null;
+        m.pendingChoices = null;
+        m.skills = [];
+        m.skillDefs = {};
+    }
+    pushNotice(room, '🔄 공대장이 다시 시작을 요청했습니다. 준비해주세요!', 'info', 4000);
+    broadcastRoom(room);
+    return { ok: true };
+}
+
 function refundLeftoverPotionsAsync(name, potions) {
     (async () => {
         try {
@@ -1381,6 +1409,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const hitDetails = [];
     let totalHits = hitCount;
     const maxHits = extra && extra.extraOnCrit ? Math.max(totalHits, Math.floor(Number(extra.extraOnCrit.max || totalHits))) : totalHits;
+    let abyssDoomUsed = false;
     for (let i = 0; i < totalHits; i++) {
         let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0)) * dealtDmgMul * getFinalDamageMul(attacker);
         let fixedHitDamage = 0;
@@ -1390,8 +1419,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             hitDamage = Math.round(hitDamage * Math.max(1, Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0) - Number(monsterStats.critDef || 0)));
             criticalCount++;
             if (extra && extra.extraOnCrit && totalHits < maxHits) totalHits++;
-            if (stats && stats.hasAbyssDoom && extra && extra.isBasic && totalHits < 999 && Math.random() < 0.3) {
+            if (stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
                 totalHits++;
+                abyssDoomUsed = true;
             }
         }
         
@@ -2402,6 +2432,7 @@ module.exports = {
     setReady,
     setPotions,
     start,
+    restartQuest,
     attachStream,
     chat,
     attackMobPhase,

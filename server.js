@@ -1129,6 +1129,12 @@ server.post('/api/party/start', requirePartyQuest, async (req, res) => {
     }
 });
 
+server.post('/api/party/restart', requirePartyQuest, (req, res) => {
+    const out = partyquest.restartQuest(req.session.name);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
 server.post('/api/party/attack', requirePartyQuest, (req, res) => {
     const out = partyquest.attackMobPhase(req.session.name);
     if (out.error) return res.status(400).json({ error: out.error });
@@ -3873,6 +3879,12 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-prog{position:relative;height:14px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.18)}
 .pq-prog .fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:999px;transition:width .15s linear}
 .pq-prog.hp .fill{background:linear-gradient(90deg,#dc2626,#f97316)}
+.pq-prog.boss-hp{height:20px;border:1px solid rgba(239,68,68,.5);box-shadow:0 0 10px rgba(220,38,38,.3)}
+.pq-prog.boss-hp .fill{background:linear-gradient(90deg,#7f1d1d,#dc2626,#f97316);box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
+.pq-boss-illust-wrap{position:relative;width:100%;height:220px;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,rgba(30,0,40,.6),rgba(10,0,20,.85));border:1px solid rgba(168,85,247,.2)}
+.pq-boss-illust{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom;user-select:none;filter:drop-shadow(0 0 18px rgba(168,85,247,.35))}
+.pq-boss-illust-wrap::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(139,92,246,.12),transparent 70%);pointer-events:none;z-index:1}
+.pq-boss-illust-wrap::after{content:'';position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(0deg,rgba(10,0,20,.8),transparent);pointer-events:none;z-index:1}
 .pq-prog.mp .fill{background:linear-gradient(90deg,#0ea5e9,#6366f1)}
 .pq-prog.gauge{height:6px}
 .pq-prog.gauge .fill{background:linear-gradient(90deg,#facc15,#f59e0b)}

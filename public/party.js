@@ -522,6 +522,18 @@
         } else if (r.cleared) {
             wrap.append(el('div', { style: 'color:#94a3b8;font-size:12px' }, '보상 지급 중...'));
         }
+        if (snap.hostName === me) {
+            const btn = el('button', { class: 'pq-btn', type: 'button', style: 'margin-top:12px' }, '🔄 다시 도전');
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const res = await fetch('/api/party/restart', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.error) { alert(data.error); btn.disabled = false; }
+                } catch (_) { btn.disabled = false; }
+            });
+            wrap.append(btn);
+        }
         return wrap;
     }
 
@@ -627,7 +639,8 @@
     }
 
     function showSingleDamagePop(payload) {
-        const host = document.getElementById('pqMobStage') || document.getElementById('pqBossStage');
+        const illustHost = document.getElementById('pqBossIllust');
+        const host = illustHost || document.getElementById('pqMobStage') || document.getElementById('pqBossStage');
         if (!host) return;
         const isMe = payload.by === me;
         const hasFixed = Number(payload.fixedDamage || 0) > 0;
@@ -643,8 +656,10 @@
         else if (payload.skill) pop.append(el('span', { class: 'sub' }, payload.skill));
         if (hasFixed) pop.append(el('span', { class: 'sub fixed-label' }, '고정 ' + Number(payload.fixedDamage || 0).toLocaleString()));
         if (hasDestiny) pop.append(el('span', { class: 'sub fixed-label' }, '운명 ' + Number(payload.destinyDamage || 0).toLocaleString()));
-        const offsetX = 50 + (Math.random() * 30 - 15);
+        const offsetX = illustHost ? (30 + Math.random() * 40) : (50 + (Math.random() * 30 - 15));
+        const offsetY = illustHost ? (20 + Math.random() * 40) : null;
         pop.style.left = offsetX + '%';
+        if (offsetY !== null) pop.style.top = offsetY + '%';
         host.append(pop);
         setTimeout(() => { if (pop.parentNode) pop.parentNode.removeChild(pop); }, 1000);
         if (isMe) {
@@ -663,19 +678,26 @@
         const r = myMember && myMember.runtime;
         const dead = !myMember || (r && r.dead);
         const acd = r && r.actionCdRemain ? r.actionCdRemain : 0;
-        const wrap = el('div', { id: 'pqBossStage', class: 'pq-mob-stage' });
-        const boss = el('div', { class: 'pq-boss' });
+        const hasIllust = snap.questId === 'blackHodu' && snap.phaseType === 'boss';
+        const wrap = el('div', { id: 'pqBossStage', class: 'pq-mob-stage' + (hasIllust ? ' has-illust' : '') });
+        const boss = el('div', { class: 'pq-boss' + (hasIllust ? ' boss-illust-mode' : '') });
         boss.append(el('div', { class: 'pq-boss-head' },
             el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : '')),
             el('div', { id: 'pqBossHpVal', class: 'pq-boss-hpval' }, m.hp + ' / ' + m.hpMax)
         ));
-        const hpBar = el('div', { class: 'pq-prog hp' }, el('div', { id: 'pqBossHpFill', class: 'fill' }));
+        const hpBar = el('div', { class: 'pq-prog hp' + (hasIllust ? ' boss-hp' : '') }, el('div', { id: 'pqBossHpFill', class: 'fill' }));
         hpBar.firstChild.style.width = (m.hpMax > 0 ? (m.hp / m.hpMax * 100) : 0) + '%';
         boss.append(hpBar);
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
         boss.append(gBar);
         boss.append(el('div', { id: 'pqBossPattern', style: m.nextPattern ? 'color:#fbbf24;font-size:12px;font-weight:800;text-align:center' : 'display:none' }, m.nextPattern || ''));
+        if (hasIllust) {
+            const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-boss-illust-wrap' });
+            const img = el('img', { class: 'pq-boss-illust', src: '/ui/흑화 호두.png', alt: '흑화 호두', draggable: 'false' });
+            illustWrap.append(img);
+            boss.append(illustWrap);
+        }
         const btn = el('button', {
             id: 'pqAttackBtn',
             class: 'pq-attack-btn',
