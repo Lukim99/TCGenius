@@ -174,6 +174,39 @@ function kv(label, value) {
     return el('div', { class: 'kv' }, el('span', null, label), el('b', null, value));
 }
 
+let currentStatGroups = [];
+
+function renderStatCard() {
+    const root = $('#stats');
+    if (!root) return;
+    const hideZero = $('#statHideZero') && $('#statHideZero').checked;
+    const card = el('div', { class: 'stat-card' });
+    (currentStatGroups || []).forEach(g => {
+        const items = (g.items || []).filter(it => !hideZero || it.owned);
+        if (!items.length) return;
+        const grp = el('div', { class: 'stat-grp' }, el('div', { class: 'stat-grp-title' }, g.title));
+        items.forEach(it => {
+            const cls = !it.owned ? ' zero' : (it.tone === 'good' ? ' bonus' : (it.tone === 'bad' ? ' neg' : ''));
+            grp.appendChild(el('div', { class: 'stat-line' },
+                el('span', { class: 'stat-label' }, it.label),
+                el('div', { class: 'stat-vblock' },
+                    el('b', { class: 'stat-value' + cls }, it.value),
+                    it.sub ? el('span', { class: 'stat-sub' }, it.sub) : null)
+            ));
+        });
+        card.appendChild(grp);
+    });
+    root.replaceChildren(card.children.length ? card : el('div', { class: 'empty' }, '표시할 스탯이 없습니다.'));
+}
+
+if ($('#statToggle')) $('#statToggle').onclick = () => {
+    const body = $('#stats');
+    const chev = $('#statChevron');
+    const collapsed = body.classList.toggle('collapsed');
+    if (chev) chev.style.transform = collapsed ? 'rotate(-90deg)' : '';
+};
+if ($('#statHideZero')) $('#statHideZero').onchange = () => renderStatCard();
+
 function textLines(text) {
     return String(text || '').split('\n').filter(line => line && line.indexOf('\u200e') === -1);
 }
@@ -712,13 +745,8 @@ function renderProfile(data) {
         kv('💰 포인트', comma(data.user.point)),
         kv('Ⓜ️ 마일리지', comma(data.user.mileage))
     );
-    $('#stats').replaceChildren(
-        kv('공격력', comma(data.stats.atk)),
-        kv('방어력', comma(data.stats.def)),
-        kv('방어 관통력', comma(data.stats.pnt)),
-        kv('치명타 확률', data.stats.critText),
-        kv('치명타 피해량', data.stats.critMulText)
-    );
+    currentStatGroups = data.statGroups || [];
+    renderStatCard();
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
     $('#slotCards').replaceChildren(...data.cardSlots.map(card => cardNode(card, true, openCardSlotModal)));
     $('#equippedGear').replaceChildren(...(data.equippedEquipment.length ? data.equippedEquipment.map(equipmentCard) : [el('div', { class: 'empty' }, '장착 중인 장비가 없습니다.')]));

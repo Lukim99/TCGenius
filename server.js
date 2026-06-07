@@ -3670,11 +3670,94 @@ function buildTitleDisplay(user) {
     return { id: def.id, name: def.name, imageUrl: rpgenius.getTitleImageUrl(def.name) };
 }
 
+// 게임에 존재하는 모든 스탯 (그룹 유지)
+const PROFILE_STAT_GROUPS = [
+    { title: '기본', keys: ['atk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
+    { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
+    { title: '연격', keys: ['cmb', 'maxCmb'] },
+    { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'skillTrueDmg'] },
+    { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'summonDuration'] },
+    { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
+];
+const PROFILE_STAT_LABELS = {
+    atk: '공격력', def: '방어력', hp: '최대 체력', mp: '최대 MP', pnt: '방어 관통력', pntPercent: '방어력 관통',
+    crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
+    cmb: '연격 확률', maxCmb: '추가 공격 횟수',
+    afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
+    eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해',
+    '000': '10/100/1000 추가 피해 확률', skillTrueDmg: '스킬 추가 고정 피해',
+    avd: '회피 확률', takenDamage: '받는 피해 증가', recoveryEfficiency: '회복 효율', potion: '물약 효율',
+    mpReduce: 'MP 소모량', skillCooldown: '스킬 쿨타임', summonDuration: '소환 지속시간',
+    gold: '골드 획득량', plusGold: '처치 당 골드', exp: '경험치 획득량', itemDropChance: '아이템 획득 확률',
+};
+// 수치 + % 곱연산으로 합산되는 스탯 (수치/% 따로 표시)
+const PROFILE_STAT_MULT = new Set(['atk', 'def', 'hp', 'mp']);
+const PROFILE_STAT_NUMERIC = new Set(['atk', 'def', 'hp', 'mp', 'pnt', 'maxCmb', 'plusGold', 'skillTrueDmg']);
+const PROFILE_STAT_DIRECT = new Set(['crit', 'critMul', 'critDef', 'cmb', 'pntPercent', 'skillCooldown']);
+// 낮을수록(음수일수록) 이득인 스탯 — 음수일 때 긍정(초록) 표시
+const PROFILE_STAT_INVERSE = new Set(['skillCooldown', 'takenDamage', 'mpReduce']);
+// 캐릭터 카드 슬롯 효과 → 표시 스탯 매핑 (crit/critMul은 calculateUserStats에서 이미 합산됨)
+const SLOT_EFFECT_TO_STAT = {
+    expBonus: 'exp', mpCostReduction: 'mpReduce', damageBonus: 'damageBonus', goldBonus: 'gold',
+    itemDropChance: 'itemDropChance', defReduction: 'pntPercent', basicDamageBonus: 'afterBasic', skillDamageBonus: 'afterSkill',
+};
+// 슬롯 효과 값을 스탯에 더할 때의 부호 (mpCostReduction은 소모량을 줄이므로 음수로 적용)
+const SLOT_EFFECT_SIGN = { mpCostReduction: -1 };
+
+function applySlotEffectsToStats(stats, slotEffects) {
+    const out = Object.assign({}, stats);
+    Object.keys(SLOT_EFFECT_TO_STAT).forEach(k => {
+        const v = Number((slotEffects || {})[k] || 0) * (SLOT_EFFECT_SIGN[k] || 1);
+        if (v) { const sk = SLOT_EFFECT_TO_STAT[k]; out[sk] = Number(out[sk] || 0) + v; }
+    });
+    return out;
+}
+
+function statTone(key, rawValue) {
+    const v = Number(rawValue || 0);
+    if (v === 0 || PROFILE_STAT_NUMERIC.has(key)) return 'neutral';
+    const beneficial = PROFILE_STAT_INVERSE.has(key) ? v < 0 : v > 0;
+    return beneficial ? 'good' : 'bad';
+}
+
+function fmtProfileStat(key, val) {
+    if (PROFILE_STAT_NUMERIC.has(key)) return comma(Math.round(Number(val || 0)));
+    const k = PROFILE_STAT_DIRECT.has(key) ? key : key + '%';
+    return rpgenius.formatStatValue(k, val).replace(/^\+/, '');
+}
+
+function pctText(ratio) {
+    const v = Math.round(Number(ratio || 0) * 1000) / 10;
+    return (v >= 0 ? '+' : '') + v + '%';
+}
+
+function buildProfileStatItem(key, stats, plusStats) {
+    if (PROFILE_STAT_MULT.has(key)) {
+        const total = Math.round(Number(stats[key] || 0));
+        const plus = Number(plusStats[key] || 0);
+        const flat = plus !== 0 ? Math.round(total / (1 + plus)) : total;
+        return { label: PROFILE_STAT_LABELS[key], value: comma(total), sub: '수치 ' + comma(flat) + ' · ' + pctText(plus), owned: true, tone: 'neutral' };
+    }
+    const raw = Number(stats[key] || 0);
+    return { label: PROFILE_STAT_LABELS[key], value: fmtProfileStat(key, stats[key]), owned: raw !== 0, tone: statTone(key, raw) };
+}
+
+function buildProfileStatGroups(stats, plusStats) {
+    return PROFILE_STAT_GROUPS.map(g => ({
+        title: g.title,
+        items: g.keys.map(key => buildProfileStatItem(key, stats, plusStats)),
+    }));
+}
+
 function buildUserProfile(user) {
     const level = Number(user.level || 1);
     const exp = Number(user.exp || 0);
     const maxExp = getMaxExpForLevel(level);
-    const stats = rpgenius.calculateUserStats(user);
+    const _bd = {};
+    const stats = rpgenius.calculateUserStats(user, _bd);
+    const plusStats = _bd.plusStats || {};
+    const slotEffects = rpgenius.calculateCardSlotEffects(user);
+    const dispStats = applySlotEffectsToStats(stats, slotEffects);
     const cp = rpgenius.calculateCombatPower(user);
     const maxHp = Number(stats.hp || 0);
     const maxMp = Number(stats.mp || 0);
@@ -3708,6 +3791,7 @@ function buildUserProfile(user) {
             critText: rpgenius.formatStatValue('crit', stats.crit).replace(/^\+/, ''),
             critMulText: rpgenius.formatStatValue('critMul', stats.critMul).replace(/^\+/, '')
         },
+        statGroups: buildProfileStatGroups(dispStats, plusStats),
         mainCard: serializeCard(user.main_card, user),
         cardSlots: slots,
         equippedEquipment: buildInventoryEquipment(user).filter(equipment => equipment.equipped),
@@ -3765,7 +3849,28 @@ header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-betwee
 h1{margin:0;font-size:21px;font-weight:900;white-space:nowrap;background:linear-gradient(135deg,#818cf8,#a78bfa 60%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:.01em}.who{color:#a5b4fc;font-weight:700;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0;flex-shrink:0}.top-left{display:flex;gap:16px;align-items:center;min-width:0;flex:1}.group-tabs{display:flex;gap:2px;min-width:0;overflow:hidden}.group-tab{white-space:nowrap;background:transparent;border:0;color:#64748b;padding:8px 12px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;flex-shrink:0}.group-tab:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.group-tab.active{background:rgba(88,101,242,.2);color:#e5e7eb;box-shadow:0 0 0 1px rgba(99,102,241,.28)}.subnav-bar{display:flex;gap:2px;padding:0 20px;background:rgba(4,6,14,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.05);overflow-x:auto;scrollbar-width:none;flex-shrink:0}.subnav-bar::-webkit-scrollbar{display:none}.subnav-tab{flex-shrink:0;padding:9px 14px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;margin-bottom:-1px}.subnav-tab:hover{color:#cbd5e1;background:rgba(255,255,255,.05)}.subnav-tab.active{color:#e5e7eb;border-bottom-color:#818cf8}.bottom-tabs{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(5,6,12,.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,.07);justify-content:space-around;align-items:flex-start}.bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;background:transparent;border:0;color:#475569;cursor:pointer;transition:color .15s;border-radius:0;font-weight:700;min-width:0}.bottom-tab:hover{color:#94a3b8;background:transparent}.tab-icon-wrap{display:flex;align-items:center;justify-content:center;width:44px;height:28px;border-radius:14px;background:transparent;transition:background .15s}.tab-icon-wrap svg{width:22px;height:22px;display:block;flex-shrink:0;transition:filter .15s}.tab-label{font-size:10px;letter-spacing:.03em;white-space:nowrap}.bottom-tab.active{color:#818cf8}.bottom-tab.active .tab-icon-wrap{background:rgba(88,101,242,.22);box-shadow:0 0 10px rgba(88,101,242,.3)}.bottom-tab.active .tab-icon-wrap svg{filter:drop-shadow(0 0 3px rgba(129,140,248,.7))}.group-tab{gap:6px;display:flex;align-items:center}.group-tab svg{width:15px;height:15px;display:block;flex-shrink:0;opacity:.75;transition:opacity .15s}.group-tab:hover svg,.group-tab.active svg{opacity:1}
 button{border:0;border-radius:10px;padding:10px 13px;background:#141c2e;color:#e5e7eb;font-weight:700;cursor:pointer;transition:background .15s,box-shadow .15s,transform .1s}button:hover{background:#1a2540}.primary{background:linear-gradient(135deg,#5865f2,#4338ca);box-shadow:0 4px 12px rgba(88,101,242,.32)}.primary:hover{background:linear-gradient(135deg,#4752c4,#3730a3);box-shadow:0 6px 18px rgba(88,101,242,.48)}
 main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.pet-row{display:flex;flex-direction:column;gap:8px;margin-top:14px}.pet-item{display:flex;align-items:center;gap:10px}.pet-thumb{position:relative;width:52px;height:52px;flex:0 0 auto;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.pet-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.pet-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:120%;height:120%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.pet-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:26px;line-height:1}.pet-thumb.expired .icon{filter:grayscale(1) brightness(.6)}.pet-name{font-size:15px;color:#f8fafc}.pet-item.expired .pet-name{color:#94a3b8}.panel{background:rgba(8,10,20,.82);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:20px;box-shadow:0 4px 24px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.02) inset;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1f5f9}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
+h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1f5f9}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}
+.stat-panel{padding-top:0}
+.stat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 2px 14px}
+.stat-toggle{flex:1;display:flex;align-items:center;gap:10px;background:transparent;border:0;padding:0;margin:0;cursor:pointer;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1f5f9}
+.stat-toggle:hover{color:#fff;background:transparent}
+.stat-chevron{font-size:14px;color:#94a3b8;transition:transform .2s ease}
+.stat-filter{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap}
+.stat-filter input{width:15px;height:15px;cursor:pointer;accent-color:#6366f1}
+.stat-body{overflow:hidden;transition:max-height .3s ease,opacity .2s ease,margin .2s ease;max-height:3600px;opacity:1}
+.stat-body.collapsed{max-height:0;opacity:0;margin-top:-8px}
+.stat-card{background:rgba(4,6,18,.6);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 16px}
+.stat-grp+.stat-grp{border-top:1px solid rgba(255,255,255,.05)}
+.stat-grp-title{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7dd3fc;padding:13px 0 7px}
+.stat-line{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;min-height:38px}
+.stat-line+.stat-line{border-top:1px dashed rgba(148,163,184,.12)}
+.stat-line .stat-label{color:#94a3b8;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat-vblock{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:0}
+.stat-value{font-variant-numeric:tabular-nums;font-weight:800;color:#e5e7eb;white-space:nowrap;font-size:15px}
+.stat-value.bonus{color:#86efac}
+.stat-value.neg{color:#fca5a5}
+.stat-value.zero{color:#475569}
+.stat-sub{font-size:11px;color:#64748b;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}.card-tile{background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:10px;text-align:center}.card-tile img{width:100%;border-radius:12px;display:block;box-shadow:0 10px 24px rgba(0,0,0,.35)}.card-tile.compact{padding:8px}.card-name{margin-top:8px;font-size:13px;font-weight:700}.no-img,.empty-card{min-height:180px;display:grid;place-items:center;color:#94a3b8;border:1px dashed #334155;border-radius:12px}.card-tile.compact .no-img,.card-tile.compact .empty-card{min-height:120px}
 .actions{display:flex;gap:8px;flex-wrap:wrap}.view-btn{background:rgba(10,15,28,.8);border:1px solid rgba(255,255,255,.1)}.inv-kind-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;padding-bottom:2px}.inv-kind-tabs::-webkit-scrollbar{display:none}.inv-kind-tab{flex-shrink:0;white-space:nowrap;background:rgba(10,15,28,.8);border:1px solid rgba(255,255,255,.1);font-size:13px;padding:7px 14px}.inv-kind-tab.active{background:rgba(88,101,242,.22);border-color:rgba(99,102,241,.5);color:#e0e7ff}.viewer{display:grid;gap:18px}.cat{display:grid;gap:8px}.cat-title{font-size:14px;font-weight:800;color:#f1f5f9;padding:4px 4px 6px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:2px}.inv-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:rgba(4,6,18,.6);border:1px solid rgba(255,255,255,.06);border-radius:13px}.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}.inv-cell{position:relative;background:rgba(4,6,18,.7);border:1px solid rgba(255,255,255,.09);border-radius:10px;cursor:pointer;transition:border-color .15s,transform .12s,box-shadow .12s;overflow:hidden}.inv-cell:hover{border-color:rgba(99,102,241,.5);transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.4)}.inv-cell-img{aspect-ratio:1/1;position:relative;display:grid;place-items:center;background:rgba(15,23,42,.5)}.inv-cell-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.inv-cell-icon{position:relative;z-index:2;width:65%;height:65%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.55))}.inv-cell-count{position:absolute;bottom:3px;right:5px;font-size:11px;font-weight:900;color:#f8fafc;text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,1);line-height:1;z-index:3}.inv-cell-name{padding:3px 4px 5px;font-size:10px;font-weight:700;color:#94a3b8;text-align:center;line-height:1.2;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.equip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.equip-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:14px;background:linear-gradient(135deg,rgba(4,6,18,.9),rgba(8,12,26,.75));border:1px solid var(--rar,rgba(255,255,255,.08));border-left:4px solid var(--rar,rgba(255,255,255,.15));border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.3)}.equip-card .slot-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:rgba(148,163,184,.12);font-size:22px}.equip-card .equip-name{font-size:16px;font-weight:800;color:#f8fafc;margin-bottom:6px}.equip-card .equip-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.equip-card .level{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;color:#fbbf24}.card-tile,.equip-card{cursor:pointer;transition:transform .12s,box-shadow .12s}.card-tile:hover,.equip-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.45),0 0 0 1px rgba(99,102,241,.2)}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:16px}.modal-bg.active{display:flex}.modal{width:min(480px,100%);max-height:90vh;overflow-y:auto;background:rgba(7,10,20,.97);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03) inset}.modal.wide{width:min(640px,100%)}.modal h3{margin:0 0 6px;font-size:18px;color:#f8fafc}.modal .sub{color:#94a3b8;font-size:13px;margin-bottom:14px}.modal .stat-line{padding:8px 12px;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.12);border-radius:10px;margin:6px 0;font-size:14px}.modal .close{margin-top:14px;width:100%}.modal .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.modal .row>*{flex:1}.modal label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 6px;font-weight:700}.modal input,.modal select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(4,6,18,.85);color:#e5e7eb;font-size:14px;font-weight:600;font-family:inherit;transition:border-color .15s}.modal input:focus,.modal select:focus{outline:none;border-color:rgba(99,102,241,.6);box-shadow:0 0 0 3px rgba(99,102,241,.1)}.seg{display:flex;gap:6px;background:rgba(4,6,18,.7);padding:4px;border-radius:12px;flex-wrap:wrap;border:1px solid rgba(255,255,255,.06)}.seg button{flex:1 0 auto;background:transparent;font-size:13px;padding:8px 12px;white-space:nowrap;color:#94a3b8;transition:all .15s}.seg button:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.seg button.on{background:linear-gradient(135deg,#5865f2,#4338ca);color:#fff;box-shadow:0 2px 8px rgba(88,101,242,.35)}.pick-list{max-height:280px;overflow-y:auto;display:grid;gap:6px;margin-top:8px;padding:4px;background:rgba(4,6,18,.5);border-radius:10px}.pick-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;background:rgba(10,15,30,.7);border:1px solid rgba(255,255,255,.06);border-radius:10px;cursor:pointer;font-size:13px;transition:border-color .15s,background .15s}.pick-row:hover{border-color:rgba(99,102,241,.5)}.pick-row.on{border-color:rgba(99,102,241,.55);background:rgba(88,101,242,.16)}.pick-row .meta{color:#94a3b8;font-size:12px;margin-top:2px}.danger{background:#dc2626}.danger:hover{background:#b91c1c}
 .equip-thumb{position:relative;width:48px;height:48px;background:rgba(15,23,42,.7);border-radius:12px;overflow:visible}.equip-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.equip-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.equip-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:24px;line-height:1}
@@ -4023,7 +4128,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
     <section class="panel"><div class="profile-hero"><div id="mainCard" class="profile-card"></div><div class="profile-summary"><div class="name-line"><span id="profileTitle"></span><span id="level">-</span> <span id="profileName">-</span> <span id="exp" style="color:#94a3b8;font-size:15px">-</span></div><div class="status-row"><span>HP</span><div class="meter hp"><div class="meter-fill" id="hpFill"></div></div><b id="hp">-</b></div><div class="status-row"><span>MP</span><div class="meter mp"><div class="meter-fill" id="mpFill"></div></div><b id="mp">-</b></div><div class="power-line">⚔️ <b id="totalPower">-</b></div><div id="petRow" class="pet-row"></div></div></div></section>
     <section class="panel"><h2>장착 중인 카드 슬롯</h2><div id="slotCards" class="cards"></div></section>
     <section class="panel"><h2>재화</h2><div id="goods" class="grid"></div></section>
-    <section class="panel"><h2>스탯</h2><div id="stats" class="grid"></div></section>
+    <section class="panel stat-panel"><div class="stat-head"><button class="stat-toggle" id="statToggle" type="button"><span>스탯</span><span class="stat-chevron" id="statChevron">▾</span></button><label class="stat-filter"><input type="checkbox" id="statHideZero"><span>비보유 숨기기</span></label></div><div id="stats" class="stat-body"></div></section>
     <section class="panel"><h2>장착 장비</h2><div id="equippedGear" class="equip-grid"></div></section>
     <button id="viewInventoryBtn" class="primary" style="display:none;justify-self:center;padding:12px 22px;font-size:15px">인벤토리 보기</button>
   </div>

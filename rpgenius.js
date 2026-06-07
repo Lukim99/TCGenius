@@ -2129,7 +2129,7 @@ function equipTitleByName(user, name) {
     return '✅ 칭호 「' + title.name + '」을(를) 장착했습니다.';
 }
 
-function calculateUserStats(user) {
+function calculateUserStats(user, _out) {
     const stats = getBaseStat(user.main_card);
     const plusStats = {};
     normalizeStatPointData(user);
@@ -2242,6 +2242,7 @@ function calculateUserStats(user) {
             if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
         }
     }
+    if (_out && typeof _out == 'object') _out.plusStats = plusStats;
     return stats;
 }
 
@@ -2487,7 +2488,8 @@ function formatFieldList(user) {
             const aliveHp = Number(state.hp || 0);
             if (aliveHp > 0) {
                 const ratio = Math.max(0, Math.min(1, aliveHp / Number(boss.hp || 1)));
-                lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(aliveHp) + '/' + comma(Number(boss.hp || 0)) + ' (' + (Math.round(ratio * 1000) / 10) + '%)');
+                const naturalDeathAt = Number(state.revivedAt || 0) + WORLD_BOSS_FORCE_DEFEAT_MS;
+                lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(aliveHp) + '/' + comma(Number(boss.hp || 0)) + ' (' + (Math.round(ratio * 1000) / 10) + '%) · 강제 처치까지: ' + formatTimestampLocal(naturalDeathAt));
             } else {
                 const respawnAt = getWorldBossRespawnTimestamp(state);
                 if (Date.now() >= respawnAt) {
