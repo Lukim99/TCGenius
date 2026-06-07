@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -682,6 +682,7 @@ const POTENTIAL_UPGRADE = {
 };
 const POTENTIAL_JEWEL_ITEM_NAME = '쥬얼';
 const POTENTIAL_WHITE_JEWEL_ITEM_NAME = '화이트 쥬얼';
+const POTENTIAL_MAGNIFIER_ITEM_NAME = '돋보기';
 const POTENTIAL_JEWEL_DISCOUNT = 0.3;
 const POTENTIAL_WHITE_JEWEL_DISCOUNT = 0.6;
 
@@ -931,7 +932,7 @@ function getItemIdByName(name) {
     return items.findIndex(item => item && item.name == name);
 }
 
-function rerollEquipmentPotential(user, numberArg) {
+function rerollEquipmentPotential(user, numberArg, jewelChoice) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 잠재능력 재설정 [장비번호]';
     const selected = getAllUserEquipments(user)[number - 1];
@@ -945,9 +946,14 @@ function rerollEquipmentPotential(user, numberArg) {
     const baseCost = getPotentialRerollCost(type, currentTier);
     if (baseCost <= 0) return '❌ 잠재능력 재설정 비용 정보를 찾을 수 없습니다.';
     const whiteJewelItemId = getItemIdByName(POTENTIAL_WHITE_JEWEL_ITEM_NAME);
-    const hasWhiteJewel = whiteJewelItemId != -1 && getInventoryItemCount(user, whiteJewelItemId) > 0;
     const jewelItemId = getItemIdByName(POTENTIAL_JEWEL_ITEM_NAME);
-    const hasJewel = !hasWhiteJewel && jewelItemId != -1 && getInventoryItemCount(user, jewelItemId) > 0;
+    const ownWhite = whiteJewelItemId != -1 && getInventoryItemCount(user, whiteJewelItemId) > 0;
+    const ownJewel = jewelItemId != -1 && getInventoryItemCount(user, jewelItemId) > 0;
+    let hasWhiteJewel, hasJewel;
+    if (jewelChoice === 'white') { if (!ownWhite) return '❌ 화이트 쥬얼이 부족합니다.'; hasWhiteJewel = true; hasJewel = false; }
+    else if (jewelChoice === 'jewel') { if (!ownJewel) return '❌ 쥬얼이 부족합니다.'; hasWhiteJewel = false; hasJewel = true; }
+    else if (jewelChoice === 'none') { hasWhiteJewel = false; hasJewel = false; }
+    else { hasWhiteJewel = ownWhite; hasJewel = !ownWhite && ownJewel; } // 미지정: 기존 자동 선택
     const useJewel = hasWhiteJewel || hasJewel;
     const usedJewelItemId = hasWhiteJewel ? whiteJewelItemId : (hasJewel ? jewelItemId : -1);
     const usedJewelName = hasWhiteJewel ? POTENTIAL_WHITE_JEWEL_ITEM_NAME : POTENTIAL_JEWEL_ITEM_NAME;
@@ -1048,6 +1054,86 @@ function cancelPotentialReroll(user, force) {
     }
     user.pendingAction = null;
     return '✅ 잠재능력이 유지됩니다.';
+}
+
+// ===== 웹 잠재능력 래퍼 =====
+
+// 해당 장비 타입이 잠재능력을 지원하는지
+function equipmentTypeSupportsPotential(type) {
+    return !!getPotentialData()[type];
+}
+
+// 웹: 돋보기를 소모해 잠재능력 부여
+function webAwakenPotential(user, number) {
+    const idx = Number(number);
+    if (!Number.isInteger(idx) || idx < 1) return { error: '잘못된 장비 번호입니다.' };
+    const selected = getAllUserEquipments(user)[idx - 1];
+    if (!selected) return { error: '존재하지 않는 장비입니다.' };
+    const type = selected.equip.type || selected.type;
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return { error: '잘못된 장비 데이터입니다.' };
+    if (selected.equip.potential) return { error: '이미 잠재능력이 부여된 장비입니다.' };
+    if (!equipmentTypeSupportsPotential(type)) return { error: '해당 장비 타입에는 잠재능력을 부여할 수 없습니다.' };
+    const magId = getItemIdByName(POTENTIAL_MAGNIFIER_ITEM_NAME);
+    if (magId == -1 || getInventoryItemCount(user, magId) < 1) return { error: '돋보기가 부족합니다.' };
+    const potential = rollEquipmentPotential(type);
+    if (!potential) return { error: '잠재능력 데이터를 찾을 수 없습니다.' };
+    removeInventoryItem(user, magId, 1);
+    selected.equip.potential = potential;
+    return { ok: true, potential };
+}
+
+// 웹: 재설정 모달용 정보 (현재 잠재능력, 쥬얼 보유, 옵션별 비용)
+function getPotentialRerollInfo(user, number) {
+    const idx = Number(number);
+    if (!Number.isInteger(idx) || idx < 1) return { error: '잘못된 장비 번호입니다.' };
+    const selected = getAllUserEquipments(user)[idx - 1];
+    if (!selected) return { error: '존재하지 않는 장비입니다.' };
+    const type = selected.equip.type || selected.type;
+    if (!equipmentTypeSupportsPotential(type)) return { error: '해당 장비 타입에는 잠재능력을 재설정할 수 없습니다.' };
+    if (!selected.equip.potential) return { error: '잠재능력이 부여된 장비만 재설정할 수 있습니다.' };
+    const currentTier = getPotentialRarityKey(selected.equip.potential.rarity);
+    const baseCost = getPotentialRerollCost(type, currentTier);
+    const whiteJewelItemId = getItemIdByName(POTENTIAL_WHITE_JEWEL_ITEM_NAME);
+    const jewelItemId = getItemIdByName(POTENTIAL_JEWEL_ITEM_NAME);
+    const whiteCount = whiteJewelItemId != -1 ? getInventoryItemCount(user, whiteJewelItemId) : 0;
+    const jewelCount = jewelItemId != -1 ? getInventoryItemCount(user, jewelItemId) : 0;
+    const upgrade = POTENTIAL_UPGRADE[currentTier] || null;
+    const failCount = Number(selected.equip.potential.failCount || 0);
+    const costOf = discount => Math.max(0, Math.floor(baseCost * (1 - discount)));
+    return {
+        ok: true,
+        currentTier,
+        currentTierLabel: getPotentialRarityLabel(currentTier),
+        current: { tierLabel: getPotentialRarityLabel(currentTier), entries: formatPotentialOptionEntries(selected.equip.potential) },
+        jewels: { jewel: jewelCount, white: whiteCount },
+        options: {
+            none: { cost: costOf(0), discountPct: 0 },
+            jewel: { cost: costOf(POTENTIAL_JEWEL_DISCOUNT), discountPct: Math.round(POTENTIAL_JEWEL_DISCOUNT * 100), available: jewelCount > 0 },
+            white: { cost: costOf(POTENTIAL_WHITE_JEWEL_DISCOUNT), discountPct: Math.round(POTENTIAL_WHITE_JEWEL_DISCOUNT * 100), available: whiteCount > 0 }
+        },
+        upgrade: upgrade ? { next: getPotentialRarityLabel(upgrade.next), guarantee: Number(upgrade.guarantee || 0), failCount } : null,
+        gold: Number(user.gold || 0)
+    };
+}
+
+// 웹: 재설정 실행 (롤 + pending 설정). 비교용 구조 반환
+function webRerollPotential(user, number, jewelChoice) {
+    const msg = rerollEquipmentPotential(user, number, jewelChoice);
+    if (typeof msg === 'string' && msg.startsWith('❌')) return { error: msg.replace(/^❌\s*/, '') };
+    const p = user.pendingAction;
+    if (!p || p.type !== '잠재능력재설정확인') return { error: '재설정에 실패했습니다.' };
+    return {
+        ok: true,
+        cost: p.cost,
+        useJewel: p.useJewel,
+        upgraded: p.upgraded,
+        guaranteed: p.guaranteed,
+        currentTierLabel: getPotentialRarityLabel(p.currentTier),
+        nextTierLabel: getPotentialRarityLabel(p.nextTier),
+        old: { tierLabel: getPotentialRarityLabel(p.oldPotential.rarity), entries: formatPotentialOptionEntries(p.oldPotential) },
+        new: { tierLabel: getPotentialRarityLabel(p.newPotential.rarity), entries: formatPotentialOptionEntries(p.newPotential) }
+    };
 }
 
 function formatPotentialLines(potential) {
@@ -8970,6 +9056,12 @@ module.exports = {
     formatCurrentEquipmentStatLines,
     formatPotentialLines,
     formatPotentialOptionEntries,
+    equipmentTypeSupportsPotential,
+    webAwakenPotential,
+    getPotentialRerollInfo,
+    webRerollPotential,
+    confirmPotentialReroll,
+    cancelPotentialReroll,
     getPotentialRarityKey,
     getPotentialRarityLabel,
     getEquipmentDisplayName,

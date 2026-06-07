@@ -524,6 +524,93 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
     }
 });
 
+// ===== 잠재능력 =====
+
+server.post('/api/potential/awaken', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blocked = getEquipmentActionBlockedReason(user, '변경');
+        if (blocked) return res.status(400).json({ error: blocked });
+        const out = rpgenius.webAwakenPotential(user, number);
+        if (out.error) return res.status(400).json({ error: out.error });
+        await user.save();
+        res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('potential awaken error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/potential/reroll-info/:number', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.params.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const out = rpgenius.getPotentialRerollInfo(user, number);
+        if (out.error) return res.status(400).json({ error: out.error });
+        const items = rpgenius.getDataCache('Item', []) || [];
+        const iconByName = name => { const d = items.find(it => it && it.name === name); return d ? getItemIconUrl(d) : null; };
+        out.jewelIcons = { jewel: iconByName('쥬얼'), white: iconByName('화이트 쥬얼') };
+        out.goldIcon = SHOP_CURR_IMG.gold;
+        res.json(out);
+    } catch (e) {
+        console.error('potential reroll-info error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/potential/reroll', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '장비 번호가 올바르지 않습니다.' });
+        const jewel = ['none', 'jewel', 'white'].includes(req.body && req.body.jewel) ? req.body.jewel : 'none';
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blocked = getEquipmentActionBlockedReason(user, '변경');
+        if (blocked) return res.status(400).json({ error: blocked });
+        const out = rpgenius.webRerollPotential(user, number, jewel);
+        if (out.error) return res.status(400).json({ error: out.error });
+        await user.save();
+        res.json(out);
+    } catch (e) {
+        console.error('potential reroll error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/potential/reroll/confirm', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.confirmPotentialReroll(user);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('potential reroll confirm error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/potential/reroll/cancel', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        // 웹은 비교 화면에서 명시적으로 '이전 유지'를 선택하므로 강제 취소
+        const result = rpgenius.cancelPotentialReroll(user, true);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('potential reroll cancel error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 장비 강화 =====
 
 server.get('/api/equipment/upgrade/preview/:number', requireUser, async (req, res) => {
@@ -841,10 +928,35 @@ function hotdealPeriodIndex(periodKey) {
     return epoch * 4 + seg;
 }
 
-function generateHotDeal(periodKey) {
-    const rng = hotdealRng(hotdealPeriodSeed(periodKey));
-    const sectorIdx = hotdealPeriodIndex(periodKey) % HOTDEAL_SECTORS.length;
+function getHotDealSectorIndex(periodKey) {
+    return hotdealPeriodIndex(periodKey) % HOTDEAL_SECTORS.length;
+}
+
+// 섹터의 선택 가능한 모든 항목을 amounts 배열까지 펼쳐서 반환 (편집 드롭다운용)
+function hotdealSectorOptions(sectorIdx) {
     const sector = HOTDEAL_SECTORS[sectorIdx];
+    if (!sector) return [];
+    const out = [];
+    sector.items.forEach(item => {
+        const amounts = item.amounts ? item.amounts : [item.amount];
+        amounts.forEach(amount => out.push({ id: item.id, count: item.count, goods: item.goods, amount }));
+    });
+    return out;
+}
+
+function getHotDealOverride(periodKey) {
+    const all = rpgenius.getDataCache('HotDealOverride', {}) || {};
+    return all[periodKey] || null;
+}
+
+function generateHotDeal(periodKey) {
+    const sectorIdx = getHotDealSectorIndex(periodKey);
+    const sector = HOTDEAL_SECTORS[sectorIdx];
+    const override = getHotDealOverride(periodKey);
+    if (override && Array.isArray(override.picks) && override.picks.length === 2) {
+        return { sectorName: sector.name, picks: override.picks.map(p => ({ ...p })), edited: true };
+    }
+    const rng = hotdealRng(hotdealPeriodSeed(periodKey));
     const firstIdx = sector.items.indexOf(hotdealWeightedPick(sector.items, rng));
     const pool2 = sector.items.filter((_, i) => i !== firstIdx);
     const second = hotdealWeightedPick(pool2, rng);
@@ -852,7 +964,7 @@ function generateHotDeal(periodKey) {
         ...item,
         amount: item.amounts ? item.amounts[Math.floor(rng() * item.amounts.length)] : item.amount,
     }));
-    return { sectorName: sector.name, picks };
+    return { sectorName: sector.name, picks, edited: false };
 }
 
 function buildHotDealData(user) {
@@ -1410,9 +1522,12 @@ server.get('/api/admin/hotdeal/preview', requireAdmin, (req, res) => {
         const itemIcon = id => { const d = items[id]; return d ? getItemIconUrl(d) : null; };
         const formatHotdealResult = (periodKey) => {
             const d = generateHotDeal(periodKey);
+            const sectorIdx = getHotDealSectorIndex(periodKey);
             return {
                 periodKey,
                 sectorName: d.sectorName,
+                sectorIdx,
+                edited: !!d.edited,
                 slots: d.picks.map(p => ({
                     itemId: p.id,
                     name: itemName(p.id),
@@ -1420,6 +1535,11 @@ server.get('/api/admin/hotdeal/preview', requireAdmin, (req, res) => {
                     count: p.count,
                     goods: p.goods,
                     amount: p.amount,
+                })),
+                options: hotdealSectorOptions(sectorIdx).map(o => ({
+                    id: o.id, count: o.count, goods: o.goods, amount: o.amount,
+                    name: itemName(o.id), iconUrl: itemIcon(o.id),
+                    label: itemName(o.id) + (o.count > 1 ? ' ×' + o.count : '') + ' / ' + (o.goods === 'gold' ? '골드' : '가넷') + ' ' + Number(o.amount).toLocaleString(),
                 })),
             };
         };
@@ -1442,6 +1562,47 @@ server.get('/api/admin/hotdeal/preview', requireAdmin, (req, res) => {
         const today = `${y}-${m}-${day}`;
         return res.json([0, 1, 2, 3].map(s => formatHotdealResult(`${today}-${s}`)));
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+server.post('/api/admin/hotdeal/override', requireAdmin, async (req, res) => {
+    try {
+        const periodKey = String((req.body && req.body.periodKey) || '');
+        const picks = req.body && req.body.picks;
+        if (!periodKey.match(/^\d{4}-\d{2}-\d{2}-[0-3]$/)) return res.status(400).json({ error: '잘못된 기간 키' });
+        if (!Array.isArray(picks) || picks.length !== 2) return res.status(400).json({ error: '슬롯 2개를 지정해야 합니다.' });
+        // 섹터는 변경 불가 — 제출된 각 항목이 해당 섹터의 유효 옵션인지 검증
+        const sectorIdx = getHotDealSectorIndex(periodKey);
+        const options = hotdealSectorOptions(sectorIdx);
+        const normalized = [];
+        for (const p of picks) {
+            const match = options.find(o => o.id === Number(p.id) && o.count === Number(p.count) && o.goods === String(p.goods) && o.amount === Number(p.amount));
+            if (!match) return res.status(400).json({ error: '해당 섹터에 존재하지 않는 항목입니다.' });
+            normalized.push({ id: match.id, count: match.count, goods: match.goods, amount: match.amount });
+        }
+        const all = Object.assign({}, rpgenius.getDataCache('HotDealOverride', {}) || {});
+        all[periodKey] = { picks: normalized };
+        await rpgenius.saveRpgeniusDataEntry('HotDealOverride', all);
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('hotdeal override error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+server.post('/api/admin/hotdeal/override/reset', requireAdmin, async (req, res) => {
+    try {
+        const periodKey = String((req.body && req.body.periodKey) || '');
+        if (!periodKey.match(/^\d{4}-\d{2}-\d{2}-[0-3]$/)) return res.status(400).json({ error: '잘못된 기간 키' });
+        const all = Object.assign({}, rpgenius.getDataCache('HotDealOverride', {}) || {});
+        if (all[periodKey]) {
+            delete all[periodKey];
+            await rpgenius.saveRpgeniusDataEntry('HotDealOverride', all);
+        }
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('hotdeal override reset error:', e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -2036,6 +2197,7 @@ function buildInventoryEquipment(user) {
             potentialLines,
             potentialDisplay,
             potential: equip && equip.potential || null,
+            canPotential: rpgenius.equipmentTypeSupportsPotential(equip.type || type),
             rolled: equip && equip.rolled || null,
             soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0), stat: soulActive.stat || {}, plusStat: soulActive.plusStat || {} } : null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
@@ -3684,6 +3846,36 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .pot-grade.gold{--grade-bg:rgba(251,191,36,.18);--grade-fg:#fde68a;--grade-border:rgba(251,191,36,.6)}
 .pot-grade.platinum{--grade-bg:rgba(103,232,249,.16);--grade-fg:#a5f3fc;--grade-border:rgba(103,232,249,.6)}
 .pot-text{flex:1;line-height:1.4}
+.pot-awaken,.pot-reroll-open{width:100%}
+.pot-wrap{width:min(420px,100%)!important;max-height:96dvh!important;overflow:hidden!important}
+.pot-wrap .enhance-result-overlay{overflow:hidden}
+.pot-result-inner{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+.jewel-icon-img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.jewel-icon-none{color:#64748b;font-size:18px;font-weight:800}
+.protect-pick-row.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+.pot-block.cur{--pot-tier:#94a3b8}.pot-block.old{--pot-tier:#64748b;opacity:.85}.pot-block.new{--pot-tier:#a5b4fc}
+/* 잠재능력 재설정 모달 (강화 스타일) */
+.pot-mod-head{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 14px 14px;background:linear-gradient(180deg,rgba(76,29,149,.32),rgba(2,6,23,.5));border-bottom:1px solid rgba(168,85,247,.22);flex-shrink:0}
+.pot-mod-head .auc-thumb.square{width:64px!important;height:64px!important}
+.pot-mod-title{font-size:14px;font-weight:800;color:#f1f5f9;text-align:center}
+.pot-mod-tier{font-size:11px;font-weight:800;color:#c4b5fd;background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.4);border-radius:999px;padding:2px 10px}
+.enhance-protect.advanced .enhance-protect-icon,.enhance-protect.blessed .enhance-protect-icon{font-size:17px}
+.pot-cost-box{display:flex;flex-direction:column;gap:5px;padding:10px 12px;background:linear-gradient(180deg,rgba(24,32,40,.92),rgba(10,14,20,.96));border:1px solid rgba(120,160,180,.14);border-radius:9px}
+.pot-cost-line{font-size:13px;font-weight:800;color:#fde68a;display:flex;align-items:center;gap:2px}
+.pot-cost-line.lack{color:#fca5a5}
+.pot-gold-icon{width:16px;height:16px;object-fit:contain;vertical-align:-3px}
+.pot-upg-line{font-size:11px;font-weight:700;color:#c4b5fd}
+.pot-confirm-btn{background:linear-gradient(135deg,#7c3aed,#a855f7);border:0;border-radius:8px;min-height:44px;color:#fff;font-weight:900;font-size:15px;letter-spacing:.02em;cursor:pointer;box-shadow:0 6px 18px rgba(124,58,237,.4);transition:filter .15s,transform .1s}
+.pot-confirm-btn:hover{filter:brightness(1.12)}
+.pot-confirm-btn:active{transform:scale(.97)}
+.pot-confirm-btn:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+.pot-compare{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:440px}
+.pot-compare .pot-block{margin-top:0;text-align:left}
+.pot-result-actions{display:flex;gap:8px;width:100%;max-width:440px;margin-top:2px}
+.pot-result-actions>button{flex:1}
+.pot-result-reveal{opacity:0;animation:enhStatIn .45s cubic-bezier(.2,.8,.3,1) forwards}
+.pot-warn{font-size:11px;color:#fca5a5;line-height:1.5;background:rgba(127,29,29,.18);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:8px 11px;max-width:440px}
+@media(max-width:520px){.pot-compare{grid-template-columns:1fr}}
 .profile-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(251,191,36,.18),rgba(88,101,242,.18));border:1px solid rgba(251,191,36,.4);border-radius:14px;color:#fde68a;font-weight:700}.profile-banner button{padding:8px 12px;font-size:13px}
 .rank-section{display:grid;gap:14px}.rank-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.rank-tab{padding:9px 14px;border-radius:10px;background:rgba(20,28,46,.8);color:#94a3b8;cursor:pointer;font-weight:700;font-size:13px;border:1px solid rgba(255,255,255,.07);transition:all .15s}.rank-tab.active{background:linear-gradient(135deg,#5865f2,#4338ca);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(88,101,242,.32)}
 .rank-me{padding:14px 16px;background:linear-gradient(135deg,rgba(88,101,242,.15),rgba(4,6,18,.7));border:1px solid rgba(88,101,242,.4);border-radius:14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;font-weight:700;box-shadow:0 4px 16px rgba(88,101,242,.15)}.rank-me .rk{font-size:22px;color:#a5b4fc}.rank-me .nm{font-size:15px;color:#f8fafc}.rank-me .lv{font-size:12px;color:#94a3b8}.rank-me .vl{font-size:18px;color:#fbbf24;font-variant-numeric:tabular-nums}
@@ -3857,6 +4049,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
 <div id="enhanceOverlay" class="enhance-overlay"><div class="enhance-wrap"><div id="enhanceContent"></div><div id="enhanceResultOverlay" class="enhance-result-overlay"></div></div></div>
+<div id="potentialOverlay" class="enhance-overlay"><div class="enhance-wrap pot-wrap"><div id="potentialContent"></div><div id="potentialResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
 <div id="aucRegBg" class="modal-bg"><div class="modal wide" id="aucReg"></div></div>
 <div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
