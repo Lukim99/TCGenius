@@ -2489,7 +2489,7 @@ function formatFieldList(user) {
             if (aliveHp > 0) {
                 const ratio = Math.max(0, Math.min(1, aliveHp / Number(boss.hp || 1)));
                 const naturalDeathAt = Number(state.revivedAt || 0) + WORLD_BOSS_FORCE_DEFEAT_MS;
-                lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(aliveHp) + '/' + comma(Number(boss.hp || 0)) + ' (' + (Math.round(ratio * 1000) / 10) + '%) · 강제 처치까지: ' + formatTimestampLocal(naturalDeathAt));
+                lines.push('〈 ' + boss.name + ' 〉 HP ' + comma(aliveHp) + '/' + comma(Number(boss.hp || 0)) + ' (' + (Math.round(ratio * 1000) / 10) + '%)\n· 강제 처치: ' + formatTimestampLocal(naturalDeathAt));
             } else {
                 const respawnAt = getWorldBossRespawnTimestamp(state);
                 if (Date.now() >= respawnAt) {
