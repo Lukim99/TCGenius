@@ -17,10 +17,7 @@ const VIEWMORE = '‎'.repeat(500);
 
 const WELCOME_MESSAGE =
     '✅ 계정이 생성되었습니다.\n' +
-    '.핸들 [핸들] 명령어로 핸들을 설정하세요.\n' +
-    '이후 아래 사이트에 들어가 로그인 후 프로필 설정을 완료하세요.\n\n' +
-    'https://wollu.vercel.app\n' +
-    '.코드 명령어를 통해 로그인 코드를 확인할 수 있습니다.';
+    '.핸들 [핸들] 명령어로 핸들을 설정하세요.';
 
 function nowIso() {
     return new Date().toISOString();
@@ -227,7 +224,7 @@ async function changeHandle(arg, channel, user) {
     }
     const { error } = await supabase.from('users').update({ name: value, updated_at: nowIso() }).eq('id', user.id);
     if (error) throw error;
-    channel.sendChat(`✅ 핸들 설정이 완료되었습니다!\n@${value}\n\nhttps://wollu.vercel.app\n위 사이트에 들어가 프로필 설정을 완료해주세요.`);
+    channel.sendChat(`✅ 핸들 설정이 완료되었습니다!\n@${value}\n\nhttps://kakao-wollu.vercel.app\n위 사이트에 들어가 프로필 설정을 완료해주세요.`);
     return true;
 }
 
