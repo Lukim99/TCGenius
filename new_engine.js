@@ -6,6 +6,7 @@ const lolChatbot = require('./lol_chatbot.js');
 const chatbot1 = require('./chatbot1.js');
 const chatbot2 = require('./chatbot2.js');
 const rpgenius = require('./rpgenius.js');
+const wollu = require('./wollu.js');
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -3686,6 +3687,7 @@ client.on('chat', async (data, channel) => {
     if (chatbot1.TARGET_CHANNEL_IDS.includes(channel.channelId) && await chatbot1.onChat(data, channel, { client })) return;
     if (chatbot2.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await chatbot2.onChat(data, channel)) return;
     if (rpgenius.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await rpgenius.onChat(data, channel)) return;
+    if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await wollu.onChat(data, channel)) return;
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
@@ -11103,6 +11105,11 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
+    if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
+        try { await wollu.onUserJoin(channel, user); }
+        catch (e) { console.log('wollu 입장 연동 실패:', e); }
+        return;
+    }
     if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
@@ -11155,6 +11162,11 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
+    if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
+        try { await wollu.onUserLeft(channel, user, leftLog); }
+        catch (e) { console.log('wollu 퇴장 연동 실패:', e); }
+        return;
+    }
     if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     const uid = user ? user.userId + '' : null;
     const nick = user ? user.nickname : null;
@@ -11192,6 +11204,11 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
+    if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
+        try { await wollu.onProfileChanged(channel, lastInfo, user); }
+        catch (e) { console.log('wollu 프로필변경 연동 실패:', e); }
+        return;
+    }
     if (! [...new Set(['18448110985554752', '18477786254222718', lolChatbot.TARGET_CHANNEL_ID, ...(chatbot1.TARGET_CHANNEL_IDS || [chatbot1.TARGET_CHANNEL_ID]), ...(chatbot2.TARGET_CHANNEL_IDS || [chatbot2.TARGET_CHANNEL_ID])])].includes(channel.channelId + '')) return;
     try {
         const oldNick = lastInfo ? lastInfo.nickname : null;
