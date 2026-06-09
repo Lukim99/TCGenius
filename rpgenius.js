@@ -46,6 +46,9 @@ const GOLD_MINE_ORE_DROPS = {
 const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
 const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
+const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
+const EVENT_DICE_DROP_CHANCE = 0.005;
+const EVENT_DICE_DROP_DAILY_LIMIT = 10;
 const FRAGMENT_TIERS = {
     low: {
         name: '하급 편린',
@@ -3190,6 +3193,13 @@ function getWorldBossDailyState(user) {
     return user.worldBossDaily;
 }
 
+function getEventDiceDropDailyState(user) {
+    const today = getKoreanDateKey(new Date());
+    if (!user.eventDiceDropDaily || user.eventDiceDropDaily.date != today) user.eventDiceDropDaily = { date: today, count: 0 };
+    user.eventDiceDropDaily.count = Number(user.eventDiceDropDaily.count || 0);
+    return user.eventDiceDropDaily;
+}
+
 function getValorTokenItemId() {
     const items = getDataCache('Item', []);
     return items.findIndex(item => item && item.name == WORLD_BOSS_VALOR_TOKEN_NAME);
@@ -3603,12 +3613,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 }
             }
         }
-        if (Math.random() < 0.01 * dropMultiplier * levelMultiplier) {
+        const eventDiceDaily = getEventDiceDropDailyState(user);
+        if (Number(eventDiceDaily.count || 0) < EVENT_DICE_DROP_DAILY_LIMIT && Math.random() < EVENT_DICE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
-            const dropItemId = items.findIndex(item => item.name == '투표 용지');
+            const dropItemId = items.findIndex(item => item.name == EVENT_DICE_DROP_ITEM_NAME);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
-                lines.push('- 📃 [이벤트]' + items[dropItemId].name + ' 획득!');
+                eventDiceDaily.count = Number(eventDiceDaily.count || 0) + 1;
+                lines.push('- 🎲 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
             }
         }
     }
@@ -7328,6 +7340,7 @@ class RPGUser {
         this.pendingFragment = null;
         this.fragmentCounts = {};
         this.goldMineDaily = null;
+        this.eventDiceDropDaily = null;
         this.cardCombineCounts = {};
         this.cardPackCombineCounts = {};
         this.maxCardLimit = 52;
@@ -7369,6 +7382,7 @@ class RPGUser {
         if (!this.fragmentCounts || typeof this.fragmentCounts != 'object') this.fragmentCounts = {};
         cleanupExpiredSouls(this);
         if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
+        if (typeof this.eventDiceDropDaily == 'undefined') this.eventDiceDropDaily = null;
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;

@@ -61,7 +61,7 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', combine: '조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', combine: '조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -71,7 +71,7 @@ const ICONS = {
 };
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['combine', 'dex'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'dex'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -141,6 +141,7 @@ function navigatePage(pageId) {
         updateInventoryBanner();
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
+    if (pageId === 'event') loadEventDice();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
@@ -840,6 +841,297 @@ async function loadInventory(kind) {
 }
 
 $$('.inv-kind-tab').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
+
+// ===== 이벤트: 유생의 주사위 =====
+
+const EVENT_DICE_REWARDS = {
+    3:  { name: '축복받은 장비 보호권', count: 1,  mult: 170 },
+    4:  { name: '고급 장비 보호권',     count: 1,  mult: 60 },
+    5:  { name: '고급 패션 적용권',     count: 1,  mult: 30 },
+    6:  { name: '장비 보호권',          count: 1,  mult: 16 },
+    7:  { name: '패션 적용권',          count: 1,  mult: 11 },
+    8:  { name: '지니어스의 열쇠',      count: 10, mult: 8 },
+    9:  { name: '딜러 지렁이',          count: 20, mult: 6 },
+    10: { name: '화이트 쥬얼',          count: 1,  mult: 5 },
+    11: { name: '화이트 쥬얼',          count: 1,  mult: 5 },
+    12: { name: '익명 지렁이',          count: 20, mult: 6 },
+    13: { name: '캐릭터 변환석',        count: 2,  mult: 8 },
+    14: { name: '7성 카드팩',           count: 1,  mult: 11 },
+    15: { name: '8성 보호카드',         count: 1,  mult: 16 },
+    16: { name: '8성 카드팩',           count: 1,  mult: 30 },
+    17: { name: '9성 카드팩',           count: 1,  mult: 60 },
+    18: { name: '제타 카드팩',          count: 1,  mult: 170 }
+};
+const EVENT_DICE_SUMS = Object.keys(EVENT_DICE_REWARDS).map(Number);
+const EVENT_DICE_PIPS = {
+    1: [5],
+    2: [1, 9],
+    3: [1, 5, 9],
+    4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9],
+    6: [1, 3, 4, 6, 7, 9]
+};
+const EVENT_DICE_FACE_ANGLE = {
+    1: { x: 0, y: 0 },
+    2: { x: 0, y: -90 },
+    3: { x: -90, y: 0 },
+    4: { x: 90, y: 0 },
+    5: { x: 0, y: 90 },
+    6: { x: 0, y: 180 }
+};
+let eventDiceState = { built: false, loading: false, rolling: false, prediction: null, dice: [null, null, null], result: null, history: [], diceItemCount: 0, rewards: null, lightningSum: null, lightningBolt: null, error: '' };
+let eventLightningTimer = null;
+
+function generateEventLightningBolt(targetX, targetY) {
+    const pts = [];
+    const numSegs = 10 + Math.floor(Math.random() * 6);
+    const startX = targetX + (Math.random() - 0.5) * 100;
+    pts.push([startX, -30]);
+    for (let i = 1; i < numSegs; i++) {
+        const t = i / numSegs;
+        const spread = 85 * (1 - Math.pow(t, 1.6)) + 8;
+        const cx = startX + (targetX - startX) * t;
+        pts.push([cx + (Math.random() - 0.5) * spread * 2, targetY * t]);
+    }
+    pts.push([targetX, targetY]);
+    const main = pts.map(([x, y], i) => (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1)).join(' ');
+    const branches = [];
+    const numBranches = 2 + Math.floor(Math.random() * 2);
+    for (let b = 0; b < numBranches; b++) {
+        const idx = 2 + Math.floor(Math.random() * Math.floor(pts.length * 0.5));
+        if (idx >= pts.length) continue;
+        const [bx, by] = pts[idx];
+        const len = 30 + Math.random() * 60;
+        const angle = (Math.random() - 0.5) * Math.PI * 1.1;
+        const bPts = [[bx, by]];
+        const bSegs = 2 + Math.floor(Math.random() * 2);
+        for (let s = 1; s <= bSegs; s++) {
+            const t = s / bSegs;
+            bPts.push([
+                bx + Math.sin(angle) * len * t + (Math.random() - 0.5) * 14,
+                by + Math.abs(Math.cos(angle)) * len * t
+            ]);
+        }
+        branches.push(bPts.map(([x, y], i) => (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1)).join(' '));
+    }
+    return { main, branches, width: window.innerWidth, height: window.innerHeight };
+}
+
+function renderEventLightningBolt() {
+    const bolt = eventDiceState.lightningBolt;
+    if (!bolt) return null;
+    const branchSvg = bolt.branches.map(b => '<g><path d="' + b + '" stroke="rgba(255,240,80,0.4)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#eventBoltBlur)"/><path d="' + b + '" stroke="rgba(255,255,200,0.82)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>').join('');
+    return svgIcon('<svg class="event-lightning-bolt-svg" width="' + bolt.width + '" height="' + bolt.height + '" viewBox="0 0 ' + bolt.width + ' ' + bolt.height + '"><defs><filter id="eventBoltBlur"><feGaussianBlur stdDeviation="5"/></filter></defs><path d="' + bolt.main + '" stroke="rgba(255,220,40,0.3)" stroke-width="22" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#eventBoltBlur)"/><path d="' + bolt.main + '" stroke="rgba(255,240,100,0.65)" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="' + bolt.main + '" stroke="rgba(255,255,230,0.98)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' + branchSvg + '</svg>');
+}
+
+function triggerEventLightning(sum) {
+    eventDiceState.lightningSum = sum;
+    eventDiceState.lightningBolt = null;
+    renderEventDice();
+    requestAnimationFrame(() => {
+        const target = document.querySelector('[data-event-lit="true"]');
+        if (!target) return;
+        const rect = target.getBoundingClientRect();
+        eventDiceState.lightningBolt = generateEventLightningBolt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        renderEventDice();
+        if (eventLightningTimer) clearTimeout(eventLightningTimer);
+        eventLightningTimer = setTimeout(() => {
+            eventDiceState.lightningBolt = null;
+            renderEventDice();
+        }, 580);
+    });
+}
+
+function eventRewardIcon(reward, sizeClass) {
+    return el('div', { class: 'event-reward-thumb ' + (sizeClass || '') },
+        reward.frameUrl ? el('img', { class: 'event-reward-frame', src: reward.frameUrl, alt: '' }) : null,
+        reward.iconUrl ? el('img', { class: 'event-reward-icon', src: reward.iconUrl, alt: reward.name, onload: e => { if (e.currentTarget.nextSibling) e.currentTarget.nextSibling.style.display = 'none'; }, onerror: e => { e.currentTarget.style.display = 'none'; } }) : null,
+        el('span', { class: 'event-reward-fallback' }, reward.name.slice(0, 1))
+    );
+}
+
+function eventDie(value, index) {
+    const faceAngle = value ? EVENT_DICE_FACE_ANGLE[value] : null;
+    const transform = faceAngle ? 'rotateX(' + (faceAngle.x + 360 * (index + 1)) + 'deg) rotateY(' + (faceAngle.y + 360 * (index + 1)) + 'deg)' : '';
+    const hit = eventDiceState.result && eventDiceState.result.prediction === eventDiceState.result.sum;
+    const outcome = eventDiceState.result ? (hit ? ' win' : ' lose') : '';
+    const stateClass = eventDiceState.rolling ? 'rolling' : value ? 'result' : 'idle';
+    return el('div', { class: 'event-die ' + stateClass + outcome },
+        el('div', { class: 'event-cube-settle' },
+            el('div', { class: 'event-cube', style: transform ? { transform } : null },
+                [1, 2, 3, 4, 5, 6].map(v =>
+                    el('div', { class: 'event-face event-face' + v },
+                        Array.from({ length: 9 }, (_, i) => el('span', { class: EVENT_DICE_PIPS[v].includes(i + 1) ? 'event-die-pip' : 'event-die-empty' }))
+                    )
+                )
+            )
+        )
+    );
+}
+
+function eventRewardName(reward) {
+    return reward.name + ' x' + comma(reward.count);
+}
+
+function renderEventDiceResult() {
+    const result = eventDiceState.result;
+    if (!result) {
+        return el('div', { class: 'event-result-card waiting' },
+            el('div', { class: 'event-result-kicker' }, eventDiceState.prediction ? 'READY' : 'PICK A SUM'),
+            el('div', { class: 'event-result-title' }, eventDiceState.prediction ? '합계 ' + eventDiceState.prediction + ' 예측' : '합을 먼저 선택하세요'),
+            el('div', { class: 'event-result-sub' }, '굴릴 때 유생의 주사위 1개가 소모됩니다.')
+        );
+    }
+    const hit = result.prediction === result.sum;
+    return el('div', { class: 'event-result-card hit ' + (hit ? 'win' : 'lose') + (result.lightning ? ' lightning' : '') },
+        el('div', { class: 'event-result-kicker' }, hit ? 'PREDICTION HIT' : 'RESULT'),
+        el('div', { class: 'event-result-title' }, '합계 ' + result.sum),
+        el('div', { class: hit ? 'event-hit-label yes' : 'event-hit-label no' }, hit ? '예측 성공' : '예측 실패'),
+        result.lightning ? el('div', { class: 'event-lightning-hit' }, el('span', { class: 'event-lit-bolt' }, '⚡'), '라이트닝 보상 2배') : null,
+        el('div', { class: 'event-result-reward' },
+            eventRewardIcon(result.reward, 'large'),
+            el('div', null,
+                el('div', { class: 'event-result-reward-name' }, result.reward.name),
+                el('div', { class: 'event-result-reward-count' }, 'x' + comma(result.reward.count))
+            )
+        )
+    );
+}
+
+function renderEventDiceRewardGrid() {
+    const rewards = eventDiceState.rewards || EVENT_DICE_REWARDS;
+    return el('div', { class: 'event-reward-grid' },
+        EVENT_DICE_SUMS.map(sum => {
+            const reward = rewards[sum] || EVENT_DICE_REWARDS[sum];
+            const active = eventDiceState.result && eventDiceState.result.sum === sum;
+            const picked = eventDiceState.prediction === sum;
+            const lightning = eventDiceState.lightningSum === sum;
+            return el('button', {
+                class: 'event-reward-cell' + (active ? ' active' : '') + (picked ? ' picked' : '') + (lightning ? ' lightning lightning-striking' : ''),
+                type: 'button',
+                'data-event-lit': lightning ? 'true' : null,
+                disabled: eventDiceState.rolling,
+                onclick: () => { eventDiceState.prediction = sum; eventDiceState.result = null; renderEventDice(); }
+            },
+                lightning ? [el('div', { class: 'event-slot-spark' }), el('div', { class: 'event-slot-spark' }), el('div', { class: 'event-slot-spark' })] : null,
+                el('div', { class: 'event-reward-sum' }, lightning ? el('span', { class: 'event-lit-bolt' }, '⚡') : null, sum),
+                eventRewardIcon(reward),
+                el('div', { class: 'event-reward-name' }, reward.name),
+                el('div', { class: 'event-reward-count' }, 'x' + comma(reward.count) + (lightning ? ' → x' + comma(reward.count * 2) : ''))
+            );
+        })
+    );
+}
+
+function renderEventDiceHistory() {
+    if (!eventDiceState.history.length) return el('div', { class: 'event-history-empty' }, '아직 기록이 없습니다.');
+    return el('div', { class: 'event-history-list' },
+        eventDiceState.history.map(item =>
+            el('div', { class: 'event-history-row' },
+                el('span', { class: 'event-history-sum' }, item.sum),
+                el('span', { class: 'event-history-dice' }, item.dice.join(' + ')),
+                el('span', { class: 'event-history-reward' }, eventRewardName(item.reward)),
+                el('span', { class: item.prediction === item.sum ? 'event-history-hit yes' : 'event-history-hit no' }, item.prediction === item.sum ? 'HIT' : 'MISS')
+            )
+        )
+    );
+}
+
+function renderEventDice() {
+    const root = $('#eventDiceRoot');
+    if (!root) return;
+    const dice = eventDiceState.dice;
+    const canRoll = eventDiceState.prediction !== null && eventDiceState.diceItemCount > 0 && !eventDiceState.rolling && !eventDiceState.loading;
+    const rollBtn = el('button', {
+        class: 'event-roll-btn primary',
+        type: 'button',
+        disabled: !canRoll,
+        onclick: rollEventDice
+    }, eventDiceState.rolling ? '굴리는 중...' : eventDiceState.prediction === null ? '합을 선택하세요' : eventDiceState.diceItemCount <= 0 ? '유생의 주사위 부족' : '주사위 굴리기');
+
+    const effects = [];
+    if (eventDiceState.result) {
+        const hit = eventDiceState.result.prediction === eventDiceState.result.sum;
+        effects.push(el('div', { class: 'event-screen-flash ' + (hit ? 'win' : 'lose') }));
+        effects.push(el('div', { class: 'event-outcome-burst ' + (hit ? 'win' : 'lose') }, hit ? '예측 성공' : '예측 실패'));
+    }
+
+    if (eventDiceState.lightningBolt) {
+        effects.push(el('div', { class: 'event-lightning-flash' }));
+        effects.push(renderEventLightningBolt());
+    }
+
+    root.replaceChildren(
+        ...effects,
+        el('div', { class: 'event-dice-main' },
+            el('div', { class: 'event-title-block' },
+                el('div', { class: 'event-eyebrow' }, 'EVENT'),
+                el('h2', null, '유생의 주사위'),
+                el('div', { class: 'event-subcopy' }, '합을 예측한 뒤 주사위를 굴려 보상을 획득합니다.')
+            ),
+            el('div', { class: 'event-dice-row' }, dice.map((value, index) => eventDie(value, index))),
+            renderEventDiceResult(),
+            el('div', { class: 'event-ticket-line' },
+                el('span', null, '보유 유생의 주사위'),
+                el('b', null, comma(eventDiceState.diceItemCount) + '개')
+            ),
+            rollBtn
+        ),
+        el('div', { class: 'event-dice-side' },
+            el('div', { class: 'event-panel-title' }, '합 예측'),
+            renderEventDiceRewardGrid(),
+            eventDiceState.error ? el('div', { class: 'event-error' }, eventDiceState.error) : null,
+            el('div', { class: 'event-panel-title event-history-title' }, '최근 결과'),
+            renderEventDiceHistory()
+        )
+    );
+}
+
+async function rollEventDice() {
+    if (eventDiceState.rolling || eventDiceState.prediction === null) return;
+    eventDiceState.rolling = true;
+    eventDiceState.result = null;
+    eventDiceState.lightningSum = null;
+    eventDiceState.lightningBolt = null;
+    eventDiceState.error = '';
+    renderEventDice();
+    try {
+        const minSpin = new Promise(resolve => setTimeout(resolve, 1100));
+        const req = postApi('/api/event/dice/roll', { prediction: eventDiceState.prediction }).then(data => {
+            if (data.lightningSum) triggerEventLightning(data.lightningSum);
+            return data;
+        });
+        const [data] = await Promise.all([req, minSpin]);
+        eventDiceState = Object.assign(eventDiceState, {
+            rolling: false,
+            dice: data.dice,
+            diceItemCount: data.diceItemCount,
+            result: data,
+            history: [data].concat(eventDiceState.history).slice(0, 5)
+        });
+    } catch (e) {
+        eventDiceState.rolling = false;
+        eventDiceState.error = e.message;
+    }
+    renderEventDice();
+}
+
+async function loadEventDice() {
+    const root = $('#eventDiceRoot');
+    if (root && !eventDiceState.built) root.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    if (!eventDiceState.built) eventDiceState.built = true;
+    eventDiceState.loading = true;
+    try {
+        const data = await api('/api/event/dice');
+        eventDiceState.diceItemCount = data.diceItemCount || 0;
+        eventDiceState.rewards = data.rewards || null;
+        eventDiceState.error = '';
+    } catch (e) {
+        eventDiceState.error = e.message;
+    }
+    eventDiceState.loading = false;
+    renderEventDice();
+}
 
 // ===== 조합 =====
 
