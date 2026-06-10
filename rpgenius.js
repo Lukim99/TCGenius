@@ -8485,6 +8485,8 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '투표') {
+        reply('❌ 알피짓 반장선거가 종료되었습니다.\n당선인: 루이킴');
+        return true;
         const result = await voteCandidate(user, args[1], args[2]);
         await user.save();
         reply(result);
