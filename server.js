@@ -561,10 +561,11 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         const rewardItemId = findItemIdByName(rewardDef.name);
         if (rewardItemId < 0) return res.status(500).json({ error: '보상 아이템 데이터가 없습니다: ' + rewardDef.name });
         const lightning = lightningSum == sum;
+        const hit = prediction == sum;
         const rewardCount = Number(rewardDef.count || 1) * (lightning ? 2 : 1);
 
         rpgenius.removeInventoryItem(user, diceItemId, 1);
-        rpgenius.addInventoryItem(user, rewardItemId, rewardCount);
+        if (hit) rpgenius.addInventoryItem(user, rewardItemId, rewardCount);
         rpgenius.cleanupInventoryItems(user);
         await user.save();
         const reward = buildEventDiceRewardDisplay(sum);
@@ -575,7 +576,7 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
             prediction,
             dice,
             sum,
-            hit: prediction == sum,
+            hit,
             lightningSum,
             lightning,
             reward,
