@@ -460,7 +460,12 @@ const EVENT_DICE_COMBO_COUNTS = { 3: 1, 4: 3, 5: 6, 6: 10, 7: 15, 8: 21, 9: 25, 
 const EVENT_DICE_LOG_LIMIT = 5000;
 const EVENT_DICE_EDGE_SUMS = [3, 18];
 const EVENT_DICE_EDGE_FLOOR = 0.000463;
-const EVENT_DICE_CEIL_LIMIT = 600;
+
+function getEventDiceCeilLimit(sum) {
+    const reward = EVENT_DICE_REWARDS[sum];
+    const baseMult = Number(EVENT_DICE_REWARDS[3].mult || 1);
+    return Math.max(1, Math.round(600 * Number(reward && reward.mult || 1) / baseMult));
+}
 
 function findItemIdByName(name) {
     const items = rpgenius.getDataCache('Item', []);
@@ -534,7 +539,7 @@ async function getEventDiceCeilData() {
     }
     if (!data || typeof data != 'object') data = {};
     if (!data.EventDice || typeof data.EventDice != 'object') data.EventDice = {};
-    EVENT_DICE_EDGE_SUMS.forEach(sum => {
+    Object.keys(EVENT_DICE_REWARDS).forEach(sum => {
         const key = String(sum);
         const value = Number(data.EventDice[key] || 0);
         data.EventDice[key] = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -602,12 +607,11 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         if (rpgenius.getInventoryItemCount(user, diceItemId) < 1) return res.status(400).json({ error: EVENT_DICE_ITEM_NAME + '를 보유하고 있지 않습니다.' });
 
         const ceilData = await getEventDiceCeilData();
-        const ceilKey = EVENT_DICE_EDGE_SUMS.includes(prediction) ? String(prediction) : null;
-        let ceilChanged = false;
+        const ceilKey = String(prediction);
+        const ceilLimit = getEventDiceCeilLimit(prediction);
         let sum;
-        if (ceilKey && Number(ceilData.EventDice[ceilKey] || 0) >= EVENT_DICE_CEIL_LIMIT) {
+        if (Number(ceilData.EventDice[ceilKey] || 0) >= ceilLimit) {
             ceilData.EventDice[ceilKey] = 0;
-            ceilChanged = true;
             sum = prediction;
         } else {
             sum = weightedEventDiceSum(prediction);
@@ -620,16 +624,15 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         const lightning = lightningSum == sum;
         const hit = prediction == sum;
         const rewardCount = Number(rewardDef.count || 1) * (lightning ? 2 : 1);
-        if (ceilKey && !hit) {
+        if (!hit) {
             ceilData.EventDice[ceilKey] = Number(ceilData.EventDice[ceilKey] || 0) + 1;
-            ceilChanged = true;
         }
 
         rpgenius.removeInventoryItem(user, diceItemId, 1);
         if (hit) rpgenius.addInventoryItem(user, rewardItemId, rewardCount);
         rpgenius.cleanupInventoryItems(user);
         await user.save();
-        if (ceilKey || ceilChanged) await rpgenius.saveRpgeniusDataEntry('Ceil', ceilData);
+        await rpgenius.saveRpgeniusDataEntry('Ceil', ceilData);
         const reward = buildEventDiceRewardDisplay(sum);
         reward.count = rewardCount;
         await appendEventDiceLog({
