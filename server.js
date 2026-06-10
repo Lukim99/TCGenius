@@ -457,6 +457,7 @@ const EVENT_DICE_REWARDS = {
     18: { name: '제타 카드팩',          count: 1,  mult: 170 }
 };
 const EVENT_DICE_COMBO_COUNTS = { 3: 1, 4: 3, 5: 6, 6: 10, 7: 15, 8: 21, 9: 25, 10: 27, 11: 27, 12: 25, 13: 21, 14: 15, 15: 10, 16: 6, 17: 3, 18: 1 };
+const EVENT_DICE_LOG_LIMIT = 5000;
 
 function findItemIdByName(name) {
     const items = rpgenius.getDataCache('Item', []);
@@ -530,6 +531,25 @@ function randomEventDiceLightningSum() {
     return 3 + Math.floor(Math.random() * 16);
 }
 
+async function appendEventDiceLog(record) {
+    try {
+        let data = rpgenius.getDataCache('Logs', null);
+        if (!data) {
+            await rpgenius.loadRpgeniusDataEntry('Logs');
+            data = rpgenius.getDataCache('Logs', null);
+        }
+        if (!data || typeof data != 'object') data = {};
+        if (!Array.isArray(data.eventDice)) data.eventDice = [];
+        data.eventDice.unshift(Object.assign({
+            id: 'dice_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex')
+        }, record));
+        if (data.eventDice.length > EVENT_DICE_LOG_LIMIT) data.eventDice.length = EVENT_DICE_LOG_LIMIT;
+        await rpgenius.saveRpgeniusDataEntry('Logs', data);
+    } catch (e) {
+        console.error('[event-dice-log] 기록 실패:', e);
+    }
+}
+
 server.get('/api/event/dice', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -570,6 +590,24 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         await user.save();
         const reward = buildEventDiceRewardDisplay(sum);
         reward.count = rewardCount;
+        await appendEventDiceLog({
+            nickname: user.name,
+            userId: user.id,
+            time: Date.now(),
+            timeIso: new Date().toISOString(),
+            diceConsumed: true,
+            hit,
+            prediction,
+            sum,
+            dice,
+            receivedReward: hit ? {
+                name: reward.name,
+                grantName: reward.grantName,
+                count: rewardCount,
+                lightning
+            } : null,
+            lightningSum
+        });
 
         res.json({
             ok: true,
@@ -1831,6 +1869,22 @@ server.get('/api/admin/tradelog', requireAdmin, async (req, res) => {
         res.json({ items: list.slice(0, limit), total: list.length });
     } catch (e) {
         console.error('tradelog list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/admin/event-dice-logs', requireAdmin, async (req, res) => {
+    try {
+        let data = rpgenius.getDataCache('Logs', null);
+        if (!data) {
+            await rpgenius.loadRpgeniusDataEntry('Logs');
+            data = rpgenius.getDataCache('Logs', null);
+        }
+        const list = data && Array.isArray(data.eventDice) ? data.eventDice : [];
+        const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 1000)));
+        res.json({ items: list.slice(0, limit), total: list.length });
+    } catch (e) {
+        console.error('event dice logs list error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });

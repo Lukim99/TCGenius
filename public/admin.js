@@ -1913,6 +1913,75 @@ if ($('#tradeLogKind')) $('#tradeLogKind').onchange = e => { tradeLogFilter.kind
 TAB_LOADERS.tradelog = loadTradeLog;
 
 // ============================================================================
+// 유생의 주사위 로그
+// ============================================================================
+let eventDiceLogData = [];
+let eventDiceLogFilter = { q: '', hit: '' };
+
+function eventDiceRewardText(log) {
+    const reward = log.receivedReward;
+    if (!reward) return '보상 없음';
+    return (reward.name || reward.grantName || '-') + ' x' + comma(reward.count || 0) + (reward.lightning ? ' · 라이트닝 2배' : '');
+}
+
+function eventDiceLogRow(log) {
+    const hit = !!log.hit;
+    const row = el('div', { class: 'dice-log-row ' + (hit ? 'hit' : 'miss'), title: log.id || '' });
+    row.appendChild(el('div', { class: 'mono mut' }, formatTradeLogTime(log.time)));
+    row.appendChild(el('div', { class: 'user' }, log.nickname || '-', el('div', { class: 'mut mono' }, log.userId || '-')));
+    row.appendChild(el('div', { class: 'mono' }, '예측 ' + (log.prediction == null ? '-' : log.prediction) + ' → 결과 ' + (log.sum == null ? '-' : log.sum)));
+    row.appendChild(el('div', { class: 'mono' }, Array.isArray(log.dice) ? log.dice.join(' + ') : '-'));
+    row.appendChild(el('div', { class: 'mono' }, '라이트닝 ' + (log.lightningSum == null ? '-' : log.lightningSum)));
+    row.appendChild(el('div', { class: 'reward' }, eventDiceRewardText(log)));
+    row.appendChild(el('div', { class: 'status' }, el('span', { class: 'tag ' + (hit ? 'd-hit' : 'd-miss') }, hit ? '당첨' : '실패')));
+    return row;
+}
+
+function renderEventDiceLog() {
+    const list = $('#eventDiceLogList'); list.innerHTML = '';
+    const q = (eventDiceLogFilter.q || '').trim().toLowerCase();
+    const hitFilter = eventDiceLogFilter.hit;
+    let shown = 0;
+    eventDiceLogData.forEach(log => {
+        if (hitFilter === 'hit' && !log.hit) return;
+        if (hitFilter === 'miss' && log.hit) return;
+        if (q) {
+            const hay = [
+                log.nickname || '',
+                log.userId || '',
+                log.prediction == null ? '' : String(log.prediction),
+                log.sum == null ? '' : String(log.sum),
+                Array.isArray(log.dice) ? log.dice.join(' ') : '',
+                log.lightningSum == null ? '' : String(log.lightningSum),
+                eventDiceRewardText(log)
+            ].join(' ').toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        list.appendChild(eventDiceLogRow(log));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, eventDiceLogData.length === 0 ? '아직 기록된 주사위 로그가 없습니다.' : '검색 결과가 없습니다.'));
+}
+
+async function loadEventDiceLog() {
+    $('#eventDiceLogStatus').textContent = '불러오는 중...';
+    try {
+        const data = await api('/api/admin/event-dice-logs?limit=5000');
+        eventDiceLogData = data.items || [];
+        $('#eventDiceLogStatus').textContent = '총 ' + eventDiceLogData.length + '건';
+        renderEventDiceLog();
+    } catch (e) {
+        $('#eventDiceLogStatus').textContent = '';
+        toast(e.message, false);
+    }
+}
+
+if ($('#eventDiceLogReload')) $('#eventDiceLogReload').onclick = loadEventDiceLog;
+if ($('#eventDiceLogFilter')) $('#eventDiceLogFilter').addEventListener('input', e => { eventDiceLogFilter.q = e.target.value; renderEventDiceLog(); });
+if ($('#eventDiceLogHit')) $('#eventDiceLogHit').onchange = e => { eventDiceLogFilter.hit = e.target.value; renderEventDiceLog(); };
+TAB_LOADERS.eventdicelog = loadEventDiceLog;
+
+// ============================================================================
 // PITR 복원 / 마이그레이션
 // ============================================================================
 function pitrTable() {
