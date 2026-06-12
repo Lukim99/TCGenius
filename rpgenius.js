@@ -7,7 +7,7 @@ const path = require('path');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -48,7 +48,7 @@ const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
 const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
-const EVENT_DICE_DROP_CHANCE = 0.005;
+const EVENT_DICE_DROP_CHANCE = 0.05;
 const EVENT_DICE_DROP_DAILY_LIMIT = 10;
 const FRAGMENT_TIERS = {
     low: {
@@ -8519,6 +8519,8 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '투표') {
+        reply('❌ 알피짓 반장선거가 종료되었습니다.\n당선인: 루이킴');
+        return true;
         const result = await voteCandidate(user, args[1], args[2]);
         await user.save();
         reply(result);
