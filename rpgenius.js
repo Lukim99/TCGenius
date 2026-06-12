@@ -9169,5 +9169,6 @@ module.exports = {
     getTitleImageUrl,
     formatTitleStatLines,
     TITLE_IMAGE_PATH,
-    getEquipmentPassives
+    getEquipmentPassives,
+    useItem
 };

@@ -797,10 +797,73 @@ function openInvItemModal(item) {
         el('div', { class: 'kv' }, el('span', null, '보유 수량'), el('b', null, comma(item.count) + '개')),
     ];
     if (item.desc) bodyNodes.push(el('div', { style: 'padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px;font-size:13px;color:#cbd5e1;line-height:1.6;margin-top:4px' }, item.desc));
+    if (item.name === '봉인된 자물쇠') {
+        const openBtn = el('button', { class: 'primary', style: 'width:100%;margin-top:14px;font-size:15px;padding:12px;letter-spacing:.04em' }, '열기');
+        openBtn.onclick = () => { $('#modalBg').classList.remove('active'); openLockbox(); };
+        bodyNodes.push(openBtn);
+    }
     $('#modalTitle').textContent = item.name;
     $('#modalSub').style.display = 'none';
     $('#modalBody').replaceChildren(...bodyNodes);
     $('#modalBg').classList.add('active');
+}
+
+async function openLockbox() {
+    const overlay = $('#lockboxOverlay');
+    const video = $('#lockboxVideo');
+    overlay.classList.add('active');
+    video.currentTime = 0;
+    video.play();
+    const finish = async () => {
+        video.onended = null;
+        $('#lockboxSkip').onclick = null;
+        video.pause();
+        overlay.classList.remove('active');
+        const data = await postApi('/api/inventory/use-lockbox');
+        if (data && data.error) { showModal('오류', '', [el('p', null, data.error)]); return; }
+        showLockboxResult(data.rewards || []);
+        loadInventory('items');
+    };
+    video.onended = finish;
+    $('#lockboxSkip').onclick = finish;
+}
+
+function lockboxRewardRow(r, i, bonus) {
+    const thumbChildren = [];
+    if (r.frameUrl) thumbChildren.push(el('img', { class: 'lb-frame', src: r.frameUrl, alt: '' }));
+    if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
+    return el('div', { class: 'lockbox-reward-row' + (bonus ? ' bonus' : ''), style: 'animation-delay:' + (i * 0.08) + 's' },
+        el('div', { class: 'lockbox-reward-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-reward-info' },
+            el('div', { class: 'lockbox-reward-name' }, r.name),
+            el('div', { class: 'lockbox-reward-count' }, 'x' + comma(r.count))
+        )
+    );
+}
+
+function showLockboxResult(rewards) {
+    rewards = rewards || [];
+    const overlay = $('#lockboxResultOverlay');
+    const nodes = [
+        el('div', { class: 'lockbox-result-title' }, '✦  봉인 해제  ✦'),
+        el('div', { class: 'lockbox-result-sub' }, '봉인된 자물쇠에서 아이템을 획득했습니다'),
+    ];
+    const main = rewards.slice(0, 1);
+    const bonus = rewards.slice(1);
+    const grid = el('div', { class: 'lockbox-rewards-grid' });
+    main.forEach((r, i) => grid.appendChild(lockboxRewardRow(r, i, false)));
+    nodes.push(grid);
+    if (bonus.length) {
+        nodes.push(el('div', { class: 'lockbox-bonus-divider' }, '보너스'));
+        const bonusGrid = el('div', { class: 'lockbox-rewards-grid' });
+        bonus.forEach((r, i) => bonusGrid.appendChild(lockboxRewardRow(r, main.length + i, true)));
+        nodes.push(bonusGrid);
+    }
+    const closeBtn = el('button', { class: 'lockbox-result-close' }, '확인');
+    closeBtn.onclick = () => overlay.classList.remove('active');
+    nodes.push(closeBtn);
+    overlay.replaceChildren(...nodes);
+    overlay.classList.add('active');
 }
 
 async function loadInventory(kind) {

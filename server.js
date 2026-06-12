@@ -758,6 +758,40 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
     }
 });
 
+// ===== 봉인된 자물쇠 =====
+const LOCKBOX_ITEM_NAME = '봉인된 자물쇠';
+
+server.post('/api/inventory/use-lockbox', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = await rpgenius.useItem(user, LOCKBOX_ITEM_NAME, 1);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        const lines = result.split('\n');
+        const resultIdx = lines.findIndex(l => l.includes('획득 결과'));
+        const rewardLines = (resultIdx >= 0 ? lines.slice(resultIdx + 1) : lines)
+            .filter(l => l.startsWith('- ')).map(l => l.substring(2));
+        const items = rpgenius.getDataCache('Item', []);
+        const rewards = rewardLines.map(line => {
+            const m = line.match(/^(.+?)\s+x([\d,]+)$/);
+            if (!m) return { label: line, name: line, count: 1, iconUrl: null, frameUrl: null };
+            const name = m[1];
+            const count = Number(m[2].replace(/,/g, ''));
+            const itemData = items.find(it => it && it.name === name);
+            return {
+                label: line, name, count,
+                iconUrl: itemData ? getItemIconUrl(itemData) : null,
+                frameUrl: itemData ? getAuctionFrameUrl('item') : null
+            };
+        });
+        res.json({ ok: true, rewards });
+    } catch (e) {
+        console.error('lockbox error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 잠재능력 =====
 
 server.post('/api/potential/awaken', requireUser, async (req, res) => {
@@ -4292,6 +4326,13 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .dex-name{font-weight:800;font-size:16px;color:#f8fafc}.dex-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}.dex-desc{color:#94a3b8;font-size:13px;line-height:1.5}
 .dex-stat-block{padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.12);border-radius:10px;display:grid;gap:4px;font-size:13px;color:#cbd5e1}.dex-stat-title{font-weight:800;color:#f1f5f9;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
 .dex-passive{padding:10px 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.35);border-radius:10px;display:grid;gap:5px}.dex-passive-label{font-weight:800;font-size:12px;letter-spacing:.04em;color:#c4b5fd;display:flex;align-items:center;gap:6px}.dex-passive-label::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0}.dex-passive-desc{font-size:13px;color:#ddd6fe;line-height:1.5}.dex-passive-cd{font-size:11px;color:#a78bfa}
+.lockbox-overlay{position:fixed;inset:0;z-index:80;display:none;background:#04060d}.lockbox-overlay.active{display:block}#lockboxVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;mix-blend-mode:screen}.lockbox-skip-btn{position:absolute;top:16px;left:16px;z-index:2;padding:7px 16px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.28);border-radius:8px;color:rgba(255,255,255,.85);font-size:13px;font-weight:700;cursor:pointer;transition:background .15s,color .15s}.lockbox-skip-btn:hover{background:rgba(0,0,0,.78);color:#fff}
+.lockbox-result-overlay{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 35%,rgba(20,10,50,.98),rgba(4,6,18,1));padding:24px;overflow-y:auto}.lockbox-result-overlay.active{display:flex}
+.lockbox-result-title{font-size:22px;font-weight:900;color:#e2d5ff;letter-spacing:.12em;text-align:center;text-shadow:0 0 32px rgba(139,92,246,.7),0 0 10px rgba(139,92,246,.4);margin-bottom:4px}.lockbox-result-sub{font-size:13px;color:#6d5fa0;margin-bottom:22px;letter-spacing:.04em;text-align:center}
+.lockbox-rewards-grid{display:flex;flex-direction:column;gap:10px;width:100%;max-width:340px;margin-bottom:24px}.lockbox-bonus-divider{width:100%;max-width:340px;display:flex;align-items:center;gap:10px;margin:2px 0 14px;color:#a78bfa;font-size:11px;font-weight:800;letter-spacing:.14em}.lockbox-bonus-divider::before,.lockbox-bonus-divider::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(139,92,246,.4),transparent)}.lockbox-reward-row.bonus{border-color:rgba(250,204,21,.32);background:rgba(40,30,8,.55);box-shadow:0 2px 14px rgba(202,138,4,.12),inset 0 1px 0 rgba(255,255,255,.05)}.lockbox-reward-row.bonus .lockbox-reward-name{color:#fde68a}.lockbox-reward-row.bonus .lockbox-reward-count{color:#facc15}.lockbox-reward-row.bonus .lockbox-reward-thumb{border-color:rgba(250,204,21,.3)}.lockbox-reward-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(20,10,50,.7);border:1px solid rgba(139,92,246,.22);border-radius:14px;box-shadow:0 2px 14px rgba(109,40,217,.12),inset 0 1px 0 rgba(255,255,255,.04);animation:lbRewardIn .45s cubic-bezier(.2,.8,.3,1) both}@keyframes lbRewardIn{0%{opacity:0;transform:translateY(14px) scale(.95)}100%{opacity:1;transform:none}}
+.lockbox-reward-thumb{position:relative;width:52px;height:52px;flex-shrink:0;background:rgba(15,10,35,.8);border-radius:10px;overflow:visible;border:1px solid rgba(139,92,246,.2)}.lockbox-reward-thumb .lb-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.lockbox-reward-thumb .lb-icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:68%;height:68%;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.65))}
+.lockbox-reward-info{flex:1;min-width:0}.lockbox-reward-name{font-size:14px;font-weight:800;color:#e9d5ff;word-break:break-word;line-height:1.3}.lockbox-reward-count{font-size:12px;color:#a78bfa;font-weight:700;margin-top:3px}
+.lockbox-result-close{padding:13px 36px;border-radius:12px;font-size:15px;font-weight:800;background:linear-gradient(135deg,rgba(109,40,217,.85),rgba(79,70,229,.85));border:1px solid rgba(139,92,246,.5);color:#ede9fe;cursor:pointer;box-shadow:0 4px 20px rgba(109,40,217,.4),inset 0 1px 0 rgba(255,255,255,.15);transition:filter .15s,transform .1s;letter-spacing:.06em}.lockbox-result-close:hover{filter:brightness(1.15)}.lockbox-result-close:active{transform:scale(.96)}
 .dex-collapse{background:rgba(2,6,23,.4);border:1px solid rgba(148,163,184,.12);border-radius:10px}.dex-collapse>summary{cursor:pointer;padding:10px 12px;font-weight:700;color:#e5e7eb;font-size:13px;list-style:none}.dex-collapse>summary::-webkit-details-marker{display:none}.dex-collapse>summary::before{content:'▶';display:inline-block;margin-right:8px;transition:transform .15s;color:#94a3b8;font-size:10px}.dex-collapse[open]>summary::before{transform:rotate(90deg)}.dex-upgrade-list{display:grid;gap:6px;padding:0 12px 12px}
 .dex-upgrade-row{display:grid;grid-template-columns:46px 1fr;gap:8px;padding:8px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.1);border-radius:8px;font-size:12px}.dex-upgrade-row .lvl{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}.dex-upgrade-row .lines{display:grid;gap:2px;color:#cbd5e1}
 .dex-evol,.dex-recipe{display:grid;gap:8px;padding:10px 12px;background:rgba(88,101,242,.08);border:1px solid rgba(88,101,242,.3);border-radius:10px}.dex-recipe{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.3)}
@@ -4443,6 +4484,8 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
 <div id="enhanceOverlay" class="enhance-overlay"><div class="enhance-wrap"><div id="enhanceContent"></div><div id="enhanceResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="potentialOverlay" class="enhance-overlay"><div class="enhance-wrap pot-wrap"><div id="potentialContent"></div><div id="potentialResultOverlay" class="enhance-result-overlay"></div></div></div>
+<div id="lockboxOverlay" class="lockbox-overlay"><video id="lockboxVideo" src="/static/assets/%EC%9E%90%EB%AC%BC%EC%87%A0.mp4" playsinline muted></video><button id="lockboxSkip" class="lockbox-skip-btn">건너뛰기</button></div>
+<div id="lockboxResultOverlay" class="lockbox-result-overlay"></div>
 <div id="aucDetailBg" class="modal-bg"><div class="modal" id="aucDetail"></div></div>
 <div id="aucRegBg" class="modal-bg"><div class="modal wide" id="aucReg"></div></div>
 <div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
