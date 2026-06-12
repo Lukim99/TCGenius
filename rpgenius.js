@@ -12,6 +12,7 @@ const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
+const EQUIPMENT_PASSIVE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'EquipmentPassive.json');
 const ITEMS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Item.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const POTENTIAL_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Potential.json');
@@ -412,7 +413,7 @@ function formatStatValue(key, value) {
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
-        'takenDamage%', 'damageBonus%', 'finalDamage%', 'bossDmg%', 'summonDuration%'
+        'takenDamage%', 'damageBonus%', 'finalDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -543,7 +544,8 @@ const EQUIP_PLUSSTAT_LABELS = {
     damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해',
     bossDmg: '보스 몬스터에게 주는 피해 증가',
-    summonDuration: '소환 지속시간'
+    summonDuration: '소환 지속시간',
+    cooldown: '쿨타임 감소'
 };
 
 function formatEquipmentStatLines(equipment) {
@@ -2166,9 +2168,6 @@ function calculateUserStats(user, _out) {
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
             addPotentialStats(stats, plusStats, entry[1].potential);
             addSoulStats(stats, plusStats, entry[1].soul);
-            if (entry[0] == 'weapon' && data.name == DESTINY_AION_NAME) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
-            if (entry[0] == 'weapon' && data.name == '심연의 종말') stats.hasAbyssDoom = true;
-            if (entry[0] == 'weapon' && data.name == '셀레스티아') stats.hasCelestia = true;
         }
     });
     const accessories = user.equipments && user.equipments.accessory || {};
@@ -2213,6 +2212,10 @@ function calculateUserStats(user, _out) {
             }
         }
     }
+    const equippedPassiveIds = getEquippedPassiveIds(user);
+    if (equippedPassiveIds.has(0)) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
+    if (equippedPassiveIds.has(1)) stats.hasAbyssDoom = true;
+    if (equippedPassiveIds.has(2)) stats.hasCelestia = true;
     const fashion = getCardFashion(user.main_card);
     if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
@@ -2229,7 +2232,7 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg', 'summonDuration'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg', 'summonDuration', 'cooldown'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -2322,7 +2325,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * W.DEFENSE_SCALE;
 
     const mMpSave = 1 + Math.min(0.8, Math.max(0, -Number(stats.mpReduce || 0))) + Math.min(0.8, Number(slot.mpCostReduction || 0));
-    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR;
+    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR + Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)));
     const resourcePower = (mp / W.MP_DIVISOR) * mMpSave * mCooldown;
     const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
                        + Number(stats.potion || 0) * W.POTION_SCALE
@@ -2659,29 +2662,59 @@ function getPassiveMpRecovery(user) {
     return getSkillValue(skillData.skill, 1, user.main_card && user.main_card.star);
 }
 
-const IMMORTAL_DRAGON_ARMOR_NAME = '불멸하는 업화의 용갑';
 const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
 const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
 
+function getEquipmentPassives() {
+    return readJson(EQUIPMENT_PASSIVE_PATH, []);
+}
+
+function findEquipWithPassiveId(user, passiveId) {
+    const eq = user.equipments || {};
+    const check = (slot, equip) => {
+        if (!equip || typeof equip.id == 'undefined') return null;
+        const data = getEquipmentData(slot, equip.id);
+        if (data && data.passive_id === passiveId && isEquipmentEffectActive(user, data)) return data;
+        return null;
+    };
+    return check('weapon', eq.weapon)
+        || check('armor', eq.armor)
+        || Object.values(eq.accessory || {}).reduce((f, e) => f || check('accessory', e), null)
+        || (eq.support && typeof eq.support.id != 'undefined' ? check('support', eq.support) : null);
+}
+
+function getEquippedPassiveIds(user) {
+    const result = new Set();
+    const eq = user.equipments || {};
+    const check = (slot, equip) => {
+        if (!equip || typeof equip.id == 'undefined') return;
+        const data = getEquipmentData(slot, equip.id);
+        if (data && typeof data.passive_id != 'undefined' && isEquipmentEffectActive(user, data))
+            result.add(Number(data.passive_id));
+    };
+    check('weapon', eq.weapon);
+    check('armor', eq.armor);
+    Object.values(eq.accessory || {}).forEach(e => check('accessory', e));
+    if (eq.support && typeof eq.support.id != 'undefined') check('support', eq.support);
+    return result;
+}
+
 function tryImmortalArmorRevive(user, maxHp, lines) {
-    const armor = user.equipments && user.equipments.armor;
-    if (!armor || typeof armor.id == 'undefined') return false;
-    const data = getEquipmentData('armor', armor.id);
-    if (!data || data.name != IMMORTAL_DRAGON_ARMOR_NAME) return false;
-    if (!isEquipmentEffectActive(user, data)) return false;
+    const data = findEquipWithPassiveId(user, 3);
+    if (!data) return false;
     if (!user.equipmentPassiveCd || typeof user.equipmentPassiveCd != 'object') user.equipmentPassiveCd = {};
     const now = Date.now();
     const readyAt = Number(user.equipmentPassiveCd.immortalDragonArmor || 0);
     if (readyAt > now) {
         const remainMs = readyAt - now;
         const remainMin = Math.ceil(remainMs / 60000);
-        lines.push('🔥 ' + IMMORTAL_DRAGON_ARMOR_NAME + ' 효과 재사용 대기 중... (' + remainMin + '분 남음)');
+        lines.push('🔥 ' + data.name + ' 효과 재사용 대기 중... (' + remainMin + '분 남음)');
         return false;
     }
     const reviveHp = Math.max(1, Math.floor(Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO));
     user.hp = reviveHp;
     user.equipmentPassiveCd.immortalDragonArmor = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
-    lines.push('🔥 ' + IMMORTAL_DRAGON_ARMOR_NAME + '의 불멸 효과 발동! HP ' + comma(reviveHp) + ' (' + Math.round(IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO * 100) + '%)로 부활했습니다.');
+    lines.push('🔥 ' + data.name + '의 불멸 효과 발동! HP ' + comma(reviveHp) + ' (' + Math.round(IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO * 100) + '%)로 부활했습니다.');
     return true;
 }
 
@@ -3783,7 +3816,7 @@ function executeMainCardSkillInField(user, skillName) {
         const heal = getSkillValue(skillData.skill, 0, star) + Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star);
         const lines = ['✨ 글버지를 사용했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
-        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        const cooltime = Math.max(0, (Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
         user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
         if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
         if (isWorldBoss) setWorldBossNextActionAt(user);
@@ -3815,7 +3848,7 @@ function executeMainCardSkillInField(user, skillName) {
         const durationMs = Math.round(20000 * summonDurationBonus);
         user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + durationMs };
         const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        const cooltime = Math.max(0, (Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
         user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
         if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
         if (isWorldBoss) setWorldBossNextActionAt(user);
@@ -3939,7 +3972,7 @@ async function useWorldBossChosenSkill(user, skillName) {
     const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0))));
     if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.mp = mp - mpCost;
-    const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+    const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
     user.field.skillCooldowns[skill.name] = now + cooltime;
     const lines = [];
     let dealtSomething = false;
@@ -4394,7 +4427,7 @@ const SUPPORT_PLUS_STAT_LABELS = {
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
-    summonDuration: '소환 지속시간'
+    summonDuration: '소환 지속시간', cooldown: '쿨타임 감소'
 };
 
 function formatEquippedEquipmentDetail(label, type, equip, user) {
@@ -4455,7 +4488,7 @@ function formatEquipmentInfo(user) {
         cardData.skills.forEach(skillIndex => {
             const skill = skills[skillIndex];
             if (!skill) return;
-            const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+            const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
             lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ] 쿨타임 ' + formatCooltime(cooltime));
             formatCurrentSkillDesc(skill, star).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
         });
@@ -6539,7 +6572,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
-        takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가'
+        takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
+        cooldown: '쿨타임 감소'
     };
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
@@ -9132,5 +9166,6 @@ module.exports = {
     getEquippedTitleDef,
     getTitleImageUrl,
     formatTitleStatLines,
-    TITLE_IMAGE_PATH
+    TITLE_IMAGE_PATH,
+    getEquipmentPassives
 };

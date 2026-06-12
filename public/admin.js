@@ -48,9 +48,10 @@ const TAB_LOADERS = {};
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 
 // ---------- 룩업 캐시 ----------
-const LOOKUP = { items: null, equipment: null, cards: null, fashion: null, pet: null };
+const LOOKUP = { items: null, equipment: null, cards: null, fashion: null, pet: null, equipmentPassives: null };
 async function getItems() { if (!LOOKUP.items) LOOKUP.items = await api('/api/lookup/items'); return LOOKUP.items; }
 async function getEquipment() { if (!LOOKUP.equipment) LOOKUP.equipment = await api('/api/lookup/equipment'); return LOOKUP.equipment; }
+async function fetchEquipmentPassives() { if (!LOOKUP.equipmentPassives) LOOKUP.equipmentPassives = await api('/api/lookup/equipment-passives'); return LOOKUP.equipmentPassives || []; }
 async function getCards() { if (!LOOKUP.cards) LOOKUP.cards = await api('/api/lookup/cards'); return LOOKUP.cards; }
 async function getFashion() { if (!LOOKUP.fashion) LOOKUP.fashion = await api('/api/lookup/fashion'); return LOOKUP.fashion; }
 async function getPets() { if (!LOOKUP.pet) LOOKUP.pet = await api('/api/lookup/pet'); return LOOKUP.pet; }
@@ -983,7 +984,8 @@ const PLUS_STAT_DEFS = [
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
     { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
-    { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' }
+    { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' },
+    { key: 'cooldown', label: '쿨타임 감소', kind: 'percent' }
 ];
 
 function statKindUnit(kind) {
@@ -1351,7 +1353,8 @@ let equipData = { weapon: [], armor: [], accessory: [], support: [] };
 let equipCurrentSlot = 'weapon';
 let equipFilterText = '';
 const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
-const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade', 'category', 'isRaid']);
+const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade', 'category', 'isRaid', 'passive_id']);
+let equipPassivesList = [];
 
 function renderEquipTypes() {
     const wrap = $('#equipTypes'); wrap.innerHTML = '';
@@ -1426,6 +1429,19 @@ function equipCard(eq, index) {
     card.appendChild(el('div', null, el('label', null, '설명'),
         el('textarea', { value: eq.desc || '', placeholder: '장비 설명', style: { minHeight: '40px', fontFamily: 'inherit', fontSize: '13px' }, oninput: e => eq.desc = e.target.value })
     ));
+
+    // 패시브
+    if (equipPassivesList && equipPassivesList.length) {
+        const passiveSel = el('select');
+        passiveSel.appendChild(el('option', { value: '' }, '(없음)'));
+        equipPassivesList.forEach(p => passiveSel.appendChild(el('option', { value: String(p.id) }, p.id + ' — ' + p.name)));
+        passiveSel.value = typeof eq.passive_id !== 'undefined' ? String(eq.passive_id) : '';
+        passiveSel.onchange = () => {
+            if (passiveSel.value === '') delete eq.passive_id;
+            else eq.passive_id = Number(passiveSel.value);
+        };
+        card.appendChild(el('div', { class: 'nf' }, el('label', null, '패시브'), passiveSel));
+    }
 
     // 장착 조건
     card.appendChild(sectionTitle('장착 조건', '🔒'));
@@ -1518,8 +1534,10 @@ $('#equipAdd').onclick = () => {
 };
 $('#equipReload').onclick = async () => {
     try {
-        const data = (await loadKey('Equipment')) || {};
-        equipData = { weapon: Array.isArray(data.weapon) ? data.weapon : [], armor: Array.isArray(data.armor) ? data.armor : [], accessory: Array.isArray(data.accessory) ? data.accessory : [], support: Array.isArray(data.support) ? data.support : [] };
+        const [data, passives] = await Promise.all([loadKey('Equipment'), fetchEquipmentPassives()]);
+        const eq = data || {};
+        equipData = { weapon: Array.isArray(eq.weapon) ? eq.weapon : [], armor: Array.isArray(eq.armor) ? eq.armor : [], accessory: Array.isArray(eq.accessory) ? eq.accessory : [], support: Array.isArray(eq.support) ? eq.support : [] };
+        equipPassivesList = passives;
         renderEquipTypes(); renderEquip();
         $('#equipStatus').textContent = '로드 완료 (무기 ' + equipData.weapon.length + ' / 갑옷 ' + equipData.armor.length + ' / 장신구 ' + equipData.accessory.length + ' / 보조 ' + equipData.support.length + ')';
         invalidateLookupCache(['equipment']);

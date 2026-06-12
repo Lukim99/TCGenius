@@ -114,15 +114,24 @@ function toPartyMainCardSkillDef(entry) {
 }
 
 function getImmortalArmorSnapshot(user) {
-    const armor = user && user.equipments && user.equipments.armor;
-    if (!armor || typeof armor.id === 'undefined') return null;
+    if (!user) return null;
+    const eq = user.equipments || {};
+    const slots = [
+        ['weapon', eq.weapon],
+        ['armor', eq.armor],
+        ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
+        ['support', eq.support]
+    ];
     let equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
-    if (!equipments || !equipments.armor || !equipments.armor[armor.id]) equipments = loadJsonCached(EQUIPMENT_PATH, 'equipment');
-    const data = equipments && equipments.armor && equipments.armor[armor.id];
-    if (!data || data.name !== IMMORTAL_DRAGON_ARMOR_NAME) return null;
-    return {
-        readyAt: Number(user.equipmentPassiveCd && user.equipmentPassiveCd.immortalDragonArmor || 0)
-    };
+    if (!equipments || typeof equipments !== 'object') equipments = loadJsonCached(EQUIPMENT_PATH, 'equipment');
+    for (const [slot, equip] of slots) {
+        if (!equip || typeof equip.id === 'undefined') continue;
+        const data = equipments && equipments[slot] && equipments[slot][equip.id];
+        if (data && data.passive_id === 3) {
+            return { readyAt: Number(user.equipmentPassiveCd && user.equipmentPassiveCd.immortalDragonArmor || 0) };
+        }
+    }
+    return null;
 }
 
 function getPartyQuestPacks() {
@@ -455,7 +464,7 @@ function mergeMonsterStats(monsterDef) {
     for (const key of ['hp', 'mp', 'atk', 'def', 'pnt']) if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = Number(src[key] || 0);
     for (const key of ['atk', 'def', 'hp', 'mp']) if (Number(plusStat[key] || 0) !== 0) out[key] = Math.round(Number(out[key] || 0) * (1 + Number(plusStat[key] || 0)));
     out.pntPercent = Number(out.pntPercent || 0) + Number(plusStat.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg', 'trueDamageChance', 'attackHpRecovery', 'attackMpRecovery', 'plusGold'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg', 'trueDamageChance', 'attackHpRecovery', 'attackMpRecovery', 'plusGold', 'cooldown'].forEach(key => {
         out[key] = Number(out[key] || 0) + Number(plusStat[key] || 0);
     });
     return out;
@@ -1972,7 +1981,8 @@ function useSkill(name, skillName, targetName) {
     me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
     const cdMul = (posDef && posDef.stats && posDef.stats.skillCd) || 1;
     const statCd = Number(stats.skillCooldown || 0) / 1000;
-    me.runtime.cooldownsUntil[skillName] = nowMs() + Math.max(500, (Number(def.cd || 0) * cdMul + statCd) * 1000);
+    const cdPct = 1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)));
+    me.runtime.cooldownsUntil[skillName] = nowMs() + Math.max(500, (Number(def.cd || 0) * cdMul + statCd) * cdPct * 1000);
     executeSkillEffect(room, me, skillName, def, targetName);
     broadcastRoom(room);
     return { ok: true };

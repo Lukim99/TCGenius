@@ -3165,6 +3165,17 @@ function dexCard(entry) {
         card.appendChild(block);
     }
 
+    if (entry.passive) {
+        const block = el('div', { class: 'dex-passive' });
+        block.appendChild(el('div', { class: 'dex-passive-label' }, '패시브 · ' + entry.passive.name));
+        block.appendChild(el('div', { class: 'dex-passive-desc' }, entry.passive.desc));
+        if (entry.passive.cooltime) {
+            const ctMin = Math.round(entry.passive.cooltime / 60000);
+            block.appendChild(el('div', { class: 'dex-passive-cd' }, '재사용 대기시간: ' + ctMin + '분'));
+        }
+        card.appendChild(block);
+    }
+
     if (entry.set) {
         const block = el('div', { class: 'dex-stat-block' });
         block.appendChild(el('div', { class: 'dex-stat-title' }, '세트 효과 · ' + entry.set.name));

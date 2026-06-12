@@ -1651,6 +1651,11 @@ server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
     res.json({ weapon: pack(eq.weapon), armor: pack(eq.armor), accessory: pack(eq.accessory), support: pack(eq.support) });
 });
 
+server.get('/api/lookup/equipment-passives', requireAdmin, (req, res) => {
+    const passives = rpgenius.getEquipmentPassives();
+    res.json(passives.map((p, i) => ({ id: i, name: p ? p.name : '?' })));
+});
+
 server.get('/api/lookup/cards', requireAdmin, (req, res) => {
     const cards = readJson(CHARACTER_CARDS_PATH, []);
     res.json(cards.map((card, id) => card ? { id, name: card.name } : null).filter(Boolean));
@@ -2424,6 +2429,17 @@ function buildInventoryEquipment(user) {
 
 const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
 
+function formatPassiveDesc(passive) {
+    if (!passive) return '';
+    let desc = passive.desc || '';
+    (passive.format || []).forEach((fmt, i) => {
+        const val = Number(fmt.base || 0);
+        const text = fmt.type === 'flat' ? String(Math.round(val)) : (Math.round(val * 1000) / 10) + '%';
+        desc = desc.replace('${' + (i + 1) + '}', text);
+    });
+    return desc;
+}
+
 function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
     if (!data) return null;
     const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
@@ -2451,6 +2467,18 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
     }
     const recipeKey = type + ':' + id;
     const recipe = recipeIndex[recipeKey] || null;
+    let passive = null;
+    if (typeof data.passive_id !== 'undefined') {
+        const passives = rpgenius.getEquipmentPassives();
+        const pd = passives[Number(data.passive_id)];
+        if (pd) {
+            passive = {
+                name: pd.name,
+                desc: formatPassiveDesc(pd),
+                cooltime: pd.cooltime || null
+            };
+        }
+    }
     return {
         type,
         typeLabel,
@@ -2465,7 +2493,8 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
         upgrades: upgradeLines,
         maxUpgradeLevel: upgrades.length,
         evolution,
-        recipe
+        recipe,
+        passive
     };
 }
 
@@ -3881,7 +3910,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
     { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'skillTrueDmg'] },
-    { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'summonDuration'] },
+    { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'cooldown', 'summonDuration'] },
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
 ];
 const PROFILE_STAT_LABELS = {
@@ -3892,7 +3921,7 @@ const PROFILE_STAT_LABELS = {
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해',
     '000': '10/100/1000 추가 피해 확률', skillTrueDmg: '스킬 추가 고정 피해',
     avd: '회피 확률', takenDamage: '받는 피해 증가', recoveryEfficiency: '회복 효율', potion: '물약 효율',
-    mpReduce: 'MP 소모량', skillCooldown: '스킬 쿨타임', summonDuration: '소환 지속시간',
+    mpReduce: 'MP 소모량', skillCooldown: '스킬 쿨타임', cooldown: '쿨타임 감소', summonDuration: '소환 지속시간',
     gold: '골드 획득량', plusGold: '처치 당 골드', exp: '경험치 획득량', itemDropChance: '아이템 획득 확률',
 };
 // 수치 + % 곱연산으로 합산되는 스탯 (수치/% 따로 표시)
@@ -4217,6 +4246,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .dex-thumb{position:relative;width:72px;height:72px;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.dex-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,.55))}.dex-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:56px;line-height:1}
 .dex-name{font-weight:800;font-size:16px;color:#f8fafc}.dex-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}.dex-desc{color:#94a3b8;font-size:13px;line-height:1.5}
 .dex-stat-block{padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.12);border-radius:10px;display:grid;gap:4px;font-size:13px;color:#cbd5e1}.dex-stat-title{font-weight:800;color:#f1f5f9;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+.dex-passive{padding:10px 12px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.35);border-radius:10px;display:grid;gap:5px}.dex-passive-label{font-weight:800;font-size:12px;letter-spacing:.04em;color:#c4b5fd;display:flex;align-items:center;gap:6px}.dex-passive-label::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#7c3aed;flex-shrink:0}.dex-passive-desc{font-size:13px;color:#ddd6fe;line-height:1.5}.dex-passive-cd{font-size:11px;color:#a78bfa}
 .dex-collapse{background:rgba(2,6,23,.4);border:1px solid rgba(148,163,184,.12);border-radius:10px}.dex-collapse>summary{cursor:pointer;padding:10px 12px;font-weight:700;color:#e5e7eb;font-size:13px;list-style:none}.dex-collapse>summary::-webkit-details-marker{display:none}.dex-collapse>summary::before{content:'▶';display:inline-block;margin-right:8px;transition:transform .15s;color:#94a3b8;font-size:10px}.dex-collapse[open]>summary::before{transform:rotate(90deg)}.dex-upgrade-list{display:grid;gap:6px;padding:0 12px 12px}
 .dex-upgrade-row{display:grid;grid-template-columns:46px 1fr;gap:8px;padding:8px 10px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.1);border-radius:8px;font-size:12px}.dex-upgrade-row .lvl{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}.dex-upgrade-row .lines{display:grid;gap:2px;color:#cbd5e1}
 .dex-evol,.dex-recipe{display:grid;gap:8px;padding:10px 12px;background:rgba(88,101,242,.08);border:1px solid rgba(88,101,242,.3);border-radius:10px}.dex-recipe{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.3)}
