@@ -682,6 +682,40 @@ server.get('/api/combine/cards', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/jobcombine/cards', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json({ cards: buildJobCombineCards(user), gold: Number(user.gold || 0) });
+    } catch (e) {
+        console.error('jobcombine cards error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/jobcombine', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(n => Number(n)) : [];
+        const selection = rpgenius.getJobCombineSelection(user, numbers);
+        if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
+        user.pendingAction = { type: '전직조합', numbers: selection.numbers };
+        const message = rpgenius.runJobCombine(user);
+        if (typeof message == 'string' && message.startsWith('❌')) {
+            user.pendingAction = null;
+            return res.status(400).json({ error: message.replace(/^❌\s*/, '') });
+        }
+        const cardsArr = user.inventory.card;
+        const resultCard = serializeCard(cardsArr[cardsArr.length - 1], user);
+        await user.save();
+        res.json({ ok: true, message, resultCard, cards: buildJobCombineCards(user), gold: Number(user.gold || 0), profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('jobcombine error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.post('/api/combine', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -2425,6 +2459,19 @@ function buildCombineCards(user) {
             imageUrl: s.imageUrl,
             combinable: !!rpgenius.getCardCombineInfo(star)
         };
+    }).filter(Boolean).sort((a, b) => b.star - a.star || a.id - b.id);
+}
+
+function buildJobCombineCards(user) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards.map((card, i) => {
+        if (card.type === '전직') return null;
+        const star = Number(card.star || 0);
+        if (star < 4) return null;
+        if (!rpgenius.hasJobClass(card.id)) return null;
+        const s = serializeCard(card, user);
+        if (!s) return null;
+        return { number: i + 1, id: s.id, star, starText: s.starText, name: s.name, formatted: s.formatted, imageUrl: s.imageUrl };
     }).filter(Boolean).sort((a, b) => b.star - a.star || a.id - b.id);
 }
 
@@ -4225,6 +4272,21 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .equip-thumb.pet-expired .icon{filter:grayscale(1) brightness(.6)}
 .combine-board{position:sticky;top:74px;z-index:1;align-self:start}
 @media(min-width:900px){.page[data-page="combine"]{grid-template-columns:minmax(340px,520px) 1fr;align-items:start}}
+@media(min-width:900px){.page[data-page="jobcombine"]{grid-template-columns:minmax(340px,520px) 1fr;align-items:start}}
+.jobcombine-board{position:sticky;top:74px;z-index:1;align-self:start}
+.jobcombine-wrap{display:grid;gap:14px;justify-items:center}
+.jobcombine-stage{position:relative;width:min(560px,96%);aspect-ratio:872/896;background-size:contain;background-repeat:no-repeat;background-position:center}
+.jobcombine-slot{position:absolute;cursor:pointer}
+.jobcombine-slot .slot-card{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+.jobcombine-slot.m0{left:6.6%;top:56.4%;width:21.8%;height:29%}
+.jobcombine-slot.m1{left:38.8%;top:3.3%;width:21.8%;height:29%}
+.jobcombine-slot.m2{left:71.3%;top:56.4%;width:21.8%;height:29%}
+.jobcombine-slot.result{left:39.2%;top:39.3%;width:21.3%;height:28.8%}
+.jobcombine-slot.empty .slot-card{display:none}
+.jobcombine-slot.clickable:hover .slot-card{filter:brightness(1.12) drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+.jobcombine-btn{position:absolute;left:38.5%;top:94.5%;width:23%;height:5%;border:0;background:transparent;background-size:contain;background-repeat:no-repeat;background-position:center;cursor:pointer;padding:0}
+.jobcombine-btn:disabled{opacity:.45;cursor:not-allowed}
+.jobcombine-info{font-size:13px;color:#cbd5e1;text-align:center;min-height:20px;line-height:1.6;display:flex;flex-direction:column;align-items:center;gap:4px}
 .combine-wrap{display:grid;gap:14px;justify-items:center}
 .combine-stage{position:relative;width:min(560px,96%);aspect-ratio:878/898;background-size:contain;background-repeat:no-repeat;background-position:center}
 .combine-slot{position:absolute;cursor:pointer}
@@ -4473,6 +4535,15 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
       </div>
     </section>
     <section class="panel"><h2>보유 캐릭터 카드</h2><div id="combinePool" class="card-grid"></div></section>
+  </div>
+  <div class="page" data-page="jobcombine">
+    <section class="panel jobcombine-board">
+      <div class="jobcombine-wrap">
+        <div class="jobcombine-stage" id="jobCombineStage"></div>
+        <div class="jobcombine-info" id="jobCombineInfo"></div>
+      </div>
+    </section>
+    <section class="panel"><h2>보유 캐릭터 카드 (전직 가능)</h2><div id="jobCombinePool" class="card-grid"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>

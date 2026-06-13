@@ -61,7 +61,7 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', combine: '조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -71,7 +71,7 @@ const ICONS = {
 };
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'dex'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -143,6 +143,7 @@ function navigatePage(pageId) {
     }
     if (pageId === 'event') loadEventDice();
     if (pageId === 'combine') loadCombine();
+    if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
@@ -1789,6 +1790,167 @@ async function loadCombine() {
     } catch (e) {
         combineState.built = false;
         const stage = $('#combineStage');
+        if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+// ===== 전직조합 =====
+
+let jobCombineState = { cards: [], gold: 0, slots: [null, null, null], result: null, busy: false, built: false, slotEls: null };
+
+function buildJobCombineStage() {
+    const stage = $('#jobCombineStage');
+    if (!stage) return;
+    stage.style.backgroundImage = 'url(' + combineUi('전직조합원본.jpg') + ')';
+    const mkSlot = (cls) => el('div', { class: 'jobcombine-slot ' + cls + ' empty' },
+        el('img', { class: 'slot-card', alt: '' })
+    );
+    const result = mkSlot('result');
+    const m = [mkSlot('m0'), mkSlot('m1'), mkSlot('m2')];
+    m.forEach((slot, i) => slot.onclick = () => removeFromJobSlotByIndex(i));
+    const btn = el('button', { class: 'jobcombine-btn', id: 'jobCombineBtn', onclick: submitJobCombine });
+    btn.style.backgroundImage = 'url(' + combineUi('전직조합버튼.png') + ')';
+    stage.replaceChildren(result, m[0], m[1], m[2], btn);
+    jobCombineState.slotEls = { result, m };
+    jobCombineState.built = true;
+}
+
+function renderJobCombineStage() {
+    if (!jobCombineState.built) buildJobCombineStage();
+    const els = jobCombineState.slotEls;
+    if (!els) return;
+    jobCombineState.slots.forEach((card, i) => {
+        const slot = els.m[i];
+        const img = slot.querySelector('.slot-card');
+        slot.classList.add('clickable');
+        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); }
+        else { img.removeAttribute('src'); slot.classList.add('empty'); }
+    });
+    const rimg = els.result.querySelector('.slot-card');
+    if (jobCombineState.result) { rimg.src = jobCombineState.result.imageUrl; els.result.classList.remove('empty'); }
+    else { rimg.removeAttribute('src'); els.result.classList.add('empty'); }
+    const btn = $('#jobCombineBtn');
+    if (btn) btn.disabled = !(jobCombineState.slots.every(Boolean) && !jobCombineState.busy);
+    renderJobCombineInfo();
+    renderJobCombinePool();
+}
+
+function jobCombineSelectedId() {
+    const filled = jobCombineState.slots.find(Boolean);
+    return filled ? filled.id : null;
+}
+function jobCombineSelectedStar() {
+    const filled = jobCombineState.slots.find(Boolean);
+    return filled ? filled.star : null;
+}
+
+function renderJobCombineInfo() {
+    const info = $('#jobCombineInfo');
+    if (!info) return;
+    const filled = jobCombineState.slots.filter(Boolean).length;
+    const star = jobCombineSelectedStar();
+    const characterId = jobCombineSelectedId();
+    const lines = [];
+    if (star == null) lines.push('같은 캐릭터·같은 등급의 일반 카드 3장을 선택하세요.');
+    else {
+        const filledCards = jobCombineState.slots.filter(Boolean);
+        const allSame = filledCards.every(c => c.id === characterId && c.star === star);
+        if (!allSame) lines.push('⚠️ 같은 캐릭터·같은 등급의 카드 3장이 필요합니다.');
+        else lines.push('전직조합 · 100% 성공 · ' + (star + 1) + '성 전직 카드 획득');
+    }
+    lines.push('선택 ' + filled + '/3');
+    info.replaceChildren(...lines.map(l => el('div', null, l)));
+}
+
+function renderJobCombinePool() {
+    const pool = $('#jobCombinePool');
+    if (!pool) return;
+    if (!jobCombineState.cards.length) { pool.replaceChildren(el('div', { class: 'empty' }, '전직조합 가능한 카드가 없습니다. (같은 캐릭터 5성↑ 일반 카드 3장 필요)')); return; }
+    const selectedId = jobCombineSelectedId();
+    const selectedStar = jobCombineSelectedStar();
+    const used = new Set(jobCombineState.slots.filter(Boolean).map(c => c.number));
+    pool.replaceChildren(...jobCombineState.cards.map(card => {
+        const selected = used.has(card.number);
+        const disabled = !selected && (
+            (selectedId != null && card.id !== selectedId) ||
+            (selectedStar != null && card.star !== selectedStar)
+        );
+        const node = cardNode(card, true, null);
+        if (selected) node.classList.add('selected');
+        else if (disabled) node.classList.add('disabled');
+        node.onclick = () => {
+            if (jobCombineState.busy) return;
+            if (selected) removeFromJobSlotByIndex(jobCombineState.slots.findIndex(c => c && c.number === card.number));
+            else if (!disabled) addJobCardToSlot(card);
+        };
+        return node;
+    }));
+}
+
+function addJobCardToSlot(card) {
+    const selectedId = jobCombineSelectedId();
+    const selectedStar = jobCombineSelectedStar();
+    if (selectedId != null && card.id !== selectedId) { alert('같은 캐릭터 카드끼리만 조합할 수 있습니다.'); return; }
+    if (selectedStar != null && card.star !== selectedStar) { alert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (jobCombineState.slots.some(c => c && c.number === card.number)) return;
+    const idx = jobCombineState.slots.findIndex(c => !c);
+    if (idx === -1) { alert('재료 슬롯이 가득 찼습니다.'); return; }
+    jobCombineState.slots[idx] = card;
+    jobCombineState.result = null;
+    renderJobCombineStage();
+}
+
+function removeFromJobSlotByIndex(i) {
+    if (jobCombineState.busy || !jobCombineState.slots[i]) return;
+    jobCombineState.slots[i] = null;
+    jobCombineState.result = null;
+    renderJobCombineStage();
+}
+
+async function submitJobCombine() {
+    if (jobCombineState.busy || !jobCombineState.slots.every(Boolean)) return;
+    jobCombineState.busy = true;
+    const btn = $('#jobCombineBtn');
+    if (btn) btn.disabled = true;
+    try {
+        const data = await postApi('/api/jobcombine', { numbers: jobCombineState.slots.map(c => c.number) });
+        jobCombineState.cards = data.cards || [];
+        jobCombineState.gold = data.gold != null ? data.gold : jobCombineState.gold;
+        jobCombineState.slots = [null, null, null];
+        jobCombineState.result = data.resultCard || null;
+        jobCombineState.busy = false;
+        renderJobCombineStage();
+        if (data.profile) renderProfile(data.profile);
+        const info = $('#jobCombineInfo');
+        if (info && data.resultCard) {
+            const rc = data.resultCard;
+            info.replaceChildren(el('div', { class: 'combine-result ok' },
+                el('div', { class: 'combine-result-head' }, '✨ 전직조합 성공!'),
+                el('div', { class: 'combine-result-card' },
+                    rc.imageUrl ? el('img', { class: 'combine-result-img', src: rc.imageUrl, alt: rc.formatted || rc.name }) : null,
+                    el('div', { class: 'combine-result-name' }, rc.formatted || rc.name || '')
+                )
+            ));
+        }
+    } catch (e) {
+        jobCombineState.busy = false;
+        renderJobCombineStage();
+        alert(e.message);
+    }
+}
+
+async function loadJobCombine() {
+    try {
+        const data = await api('/api/jobcombine/cards');
+        jobCombineState.cards = data.cards || [];
+        jobCombineState.gold = data.gold != null ? data.gold : 0;
+        jobCombineState.slots = [null, null, null];
+        jobCombineState.result = null;
+        jobCombineState.busy = false;
+        renderJobCombineStage();
+    } catch (e) {
+        jobCombineState.built = false;
+        const stage = $('#jobCombineStage');
         if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
     }
 }

@@ -888,6 +888,10 @@ async function start(hostName) {
             buffs: [],
             shield: 0,
             shieldHits: 0,
+            shieldExpireAt: 0,
+            shieldExpireHeal: 0,
+            nextSkillDamageBonus: 0,
+            nextDamageReduction: 0,
             dead: false,
             tauntedBy: null,
             tauntRemain: 0,
@@ -1159,6 +1163,7 @@ function stepRoom(room) {
                 r.buffs.splice(i, 1);
             }
         }
+        if (r.shieldExpireAt && Date.now() >= r.shieldExpireAt) triggerShieldExpire(room, m);
         if (r.iktaeBot) {
             const now = Date.now();
             if (now > r.iktaeBot.expired_at) {
@@ -1235,6 +1240,19 @@ function stepRoom(room) {
         tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
         tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10)
     });
+}
+
+function triggerShieldExpire(room, m) {
+    const r = m.runtime;
+    const heal = Math.round(Number(r.shieldExpireHeal || 0));
+    r.shield = 0;
+    r.shieldHits = 0;
+    r.shieldExpireAt = 0;
+    if (heal > 0 && !r.dead) {
+        const healed = healMember(m, heal);
+        if (healed > 0) pushCombat(room, '🛡 ' + m.name + ' 보호막 소멸 → 생명력 +' + comma(healed), 'heal');
+    }
+    r.shieldExpireHeal = 0;
 }
 
 function expireBuff(member, buff) {
@@ -1811,14 +1829,19 @@ function applyDamageToMember(room, member, dmg, source) {
         pushCombat(room, source + ' → ' + member.name + ' [회피]', 'damage');
         return;
     }
+    if (r.nextDamageReduction) {
+        dmg = Math.round(dmg * (1 - Number(r.nextDamageReduction || 0)));
+        r.nextDamageReduction = 0;
+    }
     if (r.shield > 0) {
         const absorbed = Math.min(r.shield, dmg);
         r.shield -= absorbed;
         dmg -= absorbed;
         if (r.shieldHits > 0) {
             r.shieldHits -= 1;
-            if (r.shieldHits <= 0) { r.shield = 0; }
+            if (r.shieldHits <= 0) r.shield = 0;
         }
+        if (r.shield <= 0 && r.shieldExpireAt) triggerShieldExpire(room, member);
         if (dmg <= 0) {
             pushCombat(room, source + ' → ' + member.name + ' [방어]', 'damage');
             return;
@@ -1905,10 +1928,7 @@ function recoverPartyMp(room, amount) {
 }
 
 function applyMainCardPassiveMpRecovery(room, caster) {
-    const entries = (caster.baseSnapshot && caster.baseSnapshot.mainCardSkills) || [];
-    const entry = entries.find(e => e.skill && e.skill.name === '피아스트');
-    if (!entry) return;
-    recoverPartyMp(room, getSkillValue(entry.skill, 1, entry.star));
+    // 피아스트 개편으로 '공격 시 MP 회복' 패시브 제거됨
 }
 
 function applyDamageTakenSlotRecovery(room, damaged, damage) {
@@ -2169,12 +2189,26 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     const multiplier = getSkillValue(skill, 0, star);
     const extra = {};
-    let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)) * skillDmgMul);
+    let nextSkillBonus = 0;
+    if (caster.runtime.nextSkillDamageBonus) {
+        nextSkillBonus = Number(caster.runtime.nextSkillDamageBonus || 0);
+        caster.runtime.nextSkillDamageBonus = 0;
+    }
+    let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus) * skillDmgMul);
     if (skillName === '글버지') {
-        const amount = Math.max(1, Math.round(getSkillValue(skill, 0, star) + finalAtk * getSkillValue(skill, 1, star)));
-        for (const m of room.members) if (m.runtime && !m.runtime.dead) m.runtime.hp = Math.min(m.runtime.hpMax, m.runtime.hp + amount);
-        pushCombat(room, caster.name + ' [글버지] → 파티 전체 [+' + amount + ']', 'heal');
-        return;
+        const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star)));
+        const allyAtk = getSkillValue(skill, 2, star);
+        const expireHeal = Math.round(caster.runtime.hpMax * 0.04);
+        for (const m of room.members) {
+            if (!m.runtime || m.runtime.dead) continue;
+            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            m.runtime.shieldHits = 99;
+            m.runtime.shieldExpireAt = Date.now() + 8000;
+            m.runtime.shieldExpireHeal = expireHeal;
+            m.runtime.atkBuff = allyAtk;
+            upsertMemberBuff(m, { id: 'atkBuff', label: '글버지 (공+)', value: allyAtk, remain: 8 });
+        }
+        pushCombat(room, caster.name + ' [글버지] → 파티 🛡 +' + comma(shieldAmt) + ' / 공격력 ▲', 'buff');
     }
     if (skillName === '자인') caster.runtime.nextBasicDamageBonus = getSkillValue(skill, 1, star);
     if (skillName === '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skill, 1, star);
@@ -2183,11 +2217,27 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         caster.runtime.takenDmgMul = 1.5;
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: 4 });
     }
-    if (skillName === '피아스트') extra.skillMpRecovery = getSkillValue(skill, 1, star);
+    if (skillName === '피아스트') {
+        const allyAtk = getSkillValue(skill, 2, star);
+        for (const m of room.members) {
+            if (!m.runtime || m.runtime.dead) continue;
+            m.runtime.atkBuff = allyAtk;
+            upsertMemberBuff(m, { id: 'atkBuff', label: '피아스트 (공+)', value: allyAtk, remain: 8 });
+        }
+        extra.partyMpFlat = Math.round(caster.runtime.mpMax * getSkillValue(skill, 3, star));
+    }
     if (skillName === '수업끝') {
         extra.disableCritical = true;
         caster.runtime.takenDmgMul = 0.7;
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '수업끝 (피해감소)', value: caster.runtime.takenDmgMul, remain: 3 });
+    }
+    if (skillName === '유드 알레프') {
+        caster.runtime.nextSkillDamageBonus = 0.10;
+        upsertMemberBuff(caster, { id: 'nextSkillDmg', label: '유드 알레프 (다음 스킬+)', value: 0.10, remain: 1 });
+    }
+    if (skillName === '안면강타') {
+        caster.runtime.nextDamageReduction = 0.30;
+        upsertMemberBuff(caster, { id: 'nextDmgRed', label: '안면강타 (다음 피해감소)', value: 0.30, remain: 1 });
     }
     if (skillName === '익테봇 소환') {
         const hpRatio = getSkillValue(skill, 0, star);
@@ -2215,15 +2265,13 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         const result = calculateOutgoingDamage(caster, fakeMon, room, rawDamage, extra);
         applyMobPhaseDamage(room, caster, fakeMon, result, 'skill', skillName, true);
         if (extra.lifeStealFromPreMitigation) healMember(caster, Math.round(rawDamage * Number(extra.lifeStealFromPreMitigation || 0)));
-        if (extra.skillMpRecovery) recoverPartyMp(room, extra.skillMpRecovery);
-        if (skillName !== '피아스트') applyMainCardPassiveMpRecovery(room, caster);
+        if (extra.partyMpFlat) recoverPartyMp(room, extra.partyMpFlat);
         return;
     }
     const result = dealSkillDamageToMonster(room, caster, rawDamage, extra);
     applyAttackPotentialRecovery(room, caster);
     if (extra.lifeStealFromPreMitigation) healMember(caster, Math.round(rawDamage * Number(extra.lifeStealFromPreMitigation || 0)));
-    if (extra.skillMpRecovery) recoverPartyMp(room, extra.skillMpRecovery);
-    if (skillName !== '피아스트') applyMainCardPassiveMpRecovery(room, caster);
+    if (extra.partyMpFlat) recoverPartyMp(room, extra.partyMpFlat);
     pushCombat(room, caster.name + ' [' + skillName + '] → ' + (room.monster ? room.monster.name : '적') + ' [-' + result.damage + (result.isCrit ? ' 치명' : '') + ']', 'skill');
     broadcast(room, 'hit', {
         by: caster.name,

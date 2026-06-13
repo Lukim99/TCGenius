@@ -1204,11 +1204,16 @@ function getFashionData() {
 function getCardFashion(card) {
     if (!card || typeof card.skin != 'string' || !card.skin.trim()) return null;
     const skin = card.skin.trim();
-    return getFashionData().find(fashion => fashion && fashion.name == skin && (fashion.primary_card || []).map(id => Number(id)).includes(Number(card.id))) || null;
+    const isJob = card.type === '전직';
+    return getFashionData().find(fashion => {
+        if (!fashion || fashion.name != skin) return false;
+        if (!(fashion.primary_card || []).map(id => Number(id)).includes(Number(card.id))) return false;
+        return isJob ? fashion.type === '전직' : fashion.type !== '전직';
+    }) || null;
 }
 
 function pickFashionForCard(cardId) {
-    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && fashion.type !== '전직' && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
     return candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : null;
 }
 
@@ -1243,10 +1248,12 @@ function applyPackSkinToCard(card, skinName) {
 function getApplicableFashionsForCard(card, highOnly) {
     if (!card || typeof card.id == 'undefined' || (typeof card.skin == 'string' && card.skin.trim())) return [];
     if (Number(card.star || 0) < 6) return [];
+    const isJob = card.type === '전직';
     return getFashionData().filter(fashion => {
         if (!fashion || !Array.isArray(fashion.primary_card)) return false;
         if (!!fashion.isHigh !== !!highOnly) return false;
         if (!fashion.primary_card.map(id => Number(id)).includes(Number(card.id))) return false;
+        if (isJob ? fashion.type !== '전직' : fashion.type === '전직') return false;
         return Number(card.star || 0) >= Number(fashion.requireStar || 0);
     });
 }
@@ -1461,6 +1468,12 @@ function isEquipmentEffectActive(user, data) {
     return true;
 }
 
+function hasJobClass(id) {
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const data = characterCards[Number(id)];
+    return !!(data && data.class);
+}
+
 function getCardSlotEffectValue(card, cardData) {
     if (!card || !cardData || !cardData.slot_effect) return 0;
     const star = Number(card.star || 0);
@@ -1486,6 +1499,17 @@ function calculateCardSlotEffects(user) {
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
+        if (card.type === '전직' && cardData && cardData.class && Array.isArray(cardData.class.slot_effects)) {
+            const star = Number(card.star || 0);
+            if (star >= 4) {
+                cardData.class.slot_effects.forEach(se => {
+                    const value = Number(se.base || 0) + Number(se.per_level || 0) * (star - 4);
+                    if (se.effect === 'expBonus') effects.expBonus += value;
+                    if (se.effect === 'hpDamageReduction') effects.hpDamageReduction += Math.abs(value);
+                });
+            }
+            return;
+        }
         const value = getCardSlotEffectValue(card, cardData);
         if (value == 0) return;
         if (cardData.name == '빵귤') effects.expBonus += value;
@@ -1716,6 +1740,41 @@ function runCardCombine(user) {
     return lines.join('\n');
 }
 
+function getJobCombineSelection(user, numberArgs) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ 카드번호 3개를 선택해주세요.' };
+    const numbers = numberArgs.map(arg => Number(arg));
+    if (numbers.some(n => !Number.isInteger(n) || n < 1 || n > cards.length)) return { error: '❌ 존재하지 않는 카드 번호가 있습니다.' };
+    if (new Set(numbers).size != 3) return { error: '❌ 서로 다른 카드 3장을 선택해야 합니다.' };
+    const selected = numbers.map(n => cards[n - 1]);
+    if (selected.some(card => card.type === '전직')) return { error: '❌ 전직 카드는 전직조합 재료로 사용할 수 없습니다.' };
+    const star = Number(selected[0].star || 0);
+    if (star < 4) return { error: '❌ 5성 이상 카드만 전직조합할 수 있습니다.' };
+    if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 카드 3개는 모두 같은 등급이어야 합니다.' };
+    const ids = selected.map(card => Number(card.id));
+    if (ids[0] != ids[1] || ids[1] != ids[2]) return { error: '❌ 같은 캐릭터 카드 3장이 필요합니다.' };
+    const sameCardId = ids[0];
+    if (!hasJobClass(sameCardId)) return { error: '❌ 해당 캐릭터는 전직이 없습니다.' };
+    const info = getCardCombineInfo(star);
+    if (!info) return { error: '❌ 해당 등급의 카드는 전직조합을 할 수 없습니다.' };
+    const jobInfo = Object.assign({}, info, { gold: info.gold * 2 });
+    return { numbers, selected, star, info: jobInfo, sameCardId };
+}
+
+function runJobCombine(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '전직조합') return '❌ 진행 중인 전직조합이 없습니다.';
+    const selection = getJobCombineSelection(user, pending.numbers);
+    user.pendingAction = null;
+    if (selection.error) return selection.error;
+    if (Number(user.gold || 0) < selection.info.gold) return '❌ 골드가 부족합니다.';
+    user.gold = Number(user.gold || 0) - selection.info.gold;
+    selection.numbers.slice().sort((a, b) => b - a).forEach(n => user.inventory.card.splice(n - 1, 1));
+    const resultCard = { id: selection.sameCardId, star: selection.star, type: '전직' };
+    user.inventory.card.push(resultCard);
+    return '✅ 전직조합이 완료되었습니다!\n[ 결과 ]\n- ' + formatUserCard(resultCard) + '\n- 🪙 ' + comma(selection.info.gold) + ' 소모';
+}
+
 function getCardPackNameByStar(starIndex) {
     if (!Number.isInteger(starIndex) || starIndex < 0 || starIndex > 11) return null;
     if (starIndex == 9) return '제타 카드팩';
@@ -1905,6 +1964,7 @@ function convertCharacterCard(user, numberArg, confirmedFashion, can) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
+    if (card.type === '전직') return '❌ 전직 카드는 캐릭터 변환석을 사용할 수 없습니다. (전직 변환석 사용)';
     const maxStar = CHARACTER_CONVERT_MAX_STAR[can] || 9;
     if (Number(card.star || 0) >= maxStar) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
     if (typeof card.skin == 'string' && card.skin.trim() && !confirmedFashion) {
@@ -1918,6 +1978,23 @@ function convertCharacterCard(user, numberArg, confirmedFashion, can) {
     delete card.skin;
     user.pendingAction = null;
     return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
+}
+
+function convertJobCharacterCard(user, numberArg) {
+    const number = Number(numberArg);
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
+    const card = cards[number - 1];
+    if (card.type !== '전직') return '❌ 전직 카드만 전직 변환석으로 변환할 수 있습니다.';
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const jobCardIds = characterCards.map((c, i) => i).filter(i => characterCards[i] && characterCards[i].class);
+    const candidates = jobCardIds.filter(id => id != Number(card.id));
+    if (candidates.length == 0) return '❌ 변환할 수 있는 다른 전직 캐릭터가 없습니다.';
+    const before = Object.assign({}, card);
+    card.id = candidates[randomInt(0, candidates.length - 1)];
+    delete card.skin;
+    user.pendingAction = null;
+    return '✅ 전직 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
 }
 
 function getBaseStat(card) {
@@ -2136,6 +2213,9 @@ function equipTitleByName(user, name) {
 
 function calculateUserStats(user, _out) {
     const stats = getBaseStat(user.main_card);
+    if (user.main_card && user.main_card.type === '전직') {
+        ['atk', 'def', 'hp', 'mp', 'pnt'].forEach(k => { if (stats[k]) stats[k] = Math.round(stats[k] * 1.02); });
+    }
     const plusStats = {};
     normalizeStatPointData(user);
     Object.keys(user.statPointStats).forEach(key => {
@@ -2649,7 +2729,11 @@ function getMainCardSkills(user) {
     const skills = readJson(SKILLS_PATH, []);
     const card = user.main_card && characterCards[user.main_card.id];
     if (!card) return [];
-    return (card.skills || []).map(index => ({ index: index, skill: skills[index] })).filter(data => data.skill);
+    let skillIndices = card.skills || [];
+    if (user.main_card && user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
+        skillIndices = skillIndices.concat(card.class.skills);
+    }
+    return skillIndices.map(index => ({ index: index, skill: skills[index] })).filter(data => data.skill);
 }
 
 function findUsableSkill(user, skillName) {
@@ -2657,9 +2741,8 @@ function findUsableSkill(user, skillName) {
 }
 
 function getPassiveMpRecovery(user) {
-    const skillData = getMainCardSkills(user).find(data => data.skill.name == '피아스트');
-    if (!skillData) return 0;
-    return getSkillValue(skillData.skill, 1, user.main_card && user.main_card.star);
+    // 피아스트 개편으로 '공격 시 MP 회복' 패시브 제거됨
+    return 0;
 }
 
 const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
@@ -3080,6 +3163,19 @@ function getActiveFieldDamageMultiplier(user) {
     return Math.max(0, Number(buff.value || 1));
 }
 
+function applyFieldShieldAbsorption(user, damage, lines) {
+    const s = user.field && user.field.shield;
+    if (!s || Number(s.amount || 0) <= 0 || Number(s.expired_at || 0) <= Date.now()) {
+        if (user.field && user.field.shield) user.field.shield = null;
+        return damage;
+    }
+    const absorbed = Math.min(Number(s.amount || 0), damage);
+    s.amount -= absorbed;
+    if (lines && absorbed > 0) lines.push('🛡 보호막이 ' + comma(Math.round(absorbed)) + ' 피해를 흡수했습니다! (잔여 ' + comma(Math.max(0, Math.round(s.amount))) + ')');
+    if (s.amount <= 0) user.field.shield = null;
+    return damage - absorbed;
+}
+
 function getEliteState(fieldName) {
     if (!eliteFieldStates[fieldName]) eliteFieldStates[fieldName] = { owner: null, defeatedAt: 0 };
     return eliteFieldStates[fieldName];
@@ -3365,7 +3461,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
+            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.03 : 0)));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -3399,6 +3495,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
         : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && extra.notice) lines.push('- ' + extra.notice);
+    if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     applyAttackPotentialRecovery(user, stats, lines);
@@ -3452,6 +3549,8 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
+    fieldDamage = consumeNextDamageReduction(user, fieldDamage);
+    fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else {
@@ -3538,8 +3637,11 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
+    fieldDamage = consumeNextDamageReduction(user, fieldDamage);
+    fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
     if (extra && extra.notice) lines.push('- ' + extra.notice);
+    if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
     if (goldMineCapNote) lines.push(goldMineCapNote);
@@ -3587,7 +3689,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
-        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0)));
+        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.03 : 0)));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
         lines.push('', '[ 보상 ]');
@@ -3754,6 +3856,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
     const prefix = actionType == 'skill' && skill ? '✨ ' + skill.name + '! ' : '⚔️ ';
     const lines = formatWorldBossDamageLines(boss, result, prefix);
     if (extra && extra.notice) lines.push('- ' + extra.notice);
+    if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (Number(result.bonusTripleZero || 0) > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(result.bonusTripleZero));
     grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
@@ -3780,6 +3883,14 @@ function useSkillInField(user, skillName, channel) {
         return useWorldBossChosenSkill(user, skillName);
     }
     return executeMainCardSkillInField(user, skillName);
+}
+
+function consumeNextDamageReduction(user, damage) {
+    const buffs = getFieldBuffs(user);
+    if (!buffs.nextDamageReduction) return damage;
+    const reduction = Number(buffs.nextDamageReduction.value || 0);
+    delete buffs.nextDamageReduction;
+    return Math.round(damage * (1 - reduction));
 }
 
 function executeMainCardSkillInField(user, skillName) {
@@ -3813,15 +3924,10 @@ function executeMainCardSkillInField(user, skillName) {
     extra.maxMp = maxMp;
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     if (skillData.skill.name == '글버지') {
-        const heal = getSkillValue(skillData.skill, 0, star) + Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star);
-        const lines = ['✨ 글버지를 사용했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        applyFlatSkillRecovery(user, Number(stats.hp || 0), heal, stats, lines);
-        const cooltime = Math.max(0, (Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
-        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
-        if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-        return lines.join('\n');
+        const ratio = getSkillValue(skillData.skill, 1, star);
+        const amount = Math.round(Number(stats.hp || 0) * ratio);
+        user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (skillData.skill.name == '자인') getFieldBuffs(user).nextBasicDamageBonus = { value: getSkillValue(skillData.skill, 1, star) };
     if (skillData.skill.name == '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skillData.skill, 1, star);
@@ -3831,8 +3937,10 @@ function executeMainCardSkillInField(user, skillName) {
         if (isWorldBoss) getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Date.now() + 8000 };
     }
     if (skillData.skill.name == '피아스트') {
-        extra.skillMpRecovery = getSkillValue(skillData.skill, 1, star);
-        extra.skipPassiveMpRecovery = true;
+        const ratio = getSkillValue(skillData.skill, 1, star);
+        const amount = Math.round(maxMp * ratio);
+        user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (skillData.skill.name == '수업끝') {
         extra.disableCritical = true;
@@ -3866,10 +3974,24 @@ function executeMainCardSkillInField(user, skillName) {
         extra.forceCritical = true;
         extra.basicAttackSkill = true;
     }
+    if (skillData.skill.name == '유드 알레프') {
+        getFieldBuffs(user).nextSkillDamageBonus = { value: 0.10 };
+        extra.notice = '유드 알레프: 다음 스킬 공격 피해 +10%';
+    }
+    if (skillData.skill.name == '안면강타') {
+        getFieldBuffs(user).nextDamageReduction = { value: 0.30 };
+        extra.notice = '안면강타: 다음 받는 피해 30% 감소';
+    }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
+    const fieldBuffsNow = getFieldBuffs(user);
+    let nextSkillBonus = 0;
+    if (!extra.basicAttackSkill && fieldBuffsNow.nextSkillDamageBonus && skillData.skill.name !== '유드 알레프') {
+        nextSkillBonus = Number(fieldBuffsNow.nextSkillDamageBonus.value || 0);
+        delete fieldBuffsNow.nextSkillDamageBonus;
+    }
     const rawDamage = extra.basicAttackSkill
         ? Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)))
-        : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
+        : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus));
     const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
     user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
     if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
@@ -4201,6 +4323,8 @@ async function runWorldBossSkillTick(userName, bossName) {
             clearFieldIktaeBot(userName);
         }
     }
+    finalDamage = consumeNextDamageReduction(latest, finalDamage);
+    finalDamage = applyFieldShieldAbsorption(latest, finalDamage, tickLines);
     latest.hp = Math.max(0, beforeHp - finalDamage);
     tickLines.unshift('💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!');
     applyDamageTakenSlotRecovery(latest, Number(userStats.hp || 0), finalDamage, slotEffects, userStats, tickLines);
@@ -6979,6 +7103,8 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '사용') {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '전직캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '전직프레스티지' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if ((item.use == '패션적용' || item.use == '고급패션적용') && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -6993,7 +7119,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
-        if (item.use != '캐릭터변환' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
 
     removeInventoryItem(user, itemId, useCount);
@@ -7180,6 +7306,28 @@ async function useItem(user, itemName, countArg) {
                 lines.push('✨ 프레스티지가 적용되었습니다.');
             }
         }
+        if (item.use == '전직프레스티지') {
+            if (user.jobPrestige === true) {
+                user.mileage = Number(user.mileage || 0) + 20000;
+                lines.push('- 이미 전직 프레스티지가 적용되어 Ⓜ️ 20,000 마일리지를 획득했습니다.');
+            } else {
+                user.jobPrestige = true;
+                lines.push('✨ 전직 프레스티지가 적용되었습니다.\n- 골드 획득량 +3%');
+            }
+        }
+        if (item.use == '전직캐릭터변환') {
+            const jobCards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []).filter(c => c.type === '전직');
+            if (jobCards.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 변환할 전직 카드가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '전직캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('변환할 전직 캐릭터 카드를 선택해주세요.');
+                lines.push('/RPGenius 선택 [카드번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatCharacterInventory(user));
+            }
+        }
     }
 
     await user.save();
@@ -7334,6 +7482,7 @@ class RPGUser {
         this.main_card = {};
         this.need_character_card_select = true;
         this.prestige = false;
+        this.jobPrestige = false;
         this.level = 1;
         this.exp = 0;
         this.hp = 0;
@@ -7420,6 +7569,7 @@ class RPGUser {
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;
+        if (typeof this.jobPrestige == 'undefined') this.jobPrestige = false;
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         if (!this.maxAccessory || Number(this.maxAccessory) < 3) this.maxAccessory = 3;
         return this;
@@ -8183,6 +8333,24 @@ async function handleRPGCommand(data, channel) {
             return true;
         }
         const result = convertCharacterCard(user, args[1], false, user.pendingAction.can);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '전직캐릭터변환') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 전직 변환석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 변환할 전직 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = convertJobCharacterCard(user, args[1]);
         await user.save();
         reply(result);
         return true;
@@ -9126,6 +9294,9 @@ module.exports = {
     runCardCombine,
     getCardCombineSelection,
     getCardCombineInfo,
+    hasJobClass,
+    getJobCombineSelection,
+    runJobCombine,
     getProtectItemIdForCardStar,
     getCardCombineCount,
     getCardCombineGuaranteeCount,

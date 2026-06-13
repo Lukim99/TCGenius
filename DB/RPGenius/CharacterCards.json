@@ -8,7 +8,15 @@
         },
         "skills": [
             0
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                { "effect": "expBonus",          "name": "경험치 획득 증가량", "base": 0.005, "per_level": 0.005 },
+                { "effect": "hpDamageReduction", "name": "받는 피해량",        "base": 0.025, "per_level": 0.0125 }
+            ],
+            "skills": [12]
+        }
     },
     {
         "name": "뭔마",
@@ -19,7 +27,15 @@
         },
         "skills": [
             1
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                { "effect": "expBonus",          "name": "경험치 획득 증가량", "base": 0.005, "per_level": 0.005 },
+                { "effect": "hpDamageReduction", "name": "받는 피해량",        "base": 0.025, "per_level": 0.0125 }
+            ],
+            "skills": [13]
+        }
     },
     {
         "name": "글렌첵",
