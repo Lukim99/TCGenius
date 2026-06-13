@@ -2254,11 +2254,11 @@ function getCardImageUrl(card, user) {
     if (card && card.type === '전직') {
         const prestige = user && user.jobPrestige === true;
         if (skin) {
-            if (prestige) candidates.push(star + ' 전직 프레스티지 ' + skin + ' ' + data.name + '.png');
+            if (prestige) candidates.push(star + ' 프레스티지 전직 ' + skin + ' ' + data.name + '.png');
             candidates.push(star + ' 전직 ' + skin + ' ' + data.name + '.png');
             candidates.push(star + ' 전직 ' + data.name + '.png');
         } else {
-            if (prestige) candidates.push(star + ' 전직 프레스티지 ' + data.name + '.png');
+            if (prestige) candidates.push(star + ' 프레스티지 전직 ' + data.name + '.png');
             candidates.push(star + ' 전직 ' + data.name + '.png');
         }
     } else {

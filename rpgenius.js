@@ -4486,12 +4486,12 @@ async function sendUserMainCardImage(channel, user) {
     const candidates = [];
     if (isJob) {
         if (skin) {
-            if (user.jobPrestige === true) candidates.push(star + ' 전직 프레스티지 ' + skin + ' ' + card.name + '.png');
+            if (user.jobPrestige === true) candidates.push(star + ' 프레스티지 전직 ' + skin + ' ' + card.name + '.png');
             candidates.push(star + ' 전직 ' + skin + ' ' + card.name + '.png');
             candidates.push(star + ' 전직 ' + card.name + '.png');
             candidates.push(star + ' ' + skin + ' ' + card.name + '.png');
         } else {
-            if (user.jobPrestige === true) candidates.push(star + ' 전직 프레스티지 ' + card.name + '.png');
+            if (user.jobPrestige === true) candidates.push(star + ' 프레스티지 전직 ' + card.name + '.png');
             candidates.push(star + ' 전직 ' + card.name + '.png');
         }
         candidates.push(star + ' ' + card.name + '.png');
