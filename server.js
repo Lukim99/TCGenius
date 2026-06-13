@@ -4467,13 +4467,14 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .lvreward-icon-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px}
 .lvreward-thumb{position:relative;width:44px;height:44px;flex-shrink:0}
 .lvreward-thumb .auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;pointer-events:none}
-.lvreward-thumb .auc-item-img{position:relative;z-index:2;width:68%;height:68%;object-fit:contain;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+.lvreward-thumb .auc-item-img{position:relative;z-index:2;width:100%;height:100%;object-fit:contain;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
 .lvreward-thumb-fallback{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#94a3b8;background:rgba(30,41,59,.6);border-radius:8px;text-align:center;word-break:keep-all;padding:2px;flex-shrink:0}
 .lvreward-icon-count{font-size:10px;font-weight:900;color:#fde68a;white-space:nowrap}
 .lvreward-garnet{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:900;color:#7dd3fc}
 .lvreward-garnet img{width:36px;height:36px;object-fit:contain}
 .lvreward-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;min-width:110px}
 .lvreward-label{font-size:12px;font-weight:900;letter-spacing:.02em;background:url('/rpg-ui?file=%EB%AC%B4%EC%A7%80%EA%B0%9C%20%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98.jpg') center/cover;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+.lvreward-label.gray{background:none;-webkit-background-clip:unset;background-clip:unset;-webkit-text-fill-color:unset;color:#6b7280}
 .lvreward-btn{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:900;cursor:pointer;border:0;transition:opacity .15s,transform .1s}
 .lvreward-btn.claim{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 4px 12px rgba(245,158,11,.35)}
 .lvreward-btn.claim:hover{opacity:.88}

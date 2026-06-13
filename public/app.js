@@ -2040,7 +2040,8 @@ function renderLevelRewardList(rewards, userLevel) {
         }
 
         const right = el('div', { class: 'lvreward-right' });
-        right.appendChild(el('div', { class: 'lvreward-label' }, 'Lv.' + r.level + ' 달성보상'));
+        const labelClass = (r.claimed || !r.unlocked) ? 'lvreward-label gray' : 'lvreward-label';
+        right.appendChild(el('div', { class: labelClass }, 'Lv.' + r.level + ' 달성보상'));
         if (r.claimed) {
             right.appendChild(el('button', { class: 'lvreward-btn done', disabled: true }, '수령 완료'));
         } else if (r.unlocked) {

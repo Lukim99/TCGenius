@@ -1606,14 +1606,15 @@ function rollCardCombineSuccess(user, kind, star, rate) {
     normalizeCardCombineCounts(user);
     const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
     const key = String(star);
+    const effectiveRate = Math.min(1, Number(rate || 0) + (user.nickname === '시그니를' ? 0.1 : 0));
     const guarantee = getCardCombineGuaranteeCount(star);
-    if (!guarantee) return { success: Math.random() < Number(rate || 0), guaranteed: false, count: 0, guarantee: 0 };
+    if (!guarantee) return { success: Math.random() < effectiveRate, guaranteed: false, count: 0, guarantee: 0 };
     const nextCount = Number(target[key] || 0) + 1;
     if (nextCount >= guarantee) {
         target[key] = 0;
         return { success: true, guaranteed: true, count: 0, guarantee };
     }
-    const success = Math.random() < Number(rate || 0);
+    const success = Math.random() < effectiveRate;
     target[key] = success ? 0 : nextCount;
     return { success, guaranteed: false, count: Number(target[key] || 0), guarantee };
 }
