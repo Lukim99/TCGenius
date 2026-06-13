@@ -2488,6 +2488,7 @@ function buildCombineCards(user) {
             number: i + 1,
             id: s.id,
             star,
+            type: card.type || '일반',
             starText: s.starText,
             name: s.name,
             formatted: s.formatted,

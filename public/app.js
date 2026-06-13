@@ -1208,6 +1208,11 @@ function combineGrade() {
     return filled ? filled.star : null;
 }
 
+function combineType() {
+    const filled = combineState.slots.find(Boolean);
+    return filled ? (filled.type || '일반') : null;
+}
+
 // ===== 장비 강화 =====
 let enhanceState = { preview: null, busy: false, selectedProtectLevel: 'auto' };
 
@@ -1656,10 +1661,12 @@ function renderCombinePool() {
     if (!pool) return;
     if (!combineState.cards.length) { pool.replaceChildren(el('div', { class: 'empty' }, '보유한 캐릭터 카드가 없습니다.')); return; }
     const grade = combineGrade();
+    const type = combineType();
     const used = new Set(combineState.slots.filter(Boolean).map(c => c.number));
     pool.replaceChildren(...combineState.cards.map(card => {
         const selected = used.has(card.number);
-        const disabled = !selected && (!card.combinable || (grade != null && card.star != grade));
+        const cardType = card.type || '일반';
+        const disabled = !selected && (!card.combinable || (grade != null && card.star != grade) || (type != null && cardType !== type));
         const node = cardNode(card, true, null);
         node.classList.add('combine-pool-card');
         if (selected) node.classList.add('selected');
@@ -1675,8 +1682,10 @@ function renderCombinePool() {
 
 function addCardToSlot(card) {
     const grade = combineGrade();
+    const type = combineType();
     if (!card.combinable) { alert('이 등급은 조합할 수 없습니다.'); return; }
     if (grade != null && card.star != grade) { alert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (type != null && (card.type || '일반') !== type) { alert('같은 종류의 카드끼리만 조합할 수 있습니다.'); return; }
     if (combineState.slots.some(c => c && c.number === card.number)) return;
     const idx = combineState.slots.findIndex(c => !c);
     if (idx === -1) { alert('재료 슬롯이 가득 찼습니다.'); return; }

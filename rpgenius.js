@@ -1571,7 +1571,8 @@ const CARD_COMBINE_TABLE = [
     { rate: 0.50, gold: 51200 },
     { rate: 0.40, gold: 128000 },
     { rate: 0.30, gold: 256000 },
-    { rate: 0.20, gold: 512000 }
+    { rate: 0.20, gold: 512000 },
+    { gold: 1024000 }
 ];
 
 const CARD_COMBINE_GUARANTEE_COUNTS = {
@@ -1638,8 +1639,9 @@ function getCardCombineSelection(user, numberArgs) {
     if (selected.some(card => (card.type || '일반') !== cardType)) return { error: '❌ 카드 3개는 모두 같은 종류(일반/전직)여야 합니다.' };
     const info = getCardCombineInfo(star);
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
+    const isOmega = star === 11;
     const sameCardId = selected.every(card => Number(card.id) == Number(selected[0].id)) ? Number(selected[0].id) : null;
-    return { numbers, selected, star, info, sameCardId, cardType };
+    return { numbers, selected, star, info, sameCardId, cardType, isOmega };
 }
 
 function setCardCombineProtection(user, indexArg) {
@@ -1685,18 +1687,24 @@ function formatCardCombinePreview(user, numberArgs) {
     selection.selected.forEach(card => {
         lines.push('- ' + formatUserCard(card));
     });
-    lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
-    const guarantee = getCardCombineGuaranteeCount(selection.star);
-    if (guarantee) lines.push('- 보정 카운트: ' + comma(getCardCombineCount(user, 'card', selection.star)) + '/' + comma(guarantee));
+    if (selection.isOmega) {
+        lines.push('', '- 100% 확률로 오메가 캐릭터 카드를 획득합니다. (조합 재료 캐릭터 제외)');
+    } else {
+        lines.push('', '- ' + formatRatePercent(selection.info.rate) + ' 확률로 ' + formatStar(selection.star + 1) + ' 캐릭터 카드를 획득합니다.');
+        const guarantee = getCardCombineGuaranteeCount(selection.star);
+        if (guarantee) lines.push('- 보정 카운트: ' + comma(getCardCombineCount(user, 'card', selection.star)) + '/' + comma(guarantee));
+    }
     lines.push('- 필요 골드: 🪙 ' + comma(selection.info.gold));
     if (Number(user.gold || 0) < selection.info.gold) {
         user.pendingAction = null;
         lines.push('', '❌ 골드가 부족합니다.');
     } else {
         user.pendingAction = { type: '카드조합', numbers: selection.numbers };
-        const protectItemId = getProtectItemIdForCardStar(user, selection.star);
-        if (protectItemId != -1) {
-            lines.push('', '🛡️ 보호 카드를 사용할 수 있습니다.', '/RPGenius 보호카드사용 [1/2/3]');
+        if (!selection.isOmega) {
+            const protectItemId = getProtectItemIdForCardStar(user, selection.star);
+            if (protectItemId != -1) {
+                lines.push('', '🛡️ 보호 카드를 사용할 수 있습니다.', '/RPGenius 보호카드사용 [1/2/3]');
+            }
         }
         lines.push('', '/RPGenius 조합');
     }
@@ -1712,6 +1720,20 @@ function runCardCombine(user) {
     if (Number(user.gold || 0) < selection.info.gold) return '❌ 골드가 부족합니다.';
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length == 0) return '❌ 캐릭터 카드 데이터가 없습니다.';
+    if (selection.isOmega) {
+        user.gold = Number(user.gold || 0) - selection.info.gold;
+        selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
+        const usedIds = new Set(selection.selected.map(c => Number(c.id)));
+        const candidates = characterCards.map((_, i) => i).filter(i => !usedIds.has(i));
+        const newId = candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : randomInt(0, characterCards.length - 1);
+        const resultCard = { id: newId, star: 11, type: selection.cardType || '일반' };
+        applyFashionRollToCard(resultCard, null);
+        user.inventory.card.push(resultCard);
+        const prog = getTitleProgress(user);
+        prog.omegaCombines = Number(prog.omegaCombines || 0) + 1;
+        checkAndUnlockTitles(user);
+        return '🌟 오메가 카드 3장을 조합했습니다!\n[ 획득 결과 ]\n- ' + formatUserCard(resultCard);
+    }
     const protectIndex = Number(pending.protectIndex);
     const useProtection = Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3;
     const protectItemId = useProtection ? getProtectItemIdForCardStar(user, selection.star) : -1;
