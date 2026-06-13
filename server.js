@@ -2235,13 +2235,25 @@ function getCardImageUrl(card, user) {
     const star = String(Number(card.star || 0) + 1).padStart(2, '0');
     const skin = typeof card.skin == 'string' ? card.skin.trim() : '';
     const candidates = [];
-    if (skin) {
-        if (user.prestige === true) candidates.push(star + ' 프레스티지 ' + skin + ' ' + data.name + '.png');
-        candidates.push(star + ' ' + skin + ' ' + data.name + '.png');
-        candidates.push(star + ' ' + data.name + '.png');
+    if (card && card.type === '전직') {
+        const prestige = user && user.jobPrestige === true;
+        if (skin) {
+            if (prestige) candidates.push(star + ' 전직 프레스티지 ' + skin + ' ' + data.name + '.png');
+            candidates.push(star + ' 전직 ' + skin + ' ' + data.name + '.png');
+            candidates.push(star + ' 전직 ' + data.name + '.png');
+        } else {
+            if (prestige) candidates.push(star + ' 전직 프레스티지 ' + data.name + '.png');
+            candidates.push(star + ' 전직 ' + data.name + '.png');
+        }
     } else {
-        if (user.prestige === true) candidates.push(star + ' 프레스티지 ' + data.name + '.png');
-        candidates.push(star + ' ' + data.name + '.png');
+        if (skin) {
+            if (user && user.prestige === true) candidates.push(star + ' 프레스티지 ' + skin + ' ' + data.name + '.png');
+            candidates.push(star + ' ' + skin + ' ' + data.name + '.png');
+            candidates.push(star + ' ' + data.name + '.png');
+        } else {
+            if (user && user.prestige === true) candidates.push(star + ' 프레스티지 ' + data.name + '.png');
+            candidates.push(star + ' ' + data.name + '.png');
+        }
     }
     const file = candidates.find(candidate => fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, candidate)));
     if (!file) return null;
@@ -4278,9 +4290,9 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .jobcombine-stage{position:relative;width:min(560px,96%);aspect-ratio:872/896;background-size:contain;background-repeat:no-repeat;background-position:center}
 .jobcombine-slot{position:absolute;cursor:pointer}
 .jobcombine-slot .slot-card{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
-.jobcombine-slot.m0{left:6.6%;top:56.4%;width:21.8%;height:29%}
-.jobcombine-slot.m1{left:38.8%;top:3.3%;width:21.8%;height:29%}
-.jobcombine-slot.m2{left:71.3%;top:56.4%;width:21.8%;height:29%}
+.jobcombine-slot.m0{left:6.8%;top:55.4%;width:21.8%;height:29%}
+.jobcombine-slot.m1{left:38.88%;top:4%;width:21.8%;height:29%}
+.jobcombine-slot.m2{left:71.7%;top:55.4%;width:21.8%;height:29%}
 .jobcombine-slot.result{left:39.2%;top:39.3%;width:21.3%;height:28.8%}
 .jobcombine-slot.empty .slot-card{display:none}
 .jobcombine-slot.clickable:hover .slot-card{filter:brightness(1.12) drop-shadow(0 4px 10px rgba(0,0,0,.55))}
