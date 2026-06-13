@@ -772,14 +772,17 @@ server.get('/api/levelrewards', requireUser, async (req, res) => {
         const items = rpgenius.getDataCache('Item', []);
         const userLevel = Number(user.level || 1);
         const claimed = new Set(Array.isArray(user.claimedLevelRewards) ? user.claimedLevelRewards : []);
+        const garnetIconUrl = getItemImageUrl('화폐', '가넷.png');
         const list = LEVEL_REWARDS.map(r => ({
             level: r.level,
             claimed: claimed.has(r.level),
             unlocked: userLevel >= r.level,
             garnet: r.garnet || 0,
+            garnetIconUrl,
             items: r.items.map(([name, count]) => {
                 const itemData = items.find(it => it && it.name === name);
-                return { name, count, iconUrl: itemData ? getItemIconUrl(itemData) : null };
+                const assets = itemData ? getItemDisplayAssets(itemData) : { iconUrl: null, frameUrl: null };
+                return { name, count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
             }),
         }));
         res.json({ list, userLevel });
@@ -4462,10 +4465,13 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .lvreward-row.claimed{border-left-color:rgba(100,116,139,.4);opacity:.55}
 .lvreward-items{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap}
 .lvreward-icon-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px}
-.lvreward-icon-masked{width:44px;height:44px;background:url('/rpg-ui?file=%EB%AC%B4%EC%A7%80%EA%B0%9C%20%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98.jpg') center/cover;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;flex-shrink:0}
-.lvreward-icon-fallback{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#94a3b8;background:rgba(30,41,59,.6);border-radius:8px;text-align:center;word-break:keep-all;padding:2px;flex-shrink:0}
+.lvreward-thumb{position:relative;width:44px;height:44px;flex-shrink:0}
+.lvreward-thumb .auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;pointer-events:none}
+.lvreward-thumb .auc-item-img{position:relative;z-index:2;width:68%;height:68%;object-fit:contain;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+.lvreward-thumb-fallback{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#94a3b8;background:rgba(30,41,59,.6);border-radius:8px;text-align:center;word-break:keep-all;padding:2px;flex-shrink:0}
 .lvreward-icon-count{font-size:10px;font-weight:900;color:#fde68a;white-space:nowrap}
-.lvreward-garnet{display:flex;align-items:center;gap:3px;font-size:11px;font-weight:900;color:#7dd3fc}
+.lvreward-garnet{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:900;color:#7dd3fc}
+.lvreward-garnet img{width:36px;height:36px;object-fit:contain}
 .lvreward-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;min-width:110px}
 .lvreward-label{font-size:12px;font-weight:900;letter-spacing:.02em;background:url('/rpg-ui?file=%EB%AC%B4%EC%A7%80%EA%B0%9C%20%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98.jpg') center/cover;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
 .lvreward-btn{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:900;cursor:pointer;border:0;transition:opacity .15s,transform .1s}
@@ -4732,7 +4738,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
     </section>
     <section class="panel"><h2>보유 캐릭터 카드 (전직 가능)</h2><div id="jobCombinePool" class="card-grid"></div></section>
   </div>
-  <div class="page" data-page="level">
+  <div class="page" data-page="레벨보상">
     <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>

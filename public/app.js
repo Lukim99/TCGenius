@@ -71,7 +71,7 @@ const ICONS = {
 };
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex', 'level'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -144,7 +144,7 @@ function navigatePage(pageId) {
     if (pageId === 'event') loadEventDice();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
-    if (pageId === 'level') loadLevelRewards();
+    if (pageId === '레벨보상') loadLevelRewards();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
@@ -1987,21 +1987,24 @@ function renderLevelRewardList(rewards, userLevel) {
         const itemsEl = el('div', { class: 'lvreward-items' });
         r.items.forEach(item => {
             const wrap = el('div', { class: 'lvreward-icon-wrap' });
-            const iconEl = el('div', { class: 'lvreward-icon-masked' });
-            if (item.iconUrl) {
-                iconEl.style.webkitMaskImage = 'url(' + item.iconUrl + ')';
-                iconEl.style.maskImage = 'url(' + item.iconUrl + ')';
+            if (item.iconUrl || item.frameUrl) {
+                const thumb = el('div', { class: 'lvreward-thumb' });
+                if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
+                if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
+                wrap.appendChild(thumb);
             } else {
-                iconEl.className = 'lvreward-icon-fallback';
-                iconEl.textContent = item.name;
+                wrap.appendChild(el('div', { class: 'lvreward-thumb-fallback' }, item.name));
             }
-            wrap.appendChild(iconEl);
             wrap.appendChild(el('div', { class: 'lvreward-icon-count' }, 'x' + item.count));
             itemsEl.appendChild(wrap);
         });
         if (r.garnet) {
-            const gEl = el('div', { class: 'lvreward-garnet' }, '💠 ' + r.garnet.toLocaleString());
-            itemsEl.appendChild(gEl);
+            const gWrap = el('div', { class: 'lvreward-icon-wrap' });
+            const gThumb = el('div', { class: 'lvreward-garnet' });
+            if (r.garnetIconUrl) gThumb.appendChild(el('img', { src: r.garnetIconUrl, alt: '가넷' }));
+            gWrap.appendChild(gThumb);
+            gWrap.appendChild(el('div', { class: 'lvreward-icon-count' }, r.garnet.toLocaleString()));
+            itemsEl.appendChild(gWrap);
         }
 
         const right = el('div', { class: 'lvreward-right' });
