@@ -922,7 +922,7 @@ const EVENT_DICE_REWARDS = {
     12: { name: '익명 지렁이',          count: 20, mult: 6 },
     13: { name: '캐릭터 변환석',        count: 2,  mult: 8 },
     14: { name: '7성 카드팩',           count: 1,  mult: 11 },
-    15: { name: '8성 보호카드',         count: 1,  mult: 16 },
+    15: { name: '8성 보호 카드',         count: 1,  mult: 16 },
     16: { name: '8성 카드팩',           count: 1,  mult: 30 },
     17: { name: '9성 카드팩',           count: 1,  mult: 60 },
     18: { name: '제타 카드팩',          count: 1,  mult: 170 }
@@ -1628,7 +1628,7 @@ function renderCombineStage() {
     });
     const limg = els.lucky.querySelector('.slot-card');
     if (combineState.protectIndex != null && combineState.slots[combineState.protectIndex]) {
-        limg.src = combineUi((combineState.slots[combineState.protectIndex].star + 1) + '성 보호카드.png');
+        limg.src = combineUi((combineState.slots[combineState.protectIndex].star + 1) + '성 보호 카드.png');
         els.lucky.classList.remove('empty');
     } else { limg.removeAttribute('src'); els.lucky.classList.add('empty'); }
     const rimg = els.result.querySelector('.slot-card');
