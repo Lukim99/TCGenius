@@ -4480,6 +4480,10 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .lvreward-btn.claim:active{transform:scale(.96)}
 .lvreward-btn.done{background:rgba(30,41,59,.6);color:#64748b;border:1px solid rgba(100,116,139,.2);cursor:default}
 .lvreward-btn.locked{background:rgba(30,41,59,.4);color:#475569;border:1px solid rgba(100,116,139,.15);cursor:default}
+.lvreward-modal-body{display:flex;flex-direction:column;gap:8px}
+.lvreward-modal-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(4,6,18,.5);border:1px solid rgba(255,255,255,.06);border-radius:10px}
+.lvreward-modal-name{flex:1;font-size:13px;font-weight:700;color:#e2e8f0}
+.lvreward-modal-count{font-size:13px;font-weight:900;color:#fde68a;white-space:nowrap}
 .combine-stage{position:relative;width:min(560px,96%);aspect-ratio:878/898;background-size:contain;background-repeat:no-repeat;background-position:center}
 .combine-slot{position:absolute;cursor:pointer}
 .combine-slot .slot-card{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}

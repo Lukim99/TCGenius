@@ -1967,6 +1967,38 @@ async function loadJobCombine() {
 
 // ===== 레벨 보상 =====
 
+function openLevelRewardModal(r) {
+    $('#modalTitle').textContent = 'Lv.' + r.level + ' 달성 보상';
+    $('#modalSub').textContent = r.claimed ? '수령 완료' : r.unlocked ? '수령 가능' : 'Lv.' + r.level + ' 달성 시 수령 가능';
+    $('#modalSub').style.display = '';
+    const body = el('div', { class: 'lvreward-modal-body' });
+    r.items.forEach(item => {
+        const row = el('div', { class: 'lvreward-modal-row' });
+        if (item.iconUrl || item.frameUrl) {
+            const thumb = el('div', { class: 'lvreward-thumb' });
+            if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
+            if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
+            row.appendChild(thumb);
+        }
+        row.appendChild(el('span', { class: 'lvreward-modal-name' }, item.name));
+        row.appendChild(el('span', { class: 'lvreward-modal-count' }, 'x' + item.count));
+        body.appendChild(row);
+    });
+    if (r.garnet) {
+        const row = el('div', { class: 'lvreward-modal-row' });
+        if (r.garnetIconUrl) {
+            const thumb = el('div', { class: 'lvreward-thumb' });
+            thumb.appendChild(el('img', { class: 'auc-item-img', src: r.garnetIconUrl, alt: '가넷', style: 'width:100%;height:100%' }));
+            row.appendChild(thumb);
+        }
+        row.appendChild(el('span', { class: 'lvreward-modal-name' }, '가넷'));
+        row.appendChild(el('span', { class: 'lvreward-modal-count' }, r.garnet.toLocaleString()));
+        body.appendChild(row);
+    }
+    $('#modalBody').replaceChildren(body);
+    $('#modalBg').classList.add('active');
+}
+
 async function loadLevelRewards() {
     const list = $('#levelRewardList');
     if (!list) return;
@@ -1982,7 +2014,7 @@ function renderLevelRewardList(rewards, userLevel) {
     const list = $('#levelRewardList');
     if (!list) return;
     list.replaceChildren(...rewards.map(r => {
-        const row = el('div', { class: 'lvreward-row' + (r.claimed ? ' claimed' : '') });
+        const row = el('div', { class: 'lvreward-row' + (r.claimed ? ' claimed' : ''), style: 'cursor:pointer', onclick: () => openLevelRewardModal(r) });
 
         const itemsEl = el('div', { class: 'lvreward-items' });
         r.items.forEach(item => {
@@ -2013,7 +2045,8 @@ function renderLevelRewardList(rewards, userLevel) {
             right.appendChild(el('button', { class: 'lvreward-btn done', disabled: true }, '수령 완료'));
         } else if (r.unlocked) {
             const btn = el('button', { class: 'lvreward-btn claim' }, '보상받기');
-            btn.onclick = async () => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
                 btn.disabled = true;
                 try {
                     const result = await postApi('/api/levelreward', { level: r.level });
