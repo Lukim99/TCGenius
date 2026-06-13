@@ -1217,8 +1217,9 @@ function pickFashionForCard(cardId) {
     return candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : null;
 }
 
-function pickRandomFashionCard() {
-    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0);
+function pickRandomFashionCard(cardType) {
+    const isJob = cardType === '전직';
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0 && (isJob ? fashion.type === '전직' : fashion.type !== '전직'));
     if (candidates.length == 0) return null;
     const fashion = candidates[randomInt(0, candidates.length - 1)];
     const primaryCards = fashion.primary_card.map(id => Number(id)).filter(id => Number.isInteger(id) && id >= 0);
@@ -1228,7 +1229,7 @@ function pickRandomFashionCard() {
 
 function applyFashionRollToCard(card, fixedCardId) {
     if (!card || Math.random() >= 0.1) return;
-    const picked = fixedCardId != null ? { fashion: pickFashionForCard(fixedCardId), id: fixedCardId } : pickRandomFashionCard();
+    const picked = fixedCardId != null ? { fashion: pickFashionForCard(fixedCardId), id: fixedCardId } : pickRandomFashionCard(card.type);
     if (!picked || !picked.fashion) return;
     card.id = picked.id;
     if (Number(card.star || 0) >= Number(picked.fashion.requireStar || 0)) card.skin = picked.fashion.name;
@@ -1745,8 +1746,17 @@ function runCardCombine(user) {
     const success = combineRoll.success;
     if (useProtection) removeInventoryItem(user, protectItemId, 1);
     if (!success && protectedCard) user.inventory.card.push(protectedCard);
+    let resultId;
+    if (selection.sameCardId != null) {
+        resultId = selection.sameCardId;
+    } else if (selection.cardType === '전직') {
+        const jobCandidates = characterCards.map((_, i) => i).filter(i => hasJobClass(i));
+        resultId = jobCandidates.length > 0 ? jobCandidates[randomInt(0, jobCandidates.length - 1)] : randomInt(0, characterCards.length - 1);
+    } else {
+        resultId = randomInt(0, characterCards.length - 1);
+    }
     const resultCard = {
-        id: selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
+        id: resultId,
         star: success ? selection.star + 1 : selection.star,
         type: selection.cardType || '일반'
     };
@@ -4472,8 +4482,20 @@ async function sendUserMainCardImage(channel, user) {
     if (!card) return;
     const star = String(Number(mainCard.star || 0) + 1).padStart(2, '0');
     const skin = typeof mainCard.skin == 'string' ? mainCard.skin.trim() : '';
+    const isJob = mainCard.type === '전직';
     const candidates = [];
-    if (skin) {
+    if (isJob) {
+        if (skin) {
+            if (user.jobPrestige === true) candidates.push(star + ' 전직 프레스티지 ' + skin + ' ' + card.name + '.png');
+            candidates.push(star + ' 전직 ' + skin + ' ' + card.name + '.png');
+            candidates.push(star + ' 전직 ' + card.name + '.png');
+            candidates.push(star + ' ' + skin + ' ' + card.name + '.png');
+        } else {
+            if (user.jobPrestige === true) candidates.push(star + ' 전직 프레스티지 ' + card.name + '.png');
+            candidates.push(star + ' 전직 ' + card.name + '.png');
+        }
+        candidates.push(star + ' ' + card.name + '.png');
+    } else if (skin) {
         if (user.prestige === true) candidates.push(star + ' 프레스티지 ' + skin + ' ' + card.name + '.png');
         candidates.push(star + ' ' + skin + ' ' + card.name + '.png');
         candidates.push(star + ' ' + card.name + '.png');
