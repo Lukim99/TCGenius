@@ -53,6 +53,39 @@ const PARTY_JS_PATH = path.join(__dirname, 'public', 'party.js');
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'itemImage');
+
+const LEVEL_REWARDS = [
+    { level: 10,  items: [['황금 주머니', 5], ['5성 카드팩', 3], ['레어 장비 상자', 3]] },
+    { level: 20,  items: [['황금 주머니', 5], ['6성 카드팩', 1], ['하급 고유의 보석', 1]] },
+    { level: 30,  items: [['황금 주머니', 5], ['6성 카드팩', 2], ['6성 보호카드', 1]] },
+    { level: 40,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['유니크 장비 상자', 1]] },
+    { level: 50,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['장비 보호권', 1]] },
+    { level: 60,  items: [['황금 주머니', 5], ['7성 카드팩', 1], ['7성 보호카드', 1]] },
+    { level: 70,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['패션 적용권', 1]] },
+    { level: 80,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['지니어스의 열쇠', 30]] },
+    { level: 90,  items: [['황금 주머니', 5], ['8성 카드팩', 1], ['8성 보호카드', 1]] },
+    { level: 100, items: [['황금 주머니', 10], ['9성 카드팩', 1], ['캐릭터 변환석', 5]] },
+    { level: 110, items: [['황금 주머니', 10], ['고유의 보석', 1], ['장비 보호권', 1]] },
+    { level: 120, items: [['황금 주머니', 10], ['딜러 지렁이', 200], ['패션 박스', 10]] },
+    { level: 130, items: [['황금 주머니', 10], ['익명 지렁이', 200], ['지니어스의 열쇠', 30]] },
+    { level: 140, items: [['황금 주머니', 10], ['6성 카드팩', 5], ['쥬얼', 20]] },
+    { level: 150, items: [['황금 주머니', 15], ['9성 카드팩', 1], ['9성 보호카드', 1]] },
+    { level: 160, items: [['황금 주머니', 15], ['7성 카드팩', 3], ['장비 보호권', 1]] },
+    { level: 170, items: [['황금 주머니', 15], ['7성 카드팩', 5], ['전직 캐릭터 변환석', 3]] },
+    { level: 180, items: [['황금 주머니', 15], ['8성 카드팩', 1], ['고급 장비 보호권', 1]] },
+    { level: 190, items: [['황금 주머니', 15], ['8성 카드팩', 3], ['화이트 쥬얼', 20]] },
+    { level: 200, items: [['황금 주머니', 20], ['제타 카드팩', 1], ['제타 캐릭터 변환석', 3], ['유니크 장비 상자', 1]] },
+    { level: 210, items: [['황금 주머니', 20], ['장비 보호권', 1]], garnet: 1000 },
+    { level: 220, items: [['황금 주머니', 20], ['장비 보호권', 1]], garnet: 1000 },
+    { level: 230, items: [['황금 주머니', 20], ['장비 보호권', 1]], garnet: 1000 },
+    { level: 240, items: [['황금 주머니', 20], ['장비 보호권', 1]], garnet: 1000 },
+    { level: 250, items: [['황금 주머니', 25], ['시그마 카드팩', 1], ['시그마 캐릭터 변환석', 3]] },
+    { level: 260, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
+    { level: 270, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
+    { level: 280, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
+    { level: 290, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
+    { level: 300, items: [['황금 주머니', 30], ['오메가 카드팩', 1], ['오메가 캐릭터 변환석', 3], ['축복받은 장비 보호권', 1]] },
+];
 server.get('/static/admin.js', (req, res) => {
     const sess = getSession(req);
     if (!sess || !sess.admin) return res.status(401).end();
@@ -728,6 +761,56 @@ server.post('/api/jobcombine', requireUser, async (req, res) => {
         res.json({ ok: true, message, resultCard, cards: buildJobCombineCards(user), gold: Number(user.gold || 0), profile: buildUserProfile(user) });
     } catch (e) {
         console.error('jobcombine error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/levelrewards', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const items = rpgenius.getDataCache('Item', []);
+        const userLevel = Number(user.level || 1);
+        const claimed = new Set(Array.isArray(user.claimedLevelRewards) ? user.claimedLevelRewards : []);
+        const list = LEVEL_REWARDS.map(r => ({
+            level: r.level,
+            claimed: claimed.has(r.level),
+            unlocked: userLevel >= r.level,
+            garnet: r.garnet || 0,
+            items: r.items.map(([name, count]) => {
+                const itemData = items.find(it => it && it.name === name);
+                return { name, count, iconUrl: itemData ? getItemIconUrl(itemData) : null };
+            }),
+        }));
+        res.json({ list, userLevel });
+    } catch (e) {
+        console.error('levelrewards error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/levelreward', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const level = Number(req.body && req.body.level);
+        const reward = LEVEL_REWARDS.find(r => r.level === level);
+        if (!reward) return res.status(400).json({ error: '존재하지 않는 보상입니다.' });
+        const userLevel = Number(user.level || 1);
+        if (userLevel < level) return res.status(400).json({ error: '레벨이 부족합니다.' });
+        if (!Array.isArray(user.claimedLevelRewards)) user.claimedLevelRewards = [];
+        if (user.claimedLevelRewards.includes(level)) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
+        const allItems = rpgenius.getDataCache('Item', []);
+        for (const [name, count] of reward.items) {
+            const itemId = allItems.findIndex(it => it && it.name === name);
+            if (itemId !== -1) rpgenius.addInventoryItem(user, itemId, count);
+        }
+        if (reward.garnet) user.garnet = Number(user.garnet || 0) + reward.garnet;
+        user.claimedLevelRewards.push(level);
+        await user.save();
+        res.json({ ok: true, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('levelreward claim error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -4374,6 +4457,23 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .jobcombine-btn:disabled{opacity:.45;cursor:not-allowed}
 .jobcombine-info{font-size:13px;color:#cbd5e1;text-align:center;min-height:20px;line-height:1.6;display:flex;flex-direction:column;align-items:center;gap:4px}
 .combine-wrap{display:grid;gap:14px;justify-items:center}
+.lvreward-list{display:flex;flex-direction:column;gap:10px;padding:4px 0}
+.lvreward-row{display:flex;align-items:center;gap:12px;padding:14px 16px;background:rgba(4,6,18,.7);border:1px solid rgba(255,255,255,.07);border-left:3px solid #f59e0b;border-radius:12px;transition:border-color .15s}
+.lvreward-row.claimed{border-left-color:rgba(100,116,139,.4);opacity:.55}
+.lvreward-items{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap}
+.lvreward-icon-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px}
+.lvreward-icon-masked{width:44px;height:44px;background:url('/rpg-ui?file=%EB%AC%B4%EC%A7%80%EA%B0%9C%20%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98.jpg') center/cover;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;flex-shrink:0}
+.lvreward-icon-fallback{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#94a3b8;background:rgba(30,41,59,.6);border-radius:8px;text-align:center;word-break:keep-all;padding:2px;flex-shrink:0}
+.lvreward-icon-count{font-size:10px;font-weight:900;color:#fde68a;white-space:nowrap}
+.lvreward-garnet{display:flex;align-items:center;gap:3px;font-size:11px;font-weight:900;color:#7dd3fc}
+.lvreward-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;min-width:110px}
+.lvreward-label{font-size:12px;font-weight:900;letter-spacing:.02em;background:url('/rpg-ui?file=%EB%AC%B4%EC%A7%80%EA%B0%9C%20%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98.jpg') center/cover;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+.lvreward-btn{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:900;cursor:pointer;border:0;transition:opacity .15s,transform .1s}
+.lvreward-btn.claim{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 4px 12px rgba(245,158,11,.35)}
+.lvreward-btn.claim:hover{opacity:.88}
+.lvreward-btn.claim:active{transform:scale(.96)}
+.lvreward-btn.done{background:rgba(30,41,59,.6);color:#64748b;border:1px solid rgba(100,116,139,.2);cursor:default}
+.lvreward-btn.locked{background:rgba(30,41,59,.4);color:#475569;border:1px solid rgba(100,116,139,.15);cursor:default}
 .combine-stage{position:relative;width:min(560px,96%);aspect-ratio:878/898;background-size:contain;background-repeat:no-repeat;background-position:center}
 .combine-slot{position:absolute;cursor:pointer}
 .combine-slot .slot-card{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
@@ -4631,6 +4731,9 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
       </div>
     </section>
     <section class="panel"><h2>보유 캐릭터 카드 (전직 가능)</h2><div id="jobCombinePool" class="card-grid"></div></section>
+  </div>
+  <div class="page" data-page="level">
+    <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>

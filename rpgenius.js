@@ -3513,7 +3513,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.03 : 0)));
+            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0)));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -3743,7 +3743,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
-        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.03 : 0)));
+        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0)));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
         lines.push('', '[ 보상 ]');
@@ -7639,6 +7639,7 @@ class RPGUser {
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;
         if (typeof this.jobPrestige == 'undefined') this.jobPrestige = false;
+        if (!Array.isArray(this.claimedLevelRewards)) this.claimedLevelRewards = [];
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         if (!this.maxAccessory || Number(this.maxAccessory) < 3) this.maxAccessory = 3;
         return this;

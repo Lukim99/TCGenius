@@ -71,7 +71,7 @@ const ICONS = {
 };
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex', 'level'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -144,6 +144,7 @@ function navigatePage(pageId) {
     if (pageId === 'event') loadEventDice();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
+    if (pageId === 'level') loadLevelRewards();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
@@ -1962,6 +1963,73 @@ async function loadJobCombine() {
         const stage = $('#jobCombineStage');
         if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
     }
+}
+
+// ===== 레벨 보상 =====
+
+async function loadLevelRewards() {
+    const list = $('#levelRewardList');
+    if (!list) return;
+    try {
+        const data = await api('/api/levelrewards');
+        renderLevelRewardList(data.list || [], data.userLevel || 1);
+    } catch (e) {
+        list.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+function renderLevelRewardList(rewards, userLevel) {
+    const list = $('#levelRewardList');
+    if (!list) return;
+    list.replaceChildren(...rewards.map(r => {
+        const row = el('div', { class: 'lvreward-row' + (r.claimed ? ' claimed' : '') });
+
+        const itemsEl = el('div', { class: 'lvreward-items' });
+        r.items.forEach(item => {
+            const wrap = el('div', { class: 'lvreward-icon-wrap' });
+            const iconEl = el('div', { class: 'lvreward-icon-masked' });
+            if (item.iconUrl) {
+                iconEl.style.webkitMaskImage = 'url(' + item.iconUrl + ')';
+                iconEl.style.maskImage = 'url(' + item.iconUrl + ')';
+            } else {
+                iconEl.className = 'lvreward-icon-fallback';
+                iconEl.textContent = item.name;
+            }
+            wrap.appendChild(iconEl);
+            wrap.appendChild(el('div', { class: 'lvreward-icon-count' }, 'x' + item.count));
+            itemsEl.appendChild(wrap);
+        });
+        if (r.garnet) {
+            const gEl = el('div', { class: 'lvreward-garnet' }, '💠 ' + r.garnet.toLocaleString());
+            itemsEl.appendChild(gEl);
+        }
+
+        const right = el('div', { class: 'lvreward-right' });
+        right.appendChild(el('div', { class: 'lvreward-label' }, 'Lv.' + r.level + ' 달성보상'));
+        if (r.claimed) {
+            right.appendChild(el('button', { class: 'lvreward-btn done', disabled: true }, '수령 완료'));
+        } else if (r.unlocked) {
+            const btn = el('button', { class: 'lvreward-btn claim' }, '보상받기');
+            btn.onclick = async () => {
+                btn.disabled = true;
+                try {
+                    const result = await postApi('/api/levelreward', { level: r.level });
+                    if (result.profile) renderProfile(result.profile);
+                    await loadLevelRewards();
+                } catch (e) {
+                    alert(e.message);
+                    btn.disabled = false;
+                }
+            };
+            right.appendChild(btn);
+        } else {
+            right.appendChild(el('button', { class: 'lvreward-btn locked', disabled: true }, 'Lv.' + r.level + ' 필요'));
+        }
+
+        row.appendChild(itemsEl);
+        row.appendChild(right);
+        return row;
+    }));
 }
 
 // ===== 경매장 =====
