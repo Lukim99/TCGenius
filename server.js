@@ -182,12 +182,28 @@ server.get('/party', requirePartyQuest, (req, res) => {
 });
 
 server.post('/api/login', async (req, res) => {
+    const name = String((req.body && req.body.name) || '').trim();
     const code = String((req.body && req.body.code) || '').trim();
-    if (!code) return res.status(400).json({ error: '코드를 입력해주세요.' });
+    const ua = String(req.headers['user-agent'] || '').trim();
+    if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
     try {
-        const user = await rpgenius.getRPGUserByCode(code);
-        if (!user) return res.status(401).json({ error: '존재하지 않는 코드입니다.' });
+        const user = await rpgenius.getRPGUserByName(name);
+        if (!user) return res.status(401).json({ error: '존재하지 않는 닉네임입니다.' });
+        const knownAgent = ua && Array.isArray(user.logged_in_agent) && user.logged_in_agent.includes(ua);
+        if (!code) {
+            if (knownAgent) {
+                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
+                return res.json({ ok: true, name: user.name });
+            }
+            return res.json({ needCode: true });
+        }
+        if (user.code !== code) return res.status(401).json({ error: '코드가 올바르지 않습니다.' });
         if (typeof user.changeCode == 'function') await user.changeCode();
+        const latest = await rpgenius.getRPGUserByName(name);
+        if (latest && ua && !latest.logged_in_agent.includes(ua)) {
+            latest.logged_in_agent.push(ua);
+            await latest.save();
+        }
         setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
         res.json({ ok: true, name: user.name });
     } catch (e) {
@@ -2267,6 +2283,13 @@ function getCharacterCoverImageUrl(data) {
     return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
 }
 
+function getJobCoverImageUrl(data) {
+    if (!data || !data.name) return null;
+    const file = '전직 캐릭터표지.png';
+    if (!fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, file))) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
+}
+
 function getItemImageUrl(dir, file) {
     const filePath = path.join(ITEM_IMAGE_PATH, dir, file);
     if (!fs.existsSync(filePath)) return null;
@@ -2695,10 +2718,34 @@ function buildRecipeIndex() {
 function buildCharacterDex() {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+    const fmtPct = v => (Math.round(Number(v || 0) * 1000) / 10) + '%';
+    const buildSkillEntry = skillId => {
+        const skill = skills[Number(skillId)];
+        if (!skill) return null;
+        return {
+            id: Number(skillId),
+            name: skill.name,
+            mpCost: Number(skill.mp_cost || 0),
+            cooltimeText: rpgenius.formatCooltime(Number(skill.cooltime || 0)),
+            descLines: rpgenius.formatSkillDescWithIncrease(skill).split('\n').filter(Boolean)
+        };
+    };
     return characterCards.map((data, id) => {
         if (!data) return null;
         const baseCard = { id, star: 0, type: '일반' };
         const slotEffect = buildSlotEffectInfo({ id, star: 4 }, data);
+        let jobClass = null;
+        if (data.class) {
+            jobClass = {
+                slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => ({
+                    name: se.name,
+                    baseText: fmtPct(se.base),
+                    perLevelText: fmtPct(se.per_level),
+                    requireStarText: '5성'
+                })) : [],
+                skills: Array.isArray(data.class.skills) ? data.class.skills.map(buildSkillEntry).filter(Boolean) : []
+            };
+        }
         return {
             kind: 'character',
             type: 'character',
@@ -2708,18 +2755,11 @@ function buildCharacterDex() {
             formatted: rpgenius.formatUserCard(baseCard),
             imageUrl: getCardImageUrl(baseCard, { prestige: false }),
             coverUrl: getCharacterCoverImageUrl(data),
+            jobCoverUrl: getJobCoverImageUrl(data),
+            hasJobClass: !!data.class,
             slotEffect,
-            skills: Array.isArray(data.skills) ? data.skills.map(skillId => {
-                const skill = skills[Number(skillId)];
-                if (!skill) return null;
-                return {
-                    id: Number(skillId),
-                    name: skill.name,
-                    mpCost: Number(skill.mp_cost || 0),
-                    cooltimeText: rpgenius.formatCooltime(Number(skill.cooltime || 0)),
-                    descLines: rpgenius.formatSkillDescWithIncrease(skill).split('\n').filter(Boolean)
-                };
-            }).filter(Boolean) : []
+            skills: Array.isArray(data.skills) ? data.skills.map(buildSkillEntry).filter(Boolean) : [],
+            jobClass
         };
     }).filter(Boolean);
 }
@@ -2885,6 +2925,7 @@ function buildBundleContents(data) {
         }
         if (entry.type === '골드') return { type: '골드', name: '골드', count: countStr, imgUrl: SHOP_CURR_IMG.gold };
         if (entry.type === '가넷') return { type: '가넷', name: '가넷', count: countStr, imgUrl: SHOP_CURR_IMG.garnet };
+        if (entry.type === '마일리지') return { type: '마일리지', name: '마일리지', count: countStr, label: 'Ⓜ️' };
         return null;
     }).filter(Boolean);
 }
@@ -4192,20 +4233,52 @@ button:hover{background:linear-gradient(135deg,#4752c4 0%,#6d28d9 100%);box-shad
 button:disabled{opacity:.6;cursor:wait;transform:none;box-shadow:none}
 .err{margin-top:12px;color:#f87171;font-size:13px;min-height:18px}
 </style></head><body>
-<form class="card" id="f">
+<div class="card" id="card">
   <h1>RPGenius</h1>
-  <p class="sub">RPGenius 계정의 로그인 코드를 입력하세요.</p>
-  <label>로그인 코드</label>
-  <input id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345" required>
-  <button type="submit">로그인</button>
+  <p class="sub" id="sub">닉네임을 입력하세요.</p>
+  <form id="f1">
+    <label>닉네임</label>
+    <input id="nameInput" autocomplete="off" spellcheck="false" placeholder="닉네임" required>
+    <button type="submit">다음</button>
+  </form>
+  <form id="f2" style="display:none">
+    <label>로그인 코드</label>
+    <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345" required>
+    <button type="submit">로그인</button>
+  </form>
   <div class="err" id="err"></div>
-</form>
+</div>
 <script>
-const f=document.getElementById('f'),err=document.getElementById('err'),code=document.getElementById('code');
-f.addEventListener('submit',async e=>{e.preventDefault();err.textContent='';f.querySelector('button').disabled=true;
-try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code.value.trim()})});
-const j=await r.json();if(!r.ok)throw new Error(j.error||'로그인 실패');location.reload();
-}catch(x){err.textContent='❌ '+x.message;f.querySelector('button').disabled=false}});
+const err=document.getElementById('err');
+const f1=document.getElementById('f1'),f2=document.getElementById('f2');
+const nameInput=document.getElementById('nameInput'),codeInput=document.getElementById('codeInput');
+let savedName='';
+f1.addEventListener('submit',async e=>{
+  e.preventDefault();err.textContent='';
+  const btn=f1.querySelector('button');btn.disabled=true;
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nameInput.value.trim()})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||'로그인 실패');
+    if(j.ok){location.reload();return;}
+    if(j.needCode){
+      savedName=nameInput.value.trim();
+      document.getElementById('sub').textContent='코드를 입력하세요.';
+      f1.style.display='none';f2.style.display='';codeInput.focus();
+    }
+  }catch(x){err.textContent='❌ '+x.message;}
+  btn.disabled=false;
+});
+f2.addEventListener('submit',async e=>{
+  e.preventDefault();err.textContent='';
+  const btn=f2.querySelector('button');btn.disabled=true;
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:savedName,code:codeInput.value.trim()})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||'로그인 실패');
+    location.reload();
+  }catch(x){err.textContent='❌ '+x.message;btn.disabled=false;}
+});
 </script></body></html>`;
 }
 
@@ -4395,6 +4468,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .dex-title-btn.on{border-color:#fbbf24;background:rgba(251,191,36,.15);color:#fde68a}
 .dex-title-btn:disabled{opacity:.5;cursor:wait}
 .dex-card{display:grid;gap:12px;padding:14px;background:linear-gradient(135deg,rgba(4,6,18,.9),rgba(8,12,26,.75));border:1px solid var(--rar,rgba(255,255,255,.08));border-left:4px solid var(--rar,rgba(255,255,255,.15));border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.dex-char-toggle{display:flex;gap:6px}.dex-char-toggle-btn{flex:1;padding:5px 0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.45);font-size:.8rem;cursor:pointer;transition:background .15s,color .15s}.dex-char-toggle-btn.active{background:rgba(88,101,242,.25);border-color:#5865f2;color:#c7d0ff;font-weight:700}
 .dex-head{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center}
 .dex-thumb{position:relative;width:72px;height:72px;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.dex-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(0,0,0,.55))}.dex-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:56px;line-height:1}
 .dex-name{font-weight:800;font-size:16px;color:#f8fafc}.dex-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px}.dex-desc{color:#94a3b8;font-size:13px;line-height:1.5}

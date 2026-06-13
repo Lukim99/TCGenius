@@ -2353,6 +2353,9 @@ function openShopBuyModal(item) {
             const mini = el('div', { class: 'shop-bundle-mini' });
             if (bc.imgUrl) {
                 mini.appendChild(el('img', { src: bc.imgUrl, style: 'width:100%;height:100%;object-fit:contain' }));
+            } else if (bc.label) {
+                mini.style.fontSize = '18px';
+                mini.textContent = bc.label;
             } else {
                 if (bc.frameUrl) mini.appendChild(el('img', { src: bc.frameUrl, style: 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1' }));
                 if (bc.iconUrl) mini.appendChild(el('img', { src: bc.iconUrl, style: 'width:75%;height:75%;object-fit:contain;position:relative;z-index:2' }));
@@ -3463,34 +3466,35 @@ function dexCard(entry) {
 function dexCharacterCard(entry) {
     const card = el('div', { class: 'dex-card' });
     card.style.setProperty('--rar', '#5865f2');
-    if (entry.coverUrl) {
-        card.appendChild(el('div', { style: { margin: '-14px -14px 0', aspectRatio: '16 / 9', borderRadius: '14px 14px 8px 8px', overflow: 'hidden', background: '#020617' } },
-            el('img', { src: entry.coverUrl, alt: entry.name, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
-        ));
-    }
-    const head = el('div', { style: { display: 'grid', gap: '4px' } });
-    head.appendChild(el('div', null,
-        el('div', { class: 'dex-name' }, entry.name),
-        el('div', { class: 'dex-meta' },
-            el('span', { class: 'tag rarity' }, entry.typeLabel || '캐릭터 카드')
-        )
-    ));
-    card.appendChild(head);
 
-    if (entry.slotEffect) {
-        const eff = entry.slotEffect;
-        const block = el('div', { class: 'dex-stat-block' });
-        block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'));
-        block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
-        if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0) block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
-        card.appendChild(block);
+    let view = '일반';
+
+    // 일반/전직 토글 (전직이 있는 캐릭터만)
+    let toggleBar = null;
+    if (entry.hasJobClass) {
+        toggleBar = el('div', { class: 'dex-char-toggle' });
+        ['일반', '전직'].forEach(v => {
+            const btn = el('button', { class: 'dex-char-toggle-btn' + (v === '일반' ? ' active' : ''), type: 'button' }, v);
+            btn.onclick = () => {
+                if (view === v) return;
+                view = v;
+                toggleBar.querySelectorAll('.dex-char-toggle-btn').forEach(b => b.classList.toggle('active', b.textContent === v));
+                renderBody();
+            };
+            toggleBar.appendChild(btn);
+        });
+        card.appendChild(toggleBar);
     }
 
-    if (entry.skills && entry.skills.length) {
+    const body = el('div', { style: { display: 'contents' } });
+    card.appendChild(body);
+
+    function renderSkills(skills) {
+        if (!skills || !skills.length) return null;
         const det = el('details', { class: 'dex-collapse', open: true });
         det.appendChild(el('summary', null, '스킬'));
         const list = el('div', { class: 'dex-upgrade-list' });
-        entry.skills.forEach(skill => {
+        skills.forEach(skill => {
             list.appendChild(el('div', { class: 'dex-upgrade-row' },
                 el('div', { class: 'lvl' }, skill.name),
                 el('div', { class: 'lines' },
@@ -3500,9 +3504,59 @@ function dexCharacterCard(entry) {
             ));
         });
         det.appendChild(list);
-        card.appendChild(det);
+        return det;
     }
 
+    function renderBody() {
+        body.innerHTML = '';
+        const isJob = view === '전직';
+        const coverUrl = isJob ? entry.jobCoverUrl : entry.coverUrl;
+
+        if (coverUrl) {
+            body.appendChild(el('div', { style: { margin: '-14px -14px 0', aspectRatio: '16 / 9', borderRadius: '14px 14px 8px 8px', overflow: 'hidden', background: '#020617' } },
+                el('img', { src: coverUrl, alt: entry.name, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
+            ));
+        }
+
+        const head = el('div', { style: { display: 'grid', gap: '4px' } });
+        head.appendChild(el('div', null,
+            el('div', { class: 'dex-name' }, entry.name),
+            el('div', { class: 'dex-meta' },
+                el('span', { class: 'tag rarity' }, isJob ? '전직 카드' : (entry.typeLabel || '캐릭터 카드'))
+            )
+        ));
+        body.appendChild(head);
+
+        if (isJob && entry.jobClass) {
+            const effs = entry.jobClass.slotEffects || [];
+            if (effs.length) {
+                const block = el('div', { class: 'dex-stat-block' });
+                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과 (전직)'));
+                effs.forEach(eff => {
+                    block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
+                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
+                        block.appendChild(el('div', null, '이후 등급마다 +' + eff.perLevelText));
+                });
+                body.appendChild(block);
+            }
+            const skillsDet = renderSkills(entry.jobClass.skills);
+            if (skillsDet) body.appendChild(skillsDet);
+        } else {
+            if (entry.slotEffect) {
+                const eff = entry.slotEffect;
+                const block = el('div', { class: 'dex-stat-block' });
+                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'));
+                block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
+                if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
+                    block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
+                body.appendChild(block);
+            }
+            const skillsDet = renderSkills(entry.skills);
+            if (skillsDet) body.appendChild(skillsDet);
+        }
+    }
+
+    renderBody();
     return card;
 }
 

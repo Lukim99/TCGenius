@@ -1634,10 +1634,12 @@ function getCardCombineSelection(user, numberArgs) {
     const selected = numbers.map(number => cards[number - 1]);
     const star = Number(selected[0].star || 0);
     if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 입력된 카드 3개는 모두 같은 등급이어야 합니다.' };
+    const cardType = selected[0].type || '일반';
+    if (selected.some(card => (card.type || '일반') !== cardType)) return { error: '❌ 카드 3개는 모두 같은 종류(일반/전직)여야 합니다.' };
     const info = getCardCombineInfo(star);
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
     const sameCardId = selected.every(card => Number(card.id) == Number(selected[0].id)) ? Number(selected[0].id) : null;
-    return { numbers, selected, star, info, sameCardId };
+    return { numbers, selected, star, info, sameCardId, cardType };
 }
 
 function setCardCombineProtection(user, indexArg) {
@@ -1661,11 +1663,11 @@ function getRandomCardCombineNumbers(user, starArg) {
     const info = getCardCombineInfo(star);
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
-    const numbers = cards
-        .map((card, index) => ({ card, number: index + 1 }))
-        .filter(entry => Number(entry.card.star || 0) == star)
-        .map(entry => entry.number);
-    if (numbers.length < 3) return { error: '❌ 해당 등급의 카드가 3장 이상 필요합니다.' };
+    const sameStar = cards.map((card, index) => ({ card, number: index + 1 })).filter(entry => Number(entry.card.star || 0) == star);
+    const byType = {};
+    sameStar.forEach(entry => { const t = entry.card.type || '일반'; (byType[t] = byType[t] || []).push(entry.number); });
+    const numbers = Object.values(byType).find(arr => arr.length >= 3) || [];
+    if (numbers.length < 3) return { error: '❌ 해당 등급의 같은 종류(일반/전직) 카드가 3장 이상 필요합니다.' };
     for (let i = numbers.length - 1; i > 0; i--) {
         const j = randomInt(0, i);
         const temp = numbers[i];
@@ -1724,7 +1726,7 @@ function runCardCombine(user) {
     const resultCard = {
         id: selection.sameCardId != null ? selection.sameCardId : randomInt(0, characterCards.length - 1),
         star: success ? selection.star + 1 : selection.star,
-        type: '일반'
+        type: selection.cardType || '일반'
     };
     applyFashionRollToCard(resultCard, selection.sameCardId);
     user.inventory.card.push(resultCard);
@@ -2359,7 +2361,13 @@ const CP_WEIGHTS = {
 };
 
 function calculateCombatPower(user) {
-    return computeCombatPowerFromStats(calculateUserStats(user), calculateCardSlotEffects(user));
+    const stats = calculateUserStats(user);
+    const slot = calculateCardSlotEffects(user);
+    if (findEquipWithPassiveId(user, 4)) {
+        const passive = getEquipmentPassives()[4];
+        if (passive) stats.finalDamage = (Number(stats.finalDamage || 0) + Number(passive.format && passive.format[1] && passive.format[1].base || 0.05));
+    }
+    return computeCombatPowerFromStats(stats, slot);
 }
 
 function getTotalDefenseReductionRate(stats, slotEffects) {
@@ -2675,7 +2683,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let totalHits = hitCount;
     let abyssDoomUsed = false;
     for (let i = 0; i < totalHits; i++) {
-        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0));
+        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0) + Number(extra && extra.finalDamageBonus || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
         if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
@@ -2750,6 +2758,18 @@ const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
 
 function getEquipmentPassives() {
     return readJson(EQUIPMENT_PASSIVE_PATH, []);
+}
+
+function getManaResonanceBonus(user, stats) {
+    if (!findEquipWithPassiveId(user, 4)) return 0;
+    const passive = getEquipmentPassives()[4];
+    if (!passive) return 0;
+    const maxMp = Number(stats && stats.mp || 0);
+    if (maxMp <= 0) return 0;
+    const currentMp = typeof user.mp === 'undefined' ? maxMp : Number(user.mp || 0);
+    const threshold = Number(passive.format && passive.format[0] && passive.format[0].base || 0.75);
+    const bonus = Number(passive.format && passive.format[1] && passive.format[1].base || 0.05);
+    return currentMp / maxMp >= threshold ? bonus : 0;
 }
 
 function findEquipWithPassiveId(user, passiveId) {
@@ -3485,7 +3505,8 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const elite = getCombatStats(dungeon.elite);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, elite);
+    const eliteExtra = Object.assign({}, extra, { finalDamageBonus: getManaResonanceBonus(user, stats) });
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, eliteExtra && eliteExtra.pnt || stats.pnt, stats, slotEffects, eliteExtra, elite);
     const finalDamage = hitResult.finalDamage;
     let remainHp = Math.max(0, currentHp - finalDamage);
     const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
@@ -3579,7 +3600,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, extra && extra.pnt || stats.pnt, stats, slotEffects, extra, monster);
+    const huntExtra = Object.assign({}, extra, { finalDamageBonus: getManaResonanceBonus(user, stats) });
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, huntExtra && huntExtra.pnt || stats.pnt, stats, slotEffects, huntExtra, monster);
     const finalDamage = hitResult.finalDamage;
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
@@ -4025,6 +4047,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const extra = Object.assign({}, opts || {});
+    extra.finalDamageBonus = getManaResonanceBonus(user, stats);
     const defenderStats = getWorldBossDefenderStats(boss);
     let finalDamage = 0;
     let isCritical = false;
@@ -7479,6 +7502,7 @@ class RPGUser {
         this.isAdmin = false;
         this.code = getRandomString(10).toUpperCase();
         this.logged_in = [id];
+        this.logged_in_agent = [];
         this.main_card = {};
         this.need_character_card_select = true;
         this.prestige = false;
@@ -7537,6 +7561,7 @@ class RPGUser {
     load(data) {
         Object.assign(this, data);
         if (!Array.isArray(this.logged_in)) this.logged_in = [];
+        if (!Array.isArray(this.logged_in_agent)) this.logged_in_agent = [];
         if (!this.inventory) this.inventory = { card: [], item: [] };
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
@@ -9341,5 +9366,6 @@ module.exports = {
     formatTitleStatLines,
     TITLE_IMAGE_PATH,
     getEquipmentPassives,
+    getManaResonanceBonus,
     useItem
 };

@@ -134,6 +134,32 @@ function getImmortalArmorSnapshot(user) {
     return null;
 }
 
+function getManaResonanceSnapshot(user) {
+    if (!user) return null;
+    const eq = user.equipments || {};
+    const slots = [
+        ['weapon', eq.weapon],
+        ['armor', eq.armor],
+        ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
+        ['support', eq.support]
+    ];
+    const equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
+    for (const [slot, equip] of slots) {
+        if (!equip || typeof equip.id === 'undefined') continue;
+        const data = equipments && equipments[slot] && equipments[slot][equip.id];
+        if (data && data.passive_id === 4) {
+            const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
+            const passive = passives[4];
+            if (!passive) return null;
+            return {
+                threshold: Number(passive.format && passive.format[0] && passive.format[0].base || 0.75),
+                bonus: Number(passive.format && passive.format[1] && passive.format[1].base || 0.05)
+            };
+        }
+    }
+    return null;
+}
+
 function getPartyQuestPacks() {
     const cached = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Pack', []) : [];
     return Array.isArray(cached) && cached.length ? cached : loadJsonCached(PACKS_PATH, 'packs');
@@ -858,7 +884,8 @@ async function start(hostName) {
             const slotEffects = user && typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : null;
             const mainCardSkills = user ? getMainCardSkillEntries(user) : [];
             const immortalArmor = user ? getImmortalArmorSnapshot(user) : null;
-            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor };
+            const manaResonance = user ? getManaResonanceSnapshot(user) : null;
+            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
         }
@@ -1296,6 +1323,12 @@ function getFinalDamageMul(attacker) {
         const r = attacker.runtime;
         const missingPct = r.hpMax > 0 ? Math.max(0, (r.hpMax - r.hp) / r.hpMax) : 0;
         mul *= 1 + missingPct * 0.4;
+    }
+    // 마력 감응: MP 75% 이상일 때 최종 피해 +5%
+    const mr = attacker.baseSnapshot && attacker.baseSnapshot.manaResonance;
+    if (mr && attacker.runtime) {
+        const r = attacker.runtime;
+        if (r.mpMax > 0 && r.mp / r.mpMax >= mr.threshold) mul *= 1 + mr.bonus;
     }
     return mul;
 }
