@@ -88,7 +88,11 @@ function getMainCardSkillEntries(user) {
     const card = user && user.main_card && cards[user.main_card.id];
     if (!card) return [];
     const star = Number(user.main_card.star || 0);
-    return (card.skills || []).map(index => {
+    let skillIndices = card.skills || [];
+    if (user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
+        skillIndices = skillIndices.concat(card.class.skills);
+    }
+    return skillIndices.map(index => {
         const skill = skills[index];
         return skill ? { index: Number(index), skill, star } : null;
     }).filter(Boolean);
@@ -2307,6 +2311,20 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (skillName === '안면강타') {
         caster.runtime.nextDamageReduction = 0.30;
         upsertMemberBuff(caster, { id: 'nextDmgRed', label: '안면강타 (다음 피해감소)', value: 0.30, remain: 1 });
+    }
+    if (skillName === '감사합니다 친구야') {
+        const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star)));
+        caster.runtime.shield = (caster.runtime.shield || 0) + shieldAmt;
+        caster.runtime.shieldHits = 99;
+        caster.runtime.shieldExpireAt = Date.now() + 12000;
+        caster.runtime.shieldExpireHeal = 0;
+        caster.runtime.takenDmgMul = 0.7;
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '감사합니다 친구야 (피해감소)', value: 0.7, remain: 12 });
+        pushCombat(room, caster.name + ' [감사합니다 친구야] → 🛡 +' + comma(shieldAmt) + ' / 받는 피해 ▼', 'buff');
+    }
+    if (skillName === 'KICK BACK') {
+        extra.critChanceMul = 0.5;
+        extra.critMulBonus = getSkillValue(skill, 1, star);
     }
     if (skillName === '익테봇 소환') {
         const hpRatio = getSkillValue(skill, 0, star);

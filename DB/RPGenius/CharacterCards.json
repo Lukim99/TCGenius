@@ -79,7 +79,27 @@
         },
         "skills": [
             5
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "damageBonus",
+                    "name": "일반 몬스터 대상 피해 증가량",
+                    "base": 0.02,
+                    "per_level": 0.012
+                },
+                {
+                    "effect": "critMul",
+                    "name": "치명타 피해량 증가량",
+                    "base": 0.025,
+                    "per_level": 0.015
+                }
+            ],
+            "skills": [
+                14
+            ]
+        }
     },
     {
         "name": "켄시",
@@ -90,7 +110,27 @@
         },
         "skills": [
             6
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "damageBonus",
+                    "name": "일반 몬스터 대상 피해 증가량",
+                    "base": 0.02,
+                    "per_level": 0.012
+                },
+                {
+                    "effect": "critMul",
+                    "name": "치명타 피해량 증가량",
+                    "base": 0.025,
+                    "per_level": 0.015
+                }
+            ],
+            "skills": [
+                15
+            ]
+        }
     },
     {
         "name": "제우스",

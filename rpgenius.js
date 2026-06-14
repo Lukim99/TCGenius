@@ -673,6 +673,10 @@ function getPotentialRarityKey(label) {
     return { '레어': 'rare', '에픽': 'epic', '유니크': 'unique', '레전더리': 'legendary', rare: 'rare', epic: 'epic', unique: 'unique', legendary: 'legendary' }[label] || 'rare';
 }
 
+function getPotentialRarityRank(label) {
+    return { rare: 0, epic: 1, unique: 2, legendary: 3 }[getPotentialRarityKey(label)] || 0;
+}
+
 const POTENTIAL_REROLL_COST = {
     weapon: { rare: 80000, epic: 200000, unique: 680000, legendary: 1400000 },
     armor: { rare: 60000, epic: 150000, unique: 520000, legendary: 1070000 },
@@ -884,13 +888,20 @@ function applySoulToEquipment(user, numberArg) {
     return lines.join('\n');
 }
 
-function getPotentialAwakenTargets(user) {
+function getPotentialAwakenTargets(user, tier) {
+    const tierRank = tier ? getPotentialRarityRank(tier) : null;
     return getAllUserEquipments(user)
         .map((entry, index) => {
             const type = entry.equip.type || entry.type;
             const equipment = getEquipmentData(type, entry.equip.id);
-            if (!equipment || entry.equip.potential) return null;
+            if (!equipment) return null;
             if (!getPotentialData()[type]) return null;
+            if (tierRank == null) {
+                if (entry.equip.potential) return null;
+            } else {
+                const curRank = entry.equip.potential ? getPotentialRarityRank(entry.equip.potential.rarity) : -1;
+                if (curRank >= tierRank) return null;
+            }
             return { number: index + 1, entry, type, equipment };
         })
         .filter(Boolean);
@@ -917,9 +928,15 @@ function awakenEquipmentPotential(user, numberArg) {
     const type = selected.equip.type || selected.type;
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
-    if (selected.equip.potential) return '❌ 이미 잠재능력이 부여된 장비입니다.';
     if (!getPotentialData()[type]) return '❌ 해당 장비 타입에는 잠재능력을 부여할 수 없습니다.';
-    const potential = rollEquipmentPotential(type);
+    const tierKey = pending.tier || null;
+    if (tierKey) {
+        const curRank = selected.equip.potential ? getPotentialRarityRank(selected.equip.potential.rarity) : -1;
+        if (curRank >= getPotentialRarityRank(tierKey)) return '❌ 이미 ' + getPotentialRarityLabel(tierKey) + ' 이상의 잠재능력이 부여된 장비입니다.';
+    } else if (selected.equip.potential) {
+        return '❌ 이미 잠재능력이 부여된 장비입니다.';
+    }
+    const potential = rollEquipmentPotential(type, tierKey || undefined);
     if (!potential) return '❌ 잠재능력 데이터를 찾을 수 없습니다.';
     selected.equip.potential = potential;
     user.pendingAction = null;
@@ -1507,6 +1524,8 @@ function calculateCardSlotEffects(user) {
                     const value = Number(se.base || 0) + Number(se.per_level || 0) * (star - 4);
                     if (se.effect === 'expBonus') effects.expBonus += value;
                     if (se.effect === 'hpDamageReduction') effects.hpDamageReduction += Math.abs(value);
+                    if (se.effect === 'damageBonus') effects.damageBonus += value;
+                    if (se.effect === 'critMul') effects.critMul += value;
                 });
             }
             return;
@@ -2929,6 +2948,33 @@ function applyLowLevelExpBonus(user, amount) {
     return Math.round(Number(amount || 0) * (level >= 1 && level <= 30 ? 1.5 : 1));
 }
 
+function getActivePotionBonus(potion) {
+    if (potion && Number(potion.amount || 0) > 0 && Number(potion.expired_at || 0) > Date.now()) return Number(potion.amount || 0);
+    return 0;
+}
+
+function getExpPotionBonus(user) {
+    return getActivePotionBonus(user && user.expPotion);
+}
+
+function getGoldPotionBonus(user) {
+    return getActivePotionBonus(user && user.goldPotion);
+}
+
+// 비약 버프 적용: 중첩 불가. 같은 %는 시간 연장, 더 높은 %는 새 버프로 리셋. (더 낮은 % 사용 불가는 호출 전 검증)
+function applyPotionBuff(user, field, amount, duration, label, resultLines) {
+    const now = Date.now();
+    const cur = user[field];
+    const active = cur && Number(cur.expired_at || 0) > now;
+    if (active && amount === Number(cur.amount || 0)) {
+        cur.expired_at = Number(cur.expired_at || 0) + Number(duration || 0);
+    } else {
+        user[field] = { amount: amount, expired_at: now + Number(duration || 0) };
+    }
+    const remainMin = Math.max(1, Math.ceil((Number(user[field].expired_at) - now) / 60000));
+    resultLines.push('- ' + label + ' +' + Math.round(amount * 100) + '% (남은 시간 약 ' + remainMin + '분)');
+}
+
 function getLevelExpMultiplier(userLevel, requireLevel) {
     const n = Number(userLevel || 1) - Number(requireLevel || 1);
     if (n <= 1) return 1.2;
@@ -3515,13 +3561,13 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
         if (reward.roll != null && Math.random() >= Number(reward.roll || 0) * levelMultiplier) return;
         const count = rollCount(reward.count);
         if (reward.type == '경험치') {
-            const amount = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0)))));
+            const amount = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(count * levelMultiplier * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0) + getExpPotionBonus(user)))));
             levelUps += addExperience(user, amount);
             rewardLines.push('- XP ' + comma(amount));
             return;
         }
         if (reward.type == '골드') {
-            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0)));
+            const amount = Math.round((count + Number(stats.plusGold || 0)) * levelMultiplier * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user)));
             user.gold = Number(user.gold || 0) + amount;
             rewardLines.push('- 🪙 ' + comma(amount));
             return;
@@ -3781,10 +3827,10 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
             prog.newbieKills = Math.min(1000, Number(prog.newbieKills || 0) + killCount);
             checkAndUnlockTitles(user);
         }
-        let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0)))));
+        let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, Math.round(Number(dungeon.reward && dungeon.reward.exp || 0) * killCount * levelMultiplier * (1 + slotEffects.expBonus + Number(stats.exp || 0) + getExpPotionBonus(user)))));
         let goldReward = 0;
         for (let i = 0; i < killCount; i++) goldReward += randomInt(Number(dungeon.reward.gold.min || 0), Number(dungeon.reward.gold.max || 0)) + Number(stats.plusGold || 0);
-        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0)));
+        goldReward = Math.round(goldReward * levelMultiplier * (1 + slotEffects.goldBonus + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user)));
         user.gold = Number(user.gold || 0) + goldReward;
         const levelUps = addExperience(user, expReward);
         lines.push('', '[ 보상 ]');
@@ -4076,6 +4122,19 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '안면강타') {
         getFieldBuffs(user).nextDamageReduction = { value: 0.30 };
         extra.notice = '안면강타: 다음 받는 피해 30% 감소';
+    }
+    if (skillData.skill.name == '감사합니다 친구야') {
+        const ratio = getSkillValue(skillData.skill, 1, star);
+        const amount = Math.round(Number(stats.hp || 0) * ratio);
+        user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
+        extra.receivedDamageReduction = 0.3;
+        getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 12000 };
+        extra.notice = '감사합니다 친구야: 12초 동안 받는 피해 30% 감소';
+    }
+    if (skillData.skill.name == 'KICK BACK') {
+        extra.critChanceMul = 0.5;
+        extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
     }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const fieldBuffsNow = getFieldBuffs(user);
@@ -7068,12 +7127,15 @@ function grantPackReward(user, reward, summary) {
 
 function grantCharacterCardPack(user, pack, useCount, summary) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const isJob = pack.type == '전직 캐릭터 카드팩';
+    const candidateIds = characterCards.map((_, i) => i).filter(i => isJob ? hasJobClass(i) : true);
+    if (candidateIds.length == 0) return;
     const minStar = Number(pack.range && pack.range.min || 1);
     const maxStar = Number(pack.range && pack.range.max || minStar);
     for (let i = 0; i < useCount; i++) {
-        const id = randomInt(0, characterCards.length - 1);
+        const id = candidateIds[randomInt(0, candidateIds.length - 1)];
         const star = randomInt(minStar, maxStar) - 1;
-        const card = { id: id, star: star, type: '일반' };
+        const card = { id: id, star: star, type: isJob ? '전직' : '일반' };
         applyPackSkinToCard(card, pack.skin);
         user.inventory.card.push(card);
         addRewardSummary(summary, 'card:' + card.id + ':' + star + ':' + (card.skin || ''), formatUserCard(card), 1);
@@ -7184,6 +7246,15 @@ function applyUseFunc(user, func, useCount, resultLines) {
         const levelUps = addExperience(user, amount);
         resultLines.push('- XP +' + comma(amount));
         if (levelUps > 0) resultLines.push('- 레벨업! Lv. ' + user.level);
+        return;
+    }
+    if (func.type == '경험치비약') {
+        applyPotionBuff(user, 'expPotion', Number(func.amount || 0), Number(func.duration || 0), '경험치 획득량', resultLines);
+        return;
+    }
+    if (func.type == '골드비약') {
+        applyPotionBuff(user, 'goldPotion', Number(func.amount || 0), Number(func.duration || 0), '골드 획득량', resultLines);
+        return;
     }
 }
 
@@ -7205,7 +7276,7 @@ async function useItem(user, itemName, countArg) {
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
     if (getInventoryItemCount(user, itemId) < useCount) return '❌ 아이템이 부족합니다.';
     const requestedUseCount = useCount;
-    if (item.pack && item.pack.type == '캐릭터 카드팩') {
+    if (item.pack && (item.pack.type == '캐릭터 카드팩' || item.pack.type == '전직 캐릭터 카드팩')) {
         const remainingSpace = getRemainingCardInventorySpace(user);
         if (remainingSpace < 1) return '❌ 캐릭터 카드 인벤토리가 가득 찼습니다.';
         useCount = Math.min(useCount, remainingSpace);
@@ -7243,6 +7314,17 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
         if (item.use != '캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
+    if (item.type == '소모품') {
+        for (const func of (item.use_func || [])) {
+            if (func.type != '경험치비약' && func.type != '골드비약') continue;
+            if (useCount != 1) return '❌ 비약은 한 번에 1개만 사용할 수 있습니다.';
+            const field = func.type == '경험치비약' ? 'expPotion' : 'goldPotion';
+            const cur = user[field];
+            if (cur && Number(cur.expired_at || 0) > Date.now() && Number(func.amount || 0) < Number(cur.amount || 0)) {
+                return '❌ 이미 더 높은 효과의 ' + (func.type == '경험치비약' ? '경험치' : '골드') + ' 획득 버프가 적용 중입니다.';
+            }
+        }
+    }
 
     removeInventoryItem(user, itemId, useCount);
     requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
@@ -7260,7 +7342,7 @@ async function useItem(user, itemName, countArg) {
             if (!Array.isArray(pack)) return '❌ 사용할 수 없는 가챠입니다.';
             const rollCount = Number(item.num || 1) * useCount;
             for (let i = 0; i < rollCount; i++) grantPackReward(user, pickPackEntry(pack), summary);
-        } else if (item.pack && item.pack.type == '캐릭터 카드팩') {
+        } else if (item.pack && (item.pack.type == '캐릭터 카드팩' || item.pack.type == '전직 캐릭터 카드팩')) {
             if (!user.inventory) user.inventory = { card: [], item: [] };
             if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
             grantCharacterCardPack(user, item.pack, useCount, summary);
@@ -7354,13 +7436,14 @@ async function useItem(user, itemName, countArg) {
             }
         }
         if (item.use == '잠재능력부여') {
-            const targets = getPotentialAwakenTargets(user);
+            const tierKey = item.tier ? getPotentialRarityKey(item.tier) : null;
+            const targets = getPotentialAwakenTargets(user, tierKey);
             if (targets.length == 0) {
                 addInventoryItem(user, itemId, useCount);
                 lines.push('❌ 잠재능력을 부여할 수 있는 장비가 없어 아이템을 반환했습니다.');
             } else {
-                user.pendingAction = { type: '잠재능력부여', consumedItemId: itemId, consumedItemCount: useCount };
-                lines.push('잠재능력을 부여할 장비를 선택해주세요.');
+                user.pendingAction = { type: '잠재능력부여', tier: tierKey, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push((tierKey ? getPotentialRarityLabel(tierKey) + ' ' : '') + '잠재능력을 부여할 장비를 선택해주세요.');
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatPotentialAwakenTargetList(targets));
@@ -7647,6 +7730,8 @@ class RPGUser {
         this.fragmentCounts = {};
         this.goldMineDaily = null;
         this.eventDiceDropDaily = null;
+        this.expPotion = null;
+        this.goldPotion = null;
         this.cardCombineCounts = {};
         this.cardPackCombineCounts = {};
         this.maxCardLimit = 52;
