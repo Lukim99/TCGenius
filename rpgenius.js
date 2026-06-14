@@ -2793,6 +2793,13 @@ function getEquipmentPassives() {
     return readJson(EQUIPMENT_PASSIVE_PATH, []);
 }
 
+function getThornsReflect(user, stats) {
+    if (!findEquipWithPassiveId(user, 5)) return 0;
+    const p = getEquipmentPassives()[5];
+    const ratio = Number(p && p.format && p.format[0] && p.format[0].base || 0);
+    return Math.max(0, Math.round(Number(stats && stats.def || 0) * ratio));
+}
+
 function getManaResonanceBonus(user, stats) {
     if (!findEquipWithPassiveId(user, 4)) return 0;
     const passive = getEquipmentPassives()[4];
@@ -3606,6 +3613,26 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
+    if (fieldDamage > 0) {
+        const thornsReflect = getThornsReflect(user, stats);
+        if (thornsReflect > 0 && user.field.elite) {
+            user.field.elite.hp = Math.max(0, user.field.elite.hp - thornsReflect);
+            lines.push('- 🪞 가시 반사: ' + elite.name + '에게 ' + comma(thornsReflect) + ' 피해');
+            lines.push('- ' + elite.name + ' HP: ' + comma(user.field.elite.hp) + '/' + comma(elite.hp));
+            if (user.field.elite.hp <= 0) {
+                lines.push('- ' + elite.name + ' 처치!');
+                applySkillRecovery(user, maxHp, extra, lines);
+                applyEliteReward(user, dungeon, slotEffects, extra, lines);
+                const state = getEliteState(dungeon.name);
+                state.owner = null;
+                state.defeatedAt = Date.now();
+                persistEliteState();
+                user.field.elite = null;
+                if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+                return lines.join('\n');
+            }
+        }
+    }
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else {
         if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ' + elite.name + '에게 ', '피해를 입었습니다!').forEach(line => lines.push(line));
@@ -3695,6 +3722,19 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
+    if (fieldDamage > 0) {
+        const thornsReflect = getThornsReflect(user, stats);
+        if (thornsReflect > 0) {
+            const bonusKills = Math.floor(thornsReflect / Number(monster.hp || 1));
+            if (bonusKills > 0) {
+                const remaining = typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily
+                    ? Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - Number(user.goldMineDaily.count || 0))
+                    : Infinity;
+                killCount += Math.min(bonusKills, remaining);
+            }
+            lines.push('- 🪞 가시 반사: ' + comma(thornsReflect) + ' (추가 처치 ' + comma(bonusKills) + '마리)');
+        }
+    }
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
@@ -4385,6 +4425,20 @@ async function runWorldBossSkillTick(userName, bossName) {
     tickLines.unshift('💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!');
     applyDamageTakenSlotRecovery(latest, Number(userStats.hp || 0), finalDamage, slotEffects, userStats, tickLines);
     latest.field.karmaStack = Number(latest.field.karmaStack || 0) + finalDamage * 0.30;
+    if (finalDamage > 0) {
+        const thornsReflect = getThornsReflect(latest, userStats);
+        if (thornsReflect > 0) {
+            const thornsRes = dealDamageToWorldBoss(latest, boss, thornsReflect, { trueDamage: true });
+            formatWorldBossDamageLines(boss, thornsRes, '🪞 가시 반사! ').forEach(l => tickLines.push(l));
+            grantWorldBossThresholdRewards(latest, boss, getWorldBossState(boss.name), tickLines, '[ 월드보스 딜량 달성 보상 ]');
+            if (Number(thornsRes.after) <= 0) {
+                await finalizeWorldBossDefeat(latest, boss, tickLines);
+                await latest.save();
+                if (channel) channel.sendChat(tickLines.join('\n'));
+                return;
+            }
+        }
+    }
     if (counterActive) {
         const counterRaw = Math.round(Number(counterBuff.flat || 0) + Number(userStats.atk || 0) * Number(counterBuff.mul || 0));
         const counterResult = dealDamageToWorldBoss(latest, boss, counterRaw, {});

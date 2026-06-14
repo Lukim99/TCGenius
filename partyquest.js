@@ -160,6 +160,29 @@ function getManaResonanceSnapshot(user) {
     return null;
 }
 
+function getThornsSnapshot(user) {
+    if (!user) return null;
+    const eq = user.equipments || {};
+    const slots = [
+        ['weapon', eq.weapon],
+        ['armor', eq.armor],
+        ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
+        ['support', eq.support]
+    ];
+    const equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
+    for (const [slot, equip] of slots) {
+        if (!equip || typeof equip.id === 'undefined') continue;
+        const data = equipments && equipments[slot] && equipments[slot][equip.id];
+        if (data && data.passive_id === 5) {
+            const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
+            const passive = passives[5];
+            if (!passive) return null;
+            return { ratio: Number(passive.format && passive.format[0] && passive.format[0].base || 0) };
+        }
+    }
+    return null;
+}
+
 function getPartyQuestPacks() {
     const cached = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Pack', []) : [];
     return Array.isArray(cached) && cached.length ? cached : loadJsonCached(PACKS_PATH, 'packs');
@@ -885,7 +908,8 @@ async function start(hostName) {
             const mainCardSkills = user ? getMainCardSkillEntries(user) : [];
             const immortalArmor = user ? getImmortalArmorSnapshot(user) : null;
             const manaResonance = user ? getManaResonanceSnapshot(user) : null;
-            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance };
+            const thorns = user ? getThornsSnapshot(user) : null;
+            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
         }
@@ -1895,6 +1919,18 @@ function applyDamageToMember(room, member, dmg, source) {
     r.hp = Math.max(0, r.hp - dmg);
     pushCombat(room, source + ' → ' + member.name + ' [-' + dmg + ']', 'damage');
     applyDamageTakenSlotRecovery(room, member, dmg);
+    // 장비 패시브: 가시 (passive_id 5) — 방어력 × ratio 고정 피해 반사
+    const thornSnap = member.baseSnapshot && member.baseSnapshot.thorns;
+    if (dmg > 0 && thornSnap && room.monster) {
+        const tStats = member.baseSnapshot.stats;
+        const tQuest = getQuestById(room.questId);
+        const tPosDef = tQuest && tQuest.positions && tQuest.positions[member.position];
+        const finalDefMul = (tPosDef && tPosDef.stats && tPosDef.stats.finalDef) || 1;
+        const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
+        room.monster.hp = Math.max(0, room.monster.hp - reflect);
+        pushCombat(room, '🪞 가시 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
+    }
     // 패시브: 가시 갑옷 — 받은 피해 발생 시 방어력 20% 반사
     if (dmg > 0 && hasPassive(member, '가시 갑옷') && room.monster) {
         const stats = member.baseSnapshot.stats;
