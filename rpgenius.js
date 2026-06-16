@@ -1625,7 +1625,7 @@ function rollCardCombineSuccess(user, kind, star, rate) {
     normalizeCardCombineCounts(user);
     const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
     const key = String(star);
-    const effectiveRate = Math.min(1, Number(rate || 0) + (['시그니를','월야환담'].includes(user.nickname) ? 0.6 : 0));
+    const effectiveRate = Math.min(1, Number(rate || 0) + (['시그니를','월야환담','엄마'].includes(user.nickname) ? 0.6 : 0));
     const guarantee = getCardCombineGuaranteeCount(star);
     if (!guarantee) return { success: Math.random() < effectiveRate, guaranteed: false, count: 0, guarantee: 0 };
     const nextCount = Number(target[key] || 0) + 1;
