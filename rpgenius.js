@@ -1626,7 +1626,7 @@ function rollCardCombineSuccess(user, kind, star, rate) {
     const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
     const key = String(star);
     const probCombine = getDataCache('Prob', {}).combine || {};
-    const nicknameBonus = Number(probCombine[user.nickname] || 0);
+    const nicknameBonus = Number(probCombine[user.name] || 0);
     const effectiveRate = Math.min(1, Number(rate || 0) + nicknameBonus);
     const guarantee = getCardCombineGuaranteeCount(star);
     if (!guarantee) return { success: Math.random() < effectiveRate, guaranteed: false, count: 0, guarantee: 0 };
