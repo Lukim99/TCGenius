@@ -33,7 +33,7 @@ const TARGET_CHANNEL_IDS = [
     "442097040687921", "18486286197949811"
 ];
 
-const USER_TABLE = "user_data";
+const USER_TABLE = "hunter_user";
 const HUNT_TABLE = "hunt";
 const VIEWMORE = '‎'.repeat(500);
 const DB_ROOT = path.join(__dirname, 'DB', 'hunter');
@@ -362,88 +362,64 @@ function getTier(rating) {
     else return "마스터";
 }
 
-// ───────────────────────────────────────────────────────────── User (DynamoDB: user_data)
+// ───────────────────────────────────────────────────────────── User (DynamoDB: hunter_user)
+// 헌터 콜로세움 전용 최소 스키마. (old_engine user_data 에서 헌터에 필요한 필드만 추출)
 function User(name, id) {
-    this._get = 1;
-    this.id = id;
-    this.name = name;
+    this._get = 1;                  // getIdx GSI 파티션 키
+    this.id = id;                   // 테이블 파티션 키 (최초 가입 senderId)
+    this.name = name;               // nameIdx GSI
+    this.code = getRandomString(10).toUpperCase(); // codeIdx GSI (로그인 코드)
+    this.logged_in = [id];          // 로그인된 senderId 목록
     this.isAdmin = false;
-    this.isRPG = false;
-    this.code = getRandomString(10).toUpperCase();
-    this.logged_in = [id];
-    this.rank = -1;
-    this.rate = null;
-    this.lp = 0;
-    this.playing = {};
-    this.money = 10000;
-    this.stocks = [];
-    this.stockInit = false;
-    this.arbeit = null;
+    // 재화 / 인벤토리 / 장비
+    this.cash = 0;                  // 코인
     this.inventory = [];
     this.equips = { weapon: { name: "맨손", tier: "-" }, armor: { name: "평상복", tier: "-" }, artifact: [] };
-    this.cash = 0;
-    this.title = null;
-    this.character_setting = null;
-    this.entered_coupon = [];
+    this.equipSet = [null, null, null];
+    this.artifactMaxSlot = 3;
+    // 스탯 / 콜로세움 레이팅
+    this.stat = { str: 0, def: 0, int: 0 };
     this.hunterRate = 1500;
     this.initHunterRate = "F";
     this.lastHunterRate = null;
-    this.remainArcana = 100;
-    this.guild = null;
+    // 펫 / 진행 상태 / 위치
     this.pet = { name: null, level: 0, damage: 0 };
-    this.equipSet = [null, null, null];
-    this.gem = 0;
-    this.init = { artifact: false };
-    this.artifactMaxSlot = 3;
-    this.stat = { str: 0, def: 0, int: 0 };
+    this.playing = {};              // playing.hunt 등
+    this.location = null;           // 루나리 왕국 등 위치
+    this.state = null;              // NPC 상태 등
+    // 길드 / 칭호 / 기타
+    this.guild = null;
+    this.title = null;
     this.titles = [];
-    this.tbTicket = 0;
-    this.tbCoupon = [];
-    this.credit = 0;
-    this.restricted = {};
-    this.notified = 0;
+    this.entered_coupon = [];       // 사용한 쿠폰 추적
+    this.remainArcana = 100;
+    this.init = { artifact: false };
 }
 User.prototype.load = function (data) {
-    this.name = data.name;
-    this.id = data.id;
-    this.isAdmin = data.isAdmin;
-    this.isRPG = data.isRPG || false;
-    this.code = data.code;
-    this.logged_in = data.logged_in;
-    this.rank = data.rank;
-    this.rate = data.rate ? Number(data.rate) : null;
-    this.lp = Number(data.lp);
-    this.playing = data.playing;
-    this.money = Number(data.money) || (data.money == 0 ? 0 : 10000);
-    this.stocks = data.stocks || [];
-    this.stockInit = data.stockInit || false;
-    this.arbeit = data.arbeit || null;
-    this.inventory = data.inventory || [];
-    this.equips = data.equips || { weapon: { name: "맨손", tier: "-" }, armor: { name: "평상복", tier: "-" }, artifact: [] };
-    this.cash = data.cash || 0;
-    this.title = data.title || null;
-    this.character_setting = data.character_setting || null;
-    this.entered_coupon = data.entered_coupon || [];
-    this.hunterRate = data.hunterRate || 1500;
-    this.initHunterRate = data.initHunterRate || "F";
-    this.challenged = data.challenged || 0;
-    this.lastHunterRate = data.lastHunterRate || null;
-    this.remainArcana = data.remainArcana || (data.remainArcana == 0 ? 0 : 100);
-    this.guild = data.guild || null;
-    this.pet = data.pet || { name: null, level: 0, damage: 0 };
-    this.equipSet = data.equipSet || [null, null, null];
-    this.gem = data.gem || 0;
-    this.location = data.location || null;
-    this.state = data.state || null;
-    this.init = data.init || { artifact: false };
-    this.artifactMaxSlot = data.artifactMaxSlot || 3;
-    this.stat = data.stat || { str: 0, def: 0, int: 0 };
-    this.titles = data.titles || [];
-    this.tbTicket = data.tbTicket || 0;
-    this.tbCoupon = data.tbCoupon || [];
-    this.credit = data.credit || 0;
-    this.restricted = data.restricted || {};
-    this.notified = data.notified || 0;
+    Object.assign(this, data);
+    if (this._get == null) this._get = 1;
+    if (!Array.isArray(this.logged_in)) this.logged_in = this.id ? [this.id] : [];
+    if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
+    if (typeof this.cash == 'undefined') this.cash = 0;
+    if (!Array.isArray(this.inventory)) this.inventory = [];
+    if (!this.equips || typeof this.equips != 'object') this.equips = { weapon: { name: "맨손", tier: "-" }, armor: { name: "평상복", tier: "-" }, artifact: [] };
+    if (!Array.isArray(this.equips.artifact)) this.equips.artifact = [];
+    if (!Array.isArray(this.equipSet)) this.equipSet = [null, null, null];
+    if (!this.artifactMaxSlot) this.artifactMaxSlot = 3;
+    if (!this.stat || typeof this.stat != 'object') this.stat = { str: 0, def: 0, int: 0 };
+    if (typeof this.hunterRate == 'undefined') this.hunterRate = 1500;
+    if (!this.initHunterRate) this.initHunterRate = "F";
+    if (typeof this.lastHunterRate == 'undefined') this.lastHunterRate = null;
+    if (!this.pet || typeof this.pet != 'object') this.pet = { name: null, level: 0, damage: 0 };
+    if (!this.playing || typeof this.playing != 'object') this.playing = {};
+    if (typeof this.location == 'undefined') this.location = null;
+    if (typeof this.state == 'undefined') this.state = null;
+    if (typeof this.guild == 'undefined') this.guild = null;
+    if (typeof this.title == 'undefined') this.title = null;
+    if (!Array.isArray(this.titles)) this.titles = [];
+    if (!Array.isArray(this.entered_coupon)) this.entered_coupon = [];
+    if (typeof this.remainArcana == 'undefined') this.remainArcana = 100;
+    if (!this.init || typeof this.init != 'object') this.init = { artifact: false };
     return this;
 };
 User.prototype.toString = function () {
@@ -506,9 +482,8 @@ async function getUserByName(name) {
             TableName: USER_TABLE,
             IndexName: "nameIdx",
             KeyConditionExpression: "#name = :name_val",
-            FilterExpression: "#get = :get",
-            ExpressionAttributeNames: { "#name": "name", "#get": "_get" },
-            ExpressionAttributeValues: { ":name_val": name, ":get": 1 }
+            ExpressionAttributeNames: { "#name": "name" },
+            ExpressionAttributeValues: { ":name_val": name }
         }));
         if (res.Items && res.Items[0]) return new User().load(res.Items[0]);
     } catch (e) { console.error('[hunter getUserByName]', e.message); }
@@ -520,13 +495,50 @@ async function getUserByCode(code) {
             TableName: USER_TABLE,
             IndexName: "codeIdx",
             KeyConditionExpression: "#code = :code_val",
-            FilterExpression: "#get = :get",
-            ExpressionAttributeNames: { "#code": "code", "#get": "_get" },
-            ExpressionAttributeValues: { ":code_val": code, ":get": 1 }
+            ExpressionAttributeNames: { "#code": "code" },
+            ExpressionAttributeValues: { ":code_val": code }
         }));
         if (res.Items && res.Items[0]) return new User().load(res.Items[0]);
     } catch (e) { console.error('[hunter getUserByCode]', e.message); }
     return null;
+}
+// getIdx 로 전체 헌터 유저 조회 (랭킹/시즌 집계용).
+async function getAllUsers() {
+    const users = [];
+    let ExclusiveStartKey;
+    try {
+        do {
+            const res = await docClient.send(new QueryCommand({
+                TableName: USER_TABLE,
+                IndexName: "getIdx",
+                KeyConditionExpression: "#gsi_partition_key = :gsi_value",
+                ExpressionAttributeNames: { "#gsi_partition_key": "_get" },
+                ExpressionAttributeValues: { ":gsi_value": 1 },
+                ExclusiveStartKey
+            }));
+            (res.Items || []).forEach(it => users.push(new User().load(it)));
+            ExclusiveStartKey = res.LastEvaluatedKey;
+        } while (ExclusiveStartKey);
+    } catch (e) { console.error('[hunter getAllUsers]', e.message); }
+    return users;
+}
+// 신규 등록(이미 존재하면 실패). attribute_not_exists(id) 조건.
+async function putNewUser(user) {
+    try {
+        await docClient.send(new (require('@aws-sdk/lib-dynamodb').PutCommand)({
+            TableName: USER_TABLE,
+            Item: jsonCopy(user),
+            ConditionExpression: "attribute_not_exists(id)"
+        }));
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e };
+    }
+}
+function jsonCopy(obj) {
+    const out = {};
+    for (const k of Object.keys(obj)) { if (typeof obj[k] !== 'function') out[k] = obj[k]; }
+    return out;
 }
 // old_engine updateItem('user_data', id, user): id 를 제외한 모든 필드를 SET.
 async function saveUser(user) {
@@ -665,25 +677,10 @@ async function getDeletedUserByName(name) {
     } catch (e) { console.error('[hunter getDeletedUserByName]', e.message); }
     return null;
 }
-// old_engine: DynamoDB Query on ihrIdx (initHunterRate index). 헌터 랭킹/시즌 집계용.
+// 헌터 랭킹/시즌 집계용. 전용 테이블이라 전체 조회 후 initHunterRate 로 필터(별도 GSI 불필요).
 async function getHuntersByInitRate(val) {
-    let users = [];
-    let payload = {
-        TableName: USER_TABLE,
-        IndexName: "ihrIdx",
-        KeyConditionExpression: "#gsi_partition_key = :gsi_value",
-        ExpressionAttributeNames: { "#gsi_partition_key": "initHunterRate" },
-        ExpressionAttributeValues: { ":gsi_value": val }
-    };
-    try {
-        while (true) {
-            const res = await docClient.send(new QueryCommand(payload));
-            if (res.Items) users = users.concat(res.Items.map(r => new User().load(r)));
-            if (!res.LastEvaluatedKey) break;
-            payload.ExclusiveStartKey = res.LastEvaluatedKey;
-        }
-    } catch (e) { console.error('[hunter getHuntersByInitRate]', e.message); }
-    return users;
+    const users = await getAllUsers();
+    return users.filter(u => u.initHunterRate == val);
 }
 
 // 전투 종료 후, processHunt 가 동기 처리하지 못한 부작용(풍선 선물 등) 일괄 지급.
@@ -6034,7 +6031,7 @@ async function handleHunter(user, channel, senderID, cmd) {
                 let target = await getUserByName(args[1]);
                 if (! target) {
                     room.send("❌ 유저를 찾을 수 없습니다.");
-                } else if (!target.inventory || !target.hunterRate || !target.equips || target.entered_coupon.length == 0) {
+                } else if (!target.inventory || !target.hunterRate || !target.equips) {
                     room.send("❌ 헌터에게만 도전할 수 있습니다.");
                 } else if (target.id == user.id) {
                     room.send("❌ 자기 자신에게는 도전할 수 없습니다.");
@@ -8040,6 +8037,8 @@ module.exports = {
     initHunterData,
     getUserById,
     getUserByName,
+    getUserByCode,
+    getAllUsers,
     getHuntById,
     getHuntersByInitRate
 };
@@ -8055,6 +8054,64 @@ function isHunterCommand(cmd) {
     return false;
 }
 
+// 등록/로그인/로그아웃/코드 — 계정 유무와 무관하게 동작. 처리하면 true 반환. (rpgenius.js 참고)
+async function handleAuth(channel, senderId, cmd) {
+    const reply = (m) => channel.sendChat(m);
+    const sub = cmd.split(" ").slice(1)[0];
+    if (sub == "등록") {
+        const nickname = cmd.substr("헌터 등록".length).trim();
+        const existing = await getUserById(senderId);
+        if (existing) { reply("❌ 이미 로그인된 상태입니다.\n- " + existing.name); return true; }
+        if (!nickname || nickname.match(/[^가-힣ㄱ-ㅎa-zA-Z0-9\s]/)) { reply("❌ 닉네임은 한글, 영어, 숫자 및 공백만 들어갈 수 있습니다."); return true; }
+        if (nickname.length > 10) { reply("❌ 닉네임은 최대 10글자로 설정하셔야 합니다."); return true; }
+        if (await getUserByName(nickname)) { reply("❌ 이미 존재하는 이름입니다."); return true; }
+        myCheck[senderId] = { type: "헌터등록", arg: { name: nickname } };
+        reply("🏹 헌터 콜로세움 ⚔️\n닉네임: [ " + nickname + " ]\n정말 등록하시겠습니까?\n\n[ $확인 ]");
+        return true;
+    }
+    if (sub == "로그인") {
+        const existing = await getUserById(senderId);
+        if (existing) { reply("❌ 이미 로그인된 상태입니다.\n- " + existing.name); return true; }
+        const code = (cmd.split(" ")[2] || "").trim();
+        const loginUser = await getUserByCode(code);
+        if (!loginUser) { reply("❌ 잘못된 코드입니다."); return true; }
+        if (!Array.isArray(loginUser.logged_in)) loginUser.logged_in = [];
+        if (!loginUser.logged_in.includes(senderId)) loginUser.logged_in.push(senderId);
+        loginUser.code = getRandomString(10).toUpperCase();
+        await loginUser.save();
+        reply("✅ " + loginUser.name + " 계정으로 로그인했습니다.");
+        return true;
+    }
+    if (sub == "로그아웃") {
+        const user = await getUserById(senderId);
+        if (!user) { reply("❌ 로그인된 계정이 없습니다."); return true; }
+        user.logged_in = (user.logged_in || []).filter(id => id != senderId);
+        await user.save();
+        reply("✅ " + user.name + " 계정에서 로그아웃했습니다.");
+        return true;
+    }
+    if (sub == "코드") {
+        const user = await getUserById(senderId);
+        if (!user) { reply("❌ 로그인된 계정이 없습니다."); return true; }
+        reply("🔑 로그인 코드: " + user.code + "\n다른 기기에서 [ $헌터 로그인 " + user.code + " ] 로 로그인할 수 있습니다.\n(로그인 시 코드는 갱신됩니다)");
+        return true;
+    }
+    return false;
+}
+
+// $확인 으로 등록 확정.
+async function handleRegisterConfirm(channel, senderId) {
+    const reply = (m) => channel.sendChat(m);
+    const nickname = myCheck[senderId].arg.name;
+    delete myCheck[senderId];
+    if (await getUserById(senderId)) { reply("❌ 이미 등록된 계정이 있습니다."); return; }
+    if (await getUserByName(nickname)) { reply("❌ 이미 존재하는 이름입니다."); return; }
+    const newUser = new User(nickname, senderId);
+    const res = await putNewUser(newUser);
+    if (res.success) reply("🏹 헌터 콜로세움 ⚔️\n✅ 성공적으로 등록되셨습니다!\n환영합니다, " + nickname + "님!\n\n>> 도움말: [ $헌터 도움말 ]");
+    else reply("❌ 등록 과정에서 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+}
+
 async function onChat(data, channel) {
     if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
     const msg = (data.text || '').trim();
@@ -8068,9 +8125,18 @@ async function onChat(data, channel) {
     const senderId = sender.userId + '';
 
     await ensureHunterDataLoaded();
-    const user = await getUserById(senderId);
 
     try {
+        // 1) 등록 확정 ($확인): 계정 생성 전 단계이므로 게임 myCheck 보다 먼저 처리.
+        if (isConfirm && myCheck[senderId] && myCheck[senderId].type == "헌터등록") {
+            await handleRegisterConfirm(channel, senderId);
+            return true;
+        }
+        // 2) 인증 명령(등록/로그인/로그아웃/코드) — 계정 유무와 무관.
+        if (cmd.startsWith("헌터") && await handleAuth(channel, senderId, cmd)) return true;
+
+        // 3) 일반 명령 — 계정 로드.
+        const user = await getUserById(senderId);
         // $확인: 헌터 관련 myCheck 만 처리하고, 아니면 false 를 반환해 다른 모듈로 넘긴다.
         if (isConfirm) return await handleConfirm(user, channel, senderId, cmd);
         // old_engine 은 매 메시지마다 헌터 블록과 플레이 블록을 순차 실행했다(각 블록은 내부에서 자체 가드).
