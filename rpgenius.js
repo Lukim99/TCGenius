@@ -3,6 +3,7 @@ const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetComm
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
+const ragbot = require('./ragbot');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
@@ -8364,6 +8365,21 @@ async function handleRPGCommand(data, channel) {
     const senderId = sender.userId + '';
     const args = cmd.substr(cmd.split(' ')[0].length + 1).split(' ');
     const reply = text => channel.sendChat(text);
+
+    if (args[0] == '질문') {
+        const question = args.slice(1).join(' ').trim();
+        if (!question) {
+            reply('❌ 질문을 입력해주세요.\n예) /rpg 질문 전직 조합은 어떻게 하나요?');
+            return true;
+        }
+        try {
+            const answer = await ragbot.askRag(question);
+            reply('🤖 챗봇 답변:\n' + answer);
+        } catch (e) {
+            reply('❌ 답변 생성에 실패했습니다: ' + (e && e.message || e));
+        }
+        return true;
+    }
 
     if (args[0] == '등록') {
         const nickname = cmd.substr(cmd.split(' ')[0].length + 4).trim();
