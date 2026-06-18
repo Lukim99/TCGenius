@@ -30,9 +30,7 @@ const { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand, DeleteC
 // 헌터 콜로세움 게임이 지원되는 방 목록 (old_engine 의 possibleRooms).
 // new_engine 의 channelId 체계로 채워 넣어야 한다. (임시: old_engine 값 유지)
 const TARGET_CHANNEL_IDS = [
-    "442097040687921", "18446472286956749", "18447887254284126", "433076049769561",
-    "384981318100178", "18448796257459256", "18451173486559958", "439083102695072",
-    "18454451074557977", "18456913814672594"
+    "442097040687921", "18486286197949811"
 ];
 
 const USER_TABLE = "user_data";
