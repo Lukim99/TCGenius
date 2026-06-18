@@ -1,0 +1,468 @@
+[
+    {
+        "craft": {
+            "name": "체력 물약",
+            "type": "음식",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "보호의 정수",
+                "type": "재료",
+                "count": 1
+            },
+            {
+                "name": "유리병",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "저항 물약",
+            "type": "음식",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 35
+            },
+            {
+                "name": "유리병",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "유리병",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "서리 파편",
+                "type": "재료",
+                "count": 5
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "구운 아이스 베어 고기",
+            "type": "음식",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "훈연 숯",
+                "type": "재료",
+                "count": 1
+            },
+            {
+                "name": "아이스 베어 고기",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "서리 결정",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "서리 파편",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "강함의 증명",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "강함의 조각",
+                "type": "재료",
+                "count": 2
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "홍월의 샤드",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "달의 파편",
+                "type": "재료",
+                "count": 10
+            },
+            {
+                "name": "강함의 증명",
+                "type": "재료",
+                "count": 3
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "달의 파편",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "힘의 두루마리",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "마나가 담긴 종이",
+                "type": "재료",
+                "count": 100
+            },
+            {
+                "name": "힘의 정수",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "마법의 두루마리",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "마나가 담긴 종이",
+                "type": "재료",
+                "count": 100
+            },
+            {
+                "name": "마법의 정수",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "보호의 두루마리",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "마나가 담긴 종이",
+                "type": "재료",
+                "count": 100
+            },
+            {
+                "name": "보호의 정수",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "루나리 왕국 입장권",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "💎",
+                "type": "재화",
+                "count": 50
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "무기 마법 부여 스크롤",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 1
+            },
+            {
+                "name": "힘의 두루마리",
+                "type": "재료",
+                "count": 1
+            },
+            {
+                "name": "마법의 두루마리",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "갑옷 마법 부여 스크롤",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 1
+            },
+            {
+                "name": "보호의 두루마리",
+                "type": "재료",
+                "count": 1
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "시련의 회당 티켓",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 5
+            },
+            {
+                "name": "코인",
+                "type": "코인",
+                "count": 50000000
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "달의 증표",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "달의 파편",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "별의 증표",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "별의 파편",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "코인",
+                "type": "코인",
+                "count": 10000000
+            },
+            {
+                "name": "💎",
+                "type": "재화",
+                "count": 2
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "달의 증표",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별의 증표",
+                "type": "재료",
+                "count": 10
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "성월의 레이피어의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "격조의 창의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "아스트로베놈의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "맹독 비수의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "천상유랑검의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "방랑자의 장검의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "혈성극검의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "뱀파이어의 송곳니의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "셀레스티아의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "별빛 지팡이의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "소울 하베스터의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "사신의 낫의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "천명즉살검의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "새벽 단검의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "스텔라 인페르노의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "염화의 지팡이의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "엠파이리언 아크의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "하늘의 장궁의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    },
+    {
+        "craft": {
+            "name": "광살혈도의 조각",
+            "type": "재료",
+            "count": 1
+        },
+        "material": [
+            {
+                "name": "흉포한 도끼의 조각",
+                "type": "재료",
+                "count": 100
+            }
+        ]
+    }
+]

@@ -1,0 +1,71 @@
+[
+    {
+        "name": "헌터 로비",
+        "npcs": [],
+        "need_ticket": false,
+        "banned": [],
+        "can_entry": [
+            "루나리 왕국"
+        ],
+        "hotel": false
+    },
+    {
+        "name": "루나리 왕국 마을",
+        "npcs": [
+            "리나 에셀",
+            "비쉬프 에셀",
+            "이카리스 멜"
+        ],
+        "need_ticket": false,
+        "banned": [],
+        "can_entry": [
+            "루나리 왕성",
+            "실라우스의 상점",
+            "헌터 로비"
+        ],
+        "hotel": true
+    },
+    {
+        "name": "루나리 왕성",
+        "npcs": [
+            "리스 루나리"
+        ],
+        "need_ticket": false,
+        "banned": [
+            "5374185238429193005"
+        ],
+        "can_entry": [
+            "루나리 왕국 마을",
+            "실라우스의 상점",
+            "헌터 로비"
+        ],
+        "hotel": false
+    },
+    {
+        "name": "루나리 왕국",
+        "npcs": [],
+        "need_ticket": true,
+        "banned": [],
+        "can_entry": [
+            "루나리 왕국 마을",
+            "루나리 왕성",
+            "실라우스의 상점",
+            "헌터 로비"
+        ],
+        "hotel": false
+    },
+    {
+        "name": "실라우스의 상점",
+        "npcs": [
+            "라디안 실라우스"
+        ],
+        "need_ticket": false,
+        "banned": [],
+        "can_entry": [
+            "루나리 왕국 마을",
+            "루나리 왕성",
+            "헌터 로비"
+        ],
+        "hotel": false
+    }
+]

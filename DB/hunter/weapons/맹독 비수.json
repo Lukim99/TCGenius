@@ -1,0 +1,122 @@
+{
+    "E": {
+        "plusStat": {
+            "hit": 0,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.3,
+            "dth": 0
+        },
+        "tierDesc": "공격 시 45의 물리 피해를 입힙니다."
+    },
+    "D": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.4,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "C": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.5,
+            "dth": 0
+        },
+        "tierDesc": "대상이 중독된 상태라면 🗡️관통 +15%"
+    },
+    "B": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.05,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.6,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "A": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.05,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.7,
+            "dth": 0
+        },
+        "tierDesc": "맹독 난무: 공격 시 대상 중독 중첩마다 15의 추가 물리 피해를 입힙니다."
+    },
+    "S": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.05,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.8,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "S+": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.05,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0.9,
+            "dth": 0
+        },
+        "tierDesc": "독소 폭발: 공격 시 대상 중독 중첩이 3 이상이라면 35% 확률로 독소 폭발을 일으켜 중독 중첩마다 대상 최대 체력의 2%만큼 고정 피해를 입힙니다."
+    },
+    "★": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.05,
+            "crt": 0.1,
+            "pnt": 0.1,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 1,
+            "dth": 0
+        },
+        "tierDesc": "극독: 중독이 발동하면 중독 중첩이 +1 증가합니다."
+    }
+}

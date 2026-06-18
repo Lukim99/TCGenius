@@ -6,6 +6,7 @@ const lolChatbot = require('./lol_chatbot.js');
 const chatbot1 = require('./chatbot1.js');
 const chatbot2 = require('./chatbot2.js');
 const rpgenius = require('./rpgenius.js');
+const hunterColosseum = require('./hunter_colosseum.js');
 const wollu = require('./wollu.js');
 const express = require('express');
 const request = require('request');
@@ -3687,6 +3688,7 @@ client.on('chat', async (data, channel) => {
     if (chatbot1.TARGET_CHANNEL_IDS.includes(channel.channelId) && await chatbot1.onChat(data, channel, { client })) return;
     if (chatbot2.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await chatbot2.onChat(data, channel)) return;
     if (rpgenius.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await rpgenius.onChat(data, channel)) return;
+    if (hunterColosseum.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await hunterColosseum.onChat(data, channel)) return;
     if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await wollu.onChat(data, channel)) return;
     try {
         const msg = data.text.trim();
@@ -11298,6 +11300,7 @@ async function login() {
             try {
                 await rpgenius.initRpgeniusData();
                 await rpgenius.resumeAllFishing(id => { try { return client.channelList.get(id); } catch (e) { return null; } });
+                await hunterColosseum.initHunterData();
             } catch (e) {
                 console.error('[rpgenius] resume on login error:', e);
             }

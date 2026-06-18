@@ -1,0 +1,122 @@
+{
+    "E": {
+        "plusStat": {
+            "hit": 0,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": "공격 시 95의 물리 피해를 입힙니다."
+    },
+    "D": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0,
+            "bld": 0.1,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "C": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.1,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "B": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.1,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.2,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "A": {
+        "plusStat": {
+            "hit": 0.1,
+            "cnt": 0,
+            "cmb": 0.1,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.2,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": "붉은 새벽녘: 공격 시 대상이 출혈 상태라면 65% 확률로 현재 체력의 15%만큼 추가 물리 피해를 입힙니다."
+    },
+    "S": {
+        "plusStat": {
+            "hit": 0.15,
+            "cnt": 0,
+            "cmb": 0.1,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.4,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": ""
+    },
+    "S+": {
+        "plusStat": {
+            "hit": 0.15,
+            "cnt": 0,
+            "cmb": 0.1,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.4,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0
+        },
+        "tierDesc": "공격 시 대상이 출혈 상태라면 ✨연격 +50%"
+    },
+    "★": {
+        "plusStat": {
+            "hit": 0.15,
+            "cnt": 0,
+            "cmb": 0.1,
+            "crt": 0,
+            "pnt": 0.1,
+            "bld": 0.4,
+            "brn": 0,
+            "stn": 0,
+            "poi": 0,
+            "dth": 0.009
+        },
+        "tierDesc": "피의 마무리: 일격이 발동하면 대상의 남은 체력이 30% 미만일 경우 즉사시킵니다."
+    }
+}

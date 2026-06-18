@@ -1,0 +1,175 @@
+[
+    {
+        "name": "활력 펜던트",
+        "plusStat": {
+            "hp": 50,
+            "maxHp": 50
+        }
+    },
+    {
+        "name": "카네이션 펜던트",
+        "plusStat": {
+            "hp": 250,
+            "maxHp": 250
+        }
+    },
+    {
+        "name": "홍월의 카네이션 펜던트",
+        "plusStat": {
+            "hp": 550,
+            "maxHp": 550
+        }
+    },
+    {
+        "name": "고대의 눈알",
+        "plusStat": {
+            "hit": 0.1
+        }
+    },
+    {
+        "name": "환영무쌍의 장갑",
+        "plusStat": {
+            "cmb": 0.05
+        }
+    },
+    {
+        "name": "아르카나 그림자 망토",
+        "plusStat": {
+            "avd": 0.1
+        }
+    },
+    {
+        "name": "아르카나 여명의 갑주",
+        "plusStat": {
+            "def": 0.15
+        }
+    },
+    {
+        "name": "아르카나 핏빛 로브",
+        "plusStat": {
+            "hp": 150,
+            "maxHp": 150
+        }
+    },
+    {
+        "name": "아르카나 격조의 창",
+        "plusStat": {
+            "cnt": 0.15
+        }
+    },
+    {
+        "name": "아르카나 방랑자의 장검",
+        "plusStat": {
+            "cmb": 0.15
+        }
+    },
+    {
+        "name": "아르카나 새벽 단검",
+        "plusStat": {
+            "bld": 0.15
+        }
+    },
+    {
+        "name": "아르카나 뱀파이어의 송곳니",
+        "plusStat": {
+            "crt": 0.15
+        }
+    },
+    {
+        "name": "아르카나 하늘의 장궁",
+        "plusStat": {
+            "crt": 0.15
+        }
+    },
+    {
+        "name": "수호자의 반지",
+        "plusStat": {
+            "shield": 250
+        }
+    },
+    {
+        "name": "암살자의 칼날",
+        "plusStat": {
+            "pnt": 0.1,
+            "bld": 0.1
+        }
+    },
+    {
+        "name": "생명의 수정",
+        "plusStat": {
+            "hp": 120,
+            "maxHp": 120
+        }
+    },
+    {
+        "name": "정령의 보주",
+        "plusStat": {
+            "hp": 300,
+            "maxHp": 300,
+            "res": 0.1
+        }
+    },
+    {
+        "name": "아이기스의 파편",
+        "plusStat": {
+            "hp": 300,
+            "maxHp": 300,
+            "def": 0.1
+        }
+    },
+    {
+        "name": "아이기스의 방패",
+        "plusStat": {
+            "hp": 450,
+            "maxHp": 450,
+            "def": 0.15
+        }
+    },
+    {
+        "name": "아르카나 마법사의 로브",
+        "plusStat": {
+            "res": 0.1
+        }
+    },
+    {
+        "name": "이카리스의 날개",
+        "plusStat": {
+            "avd": 0.15
+        }
+    },
+    {
+        "name": "닌자의 신발",
+        "plusStat": {
+            "avd": 0.2
+        }
+    },
+    {
+        "name": "사파이어 목걸이",
+        "plusStat": {
+            "hp": 450,
+            "maxHp": 450
+        }
+    },
+    {
+        "name": "홍월의 사파이어 목걸이",
+        "plusStat": {
+            "hp": 650,
+            "maxHp": 650
+        }
+    },
+    {
+        "name": "네메아의 사자 가죽",
+        "plusStat": {
+            "hp": 650,
+            "maxHp": 650,
+            "def": 0.25
+        }
+    },
+    {
+        "name": "아이스 하트",
+        "plusStat": {
+            "hp": 1000,
+            "maxHp": 1000
+        }
+    }
+]

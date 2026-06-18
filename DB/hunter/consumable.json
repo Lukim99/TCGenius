@@ -1,0 +1,965 @@
+[
+    {
+        "name": "강화석 주머니",
+        "reward": [
+            {
+                "name": "강화석",
+                "type": "재료",
+                "minCount": 10,
+                "maxCount": 1000,
+                "percent": 1
+            }
+        ]
+    },
+    {
+        "name": "강화석 상자",
+        "reward": [
+            {
+                "name": "강화석",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 100000,
+                "percent": 1
+            }
+        ]
+    },
+    {
+        "name": "무기 상자",
+        "reward": [
+            {
+                "name": "격조의 창의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "맹독 비수의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "방랑자의 장검의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "뱀파이어의 송곳니의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "별빛 지팡이의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "새벽 단검의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "염화의 지팡이의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "하늘의 장궁의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.1225
+            },
+            {
+                "name": "흉포한 도끼의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.01
+            },
+            {
+                "name": "사신의 낫의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.01
+            }
+        ]
+    },
+    {
+        "name": "갑옷 상자",
+        "reward": [
+            {
+                "name": "그림자 망토의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.196
+            },
+            {
+                "name": "마법사의 로브의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.196
+            },
+            {
+                "name": "방랑자의 천갑옷의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.196
+            },
+            {
+                "name": "여명의 갑주의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.196
+            },
+            {
+                "name": "화염 드래곤의 비늘의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.196
+            },
+            {
+                "name": "석상 돌갑옷의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.01
+            },
+            {
+                "name": "핏빛 로브의 조각",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 200,
+                "percent": 0.01
+            }
+        ]
+    },
+    {
+        "name": "별빛 상자",
+        "reward": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 3,
+                "percent": 0.99
+            },
+            {
+                "name": "별의 증표",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            }
+        ]
+    },
+    {
+        "name": "달빛 상자",
+        "reward": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "minCount": 2,
+                "maxCount": 15,
+                "percent": 0.9
+            },
+            {
+                "name": "달의 파편",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 3,
+                "percent": 0.099
+            },
+            {
+                "name": "달의 증표",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.001
+            }
+        ]
+    },
+    {
+        "name": "희귀 상자",
+        "reward": [
+            {
+                "name": "강화석",
+                "type": "재료",
+                "minCount": 10000,
+                "maxCount": 50000,
+                "percent": 0.4
+            },
+            {
+                "name": "흉포한 도끼의 조각",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 5000,
+                "percent": 0.15
+            },
+            {
+                "name": "핏빛 로브의 조각",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 5000,
+                "percent": 0.15
+            },
+            {
+                "name": "석상 돌갑옷의 조각",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 5000,
+                "percent": 0.15
+            },
+            {
+                "name": "사신의 낫의 조각",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 4444,
+                "percent": 0.15
+            }
+        ]
+    },
+    {
+        "name": "보물상자",
+        "reward": [
+            {
+                "name": "강화석",
+                "type": "재료",
+                "minCount": 1000,
+                "maxCount": 25000,
+                "percent": 0.3
+            },
+            {
+                "name": "늑대 이빨",
+                "type": "재료",
+                "minCount": 250,
+                "maxCount": 1000,
+                "percent": 0.15
+            },
+            {
+                "name": "마나가 담긴 종이",
+                "type": "재료",
+                "minCount": 250,
+                "maxCount": 1000,
+                "percent": 0.15
+            },
+            {
+                "name": "무기 상자",
+                "type": "소모품",
+                "minCount": 10,
+                "maxCount": 200,
+                "percent": 0.1
+            },
+            {
+                "name": "갑옷 상자",
+                "type": "소모품",
+                "minCount": 10,
+                "maxCount": 200,
+                "percent": 0.1
+            },
+            {
+                "name": "LK봇의 부품",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 15,
+                "percent": 0.1
+            },
+            {
+                "name": "희귀 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.07
+            },
+            {
+                "name": "별빛 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.029
+            },
+            {
+                "name": "슬롯 확장 스크롤",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.001
+            }
+        ]
+    },
+    {
+        "name": "아르카나 상자",
+        "reward": [
+            {
+                "name": "아르카나 무기 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.005
+            },
+            {
+                "name": "무기 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 10,
+                "percent": 0.995
+            }
+        ]
+    },
+    {
+        "name": "코인 주머니",
+        "reward": [
+            {
+                "name": "코인",
+                "type": "재화",
+                "minCount": 100000,
+                "maxCount": 10000000,
+                "percent": 1
+            }
+        ]
+    },
+    {
+        "name": "아르카나 무기 상자",
+        "reward": [
+            {
+                "name": "아르카나 격조의 창",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 맹독 비수",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 방랑자의 장검",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 뱀파이어의 송곳니",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 별빛 지팡이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 사신의 낫",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 새벽 단검",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 염화의 지팡이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 하늘의 장궁",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 흉포한 도끼",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            }
+        ]
+    },
+    {
+        "name": "펫 알",
+        "reward": [
+            {
+                "name": "검은 고양이",
+                "type": "펫",
+                "minCount": 1,
+                "maxCount": 10,
+                "percent": 0.2
+            },
+            {
+                "name": "아기 늑대",
+                "type": "펫",
+                "minCount": 1,
+                "maxCount": 10,
+                "percent": 0.2
+            },
+            {
+                "name": "작은 마법사",
+                "type": "펫",
+                "minCount": 1,
+                "maxCount": 10,
+                "percent": 0.2
+            },
+            {
+                "name": "조약돌 골렘",
+                "type": "펫",
+                "minCount": 1,
+                "maxCount": 10,
+                "percent": 0.2
+            },
+            {
+                "name": "펫 먹이",
+                "type": "재료",
+                "minCount": 2,
+                "maxCount": 15,
+                "percent": 0.2
+            }
+        ]
+    },
+    {
+        "name": "엔텔 아르카나 상자",
+        "reward": [
+            {
+                "name": "아르카나 염화의 지팡이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.5
+            },
+            {
+                "name": "아르카나 화염 드래곤의 비늘",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.5
+            }
+        ]
+    },
+    {
+        "name": "어린이날 선물 상자",
+        "reward": [
+            {
+                "name": "코인 주머니",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.25
+            },
+            {
+                "name": "강화석 주머니",
+                "type": "소모품",
+                "minCount": 10,
+                "maxCount": 200,
+                "percent": 0.25
+            },
+            {
+                "name": "코인 주머니",
+                "type": "소모품",
+                "minCount": 2,
+                "maxCount": 5,
+                "percent": 0.15
+            },
+            {
+                "name": "희귀 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "별빛 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "강화석 상자",
+                "type": "소모품",
+                "minCount": 2,
+                "maxCount": 5,
+                "percent": 0.05
+            },
+            {
+                "name": "강화석 상자",
+                "type": "소모품",
+                "minCount": 2,
+                "maxCount": 5,
+                "percent": 0.05
+            },
+            {
+                "name": "아르카나 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "💎",
+                "type": "재화",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            }
+        ]
+    },
+    {
+        "name": "아티팩트 상자",
+        "reward": [
+            {
+                "name": "과부하 기계",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.15
+            },
+            {
+                "name": "늑대 이빨 목걸이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "힘의 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "마력 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "예리한 봉첨",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "마법의 고서",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "수호자의 반지",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "암살자의 칼날",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "아이기스의 파편",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "정령의 보주",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 5,
+                "percent": 0.1
+            },
+            {
+                "name": "아르카나 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 3,
+                "percent": 0.05
+            },
+            {
+                "name": "고대의 눈알",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.02
+            },
+            {
+                "name": "엘케이봇",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.02
+            },
+            {
+                "name": "닌자의 신발",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.02
+            },
+            {
+                "name": "철가루 슬라임",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.015
+            },
+            {
+                "name": "황금 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0135
+            },
+            {
+                "name": "라이칸 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0025
+            },
+            {
+                "name": "이카리스의 날개",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0025
+            },
+            {
+                "name": "루나리 왕실 브로치",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0025
+            },
+            {
+                "name": "사파이어 목걸이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.001
+            },
+            {
+                "name": "혈사조",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.001
+            },
+            {
+                "name": "네메아의 사자 가죽",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.001
+            },
+            {
+                "name": "네크로노미콘",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0005
+            },
+            {
+                "name": "프리가라흐",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.0005
+            }
+        ]
+    },
+    {
+        "name": "두루마리 상자",
+        "reward": [
+            {
+                "name": "힘의 두루마리",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.2
+            },
+            {
+                "name": "마법의 두루마리",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.2
+            },
+            {
+                "name": "보호의 두루마리",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.1
+            },
+            {
+                "name": "힘의 정수",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.2
+            },
+            {
+                "name": "마법의 정수",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.2
+            },
+            {
+                "name": "보호의 정수",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.1
+            }
+        ]
+    },
+    {
+        "name": "고급 아티팩트 상자",
+        "reward": [
+            {
+                "name": "별의 파편",
+                "type": "재료",
+                "minCount": 5,
+                "maxCount": 15,
+                "percent": 0.2
+            },
+            {
+                "name": "아르카나 상자",
+                "type": "소모품",
+                "minCount": 4,
+                "maxCount": 8,
+                "percent": 0.2
+            },
+            {
+                "name": "고대의 눈알",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "엘케이봇",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "닌자의 신발",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "철가루 슬라임",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "황금 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "라이칸 팔찌",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.075
+            },
+            {
+                "name": "이카리스의 날개",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "루나리 왕실 브로치",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            },
+            {
+                "name": "사파이어 목걸이",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            },
+            {
+                "name": "혈사조",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            },
+            {
+                "name": "네메아의 사자 가죽",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            },
+            {
+                "name": "네크로노미콘",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            },
+            {
+                "name": "프리가라흐",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.01
+            }
+        ]
+    },
+    {
+        "name": "신화 상자",
+        "reward": [
+            {
+                "name": "아이기스의 방패",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.2
+            },
+            {
+                "name": "이카리스의 날개",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.2
+            },
+            {
+                "name": "네메아의 사자 가죽",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.15
+            },
+            {
+                "name": "네크로노미콘",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.15
+            },
+            {
+                "name": "프리가라흐",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.15
+            },
+            {
+                "name": "네메아의 사자",
+                "type": "펫",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            },
+            {
+                "name": "솔로몬의 반지",
+                "type": "아티팩트",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.05
+            }
+        ]
+    },
+    {
+        "name": "영광의 붉은 달 상자",
+        "reward": [
+            {
+                "name": "달빛 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 2,
+                "percent": 0.3
+            },
+            {
+                "name": "영광의 별",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.3
+            },
+            {
+                "name": "고급 아티팩트 상자",
+                "type": "소모품",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.3
+            },
+            {
+                "name": "홍월의 샤드",
+                "type": "재료",
+                "minCount": 1,
+                "maxCount": 1,
+                "percent": 0.1
+            }
+        ]
+    }
+]
