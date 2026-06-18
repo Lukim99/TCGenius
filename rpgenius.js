@@ -2178,16 +2178,9 @@ function checkAndUnlockTitles(user) {
 }
 
 // 현재 장착 중인 모든 장비(무기/갑옷/장신구/보조)의 강화 레벨 합산
-function getTotalEquippedEnhanceLevel(user) {
-    const eq = user.equipments || {};
-    let sum = 0;
-    if (eq.weapon) sum += Number(eq.weapon.level || 0);
-    if (eq.armor) sum += Number(eq.armor.level || 0);
-    if (eq.accessory && typeof eq.accessory == 'object') {
-        Object.values(eq.accessory).forEach(a => { if (a) sum += Number(a.level || 0); });
-    }
-    if (eq.support) sum += Number(eq.support.level || 0);
-    return sum;
+function getEquippedWeaponEnhanceLevel(user) {
+    const weapon = user.equipments && user.equipments.weapon;
+    return weapon ? Number(weapon.level || 0) : 0;
 }
 
 // 강화 성공 시 도달 최고 강화 레벨 기록 (강화 달인/대가/신 칭호 조건)
@@ -2227,7 +2220,7 @@ function formatTitleStatLines(title) {
     });
     const se = title.specialEffect;
     if (se) {
-        if (se.type == 'atkPerEnhanceLevel') lines.push('- 장착 장비 강화 1강 당 공격력 +' + comma(Number(se.value || 0)));
+        if (se.type == 'atkPerEnhanceLevel') lines.push('- 장착 무기 강화 1강 당 공격력 +' + comma(Number(se.value || 0)));
         else if (se.type == 'atkPctIfCardStar') lines.push('- ' + cardStarLabel(se.minStar) + ' 이상 캐릭터 카드 장착 시 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
     }
     return lines.join('\n');
@@ -2364,6 +2357,10 @@ function calculateUserStats(user, _out) {
         addStats(plusStats, titleDef.plusStat || {});
     }
     applyPotentialDerivedStats(stats, user);
+    // 칭호: 강화 1강 당 공격력 — 기본 공격력에 가산하여 공격력% 증폭을 함께 받도록 % 연산 이전에 적용
+    if (titleDef && titleDef.specialEffect && titleDef.specialEffect.type == 'atkPerEnhanceLevel') {
+        stats.atk = Number(stats.atk || 0) + Number(titleDef.specialEffect.value || 0) * getEquippedWeaponEnhanceLevel(user);
+    }
     ['atk', 'def', 'hp', 'mp'].forEach(key => {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
@@ -2374,12 +2371,10 @@ function calculateUserStats(user, _out) {
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
-    // 칭호 특수 효과 (동적/조건부 — 최종 공격력에 적용)
+    // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
     if (titleDef && titleDef.specialEffect) {
         const se = titleDef.specialEffect;
-        if (se.type == 'atkPerEnhanceLevel') {
-            stats.atk = Number(stats.atk || 0) + Number(se.value || 0) * getTotalEquippedEnhanceLevel(user);
-        } else if (se.type == 'atkPctIfCardStar') {
+        if (se.type == 'atkPctIfCardStar') {
             const star = Number(user.main_card && user.main_card.star || 0);
             if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
         }
