@@ -99,7 +99,7 @@ async function initHunterData() {
     try {
         do {
             const res = await docClient.send(new ScanCommand({ TableName: HUNTER_DATA_TABLE, ExclusiveStartKey }));
-            (res.Items || []).forEach(it => { if (it && it.key != null) hunterDataCache[it.key] = it.data; });
+            (res.Items || []).forEach(it => { if (it && it.key != null && it.data !== undefined) hunterDataCache[it.key] = it.data; });
             ExclusiveStartKey = res.LastEvaluatedKey;
         } while (ExclusiveStartKey);
         hunterDataLoaded = true;
@@ -122,7 +122,9 @@ function persistHunterData(key, value) {
 function read(p) {
     const key = dynamicKey(p);
     if (key) {
-        if (key in hunterDataCache) return hunterDataCache[key];
+        const v = hunterDataCache[key];
+        // 호출부는 문자열(보통 JSON 텍스트)을 기대하므로, hunter_data 에 Map/List 로 저장된 경우 직렬화한다.
+        if (v !== undefined && v !== null) return (typeof v === 'string') ? v : JSON.stringify(v);
         // 캐시에 없으면 DB/hunter/ 의 시드 파일을 기본값으로 사용(최초 save 시 hunter_data 로 이관됨).
         try { return fs.readFileSync(resolveDataPath(p), 'utf8'); } catch (e) { return null; }
     }
@@ -5882,6 +5884,10 @@ async function handleHunter(user, channel, senderID, cmd) {
                                 h1: colosseum[room.id].h1.name,
                                 h2: username
                             },
+                            id: {
+                                h1: colosseum[room.id].h1.id,
+                                h2: colosseum[room.id].h2.id
+                            },
                             stat: {
                                 h1: {
                                     hit: 0.7 + weapon_h1[colosseum[room.id].h1.weapon.tier].plusStat.hit,
@@ -6051,6 +6057,10 @@ async function handleHunter(user, channel, senderID, cmd) {
                                     name: {
                                         h1: username,
                                         h2: (target.title ? "[" + target.title + "] ":"") + target.name
+                                    },
+                                    id: {
+                                        h1: user.id,
+                                        h2: target.id
                                     },
                                     stat: {
                                         h1: {
@@ -6901,6 +6911,9 @@ async function handlePlay(user, channel, senderID, cmd) {
                             tempObj.name = {
                                 user: (user.title ? "[" + user.title + "] " : "") + user.name,
                                 mob: user.playing.hunt.monster.name
+                            };
+                            tempObj.id = {
+                                user: user.id
                             };
                             let weapon = JSON.parse(read("DB/weapons/" + user.equips.weapon.name + ".json"));
                             let armor = JSON.parse(read("DB/armors/" + user.equips.armor.name + ".json"));
@@ -7759,6 +7772,7 @@ async function handleConfirm(user, channel, senderID, cmd) {
                 delete huntParty[room.id];
                 let tempObj = {
                     name: {},
+                    id: {},
                     stat: {},
                     effect: {},
                     stack: {},
@@ -7802,6 +7816,7 @@ async function handleConfirm(user, channel, senderID, cmd) {
                     let myWeapon = JSON.parse(read("DB/weapons/" + player.equips.weapon.name + ".json"));
                     let myArmor = JSON.parse(read("DB/armors/" + player.equips.armor.name + ".json"));
                     tempObj.name["p" + number] = (player.title ? "[" + player.title + "] ":"") + player.name;
+                    tempObj.id["p" + number] = player.id;
                     tempObj.stat["p" + number] = {
                         hit: 0.7 + myWeapon[player.equips.weapon.tier].plusStat.hit,
                         cnt: 0.05 + myWeapon[player.equips.weapon.tier].plusStat.cnt,
