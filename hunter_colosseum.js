@@ -41,6 +41,11 @@ const VIEWMORE = '‎'.repeat(500);
 const DB_ROOT = path.join(__dirname, 'DB', 'hunter');
 const HUNTER_DATA_TABLE = 'hunter_data';
 
+const SWORDS = ["맹독 비수", "방랑자의 장검", "뱀파이어의 송곳니", "새벽 단검", "아스트로베놈", "천명즉살검", "천상유랑검", "혈성극검"];
+const ARCANA_LIMIT = 5;
+const PREFIX = "$";   // 길드 생성 확인 프롬프트 등에서 사용 (old_engine 전역)
+
+
 // 런타임에 읽고/쓰는 동적 데이터는 파일 대신 DynamoDB(hunter_data) 로 관리한다.
 // 정적 설정(weapons/armors/monster.json 등)은 그대로 DB/hunter/ 파일을 사용한다.
 //  - 접두사형(유저/엔터티별): harvested_soul/{name}, tamed/{id}, userQuest/{id}, npcData/{...}
@@ -67,6 +72,7 @@ const colosseum = {};   // PvP 결투 진행 상태
 const huntParty = {};   // 사냥 파티 모집 상태
 const toWait = {};      // 소모품 사용 잠금 (userId)
 const myCheck = {};     // $확인 대기중인 액션 (senderId)
+const outputing = {};   // NPC 대화 진행중 잠금 (userId → npc 이름)
 
 // ───────────────────────────────────────────────────────────── 데이터 IO
 // 엔진/핸들러는 read("DB/xxx")/save("DB/xxx", str) 형태로 호출한다.
