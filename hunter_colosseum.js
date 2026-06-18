@@ -3751,11 +3751,7 @@ async function handleHunter(user, channel, senderID, cmd) {
                 room.send("❌ 봇에 등록되지 않은 유저입니다.\n>> $도움말");
                 return;
             }
-            let possibleRooms = ["442097040687921","18446472286956749","18447887254284126","433076049769561","384981318100178","18448796257459256","18451173486559958","439083102695072","18454451074557977","18456913814672594"];
-            if (! possibleRooms.includes(room.id)) {
-                room.send("❌ 헌터 콜로세움 게임이 지원되는 방이 아닙니다.");
-                return;
-            }
+            let possibleRooms = ["442097040687921","18486286197949811"];
             if (toWait[user.id]) {
                 room.send("❌ 소모품을 사용하는 중입니다. 잠시만 기다려주세요.");
                 return;
