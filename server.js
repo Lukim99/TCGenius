@@ -901,6 +901,20 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
 // ===== 봉인된 자물쇠 =====
 const LOCKBOX_ITEM_NAME = '봉인된 자물쇠';
 
+server.post('/api/inventory/lockbox-check', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const count = Number(req.body && req.body.count) || 1;
+        if (![1, 10].includes(count)) return res.status(400).json({ error: '잘못된 요청입니다.' });
+        const err = rpgenius.getLockboxOpenError(user, count);
+        return res.json(err ? { ok: false, error: err } : { ok: true });
+    } catch (e) {
+        console.error('lockbox check error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.post('/api/inventory/use-lockbox', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);

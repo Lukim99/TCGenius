@@ -807,6 +807,18 @@ function openInvItemModal(item) {
 }
 
 async function openLockbox(count = 1) {
+    // 영상 재생 전에 열쇠/자물쇠 보유를 먼저 확인해, 부족하면 경고만 띄운다.
+    let check;
+    try {
+        check = await postApi('/api/inventory/lockbox-check', { count });
+    } catch (e) {
+        openModal('오류', '', [e.message]);
+        return;
+    }
+    if (!check.ok) {
+        openModal('열기 불가', '', [check.error || '열쇠가 부족합니다.']);
+        return;
+    }
     const overlay = $('#lockboxOverlay');
     const video = $('#lockboxVideo');
     overlay.classList.add('active');
@@ -822,7 +834,7 @@ async function openLockbox(count = 1) {
             showLockboxResult(data.opens || []);
             loadInventory('items');
         } catch (e) {
-            showModal('오류', '', [el('p', null, e.message)]);
+            openModal('오류', '', [e.message]);
         }
     };
     video.onended = finish;

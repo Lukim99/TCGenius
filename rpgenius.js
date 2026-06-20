@@ -7135,23 +7135,41 @@ function grantPackReward(user, reward, summary) {
     }
 }
 
-// 봉인된 자물쇠 개봉. useItem과 달리 개봉(open)·롤(roll) 단위로 결과를 분리해 반환한다. (메인=각 개봉의 첫 롤, 보너스=나머지 롤)
-function openSealedLockbox(user, count) {
-    const opens = Math.max(1, Math.floor(Number(count) || 1));
+// 봉인된 자물쇠 데이터/팩 컨텍스트를 해석. 실패 시 { error }.
+function getLockboxContext() {
     const items = getDataCache('Item', []);
     const itemId = items.findIndex(it => it && it.name === '봉인된 자물쇠');
     const item = items[itemId];
     if (!item || typeof item.pack != 'number') return { error: '봉인된 자물쇠 정보를 찾을 수 없습니다.' };
     const pack = (getDataCache('Pack', []) || [])[item.pack];
     if (!Array.isArray(pack)) return { error: '자물쇠 보상 정보를 찾을 수 없습니다.' };
-    if (getInventoryItemCount(user, itemId) < opens) return { error: '봉인된 자물쇠가 부족합니다.' };
-    const requirements = Array.isArray(item.require) ? item.require : [];
+    return { items, itemId, item, pack };
+}
+
+// 개봉 가능 여부 검증(소비 없음). 불가하면 사유 문자열, 가능하면 null 반환.
+function getLockboxOpenError(user, count) {
+    const opens = Math.max(1, Math.floor(Number(count) || 1));
+    const ctx = getLockboxContext();
+    if (ctx.error) return ctx.error;
+    if (getInventoryItemCount(user, ctx.itemId) < opens) return '봉인된 자물쇠가 부족합니다.';
+    const requirements = Array.isArray(ctx.item.require) ? ctx.item.require : [];
     for (const req of requirements) {
         if (getInventoryItemCount(user, req.id) < Number(req.count || 0) * opens) {
-            const reqItem = items[req.id];
-            return { error: (reqItem ? reqItem.name : '필요 아이템') + '이(가) 부족합니다.' };
+            const reqItem = ctx.items[req.id];
+            return (reqItem ? reqItem.name : '필요 아이템') + '이(가) 부족합니다.';
         }
     }
+    return null;
+}
+
+// 봉인된 자물쇠 개봉. useItem과 달리 개봉(open)·롤(roll) 단위로 결과를 분리해 반환한다. (메인=각 개봉의 첫 롤, 보너스=나머지 롤)
+function openSealedLockbox(user, count) {
+    const opens = Math.max(1, Math.floor(Number(count) || 1));
+    const err = getLockboxOpenError(user, opens);
+    if (err) return { error: err };
+    const ctx = getLockboxContext();
+    const { itemId, item, pack } = ctx;
+    const requirements = Array.isArray(item.require) ? item.require : [];
     removeInventoryItem(user, itemId, opens);
     requirements.forEach(req => removeInventoryItem(user, req.id, Number(req.count || 0) * opens));
     const num = Math.max(1, Math.floor(Number(item.num || 1)));
@@ -9514,6 +9532,7 @@ module.exports = {
     getDataCache,
     RPGENIUS_DATA_KEYS,
     openSealedLockbox,
+    getLockboxOpenError,
     calculateUserStats,
     calculateCombatPower,
     getEquippedPets,
