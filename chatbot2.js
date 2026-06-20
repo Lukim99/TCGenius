@@ -11,7 +11,7 @@ const ATTENDANCE_REWARD = 100;
 const GAME_REWARD = 10;
 const UPDOWN_TIMEOUT = 5 * 60 * 1000;
 const CHOSEONG_TIMEOUT = 30 * 1000;
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const BASEBALL_TIMEOUT = 5 * 60 * 1000;
 
 const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_KEY
     ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
@@ -61,6 +61,7 @@ const choseongWordPools = Object.fromEntries(
 );
 const updownGames = new Map();
 const choseongGames = new Map();
+const numberBaseballGames = new Map();
 
 function isTargetChannel(channel) {
     return !!channel && TARGET_CHANNEL_IDS.includes(channel.channelId + '');
@@ -110,70 +111,51 @@ function d(value) {
     return value ? new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기록 없음';
 }
 
-function pseudoKstDate(date = new Date()) {
-    return new Date(date.getTime() + KST_OFFSET_MS);
+function addDaysStr(dateStr, days) {
+    const base = new Date(dateStr + 'T00:00:00Z');
+    base.setUTCDate(base.getUTCDate() + days);
+    return base.toISOString().slice(0, 10);
 }
 
-function startOfTodayIso(date = new Date()) {
-    const kst = pseudoKstDate(date);
-    const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), 0, 0, 0, 0) - KST_OFFSET_MS;
-    return new Date(utcMs).toISOString();
-}
-
-function addDaysIso(iso, days) {
-    return new Date(new Date(iso).getTime() + days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function startOfYesterdayIso(date = new Date()) {
-    return addDaysIso(startOfTodayIso(date), -1);
-}
-
-function startOfWeekIso(date = new Date()) {
-    const kst = pseudoKstDate(date);
-    const day = kst.getUTCDay();
+function startOfWeekStr(date = new Date()) {
+    const today = todayKst(date);
+    const day = new Date(today + 'T00:00:00Z').getUTCDay();
     const diff = day === 0 ? 6 : day - 1;
-    const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() - diff, 0, 0, 0, 0) - KST_OFFSET_MS;
-    return new Date(utcMs).toISOString();
+    return addDaysStr(today, -diff);
 }
 
-function startOfNextWeekIso(date = new Date()) {
-    return addDaysIso(startOfWeekIso(date), 7);
+function startOfMonthStr(date = new Date()) {
+    return todayKst(date).slice(0, 8) + '01';
 }
 
-function startOfLastWeekIso(date = new Date()) {
-    return addDaysIso(startOfWeekIso(date), -7);
+function startOfNextMonthStr(date = new Date()) {
+    const base = new Date(startOfMonthStr(date) + 'T00:00:00Z');
+    base.setUTCMonth(base.getUTCMonth() + 1);
+    return base.toISOString().slice(0, 10);
 }
 
-function startOfMonthIso(date = new Date()) {
-    const kst = pseudoKstDate(date);
-    const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), 1, 0, 0, 0, 0) - KST_OFFSET_MS;
-    return new Date(utcMs).toISOString();
-}
-
-function startOfNextMonthIso(date = new Date()) {
-    const kst = pseudoKstDate(date);
-    const utcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() + 1, 1, 0, 0, 0, 0) - KST_OFFSET_MS;
-    return new Date(utcMs).toISOString();
-}
-
+// 채팅수 기간 범위를 KST 날짜 문자열(YYYY-MM-DD)로 반환. endDate는 미포함(exclusive).
 function getChatPeriodRange(periodKey, date = new Date()) {
+    const today = todayKst(date);
     if (periodKey === '오늘') {
-        return { startIso: startOfTodayIso(date), endIso: addDaysIso(startOfTodayIso(date), 1) };
+        return { startDate: today, endDate: addDaysStr(today, 1) };
     }
     if (periodKey === '어제') {
-        return { startIso: startOfYesterdayIso(date), endIso: startOfTodayIso(date) };
+        return { startDate: addDaysStr(today, -1), endDate: today };
     }
     if (periodKey === '주간') {
-        return { startIso: startOfWeekIso(date), endIso: startOfNextWeekIso(date) };
+        const start = startOfWeekStr(date);
+        return { startDate: start, endDate: addDaysStr(start, 7) };
     }
     if (periodKey === '저번주') {
-        return { startIso: startOfLastWeekIso(date), endIso: startOfWeekIso(date) };
+        const start = startOfWeekStr(date);
+        return { startDate: addDaysStr(start, -7), endDate: start };
     }
     if (periodKey === '월간') {
-        return { startIso: startOfMonthIso(date), endIso: startOfNextMonthIso(date) };
+        return { startDate: startOfMonthStr(date), endDate: startOfNextMonthStr(date) };
     }
     if (periodKey === '전체') {
-        return { startIso: null, endIso: null };
+        return { startDate: null, endDate: null };
     }
     return null;
 }
@@ -254,6 +236,7 @@ function baseUser(userId, nickname, channelId, old = {}) {
         game_enabled: typeof old.game_enabled === 'boolean' ? old.game_enabled : true,
         updown_wins: Number(old.updown_wins || 0),
         choseong_wins: Number(old.choseong_wins || 0),
+        baseball_wins: Number(old.baseball_wins || 0),
         last_chat_at: old.last_chat_at || null,
         last_join_at: old.last_join_at || null,
         last_leave_at: old.last_leave_at || null,
@@ -315,14 +298,13 @@ async function touchChat(sender, msg, channelId) {
         updated_at: timestamp,
         last_seen_at: timestamp
     });
-    const { error: logError } = await supabase.from('chatbot2_chat_logs').insert({
-        channel_id: channelId + '',
-        user_id: sender.userId + '',
-        nickname: next.display_nickname || sender.nickname || '',
-        message: (msg || '').slice(0, 1500),
-        created_at: timestamp
+    const { error: countError } = await supabase.rpc('chatbot2_increment_chat_count', {
+        p_channel_id: channelId + '',
+        p_user_id: sender.userId + '',
+        p_date: todayKst(),
+        p_amount: 1
     });
-    if (logError) console.log('[chatbot2] chat log insert error:', logError);
+    if (countError) console.log('[chatbot2] chat count rpc error:', countError);
     return { user: next, reward };
 }
 
@@ -519,6 +501,97 @@ async function catchChoseong(msg, sender, channel) {
     return true;
 }
 
+function clearBaseball(channelId) {
+    const state = numberBaseballGames.get(channelId);
+    if (!state) return;
+    if (state.timeout) clearTimeout(state.timeout);
+    numberBaseballGames.delete(channelId);
+}
+
+function generateBaseballAnswer() {
+    const digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    for (let i = digits.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [digits[i], digits[j]] = [digits[j], digits[i]];
+    }
+    return digits.slice(0, 3).join('');
+}
+
+function judgeBaseball(answer, guess) {
+    let strike = 0;
+    let ball = 0;
+    for (let i = 0; i < 3; i++) {
+        if (guess[i] === answer[i]) strike += 1;
+        else if (answer.includes(guess[i])) ball += 1;
+    }
+    return { strike, ball };
+}
+
+function hasDistinctDigits(value) {
+    return new Set(value.split('')).size === value.length;
+}
+
+async function startBaseball(channel, sender) {
+    const channelId = channel.channelId + '';
+    if (numberBaseballGames.has(channelId)) {
+        channel.sendChat('❌ 이미 숫자야구 게임이 진행 중입니다.');
+        return true;
+    }
+    if (!await isGameEnabledForUser(sender, channelId)) {
+        channel.sendChat('❌ 현재 본인의 게임 참여가 비활성화되어 있습니다.');
+        return true;
+    }
+    const answer = generateBaseballAnswer();
+    const state = {
+        answer,
+        tries: 0,
+        timeout: setTimeout(() => {
+            if (numberBaseballGames.get(channelId) !== state) return;
+            clearBaseball(channelId);
+            channel.sendChat(`⌛ 숫자야구 게임 종료\n정답: ${answer}`);
+        }, BASEBALL_TIMEOUT)
+    };
+    numberBaseballGames.set(channelId, state);
+    channel.sendChat(
+        `⚾ 숫자야구 게임 시작\n` +
+        `서로 다른 3자리 숫자(0~9, 중복 없음)를 맞혀보세요!\n` +
+        `예) 012, 345`
+    );
+    return true;
+}
+
+async function catchBaseball(msg, sender, channel) {
+    const channelId = channel.channelId + '';
+    const state = numberBaseballGames.get(channelId);
+    if (!state || msg.startsWith('/')) return false;
+    if (!await isGameEnabledForUser(sender, channelId)) return false;
+    const raw = (msg || '').trim();
+    if (!/^\d{3}$/.test(raw) || !hasDistinctDigits(raw)) return false;
+    state.tries += 1;
+    const { strike, ball } = judgeBaseball(state.answer, raw);
+    if (strike === 3) {
+        clearBaseball(channelId);
+        const user = await ensureUser(sender, channelId);
+        const next = await putUser({
+            ...user,
+            points: Number(user.points || 0) + GAME_REWARD,
+            baseball_wins: Number(user.baseball_wins || 0) + 1,
+            updated_at: nowIso(),
+            last_seen_at: nowIso()
+        });
+        channel.sendChat(
+            `${displayName(next, sender.nickname)}님이 정답을 맞히셨습니다!\n` +
+            `정답: ${state.answer}\n\n` +
+            `- 시도 횟수: ${commas(state.tries)}회\n` +
+            `- 포인트: ${commas(next.points)}P (+${GAME_REWARD})`
+        );
+        return true;
+    }
+    const result = strike === 0 && ball === 0 ? '아웃 (OUT)' : `${strike} 스트라이크 ${ball} 볼`;
+    channel.sendChat(`${displayName(null, sender.nickname)}님 ⚾ ${raw} → ${result}`);
+    return true;
+}
+
 async function getUsersByPoints(channelId, limit = 15) {
     const users = await getAllUsers(channelId);
     return users.sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, limit);
@@ -553,32 +626,6 @@ async function getAllUsers(channel) {
     return result;
 }
 
-async function getChatCount(channelId, userId, sinceIso, untilIso) {
-    let query = supabase.from('chatbot2_chat_logs').select('*', { count: 'exact', head: true }).eq('channel_id', channelId).eq('user_id', userId + '');
-    if (sinceIso) query = query.gte('created_at', sinceIso);
-    if (untilIso) query = query.lt('created_at', untilIso);
-    const { count, error } = await query;
-    if (error) throw error;
-    return Number(count || 0);
-}
-
-async function getChatStats(channelId, userId) {
-    const todayRange = getChatPeriodRange('오늘');
-    const yesterdayRange = getChatPeriodRange('어제');
-    const weekRange = getChatPeriodRange('주간');
-    const lastWeekRange = getChatPeriodRange('저번주');
-    const monthRange = getChatPeriodRange('월간');
-    const [today, yesterday, week, lastWeek, month, total] = await Promise.all([
-        getChatCount(channelId, userId, todayRange.startIso, todayRange.endIso),
-        getChatCount(channelId, userId, yesterdayRange.startIso, yesterdayRange.endIso),
-        getChatCount(channelId, userId, weekRange.startIso, weekRange.endIso),
-        getChatCount(channelId, userId, lastWeekRange.startIso, lastWeekRange.endIso),
-        getChatCount(channelId, userId, monthRange.startIso, monthRange.endIso),
-        getChatCount(channelId, userId, null, null)
-    ]);
-    return { today, yesterday, week, lastWeek, month, total };
-}
-
 async function getChatRanking(channel, periodKey, limit = 50) {
     const currentChannelId = channel.channelId + '';
     const users = await getAllUsers(channel);
@@ -595,17 +642,17 @@ async function getChatRanking(channel, periodKey, limit = 50) {
 
     const range = getChatPeriodRange(periodKey);
     if (!range) return [];
-    let query = supabase.from('chatbot2_chat_logs').select('user_id, nickname').eq('channel_id', currentChannelId);
-    if (range.startIso) query = query.gte('created_at', range.startIso);
-    if (range.endIso) query = query.lt('created_at', range.endIso);
+    let query = supabase.from('chatbot2_chat_counts').select('user_id, count').eq('channel_id', currentChannelId);
+    if (range.startDate) query = query.gte('date', range.startDate);
+    if (range.endDate) query = query.lt('date', range.endDate);
     const { data, error } = await query.limit(100000);
     if (error) throw error;
     const rankingMap = new Map();
     for (const row of data || []) {
         const userId = row.user_id + '';
         if (!memberIds.has(userId)) continue;
-        const current = rankingMap.get(userId) || { user_id: userId, nickname: nameMap.get(userId) || row.nickname || '알 수 없음', count: 0 };
-        current.count += 1;
+        const current = rankingMap.get(userId) || { user_id: userId, nickname: nameMap.get(userId) || '알 수 없음', count: 0 };
+        current.count += Number(row.count || 0);
         rankingMap.set(userId, current);
     }
     return Array.from(rankingMap.values())
@@ -873,6 +920,7 @@ async function handleCommand(data, channel, sender) {
             `/닉변기록 @멘션\n- 해당 유저의 닉변 기록 확인\n\n` +
             `/업다운 (숫자)\n- 1부터 숫자까지의 범위 내에서 업다운 게임 시작 (기본 100)\n\n` +
             `/초성퀴즈 | /초성게임\n- 초성퀴즈 시작\n\n` +
+            `/숫자야구\n- 서로 다른 3자리 숫자 맞히기 게임 시작\n\n` +
             `/상점 | /포인트상점\n- 상점 조회\n\n` +
             `/구매 [상품명]\n- 상품 구매\n\n` +
             `/상점등록 [상품명] | [가격] | [설명]\n- 상점 물품 등록 (방장 전용)\n\n` +
@@ -893,7 +941,7 @@ async function handleCommand(data, channel, sender) {
             `💰 포인트: ${commas(user.points)}P\n` +
             `💬 누적 채팅: ${commas(user.total_chat_count)}회\n` +
             `📅 출석 횟수: ${commas(user.attendance_days)}일${user.attendance_streak > 1 ? ` (연속 ${commas(user.attendance_streak)}일)` : ""}\n` +
-            `🎮 게임 승리 횟수\n - 업다운 ${commas(user.updown_wins)}회\n - 초성퀴즈 ${commas(user.choseong_wins)}회\n` +
+            `🎮 게임 승리 횟수\n - 업다운 ${commas(user.updown_wins)}회\n - 초성퀴즈 ${commas(user.choseong_wins)}회\n - 숫자야구 ${commas(user.baseball_wins)}회\n` +
             `⚙️ 게임 참여: ${user.game_enabled === false ? 'OFF' : 'ON'}\n` +
             `🕒 마지막 채팅: ${dt(user.last_chat_at)}`
         );
@@ -1017,6 +1065,14 @@ async function handleCommand(data, channel, sender) {
     if (cmd === '초성중지') {
         clearChoseong(channelId);
         channel.sendChat('🛑 초성퀴즈를 종료했습니다.');
+        return true;
+    }
+
+    if (cmd === '숫자야구' || cmd === '야구게임') return startBaseball(channel, sender);
+
+    if (cmd === '숫자야구중지' || cmd === '야구중지') {
+        clearBaseball(channelId);
+        channel.sendChat('🛑 숫자야구 게임을 종료했습니다.');
         return true;
     }
 
@@ -1152,6 +1208,7 @@ async function onChat(data, channel) {
         if (ATTENDANCE_KEYWORDS.has(msg)) return attendance(sender, channel);
         if (await catchUpdown(msg, sender, channel)) return true;
         if (await catchChoseong(msg, sender, channel)) return true;
+        if (await catchBaseball(msg, sender, channel)) return true;
         if (msg.startsWith('/')) return handleCommand(data, channel, sender);
     } catch (e) {
         console.log('[chatbot2] onChat error:', e);
