@@ -6320,6 +6320,15 @@ function autoUnequipInvalidSupport(user) {
     return null;
 }
 
+// 장비 변경으로 최대 체력/마나가 줄어 현재 수치보다 작아지면 현재 수치를 최대치로 맞춘다. (해제와 동일)
+function clampHpToMaxStat(user) {
+    const stats = calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const maxMp = Number(stats.mp || 0);
+    if (typeof user.hp != 'undefined' && Number(user.hp || 0) > maxHp) user.hp = maxHp;
+    if (typeof user.mp != 'undefined' && Number(user.mp || 0) > maxMp) user.mp = maxMp;
+}
+
 function equipItemByNumber(user, numberArg) {
     if (!user.inventory || !Array.isArray(user.inventory.equipment) || user.inventory.equipment.length == 0) {
         return '❌ 보유 중인 장비가 없습니다.';
@@ -6361,6 +6370,7 @@ function equipItemByNumber(user, numberArg) {
             const back = cloneEquipmentInstance(prev, 'support');
             user.inventory.equipment.push(back);
         }
+        clampHpToMaxStat(user);
         return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
@@ -6373,6 +6383,7 @@ function equipItemByNumber(user, numberArg) {
             const back = cloneEquipmentInstance(prev, target.type);
             user.inventory.equipment.push(back);
         }
+        clampHpToMaxStat(user);
         return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
@@ -6401,6 +6412,7 @@ function equipItemByNumber(user, numberArg) {
         const equipEntry = bindEquipmentToUser(cloneEquipmentInstance(target, 'accessory'), user);
         accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
+        clampHpToMaxStat(user);
         return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
