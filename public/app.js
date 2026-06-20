@@ -61,7 +61,7 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -71,7 +71,7 @@ const ICONS = {
 };
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -142,6 +142,7 @@ function navigatePage(pageId) {
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (pageId === 'event') loadEventDice();
+    if (pageId === '자물쇠') loadLockbox();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === '레벨보상') loadLevelRewards();
@@ -799,18 +800,13 @@ function openInvItemModal(item) {
         el('div', { class: 'kv' }, el('span', null, '보유 수량'), el('b', null, comma(item.count) + '개')),
     ];
     if (item.desc) bodyNodes.push(el('div', { style: 'padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px;font-size:13px;color:#cbd5e1;line-height:1.6;margin-top:4px' }, item.desc));
-    if (item.name === '봉인된 자물쇠') {
-        const openBtn = el('button', { class: 'primary', style: 'width:100%;margin-top:14px;font-size:15px;padding:12px;letter-spacing:.04em' }, '열기');
-        openBtn.onclick = () => { $('#modalBg').classList.remove('active'); openLockbox(); };
-        bodyNodes.push(openBtn);
-    }
     $('#modalTitle').textContent = item.name;
     $('#modalSub').style.display = 'none';
     $('#modalBody').replaceChildren(...bodyNodes);
     $('#modalBg').classList.add('active');
 }
 
-async function openLockbox() {
+async function openLockbox(count = 1) {
     const overlay = $('#lockboxOverlay');
     const video = $('#lockboxVideo');
     overlay.classList.add('active');
@@ -821,10 +817,13 @@ async function openLockbox() {
         $('#lockboxSkip').onclick = null;
         video.pause();
         overlay.classList.remove('active');
-        const data = await postApi('/api/inventory/use-lockbox');
-        if (data && data.error) { showModal('오류', '', [el('p', null, data.error)]); return; }
-        showLockboxResult(data.rewards || []);
-        loadInventory('items');
+        try {
+            const data = await postApi('/api/inventory/use-lockbox', { count });
+            showLockboxResult(data.opens || []);
+            loadInventory('items');
+        } catch (e) {
+            showModal('오류', '', [el('p', null, e.message)]);
+        }
     };
     video.onended = finish;
     $('#lockboxSkip').onclick = finish;
@@ -843,23 +842,53 @@ function lockboxRewardRow(r, i, bonus) {
     );
 }
 
-function showLockboxResult(rewards) {
-    rewards = rewards || [];
+function lockboxMiniItem(r, bonus) {
+    const thumbChildren = [];
+    if (r.frameUrl) thumbChildren.push(el('img', { class: 'lb-frame', src: r.frameUrl, alt: '' }));
+    if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
+    return el('div', { class: 'lockbox-mini' + (bonus ? ' bonus' : '') },
+        el('span', { class: 'lockbox-mini-tag' }, bonus ? '보너스' : '메인'),
+        el('div', { class: 'lockbox-mini-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-mini-info' },
+            el('div', { class: 'lockbox-mini-name' }, r.name),
+            el('div', { class: 'lockbox-mini-count' }, 'x' + comma(r.count))
+        )
+    );
+}
+
+function lockboxOpenCard(o, idx) {
+    const card = el('div', { class: 'lockbox-open-card', style: 'animation-delay:' + (idx * 0.05) + 's' });
+    card.appendChild(el('div', { class: 'lockbox-open-no' }, (idx + 1) + '회'));
+    const body = el('div', { class: 'lockbox-open-body' });
+    (o.main || []).forEach(r => body.appendChild(lockboxMiniItem(r, false)));
+    (o.bonus || []).forEach(r => body.appendChild(lockboxMiniItem(r, true)));
+    card.appendChild(body);
+    return card;
+}
+
+function showLockboxResult(opens) {
+    opens = opens || [];
     const overlay = $('#lockboxResultOverlay');
+    const multi = opens.length > 1;
     const nodes = [
         el('div', { class: 'lockbox-result-title' }, '✦  봉인 해제  ✦'),
-        el('div', { class: 'lockbox-result-sub' }, '봉인된 자물쇠에서 아이템을 획득했습니다'),
+        el('div', { class: 'lockbox-result-sub' }, multi ? opens.length + '회 개봉 결과' : '봉인된 자물쇠에서 아이템을 획득했습니다'),
     ];
-    const main = rewards.slice(0, 1);
-    const bonus = rewards.slice(1);
-    const grid = el('div', { class: 'lockbox-rewards-grid' });
-    main.forEach((r, i) => grid.appendChild(lockboxRewardRow(r, i, false)));
-    nodes.push(grid);
-    if (bonus.length) {
-        nodes.push(el('div', { class: 'lockbox-bonus-divider' }, '보너스'));
-        const bonusGrid = el('div', { class: 'lockbox-rewards-grid' });
-        bonus.forEach((r, i) => bonusGrid.appendChild(lockboxRewardRow(r, main.length + i, true)));
-        nodes.push(bonusGrid);
+    if (multi) {
+        const list = el('div', { class: 'lockbox-opens' });
+        opens.forEach((o, idx) => list.appendChild(lockboxOpenCard(o, idx)));
+        nodes.push(list);
+    } else {
+        const o = opens[0] || { main: [], bonus: [] };
+        const grid = el('div', { class: 'lockbox-rewards-grid' });
+        (o.main || []).forEach((r, i) => grid.appendChild(lockboxRewardRow(r, i, false)));
+        nodes.push(grid);
+        if ((o.bonus || []).length) {
+            nodes.push(el('div', { class: 'lockbox-bonus-divider' }, '보너스'));
+            const bonusGrid = el('div', { class: 'lockbox-rewards-grid' });
+            o.bonus.forEach((r, i) => bonusGrid.appendChild(lockboxRewardRow(r, i, true)));
+            nodes.push(bonusGrid);
+        }
     }
     const closeBtn = el('button', { class: 'lockbox-result-close' }, '확인');
     closeBtn.onclick = () => overlay.classList.remove('active');
@@ -946,6 +975,21 @@ const EVENT_DICE_FACE_ANGLE = {
 };
 let eventDiceState = { built: false, loading: false, rolling: false, prediction: null, dice: [null, null, null], result: null, history: [], diceItemCount: 0, rewards: null, lightningSum: null, lightningBolt: null, error: '' };
 let eventLightningTimer = null;
+
+// ===== 봉인된 자물쇠 탭 =====
+const lockboxUi = name => '/lockbox-ui?file=' + encodeURIComponent(name);
+
+function loadLockbox() {
+    const root = $('#lockboxRoot');
+    if (!root) return;
+    const title = el('img', { class: 'lockbox-title', src: lockboxUi('글씨.png'), alt: '봉인된 자물쇠' });
+    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png'), alt: '이달의 아이템' });
+    const char = el('img', { class: 'lockbox-char', src: lockboxUi('캐릭터.png'), alt: '' });
+    const btns = el('div', { class: 'lockbox-btns' });
+    btns.appendChild(el('button', { class: 'lockbox-btn', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));
+    btns.appendChild(el('button', { class: 'lockbox-btn', style: "background-image:url('" + lockboxUi('10회 열기 버튼.png') + "')", onclick: () => openLockbox(10) }));
+    root.replaceChildren(title, item, char, btns);
+}
 
 function generateEventLightningBolt(targetX, targetY) {
     const pts = [];
@@ -3931,6 +3975,8 @@ if ($('#patchSubmit')) $('#patchSubmit').onclick = async () => {
         myName = me.name;
         const profile = await api('/api/profile');
         renderProfile(profile);
+        const tab = new URLSearchParams(location.search).get('tab');
+        if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
     } catch (e) {
         $('#app').replaceChildren(el('section', { class: 'panel' }, el('h2', null, '오류'), el('p', { class: 'err' }, e.message)));
     }

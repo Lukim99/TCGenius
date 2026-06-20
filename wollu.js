@@ -99,7 +99,7 @@ function sendPreviousLogs(channel, userInfo, prevLogs) {
 }
 
 async function handleCustomCommand(msg, channel) {
-    if (!msg) return false;
+    if (!msg || msg.length > 100) return false;
     const { data, error } = await supabase
         .from('commands')
         .select('response_text, image_url')

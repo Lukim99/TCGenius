@@ -7123,6 +7123,39 @@ function grantPackReward(user, reward, summary) {
     }
 }
 
+// 봉인된 자물쇠 개봉. useItem과 달리 개봉(open)·롤(roll) 단위로 결과를 분리해 반환한다. (메인=각 개봉의 첫 롤, 보너스=나머지 롤)
+function openSealedLockbox(user, count) {
+    const opens = Math.max(1, Math.floor(Number(count) || 1));
+    const items = getDataCache('Item', []);
+    const itemId = items.findIndex(it => it && it.name === '봉인된 자물쇠');
+    const item = items[itemId];
+    if (!item || typeof item.pack != 'number') return { error: '봉인된 자물쇠 정보를 찾을 수 없습니다.' };
+    const pack = (getDataCache('Pack', []) || [])[item.pack];
+    if (!Array.isArray(pack)) return { error: '자물쇠 보상 정보를 찾을 수 없습니다.' };
+    if (getInventoryItemCount(user, itemId) < opens) return { error: '봉인된 자물쇠가 부족합니다.' };
+    const requirements = Array.isArray(item.require) ? item.require : [];
+    for (const req of requirements) {
+        if (getInventoryItemCount(user, req.id) < Number(req.count || 0) * opens) {
+            const reqItem = items[req.id];
+            return { error: (reqItem ? reqItem.name : '필요 아이템') + '이(가) 부족합니다.' };
+        }
+    }
+    removeInventoryItem(user, itemId, opens);
+    requirements.forEach(req => removeInventoryItem(user, req.id, Number(req.count || 0) * opens));
+    const num = Math.max(1, Math.floor(Number(item.num || 1)));
+    const result = [];
+    for (let o = 0; o < opens; o++) {
+        const rollGroups = [];
+        for (let r = 0; r < num; r++) {
+            const s = {};
+            grantPackReward(user, pickPackEntry(pack), s);
+            rollGroups.push(Object.keys(s).map(k => ({ name: s[k].label, count: s[k].count })));
+        }
+        result.push({ main: rollGroups[0] || [], bonus: rollGroups.slice(1).reduce((a, g) => a.concat(g), []) });
+    }
+    return { opens: result };
+}
+
 function grantCharacterCardPack(user, pack, useCount, summary) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const isJob = pack.type == '전직 캐릭터 카드팩';
@@ -7261,6 +7294,7 @@ async function useItem(user, itemName, countArg) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
+    if (item.name == '봉인된 자물쇠') return '봉인된 자물쇠는 웹버전에서 이용 가능합니다.';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '미끼') {
         if (!getBaitDefinition(item.name)) return '❌ 등록되지 않은 미끼입니다.';
@@ -9467,6 +9501,7 @@ module.exports = {
     saveRpgeniusDataEntry,
     getDataCache,
     RPGENIUS_DATA_KEYS,
+    openSealedLockbox,
     calculateUserStats,
     calculateCombatPower,
     getEquippedPets,
