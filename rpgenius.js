@@ -8,7 +8,7 @@ const ragbot = require('./ragbot');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -7156,7 +7156,7 @@ function getLockboxOpenError(user, count) {
     for (const req of requirements) {
         if (getInventoryItemCount(user, req.id) < Number(req.count || 0) * opens) {
             const reqItem = ctx.items[req.id];
-            return (reqItem ? reqItem.name : '필요 아이템') + '이(가) 부족합니다.';
+            return (reqItem ? reqItem.name : '필요 아이템') + '가 부족합니다.';
         }
     }
     return null;
@@ -7324,7 +7324,7 @@ async function useItem(user, itemName, countArg) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
-    if (item.name == '봉인된 자물쇠') return '봉인된 자물쇠는 웹버전에서 이용 가능합니다.';
+    if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '미끼') {
         if (!getBaitDefinition(item.name)) return '❌ 등록되지 않은 미끼입니다.';

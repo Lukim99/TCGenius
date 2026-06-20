@@ -491,6 +491,10 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 });
 
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
+// 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 서버 차원에서 굴리기 차단.
+const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
+const EVENT_DICE_ENDED_MSG = '유생의 주사위 이벤트가 종료되었습니다.';
+function isEventDiceEnded() { return Date.now() >= EVENT_DICE_END_TS; }
 const EVENT_DICE_REWARDS = {
     3:  { name: '축복받은 장비 보호권', count: 1,  mult: 170 },
     4:  { name: '고급 장비 보호권',     count: 1,  mult: 60 },
@@ -641,7 +645,7 @@ server.get('/api/event/dice', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const diceItemId = findItemIdByName(EVENT_DICE_ITEM_NAME);
         const diceItemCount = diceItemId >= 0 ? rpgenius.getInventoryItemCount(user, diceItemId) : 0;
-        res.json({ ok: true, diceItemName: EVENT_DICE_ITEM_NAME, diceItemCount, rewards: buildEventDiceRewardsDisplay() });
+        res.json({ ok: true, ended: isEventDiceEnded(), diceItemName: EVENT_DICE_ITEM_NAME, diceItemCount, rewards: buildEventDiceRewardsDisplay() });
     } catch (e) {
         console.error('event dice status error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -650,6 +654,7 @@ server.get('/api/event/dice', requireUser, async (req, res) => {
 
 server.post('/api/event/dice/roll', requireUser, async (req, res) => {
     try {
+        if (isEventDiceEnded()) return res.status(400).json({ error: EVENT_DICE_ENDED_MSG });
         const prediction = Number(req.body && req.body.prediction);
         if (!Number.isInteger(prediction) || prediction < 3 || prediction > 18) return res.status(400).json({ error: '합 예측을 선택해주세요.' });
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -720,6 +725,81 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         });
     } catch (e) {
         console.error('event dice roll error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// ===== 펀치기계 =====
+const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
+const PUNCH_RANK_LIMIT = 5;
+const PUNCH_MIN_SCORE = 3000, PUNCH_MAX_SCORE = 9999;
+
+function getPunchRank() {
+    const r = rpgenius.getDataCache('PunchRank', []);
+    return Array.isArray(r) ? r.filter(e => e && e.name && Number.isFinite(Number(e.score))) : [];
+}
+// 닉네임당 최고점 1개만 유지하여 상위 5명을 정렬해 반환.
+function buildPunchRank(rank, name, score) {
+    const best = new Map();
+    for (const e of rank) {
+        const prev = best.get(e.name);
+        if (!prev || Number(e.score) > prev.score) best.set(e.name, { name: e.name, score: Number(e.score), time: Number(e.time) || 0 });
+    }
+    const mine = best.get(name);
+    if (!mine || score > mine.score) best.set(name, { name, score, time: Date.now() });
+    return Array.from(best.values()).sort((a, b) => b.score - a.score || a.time - b.time).slice(0, PUNCH_RANK_LIMIT);
+}
+
+server.get('/api/punch', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const tokenId = findItemIdByName(PUNCH_TOKEN_ITEM_NAME);
+        const tokenCount = tokenId >= 0 ? rpgenius.getInventoryItemCount(user, tokenId) : 0;
+        res.json({ ok: true, tokenItemName: PUNCH_TOKEN_ITEM_NAME, tokenCount, rank: getPunchRank().slice(0, PUNCH_RANK_LIMIT) });
+    } catch (e) {
+        console.error('punch status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// 토큰 1개를 소비하고 1회용 토큰(nonce)을 발급. 이 nonce가 있어야 점수를 기록할 수 있다.
+server.post('/api/punch/play', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const tokenId = findItemIdByName(PUNCH_TOKEN_ITEM_NAME);
+        if (tokenId < 0) return res.status(500).json({ error: PUNCH_TOKEN_ITEM_NAME + ' 아이템 데이터가 없습니다.' });
+        if (rpgenius.getInventoryItemCount(user, tokenId) < 1) return res.status(400).json({ error: PUNCH_TOKEN_ITEM_NAME + '이(가) 없습니다.' });
+        rpgenius.removeInventoryItem(user, tokenId, 1);
+        rpgenius.cleanupInventoryItems(user);
+        const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        user.punchToken = nonce;
+        await user.save();
+        res.json({ ok: true, token: nonce, tokenCount: rpgenius.getInventoryItemCount(user, tokenId) });
+    } catch (e) {
+        console.error('punch play error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// 발급받은 nonce로 점수를 기록(닉네임당 최고점, 상위 5명).
+server.post('/api/punch/score', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const token = req.body && req.body.token;
+        if (!token || user.punchToken !== token) return res.status(400).json({ error: '유효하지 않은 플레이입니다.' });
+        const score = Math.round(Number(req.body && req.body.score));
+        if (!Number.isFinite(score) || score < PUNCH_MIN_SCORE || score > PUNCH_MAX_SCORE) return res.status(400).json({ error: '잘못된 점수입니다.' });
+        user.punchToken = null;
+        await user.save();
+        const rank = buildPunchRank(getPunchRank(), user.name, score);
+        await rpgenius.saveRpgeniusDataEntry('PunchRank', rank);
+        const position = rank.findIndex(e => e.name === user.name && e.score === score);
+        res.json({ ok: true, rank, ranked: position >= 0, position: position >= 0 ? position + 1 : null });
+    } catch (e) {
+        console.error('punch score error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -4757,6 +4837,76 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .event-cube-settle{width:100%;height:100%;transform-style:preserve-3d}.event-die.result .event-cube-settle{animation:eventDiceSettle .72s cubic-bezier(.18,.9,.22,1.18) both}.event-die.win{filter:drop-shadow(0 16px 24px rgba(0,0,0,.58)) drop-shadow(0 0 18px rgba(250,204,21,.62))}.event-die.lose{filter:drop-shadow(0 14px 22px rgba(0,0,0,.58)) grayscale(.2) brightness(.88)}.event-result-card.hit{animation:eventResultPop .58s cubic-bezier(.17,.84,.28,1.18) both}.event-result-card.win{border-color:rgba(74,222,128,.5);box-shadow:0 18px 46px rgba(0,0,0,.42),0 0 28px rgba(74,222,128,.2)}.event-result-card.lose{border-color:rgba(148,163,184,.28);box-shadow:0 18px 46px rgba(0,0,0,.42),0 0 24px rgba(148,163,184,.1)}.event-screen-flash{position:absolute;inset:0;z-index:0;pointer-events:none;animation:eventFlash .82s ease-out both}.event-screen-flash.win{background:radial-gradient(circle at 38% 38%,rgba(250,204,21,.32),transparent 38%),radial-gradient(circle at 50% 48%,rgba(74,222,128,.22),transparent 44%)}.event-screen-flash.lose{background:radial-gradient(circle at 38% 38%,rgba(148,163,184,.18),transparent 42%)}.event-outcome-burst{position:absolute;left:50%;top:48%;z-index:0;width:240px;height:240px;margin:-120px 0 0 -120px;border-radius:50%;pointer-events:none;animation:eventBurst .9s ease-out both}.event-outcome-burst.win{background:conic-gradient(from 0deg,transparent 0 11%,rgba(250,204,21,.8) 12% 13%,transparent 14% 25%,rgba(74,222,128,.65) 26% 27%,transparent 28% 39%,rgba(250,204,21,.7) 40% 41%,transparent 42%)}.event-outcome-burst.lose{background:conic-gradient(from 0deg,transparent 0 14%,rgba(148,163,184,.34) 15% 16%,transparent 17% 34%,rgba(100,116,139,.28) 35% 36%,transparent 37%)}@keyframes eventDiceSettle{0%{transform:translateY(-16px) scale(.92);opacity:.6}52%{transform:translateY(5px) scale(1.07);opacity:1}76%{transform:translateY(-2px) scale(.98)}100%{transform:translateY(0) scale(1)}}@keyframes eventResultPop{0%{opacity:0;transform:translateY(14px) scale(.94)}62%{opacity:1;transform:translateY(-3px) scale(1.03)}100%{opacity:1;transform:none}}@keyframes eventFlash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}@keyframes eventBurst{0%{opacity:0;transform:scale(.35) rotate(0deg);filter:blur(1px)}22%{opacity:1}100%{opacity:0;transform:scale(1.75) rotate(18deg);filter:blur(5px)}}@media(max-width:900px){.event-dice-panel{background-image:linear-gradient(180deg,rgba(4,7,18,.54),rgba(4,7,18,.88) 58%,rgba(4,7,18,.97)),url('/rpg-ui?file=%EC%A3%BC%EC%82%AC%EC%9C%84%EB%AA%A8%EB%B0%94%EC%9D%BC.png') !important;background-size:cover !important;background-position:center top !important;background-repeat:no-repeat !important}.event-outcome-burst{top:38%;width:190px;height:190px;margin:-95px 0 0 -95px}}
 .event-lightning-flash{position:fixed;inset:0;z-index:9999;pointer-events:none;animation:eventLightningScreenFlash .85s ease-out forwards}.event-lightning-bolt-svg{position:fixed;left:0;top:0;pointer-events:none;z-index:9998;overflow:visible;animation:eventBoltFade .55s ease-out forwards}.event-reward-cell{position:relative;overflow:hidden}.event-reward-cell.lightning{background:linear-gradient(135deg,rgba(6,182,212,.18),rgba(8,145,178,.18),rgba(34,211,238,.16));border-color:rgba(34,211,238,.72);box-shadow:0 0 22px rgba(6,182,212,.55),0 0 45px rgba(34,211,238,.18)}.event-reward-cell.lightning::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(6,182,212,.16),transparent 65%);pointer-events:none}.event-reward-cell.lightning-striking{animation:eventLightningTargetStrike .65s ease-out forwards,eventLightningPulse 2.5s ease-in-out .65s infinite!important}.event-slot-spark{position:absolute;width:2px;height:10px;border-radius:1px;background:#22d3ee;opacity:0;animation:eventLightningSpark 1.8s linear infinite;pointer-events:none;z-index:2}.event-reward-cell.lightning .event-slot-spark:nth-child(1){top:18%;right:-1px;animation-delay:0s}.event-reward-cell.lightning .event-slot-spark:nth-child(2){top:55%;right:-1px;animation-delay:.6s}.event-reward-cell.lightning .event-slot-spark:nth-child(3){bottom:22%;left:-1px;animation-delay:1.1s}.event-lit-bolt{font-size:12px;margin-right:2px;display:inline-block;animation:eventZapBolt .55s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(34,211,238,.9))}.event-lightning-hit{justify-self:center;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid rgba(34,211,238,.45);border-radius:999px;background:rgba(6,182,212,.14);color:#a5f3fc;font-size:12px;font-weight:900}.event-result-card.lightning{border-color:rgba(34,211,238,.62);box-shadow:0 18px 46px rgba(0,0,0,.42),0 0 30px rgba(34,211,238,.24)}@keyframes eventLightningScreenFlash{0%{background:rgba(255,240,80,0)}6%{background:rgba(255,255,180,.75)}12%{background:rgba(255,220,50,.2)}20%{background:rgba(255,240,100,.55)}32%{background:rgba(255,200,30,.15)}50%{background:rgba(255,210,60,.25)}70%{background:rgba(255,200,30,.08)}100%{background:rgba(255,200,30,0)}}@keyframes eventBoltFade{0%{opacity:0}4%{opacity:1}15%{opacity:.25}22%{opacity:.95}38%{opacity:.15}52%{opacity:.6}100%{opacity:0}}@keyframes eventLightningTargetStrike{0%{transform:translateX(0) scaleX(1);filter:brightness(1);box-shadow:0 0 8px rgba(6,182,212,.12)}8%{transform:translateX(-4px) scaleX(1.02);filter:brightness(3.5);box-shadow:0 0 40px #22d3ee,0 0 80px rgba(34,211,238,.45)}16%{transform:translateX(4px) scaleX(.99);filter:brightness(2.5);box-shadow:0 0 28px #22d3ee}26%{transform:translateX(-3px) scaleX(1.01);filter:brightness(2);box-shadow:0 0 20px rgba(34,211,238,.45)}38%{transform:translateX(2px) scaleX(1);filter:brightness(1.6)}52%{transform:translateX(-1px) scaleX(1);filter:brightness(1.3)}100%{transform:translateX(0) scaleX(1);filter:brightness(1);box-shadow:0 0 18px rgba(34,211,238,.45)}}@keyframes eventLightningPulse{0%,100%{box-shadow:0 0 8px rgba(6,182,212,.16)}50%{box-shadow:0 0 18px rgba(34,211,238,.45)}}@keyframes eventLightningSpark{0%{opacity:0;transform:scaleY(1) translateY(0)}20%{opacity:1;transform:scaleY(1.6) translateY(-3px)}40%{opacity:.6;transform:scaleY(.8) translateY(2px)}60%{opacity:1;transform:scaleY(1.4) translateY(-2px)}80%{opacity:.3}100%{opacity:0}}@keyframes eventZapBolt{0%,100%{opacity:1;transform:scale(1) rotate(0deg);filter:drop-shadow(0 0 3px #22d3ee)}30%{opacity:.4;transform:scale(.7) rotate(-14deg);filter:none}55%{opacity:1;transform:scale(1.4) rotate(9deg);filter:drop-shadow(0 0 8px #22d3ee) brightness(1.7)}70%{opacity:.7;transform:scale(.85) rotate(-5deg);filter:drop-shadow(0 0 4px #22d3ee)}}@media(max-width:900px){.event-dice-panel{background-image:linear-gradient(180deg,rgba(4,7,18,.24),rgba(4,7,18,.72) 62%,rgba(4,7,18,.94)),url('/rpg-ui?file=%EC%A3%BC%EC%82%AC%EC%9C%84%EB%AA%A8%EB%B0%94%EC%9D%BC.png')!important;background-size:100% 100%,contain!important;background-position:center top,center top!important;background-repeat:no-repeat,no-repeat!important}.event-dice-main{min-height:min(540px,62svh)}}
 @media(max-width:520px){header{padding:10px 8px;gap:6px}h1{font-size:clamp(16px,5vw,20px)}.top-left{gap:8px}.bar{gap:5px}.who{max-width:30vw;font-size:clamp(10px,2.8vw,12px)}.subnav-bar{padding:0 8px}.tab-label{display:none}.tab-icon-wrap{width:36px;height:36px;border-radius:12px}.tab-icon-wrap svg{width:20px;height:20px}.search-input{flex:1;min-width:0}.shop-grid{grid-template-columns:repeat(2,1fr);gap:8px}.shop-currency-chip{font-size:11px;padding:4px 8px}.shop-currency-chip img{width:14px;height:14px}}
+.page[data-page="펀치기계"]{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-top:-26px;margin-bottom:-50px}.page[data-page="펀치기계"].active{display:block}
+.punch-panel{position:relative;overflow:hidden;min-height:calc(100svh - 104px);background:radial-gradient(circle at 28% 12%,rgba(99,102,241,.16),transparent 42%),radial-gradient(circle at 80% 90%,rgba(244,63,94,.14),transparent 46%),linear-gradient(180deg,#0a0e1c,#05070f)}
+#punchRoot{position:relative;z-index:1;height:100%}
+.punch-stage{display:grid;grid-template-columns:minmax(240px,360px) minmax(0,1fr);gap:clamp(20px,4vw,52px);align-items:center;justify-items:center;width:min(1040px,92vw);margin:0 auto;padding:clamp(20px,4vw,44px) 0;perspective:1100px}
+.punch-tower-wrap{transform:rotateY(-16deg) rotateX(3deg);transform-style:preserve-3d;filter:drop-shadow(0 28px 40px rgba(0,0,0,.6))}
+.punch-tower{width:min(320px,72vw);height:auto;display:block;overflow:visible}
+.pm-light{fill:#1c2742;transition:fill .07s,filter .07s}
+.pm-light.on{fill:#ffd24a;filter:drop-shadow(0 0 5px rgba(255,196,40,.95))}
+#punchBell{transform-origin:96px 20px}
+#punchBell.ring{animation:pmBellRing .7s ease-out}
+@keyframes pmBellRing{0%,100%{transform:rotate(0)}12%{transform:rotate(-13deg)}30%{transform:rotate(11deg)}48%{transform:rotate(-8deg)}66%{transform:rotate(5deg)}82%{transform:rotate(-2deg)}}
+.punch-controls{display:flex;flex-direction:column;align-items:center;gap:clamp(14px,2.4vw,24px);min-width:0;text-align:center}
+.punch-title-block{display:grid;gap:6px}
+.punch-eyebrow{font-size:11px;font-weight:900;letter-spacing:.16em;color:#fca5a5}
+.punch-title-block h2{margin:0;font-size:clamp(26px,5vw,44px);line-height:1;color:#fff;text-shadow:0 4px 22px rgba(0,0,0,.7),0 0 18px rgba(244,63,94,.22)}
+.punch-sub{font-size:13px;color:#cbd5e1;font-weight:700}
+.punch-lcd{position:relative;width:min(300px,80vw);padding:16px 16px 12px;border-radius:14px;background:linear-gradient(165deg,#3a3f49,#1c2027 58%,#0f1217);border:1px solid rgba(0,0,0,.6);box-shadow:0 14px 30px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -3px 8px rgba(0,0,0,.55)}
+.punch-lcd-screw{position:absolute;width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#cdd3da,#5a626d 60%,#2b3038);box-shadow:inset 0 1px 1px rgba(255,255,255,.5),0 1px 2px rgba(0,0,0,.5)}
+.punch-lcd-screw.tl{top:6px;left:6px}.punch-lcd-screw.tr{top:6px;right:6px}.punch-lcd-screw.bl{bottom:6px;left:6px}.punch-lcd-screw.br{bottom:6px;right:6px}
+.punch-lcd-label{font-size:10px;font-weight:900;letter-spacing:.32em;color:#8b94a3;text-align:center;margin-bottom:8px;text-shadow:0 1px 0 rgba(0,0,0,.6)}
+.punch-lcd-screen{position:relative;border-radius:8px;padding:10px 18px;background:linear-gradient(180deg,#120a03,#1c0f02);box-shadow:inset 0 3px 10px rgba(0,0,0,.85),inset 0 0 0 1px rgba(0,0,0,.6),0 0 0 2px rgba(255,255,255,.04);overflow:hidden}
+.punch-lcd-screen::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);mix-blend-mode:multiply;opacity:.5}
+.punch-lcd-ghost,.punch-lcd-value{display:block;text-align:right;font-family:'Courier New',ui-monospace,monospace;font-weight:900;font-style:italic;font-size:clamp(40px,9vw,60px);line-height:1;letter-spacing:6px;font-variant-numeric:tabular-nums}
+.punch-lcd-ghost{color:rgba(255,120,20,.1)}
+.punch-lcd-value{position:absolute;inset:10px 18px auto auto;color:#ff8a1e;text-shadow:0 0 6px rgba(255,138,30,.9),0 0 16px rgba(255,90,10,.6),0 0 30px rgba(255,80,0,.4)}
+.punch-best{font-size:11px;font-weight:900;letter-spacing:.18em;color:#7f8896;margin-top:8px;text-align:center}.punch-best b{color:#fca5a5;font-variant-numeric:tabular-nums;font-family:'Courier New',ui-monospace,monospace;font-style:italic}
+.punch-dial{position:relative;width:clamp(212px,56vw,284px);aspect-ratio:1;display:grid;place-items:center;margin:2px 0}
+.punch-ring{position:absolute;inset:0;width:100%;height:100%;overflow:visible;transition:filter .2s}
+.punch-ring-grad{opacity:.4;transition:opacity .25s}
+.punch-dial.active .punch-ring-grad{opacity:1}
+.punch-dial.active .punch-ring{filter:drop-shadow(0 0 10px rgba(255,140,30,.35))}
+.punch-dot{opacity:0;transition:opacity .2s}
+.punch-dial.active .punch-dot{opacity:1}
+.punch-pad{position:relative;z-index:2;width:58%;height:58%;border:0;border-radius:50%;background:radial-gradient(circle at 36% 28%,#ff8a8a 0%,#ef4444 42%,#b91c1c 78%,#7f1212 100%);color:#fff;font-weight:900;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;box-shadow:0 12px 0 #6d1212,0 20px 28px rgba(0,0,0,.5),inset 0 5px 14px rgba(255,255,255,.45),inset 0 -10px 20px rgba(0,0,0,.32);transition:transform .08s ease,box-shadow .08s ease,filter .15s;display:grid;place-items:center;gap:2px}
+.punch-pad:hover,.punch-pad:focus,.punch-pad:active{background:radial-gradient(circle at 36% 28%,#ff8a8a 0%,#ef4444 42%,#b91c1c 78%,#7f1212 100%);color:#fff;outline:none}
+.punch-pad:not(:disabled):hover{filter:brightness(1.06)}
+.punch-pad:not(:disabled):active{transform:translateY(8px);box-shadow:0 4px 0 #6d1212,0 8px 14px rgba(0,0,0,.5),inset 0 5px 14px rgba(255,255,255,.3),inset 0 -8px 18px rgba(0,0,0,.4)}
+.punch-pad:disabled{filter:grayscale(.35) brightness(.82);cursor:default}
+.punch-pad .pm-glove{font-size:clamp(30px,7vw,40px);line-height:1;filter:drop-shadow(0 4px 6px rgba(0,0,0,.4))}
+.punch-pad-label{font-size:clamp(12px,2.4vw,15px);letter-spacing:.02em}
+.punch-coin-btn{padding:11px 20px;border:0;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#3b1d00;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 8px 18px rgba(217,119,6,.4);transition:transform .1s,box-shadow .1s,filter .15s}
+.punch-coin-btn b{font-variant-numeric:tabular-nums}
+.punch-coin-btn:not(:disabled):hover{filter:brightness(1.06)}
+.punch-coin-btn:not(:disabled):active{transform:translateY(2px)}
+.punch-coin-btn:disabled{background:linear-gradient(135deg,#3a4254,#2a3142);color:#6b7280;box-shadow:none;cursor:default}
+.punch-rank{width:min(320px,84vw);background:rgba(5,8,18,.6);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px 14px}
+.punch-rank-title{font-size:13px;font-weight:900;color:#fde68a;text-align:center;margin-bottom:8px;letter-spacing:.04em}
+.punch-rank-list{display:grid;gap:5px}
+.punch-rank-empty{padding:10px;text-align:center;color:#64748b;font-size:12px}
+.punch-rank-row{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:7px 9px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);border-radius:9px;font-size:13px}
+.punch-rank-row.me{border-color:rgba(244,63,94,.5);background:rgba(244,63,94,.1)}
+.punch-rank-no{font-weight:900;text-align:center;color:#94a3b8;font-variant-numeric:tabular-nums}
+.punch-rank-no.r1{color:#fbbf24}.punch-rank-no.r2{color:#cbd5e1}.punch-rank-no.r3{color:#d97757}
+.punch-rank-name{font-weight:800;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.punch-rank-score{font-weight:900;color:#fca5a5;font-variant-numeric:tabular-nums}
+.punch-hint{font-size:12px;color:#64748b;font-weight:700;max-width:300px;line-height:1.5;text-align:center}
+@media(max-width:820px){
+.punch-panel{min-height:calc(100svh - 124px)}
+.punch-stage{display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 0 34px;width:100%}
+.punch-controls{display:contents}
+.punch-title-block{order:1;gap:3px}.punch-title-block h2{font-size:24px}
+.punch-sub{order:1;display:block;font-size:12px;max-width:84vw}
+.punch-tower-wrap{order:2;transform:rotateY(-10deg);flex:0 0 auto}
+.punch-tower{width:min(170px,44vw);height:auto}
+.punch-lcd{order:3;width:min(260px,80vw)}
+.punch-dial{order:4;width:min(286px,82vw)}
+.punch-coin-btn{order:5}
+.punch-rank{order:6;width:min(330px,90vw)}
+.punch-hint{display:none}
+}
 </style></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
@@ -4779,6 +4929,9 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>
+  </div>
+  <div class="page" data-page="펀치기계">
+    <section class="punch-panel"><div id="punchRoot"></div></section>
   </div>
   <div class="page" data-page="combine">
     <section class="panel combine-board">
@@ -4818,7 +4971,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 <div id="boDetailBg" class="modal-bg"><div class="modal" id="boDetail"></div></div>
 <div id="boRegBg" class="modal-bg"><div class="modal wide" id="boReg"></div></div>
 <nav class="bottom-tabs" id="bottomTabs"></nav>
-<script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};</script>
+<script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
 <script src="/static/app.js"></script>
 </body></html>`;
 }

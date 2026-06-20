@@ -61,7 +61,7 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -69,9 +69,14 @@ const ICONS = {
     party:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg>`,
     community: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`,
 };
+// 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 종료 후 탭 자체를 노출하지 않는다.
+const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
+const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
+// 펀치기계 탭: 지금은 관리자에게만, 이벤트 종료(7/10 23:59) 이후 모든 유저에게 노출.
+const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['event', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(EVENT_DICE_ENDED ? [] : ['event']), '자물쇠', ...(PUNCH_VISIBLE ? ['펀치기계'] : []), 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -143,6 +148,7 @@ function navigatePage(pageId) {
     }
     if (pageId === 'event') loadEventDice();
     if (pageId === '자물쇠') loadLockbox();
+    if (pageId === '펀치기계') loadPunch();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === '레벨보상') loadLevelRewards();
@@ -1244,6 +1250,11 @@ async function loadEventDice() {
     eventDiceState.loading = true;
     try {
         const data = await api('/api/event/dice');
+        if (data.ended) {
+            eventDiceState.loading = false;
+            $('#eventDiceRoot').replaceChildren(el('div', { class: 'empty' }, '유생의 주사위 이벤트가 종료되었습니다.'));
+            return;
+        }
         eventDiceState.diceItemCount = data.diceItemCount || 0;
         eventDiceState.rewards = data.rewards || null;
         eventDiceState.error = '';
@@ -1252,6 +1263,310 @@ async function loadEventDice() {
     }
     eventDiceState.loading = false;
     renderEventDice();
+}
+
+// ===== 펀치기계 =====
+const PUNCH_MIN_SCORE = 3000, PUNCH_MAX_SCORE = 9999;
+const PUNCH_PUCK_RANGE = 334;        // SVG 단위: 파워 0→1 시 퍽 이동 거리
+const PUNCH_LIGHT_COUNT = 14;
+const PUNCH_RING_R = 116;            // 다이얼 SVG(280) 기준 점이 도는 원 반지름
+// phase: 'idle'(토큰 대기) | 'ready'(점이 회전, 멈출 수 있음) | 'busy'(연출 중)
+let punchState = { built: false, phase: 'idle', tokenCount: 0, rank: [], token: null, angle: Math.PI, raf: 0, lastTs: 0, best: 0 };
+let punchEls = null;
+
+async function loadPunch() {
+    const root = $('#punchRoot');
+    if (!root) return;
+    if (!punchState.built) {
+        punchState.best = Number(localStorage.getItem('punchBest') || 0) || 0;
+        buildPunchUI(root);
+        punchState.built = true;
+    }
+    try {
+        const data = await api('/api/punch');
+        punchState.tokenCount = data.tokenCount || 0;
+        punchState.rank = data.rank || [];
+    } catch (e) { /* 네트워크 실패 시 기존 상태 유지 */ }
+    renderPunchMeta();
+    renderPunchRank();
+    updatePunchPuck(0);
+}
+
+function buildPunchUI(root) {
+    let lights = '';
+    for (let i = 0; i < PUNCH_LIGHT_COUNT; i++) {
+        const level = 1 - i / (PUNCH_LIGHT_COUNT - 1);
+        const y = (70 + i * (400 - 70) / (PUNCH_LIGHT_COUNT - 1)).toFixed(1);
+        lights += '<circle class="pm-light" data-level="' + level.toFixed(4) + '" cx="64" cy="' + y + '" r="4"/>';
+        lights += '<circle class="pm-light" data-level="' + level.toFixed(4) + '" cx="128" cy="' + y + '" r="4"/>';
+    }
+    const svg = `<svg class="punch-tower" viewBox="0 0 200 470" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pmFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c3c66"/><stop offset="1" stop-color="#121b31"/></linearGradient>
+    <linearGradient id="pmSide" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1729"/><stop offset="1" stop-color="#070b15"/></linearGradient>
+    <linearGradient id="pmTop" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a4c80"/><stop offset="1" stop-color="#243760"/></linearGradient>
+    <linearGradient id="pmTrack" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a1120"/><stop offset="1" stop-color="#05080f"/></linearGradient>
+    <radialGradient id="pmPuck" cx="40%" cy="32%" r="80%"><stop offset="0" stop-color="#fff6c4"/><stop offset="45%" stop-color="#ffc24a"/><stop offset="100%" stop-color="#ff7a1a"/></radialGradient>
+    <linearGradient id="pmBell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe79a"/><stop offset="1" stop-color="#caa033"/></linearGradient>
+    <radialGradient id="pmCoin" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#fff1b0"/><stop offset="55%" stop-color="#f4c430"/><stop offset="100%" stop-color="#b8860b"/></radialGradient>
+    <filter id="pmGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <ellipse cx="96" cy="456" rx="74" ry="13" fill="rgba(0,0,0,.45)"/>
+  <polygon points="56,40 76,26 156,26 136,40" fill="url(#pmTop)"/>
+  <polygon points="136,40 156,26 156,406 136,420" fill="url(#pmSide)"/>
+  <rect x="56" y="40" width="80" height="380" rx="9" fill="url(#pmFront)" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+  <rect x="74" y="48" width="44" height="370" rx="13" fill="#05070d" stroke="rgba(0,0,0,.6)" stroke-width="1.5"/>
+  <rect x="78" y="52" width="36" height="362" rx="10" fill="url(#pmTrack)"/>
+  <rect x="78" y="41" width="36" height="9" rx="4" fill="#0a0f1c" stroke="rgba(0,0,0,.7)" stroke-width="1"/>
+  <rect x="84" y="43.4" width="24" height="4" rx="2" fill="#04060c"/>
+  ${lights}
+  <g id="punchBell">
+    <rect x="83" y="14" width="26" height="6" rx="3" fill="#8a6d22"/>
+    <path d="M75 18 Q96 -10 117 18 Z" fill="url(#pmBell)" stroke="#7a5e1c" stroke-width="1"/>
+    <circle cx="96" cy="20" r="3.2" fill="#7a5e1c"/>
+  </g>
+  <g id="punchCoin" opacity="0">
+    <circle cx="96" cy="46" r="9" fill="url(#pmCoin)" stroke="#9a7b1e" stroke-width="1.5"/>
+    <ellipse cx="96" cy="46" rx="4" ry="6" fill="rgba(120,90,10,.35)"/>
+  </g>
+  <g id="punchPuck">
+    <rect x="70" y="57" width="52" height="22" rx="7" fill="url(#pmPuck)" filter="url(#pmGlow)"/>
+    <rect x="75" y="61" width="42" height="5" rx="2.5" fill="rgba(255,255,255,.75)"/>
+  </g>
+</svg>`;
+    const towerWrap = el('div', { class: 'punch-tower-wrap' });
+    towerWrap.innerHTML = svg;
+
+    const lcd = el('div', { class: 'punch-lcd' },
+        el('span', { class: 'punch-lcd-screw tl' }), el('span', { class: 'punch-lcd-screw tr' }),
+        el('span', { class: 'punch-lcd-screw bl' }), el('span', { class: 'punch-lcd-screw br' }),
+        el('div', { class: 'punch-lcd-label' }, 'SCORE'),
+        el('div', { class: 'punch-lcd-screen' },
+            el('span', { class: 'punch-lcd-ghost' }, '8888'),
+            el('span', { class: 'punch-lcd-value', id: 'punchScoreValue' }, '0')),
+        el('div', { class: 'punch-best' }, 'BEST ', el('b', { id: 'punchBest' }, String(punchState.best))));
+
+    const dial = el('div', { class: 'punch-dial', id: 'punchDial' });
+    dial.innerHTML = `<svg class="punch-ring" viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pmRing" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff3b3b"/>
+      <stop offset="0.32" stop-color="#ff8a1e"/>
+      <stop offset="0.55" stop-color="#ffd21e"/>
+      <stop offset="1" stop-color="#27c93f"/>
+    </linearGradient>
+    <filter id="pmDotGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="140" cy="140" r="${PUNCH_RING_R}" fill="none" stroke="#0b1120" stroke-width="22"/>
+  <circle class="punch-ring-grad" cx="140" cy="140" r="${PUNCH_RING_R}" fill="none" stroke="url(#pmRing)" stroke-width="13" stroke-linecap="round"/>
+  <g id="punchDot" class="punch-dot"><circle cx="140" cy="140" r="11" fill="#fff" stroke="#0b1120" stroke-width="3" filter="url(#pmDotGlow)"/></g>
+</svg>`;
+    const pad = el('button', { class: 'punch-pad', id: 'punchPad', type: 'button' },
+        el('span', { class: 'pm-glove' }, ''),
+        el('span', { class: 'punch-pad-label', id: 'punchPadLabel' }, ''));
+    dial.appendChild(pad);
+
+    const coinBtn = el('button', { class: 'punch-coin-btn', id: 'punchCoinBtn', type: 'button' },
+        '토큰 투입 (', el('b', { id: 'punchTokenCount' }, String(punchState.tokenCount)), ')');
+
+    const rank = el('div', { class: 'punch-rank' },
+        el('div', { class: 'punch-rank-title' }, '펀치 랭킹 TOP 5'),
+        el('div', { class: 'punch-rank-list', id: 'punchRankList' }));
+
+    const controls = el('div', { class: 'punch-controls' },
+        el('div', { class: 'punch-title-block' },
+            el('div', { class: 'punch-eyebrow' }, 'POWER OF ONE PUNCH'),
+            el('h2', null, '펀치기계'),
+            el('div', { class: 'punch-sub' }, '당신의 힘을 뽐내보세요!')),
+        lcd, dial, coinBtn, rank,
+        el('div', { class: 'punch-hint' }, ''));
+    const stage = el('div', { class: 'punch-stage', id: 'punchStage' }, towerWrap, controls);
+    root.replaceChildren(stage);
+
+    punchEls = {
+        stage,
+        puck: root.querySelector('#punchPuck'),
+        bell: root.querySelector('#punchBell'),
+        coin: root.querySelector('#punchCoin'),
+        lights: Array.from(root.querySelectorAll('.pm-light')),
+        value: root.querySelector('#punchScoreValue'),
+        best: root.querySelector('#punchBest'),
+        dial, pad,
+        padLabel: root.querySelector('#punchPadLabel'),
+        dot: root.querySelector('#punchDot'),
+        coinBtn,
+        tokenCountEl: root.querySelector('#punchTokenCount'),
+        rankList: root.querySelector('#punchRankList')
+    };
+    coinBtn.addEventListener('click', insertPunchCoin);
+    pad.addEventListener('click', punchStop);
+    renderPunchDot();
+}
+
+function renderPunchMeta() {
+    if (!punchEls) return;
+    punchEls.tokenCountEl.textContent = String(punchState.tokenCount);
+    const idle = punchState.phase === 'idle';
+    punchEls.coinBtn.disabled = !idle || punchState.tokenCount < 1;
+    punchEls.pad.disabled = punchState.phase !== 'ready';
+    punchEls.dial.classList.toggle('active', punchState.phase === 'ready');
+    punchEls.padLabel.textContent = punchState.phase === 'ready' ? '' : punchState.phase === 'busy' ? '' : '';
+}
+
+function renderPunchRank() {
+    if (!punchEls) return;
+    if (!punchState.rank.length) { punchEls.rankList.replaceChildren(el('div', { class: 'punch-rank-empty' }, '아직 기록이 없습니다.')); return; }
+    punchEls.rankList.replaceChildren(...punchState.rank.map((e, i) =>
+        el('div', { class: 'punch-rank-row' + (e.name === myName ? ' me' : '') },
+            el('span', { class: 'punch-rank-no r' + (i + 1) }, String(i + 1)),
+            el('span', { class: 'punch-rank-name' }, e.name),
+            el('span', { class: 'punch-rank-score' }, String(e.score)))));
+}
+
+function updatePunchPuck(gauge) {
+    if (!punchEls) return;
+    const ty = (1 - gauge) * PUNCH_PUCK_RANGE;
+    punchEls.puck.setAttribute('transform', 'translate(0,' + ty.toFixed(2) + ')');
+    punchEls.lights.forEach(l => l.classList.toggle('on', gauge >= Number(l.dataset.level)));
+}
+
+// 점을 현재 각도 위치에 배치(angle=0 → 맨 위).
+function renderPunchDot() {
+    if (!punchEls) return;
+    const dx = PUNCH_RING_R * Math.sin(punchState.angle);
+    const dy = -PUNCH_RING_R * Math.cos(punchState.angle);
+    punchEls.dot.setAttribute('transform', 'translate(' + dx.toFixed(2) + ',' + dy.toFixed(2) + ')');
+}
+
+async function insertPunchCoin() {
+    if (punchState.phase !== 'idle') return;
+    if (punchState.tokenCount < 1) { openModal('토큰 부족', '', ['펀치기계 토큰이 없습니다.']); return; }
+    punchState.phase = 'busy';
+    renderPunchMeta();
+    let data;
+    try {
+        data = await postApi('/api/punch/play', {});
+    } catch (e) {
+        punchState.phase = 'idle';
+        renderPunchMeta();
+        openModal('오류', '', [e.message]);
+        return;
+    }
+    punchState.token = data.token;
+    punchState.tokenCount = data.tokenCount;
+    punchEls.tokenCountEl.textContent = String(punchState.tokenCount);
+    animatePunchCoin(startPunchOrbit);
+}
+
+// 동전이 머신 투입구로 떨어지는 연출.
+function animatePunchCoin(done) {
+    const coin = punchEls.coin;
+    if (!coin) { done(); return; }
+    const start = performance.now(), dur = 720, easeIn = p => p * p;
+    function step(t) {
+        const p = Math.min(1, (t - start) / dur);
+        const y = -86 * (1 - easeIn(p));
+        const op = p < 0.14 ? p / 0.14 : (p > 0.82 ? Math.max(0, 1 - (p - 0.82) / 0.18) : 1);
+        coin.setAttribute('transform', 'translate(0,' + y.toFixed(1) + ')');
+        coin.setAttribute('opacity', op.toFixed(2));
+        if (p < 1) requestAnimationFrame(step);
+        else { coin.setAttribute('opacity', '0'); done(); }
+    }
+    requestAnimationFrame(step);
+}
+
+function startPunchOrbit() {
+    punchState.phase = 'ready';
+    punchState.angle = Math.PI;          // 맨 아래에서 시작
+    punchState.lastTs = 0;
+    updatePunchPuck(0);                   // 퍽을 바닥으로 리셋
+    if (punchEls) punchEls.value.textContent = '0';
+    renderPunchMeta();
+    punchState.raf = requestAnimationFrame(punchOrbit);
+}
+
+function punchOrbit(ts) {
+    if (punchState.phase !== 'ready') return;
+    if (!punchState.lastTs) punchState.lastTs = ts;
+    const dt = Math.min(60, ts - punchState.lastTs) / 1000;
+    punchState.lastTs = ts;
+    const power = (Math.cos(punchState.angle) + 1) / 2;     // 위=1, 아래=0
+    const omega = 4.5 + 10.8 * power;                        // 위로 갈수록 빠르게, 아래로 갈수록 느리게 (기존 대비 +80%)
+    punchState.angle = (punchState.angle + omega * dt) % (Math.PI * 2);
+    renderPunchDot();
+    punchState.raf = requestAnimationFrame(punchOrbit);
+}
+
+function punchStop() {
+    if (punchState.phase !== 'ready') return;
+    punchState.phase = 'busy';
+    cancelAnimationFrame(punchState.raf);
+    renderPunchMeta();
+    const power = (Math.cos(punchState.angle) + 1) / 2;      // 점의 높이 → 파워(위=1)
+    // 파워가 가리키는 '원래 점수'에 -1000~+100의 랜덤 오프셋(주로 깎이고 드물게 약간 상승).
+    const base = PUNCH_MIN_SCORE + power * (PUNCH_MAX_SCORE - PUNCH_MIN_SCORE);
+    const offset = Math.random() * 1100 - 1000;
+    const score = Math.min(PUNCH_MAX_SCORE, Math.max(PUNCH_MIN_SCORE, Math.round(base + offset)));
+    settlePunch((score - PUNCH_MIN_SCORE) / (PUNCH_MAX_SCORE - PUNCH_MIN_SCORE), score);
+}
+
+function settlePunch(targetGauge, score) {
+    const start = performance.now(), dur = 560;
+    const backOut = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+    function step(t) {
+        const p = Math.min(1, (t - start) / dur);
+        updatePunchPuck(targetGauge * backOut(p));
+        if (p < 1) requestAnimationFrame(step);
+        else updatePunchPuck(targetGauge);
+    }
+    requestAnimationFrame(step);
+    revealPunchScore(score);
+}
+
+// 점수판을 앞자리부터 차례대로 공개. 미확정 자리는 빠르게 깜빡여 긴장감을 준다.
+function revealPunchScore(score) {
+    const digits = String(score).split('');          // 항상 4자리(3000~9999)
+    const perDigit = 650;                              // 자리당 공개 간격(ms)
+    const total = perDigit * digits.length;            // 전체 공개 시간(ms)
+    const start = performance.now();
+    let lastFlick = 0, lastLocked = -1;
+    function frame(t) {
+        const elapsed = t - start;
+        const locked = Math.min(digits.length, Math.floor(elapsed / perDigit));
+        if (locked !== lastLocked || t - lastFlick > 5) {
+            let out = '';
+            for (let i = 0; i < digits.length; i++) out += i < locked ? digits[i] : Math.floor(Math.random() * 10);
+            if (punchEls) punchEls.value.textContent = out;
+            lastFlick = t;
+            lastLocked = locked;
+        }
+        if (elapsed < total) requestAnimationFrame(frame);
+        else finishPunch(score);
+    }
+    requestAnimationFrame(frame);
+}
+
+async function finishPunch(score) {
+    if (punchEls) punchEls.value.textContent = String(score);
+    if (score >= 9000 && punchEls) {
+        punchEls.bell.classList.add('ring');
+        setTimeout(() => punchEls.bell.classList.remove('ring'), 900);
+    }
+    if (score > punchState.best) {
+        punchState.best = score;
+        localStorage.setItem('punchBest', String(score));
+        if (punchEls) punchEls.best.textContent = String(score);
+    }
+    if (punchState.token) {
+        try {
+            const data = await postApi('/api/punch/score', { token: punchState.token, score });
+            if (Array.isArray(data.rank)) punchState.rank = data.rank;
+        } catch (e) { /* 기록 실패해도 게임은 진행 */ }
+        punchState.token = null;
+    }
+    punchState.phase = 'idle';
+    renderPunchMeta();
+    renderPunchRank();
 }
 
 // ===== 조합 =====
