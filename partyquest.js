@@ -533,6 +533,8 @@ function createPhaseMonster(phase) {
     const fixedAoe = findPattern('fixedAoe');
     const regenBelowHp = findPattern('regenBelowHp');
     const selfBuff = findPattern('selfBuff');
+    const hpThresholdCast = findPattern('hpThresholdCast');
+    const roleDamageLock = findPattern('roleDamageLock');
     return {
         name: monDef.name || phase.name || '몬스터',
         hp,
@@ -559,7 +561,16 @@ function createPhaseMonster(phase) {
             healTimer: Number(regenBelowHp.interval || 5),
             buffTimer: Number(selfBuff.interval || 30),
             buffRemain: 0,
-            casting: null
+            casting: null,
+            purgeTimer: Number(hpThresholdCast.intervalSec || 0),
+            shieldInterval: Number(roleDamageLock.interval || 0),
+            shieldDuration: Number(roleDamageLock.duration || 10),
+            shieldTimer: Number(roleDamageLock.interval || 0),
+            shieldRemain: 0,
+            shieldRole: null,
+            curseTriggered: false,
+            curseRemain: 0,
+            curseWipeArmed: false
         } : null,
         stackCounters: {},
         patterns,
@@ -1588,7 +1599,7 @@ function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
     const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra);
     const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
     if (invincible) result.damage = 0;
-    else room.monster.hp = Math.max(0, room.monster.hp - result.damage);
+    else result.damage = applyPlayerDamageToBoss(room, room.monster, attacker, result.damage);
     applyBlackHoduCritReflect(room, attacker, result);
     return result;
 }
@@ -1599,7 +1610,7 @@ function performBasicAttack(room, attacker) {
     const r = computeBasicDamage(attacker, mon, room);
     const invincible = !!(mon.bossState && mon.bossState.casting);
     if (invincible) r.damage = 0;
-    else mon.hp = Math.max(0, mon.hp - r.damage);
+    else r.damage = applyPlayerDamageToBoss(room, mon, attacker, r.damage);
     applyAttackPotentialRecovery(room, attacker);
     applyMainCardPassiveMpRecovery(room, attacker);
     applyBlackHoduCritReflect(room, attacker, r);
@@ -1696,6 +1707,57 @@ function getMonsterPattern(mon, type) {
     return mon && Array.isArray(mon.patterns) ? (mon.patterns.find(p => p && p.type === type) || {}) : {};
 }
 
+// 암흑의 저주 발동: 체력을 threshold(40%)로 되돌리고 windowSec 동안 발동 창을 연다.
+function triggerBlackHoduCurse(room, mon) {
+    const st = mon && mon.bossState;
+    if (!st || st.curseTriggered) return;
+    const pattern = getMonsterPattern(mon, 'curseRevive');
+    const floorRatio = Number(pattern.threshold || 0.4);
+    st.curseTriggered = true;
+    st.curseRemain = Number(pattern.windowSec || 5);
+    mon.hp = Math.max(1, Math.ceil(mon.hpMax * floorRatio));
+    pushNotice(room, '🩸 암흑의 저주! ' + st.curseRemain + '초간 보스를 공격하면 파티가 전멸합니다!', 'danger', 5000);
+    pushCombat(room, mon.name + ' [' + (pattern.name || '암흑의 저주') + '] 체력을 ' + Math.round(floorRatio * 100) + '%로 되돌립니다', 'danger');
+}
+
+function wipePartyByCurse(room, mon) {
+    for (const m of room.members) {
+        if (m.runtime && !m.runtime.dead) { m.runtime.hp = 0; m.runtime.dead = true; }
+    }
+    pushCombat(room, (mon ? mon.name : '보스') + ' [암흑의 저주] 발동 — 보스를 공격하여 파티 전멸', 'danger');
+    endQuest(room, false, '암흑의 저주');
+}
+
+// 플레이어가 보스에게 피해를 줄 때의 익스트림 기믹 처리. 실제 적용된 피해를 반환.
+function applyPlayerDamageToBoss(room, mon, attacker, damage) {
+    damage = Math.max(0, Math.round(Number(damage) || 0));
+    const st = mon && mon.bossState;
+    if (st && damage > 0) {
+        // 칠흑의 방패: 지정된 역할군만 피해를 줄 수 있다.
+        if (st.shieldRemain > 0 && st.shieldRole && (!attacker || attacker.position !== st.shieldRole)) {
+            pushCombat(room, mon.name + ' [칠흑의 방패] ' + ((attacker && attacker.name) || '공격') + ' 피해 무효', 'buff');
+            return 0;
+        }
+        // 암흑의 저주 발동 창: 보스에게 피해를 입히면 전멸을 예약(틱에서 처리해 안전하게).
+        if (st.curseRemain > 0) {
+            st.curseWipeArmed = true;
+            return 0;
+        }
+        // 암흑의 저주: 최초로 40% 미만으로 떨어지는 피해는 40%로 복구되며 발동한다.
+        const cursePattern = getMonsterPattern(mon, 'curseRevive');
+        if (cursePattern.type && !st.curseTriggered) {
+            const floor = Math.max(1, Math.ceil(mon.hpMax * Number(cursePattern.threshold || 0.4)));
+            if (mon.hp - damage < floor) {
+                const applied = Math.max(0, mon.hp - floor);
+                triggerBlackHoduCurse(room, mon);
+                return applied;
+            }
+        }
+    }
+    mon.hp = Math.max(0, mon.hp - damage);
+    return damage;
+}
+
 function executeMember(room, member, source) {
     if (!member || !member.runtime || member.runtime.dead) return;
     member.runtime.hp = 0;
@@ -1744,6 +1806,8 @@ function finishBlackHoduCast(room, mon, cast) {
 function stepBlackHoduBoss(room, mon, dt) {
     const st = mon && mon.bossState;
     if (!st || st.disabled) return false;
+    // 암흑의 저주: 발동 창 중 보스를 공격했다면 이 시점에 전멸 처리(데미지 핸들러 밖에서 안전하게).
+    if (st.curseWipeArmed) { wipePartyByCurse(room, mon); return true; }
     if (st.casting) {
         st.casting.remain = Math.max(0, Number(st.casting.remain || 0) - dt);
         mon.nextPattern = st.casting.name + ' ' + st.casting.remain.toFixed(1) + 's';
@@ -1759,7 +1823,49 @@ function stepBlackHoduBoss(room, mon, dt) {
     const executePattern = getMonsterPattern(mon, 'executePositionCast');
     const halfThreshold = Number(halfPattern.threshold || 0.5);
     const executeThreshold = Number(executePattern.threshold || 0.1);
-    if (!st.phase50Started && hpRatio <= halfThreshold) {
+    // 암흑의 저주: 발동 창 카운트다운
+    if (st.curseRemain > 0) {
+        st.curseRemain = Math.max(0, st.curseRemain - dt);
+        if (st.curseRemain <= 0) pushCombat(room, mon.name + ' [암흑의 저주] 효과 종료', 'buff');
+    }
+    // 암흑의 저주: 최초로 40% 미만이 되면(데미지 인터셉트를 놓친 경우 대비) 복구하며 발동
+    const cursePattern = getMonsterPattern(mon, 'curseRevive');
+    if (cursePattern.type && !st.curseTriggered && hpRatio <= Number(cursePattern.threshold || 0.4)) {
+        triggerBlackHoduCurse(room, mon);
+        return true;
+    }
+    // 칠흑의 방패: 일정 주기마다 참가 역할군 중 하나를 골라 그 역할군만 피해를 줄 수 있게 한다.
+    if (st.shieldInterval > 0) {
+        if (st.shieldRemain > 0) {
+            st.shieldRemain = Math.max(0, st.shieldRemain - dt);
+            if (st.shieldRemain <= 0) {
+                st.shieldRole = null;
+                pushCombat(room, mon.name + ' [칠흑의 방패] 해제', 'buff');
+            }
+        } else {
+            st.shieldTimer = Math.max(0, Number(st.shieldTimer || 0) - dt);
+            if (st.shieldTimer <= 0) {
+                st.shieldTimer += st.shieldInterval;
+                const roles = [...new Set(room.members.map(m => m.position).filter(Boolean))];
+                if (roles.length) {
+                    st.shieldRole = roles[Math.floor(Math.random() * roles.length)];
+                    st.shieldRemain = st.shieldDuration;
+                    pushNotice(room, '🛡 칠흑의 방패! ' + st.shieldDuration + '초간 ' + st.shieldRole + '의 공격만 통합니다!', 'danger', 4500);
+                    pushCombat(room, mon.name + ' [칠흑의 방패] ' + st.shieldRole + '만 피해를 줄 수 있습니다 (' + st.shieldDuration + 's)', 'danger');
+                    return true;
+                }
+            }
+        }
+    }
+    // 파멸의 정화: intervalSec가 있으면 주기 발동, 없으면 기존 체력 임계 1회 발동
+    if (Number(halfPattern.intervalSec || 0) > 0) {
+        st.purgeTimer = Math.max(0, Number(st.purgeTimer || 0) - dt);
+        if (st.purgeTimer <= 0) {
+            st.purgeTimer += Number(halfPattern.intervalSec);
+            startBlackHoduCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2));
+            return true;
+        }
+    } else if (!st.phase50Started && hpRatio <= halfThreshold) {
         st.phase50Started = true;
         startBlackHoduCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2));
         return true;
@@ -2141,8 +2247,8 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
         const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic }));
         const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
         if (invincible) result.damage = 0;
-        const damage = result.damage;
-        if (!invincible) room.monster.hp = Math.max(0, room.monster.hp - damage);
+        let damage = result.damage;
+        if (!invincible) damage = applyPlayerDamageToBoss(room, room.monster, caster, damage);
         pushCombat(room, caster.name + ' [' + skillName + '] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
         if (def.debuff && def.debuff.def) room.monster.def = Math.max(0, Number(room.monster.def || 0) + Number(def.debuff.def));
         if (def.debuff && def.debuff.takenDmg) {
