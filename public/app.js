@@ -61,7 +61,7 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -76,7 +76,7 @@ const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(EVENT_DICE_ENDED ? [] : ['event']), '자물쇠', ...(PUNCH_VISIBLE ? ['펀치기계'] : []), 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', ...(PUNCH_VISIBLE ? ['펀치기계'] : []), 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -147,6 +147,7 @@ function navigatePage(pageId) {
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (pageId === 'event') loadEventDice();
+    if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '펀치기계') loadPunch();
     if (pageId === 'combine') loadCombine();
@@ -2438,6 +2439,135 @@ function renderLevelRewardList(rewards, userLevel) {
         row.appendChild(right);
         return row;
     }));
+}
+
+// ===== 버닝 =====
+async function loadBurning() {
+    const root = $('#burningRoot');
+    if (!root) return;
+    root.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        renderBurning(await api('/api/burning'));
+    } catch (e) {
+        root.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+// 셀마다 불 오브 하나만 표시. 클릭하면 보상 모달이 뜬다.
+function burningCell(level, track, info, opts) {
+    const claimable = opts.unlocked && !info.claimed && !opts.megaLocked;
+    const stateClass = info.claimed ? ' claimed' : claimable ? ' claimable' : ' locked';
+    const orb = el('div', { class: 'burning-orb' + stateClass, role: 'button', tabindex: '0' },
+        el('span', { class: 'burning-fire' }, '🔥'));
+    if (info.claimed) orb.appendChild(el('span', { class: 'burning-orb-check' }, '✓'));
+    else if (!opts.unlocked || opts.megaLocked) orb.appendChild(el('span', { class: 'burning-orb-lock' }, '🔒'));
+    orb.onclick = () => openBurningModal(level, track, info, opts);
+    return el('div', { class: 'burning-cell' }, orb);
+}
+
+function openBurningModal(level, track, info, opts) {
+    const claimable = opts.unlocked && !info.claimed && !opts.megaLocked;
+    $('#modalTitle').textContent = (track === 'mega' ? '메가 버닝' : '버닝') + ' Lv.' + level;
+    $('#modalSub').textContent = info.claimed ? '수령 완료'
+        : opts.megaLocked ? '메가 버닝 해금이 필요합니다'
+            : opts.unlocked ? '수령 가능' : 'Lv.' + level + ' 달성 시 수령 가능';
+    $('#modalSub').style.display = '';
+    const body = el('div', { class: 'burning-modal-body' });
+    info.items.forEach(item => {
+        const row = el('div', { class: 'burning-modal-row' });
+        const thumb = el('div', { class: 'burning-modal-thumb' });
+        if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
+        if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
+        if (!item.iconUrl && !item.frameUrl) thumb.appendChild(el('span', { class: 'burning-orb-fallback' }, item.name.slice(0, 2)));
+        row.appendChild(thumb);
+        row.appendChild(el('span', { class: 'burning-modal-name' }, item.name));
+        row.appendChild(el('span', { class: 'burning-modal-count' }, 'x' + item.count));
+        body.appendChild(row);
+    });
+    if (info.title) {
+        const row = el('div', { class: 'burning-modal-row' });
+        const thumb = el('div', { class: 'burning-modal-thumb title' });
+        if (info.titleImageUrl) thumb.appendChild(el('img', { src: info.titleImageUrl, alt: info.title }));
+        else thumb.appendChild(el('span', { class: 'burning-fire' }, '🔥'));
+        row.appendChild(thumb);
+        row.appendChild(el('span', { class: 'burning-modal-name' }, info.title + ' 칭호'));
+        body.appendChild(row);
+    }
+    if (claimable) {
+        const btn = el('button', { class: 'burning-modal-claim' }, '보상 받기');
+        btn.onclick = async () => {
+            btn.disabled = true;
+            try {
+                const result = await postApi('/api/burning/claim', { track, level });
+                if (result.profile) renderProfile(result.profile);
+                closeModal();
+                await loadBurning();
+            } catch (e) { alert(e.message); btn.disabled = false; }
+        };
+        body.appendChild(btn);
+    }
+    $('#modalBody').replaceChildren(body);
+    $('#modalBg').classList.add('active');
+}
+
+function openBurningUnlockModal(cost, pointIconUrl) {
+    $('#modalTitle').textContent = '메가 버닝 해금';
+    $('#modalSub').style.display = 'none';
+    const costRow = el('div', { class: 'burning-unlock-cost' });
+    if (pointIconUrl) costRow.appendChild(el('img', { src: pointIconUrl, alt: '포인트' }));
+    costRow.appendChild(el('b', null, Number(cost).toLocaleString() + 'P'));
+    costRow.appendChild(document.createTextNode(' 소모'));
+    const btn = el('button', { class: 'burning-unlock-btn' }, '해금하기');
+    btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+            const result = await postApi('/api/burning/unlock-mega', {});
+            if (result.profile) renderProfile(result.profile);
+            closeModal();
+            await loadBurning();
+        } catch (e) { alert(e.message); btn.disabled = false; }
+    };
+    const body = el('div', { class: 'burning-unlock-modal' },
+        el('div', { class: 'burning-unlock-icon' }, '🔥'),
+        el('div', { class: 'burning-unlock-desc' }, '메가 버닝을 해금하시겠습니까?'),
+        costRow, btn);
+    $('#modalBody').replaceChildren(body);
+    $('#modalBg').classList.add('active');
+}
+
+function burningMegaUnlockBtn(cost, pointIconUrl) {
+    const btn = el('button', { class: 'burning-mega-btn' }, '메가 버닝 해금');
+    btn.onclick = () => openBurningUnlockModal(cost, pointIconUrl);
+    return btn;
+}
+
+function renderBurning(data) {
+    const root = $('#burningRoot');
+    if (!root) return;
+    const pointIcon = data.pointIconUrl
+        ? el('img', { class: 'burning-point-icon', src: data.pointIconUrl, alt: '포인트' })
+        : null;
+    const wrap = el('div', { class: 'burning-wrap' });
+    wrap.appendChild(el('div', { class: 'burning-head' },
+        el('div', null,
+            el('div', { class: 'burning-title' }, '버닝 BURNING'),
+            el('div', { class: 'burning-sub' }, '100레벨까지 메가 버닝! 9성 카드로 스타트!')),
+        el('div', { class: 'burning-head-right' },
+            el('div', { class: 'burning-points' }, pointIcon, el('b', null, Number(data.point || 0).toLocaleString())),
+            data.megaUnlocked
+                ? el('div', { class: 'burning-mega-on' }, '🔥 메가 버닝 해금됨')
+                : burningMegaUnlockBtn(data.megaCost, data.pointIconUrl))));
+
+    const normalCol = el('div', { class: 'burning-track normal' }, el('div', { class: 'burning-colhead-cell c-normal' }, '버닝'));
+    const spineCol = el('div', { class: 'burning-spine' }, el('div', { class: 'burning-colhead-cell c-lv' }, '레벨'));
+    const megaCol = el('div', { class: 'burning-track mega' }, el('div', { class: 'burning-colhead-cell c-mega' }, '메가 버닝'));
+    (data.list || []).forEach(r => {
+        normalCol.appendChild(burningCell(r.level, 'normal', r.normal, { unlocked: r.unlocked, megaLocked: false }));
+        spineCol.appendChild(el('div', { class: 'burning-level-badge' }, el('span', null, String(r.level))));
+        megaCol.appendChild(burningCell(r.level, 'mega', r.mega, { unlocked: r.unlocked, megaLocked: !data.megaUnlocked }));
+    });
+    wrap.appendChild(el('div', { class: 'burning-board' }, normalCol, spineCol, megaCol));
+    root.replaceChildren(wrap);
 }
 
 // ===== 경매장 =====

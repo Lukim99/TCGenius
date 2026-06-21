@@ -86,6 +86,22 @@ const LEVEL_REWARDS = [
     { level: 290, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
     { level: 300, items: [['황금 주머니', 30], ['오메가 카드팩', 1], ['오메가 캐릭터 변환석', 3], ['축복받은 장비 보호권', 1]] },
 ];
+// 버닝: 레벨 보상처럼 10레벨 단위(1~100) 보상. 일반(normal)과 메가(mega) 트랙. 메가는 500포인트로 해금.
+const BURNING_MEGA_COST = 500;
+const BURNING_REWARDS = [
+    { level: 1,   normal: [['1000경험치비약', 1], ['5성 카드팩', 1]],        mega: [['1000경험치비약', 1], ['5성 전직 카드팩', 1]] },
+    { level: 10,  normal: [['7500경험치비약', 1], ['6성 카드팩', 1]],        mega: [['7500경험치비약', 1], ['6성 전직 카드팩', 1]] },
+    { level: 20,  normal: [['20000경험치비약', 1], ['황금 주머니', 10]],     mega: [['20000경험치비약', 1], ['황금 주머니', 30]] },
+    { level: 30,  normal: [['100000경험치비약', 1], ['7성 카드팩', 1]],      mega: [['100000경험치비약', 1], ['7성 전직 카드팩', 1]] },
+    { level: 40,  normal: [['300000경험치비약', 1], ['유니크 장비 상자', 1]], mega: [['300000경험치비약', 1], ['유니크 장비 상자', 1]] },
+    { level: 50,  normal: [['600000경험치비약', 1], ['8성 카드팩', 1]],      mega: [['600000경험치비약', 1], ['8성 보호 카드', 1]] },
+    { level: 60,  normal: [['1000000경험치비약', 1], ['유니크 장비 상자', 1]], mega: [['1000000경험치비약', 1], ['유니크 장비 상자', 1]] },
+    { level: 70,  normal: [['2000000경험치비약', 1], ['장비 보호권', 1]],     mega: [['2000000경험치비약', 1], ['고급 장비 보호권', 1]] },
+    { level: 80,  normal: [['4000000경험치비약', 1], ['패션 상자', 1]],       mega: [['4000000경험치비약', 1], ['패션 적용권', 1]] },
+    { level: 90,  normal: [['8000000경험치비약', 1], ['캐릭터 변환석', 5]],    mega: [['8000000경험치비약', 1], ['전직 캐릭터 변환석', 5]] },
+    { level: 100, normal: [['9성 카드팩', 1], ['유니크 잠재능력 주문서', 1]], normalTitle: 'burning',
+                  mega:   [['9성 보호 카드', 1], ['레전더리 잠재능력 주문서', 1]], megaTitle: 'megaBurning' },
+];
 server.get('/static/admin.js', (req, res) => {
     const sess = getSession(req);
     if (!sess || !sess.admin) return res.status(401).end();
@@ -898,6 +914,91 @@ server.post('/api/levelreward', requireUser, async (req, res) => {
         res.json({ ok: true, profile: buildUserProfile(user) });
     } catch (e) {
         console.error('levelreward claim error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// ===== 버닝 =====
+function resolveBurningItems(itemList) {
+    const items = rpgenius.getDataCache('Item', []);
+    return (itemList || []).map(([name, count]) => {
+        const itemData = items.find(it => it && it.name === name);
+        const assets = itemData ? getItemDisplayAssets(itemData) : { iconUrl: null, frameUrl: null };
+        return { name, count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
+    });
+}
+function buildBurningTrack(reward, track, claimedSet) {
+    const titleId = track === 'mega' ? reward.megaTitle : reward.normalTitle;
+    const titleDef = titleId ? rpgenius.getTitleById(titleId) : null;
+    return {
+        claimed: claimedSet.has(reward.level),
+        items: resolveBurningItems(track === 'mega' ? reward.mega : reward.normal),
+        title: titleDef ? titleDef.name : null,
+        titleImageUrl: titleDef ? rpgenius.getTitleImageUrl(titleDef.name) : null
+    };
+}
+
+server.get('/api/burning', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const userLevel = Number(user.level || 1);
+        const claimedNormal = new Set(Array.isArray(user.claimedBurning) ? user.claimedBurning : []);
+        const claimedMega = new Set(Array.isArray(user.claimedMegaBurning) ? user.claimedMegaBurning : []);
+        const list = BURNING_REWARDS.map(r => ({
+            level: r.level,
+            unlocked: userLevel >= r.level,
+            normal: buildBurningTrack(r, 'normal', claimedNormal),
+            mega: buildBurningTrack(r, 'mega', claimedMega)
+        }));
+        res.json({ list, userLevel, megaUnlocked: !!user.megaBurningUnlocked, megaCost: BURNING_MEGA_COST, point: Number(user.point || 0), pointIconUrl: getItemImageUrl('화폐', '포인트.png') });
+    } catch (e) {
+        console.error('burning status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/burning/unlock-mega', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (user.megaBurningUnlocked) return res.status(400).json({ error: '이미 메가 버닝이 해금되었습니다.' });
+        if (Number(user.point || 0) < BURNING_MEGA_COST) return res.status(400).json({ error: '포인트가 부족합니다. (' + BURNING_MEGA_COST + 'P 필요)' });
+        user.point = Number(user.point || 0) - BURNING_MEGA_COST;
+        user.megaBurningUnlocked = true;
+        await user.save();
+        res.json({ ok: true, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('burning unlock-mega error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/burning/claim', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const track = req.body && req.body.track === 'mega' ? 'mega' : 'normal';
+        const level = Number(req.body && req.body.level);
+        const reward = BURNING_REWARDS.find(r => r.level === level);
+        if (!reward) return res.status(400).json({ error: '존재하지 않는 보상입니다.' });
+        if (Number(user.level || 1) < level) return res.status(400).json({ error: '레벨이 부족합니다.' });
+        if (track === 'mega' && !user.megaBurningUnlocked) return res.status(400).json({ error: '메가 버닝이 해금되지 않았습니다.' });
+        const claimedKey = track === 'mega' ? 'claimedMegaBurning' : 'claimedBurning';
+        if (!Array.isArray(user[claimedKey])) user[claimedKey] = [];
+        if (user[claimedKey].includes(level)) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
+        const allItems = rpgenius.getDataCache('Item', []);
+        for (const [name, count] of (track === 'mega' ? reward.mega : reward.normal)) {
+            const itemId = allItems.findIndex(it => it && it.name === name);
+            if (itemId !== -1) rpgenius.addInventoryItem(user, itemId, count);
+        }
+        const titleId = track === 'mega' ? reward.megaTitle : reward.normalTitle;
+        if (titleId) rpgenius.unlockTitle(user, titleId);
+        user[claimedKey].push(level);
+        await user.save();
+        res.json({ ok: true, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('burning claim error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -4720,7 +4821,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .dex-evol-target,.dex-recipe-mat{display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:6px 8px;background:rgba(2,6,23,.55);border-radius:8px;font-size:13px}
 .dex-evol-thumb,.dex-mat-thumb{position:relative;width:42px;height:42px;background:rgba(15,23,42,.7);border-radius:8px;overflow:visible}.dex-evol-thumb .frame,.dex-mat-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.dex-evol-thumb .icon,.dex-mat-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:124%;height:124%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.dex-evol-thumb .icon-fallback,.dex-mat-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:32px;line-height:1}
 .dex-mat-count{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums}
-.auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.07);border-radius:16px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.45),0 0 0 1px rgba(88,101,242,.3);border-color:rgba(88,101,242,.45)}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb.square{aspect-ratio:1/1;position:relative;background:transparent}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.auc-icon,.auc-item-img{position:relative;z-index:2}.auc-icon{font-size:64px;line-height:1;text-shadow:0 4px 14px rgba(0,0,0,.6)}.auc-item-img{width:62%;height:62%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}.currency-img{width:20px;height:20px;object-fit:contain;vertical-align:-4px;margin-right:5px}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.auction-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.auction-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.auc-card{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.07);border-radius:16px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s}.auc-card:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.45),0 0 0 1px rgba(88,101,242,.3);border-color:rgba(88,101,242,.45)}.auc-card.mine{border-color:#fbbf24}.auc-thumb{aspect-ratio:3/4;display:grid;place-items:center;background:rgba(15,23,42,.7);border-radius:10px;font-size:64px;overflow:hidden}.auc-thumb.square{aspect-ratio:1/1;position:relative;background:transparent}.auc-thumb img{width:100%;height:100%;object-fit:contain}.auc-thumb.card{background:transparent}.auc-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.auc-icon,.auc-item-img{position:relative;z-index:2}.auc-icon{font-size:64px;line-height:1;text-shadow:0 4px 14px rgba(0,0,0,.6)}.auc-item-img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}.currency-img{width:20px;height:20px;object-fit:contain;vertical-align:-4px;margin-right:5px}.auc-name{font-weight:800;font-size:15px;color:#f8fafc;line-height:1.3;word-break:break-word}.auc-sub{font-size:12px;color:#94a3b8}.auc-price{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fbbf24}.auc-seller{font-size:11px;color:#64748b}.auc-mine-badge{position:absolute;top:8px;right:8px;background:#fbbf24;color:#0f172a;font-size:11px;font-weight:800;padding:3px 7px;border-radius:999px}.tag{display:inline-block;padding:3px 8px;border-radius:999px;background:#263244;color:#cbd5e1;font-size:12px;font-weight:700}.tag.rarity{color:#fff;background:var(--rar,#334155)}.tag.on{background:#14532d;color:#bbf7d0}.empty,.loading{padding:24px;text-align:center;color:#94a3b8}.err{color:#f87171}.section-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:12px 14px;gap:8px}.top-left{flex:1 1 auto;min-width:0;gap:10px}.bar{flex:0 0 auto;gap:6px}.group-tabs{display:none}.bottom-tabs{display:flex}main{padding-bottom:74px}.subnav-bar{padding:0 14px}.who{max-width:36vw;font-size:13px;line-height:1.2}.grid{grid-template-columns:1fr}}
 .patch-wrap{display:grid;gap:14px}.patch-editor{display:none;gap:8px;padding:14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.08);border-radius:14px}.patch-editor.active{display:grid}.patch-editor input,.patch-editor textarea,.reply-box textarea{width:100%;padding:10px 12px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#e5e7eb;outline:none;transition:border-color .15s}.patch-editor textarea,.reply-box textarea{min-height:140px;resize:vertical;line-height:1.5}.patch-list{display:grid;gap:14px}.patch-card{display:grid;gap:12px;padding:16px;background:linear-gradient(135deg,rgba(4,6,18,.9),rgba(8,12,26,.75));border:1px solid rgba(255,255,255,.07);border-radius:16px;transition:border-color .15s}.patch-card:hover{border-color:rgba(255,255,255,.12)}.patch-title{font-size:18px;font-weight:900;color:#f8fafc}.patch-date{font-size:12px;color:#94a3b8}.markdown-body{line-height:1.65;color:#dbeafe;word-break:break-word}.markdown-body h1,.markdown-body h2,.markdown-body h3{color:#f8fafc;margin:14px 0 8px}.markdown-body p{margin:8px 0}.markdown-body ul,.markdown-body ol{padding-left:22px}.markdown-body code{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.18);border-radius:6px;padding:1px 5px}.markdown-body pre{background:#020617;border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:12px;overflow:auto}.reply-list{display:grid;gap:8px}.reply-item{display:grid;gap:7px;padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px}.reply-item.child{margin-left:22px}.reply-meta{font-size:12px;color:#94a3b8}.reply-meta b{color:#f8fafc}.reply-text{white-space:pre-wrap;line-height:1.5}.reply-box{display:grid;gap:8px}.reply-box textarea{min-height:70px}
 .search-input{padding:8px 10px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#e5e7eb;font-size:13px;outline:none;min-width:140px;transition:border-color .15s}.search-input:focus{border-color:rgba(99,102,241,.6)}
@@ -4907,6 +5008,64 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .punch-rank{order:6;width:min(330px,90vw)}
 .punch-hint{display:none}
 }
+.burning-wrap{max-width:880px;margin:0 auto;position:relative}
+.burning-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.burning-title{font-size:clamp(24px,5vw,38px);font-weight:900;font-style:italic;letter-spacing:.01em;background:linear-gradient(90deg,#a855f7 0%,#22d3ee 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 14px rgba(124,58,237,.4))}
+.burning-sub{font-size:12px;color:#a5b4fc;font-weight:700;margin-top:3px}
+.burning-head-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.burning-points{font-size:14px;font-weight:800;color:#cbd5e1;display:flex;align-items:center;gap:3px}.burning-points b{color:#5eead4;font-variant-numeric:tabular-nums}
+.burning-mega-btn{padding:10px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#d946ef);color:#fff;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 0 16px rgba(168,85,247,.55),0 6px 16px rgba(0,0,0,.4)}
+.burning-mega-btn:hover,.burning-mega-btn:focus,.burning-mega-btn:active{background:linear-gradient(135deg,#8b5cf6,#e879f9);color:#fff;outline:none}
+.burning-mega-btn:disabled{opacity:.5;cursor:default}
+.burning-mega-on{font-size:13px;font-weight:900;color:#d8b4fe;display:flex;align-items:center;gap:5px;text-shadow:0 0 12px rgba(168,85,247,.6)}
+/* 보드: 좌(버닝) | 중앙(레벨) | 우(메가) — 모바일에서도 좌우 유지 */
+.burning-board{--bcell:132px;--bgap:12px;--bhead:34px;position:relative;display:flex;align-items:flex-start;gap:clamp(4px,1.6vw,14px);padding:clamp(10px,2.4vw,18px);border-radius:20px;background:radial-gradient(circle at 28% -5%,rgba(124,58,237,.26),transparent 52%),radial-gradient(circle at 78% 105%,rgba(20,184,166,.2),transparent 52%),linear-gradient(180deg,#0d0a20,#080c18);border:1px solid rgba(148,163,184,.14);box-shadow:inset 0 0 60px rgba(76,29,149,.18)}
+.burning-track,.burning-spine{position:relative;display:flex;flex-direction:column;gap:var(--bgap);min-width:0}
+.burning-track{flex:1 1 0}
+.burning-spine{flex:0 0 clamp(40px,11vw,58px)}
+.burning-track::before,.burning-spine::before{content:'';position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--bhead) + var(--bgap));bottom:calc(var(--bcell) / 2);width:3px;border-radius:2px;z-index:0}
+.burning-track.normal::before{background:linear-gradient(180deg,rgba(34,211,238,.1),rgba(34,211,238,.55),rgba(34,211,238,.1));box-shadow:0 0 10px rgba(34,211,238,.5)}
+.burning-track.mega::before{background:linear-gradient(180deg,rgba(217,70,239,.1),rgba(192,132,252,.6),rgba(217,70,239,.1));box-shadow:0 0 10px rgba(168,85,247,.55)}
+.burning-spine::before{background:linear-gradient(180deg,rgba(148,163,184,.05),rgba(168,85,247,.4),rgba(148,163,184,.05))}
+.burning-colhead-cell{height:var(--bhead);display:flex;align-items:center;justify-content:center;font-size:clamp(11px,2.6vw,14px);font-weight:900;border-radius:10px;letter-spacing:.02em}
+.burning-colhead-cell.c-normal{color:#67e8f9;background:rgba(34,211,238,.08)}
+.burning-colhead-cell.c-mega{color:#e9d5ff;background:rgba(168,85,247,.1)}
+.burning-colhead-cell.c-lv{color:#cbd5e1;background:rgba(255,255,255,.04);font-size:11px}
+.burning-track.normal{--glow:34,211,238}
+.burning-track.mega{--glow:168,85,247}
+.burning-cell,.burning-level-badge{position:relative;z-index:1;min-height:var(--bcell);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.burning-orb{position:relative;width:clamp(44px,12vw,60px);height:clamp(44px,12vw,60px);border-radius:50%;display:grid;place-items:center;cursor:pointer;background:radial-gradient(circle at 35% 28%,rgba(var(--glow),.22),rgba(8,12,28,.95));border:2px solid rgba(var(--glow),.72);box-shadow:0 0 12px rgba(var(--glow),.45),inset 0 0 10px rgba(var(--glow),.18);transition:transform .12s ease,box-shadow .2s ease,filter .2s ease;-webkit-tap-highlight-color:transparent}
+.burning-orb:hover{transform:scale(1.09);box-shadow:0 0 20px rgba(var(--glow),.85),inset 0 0 12px rgba(var(--glow),.28)}
+.burning-orb.claimable{animation:burningPulse 1.6s ease-in-out infinite}
+@keyframes burningPulse{0%,100%{box-shadow:0 0 12px rgba(var(--glow),.5),inset 0 0 10px rgba(var(--glow),.22)}50%{box-shadow:0 0 26px rgba(var(--glow),.95),inset 0 0 14px rgba(var(--glow),.4)}}
+.burning-orb.claimed{opacity:.55;filter:grayscale(.35)}
+.burning-orb.locked{opacity:.42;filter:grayscale(.7)}
+.burning-fire{font-size:clamp(22px,6vw,30px);line-height:1;filter:drop-shadow(0 0 6px rgba(251,146,60,.85))}
+.burning-orb-check{position:absolute;bottom:-3px;right:-3px;width:18px;height:18px;border-radius:50%;background:#22c55e;color:#04140a;font-size:11px;font-weight:900;display:grid;place-items:center;border:2px solid #07121f}
+.burning-orb-lock{position:absolute;bottom:-3px;right:-3px;font-size:13px;filter:drop-shadow(0 1px 1px #000)}
+.burning-level-badge>span{width:clamp(32px,9vw,46px);height:clamp(32px,9vw,46px);border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:clamp(10px,2.6vw,14px);color:#f3e8ff;background:radial-gradient(circle at 40% 30%,#3b1d6e,#150a2c);border:2px solid rgba(168,85,247,.7);box-shadow:0 0 14px rgba(168,85,247,.5)}
+.burning-point-icon{width:16px;height:16px;object-fit:contain;vertical-align:-3px;margin-right:2px}
+/* 보상 모달 */
+.burning-modal-body{display:flex;flex-direction:column;gap:8px}
+.burning-modal-row{display:flex;align-items:center;gap:12px;padding:8px 4px}
+.burning-modal-thumb{position:relative;width:54px;height:54px;flex:0 0 auto;display:grid;place-items:center}
+.burning-modal-thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.burning-modal-thumb.title{width:auto;min-width:54px;height:42px}
+.burning-modal-thumb.title img{max-width:160px;max-height:42px;width:auto}
+.burning-modal-name{flex:1;font-weight:800;color:#e5e7eb;font-size:14px}
+.burning-modal-count{font-weight:900;color:#fbbf24;font-variant-numeric:tabular-nums}
+.burning-modal-claim,.burning-unlock-btn{margin-top:6px;width:100%;padding:12px;border:0;border-radius:12px;font-weight:900;font-size:15px;cursor:pointer;background:linear-gradient(135deg,#f97316,#dc2626);color:#fff;box-shadow:0 6px 18px rgba(220,38,38,.4)}
+.burning-modal-claim:hover,.burning-modal-claim:focus,.burning-modal-claim:active,.burning-unlock-btn:hover,.burning-unlock-btn:focus,.burning-unlock-btn:active{background:linear-gradient(135deg,#fb923c,#ef4444);color:#fff;outline:none}
+.burning-modal-claim:disabled,.burning-unlock-btn:disabled{opacity:.6;cursor:default}
+/* 메가 해금 모달 */
+.burning-unlock-modal{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:6px 2px}
+.burning-unlock-icon{font-size:52px;line-height:1;filter:drop-shadow(0 0 16px rgba(217,70,239,.7))}
+.burning-unlock-desc{font-size:14px;color:#cbd5e1;font-weight:700;line-height:1.55}
+.burning-unlock-cost{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:900;color:#e9d5ff;padding:8px 16px;border-radius:999px;background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.4)}
+.burning-unlock-cost img{width:20px;height:20px;object-fit:contain}
+.burning-unlock-btn{background:linear-gradient(135deg,#7c3aed,#d946ef);box-shadow:0 0 18px rgba(168,85,247,.5),0 6px 16px rgba(0,0,0,.4)}
+.burning-unlock-btn:hover,.burning-unlock-btn:focus,.burning-unlock-btn:active{background:linear-gradient(135deg,#8b5cf6,#e879f9)}
+@media(max-width:560px){.burning-board{--bcell:104px;--bgap:9px;padding:9px}}
 </style></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
@@ -4926,6 +5085,9 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
   </div>
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
+  </div>
+  <div class="page" data-page="버닝">
+    <section class="panel"><div id="burningRoot"></div></section>
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>

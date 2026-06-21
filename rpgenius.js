@@ -116,10 +116,16 @@ const worldBossSkillTimers = {};
 const worldBossChannels = {};
 const activeFieldChannels = {};
 const fieldIktaeBotTimers = {};
+// 유저 닉네임 → 해당 유저가 명령을 보낼 때 쓰는 큐 키(senderId). 타이머 틱을 같은 큐에 묶어 경합을 막는 데 사용.
+const fieldQueueKeys = {};
+// 봇/보스 타이머 틱을 유저의 명령 큐에 합류시켜, 유저의 수동 공격과 동시에 실행되어 한쪽 갱신이 유실(씹힘)되는 것을 방지한다.
+function enqueueFieldTick(userName, task) {
+    return enqueueUserCommand(fieldQueueKeys[userName] || userName, task);
+}
 
 function startFieldIktaeBot(userName) {
     clearFieldIktaeBot(userName);
-    fieldIktaeBotTimers[userName] = setInterval(() => runFieldIktaeBotTick(userName).catch(e => console.error('[iktaebot tick]', e.message)), 4000);
+    fieldIktaeBotTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldIktaeBotTick(userName)).catch(e => console.error('[iktaebot tick]', e.message)), 4000);
 }
 
 function ensureFieldIktaeBotTimer(user, channel) {
@@ -4387,7 +4393,7 @@ function scheduleNextWorldBossSkillTimer(user, boss) {
     const userName = user.name;
     const bossName = boss.name;
     if (worldBossSkillTimers[userName]) clearTimeout(worldBossSkillTimers[userName]);
-    worldBossSkillTimers[userName] = setTimeout(() => runWorldBossSkillTick(userName, bossName).catch(e => console.error('[worldboss tick]', e.message)), delay);
+    worldBossSkillTimers[userName] = setTimeout(() => enqueueFieldTick(userName, () => runWorldBossSkillTick(userName, bossName)).catch(e => console.error('[worldboss tick]', e.message)), delay);
 }
 
 function clearWorldBossSkillTimer(name) {
@@ -8556,6 +8562,8 @@ async function handleRPGCommand(data, channel) {
         reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         return true;
     }
+    // 봇/보스 타이머 틱이 이 유저의 명령과 같은 큐(senderId)에서 직렬화되도록 매핑 기록.
+    fieldQueueKeys[user.name] = senderId;
 
     petShortcutCache[senderId] = getActivePetShortcutMap(user);
 

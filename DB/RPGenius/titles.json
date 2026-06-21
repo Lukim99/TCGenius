@@ -93,6 +93,19 @@
       "description": "오메가 카드조합 3회 성공",
       "condition": { "progressKey": "omegaCombines", "count": 3 },
       "specialEffect": { "type": "atkPctIfCardStar", "minStar": 11, "value": 0.05 }
+    },
+    {
+      "id": "burning",
+      "name": "BURNING",
+      "description": "버닝 Lv.100 보상 획득",
+      "plusStat": { "exp": 0.02 }
+    },
+    {
+      "id": "megaBurning",
+      "name": "MEGA BURNING",
+      "description": "메가 버닝 Lv.100 보상 획득",
+      "stat": { "atk": 5 },
+      "plusStat": { "exp": 0.03 }
     }
   ]
 }
