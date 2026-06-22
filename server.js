@@ -5,6 +5,11 @@ const rpgenius = require('./rpgenius.js');
 const partyquest = require('./partyquest.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseP = (process.env.SUPABASE_URL_P && process.env.SUPABASE_KEY_P)
+    ? createClient(process.env.SUPABASE_URL_P, process.env.SUPABASE_KEY_P)
+    : null;
 
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'rpgenius-default-secret-change-me';
 const SESSION_COOKIE = 'rpg_admin';
@@ -43,6 +48,16 @@ function sendAuctionKakaoNotice(message) {
         if (channel && typeof channel.sendChat == 'function') channel.sendChat(message);
     } catch (e) {
         console.error('auction kakao notice error:', e);
+    }
+}
+
+function sendKakaoNotice(channelId, message) {
+    try {
+        if (!kakaoClient || !kakaoClient.channelList) return;
+        const channel = kakaoClient.channelList.get(channelId);
+        if (channel && typeof channel.sendChat == 'function') channel.sendChat(message);
+    } catch (e) {
+        console.error('kakao notice error:', e);
     }
 }
 
@@ -1000,6 +1015,98 @@ server.post('/api/burning/claim', requireUser, async (req, res) => {
     } catch (e) {
         console.error('burning claim error:', e);
         res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// ===== 포인트 충전 =====
+const POINT_CHARGE_MIN = 50;
+const POINT_CHARGE_NOTICE_CHANNEL_ID = '18436121437302863';
+
+async function addSupabaseUserBalance(nickname, delta) {
+    const { data, error } = await supabaseP.from('users').select('balance').eq('nickname', nickname).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("'" + nickname + "' 계정을 찾을 수 없습니다.");
+    const { error: updErr } = await supabaseP.from('users').update({ balance: Number(data.balance || 0) + delta }).eq('nickname', nickname);
+    if (updErr) throw updErr;
+}
+
+async function addSupabaseCompanyBalance(name, delta) {
+    const { data, error } = await supabaseP.from('companies').select('balance').eq('name', name).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("'" + name + "' 회사를 찾을 수 없습니다.");
+    const { error: updErr } = await supabaseP.from('companies').update({ balance: Number(data.balance || 0) + delta }).eq('name', name);
+    if (updErr) throw updErr;
+}
+
+async function appendPointLog(entry) {
+    await rpgenius.loadRpgeniusDataEntry('PointLogs').catch(() => {});
+    const cached = rpgenius.getDataCache('PointLogs', []);
+    const logs = Array.isArray(cached) ? cached.slice() : [];
+    logs.push(entry);
+    while (logs.length > 100) logs.shift();
+    await rpgenius.saveRpgeniusDataEntry('PointLogs', logs);
+}
+
+server.post('/api/point/charge', requireUser, async (req, res) => {
+    if (!supabaseP) return res.status(503).json({ error: '충전 기능이 설정되지 않았습니다.' });
+    const amount = Math.floor(Number(req.body && req.body.amount));
+    if (!Number.isFinite(amount) || amount < POINT_CHARGE_MIN) {
+        return res.status(400).json({ error: '최소 ' + POINT_CHARGE_MIN + 'P부터 충전할 수 있습니다.' });
+    }
+    const nickname = req.session.name;
+    // 중간 실패 시 역순으로 실행되는 보상(rollback) 스택
+    const rollback = [];
+    try {
+        const { data: acc, error: accErr } = await supabaseP.from('users').select('balance').eq('nickname', nickname).maybeSingle();
+        if (accErr) throw accErr;
+        if (!acc) return res.status(404).json({ error: '연동된 계정을 찾을 수 없습니다.' });
+        const balance = Number(acc.balance || 0);
+        if (balance < amount) return res.status(400).json({ error: '잔액이 부족합니다. (보유 ' + balance.toLocaleString('ko-KR') + ')' });
+
+        const lotto = Math.max(1, Math.floor(amount * 0.01));
+        const company = Math.max(1, Math.floor(amount * 0.01));
+        const kinder = amount - lotto - company;
+        const storeBalance = balance - amount;
+
+        // 1) 충전 계정 잔액 차감
+        const { error: deductErr } = await supabaseP.from('users').update({ balance: storeBalance }).eq('nickname', nickname);
+        if (deductErr) throw deductErr;
+        rollback.push(() => supabaseP.from('users').update({ balance }).eq('nickname', nickname));
+
+        // 2) 포인트 지급 (DynamoDB rpgenius_user)
+        const user = await rpgenius.getRPGUserByName(nickname);
+        if (!user) throw new Error('유저를 찾을 수 없습니다.');
+        const prevPoint = Number(user.point || 0);
+        user.point = prevPoint + amount;
+        await user.save();
+        const newPoint = Number(user.point || 0);
+        rollback.push(async () => { user.point = prevPoint; await user.save(); });
+
+        // 3) 차감액 분배 이체 (1% 로또기금 / 1% 익테봇 / 나머지 유치원생)
+        await addSupabaseUserBalance('로또기금', lotto);
+        rollback.push(() => addSupabaseUserBalance('로또기금', -lotto));
+        await addSupabaseCompanyBalance('익테봇', company);
+        rollback.push(() => addSupabaseCompanyBalance('익테봇', -company));
+        await addSupabaseUserBalance('유치원생', kinder);
+        rollback.push(() => addSupabaseUserBalance('유치원생', -kinder));
+
+        // 4) 충전 로그 기록 (최대 100건)
+        await appendPointLog({ nickname, amount, point: newPoint, lotto, company, kinder, at: new Date().toISOString() });
+
+        // 5) 카카오 알림 (성공 후 best-effort, 실패해도 충전은 롤백하지 않음)
+        sendKakaoNotice(POINT_CHARGE_NOTICE_CHANNEL_ID,
+            '[ RPGenius 충전 ]\n' +
+            '✅ ' + nickname + ' ' + amount.toLocaleString('ko-KR') + ' P 충전 완료\n' +
+            '💰 포인트 상점 잔액: ' + storeBalance.toLocaleString('ko-KR') + ' P\n' +
+            '💰 RPGenius 잔액: ' + newPoint.toLocaleString('ko-KR') + ' P');
+
+        res.json({ ok: true, point: newPoint, charged: amount });
+    } catch (e) {
+        console.error('point charge error:', e);
+        for (const undo of rollback.reverse()) {
+            try { await undo(); } catch (re) { console.error('point charge rollback failed:', re); }
+        }
+        res.status(500).json({ error: '충전에 실패하여 원래 상태로 복구했습니다.' });
     }
 });
 
@@ -4582,6 +4689,16 @@ function renderUserDashboard(sess) {
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
 body{margin:0;background:#06070d;background-image:radial-gradient(ellipse 100% 55% at -5% 0%,rgba(30,41,59,.8),transparent 55%),radial-gradient(ellipse 60% 40% at 110% 100%,rgba(88,101,242,.07),transparent);color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:rgba(5,6,12,.9);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06);box-shadow:0 1px 0 rgba(99,102,241,.12)}
+.point-pill{display:flex;align-items:center;gap:5px;padding:4px 5px 4px 9px;border-radius:999px;background:rgba(94,234,212,.08);border:1px solid rgba(94,234,212,.28);flex:0 0 auto}
+.point-pill img{width:18px;height:18px;object-fit:contain;flex:0 0 auto}
+.point-pill b{color:#5eead4;font-weight:800;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap;line-height:1}
+#pointAddBtn{width:22px;height:22px;min-width:22px;padding:0;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#fff;font-size:17px;font-weight:900;line-height:1;flex:0 0 auto}
+#pointAddBtn:hover{background:linear-gradient(135deg,#2dd4bf,#14b8a6)}
+.point-charge-body{display:flex;flex-direction:column;gap:12px}
+.point-charge-body input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(148,163,184,.25);background:#0b0f1c;color:#e5e7eb;font-size:16px;font-variant-numeric:tabular-nums}
+.point-charge-body .point-charge-info{font-size:13px;color:#94a3b8;line-height:1.55}
+.point-charge-body button.primary{padding:12px;font-size:15px;font-weight:800}
+@media(max-width:560px){.point-pill b{font-size:13px}.who{display:none}}
 h1{margin:0;font-size:21px;font-weight:900;white-space:nowrap;background:linear-gradient(135deg,#818cf8,#a78bfa 60%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:.01em}.who{color:#a5b4fc;font-weight:700;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0;flex-shrink:0}.top-left{display:flex;gap:16px;align-items:center;min-width:0;flex:1}.group-tabs{display:flex;gap:2px;min-width:0;overflow:hidden}.group-tab{white-space:nowrap;background:transparent;border:0;color:#64748b;padding:8px 12px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;flex-shrink:0}.group-tab:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.group-tab.active{background:rgba(88,101,242,.2);color:#e5e7eb;box-shadow:0 0 0 1px rgba(99,102,241,.28)}.subnav-bar{display:flex;gap:2px;padding:0 20px;background:rgba(4,6,14,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.05);overflow-x:auto;scrollbar-width:none;flex-shrink:0}.subnav-bar::-webkit-scrollbar{display:none}.subnav-tab{flex-shrink:0;padding:9px 14px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;margin-bottom:-1px}.subnav-tab:hover{color:#cbd5e1;background:rgba(255,255,255,.05)}.subnav-tab.active{color:#e5e7eb;border-bottom-color:#818cf8}.bottom-tabs{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(5,6,12,.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,.07);justify-content:space-around;align-items:flex-start}.bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;background:transparent;border:0;color:#475569;cursor:pointer;transition:color .15s;border-radius:0;font-weight:700;min-width:0}.bottom-tab:hover{color:#94a3b8;background:transparent}.tab-icon-wrap{display:flex;align-items:center;justify-content:center;width:44px;height:28px;border-radius:14px;background:transparent;transition:background .15s}.tab-icon-wrap svg{width:22px;height:22px;display:block;flex-shrink:0;transition:filter .15s}.tab-label{font-size:10px;letter-spacing:.03em;white-space:nowrap}.bottom-tab.active{color:#818cf8}.bottom-tab.active .tab-icon-wrap{background:rgba(88,101,242,.22);box-shadow:0 0 10px rgba(88,101,242,.3)}.bottom-tab.active .tab-icon-wrap svg{filter:drop-shadow(0 0 3px rgba(129,140,248,.7))}.group-tab{gap:6px;display:flex;align-items:center}.group-tab svg{width:15px;height:15px;display:block;flex-shrink:0;opacity:.75;transition:opacity .15s}.group-tab:hover svg,.group-tab.active svg{opacity:1}
 button{border:0;border-radius:10px;padding:10px 13px;background:#141c2e;color:#e5e7eb;font-weight:700;cursor:pointer;transition:background .15s,box-shadow .15s,transform .1s}button:hover{background:#1a2540}.primary{background:linear-gradient(135deg,#5865f2,#4338ca);box-shadow:0 4px 12px rgba(88,101,242,.32)}.primary:hover{background:linear-gradient(135deg,#4752c4,#3730a3);box-shadow:0 6px 18px rgba(88,101,242,.48)}
 main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.pet-row{display:flex;flex-direction:column;gap:8px;margin-top:14px}.pet-item{display:flex;align-items:center;gap:10px}.pet-thumb{position:relative;width:52px;height:52px;flex:0 0 auto;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.pet-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.pet-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:120%;height:120%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.pet-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:26px;line-height:1}.pet-thumb.expired .icon{filter:grayscale(1) brightness(.6)}.pet-name{font-size:15px;color:#f8fafc}.pet-item.expired .pet-name{color:#94a3b8}.panel{background:rgba(8,10,20,.82);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:20px;box-shadow:0 4px 24px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.02) inset;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -5067,7 +5184,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .burning-unlock-btn:hover,.burning-unlock-btn:focus,.burning-unlock-btn:active{background:linear-gradient(135deg,#8b5cf6,#e879f9)}
 @media(max-width:560px){.burning-board{--bcell:104px;--bgap:9px;padding:9px}}
 </style></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
   <div class="page active" data-page="info">

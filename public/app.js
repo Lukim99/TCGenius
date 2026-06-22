@@ -61,6 +61,38 @@ const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
+function setHeaderPoint(n) {
+    const node = $('#pointAmount');
+    if (node) node.textContent = comma(Number(n || 0));
+}
+function openPointChargeModal() {
+    $('#modalTitle').textContent = '포인트 충전';
+    $('#modalSub').textContent = '최소 50P부터 충전할 수 있습니다.';
+    $('#modalSub').style.display = '';
+    const input = el('input', { type: 'number', min: '50', step: '1', placeholder: '충전할 포인트', inputmode: 'numeric' });
+    const info = el('div', { class: 'point-charge-info' }, '보유 잔액에서 입력한 포인트만큼 차감되어 충전됩니다.');
+    const btn = el('button', { class: 'primary' }, '충전하기');
+    btn.onclick = async () => {
+        const amount = Math.floor(Number(input.value));
+        if (!Number.isFinite(amount) || amount < 50) { alert('최소 50P부터 충전할 수 있습니다.'); return; }
+        btn.disabled = true;
+        try {
+            const r = await postApi('/api/point/charge', { amount });
+            setHeaderPoint(r.point);
+            closeModal();
+            alert(comma(r.charged) + 'P를 충전했습니다.');
+            if (currentProfileName === myName) { try { renderProfile(await api('/api/profile')); } catch (e) {} }
+        } catch (e) {
+            alert(e.message);
+            btn.disabled = false;
+        }
+    };
+    $('#modalBody').replaceChildren(el('div', { class: 'point-charge-body' }, input, info, btn));
+    $('#modalBg').classList.add('active');
+    setTimeout(() => input.focus(), 50);
+}
+if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
+
 const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
@@ -738,6 +770,7 @@ function renderProfile(data) {
         if (isOther) $('#profileBannerText').textContent = data.user.name + '님의 정보를 보고 있습니다';
     }
     $('#who').textContent = myName;
+    if (data.user.name === myName) setHeaderPoint(data.user.point);
     $('#profileName').textContent = data.user.name;
     const pTitle = $('#profileTitle');
     if (pTitle) { const img = titleImg(data.user.title); pTitle.replaceChildren(...(img ? [img] : [])); }
