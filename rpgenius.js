@@ -43,7 +43,8 @@ const ELITE_KILL_REQUIREMENT = 100;
 const GOLD_MINE_ORE_DROPS = {
     1: { name: '희미한 금광석', chance: 0.005 },
     2: { name: '저주받은 금광석', chance: 0.003 },
-    3: { name: '찬란한 금광석', chance: 0.002 }
+    3: { name: '찬란한 금광석', chance: 0.002 },
+    4: { name: '신성한 금광석', chance: 0.001 }
 };
 const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
