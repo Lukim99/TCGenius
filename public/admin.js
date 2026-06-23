@@ -35,6 +35,8 @@ const api = async (url, opt) => {
 };
 const clone = v => JSON.parse(JSON.stringify(v));
 const isInt = v => Number.isInteger(Number(v));
+function showLoading() { const o = $('#loadingOverlay'); if (o) o.classList.add('active'); }
+function hideLoading() { const o = $('#loadingOverlay'); if (o) o.classList.remove('active'); }
 
 // ---------- 탭 전환 ----------
 $$('.tab').forEach(t => t.onclick = () => {
@@ -2034,6 +2036,7 @@ function pointLogRow(log) {
 async function cancelPointLog(log, btn) {
     if (!confirm(log.nickname + '님의 ' + comma(log.amount) + 'P 충전을 취소(환불)할까요?\n충전 계정 잔액과 분배가 되돌려집니다.')) return;
     btn.disabled = true;
+    showLoading();
     try {
         await api('/api/admin/point-logs/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: log.id }) });
         toast('충전을 취소했습니다.', true);
@@ -2041,6 +2044,8 @@ async function cancelPointLog(log, btn) {
     } catch (e) {
         btn.disabled = false;
         toast(e.message, false);
+    } finally {
+        hideLoading();
     }
 }
 

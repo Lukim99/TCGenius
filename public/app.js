@@ -65,6 +65,8 @@ function setHeaderPoint(n) {
     const node = $('#pointAmount');
     if (node) node.textContent = comma(Number(n || 0));
 }
+function showLoading() { const o = $('#loadingOverlay'); if (o) o.classList.add('active'); }
+function hideLoading() { const o = $('#loadingOverlay'); if (o) o.classList.remove('active'); }
 function openPointChargeModal() {
     $('#modalTitle').textContent = '포인트 충전';
     $('#modalSub').textContent = '최소 50P부터 충전할 수 있습니다.';
@@ -76,6 +78,7 @@ function openPointChargeModal() {
         const amount = Math.floor(Number(input.value));
         if (!Number.isFinite(amount) || amount < 50) { alert('최소 50P부터 충전할 수 있습니다.'); return; }
         btn.disabled = true;
+        showLoading();
         try {
             const r = await postApi('/api/point/charge', { amount });
             setHeaderPoint(r.point);
@@ -85,6 +88,8 @@ function openPointChargeModal() {
         } catch (e) {
             alert(e.message);
             btn.disabled = false;
+        } finally {
+            hideLoading();
         }
     };
     $('#modalBody').replaceChildren(el('div', { class: 'point-charge-body' }, input, info, btn));

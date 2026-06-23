@@ -163,6 +163,10 @@ details.collapsible .body{padding:12px}
 .point-log-row .dist{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .point-log-row .act{text-align:right}
 @media(max-width:1120px){.point-log-row{grid-template-columns:1fr 1fr;gap:7px}.point-log-row .dist{grid-column:1/-1}.point-log-row .act{grid-column:1/-1;text-align:left}}
+.loading-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(2,4,10,.55)}
+.loading-overlay.active{display:flex}
+.loading-spinner{width:54px;height:54px;border-radius:50%;border:5px solid rgba(129,140,248,.25);border-top-color:#818cf8;animation:loadingSpin .8s linear infinite}
+@keyframes loadingSpin{to{transform:rotate(360deg)}}
 @media(max-width:1080px){.log-row{grid-template-columns:1fr 1fr;gap:8px}.log-row .col-time{grid-column:1/-1}.log-row .col-tags{grid-column:1/-1}.log-row .col-parties{grid-column:1/-1}}
 .hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .hd-prev-card{background:rgba(10,14,26,.8);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
@@ -320,6 +324,7 @@ details.collapsible .body{padding:12px}
 </div></div>
 
 <div class="toast" id="toast"></div>
+<div id="loadingOverlay" class="loading-overlay"><div class="loading-spinner"></div></div>
 
 <script>window.DATA_KEYS={{DATA_KEYS}};</script>
 <script src="/static/admin.js"></script>
