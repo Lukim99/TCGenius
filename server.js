@@ -1049,6 +1049,13 @@ async function appendPointLog(entry) {
     await rpgenius.saveRpgeniusDataEntry('PointLogs', logs);
 }
 
+// rpgenius_user name → supabase users nickname 치환 (NameMatch 데이터에 키가 있을 때만)
+async function resolveStoreNickname(name) {
+    await rpgenius.loadRpgeniusDataEntry('NameMatch').catch(() => {});
+    const map = rpgenius.getDataCache('NameMatch', {}) || {};
+    return (typeof map[name] === 'string' && map[name]) ? map[name] : name;
+}
+
 server.post('/api/point/charge', requireUser, async (req, res) => {
     if (!supabaseP) return res.status(503).json({ error: '충전 기능이 설정되지 않았습니다.' });
     const amount = Math.floor(Number(req.body && req.body.amount));
@@ -1059,7 +1066,8 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
     // 중간 실패 시 역순으로 실행되는 보상(rollback) 스택
     const rollback = [];
     try {
-        const { data: acc, error: accErr } = await supabaseP.from('users').select('balance').eq('nickname', nickname).maybeSingle();
+        const storeNickname = await resolveStoreNickname(nickname);
+        const { data: acc, error: accErr } = await supabaseP.from('users').select('balance').eq('nickname', storeNickname).maybeSingle();
         if (accErr) throw accErr;
         if (!acc) return res.status(404).json({ error: '연동된 계정을 찾을 수 없습니다.' });
         const balance = Number(acc.balance || 0);
@@ -1073,9 +1081,9 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         const storeBalance = balance - amount;
 
         // 1) 충전 계정 잔액 차감
-        const { error: deductErr } = await supabaseP.from('users').update({ balance: storeBalance }).eq('nickname', nickname);
+        const { error: deductErr } = await supabaseP.from('users').update({ balance: storeBalance }).eq('nickname', storeNickname);
         if (deductErr) throw deductErr;
-        rollback.push(() => supabaseP.from('users').update({ balance }).eq('nickname', nickname));
+        rollback.push(() => supabaseP.from('users').update({ balance }).eq('nickname', storeNickname));
 
         // 2) 포인트 지급 (DynamoDB rpgenius_user)
         const user = await rpgenius.getRPGUserByName(nickname);
@@ -2480,9 +2488,10 @@ server.post('/api/admin/point-logs/cancel', requireAdmin, async (req, res) => {
         await user.save();
         rollback.push(async () => { user.point = curPoint; await user.save(); });
 
-        // 2) 충전 계정 잔액 환불
-        const refundedBalance = await addSupabaseUserBalance(entry.nickname, amount);
-        rollback.push(() => addSupabaseUserBalance(entry.nickname, -amount));
+        // 2) 충전 계정 잔액 환불 (NameMatch 치환 적용)
+        const storeNickname = await resolveStoreNickname(entry.nickname);
+        const refundedBalance = await addSupabaseUserBalance(storeNickname, amount);
+        rollback.push(() => addSupabaseUserBalance(storeNickname, -amount));
 
         // 3) 분배 회수
         await addSupabaseUserBalance('로또기금', -lotto);
