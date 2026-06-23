@@ -155,13 +155,14 @@ details.collapsible .body{padding:12px}
 .tag.d-miss{color:#fca5a5;background:#7f1d1d}
 .tag.d-lightning{color:#a5f3fc;background:#155e75}
 @media(max-width:1120px){.dice-log-row{grid-template-columns:1fr 1fr;gap:7px}.dice-log-row .reward{grid-column:1/-1}.dice-log-row .status{text-align:left}}
-.point-log-row{display:grid;grid-template-columns:158px 160px 120px 1fr;gap:10px;align-items:center;padding:10px 12px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;font-size:12.5px}
+.point-log-row{display:grid;grid-template-columns:158px 150px 110px 1fr 72px;gap:10px;align-items:center;padding:10px 12px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;font-size:12.5px}
 .point-log-row .mono{font-family:ui-monospace,'Cascadia Code',monospace;font-variant-numeric:tabular-nums}
 .point-log-row .mut{color:var(--mut)}
 .point-log-row .nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
 .point-log-row .amount{color:#86efac;font-weight:800}
 .point-log-row .dist{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:1120px){.point-log-row{grid-template-columns:1fr 1fr;gap:7px}.point-log-row .dist{grid-column:1/-1}}
+.point-log-row .act{text-align:right}
+@media(max-width:1120px){.point-log-row{grid-template-columns:1fr 1fr;gap:7px}.point-log-row .dist{grid-column:1/-1}.point-log-row .act{grid-column:1/-1;text-align:left}}
 @media(max-width:1080px){.log-row{grid-template-columns:1fr 1fr;gap:8px}.log-row .col-time{grid-column:1/-1}.log-row .col-tags{grid-column:1/-1}.log-row .col-parties{grid-column:1/-1}}
 .hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .hd-prev-card{background:rgba(10,14,26,.8);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}

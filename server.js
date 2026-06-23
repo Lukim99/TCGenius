@@ -1026,8 +1026,10 @@ async function addSupabaseUserBalance(nickname, delta) {
     const { data, error } = await supabaseP.from('users').select('balance').eq('nickname', nickname).maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("'" + nickname + "' 계정을 찾을 수 없습니다.");
-    const { error: updErr } = await supabaseP.from('users').update({ balance: Number(data.balance || 0) + delta }).eq('nickname', nickname);
+    const next = Number(data.balance || 0) + delta;
+    const { error: updErr } = await supabaseP.from('users').update({ balance: next }).eq('nickname', nickname);
     if (updErr) throw updErr;
+    return next;
 }
 
 async function addSupabaseCompanyBalance(name, delta) {
@@ -1066,8 +1068,8 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         const lotto = Math.max(1, Math.floor(amount * 0.01));
         const company = Math.max(1, Math.floor(amount * 0.01));
         const remainder = amount - lotto - company;
-        const lukim = Math.floor(remainder / 2);
-        const kinder = remainder - lukim;
+        const kinder = Math.floor(remainder / 2);   // 유치원생
+        const lukim = remainder - kinder;           // Lukim9 (잉여 포인트 포함)
         const storeBalance = balance - amount;
 
         // 1) 충전 계정 잔액 차감
@@ -1095,14 +1097,19 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         rollback.push(() => addSupabaseUserBalance('유치원생', -kinder));
 
         // 4) 충전 로그 기록 (최대 100건)
-        await appendPointLog({ nickname, amount, point: newPoint, lotto, company, lukim, kinder, at: new Date().toISOString() });
+        await appendPointLog({ id: crypto.randomUUID(), nickname, amount, point: newPoint, lotto, company, lukim, kinder, at: new Date().toISOString() });
 
         // 5) 카카오 알림 (성공 후 best-effort, 실패해도 충전은 롤백하지 않음)
         sendKakaoNotice(POINT_CHARGE_NOTICE_CHANNEL_ID,
             '[ RPGenius 충전 ]\n' +
             '✅ ' + nickname + ' ' + amount.toLocaleString('ko-KR') + ' P 충전 완료\n' +
             '💰 포인트 상점 잔액: ' + storeBalance.toLocaleString('ko-KR') + ' P\n' +
-            '💰 RPGenius 잔액: ' + newPoint.toLocaleString('ko-KR') + ' P');
+            '💰 RPGenius 잔액: ' + newPoint.toLocaleString('ko-KR') + ' P\n' +
+            '\n[ 포인트 분배 ]' +
+            '- 로또기금: ' + lotto.toLocaleString('ko-KR') + ' P\n' +
+            '- 익테봇: ' + company.toLocaleString('ko-KR') + ' P\n' +
+            '- 유치원생: ' + kinder.toLocaleString('ko-KR') + ' P\n' +
+            '- Lukim9: ' + lukim.toLocaleString('ko-KR') + ' P');
 
         res.json({ ok: true, point: newPoint, charged: amount });
     } catch (e) {
@@ -2436,6 +2443,79 @@ server.get('/api/admin/point-logs', requireAdmin, async (req, res) => {
     } catch (e) {
         console.error('point logs list error:', e);
         res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/admin/point-logs/cancel', requireAdmin, async (req, res) => {
+    if (!supabaseP) return res.status(503).json({ error: '충전 기능이 설정되지 않았습니다.' });
+    const id = String((req.body && req.body.id) || '');
+    if (!id) return res.status(400).json({ error: '취소할 로그 ID가 없습니다.' });
+    // 중간 실패 시 역순으로 실행되는 보상(rollback) 스택
+    const rollback = [];
+    try {
+        await rpgenius.loadRpgeniusDataEntry('PointLogs').catch(() => {});
+        const cached = rpgenius.getDataCache('PointLogs', []);
+        const logs = Array.isArray(cached) ? cached.slice() : [];
+        const entry = logs.find(l => l && l.id === id);
+        if (!entry) return res.status(404).json({ error: '해당 충전 기록을 찾을 수 없습니다. (이미 취소되었을 수 있습니다)' });
+
+        const amount = Number(entry.amount || 0);
+        const lotto = Number(entry.lotto || 0);
+        const company = Number(entry.company || 0);
+        const lukim = Number(entry.lukim || 0);
+        const kinder = Number(entry.kinder || 0);
+
+        // 보유 rpgenius 포인트 확인
+        const user = await rpgenius.getRPGUserByName(entry.nickname);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const curPoint = Number(user.point || 0);
+        if (curPoint < amount) {
+            return res.status(400).json({ error: '보유 포인트(' + curPoint.toLocaleString('ko-KR') + ')가 취소 포인트(' + amount.toLocaleString('ko-KR') + ')보다 적어 취소할 수 없습니다.' });
+        }
+
+        // 충전의 역연산 (각 단계마다 보상 등록)
+        // 1) 포인트 회수
+        const newPoint = curPoint - amount;
+        user.point = newPoint;
+        await user.save();
+        rollback.push(async () => { user.point = curPoint; await user.save(); });
+
+        // 2) 충전 계정 잔액 환불
+        const refundedBalance = await addSupabaseUserBalance(entry.nickname, amount);
+        rollback.push(() => addSupabaseUserBalance(entry.nickname, -amount));
+
+        // 3) 분배 회수
+        await addSupabaseUserBalance('로또기금', -lotto);
+        rollback.push(() => addSupabaseUserBalance('로또기금', lotto));
+        await addSupabaseCompanyBalance('익테봇', -company);
+        rollback.push(() => addSupabaseCompanyBalance('익테봇', company));
+        await addSupabaseUserBalance('Lukim9', -lukim);
+        rollback.push(() => addSupabaseUserBalance('Lukim9', lukim));
+        await addSupabaseUserBalance('유치원생', -kinder);
+        rollback.push(() => addSupabaseUserBalance('유치원생', kinder));
+
+        // 4) 로그에서 제거
+        await rpgenius.saveRpgeniusDataEntry('PointLogs', logs.filter(l => l !== entry));
+
+        // 5) 카카오 알림 (성공 후 best-effort)
+        sendKakaoNotice(POINT_CHARGE_NOTICE_CHANNEL_ID,
+            '[ RPGenius 환불 ]\n' +
+            '✅ ' + entry.nickname + ' ' + amount.toLocaleString('ko-KR') + ' P 환불 완료\n' +
+            '💰 포인트 상점 잔액: ' + refundedBalance.toLocaleString('ko-KR') + ' P\n' +
+            '💰 RPGenius 잔액: ' + newPoint.toLocaleString('ko-KR') + ' P\n' +
+            '\n' +
+            '- 로또기금: -' + lotto.toLocaleString('ko-KR') + ' P\n' +
+            '- 익테봇: -' + company.toLocaleString('ko-KR') + ' P\n' +
+            '- 유치원생: -' + kinder.toLocaleString('ko-KR') + ' P\n' +
+            '- Lukim9: -' + lukim.toLocaleString('ko-KR') + ' P');
+
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('point log cancel error:', e);
+        for (const undo of rollback.reverse()) {
+            try { await undo(); } catch (re) { console.error('point log cancel rollback failed:', re); }
+        }
+        res.status(500).json({ error: '취소 처리에 실패하여 원래 상태로 복구했습니다.' });
     }
 });
 

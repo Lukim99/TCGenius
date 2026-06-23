@@ -2021,7 +2021,27 @@ function pointLogRow(log) {
         + ' · Lukim9 ' + comma(log.lukim) + ' · 유치원생 ' + comma(log.kinder)
         + ' / 충전 후 잔액 ' + comma(log.point) + ' P';
     row.appendChild(el('div', { class: 'mono dist mut', title: dist }, dist));
+    const act = el('div', { class: 'act' });
+    if (log.id) {
+        const btn = el('button', { class: 'btn danger', style: 'padding:5px 10px;font-size:12px' }, '취소');
+        btn.onclick = () => cancelPointLog(log, btn);
+        act.appendChild(btn);
+    }
+    row.appendChild(act);
     return row;
+}
+
+async function cancelPointLog(log, btn) {
+    if (!confirm(log.nickname + '님의 ' + comma(log.amount) + 'P 충전을 취소(환불)할까요?\n충전 계정 잔액과 분배가 되돌려집니다.')) return;
+    btn.disabled = true;
+    try {
+        await api('/api/admin/point-logs/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: log.id }) });
+        toast('충전을 취소했습니다.', true);
+        loadPointLog();
+    } catch (e) {
+        btn.disabled = false;
+        toast(e.message, false);
+    }
 }
 
 function renderPointLog() {
