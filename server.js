@@ -1105,7 +1105,7 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
             '✅ ' + nickname + ' ' + amount.toLocaleString('ko-KR') + ' P 충전 완료\n' +
             '💰 포인트 상점 잔액: ' + storeBalance.toLocaleString('ko-KR') + ' P\n' +
             '💰 RPGenius 잔액: ' + newPoint.toLocaleString('ko-KR') + ' P\n' +
-            '\n[ 포인트 분배 ]' +
+            '\n[ 포인트 분배 ]\n' +
             '- 로또기금: ' + lotto.toLocaleString('ko-KR') + ' P\n' +
             '- 익테봇: ' + company.toLocaleString('ko-KR') + ' P\n' +
             '- 유치원생: ' + kinder.toLocaleString('ko-KR') + ' P\n' +
