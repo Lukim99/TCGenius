@@ -155,6 +155,13 @@ details.collapsible .body{padding:12px}
 .tag.d-miss{color:#fca5a5;background:#7f1d1d}
 .tag.d-lightning{color:#a5f3fc;background:#155e75}
 @media(max-width:1120px){.dice-log-row{grid-template-columns:1fr 1fr;gap:7px}.dice-log-row .reward{grid-column:1/-1}.dice-log-row .status{text-align:left}}
+.point-log-row{display:grid;grid-template-columns:158px 160px 120px 1fr;gap:10px;align-items:center;padding:10px 12px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;font-size:12.5px}
+.point-log-row .mono{font-family:ui-monospace,'Cascadia Code',monospace;font-variant-numeric:tabular-nums}
+.point-log-row .mut{color:var(--mut)}
+.point-log-row .nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+.point-log-row .amount{color:#86efac;font-weight:800}
+.point-log-row .dist{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1120px){.point-log-row{grid-template-columns:1fr 1fr;gap:7px}.point-log-row .dist{grid-column:1/-1}}
 @media(max-width:1080px){.log-row{grid-template-columns:1fr 1fr;gap:8px}.log-row .col-time{grid-column:1/-1}.log-row .col-tags{grid-column:1/-1}.log-row .col-parties{grid-column:1/-1}}
 .hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .hd-prev-card{background:rgba(10,14,26,.8);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
@@ -190,6 +197,7 @@ details.collapsible .body{padding:12px}
   <button class="tab" data-tab="fashion">Fashion</button>
   <button class="tab" data-tab="tradelog">거래 로그</button>
   <button class="tab" data-tab="eventdicelog">유생 주사위 로그</button>
+  <button class="tab" data-tab="pointlog">포인트 충전 로그</button>
   <button class="tab" data-tab="pitr">PITR 복원</button>
   <button class="tab" data-tab="raw">Raw JSON</button>
   <button class="tab" data-tab="hotdealpreview">핫딜 미리보기</button>
@@ -248,6 +256,8 @@ details.collapsible .body{padding:12px}
 <div class="panel" data-panel="tradelog"><section><h2>거래 로그</h2><div class="muted" style="margin-bottom:10px">경매장/삽니다에서 체결된 거래 기록입니다. 최신순으로 표시되며 최대 2,000건까지 보관됩니다.</div><div class="bar"><input id="tradeLogFilter" placeholder="구매자 / 판매자 / 물품명 검색..." style="flex:1;min-width:200px"><select id="tradeLogType" style="width:130px;flex:0 0 auto"><option value="">전체 거래타입</option><option value="경매장">경매장</option><option value="삽니다">삽니다</option></select><select id="tradeLogKind" style="width:130px;flex:0 0 auto"><option value="">전체 물품타입</option><option value="card">캐릭터 카드</option><option value="equipment">장비</option><option value="item">아이템</option></select><button class="btn" id="tradeLogReload">다시 불러오기</button><button class="btn danger" id="tradeLogClear">전체 삭제</button><span class="muted" id="tradeLogStatus"></span></div><div id="tradeLogList" class="list" style="margin-top:14px"></div></section></div>
 
 <div class="panel" data-panel="eventdicelog"><section><h2>유생의 주사위 로그</h2><div class="muted" style="margin-bottom:10px">유생의 주사위 사용 기록입니다. 최신순으로 한 줄씩 표시됩니다.</div><div class="bar"><input id="eventDiceLogFilter" placeholder="닉네임 / 유저ID / 보상 검색..." style="flex:1;min-width:220px"><select id="eventDiceLogHit" style="width:120px;flex:0 0 auto"><option value="">전체 결과</option><option value="hit">당첨</option><option value="miss">실패</option></select><button class="btn" id="eventDiceLogReload">다시 불러오기</button><span class="muted" id="eventDiceLogStatus"></span></div><div id="eventDiceLogList" class="list" style="margin-top:14px"></div></section></div>
+
+<div class="panel" data-panel="pointlog"><section><h2>포인트 충전 로그</h2><div class="muted" style="margin-bottom:10px">웹에서 처리된 포인트 충전 기록입니다. 최신순으로 표시되며 최대 100건까지 보관됩니다.</div><div class="bar"><input id="pointLogFilter" placeholder="닉네임 검색..." style="flex:1;min-width:220px"><button class="btn" id="pointLogReload">다시 불러오기</button><span class="muted" id="pointLogStatus"></span></div><div id="pointLogList" class="list" style="margin-top:14px"></div></section></div>
 
 <div class="panel" data-panel="pitr">
   <section>

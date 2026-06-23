@@ -1065,7 +1065,9 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
 
         const lotto = Math.max(1, Math.floor(amount * 0.01));
         const company = Math.max(1, Math.floor(amount * 0.01));
-        const kinder = amount - lotto - company;
+        const remainder = amount - lotto - company;
+        const lukim = Math.floor(remainder / 2);
+        const kinder = remainder - lukim;
         const storeBalance = balance - amount;
 
         // 1) 충전 계정 잔액 차감
@@ -1082,16 +1084,18 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         const newPoint = Number(user.point || 0);
         rollback.push(async () => { user.point = prevPoint; await user.save(); });
 
-        // 3) 차감액 분배 이체 (1% 로또기금 / 1% 익테봇 / 나머지 유치원생)
+        // 3) 차감액 분배 이체 (1% 로또기금 / 1% 익테봇 / 49% Lukim9 / 49% 유치원생)
         await addSupabaseUserBalance('로또기금', lotto);
         rollback.push(() => addSupabaseUserBalance('로또기금', -lotto));
         await addSupabaseCompanyBalance('익테봇', company);
         rollback.push(() => addSupabaseCompanyBalance('익테봇', -company));
+        await addSupabaseUserBalance('Lukim9', lukim);
+        rollback.push(() => addSupabaseUserBalance('Lukim9', -lukim));
         await addSupabaseUserBalance('유치원생', kinder);
         rollback.push(() => addSupabaseUserBalance('유치원생', -kinder));
 
         // 4) 충전 로그 기록 (최대 100건)
-        await appendPointLog({ nickname, amount, point: newPoint, lotto, company, kinder, at: new Date().toISOString() });
+        await appendPointLog({ nickname, amount, point: newPoint, lotto, company, lukim, kinder, at: new Date().toISOString() });
 
         // 5) 카카오 알림 (성공 후 best-effort, 실패해도 충전은 롤백하지 않음)
         sendKakaoNotice(POINT_CHARGE_NOTICE_CHANNEL_ID,
@@ -2416,6 +2420,21 @@ server.get('/api/admin/event-dice-logs', requireAdmin, async (req, res) => {
         res.json({ items: list.slice(0, limit), total: list.length });
     } catch (e) {
         console.error('event dice logs list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/admin/point-logs', requireAdmin, async (req, res) => {
+    try {
+        let data = rpgenius.getDataCache('PointLogs', null);
+        if (!data) {
+            await rpgenius.loadRpgeniusDataEntry('PointLogs');
+            data = rpgenius.getDataCache('PointLogs', null);
+        }
+        const list = Array.isArray(data) ? data : [];
+        res.json({ items: list.slice().reverse(), total: list.length });
+    } catch (e) {
+        console.error('point logs list error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });

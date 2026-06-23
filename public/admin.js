@@ -2000,6 +2000,60 @@ if ($('#eventDiceLogHit')) $('#eventDiceLogHit').onchange = e => { eventDiceLogF
 TAB_LOADERS.eventdicelog = loadEventDiceLog;
 
 // ============================================================================
+// 포인트 충전 로그
+// ============================================================================
+let pointLogData = [];
+let pointLogFilter = '';
+
+function formatPointLogTime(iso) {
+    if (!iso) return '-';
+    const ms = Date.parse(iso);
+    if (Number.isNaN(ms)) return String(iso);
+    return formatTradeLogTime(ms);
+}
+
+function pointLogRow(log) {
+    const row = el('div', { class: 'point-log-row' });
+    row.appendChild(el('div', { class: 'mono mut' }, formatPointLogTime(log.at)));
+    row.appendChild(el('div', { class: 'nick' }, log.nickname || '-'));
+    row.appendChild(el('div', { class: 'mono amount' }, '+' + comma(log.amount) + ' P'));
+    const dist = '로또기금 ' + comma(log.lotto) + ' · 익테봇 ' + comma(log.company)
+        + ' · Lukim9 ' + comma(log.lukim) + ' · 유치원생 ' + comma(log.kinder)
+        + ' / 충전 후 잔액 ' + comma(log.point) + ' P';
+    row.appendChild(el('div', { class: 'mono dist mut', title: dist }, dist));
+    return row;
+}
+
+function renderPointLog() {
+    const list = $('#pointLogList'); list.innerHTML = '';
+    const q = (pointLogFilter || '').trim().toLowerCase();
+    let shown = 0;
+    pointLogData.forEach(log => {
+        if (q && !String(log.nickname || '').toLowerCase().includes(q)) return;
+        list.appendChild(pointLogRow(log));
+        shown++;
+    });
+    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, pointLogData.length === 0 ? '아직 충전 기록이 없습니다.' : '검색 결과가 없습니다.'));
+}
+
+async function loadPointLog() {
+    $('#pointLogStatus').textContent = '불러오는 중...';
+    try {
+        const data = await api('/api/admin/point-logs');
+        pointLogData = data.items || [];
+        $('#pointLogStatus').textContent = '총 ' + pointLogData.length + '건';
+        renderPointLog();
+    } catch (e) {
+        $('#pointLogStatus').textContent = '';
+        toast(e.message, false);
+    }
+}
+
+if ($('#pointLogReload')) $('#pointLogReload').onclick = loadPointLog;
+if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { pointLogFilter = e.target.value; renderPointLog(); });
+TAB_LOADERS.pointlog = loadPointLog;
+
+// ============================================================================
 // PITR 복원 / 마이그레이션
 // ============================================================================
 function pitrTable() {
