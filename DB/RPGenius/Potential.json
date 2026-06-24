@@ -43,6 +43,26 @@
                         "stat": {
                             "pnt": 3
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 2
+                        }
                     }
                 ]
             },
@@ -120,6 +140,26 @@
                         "stat": {
                             "pnt": 5
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 4
+                        }
                     }
                 ]
             },
@@ -196,6 +236,26 @@
                     {
                         "stat": {
                             "pnt": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 7
                         }
                     }
                 ]
@@ -319,6 +379,26 @@
                         "stat": {
                             "pnt": 10
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 10
+                        }
                     }
                 ]
             },
@@ -428,6 +508,26 @@
                         "stat": {
                             "def": 20
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 3
+                        }
                     }
                 ]
             },
@@ -505,6 +605,26 @@
                         "stat": {
                             "def": 25
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 6
+                        }
                     }
                 ]
             },
@@ -581,6 +701,26 @@
                     {
                         "stat": {
                             "def": 30
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 9
                         }
                     }
                 ]
@@ -693,6 +833,26 @@
                     {
                         "stat": {
                             "def": 40
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 12
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 12
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 12
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 12
                         }
                     }
                 ]
@@ -808,6 +968,26 @@
                         "stat": {
                             "def": 20
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 2
+                        }
                     }
                 ]
             },
@@ -832,6 +1012,26 @@
                     {
                         "stat": {
                             "pnt": 1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 1
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 1
                         }
                     }
                 ]
@@ -885,6 +1085,26 @@
                         "stat": {
                             "def": 25
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 4
+                        }
                     }
                 ]
             },
@@ -909,6 +1129,26 @@
                     {
                         "stat": {
                             "pnt": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 3
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 3
                         }
                     }
                 ]
@@ -962,6 +1202,26 @@
                         "stat": {
                             "def": 30
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 7
+                        }
                     }
                 ]
             },
@@ -986,6 +1246,26 @@
                     {
                         "stat": {
                             "pnt": 5
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 6
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 6
                         }
                     }
                 ]
@@ -1089,6 +1369,26 @@
                         "stat": {
                             "def": 40
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireRes": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterRes": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightRes": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkRes": 10
+                        }
                     }
                 ]
             },
@@ -1113,6 +1413,26 @@
                     {
                         "stat": {
                             "pnt": 8
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 9
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 9
                         }
                     }
                 ]
@@ -1243,6 +1563,26 @@
                         "stat": {
                             "pnt": 3
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 2
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 2
+                        }
                     }
                 ]
             },
@@ -1320,6 +1660,26 @@
                         "stat": {
                             "pnt": 5
                         }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 4
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 4
+                        }
                     }
                 ]
             },
@@ -1396,6 +1756,26 @@
                     {
                         "stat": {
                             "pnt": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 7
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 7
                         }
                     }
                 ]
@@ -1518,6 +1898,26 @@
                     {
                         "stat": {
                             "pnt": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "fireAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "waterAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "lightAtk": 10
+                        }
+                    },
+                    {
+                        "stat": {
+                            "darkAtk": 10
                         }
                     }
                 ]

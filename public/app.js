@@ -4001,6 +4001,7 @@ $$('.rank-tab').forEach(btn => btn.onclick = () => {
 
 // ===== 도감 =====
 let dexData = null;
+let potentialDexData = null;
 let dexTab = 'weapon';
 
 function dexThumb(iconUrl, frameUrl, fallback, sizeClass) {
@@ -4251,8 +4252,35 @@ function dexTitleCard(entry) {
     return card;
 }
 
+function dexPotentialCard(typeData) {
+    const card = el('div', { class: 'dex-card' });
+    card.style.setProperty('--rar', '#a855f7');
+    const head = el('div', { class: 'dex-head' });
+    head.appendChild(el('div', null, el('div', { class: 'dex-name' }, typeData.label + ' 잠재능력')));
+    card.appendChild(head);
+    (typeData.grades || []).forEach(g => {
+        const block = el('div', { class: 'dex-stat-block' });
+        block.appendChild(el('div', { class: 'dex-stat-title' }, g.gradeLabel));
+        (g.groups || []).forEach(group => {
+            block.appendChild(el('div', { class: 'dex-pot-row' },
+                el('span', { class: 'dex-pot-rate' }, group.percent + '%'),
+                el('span', { class: 'dex-pot-opts' }, (group.options || []).join(' / ') || '없음')
+            ));
+        });
+        card.appendChild(block);
+    });
+    return card;
+}
+
 function renderDex() {
     const grid = $('#dexList');
+    if (dexTab === 'potential') {
+        grid.className = 'dex-grid';
+        if (!potentialDexData) return;
+        grid.innerHTML = '';
+        (potentialDexData.types || []).forEach(t => grid.appendChild(dexPotentialCard(t)));
+        return;
+    }
     if (dexTab === 'title') {
         if (!titlesData) return;
         grid.className = 'dex-grid dex-title-grid';
@@ -4274,6 +4302,15 @@ function renderDex() {
 }
 
 async function loadDex() {
+    if (dexTab === 'potential') {
+        if (!potentialDexData) {
+            $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+            try { potentialDexData = await api('/api/dex/potential'); }
+            catch (e) { $('#dexList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+        }
+        renderDex();
+        return;
+    }
     if (dexTab === 'title') {
         if (!titlesData) {
             $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));

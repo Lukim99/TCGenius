@@ -548,6 +548,7 @@ function createPhaseMonster(phase) {
         actionInterval: Number(monDef.actionInterval || (phase.type === 'boss' ? 2.0 : 2.5)),
         gauge: 0,
         type: phase.type,
+        element: monDef.element || null,
         tauntTarget: null,
         tauntRemain: 0,
         stunRemain: 0,
@@ -924,7 +925,8 @@ async function start(hostName) {
             const immortalArmor = user ? getImmortalArmorSnapshot(user) : null;
             const manaResonance = user ? getManaResonanceSnapshot(user) : null;
             const thorns = user ? getThornsSnapshot(user) : null;
-            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns };
+            const elementChain = user && typeof rpgenius.getEquipmentElementChain === 'function' ? rpgenius.getEquipmentElementChain(user) : null;
+            m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
         }
@@ -1253,6 +1255,29 @@ function stepRoom(room) {
                 }
             }
         }
+        if (r.sunata) {
+            const now = Date.now();
+            if (now > r.sunata.expired_at) {
+                r.sunata = null;
+                pushCombat(room, '🎵 ' + m.name + '의 수나타 소환이 만료되었습니다.', 'buff');
+            } else if (now >= r.sunata.nextAttackAt) {
+                r.sunata.nextAttackAt = now + 5000;
+                let targetMon = room.monster;
+                const quest = getQuestById(room.questId);
+                const phase = quest && quest.phases[room.phaseIndex];
+                if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
+                if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
+                    const dmg = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.sunata.atkMul));
+                    const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true });
+                    const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
+                    if (invincible) res.damage = 0;
+                    if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
+                    else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '수나타 소환', false);
+                    pushCombat(room, '🎵 ' + m.name + '의 수나타 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
+                    if (room.monster) applyBlackHoduCritReflect(room, m, res);
+                }
+            }
+        }
     }
     if (room.tauntRemain > 0) {
         room.tauntRemain = Math.max(0, room.tauntRemain - dt);
@@ -1369,6 +1394,10 @@ function getFinalDamageMul(attacker) {
         const r = attacker.runtime;
         if (r.mpMax > 0 && r.mp / r.mpMax >= mr.threshold) mul *= 1 + mr.bonus;
     }
+    // 수나타 소환: 소환 중 본인 공격력(피해) +buff
+    if (attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
+        mul *= 1 + Number(attacker.runtime.sunata.buff || 0);
+    }
     return mul;
 }
 
@@ -1457,6 +1486,25 @@ function getDestinyDamageAfterDefense(damage, defense, penetration, defenseReduc
     return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
 }
 
+// 파티 공격 속성 판정: 무기 > 스킬 > 보조>갑옷>장신구 (rest). 없으면 null
+function resolvePartyAttackElement(attacker, skillElement) {
+    const chain = (attacker && attacker.baseSnapshot && attacker.baseSnapshot.elementChain) || {};
+    if (chain.weapon) return chain.weapon;
+    const atkKeys = rpgenius.ELEMENT_ATK_KEYS || {};
+    if (skillElement && atkKeys[skillElement]) return skillElement;
+    return chain.rest || null;
+}
+
+// 공격 속성 배수: 1 + (공격자 속성 강화 - 대상 속성 저항) * 0.1%. 없으면 1
+function getPartyElementMultiplier(attacker, monster, skillElement) {
+    if (typeof rpgenius.getElementDamageMultiplier !== 'function') return 1;
+    const elem = resolvePartyAttackElement(attacker, skillElement);
+    if (!elem) return 1;
+    const stats = (attacker && attacker.baseSnapshot && attacker.baseSnapshot.stats) || {};
+    const monsterResist = (monster && monster.stats) || {};
+    return rpgenius.getElementDamageMultiplier(elem, stats, monsterResist);
+}
+
 function calculateNormalDamageToMonster(attacker, monster, room, rawDamage) {
     const snapshot = (attacker && attacker.baseSnapshot) || {};
     const stats = snapshot.stats || {};
@@ -1487,6 +1535,11 @@ function calculateNormalDamageToMember(room, mon, target, rawDamage) {
     const penetration = Number(monStats.pnt || mon.pnt || 0);
     let damage = Number(rawDamage || 0) * monDealtMul * mitigation * targetTakenMul;
     damage = getDamageAfterDefense(damage, defense, penetration, defenseReductionRate);
+    // 몬스터가 element 속성을 가지면 플레이어 속성 저항 적용 (맨 마지막)
+    const monElement = mon.element || monStats.element;
+    if (monElement && typeof rpgenius.getElementDamageMultiplier === 'function') {
+        damage *= rpgenius.getElementDamageMultiplier(monElement, monStats, targetStats);
+    }
     return Math.max(0, applyDamageVariance(damage));
 }
 
@@ -1543,6 +1596,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     let totalHits = hitCount;
     const maxHits = extra && extra.extraOnCrit ? Math.max(totalHits, Math.floor(Number(extra.extraOnCrit.max || totalHits))) : totalHits;
     let abyssDoomUsed = false;
+    const elementMul = getPartyElementMultiplier(attacker, monster, extra && extra.skillElement);
     for (let i = 0; i < totalHits; i++) {
         let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0)) * dealtDmgMul * getFinalDamageMul(attacker);
         let fixedHitDamage = 0;
@@ -1581,6 +1635,11 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             const bonus = getFixedDamageAgainstMonster(Number(extra.skillTrueDmg || 0), monster, penetration, defenseReductionRate);
             hitDamage += bonus;
             fixedHitDamage += bonus;
+        }
+        if (elementMul !== 1) { // 속성 배수: 맨 마지막 적용 (총/고정/운명 비례 스케일)
+            hitDamage = Math.max(0, hitDamage * elementMul);
+            fixedHitDamage *= elementMul;
+            destinyHitDamage *= elementMul;
         }
         fixedDamage += fixedHitDamage;
         destinyDamage += destinyHitDamage;
@@ -1962,6 +2021,11 @@ function computeMonsterDamage(room, mon, target) {
         if (Number(monStats.skillTrueDmg || 0) > 0) hitDamage += Number(monStats.skillTrueDmg || 0);
         total += applyDamageVariance(hitDamage);
     }
+    // 몬스터가 element 속성을 가지면 플레이어 속성 저항 적용 (맨 마지막)
+    const monElement = mon.element || monStats.element;
+    if (monElement && typeof rpgenius.getElementDamageMultiplier === 'function') {
+        total *= rpgenius.getElementDamageMultiplier(monElement, monStats, targetStats);
+    }
     return Math.max(0, Math.round(total));
 }
 
@@ -2235,7 +2299,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
         const fixedDamage = Math.max(0, Math.round(Number(stats.skillTrueDmg || 0)));
         const rawDamage = Math.max(1, Math.round(dmg));
         if (phase && phase.type === 'mob' && !room.monster) {
-            const result = calculateOutgoingDamage(caster, targetMonster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic }));
+            const result = calculateOutgoingDamage(caster, targetMonster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic, skillElement: def.element }));
             const damage = result.damage;
             applyMobPhaseDamage(room, caster, targetMonster, result, 'skill', skillName, true);
             if (def.mpRefundPctOfDealt) caster.runtime.mp = Math.min(caster.runtime.mpMax, caster.runtime.mp + Math.round(damage * Number(def.mpRefundPctOfDealt)));
@@ -2244,7 +2308,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
             applyMainCardPassiveMpRecovery(room, caster);
             return;
         }
-        const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic }));
+        const result = calculateOutgoingDamage(caster, room.monster, room, rawDamage, Object.assign({}, extra, { skillTrueDmg: fixedDamage, isSkill: true, isBasic: !!def.countAsBasic, skillElement: def.element }));
         const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
         if (invincible) result.damage = 0;
         let damage = result.damage;
@@ -2368,6 +2432,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     const multiplier = getSkillValue(skill, 0, star);
     const extra = {};
+    if (skill && skill.element) extra.skillElement = skill.element;
     let nextSkillBonus = 0;
     if (caster.runtime.nextSkillDamageBonus) {
         nextSkillBonus = Number(caster.runtime.nextSkillDamageBonus || 0);
@@ -2449,6 +2514,48 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
     if (skillName === '비리') {
         extra.forceCritical = true;
         rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
+    }
+    if (skillName === '54버스트') extra.forceCritical = true;
+    if (skillName === '처형박수') {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0); // 치명타 확률만큼 피해 증가
+        caster.runtime.takenDmgMul = 2.0; // 받는 피해 100% 증가
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '처형박수 (피해증가)', value: 2.0, remain: 4 });
+    }
+    if (skillName === '핫식스의정력') {
+        const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star)));
+        for (const m of room.members) {
+            if (!m.runtime || m.runtime.dead) continue;
+            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            m.runtime.shieldHits = 99;
+            m.runtime.shieldExpireAt = Date.now() + 12000;
+            m.runtime.shieldExpireHeal = 0;
+        }
+        pushCombat(room, caster.name + ' [핫식스의정력] → 파티 🛡 +' + comma(shieldAmt) + ' (12초)', 'buff');
+    }
+    if (skillName === '이어브피') {
+        const shieldAmt = Math.max(1, Math.round(caster.runtime.mpMax * getSkillValue(skill, 1, star)));
+        for (const m of room.members) {
+            if (!m.runtime || m.runtime.dead) continue;
+            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            m.runtime.shieldHits = 99;
+            m.runtime.shieldExpireAt = Date.now() + 12000;
+            m.runtime.shieldExpireHeal = 0;
+        }
+        pushCombat(room, caster.name + ' [이어브피] → 파티 🛡 +' + comma(shieldAmt) + ' (12초)', 'buff');
+    }
+    if (skillName === '댄져') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skill, 1, star);
+    if (skillName === '초특급한탕' && Math.random() < 0.1) {
+        rawDamage = Math.round(rawDamage * (getSkillValue(skill, 1, star) / (multiplier || 1)));
+        pushCombat(room, '💥 ' + caster.name + ' [초특급한탕] 폭딜 발동!', 'buff');
+    }
+    if (skillName === '수나타 소환') {
+        const atkMul = getSkillValue(skill, 0, star);
+        const buffMul = getSkillValue(skill, 1, star);
+        const durationMs = Math.round(45000 * (1 + Number(caster.baseSnapshot.stats.summonDuration || 0) / 100));
+        caster.runtime.sunata = { atkMul: atkMul, buff: buffMul, expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 5000 };
+        upsertMemberBuff(caster, { id: 'sunata', label: '수나타 (공+)', value: buffMul, remain: Math.round(durationMs / 1000) });
+        pushCombat(room, '🎵 ' + caster.name + '님이 수나타를 소환했습니다! (' + (durationMs / 1000).toFixed(1) + '초간 유지)', 'buff');
+        return;
     }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const quest = getQuestById(room.questId);

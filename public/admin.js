@@ -957,7 +957,15 @@ const FLAT_STAT_DEFS = [
     { key: 'maxCmb', label: '추가 공격 횟수', kind: 'int' },
     { key: 'skillCooldown', label: '스킬 쿨타임 (ms, 음수=감소)', kind: 'cooldown' },
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
-    { key: 'atkPerMillionGold', label: '보유 골드 100만 당 공격력', kind: 'int' }
+    { key: 'atkPerMillionGold', label: '보유 골드 100만 당 공격력', kind: 'int' },
+    { key: 'fireAtk', label: '[화]속성 강화', kind: 'int' },
+    { key: 'waterAtk', label: '[수]속성 강화', kind: 'int' },
+    { key: 'lightAtk', label: '[명]속성 강화', kind: 'int' },
+    { key: 'darkAtk', label: '[암]속성 강화', kind: 'int' },
+    { key: 'fireRes', label: '[화]속성 저항', kind: 'int' },
+    { key: 'waterRes', label: '[수]속성 저항', kind: 'int' },
+    { key: 'lightRes', label: '[명]속성 저항', kind: 'int' },
+    { key: 'darkRes', label: '[암]속성 저항', kind: 'int' }
 ];
 
 const PLUS_STAT_DEFS = [

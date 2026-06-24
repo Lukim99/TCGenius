@@ -12,10 +12,22 @@
         "class": {
             "name": "전직",
             "slot_effects": [
-                { "effect": "expBonus",          "name": "경험치 획득 증가량", "base": 0.005, "per_level": 0.005 },
-                { "effect": "hpDamageReduction", "name": "받는 피해량",        "base": 0.025, "per_level": 0.0125 }
+                {
+                    "effect": "expBonus",
+                    "name": "경험치 획득 증가량",
+                    "base": 0.005,
+                    "per_level": 0.005
+                },
+                {
+                    "effect": "hpDamageReduction",
+                    "name": "받는 피해량",
+                    "base": 0.025,
+                    "per_level": 0.0125
+                }
             ],
-            "skills": [12]
+            "skills": [
+                12
+            ]
         }
     },
     {
@@ -31,10 +43,22 @@
         "class": {
             "name": "전직",
             "slot_effects": [
-                { "effect": "expBonus",          "name": "경험치 획득 증가량", "base": 0.005, "per_level": 0.005 },
-                { "effect": "hpDamageReduction", "name": "받는 피해량",        "base": 0.025, "per_level": 0.0125 }
+                {
+                    "effect": "expBonus",
+                    "name": "경험치 획득 증가량",
+                    "base": 0.005,
+                    "per_level": 0.005
+                },
+                {
+                    "effect": "hpDamageReduction",
+                    "name": "받는 피해량",
+                    "base": 0.025,
+                    "per_level": 0.0125
+                }
             ],
-            "skills": [13]
+            "skills": [
+                13
+            ]
         }
     },
     {
@@ -46,7 +70,27 @@
         },
         "skills": [
             2
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "killRecoveryChance",
+                    "name": "받은 피해의 20%만큼 체력 회복 확률",
+                    "base": 0.04,
+                    "per_level": 0.0075
+                },
+                {
+                    "effect": "mpCostReduction",
+                    "name": "MP 소모량 감소",
+                    "base": 0.02,
+                    "per_level": 0.01
+                }
+            ],
+            "skills": [
+                18
+            ]
+        }
     },
     {
         "name": "오버라이드",
@@ -57,7 +101,27 @@
         },
         "skills": [
             3
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "basicDamageBonus",
+                    "name": "일반 공격 피해",
+                    "base": 0.015,
+                    "per_level": 0.006
+                },
+                {
+                    "effect": "crit",
+                    "name": "치명타 확률 증가",
+                    "base": 0.005,
+                    "per_level": 0.005
+                }
+            ],
+            "skills": [
+                17
+            ]
+        }
     },
     {
         "name": "일레이나",
@@ -68,7 +132,27 @@
         },
         "skills": [
             4
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "killRecoveryChance",
+                    "name": "받은 피해의 20%만큼 체력 회복 확률",
+                    "base": 0.04,
+                    "per_level": 0.0075
+                },
+                {
+                    "effect": "mpCostReduction",
+                    "name": "MP 소모량 감소",
+                    "base": 0.02,
+                    "per_level": 0.01
+                }
+            ],
+            "skills": [
+                19
+            ]
+        }
     },
     {
         "name": "진필규",
@@ -141,7 +225,27 @@
         },
         "skills": [
             7
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "goldBonus",
+                    "name": "골드 획득 증가량",
+                    "base": 0.005,
+                    "per_level": 0.0015
+                },
+                {
+                    "effect": "skillDamageBonus",
+                    "name": "스킬 공격 피해",
+                    "base": 0.01,
+                    "per_level": 0.005
+                }
+            ],
+            "skills": [
+                22
+            ]
+        }
     },
     {
         "name": "타이란트",
@@ -152,7 +256,27 @@
         },
         "skills": [
             8
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "defReduction",
+                    "name": "방어력 관통",
+                    "base": 0.04,
+                    "per_level": 0.0075
+                },
+                {
+                    "effect": "itemDropChance",
+                    "name": "아이템 드랍 확률",
+                    "base": 0.05,
+                    "per_level": 0.015
+                }
+            ],
+            "skills": [
+                21
+            ]
+        }
     },
     {
         "name": "마쉐비",
@@ -163,7 +287,27 @@
         },
         "skills": [
             9
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "defReduction",
+                    "name": "방어력 관통",
+                    "base": 0.04,
+                    "per_level": 0.0075
+                },
+                {
+                    "effect": "itemDropChance",
+                    "name": "아이템 드랍 확률",
+                    "base": 0.05,
+                    "per_level": 0.015
+                }
+            ],
+            "skills": [
+                20
+            ]
+        }
     },
     {
         "name": "딜러장",
@@ -174,7 +318,27 @@
         },
         "skills": [
             10
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "basicDamageBonus",
+                    "name": "일반 공격 피해",
+                    "base": 0.015,
+                    "per_level": 0.006
+                },
+                {
+                    "effect": "crit",
+                    "name": "치명타 확률 증가",
+                    "base": 0.005,
+                    "per_level": 0.005
+                }
+            ],
+            "skills": [
+                16
+            ]
+        }
     },
     {
         "name": "이익태",
@@ -185,6 +349,26 @@
         },
         "skills": [
             11
-        ]
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "skillDamageBonus",
+                    "name": "스킬 공격 피해",
+                    "base": 0.01,
+                    "per_level": 0.005
+                },
+                {
+                    "effect": "goldBonus",
+                    "name": "골드 획득 증가량",
+                    "base": 0.005,
+                    "per_level": 0.0015
+                }
+            ],
+            "skills": [
+                23
+            ]
+        }
     }
 ]
