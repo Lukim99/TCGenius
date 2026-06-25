@@ -190,6 +190,7 @@ details.collapsible .body{padding:12px}
 </header>
 <div class="tabs">
   <button class="tab active" data-tab="grant">유저 / 재화</button>
+  <button class="tab" data-tab="mailbroadcast">📢 메일 발송</button>
   <button class="tab" data-tab="pack">Pack</button>
   <button class="tab" data-tab="bundle">Bundle</button>
   <button class="tab" data-tab="coupon">Coupon</button>
@@ -234,6 +235,38 @@ details.collapsible .body{padding:12px}
       </div>
       <div><label>수량</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
       <div class="nf"><button class="btn primary" id="grantBtn">지급/차감</button></div>
+    </div>
+  </section>
+</div>
+
+<div class="panel" data-panel="mailbroadcast">
+  <section>
+    <h2>📢 메일 전체 발송</h2>
+    <p class="muted">모든 유저에게 메일을 발송합니다. 선물은 즉시 합성되며 <b>관리자 인벤토리에서 차감되지 않고, 골드/가넷 수수료도 없습니다.</b> 발신자에는 GM 태그가 붙습니다.</p>
+    <div class="row">
+      <div><label>GM 발신자명</label><input id="bcGmName" placeholder="운영자" value="운영자"></div>
+      <div style="flex:2"><label>제목</label><input id="bcSubject" placeholder="제목 (최대 50자)" maxlength="50"></div>
+    </div>
+    <div class="row">
+      <div style="flex:1"><label>내용</label><textarea id="bcBody" placeholder="내용 (최대 1000자)" maxlength="1000" rows="5" style="width:100%;resize:vertical"></textarea></div>
+    </div>
+  </section>
+  <section>
+    <h2>🎁 선물 (최대 10개)</h2>
+    <div class="bar" style="flex-wrap:wrap;gap:6px">
+      <button class="btn" id="bcAddGold" type="button">🪙 골드</button>
+      <button class="btn" id="bcAddGarnet" type="button">💠 가넷</button>
+      <button class="btn" id="bcAddItem" type="button">📦 아이템</button>
+      <button class="btn" id="bcAddCard" type="button">🃏 카드</button>
+      <button class="btn" id="bcAddEquip" type="button">⚔️ 장비</button>
+      <button class="btn" id="bcAddPet" type="button">🐾 펫</button>
+    </div>
+    <div id="bcGiftList" class="list" style="margin-top:12px"></div>
+  </section>
+  <section>
+    <div class="bar">
+      <button class="btn primary" id="bcSendBtn" type="button">📨 전체 발송</button>
+      <span class="muted" id="bcStatus"></span>
     </div>
   </section>
 </div>

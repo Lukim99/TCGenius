@@ -2346,3 +2346,136 @@ $('#hdDate').value = _hdTodayLocal.getFullYear() + '-' + String(_hdTodayLocal.ge
 $('#hdPreviewBtn').onclick = loadHdPreview;
 TAB_LOADERS.hotdealpreview = () => loadHdPreview();
 TAB_LOADERS.raw = () => rawLoad();
+
+// ============================================================================
+// 메일 전체 발송
+// ============================================================================
+const bcGifts = [];
+const BC_MAX = 10;
+const EQUIP_TYPE_LABEL = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
+
+function bcGiftLabel(g) {
+    if (g.type === 'gold') return '🪙 골드 ' + (Number(g.amount) || 0);
+    if (g.type === 'garnet') return '💠 가넷 ' + (Number(g.amount) || 0);
+    if (g.type === 'item') return '📦 ' + (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
+    if (g.type === 'card') return '🃏 ' + (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
+    if (g.type === 'equipment') return '⚔️ ' + (g.equipName || (EQUIP_TYPE_LABEL[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
+    if (g.type === 'pet') return '🐾 ' + (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
+    return '?';
+}
+
+function renderBcGifts() {
+    const list = $('#bcGiftList');
+    list.innerHTML = '';
+    if (!bcGifts.length) { list.appendChild(el('div', { class: 'muted' }, '담은 선물이 없습니다.')); return; }
+    bcGifts.forEach((g, i) => {
+        const card = el('div', { class: 'card' });
+        card.appendChild(el('div', { class: 'card-head' },
+            el('div', { class: 'card-title' }, bcGiftLabel(g)),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { bcGifts.splice(i, 1); renderBcGifts(); } }, '삭제')
+        ));
+        const row = el('div', { class: 'row' });
+        if (g.type === 'gold' || g.type === 'garnet') {
+            row.appendChild(el('div', null, el('label', null, '수량'),
+                el('input', { type: 'number', value: g.amount || 0, oninput: e => { g.amount = Number(e.target.value); } })));
+        } else if (g.type === 'item') {
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '아이템 (거래불가 가능)'),
+                el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickItem(it => { g.id = it.id; g.itemName = it.name; renderBcGifts(); }) }, g.itemName ? ('#' + g.id + ' ' + g.itemName) : '아이템 선택...')));
+            row.appendChild(el('div', null, el('label', null, '수량'),
+                el('input', { type: 'number', value: g.count || 1, oninput: e => { g.count = Number(e.target.value); } })));
+        } else if (g.type === 'card') {
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '캐릭터'),
+                el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickCard(c => { g.cardId = c.id; g.cardName = c.name; renderBcGifts(); }) }, g.cardName ? ('#' + g.cardId + ' ' + g.cardName) : '캐릭터 선택...')));
+            row.appendChild(el('div', null, el('label', null, '성급 (0=1성)'),
+                el('input', { type: 'number', min: 0, max: 10, value: g.star || 0, oninput: e => { g.star = Number(e.target.value); } })));
+            const sel = el('select', { onchange: e => { g.jobType = e.target.value; renderBcGifts(); } },
+                el('option', { value: '일반' }, '일반'), el('option', { value: '전직' }, '전직'));
+            sel.value = g.jobType || '일반';
+            row.appendChild(el('div', null, el('label', null, '종류'), sel));
+        } else if (g.type === 'equipment') {
+            const typeSel = el('select', { onchange: e => { g.equipType = e.target.value; g.id = undefined; g.equipName = ''; renderBcGifts(); } },
+                ...['weapon', 'armor', 'accessory', 'support'].map(t => el('option', { value: t }, EQUIP_TYPE_LABEL[t])));
+            typeSel.value = g.equipType || 'weapon';
+            row.appendChild(el('div', null, el('label', null, '부위'), typeSel));
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '장비'),
+                el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickEquipment(g.equipType || 'weapon', eq => { g.id = eq.id; g.equipName = eq.name; renderBcGifts(); }) }, g.equipName ? ('#' + g.id + ' ' + g.equipName) : '장비 선택...')));
+            row.appendChild(el('div', null, el('label', null, '강화 (+레벨)'),
+                el('input', { type: 'number', min: 0, value: g.level || 0, oninput: e => { g.level = Number(e.target.value); } })));
+            card.appendChild(row);
+            card.appendChild(el('div', { class: 'row' }, el('div', { style: 'flex:1' },
+                el('label', null, '고급 옵션 JSON (선택) — potential / rolled / soul / locked'),
+                el('textarea', { rows: 3, style: 'width:100%;font-family:monospace;font-size:12px', placeholder: '예) {"potential":{"rarity":"전설","options":[...]}}', value: g.advancedText || '', oninput: e => { g.advancedText = e.target.value; } }))));
+            list.appendChild(card);
+            return;
+        } else if (g.type === 'pet') {
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '펫'),
+                el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickPet(p => { g.id = p.id; g.petName = p.name; renderBcGifts(); }) }, g.petName ? ('#' + g.id + ' ' + g.petName) : '펫 선택...')));
+            row.appendChild(el('div', null, el('label', null, '레벨'),
+                el('input', { type: 'number', min: 0, value: g.level || 0, oninput: e => { g.level = Number(e.target.value); } })));
+        }
+        card.appendChild(row);
+        list.appendChild(card);
+    });
+}
+
+function bcAdd(type) {
+    if (bcGifts.length >= BC_MAX) return toast('선물은 최대 ' + BC_MAX + '개입니다.', false);
+    const g = { type };
+    if (type === 'equipment') g.equipType = 'weapon';
+    if (type === 'card') g.jobType = '일반';
+    bcGifts.push(g);
+    renderBcGifts();
+}
+
+$('#bcAddGold').onclick = () => bcAdd('gold');
+$('#bcAddGarnet').onclick = () => bcAdd('garnet');
+$('#bcAddItem').onclick = () => bcAdd('item');
+$('#bcAddCard').onclick = () => bcAdd('card');
+$('#bcAddEquip').onclick = () => bcAdd('equipment');
+$('#bcAddPet').onclick = () => bcAdd('pet');
+
+$('#bcSendBtn').onclick = async () => {
+    const subject = $('#bcSubject').value.trim();
+    const body = $('#bcBody').value.trim();
+    const gmName = $('#bcGmName').value.trim();
+    if (!subject && !body && !bcGifts.length) return toast('제목/내용 또는 선물을 입력하세요.', false);
+    const gifts = [];
+    for (const g of bcGifts) {
+        if (g.type === 'gold' || g.type === 'garnet') {
+            if (!(Number(g.amount) > 0)) return toast((g.type === 'gold' ? '골드' : '가넷') + ' 수량을 입력하세요.', false);
+            gifts.push({ type: g.type, amount: Number(g.amount) });
+        } else if (g.type === 'item') {
+            if (typeof g.id === 'undefined') return toast('아이템을 선택하세요.', false);
+            gifts.push({ type: 'item', id: g.id, count: Number(g.count || 0) });
+        } else if (g.type === 'card') {
+            if (typeof g.cardId === 'undefined') return toast('카드를 선택하세요.', false);
+            gifts.push({ type: 'card', cardId: g.cardId, star: Number(g.star || 0), jobType: g.jobType || '일반' });
+        } else if (g.type === 'pet') {
+            if (typeof g.id === 'undefined') return toast('펫을 선택하세요.', false);
+            gifts.push({ type: 'pet', id: g.id, level: Number(g.level || 0) });
+        } else if (g.type === 'equipment') {
+            if (typeof g.id === 'undefined') return toast('장비를 선택하세요.', false);
+            const spec = { type: 'equipment', equipType: g.equipType, id: g.id, level: Number(g.level || 0) };
+            if (g.advancedText && g.advancedText.trim()) {
+                try { spec.advanced = JSON.parse(g.advancedText); }
+                catch (err) { return toast('장비 고급 옵션 JSON 오류: ' + err.message, false); }
+            }
+            gifts.push(spec);
+        }
+    }
+    if (!confirm('모든 유저에게 메일을 발송합니다. 계속할까요?')) return;
+    $('#bcSendBtn').disabled = true;
+    $('#bcStatus').textContent = '발송 중...';
+    try {
+        const r = await api('/api/admin/mail/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, body, gmName, gifts }) });
+        toast('✅ ' + r.recipients + '명에게 발송 완료');
+        $('#bcStatus').textContent = r.recipients + '명 발송 완료';
+        bcGifts.length = 0;
+        $('#bcSubject').value = '';
+        $('#bcBody').value = '';
+        renderBcGifts();
+    } catch (e) { toast(e.message, false); $('#bcStatus').textContent = ''; }
+    finally { $('#bcSendBtn').disabled = false; }
+};
+
+renderBcGifts();

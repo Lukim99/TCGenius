@@ -236,6 +236,21 @@ server.get('/', async (req, res) => {
     return res.send(renderLogin());
 });
 
+server.get('/mail', async (req, res) => {
+    const sess = getSession(req);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    if (!sess || !sess.name) return res.redirect('/');
+    try {
+        const user = await rpgenius.getRPGUserByName(sess.name);
+        return res.send(renderUserDashboard(Object.assign({}, sess, {
+            admin: user ? !!user.isAdmin : !!sess.admin,
+            canPartyQuest: user ? !!user.canPartyQuest : !!sess.canPartyQuest
+        }), { initialPage: 'mail' }));
+    } catch (_) {
+        return res.send(renderUserDashboard(sess, { initialPage: 'mail' }));
+    }
+});
+
 server.get('/admin', (req, res) => {
     const sess = getSession(req);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -314,6 +329,102 @@ server.get('/api/profile/:name', requireUser, async (req, res) => {
         console.error('profile-by-name error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
+});
+
+// ===== 메일함 =====
+// 선물 표시객체에 아이콘 URL을 채운다(rpgenius 모듈엔 이미지 헬퍼가 없어 서버에서 후처리)
+function attachMailGiftIcons(g) {
+    if (!g || !g.type) return g;
+    if (g.type === 'gold') g.iconUrl = getItemImageUrl('화폐', '골드.png');
+    else if (g.type === 'garnet') g.iconUrl = getItemImageUrl('화폐', '가넷.png');
+    else if (g.type === 'item') {
+        const items = rpgenius.getDataCache('Item', []);
+        const a = getItemDisplayAssets(items[g.id]);
+        g.iconUrl = a.iconUrl; g.frameUrl = a.frameUrl;
+    } else if (g.type === 'equipment') {
+        const eq = rpgenius.getDataCache('Equipment', {});
+        const data = eq[g.equipType] && eq[g.equipType][g.equipId];
+        if (data) { g.iconUrl = getEquipmentIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
+        else g.frameUrl = getAuctionFrameUrl('equipment', g.rarity);
+    } else if (g.type === 'pet') {
+        const pets = rpgenius.getDataCache('Pet', []);
+        const data = pets[g.petId];
+        if (data) { g.iconUrl = getPetIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
+    } else if (g.type === 'card') {
+        g.iconUrl = getCardImageUrl({ id: g.cardId, star: g.star, type: g.cardType }, { prestige: false, jobPrestige: false });
+    }
+    return g;
+}
+
+server.get('/api/mail', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const box = await rpgenius.getMailbox(user, req.query.page);
+        (box.mails || []).forEach(m => { (m.gifts || []).forEach(attachMailGiftIcons); });
+        res.json(box);
+    } catch (e) { console.error('mail list error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.get('/api/mail/giftable', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const equipment = buildInventoryEquipment(user)
+            .filter(e => !e.equipped && !e.noTrade)
+            .map(e => ({ number: e.number, name: e.name, rarity: e.rarity, level: e.level, iconUrl: e.iconUrl, frameUrl: e.frameUrl }));
+        const pets = buildInventoryPets(user)
+            .filter(p => p.source === 'inventory' && p.tradeCount > 0 && !p.expired)
+            .map(p => ({ index: p.index, name: p.name, rarity: p.rarity, level: p.level, iconUrl: p.iconUrl, frameUrl: p.frameUrl }));
+        const items = buildInventoryItems(user)
+            .filter(i => !i.noTrade)
+            .map(i => ({ id: i.id, name: i.name, count: i.count, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
+        res.json({
+            gold: Number(user.gold || 0), garnet: Number(user.garnet || 0),
+            goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'),
+            feeRate: 0.05, feeMin: 5, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
+        });
+    } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.post('/api/mail/read', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (rpgenius.markMailRead(user, String((req.body && req.body.id) || ''))) await user.save();
+        res.json({ ok: true, unread: rpgenius.countUnreadMail(user) });
+    } catch (e) { console.error('mail read error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.post('/api/mail/claim', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = await rpgenius.claimMailGifts(user, String((req.body && req.body.id) || ''));
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true, lines: result.lines || [] });
+    } catch (e) { console.error('mail claim error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.post('/api/mail/send', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const b = req.body || {};
+        const result = await rpgenius.sendMail(user, b.to, b.subject, b.body, Array.isArray(b.gifts) ? b.gifts : []);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true, fee: result.fee || 0 });
+    } catch (e) { console.error('mail send error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+// 관리자 전체 발송 (선물 합성·무소모·무수수료·GM 태그)
+server.post('/api/admin/mail/broadcast', requireAdmin, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const result = await rpgenius.sendBroadcastMail({ subject: b.subject, body: b.body, gmName: b.gmName, gifts: Array.isArray(b.gifts) ? b.gifts : [] });
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true, recipients: result.recipients });
+    } catch (e) { console.error('mail broadcast error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
 
 server.get('/api/ranking', requireUser, async (req, res) => {
@@ -4839,9 +4950,11 @@ f2.addEventListener('submit',async e=>{
 </script></body></html>`;
 }
 
-function renderUserDashboard(sess) {
+function renderUserDashboard(sess, opts) {
+    const initialPage = opts && opts.initialPage ? opts.initialPage : '';
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
+<script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:dark}
@@ -5367,6 +5480,154 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .mc-note{margin-top:8px;font-size:12px;color:#94a3b8;line-height:1.5}
 .mc-note.warn{color:#fcd34d}
 .mc-empty{padding:22px;text-align:center;color:#64748b;font-size:14px}
+.page[data-page="mail"]{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-top:-26px;margin-bottom:-50px}
+.page[data-page="mail"].active{display:block}
+.mailbox{position:relative;display:flex;height:calc(100svh - 104px);background:#05070d;overflow:hidden}
+.mailbox-list-pane{width:380px;flex:0 0 380px;display:flex;flex-direction:column;border-right:1px solid rgba(148,163,184,.12);min-height:0}
+.mailbox-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 20px;border-bottom:1px solid rgba(148,163,184,.1)}
+.mailbox-head h2{margin:0;font-size:19px;color:#f8fafc}
+.mail-compose-btn{padding:9px 14px;font-size:13px;font-weight:800}
+.mailbox-list{flex:1;overflow-y:auto;min-height:0;padding:8px;display:flex;flex-direction:column;gap:4px}
+.mail-row{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border-radius:12px;cursor:pointer;transition:background .12s;border:1px solid transparent}
+.mail-row:hover{background:rgba(255,255,255,.03)}
+.mail-row.active{background:rgba(88,101,242,.14);border-color:rgba(99,102,241,.4)}
+.mail-row.unread .mail-row-subject{font-weight:800;color:#f8fafc}
+.mail-dot{width:9px;height:9px;border-radius:50%;background:#6366f1;flex:0 0 auto;margin-top:6px;box-shadow:0 0 8px rgba(99,102,241,.6)}
+.mail-dot.read{background:transparent;box-shadow:none}
+.mail-row-main{flex:1;min-width:0}
+.mail-row-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.mail-row-from{font-size:12px;color:#93c5fd;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-row-date{font-size:11px;color:#64748b;flex:0 0 auto}
+.mail-row-subject{font-size:14px;color:#cbd5e1;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-row-tags{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.mail-tag-gift{font-size:10px;font-weight:800;color:#fcd34d;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);border-radius:999px;padding:2px 8px}
+.mail-tag-gift.claimed{color:#86efac;background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.28)}
+.gm-tag{display:inline-block;font-size:10px;font-weight:900;color:#fff;background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:5px;padding:1px 5px;margin-right:5px;letter-spacing:.04em;vertical-align:middle;box-shadow:0 0 8px rgba(245,158,11,.35)}
+.mailbox-head h2{display:flex;align-items:center;gap:9px}
+.mail-head-svg{width:22px;height:22px;color:#818cf8}
+.mail-compose-btn{display:inline-flex;align-items:center;gap:7px}
+.mail-compose-btn svg{width:16px;height:16px}
+.mail-detail-empty svg{width:50px;height:50px;opacity:.45}
+.mail-tag-gift{display:inline-flex;align-items:center;gap:4px}
+.mtg-icon{width:12px;height:12px}
+.mail-gift-title svg{width:16px;height:16px}
+.mail-claimed-badge{display:flex;align-items:center;justify-content:center;gap:7px}
+.mail-claimed-badge svg{width:16px;height:16px}
+.mail-claim-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.mail-claim-btn svg{width:17px;height:17px}
+.mail-gift-thumb{position:relative;width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:9px;background:rgba(15,23,42,.5);overflow:hidden}
+.mg-frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+.mg-icon{position:relative;z-index:2;width:80%;height:80%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.mg-fallback{position:relative;z-index:2;color:#94a3b8}
+.mg-fallback svg{width:20px;height:20px}
+.mg-label{flex:1;min-width:0;word-break:break-word}
+/* 메일 전용 모달 */
+.mail-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.74);display:none;align-items:center;justify-content:center;z-index:90;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);padding:16px}
+.mail-modal-bg.active{display:flex}
+.mail-modal{width:min(420px,100%);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(13,17,30,.99),rgba(8,11,21,.99));border:1px solid rgba(255,255,255,.1);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03) inset;overflow:hidden;animation:mmPop .18s ease}
+.mail-modal.wide{width:min(520px,100%)}
+@keyframes mmPop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.mm-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 20px 14px;border-bottom:1px solid rgba(148,163,184,.12)}
+.mm-titlewrap{display:flex;align-items:center;gap:10px;min-width:0}
+.mm-headicon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:rgba(99,102,241,.15);color:#a5b4fc;flex:0 0 auto}
+.mm-headicon svg{width:18px;height:18px}
+.mm-title{font-size:17px;font-weight:800;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mm-close{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.05);border:none;color:#94a3b8;cursor:pointer;flex:0 0 auto}
+.mm-close:hover{background:rgba(255,255,255,.1);color:#e2e8f0}
+.mm-close svg{width:16px;height:16px}
+.mm-body{padding:18px 20px;overflow-y:auto}
+.mm-foot{display:flex;gap:10px;padding:14px 20px 18px;border-top:1px solid rgba(148,163,184,.1)}
+.mm-btn{flex:1;padding:12px;border-radius:11px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid transparent;font-family:inherit}
+.mm-btn.primary{background:linear-gradient(135deg,#5865f2,#4338ca);color:#fff;box-shadow:0 4px 14px rgba(88,101,242,.4)}
+.mm-btn.primary:hover{filter:brightness(1.08)}
+.mm-btn.primary:disabled{opacity:.5;cursor:default}
+.mm-btn.ghost{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#cbd5e1}
+.mm-btn.ghost:hover{background:rgba(255,255,255,.1)}
+.mm-btn.danger{background:#dc2626;color:#fff}
+.mm-message{font-size:14px;line-height:1.65;color:#cbd5e1}
+.mm-msg-text{white-space:pre-wrap}
+/* 메일 작성 모달 내부 */
+.mc-view{display:flex;flex-direction:column;gap:13px}
+.mc-field{display:flex;flex-direction:column;gap:6px}
+.mc-label{font-size:12px;font-weight:700;color:#94a3b8}
+.mc-input,.mc-textarea{width:100%;padding:11px 13px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(4,6,18,.85);color:#e5e7eb;font-size:14px;font-family:inherit;transition:border-color .15s}
+.mc-input:focus,.mc-textarea:focus{outline:none;border-color:rgba(99,102,241,.6);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.mc-textarea{min-height:110px;resize:vertical;line-height:1.6}
+.mc-section-label{font-size:12px;font-weight:800;color:#cbd5e1;margin-top:2px}
+.mc-add-row{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+.mc-add-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 4px;border-radius:12px;background:rgba(88,101,242,.1);border:1px solid rgba(99,102,241,.25);color:#c7d2fe;font-size:12px;font-weight:700;cursor:pointer;transition:transform .14s,background .14s,border-color .14s}
+.mc-add-btn:hover{background:rgba(88,101,242,.2);border-color:rgba(99,102,241,.5);transform:translateY(-1px)}
+.mc-add-ic{display:grid;place-items:center;height:22px}
+.mc-add-ic svg{width:20px;height:20px}
+.mc-add-img{width:22px;height:22px;object-fit:contain}
+.mc-gift-slots{display:flex;flex-direction:column;gap:7px}
+.mc-gift-empty{padding:16px;text-align:center;color:#64748b;font-size:13px;background:rgba(4,6,18,.4);border:1px dashed rgba(148,163,184,.2);border-radius:11px}
+.mc-gift-slot{display:flex;align-items:center;gap:10px;padding:9px 11px;background:rgba(4,6,18,.6);border:1px solid rgba(148,163,184,.14);border-radius:11px}
+.mc-slot-label{flex:1;min-width:0;font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-slot-remove{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgba(127,29,29,.4);border:none;color:#fecaca;cursor:pointer;flex:0 0 auto}
+.mc-slot-remove:hover{background:rgba(153,27,27,.6)}
+.mc-slot-remove svg{width:13px;height:13px}
+.mc-fee-note{font-size:12px;color:#fcd34d;line-height:1.5}
+.mc-error{font-size:13px;color:#fca5a5;font-weight:600}
+.mc-asset-head{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(4,6,18,.5);border-radius:12px}
+.mc-asset-img{width:42px;height:42px;object-fit:contain}
+.mc-asset-name{font-size:15px;font-weight:800;color:#f8fafc}
+.mc-asset-bal{font-size:12px;color:#94a3b8;margin-top:2px}
+.mc-preview{font-size:12px;color:#86efac;font-weight:600}
+.mc-pick-list{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow-y:auto}
+.mc-pick-row{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;background:rgba(4,6,18,.5);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:border-color .14s,background .14s}
+.mc-pick-row:hover{border-color:rgba(99,102,241,.5);background:rgba(88,101,242,.12)}
+.mc-pick-main{min-width:0;flex:1}
+.mc-pick-name{font-size:14px;font-weight:700;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-pick-sub{font-size:12px;color:#94a3b8;margin-top:2px}
+.mailbox-empty{padding:48px 20px;text-align:center;color:#64748b;font-size:14px;line-height:1.7}
+.mail-pager{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px;border-top:1px solid rgba(148,163,184,.1);flex:0 0 auto}
+.mail-pager button{padding:7px 13px;font-size:13px;background:rgba(88,101,242,.14);border:1px solid rgba(99,102,241,.3);color:#c7d2fe;border-radius:9px;font-weight:800;cursor:pointer}
+.mail-pager button:disabled{opacity:.35;cursor:default}
+.mail-pager .mail-page-info{font-size:13px;color:#94a3b8;font-variant-numeric:tabular-nums;font-weight:700}
+.mailbox-detail-pane{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;overflow-y:auto}
+.mail-back-btn{display:none;position:sticky;top:0;z-index:2;background:rgba(5,7,13,.94);border:none;border-bottom:1px solid rgba(148,163,184,.12);color:#93c5fd;font-size:14px;font-weight:700;padding:14px 18px;text-align:left;cursor:pointer}
+.mail-detail-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#475569}
+.mail-detail-empty span{font-size:46px;opacity:.55}
+.mail-detail-empty p{margin:0;font-size:14px}
+.mail-detail{padding:30px 34px;max-width:760px;width:100%;margin:0 auto}
+.mail-detail-subject{font-size:23px;font-weight:900;color:#f8fafc;line-height:1.32;margin:0 0 14px;word-break:break-word}
+.mail-detail-meta{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.14);font-size:13px;color:#94a3b8}
+.mail-detail-meta b{color:#93c5fd}
+.mail-detail-body{padding:22px 0;font-size:15px;line-height:1.78;color:#e2e8f0;white-space:pre-wrap;word-break:break-word;min-height:70px}
+.mail-gift-box{margin-top:4px;background:linear-gradient(135deg,rgba(12,16,34,.9),rgba(18,22,46,.6));border:1px solid rgba(251,191,36,.22);border-radius:16px;padding:18px}
+.mail-gift-title{font-size:13px;font-weight:800;color:#fcd34d;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.mail-gift-list{display:flex;flex-direction:column;gap:8px}
+.mail-gift-item{display:flex;align-items:center;gap:8px;padding:11px 14px;background:rgba(4,6,18,.6);border:1px solid rgba(148,163,184,.12);border-radius:11px;font-size:14px;color:#e2e8f0;font-weight:600}
+.mail-claim-btn{margin-top:14px;width:100%;padding:13px;font-size:15px;font-weight:800}
+.mail-claimed-badge{margin-top:14px;text-align:center;color:#86efac;font-size:14px;font-weight:800;padding:12px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.28);border-radius:12px}
+.mail-compose-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.mail-compose-field label{font-size:13px;font-weight:700;color:#94a3b8}
+.mail-compose-field input,.mail-compose-field textarea{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(4,6,18,.85);color:#e5e7eb;font-size:14px;font-family:inherit}
+.mail-compose-field textarea{min-height:110px;resize:vertical;line-height:1.6}
+.mail-gift-slots{display:flex;flex-direction:column;gap:7px;margin-bottom:8px}
+.mail-gift-slot{display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(4,6,18,.6);border:1px solid rgba(148,163,184,.14);border-radius:10px;font-size:13px}
+.mail-gift-slot .slot-label{flex:1;min-width:0;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail-gift-slot .slot-remove{background:rgba(127,29,29,.4);border:none;color:#fecaca;width:26px;height:26px;border-radius:7px;cursor:pointer;font-weight:900;flex:0 0 auto}
+.mail-gift-add{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}
+.mail-gift-add button{flex:1 0 auto;font-size:12px;padding:8px 10px;background:rgba(88,101,242,.14);border:1px solid rgba(99,102,241,.3);color:#c7d2fe;border-radius:9px;font-weight:700}
+.mail-fee-note{font-size:12px;color:#fcd34d;margin-top:2px;line-height:1.5}
+.group-tab,.bottom-tab{position:relative}
+.mail-badge{position:absolute;top:2px;right:0;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px rgba(5,6,12,.9)}
+.bottom-tab .mail-badge{top:-2px;right:8px}
+.subnav-tab{position:relative}
+.subnav-tab .mail-badge{top:-5px;right:-7px}
+@media(max-width:768px){
+  .page[data-page="mail"]{margin-top:-14px;margin-bottom:-30px}
+  .mailbox{height:calc(100svh - 92px)}
+  .mailbox-list-pane{width:100%;flex:1 1 auto;border-right:none}
+  .mailbox.show-detail .mailbox-list-pane{display:none}
+  .mailbox-detail-pane{display:none}
+  .mailbox.show-detail .mailbox-detail-pane{display:flex;position:absolute;inset:0;z-index:5;background:#05070d}
+  .mail-back-btn{display:block}
+  .mail-detail{padding:18px}
+  .mail-detail-subject{font-size:20px}
+}
 </style></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
@@ -5384,6 +5645,24 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
     <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
     <section class="panel" style="min-width:0"><h2 id="viewerTitle" style="margin:0 0 10px">인벤토리</h2><div class="inv-kind-tabs"><button class="view-btn inv-kind-tab" data-kind="items">인벤토리</button><button class="view-btn inv-kind-tab" data-kind="cards">캐릭터 카드</button><button class="view-btn inv-kind-tab" data-kind="equipment">보유 장비</button><button class="view-btn inv-kind-tab" data-kind="pet">보유 펫</button></div><div id="viewer" class="viewer" style="margin-top:14px"></div></section>
   </div>
+  <div class="page" data-page="mail">
+    <div class="mailbox" id="mailbox">
+      <div class="mailbox-list-pane">
+        <div class="mailbox-head">
+          <h2><svg class="mail-head-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>메일함</h2>
+          <button class="primary mail-compose-btn" id="mailComposeBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>메일 쓰기</button>
+        </div>
+        <div class="mailbox-list" id="mailList"></div>
+        <div class="mail-pager" id="mailPager" style="display:none"></div>
+      </div>
+      <div class="mailbox-detail-pane" id="mailDetailPane">
+        <button class="mail-back-btn" id="mailBackBtn">‹ 목록</button>
+        <div class="mail-detail-empty" id="mailDetailEmpty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><p>왼쪽에서 메일을 선택하세요.</p></div>
+        <div class="mail-detail" id="mailDetail" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+  <div class="mail-modal-bg" id="mailModalBg"><div class="mail-modal" id="mailModal"></div></div>
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>

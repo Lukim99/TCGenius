@@ -1,5 +1,5 @@
 ﻿const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +8,11 @@ const ragbot = require('./ragbot');
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
 const SID_TABLE_NAME = 'rpgenius_sid'; // senderId → accountId 매핑 (getRPGUserById 전체 스캔 제거용)
+const MAIL_TABLE_NAME = 'rpgenius_mail'; // 메일 본문/선물 저장 (user.mail에는 id+읽음여부만)
+const MAIL_GIFT_MAX = 5;                 // 메일당 최대 선물 슬롯
+const MAIL_READ_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 읽은 메일은 3일 뒤 삭제(선물 미수령 시 제외)
+const MAIL_GOLD_FEE_RATE = 0.05;         // 골드/가넷 선물 수수료
+const MAIL_GOLD_FEE_MIN = 5;             // 최소 수수료
 const DATA_TABLE_NAME = 'rpgenius_data';
 const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PointLogs', 'NameMatch'];
 const VIEWMORE = '\u200e'.repeat(500);
@@ -8130,6 +8135,7 @@ class RPGUser {
         this.maxCardLimit = 52;
         this.maxAccessory = 3;
         this.mail = [];
+        this.mailNotified = true; // 새 메일 도착 시 false → 다음 카톡 채팅에서 알림 후 true
         this.usedCoupons = [];
         this.shopPurchases = {};
         this.lastAttendanceDate = null;
@@ -8158,6 +8164,17 @@ class RPGUser {
         if (!Array.isArray(this.equipments.pet)) this.equipments.pet = [];
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
+        // 메일 엔트리 정규화: { id, read, readAt, claimed, createdAt, shared }
+        // shared=true: 전체발송(공유 레코드) → 청소 시 본문 레코드는 삭제하지 않고 엔트리만 제거
+        this.mail = this.mail.filter(m => m && m.id).map(m => ({
+            id: String(m.id),
+            read: !!m.read,
+            readAt: m.readAt ? Number(m.readAt) : null,
+            claimed: !!m.claimed,
+            createdAt: m.createdAt ? Number(m.createdAt) : 0,
+            shared: !!m.shared
+        }));
+        if (typeof this.mailNotified == 'undefined') this.mailNotified = true;
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
         if (!this.shopPurchases || typeof this.shopPurchases != 'object') this.shopPurchases = {};
         if (typeof this.lastAttendanceDate == 'undefined') this.lastAttendanceDate = null;
@@ -8635,6 +8652,377 @@ async function deleteSidMapping(senderId) {
     }
 }
 
+// ===== 메일함 (rpgenius_mail) =====
+// 메일 본문/선물은 rpgenius_mail 테이블(키 id)에 1건=1아이템으로 저장.
+// 수신자의 user.mail에는 { id, read, readAt, claimed }만 보관.
+function genMailId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+async function getMailRecord(id) {
+    try {
+        const res = await docClient.send(new GetCommand({ TableName: MAIL_TABLE_NAME, Key: { id: String(id) } }));
+        return res && res.Item ? res.Item : null;
+    } catch (e) {
+        console.error('[mail] get 실패 (' + id + '):', e.message);
+        return null;
+    }
+}
+
+async function putMailRecord(record) {
+    await docClient.send(new PutCommand({ TableName: MAIL_TABLE_NAME, Item: record }));
+}
+
+async function deleteMailRecord(id) {
+    try {
+        await docClient.send(new DeleteCommand({ TableName: MAIL_TABLE_NAME, Key: { id: String(id) } }));
+    } catch (e) {
+        console.error('[mail] delete 실패 (' + id + '):', e.message);
+    }
+}
+
+function mailGoldFee(amount) {
+    return Math.max(MAIL_GOLD_FEE_MIN, Math.floor(Number(amount || 0) * MAIL_GOLD_FEE_RATE));
+}
+
+// 선물 1개를 표시용 객체로 변환. 아이콘 URL은 server.js가 후처리로 채운다(이 모듈엔 이미지 헬퍼가 없음).
+function describeMailGift(gift) {
+    if (!gift || !gift.type) return null;
+    if (gift.type == 'gold') return { type: 'gold', amount: Number(gift.amount || 0), name: '골드', label: comma(gift.amount) + ' 골드' };
+    if (gift.type == 'garnet') return { type: 'garnet', amount: Number(gift.amount || 0), name: '가넷', label: comma(gift.amount) + ' 가넷' };
+    if (gift.type == 'equipment') {
+        const eq = gift.equip || {};
+        const data = getEquipmentData(eq.type, eq.id);
+        const name = data ? getEquipmentDisplayName(data, eq) : '장비';
+        const lvl = Number(eq.level || 0);
+        return { type: 'equipment', equipType: eq.type, equipId: Number(eq.id), rarity: data ? data.rarity : '', level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : '') };
+    }
+    if (gift.type == 'pet') {
+        const p = gift.pet || {};
+        const data = getPetData(p.id);
+        const lvl = Number(p.level || 0);
+        const name = data ? data.name : '펫';
+        return { type: 'pet', petId: Number(p.id), level: lvl, name, label: name + (lvl > 0 ? ' +' + lvl : '') };
+    }
+    if (gift.type == 'item') {
+        const items = getDataCache('Item', []);
+        const data = items[Number(gift.id)];
+        const name = data ? data.name : '아이템';
+        return { type: 'item', id: Number(gift.id), count: Number(gift.count || 0), name, label: name + ' x' + comma(gift.count) };
+    }
+    if (gift.type == 'card') {
+        const c = gift.card || {};
+        let label;
+        try { label = formatUserCard({ id: Number(c.id), star: Number(c.star || 0), type: c.type || '일반' }); }
+        catch (_) { label = '캐릭터 카드'; }
+        return { type: 'card', cardId: Number(c.id), star: Number(c.star || 0), cardType: c.type || '일반', name: label, label };
+    }
+    return null;
+}
+
+function serializeMail(record, entry) {
+    const gifts = Array.isArray(record.gifts) ? record.gifts : [];
+    const hasGifts = gifts.length > 0;
+    return {
+        id: record.id,
+        from: record.fromName || (record.gm ? 'GM' : '시스템'),
+        gm: !!record.gm,
+        subject: record.subject || '(제목 없음)',
+        body: record.body || '',
+        createdAt: Number(record.createdAt || 0),
+        read: !!entry.read,
+        hasGifts,
+        claimed: hasGifts ? !!entry.claimed : true,
+        gifts: gifts.map(describeMailGift).filter(Boolean)
+    };
+}
+
+const MAIL_PAGE_SIZE = 20;
+
+// 현재 페이지(최대 100키)만 BatchGet으로 본문 조회
+async function batchGetMailRecords(ids) {
+    const map = {};
+    let keys = [...new Set(ids.map(String))].map(id => ({ id }));
+    if (!keys.length) return map;
+    try {
+        // BatchGet은 한 번에 최대 100키. 페이지 크기(20)면 단일 요청이지만 UnprocessedKeys는 재시도.
+        while (keys.length) {
+            const res = await docClient.send(new BatchGetCommand({ RequestItems: { [MAIL_TABLE_NAME]: { Keys: keys } } }));
+            (res.Responses && res.Responses[MAIL_TABLE_NAME] || []).forEach(item => { map[item.id] = item; });
+            const un = res.UnprocessedKeys && res.UnprocessedKeys[MAIL_TABLE_NAME] && res.UnprocessedKeys[MAIL_TABLE_NAME].Keys;
+            keys = un && un.length ? un : [];
+        }
+    } catch (e) {
+        console.error('[mail] batchGet 실패:', e.message);
+    }
+    return map;
+}
+
+// 수신자 메일함 조회(서버 페이지네이션, 페이지당 20). 3일 지난(읽음+선물수령) 메일 lazy 청소.
+async function getMailbox(user, page) {
+    page = Math.max(1, Number(page) || 1);
+    const now = Date.now();
+    // 1) 청소: 읽음 + 3일 경과 + 수령완료 → 본문 삭제 (레코드 조회 없이 엔트리 필드만으로 판단)
+    const kept = [];
+    let changed = false;
+    for (const e of (Array.isArray(user.mail) ? user.mail : [])) {
+        if (e.read && e.readAt && (now - e.readAt) >= MAIL_READ_TTL_MS && e.claimed) {
+            if (!e.shared) await deleteMailRecord(e.id); // 공유(전체발송) 레코드는 다른 유저가 참조하므로 본문 삭제 금지
+            changed = true;
+            continue;
+        }
+        kept.push(e);
+    }
+    // 2) 최신순 정렬한 사본으로 페이지 산정 (저장 배열 순서는 유지)
+    const sorted = kept.slice().sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    const unread = sorted.filter(e => !e.read).length;
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / MAIL_PAGE_SIZE));
+    if (page > totalPages) page = totalPages;
+    const start = (page - 1) * MAIL_PAGE_SIZE;
+    const pageEntries = sorted.slice(start, start + MAIL_PAGE_SIZE);
+    // 3) 현재 페이지 본문만 BatchGet
+    const recordMap = await batchGetMailRecords(pageEntries.map(e => e.id));
+    const mails = [];
+    const goneIds = new Set();
+    pageEntries.forEach(e => {
+        const rec = recordMap[e.id];
+        if (!rec) { goneIds.add(e.id); changed = true; return; } // 본문 사라진 고아 엔트리 제거
+        mails.push(serializeMail(rec, e));
+    });
+    if (changed) { user.mail = kept.filter(e => !goneIds.has(e.id)); await user.save(); }
+    return { mails, unread, page, totalPages, total };
+}
+
+function countUnreadMail(user) {
+    return (Array.isArray(user.mail) ? user.mail : []).filter(m => !m.read).length;
+}
+
+function markMailRead(user, id) {
+    const e = (user.mail || []).find(m => m.id == id);
+    if (!e || e.read) return false;
+    e.read = true;
+    e.readAt = Date.now();
+    return true;
+}
+
+// 선물 수령: 메일의 선물을 수신자 인벤토리/재화로 지급
+async function claimMailGifts(user, id) {
+    const e = (user.mail || []).find(m => m.id == id);
+    if (!e) return { error: '메일을 찾을 수 없습니다.' };
+    if (e.claimed) return { error: '이미 선물을 수령했습니다.' };
+    const rec = await getMailRecord(id);
+    if (!rec) return { error: '메일 정보를 불러올 수 없습니다.' };
+    const gifts = Array.isArray(rec.gifts) ? rec.gifts : [];
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+    if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+    if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
+    const lines = [];
+    gifts.forEach(g => {
+        if (g.type == 'gold') { user.gold = Number(user.gold || 0) + Number(g.amount || 0); lines.push('🪙 ' + comma(g.amount) + ' 골드'); }
+        else if (g.type == 'garnet') { user.garnet = Number(user.garnet || 0) + Number(g.amount || 0); lines.push('💠 ' + comma(g.amount) + ' 가넷'); }
+        else if (g.type == 'equipment' && g.equip) { user.inventory.equipment.push(JSON.parse(JSON.stringify(g.equip))); const d = describeMailGift(g); lines.push(d ? d.label : '장비'); }
+        else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
+        else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
+        else if (g.type == 'item') { addInventoryItem(user, Number(g.id), Number(g.count || 0)); const d = describeMailGift(g); lines.push(d ? d.label : '아이템'); }
+    });
+    e.claimed = true;
+    if (!e.read) { e.read = true; e.readAt = Date.now(); }
+    await user.save();
+    return { ok: true, lines };
+}
+
+// 메일 발송(플레이어 간). giftSpecs: 웹에서 전달된 선물 지정 배열.
+//   {type:'gold'|'garnet', amount} | {type:'equipment', number} | {type:'pet', index} | {type:'item', id, count}
+async function sendMail(sender, recipientName, subject, body, giftSpecs) {
+    const toName = String(recipientName || '').trim();
+    if (!toName) return { error: '받는 사람을 입력해주세요.' };
+    if (toName == sender.name) return { error: '자신에게는 메일을 보낼 수 없습니다.' };
+    const recipient = await getRPGUserByName(toName);
+    if (!recipient) return { error: '존재하지 않는 닉네임입니다.' };
+    subject = String(subject || '').trim().slice(0, 50) || '(제목 없음)';
+    body = String(body || '').trim().slice(0, 1000);
+    const specs = Array.isArray(giftSpecs) ? giftSpecs : [];
+    if (specs.length > MAIL_GIFT_MAX) return { error: '선물은 최대 ' + MAIL_GIFT_MAX + '개까지 담을 수 있습니다.' };
+
+    // 1차: 비변형 검증 + 대상 수집 (중복 선택은 인덱스 꼬임/복제 위험 → 거부)
+    const resolved = [];
+    let feeTotal = 0;
+    const usedEquip = new Set();
+    const usedPet = new Set();
+    const itemReq = {};
+    for (const spec of specs) {
+        if (spec.type == 'gold' || spec.type == 'garnet') {
+            const amount = Math.floor(Number(spec.amount || 0));
+            if (!(amount > 0)) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 수량이 올바르지 않습니다.' };
+            const balance = Number((spec.type == 'gold' ? sender.gold : sender.garnet) || 0);
+            if (balance < amount) return { error: (spec.type == 'gold' ? '골드' : '가넷') + '가 부족합니다.' };
+            const fee = mailGoldFee(amount);
+            const recv = amount - fee;
+            if (recv < 1) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
+            feeTotal += fee;
+            resolved.push({ kind: spec.type, amount, recv });
+        } else if (spec.type == 'equipment') {
+            const number = Number(spec.number);
+            if (usedEquip.has(number)) return { error: '같은 장비를 중복으로 담을 수 없습니다.' };
+            usedEquip.add(number);
+            const selected = getEquipmentByNumber(sender, number);
+            if (!selected) return { error: '존재하지 않는 장비입니다.' };
+            if (selected.source == 'equipped') return { error: '장착 중인 장비는 보낼 수 없습니다.' };
+            const reason = getEquipmentTradeBlockReason(selected.equip, sender.name);
+            if (reason) return { error: reason };
+            resolved.push({ kind: 'equipment', selected });
+        } else if (spec.type == 'pet') {
+            const index = Number(spec.index);
+            if (usedPet.has(index)) return { error: '같은 펫을 중복으로 담을 수 없습니다.' };
+            usedPet.add(index);
+            const pet = sender.inventory && Array.isArray(sender.inventory.pet) ? sender.inventory.pet[index] : null;
+            if (!pet) return { error: '존재하지 않는 펫입니다.' };
+            if (!isPetTradable(pet)) return { error: '거래 가능 횟수가 없는 펫입니다.' };
+            resolved.push({ kind: 'pet', index, pet });
+        } else if (spec.type == 'item') {
+            const items = getDataCache('Item', []);
+            const id = Number(spec.id);
+            const data = items[id];
+            if (!data) return { error: '존재하지 않는 아이템입니다.' };
+            if (data.no_trade) return { error: '거래 불가 아이템입니다: ' + data.name };
+            const count = Math.floor(Number(spec.count || 0));
+            if (!(count > 0)) return { error: '아이템 수량이 올바르지 않습니다.' };
+            itemReq[id] = (itemReq[id] || 0) + count; // 같은 아이템 여러 슬롯 누적 검증
+            if (getInventoryItemCount(sender, id) < itemReq[id]) return { error: '보유한 아이템이 부족합니다: ' + data.name };
+            resolved.push({ kind: 'item', id, count });
+        } else {
+            return { error: '지원하지 않는 선물 종류입니다.' };
+        }
+    }
+
+    // 2차: 실제 차감 + 선물 객체 생성 (역순 splice로 인덱스 안정)
+    const gifts = [];
+    const equipIndices = [];
+    const petIndices = [];
+    resolved.forEach(r => {
+        if (r.kind == 'gold') { sender.gold = Number(sender.gold || 0) - r.amount; gifts.push({ type: 'gold', amount: r.recv }); }
+        else if (r.kind == 'garnet') { sender.garnet = Number(sender.garnet || 0) - r.amount; gifts.push({ type: 'garnet', amount: r.recv }); }
+        else if (r.kind == 'equipment') {
+            const idx = sender.inventory.equipment.indexOf(r.selected.equip);
+            const copy = cloneEquipmentInstance(r.selected.equip, r.selected.type);
+            markEquipmentTraded(copy);
+            if (idx >= 0) equipIndices.push(idx);
+            gifts.push({ type: 'equipment', equip: copy });
+        } else if (r.kind == 'pet') {
+            const copy = clonePetInstance(r.pet);
+            markPetTraded(copy);
+            petIndices.push(r.index);
+            gifts.push({ type: 'pet', pet: copy });
+        } else if (r.kind == 'item') {
+            removeInventoryItem(sender, r.id, r.count);
+            gifts.push({ type: 'item', id: r.id, count: r.count });
+        }
+    });
+    equipIndices.sort((a, b) => b - a).forEach(i => sender.inventory.equipment.splice(i, 1));
+    petIndices.sort((a, b) => b - a).forEach(i => sender.inventory.pet.splice(i, 1));
+
+    const record = {
+        id: genMailId(),
+        fromName: sender.name,
+        toName: recipient.name,
+        subject,
+        body,
+        gifts,
+        createdAt: Date.now()
+    };
+    await putMailRecord(record);
+    if (!Array.isArray(recipient.mail)) recipient.mail = [];
+    recipient.mail.push({ id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt });
+    recipient.mailNotified = false;
+    await recipient.save();
+    await sender.save();
+    return { ok: true, mailId: record.id, fee: feeTotal };
+}
+
+const BROADCAST_GIFT_MAX = 10;
+
+// 관리자 전체 발송: 선물을 합성(인벤토리 무소모·수수료 없음)해 단일 공유 레코드로 만들고 모든 유저에게 배포.
+// giftSpecs:
+//   {type:'gold'|'garnet', amount}
+//   {type:'item', id, count}                 // 거래불가 아이템도 가능
+//   {type:'card', cardId, star, jobType}     // jobType==='전직'이면 전직 카드
+//   {type:'equipment', equipType, id, level, advanced:{potential,rolled,soul,locked}}
+//   {type:'pet', id, level}
+async function sendBroadcastMail(opts) {
+    opts = opts || {};
+    const subject = String(opts.subject || '').trim().slice(0, 50) || '(제목 없음)';
+    const body = String(opts.body || '').trim().slice(0, 1000);
+    const gmName = String(opts.gmName || '').trim().slice(0, 20) || '운영자';
+    const specs = Array.isArray(opts.gifts) ? opts.gifts : [];
+    if (specs.length > BROADCAST_GIFT_MAX) return { error: '선물은 최대 ' + BROADCAST_GIFT_MAX + '개까지 담을 수 있습니다.' };
+
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const items = getDataCache('Item', []);
+    const gifts = [];
+    for (const spec of specs) {
+        if (spec.type == 'gold' || spec.type == 'garnet') {
+            const amount = Math.floor(Number(spec.amount || 0));
+            if (!(amount > 0)) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 수량이 올바르지 않습니다.' };
+            gifts.push({ type: spec.type, amount });
+        } else if (spec.type == 'item') {
+            const id = Number(spec.id);
+            if (!items[id]) return { error: '존재하지 않는 아이템입니다. (id ' + spec.id + ')' };
+            const count = Math.floor(Number(spec.count || 0));
+            if (!(count > 0)) return { error: '아이템 수량이 올바르지 않습니다.' };
+            gifts.push({ type: 'item', id, count });
+        } else if (spec.type == 'card') {
+            const id = Number(spec.cardId);
+            const data = characterCards[id];
+            if (!data) return { error: '존재하지 않는 캐릭터 카드입니다. (id ' + spec.cardId + ')' };
+            const isJob = spec.jobType == '전직';
+            if (isJob && !data.class) return { error: data.name + ' 카드는 전직이 없습니다.' };
+            const star = Math.max(0, Math.min(10, Math.floor(Number(spec.star || 0))));
+            gifts.push({ type: 'card', card: { id, star, type: isJob ? '전직' : '일반' } });
+        } else if (spec.type == 'equipment') {
+            const equipType = String(spec.equipType || '');
+            const id = Number(spec.id);
+            if (!getEquipmentData(equipType, id)) return { error: '존재하지 않는 장비입니다.' };
+            const equip = { type: equipType, id, level: Math.max(0, Math.floor(Number(spec.level || 0))) };
+            if (spec.advanced && typeof spec.advanced == 'object') {
+                ['potential', 'rolled', 'soul', 'locked'].forEach(k => { if (typeof spec.advanced[k] != 'undefined') equip[k] = spec.advanced[k]; });
+            }
+            gifts.push({ type: 'equipment', equip });
+        } else if (spec.type == 'pet') {
+            const id = Number(spec.id);
+            if (!getPetData(id)) return { error: '존재하지 않는 펫입니다.' };
+            gifts.push({ type: 'pet', pet: { id, level: Math.max(0, Math.floor(Number(spec.level || 0))), tradeCount: PET_TRADE_DEFAULT_COUNT } });
+        } else {
+            return { error: '지원하지 않는 선물 종류입니다.' };
+        }
+    }
+
+    const record = { id: genMailId(), gm: true, fromName: gmName, subject, body, gifts, createdAt: Date.now(), broadcast: true };
+    await putMailRecord(record);
+
+    const users = await getAllRPGUsers();
+    let count = 0;
+    for (const u of users) {
+        if (!Array.isArray(u.mail)) u.mail = [];
+        u.mail.push({ id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt, shared: true });
+        u.mailNotified = false;
+        try { await u.save(); count++; } catch (e) { console.error('[mail] broadcast 저장 실패 (' + u.name + '):', e.message); }
+    }
+    return { ok: true, recipients: count, mailId: record.id };
+}
+
+// 카톡 채팅 시 미알림 메일이 있으면 1회 알림
+async function maybeNotifyMail(user, reply) {
+    if (!user || user.mailNotified) return;
+    const unread = countUnreadMail(user);
+    if (unread > 0) {
+        reply('✉️ ' + user.name + '님에게 메일이 ' + unread + '건 도착했습니다!\n\n웹버전에서 확인해주세요.\nhttps://rpgenius.kro.kr/mail');
+    }
+    user.mailNotified = true;
+    await user.save();
+}
+
 // senderId로 유저 조회.
 // 진실의 원천은 user.logged_in(배열, GSI 키로 못 씀). 매핑(senderId→accountId)을 우선 사용하고,
 // 매핑이 아직 없는(마이그레이션 전) senderId는 레거시 전체 스캔으로 찾은 뒤 매핑을 자가 백필한다.
@@ -8836,6 +9224,12 @@ async function handleRPGCommand(data, channel) {
         }
         return true;
     }
+
+    // 로그인된 유저가 채팅하면 미알림 메일 1회 알림
+    try {
+        const mailUser = await getRPGUserById(senderId);
+        if (mailUser) await maybeNotifyMail(mailUser, reply);
+    } catch (_) { }
 
     if (args[0] == '등록') {
         const nickname = cmd.substr(cmd.split(' ')[0].length + 4).trim();
@@ -9937,6 +10331,14 @@ module.exports = {
     getRPGUserById,
     getRPGUserByName,
     getRPGUserByCode,
+    getMailbox,
+    countUnreadMail,
+    markMailRead,
+    claimMailGifts,
+    sendMail,
+    sendBroadcastMail,
+    MAIL_GIFT_MAX,
+    mailGoldFee,
     getAllRPGUsers,
     getMaxExpForLevel,
     onChat,

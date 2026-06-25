@@ -98,7 +98,8 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
@@ -112,7 +113,7 @@ const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 // 펀치기계 탭: 지금은 관리자에게만, 이벤트 종료(7/10 23:59) 이후 모든 유저에게 노출.
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
-    { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory'] },
+    { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', ...(PUNCH_VISIBLE ? ['펀치기계'] : []), 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
@@ -158,6 +159,7 @@ function buildSubNav(group) {
         el('button', { class: 'subnav-tab' + (pageId === activePage ? ' active' : ''), 'data-page': pageId,
             onclick: () => navigatePage(pageId) }, PAGE_LABELS[pageId] || pageId)
     ));
+    updateMailBadge();
 }
 
 function activateGroup(groupId) {
@@ -183,6 +185,7 @@ function navigatePage(pageId) {
         updateInventoryBanner();
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
+    if (pageId === 'mail') loadMail();
     if (pageId === 'event') loadEventDice();
     if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
@@ -4550,14 +4553,375 @@ if ($('#patchSubmit')) $('#patchSubmit').onclick = async () => {
     }
 };
 
+// ===== 메일함 =====
+function mailRelTime(ts) {
+    const diff = Date.now() - Number(ts || 0);
+    if (diff < 60000) return '방금';
+    if (diff < 3600000) return Math.floor(diff / 60000) + '분 전';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + '시간 전';
+    const d = new Date(Number(ts));
+    return (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+}
+
+// ----- 메일 전용 아이콘 / 모달 인프라 -----
+const MAIL_SVG = {
+    gift: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>`,
+    item: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`,
+    equipment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg>`,
+    pet: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+    close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    pencil: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>`
+};
+function mailSvg(name, cls) { const n = svgIcon(MAIL_SVG[name]); if (n && cls) n.setAttribute('class', cls); return n; }
+
+function mailModalClose() { const bg = $('#mailModalBg'); if (bg) bg.classList.remove('active'); const m = $('#mailModal'); if (m) m.replaceChildren(); }
+if ($('#mailModalBg')) $('#mailModalBg').onclick = e => { if (e.target === $('#mailModalBg')) mailModalClose(); };
+
+function mailModalOpen(contentNode, opts) {
+    opts = opts || {};
+    const modal = $('#mailModal');
+    modal.className = 'mail-modal' + (opts.wide ? ' wide' : '');
+    const parts = [];
+    if (opts.title) parts.push(el('div', { class: 'mm-head' },
+        el('div', { class: 'mm-titlewrap' },
+            opts.icon ? el('span', { class: 'mm-headicon' }, mailSvg(opts.icon)) : null,
+            el('div', { class: 'mm-title' }, opts.title)),
+        el('button', { class: 'mm-close', type: 'button', onclick: mailModalClose }, mailSvg('close'))
+    ));
+    parts.push(el('div', { class: 'mm-body' }, contentNode));
+    if (opts.footer && opts.footer.length) parts.push(el('div', { class: 'mm-foot' }, ...opts.footer));
+    modal.replaceChildren(...parts);
+    $('#mailModalBg').classList.add('active');
+}
+
+function mailConfirm(opts) {
+    opts = opts || {};
+    return new Promise(resolve => {
+        const cancel = el('button', { class: 'mm-btn ghost', type: 'button', onclick: () => { mailModalClose(); resolve(false); } }, opts.cancelText || '취소');
+        const ok = el('button', { class: 'mm-btn ' + (opts.danger ? 'danger' : 'primary'), type: 'button', onclick: () => { mailModalClose(); resolve(true); } }, opts.confirmText || '확인');
+        mailModalOpen(el('div', { class: 'mm-message' }, opts.message || ''), { title: opts.title || '확인', icon: opts.icon, footer: [cancel, ok] });
+    });
+}
+
+function mailInfo(opts) {
+    opts = opts || {};
+    return new Promise(resolve => {
+        const ok = el('button', { class: 'mm-btn primary', type: 'button', onclick: () => { mailModalClose(); resolve(); } }, opts.confirmText || '확인');
+        const body = el('div', { class: 'mm-message' });
+        if (opts.message) body.appendChild(el('div', { class: 'mm-msg-text' }, opts.message));
+        if (opts.extra) body.appendChild(opts.extra);
+        mailModalOpen(body, { title: opts.title || '알림', icon: opts.icon, footer: [ok] });
+    });
+}
+
+// 선물 아이콘 썸네일 (frame + icon, 삽니다 모달 스타일)
+function mailGiftThumb(g) {
+    const wrap = el('div', { class: 'mail-gift-thumb' });
+    if (g.frameUrl) wrap.appendChild(el('img', { class: 'mg-frame', src: g.frameUrl, alt: '' }));
+    if (g.iconUrl) wrap.appendChild(el('img', { class: 'mg-icon', src: g.iconUrl, alt: '', onerror: e => e.currentTarget.remove() }));
+    else if (!g.frameUrl) wrap.appendChild(el('span', { class: 'mg-fallback' }, mailSvg(g.type === 'equipment' ? 'equipment' : g.type === 'pet' ? 'pet' : g.type === 'card' ? 'gift' : 'item')));
+    return wrap;
+}
+function mailGiftRow(g) { return el('div', { class: 'mail-gift-item' }, mailGiftThumb(g), el('span', { class: 'mg-label' }, g.label)); }
+
+function updateMailBadge() {
+    document.querySelectorAll('.mail-badge').forEach(b => b.remove());
+    const n = mailState.unread;
+    if (!n || n <= 0) return;
+    const label = n > 99 ? '99+' : String(n);
+    $$('.group-tab[data-group="me"], .bottom-tab[data-group="me"]').forEach(t => t.appendChild(el('span', { class: 'mail-badge' }, label)));
+    $$('.subnav-tab[data-page="mail"]').forEach(t => t.appendChild(el('span', { class: 'mail-badge' }, label)));
+}
+
+function renderMailList() {
+    const listEl = $('#mailList');
+    if (!listEl) return;
+    if (!mailState.mails.length) {
+        listEl.replaceChildren(el('div', { class: 'mailbox-empty' }, '받은 메일이 없습니다.'));
+        return;
+    }
+    listEl.replaceChildren(...mailState.mails.map(m => {
+        const tags = [];
+        if (m.hasGifts) tags.push(el('span', { class: 'mail-tag-gift' + (m.claimed ? ' claimed' : '') }, mailSvg(m.claimed ? 'check' : 'gift', 'mtg-icon'), m.claimed ? '수령완료' : '선물 ' + m.gifts.length));
+        return el('div', { class: 'mail-row' + (m.read ? '' : ' unread') + (m.id === mailState.selectedId ? ' active' : ''), onclick: () => openMailDetail(m.id) },
+            el('span', { class: 'mail-dot' + (m.read ? ' read' : '') }),
+            el('div', { class: 'mail-row-main' },
+                el('div', { class: 'mail-row-top' },
+                    el('span', { class: 'mail-row-from' }, m.gm ? el('span', { class: 'gm-tag' }, 'GM') : null, m.from),
+                    el('span', { class: 'mail-row-date' }, mailRelTime(m.createdAt))),
+                el('div', { class: 'mail-row-subject' }, m.subject),
+                tags.length ? el('div', { class: 'mail-row-tags' }, ...tags) : null
+            )
+        );
+    }));
+}
+
+function renderMailDetail(m) {
+    const children = [
+        el('h2', { class: 'mail-detail-subject' }, m.subject),
+        el('div', { class: 'mail-detail-meta' },
+            el('span', null, '보낸 사람'), el('b', null, m.gm ? el('span', { class: 'gm-tag' }, 'GM') : null, m.from),
+            el('span', { style: 'margin-left:auto' }, new Date(m.createdAt).toLocaleString('ko-KR'))),
+        el('div', { class: 'mail-detail-body' }, m.body || '(내용 없음)')
+    ];
+    if (m.hasGifts) {
+        const giftBox = el('div', { class: 'mail-gift-box' },
+            el('div', { class: 'mail-gift-title' }, mailSvg('gift'), '첨부된 선물'),
+            el('div', { class: 'mail-gift-list' }, ...m.gifts.map(mailGiftRow))
+        );
+        if (m.claimed) {
+            giftBox.appendChild(el('div', { class: 'mail-claimed-badge' }, mailSvg('check'), '수령 완료'));
+        } else {
+            giftBox.appendChild(el('button', { class: 'primary mail-claim-btn', type: 'button', onclick: () => claimMail(m.id) }, mailSvg('gift'), '선물 받기'));
+        }
+        children.push(giftBox);
+    }
+    $('#mailDetail').replaceChildren(...children);
+}
+
+async function openMailDetail(id) {
+    const m = mailState.mails.find(x => x.id === id);
+    if (!m) return;
+    mailState.selectedId = id;
+    $('#mailbox').classList.add('show-detail');
+    $('#mailDetailEmpty').style.display = 'none';
+    $('#mailDetail').style.display = '';
+    renderMailDetail(m);
+    renderMailList();
+    if (!m.read) {
+        m.read = true;
+        mailState.unread = Math.max(0, mailState.unread - 1);
+        updateMailBadge();
+        renderMailList();
+        try { await postApi('/api/mail/read', { id }); } catch (_) { }
+    }
+}
+
+async function claimMail(id) {
+    const m = mailState.mails.find(x => x.id === id);
+    if (!m) return;
+    const ok = await mailConfirm({ title: '선물 받기', icon: 'gift', message: '첨부된 선물을 모두 수령하시겠습니까?', confirmText: '받기' });
+    if (!ok) return;
+    try {
+        await postApi('/api/mail/claim', { id });
+        m.claimed = true;
+        renderMailDetail(m);
+        renderMailList();
+        await mailInfo({ title: '수령 완료', icon: 'check', message: '선물을 수령했습니다.', extra: el('div', { class: 'mail-gift-list', style: 'margin-top:12px' }, ...m.gifts.map(mailGiftRow)) });
+    } catch (e) { mailInfo({ title: '오류', message: e.message }); }
+}
+
+function renderMailPager() {
+    const pager = $('#mailPager');
+    if (!pager) return;
+    if (mailState.totalPages <= 1) { pager.style.display = 'none'; pager.replaceChildren(); return; }
+    pager.style.display = '';
+    pager.replaceChildren(
+        el('button', { disabled: mailState.page <= 1, onclick: () => loadMail(mailState.page - 1) }, '‹ 이전'),
+        el('span', { class: 'mail-page-info' }, mailState.page + ' / ' + mailState.totalPages),
+        el('button', { disabled: mailState.page >= mailState.totalPages, onclick: () => loadMail(mailState.page + 1) }, '다음 ›')
+    );
+}
+
+async function loadMail(page) {
+    const listEl = $('#mailList');
+    if (listEl) listEl.replaceChildren(el('div', { class: 'mailbox-empty' }, '불러오는 중...'));
+    const composeBtn = $('#mailComposeBtn');
+    if (composeBtn) composeBtn.onclick = openMailCompose;
+    const backBtn = $('#mailBackBtn');
+    if (backBtn) backBtn.onclick = () => { mailState.selectedId = null; $('#mailbox').classList.remove('show-detail'); renderMailList(); };
+    try {
+        const box = await api('/api/mail?page=' + (Number(page) || 1));
+        mailState.mails = box.mails || [];
+        mailState.unread = box.unread || 0;
+        mailState.page = box.page || 1;
+        mailState.totalPages = box.totalPages || 1;
+        renderMailList();
+        renderMailPager();
+        updateMailBadge();
+        if (mailState.selectedId && mailState.mails.some(m => m.id === mailState.selectedId)) {
+            openMailDetail(mailState.selectedId);
+        } else if (!mailState.selectedId) {
+            $('#mailbox').classList.remove('show-detail');
+            $('#mailDetail').style.display = 'none';
+            $('#mailDetailEmpty').style.display = '';
+        }
+    } catch (e) {
+        if (listEl) listEl.replaceChildren(el('div', { class: 'mailbox-empty err' }, e.message));
+    }
+}
+
+async function refreshMailBadge() {
+    try {
+        const box = await api('/api/mail?page=1');
+        mailState.unread = box.unread || 0;
+        updateMailBadge();
+    } catch (_) { }
+}
+
+// ----- 메일 작성 (전용 모던 모달) -----
+async function openMailCompose() {
+    let giftable;
+    try { giftable = await api('/api/mail/giftable'); } catch (e) { return mailInfo({ title: '오류', message: e.message }); }
+    const gifts = [];
+    const toInput = el('input', { class: 'mc-input', placeholder: '받는 사람 닉네임', maxLength: 10 });
+    const subjectInput = el('input', { class: 'mc-input', placeholder: '제목 (최대 50자)', maxLength: 50 });
+    const bodyInput = el('textarea', { class: 'mc-textarea', placeholder: '내용을 입력하세요...', maxLength: 1000 });
+    const slotsEl = el('div', { class: 'mc-gift-slots' });
+    const feeNote = el('div', { class: 'mc-fee-note' });
+    const composeErr = el('div', { class: 'mc-error' });
+
+    function giftDisplay(g) {
+        if (g.type === 'gold') return { type: 'gold', iconUrl: giftable.goldIconUrl, label: comma(g.amount) + ' 골드' };
+        if (g.type === 'garnet') return { type: 'garnet', iconUrl: giftable.garnetIconUrl, label: comma(g.amount) + ' 가넷' };
+        return { type: g.type, iconUrl: g._icon, frameUrl: g._frame, label: g._label };
+    }
+
+    function renderSlots() {
+        if (!gifts.length) slotsEl.replaceChildren(el('div', { class: 'mc-gift-empty' }, '담은 선물이 없습니다.'));
+        else slotsEl.replaceChildren(...gifts.map((g, i) => {
+            const d = giftDisplay(g);
+            return el('div', { class: 'mc-gift-slot' },
+                mailGiftThumb(d),
+                el('span', { class: 'mc-slot-label' }, d.label),
+                el('button', { class: 'mc-slot-remove', type: 'button', onclick: () => { gifts.splice(i, 1); renderSlots(); } }, mailSvg('close')));
+        }));
+        let fee = 0;
+        gifts.forEach(g => { if (g.type === 'gold' || g.type === 'garnet') fee += Math.max(giftable.feeMin, Math.floor(g.amount * giftable.feeRate)); });
+        feeNote.textContent = fee > 0 ? '골드/가넷 수수료 합계 ' + comma(fee) + ' · 받는 사람은 수수료를 뺀 금액을 받습니다' : '';
+    }
+
+    function canAdd() {
+        if (gifts.length >= giftable.maxGifts) { composeErr.textContent = '선물은 최대 ' + giftable.maxGifts + '개까지 담을 수 있습니다.'; return false; }
+        composeErr.textContent = '';
+        return true;
+    }
+
+    const field = (label, input) => el('div', { class: 'mc-field' }, el('label', { class: 'mc-label' }, label), input);
+    const addBtn = (type, label, iconNode) => el('button', { class: 'mc-add-btn', type: 'button', onclick: () => { if (!canAdd()) return; if (type === 'gold' || type === 'garnet') viewCurrency(type); else viewPicker(type); } }, el('span', { class: 'mc-add-ic' }, iconNode), el('span', null, label));
+
+    function viewCompose() {
+        renderSlots();
+        const content = el('div', { class: 'mc-view' },
+            field('받는 사람', toInput),
+            field('제목', subjectInput),
+            field('내용', bodyInput),
+            el('div', { class: 'mc-section-label' }, '선물 (최대 ' + giftable.maxGifts + '개)'),
+            el('div', { class: 'mc-add-row' },
+                addBtn('gold', '골드', giftable.goldIconUrl ? el('img', { class: 'mc-add-img', src: giftable.goldIconUrl, alt: '' }) : mailSvg('item')),
+                addBtn('garnet', '가넷', giftable.garnetIconUrl ? el('img', { class: 'mc-add-img', src: giftable.garnetIconUrl, alt: '' }) : mailSvg('item')),
+                addBtn('equipment', '장비', mailSvg('equipment')),
+                addBtn('pet', '펫', mailSvg('pet')),
+                addBtn('item', '아이템', mailSvg('item'))),
+            slotsEl, feeNote, composeErr
+        );
+        const cancel = el('button', { class: 'mm-btn ghost', type: 'button', onclick: mailModalClose }, '닫기');
+        const send = el('button', { class: 'mm-btn primary', type: 'button', onclick: () => doSend(send) }, '보내기');
+        mailModalOpen(content, { title: '메일 쓰기', icon: 'pencil', wide: true, footer: [cancel, send] });
+    }
+
+    function viewCurrency(type) {
+        const name = type === 'gold' ? '골드' : '가넷';
+        const max = type === 'gold' ? giftable.gold : giftable.garnet;
+        const iconUrl = type === 'gold' ? giftable.goldIconUrl : giftable.garnetIconUrl;
+        const input = el('input', { class: 'mc-input', type: 'text', inputmode: 'numeric', placeholder: '0' });
+        const errEl = el('div', { class: 'mc-error' });
+        const preview = el('div', { class: 'mc-preview' });
+        input.addEventListener('input', () => {
+            const a = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
+            if (a > 0) { const fee = Math.max(giftable.feeMin, Math.floor(a * giftable.feeRate)); preview.textContent = '수수료 ' + comma(fee) + ' · 받는 사람 ' + comma(Math.max(0, a - fee)) + ' 수령'; }
+            else preview.textContent = '';
+        });
+        const content = el('div', { class: 'mc-view' },
+            el('div', { class: 'mc-asset-head' }, iconUrl ? el('img', { class: 'mc-asset-img', src: iconUrl, alt: '' }) : null,
+                el('div', null, el('div', { class: 'mc-asset-name' }, name), el('div', { class: 'mc-asset-bal' }, '보유 ' + comma(max)))),
+            el('label', { class: 'mc-label' }, name + ' 수량'), input, preview, errEl);
+        const back = el('button', { class: 'mm-btn ghost', type: 'button', onclick: viewCompose }, '뒤로');
+        const add = el('button', { class: 'mm-btn primary', type: 'button', onclick: () => {
+            const amount = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
+            if (!(amount > 0)) { errEl.textContent = '수량을 입력하세요.'; return; }
+            if (amount > max) { errEl.textContent = '보유량을 초과했습니다.'; return; }
+            const fee = Math.max(giftable.feeMin, Math.floor(amount * giftable.feeRate));
+            if (amount - fee < 1) { errEl.textContent = '수수료(' + comma(fee) + ') 이상이어야 합니다.'; return; }
+            gifts.push({ type, amount });
+            viewCompose();
+        } }, '담기');
+        mailModalOpen(content, { title: name + ' 담기', wide: true, footer: [back, add] });
+        setTimeout(() => input.focus(), 60);
+    }
+
+    function viewPicker(kind) {
+        const usedNums = new Set(gifts.filter(g => g.type === 'equipment').map(g => g.number));
+        const usedIdx = new Set(gifts.filter(g => g.type === 'pet').map(g => g.index));
+        let opts = kind === 'equipment' ? giftable.equipment : kind === 'pet' ? giftable.pets : giftable.items;
+        if (kind === 'equipment') opts = opts.filter(o => !usedNums.has(o.number));
+        else if (kind === 'pet') opts = opts.filter(o => !usedIdx.has(o.index));
+        const title = kind === 'equipment' ? '장비 선택' : kind === 'pet' ? '펫 선택' : '아이템 선택';
+        const list = el('div', { class: 'mc-pick-list' });
+        if (!opts.length) list.appendChild(el('div', { class: 'mc-gift-empty' }, '보낼 수 있는 항목이 없습니다.'));
+        else opts.forEach(o => {
+            const sub = kind === 'item' ? ('보유 ' + comma(o.count)) : (o.rarity + (o.level > 0 ? ' · +' + o.level : ''));
+            list.appendChild(el('div', { class: 'mc-pick-row', onclick: () => pickGift(kind, o) },
+                mailGiftThumb({ type: kind, iconUrl: o.iconUrl, frameUrl: o.frameUrl }),
+                el('div', { class: 'mc-pick-main' }, el('div', { class: 'mc-pick-name' }, o.name), el('div', { class: 'mc-pick-sub' }, sub))));
+        });
+        const back = el('button', { class: 'mm-btn ghost', type: 'button', onclick: viewCompose }, '뒤로');
+        mailModalOpen(el('div', { class: 'mc-view' }, list), { title, wide: true, footer: [back] });
+    }
+
+    function pickGift(kind, o) {
+        if (kind === 'equipment') { gifts.push({ type: 'equipment', number: o.number, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
+        else if (kind === 'pet') { gifts.push({ type: 'pet', index: o.index, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
+        else viewItemCount(o);
+    }
+
+    function viewItemCount(o) {
+        const input = el('input', { class: 'mc-input', type: 'text', inputmode: 'numeric', value: '1' });
+        const errEl = el('div', { class: 'mc-error' });
+        const content = el('div', { class: 'mc-view' },
+            el('div', { class: 'mc-asset-head' }, mailGiftThumb({ type: 'item', iconUrl: o.iconUrl, frameUrl: o.frameUrl }),
+                el('div', null, el('div', { class: 'mc-asset-name' }, o.name), el('div', { class: 'mc-asset-bal' }, '보유 ' + comma(o.count)))),
+            el('label', { class: 'mc-label' }, '보낼 수량'), input, errEl);
+        const back = el('button', { class: 'mm-btn ghost', type: 'button', onclick: () => viewPicker('item') }, '뒤로');
+        const add = el('button', { class: 'mm-btn primary', type: 'button', onclick: () => {
+            const count = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
+            if (!(count > 0) || count > o.count) { errEl.textContent = '수량이 올바르지 않습니다.'; return; }
+            gifts.push({ type: 'item', id: o.id, count, _label: o.name + ' x' + comma(count), _icon: o.iconUrl, _frame: o.frameUrl });
+            viewCompose();
+        } }, '담기');
+        mailModalOpen(content, { title: o.name, wide: true, footer: [back, add] });
+        setTimeout(() => input.focus(), 60);
+    }
+
+    async function doSend(btn) {
+        composeErr.textContent = '';
+        const to = toInput.value.trim();
+        if (!to) { composeErr.textContent = '받는 사람을 입력해주세요.'; return; }
+        if (!subjectInput.value.trim() && !bodyInput.value.trim() && !gifts.length) { composeErr.textContent = '내용 또는 선물을 입력해주세요.'; return; }
+        btn.disabled = true;
+        try {
+            const payload = gifts.map(g => { const c = {}; for (const k in g) if (k[0] !== '_') c[k] = g[k]; return c; });
+            const r = await postApi('/api/mail/send', { to, subject: subjectInput.value.trim(), body: bodyInput.value.trim(), gifts: payload });
+            mailModalClose();
+            await mailInfo({ title: '발송 완료', icon: 'check', message: to + '님에게 메일을 보냈습니다.' + (r.fee ? '\n골드/가넷 수수료 ' + comma(r.fee) + ' 제외 후 전달됩니다.' : '') });
+        } catch (e) { composeErr.textContent = e.message; btn.disabled = false; }
+    }
+
+    viewCompose();
+}
+
 (async () => {
     try {
         const me = await api('/api/me');
         myName = me.name;
         const profile = await api('/api/profile');
         renderProfile(profile);
+        refreshMailBadge();
         const tab = new URLSearchParams(location.search).get('tab');
+        const initialPage = (typeof window !== 'undefined' && window.__INITIAL_PAGE) || '';
         if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
+        else if (initialPage && GROUPS.some(g => g.pages.includes(initialPage))) activatePage(initialPage);
     } catch (e) {
         $('#app').replaceChildren(el('section', { class: 'panel' }, el('h2', null, '오류'), el('p', { class: 'err' }, e.message)));
     }
