@@ -358,20 +358,44 @@ function openMainCardModal(card) {
             (skill.descLines || []).forEach(desc => lines.push(' ㄴ ' + desc));
         });
     }
+    if (card && card.classInfo && Array.isArray(card.classInfo.skills) && card.classInfo.skills.length > 0) {
+        if (lines.length > 0) lines.push('');
+        lines.push('〈 전직: ' + (card.classInfo.name || '전직') + ' 〉');
+        card.classInfo.skills.forEach(skill => {
+            lines.push('◆ ' + skill.name + ' [ MP ' + comma(skill.mpCost) + ' ] 쿨타임 ' + skill.cooltimeText);
+            (skill.descLines || []).forEach(desc => lines.push(' ㄴ ' + desc));
+        });
+    }
     openModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬 정보' : '스킬 정보', lines);
 }
 
 function openCardSlotModal(card) {
     const eff = card.slotEffect;
-    if (!eff) return openModal(card.formatted, card.starText + ' · 슬롯 효과 없음', []);
+    const hasClassSlots = card.classInfo && Array.isArray(card.classInfo.slotEffects) && card.classInfo.slotEffects.length > 0;
+    if (!eff && !hasClassSlots) return openModal(card.formatted, card.starText + ' · 슬롯 효과 없음', []);
     const lines = [];
-    if (eff.active) {
-        lines.push('◆ ' + eff.name + ' ' + eff.currentText + ' (현재 ' + eff.currentStarText + ')');
-    } else {
-        lines.push('⚠️ ' + eff.requireStarText + ' 이상부터 효과 적용');
-        lines.push('◆ ' + eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)');
+    if (eff) {
+        if (eff.active) {
+            lines.push('◆ ' + eff.name + ' ' + eff.currentText + ' (현재 ' + eff.currentStarText + ')');
+        } else {
+            lines.push('⚠️ ' + eff.requireStarText + ' 이상부터 효과 적용');
+            lines.push('◆ ' + eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)');
+        }
+        if (Number(eff.perLevelText.replace(/[^0-9.]/g, '')) > 0) lines.push(' ㄴ 이후 등급마다 +' + eff.perLevelText);
     }
-    if (Number(eff.perLevelText.replace(/[^0-9.]/g, '')) > 0) lines.push(' ㄴ 이후 등급마다 +' + eff.perLevelText);
+    if (hasClassSlots) {
+        if (lines.length > 0) lines.push('');
+        lines.push('〈 전직: ' + (card.classInfo.name || '전직') + ' 〉');
+        card.classInfo.slotEffects.forEach(se => {
+            if (se.active) {
+                lines.push('◆ ' + se.name + ' ' + se.currentText + ' (현재 ' + se.currentStarText + ')');
+            } else {
+                lines.push('⚠️ ' + se.requireStarText + ' 이상부터 효과 적용');
+                lines.push('◆ ' + se.name + ' ' + se.baseText + ' (' + se.requireStarText + ' 기준)');
+            }
+            if (Number(se.perLevelText.replace(/[^0-9.]/g, '')) > 0) lines.push(' ㄴ 이후 등급마다 +' + se.perLevelText);
+        });
+    }
     openModal(card.formatted, '카드 슬롯 효과', lines);
 }
 

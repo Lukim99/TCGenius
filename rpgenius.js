@@ -1,5 +1,5 @@
 ﻿const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
@@ -7,6 +7,7 @@ const ragbot = require('./ragbot');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
+const SID_TABLE_NAME = 'rpgenius_sid'; // senderId → accountId 매핑 (getRPGUserById 전체 스캔 제거용)
 const DATA_TABLE_NAME = 'rpgenius_data';
 const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PointLogs', 'NameMatch'];
 const VIEWMORE = '\u200e'.repeat(500);
@@ -550,6 +551,27 @@ function formatCharacterCardDetail(card) {
             formatSkillDescWithIncrease(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
         }
     });
+    if (card.class) {
+        lines.push('');
+        lines.push('[ 전직: ' + (card.class.name || '전직') + ' ]');
+        if (Array.isArray(card.class.slot_effects) && card.class.slot_effects.length > 0) {
+            lines.push('〈 슬롯 효과 〉');
+            card.class.slot_effects.forEach(se => {
+                lines.push('- ' + se.name + ' ' + formatValue(se));
+                lines.push(' ㄴ 5성 이후 등급마다 ' + formatIncreaseText(se));
+            });
+        }
+        if (Array.isArray(card.class.skills) && card.class.skills.length > 0) {
+            lines.push('〈 스킬 〉');
+            card.class.skills.forEach(skillIndex => {
+                const skill = skills[skillIndex];
+                if (skill) {
+                    lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ]');
+                    formatSkillDescWithIncrease(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
+                }
+            });
+        }
+    }
     return lines.join('\n').trim();
 }
 
@@ -7989,6 +8011,54 @@ async function updateItem(table, id, data) {
     }
 }
 
+// RPGUser.save()용: 로드 시점 스냅샷(__loaded)과 비교해 변경된 top-level 속성만 SET/REMOVE.
+// 변경이 없으면 DB 쓰기 자체를 생략한다. 스냅샷이 없는 객체(load 미경유)는 기존 전체 쓰기로 폴백.
+async function updateChangedItem(table, obj) {
+    const loaded = obj.__loaded;
+    if (!loaded) return updateItem(table, obj.id, obj);
+    const setKeys = [];
+    const removeKeys = [];
+    const curStr = {};
+    for (const k of Object.keys(obj)) {
+        if (k === 'id') continue;
+        const v = obj[k];
+        if (typeof v === 'undefined') { if (k in loaded) removeKeys.push(k); continue; }
+        let s; try { s = JSON.stringify(v); } catch (_) { s = undefined; }
+        curStr[k] = s;
+        if (loaded[k] !== s) setKeys.push(k);
+    }
+    // 로드 시 있었으나 지금 사라진 키 → REMOVE
+    for (const k of Object.keys(loaded)) {
+        if (k === 'id') continue;
+        if (!Object.prototype.hasOwnProperty.call(obj, k) || typeof obj[k] === 'undefined') {
+            if (!removeKeys.includes(k)) removeKeys.push(k);
+        }
+    }
+    if (setKeys.length === 0 && removeKeys.length === 0) return { success: true, result: ['noop'] }; // 변경 없음 → 쓰기 생략
+    try {
+        const names = {};
+        const values = {};
+        const clauses = [];
+        if (setKeys.length) {
+            clauses.push('SET ' + setKeys.map(k => '#' + k + '=:v_' + k).join(','));
+            setKeys.forEach(k => { names['#' + k] = k; values[':v_' + k] = obj[k]; });
+        }
+        if (removeKeys.length) {
+            clauses.push('REMOVE ' + removeKeys.map(k => '#' + k).join(','));
+            removeKeys.forEach(k => { names['#' + k] = k; });
+        }
+        const params = { TableName: table, Key: { id: obj.id }, UpdateExpression: clauses.join(' '), ExpressionAttributeNames: names };
+        if (Object.keys(values).length) params.ExpressionAttributeValues = values;
+        await docClient.send(new UpdateCommand(params));
+        setKeys.forEach(k => { loaded[k] = curStr[k]; }); // 스냅샷 갱신
+        removeKeys.forEach(k => { delete loaded[k]; });
+        return { success: true, result: ['updated'] };
+    } catch (error) {
+        console.error('[updateChangedItem] 실패 (' + obj.id + '):', error && error.message);
+        return { success: false, result: [error] };
+    }
+}
+
 async function queryItems(params) {
     try {
         const command = new QueryCommand(params);
@@ -8066,6 +8136,12 @@ class RPGUser {
     }
 
     load(data) {
+        // 변경분만 저장(save())하기 위한 로드 시점 원본 스냅샷 (top-level 속성별 JSON 문자열).
+        // Object.assign 이전에 떠야 이후 참조 공유 변형에 영향받지 않는다.
+        const _snap = {};
+        const _src = data || {};
+        for (const k of Object.keys(_src)) { try { _snap[k] = JSON.stringify(_src[k]); } catch (_) { } }
+        Object.defineProperty(this, '__loaded', { value: _snap, enumerable: false, writable: true, configurable: true });
         Object.assign(this, data);
         if (!Array.isArray(this.logged_in)) this.logged_in = [];
         if (!Array.isArray(this.logged_in_agent)) this.logged_in_agent = [];
@@ -8113,7 +8189,7 @@ class RPGUser {
     }
 
     async save() {
-        await updateItem(TABLE_NAME, this.id, this);
+        await updateChangedItem(TABLE_NAME, this);
     }
 
     async changeCode() {
@@ -8520,7 +8596,58 @@ async function cancelTradeByUser(user, channel) {
     return null;
 }
 
+// 기본키(id)로 유저 직접 조회 — 가장 저렴한 점 조회 (스캔 없음)
+async function getUserByPrimaryId(id) {
+    try {
+        const res = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: id } }));
+        if (res && res.Item) return new RPGUser().load(res.Item);
+        return null;
+    } catch (e) {
+        console.log('getUserByPrimaryId error:', e);
+        return null;
+    }
+}
+
+// ===== senderId → accountId 매핑 (rpgenius_sid) =====
+async function getAccountIdBySid(senderId) {
+    try {
+        const res = await docClient.send(new GetCommand({ TableName: SID_TABLE_NAME, Key: { senderId: senderId } }));
+        return res && res.Item && typeof res.Item.accountId != 'undefined' ? res.Item.accountId : null;
+    } catch (e) {
+        console.log('getAccountIdBySid error:', e);
+        return null;
+    }
+}
+
+async function putSidMapping(senderId, accountId) {
+    try {
+        await docClient.send(new PutCommand({ TableName: SID_TABLE_NAME, Item: { senderId: senderId, accountId: accountId } }));
+    } catch (e) {
+        console.error('[sid] put 실패 (' + senderId + '):', e.message);
+    }
+}
+
+async function deleteSidMapping(senderId) {
+    try {
+        await docClient.send(new DeleteCommand({ TableName: SID_TABLE_NAME, Key: { senderId: senderId } }));
+    } catch (e) {
+        console.error('[sid] delete 실패 (' + senderId + '):', e.message);
+    }
+}
+
+// senderId로 유저 조회.
+// 진실의 원천은 user.logged_in(배열, GSI 키로 못 씀). 매핑(senderId→accountId)을 우선 사용하고,
+// 매핑이 아직 없는(마이그레이션 전) senderId는 레거시 전체 스캔으로 찾은 뒤 매핑을 자가 백필한다.
 async function getRPGUserById(id) {
+    // 1) 매핑 우선 (정상 경로, O(1))
+    const accountId = await getAccountIdBySid(id);
+    if (accountId != null) {
+        const mapped = await getUserByPrimaryId(accountId);
+        if (mapped && Array.isArray(mapped.logged_in) && mapped.logged_in.includes(id)) return mapped;
+        // 매핑이 stale(계정 삭제/로그아웃 누락) → 정리 후 레거시로 재확인
+        await deleteSidMapping(id);
+    }
+    // 2) 레거시 폴백: 전체 스캔 후 매핑 백필 (자가 마이그레이션)
     try {
         const res = await queryItems({
             TableName: TABLE_NAME,
@@ -8535,7 +8662,11 @@ async function getRPGUserById(id) {
                 ':userid_val': id
             }
         });
-        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) return new RPGUser().load(res.result[0].Items[0]);
+        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) {
+            const user = new RPGUser().load(res.result[0].Items[0]);
+            if (user && typeof user.id != 'undefined') await putSidMapping(id, user.id); // 백필
+            return user;
+        }
         return null;
     } catch (e) {
         console.log('getRPGUserById error:', e);
@@ -8743,6 +8874,7 @@ async function handleRPGCommand(data, channel) {
             if (!loginUser.logged_in.includes(senderId)) loginUser.logged_in.push(senderId);
             loginUser.code = getRandomString(10).toUpperCase();
             await loginUser.save();
+            await putSidMapping(senderId, loginUser.id); // 추가 연결 기기 매핑
             reply('✅ ' + loginUser + ' 계정으로 로그인했습니다.');
         } else {
             reply('❌ 잘못된 코드입니다.');
@@ -8768,6 +8900,7 @@ async function handleRPGCommand(data, channel) {
             const user = new RPGUser(nickname, senderId);
             const res = await putNewItem(TABLE_NAME, user);
             if (res.success) {
+                await putSidMapping(senderId, user.id); // 가입 기기 매핑 (user.id == senderId)
                 reply('✅ 성공적으로 등록되셨습니다!\n환영합니다, ' + user.name + '님!\n캐릭터 카드를 선택해주세요.');
                 reply(formatCharacterCardList());
             } else {
@@ -9748,6 +9881,7 @@ async function handleRPGCommand(data, channel) {
     if (args[0] == '로그아웃') {
         user.logged_in = user.logged_in.filter(id => id != senderId);
         await user.save();
+        await deleteSidMapping(senderId); // 매핑 제거
         reply('✅ ' + user + ' 계정에서 로그아웃했습니다.');
         return true;
     }

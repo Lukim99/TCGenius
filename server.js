@@ -2960,6 +2960,44 @@ function serializeCard(card, user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
+    let classInfo = null;
+    if (data.class) {
+        const skills = readJson(path.join(__dirname, 'DB', 'RPGenius', 'Skills.json'), []);
+        const stats = user ? rpgenius.calculateUserStats(user) : {};
+        const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
+        const star = Number(card && card.star || 0);
+        const fmtPct = v => (Math.round(Number(v || 0) * 1000) / 10) + '%';
+        classInfo = {
+            name: data.class.name || '',
+            slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => {
+                const base = Number(se.base || 0);
+                const perLevel = Number(se.per_level || 0);
+                const current = star >= 4 ? base + perLevel * (star - 4) : 0;
+                const fmt = v => se.type === 'flat' ? String(v) : fmtPct(v);
+                return {
+                    name: se.name,
+                    baseText: fmt(base),
+                    perLevelText: fmt(perLevel),
+                    currentText: fmt(current),
+                    active: star >= 4,
+                    requireStarText: '5성',
+                    currentStarText: (star + 1) + '성'
+                };
+            }) : [],
+            skills: Array.isArray(data.class.skills) ? data.class.skills.map(skillId => {
+                const skill = skills[Number(skillId)];
+                if (!skill) return null;
+                const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+                const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+                return {
+                    name: skill.name,
+                    mpCost,
+                    cooltimeText: rpgenius.formatCooltime(cooltime),
+                    descLines: rpgenius.formatCurrentSkillDesc(skill, star).split('\n').filter(Boolean)
+                };
+            }).filter(Boolean) : []
+        };
+    }
     return {
         id: Number(card.id),
         star: Number(card.star || 0),
@@ -2970,7 +3008,8 @@ function serializeCard(card, user) {
         formatted: rpgenius.formatUserCard(card),
         imageUrl: getCardImageUrl(card, user),
         slotEffect: buildSlotEffectInfo(card, data),
-        skills: buildSkillInfo(card, user)
+        skills: buildSkillInfo(card, user),
+        classInfo
     };
 }
 
@@ -4604,6 +4643,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
     { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'skillTrueDmg'] },
+    { title: '속성', keys: ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes'] },
     { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'cooldown', 'summonDuration'] },
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
 ];
@@ -4613,6 +4653,8 @@ const PROFILE_STAT_LABELS = {
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해',
+    fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
+    fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
     '000': '10/100/1000 추가 피해 확률', skillTrueDmg: '스킬 추가 고정 피해',
     avd: '회피 확률', takenDamage: '받는 피해 증가', recoveryEfficiency: '회복 효율', potion: '물약 효율',
     mpReduce: 'MP 소모량', skillCooldown: '스킬 쿨타임', cooldown: '쿨타임 감소', summonDuration: '소환 지속시간',
@@ -4620,7 +4662,7 @@ const PROFILE_STAT_LABELS = {
 };
 // 수치 + % 곱연산으로 합산되는 스탯 (수치/% 따로 표시)
 const PROFILE_STAT_MULT = new Set(['atk', 'def', 'hp', 'mp']);
-const PROFILE_STAT_NUMERIC = new Set(['atk', 'def', 'hp', 'mp', 'pnt', 'maxCmb', 'plusGold', 'skillTrueDmg']);
+const PROFILE_STAT_NUMERIC = new Set(['atk', 'def', 'hp', 'mp', 'pnt', 'maxCmb', 'plusGold', 'skillTrueDmg', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes']);
 const PROFILE_STAT_DIRECT = new Set(['crit', 'critMul', 'critDef', 'cmb', 'pntPercent', 'skillCooldown']);
 // 낮을수록(음수일수록) 이득인 스탯 — 음수일 때 긍정(초록) 표시
 const PROFILE_STAT_INVERSE = new Set(['skillCooldown', 'takenDamage', 'mpReduce']);

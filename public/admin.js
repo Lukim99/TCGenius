@@ -994,6 +994,8 @@ const PLUS_STAT_DEFS = [
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
     { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
+    { key: 'finalDamage', label: '최종 피해', kind: 'percent' },
+    { key: 'bossDmg', label: '보스 몬스터에게 주는 피해 증가', kind: 'percent' },
     { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' },
     { key: 'cooldown', label: '쿨타임 감소', kind: 'percent' }
 ];
