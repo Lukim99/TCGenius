@@ -5347,6 +5347,26 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .burning-unlock-btn{background:linear-gradient(135deg,#7c3aed,#d946ef);box-shadow:0 0 18px rgba(168,85,247,.5),0 6px 16px rgba(0,0,0,.4)}
 .burning-unlock-btn:hover,.burning-unlock-btn:focus,.burning-unlock-btn:active{background:linear-gradient(135deg,#8b5cf6,#e879f9)}
 @media(max-width:560px){.burning-board{--bcell:104px;--bgap:9px;padding:9px}}
+.mc-body{display:flex;flex-direction:column;gap:11px}
+.mc-section{display:flex;align-items:center;gap:10px;margin:8px 0 1px}
+.mc-section-line{flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(192,132,252,.4),transparent)}
+.mc-section-label{font-size:11px;font-weight:800;letter-spacing:.12em;color:#d8b4fe;padding:4px 14px;border:1px solid rgba(192,132,252,.4);border-radius:999px;background:rgba(192,132,252,.12);box-shadow:0 0 14px rgba(192,132,252,.18)}
+.mc-panel{position:relative;background:linear-gradient(135deg,rgba(12,16,34,.92),rgba(18,22,46,.7));border:1px solid rgba(148,163,184,.16);border-radius:15px;padding:14px 16px;box-shadow:0 8px 22px rgba(0,0,0,.35);overflow:hidden}
+.mc-panel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--mc-accent,linear-gradient(180deg,#818cf8,#6366f1))}
+.mc-panel.skill{--mc-accent:linear-gradient(180deg,#818cf8,#4f46e5)}
+.mc-panel.slot{--mc-accent:linear-gradient(180deg,#4ade80,#16a34a)}
+.mc-panel.locked{--mc-accent:linear-gradient(180deg,#64748b,#475569);opacity:.78}
+.mc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mc-name{font-size:15px;font-weight:800;color:#f8fafc;line-height:1.3}
+.mc-chips{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
+.mc-chip{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap;line-height:1.5}
+.mc-chip.mp{color:#93c5fd;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.32)}
+.mc-chip.cd{color:#fcd34d;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3)}
+.mc-chip.val{color:#86efac;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.34);font-size:13px}
+.mc-desc{margin-top:9px;font-size:13px;line-height:1.62;color:#cbd5e1;display:flex;flex-direction:column;gap:3px}
+.mc-note{margin-top:8px;font-size:12px;color:#94a3b8;line-height:1.5}
+.mc-note.warn{color:#fcd34d}
+.mc-empty{padding:22px;text-align:center;color:#64748b;font-size:14px}
 </style></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>

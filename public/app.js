@@ -350,53 +350,74 @@ function openModal(title, sub, lines) {
 
 function closeModal() { $('#modalBg').classList.remove('active'); }
 
+function openRichModal(title, sub, nodes) {
+    $('#modalTitle').textContent = title;
+    $('#modalSub').textContent = sub || '';
+    $('#modalSub').style.display = sub ? '' : 'none';
+    $('#modalBody').replaceChildren(el('div', { class: 'mc-body' }, ...nodes));
+    $('#modalBg').classList.add('active');
+}
+
+function cardSectionNode(label) {
+    return el('div', { class: 'mc-section' },
+        el('span', { class: 'mc-section-line' }),
+        el('span', { class: 'mc-section-label' }, label),
+        el('span', { class: 'mc-section-line' })
+    );
+}
+
+function skillPanelNode(skill) {
+    return el('div', { class: 'mc-panel skill' },
+        el('div', { class: 'mc-head' },
+            el('span', { class: 'mc-name' }, skill.name),
+            el('div', { class: 'mc-chips' },
+                el('span', { class: 'mc-chip mp' }, 'MP ' + comma(skill.mpCost)),
+                el('span', { class: 'mc-chip cd' }, '⏱ ' + skill.cooltimeText)
+            )
+        ),
+        el('div', { class: 'mc-desc' }, ...(skill.descLines || []).map(d => el('span', null, d)))
+    );
+}
+
+function slotEffectPanelNode(eff) {
+    const valText = eff.active ? eff.currentText : eff.baseText;
+    const perLevel = Number(String(eff.perLevelText || '').replace(/[^0-9.]/g, '')) > 0;
+    return el('div', { class: 'mc-panel slot' + (eff.active ? '' : ' locked') },
+        el('div', { class: 'mc-head' },
+            el('span', { class: 'mc-name' }, eff.name),
+            el('div', { class: 'mc-chips' }, el('span', { class: 'mc-chip val' }, valText))
+        ),
+        el('div', { class: 'mc-note' + (eff.active ? '' : ' warn') },
+            (eff.active ? '현재 ' + eff.currentStarText + ' 기준' : '⚠️ ' + eff.requireStarText + ' 이상부터 적용 (' + eff.requireStarText + ' 기준값)')
+            + (perLevel ? ' · 등급마다 +' + eff.perLevelText : '')
+        )
+    );
+}
+
 function openMainCardModal(card) {
-    const lines = [];
+    const nodes = [];
     if (card && Array.isArray(card.skills) && card.skills.length > 0) {
-        card.skills.forEach(skill => {
-            lines.push('◆ ' + skill.name + ' [ MP ' + comma(skill.mpCost) + ' ] 쿨타임 ' + skill.cooltimeText);
-            (skill.descLines || []).forEach(desc => lines.push(' ㄴ ' + desc));
-        });
+        card.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
     if (card && card.classInfo && Array.isArray(card.classInfo.skills) && card.classInfo.skills.length > 0) {
-        if (lines.length > 0) lines.push('');
-        lines.push('〈 전직: ' + (card.classInfo.name || '전직') + ' 〉');
-        card.classInfo.skills.forEach(skill => {
-            lines.push('◆ ' + skill.name + ' [ MP ' + comma(skill.mpCost) + ' ] 쿨타임 ' + skill.cooltimeText);
-            (skill.descLines || []).forEach(desc => lines.push(' ㄴ ' + desc));
-        });
+        nodes.push(cardSectionNode('전직'));
+        card.classInfo.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
-    openModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬 정보' : '스킬 정보', lines);
+    if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '표시할 스킬이 없습니다.'));
+    openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
 }
 
 function openCardSlotModal(card) {
     const eff = card.slotEffect;
     const hasClassSlots = card.classInfo && Array.isArray(card.classInfo.slotEffects) && card.classInfo.slotEffects.length > 0;
-    if (!eff && !hasClassSlots) return openModal(card.formatted, card.starText + ' · 슬롯 효과 없음', []);
-    const lines = [];
-    if (eff) {
-        if (eff.active) {
-            lines.push('◆ ' + eff.name + ' ' + eff.currentText + ' (현재 ' + eff.currentStarText + ')');
-        } else {
-            lines.push('⚠️ ' + eff.requireStarText + ' 이상부터 효과 적용');
-            lines.push('◆ ' + eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)');
-        }
-        if (Number(eff.perLevelText.replace(/[^0-9.]/g, '')) > 0) lines.push(' ㄴ 이후 등급마다 +' + eff.perLevelText);
-    }
+    const nodes = [];
+    if (eff) nodes.push(slotEffectPanelNode(eff));
     if (hasClassSlots) {
-        if (lines.length > 0) lines.push('');
-        lines.push('〈 전직: ' + (card.classInfo.name || '전직') + ' 〉');
-        card.classInfo.slotEffects.forEach(se => {
-            if (se.active) {
-                lines.push('◆ ' + se.name + ' ' + se.currentText + ' (현재 ' + se.currentStarText + ')');
-            } else {
-                lines.push('⚠️ ' + se.requireStarText + ' 이상부터 효과 적용');
-                lines.push('◆ ' + se.name + ' ' + se.baseText + ' (' + se.requireStarText + ' 기준)');
-            }
-            if (Number(se.perLevelText.replace(/[^0-9.]/g, '')) > 0) lines.push(' ㄴ 이후 등급마다 +' + se.perLevelText);
-        });
+        nodes.push(cardSectionNode('전직'));
+        card.classInfo.slotEffects.forEach(se => nodes.push(slotEffectPanelNode(se)));
     }
-    openModal(card.formatted, '카드 슬롯 효과', lines);
+    if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
+    openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
 }
 
 const POTENTIAL_TIER_COLORS = { rare: '#ffffff', epic: '#86efac', unique: '#c084fc', legendary: '#fbbf24' };

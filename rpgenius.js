@@ -553,7 +553,7 @@ function formatCharacterCardDetail(card) {
     });
     if (card.class) {
         lines.push('');
-        lines.push('[ 전직: ' + (card.class.name || '전직') + ' ]');
+        lines.push('[ 전직 ]');
         if (Array.isArray(card.class.slot_effects) && card.class.slot_effects.length > 0) {
             lines.push('〈 슬롯 효과 〉');
             card.class.slot_effects.forEach(se => {
