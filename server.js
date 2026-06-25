@@ -5524,17 +5524,17 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 /* 메일 전용 모달 */
 .mail-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.74);display:none;align-items:center;justify-content:center;z-index:90;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);padding:16px}
 .mail-modal-bg.active{display:flex}
-.mail-modal{width:min(420px,100%);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(13,17,30,.99),rgba(8,11,21,.99));border:1px solid rgba(255,255,255,.1);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03) inset;overflow:hidden;animation:mmPop .18s ease}
+.mail-modal{position:relative;width:min(420px,100%);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(13,17,30,.99),rgba(8,11,21,.99));border:1px solid rgba(255,255,255,.1);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.03) inset;overflow:hidden;animation:mmPop .18s ease}
 .mail-modal.wide{width:min(520px,100%)}
 @keyframes mmPop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
-.mm-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 20px 14px;border-bottom:1px solid rgba(148,163,184,.12)}
-.mm-titlewrap{display:flex;align-items:center;gap:10px;min-width:0}
+.mm-head{display:flex;align-items:center;gap:10px;padding:16px 56px 14px 20px;border-bottom:1px solid rgba(148,163,184,.12)}
+.mm-titlewrap{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
 .mm-headicon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:rgba(99,102,241,.15);color:#a5b4fc;flex:0 0 auto}
 .mm-headicon svg{width:18px;height:18px}
 .mm-title{font-size:17px;font-weight:800;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mm-close{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.05);border:none;color:#94a3b8;cursor:pointer;flex:0 0 auto}
+.mm-close{position:absolute;top:14px;right:14px;z-index:2;display:grid;place-items:center;width:32px;height:32px;padding:0;border-radius:9px;background:rgba(255,255,255,.05);border:none;color:#94a3b8;cursor:pointer}
 .mm-close:hover{background:rgba(255,255,255,.1);color:#e2e8f0}
-.mm-close svg{width:16px;height:16px}
+.mm-close svg{display:block;width:16px;height:16px}
 .mm-body{padding:18px 20px;overflow-y:auto}
 .mm-foot{display:flex;gap:10px;padding:14px 20px 18px;border-top:1px solid rgba(148,163,184,.1)}
 .mm-btn{flex:1;padding:12px;border-radius:11px;font-size:14px;font-weight:800;cursor:pointer;border:1px solid transparent;font-family:inherit}
