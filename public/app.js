@@ -395,11 +395,13 @@ function slotEffectPanelNode(eff) {
 }
 
 function openMainCardModal(card) {
+    const isJob = card && card.type === '전직';
     const nodes = [];
     if (card && Array.isArray(card.skills) && card.skills.length > 0) {
         card.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
-    if (card && card.classInfo && Array.isArray(card.classInfo.skills) && card.classInfo.skills.length > 0) {
+    // 전직 카드만 전직 스킬을 추가로 사용 (일반 스킬 + 전직 스킬 둘 다)
+    if (isJob && card.classInfo && Array.isArray(card.classInfo.skills) && card.classInfo.skills.length > 0) {
         nodes.push(cardSectionNode('전직'));
         card.classInfo.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
@@ -408,13 +410,15 @@ function openMainCardModal(card) {
 }
 
 function openCardSlotModal(card) {
-    const eff = card.slotEffect;
-    const hasClassSlots = card.classInfo && Array.isArray(card.classInfo.slotEffects) && card.classInfo.slotEffects.length > 0;
+    const isJob = card && card.type === '전직';
     const nodes = [];
-    if (eff) nodes.push(slotEffectPanelNode(eff));
-    if (hasClassSlots) {
-        nodes.push(cardSectionNode('전직'));
-        card.classInfo.slotEffects.forEach(se => nodes.push(slotEffectPanelNode(se)));
+    // 전직 카드는 전직 슬롯 효과만, 일반 카드는 일반 슬롯 효과만 적용
+    if (isJob) {
+        if (card.classInfo && Array.isArray(card.classInfo.slotEffects)) {
+            card.classInfo.slotEffects.forEach(se => nodes.push(slotEffectPanelNode(se)));
+        }
+    } else if (card.slotEffect) {
+        nodes.push(slotEffectPanelNode(card.slotEffect));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
     openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
