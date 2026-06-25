@@ -8165,7 +8165,7 @@ class RPGUser {
         cleanupInventoryItems(this);
         if (!Array.isArray(this.mail)) this.mail = [];
         // 메일 엔트리 정규화: { id, read, readAt, claimed, createdAt, shared }
-        // shared=true: 전체발송(공유 레코드) → 청소 시 본문 레코드는 삭제하지 않고 엔트리만 제거
+        // shared=true: 전체발송(공유 레코드) → 청소 시 본문 레코드는 삭제하지 않고 엔트리만 제거.
         this.mail = this.mail.filter(m => m && m.id).map(m => ({
             id: String(m.id),
             read: !!m.read,
