@@ -3255,6 +3255,26 @@ function formatStatPointStatus(user) {
     return lines.join('\n');
 }
 
+// 웹 정보 탭용: 스탯포인트 현황을 구조화된 객체로 반환
+function getStatPointInfo(user) {
+    normalizeStatPointData(user);
+    return {
+        available: Number(user.statPoint || 0),
+        perStatLimit: STAT_POINT_PER_STAT_LIMIT,
+        buyCount: Number(user.statPointBuyCount || 0),
+        nextPrice: getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1),
+        stats: STAT_POINT_DISPLAY.map(stat => {
+            const count = Number(user.statPointStats[stat.key] || 0);
+            return {
+                name: stat.name,
+                invested: count,
+                flat: count * stat.flat,
+                plusPercent: stat.plusKey ? Math.round(count * stat.plus * 10) / 10 : null
+            };
+        })
+    };
+}
+
 async function enterField(user, fieldName, options, channel) {
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
@@ -10399,6 +10419,7 @@ module.exports = {
     formatEquipmentBaseStatLines,
     formatStatValue,
     formatValue,
+    getStatPointInfo,
     formatCurrentEquipmentStatLines,
     formatPotentialLines,
     formatPotentialOptionEntries,

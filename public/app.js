@@ -56,7 +56,6 @@ const comma = value => {
     if (topIndex > 0 && groups[topIndex - 1] > 0) parts.push(String(groups[topIndex - 1]) + KOREAN_BIG_UNITS[topIndex - 1]);
     return sign + parts.join(' ');
 };
-const ratio = (value, max) => Math.max(0, Math.min(100, max > 0 ? (Number(value || 0) / Number(max || 0)) * 100 : 0));
 
 $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
@@ -175,7 +174,7 @@ function navigatePage(pageId) {
     activePage = pageId;
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
-    if (pageId === 'info' && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
+    if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
     if (pageId === 'inventory') {
         if (currentProfileName && myName && currentProfileName !== myName) {
             currentInventoryName = currentProfileName;
@@ -250,13 +249,52 @@ function renderStatCard() {
     root.replaceChildren(card.children.length ? card : el('div', { class: 'empty' }, '표시할 스탯이 없습니다.'));
 }
 
-if ($('#statToggle')) $('#statToggle').onclick = () => {
-    const body = $('#stats');
-    const chev = $('#statChevron');
-    const collapsed = body.classList.toggle('collapsed');
-    if (chev) chev.style.transform = collapsed ? 'rotate(-90deg)' : '';
-};
 if ($('#statHideZero')) $('#statHideZero').onchange = () => renderStatCard();
+
+function goodsRow(iconUrl, name, value, subName, subValue) {
+    const icon = iconUrl ? el('img', { class: 'goods-icon', src: iconUrl, alt: name }) : el('span', { class: 'goods-icon-fallback' }, '●');
+    const vblock = el('div', { class: 'goods-vblock' }, el('b', { class: 'goods-value' }, value));
+    if (subName != null) vblock.appendChild(el('div', { class: 'goods-sub' }, subName + ' ' + subValue));
+    return el('div', { class: 'goods-row' }, icon, el('div', { class: 'goods-name' }, name), vblock);
+}
+
+function renderGoods(user, icons) {
+    const root = $('#goods');
+    if (!root) return;
+    root.replaceChildren(el('div', { class: 'goods-card' },
+        goodsRow(icons.gold, '골드', comma(user.gold)),
+        goodsRow(icons.garnet, '가넷', comma(user.garnet)),
+        goodsRow(icons.point, '포인트', comma(user.point), '마일리지', comma(user.mileage))
+    ));
+}
+
+function renderStatPoint(sp) {
+    const root = $('#statPointBody');
+    if (!root) return;
+    if (!sp) { root.replaceChildren(el('div', { class: 'empty' }, '스탯포인트 정보가 없습니다.')); return; }
+    const summary = el('div', { class: 'sp-summary' },
+        el('div', { class: 'sp-avail' }, el('span', null, '잔여 스탯포인트'), el('b', null, comma(sp.available))),
+        el('div', { class: 'sp-buy' }, '누적 구매 ' + comma(sp.buyCount) + '회 · 다음 1개 🪙 ' + comma(sp.nextPrice))
+    );
+    const list = el('div', { class: 'sp-list' });
+    (sp.stats || []).forEach(s => {
+        const pct = sp.perStatLimit > 0 ? Math.min(100, s.invested / sp.perStatLimit * 100) : 0;
+        const bonus = '+' + comma(s.flat) + (s.plusPercent != null ? '  /  +' + s.plusPercent + '%' : '');
+        list.appendChild(el('div', { class: 'sp-row' },
+            el('div', { class: 'sp-name' }, s.name),
+            el('div', { class: 'sp-bar' }, el('div', { class: 'sp-bar-fill', style: 'width:' + pct + '%' })),
+            el('div', { class: 'sp-count' }, comma(s.invested) + ' / ' + comma(sp.perStatLimit)),
+            el('div', { class: 'sp-bonus' }, bonus)
+        ));
+    });
+    root.replaceChildren(summary, list, el('div', { class: 'sp-note' }, '스탯포인트 구매·투자는 카카오톡에서 가능합니다.'));
+}
+
+$$('.pf-tab').forEach(btn => btn.onclick = () => {
+    const tab = btn.dataset.pftab;
+    $$('.pf-tab').forEach(b => b.classList.toggle('active', b === btn));
+    $$('.pf-panel').forEach(p => p.classList.toggle('active', p.dataset.pfpanel === tab));
+});
 
 function textLines(text) {
     return String(text || '').split('\n').filter(line => line && line.indexOf('\u200e') === -1);
@@ -341,6 +379,42 @@ function equipmentCard(eq) {
     );
     card.style.setProperty('--rar', color);
     return card;
+}
+
+function gearSlotNode(typeKey, label, eq) {
+    const pos = el('div', { class: 'gear-slot-pos' }, label);
+    if (!eq) {
+        const thumb = el('div', { class: 'equip-thumb gear-empty-thumb' }, el('span', { class: 'icon-fallback' }, SLOT_ICONS[typeKey] || '🎒'));
+        return el('div', { class: 'gear-slot empty' }, pos, thumb,
+            el('div', { class: 'gear-slot-info' }, el('div', { class: 'gear-slot-empty' }, '미장착')),
+            el('span', { class: 'gear-slot-lv' }));
+    }
+    const node = el('div', { class: 'gear-slot filled', onclick: () => openEquipmentModal(eq) },
+        pos, equipmentThumb(eq),
+        el('div', { class: 'gear-slot-info' },
+            el('div', { class: 'gear-slot-name' }, eq.name),
+            el('div', { class: 'equip-meta' }, el('span', { class: 'tag rarity' }, eq.rarity))
+        ),
+        eq.level > 0 ? el('span', { class: 'gear-slot-lv' }, '+' + eq.level) : el('span', { class: 'gear-slot-lv' })
+    );
+    node.style.setProperty('--rar', RARITY_COLORS[eq.rarity] || '#334155');
+    return node;
+}
+
+function renderGearSlots(data) {
+    const root = $('#equippedGear');
+    if (!root) return;
+    const byType = { weapon: null, armor: null, support: null };
+    const accessories = [];
+    (data.equippedEquipment || []).forEach(e => {
+        if (e.type === 'accessory') accessories.push(e);
+        else if (e.type in byType) byType[e.type] = e;
+    });
+    const maxAcc = Math.max(1, Number(data.user.maxAccessory || 3));
+    const nodes = [gearSlotNode('weapon', '무기', byType.weapon), gearSlotNode('armor', '갑옷', byType.armor)];
+    for (let i = 0; i < maxAcc; i++) nodes.push(gearSlotNode('accessory', maxAcc > 1 ? '장신구 ' + (i + 1) : '장신구', accessories[i] || null));
+    nodes.push(gearSlotNode('support', '보조', byType.support));
+    root.replaceChildren(...nodes);
 }
 
 function openModal(title, sub, lines) {
@@ -807,6 +881,7 @@ function categorySection(title, children) {
 let myName = null;
 let currentProfileName = null;
 let currentInventoryName = null;
+let suppressInfoSelfReset = false;
 
 function updateInventoryBanner() {
     const banner = $('#inventoryBanner');
@@ -820,51 +895,29 @@ function renderProfile(data) {
     currentProfileName = data.user.name;
     const isInitialOwnProfile = myName == null;
     if (myName == null) myName = data.user.name;
-    const banner = $('#profileBanner');
-    if (banner) {
-        const isOther = data.user.name !== myName;
-        banner.style.display = isOther ? 'flex' : 'none';
-        if (isOther) $('#profileBannerText').textContent = data.user.name + '님의 정보를 보고 있습니다';
-    }
     $('#who').textContent = myName;
     if (data.user.name === myName) setHeaderPoint(data.user.point);
     $('#profileName').textContent = data.user.name;
     const pTitle = $('#profileTitle');
     if (pTitle) { const img = titleImg(data.user.title); pTitle.replaceChildren(...(img ? [img] : [])); }
     $('#level').textContent = 'Lv. ' + comma(data.user.level);
-    $('#exp').textContent = '(' + comma(data.user.exp) + '/' + comma(data.user.maxExp) + ')';
-    $('#hp').textContent = comma(data.user.hp) + ' / ' + comma(data.user.maxHp);
-    $('#hpFill').style.width = ratio(data.user.hp, data.user.maxHp) + '%';
-    $('#mp').textContent = comma(data.user.mp) + ' / ' + comma(data.user.maxMp);
-    $('#mpFill').style.width = ratio(data.user.mp, data.user.maxMp) + '%';
+    $('#exp').textContent = 'EXP ' + comma(data.user.exp) + ' / ' + comma(data.user.maxExp);
     $('#totalPower').textContent = comma(data.combatPower.total);
+    const heroBg = $('#pfHeroBg');
+    if (heroBg) heroBg.style.backgroundImage = (data.mainCard && data.mainCard.imageUrl) ? 'url("' + data.mainCard.imageUrl + '")' : 'none';
     const petRow = $('#petRow');
     if (petRow) petRow.replaceChildren(...(data.equippedPets || []).map(petCard));
-    $('#goods').replaceChildren(
-        kv('🪙 골드', comma(data.user.gold)),
-        kv('💠 가넷', comma(data.user.garnet)),
-        kv('💰 포인트', comma(data.user.point)),
-        kv('Ⓜ️ 마일리지', comma(data.user.mileage))
-    );
+    renderGoods(data.user, data.currencyIcons || {});
     currentStatGroups = data.statGroups || [];
     renderStatCard();
+    renderStatPoint(data.statPoint);
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
     $('#slotCards').replaceChildren(...data.cardSlots.map(card => cardNode(card, true, openCardSlotModal)));
-    $('#equippedGear').replaceChildren(...(data.equippedEquipment.length ? data.equippedEquipment.map(equipmentCard) : [el('div', { class: 'empty' }, '장착 중인 장비가 없습니다.')]));
-    const viewInvBtn = $('#viewInventoryBtn');
-    if (viewInvBtn) viewInvBtn.style.display = data.user.name !== myName ? '' : 'none';
+    renderGearSlots(data);
     if (data.user.isAdmin) $('#adminLink').style.display = '';
     if (isInitialOwnProfile && !data.user.canPartyQuest)
         $$('.group-tab[data-group="party"], .bottom-tab[data-group="party"]').forEach(t => t.remove());
 }
-
-if ($('#viewInventoryBtn')) $('#viewInventoryBtn').onclick = () => {
-    if (!currentProfileName) return;
-    currentInventoryName = currentProfileName;
-    updateInventoryBanner();
-    activatePage('inventory');
-    loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
-};
 
 if ($('#inventoryBackBtn')) $('#inventoryBackBtn').onclick = () => {
     currentInventoryName = myName;
@@ -3988,13 +4041,13 @@ if ($('#boNew')) $('#boNew').onclick = openBoRegisterModal;
 async function loadProfile(name) {
     const url = name && name !== myName ? '/api/profile/' + encodeURIComponent(name) : '/api/profile';
     const data = await api(url);
+    // activatePage('info')는 navigatePage에서 '다른 사람 보던 중 정보 탭 진입 시 내 정보로 복귀' 로직을 트리거한다.
+    // 특정 프로필을 불러오는 중에는 그 복귀 로직을 막아, 클릭한 대상이 자기 자신으로 덮어쓰이지 않게 한다.
+    suppressInfoSelfReset = true;
     activatePage('info');
+    suppressInfoSelfReset = false;
     renderProfile(data);
 }
-
-if ($('#profileBackBtn')) $('#profileBackBtn').onclick = () => {
-    if (myName) loadProfile(myName).catch(e => alert(e.message));
-};
 
 // ===== 랭킹 =====
 let rankingData = null;
