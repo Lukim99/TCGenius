@@ -539,6 +539,8 @@
         if (snap.state === 'cleared' && snap.result && Array.isArray(snap.result.rewards) && snap.result.rewards.length && shownRewardRoomId !== snap.id) {
             shownRewardRoomId = snap.id;
             openRewardModal(snap.result.rewards);
+            const mine = snap.result.rewards.find(rv => rv.name === me);
+            if (mine && mine.firstClear) openFirstClearModal(mine.firstClear);
         }
     }
 
@@ -592,6 +594,36 @@
             ));
         });
         $('#pqRewardBg').classList.add('active');
+    }
+
+    function openFirstClearModal(fc) {
+        if (!fc) return;
+        const titleEl = $('#pqFirstClearTitle');
+        if (titleEl) titleEl.textContent = '🎉 ' + (fc.questName || '') + ' 최초 클리어!';
+        const root = $('#pqFirstClearList');
+        root.replaceChildren();
+        (fc.rewards || []).forEach(rw => {
+            const thumb = el('div', { class: 'pq-fc-thumb' });
+            if (rw.kind === 'item') {
+                thumb.append(el('img', { class: 'frame', src: rw.frameUrl || ('/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('아이템.png')), alt: '' }));
+                if (rw.iconUrl) thumb.append(el('img', { class: 'icon', src: rw.iconUrl, alt: rw.name || '' }));
+                else thumb.append(el('span', { class: 'fallback' }, '🎁'));
+            } else if (rw.kind === 'gold' || rw.kind === 'garnet') {
+                thumb.append(el('img', { class: 'icon', src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent((rw.kind === 'gold' ? '골드' : '가넷') + '.png'), alt: rw.name || '' }));
+            } else {
+                thumb.append(el('span', { class: 'fallback' }, '🏆'));
+            }
+            let amount;
+            if (rw.kind === 'item') amount = 'x' + (rw.count || 1);
+            else if (rw.kind === 'gold' || rw.kind === 'garnet') amount = '+' + Number(rw.count || 0).toLocaleString();
+            else amount = '획득';
+            root.append(el('div', { class: 'pq-fc-row' },
+                thumb,
+                el('div', { class: 'pq-fc-name' }, rw.kind === 'title' ? '칭호 「' + rw.name + '」' : rw.name),
+                el('div', { class: 'pq-fc-amount' }, amount)
+            ));
+        });
+        $('#pqFirstClearBg').classList.add('active');
     }
 
     function renderMobStage(snap) {
@@ -1183,6 +1215,7 @@
     $('#pqOpenPotion').onclick = () => openPotionModal();
     $('#pqPotionCancel').onclick = () => $('#pqPotionBg').classList.remove('active');
     $('#pqRewardClose').onclick = () => $('#pqRewardBg').classList.remove('active');
+    $('#pqFirstClearClose').onclick = () => $('#pqFirstClearBg').classList.remove('active');
 
     async function leaveRoom() {
         try { await api('/api/party/leave', { method: 'POST', body: JSON.stringify({}) }); } catch (_) {}

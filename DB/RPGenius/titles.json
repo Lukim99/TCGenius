@@ -106,6 +106,12 @@
       "description": "메가 버닝 Lv.100 보상 획득",
       "stat": { "atk": 5 },
       "plusStat": { "exp": 0.03 }
+    },
+    {
+      "id": "hoduExtreme",
+      "name": "흑두 익스트림",
+      "description": "흑화 호두 (익스트림) 파티 퀘스트 1회 클리어",
+      "stat": { "hp": 1000 }
     }
   ]
 }

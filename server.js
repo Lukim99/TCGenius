@@ -6038,6 +6038,19 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-reward-row .owner{font-size:12px;font-weight:900;color:#f8fafc}
 .pq-reward-row .item{font-size:12px;font-weight:800;color:#fde68a}
 .pq-reward-row .meta{font-size:11px;color:#94a3b8;margin-top:2px}
+#pqFirstClearBg{z-index:34}
+.pq-fc-modal{max-width:420px;border:1px solid rgba(251,191,36,.4);background:linear-gradient(180deg,#1c1407,#0f172a 62%);box-shadow:0 22px 64px rgba(0,0,0,.6),0 0 0 1px rgba(251,191,36,.14)}
+.pq-fc-badge{align-self:center;font-size:11px;font-weight:900;letter-spacing:.1em;color:#0f172a;background:linear-gradient(135deg,#fbbf24,#f59e0b);padding:5px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(251,191,36,.4)}
+.pq-fc-title{text-align:center;font-size:18px!important;color:#fde68a!important;line-height:1.35}
+.pq-fc-sub{text-align:center;font-size:12px;color:#cbd5e1;margin-top:-4px}
+.pq-fc-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;max-height:380px;overflow-y:auto}
+.pq-fc-row{display:grid;grid-template-columns:50px 1fr auto;gap:11px;align-items:center;padding:10px 12px;background:rgba(2,6,23,.5);border:1px solid rgba(251,191,36,.18);border-radius:12px}
+.pq-fc-thumb{position:relative;width:46px;height:46px;display:grid;place-items:center}
+.pq-fc-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}
+.pq-fc-thumb .icon{position:relative;width:74%;height:74%;object-fit:contain;z-index:2;filter:drop-shadow(0 2px 5px rgba(0,0,0,.5))}
+.pq-fc-thumb .fallback{position:relative;z-index:2;font-size:26px}
+.pq-fc-name{font-size:13px;font-weight:800;color:#f8fafc}
+.pq-fc-amount{font-size:14px;font-weight:900;color:#fde68a;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pq-potion-row{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;padding:10px 12px;background:rgba(2,6,23,.55);border:1px solid rgba(148,163,184,.14);border-radius:10px}
 .pq-potion-row .nm{font-weight:800;color:#f1f5f9;font-size:13px}
 .pq-potion-row .ef{font-size:11px;color:#a5b4fc;grid-column:1/-1}
@@ -6212,6 +6225,16 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
       <div style="font-size:12px;color:#94a3b8">파티원별 획득 아이템</div>
       <div id="pqRewardList" class="pq-reward-list"></div>
       <div class="pq-actions"><button class="pq-btn primary" id="pqRewardClose" type="button">확인</button></div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqFirstClearBg">
+    <div class="pq-modal pq-fc-modal">
+      <div class="pq-fc-badge">최초 클리어</div>
+      <h3 class="pq-fc-title" id="pqFirstClearTitle">최초 클리어!</h3>
+      <div class="pq-fc-sub">개인 최초 클리어 특별 보상을 획득했습니다.</div>
+      <div id="pqFirstClearList" class="pq-fc-list"></div>
+      <div class="pq-actions"><button class="pq-btn primary" id="pqFirstClearClose" type="button">확인</button></div>
     </div>
   </div>
 

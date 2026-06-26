@@ -362,6 +362,29 @@ function grantPartyQuestClearRewards(room) {
                     prog.hoduClears = Number(prog.hoduClears || 0) + 1;
                     rpgenius.checkAndUnlockTitles(user);
                 }
+                // 흑화 호두 (익스트림) 개인 최초 클리어 보너스 (기존 보상과 별도)
+                let firstClear = null;
+                if (room.questId === 'blackHoduExtreme' && !rpgenius.getUnlockedTitles(user).includes('hoduExtreme')) {
+                    const bonusGold = 1000000;
+                    const bonusGarnet = 200;
+                    const boxItemId = 137;
+                    user.gold = Number(user.gold || 0) + bonusGold;
+                    user.garnet = Number(user.garnet || 0) + bonusGarnet;
+                    rpgenius.addInventoryItem(user, boxItemId, 1);
+                    rpgenius.unlockTitle(user, 'hoduExtreme');
+                    const itemCache = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Item', []) : [];
+                    const boxItem = itemCache[boxItemId];
+                    const boxAsset = getPartyQuestItemAsset(boxItemId, 0);
+                    firstClear = {
+                        questName: (quest && quest.name) || '흑화 호두 (익스트림)',
+                        rewards: [
+                            { kind: 'item', name: boxItem ? boxItem.name : '흑화 호두 장신구 상자', count: 1, iconUrl: boxAsset.iconUrl, frameUrl: boxAsset.frameUrl },
+                            { kind: 'garnet', name: '가넷', count: bonusGarnet },
+                            { kind: 'gold', name: '골드', count: bonusGold },
+                            { kind: 'title', name: '흑두 익스트림' }
+                        ]
+                    };
+                }
                 await user.save();
                 results.push({
                     name: member.name,
@@ -369,6 +392,7 @@ function grantPartyQuestClearRewards(room) {
                     gold,
                     levelUps,
                     item: itemReward,
+                    firstClear,
                     summary: Object.keys(summary).map(key => ({ label: summary[key].label, count: summary[key].count }))
                 });
             } catch (e) {
