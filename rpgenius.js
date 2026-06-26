@@ -526,7 +526,7 @@ function formatPackEntry(entry) {
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
     if (entry.type == '마일리지') return 'Ⓜ️ ' + formatCount(entry.count) + '마일리지';
-    if (entry.type == '포인트') return '💰 ' + formatCount(entry.count) + '포인트';
+    if (entry.type == '포인트') return '💰 ' + formatCount(entry.count) + 'P';
     return entry.type || '알 수 없는 보상';
 }
 
@@ -5918,7 +5918,7 @@ async function voteCandidate(user, candidateArg, countArg) {
         for (let i = 0; i < count; i++) {
             grantPackReward(user, pickPackEntry(pack), summary);
         }
-        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+        Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }
 
     return lines.join('\n');
@@ -7357,6 +7357,12 @@ function addRewardSummary(summary, key, label, count) {
     summary[key].count += count;
 }
 
+// 보상 요약 1줄 포맷. 포인트는 'NP' 형식으로 표시(예: 100P).
+function formatRewardSummaryEntry(key, entry) {
+    if (key === 'point') return '- 💰 ' + comma(entry.count) + 'P';
+    return '- ' + entry.label + ' x' + comma(entry.count);
+}
+
 function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -7744,7 +7750,7 @@ async function useItem(user, itemName, countArg) {
             return '❌ 사용할 수 없는 가챠입니다.';
         }
         lines.push('[ 획득 결과 ]');
-        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+        Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }
     if (item.type == '번들') {
         const bundles = getDataCache('Bundle', []);
@@ -7752,7 +7758,7 @@ async function useItem(user, itemName, countArg) {
         const summary = {};
         for (let i = 0; i < useCount; i++) bundle.forEach(reward => grantPackReward(user, reward, summary));
         lines.push('[ 획득 결과 ]');
-        Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+        Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }
     if (item.type == '사용') {
         if (item.use == '변환') {
@@ -8736,7 +8742,7 @@ function describeMailGift(gift) {
     if (!gift || !gift.type) return null;
     if (gift.type == 'gold') return { type: 'gold', amount: Number(gift.amount || 0), name: '골드', label: comma(gift.amount) + ' 골드' };
     if (gift.type == 'garnet') return { type: 'garnet', amount: Number(gift.amount || 0), name: '가넷', label: comma(gift.amount) + ' 가넷' };
-    if (gift.type == 'point') return { type: 'point', amount: Number(gift.amount || 0), name: '포인트', label: comma(gift.amount) + ' 포인트' };
+    if (gift.type == 'point') return { type: 'point', amount: Number(gift.amount || 0), name: '포인트', label: comma(gift.amount) + 'P' };
     if (gift.type == 'equipment') {
         const eq = gift.equip || {};
         const data = getEquipmentData(eq.type, eq.id);
@@ -8869,7 +8875,7 @@ async function claimMailGifts(user, id) {
     gifts.forEach(g => {
         if (g.type == 'gold') { user.gold = Number(user.gold || 0) + Number(g.amount || 0); lines.push('🪙 ' + comma(g.amount) + ' 골드'); }
         else if (g.type == 'garnet') { user.garnet = Number(user.garnet || 0) + Number(g.amount || 0); lines.push('💠 ' + comma(g.amount) + ' 가넷'); }
-        else if (g.type == 'point') { user.point = Number(user.point || 0) + Number(g.amount || 0); lines.push('💰 ' + comma(g.amount) + ' 포인트'); }
+        else if (g.type == 'point') { user.point = Number(user.point || 0) + Number(g.amount || 0); lines.push('💰 ' + comma(g.amount) + 'P'); }
         else if (g.type == 'equipment' && g.equip) { user.inventory.equipment.push(JSON.parse(JSON.stringify(g.equip))); const d = describeMailGift(g); lines.push(d ? d.label : '장비'); }
         else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
