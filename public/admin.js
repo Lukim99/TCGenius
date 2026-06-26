@@ -198,7 +198,7 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지', '경험치'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지', '포인트', '경험치'];
 const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지'];
 const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫'];
 
@@ -2360,6 +2360,7 @@ const EQUIP_TYPE_LABEL = { weapon: '무기', armor: '갑옷', accessory: '장신
 function bcGiftLabel(g) {
     if (g.type === 'gold') return '골드 ' + (Number(g.amount) || 0);
     if (g.type === 'garnet') return '가넷 ' + (Number(g.amount) || 0);
+    if (g.type === 'point') return '포인트 ' + (Number(g.amount) || 0);
     if (g.type === 'item') return (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
     if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
     if (g.type === 'equipment') return (g.equipName || (EQUIP_TYPE_LABEL[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
@@ -2378,7 +2379,7 @@ function renderBcGifts() {
             el('button', { class: 'btn sm danger', type: 'button', onclick: () => { bcGifts.splice(i, 1); renderBcGifts(); } }, '삭제')
         ));
         const row = el('div', { class: 'row' });
-        if (g.type === 'gold' || g.type === 'garnet') {
+        if (g.type === 'gold' || g.type === 'garnet' || g.type === 'point') {
             row.appendChild(el('div', null, el('label', null, '수량'),
                 el('input', { type: 'number', value: g.amount || 0, oninput: e => { g.amount = Number(e.target.value); } })));
         } else if (g.type === 'item') {
@@ -2432,6 +2433,7 @@ function bcAdd(type) {
 
 $('#bcAddGold').onclick = () => bcAdd('gold');
 $('#bcAddGarnet').onclick = () => bcAdd('garnet');
+$('#bcAddPoint').onclick = () => bcAdd('point');
 $('#bcAddItem').onclick = () => bcAdd('item');
 $('#bcAddCard').onclick = () => bcAdd('card');
 $('#bcAddEquip').onclick = () => bcAdd('equipment');
@@ -2444,8 +2446,8 @@ $('#bcSendBtn').onclick = async () => {
     if (!subject && !body && !bcGifts.length) return toast('제목/내용 또는 선물을 입력하세요.', false);
     const gifts = [];
     for (const g of bcGifts) {
-        if (g.type === 'gold' || g.type === 'garnet') {
-            if (!(Number(g.amount) > 0)) return toast((g.type === 'gold' ? '골드' : '가넷') + ' 수량을 입력하세요.', false);
+        if (g.type === 'gold' || g.type === 'garnet' || g.type === 'point') {
+            if (!(Number(g.amount) > 0)) return toast((g.type === 'gold' ? '골드' : g.type === 'garnet' ? '가넷' : '포인트') + ' 수량을 입력하세요.', false);
             gifts.push({ type: g.type, amount: Number(g.amount) });
         } else if (g.type === 'item') {
             if (typeof g.id === 'undefined') return toast('아이템을 선택하세요.', false);

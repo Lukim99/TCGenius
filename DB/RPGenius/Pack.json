@@ -1,74 +1,1444 @@
 [
-    [
-        { "type": "아이템", "item_id": 69, "count": { "min": 1, "max": 1 }, "roll": 0.005 },
-        { "type": "아이템", "item_id": 70, "count": { "min": 1, "max": 1 }, "roll": 0.002 },
-        { "type": "아이템", "item_id": 11, "count": { "min": 1, "max": 1 }, "roll": 0.175 },
-        { "type": "아이템", "item_id": 11, "count": { "min": 3, "max": 3 }, "roll": 0.085 },
-        { "type": "아이템", "item_id": 11, "count": { "min": 5, "max": 5 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 12, "count": { "min": 1, "max": 1 }, "roll": 0.175 },
-        { "type": "아이템", "item_id": 12, "count": { "min": 3, "max": 3 }, "roll": 0.085 },
-        { "type": "아이템", "item_id": 12, "count": { "min": 5, "max": 5 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 15, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 18, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 19, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 20, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 37, "count": { "min": 50, "max": 50 }, "roll": 0.05 },
-        { "type": "아이템", "item_id": 37, "count": { "min": 100, "max": 100 }, "roll": 0.035 },
-        { "type": "아이템", "item_id": 37, "count": { "min": 200, "max": 200 }, "roll": 0.015 },
-        { "type": "아이템", "item_id": 0, "count": { "min": 100, "max": 100 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 0, "count": { "min": 300, "max": 300 }, "roll": 0.02 },
-        { "type": "아이템", "item_id": 0, "count": { "min": 500, "max": 500 }, "roll": 0.01 },
-        { "type": "아이템", "item_id": 3, "count": { "min": 1, "max": 1 }, "roll": 0.012 },
-        { "type": "아이템", "item_id": 16, "count": { "min": 1, "max": 1 }, "roll": 0.001 },
-        { "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 }, "roll": 0.02 },
-        { "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 }, "roll": 0.01 },
-        { "type": "아이템", "item_id": 13, "count": { "min": 5, "max": 5 }, "roll": 0.01 },
-        { "type": "아이템", "item_id": 35, "count": { "min": 1, "max": 1 }, "roll": 0.01 }
-    ],
-    [
-        { "type": "무기", "weapon_id": 3, "roll": 0.5 },
-        { "type": "갑옷", "armor_id": 3, "roll": 0.5 }
-    ],
-    [
-        { "type": "아이템", "item_id": 30, "count": { "min": 1, "max": 1 }, "roll": 0.9 },
-        { "type": "아이템", "item_id": 31, "count": { "min": 1, "max": 1 }, "roll": 0.099 },
-        { "type": "아이템", "item_id": 16, "count": { "min": 1, "max": 1 }, "roll": 0.001 }
-    ],
-    [
-        { "type": "무기", "weapon_id": 0, "roll": 0.1428 },
-        { "type": "무기", "weapon_id": 1, "roll": 0.1428 },
-        { "type": "갑옷", "armor_id": 0, "roll": 0.1428 },
-        { "type": "갑옷", "armor_id": 1, "roll": 0.1428 },
-        { "type": "장신구", "accessory_id": 0, "roll": 0.1428 },
-        { "type": "장신구", "accessory_id": 1, "roll": 0.1428 },
-        { "type": "장신구", "accessory_id": 2, "roll": 0.1428 },
-        { "type": "아이템", "item_id": 30, "count": { "min": 2, "max": 2 }, "roll": 0.0004 }
-    ],
-    [
-        { "type": "무기", "weapon_id": 2, "roll": 0.5 },
-        { "type": "갑옷", "armor_id": 2, "roll": 0.5 }
-    ],
-    [
-        { "type": "아이템", "item_id": 17, "count": { "min": 1, "max": 10 }, "roll": 1 }
-    ],
-    [
-        { "type": "골드", "count": { "min": 100, "max": 10000 }, "roll": 0.45 },
-        { "type": "골드", "count": { "min": 1000, "max": 100000 }, "roll": 0.2 },
-        { "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-        { "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 }, "roll": 0.05 }
-    ],
-    [
-        { "type": "아이템", "item_id": 15, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-        { "type": "아이템", "item_id": 18, "count": { "min": 1, "max": 1 }, "roll": 0.3 },
-        { "type": "아이템", "item_id": 19, "count": { "min": 1, "max": 1 }, "roll": 0.2 },
-        { "type": "아이템", "item_id": 20, "count": { "min": 1, "max": 1 }, "roll": 0.15 },
-        { "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 }, "roll": 0.04 },
-        { "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 }, "roll": 0.007 },
-        { "type": "아이템", "item_id": 23, "count": { "min": 1, "max": 1 }, "roll": 0.003 }
-    ],
-    [
-        { "type": "아이템", "item_id": 23, "count": { "min": 1, "max": 1 }, "roll": 0.4 },
-        { "type": "아이템", "item_id": 24, "count": { "min": 1, "max": 1 }, "roll": 0.35 },
-        { "type": "아이템", "item_id": 25, "count": { "min": 1, "max": 1 }, "roll": 0.25 }
-    ]
+  [
+    {
+      "type": "아이템",
+      "item_id": 131,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.005
+    },
+    {
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.002,
+      "item_id": 132
+    },
+    {
+      "roll": 0.2,
+      "item_id": 11,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "item_id": 11,
+      "roll": 0.1,
+      "count": {
+        "min": 3,
+        "max": 3
+      },
+      "type": "아이템"
+    },
+    {
+      "type": "아이템",
+      "item_id": 11,
+      "roll": 0.04,
+      "count": {
+        "min": 5,
+        "max": 5
+      }
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 12,
+      "roll": 0.2,
+      "type": "아이템"
+    },
+    {
+      "type": "아이템",
+      "item_id": 12,
+      "count": {
+        "max": 3,
+        "min": 3
+      },
+      "roll": 0.1
+    },
+    {
+      "type": "아이템",
+      "roll": 0.04,
+      "item_id": 12,
+      "count": {
+        "max": 5,
+        "min": 5
+      }
+    },
+    {
+      "type": "아이템",
+      "roll": 0.04,
+      "item_id": 20,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 21,
+      "type": "아이템",
+      "roll": 0.03
+    },
+    {
+      "type": "아이템",
+      "item_id": 22,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.02
+    },
+    {
+      "type": "아이템",
+      "item_id": 23,
+      "roll": 0.01,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 24,
+      "type": "아이템",
+      "roll": 0.003
+    },
+    {
+      "item_id": 37,
+      "count": {
+        "min": 500,
+        "max": 500
+      },
+      "type": "아이템",
+      "roll": 0.035
+    },
+    {
+      "type": "아이템",
+      "roll": 0.02,
+      "item_id": 37,
+      "count": {
+        "max": 1000,
+        "min": 1000
+      }
+    },
+    {
+      "roll": 0.01,
+      "type": "아이템",
+      "item_id": 84,
+      "count": {
+        "min": 100,
+        "max": 100
+      }
+    },
+    {
+      "roll": 0.005,
+      "type": "아이템",
+      "count": {
+        "max": 200,
+        "min": 200
+      },
+      "item_id": 84
+    },
+    {
+      "item_id": 144,
+      "type": "아이템",
+      "count": {
+        "min": 100,
+        "max": 100
+      },
+      "roll": 0.01
+    },
+    {
+      "count": {
+        "max": 200,
+        "min": 200
+      },
+      "item_id": 144,
+      "type": "아이템",
+      "roll": 0.005
+    },
+    {
+      "type": "아이템",
+      "count": {
+        "max": 150,
+        "min": 150
+      },
+      "roll": 0.04,
+      "item_id": 0
+    },
+    {
+      "roll": 0.02,
+      "type": "아이템",
+      "count": {
+        "min": 300,
+        "max": 300
+      },
+      "item_id": 0
+    },
+    {
+      "item_id": 0,
+      "roll": 0.007,
+      "count": {
+        "max": 500,
+        "min": 500
+      },
+      "type": "아이템"
+    },
+    {
+      "roll": 0.01,
+      "count": {
+        "max": 5,
+        "min": 5
+      },
+      "item_id": 13,
+      "type": "아이템"
+    },
+    {
+      "item_id": 35,
+      "roll": 0.01,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.01,
+      "item_id": 103,
+      "type": "아이템"
+    },
+    {
+      "type": "아이템",
+      "roll": 0.01,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 36
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템",
+      "roll": 0.01,
+      "item_id": 124
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 133,
+      "roll": 0.005,
+      "type": "아이템"
+    },
+    {
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 104,
+      "roll": 0.003
+    }
+  ],
+  [
+    {
+      "type": "무기",
+      "roll": 0.5,
+      "weapon_id": 3,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "type": "갑옷",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.5,
+      "armor_id": 3
+    }
+  ],
+  [
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.9,
+      "item_id": 30,
+      "type": "아이템"
+    },
+    {
+      "roll": 0.099,
+      "type": "아이템",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 31
+    },
+    {
+      "item_id": 16,
+      "roll": 0.001,
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    }
+  ],
+  [
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "무기",
+      "weapon_id": 0,
+      "roll": 0.1428
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.1428,
+      "type": "무기",
+      "weapon_id": 1
+    },
+    {
+      "type": "갑옷",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.1428,
+      "armor_id": 0
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "armor_id": 1,
+      "type": "갑옷",
+      "roll": 0.1428
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "accessory_id": 0,
+      "type": "장신구",
+      "roll": 0.1428
+    },
+    {
+      "type": "장신구",
+      "roll": 0.1428,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "accessory_id": 1
+    },
+    {
+      "type": "장신구",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "accessory_id": 2,
+      "roll": 0.1428
+    },
+    {
+      "type": "아이템",
+      "item_id": 30,
+      "roll": 0.0004,
+      "count": {
+        "max": 2,
+        "min": 2
+      }
+    }
+  ],
+  [
+    {
+      "weapon_id": 2,
+      "roll": 0.5,
+      "type": "무기",
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.5,
+      "type": "갑옷",
+      "armor_id": 2
+    }
+  ],
+  [
+    {
+      "roll": 1,
+      "type": "아이템",
+      "item_id": 17,
+      "count": {
+        "max": 10,
+        "min": 1
+      }
+    }
+  ],
+  [
+    {
+      "type": "골드",
+      "roll": 0.25,
+      "count": {
+        "min": 5000,
+        "max": 50000
+      }
+    },
+    {
+      "item_id": 0,
+      "roll": 0.12,
+      "count": {
+        "max": 1000,
+        "min": 1000
+      },
+      "type": "아이템"
+    },
+    {
+      "item_id": 124,
+      "type": "아이템",
+      "roll": 0.2,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템",
+      "roll": 0.07,
+      "item_id": 133
+    },
+    {
+      "item_id": 21,
+      "roll": 0.2,
+      "type": "아이템",
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "item_id": 22,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.1,
+      "type": "아이템"
+    },
+    {
+      "item_id": 23,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템",
+      "roll": 0.03
+    },
+    {
+      "type": "마일리지",
+      "count": {
+        "min": 10,
+        "max": 10
+      },
+      "roll": 0.03
+    }
+  ],
+  [
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.3,
+      "item_id": 15,
+      "type": "아이템"
+    },
+    {
+      "item_id": 18,
+      "type": "아이템",
+      "roll": 0.3,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "type": "아이템",
+      "roll": 0.2,
+      "item_id": 19,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템",
+      "item_id": 20,
+      "roll": 0.15
+    },
+    {
+      "type": "아이템",
+      "roll": 0.04,
+      "item_id": 21,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "roll": 0.007,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 22,
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.003,
+      "item_id": 23,
+      "type": "아이템"
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 23,
+      "roll": 0.4,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "roll": 0.35,
+      "item_id": 24,
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "type": "아이템",
+      "roll": 0.25,
+      "item_id": 25,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    }
+  ],
+  [
+    {
+      "roll": 0.9,
+      "item_id": 76,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템",
+      "roll": 0.1,
+      "item_id": 77
+    }
+  ],
+  [
+    {
+      "display_star": 7,
+      "card_id": 10,
+      "type": "캐릭터카드",
+      "roll": 0.75,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "roll": 0.25,
+      "card_id": 10,
+      "display_star": 8,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "캐릭터카드"
+    }
+  ],
+  [
+    {
+      "type": "골드",
+      "count": {
+        "max": 50000,
+        "min": 3000
+      },
+      "roll": 0.65
+    },
+    {
+      "type": "골드",
+      "count": {
+        "min": 10000,
+        "max": 100000
+      },
+      "roll": 0.3
+    },
+    {
+      "type": "아이템",
+      "roll": 0.03,
+      "count": {
+        "min": 100,
+        "max": 350
+      },
+      "item_id": 0
+    },
+    {
+      "item_id": 3,
+      "roll": 0.015,
+      "type": "아이템",
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "roll": 0.004,
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 4
+    },
+    {
+      "roll": 0.001,
+      "type": "아이템",
+      "item_id": 16,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    }
+  ],
+  [
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 30,
+      "type": "아이템",
+      "roll": 0.8
+    },
+    {
+      "type": "아이템",
+      "roll": 0.195,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 31
+    },
+    {
+      "item_id": 16,
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.005
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 94,
+      "roll": 0.8
+    },
+    {
+      "item_id": 95,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.18,
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.015,
+      "type": "아이템",
+      "item_id": 96
+    },
+    {
+      "item_id": 97,
+      "roll": 0.005,
+      "type": "아이템",
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    }
+  ],
+  [
+    {
+      "count": {
+        "min": 1,
+        "max": 3
+      },
+      "type": "아이템",
+      "item_id": 106,
+      "roll": 0.965
+    },
+    {
+      "type": "아이템",
+      "item_id": 104,
+      "roll": 0.03,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "type": "아이템",
+      "roll": 0.005,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 105
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 125,
+      "roll": 0.5,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "item_id": 126,
+      "roll": 0.32,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.084,
+      "item_id": 127,
+      "type": "아이템"
+    },
+    {
+      "roll": 0.063,
+      "item_id": 128,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.019,
+      "type": "아이템",
+      "item_id": 129
+    },
+    {
+      "type": "아이템",
+      "item_id": 130,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.014
+    }
+  ],
+  [
+    {
+      "item_id": 104,
+      "type": "아이템",
+      "roll": 0.75,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 105,
+      "roll": 0.25,
+      "type": "아이템"
+    }
+  ],
+  [
+    {
+      "type": "아이템",
+      "item_id": 134,
+      "roll": 0.8,
+      "count": {
+        "max": 25,
+        "min": 20
+      }
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템",
+      "item_id": 135,
+      "roll": 0.1
+    },
+    {
+      "item_id": 133,
+      "type": "아이템",
+      "roll": 0.05,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "item_id": 23,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.05,
+      "type": "아이템"
+    }
+  ],
+  [
+    {
+      "roll": 0.3,
+      "item_id": 137,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "item_id": 16,
+      "roll": 0.25,
+      "type": "아이템"
+    },
+    {
+      "type": "아이템",
+      "item_id": 166,
+      "roll": 0.2,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "item_id": 97,
+      "type": "아이템",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.05
+    },
+    {
+      "item_id": 24,
+      "roll": 0.1,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.05,
+      "item_id": 25,
+      "type": "아이템"
+    },
+    {
+      "item_id": 4,
+      "type": "아이템",
+      "roll": 0.05,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    }
+  ],
+  [
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.2,
+      "accessory_id": 31,
+      "type": "장신구"
+    },
+    {
+      "roll": 0.2,
+      "accessory_id": 32,
+      "type": "장신구",
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "accessory_id": 33,
+      "roll": 0.2,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "장신구"
+    },
+    {
+      "accessory_id": 34,
+      "roll": 0.2,
+      "type": "장신구",
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "accessory_id": 35,
+      "roll": 0.2,
+      "type": "장신구"
+    }
+  ],
+  [
+    {
+      "type": "골드",
+      "roll": 0.8,
+      "count": {
+        "min": 1000,
+        "max": 30000
+      }
+    },
+    {
+      "item_id": 0,
+      "count": {
+        "min": 100,
+        "max": 200
+      },
+      "roll": 0.1,
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "item_id": 67,
+      "roll": 0.09,
+      "type": "아이템"
+    },
+    {
+      "roll": 0.01,
+      "item_id": 35,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "아이템"
+    }
+  ],
+  [
+    {
+      "card_id": 11,
+      "type": "캐릭터카드",
+      "roll": 0.75,
+      "display_star": 7,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "display_star": 8,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "캐릭터카드",
+      "roll": 0.25,
+      "card_id": 11
+    }
+  ],
+  [
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.78,
+      "item_id": 155,
+      "type": "아이템"
+    },
+    {
+      "count": {
+        "min": 2,
+        "max": 2
+      },
+      "roll": 0.18,
+      "type": "아이템",
+      "item_id": 155
+    },
+    {
+      "item_id": 155,
+      "roll": 0.03,
+      "count": {
+        "min": 3,
+        "max": 3
+      },
+      "type": "아이템"
+    },
+    {
+      "pet_id": 11,
+      "roll": 0.0016,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "펫"
+    },
+    {
+      "type": "펫",
+      "pet_id": 12,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.0016
+    },
+    {
+      "pet_id": 13,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "펫",
+      "roll": 0.0016
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.0016,
+      "type": "펫",
+      "pet_id": 14
+    },
+    {
+      "roll": 0.0016,
+      "pet_id": 15,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "펫"
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.0003,
+      "type": "펫",
+      "pet_id": 6
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.0003,
+      "pet_id": 7,
+      "type": "펫"
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.0003,
+      "type": "펫",
+      "pet_id": 8
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "pet_id": 9,
+      "roll": 0.0003,
+      "type": "펫"
+    },
+    {
+      "pet_id": 10,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "펫",
+      "roll": 0.0003
+    },
+    {
+      "type": "펫",
+      "pet_id": 1,
+      "roll": 0.0001,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "type": "펫",
+      "roll": 0.0001,
+      "pet_id": 2,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "pet_id": 3,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.0001,
+      "type": "펫"
+    },
+    {
+      "pet_id": 4,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.0001,
+      "type": "펫"
+    },
+    {
+      "roll": 0.0001,
+      "type": "펫",
+      "pet_id": 5,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    }
+  ],
+  [
+    {
+      "roll": 0.045,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "accessory_id": 3,
+      "type": "장신구"
+    },
+    {
+      "roll": 0.045,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "장신구",
+      "accessory_id": 4
+    },
+    {
+      "type": "장신구",
+      "accessory_id": 5,
+      "roll": 0.045,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "장신구",
+      "accessory_id": 6,
+      "roll": 0.045
+    },
+    {
+      "accessory_id": 7,
+      "roll": 0.045,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "장신구"
+    },
+    {
+      "roll": 0.045,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "type": "장신구",
+      "accessory_id": 8
+    },
+    {
+      "roll": 0.045,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "accessory_id": 9,
+      "type": "장신구"
+    },
+    {
+      "roll": 0.045,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "accessory_id": 10,
+      "type": "장신구"
+    },
+    {
+      "type": "장신구",
+      "accessory_id": 11,
+      "roll": 0.045,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "type": "장신구",
+      "accessory_id": 12,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.045
+    },
+    {
+      "roll": 0.045,
+      "type": "장신구",
+      "accessory_id": 13,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "roll": 0.045,
+      "type": "장신구",
+      "accessory_id": 14,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "type": "장신구",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.045,
+      "accessory_id": 15
+    },
+    {
+      "type": "장신구",
+      "accessory_id": 16,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "roll": 0.045
+    },
+    {
+      "roll": 0.045,
+      "type": "장신구",
+      "accessory_id": 17,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "type": "장신구",
+      "accessory_id": 18,
+      "roll": 0.045,
+      "count": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "accessory_id": 19,
+      "type": "장신구",
+      "roll": 0.045,
+      "count": {
+        "max": 1,
+        "min": 1
+      }
+    },
+    {
+      "roll": 0.044,
+      "type": "장신구",
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "accessory_id": 20
+    },
+    {
+      "roll": 0.045,
+      "accessory_id": 21,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "장신구"
+    },
+    {
+      "accessory_id": 22,
+      "type": "장신구",
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.045
+    },
+    {
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "장신구",
+      "roll": 0.025,
+      "accessory_id": 23
+    },
+    {
+      "accessory_id": 24,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "roll": 0.025,
+      "type": "장신구"
+    },
+    {
+      "roll": 0.025,
+      "count": {
+        "min": 1,
+        "max": 1
+      },
+      "accessory_id": 25,
+      "type": "장신구"
+    },
+    {
+      "accessory_id": 26,
+      "roll": 0.025,
+      "count": {
+        "max": 1,
+        "min": 1
+      },
+      "type": "장신구"
+    }
+  ]
 ]

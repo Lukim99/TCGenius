@@ -526,6 +526,7 @@ function formatPackEntry(entry) {
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
     if (entry.type == '마일리지') return 'Ⓜ️ ' + formatCount(entry.count) + '마일리지';
+    if (entry.type == '포인트') return '💰 ' + formatCount(entry.count) + '포인트';
     return entry.type || '알 수 없는 보상';
 }
 
@@ -7412,6 +7413,11 @@ function grantPackReward(user, reward, summary) {
         addRewardSummary(summary, 'mileage', 'Ⓜ️ 마일리지', count);
         return;
     }
+    if (reward.type == '포인트') {
+        user.point = Number(user.point || 0) + count;
+        addRewardSummary(summary, 'point', '💰 포인트', count);
+        return;
+    }
     if (reward.type == '무기') {
         addEquipmentInventory(user, 'weapon', reward.weapon_id);
         const equipment = equipments.weapon && equipments.weapon[reward.weapon_id];
@@ -8730,6 +8736,7 @@ function describeMailGift(gift) {
     if (!gift || !gift.type) return null;
     if (gift.type == 'gold') return { type: 'gold', amount: Number(gift.amount || 0), name: '골드', label: comma(gift.amount) + ' 골드' };
     if (gift.type == 'garnet') return { type: 'garnet', amount: Number(gift.amount || 0), name: '가넷', label: comma(gift.amount) + ' 가넷' };
+    if (gift.type == 'point') return { type: 'point', amount: Number(gift.amount || 0), name: '포인트', label: comma(gift.amount) + ' 포인트' };
     if (gift.type == 'equipment') {
         const eq = gift.equip || {};
         const data = getEquipmentData(eq.type, eq.id);
@@ -8862,6 +8869,7 @@ async function claimMailGifts(user, id) {
     gifts.forEach(g => {
         if (g.type == 'gold') { user.gold = Number(user.gold || 0) + Number(g.amount || 0); lines.push('🪙 ' + comma(g.amount) + ' 골드'); }
         else if (g.type == 'garnet') { user.garnet = Number(user.garnet || 0) + Number(g.amount || 0); lines.push('💠 ' + comma(g.amount) + ' 가넷'); }
+        else if (g.type == 'point') { user.point = Number(user.point || 0) + Number(g.amount || 0); lines.push('💰 ' + comma(g.amount) + ' 포인트'); }
         else if (g.type == 'equipment' && g.equip) { user.inventory.equipment.push(JSON.parse(JSON.stringify(g.equip))); const d = describeMailGift(g); lines.push(d ? d.label : '장비'); }
         else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
@@ -9002,9 +9010,9 @@ async function sendBroadcastMail(opts) {
     const items = getDataCache('Item', []);
     const gifts = [];
     for (const spec of specs) {
-        if (spec.type == 'gold' || spec.type == 'garnet') {
+        if (spec.type == 'gold' || spec.type == 'garnet' || spec.type == 'point') {
             const amount = Math.floor(Number(spec.amount || 0));
-            if (!(amount > 0)) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 수량이 올바르지 않습니다.' };
+            if (!(amount > 0)) return { error: (spec.type == 'gold' ? '골드' : spec.type == 'garnet' ? '가넷' : '포인트') + ' 수량이 올바르지 않습니다.' };
             gifts.push({ type: spec.type, amount });
         } else if (spec.type == 'item') {
             const id = Number(spec.id);

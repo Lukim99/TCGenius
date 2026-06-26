@@ -337,6 +337,7 @@ function attachMailGiftIcons(g) {
     if (!g || !g.type) return g;
     if (g.type === 'gold') g.iconUrl = getItemImageUrl('화폐', '골드.png');
     else if (g.type === 'garnet') g.iconUrl = getItemImageUrl('화폐', '가넷.png');
+    else if (g.type === 'point') g.iconUrl = getItemImageUrl('화폐', '포인트.png');
     else if (g.type === 'item') {
         const items = rpgenius.getDataCache('Item', []);
         const a = getItemDisplayAssets(items[g.id]);
