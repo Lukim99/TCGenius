@@ -2357,12 +2357,12 @@ const BC_MAX = 10;
 const EQUIP_TYPE_LABEL = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
 
 function bcGiftLabel(g) {
-    if (g.type === 'gold') return '🪙 골드 ' + (Number(g.amount) || 0);
-    if (g.type === 'garnet') return '💠 가넷 ' + (Number(g.amount) || 0);
-    if (g.type === 'item') return '📦 ' + (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
-    if (g.type === 'card') return '🃏 ' + (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
-    if (g.type === 'equipment') return '⚔️ ' + (g.equipName || (EQUIP_TYPE_LABEL[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
-    if (g.type === 'pet') return '🐾 ' + (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
+    if (g.type === 'gold') return '골드 ' + (Number(g.amount) || 0);
+    if (g.type === 'garnet') return '가넷 ' + (Number(g.amount) || 0);
+    if (g.type === 'item') return (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
+    if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
+    if (g.type === 'equipment') return (g.equipName || (EQUIP_TYPE_LABEL[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
+    if (g.type === 'pet') return (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
     return '?';
 }
 

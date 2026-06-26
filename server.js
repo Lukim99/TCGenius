@@ -5583,7 +5583,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .mc-slot-label{flex:1;min-width:0;font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mc-slot-remove{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgba(127,29,29,.4);border:none;color:#fecaca;cursor:pointer;flex:0 0 auto}
 .mc-slot-remove:hover{background:rgba(153,27,27,.6)}
-.mc-slot-remove svg{width:13px;height:13px}
+.mc-slot-remove svg{display:block;width:13px;height:13px}
 .mc-fee-note{font-size:12px;color:#fcd34d;line-height:1.5}
 .mc-error{font-size:13px;color:#fca5a5;font-weight:600}
 .mc-asset-head{display:flex;align-items:center;gap:12px;padding:12px;background:rgba(4,6,18,.5);border-radius:12px}
