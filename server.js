@@ -1600,7 +1600,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
-        finalDamage: '최종 피해', bossDmg: '보스 추가 피해'
+        finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해'
     };
     // 값이 낮을수록(감소할수록) 이득인 스탯
     const LOWER_IS_BETTER = new Set(['skillCooldown', 'mpReduce', 'takenDamage']);
@@ -4753,7 +4753,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '기본', keys: ['atk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
-    { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'skillTrueDmg'] },
+    { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'extraDamage', 'skillTrueDmg'] },
     { title: '속성', keys: ['allElementAtk', 'allElementRes', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes'] },
     { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'cooldown', 'summonDuration'] },
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
@@ -4763,7 +4763,7 @@ const PROFILE_STAT_LABELS = {
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
-    eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해',
+    eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해', extraDamage: '추가 피해',
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
@@ -5581,7 +5581,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .mc-gift-empty{padding:16px;text-align:center;color:#64748b;font-size:13px;background:rgba(4,6,18,.4);border:1px dashed rgba(148,163,184,.2);border-radius:11px}
 .mc-gift-slot{display:flex;align-items:center;gap:10px;padding:9px 11px;background:rgba(4,6,18,.6);border:1px solid rgba(148,163,184,.14);border-radius:11px}
 .mc-slot-label{flex:1;min-width:0;font-size:13px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mc-slot-remove{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgba(127,29,29,.4);border:none;color:#fecaca;cursor:pointer;flex:0 0 auto}
+.mc-slot-remove{display:grid;place-items:center;width:26px;height:26px;padding:0;border-radius:8px;background:rgba(127,29,29,.4);border:none;color:#fecaca;cursor:pointer;flex:0 0 auto}
 .mc-slot-remove:hover{background:rgba(153,27,27,.6)}
 .mc-slot-remove svg{display:block;width:13px;height:13px}
 .mc-fee-note{font-size:12px;color:#fcd34d;line-height:1.5}

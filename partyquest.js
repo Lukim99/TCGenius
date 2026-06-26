@@ -1648,7 +1648,14 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit });
         damage += finalHitDamage;
     }
-    return { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), destinyDamage: Math.max(0, Math.round(destinyDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, criticalCount, hitDamages, hitDetails };
+    // 추가 피해: 모든 계산이 끝난 최종 피해에 마지막으로 비율만큼 더한다
+    let extraDamageDealt = 0;
+    const extraDamageRate = Math.max(0, Number(stats.extraDamage || 0)) + Math.max(0, Number(extra && extra.extraDamageBonus || 0));
+    if (extraDamageRate > 0 && damage > 0) {
+        extraDamageDealt = Math.floor(damage * extraDamageRate);
+        damage += extraDamageDealt;
+    }
+    return { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), destinyDamage: Math.max(0, Math.round(destinyDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, criticalCount, hitDamages, hitDetails, extraDamageDealt: Math.round(extraDamageDealt) };
 }
 
 function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {

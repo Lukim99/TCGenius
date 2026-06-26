@@ -476,7 +476,7 @@ function formatStatValue(key, value) {
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
-        'takenDamage%', 'damageBonus%', 'finalDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%'
+        'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -637,6 +637,7 @@ const EQUIP_PLUSSTAT_LABELS = {
     takenDamage: '받는 피해 증가',
     damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해',
+    extraDamage: '추가 피해',
     bossDmg: '보스 몬스터에게 주는 피해 증가',
     summonDuration: '소환 지속시간',
     cooldown: '쿨타임 감소'
@@ -2568,7 +2569,7 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'bossDmg', 'summonDuration', 'cooldown'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -2594,6 +2595,7 @@ const CP_WEIGHTS = {
     ELITE_DMG_RATIO: 0.3,
     BOSS_DMG_RATIO: 0.3,
     FINAL_DAMAGE_RATIO: 0.9,
+    EXTRA_DAMAGE_RATIO: 0.9,
     PEN_DIVISOR: 280,
     DEF_REDUCTION_RATIO: 0.5,
     TRIPLE_ZERO_RATIO: 0.15,
@@ -2644,7 +2646,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const pntPercent = getTotalDefenseReductionRate(stats, slot);
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + (Number(stats.afterSkill || 0) + Number(slot.skillDamageBonus || 0)) * W.AFTER_SKILL_RATIO);
-    const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO;
+    const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO + Number(stats.extraDamage || 0) * W.EXTRA_DAMAGE_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
     const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
@@ -2978,7 +2980,14 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage });
         finalDamage += hitDamage;
     }
-    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount };
+    // 추가 피해: 모든 계산(방어/속성 등)이 끝난 최종 피해에 마지막으로 비율만큼 더한다 (연격과 유사)
+    let extraDamageDealt = 0;
+    const extraDamageRate = Math.max(0, Number(stats && stats.extraDamage || 0)) + Math.max(0, Number(extra && extra.extraDamageBonus || 0));
+    if (extraDamageRate > 0 && finalDamage > 0) {
+        extraDamageDealt = Math.floor(finalDamage * extraDamageRate);
+        finalDamage += extraDamageDealt;
+    }
+    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
@@ -5008,6 +5017,7 @@ const SUPPORT_PLUS_STAT_LABELS = {
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
+    finalDamage: '최종 피해', extraDamage: '추가 피해',
     summonDuration: '소환 지속시간', cooldown: '쿨타임 감소'
 };
 
@@ -7169,6 +7179,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
+        finalDamage: '최종 피해', extraDamage: '추가 피해',
         cooldown: '쿨타임 감소'
     };
     const rates = getEquipmentUpgradeRates(type, level);
