@@ -965,7 +965,9 @@ const FLAT_STAT_DEFS = [
     { key: 'fireRes', label: '[화]속성 저항', kind: 'int' },
     { key: 'waterRes', label: '[수]속성 저항', kind: 'int' },
     { key: 'lightRes', label: '[명]속성 저항', kind: 'int' },
-    { key: 'darkRes', label: '[암]속성 저항', kind: 'int' }
+    { key: 'darkRes', label: '[암]속성 저항', kind: 'int' },
+    { key: 'allElementAtk', label: '모든 속성 강화', kind: 'int' },
+    { key: 'allElementRes', label: '모든 속성 저항', kind: 'int' }
 ];
 
 const PLUS_STAT_DEFS = [

@@ -4305,29 +4305,39 @@ function dexTitleCard(entry) {
 }
 
 function dexPotentialCard(typeData) {
-    const card = el('div', { class: 'dex-card' });
-    card.style.setProperty('--rar', '#a855f7');
-    const head = el('div', { class: 'dex-head' });
-    head.appendChild(el('div', null, el('div', { class: 'dex-name' }, typeData.label + ' 잠재능력')));
-    card.appendChild(head);
+    const card = el('div', { class: 'dex-pot-card' });
+    card.appendChild(el('div', { class: 'dex-pot-cardhead' }, typeData.label + ' 잠재능력'));
+    const tbody = el('tbody');
     (typeData.grades || []).forEach(g => {
-        const block = el('div', { class: 'dex-stat-block' });
-        block.appendChild(el('div', { class: 'dex-stat-title' }, g.gradeLabel));
-        (g.groups || []).forEach(group => {
-            block.appendChild(el('div', { class: 'dex-pot-row' },
-                el('span', { class: 'dex-pot-rate' }, group.percent + '%'),
-                el('span', { class: 'dex-pot-opts' }, (group.options || []).join(' / ') || '없음')
-            ));
+        const groups = g.groups || [];
+        if (!groups.length) return;
+        groups.forEach((group, gi) => {
+            const tr = el('tr', { class: gi === 0 ? 'grade-start' : '' });
+            if (gi === 0) tr.appendChild(el('td', { class: 'c-grade', rowSpan: groups.length },
+                el('span', { class: 'pot-grade ' + g.grade }, g.gradeLabel)));
+            tr.appendChild(el('td', { class: 'c-rate' }, el('span', { class: 'dex-rate-pill' }, group.percent + '%')));
+            const optCell = el('td', { class: 'c-opt' });
+            const opts = group.options || [];
+            if (!opts.length) optCell.appendChild(el('span', { class: 'dex-opt-none' }, '없음'));
+            else opts.forEach(o => optCell.appendChild(el('span', { class: 'dex-opt-chip' }, o)));
+            tr.appendChild(optCell);
+            tbody.appendChild(tr);
         });
-        card.appendChild(block);
     });
+    const table = el('table', { class: 'dex-pot-table' },
+        el('thead', null, el('tr', null,
+            el('th', { class: 'c-grade' }, '등급'),
+            el('th', { class: 'c-rate' }, '확률'),
+            el('th', { class: 'c-opt' }, '옵션'))),
+        tbody);
+    card.appendChild(el('div', { class: 'dex-pot-tablewrap' }, table));
     return card;
 }
 
 function renderDex() {
     const grid = $('#dexList');
     if (dexTab === 'potential') {
-        grid.className = 'dex-grid';
+        grid.className = 'dex-grid dex-pot-grid';
         if (!potentialDexData) return;
         grid.innerHTML = '';
         (potentialDexData.types || []).forEach(t => grid.appendChild(dexPotentialCard(t)));

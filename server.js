@@ -4754,7 +4754,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
     { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'skillTrueDmg'] },
-    { title: '속성', keys: ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes'] },
+    { title: '속성', keys: ['allElementAtk', 'allElementRes', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes'] },
     { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'cooldown', 'summonDuration'] },
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
 ];
@@ -4766,6 +4766,7 @@ const PROFILE_STAT_LABELS = {
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해',
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
+    allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
     '000': '10/100/1000 추가 피해 확률', skillTrueDmg: '스킬 추가 고정 피해',
     avd: '회피 확률', takenDamage: '받는 피해 증가', recoveryEfficiency: '회복 효율', potion: '물약 효율',
     mpReduce: 'MP 소모량', skillCooldown: '스킬 쿨타임', cooldown: '쿨타임 감소', summonDuration: '소환 지속시간',
@@ -4773,7 +4774,7 @@ const PROFILE_STAT_LABELS = {
 };
 // 수치 + % 곱연산으로 합산되는 스탯 (수치/% 따로 표시)
 const PROFILE_STAT_MULT = new Set(['atk', 'def', 'hp', 'mp']);
-const PROFILE_STAT_NUMERIC = new Set(['atk', 'def', 'hp', 'mp', 'pnt', 'maxCmb', 'plusGold', 'skillTrueDmg', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes']);
+const PROFILE_STAT_NUMERIC = new Set(['atk', 'def', 'hp', 'mp', 'pnt', 'maxCmb', 'plusGold', 'skillTrueDmg', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes', 'allElementAtk', 'allElementRes']);
 const PROFILE_STAT_DIRECT = new Set(['crit', 'critMul', 'critDef', 'cmb', 'pntPercent', 'skillCooldown']);
 // 낮을수록(음수일수록) 이득인 스탯 — 음수일 때 긍정(초록) 표시
 const PROFILE_STAT_INVERSE = new Set(['skillCooldown', 'takenDamage', 'mpReduce']);
@@ -5157,7 +5158,23 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
 .title-badge{height:16px;width:auto;vertical-align:-3px;margin-right:4px;image-rendering:auto}
 .rank-list{display:grid;gap:8px}.rank-row{display:grid;grid-template-columns:60px 1fr auto;align-items:center;gap:12px;padding:12px 14px;background:rgba(4,6,18,.6);border:1px solid rgba(255,255,255,.06);border-radius:12px;cursor:pointer;transition:transform .12s,border-color .12s,background .12s,box-shadow .12s}.rank-row:hover{transform:translateX(3px);border-color:rgba(88,101,242,.5);background:rgba(88,101,242,.1);box-shadow:0 4px 14px rgba(88,101,242,.15)}.rank-row.me{border-color:#fbbf24;background:rgba(251,191,36,.08)}.rank-row .rk{font-size:16px;font-weight:800;color:#a5b4fc;text-align:center}.rank-row .rk.gold{color:#fbbf24;font-size:22px}.rank-row .rk.silver{color:#cbd5e1;font-size:20px}.rank-row .rk.bronze{color:#d97706;font-size:18px}.rank-row .nm{font-weight:700;color:#f1f5f9}.rank-row .lv{font-size:12px;color:#94a3b8;margin-left:6px}.rank-row .vl{font-weight:800;color:#fbbf24;font-variant-numeric:tabular-nums;font-size:15px}
 .dex-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.dex-tab{padding:9px 14px;border-radius:10px;background:rgba(20,28,46,.8);color:#94a3b8;cursor:pointer;font-weight:700;font-size:13px;border:1px solid rgba(255,255,255,.07);transition:all .15s}.dex-tab.active{background:linear-gradient(135deg,#5865f2,#4338ca);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(88,101,242,.32)}
-.dex-pot-row{display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12.5px;line-height:1.5}.dex-pot-rate{flex:0 0 auto;min-width:46px;text-align:center;font-weight:800;color:#c4b5fd;background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.3);border-radius:7px;padding:2px 6px}.dex-pot-opts{flex:1;color:#cbd5e1}
+.dex-pot-grid{display:flex!important;flex-direction:column;gap:16px}
+.dex-pot-card{background:linear-gradient(135deg,rgba(8,10,24,.92),rgba(15,11,30,.82));border:1px solid rgba(168,85,247,.22);border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.dex-pot-cardhead{display:flex;align-items:center;gap:10px;padding:15px 18px;font-size:16px;font-weight:800;color:#f8fafc;background:linear-gradient(180deg,rgba(168,85,247,.15),transparent);border-bottom:1px solid rgba(168,85,247,.18)}
+.dex-pot-cardhead::before{content:'';width:4px;height:18px;border-radius:3px;background:linear-gradient(180deg,#c084fc,#7c3aed);flex:0 0 auto}
+.dex-pot-tablewrap{overflow-x:auto}
+.dex-pot-table{width:100%;border-collapse:collapse;font-size:13px}
+.dex-pot-table thead th{text-align:left;font-size:11px;font-weight:800;letter-spacing:.06em;color:#94a3b8;text-transform:uppercase;padding:10px 14px;background:rgba(255,255,255,.02);border-bottom:1px solid rgba(148,163,184,.16);white-space:nowrap}
+.dex-pot-table td{padding:9px 14px;vertical-align:middle;border-bottom:1px solid rgba(148,163,184,.08)}
+.dex-pot-table tr:last-child td{border-bottom:none}
+.dex-pot-table tr.grade-start td{border-top:2px solid rgba(168,85,247,.18)}
+.dex-pot-table tr.grade-start:first-child td{border-top:none}
+.dex-pot-table .c-grade{width:96px;text-align:center;vertical-align:middle;border-right:1px solid rgba(148,163,184,.1);background:rgba(2,6,23,.32)}
+.dex-pot-table th.c-rate,.dex-pot-table td.c-rate{width:78px;white-space:nowrap}
+.dex-pot-table td.c-opt{line-height:2}
+.dex-rate-pill{display:inline-block;min-width:48px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;color:#c4b5fd;background:rgba(168,85,247,.14);border:1px solid rgba(168,85,247,.32);border-radius:7px;padding:3px 8px;font-size:12.5px}
+.dex-opt-chip{display:inline-block;margin:2px 5px 2px 0;padding:3px 10px;font-size:12px;font-weight:600;color:#dbeafe;background:rgba(79,109,245,.12);border:1px solid rgba(99,102,241,.26);border-radius:999px;white-space:nowrap}
+.dex-opt-none{color:#64748b;font-size:12px}
 .dex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
 .dex-title-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
 .dex-title-card{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 14px;background:linear-gradient(135deg,rgba(4,6,18,.9),rgba(8,12,26,.75));border:1px solid rgba(255,255,255,.08);border-radius:14px;text-align:center;transition:border-color .15s,box-shadow .15s}

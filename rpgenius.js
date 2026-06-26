@@ -606,7 +606,9 @@ const EQUIP_STAT_LABELS = {
     fireRes: '[화]속성 저항',
     waterRes: '[수]속성 저항',
     lightRes: '[명]속성 저항',
-    darkRes: '[암]속성 저항'
+    darkRes: '[암]속성 저항',
+    allElementAtk: '모든 속성 강화',
+    allElementRes: '모든 속성 저항'
 };
 const EQUIP_PLUSSTAT_LABELS = {
     atk: '최종 공격력',
@@ -691,8 +693,9 @@ function getAttackElement(user, skill) {
 // 공격 속성 배수: 1 + (속성 강화 - 대상 저항) * 0.1%. '최종 피해%' 뒤, 계산의 맨 마지막에 적용
 function getElementDamageMultiplier(element, attackerStats, defenderStats) {
     if (!element || !ELEMENT_ATK_KEYS[element]) return 1;
-    const power = Number((attackerStats && attackerStats[ELEMENT_ATK_KEYS[element]]) || 0);
-    const resist = Number((defenderStats && defenderStats[ELEMENT_RES_KEYS[element]]) || 0);
+    // 모든 속성 강화/저항(allElementAtk/allElementRes)은 모든 속성에 합산된다
+    const power = Number((attackerStats && attackerStats[ELEMENT_ATK_KEYS[element]]) || 0) + Number((attackerStats && attackerStats.allElementAtk) || 0);
+    const resist = Number((defenderStats && defenderStats[ELEMENT_RES_KEYS[element]]) || 0) + Number((defenderStats && defenderStats.allElementRes) || 0);
     return Math.max(0, 1 + (power - resist) * ELEMENT_DAMAGE_PER_POINT);
 }
 
@@ -2731,6 +2734,10 @@ function formatMyInfo(user) {
     lines.push('연격 확률: ' + formatStatValue('crit', stats.cmb).replace(/^\+/, ''));
     lines.push('최대 공격 횟수: ' + comma(2 + Math.max(0, Math.floor(Number(stats.maxCmb || 0)))));
     const elementLines = [];
+    const allAtk = Number(stats.allElementAtk || 0);
+    const allRes = Number(stats.allElementRes || 0);
+    if (allAtk > 0) elementLines.push('모든 속성 강화: ' + comma(allAtk));
+    if (allRes > 0) elementLines.push('모든 속성 저항: ' + comma(allRes));
     Object.keys(ELEMENT_ATK_KEYS).forEach(e => {
         const atkVal = Number(stats[ELEMENT_ATK_KEYS[e]] || 0);
         const resVal = Number(stats[ELEMENT_RES_KEYS[e]] || 0);
@@ -4985,7 +4992,8 @@ const SUPPORT_STAT_LABELS = {
     cardStarAtk: '카드 1성당 공격력', level9Atk: '레벨 9당 공격력',
     atkPerMillionGold: '보유 골드 100만 당 공격력',
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
-    fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항'
+    fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
+    allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항'
 };
 
 const SUPPORT_PLUS_STAT_LABELS = {
@@ -7146,7 +7154,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
-        fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항'
+        fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
+        allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항'
     };
     const plusStatNames = {
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
