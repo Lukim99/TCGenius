@@ -7587,7 +7587,7 @@ async function useCoupon(user, codeArg) {
         console.error('쿠폰 사용 횟수 저장 실패:', e);
     }
     const lines = ['✅ 쿠폰 보상을 획득했습니다.', '[ 획득 결과 ]'];
-    Object.keys(summary).forEach(key => lines.push('- ' + summary[key].label + ' x' + comma(summary[key].count)));
+    Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     return lines.join('\n');
 }
 
