@@ -4000,13 +4000,19 @@ if ($('#profileBackBtn')) $('#profileBackBtn').onclick = () => {
 let rankingData = null;
 let rankingTab = 'cp';
 
+function rankTitleImg(title) {
+    if (!title || !title.imageUrl) return null;
+    return el('img', { src: title.imageUrl, class: 'rank-ttl', alt: title.name || '', title: title.name || '' });
+}
+
 function rankRow(entry, isMe, valueFormatter) {
     const rk = entry.rank;
     const rkClass = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
     const medal = rk === 1 ? '🥇' : rk === 2 ? '🥈' : rk === 3 ? '🥉' : rk + '위';
     return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => alert(e.message)) },
         el('div', { class: 'rk ' + rkClass }, medal),
-        el('div', { class: 'nm' }, titleImg(entry.title), el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level)), entry.name),
+        el('div', { class: 'ttl' }, rankTitleImg(entry.title)),
+        el('div', { class: 'nm' }, entry.name, el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
         el('div', { class: 'vl' }, valueFormatter(entry.value))
     );
 }
@@ -4021,8 +4027,8 @@ function renderRanking() {
     if (me) {
         meBox.className = 'rank-me';
         meBox.appendChild(el('div', { class: 'rk' }, comma(me.rank) + '위'));
-        meBox.appendChild(el('div', { class: 'nm' }, titleImg(me.title), el('span', { class: 'lv' }, 'Lv. ' + comma(me.level)), me.name));
-        meBox.appendChild(el('div', null, '/ ' + comma(rankingTab === 'worldBoss' ? list.length : rankingData.total) + '명'));
+        meBox.appendChild(el('div', { class: 'ttl' }, rankTitleImg(me.title)));
+        meBox.appendChild(el('div', { class: 'nm' }, me.name, el('span', { class: 'lv' }, 'Lv. ' + comma(me.level)), el('span', { class: 'total' }, ' / ' + comma(rankingTab === 'worldBoss' ? list.length : rankingData.total) + '명')));
         meBox.appendChild(el('div', { class: 'vl' }, valueFormatter(me.value)));
     } else {
         meBox.className = '';
@@ -4398,6 +4404,15 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
 
 let patchnoteData = null;
 let patchnoteAdmin = false;
+let patchView = 'list';
+let patchSelectedId = null;
+let patchReplyActive = null;
+
+function countReplies(replies) {
+    let n = 0;
+    (replies || []).forEach(r => { n += 1 + countReplies(r.replies); });
+    return n;
+}
 
 function formatDateTime(value) {
     if (!value) return '-';
@@ -4476,6 +4491,7 @@ function replyForm(noteId, parentId) {
         try {
             const data = await postApi('/api/patchnotes/' + encodeURIComponent(noteId) + '/replies', { parentId, textbody });
             patchnoteData = data.items || [];
+            patchReplyActive = null;
             renderPatchnotes();
         } catch (e) {
             alert(e.message);
@@ -4488,25 +4504,52 @@ function replyForm(noteId, parentId) {
 function renderPatchReplies(noteId, replies, depth) {
     const wrap = el('div', { class: 'reply-list' });
     (replies || []).forEach(reply => {
-        const row = el('div', { class: 'reply-item ' + (depth > 0 ? 'child' : '') },
+        const isActive = patchReplyActive === reply.id;
+        const head = el('div', { class: 'reply-head', onclick: () => {
+            patchReplyActive = isActive ? null : reply.id;
+            renderPatchnotes();
+        } },
             el('div', { class: 'reply-meta' }, titleImg(reply.authorTitle), el('b', null, reply.authorName || '알 수 없음'), ' Lv. ' + comma(reply.authorLevel || 1) + ' · ' + formatDateTime(reply.date)),
             el('div', { class: 'reply-text' }, reply.textbody || ''),
-            replyForm(noteId, reply.id)
+            el('div', { class: 'reply-replybtn' }, isActive ? '답글 취소' : '답글 달기')
         );
-        if (reply.replies && reply.replies.length) row.appendChild(renderPatchReplies(noteId, reply.replies, depth + 1));
-        wrap.appendChild(row);
+        const item = el('div', { class: 'reply-item ' + (depth > 0 ? 'child ' : '') + (isActive ? 'active' : '') }, head);
+        if (isActive) item.appendChild(replyForm(noteId, reply.id));
+        if (reply.replies && reply.replies.length) item.appendChild(renderPatchReplies(noteId, reply.replies, depth + 1));
+        wrap.appendChild(item);
     });
     return wrap;
 }
 
-function patchnoteCard(note) {
+function patchPostRow(note) {
+    return el('div', { class: 'patch-post', onclick: () => {
+        patchView = 'detail'; patchSelectedId = note.id; patchReplyActive = null;
+        renderPatchnotes();
+        const list = $('#patchList'); if (list) list.scrollIntoView({ block: 'start' });
+    } },
+        el('div', { class: 'pp-main' },
+            el('div', { class: 'pp-title' }, note.title || '(제목 없음)'),
+            el('div', { class: 'pp-date' }, formatDateTime(note.date))
+        ),
+        el('div', { class: 'pp-cmt' }, '댓글 ' + comma(countReplies(note.replies)))
+    );
+}
+
+function renderPatchDetail(note) {
     const body = el('div', { class: 'markdown-body' });
     body.innerHTML = markdownToHtml(note.textbody || '');
-    return el('article', { class: 'patch-card' },
-        el('div', null, el('div', { class: 'patch-title' }, note.title || '(제목 없음)'), el('div', { class: 'patch-date' }, formatDateTime(note.date))),
+    return el('div', { class: 'patch-detail' },
+        el('button', { class: 'patch-back', onclick: () => {
+            patchView = 'list'; patchSelectedId = null; patchReplyActive = null;
+            renderPatchnotes();
+        } }, '← 목록으로'),
+        el('div', { class: 'patch-detail-head' },
+            el('div', { class: 'patch-detail-title' }, note.title || '(제목 없음)'),
+            el('div', { class: 'patch-detail-date' }, formatDateTime(note.date))
+        ),
         body,
-        el('div', { class: 'reply-list' },
-            el('h3', { style: { margin: '4px 0' } }, '댓글'),
+        el('div', { class: 'patch-comments' },
+            el('div', { class: 'patch-comments-h' }, '댓글 ', el('span', null, comma(countReplies(note.replies)))),
             renderPatchReplies(note.id, note.replies || [], 0),
             replyForm(note.id, null)
         )
@@ -4517,12 +4560,22 @@ function renderPatchnotes() {
     const list = $('#patchList');
     if (!list) return;
     list.innerHTML = '';
-    if ($('#patchNew')) $('#patchNew').style.display = patchnoteAdmin ? '' : 'none';
+    const inDetail = patchView === 'detail' && patchSelectedId != null
+        && patchnoteData && patchnoteData.some(n => n.id === patchSelectedId);
+    if (!inDetail) { patchView = 'list'; patchSelectedId = null; }
+    if ($('#patchNew')) $('#patchNew').style.display = (patchnoteAdmin && !inDetail) ? '' : 'none';
+    if (inDetail && $('#patchEditor')) $('#patchEditor').classList.remove('active');
     if (!patchnoteData || patchnoteData.length === 0) {
         list.appendChild(el('div', { class: 'empty' }, '등록된 패치노트가 없습니다.'));
         return;
     }
-    patchnoteData.forEach(note => list.appendChild(patchnoteCard(note)));
+    if (inDetail) {
+        list.appendChild(renderPatchDetail(patchnoteData.find(n => n.id === patchSelectedId)));
+        return;
+    }
+    const board = el('div', { class: 'patch-board' });
+    patchnoteData.forEach(note => board.appendChild(patchPostRow(note)));
+    list.appendChild(board);
 }
 
 async function loadPatchnotes() {
