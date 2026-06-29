@@ -3317,7 +3317,12 @@ async function enterField(user, fieldName, options, channel) {
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
     if (user.field.worldBoss && user.field.skillSelecting) {
-        return '❌ 월드보스에서는 퇴장할 수 없습니다.\n스킬을 선택해주세요.\n\n/RPGenius 월드보스선택 [1/2/3]';
+        // 스킬 선택 단계는 아직 전투 시작 전(토큰/입장 횟수 미소모)이라 언제든 취소 가능.
+        // 보스가 강제 처치되어 선택도 퇴장도 못하는 '갇힘' 상태도 이 경로로 빠져나간다.
+        user.field = null;
+        if (user.pendingAction && user.pendingAction.type == '월드보스스킬선택') user.pendingAction = null;
+        clearWorldBossSkillTimer(user.name);
+        return '✅ 월드보스 입장을 취소했습니다.';
     }
     if (user.field.worldBoss) return '❌ 월드보스 전투 중에는 퇴장할 수 없습니다.';
     const fieldName = user.field.name;
@@ -3375,6 +3380,14 @@ async function enterWorldBossField(user, boss, options, channel) {
         used.add(idx);
         candidates.push(pool[idx].id);
     }
+    // 도전 기회/티켓은 선택 단계 진입 시점에 소모한다.
+    // (스킬 선택 중 퇴장하거나 보스가 처치돼 입장이 취소돼도 도전 기회는 소모된 것으로 처리)
+    if (useToken) {
+        removeInventoryItem(user, getValorTokenItemId(), 1);
+        daily.tokenCount = Number(daily.tokenCount || 0) + 1;
+    } else {
+        daily.count = Number(daily.count || 0) + 1;
+    }
     user.field = { name: boss.name, worldBoss: true, skillSelecting: true };
     user.pendingAction = { type: '월드보스스킬선택', boss: boss.name, candidates: candidates, useToken: useToken };
     const lines = ['[ 월드보스 ] ' + boss.name];
@@ -3399,6 +3412,8 @@ function confirmWorldBossSkill(user, indexArg, channel) {
     const activeUser = getActiveWorldBossUserInChannel(channel, user.name);
     if (activeUser) {
         user.pendingAction = null;
+        user.field = null;
+        clearWorldBossSkillTimer(user.name);
         return formatWorldBossChannelBusyMessage(activeUser);
     }
     const index = Number(indexArg);
@@ -3407,30 +3422,21 @@ function confirmWorldBossSkill(user, indexArg, channel) {
     const skill = getExtraSkillById(skillId);
     if (!skill) return '❌ 선택한 스킬 데이터를 찾을 수 없습니다.';
     const boss = findWorldBossByName(pending.boss);
-    if (!boss) return '❌ 월드보스 데이터를 찾을 수 없습니다.';
+    if (!boss) {
+        user.pendingAction = null;
+        user.field = null;
+        clearWorldBossSkillTimer(user.name);
+        return '❌ 월드보스 데이터를 찾을 수 없습니다. 입장이 취소되었습니다.';
+    }
     ensureWorldBossRevived(boss);
     const state = getWorldBossState(boss.name);
     if (Number(state.hp || 0) <= 0) {
         user.pendingAction = null;
-        return '❌ 보스가 이미 사망 상태입니다.';
+        user.field = null;
+        clearWorldBossSkillTimer(user.name);
+        return '❌ 보스가 이미 처치되었습니다. 입장이 취소되었습니다.';
     }
-    if (pending.useToken) {
-        const daily = getWorldBossDailyState(user);
-        if (Number(daily.tokenCount || 0) >= WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT) {
-            user.pendingAction = null;
-            return '❌ 오늘 사용할 수 있는 ' + WORLD_BOSS_VALOR_TOKEN_NAME + ' 한도에 도달했습니다. (' + comma(daily.tokenCount) + '/' + comma(WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT) + ')';
-        }
-        const tokenId = getValorTokenItemId();
-        if (tokenId == -1 || getInventoryItemCount(user, tokenId) < 1) {
-            user.pendingAction = null;
-            return '❌ ' + WORLD_BOSS_VALOR_TOKEN_NAME + '가 부족합니다.';
-        }
-        removeInventoryItem(user, tokenId, 1);
-        daily.tokenCount = Number(daily.tokenCount || 0) + 1;
-    } else {
-        const daily = getWorldBossDailyState(user);
-        daily.count = Number(daily.count || 0) + 1;
-    }
+    // 도전 기회/티켓은 입장(스킬 선택 단계 진입) 시점에 이미 소모됨 — 여기서는 재소모하지 않는다.
     user.pendingAction = null;
     // 독재자 참여 횟수 칭호 추적
     if (boss.name === '독재자') {
