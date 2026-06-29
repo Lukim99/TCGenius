@@ -27,6 +27,31 @@ function dt(value) {
     return value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '기록 없음';
 }
 
+// "26-06-03 21:25" 형식 (KST)
+function fmtDate(value) {
+    if (!value) return '기록 없음';
+    const parts = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date(value));
+    const get = t => (parts.find(p => p.type === t) || {}).value || '00';
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+}
+
+// 경과 시간을 "N일 N시간 전" 으로 표시
+function sinceText(value) {
+    if (!value) return '기록 없음';
+    const h = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3600000));
+    const d = Math.floor(h / 24);
+    return d > 0 ? `${d}일 ${h % 24}시간 전` : `${h}시간 전`;
+}
+
+function mentionIds(data) {
+    return Array.isArray(data?.chat?.attachment?.mentions)
+        ? data.chat.attachment.mentions.map(v => v.user_id + '')
+        : [];
+}
+
 function generateCode() {
     return Math.random().toString(36).slice(2, 10).toUpperCase();
 }
@@ -180,17 +205,21 @@ async function insertTempUser(userInfo, extra = {}) {
     return data;
 }
 
-// 채팅마다: chat_count +1, kakao_name/profile_image 갱신. 유저가 없으면 임시 데이터 생성.
-async function touchUser(sender) {
+// 채팅마다: chat_count +1, kakao_name/profile_image/마지막 채팅 갱신. 유저가 없으면 임시 데이터 생성.
+async function touchUser(sender, msg) {
+    const text = (msg || '').trim();
+    const chatFields = { last_chat_at: nowIso() };
+    if (text && !text.startsWith('.')) chatFields.last_chat_text = text;
     const existing = await getUser(sender.userId + '');
     if (!existing) {
-        const created = await insertTempUser(sender, { chat_count: 1 });
+        const created = await insertTempUser(sender, { chat_count: 1, ...chatFields });
         return { user: created, isNew: true };
     }
     const { data, error } = await supabase.from('users').update({
         chat_count: Number(existing.chat_count || 0) + 1,
         kakao_name: sender.nickname || '',
         profile_image: sender.profileURL || null,
+        ...chatFields,
         updated_at: nowIso()
     }).eq('id', existing.id).select('*').single();
     if (error) throw error;
@@ -228,7 +257,97 @@ async function changeHandle(arg, channel, user) {
     return true;
 }
 
-async function handleCommand(msg, channel, user) {
+async function handleGhost(channel) {
+    const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+        .from('users')
+        .select('name, kakao_name, last_chat_at')
+        .lt('last_chat_at', cutoff)
+        .order('last_chat_at', { ascending: true });
+    if (error) throw error;
+    if (!data || !data.length) {
+        channel.sendChat('👻 72시간 이상 미채팅 유저가 없습니다.');
+        return true;
+    }
+    const lines = data.map((u, i) => {
+        const display = (u.kakao_name && u.kakao_name.trim()) || u.name;
+        return `${i + 1}. ${display} - 마지막 채팅 ${fmtDate(u.last_chat_at)} (${sinceText(u.last_chat_at)})`;
+    });
+    channel.sendChat(`👻 72시간 이상 미채팅 유저 (${data.length}명)\n${VIEWMORE}\n${lines.join('\n')}`);
+    return true;
+}
+
+async function handleInfo(channel, user, data) {
+    const ids = mentionIds(data);
+    let target = user;
+    if (ids.length) {
+        target = await getUser(ids[0]);
+        if (!target) {
+            channel.sendChat('❌ 등록되지 않은 유저입니다.');
+            return true;
+        }
+    }
+
+    const { data: warnings, error: warnErr } = await supabase
+        .from('user_warnings')
+        .select('reason, created_at')
+        .eq('user_id', target.id)
+        .order('created_at', { ascending: true });
+    if (warnErr) throw warnErr;
+
+    const v = x => (x != null && String(x).trim()) ? String(x).trim() : '-';
+    const chatCount = Number(target.chat_count || 0);
+    const level = Math.floor(chatCount / 10) + 1;
+    const exp = chatCount % 10;
+    const bar = '■'.repeat(exp) + '□'.repeat(10 - exp);
+    const logs = normalizeLogs(target.logs);
+    const entryDates = logs.entry.map(e => e.date).filter(Boolean).sort();
+    const exitDates = logs.exit.map(e => e.date).filter(Boolean).sort();
+    const lastEntry = entryDates[entryDates.length - 1];
+    const lastExit = exitDates[exitDates.length - 1];
+    const present = lastEntry && (!lastExit || new Date(lastEntry) >= new Date(lastExit));
+
+    const lines = [];
+    lines.push(`[🥇${target.kakao_name || target.name} 님의 정보]\n${VIEWMORE}`);
+    lines.push('');
+    lines.push(`- 레벨: ${level}`);
+    lines.push(`- 경험치: ${bar} ${exp * 10}%`);
+    lines.push(`- 총 채팅 수: ${chatCount}회`);
+    lines.push(`- 경고: ${(warnings || []).length}회`);
+    (warnings || []).forEach((w, i) => lines.push(`${i + 1}. ${fmtDate(w.created_at)} (사유: ${v(w.reason)})`));
+    lines.push('');
+    lines.push(`① 주량 : ${v(target.drink_capacity)}`);
+    lines.push(`② 벙참가능유무 : ${v(target.meetup_available)}`);
+    lines.push(`③ 벙참가능시간 : ${v(target.meetup_time)}`);
+    lines.push(`④ 본인 스타일 : ${v(target.self_style)}`);
+    lines.push(`⑤ 이상형 : ${v(target.ideal_type)}`);
+    lines.push(`⑥ 현 상태 : ${v(target.status_msg)}`);
+    lines.push(`⑦ MBTI : ${v(target.mbti)}`);
+    lines.push(`⑧ 혈액형 : ${v(target.blood_type)}`);
+    lines.push(` - 첫 채팅 일시: ${fmtDate(target.created_at)}`);
+    lines.push(` - 최근 채팅: ${v(target.last_chat_text)}`);
+    lines.push(` - 최근 채팅 일시: ${fmtDate(target.last_chat_at)}`);
+    lines.push('');
+    lines.push('[ 입퇴장 기록 ]');
+    lines.push(` - 최초 입장: ${entryDates.length ? fmtDate(entryDates[0]) : '기록 없음'}`);
+    lines.push(` - 최근 입장: ${lastEntry ? fmtDate(lastEntry) : '기록 없음'}`);
+    lines.push(present ? ' - ✅ 현재 재실 중' : ' - ❌ 현재 부재중');
+
+    const changes = logs.change_name.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (changes.length) {
+        const medals = ['🥈', '🥉'];
+        lines.push('');
+        lines.push('[ 닉네임 변경 기록 ]');
+        changes.forEach((c, i) => {
+            lines.push(`${medals[i] || `${i + 2}.`}${c.old_name || '?'} (${fmtDate(c.date)})`);
+        });
+    }
+
+    channel.sendChat(lines.join('\n'));
+    return true;
+}
+
+async function handleCommand(msg, channel, user, data) {
     const line = msg.split('\n')[0].trim();
     const spaceIdx = line.indexOf(' ');
     const command = (spaceIdx === -1 ? line : line.slice(0, spaceIdx)).slice(1);
@@ -240,6 +359,12 @@ async function handleCommand(msg, channel, user) {
     }
     if (command === '핸들') {
         return changeHandle(arg, channel, user);
+    }
+    if (command === '유령') {
+        return handleGhost(channel);
+    }
+    if (command === '정보') {
+        return handleInfo(channel, user, data);
     }
     return false;
 }
@@ -273,9 +398,9 @@ async function onChat(data, channel) {
     if (!sender) return false;
     const msg = (data.text || '').trim();
     try {
-        const { user, isNew } = await touchUser(sender);
+        const { user, isNew } = await touchUser(sender, msg);
         if (isNew) channel.sendChat(WELCOME_MESSAGE);
-        if (msg.startsWith('.')) return await handleCommand(msg, channel, user);
+        if (msg.startsWith('.')) return await handleCommand(msg, channel, user, data);
         if (await handleCustomCommand(msg, channel)) return true;
     } catch (e) {
         console.log('[wollu] onChat error:', e);
