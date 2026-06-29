@@ -22,6 +22,7 @@ server.use(express.json({ limit: '5mb' }));
 server.use('/static', express.static(path.join(__dirname, 'public')));
 
 const AUCTION_NOTIFY_CHANNEL_ID = '18470462260425659';
+const SEND_KAKAO_API_KEY = 'delutive-kakao-1mdk2kfe';
 let kakaoClient = null;
 const PITR_TABLES = {
     rpgenius_user: { key: 'id', label: '유저 데이터' },
@@ -217,6 +218,28 @@ async function requirePartyQuest(req, res, next) {
 
 server.get('/sealed-lock', (req, res) => {
     res.redirect('/?tab=' + encodeURIComponent('자물쇠'));
+});
+
+// 외부 API: 카카오톡 채널로 메시지 발송. API Key 인증(헤더 x-api-key 또는 body.apiKey).
+server.post('/send-kakao', async (req, res) => {
+    const key = req.get('x-api-key') || (req.body && req.body.apiKey) || '';
+    if (key !== SEND_KAKAO_API_KEY) return res.status(401).json({ error: '인증 실패: 올바르지 않은 API Key입니다.' });
+    const body = req.body || {};
+    const channelId = String(body.channelId || body.channelID || body.channel || '').trim();
+    const message = body.content != null ? body.content : (body.message != null ? body.message : body.text);
+    if (!channelId) return res.status(400).json({ error: 'channelId(채널ID)가 필요합니다.' });
+    if (typeof message !== 'string' || message.trim() === '') return res.status(400).json({ error: 'content(내용)가 필요합니다.' });
+    if (!kakaoClient || !kakaoClient.channelList) return res.status(503).json({ error: '카카오 봇이 아직 준비되지 않았습니다.' });
+    let channel;
+    try { channel = kakaoClient.channelList.get(channelId); } catch (e) { channel = null; }
+    if (!channel || typeof channel.sendChat !== 'function') return res.status(404).json({ error: '채널을 찾을 수 없습니다: ' + channelId });
+    try {
+        await channel.sendChat(message);
+        res.json({ ok: true, channelId });
+    } catch (e) {
+        console.error('[send-kakao] 전송 실패:', e);
+        res.status(500).json({ error: '메시지 전송 실패: ' + ((e && e.message) || String(e)) });
+    }
 });
 
 server.get('/', async (req, res) => {
