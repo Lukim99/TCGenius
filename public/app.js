@@ -1715,7 +1715,7 @@ async function finishPunch(score) {
 
 // ===== 조합 =====
 
-let combineState = { cards: [], meta: { table: {}, protect: {}, gold: 0 }, slots: [null, null, null], protectIndex: null, result: null, busy: false, built: false, slotEls: null };
+let combineState = { cards: [], meta: { table: {}, protect: {}, lucky: [], gold: 0 }, slots: [null, null, null], protectIndex: null, luckyRate: null, result: null, busy: false, built: false, slotEls: null };
 
 function combineUi(file) { return '/combine-ui?file=' + encodeURIComponent(file); }
 
@@ -2145,6 +2145,9 @@ function renderCombineStage() {
     if (combineState.protectIndex != null && combineState.slots[combineState.protectIndex]) {
         limg.src = combineUi((combineState.slots[combineState.protectIndex].star + 1) + '성 보호 카드.png');
         els.lucky.classList.remove('empty');
+    } else if (combineState.luckyRate != null) {
+        limg.src = combineUi('럭키' + Math.round(combineState.luckyRate * 100) + '%.png');
+        els.lucky.classList.remove('empty');
     } else { limg.removeAttribute('src'); els.lucky.classList.add('empty'); }
     const rimg = els.result.querySelector('.slot-card');
     if (combineState.result) { rimg.src = combineState.result.imageUrl; els.result.classList.remove('empty'); }
@@ -2164,11 +2167,16 @@ function renderCombineInfo() {
     const t = combineState.meta.table[grade];
     const lines = [];
     if (t) {
-        let s = (grade + 1) + '성 조합 · 성공 확률 ' + (Math.round(t.rate * 1000) / 10) + '% · 필요 골드 🪙 ' + comma(t.gold);
+        const lucky = combineState.luckyRate != null;
+        const shownRate = lucky ? Math.min(1, t.rate * (1 + combineState.luckyRate)) : t.rate;
+        let s = (grade + 1) + '성 조합 · 성공 확률 ' + (Math.round(shownRate * 1000) / 10) + '%' + (lucky ? ' 🍀' : '') + ' · 필요 골드 🪙 ' + comma(t.gold);
         if (t.guarantee) s += ' · 보정 ' + comma(t.count) + '/' + comma(t.guarantee);
         lines.push(s);
     } else lines.push('이 등급은 조합할 수 없습니다.');
-    lines.push('선택 ' + filled + '/3' + (combineState.protectIndex != null ? ' · 🛡️ ' + (combineState.protectIndex + 1) + '번째 재료 보호' : ''));
+    let extra = '';
+    if (combineState.protectIndex != null) extra = ' · 🛡️ ' + (combineState.protectIndex + 1) + '번째 재료 보호';
+    else if (combineState.luckyRate != null) extra = ' · 🍀 럭키 ' + (Math.round(combineState.luckyRate * 1000) / 10) + '% 증가';
+    lines.push('선택 ' + filled + '/3' + extra);
     info.replaceChildren(...lines.map(l => el('div', null, l)));
 }
 
@@ -2227,24 +2235,45 @@ function onLuckyClick() {
     if (combineState.busy) return;
     if (!combineState.slots.every(Boolean)) { alert('재료 카드 3장을 먼저 선택하세요.'); return; }
     const grade = combineGrade();
-    if (!combineState.meta.protect[grade]) { alert('이 등급에 사용할 수 있는 보호 카드가 없습니다.'); return; }
+    const hasProtect = !!combineState.meta.protect[grade];
+    const hasLucky = (combineState.meta.lucky || []).length > 0;
+    if (!hasProtect && !hasLucky) { alert('사용할 수 있는 보호/럭키 카드가 없습니다.'); return; }
     openProtectModal(grade);
 }
 
 function openProtectModal(grade) {
-    openModal('보호 카드 사용', (grade + 1) + '성 · 조합 실패 시 보존할 재료를 선택하세요', []);
+    const hasProtect = !!combineState.meta.protect[grade];
+    const luckyList = combineState.meta.lucky || [];
+    openModal('보호 / 럭키 카드', (grade + 1) + '성 조합 보조 카드를 선택하세요 (둘 중 하나만 사용 가능)', []);
     const body = $('#modalBody');
-    body.replaceChildren(el('img', { src: combineUi((grade + 1) + '성 보호카드.png'), alt: '', style: 'width:96px;display:block;margin:0 auto 14px' }));
-    combineState.slots.forEach((card, i) => {
-        const row = el('div', { class: 'stat-line', style: 'cursor:pointer;display:flex;align-items:center;gap:10px' },
-            card.imageUrl ? el('img', { src: card.imageUrl, alt: '', style: 'width:34px;border-radius:4px' }) : null,
-            el('span', null, (i + 1) + '번째 재료 · ' + card.formatted)
-        );
-        if (combineState.protectIndex === i) row.style.borderColor = '#fbbf24';
-        row.onclick = () => { combineState.protectIndex = i; closeModal(); renderCombineStage(); };
-        body.appendChild(row);
-    });
-    body.appendChild(el('button', { class: 'close', onclick: () => { combineState.protectIndex = null; closeModal(); renderCombineStage(); } }, '보호 사용 안 함'));
+    body.replaceChildren();
+    if (luckyList.length) {
+        body.appendChild(el('div', { style: 'font-weight:800;color:#86efac;margin:4px 0 6px' }, '🍀 럭키 카드 — 성공 확률 상승'));
+        luckyList.forEach(l => {
+            const pct = Math.round(l.rate * 1000) / 10;
+            const row = el('div', { class: 'stat-line', style: 'cursor:pointer;display:flex;align-items:center;gap:10px' },
+                el('img', { src: combineUi('럭키' + Math.round(l.rate * 100) + '%.png'), alt: '', style: 'width:34px;border-radius:4px' }),
+                el('span', null, (l.name || '럭키 카드') + ' · 성공 확률 ' + pct + '% 증가 (곱연산)')
+            );
+            if (combineState.luckyRate != null && Math.abs(combineState.luckyRate - l.rate) < 1e-9) row.style.borderColor = '#fbbf24';
+            row.onclick = () => { combineState.luckyRate = l.rate; combineState.protectIndex = null; closeModal(); renderCombineStage(); };
+            body.appendChild(row);
+        });
+    }
+    if (hasProtect) {
+        body.appendChild(el('div', { style: 'font-weight:800;color:#93c5fd;margin:10px 0 6px' }, '🛡️ 보호 카드 — 실패 시 재료 1장 보존'));
+        body.appendChild(el('img', { src: combineUi((grade + 1) + '성 보호 카드.png'), alt: '', style: 'width:80px;display:block;margin:0 auto 8px' }));
+        combineState.slots.forEach((card, i) => {
+            const row = el('div', { class: 'stat-line', style: 'cursor:pointer;display:flex;align-items:center;gap:10px' },
+                card.imageUrl ? el('img', { src: card.imageUrl, alt: '', style: 'width:34px;border-radius:4px' }) : null,
+                el('span', null, (i + 1) + '번째 재료 · ' + card.formatted)
+            );
+            if (combineState.protectIndex === i) row.style.borderColor = '#fbbf24';
+            row.onclick = () => { combineState.protectIndex = i; combineState.luckyRate = null; closeModal(); renderCombineStage(); };
+            body.appendChild(row);
+        });
+    }
+    body.appendChild(el('button', { class: 'close', onclick: () => { combineState.protectIndex = null; combineState.luckyRate = null; closeModal(); renderCombineStage(); } }, '사용 안 함'));
 }
 
 function playCombineEffect() {
@@ -2262,6 +2291,7 @@ async function submitCombine() {
     if (btn) btn.disabled = true;
     const payload = { numbers: combineState.slots.map(c => c.number) };
     if (combineState.protectIndex != null) payload.protectIndex = combineState.protectIndex;
+    else if (combineState.luckyRate != null) payload.luckyRate = combineState.luckyRate;
     try {
         const data = await postApi('/api/combine', payload);
         playCombineEffect();
@@ -2270,6 +2300,7 @@ async function submitCombine() {
             combineState.meta = data.meta || combineState.meta;
             combineState.slots = [null, null, null];
             combineState.protectIndex = null;
+            combineState.luckyRate = null;
             combineState.result = data.resultCard || null;
             combineState.busy = false;
             renderCombineStage();
@@ -2306,9 +2337,10 @@ async function loadCombine() {
     try {
         const data = await api('/api/combine/cards');
         combineState.cards = data.cards || [];
-        combineState.meta = data.meta || { table: {}, protect: {}, gold: 0 };
+        combineState.meta = data.meta || { table: {}, protect: {}, lucky: [], gold: 0 };
         combineState.slots = [null, null, null];
         combineState.protectIndex = null;
+        combineState.luckyRate = null;
         combineState.result = null;
         combineState.busy = false;
         renderCombineStage();

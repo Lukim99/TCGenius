@@ -1836,6 +1836,37 @@ function getProtectItemIdForCardStar(user, star) {
     return items.findIndex((item, id) => item && item.protect && Number(item.protect.star) == Number(star) && getInventoryItemCount(user, id) > 0);
 }
 
+// 럭키 카드: item.lucky(예: 0.1)만큼 카드 조합 성공률이 상승. 등급에 구애받지 않는다.
+function getLuckyCardItems(user) {
+    const items = getDataCache('Item', []);
+    const result = [];
+    items.forEach((item, id) => {
+        if (item && Number(item.lucky) > 0 && getInventoryItemCount(user, id) > 0) {
+            result.push({ id, lucky: Number(item.lucky), name: item.name });
+        }
+    });
+    return result.sort((a, b) => b.lucky - a.lucky);
+}
+
+function getBestLuckyCardItem(user) {
+    const list = getLuckyCardItems(user);
+    return list.length ? list[0] : null;
+}
+
+function getLuckyItemIdForRate(user, rate) {
+    const items = getDataCache('Item', []);
+    const target = Number(rate);
+    return items.findIndex((item, id) => item && Number(item.lucky) > 0 && Math.abs(Number(item.lucky) - target) < 1e-9 && getInventoryItemCount(user, id) > 0);
+}
+
+// "10%" -> 0.1, "10" -> 0.1, "0.1" -> 0.1
+function parseLuckyRateArg(arg) {
+    const s = String(arg || '').trim().replace(/%$/, '');
+    const n = Number(s);
+    if (!Number.isFinite(n) || n <= 0) return NaN;
+    return n < 1 ? n : n / 100;
+}
+
 function getCardCombineSelection(user, numberArgs) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ /RPGenius 카드조합 [카드번호1] [카드번호2] [카드번호3]' };
@@ -1865,7 +1896,29 @@ function setCardCombineProtection(user, indexArg) {
     if (protectItemId == -1) return '❌ 해당 등급에 사용할 수 있는 보호 아이템이 없습니다.';
     pending.protectIndex = index - 1;
     pending.protectItemId = protectItemId;
+    // 보호 카드와 럭키 카드는 동시 사용 불가 → 럭키 선택 해제
+    delete pending.luckyItemId;
+    delete pending.luckyRate;
     return '🛡️ 보호 카드 사용 대상이 변경되었습니다.\n- 보호 대상: ' + formatUserCard(selection.selected[index - 1]);
+}
+
+function setCardCombineLucky(user, rateArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '카드조합') return '❌ 진행 중인 카드조합이 없습니다.';
+    const selection = getCardCombineSelection(user, pending.numbers);
+    if (selection.error) return selection.error;
+    if (selection.isOmega) return '❌ 오메가 조합에는 럭키 카드를 사용할 수 없습니다.';
+    const rate = parseLuckyRateArg(rateArg);
+    if (!Number.isFinite(rate) || rate <= 0) return '❌ /RPGenius 럭키카드사용 [확률] (예: 10%)';
+    const luckyItemId = getLuckyItemIdForRate(user, rate);
+    if (luckyItemId == -1) return '❌ 해당 확률의 럭키 카드를 보유하고 있지 않습니다.';
+    // 럭키 카드와 보호 카드는 동시 사용 불가 → 보호 선택 해제
+    delete pending.protectIndex;
+    delete pending.protectItemId;
+    pending.luckyItemId = luckyItemId;
+    pending.luckyRate = rate;
+    const finalRate = Math.min(1, Number(selection.info.rate || 0) * (1 + rate));
+    return '🍀 럭키 카드를 사용합니다. (' + formatRatePercent(rate) + ' 증가)\n- 성공 확률: ' + formatRatePercent(finalRate);
 }
 
 function getRandomCardCombineNumbers(user, starArg) {
@@ -1915,6 +1968,10 @@ function formatCardCombinePreview(user, numberArgs) {
             if (protectItemId != -1) {
                 lines.push('', '🛡️ 보호 카드를 사용할 수 있습니다.', '/RPGenius 보호카드사용 [1/2/3]');
             }
+            const bestLucky = getBestLuckyCardItem(user);
+            if (bestLucky) {
+                lines.push('', '🍀 럭키 카드를 사용할 수 있습니다.', '/RPGenius 럭키카드사용 ' + formatRatePercent(bestLucky.lucky));
+            }
         }
         lines.push('', '/RPGenius 조합');
     }
@@ -1949,11 +2006,17 @@ function runCardCombine(user) {
     const protectItemId = useProtection ? getProtectItemIdForCardStar(user, selection.star) : -1;
     if (useProtection && (protectItemId == -1 || getInventoryItemCount(user, protectItemId) < 1)) return '❌ 보호 카드가 부족합니다.';
     const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
+    // 럭키 카드 (보호 카드와 동시 사용 불가)
+    const luckyRate = Math.max(0, Number(pending.luckyRate || 0));
+    const useLucky = !useProtection && luckyRate > 0;
+    const luckyItemId = useLucky ? getLuckyItemIdForRate(user, luckyRate) : -1;
+    if (useLucky && (luckyItemId == -1 || getInventoryItemCount(user, luckyItemId) < 1)) return '❌ 럭키 카드가 부족합니다.';
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
-    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate);
+    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate * (useLucky ? (1 + luckyRate) : 1));
     const success = combineRoll.success;
     if (useProtection) removeInventoryItem(user, protectItemId, 1);
+    if (useLucky) removeInventoryItem(user, luckyItemId, 1);
     if (!success && protectedCard) user.inventory.card.push(protectedCard);
     let resultId;
     if (selection.sameCardId != null) {
@@ -1979,6 +2042,7 @@ function runCardCombine(user) {
     }
     const lines = [(success ? (combineRoll.guaranteed ? '⚜️ 카드 3장을 확정 조합했습니다!' : '🌟 카드 3장을 조합했습니다!') : '✅ 카드 3장을 조합했습니다.')];
     if (useProtection) lines.push(success ? '🛡️ 조합에 성공해 보호 카드는 소모되었지만 재료 카드는 보존되지 않았습니다.' : '🛡️ 보호 카드 효과로 재료 카드 1장을 보존했습니다.\n- ' + formatUserCard(protectedCard));
+    if (useLucky) lines.push('🍀 럭키 카드 효과로 성공 확률이 ' + formatRatePercent(luckyRate) + ' 증가했습니다.');
     lines.push('[ 획득 결과 ]', '- ' + formatUserCard(resultCard));
     return lines.join('\n');
 }
@@ -2236,6 +2300,34 @@ function convertCharacterCardToTarget(user, numberArg) {
     if (Number(card.id) == targetId) return '❌ 이미 변환 대상 캐릭터 카드입니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
     const before = Object.assign({}, card);
     card.id = targetId;
+    delete card.skin;
+    user.pendingAction = null;
+    return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
+}
+
+// 만능 캐릭터 변환: 등급/타입 제한 없이 어떤 카드든 변환한다.
+// 전직 카드는 다른 전직 카드로, 일반 카드는 다른 일반 카드로 변환해 카드 유효성을 유지한다.
+function convertCharacterCardUniversal(user, numberArg, confirmedFashion) {
+    const number = Number(numberArg);
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
+    const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
+    const card = cards[number - 1];
+    if (typeof card.skin == 'string' && card.skin.trim() && !confirmedFashion) {
+        user.pendingAction.cardNumber = number;
+        return '❗ 패션 카드를 변환하시겠습니까?\n\n적용된 패션이 사라지고 일반 카드로 변환됩니다.\n/RPGenius 확인\n/RPGenius 사용취소';
+    }
+    const before = Object.assign({}, card);
+    if (card.type === '전직') {
+        const jobIds = characterCards.map((c, i) => i).filter(i => characterCards[i] && characterCards[i].class && i != Number(card.id));
+        if (jobIds.length == 0) return '❌ 변환할 수 있는 다른 전직 캐릭터가 없습니다.';
+        card.id = jobIds[randomInt(0, jobIds.length - 1)];
+    } else {
+        let newId = card.id;
+        while (newId == card.id) newId = randomInt(0, characterCards.length - 1);
+        card.id = newId;
+    }
     delete card.skin;
     user.pendingAction = null;
     return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
@@ -7689,6 +7781,7 @@ async function useItem(user, itemName, countArg) {
     if (item.type == '사용') {
         if (item.use == '변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '만능캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '전직캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '전직프레스티지' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if ((item.use == '패션적용' || item.use == '고급패션적용') && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -7712,7 +7805,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -7779,6 +7872,13 @@ async function useItem(user, itemName, countArg) {
             user.pendingAction = { type: '캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
             if (item.can) user.pendingAction.can = item.can;
             lines.push('변환할 캐릭터 카드를 선택해주세요.');
+            lines.push('/RPGenius 선택 [카드번호]');
+            lines.push('/RPGenius 사용취소');
+            lines.push('', formatCharacterInventory(user));
+        }
+        if (item.use == '만능캐릭터변환') {
+            user.pendingAction = { type: '만능캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+            lines.push('변환할 캐릭터 카드를 선택해주세요. (등급·타입 제한 없음)');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('/RPGenius 사용취소');
             lines.push('', formatCharacterInventory(user));
@@ -9493,6 +9593,34 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '만능캐릭터변환') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 만능 캐릭터 변환석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] == '확인') {
+            if (!user.pendingAction.cardNumber) {
+                reply('❌ 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+                return true;
+            }
+            const result = convertCharacterCardUniversal(user, user.pendingAction.cardNumber, true);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 변환할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = convertCharacterCardUniversal(user, args[1], false);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '전직캐릭터변환') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -9709,6 +9837,12 @@ async function handleRPGCommand(data, channel) {
     if (user.pendingAction && user.pendingAction.type == '카드조합') {
         if (args[0] == '보호카드사용') {
             const result = setCardCombineProtection(user, args[1]);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        if (args[0] == '럭키카드사용') {
+            const result = setCardCombineLucky(user, args[1]);
             await user.save();
             reply(result);
             return true;
@@ -10465,6 +10599,10 @@ module.exports = {
     getJobCombineSelection,
     runJobCombine,
     getProtectItemIdForCardStar,
+    getLuckyCardItems,
+    getBestLuckyCardItem,
+    getLuckyItemIdForRate,
+    setCardCombineLucky,
     getCardCombineCount,
     getCardCombineGuaranteeCount,
     getRemainingCardInventorySpace,

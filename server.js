@@ -1279,12 +1279,16 @@ server.post('/api/combine', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(n => Number(n)) : [];
         const protectIndex = req.body && req.body.protectIndex != null ? Number(req.body.protectIndex) : null;
+        const luckyRate = req.body && req.body.luckyRate != null ? Number(req.body.luckyRate) : null;
         const selection = rpgenius.getCardCombineSelection(user, numbers);
         if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
         const pending = { type: '카드조합', numbers: selection.numbers };
         if (Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3) {
             if (rpgenius.getProtectItemIdForCardStar(user, selection.star) == -1) return res.status(400).json({ error: '사용할 수 있는 보호 카드가 없습니다.' });
             pending.protectIndex = protectIndex;
+        } else if (luckyRate != null && luckyRate > 0) {
+            if (rpgenius.getLuckyItemIdForRate(user, luckyRate) == -1) return res.status(400).json({ error: '사용할 수 있는 럭키 카드가 없습니다.' });
+            pending.luckyRate = luckyRate;
         }
         user.pendingAction = pending;
         const message = rpgenius.runCardCombine(user);
@@ -3213,7 +3217,8 @@ function buildCombineMeta(user) {
         };
         protect[star] = rpgenius.getProtectItemIdForCardStar(user, star) != -1;
     }
-    return { table, protect, gold: Number(user.gold || 0) };
+    const lucky = rpgenius.getLuckyCardItems(user).map(l => ({ rate: l.lucky, name: l.name }));
+    return { table, protect, lucky, gold: Number(user.gold || 0) };
 }
 
 function getEquipmentData(type, id) {
