@@ -200,7 +200,7 @@
             "hp": 193200,
             "atk": 1880,
             "def": 1360,
-            "actionInterval": 4.5,
+            "actionInterval": 3.5,
             "skills": [],
             "stat": {
               "pnt": 840,
@@ -214,15 +214,15 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
-            "hp": 528200,
-            "atk": 2540,
+            "hp": 569200,
+            "atk": 3140,
             "def": 1940,
-            "actionInterval": 3.5,
+            "actionInterval": 3,
             "patterns": [
               {
                 "name": "치명 반사",
                 "type": "critReflect",
-                "reflectPct": 0.05,
+                "reflectPct": 0.02,
                 "taunt": true,
                 "disabledWhileStunned": true
               },
@@ -237,7 +237,7 @@
               {
                 "name": "파멸의 정화",
                 "type": "hpThresholdCast",
-                "intervalSec": 60,
+                "intervalSec": 40,
                 "castTime": 2,
                 "damageTargetMaxHpPct": 0.5,
                 "healByDamage": true,
@@ -257,7 +257,7 @@
                 "name": "종언",
                 "type": "executePositionCast",
                 "threshold": 0.2,
-                "castTime": 2.5,
+                "castTime": 1.5,
                 "targetPriority": ["메인딜러", "서브딜러", "탱커", "브루저", "서포터"],
                 "interruptByStun": true,
                 "once": true
@@ -265,8 +265,8 @@
               {
                 "name": "칠흑의 방패",
                 "type": "roleDamageLock",
-                "interval": 50,
-                "duration": 10
+                "interval": 45,
+                "duration": 15
               },
               {
                 "name": "암흑의 저주",
