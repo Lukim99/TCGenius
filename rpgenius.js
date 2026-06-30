@@ -1808,23 +1808,31 @@ function getCardCombineCount(user, kind, star) {
     return Number(target[String(star)] || 0);
 }
 
-function rollCardCombineSuccess(user, kind, star, rate) {
+// baseRate(럭키 미적용 확률)를 함께 넘기면, 룰렛값이 baseRate~rate 구간에 걸려 성공한 경우
+// (= 럭키 카드 덕분에 성공) luckyDecisive=true 를 반환한다.
+function rollCardCombineSuccess(user, kind, star, rate, baseRate) {
     normalizeCardCombineCounts(user);
     const target = kind == 'pack' ? user.cardPackCombineCounts : user.cardCombineCounts;
     const key = String(star);
     const probCombine = getDataCache('Prob', {}).combine || {};
     const nicknameBonus = Number(probCombine[user.name] || 0);
     const effectiveRate = Math.min(1, Number(rate || 0) + nicknameBonus);
+    const baseEffectiveRate = Math.min(1, Number(baseRate != null ? baseRate : rate) + nicknameBonus);
     const guarantee = getCardCombineGuaranteeCount(star);
-    if (!guarantee) return { success: Math.random() < effectiveRate, guaranteed: false, count: 0, guarantee: 0 };
+    if (!guarantee) {
+        const roll = Math.random();
+        const success = roll < effectiveRate;
+        return { success, guaranteed: false, count: 0, guarantee: 0, luckyDecisive: success && roll >= baseEffectiveRate };
+    }
     const nextCount = Number(target[key] || 0) + 1;
     if (nextCount >= guarantee) {
         target[key] = 0;
-        return { success: true, guaranteed: true, count: 0, guarantee };
+        return { success: true, guaranteed: true, count: 0, guarantee, luckyDecisive: false };
     }
-    const success = Math.random() < effectiveRate;
+    const roll = Math.random();
+    const success = roll < effectiveRate;
     target[key] = success ? 0 : nextCount;
-    return { success, guaranteed: false, count: Number(target[key] || 0), guarantee };
+    return { success, guaranteed: false, count: Number(target[key] || 0), guarantee, luckyDecisive: success && roll >= baseEffectiveRate };
 }
 
 function formatRatePercent(rate) {
@@ -2013,7 +2021,7 @@ function runCardCombine(user) {
     if (useLucky && (luckyItemId == -1 || getInventoryItemCount(user, luckyItemId) < 1)) return '❌ 럭키 카드가 부족합니다.';
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
-    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate * (useLucky ? (1 + luckyRate) : 1));
+    const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate * (useLucky ? (1 + luckyRate) : 1), useLucky ? selection.info.rate : null);
     const success = combineRoll.success;
     if (useProtection) removeInventoryItem(user, protectItemId, 1);
     if (useLucky) removeInventoryItem(user, luckyItemId, 1);
@@ -2040,9 +2048,11 @@ function runCardCombine(user) {
         if (resultCard.star == 11) prog.omegaCombines = Number(prog.omegaCombines || 0) + 1; // 오메가 생성
         if (resultCard.star == 10 || resultCard.star == 11) checkAndUnlockTitles(user);
     }
-    const lines = [(success ? (combineRoll.guaranteed ? '⚜️ 카드 3장을 확정 조합했습니다!' : '🌟 카드 3장을 조합했습니다!') : '✅ 카드 3장을 조합했습니다.')];
+    const successHeadline = combineRoll.guaranteed
+        ? '⚜️ 카드 3장을 확정 조합했습니다!'
+        : (combineRoll.luckyDecisive ? '🍀 카드 3장을 조합했습니다!' : '🌟 카드 3장을 조합했습니다!');
+    const lines = [success ? successHeadline : '✅ 카드 3장을 조합했습니다.'];
     if (useProtection) lines.push(success ? '🛡️ 조합에 성공해 보호 카드는 소모되었지만 재료 카드는 보존되지 않았습니다.' : '🛡️ 보호 카드 효과로 재료 카드 1장을 보존했습니다.\n- ' + formatUserCard(protectedCard));
-    if (useLucky) lines.push('🍀 럭키 카드 효과로 성공 확률이 ' + formatRatePercent(luckyRate) + ' 증가했습니다.');
     lines.push('[ 획득 결과 ]', '- ' + formatUserCard(resultCard));
     return lines.join('\n');
 }
@@ -7878,7 +7888,7 @@ async function useItem(user, itemName, countArg) {
         }
         if (item.use == '만능캐릭터변환') {
             user.pendingAction = { type: '만능캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
-            lines.push('변환할 캐릭터 카드를 선택해주세요. (등급·타입 제한 없음)');
+            lines.push('✨ 변환할 캐릭터 카드를 선택해주세요.');
             lines.push('/RPGenius 선택 [카드번호]');
             lines.push('/RPGenius 사용취소');
             lines.push('', formatCharacterInventory(user));
