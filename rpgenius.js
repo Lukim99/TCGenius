@@ -7583,7 +7583,7 @@ function getLockboxOpenError(user, count) {
     const opens = Math.max(1, Math.floor(Number(count) || 1));
     const ctx = getLockboxContext();
     if (ctx.error) return ctx.error;
-    if (getInventoryItemCount(user, ctx.itemId) < opens) return '봉인된 자물쇠가 부족합니다.';
+    // 봉인된 자물쇠 아이템 자체는 웹 개봉 시 필요하지 않다 (require 조건만 검사).
     const requirements = Array.isArray(ctx.item.require) ? ctx.item.require : [];
     for (const req of requirements) {
         if (getInventoryItemCount(user, req.id) < Number(req.count || 0) * opens) {
@@ -7600,9 +7600,9 @@ function openSealedLockbox(user, count) {
     const err = getLockboxOpenError(user, opens);
     if (err) return { error: err };
     const ctx = getLockboxContext();
-    const { itemId, item, pack } = ctx;
+    const { item, pack } = ctx;
     const requirements = Array.isArray(item.require) ? item.require : [];
-    removeInventoryItem(user, itemId, opens);
+    // 봉인된 자물쇠 아이템은 소모하지 않는다 (require 조건만 소모).
     requirements.forEach(req => removeInventoryItem(user, req.id, Number(req.count || 0) * opens));
     const num = Math.max(1, Math.floor(Number(item.num || 1)));
     const result = [];
