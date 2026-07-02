@@ -370,5 +370,67 @@
                 23
             ]
         }
+    },
+    {
+        "name": "안성재",
+        "slot_effect": {
+            "name": "[무]속성 공격 시 최종 피해",
+            "base": 0.01,
+            "per_level": 0.01
+        },
+        "skills": [
+            24
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "nonElementFinalDamage",
+                    "name": "[무]속성 공격 시 최종 피해",
+                    "base": 0.005,
+                    "per_level": 0.005
+                },
+                {
+                    "effect": "tenthHitFinalAtk",
+                    "name": "10번째 공격마다 최종 공격력",
+                    "base": 0.04,
+                    "per_level": 0.01
+                }
+            ],
+            "skills": [
+                25
+            ]
+        }
+    },
+    {
+        "name": "흠시원",
+        "slot_effect": {
+            "name": "10번째 공격마다 최종 공격력",
+            "base": 0.08,
+            "per_level": 0.02
+        },
+        "skills": [
+            26
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "nonElementFinalDamage",
+                    "name": "[무]속성 공격 시 최종 피해",
+                    "base": 0.005,
+                    "per_level": 0.005
+                },
+                {
+                    "effect": "tenthHitFinalAtk",
+                    "name": "10번째 공격마다 최종 공격력",
+                    "base": 0.04,
+                    "per_level": 0.01
+                }
+            ],
+            "skills": [
+                27
+            ]
+        }
     }
 ]

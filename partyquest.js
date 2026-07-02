@@ -1269,7 +1269,7 @@ function stepRoom(room) {
                 if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
                     const botDamage = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.iktaeBot.atkMul));
-                    const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true });
+                    const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true, summonAttack: true });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
                     if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
@@ -1292,7 +1292,7 @@ function stepRoom(room) {
                 if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
                     const dmg = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.sunata.atkMul));
-                    const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true });
+                    const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true, summonAttack: true });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
                     if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
@@ -1315,12 +1315,25 @@ function stepRoom(room) {
         for (const k of Object.keys(mon.patternCooldowns || {})) {
             mon.patternCooldowns[k] = Math.max(0, mon.patternCooldowns[k] - dt);
         }
-        // 몬스터 디버프 (잔류 전격 등)
+        // 몬스터 디버프 (잔류 전격, 유서새김 지속 피해 등)
         if (mon.debuffs && mon.debuffs.length) {
+            let dotKilled = false;
             for (let i = mon.debuffs.length - 1; i >= 0; i--) {
-                mon.debuffs[i].remain -= dt;
-                if (mon.debuffs[i].remain <= 0) mon.debuffs.splice(i, 1);
+                const d = mon.debuffs[i];
+                if (!dotKilled && d.type === 'dot' && mon.hp > 0) {
+                    d.tick = Number(typeof d.tick !== 'undefined' ? d.tick : (d.interval || 2)) - dt;
+                    if (d.tick <= 0) {
+                        d.tick += Number(d.interval || 2);
+                        const dotDmg = Math.max(1, Math.round(Number(d.dmg || 0)));
+                        mon.hp = Math.max(0, mon.hp - dotDmg);
+                        pushCombat(room, '✍️ ' + (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dotDmg + ']', 'skill');
+                        if (mon.hp <= 0) dotKilled = true;
+                    }
+                }
+                d.remain -= dt;
+                if (d.remain <= 0) mon.debuffs.splice(i, 1);
             }
+            if (dotKilled) { onMonsterDefeated(room); return; }
         }
 
         if (mon.stunRemain <= 0) {
@@ -1451,6 +1464,27 @@ function getMonsterTakenDmgMul(monster) {
         }
     }
     return Math.max(0, mul);
+}
+
+function getMonsterDefReduce(monster) {
+    let rate = 0;
+    if (monster && Array.isArray(monster.debuffs)) {
+        for (const d of monster.debuffs) {
+            if (d.type === 'defReduce') rate += Number(d.value || 0);
+        }
+    }
+    return Math.max(0, Math.min(1, rate));
+}
+
+// 공격 시 방어력 감소(flat) 디버프 합산 — 공격자별로 누적된다
+function getMonsterDefFlat(monster) {
+    let flat = 0;
+    if (monster && Array.isArray(monster.debuffs)) {
+        for (const d of monster.debuffs) {
+            if (d.type === 'defFlat') flat += Number(d.value || 0);
+        }
+    }
+    return Math.max(0, flat);
 }
 
 function addMonsterDebuff(monster, debuff) {
@@ -1602,10 +1636,32 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (!monster || monster.type === 'mob') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.damageBonus || 0));
     if (monster && monster.type === 'elite') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.eliteDmg || 0));
     if (monster && monster.type === 'boss') contextMul *= (1 + Number(stats.bossDmg || 0));
+    // 공격 시 5초간 방어력 감소(flat) — 몬스터 디버프(파티 전체 이득), 공격자별 누적, 소환 자동공격 제외
+    if (monster && !(extra && extra.summonAttack) && Number(stats.atkDefReduce || 0) > 0) {
+        addMonsterDebuff(monster, { id: 'atkDefReduce:' + (attacker && attacker.name), type: 'defFlat', value: Number(stats.atkDefReduce || 0), remain: 5 });
+    }
+    // '월도랜드' 필드(퀘스트) 공격 시 추가 피해
+    if (/월도랜드/.test(String(quest.name || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
+    // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외)
+    if (!(extra && extra.summonAttack)) {
+        runtime.attackCounter = Number(runtime.attackCounter || 0) + 1;
+        const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
+        if (tenthAtk > 0 && runtime.attackCounter % 10 === 0) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + tenthAtk;
+    }
     contextMul *= 1 + Number(extra && extra.damageBonusMul || 0);
+    // [무]속성 공격 시 최종 피해 증가 + 범인은 이 안에(다음 공격 최종 피해)
+    let extraFinalDamage = 0;
+    if (!resolvePartyAttackElement(attacker, extra && extra.skillElement)) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
+    if (extra && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
+        extraFinalDamage += Number(runtime.nextFinalDamageBonus || 0);
+        runtime.nextFinalDamageBonus = 0;
+    }
     const hitCount = extra && extra.hitCount ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : getComboHitCount(stats);
-    const defenseReductionRate = getReducedDefenseRate(stats, slotEffects, posDef && posDef.stats && posDef.stats.armorPen);
-    const penetration = typeof extra.pnt !== 'undefined' ? Number(extra.pnt || 0) : Number(stats.pnt || 0);
+    const defenseReductionRate = Math.min(1, getReducedDefenseRate(stats, slotEffects, posDef && posDef.stats && posDef.stats.armorPen) + getMonsterDefReduce(monster) + Number(extra && extra.defReductionBonus || 0));
+    let penetration = typeof extra.pnt !== 'undefined' ? Number(extra.pnt || 0) : Number(stats.pnt || 0);
+    if (runtime.pntBonusUntil && Date.now() < Number(runtime.pntBonusUntil)) penetration += Number(runtime.pntBonusValue || 0);
+    // 방어력 감소(flat) 반영한 유효 방어력
+    const monsterDef = Math.max(0, Number(monster && monster.def || 0) - getMonsterDefFlat(monster));
     let crit = Number(stats.crit || 0);
     if (extra && typeof extra.critChanceMul !== 'undefined') crit *= Number(extra.critChanceMul || 0);
     const trueDamageOnCrit = !!(extra && extra.trueDamageOnCrit) || !!runtime.trueDamageOnCritNext;
@@ -1622,7 +1678,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     let abyssDoomUsed = false;
     const elementMul = getPartyElementMultiplier(attacker, monster, extra && extra.skillElement);
     for (let i = 0; i < totalHits; i++) {
-        let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0)) * dealtDmgMul * getFinalDamageMul(attacker);
+        let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage) * dealtDmgMul * getFinalDamageMul(attacker);
         let fixedHitDamage = 0;
         let destinyHitDamage = 0;
         const isCrit = extra && extra.disableCritical ? false : (extra && extra.forceCritical ? true : Math.random() < Math.max(0, crit));
@@ -1645,10 +1701,10 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             hitDamage = getFixedDamageAgainstMonster(hitDamage, monster, penetration, defenseReductionRate);
             fixedHitDamage += hitDamage;
         } else if (Number(stats.trueDamageChance || 0) > 0 && Math.random() < Number(stats.trueDamageChance || 0)) {
-            hitDamage = getDestinyDamageAgainstMonster(hitDamage, monster, penetration, defenseReductionRate);
+            hitDamage = getDestinyDamageAfterDefense(hitDamage, monsterDef, penetration, defenseReductionRate);
             destinyHitDamage += hitDamage;
         } else {
-            hitDamage = getDamageAfterDefense(hitDamage, monster && monster.def, penetration, defenseReductionRate);
+            hitDamage = getDamageAfterDefense(hitDamage, monsterDef, penetration, defenseReductionRate);
         }
         if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
             const bonus = getFixedDamageAgainstMonster([10, 100, 1000][randomInt(0, 2)], monster, penetration, defenseReductionRate);
@@ -1671,6 +1727,11 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         hitDamages.push(finalHitDamage);
         hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit });
         damage += finalHitDamage;
+    }
+    // 나인 멘스 모리스 패시브: 일반 공격/일반 취급 공격(countAsBasic)은 각 타격마다 중첩 (연격 각각), 최대 9
+    if (!(extra && extra.summonAttack) && extra && extra.isBasic && attacker && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
+        if (!attacker.runtime.stackCounters) attacker.runtime.stackCounters = {};
+        attacker.runtime.stackCounters['나인멘스'] = Math.min(9, Number(attacker.runtime.stackCounters['나인멘스'] || 0) + Math.max(1, hitDetails.length));
     }
     // 추가 피해: 모든 계산이 끝난 최종 피해에 마지막으로 비율만큼 더한다
     let extraDamageDealt = 0;
@@ -2295,7 +2356,7 @@ function resolveSkillDef(room, skillName, member) {
 
 function executeSkillEffect(room, caster, skillName, def, targetName) {
     if (def.source === 'mainCard') {
-        executeMainCardSkillEffect(room, caster, skillName, def);
+        executeMainCardSkillEffect(room, caster, skillName, def, targetName);
         return;
     }
     const stats = caster.baseSnapshot.stats;
@@ -2452,7 +2513,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName) {
     }
 }
 
-function executeMainCardSkillEffect(room, caster, skillName, def) {
+function executeMainCardSkillEffect(room, caster, skillName, def, targetName) {
     const skill = def.raw || {};
     const star = Number(def.star || 0);
     const stats = caster.baseSnapshot.stats || {};
@@ -2470,6 +2531,20 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         caster.runtime.nextSkillDamageBonus = 0;
     }
     let rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus) * skillDmgMul);
+    if (skillName === '나인 멘스 모리스') {
+        if (!caster.runtime.stackCounters) caster.runtime.stackCounters = {};
+        const stacks = Math.min(9, Number(caster.runtime.stackCounters['나인멘스'] || 0));
+        const nmmMul = getSkillValue(skill, 0, star) * (1 + getSkillValue(skill, 1, star) * stacks);
+        rawDamage = Math.round(finalAtk * nmmMul * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus) * skillDmgMul);
+        if (stacks >= 9) extra.defReductionBonus = Number(extra.defReductionBonus || 0) + 0.5;
+        caster.runtime.stackCounters['나인멘스'] = 0;
+        pushCombat(room, caster.name + ' [나인 멘스 모리스] ' + stacks + '중첩 소모' + (stacks >= 9 ? ' (방관 50%)' : ''), 'buff');
+    }
+    if (skillName === '포커 못 하시네') {
+        extra.hitCount = 9;
+        extra.isBasic = true; // 일반 공격으로 간주 (파티 퀘스트 countAsBasic 스킬과 동일 취급)
+        rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
+    }
     if (skillName === '글버지') {
         const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star)));
         const allyAtk = getSkillValue(skill, 2, star);
@@ -2586,6 +2661,36 @@ function executeMainCardSkillEffect(room, caster, skillName, def) {
         caster.runtime.sunata = { atkMul: atkMul, buff: buffMul, expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 5000 };
         upsertMemberBuff(caster, { id: 'sunata', label: '수나타 (공+)', value: buffMul, remain: Math.round(durationMs / 1000) });
         pushCombat(room, '🎵 ' + caster.name + '님이 수나타를 소환했습니다! (' + (durationMs / 1000).toFixed(1) + '초간 유지)', 'buff');
+        return;
+    }
+    if (skillName === '유서새김') {
+        if (room.monster) {
+            const defDown = getSkillValue(skill, 0, star);
+            const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skill, 1, star) * (1 + Number(stats.dotDamage || 0))));
+            addMonsterDebuff(room.monster, { id: '유서새김-def', type: 'defReduce', value: defDown, remain: 10 });
+            addMonsterDebuff(room.monster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10 });
+            pushCombat(room, caster.name + ' [유서새김] → ' + room.monster.name + ' 표식 (방어력 ▼ / 2초마다 지속 피해)', 'buff');
+        }
+        applyMainCardPassiveMpRecovery(room, caster);
+        return;
+    }
+    if (skillName === '범인은 이 안에') {
+        const pnt = getSkillValue(skill, 0, star);
+        const fdmg = getSkillValue(skill, 1, star);
+        const ally = pickAllyTarget(room, caster, targetName);
+        const recipients = ally && ally !== caster ? [caster, ally] : [caster];
+        const until = Date.now() + 10000;
+        for (const t of recipients) {
+            t.runtime.pntBonusValue = pnt;
+            t.runtime.pntBonusUntil = until;
+            upsertMemberBuff(t, { id: 'pntBonus', label: '범인은 이 안에 (방관)', value: pnt, remain: 10 });
+        }
+        // 다음 기본 공격 최종 피해 증가: 시전자(흠시원)에게만 부여
+        caster.runtime.nextFinalDamageBonus = fdmg;
+        const hpCost = Math.floor(Number(caster.runtime.hp || 0) * 0.1);
+        caster.runtime.hp = Math.max(1, Number(caster.runtime.hp || 0) - hpCost);
+        pushCombat(room, caster.name + ' [범인은 이 안에] → ' + recipients.map(t => t.name).join(', ') + ' 방어 관통 ▲ / 다음 공격 최종 피해 ▲ (HP -' + comma(hpCost) + ')', 'buff');
+        applyMainCardPassiveMpRecovery(room, caster);
         return;
     }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);

@@ -967,7 +967,8 @@ const FLAT_STAT_DEFS = [
     { key: 'lightRes', label: '[명]속성 저항', kind: 'int' },
     { key: 'darkRes', label: '[암]속성 저항', kind: 'int' },
     { key: 'allElementAtk', label: '모든 속성 강화', kind: 'int' },
-    { key: 'allElementRes', label: '모든 속성 저항', kind: 'int' }
+    { key: 'allElementRes', label: '모든 속성 저항', kind: 'int' },
+    { key: 'atkDefReduce', label: '공격 시 5초간 방어력 감소', kind: 'int' }
 ];
 
 const PLUS_STAT_DEFS = [
@@ -1000,7 +1001,9 @@ const PLUS_STAT_DEFS = [
     { key: 'extraDamage', label: '추가 피해', kind: 'percent' },
     { key: 'bossDmg', label: '보스 몬스터에게 주는 피해 증가', kind: 'percent' },
     { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' },
-    { key: 'cooldown', label: '쿨타임 감소', kind: 'percent' }
+    { key: 'cooldown', label: '쿨타임 감소', kind: 'percent' },
+    { key: 'dotDamage', label: '지속 피해', kind: 'percent' },
+    { key: 'waldolandDmg', label: "'월도랜드' 필드 공격 시 추가 피해", kind: 'percent' }
 ];
 
 function statKindUnit(kind) {

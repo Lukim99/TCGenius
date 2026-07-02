@@ -228,6 +228,52 @@ async function runFieldSunataTick(userName) {
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
+const fieldMarkTimers = {};
+function startFieldMark(userName) {
+    clearFieldMark(userName);
+    fieldMarkTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldMarkTick(userName)).catch(e => console.error('[mark tick]', e.message)), 2000);
+}
+function ensureFieldMarkTimer(user, channel) {
+    if (!user || !user.field || !user.field.mark) return;
+    if (channel) activeFieldChannels[user.name] = channel;
+    if (fieldMarkTimers[user.name]) return;
+    startFieldMark(user.name);
+}
+function clearFieldMark(userName) {
+    if (fieldMarkTimers[userName]) {
+        clearInterval(fieldMarkTimers[userName]);
+        delete fieldMarkTimers[userName];
+    }
+}
+async function runFieldMarkTick(userName) {
+    const user = await getRPGUserByName(userName);
+    if (!user || !user.field || !user.field.mark) { clearFieldMark(userName); return; }
+    if (Date.now() > user.field.mark.expired_at) {
+        user.field.mark = null;
+        clearFieldMark(userName);
+        await user.save();
+        const ch = activeFieldChannels[userName] || worldBossChannels[userName];
+        if (ch) ch.sendChat('✍️ 유서새김의 표식이 사라졌습니다.');
+        return;
+    }
+    const context = getFieldCombatContext(user);
+    if (context.error) return;
+    const dmg = Math.max(1, Math.round(Number(user.field.mark.dot || 0)));
+    const extra = { isBotAutoAttack: true, summonAttack: true, attackElement: getAttackElement(user, null) };
+    const lines = [];
+    if (context.type == 'worldBoss') {
+        const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
+        lines.push('✍️ 유서새김 지속 피해! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
+        if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+    } else if (context.type == 'elite') {
+        lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
+    } else {
+        lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
+    }
+    await user.save();
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
+    if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
+}
 const commandQueues = {};
 const petShortcutCache = {};
 const commandSpamStates = {};
@@ -476,7 +522,8 @@ function formatStatValue(key, value) {
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
-        'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%'
+        'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%',
+        'dotDamage%', 'waldolandDmg%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -609,7 +656,8 @@ const EQUIP_STAT_LABELS = {
     lightRes: '[명]속성 저항',
     darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화',
-    allElementRes: '모든 속성 저항'
+    allElementRes: '모든 속성 저항',
+    atkDefReduce: '공격 시 5초간 방어력 감소'
 };
 const EQUIP_PLUSSTAT_LABELS = {
     atk: '최종 공격력',
@@ -641,7 +689,9 @@ const EQUIP_PLUSSTAT_LABELS = {
     extraDamage: '추가 피해',
     bossDmg: '보스 몬스터에게 주는 피해 증가',
     summonDuration: '소환 지속시간',
-    cooldown: '쿨타임 감소'
+    cooldown: '쿨타임 감소',
+    dotDamage: '지속 피해',
+    waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
 };
 
 // ===== 속성(Element) 시스템 =====
@@ -1700,7 +1750,9 @@ function calculateCardSlotEffects(user) {
         itemDropChance: 0,
         defReduction: 0,
         basicDamageBonus: 0,
-        skillDamageBonus: 0
+        skillDamageBonus: 0,
+        nonElementFinalDamage: 0,
+        tenthHitFinalAtk: 0
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
@@ -1731,6 +1783,8 @@ function calculateCardSlotEffects(user) {
         if (cardData.name == '마쉐비') effects.defReduction += value;
         if (cardData.name == '딜러장') effects.basicDamageBonus += value;
         if (cardData.name == '이익태') effects.skillDamageBonus += value;
+        if (cardData.name == '안성재') effects.nonElementFinalDamage += value;
+        if (cardData.name == '흠시원') effects.tenthHitFinalAtk += value;
     });
     return effects;
 }
@@ -1749,7 +1803,9 @@ function formatCardSlotEffectLines(user) {
         ['itemDropChance', '아이템 드랍 확률'],
         ['defReduction', '방어력 관통'],
         ['basicDamageBonus', '일반 공격 피해'],
-        ['skillDamageBonus', '스킬 공격 피해']
+        ['skillDamageBonus', '스킬 공격 피해'],
+        ['nonElementFinalDamage', '[무]속성 공격 시 최종 피해'],
+        ['tenthHitFinalAtk', '10번째 공격마다 최종 공격력']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
@@ -2672,7 +2728,7 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -2752,7 +2808,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO + Number(stats.extraDamage || 0) * W.EXTRA_DAMAGE_RATIO;
     const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
     const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
-    const mPen = 1 + pnt / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
+    const mPen = 1 + (pnt + Math.max(0, Number(stats.atkDefReduce || 0))) / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
     const abyssDoomBonus = stats.hasAbyssDoom ? Math.min(1, crit) * 0.3 / (1 - Math.min(0.9, Math.min(1, crit) * 0.3)) : 0;
     const celestiaBonus = stats.hasCelestia ? 0.03 : 0;
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
@@ -3052,6 +3108,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let totalHits = hitCount;
     let abyssDoomUsed = false;
     const elementMul = getElementDamageMultiplier(extra && extra.attackElement, stats, defenderStats);
+    const defenseReductionRate = Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(extra && extra.defReductionBonus || 0)));
     for (let i = 0; i < totalHits; i++) {
         const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0) + Number(extra && extra.finalDamageBonus || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
@@ -3062,8 +3119,8 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         let hitDamage = 0;
         const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;
         hitDamage = isDestinyDamage
-            ? getDamageAfterDestinyDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects))
-            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, getTotalDefenseReductionRate(stats, slotEffects));
+            ? getDamageAfterDestinyDefense(criticalResult.damage, defense, penetration, defenseReductionRate)
+            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, defenseReductionRate);
         
         if (stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
             hitDamage += Math.round(criticalResult.damage * 0.15);
@@ -3431,6 +3488,7 @@ function leaveField(user) {
     saveFieldCooldowns(user);
     releaseEliteEncounter(user);
     clearFieldIktaeBot(user.name);
+    clearFieldMark(user.name);
     delete activeFieldChannels[user.name];
     user.field = null;
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
@@ -3938,6 +3996,13 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
     if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
 }
 
+// 나인 멘스 모리스: 명중 1회당 중첩 1 (연격 각각), 최대 9
+function applyNmmStackGain(user, extra, hitResult) {
+    if (!extra || !extra.buildNmmStack || !user || !user.field) return;
+    const hits = Math.max(1, Number(hitResult && hitResult.hitCount || 1));
+    user.field.nmmStacks = Math.min(9, Number(user.field.nmmStacks || 0) + hits);
+}
+
 function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     applyPetRegen(user, stats, null);
@@ -3945,8 +4010,13 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const elite = getCombatStats(dungeon.elite);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
-    const eliteExtra = Object.assign({}, extra, { finalDamageBonus: getManaResonanceBonus(user, stats) });
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, elite.def, eliteExtra && eliteExtra.pnt || stats.pnt, stats, slotEffects, eliteExtra, elite);
+    const eliteExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
+    // '월도랜드' 필드 공격 시 추가 피해
+    if (user.field && /월도랜드/.test(String(user.field.name || ''))) eliteExtra.extraDamageBonus = Number(eliteExtra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
+    // 공격 시 방어력 감소(flat)
+    const eliteDef = Math.max(0, Number(elite.def || 0) - Number(stats.atkDefReduce || 0));
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, eliteDef, (eliteExtra && eliteExtra.pnt || stats.pnt) + Number(eliteExtra.pntBonus || 0), stats, slotEffects, eliteExtra, elite);
+    applyNmmStackGain(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
     let remainHp = Math.max(0, currentHp - finalDamage);
     const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
@@ -4061,8 +4131,13 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
     const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
-    const huntExtra = Object.assign({}, extra, { finalDamageBonus: getManaResonanceBonus(user, stats) });
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, monster.def, huntExtra && huntExtra.pnt || stats.pnt, stats, slotEffects, huntExtra, monster);
+    const huntExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
+    // '월도랜드' 필드 공격 시 추가 피해
+    if (user.field && /월도랜드/.test(String(user.field.name || ''))) huntExtra.extraDamageBonus = Number(huntExtra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
+    // 공격 시 방어력 감소(flat): 솔로는 단일 적이므로 유효 방어력에서 차감
+    const monsterDef = Math.max(0, Number(monster.def || 0) - Number(stats.atkDefReduce || 0));
+    const hitResult = calculateAttackHitResult(damageWithSlotBonus, monsterDef, (huntExtra && huntExtra.pnt || stats.pnt) + Number(huntExtra.pntBonus || 0), stats, slotEffects, huntExtra, monster);
+    applyNmmStackGain(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
@@ -4298,6 +4373,7 @@ function useBasicAttackInField(user, channel) {
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.sunata) ensureFieldSunataTimer(user, channel);
+    if (user.field.mark) ensureFieldMarkTimer(user, channel);
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
     const context = getFieldCombatContext(user);
@@ -4334,6 +4410,25 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     if (actionType === 'skill') extra.isSkill = true;
     if (actionType === 'basic') extra.isBasic = true;
     extra.attackElement = getAttackElement(user, actionType === 'skill' ? skill : null);
+    // 카드 슬롯효과 기반 per-공격 보정 (안성재/흠시원)
+    const fieldSlot = calculateCardSlotEffects(user);
+    // [무]속성 공격 시 최종 피해 증가
+    if (!extra.attackElement && Number(fieldSlot.nonElementFinalDamage || 0) > 0) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldSlot.nonElementFinalDamage || 0);
+    // 10번째 공격마다 최종 공격력 증가 (일반+스킬 모두 카운트)
+    user.field.attackCount = Number(user.field.attackCount || 0) + 1;
+    if (Number(fieldSlot.tenthHitFinalAtk || 0) > 0 && user.field.attackCount % 10 === 0) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(fieldSlot.tenthHitFinalAtk || 0);
+    // 유서새김 표식: 방어력 감소(관통 보너스)
+    const fieldBuffsForAttack = getFieldBuffs(user);
+    if (user.field.mark && Date.now() < Number(user.field.mark.expired_at || 0)) extra.defReductionBonus = Number(extra.defReductionBonus || 0) + Number(user.field.mark.defReduce || 0);
+    // 나인 멘스 모리스 패시브: 일반 공격/일반 취급 공격은 각 타격마다 중첩 (연격 각각, 실제 명중 수는 build 단계에서 반영)
+    if ((extra.isBasic || extra.basicAttackSkill) && findUsableSkill(user, '나인 멘스 모리스')) extra.buildNmmStack = true;
+    // 범인은 이 안에: 10초간 방어 관통력 부여
+    if (fieldBuffsForAttack.pntBuff && Date.now() < Number(fieldBuffsForAttack.pntBuff.expired_at || 0)) extra.pntBonus = Number(extra.pntBonus || 0) + Number(fieldBuffsForAttack.pntBuff.value || 0);
+    // 범인은 이 안에: 다음 기본 공격 시 최종 피해량 증가 (기본 공격에서만 1회 소모)
+    if (extra.isBasic && fieldBuffsForAttack.nextFinalDamageBonus) {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldBuffsForAttack.nextFinalDamageBonus.value || 0);
+        delete fieldBuffsForAttack.nextFinalDamageBonus;
+    }
     // 수나타 소환 중: 본인 공격력 +buff% (소환수 자동공격은 build*를 직접 호출하므로 제외)
     if (user.field && user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0)) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0);
@@ -4381,6 +4476,7 @@ function useSkillInField(user, skillName, channel) {
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.sunata) ensureFieldSunataTimer(user, channel);
+    if (user.field.mark) ensureFieldMarkTimer(user, channel);
     if (user.field.worldBoss) {
         ensureWorldBossSkillTimer(user, channel);
         if (skillName && findUsableSkill(user, skillName)) return executeMainCardSkillInField(user, skillName);
@@ -4432,6 +4528,18 @@ function executeMainCardSkillInField(user, skillName) {
         const amount = Math.round(Number(stats.hp || 0) * ratio);
         user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
+    }
+    if (skillData.skill.name == '나인 멘스 모리스') {
+        const stacks = Math.min(9, Number(user.field.nmmStacks || 0));
+        const perStack = getSkillValue(skillData.skill, 1, star);
+        multiplier = getSkillValue(skillData.skill, 0, star) * (1 + perStack * stacks);
+        if (stacks >= 9) extra.defReductionBonus = Number(extra.defReductionBonus || 0) + 0.5;
+        user.field.nmmStacks = 0;
+        extra.notice = '나인 멘스 모리스: ' + stacks + '중첩 소모' + (stacks >= 9 ? ' (방어력 50% 무시)' : '');
+    }
+    if (skillData.skill.name == '포커 못 하시네') {
+        extra.hitCount = 9;
+        extra.basicAttackSkill = true;
     }
     if (skillData.skill.name == '자인') getFieldBuffs(user).nextBasicDamageBonus = { value: getSkillValue(skillData.skill, 1, star) };
     if (skillData.skill.name == '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skillData.skill, 1, star);
@@ -4540,6 +4648,36 @@ function executeMainCardSkillInField(user, skillName) {
         startFieldSunata(user.name);
         return lines.join('\n');
     }
+    if (skillData.skill.name == '유서새김') {
+        const defDown = getSkillValue(skillData.skill, 0, star);
+        const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.dotDamage || 0))));
+        user.field.mark = { defReduce: defDown, dot: dotDmg, expired_at: Date.now() + 10000 };
+        const lines = ['✍️ 유서새김! 대상에게 표식을 새겼습니다.\n- 10초간 방어력 ' + (Math.round(defDown * 1000) / 10) + '% 감소\n- 2초마다 지속 피해 ' + comma(dotDmg), '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
+        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        startFieldMark(user.name);
+        return lines.join('\n');
+    }
+    if (skillData.skill.name == '범인은 이 안에') {
+        const pnt = getSkillValue(skillData.skill, 0, star);
+        const fdmg = getSkillValue(skillData.skill, 1, star);
+        const buffs = getFieldBuffs(user);
+        buffs.pntBuff = { value: pnt, expired_at: Date.now() + 10000 };
+        buffs.nextFinalDamageBonus = { value: fdmg };
+        const curHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+        const hpCost = Math.floor(curHp * 0.1);
+        user.hp = Math.max(1, curHp - hpCost);
+        const lines = ['🔎 범인은 이 안에!\n- 10초간 방어 관통력 +' + comma(pnt) + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
+        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
+        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        return lines.join('\n');
+    }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
     const fieldBuffsNow = getFieldBuffs(user);
     let nextSkillBonus = 0;
@@ -4586,7 +4724,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const extra = Object.assign({}, opts || {});
-    extra.finalDamageBonus = getManaResonanceBonus(user, stats);
+    extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats);
     const defenderStats = getWorldBossDefenderStats(boss);
     let finalDamage = 0;
     let isCritical = false;
@@ -4598,13 +4736,14 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
         trueDamageCount = 1;
     } else {
-        hitResult = calculateAttackHitResult(Number(rawDamage || 0) * (1 + Number(stats.bossDmg || 0)), boss.def, stats.pnt, stats, slotEffects, extra, defenderStats);
+        hitResult = calculateAttackHitResult(Number(rawDamage || 0) * (1 + Number(stats.bossDmg || 0)), Math.max(0, Number(boss.def || 0) - Number(stats.atkDefReduce || 0)), (typeof extra.pnt !== 'undefined' ? Number(extra.pnt || 0) : Number(stats.pnt || 0)) + Number(extra.pntBonus || 0), stats, slotEffects, extra, defenderStats);
         finalDamage = Math.max(0, Math.round(Number(hitResult.finalDamage || 0)));
         isCritical = Number(hitResult.criticalCount || 0) > 0;
         trueDamageCount = Number(hitResult.trueDamageCount || 0);
         destinyDamageCount = Number(hitResult.destinyDamageCount || 0);
         bonusTripleZero = Number(hitResult.bonusTripleZero || 0);
     }
+    applyNmmStackGain(user, extra, hitResult);
     const state = ensureWorldBossRevived(boss);
     const before = Number(state.hp || 0);
     const dealt = Math.min(before, finalDamage);
@@ -5131,7 +5270,8 @@ const SUPPORT_STAT_LABELS = {
     atkPerMillionGold: '보유 골드 100만 당 공격력',
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
-    allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항'
+    allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
+    atkDefReduce: '공격 시 5초간 방어력 감소'
 };
 
 const SUPPORT_PLUS_STAT_LABELS = {
@@ -5147,7 +5287,8 @@ const SUPPORT_PLUS_STAT_LABELS = {
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해', extraDamage: '추가 피해',
-    summonDuration: '소환 지속시간', cooldown: '쿨타임 감소'
+    summonDuration: '소환 지속시간', cooldown: '쿨타임 감소',
+    dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
 };
 
 function formatEquippedEquipmentDetail(label, type, equip, user) {
@@ -7294,7 +7435,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
         fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
-        allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항'
+        allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
+        atkDefReduce: '공격 시 5초간 방어력 감소'
     };
     const plusStatNames = {
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
@@ -7309,7 +7451,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
         finalDamage: '최종 피해', extraDamage: '추가 피해',
-        cooldown: '쿨타임 감소'
+        cooldown: '쿨타임 감소',
+        dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
     };
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
