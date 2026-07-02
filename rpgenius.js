@@ -14,7 +14,7 @@ const MAIL_READ_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 읽은 메일은 3일 뒤 �
 const MAIL_GOLD_FEE_RATE = 0.05;         // 골드/가넷 선물 수수료
 const MAIL_GOLD_FEE_MIN = 5;             // 최소 수수료
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PointLogs', 'NameMatch'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -56,6 +56,10 @@ const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
 const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
+const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
+// 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 사냥 드랍 아이템이 펀치기계 토큰으로 전환된다.
+const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
+function isEventDiceEnded() { return Date.now() >= EVENT_DICE_END_TS; }
 const EVENT_DICE_DROP_CHANCE = 0.05;
 const EVENT_DICE_DROP_DAILY_LIMIT = 10;
 const FRAGMENT_TIERS = {
@@ -339,6 +343,31 @@ function getDataCache(key, fallback) {
 }
 
 initRpgeniusData();
+
+// 유생의 주사위 이벤트 종료 시, 일반 상점에서 판매 중인 '유생의 주사위'를 '펀치기계 토큰'으로 자동 전환한다.
+function migrateEventDiceShopItemToPunchToken() {
+    const items = getDataCache('Item', []);
+    const diceItemId = items.findIndex(item => item && item.name == EVENT_DICE_DROP_ITEM_NAME);
+    const tokenItemId = items.findIndex(item => item && item.name == PUNCH_TOKEN_ITEM_NAME);
+    if (diceItemId == -1 || tokenItemId == -1) return;
+    const shops = getDataCache('Shop', {});
+    const shop = shops['일반'];
+    if (!Array.isArray(shop)) return;
+    let changed = false;
+    shop.forEach(entry => {
+        if (entry && entry.type == '아이템' && entry.item_id == diceItemId) {
+            entry.item_id = tokenItemId;
+            changed = true;
+        }
+    });
+    if (changed) saveRpgeniusDataEntry('Shop', shops).catch(e => console.error('[event->punch] Shop 갱신 실패: ' + e.message));
+}
+(function scheduleEventDiceEndShopMigration() {
+    const run = () => initRpgeniusData().then(migrateEventDiceShopItemToPunchToken);
+    const delay = EVENT_DICE_END_TS - Date.now();
+    if (delay <= 0) run();
+    else setTimeout(run, delay);
+})();
 
 function getRandomString(len) {
     const chars = '023456789ABCDEFGHJKLMNOPQRSTUVWXTZabcdefghikmnopqrstuvwxyz';
@@ -4323,11 +4352,13 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const eventDiceDaily = getEventDiceDropDailyState(user);
         if (Number(eventDiceDaily.count || 0) < EVENT_DICE_DROP_DAILY_LIMIT && Math.random() < EVENT_DICE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
-            const dropItemId = items.findIndex(item => item.name == EVENT_DICE_DROP_ITEM_NAME);
+            const dropItemName = isEventDiceEnded() ? PUNCH_TOKEN_ITEM_NAME : EVENT_DICE_DROP_ITEM_NAME;
+            const dropItemEmoji = isEventDiceEnded() ? '🪙' : '🎲';
+            const dropItemId = items.findIndex(item => item.name == dropItemName);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
                 eventDiceDaily.count = Number(eventDiceDaily.count || 0) + 1;
-                lines.push('- 🎲 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
+                lines.push('- ' + dropItemEmoji + ' [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
             }
         }
     }
@@ -8200,7 +8231,7 @@ async function useItem(user, itemName, countArg) {
     return lines.join('\n');
 }
 
-async function purchaseShopItem(user, shopType, indexArg, countArg) {
+async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return '❌ 존재하지 않는 상점입니다.';
@@ -8224,6 +8255,17 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
         if (!buildCharacterCardReward(shopItem)) return '❌ 처리할 수 없는 상품입니다.';
         if (getRemainingCardInventorySpace(user) < grantCount) return '❌ 캐릭터 카드 인벤토리 공간이 부족합니다. (필요 ' + comma(grantCount) + '칸)';
     }
+    // '패키지' 상점의 '아이템'이 실제로는 번들인 경우, 번들 아이템을 지급하지 않고 구성품을 즉시 수령시킨다.
+    let bundleData = null;
+    if (shopType == '패키지' && shopItem.type == '아이템') {
+        const shopItems = getDataCache('Item', []);
+        const itemData = shopItems[shopItem.item_id];
+        if (itemData && itemData.type == '번들') {
+            const bundles = getDataCache('Bundle', []);
+            bundleData = bundles[itemData.pack];
+            if (!Array.isArray(bundleData)) return '❌ 처리할 수 없는 번들 상품입니다.';
+        }
+    }
     const totalPrice = Number(shopItem.price.amount) * count;
     const field = GOODS_FIELD[shopItem.price.goods];
     if (shopItem.price.goods == 'item') {
@@ -8239,8 +8281,16 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     const mileageEarned = shopItem.price.goods == 'point' ? Math.round(totalPrice * 0.1) : 0;
     if (mileageEarned > 0) user.mileage = Number(user.mileage || 0) + mileageEarned;
 
+    let bundleSummary = null;
     if (shopItem.type == '아이템') {
-        addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
+        if (bundleData) {
+            bundleSummary = {};
+            const grantCount = Number(shopItem.count) * count;
+            for (let i = 0; i < grantCount; i++) bundleData.forEach(reward => grantPackReward(user, reward, bundleSummary));
+            if (_out && typeof _out == 'object') _out.bundleGranted = bundleSummary;
+        } else {
+            addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
+        }
     } else if (shopItem.type == '캐릭터카드') {
         if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
         if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
@@ -8272,7 +8322,12 @@ async function purchaseShopItem(user, shopType, indexArg, countArg) {
     }
 
     const rewardItem = Object.assign({}, shopItem, { count: Number(shopItem.count || 1) * count });
-    return '✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '');
+    const resultLines = ['✅ 구매 완료: ' + formatShopItem(rewardItem) + '\n- 사용: ' + formatPrice({ goods: shopItem.price.goods, item_id: shopItem.price.item_id, amount: totalPrice }) + (mileageEarned > 0 ? '\n- 적립: Ⓜ️ ' + comma(mileageEarned) + '마일리지' : '')];
+    if (bundleSummary) {
+        resultLines.push('[ 획득 결과 ]');
+        Object.keys(bundleSummary).forEach(key => resultLines.push(formatRewardSummaryEntry(key, bundleSummary[key])));
+    }
+    return resultLines.join('\n');
 }
 
 function formatStar(star) {
@@ -9323,6 +9378,31 @@ async function sendBroadcastMail(opts) {
         try { await u.save(); count++; } catch (e) { console.error('[mail] broadcast 저장 실패 (' + u.name + '):', e.message); }
     }
     return { ok: true, recipients: count, mailId: record.id };
+}
+
+// 시스템(운영자)이 특정 유저 1명에게 선물 메일을 발송한다. 인벤토리 무소모·수수료 없음.
+// gifts: sendBroadcastMail과 동일한 최종 형태({type:'item', id, count} 등)를 그대로 받는다.
+async function sendSystemMailToUser(userName, opts) {
+    opts = opts || {};
+    const recipient = await getRPGUserByName(userName);
+    if (!recipient) return { error: '수신자를 찾을 수 없습니다.' };
+    const gifts = Array.isArray(opts.gifts) ? opts.gifts : [];
+    const record = {
+        id: genMailId(),
+        gm: true,
+        fromName: String(opts.gmName || '운영자').trim().slice(0, 20) || '운영자',
+        toName: recipient.name,
+        subject: String(opts.subject || '(제목 없음)').trim().slice(0, 50) || '(제목 없음)',
+        body: String(opts.body || '').trim().slice(0, 1000),
+        gifts,
+        createdAt: Date.now()
+    };
+    await putMailRecord(record);
+    if (!Array.isArray(recipient.mail)) recipient.mail = [];
+    recipient.mail.push({ id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt });
+    recipient.mailNotified = false;
+    await recipient.save();
+    return { ok: true, mailId: record.id };
 }
 
 // 카톡 채팅 시 미알림 메일이 있으면 1회 알림
@@ -10684,6 +10764,7 @@ module.exports = {
     claimMailGifts,
     sendMail,
     sendBroadcastMail,
+    sendSystemMailToUser,
     MAIL_GIFT_MAX,
     mailGoldFee,
     getAllRPGUsers,

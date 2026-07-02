@@ -97,7 +97,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '펀치기계', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
@@ -113,7 +113,7 @@ const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', ...(PUNCH_VISIBLE ? ['펀치기계'] : []), 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -1138,6 +1138,20 @@ const EVENT_DICE_FACE_ANGLE = {
 let eventDiceState = { built: false, loading: false, rolling: false, prediction: null, dice: [null, null, null], result: null, history: [], diceItemCount: 0, rewards: null, lightningSum: null, lightningBolt: null, error: '' };
 let eventLightningTimer = null;
 
+function formatEventDiceEndDate() {
+    return new Date(EVENT_DICE_END_TS).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+let eventDiceEndTimer = null;
+function scheduleEventDiceEndRedirect() {
+    if (EVENT_DICE_ENDED || eventDiceEndTimer) return;
+    const delay = EVENT_DICE_END_TS - Date.now();
+    if (delay <= 0) { location.href = '/?tab=' + encodeURIComponent('펀치기계'); return; }
+    eventDiceEndTimer = setTimeout(() => {
+        if (activePage === 'event') location.href = '/?tab=' + encodeURIComponent('펀치기계');
+    }, delay);
+}
+
 // ===== 봉인된 자물쇠 탭 =====
 const lockboxUi = name => '/lockbox-ui?file=' + encodeURIComponent(name);
 
@@ -1338,7 +1352,8 @@ function renderEventDice() {
             el('div', { class: 'event-title-block' },
                 el('div', { class: 'event-eyebrow' }, 'EVENT'),
                 el('h2', null, '유생의 주사위'),
-                el('div', { class: 'event-subcopy' }, '합을 예측한 뒤 주사위를 굴려 보상을 획득합니다.')
+                el('div', { class: 'event-subcopy' }, '합을 예측한 뒤 주사위를 굴려 보상을 획득합니다.'),
+                el('div', { class: 'event-end-date' }, '이벤트 종료: ' + formatEventDiceEndDate())
             ),
             el('div', { class: 'event-dice-row' }, dice.map((value, index) => eventDie(value, index))),
             renderEventDiceResult(),
@@ -1388,6 +1403,7 @@ async function rollEventDice() {
 }
 
 async function loadEventDice() {
+    scheduleEventDiceEndRedirect();
     const root = $('#eventDiceRoot');
     if (root && !eventDiceState.built) root.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     if (!eventDiceState.built) eventDiceState.built = true;
@@ -1396,7 +1412,7 @@ async function loadEventDice() {
         const data = await api('/api/event/dice');
         if (data.ended) {
             eventDiceState.loading = false;
-            $('#eventDiceRoot').replaceChildren(el('div', { class: 'empty' }, '유생의 주사위 이벤트가 종료되었습니다.'));
+            location.href = '/?tab=' + encodeURIComponent('펀치기계');
             return;
         }
         eventDiceState.diceItemCount = data.diceItemCount || 0;
@@ -1415,7 +1431,8 @@ const PUNCH_PUCK_RANGE = 334;        // SVG 단위: 파워 0→1 시 퍽 이동 
 const PUNCH_LIGHT_COUNT = 14;
 const PUNCH_RING_R = 116;            // 다이얼 SVG(280) 기준 점이 도는 원 반지름
 // phase: 'idle'(토큰 대기) | 'ready'(점이 회전, 멈출 수 있음) | 'busy'(연출 중)
-let punchState = { built: false, phase: 'idle', tokenCount: 0, rank: [], token: null, angle: Math.PI, raf: 0, lastTs: 0, best: 0 };
+// tab(모바일 전용): 'machine'(펀치기계 화면) | 'rewards'(보상 화면)
+let punchState = { built: false, phase: 'idle', tokenCount: 0, rank: [], rewards: null, pendingChoice: false, tab: 'machine', token: null, angle: Math.PI, raf: 0, lastTs: 0, best: 0 };
 let punchEls = null;
 
 async function loadPunch() {
@@ -1430,10 +1447,14 @@ async function loadPunch() {
         const data = await api('/api/punch');
         punchState.tokenCount = data.tokenCount || 0;
         punchState.rank = data.rank || [];
+        punchState.rewards = data.rewards || null;
+        punchState.pendingChoice = !!data.pendingChoice;
     } catch (e) { /* 네트워크 실패 시 기존 상태 유지 */ }
     renderPunchMeta();
+    renderPunchRewardInfo();
     renderPunchRank();
     updatePunchPuck(0);
+    if (punchState.pendingChoice) openPunch9999Modal();
 }
 
 function buildPunchUI(root) {
@@ -1513,18 +1534,31 @@ function buildPunchUI(root) {
     const coinBtn = el('button', { class: 'punch-coin-btn', id: 'punchCoinBtn', type: 'button' },
         '토큰 투입 (', el('b', { id: 'punchTokenCount' }, String(punchState.tokenCount)), ')');
 
-    const rank = el('div', { class: 'punch-rank' },
-        el('div', { class: 'punch-rank-title' }, '펀치 랭킹 TOP 5'),
-        el('div', { class: 'punch-rank-list', id: 'punchRankList' }));
-
-    const controls = el('div', { class: 'punch-controls' },
+    // 펀치기계 화면(머신): 타워 + LCD + 다이얼 + 토큰 버튼.
+    const machine = el('div', { class: 'punch-machine active', 'data-ptab': 'machine' },
         el('div', { class: 'punch-title-block' },
             el('div', { class: 'punch-eyebrow' }, 'POWER OF ONE PUNCH'),
             el('h2', null, '펀치기계'),
             el('div', { class: 'punch-sub' }, '당신의 힘을 뽐내보세요!')),
-        lcd, dial, coinBtn, rank,
-        el('div', { class: 'punch-hint' }, ''));
-    const stage = el('div', { class: 'punch-stage', id: 'punchStage' }, towerWrap, controls);
+        el('div', { class: 'punch-machine-body' },
+            towerWrap,
+            el('div', { class: 'punch-machine-controls' }, lcd, dial, coinBtn)));
+
+    // 보상 화면: 주간 1위 보상 + 점수 구간별 보상 + 랭킹.
+    const rewards = el('div', { class: 'punch-rewards', 'data-ptab': 'rewards' },
+        el('div', { class: 'punch-rewards-head' }, el('h3', null, '보상 안내')),
+        el('div', { class: 'punch-weekly', id: 'punchWeekly' }),
+        el('div', { class: 'punch-tier-list', id: 'punchTierList' }),
+        el('div', { class: 'punch-rank' },
+            el('div', { class: 'punch-rank-title' }, '펀치 랭킹 TOP 5'),
+            el('div', { class: 'punch-rank-list', id: 'punchRankList' })));
+
+    // 모바일 전용 스위치 탭.
+    const tabs = el('div', { class: 'punch-tabs' },
+        el('button', { class: 'punch-tab active', 'data-ptab': 'machine', type: 'button', onclick: () => switchPunchTab('machine') }, '펀치기계'),
+        el('button', { class: 'punch-tab', 'data-ptab': 'rewards', type: 'button', onclick: () => switchPunchTab('rewards') }, '보상'));
+
+    const stage = el('div', { class: 'punch-stage', id: 'punchStage' }, tabs, machine, rewards);
     root.replaceChildren(stage);
 
     punchEls = {
@@ -1540,11 +1574,56 @@ function buildPunchUI(root) {
         dot: root.querySelector('#punchDot'),
         coinBtn,
         tokenCountEl: root.querySelector('#punchTokenCount'),
-        rankList: root.querySelector('#punchRankList')
+        rankList: root.querySelector('#punchRankList'),
+        weekly: root.querySelector('#punchWeekly'),
+        tierList: root.querySelector('#punchTierList'),
+        machine, rewards,
+        tabBtns: Array.from(root.querySelectorAll('.punch-tab'))
     };
     coinBtn.addEventListener('click', insertPunchCoin);
     pad.addEventListener('click', punchStop);
     renderPunchDot();
+}
+
+function switchPunchTab(tab) {
+    punchState.tab = tab;
+    if (!punchEls) return;
+    punchEls.machine.classList.toggle('active', tab === 'machine');
+    punchEls.rewards.classList.toggle('active', tab === 'rewards');
+    punchEls.tabBtns.forEach(b => b.classList.toggle('active', b.dataset.ptab === tab));
+}
+
+// 보상 아이콘(프레임 + 아이템 이미지 + 수량).
+function punchRewardIcon(reward) {
+    const thumb = el('div', { class: 'punch-reward-thumb' });
+    if (reward.frameUrl) thumb.appendChild(el('img', { class: 'punch-reward-frame', src: reward.frameUrl, alt: '' }));
+    if (reward.iconUrl) thumb.appendChild(el('img', { class: 'punch-reward-icon', src: reward.iconUrl, alt: reward.name }));
+    else thumb.appendChild(el('span', { class: 'punch-reward-fallback' }, '🎁'));
+    if (Number(reward.count) > 1) thumb.appendChild(el('span', { class: 'punch-reward-count' }, 'x' + reward.count));
+    return thumb;
+}
+
+function punchTierRow(t) {
+    const tag = t.choice ? '택1' : (t.rewards.length > 1 ? '랜덤' : '');
+    const names = t.rewards.map(r => r.name + (Number(r.count) > 1 ? ' x' + r.count : '')).join(t.choice ? ' / ' : ' or ');
+    return el('div', { class: 'punch-tier-row' + (t.choice ? ' top' : '') },
+        el('div', { class: 'punch-tier-range' }, t.label),
+        el('div', { class: 'punch-tier-icons' }, ...t.rewards.map(punchRewardIcon)),
+        el('div', { class: 'punch-tier-name' }, names,
+            tag ? el('span', { class: 'punch-tier-tag' }, tag) : null));
+}
+
+function renderPunchRewardInfo() {
+    if (!punchEls || !punchEls.weekly) return;
+    const r = punchState.rewards;
+    if (!r) return;
+    punchEls.weekly.replaceChildren(
+        el('div', { class: 'punch-weekly-badge' }, '👑 주간 1위'),
+        punchRewardIcon(r.weeklyPrize),
+        el('div', { class: 'punch-weekly-info' },
+            el('div', { class: 'punch-weekly-name' }, r.weeklyPrize.name),
+            el('div', { class: 'punch-weekly-note' }, '매주 랭킹 1위에게 자동 지급')));
+    punchEls.tierList.replaceChildren(...(r.tiers || []).map(punchTierRow));
 }
 
 function renderPunchMeta() {
@@ -1701,16 +1780,64 @@ async function finishPunch(score) {
         localStorage.setItem('punchBest', String(score));
         if (punchEls) punchEls.best.textContent = String(score);
     }
+    let resp = null;
     if (punchState.token) {
         try {
-            const data = await postApi('/api/punch/score', { token: punchState.token, score });
-            if (Array.isArray(data.rank)) punchState.rank = data.rank;
+            resp = await postApi('/api/punch/score', { token: punchState.token, score });
+            if (Array.isArray(resp.rank)) punchState.rank = resp.rank;
         } catch (e) { /* 기록 실패해도 게임은 진행 */ }
         punchState.token = null;
     }
     punchState.phase = 'idle';
     renderPunchMeta();
     renderPunchRank();
+    if (resp) {
+        if (resp.pendingChoice) { punchState.pendingChoice = true; openPunch9999Modal(); }
+        else if (resp.reward) openPunchRewardModal(resp.reward);
+    }
+}
+
+// 모달 닫기 잠금(9999 선택 등 반드시 선택해야 하는 경우 백드롭/닫기 무효화).
+let modalLocked = false;
+function setModalCloseVisible(v) {
+    const btn = $('#modalClose');
+    if (btn) btn.style.display = v ? '' : 'none';
+}
+
+function openPunchRewardModal(reward) {
+    modalLocked = false;
+    setModalCloseVisible(true);
+    openRichModal('보상 획득!', '', [
+        el('div', { class: 'punch-result-modal' },
+            punchRewardIcon(reward),
+            el('div', { class: 'punch-result-name' }, reward.name + (Number(reward.count) > 1 ? ' x' + reward.count : '')),
+            el('div', { class: 'punch-result-sub' }, '인벤토리에서 확인하세요.'))
+    ]);
+}
+
+function openPunch9999Modal() {
+    const r = punchState.rewards;
+    const choices = (r && r.choice9999) || [];
+    if (!choices.length) return;
+    modalLocked = true;
+    setModalCloseVisible(false);
+    openRichModal('🎉 9999 달성!', '보상을 선택하세요', [
+        el('div', { class: 'punch-choice-row' },
+            ...choices.map(c => el('button', { class: 'punch-choice-btn', type: 'button', onclick: () => claimPunch9999(c.key) },
+                punchRewardIcon(c),
+                el('span', { class: 'punch-choice-name' }, c.name))))
+    ]);
+}
+
+async function claimPunch9999(choice) {
+    try {
+        const data = await postApi('/api/punch/claim', { choice });
+        punchState.pendingChoice = false;
+        modalLocked = false;
+        setModalCloseVisible(true);
+        if (data.reward) openPunchRewardModal(data.reward);
+        else closeModal();
+    } catch (e) { alert(e.message); }
 }
 
 // ===== 조합 =====
@@ -3205,8 +3332,9 @@ function openShopBuyModal(item) {
             const res = await r.json();
             if (!r.ok) throw new Error(res.error || '구매 실패');
             if (shopData) shopData.currencies = res.currencies;
-            closeModal();
             await loadShop();
+            if (res.bundleGranted && res.bundleGranted.length > 0) openBundleGrantedModal(d.name, res.bundleGranted);
+            else closeModal();
         } catch (e) {
             buyBtn.disabled = false;
             buyBtn.textContent = '구매';
@@ -3219,6 +3347,28 @@ function openShopBuyModal(item) {
     $('#modalTitle').textContent = d.name + ' 구매';
     $('#modalSub').style.display = 'none';
     $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+// 번들 상품 구매 시 즉시 수령한 구성품을 보여주는 전용 모달
+function openBundleGrantedModal(name, rewards) {
+    $('#modalTitle').textContent = name + ' 개봉 결과';
+    $('#modalSub').textContent = '아래 아이템을 즉시 수령했습니다';
+    $('#modalSub').style.display = '';
+    const body = el('div', { class: 'lvreward-modal-body' });
+    rewards.forEach(r => {
+        const row = el('div', { class: 'lvreward-modal-row' });
+        if (r.iconUrl || r.frameUrl) {
+            const thumb = el('div', { class: 'lvreward-thumb' });
+            if (r.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: r.frameUrl, alt: '' }));
+            if (r.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: r.iconUrl, alt: r.name }));
+            row.appendChild(thumb);
+        }
+        row.appendChild(el('span', { class: 'lvreward-modal-name' }, r.name));
+        row.appendChild(el('span', { class: 'lvreward-modal-count' }, 'x' + comma(r.count)));
+        body.appendChild(row);
+    });
+    $('#modalBody').replaceChildren(body);
     $('#modalBg').classList.add('active');
 }
 
@@ -3571,15 +3721,15 @@ $('#aucNew').onclick = openRegisterModal;
 
 // ===== 모달 닫기 핸들러 =====
 
-$('#modalClose').onclick = closeModal;
-$('#modalBg').onclick = e => { if (e.target.id === 'modalBg') closeModal(); };
+$('#modalClose').onclick = () => { if (!modalLocked) closeModal(); };
+$('#modalBg').onclick = e => { if (e.target.id === 'modalBg' && !modalLocked) closeModal(); };
 $('#aucDetailBg').onclick = e => { if (e.target.id === 'aucDetailBg') closeDetail(); };
 $('#aucRegBg').onclick = e => { if (e.target.id === 'aucRegBg') closeRegister(); };
 $('#boDetailBg').onclick = e => { if (e.target.id === 'boDetailBg') closeBoDetail(); };
 $('#boRegBg').onclick = e => { if (e.target.id === 'boRegBg') closeBoRegister(); };
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        closeModal();
+        if (!modalLocked) closeModal();
         closeDetail();
         closeRegister();
         closeBoDetail();
