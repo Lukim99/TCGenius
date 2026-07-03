@@ -1642,12 +1642,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     }
     // '월도랜드' 필드(퀘스트) 공격 시 추가 피해
     if (/월도랜드/.test(String(quest.name || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
-    // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외)
-    if (!(extra && extra.summonAttack)) {
-        runtime.attackCounter = Number(runtime.attackCounter || 0) + 1;
-        const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
-        if (tenthAtk > 0 && runtime.attackCounter % 10 === 0) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + tenthAtk;
-    }
+    // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외, 연격 각각 별도 집계해 해당 타격에만 적용)
+    const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
+    const tenthAtkStart = (!(extra && extra.summonAttack) && tenthAtk > 0) ? Number(runtime.attackCounter || 0) : null;
     contextMul *= 1 + Number(extra && extra.damageBonusMul || 0);
     // [무]속성 공격 시 최종 피해 증가 + 범인은 이 안에(다음 공격 최종 피해)
     let extraFinalDamage = 0;
@@ -1678,7 +1675,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     let abyssDoomUsed = false;
     const elementMul = getPartyElementMultiplier(attacker, monster, extra && extra.skillElement);
     for (let i = 0; i < totalHits; i++) {
-        let hitDamage = rawDamage * contextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage) * dealtDmgMul * getFinalDamageMul(attacker);
+        let hitContextMul = contextMul;
+        if (tenthAtkStart !== null && (tenthAtkStart + i + 1) % 10 === 0) hitContextMul *= 1 + tenthAtk;
+        let hitDamage = rawDamage * hitContextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage) * dealtDmgMul * getFinalDamageMul(attacker);
         let fixedHitDamage = 0;
         let destinyHitDamage = 0;
         const isCrit = extra && extra.disableCritical ? false : (extra && extra.forceCritical ? true : Math.random() < Math.max(0, crit));
@@ -1728,6 +1727,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit });
         damage += finalHitDamage;
     }
+    // 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터 전진
+    if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + hitDetails.length;
     // 나인 멘스 모리스 패시브: 일반 공격/일반 취급 공격(countAsBasic)은 각 타격마다 중첩 (연격 각각), 최대 9
     if (!(extra && extra.summonAttack) && extra && extra.isBasic && attacker && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
         if (!attacker.runtime.stackCounters) attacker.runtime.stackCounters = {};

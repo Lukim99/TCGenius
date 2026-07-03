@@ -3139,7 +3139,11 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     const elementMul = getElementDamageMultiplier(extra && extra.attackElement, stats, defenderStats);
     const defenseReductionRate = Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(extra && extra.defReductionBonus || 0)));
     for (let i = 0; i < totalHits; i++) {
-        const baseDamage = Number(rawDamage || 0) * (1 + Number(extra && extra.damageBonusMul || 0)) * (1 + Number(stats && stats.finalDamage || 0) + Number(extra && extra.finalDamageBonus || 0));
+        let hitBonusMul = Number(extra && extra.damageBonusMul || 0);
+        // 10번째 공격마다 최종 공격력 증가: 연격 각각을 개별 히트로 집계해 해당 타격에만 적용
+        const isTenthAtk = !!(extra && Number(extra.tenthAtkBonus || 0) > 0 && (Number(extra.tenthAtkStart || 0) + i + 1) % 10 === 0);
+        if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
+        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * (1 + Number(stats && stats.finalDamage || 0) + Number(extra && extra.finalDamageBonus || 0));
         const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
         if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
@@ -3166,7 +3170,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         hitDamage = applyDamageVariance(hitDamage);
         if (elementMul !== 1) hitDamage = Math.max(0, Math.round(hitDamage * elementMul)); // 속성 배수: 맨 마지막 적용
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage });
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk });
         finalDamage += hitDamage;
     }
     // 추가 피해: 모든 계산(방어/속성 등)이 끝난 최종 피해에 마지막으로 비율만큼 더한다 (연격과 유사)
@@ -3190,7 +3194,7 @@ function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, ex
 function formatHitDetailLines(hitResult, prefix, suffix) {
     if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return [];
     const details = Array.isArray(hitResult.hitDetails) ? hitResult.hitDetails : [];
-    return details.map(detail => prefix + comma(detail.damage) + (detail.isDestinyDamage ? ' 운명' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
+    return details.map(detail => (detail.isTenthAtk ? '✨ ' : '') + prefix + comma(detail.damage) + (detail.isDestinyDamage ? ' 운명' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
 }
 
 function getSkillValue(skill, index, star) {
@@ -4032,6 +4036,13 @@ function applyNmmStackGain(user, extra, hitResult) {
     user.field.nmmStacks = Math.min(9, Number(user.field.nmmStacks || 0) + hits);
 }
 
+// 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터를 전진시켜 저장
+function applyTenthAtkCounter(user, extra, hitResult) {
+    if (!extra || typeof extra.tenthAtkStart == 'undefined' || !user || !user.field) return;
+    const hits = Math.max(1, Number(hitResult && hitResult.hitDetails && hitResult.hitDetails.length || 1));
+    user.field.attackCount = Number(extra.tenthAtkStart || 0) + hits;
+}
+
 function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     applyPetRegen(user, stats, null);
@@ -4046,6 +4057,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const eliteDef = Math.max(0, Number(elite.def || 0) - Number(stats.atkDefReduce || 0));
     const hitResult = calculateAttackHitResult(damageWithSlotBonus, eliteDef, (eliteExtra && eliteExtra.pnt || stats.pnt) + Number(eliteExtra.pntBonus || 0), stats, slotEffects, eliteExtra, elite);
     applyNmmStackGain(user, extra, hitResult);
+    applyTenthAtkCounter(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
     let remainHp = Math.max(0, currentHp - finalDamage);
     const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
@@ -4053,7 +4065,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const maxHp = Number(stats.hp || 0);
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
-        : ['⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : [(hitResult.hitDetails[0] && hitResult.hitDetails[0].isTenthAtk ? '✨ ' : '') + '⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
@@ -4167,6 +4179,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const monsterDef = Math.max(0, Number(monster.def || 0) - Number(stats.atkDefReduce || 0));
     const hitResult = calculateAttackHitResult(damageWithSlotBonus, monsterDef, (huntExtra && huntExtra.pnt || stats.pnt) + Number(huntExtra.pntBonus || 0), stats, slotEffects, huntExtra, monster);
     applyNmmStackGain(user, extra, hitResult);
+    applyTenthAtkCounter(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
@@ -4200,7 +4213,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
 
     const lines = hitResult.hitCount > 1
         ? formatHitDetailLines(hitResult, '⚔️ ', '피해를 입혔습니다!')
-        : ['⚔️ ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+        : [(hitResult.hitDetails[0] && hitResult.hitDetails[0].isTenthAtk ? '✨ ' : '') + '⚔️ ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
 
     if (user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
         if (extra && extra.isBotAutoAttack) {
@@ -4445,9 +4458,11 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     const fieldSlot = calculateCardSlotEffects(user);
     // [무]속성 공격 시 최종 피해 증가
     if (!extra.attackElement && Number(fieldSlot.nonElementFinalDamage || 0) > 0) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldSlot.nonElementFinalDamage || 0);
-    // 10번째 공격마다 최종 공격력 증가 (일반+스킬 모두 카운트)
-    user.field.attackCount = Number(user.field.attackCount || 0) + 1;
-    if (Number(fieldSlot.tenthHitFinalAtk || 0) > 0 && user.field.attackCount % 10 === 0) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(fieldSlot.tenthHitFinalAtk || 0);
+    // 10번째 공격마다 최종 공격력 증가 (일반+스킬 모두 카운트, 연격 각각 별도 집계 — 실제 적용/카운터 전진은 build* 단계에서 처리)
+    if (Number(fieldSlot.tenthHitFinalAtk || 0) > 0) {
+        extra.tenthAtkBonus = Number(fieldSlot.tenthHitFinalAtk || 0);
+        extra.tenthAtkStart = Number(user.field.attackCount || 0);
+    }
     // 유서새김 표식: 방어력 감소(관통 보너스)
     const fieldBuffsForAttack = getFieldBuffs(user);
     if (user.field.mark && Date.now() < Number(user.field.mark.expired_at || 0)) extra.defReductionBonus = Number(extra.defReductionBonus || 0) + Number(user.field.mark.defReduce || 0);
@@ -4775,6 +4790,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         bonusTripleZero = Number(hitResult.bonusTripleZero || 0);
     }
     applyNmmStackGain(user, extra, hitResult);
+    applyTenthAtkCounter(user, extra, hitResult);
     const state = ensureWorldBossRevived(boss);
     const before = Number(state.hp || 0);
     const dealt = Math.min(before, finalDamage);
@@ -4796,7 +4812,8 @@ function formatWorldBossDamageLines(boss, result, prefix) {
         return formatHitDetailLines(result.hitResult, head + target, '피해를 입혔습니다!');
     }
     const damageLabel = Number(result.destinyDamageCount || 0) > 0 ? ' 운명' : (Number(result.trueDamageCount || 0) > 0 ? ' 고정' : '');
-    return [head + target + comma(result.damage) + damageLabel + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    const singleTenthAtk = result.hitResult && result.hitResult.hitDetails && result.hitResult.hitDetails[0] && result.hitResult.hitDetails[0].isTenthAtk;
+    return [(singleTenthAtk ? '✨ ' : '') + head + target + comma(result.damage) + damageLabel + (result.isCritical ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
 }
 
 async function useWorldBossChosenSkill(user, skillName) {
