@@ -4125,30 +4125,35 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
-    if (fieldDamage > 0) {
-        const thornsReflect = getThornsReflect(user, stats);
-        if (thornsReflect > 0 && user.field.elite) {
-            user.field.elite.hp = Math.max(0, user.field.elite.hp - thornsReflect);
-            lines.push('- 🪞 가시 반사: ' + elite.name + '에게 ' + comma(thornsReflect) + ' 피해');
-            lines.push('- ' + elite.name + ' HP: ' + comma(user.field.elite.hp) + '/' + comma(elite.hp));
-            if (user.field.elite.hp <= 0) {
-                lines.push('- ' + elite.name + ' 처치!');
-                applySkillRecovery(user, maxHp, extra, lines);
-                applyEliteReward(user, dungeon, slotEffects, extra, lines);
-                const state = getEliteState(dungeon.name);
-                state.owner = null;
-                state.defeatedAt = Date.now();
-                persistEliteState();
-                user.field.elite = null;
-                if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-                return lines.join('\n');
-            }
-        }
-    }
+    let eliteDefeatedByThorns = false;
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else {
-        if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ' + elite.name + '에게 ', '피해를 입었습니다!').forEach(line => lines.push(line));
-        else lines.push('❗ ' + elite.name + '에게 ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
+        const hitLines = monsterHitResult.hitCount > 1
+            ? formatHitDetailLines(monsterHitResult, '❗ ' + elite.name + '에게 ', '피해를 입었습니다!')
+            : ['❗ ' + elite.name + '에게 ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!'];
+        // 가시 반사: 받은 반격 히트 하나하나에 대해 개별적으로 반사 (몰아서 한 번에 계산하지 않음)
+        hitLines.forEach(hitLine => {
+            lines.push(hitLine);
+            if (eliteDefeatedByThorns || fieldDamage <= 0 || !user.field.elite) return;
+            const thornsReflect = applyDamageVariance(getThornsReflect(user, stats));
+            if (thornsReflect <= 0) return;
+            user.field.elite.hp = Math.max(0, user.field.elite.hp - thornsReflect);
+            lines.push('💥 가시 반사로 ' + elite.name + '에게 ' + comma(thornsReflect) + ' 피해를 입혔습니다!');
+            lines.push('- ' + elite.name + ' HP: ' + comma(user.field.elite.hp) + '/' + comma(elite.hp));
+            if (user.field.elite.hp <= 0) eliteDefeatedByThorns = true;
+        });
+    }
+    if (eliteDefeatedByThorns) {
+        lines.push('- ' + elite.name + ' 처치!');
+        applySkillRecovery(user, maxHp, extra, lines);
+        applyEliteReward(user, dungeon, slotEffects, extra, lines);
+        const state = getEliteState(dungeon.name);
+        state.owner = null;
+        state.defeatedAt = Date.now();
+        persistEliteState();
+        user.field.elite = null;
+        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        return lines.join('\n');
     }
     applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
@@ -4241,17 +4246,21 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
     user.hp = Math.max(0, beforeHp - fieldDamage);
-    if (fieldDamage > 0) {
-        const thornsReflect = getThornsReflect(user, stats);
-        if (thornsReflect > 0) {
+    // 가시 반사: 받은 반격 히트 각각에 대해 개별적으로 반사 (몰아서 한 번에 계산하지 않음). 표시는 아래 피해 로그와 히트별로 이어붙인다.
+    const thornsHitLines = [];
+    if (fieldDamage > 0 && !avoided) {
+        let goldMineRemaining = typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily
+            ? Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - Number(user.goldMineDaily.count || 0) - killCount)
+            : Infinity;
+        const incomingHitCount = Math.max(1, Number(monsterHitResult && monsterHitResult.hitCount || 1));
+        for (let i = 0; i < incomingHitCount; i++) {
+            const thornsReflect = applyDamageVariance(getThornsReflect(user, stats));
+            if (thornsReflect <= 0) { thornsHitLines.push(null); continue; }
             const bonusKills = Math.floor(thornsReflect / Number(monster.hp || 1));
-            if (bonusKills > 0) {
-                const remaining = typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily
-                    ? Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - Number(user.goldMineDaily.count || 0))
-                    : Infinity;
-                killCount += Math.min(bonusKills, remaining);
-            }
-            lines.push('- 🪞 가시 반사: ' + comma(thornsReflect) + ' (추가 처치 ' + comma(bonusKills) + '마리)');
+            const granted = Math.min(bonusKills, Math.max(0, goldMineRemaining));
+            killCount += granted;
+            goldMineRemaining -= granted;
+            thornsHitLines.push('💥 가시 반사로 ' + comma(thornsReflect) + ' 피해 (추가 처치 ' + comma(bonusKills) + '마리)');
         }
     }
     if (extra && extra.notice) lines.push('- ' + extra.notice);
@@ -4272,8 +4281,13 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
     if (avoided) lines.push('💨 필드 피해를 회피했습니다!');
     else {
-        if (monsterHitResult.hitCount > 1) formatHitDetailLines(monsterHitResult, '❗ ', '피해를 입었습니다!').forEach(line => lines.push(line));
-        else lines.push('❗ ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!');
+        const hitLines = monsterHitResult.hitCount > 1
+            ? formatHitDetailLines(monsterHitResult, '❗ ', '피해를 입었습니다!')
+            : ['❗ ' + comma(fieldDamage) + (monsterHitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입었습니다!'];
+        hitLines.forEach((hitLine, idx) => {
+            lines.push(hitLine);
+            if (thornsHitLines[idx]) lines.push(thornsHitLines[idx]);
+        });
     }
     applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
@@ -5086,7 +5100,7 @@ async function runWorldBossSkillTick(userName, bossName) {
         const thornsReflect = getThornsReflect(latest, userStats);
         if (thornsReflect > 0) {
             const thornsRes = dealDamageToWorldBoss(latest, boss, thornsReflect, { trueDamage: true });
-            formatWorldBossDamageLines(boss, thornsRes, '🪞 가시 반사! ').forEach(l => tickLines.push(l));
+            formatWorldBossDamageLines(boss, thornsRes, '💥 가시 반사로 ').forEach(l => tickLines.push(l));
             grantWorldBossThresholdRewards(latest, boss, getWorldBossState(boss.name), tickLines, '[ 월드보스 딜량 달성 보상 ]');
             if (Number(thornsRes.after) <= 0) {
                 await finalizeWorldBossDefeat(latest, boss, tickLines);

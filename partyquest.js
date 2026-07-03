@@ -2195,7 +2195,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const finalDefMul = (tPosDef && tPosDef.stats && tPosDef.stats.finalDef) || 1;
         const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
         room.monster.hp = Math.max(0, room.monster.hp - reflect);
-        pushCombat(room, '🪞 가시 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        pushCombat(room, '💥 가시 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     // 패시브: 가시 갑옷 — 받은 피해 발생 시 방어력 20% 반사
@@ -2206,7 +2206,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
         const reflect = Math.max(1, calculateNormalDamageToMonster(member, room.monster, room, Math.round(Number(stats.def || 50) * finalDefMul * 0.20)));
         room.monster.hp = Math.max(0, room.monster.hp - reflect);
-        pushCombat(room, '🪞 가시 갑옷 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        pushCombat(room, '💥 가시 갑옷 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     if (r.hp <= 0) {
