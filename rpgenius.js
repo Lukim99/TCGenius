@@ -54,6 +54,7 @@ const GOLD_MINE_ORE_DROPS = {
 };
 const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
+const NO_ITEM_DROP_LEVEL_DIFF = 100;
 const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
@@ -4189,6 +4190,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
     const levelDiff = Number(user.level || 1) - requireLevel;
+    const noItemDrop = levelDiff >= NO_ITEM_DROP_LEVEL_DIFF;
     const overLeveledCap = levelDiff >= BIG_LEVEL_DIFF_THRESHOLD && typeof dungeon.goldMineLevel == 'undefined';
     let killCapNote = null;
     if (overLeveledCap && killCount > BIG_LEVEL_DIFF_KILL_CAP) {
@@ -4323,25 +4325,27 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         lines.push('', '[ 보상 ]');
         lines.push('- XP ' + comma(expReward));
         lines.push('- 🪙 ' + comma(goldReward));
-        const dropMultiplier = 1 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
-        let stoneDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.2 * dropMultiplier * levelMultiplier) stoneDropCount++;
-        if (stoneDropCount > 0) {
-            addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
-            lines.push('- 강화석 x' + comma(stoneDropCount));
-        }
-        const items = getDataCache('Item', []);
-        const baitItemId = items.findIndex(item => item.name == '일반 떡밥');
-        let baitDropCount = 0;
-        for (let i = 0; i < killCount; i++) if (Math.random() < 0.35 * dropMultiplier * levelMultiplier) baitDropCount++;
-        if (baitItemId != -1 && baitDropCount > 0) {
-            addInventoryItem(user, baitItemId, baitDropCount);
-            lines.push('- 일반 떡밥 x' + comma(baitDropCount));
+        if (!noItemDrop) {
+            const dropMultiplier = 1 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
+            let stoneDropCount = 0;
+            for (let i = 0; i < killCount; i++) if (Math.random() < 0.2 * dropMultiplier * levelMultiplier) stoneDropCount++;
+            if (stoneDropCount > 0) {
+                addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, stoneDropCount);
+                lines.push('- 강화석 x' + comma(stoneDropCount));
+            }
+            const items = getDataCache('Item', []);
+            const baitItemId = items.findIndex(item => item.name == '일반 떡밥');
+            let baitDropCount = 0;
+            for (let i = 0; i < killCount; i++) if (Math.random() < 0.35 * dropMultiplier * levelMultiplier) baitDropCount++;
+            if (baitItemId != -1 && baitDropCount > 0) {
+                addInventoryItem(user, baitItemId, baitDropCount);
+                lines.push('- 일반 떡밥 x' + comma(baitDropCount));
+            }
         }
         if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     }
 
-    if (killCount > 0) {
+    if (killCount > 0 && !noItemDrop) {
         const dropMultiplier = 1 + Number(slotEffects.itemDropChance || 0) + Number(stats.itemDropChance || 0);
         const dropChance = 0.03 * dropMultiplier * levelMultiplier;
         if (Math.random() < dropChance) {
@@ -4391,7 +4395,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-    if (killCount > 0) tryEncounterFragment(user, dungeon, lines);
+    if (killCount > 0 && !noItemDrop) tryEncounterFragment(user, dungeon, lines);
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
 }
