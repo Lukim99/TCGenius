@@ -3467,6 +3467,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         return { hitCount: 1, comboHitCount: 1, attackUnitCount: 1, hitDamages: [damage], hitDetails: [{ damage, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], finalDamage: damage, criticalCount: 0, bonusTripleZero: 0, destinyDamageCount: 0, trueDamageCount: 0, extraDamageDealt: 0 };
     }
     const isFixedMultiHit = !!(extra && extra.hitCount);
+    const separateBasicAttackHits = !!(isFixedMultiHit && extra && extra.separateBasicAttackHits);
     const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats))));
     const hitCount = isFixedMultiHit ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : comboHitCount;
     const hitDamages = [];
@@ -3496,7 +3497,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         let hitBonusMul = Number(hitExtra.damageBonusMul || 0);
         // 고정 다단 공격은 명령 1회를 공격 1회로, 연격은 타격마다 별도 공격으로 집계한다.
         const countsAsAttack = isFixedMultiHit ? true : i < comboHitCount;
-        const attackOffset = isFixedMultiHit ? 0 : i;
+        const attackOffset = separateBasicAttackHits ? i : (isFixedMultiHit ? 0 : i);
         const isTenthAtk = !!(countsAsAttack && Number(hitExtra.tenthAtkBonus || 0) > 0 && (Number(hitExtra.tenthAtkStart || 0) + attackOffset + 1) % 10 === 0);
         if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
         const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * (1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0));
@@ -3572,7 +3573,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         extraDamageDealt = Math.floor(finalDamage * extraDamageRate);
         finalDamage += extraDamageDealt;
     }
-    return { hitCount, comboHitCount, attackUnitCount: comboHitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
+    return { hitCount, comboHitCount, attackUnitCount: separateBasicAttackHits ? hitCount : comboHitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
@@ -5904,6 +5905,7 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '포커 못 하시네') {
         extra.hitCount = 9;
         extra.basicAttackSkill = true;
+        extra.separateBasicAttackHits = true;
     }
     if (skillData.skill.name == '자인' && !getEquippedNamed(user, '궁택토')) {
         let zainBonus = getSkillValue(skillData.skill, 1, star);
