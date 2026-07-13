@@ -4678,6 +4678,26 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     return lines.join('\n');
 }
 
+function grantButagameFieldBonusDrops(user, dungeon, killCount, lines, rng = Math.random) {
+    const granted = { invitation: 0, challenge: 0, advancedStone: 0 };
+    if (!dungeon || dungeon.name != '부타게임' || Number(killCount || 0) < 1) return granted;
+    const drops = [
+        { key: 'invitation', name: '헬 초대장', chance: .04, count: () => Math.floor(rng() * 10) + 1, icon: '🎟️' },
+        { key: 'challenge', name: '헬 도전장', chance: .025, count: () => Math.floor(rng() * 10) + 1, icon: '🎫' },
+        { key: 'advancedStone', name: '상급 강화석', chance: .015, count: () => 1, icon: '💎' }
+    ];
+    drops.forEach(drop => {
+        if (rng() >= drop.chance) return;
+        const itemId = getItemIdByName(drop.name);
+        if (itemId == -1) return;
+        const count = drop.count();
+        addInventoryItem(user, itemId, count);
+        granted[drop.key] = count;
+        lines.push('- ' + drop.icon + ' ' + drop.name + ' x' + comma(count));
+    });
+    return granted;
+}
+
 function buildHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
     applyPetRegen(user, stats, null);
@@ -4849,6 +4869,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 addInventoryItem(user, baitItemId, baitDropCount);
                 lines.push('- 일반 떡밥 x' + comma(baitDropCount));
             }
+            grantButagameFieldBonusDrops(user, dungeon, killCount, lines);
         }
         if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     }
@@ -12410,6 +12431,7 @@ module.exports = {
     getManaResonanceBonus,
     getEquipmentElementChain,
     getTranscendEquipmentSnapshot,
+    grantButagameFieldBonusDrops,
     useTranscendUpgradeKit,
     getElementDamageMultiplier,
     calculateAttackHitResult,
