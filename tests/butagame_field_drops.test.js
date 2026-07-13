@@ -21,10 +21,10 @@ const rpg = require('../rpgenius');
     const lines = [];
     const rolls = [.039999, 0, .024999, .999999, .014999];
     const granted = rpg.grantButagameFieldBonusDrops(user, { name: '부타게임' }, 50, lines, () => rolls.shift());
-    assert.deepStrictEqual(granted, { invitation: 1, challenge: 10, advancedStone: 1 });
+    assert.deepStrictEqual(granted, { invitation: 1, challenge: 2, advancedStone: 1 });
     assert.strictEqual(rolls.length, 0, '여러 마리를 처치해도 각 보상은 공격당 한 번만 판정해야 한다.');
     assert.strictEqual(rpg.getInventoryItemCount(user, invitationId), 1);
-    assert.strictEqual(rpg.getInventoryItemCount(user, challengeId), 10);
+    assert.strictEqual(rpg.getInventoryItemCount(user, challengeId), 2);
     assert.strictEqual(rpg.getInventoryItemCount(user, advancedStoneId), 1);
 
     const boundaryRolls = [.04, .025, .015];
