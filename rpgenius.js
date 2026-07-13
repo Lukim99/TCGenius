@@ -174,7 +174,7 @@ async function runFieldIktaeBotTick(userName) {
     const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
     if (context.type == 'hell') {
-        lines.push(buildHellHuntResult(user, context.dungeon, botDamage, extra));
+        lines.push(buildEliteHuntResult(user, context.dungeon, botDamage, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
         lines.push('🤖 익테봇 자동 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
@@ -228,7 +228,7 @@ async function runFieldSunataTick(userName) {
     const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
     if (context.type == 'hell') {
-        lines.push(buildHellHuntResult(user, context.dungeon, dmg, extra));
+        lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         lines.push('🎵 수나타 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
@@ -277,7 +277,7 @@ async function runFieldMarkTick(userName) {
     const extra = { isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
     if (context.type == 'hell') {
-        lines.push(buildHellHuntResult(user, context.dungeon, dmg, extra));
+        lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         lines.push('✍️ 유서새김 지속 피해! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
@@ -361,7 +361,7 @@ async function runFieldEquipmentDotTick(userName) {
             const result = dealDamageToWorldBoss(user, context.boss, effect.rawDamage, extra);
             lines.push('🔥 ' + effect.label + '! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해');
             if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
-        } else if (context.type == 'hell') lines.push(buildHellHuntResult(user, context.dungeon, effect.rawDamage, extra));
+        } else if (context.type == 'hell') lines.push(buildEliteHuntResult(user, context.dungeon, effect.rawDamage, extra));
         else if (context.type == 'elite') lines.push(buildEliteHuntResult(user, context.dungeon, effect.rawDamage, extra));
         else lines.push(buildHuntResult(user, context.dungeon, effect.rawDamage, extra));
     }
@@ -4554,6 +4554,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
+    const isHell = !!(user.field && user.field.hell);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
     const damageWithSlotBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
     const eliteExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
@@ -4587,18 +4588,27 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         if (passiveMp > 0) applySkillMpRecovery(user, Number(stats.mp || 0), passiveMp, stats, lines);
     }
     if (executedByTaxationGun) lines.push('- ❌ ' + TAXATION_GUN_NAME + ' 효과: ' + elite.name + ' 처형!');
-    if (remainHp <= 0) {
+    const finishEliteKill = () => {
         lines.push('- ' + elite.name + ' 처치!');
         applySkillRecovery(user, maxHp, extra, lines);
-        applyEliteReward(user, dungeon, slotEffects, extra, lines);
-        const state = getEliteState(dungeon.name);
-        state.owner = null;
-        state.defeatedAt = Date.now();
-        persistEliteState();
-        user.field.elite = null;
+        if (isHell) {
+            // 부타게임[H]: 처치 시 보상 대신 기둥 페이즈로 전환
+            user.field.phase = 'pillar';
+            user.field.elite = null;
+            user.field.pillarHp = 3;
+            lines.push('', '🏛️ 최대 체력 3의 기둥이 나타났습니다!', '- 모든 수동 공격은 정확히 1 피해만 줍니다.');
+        } else {
+            applyEliteReward(user, dungeon, slotEffects, extra, lines);
+            const state = getEliteState(dungeon.name);
+            state.owner = null;
+            state.defeatedAt = Date.now();
+            persistEliteState();
+            user.field.elite = null;
+        }
         if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
-    }
+    };
+    if (remainHp <= 0) return finishEliteKill();
     user.field.elite.hp = remainHp;
     lines.push('- ' + elite.name + ' HP: ' + comma(remainHp) + '/' + comma(elite.hp));
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
@@ -4651,18 +4661,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
             if (user.field.elite.hp <= 0) eliteDefeatedByThorns = true;
         });
     }
-    if (eliteDefeatedByThorns) {
-        lines.push('- ' + elite.name + ' 처치!');
-        applySkillRecovery(user, maxHp, extra, lines);
-        applyEliteReward(user, dungeon, slotEffects, extra, lines);
-        const state = getEliteState(dungeon.name);
-        state.owner = null;
-        state.defeatedAt = Date.now();
-        persistEliteState();
-        user.field.elite = null;
-        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-        return lines.join('\n');
-    }
+    if (eliteDefeatedByThorns) return finishEliteKill();
     applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
     if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
@@ -4671,7 +4670,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         releaseEliteEncounter(user);
         user.field = null;
         lines.push('- 남은 체력: 1/' + comma(maxHp));
-        lines.push('', '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
+        lines.push('', isHell ? '💀 보상을 획득하지 못하고 퇴장했습니다. 소모한 헬 초대장은 반환되지 않습니다.' : '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
         return lines.join('\n');
     }
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
@@ -5061,61 +5060,16 @@ function grantHellPillarRewards(user) {
     return lines.join('\n');
 }
 
-function buildHellHuntResult(user, dungeon, rawDamage, extra) {
+// 부타게임[H] 기둥 페이즈 전용: 엘리트 전투는 buildEliteHuntResult(hell 분기)에서 처리
+function buildHellPillarResult(user, extra) {
     extra = extra || {};
-    if (!user.field || !user.field.hell) return '❌ 부타게임[H]에 입장한 상태가 아닙니다.';
-    if (user.field.phase == 'pillar') {
-        if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 자동 공격과 소환수 공격은 기둥에 피해를 줄 수 없습니다.';
-        user.field.pillarHp = Math.max(0, Number(user.field.pillarHp || 3) - 1);
-        const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/3'];
-        if (extra.notice) lines.push('- ' + extra.notice);
-        if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-        if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
-        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-        return lines.join('\n');
-    }
-
-    const stats = calculateUserStats(user);
-    const slotEffects = calculateCardSlotEffects(user);
-    const elite = getCombatStats(dungeon.elite);
-    const hit = calculateAttackHitResult(rawDamage, elite.def, Number(stats.pnt || 0) + Number(extra.pntBonus || 0), stats, slotEffects, extra, elite);
-    applyNmmStackGain(user, extra, hit);
-    applyTenthAtkCounter(user, extra, hit);
-    queueBlackShadow(user, extra, hit.finalDamage);
-    recordFieldJudgmentDamage(user, extra, hit.finalDamage);
-    const before = Number(user.field.elite && user.field.elite.hp || elite.hp);
-    const after = Math.max(0, before - Number(hit.finalDamage || 0));
-    user.field.elite.hp = after;
-    const lines = hit.hitCount > 1
-        ? formatHitDetailLines(hit, '⚔️ ', '피해를 입혔습니다!')
-        : ['⚔️ ' + comma(hit.finalDamage) + (hit.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
-    lines.push('- ' + elite.name + ' HP: ' + comma(after) + '/' + comma(elite.hp));
+    if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 자동 공격과 소환수 공격은 기둥에 피해를 줄 수 없습니다.';
+    user.field.pillarHp = Math.max(0, Number(user.field.pillarHp || 3) - 1);
+    const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/3'];
     if (extra.notice) lines.push('- ' + extra.notice);
     if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
-    if (after <= 0) {
-        user.field.phase = 'pillar';
-        user.field.elite = null;
-        user.field.pillarHp = 3;
-        lines.push('', '🏛️ 최대 체력 3의 기둥이 나타났습니다!', '- 모든 수동 공격은 정확히 1 피해만 줍니다.');
-        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
-        return lines.join('\n');
-    }
-
-    if (!extra.summonAttack) {
-        const incoming = calculateMonsterAttackHitResult(elite, stats, slotEffects, extra);
-        let fieldDamage = consumeNextDamageReduction(user, incoming.finalDamage);
-        fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
-        user.hp = Math.max(0, Number(user.hp || stats.hp) - fieldDamage);
-        lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!', '- 남은 체력: ' + comma(user.hp) + '/' + comma(stats.hp));
-        if (user.hp <= 0) {
-            user.hp = 1;
-            saveFieldCooldowns(user);
-            user.field = null;
-            lines.push('', '💀 보상을 획득하지 못하고 퇴장했습니다. 소모한 헬 초대장은 반환되지 않습니다.');
-            return lines.join('\n');
-        }
-    }
-    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
+    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
     return lines.join('\n');
 }
 
@@ -5609,7 +5563,10 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
         if (nextOrder) extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '다음 공격 순서: ' + nextOrder + '번째';
     }
     if (actionType == 'skill' && !(extra && extra.summonAttack)) applyCurrentSkillHitEquipment(user, skill, extra);
-    if (context.type == 'hell') return buildHellHuntResult(user, context.dungeon, rawDamage, extra);
+    if (context.type == 'hell') {
+        if (user.field.phase == 'pillar') return buildHellPillarResult(user, extra);
+        return buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
+    }
     if (context.type == 'worldBoss') return applyWorldBossDamageAction(user, context.boss, rawDamage, extra, actionType, skill);
     if (context.type == 'elite') return buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
     return buildHuntResult(user, context.dungeon, rawDamage, extra);
