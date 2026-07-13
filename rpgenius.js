@@ -4682,8 +4682,8 @@ function grantButagameFieldBonusDrops(user, dungeon, killCount, lines, rng = Mat
     const granted = { invitation: 0, challenge: 0, advancedStone: 0 };
     if (!dungeon || dungeon.name != '부타게임' || Number(killCount || 0) < 1) return granted;
     const drops = [
-        { key: 'invitation', name: '헬 초대장', chance: .04, count: () => Math.floor(rng() * 2) + 1, icon: '🎟️' },
-        { key: 'challenge', name: '헬 도전장', chance: .025, count: () => Math.floor(rng() * 2) + 1, icon: '🎫' },
+        { key: 'invitation', name: '헬 초대장', chance: .07, count: () => Math.floor(rng() * 2) + 1, icon: '🎟️' },
+        { key: 'challenge', name: '헬 도전장', chance: .04, count: () => Math.floor(rng() * 2) + 1, icon: '🎫' },
         { key: 'advancedStone', name: '상급 강화석', chance: .015, count: () => 1, icon: '💎' }
     ];
     drops.forEach(drop => {
@@ -5037,15 +5037,15 @@ function grantHellPillarRewards(user) {
     grantItem('헬 도전장', 1, 2, .75);
     grantItem('초월 조각', 1, 1, .03);
     const guaranteed = [
-        { rarity: '일반', chance: .43 }, { rarity: '레어', chance: .44 },
-        { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .04 }
+        { rarity: '일반', chance: .42 }, { rarity: '레어', chance: .44 },
+        { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .05 }
     ];
     lines.push('', '[ 확정 장비 ]');
     grantHellEquipment(user, pickHellRarity(guaranteed), lines);
     if (Math.random() < .20) {
         const extra = [
-            { rarity: '일반', chance: .429 }, { rarity: '레어', chance: .44 },
-            { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .04 },
+            { rarity: '일반', chance: .419 }, { rarity: '레어', chance: .44 },
+            { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .05 },
             { rarity: '신화', chance: .001 }
         ];
         lines.push('', '[ 추가 장비 ]');
