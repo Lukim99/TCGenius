@@ -1003,7 +1003,8 @@ const PLUS_STAT_DEFS = [
     { key: 'summonDuration', label: '소환 지속시간', kind: 'percent' },
     { key: 'cooldown', label: '쿨타임 감소', kind: 'percent' },
     { key: 'dotDamage', label: '지속 피해', kind: 'percent' },
-    { key: 'waldolandDmg', label: "'월도랜드' 필드 공격 시 추가 피해", kind: 'percent' }
+    { key: 'waldolandDmg', label: "'월도랜드' 필드 공격 시 추가 피해", kind: 'percent' },
+    { key: 'butagamePartyQuestDmg', label: "'부타게임' 파티 퀘스트 내 추가 피해", kind: 'percent' }
 ];
 
 function statKindUnit(kind) {

@@ -1766,7 +1766,8 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
-        finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해'
+        finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
+        butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     // 값이 낮을수록(감소할수록) 이득인 스탯
     const LOWER_IS_BETTER = new Set(['skillCooldown', 'mpReduce', 'takenDamage']);
@@ -4968,6 +4969,7 @@ const PROFILE_STAT_LABELS = {
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해', extraDamage: '추가 피해', dotDamage: '지속 피해',
+    butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해",
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',

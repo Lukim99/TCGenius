@@ -2055,5 +2055,81 @@
         "critDef": 0,
         "cmb": 0.15,
         "maxCmb": 0
+    },
+    {
+        "name": "부타게임",
+        "requireLevel": 141,
+        "reward": {
+            "exp": 13700,
+            "gold": {
+                "min": 5300,
+                "max": 7140
+            }
+        },
+        "atk": 3700,
+        "pnt": 200,
+        "def": 175,
+        "hp": 6300,
+        "elite": {
+            "name": "물장구",
+            "atk": 10200,
+            "pnt": 490,
+            "pntPercent": 0.1,
+            "def": 480,
+            "hp": 114000,
+            "reward": [
+                {
+                    "type": "경험치",
+                    "count": {
+                        "min": 157800,
+                        "max": 179100
+                    }
+                },
+                {
+                    "type": "골드",
+                    "count": {
+                        "min": 25100,
+                        "max": 45000
+                    }
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 0,
+                    "count": {
+                        "min": 198,
+                        "max": 298
+                    },
+                    "roll": 0.9
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 268,
+                    "count": {
+                        "min": 3,
+                        "max": 10
+                    },
+                    "roll": 0.3
+                },
+                {
+                    "type": "아이템",
+                    "item_id": 66,
+                    "count": {
+                        "min": 1,
+                        "max": 1
+                    },
+                    "roll": 0.4
+                }
+            ],
+            "crit": 0.3,
+            "critMul": 1.85,
+            "critDef": 0.1,
+            "cmb": 0.15,
+            "maxCmb": 0
+        },
+        "crit": 0.15,
+        "critMul": 1.6,
+        "critDef": 0,
+        "cmb": 0.15,
+        "maxCmb": 0
     }
 ]

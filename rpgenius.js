@@ -553,7 +553,7 @@ function formatStatValue(key, value) {
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
         'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%',
-        'dotDamage%', 'waldolandDmg%'
+        'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -721,8 +721,201 @@ const EQUIP_PLUSSTAT_LABELS = {
     summonDuration: '소환 지속시간',
     cooldown: '쿨타임 감소',
     dotDamage: '지속 피해',
-    waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
+    waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
+    butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
 };
+
+const WILL_ACCESSIBLE_FIELDS = {
+    self: {
+        stats: {
+            atk: { label: '공격력', valueType: 'flat' },
+            def: { label: '방어력', valueType: 'flat' },
+            hp: { label: '체력', valueType: 'flat' },
+            mp: { label: 'MP', valueType: 'flat' },
+            pnt: { label: '방어 관통력', valueType: 'flat' },
+            pntPercent: { label: '방어력 감소율', valueType: 'ratio' },
+            plusGold: { label: '처치 당 골드', valueType: 'flat' },
+            crit: { label: '치명타 확률', valueType: 'ratio' },
+            critMul: { label: '치명타 피해량', valueType: 'ratio' },
+            critDef: { label: '치명타 피해 감소율', valueType: 'ratio' },
+            cmb: { label: '연격 확률', valueType: 'ratio' },
+            maxCmb: { label: '추가 공격 횟수', valueType: 'flat' },
+            skillCooldown: { label: '스킬 쿨타임', valueType: 'milliseconds' },
+            skillTrueDmg: { label: '스킬 사용 시 추가 고정 피해', valueType: 'flat' },
+            cardStarAtk: { label: '카드 1성당 공격력', valueType: 'flat' },
+            attackHpRecovery: { label: '공격 시 10% 확률로 HP 회복', valueType: 'flat' },
+            attackMpRecovery: { label: '공격 시 10% 확률로 MP 회복', valueType: 'flat' },
+            level9Atk: { label: '레벨 9당 공격력', valueType: 'flat' },
+            atkPerMillionGold: { label: '보유 골드 100만 당 공격력', valueType: 'flat' },
+            atkDefReduce: { label: '공격 시 5초간 방어력 감소', valueType: 'flat' },
+            fireAtk: { label: '[화]속성 강화', valueType: 'flat' },
+            waterAtk: { label: '[수]속성 강화', valueType: 'flat' },
+            lightAtk: { label: '[명]속성 강화', valueType: 'flat' },
+            darkAtk: { label: '[암]속성 강화', valueType: 'flat' },
+            allElementAtk: { label: '모든 속성 강화', valueType: 'flat' },
+            fireRes: { label: '[화]속성 저항', valueType: 'flat' },
+            waterRes: { label: '[수]속성 저항', valueType: 'flat' },
+            lightRes: { label: '[명]속성 저항', valueType: 'flat' },
+            darkRes: { label: '[암]속성 저항', valueType: 'flat' },
+            allElementRes: { label: '모든 속성 저항', valueType: 'flat' },
+            gold: { label: '골드 획득량', valueType: 'ratio' },
+            potion: { label: '물약 효율', valueType: 'ratio' },
+            afterBasic: { label: '일반 공격 피해', valueType: 'ratio' },
+            afterSkill: { label: '스킬 공격 피해', valueType: 'ratio' },
+            avd: { label: '회피 확률', valueType: 'ratio' },
+            '000': { label: '공격 시 10/100/1000 추가 피해 확률', valueType: 'ratio' },
+            exp: { label: '경험치 획득량', valueType: 'ratio' },
+            eliteDmg: { label: '엘리트 몬스터 대상 추가 피해', valueType: 'ratio' },
+            mpReduce: { label: 'MP 소모량', valueType: 'ratio' },
+            itemDropChance: { label: '아이템 획득 확률', valueType: 'ratio' },
+            recoveryEfficiency: { label: '회복 효율', valueType: 'ratio' },
+            takenDamage: { label: '받는 피해 증가', valueType: 'ratio' },
+            damageBonus: { label: '일반 몬스터에게 주는 피해 증가', valueType: 'ratio' },
+            finalDamage: { label: '최종 피해', valueType: 'ratio' },
+            extraDamage: { label: '추가 피해', valueType: 'ratio' },
+            bossDmg: { label: '보스 몬스터에게 주는 피해 증가', valueType: 'ratio' },
+            summonDuration: { label: '소환 지속시간', valueType: 'ratio' },
+            cooldown: { label: '쿨타임 감소', valueType: 'ratio' },
+            dotDamage: { label: '지속 피해', valueType: 'ratio' },
+            waldolandDmg: { label: "'월도랜드' 필드 공격 시 추가 피해", valueType: 'ratio' }
+        }
+    },
+    enemy: {
+        stats: {
+            atk: { label: '공격력', valueType: 'flat' },
+            def: { label: '방어력', valueType: 'flat' },
+            hp: { label: '체력', valueType: 'flat' },
+            mp: { label: 'MP', valueType: 'flat' },
+            pnt: { label: '방어 관통력', valueType: 'flat' },
+            pntPercent: { label: '방어력 감소율', valueType: 'ratio' },
+            crit: { label: '치명타 확률', valueType: 'ratio' },
+            critMul: { label: '치명타 피해량', valueType: 'ratio' },
+            critDef: { label: '치명타 피해 감소율', valueType: 'ratio' },
+            cmb: { label: '연격 확률', valueType: 'ratio' },
+            maxCmb: { label: '추가 공격 횟수', valueType: 'flat' },
+            damageBonus: { label: '주는 피해 증가', valueType: 'ratio' },
+            finalDamage: { label: '최종 피해', valueType: 'ratio' },
+            takenDamage: { label: '받는 피해 증가', valueType: 'ratio' },
+            fireAtk: { label: '[화]속성 강화', valueType: 'flat' },
+            waterAtk: { label: '[수]속성 강화', valueType: 'flat' },
+            lightAtk: { label: '[명]속성 강화', valueType: 'flat' },
+            darkAtk: { label: '[암]속성 강화', valueType: 'flat' },
+            allElementAtk: { label: '모든 속성 강화', valueType: 'flat' },
+            fireRes: { label: '[화]속성 저항', valueType: 'flat' },
+            waterRes: { label: '[수]속성 저항', valueType: 'flat' },
+            lightRes: { label: '[명]속성 저항', valueType: 'flat' },
+            darkRes: { label: '[암]속성 저항', valueType: 'flat' },
+            allElementRes: { label: '모든 속성 저항', valueType: 'flat' }
+        }
+    }
+};
+
+const WILL_COST_SETTINGS = {
+    dailyBudgetBasis: 1000,
+    baseCost: 8,
+    impactScale: 14,
+    minimumCost: 1,
+    aiCostPolicy: 'respect_ai_estimate',
+    aiCostAuditTolerance: 0.35,
+    aiCostRejectOnAuditMismatch: false,
+    multiOperationSurcharge: 0.12,
+    targetMultiplier: {
+        self: 1.0,
+        enemy: 1.12,
+        party: 1.45,
+        allEnemies: 1.7,
+        worldBoss: 2.2
+    },
+    durationMultiplier: [
+        { mode: 'instant', multiplier: 1.0 },
+        { mode: 'nextAction', multiplier: 1.15 },
+        { mode: 'seconds', maxSeconds: 5, multiplier: 1.35 },
+        { mode: 'seconds', maxSeconds: 15, multiplier: 2.0 },
+        { mode: 'seconds', maxSeconds: 30, multiplier: 2.9 },
+        { mode: 'seconds', maxSeconds: 60, multiplier: 4.2 },
+        { mode: 'field', multiplier: 6.0 },
+        { mode: 'daily', multiplier: 12.0 },
+        { mode: 'permanent', multiplier: 35.0 }
+    ],
+    magnitudeCurve: {
+        small: { upTo: 0.25, exponent: 1.0 },
+        medium: { upTo: 1.0, exponent: 1.18 },
+        large: { exponent: 1.38 }
+    }
+};
+
+const WILL_STAT_COST_CONFIG = {
+    atk: { metric: 'relativeFlat', power: 9, basis: 'currentStat', beneficialDirection: 'increase' },
+    def: { metric: 'relativeFlat', power: 4, basis: 'currentStat', beneficialDirection: 'increase' },
+    hp: { metric: 'relativeFlat', power: 5, basis: 'currentStat', beneficialDirection: 'increase' },
+    mp: { metric: 'relativeFlat', power: 2, basis: 'currentStat', beneficialDirection: 'increase' },
+    pnt: { metric: 'targetDefenseFlat', power: 4, basis: 'targetEffectiveDefense', beneficialDirection: 'increase' },
+    pntPercent: { metric: 'defenseReductionRatio', power: 7, basis: 'targetRemainingDefense', beneficialDirection: 'increase' },
+    plusGold: { metric: 'economyFlatPerKill', power: 5, basis: 'fieldAverageGold', beneficialDirection: 'increase' },
+    crit: { metric: 'critChanceRatio', power: 7, basis: 'currentCritExpectedDamage', beneficialDirection: 'increase' },
+    critMul: { metric: 'critMultiplierRatio', power: 3, basis: 'currentCritChance', beneficialDirection: 'increase' },
+    critDef: { metric: 'critDefenseRatio', power: 3, basis: 'incomingCritExpectedDamage', beneficialDirection: 'increase' },
+    cmb: { metric: 'comboChanceRatio', power: 10, basis: 'expectedComboHits', beneficialDirection: 'increase' },
+    maxCmb: { metric: 'comboCapFlat', power: 6, basis: 'currentComboChance', beneficialDirection: 'increase' },
+    skillCooldown: { metric: 'cooldownMilliseconds', power: 6, basis: 8000, beneficialDirection: 'decrease' },
+    skillTrueDmg: { metric: 'fixedDamageFlat', power: 8, basis: 'expectedActionDamage', beneficialDirection: 'increase' },
+    cardStarAtk: { metric: 'derivedAttackFlat', power: 9, basis: 'mainCardStar', beneficialDirection: 'increase' },
+    attackHpRecovery: { metric: 'recoveryFlat', power: 3, basis: 'currentHp', procChance: 0.1, beneficialDirection: 'increase' },
+    attackMpRecovery: { metric: 'recoveryFlat', power: 1, basis: 'currentMp', procChance: 0.1, beneficialDirection: 'increase' },
+    level9Atk: { metric: 'derivedAttackFlat', power: 9, basis: 'level9Count', beneficialDirection: 'increase' },
+    atkPerMillionGold: { metric: 'derivedAttackFlat', power: 9, basis: 'heldGoldMillionCount', beneficialDirection: 'increase' },
+    atkDefReduce: { metric: 'targetDefenseFlat', power: 4, basis: 'targetEffectiveDefense', beneficialDirection: 'increase' },
+    fireAtk: { metric: 'elementAttackFlat', power: 3, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    waterAtk: { metric: 'elementAttackFlat', power: 3, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    lightAtk: { metric: 'elementAttackFlat', power: 3, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    darkAtk: { metric: 'elementAttackFlat', power: 3, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    allElementAtk: { metric: 'elementAttackFlat', power: 9, basis: 1000, elementCoverage: 1.0, beneficialDirection: 'increase' },
+    fireRes: { metric: 'elementResistFlat', power: 2, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    waterRes: { metric: 'elementResistFlat', power: 2, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    lightRes: { metric: 'elementResistFlat', power: 2, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    darkRes: { metric: 'elementResistFlat', power: 2, basis: 1000, elementCoverage: 0.25, beneficialDirection: 'increase' },
+    allElementRes: { metric: 'elementResistFlat', power: 5, basis: 1000, elementCoverage: 1.0, beneficialDirection: 'increase' },
+    gold: { metric: 'economyRatio', power: 4, basis: 0.10, longTermSensitive: true, beneficialDirection: 'increase' },
+    potion: { metric: 'potionEfficiencyRatio', power: 2, basis: 0.10, beneficialDirection: 'increase' },
+    afterBasic: { metric: 'contextDamageRatio', power: 4, basis: 0.10, actionCoverage: 0.52, beneficialDirection: 'increase' },
+    afterSkill: { metric: 'contextDamageRatio', power: 7, basis: 0.10, actionCoverage: 0.48, beneficialDirection: 'increase' },
+    avd: { metric: 'avoidanceRatio', power: 7, basis: 0.10, cap: 0.8, beneficialDirection: 'increase' },
+    '000': { metric: 'fixedDamageChanceRatio', power: 10, basis: 'expectedActionDamage', expectedProcDamage: 370, beneficialDirection: 'increase' },
+    exp: { metric: 'economyRatio', power: 4, basis: 0.10, longTermSensitive: true, beneficialDirection: 'increase' },
+    eliteDmg: { metric: 'contextDamageRatio', power: 3, basis: 0.10, contextCoverage: 0.2, beneficialDirection: 'increase' },
+    mpReduce: { metric: 'mpCostRatio', power: 4, basis: 0.10, cap: 0.8, beneficialDirection: 'decrease' },
+    itemDropChance: { metric: 'dropRatio', power: 6, basis: 0.10, longTermSensitive: true, beneficialDirection: 'increase' },
+    recoveryEfficiency: { metric: 'recoveryRatio', power: 3, basis: 0.10, beneficialDirection: 'increase' },
+    takenDamage: { metric: 'takenDamageRatio', power: 7, basis: 0.10, cap: 0.8, beneficialDirection: 'decrease', requiresDamagePipelineHook: true },
+    damageBonus: { metric: 'contextDamageRatio', power: 5, basis: 0.10, contextCoverage: 0.7, beneficialDirection: 'increase' },
+    finalDamage: { metric: 'globalDamageRatio', power: 10, basis: 0.10, beneficialDirection: 'increase' },
+    extraDamage: { metric: 'globalDamageRatio', power: 10, basis: 0.10, beneficialDirection: 'increase' },
+    bossDmg: { metric: 'contextDamageRatio', power: 5, basis: 0.10, contextCoverage: 0.35, worldBossMultiplier: 2.2, beneficialDirection: 'increase' },
+    summonDuration: { metric: 'summonDurationRatio', power: 3, basis: 0.10, summonSkillCoverage: 0.25, beneficialDirection: 'increase' },
+    cooldown: { metric: 'cooldownRatio', power: 6, basis: 0.10, cap: 0.8, beneficialDirection: 'increase' },
+    dotDamage: { metric: 'dotDamageRatio', power: 3, basis: 0.10, dotSkillCoverage: 0.25, beneficialDirection: 'increase' },
+    waldolandDmg: { metric: 'contextDamageRatio', power: 3, basis: 0.10, contextCoverage: 0.16, beneficialDirection: 'increase' }
+};
+
+function resolveWillExecutionCost(aiEstimatedCost, systemEstimatedCost, settings) {
+    const config = settings || WILL_COST_SETTINGS;
+    const minimumCost = Math.max(0, Math.ceil(Number(config.minimumCost || 0)));
+    const systemCost = Math.max(minimumCost, Math.ceil(Number(systemEstimatedCost || 0)));
+    const parsedAiCost = Number(aiEstimatedCost);
+    const hasAiCost = Number.isFinite(parsedAiCost) && parsedAiCost >= 0;
+    const aiCost = hasAiCost ? Math.max(minimumCost, Math.ceil(parsedAiCost)) : null;
+    const cost = config.aiCostPolicy == 'respect_ai_estimate' && aiCost !== null ? aiCost : systemCost;
+    const diffRate = systemCost > 0 ? Math.abs(cost - systemCost) / systemCost : 0;
+    const auditMismatch = aiCost !== null && diffRate > Number(config.aiCostAuditTolerance || 0);
+    return {
+        cost,
+        aiCost,
+        systemCost,
+        policy: config.aiCostPolicy || 'system_estimate',
+        auditMismatch,
+        reject: auditMismatch && config.aiCostRejectOnAuditMismatch === true
+    };
+}
 
 // ===== 속성(Element) 시스템 =====
 const ELEMENT_ATK_KEYS = { '화': 'fireAtk', '수': 'waterAtk', '명': 'lightAtk', '암': 'darkAtk' };
@@ -2758,7 +2951,7 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg', 'butagamePartyQuestDmg'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -5354,7 +5547,8 @@ const SUPPORT_PLUS_STAT_LABELS = {
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해', extraDamage: '추가 피해',
     summonDuration: '소환 지속시간', cooldown: '쿨타임 감소',
-    dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
+    dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
+    butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
 };
 
 function formatEquippedEquipmentDetail(label, type, equip, user) {
@@ -7518,7 +7712,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
         finalDamage: '최종 피해', extraDamage: '추가 피해',
         cooldown: '쿨타임 감소',
-        dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해"
+        dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
+        butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
@@ -10789,6 +10984,10 @@ async function onChat(data, channel) {
 
 module.exports = {
     TARGET_CHANNEL_IDS,
+    WILL_ACCESSIBLE_FIELDS,
+    WILL_COST_SETTINGS,
+    WILL_STAT_COST_CONFIG,
+    resolveWillExecutionCost,
     RPGUser,
     getRPGUserById,
     getRPGUserByName,

@@ -1642,6 +1642,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     }
     // '월도랜드' 필드(퀘스트) 공격 시 추가 피해
     if (/월도랜드/.test(String(quest.name || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
+    // 향후 추가될 '부타게임' 파티 퀘스트에서만 적용되는 추가 피해
+    if (/부타게임/.test(String(quest.name || '') + ' ' + String(quest.id || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.butagamePartyQuestDmg || 0);
     // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외, 연격 각각 별도 집계해 해당 타격에만 적용)
     const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
     const tenthAtkStart = (!(extra && extra.summonAttack) && tenthAtk > 0) ? Number(runtime.attackCounter || 0) : null;
