@@ -833,7 +833,11 @@
             root.append(el('div', { class: 'pq-my-hp' },
                 el('div', { class: 'top' }, el('span', null, '내 체력'), el('span', null, hpPct(mine.runtime).toFixed(1) + '%')),
                 makeHpBar(mine.runtime),
-                el('div', { class: 'vals' }, el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax), el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax)),
+                el('div', { class: 'vals' },
+                    el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax),
+                    el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax),
+                    mine.runtime.attackOrder ? el('span', null, '다음 공격 ' + mine.runtime.attackOrder + '번째') : null
+                ),
                 makeMpBar(mine.runtime),
                 buffs.length ? el('div', { class: 'pq-buff-row pq-my-buffs' },
                     ...buffs.map(b => {

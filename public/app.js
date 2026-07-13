@@ -300,10 +300,10 @@ function textLines(text) {
     return String(text || '').split('\n').filter(line => line && line.indexOf('\u200e') === -1);
 }
 
-const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '신화': '#ef4444', '고유': '#ec4899' };
-const SLOT_ICONS = { 'weapon': '⚔️', 'armor': '🛡️', 'accessory': '💍', 'support': '🔧' };
+const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#22d3ee', '초월 1단계': '#22d3ee', '초월 2단계': '#06b6d4', '초월 3단계': '#0891b2', '신화': '#ef4444', '고유': '#ec4899' };
+const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧' };
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '재료'];
-const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']];
+const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
 
 function equipmentThumb(eq) {
     const wrap = el('div', { class: 'equip-thumb' });
@@ -404,14 +404,18 @@ function gearSlotNode(typeKey, label, eq) {
 function renderGearSlots(data) {
     const root = $('#equippedGear');
     if (!root) return;
-    const byType = { weapon: null, armor: null, support: null };
+    const byType = { weapon: null, hat: null, armor: null, pants: null, shoes: null, support: null };
     const accessories = [];
     (data.equippedEquipment || []).forEach(e => {
         if (e.type === 'accessory') accessories.push(e);
         else if (e.type in byType) byType[e.type] = e;
     });
     const maxAcc = Math.max(1, Number(data.user.maxAccessory || 3));
-    const nodes = [gearSlotNode('weapon', '무기', byType.weapon), gearSlotNode('armor', '갑옷', byType.armor)];
+    const nodes = [
+        gearSlotNode('weapon', '무기', byType.weapon), gearSlotNode('hat', '모자', byType.hat),
+        gearSlotNode('armor', '갑옷', byType.armor), gearSlotNode('pants', '하의', byType.pants),
+        gearSlotNode('shoes', '신발', byType.shoes)
+    ];
     for (let i = 0; i < maxAcc; i++) nodes.push(gearSlotNode('accessory', maxAcc > 1 ? '장신구 ' + (i + 1) : '장신구', accessories[i] || null));
     nodes.push(gearSlotNode('support', '보조', byType.support));
     root.replaceChildren(...nodes);
@@ -1979,7 +1983,7 @@ function renderEnhancePreview(data) {
             ),
             el('div', { class: 'enhance-section-label' }, '필요 재료'),
             el('div', { class: 'enhance-cost-row' },
-                enhCostItem('강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개 보유', data.hasStone),
+                enhCostItem(data.cost.stoneName || '강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개 보유', data.hasStone),
                 enhCostItem('🪙 골드', comma(data.cost.gold), comma(data.gold) + ' 보유', data.hasGold)
             ),
             ...protectNodes
@@ -3559,6 +3563,9 @@ const REG_SLOT_SVGS = {
     accessory: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>`,
     support:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
 };
+REG_SLOT_SVGS.hat = REG_SLOT_SVGS.armor;
+REG_SLOT_SVGS.pants = REG_SLOT_SVGS.armor;
+REG_SLOT_SVGS.shoes = REG_SLOT_SVGS.armor;
 function regCurrImg(c) {
     const file = c === 'gold' ? '골드.png' : '가넷.png';
     return el('img', { src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(file), alt: c, style: 'width:22px;height:22px;object-fit:contain;display:block;flex-shrink:0' });
@@ -4107,7 +4114,7 @@ function renderBoRegisterModal() {
     } else if (kind === 'equipment') {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '장비 종류'));
         const equipTypeRow = el('div', { class: 'reg-equip-row' },
-            ...[['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].map(([k, label]) =>
+            ...EQUIP_TYPE_ORDER.map(([k, label]) =>
                 el('button', { class: 'reg-equip-btn' + (boRegState.equipType === k ? ' active' : ''),
                     onclick: () => { boRegState.equipType = k; boRegState.equipId = -1; boRegState.search = ''; renderBoRegisterModal(); }
                 }, svgIcon(REG_SLOT_SVGS[k]), label)

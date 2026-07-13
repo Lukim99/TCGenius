@@ -1719,7 +1719,8 @@ function buildEquipmentUpgradePreview(user, number) {
     const nextPlus = rpgenius.getEquipmentPlusStatsAtLevel(equipment, nextLevel);
     const rates = rpgenius.getEquipmentUpgradeRates(type, level);
     const cost = rpgenius.getEquipmentUpgradeCost(equipment, type, level);
-    const stoneCount = rpgenius.getInventoryItemCount(user, rpgenius.EQUIPMENT_STONE_ITEM_ID);
+    const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : rpgenius.EQUIPMENT_STONE_ITEM_ID;
+    const stoneCount = rpgenius.getInventoryItemCount(user, stoneItemId);
     const gold = Number(user.gold || 0);
     const hasStone = stoneCount >= cost.stone;
     const hasGold = gold >= cost.gold;
@@ -2480,7 +2481,7 @@ server.get('/api/lookup/items', requireAdmin, (req, res) => {
 server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
     const eq = rpgenius.getDataCache('Equipment', {});
     const pack = list => (list || []).map((e, id) => e ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
-    res.json({ weapon: pack(eq.weapon), armor: pack(eq.armor), accessory: pack(eq.accessory), support: pack(eq.support) });
+    res.json({ weapon: pack(eq.weapon), hat: pack(eq.hat), armor: pack(eq.armor), pants: pack(eq.pants), shoes: pack(eq.shoes), accessory: pack(eq.accessory), support: pack(eq.support) });
 });
 
 server.get('/api/lookup/equipment-passives', requireAdmin, (req, res) => {
@@ -3368,7 +3369,7 @@ function getEquipmentData(type, id) {
 
 function buildInventoryEquipment(user) {
     const result = [];
-    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
+    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
     let number = 1;
     const add = (equip, type, equipped, meta) => {
         const data = equip && getEquipmentData(equip.type || type, equip.id);
@@ -3377,6 +3378,11 @@ function buildInventoryEquipment(user) {
         const level = Number(equip.level || 0);
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
+        if (data.desc) statLines.push('고유 옵션: ' + data.desc);
+        if (data.set && data.setEffects) {
+            statLines.push('세트 효과 · ' + data.set);
+            Object.keys(data.setEffects).sort((a, b) => Number(a) - Number(b)).forEach(tier => statLines.push(tier + '세트: ' + data.setEffects[tier]));
+        }
         const potentialLines = equip && equip.potential ? rpgenius.formatPotentialLines(equip.potential) : [];
         const potentialDisplay = equip && equip.potential ? {
             tierKey: rpgenius.getPotentialRarityKey(equip.potential.rarity),
@@ -3394,7 +3400,8 @@ function buildInventoryEquipment(user) {
             slotKey: meta && typeof meta.slotKey != 'undefined' ? String(meta.slotKey) : null,
             name: rpgenius.getEquipmentDisplayName(data, equip),
             baseName: data.name,
-            rarity: data.rarity,
+            rarity: rpgenius.getEquipmentRarityLabel(data, equip),
+            baseRarity: data.rarity,
             level,
             equipped: !!equipped,
             statLines,
@@ -3411,8 +3418,9 @@ function buildInventoryEquipment(user) {
         });
     };
     (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => add(equip, equip.type, false, { source: 'inventory', index }));
-    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') add(user.equipments.weapon, 'weapon', true, { source: 'equipped' });
-    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') add(user.equipments.armor, 'armor', true, { source: 'equipped' });
+    ['weapon', 'hat', 'armor', 'pants', 'shoes'].forEach(type => {
+        if (user.equipments && user.equipments[type] && typeof user.equipments[type].id != 'undefined') add(user.equipments[type], type, true, { source: 'equipped' });
+    });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
         if (accessories[key] && typeof accessories[key].id != 'undefined') add(accessories[key], 'accessory', true, { source: 'equipped', slotKey: key });
@@ -3421,7 +3429,7 @@ function buildInventoryEquipment(user) {
     return result;
 }
 
-const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
+const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영웅', '레전더리', '전설', '초월', '신화', '고유'];
 
 function formatPassiveDesc(passive) {
     if (!passive) return '';
@@ -3473,12 +3481,16 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
             };
         }
     }
+    const set = data.set ? {
+        name: String(data.set),
+        tiers: Object.keys(data.setEffects || {}).sort((a, b) => Number(a) - Number(b)).map(tier => ({ tier: Number(tier), lines: [String(data.setEffects[tier])] }))
+    } : null;
     return {
         type,
         typeLabel,
         id,
         name: data.name,
-        rarity: data.rarity,
+        rarity: data.rarity === '초월' ? '초월 1단계' : data.rarity,
         desc: data.desc || '',
         noTrade: data.no_trade === true,
         iconUrl: getEquipmentIconUrl(data),
@@ -3488,7 +3500,8 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
         maxUpgradeLevel: upgrades.length,
         evolution,
         recipe,
-        passive
+        passive,
+        set
     };
 }
 
@@ -3661,7 +3674,10 @@ function buildEquipmentDex() {
     const pack = (list, type, label) => (list || []).map((data, id) => buildEquipmentDexEntry(type, label, id, data, recipeIndex)).filter(Boolean).sort(sortByRarity);
     return {
         weapon: pack(eq.weapon, 'weapon', '무기'),
+        hat: pack(eq.hat, 'hat', '모자'),
         armor: pack(eq.armor, 'armor', '갑옷'),
+        pants: pack(eq.pants, 'pants', '하의'),
+        shoes: pack(eq.shoes, 'shoes', '신발'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
         pet: buildPetDex(),
@@ -3783,7 +3799,7 @@ function buildRewardSummaryDisplay(summary) {
             iconUrl = SHOP_CURR_IMG.garnet;
         } else if (type === 'point') {
             iconUrl = SHOP_CURR_IMG.point;
-        } else if (['weapon', 'armor', 'accessory', 'support'].includes(type)) {
+        } else if (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(type)) {
             const data = equipments[type] && equipments[type][Number(parts[1])];
             iconUrl = data ? getEquipmentIconUrl(data) : null;
             frameUrl = data ? getAuctionFrameUrl('equipment', data.rarity) : null;
@@ -3826,7 +3842,7 @@ function buildShopPriceDisplay(price) {
     return { goods: price.goods, amount: price.amount, imgUrl: SHOP_CURR_IMG[price.goods] || null };
 }
 
-const SHOP_TAB_ORDER = ['일반', '가넷', '포인트', '마일리지', '패키지', '출석'];
+const SHOP_TAB_ORDER = ['일반', '가넷', '포인트', '마일리지', '패키지', '출석', '초월'];
 function buildShopData(user) {
     const shopRaw = rpgenius.getDataCache('Shop', {}) || {};
     const allKeys = Object.keys(shopRaw);
@@ -3943,10 +3959,11 @@ function buildTradeLogPayload(entry) {
     if (entry.kind == 'equipment') {
         const slot = entry.payload && entry.payload.type;
         const id = entry.payload && entry.payload.id;
-        const slotKey = slot == '무기' ? 'weapon' : slot == '갑옷' ? 'armor' : slot == '장신구' ? 'accessory' : slot == '보조' ? 'support' : ['weapon', 'armor', 'accessory', 'support'].includes(slot) ? slot : null;
+        const slotMap = { '무기': 'weapon', '모자': 'hat', '갑옷': 'armor', '상의': 'armor', '하의': 'pants', '신발': 'shoes', '장신구': 'accessory', '보조': 'support' };
+        const slotKey = slotMap[slot] || (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(slot) ? slot : null);
         const data = slotKey ? (equipments[slotKey] || [])[id] : null;
         return {
-            kindLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[slotKey] || slot || '장비',
+            kindLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[slotKey] || slot || '장비',
             name: data ? data.name : '알 수 없는 장비',
             rarity: data ? data.rarity : null,
             payload: Object.assign({}, entry.payload || {})
@@ -4066,7 +4083,7 @@ function describeAuctionPayload(entry) {
         const level = Number(entry.payload && entry.payload.level || 0);
         return {
             name: data ? rpgenius.getEquipmentDisplayName(data, entry.payload) : '알 수 없는 장비',
-            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[entry.payload.type] || entry.payload.type)) : '',
+            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[entry.payload.type] || entry.payload.type)) : '',
             rarity: data ? data.rarity : '',
             equipType: entry.payload && entry.payload.type,
             level
@@ -4194,7 +4211,7 @@ function buildSellableAssets(user) {
             return {
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
@@ -4510,7 +4527,7 @@ function describeBuyOrderPayload(entry) {
     }
     if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
-        const typeLabel = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
+        const typeLabel = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
         const subParts = [];
         if (data) subParts.push(data.rarity);
         if (typeLabel) subParts.push(typeLabel);
@@ -4639,7 +4656,7 @@ async function registerBuyOrder(buyerName, body) {
         ticketCostPer = rpgenius.getCardTicketCost({ star });
     } else if (kind == 'equipment') {
         const equipType = String(body.equipType || '');
-        if (!['weapon', 'armor', 'accessory', 'support'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
+        if (!['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
         const eqId = Number(body.equipId);
         const data = getEquipmentData(equipType, eqId);
         if (!data) return { error: '존재하지 않는 장비입니다.' };
@@ -4873,7 +4890,10 @@ function buildBuyOrderLookups() {
     }).filter(Boolean);
     const equipmentList = {
         weapon: pack(equipments.weapon, 'weapon'),
+        hat: pack(equipments.hat, 'hat'),
         armor: pack(equipments.armor, 'armor'),
+        pants: pack(equipments.pants, 'pants'),
+        shoes: pack(equipments.shoes, 'shoes'),
         accessory: pack(equipments.accessory, 'accessory'),
         support: pack(equipments.support, 'support')
     };
@@ -4914,7 +4934,7 @@ function buildFulfillableAssets(user, entry) {
             result.equipment.push({
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
@@ -6078,7 +6098,7 @@ h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character">캐릭터 카드</button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character">캐릭터 카드</button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button></div></div><div id="dexList" class="dex-grid"></div></section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>

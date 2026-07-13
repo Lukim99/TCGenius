@@ -4,6 +4,7 @@ const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
 const ragbot = require('./ragbot');
+const transcendEquipment = require('./transcend_equipment');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
@@ -45,6 +46,8 @@ const WORLD_BOSS_FORCE_DEFEAT_MS = 3 * 24 * 60 * 60 * 1000;
 const WORLD_BOSS_SKILL_INTERVAL = 7000;
 const CARD_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage');
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
+const EQUIPMENT_SINGLE_SLOTS = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'support'];
+const EQUIPMENT_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
 const ELITE_KILL_REQUIREMENT = 100;
 const GOLD_MINE_ORE_DROPS = {
     1: { name: '희미한 금광석', chance: 0.005 },
@@ -165,11 +168,14 @@ async function runFieldIktaeBotTick(userName) {
     }
     const context = getFieldCombatContext(user);
     if (context.error) return;
+    if (context.type == 'hell' && context.phase == 'pillar') return;
     const stats = calculateUserStats(user);
     const botDamage = Math.max(1, Math.round(Number(stats.atk || 0) * user.field.iktaeBot.atkMul));
-    const extra = { isSkill: true, isBotAutoAttack: true, attackElement: getAttackElement(user, null) };
+    const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
-    if (context.type == 'worldBoss') {
+    if (context.type == 'hell') {
+        lines.push(buildHellHuntResult(user, context.dungeon, botDamage, extra));
+    } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
         lines.push('🤖 익테봇 자동 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
@@ -216,11 +222,14 @@ async function runFieldSunataTick(userName) {
     }
     const context = getFieldCombatContext(user);
     if (context.error) return;
+    if (context.type == 'hell' && context.phase == 'pillar') return;
     const stats = calculateUserStats(user);
     const dmg = Math.max(1, Math.round(Number(stats.atk || 0) * Number(user.field.sunata.atkMul || 0)));
-    const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, attackElement: getAttackElement(user, null) };
+    const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
-    if (context.type == 'worldBoss') {
+    if (context.type == 'hell') {
+        lines.push(buildHellHuntResult(user, context.dungeon, dmg, extra));
+    } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         lines.push('🎵 수나타 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
@@ -263,10 +272,13 @@ async function runFieldMarkTick(userName) {
     }
     const context = getFieldCombatContext(user);
     if (context.error) return;
+    if (context.type == 'hell' && context.phase == 'pillar') return;
     const dmg = Math.max(1, Math.round(Number(user.field.mark.dot || 0)));
-    const extra = { isBotAutoAttack: true, summonAttack: true, attackElement: getAttackElement(user, null) };
+    const extra = { isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, attackElement: getAttackElement(user, null) };
     const lines = [];
-    if (context.type == 'worldBoss') {
+    if (context.type == 'hell') {
+        lines.push(buildHellHuntResult(user, context.dungeon, dmg, extra));
+    } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         lines.push('✍️ 유서새김 지속 피해! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
@@ -275,6 +287,85 @@ async function runFieldMarkTick(userName) {
     } else {
         lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
     }
+    await user.save();
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
+    if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
+}
+
+const fieldEquipmentDotTimers = {};
+function ensureFieldEquipmentDotTimer(user, channel) {
+    if (!user || !user.field) return;
+    const state = user.field.equipmentState || {};
+    if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    if (channel) activeFieldChannels[user.name] = channel;
+    if (fieldEquipmentDotTimers[user.name]) return;
+    fieldEquipmentDotTimers[user.name] = setInterval(() => enqueueFieldTick(user.name, () => runFieldEquipmentDotTick(user.name)).catch(e => console.error('[equipment dot tick]', e.message)), 200);
+}
+function clearFieldEquipmentDotTimer(userName) {
+    if (!fieldEquipmentDotTimers[userName]) return;
+    clearInterval(fieldEquipmentDotTimers[userName]);
+    delete fieldEquipmentDotTimers[userName];
+}
+async function runFieldEquipmentDotTick(userName) {
+    const user = await getRPGUserByName(userName);
+    const state = user && user.field && user.field.equipmentState;
+    if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
+    const context = getFieldCombatContext(user);
+    if (context.error) { clearFieldEquipmentDotTimer(userName); return; }
+    const now = Date.now();
+    const pending = [];
+    if (Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0) {
+        const currentTargetKey = getFieldCombatTargetKey(user, context);
+        const waiting = [];
+        for (const shadow of state.shadowQueue) {
+            if (now < Number(shadow.dueAt || 0)) waiting.push(shadow);
+            else if (shadow.targetKey == currentTargetKey && !(context.type == 'hell' && context.phase == 'pillar')) pending.push({ label: '그림자 공격', rawDamage: Number(shadow.damage || 0), precalculated: true });
+        }
+        state.shadowQueue = waiting;
+    }
+    if (state.judgment && now >= Number(state.judgment.expiresAt || 0)) {
+        const currentTargetKey = getFieldCombatTargetKey(user, context);
+        if (state.judgment.targetKey === currentTargetKey && !(context.type == 'hell' && context.phase == 'pillar')) {
+            const stats = calculateUserStats(user);
+            const defenderStats = context.type == 'worldBoss'
+                ? getWorldBossDefenderStats(context.boss)
+                : getCombatStats(context.dungeon && (context.type == 'normal' ? context.dungeon : context.dungeon.elite));
+            const lightMul = getElementDamageMultiplier('명', stats, defenderStats);
+            const damage = Math.max(1, Math.round(Number(state.judgment.damage || 0) * .15 * lightMul));
+            if (Number(state.judgment.damage || 0) > 0) pending.push({ label: '심판 폭발', rawDamage: damage, precalculated: true, element: '명' });
+        }
+        delete state.judgment;
+    }
+    for (const key of ['burn', 'hellfire']) {
+        const dot = state[key];
+        if (!dot) continue;
+        let ticks = 0;
+        while (Number(dot.nextTickAt || 0) <= now && Number(dot.nextTickAt || 0) <= Number(dot.expiredAt || 0)) {
+            ticks++;
+            dot.nextTickAt = Number(dot.nextTickAt || 0) + Number(dot.intervalMs || 2000);
+        }
+        if (ticks > 0 && !(context.type == 'hell' && context.phase == 'pillar')) pending.push({ label: key == 'burn' ? '화상' : '겁화', rawDamage: Number(dot.tickDamage || 0) * ticks });
+        if (now >= Number(dot.expiredAt || 0) && Number(dot.nextTickAt || 0) > Number(dot.expiredAt || 0)) {
+            if (key == 'burn' && getEquippedSetCount(user, '잿불의 장송곡') >= 4 && !(context.type == 'hell' && context.phase == 'pillar')) {
+                const stats = calculateUserStats(user);
+                pending.push({ label: '장송곡 폭발', rawDamage: Number(stats.atk || 0) });
+            }
+            delete state[key];
+        }
+    }
+    const lines = [];
+    for (const effect of pending) {
+        if (!user.field) break;
+        const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated };
+        if (context.type == 'worldBoss') {
+            const result = dealDamageToWorldBoss(user, context.boss, effect.rawDamage, extra);
+            lines.push('🔥 ' + effect.label + '! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해');
+            if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+        } else if (context.type == 'hell') lines.push(buildHellHuntResult(user, context.dungeon, effect.rawDamage, extra));
+        else if (context.type == 'elite') lines.push(buildEliteHuntResult(user, context.dungeon, effect.rawDamage, extra));
+        else lines.push(buildHuntResult(user, context.dungeon, effect.rawDamage, extra));
+    }
+    if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     await user.save();
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
@@ -301,7 +392,12 @@ let rpgeniusDataLoadPromise = null;
 async function loadRpgeniusDataEntry(key) {
     const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
-        rpgeniusDataCache[key] = res.Item.data;
+        let data = res.Item.data;
+        if (key == 'Equipment') data = transcendEquipment.mergeEquipmentDefinitions(data);
+        if (key == 'Item') data = transcendEquipment.mergeItems(data);
+        if (key == 'Recipe') data = transcendEquipment.mergeRecipes(data, getDataCache('Item', []));
+        if (key == 'Shop') data = transcendEquipment.mergeShop(data, getDataCache('Item', []));
+        rpgeniusDataCache[key] = data;
         return true;
     }
     return false;
@@ -545,7 +641,9 @@ function buildCharacterCardReward(entry) {
 function formatStatValue(key, value) {
     const number = Number(value || 0);
     const sign = number > 0 ? '+' : '';
-    if (key == 'skillCooldown') return sign + (Math.round(number / 100) / 10) + '초';
+    if (key == 'skillCooldown' || key == 'ultimateCooldownFlat') return sign + (Math.round(number / 100) / 10) + '초';
+    if (key == 'equipmentEffectDurationFlat' || key == 'burnDurationFlat') return sign + (Math.round(number * 10) / 10) + '초';
+    if (key == 'comboLastCrit') return number ? '적용' : '미적용';
     if (key == 'pntPercent') return sign + (Math.round(number * 1000) / 10) + '%';
     if ([
         'crit', 'critMul', 'critDef', 'cmb',
@@ -553,7 +651,10 @@ function formatStatValue(key, value) {
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
         'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%',
-        'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%'
+        'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%',
+        'ultimateDamage%', 'elementalExtraDamage%', 'burnDamage%', 'lightFinalDamage%',
+        'attackBuffEfficiency', 'shieldEfficiency', 'critLightBonus', 'nonCritLightBonus',
+        'manaAmplifierFinalAtk', 'comboCritMul', 'comboDamage', 'comboLastCritMul'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
@@ -687,6 +788,19 @@ const EQUIP_STAT_LABELS = {
     darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화',
     allElementRes: '모든 속성 저항',
+    attackBuffEfficiency: '공격력 증가 효과 효율',
+    shieldEfficiency: '보호막 효율',
+    ultimateCooldownFlat: '궁극기 쿨타임 감소',
+    burnDurationFlat: '화상 지속시간',
+    critLightBonus: '치명타 시 명속성 추가 피해',
+    nonCritLightBonus: '비치명타 시 명속성 추가 피해',
+    manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력',
+    equipmentEffectDurationFlat: '장비 효과 지속시간',
+    partyAllElementAtk: '파티원 모든 속성 강화',
+    comboCritMul: '연격 추가 타격 치명타 피해',
+    comboDamage: '연격 추가 타격 피해',
+    comboLastCrit: '최대 연격 마지막 타격 치명타 확정',
+    comboLastCritMul: '최대 연격 마지막 타격 치명타 피해',
     atkDefReduce: '공격 시 5초간 방어력 감소'
 };
 const EQUIP_PLUSSTAT_LABELS = {
@@ -717,6 +831,10 @@ const EQUIP_PLUSSTAT_LABELS = {
     damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해',
     extraDamage: '추가 피해',
+    ultimateDamage: '궁극기 스킬 피해',
+    elementalExtraDamage: '속성 공격 추가 피해',
+    burnDamage: '화상 피해',
+    lightFinalDamage: '명속성 공격 최종 피해',
     bossDmg: '보스 몬스터에게 주는 피해 증가',
     summonDuration: '소환 지속시간',
     cooldown: '쿨타임 감소',
@@ -947,14 +1065,17 @@ function getEquipmentElementChain(user) {
     const eq = (user && user.equipments) || {};
     const weapon = getEquipItemElement(user, 'weapon', eq.weapon);
     const support = getEquipItemElement(user, 'support', eq.support);
+    const hat = getEquipItemElement(user, 'hat', eq.hat);
     const armor = getEquipItemElement(user, 'armor', eq.armor);
+    const pants = getEquipItemElement(user, 'pants', eq.pants);
+    const shoes = getEquipItemElement(user, 'shoes', eq.shoes);
     let accessory = null;
     const accessories = eq.accessory || {};
     for (const key of Object.keys(accessories)) {
         const e = getEquipItemElement(user, 'accessory', accessories[key]);
         if (e) { accessory = e; break; }
     }
-    return { weapon: weapon || null, rest: support || armor || accessory || null };
+    return { weapon: weapon || null, rest: support || hat || armor || pants || shoes || accessory || null };
 }
 
 // 공격 속성 판정 우선순위: 무기 > 스킬 > 보조장비 > 갑옷 > 장신구. 없으면 null([무]속성)
@@ -1294,7 +1415,7 @@ function getSoulTargets(user) {
     return getAllUserEquipments(user)
         .map((entry, index) => {
             const type = entry.equip.type || entry.type;
-            if (type != 'weapon' && type != 'armor') return null;
+            if (!['weapon', 'hat', 'armor', 'pants', 'shoes'].includes(type)) return null;
             if (entry.equip.soul && !isSoulExpired(entry.equip.soul)) return null;
             const equipment = getEquipmentData(type, entry.equip.id);
             if (!equipment) return null;
@@ -1324,7 +1445,7 @@ function applySoulToEquipment(user, numberArg) {
     const selected = getAllUserEquipments(user)[number - 1];
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
     const type = selected.equip.type || selected.type;
-    if (type != 'weapon' && type != 'armor') return '❌ 영혼은 무기 또는 갑옷에만 부여할 수 있습니다.';
+    if (!['weapon', 'hat', 'armor', 'pants', 'shoes'].includes(type)) return '❌ 영혼은 무기 또는 방어구에만 부여할 수 있습니다.';
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
     if (selected.equip.soul && !isSoulExpired(selected.equip.soul)) return '❌ 이미 영혼이 깃든 장비입니다.';
@@ -1355,7 +1476,7 @@ function getPotentialAwakenTargets(user, tier) {
             const type = entry.equip.type || entry.type;
             const equipment = getEquipmentData(type, entry.equip.id);
             if (!equipment) return null;
-            if (!getPotentialData()[type]) return null;
+            if (!getPotentialData()[getPotentialEquipmentType(type)]) return null;
             if (tierRank == null) {
                 if (entry.equip.potential) return null;
             } else {
@@ -1388,7 +1509,7 @@ function awakenEquipmentPotential(user, numberArg) {
     const type = selected.equip.type || selected.type;
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
-    if (!getPotentialData()[type]) return '❌ 해당 장비 타입에는 잠재능력을 부여할 수 없습니다.';
+    if (!getPotentialData()[getPotentialEquipmentType(type)]) return '❌ 해당 장비 타입에는 잠재능력을 부여할 수 없습니다.';
     const tierKey = pending.tier || null;
     if (tierKey) {
         const curRank = selected.equip.potential ? getPotentialRarityRank(selected.equip.potential.rarity) : -1;
@@ -1396,7 +1517,7 @@ function awakenEquipmentPotential(user, numberArg) {
     } else if (selected.equip.potential) {
         return '❌ 이미 잠재능력이 부여된 장비입니다.';
     }
-    const potential = rollEquipmentPotential(type, tierKey || undefined);
+    const potential = rollEquipmentPotential(getPotentialEquipmentType(type), tierKey || undefined);
     if (!potential) return '❌ 잠재능력 데이터를 찾을 수 없습니다.';
     selected.equip.potential = potential;
     user.pendingAction = null;
@@ -1406,7 +1527,8 @@ function awakenEquipmentPotential(user, numberArg) {
 
 function getPotentialRerollCost(type, rarity) {
     const tier = getPotentialRarityKey(rarity);
-    return Number(POTENTIAL_REROLL_COST[type] && POTENTIAL_REROLL_COST[type][tier] || 0);
+    const potentialType = getPotentialEquipmentType(type);
+    return Number(POTENTIAL_REROLL_COST[potentialType] && POTENTIAL_REROLL_COST[potentialType][tier] || 0);
 }
 
 function getItemIdByName(name) {
@@ -1423,7 +1545,7 @@ function rerollEquipmentPotential(user, numberArg, jewelChoice) {
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
     if (!selected.equip.potential) return '❌ 잠재능력이 부여된 장비만 재설정할 수 있습니다.';
-    if (!getPotentialData()[type]) return '❌ 해당 장비 타입에는 잠재능력을 재설정할 수 없습니다.';
+    if (!getPotentialData()[getPotentialEquipmentType(type)]) return '❌ 해당 장비 타입에는 잠재능력을 재설정할 수 없습니다.';
     const currentTier = getPotentialRarityKey(selected.equip.potential.rarity);
     const baseCost = getPotentialRerollCost(type, currentTier);
     if (baseCost <= 0) return '❌ 잠재능력 재설정 비용 정보를 찾을 수 없습니다.';
@@ -1460,7 +1582,7 @@ function rerollEquipmentPotential(user, numberArg, jewelChoice) {
         upgraded = guaranteed || Math.random() < Number(upgrade.rate || 0) * (jewelUpgradeBonus ? 2 : 1);
         if (upgraded) nextTier = upgrade.next;
     }
-    const potential = rollEquipmentPotential(type, nextTier);
+    const potential = rollEquipmentPotential(getPotentialEquipmentType(type), nextTier);
     if (!potential) {
         user.gold = Number(user.gold || 0) + cost;
         if (useJewel) addInventoryItem(user, usedJewelItemId, 1);
@@ -1542,7 +1664,7 @@ function cancelPotentialReroll(user, force) {
 
 // 해당 장비 타입이 잠재능력을 지원하는지
 function equipmentTypeSupportsPotential(type) {
-    return !!getPotentialData()[type];
+    return !!getPotentialData()[getPotentialEquipmentType(type)];
 }
 
 // 웹: 돋보기를 소모해 잠재능력 부여
@@ -1558,7 +1680,7 @@ function webAwakenPotential(user, number) {
     if (!equipmentTypeSupportsPotential(type)) return { error: '해당 장비 타입에는 잠재능력을 부여할 수 없습니다.' };
     const magId = getItemIdByName(POTENTIAL_MAGNIFIER_ITEM_NAME);
     if (magId == -1 || getInventoryItemCount(user, magId) < 1) return { error: '돋보기가 부족합니다.' };
-    const potential = rollEquipmentPotential(type);
+    const potential = rollEquipmentPotential(getPotentialEquipmentType(type));
     if (!potential) return { error: '잠재능력 데이터를 찾을 수 없습니다.' };
     removeInventoryItem(user, magId, 1);
     selected.equip.potential = potential;
@@ -1655,12 +1777,7 @@ function hasActiveSupportEquipment(user, name) {
 
 function findEquipmentByName(name) {
     const equipments = getDataCache('Equipment', {});
-    const types = [
-        { key: 'weapon', name: '무기' },
-        { key: 'armor', name: '갑옷' },
-        { key: 'accessory', name: '장신구' },
-        { key: 'support', name: '보조' }
-    ];
+    const types = Object.keys(EQUIPMENT_TYPE_LABELS).map(key => ({ key, name: EQUIPMENT_TYPE_LABELS[key] }));
     for (const type of types) {
         const list = equipments[type.key] || [];
         const index = list.findIndex(equipment => equipment.name == name);
@@ -1784,6 +1901,10 @@ function getEquipmentData(type, id) {
     return list[id];
 }
 
+function getPotentialEquipmentType(type) {
+    return ['hat', 'pants', 'shoes'].includes(type) ? 'armor' : type;
+}
+
 function isSoulExpired(soul) {
     return !!(soul && soul.expired_at && Date.now() >= Number(soul.expired_at));
 }
@@ -1807,6 +1928,12 @@ function getEquipmentDisplayName(data, equip) {
     return baseName;
 }
 
+function getEquipmentRarityLabel(data, equip) {
+    if (!data) return '';
+    if (data.rarity == '초월') return '초월 ' + Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1))) + '단계';
+    return data.rarity;
+}
+
 function addSoulStats(stat, plusStat, soul) {
     if (!soul || isSoulExpired(soul)) return;
     addStats(stat, soul.stat || {});
@@ -1823,9 +1950,7 @@ function cleanupExpiredSouls(user) {
     };
     (user && user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach(strip);
     if (user && user.equipments) {
-        strip(user.equipments.weapon);
-        strip(user.equipments.armor);
-        strip(user.equipments.support);
+        EQUIPMENT_SINGLE_SLOTS.forEach(type => strip(user.equipments[type]));
         const accessories = user.equipments.accessory || {};
         Object.keys(accessories).forEach(key => strip(accessories[key]));
     }
@@ -1837,7 +1962,7 @@ function formatEquippedEquipment(label, type, equip) {
     const data = getEquipmentData(type, equip.id);
     if (!data) return '[' + label + '] 없음';
     const level = Number(equip.level || 0);
-    return '[' + label + '] <' + data.rarity + '> ' + getEquipmentDisplayName(data, equip) + (level > 0 ? ' +' + level : '');
+    return '[' + label + '] <' + getEquipmentRarityLabel(data, equip) + '> ' + getEquipmentDisplayName(data, equip) + (level > 0 ? ' +' + level : '');
 }
 
 function addStats(target, stats) {
@@ -2876,7 +3001,7 @@ function calculateUserStats(user, _out) {
             plusStats.pnt = Number(plusStats.pnt || 0) + count * 0.003;
         }
     });
-    [['weapon', user.equipments && user.equipments.weapon], ['armor', user.equipments && user.equipments.armor]].forEach(entry => {
+    EQUIPMENT_SINGLE_SLOTS.filter(type => type != 'support').map(type => [type, user.equipments && user.equipments[type]]).forEach(entry => {
         const data = entry[1] && getEquipmentData(entry[0], entry[1].id);
         if (data && isEquipmentEffectActive(user, data)) {
             addStats(stats, getEquipmentStatsAtLevel(data, entry[1].level));
@@ -2927,6 +3052,7 @@ function calculateUserStats(user, _out) {
             }
         }
     }
+    applyTranscendEquipmentStats(user, stats, plusStats);
     const equippedPassiveIds = getEquippedPassiveIds(user);
     if (equippedPassiveIds.has(0)) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
     if (equippedPassiveIds.has(1)) stats.hasAbyssDoom = true;
@@ -2951,12 +3077,13 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg', 'butagamePartyQuestDmg'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg', 'butagamePartyQuestDmg', 'ultimateDamage', 'elementalExtraDamage', 'burnDamage', 'lightFinalDamage'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
+    if (stats.forceZeroCrit) stats.crit = 0;
     // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
     if (titleDef && titleDef.specialEffect) {
         const se = titleDef.specialEffect;
@@ -3049,7 +3176,7 @@ function computeCombatPowerFromStats(stats, slot) {
     const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * W.DEFENSE_SCALE;
 
     const mMpSave = 1 + Math.min(0.8, Math.max(0, -Number(stats.mpReduce || 0))) + Math.min(0.8, Number(slot.mpCostReduction || 0));
-    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR + Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)));
+    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR + Math.min(0.8, Math.max(-0.8, Number(stats.cooldown || 0)));
     const resourcePower = (mp / W.MP_DIVISOR) * mMpSave * mCooldown;
     const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
                        + Number(stats.potion || 0) * W.POTION_SCALE
@@ -3101,7 +3228,10 @@ function formatMyInfo(user) {
     if (slotEffectLines.length > 0) lines.push('', '〈 카드 슬롯 효과 〉', ...slotEffectLines);
     lines.push('', '〈 장착 중인 장비 〉');
     lines.push(formatEquippedEquipment('무기', 'weapon', user.equipments && user.equipments.weapon));
+    lines.push(formatEquippedEquipment('모자', 'hat', user.equipments && user.equipments.hat));
     lines.push(formatEquippedEquipment('갑옷', 'armor', user.equipments && user.equipments.armor));
+    lines.push(formatEquippedEquipment('하의', 'pants', user.equipments && user.equipments.pants));
+    lines.push(formatEquippedEquipment('신발', 'shoes', user.equipments && user.equipments.shoes));
 
     const accessories = user.equipments && user.equipments.accessory || {};
     const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
@@ -3188,11 +3318,22 @@ function formatDungeonCPLine(userCP, recommendCP) {
 function getAccessibleDungeons(level) {
     const dungeons = readJson(DUNGEON_PATH, []);
     const lvl = Number(level || 1);
-    return dungeons.filter(dungeon => {
+    const accessible = dungeons.filter(dungeon => {
         if (lvl < Number(dungeon.requireLevel || 1)) return false;
         if (typeof dungeon.maxLevel != 'undefined' && lvl > Number(dungeon.maxLevel)) return false;
         return true;
     });
+    if (lvl >= 141 && lvl <= 300) accessible.push(getHellDungeon());
+    return accessible;
+}
+
+function getHellDungeon() {
+    const base = readJson(DUNGEON_PATH, []).find(dungeon => dungeon && dungeon.name == '부타게임') || {};
+    const elite = Object.assign({}, base.elite || {});
+    ['atk', 'pnt', 'def', 'hp'].forEach(key => { elite[key] = Math.round(Number(elite[key] || 0) * 1.05); });
+    elite.name = (elite.name || '부타게임 엘리트') + '[H]';
+    elite.reward = [];
+    return Object.assign({}, base, { name: '부타게임[H]', requireLevel: 141, maxLevel: 300, elite, isHell: true });
 }
 
 function formatDungeonLevelRange(dungeon) {
@@ -3256,6 +3397,7 @@ function formatTimestampLocal(ts) {
 }
 
 function findDungeonByName(name) {
+    if (name == '부타게임[H]') return getHellDungeon();
     const dungeons = readJson(DUNGEON_PATH, []);
     return dungeons.find(dungeon => dungeon.name == name);
 }
@@ -3301,7 +3443,7 @@ function getComboHitCount(stats) {
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
     if (extra && extra.disableCritical) return { damage: Number(damage || 0), isCritical: false };
-    const critChance = Math.max(0, Number(stats.crit || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1);
+    const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1);
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
@@ -3320,7 +3462,13 @@ const DESTINY_AION_NAME = '운명의 아이온';
 const DESTINY_AION_TRUE_DAMAGE_CHANCE = 0.25;
 
 function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEffects, extra, defenderStats) {
-    const hitCount = extra && extra.hitCount ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : getComboHitCount(stats);
+    if (extra && extra.precalculatedDamage) {
+        const damage = Math.max(0, Math.round(Number(rawDamage || 0)));
+        return { hitCount: 1, comboHitCount: 1, attackUnitCount: 1, hitDamages: [damage], hitDetails: [{ damage, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false }], finalDamage: damage, criticalCount: 0, bonusTripleZero: 0, destinyDamageCount: 0, trueDamageCount: 0, extraDamageDealt: 0 };
+    }
+    const isFixedMultiHit = !!(extra && extra.hitCount);
+    const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats))));
+    const hitCount = isFixedMultiHit ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : comboHitCount;
     const hitDamages = [];
     const hitDetails = [];
     let finalDamage = 0;
@@ -3330,15 +3478,36 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     let totalHits = hitCount;
     let abyssDoomUsed = false;
-    const elementMul = getElementDamageMultiplier(extra && extra.attackElement, stats, defenderStats);
-    const defenseReductionRate = Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(extra && extra.defReductionBonus || 0)));
+    const maxComboHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
     for (let i = 0; i < totalHits; i++) {
-        let hitBonusMul = Number(extra && extra.damageBonusMul || 0);
-        // 10번째 공격마다 최종 공격력 증가: 연격 각각을 개별 히트로 집계해 해당 타격에만 적용
-        const isTenthAtk = !!(extra && Number(extra.tenthAtkBonus || 0) > 0 && (Number(extra.tenthAtkStart || 0) + i + 1) % 10 === 0);
+        const unitIndex = isFixedMultiHit ? 0 : Math.min(i, comboHitCount - 1);
+        const unitModifier = extra && Array.isArray(extra.perAttackUnitExtras) ? (extra.perAttackUnitExtras[unitIndex] || {}) : {};
+        const hitExtra = Object.assign({}, extra || {});
+        Object.keys(unitModifier).forEach(key => {
+            if (typeof unitModifier[key] == 'number') hitExtra[key] = Number(hitExtra[key] || 0) + Number(unitModifier[key]);
+            else hitExtra[key] = unitModifier[key];
+        });
+        if (extra && typeof extra.beforeAttackUnit == 'function') extra.beforeAttackUnit({ unitIndex, hitIndex: i, isFixedMultiHit, hitExtra });
+        const hitStats = Object.assign({}, stats || {});
+        ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
+        const elementMul = getElementDamageMultiplier(hitExtra.attackElement, hitStats, defenderStats);
+        const lightMul = getElementDamageMultiplier('명', hitStats, defenderStats);
+        const darkMul = getElementDamageMultiplier('암', hitStats, defenderStats);
+        let hitBonusMul = Number(hitExtra.damageBonusMul || 0);
+        // 고정 다단 공격은 명령 1회를 공격 1회로, 연격은 타격마다 별도 공격으로 집계한다.
+        const countsAsAttack = isFixedMultiHit ? true : i < comboHitCount;
+        const attackOffset = isFixedMultiHit ? 0 : i;
+        const isTenthAtk = !!(countsAsAttack && Number(hitExtra.tenthAtkBonus || 0) > 0 && (Number(hitExtra.tenthAtkStart || 0) + attackOffset + 1) % 10 === 0);
         if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
-        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * (1 + Number(stats && stats.finalDamage || 0) + Number(extra && extra.finalDamageBonus || 0));
-        const criticalResult = applyCriticalDamage(baseDamage, stats, extra, defenderStats);
+        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * (1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0));
+        const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
+        const forceComboLastCrit = !!(isComboExtraHit && stats && stats.comboLastCrit && comboHitCount >= maxComboHits && i == comboHitCount - 1);
+        if (isComboExtraHit && Number(stats && stats.comboCritMul || 0) > 0) hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Number(stats.comboCritMul);
+        if (forceComboLastCrit) {
+            hitExtra.forceCritical = true;
+            hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Number(stats.comboLastCritMul || 0);
+        }
+        const criticalResult = applyCriticalDamage(baseDamage, stats, hitExtra, defenderStats);
         if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
             abyssDoomUsed = true;
@@ -3346,40 +3515,69 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         let hitDamage = 0;
         const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;
         hitDamage = isDestinyDamage
-            ? getDamageAfterDestinyDefense(criticalResult.damage, defense, penetration, defenseReductionRate)
-            : getDamageAfterReducedDefense(criticalResult.damage, defense, penetration, defenseReductionRate);
+            ? getDamageAfterDestinyDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))))
+            : getDamageAfterReducedDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))));
         
-        if (stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
+        if (!(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
             hitDamage += Math.round(criticalResult.damage * 0.15);
         }
 
         if (isDestinyDamage) destinyDamageCount++;
         if (criticalResult.isCritical) criticalCount++;
-        if (Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
+        if (!(extra && extra.disableEquipmentBonusDamage) && Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
             const bonus = [10, 100, 1000][randomInt(0, 2)];
             bonusTripleZero += bonus;
             hitDamage += bonus;
         }
         if (extra && Number(extra.skillTrueDmg || 0) > 0) hitDamage += Number(extra.skillTrueDmg);
+        if (i == 0 && extra && Number(extra.oneTimeTrueDmg || 0) > 0) hitDamage += Number(extra.oneTimeTrueDmg);
+        if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && Number(stats && stats.critLightBonus || 0) > 0) hitDamage += Math.round(Number(stats.atk || 0) * Number(stats.critLightBonus) * lightMul);
+        if (!(extra && extra.disableEquipmentBonusDamage) && !criticalResult.isCritical && Number(stats && stats.nonCritLightBonus || 0) > 0) hitDamage += Math.round(Number(stats.atk || 0) * Number(stats.nonCritLightBonus) * lightMul);
+        if (isComboExtraHit && Number(stats && stats.comboDamage || 0) != 0) hitDamage = Math.round(hitDamage * (1 + Number(stats.comboDamage)));
         hitDamage = applyDamageVariance(hitDamage);
         if (elementMul !== 1) hitDamage = Math.max(0, Math.round(hitDamage * elementMul)); // 속성 배수: 맨 마지막 적용
+        if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && i == 0 && Number(extra && extra.bribeDarkBonus || 0) > 0) hitDamage += Math.round(Number(stats.atk || 0) * Number(extra.bribeDarkBonus) * darkMul);
+        if (!(extra && extra.disableEquipmentBonusDamage) && extra && extra.attackElement && Number(stats && stats.elementalExtraDamage || 0) > 0) hitDamage += Math.floor(hitDamage * Number(stats.elementalExtraDamage));
+        if (!(extra && extra.disableEquipmentBonusDamage) && Number(hitExtra.rainbowAttackRatio || 0) > 0) hitDamage += Math.round(Number(stats.atk || 0) * (1 + Number(unitModifier.damageBonusMul || 0)) * Number(hitExtra.rainbowAttackRatio) * elementMul);
+        if (Number(unitModifier.extraDamageBonus || 0) > 0) hitDamage += Math.floor(hitDamage * Number(unitModifier.extraDamageBonus));
+        if (!isFixedMultiHit && i < comboHitCount && extra && typeof extra.afterAttackUnit == 'function') {
+            const post = extra.afterAttackUnit({ unitIndex, hitIndex: i, isFixedMultiHit, isCritical: criticalResult.isCritical, hitDamage, hitExtra }) || {};
+            hitDamage += Math.max(0, Math.round(Number(post.additionalDamage || 0)));
+        }
+        if (i == 0 && Number(extra && extra.oneTimeFinalDamage || 0) > 0) hitDamage += Math.max(0, Math.round(Number(extra.oneTimeFinalDamage)));
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk });
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit });
         finalDamage += hitDamage;
+    }
+    if (isFixedMultiHit && extra && typeof extra.afterAttackUnit == 'function') {
+        const post = extra.afterAttackUnit({
+            unitIndex: 0,
+            hitIndex: hitDetails.length - 1,
+            isFixedMultiHit: true,
+            isCritical: hitDetails.some(detail => detail.isCritical),
+            hitDamage: hitDamages.reduce((sum, value) => sum + Number(value || 0), 0),
+            hitExtra: extra
+        }) || {};
+        const additionalDamage = Math.max(0, Math.round(Number(post.additionalDamage || 0)));
+        if (additionalDamage > 0 && hitDamages.length > 0) {
+            hitDamages[hitDamages.length - 1] += additionalDamage;
+            hitDetails[hitDetails.length - 1].damage += additionalDamage;
+            finalDamage += additionalDamage;
+        }
     }
     // 추가 피해: 모든 계산(방어/속성 등)이 끝난 최종 피해에 마지막으로 비율만큼 더한다 (연격과 유사)
     let extraDamageDealt = 0;
-    const extraDamageRate = Math.max(0, Number(stats && stats.extraDamage || 0)) + Math.max(0, Number(extra && extra.extraDamageBonus || 0));
+    const extraDamageRate = extra && extra.disableEquipmentBonusDamage ? 0 : Math.max(0, Number(stats && stats.extraDamage || 0)) + Math.max(0, Number(extra && extra.extraDamageBonus || 0));
     if (extraDamageRate > 0 && finalDamage > 0) {
         extraDamageDealt = Math.floor(finalDamage * extraDamageRate);
         finalDamage += extraDamageDealt;
     }
-    return { hitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
+    return { hitCount, comboHitCount, attackUnitCount: comboHitCount, hitDamages, hitDetails, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
 
 function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, extra) {
     const monsterStats = getCombatStats(monster);
-    const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0))) * (1 - Math.min(1, Number(extra && extra.receivedDamageReduction || 0)));
+    const fieldDamageBase = Number(monsterStats.atk || 0) * (extra && extra.receivedDamageMul || 1) * Math.max(0, 1 + Number(defenderStats && defenderStats.takenDamage || 0)) * (1 - Math.min(1, Number(slotEffects && slotEffects.hpDamageReduction || 0))) * (1 - Math.min(1, Number(extra && extra.receivedDamageReduction || 0)));
     // 몬스터가 element 속성을 가지면 그 속성으로 공격 → 플레이어 속성 저항 적용
     const monsterExtra = ELEMENT_ATK_KEYS[monsterStats.element] ? { attackElement: monsterStats.element } : {};
     return calculateAttackHitResult(fieldDamageBase, defenderStats.def, monsterStats.pnt, monsterStats, { defReduction: Math.min(1, Math.max(0, Number(monsterStats.pntPercent || 0))) }, monsterExtra, defenderStats);
@@ -3421,7 +3619,12 @@ const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
 const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
 
 function getEquipmentPassives() {
-    return readJson(EQUIPMENT_PASSIVE_PATH, []);
+    const passives = readJson(EQUIPMENT_PASSIVE_PATH, []).slice();
+    Object.keys(transcendEquipment.uniquePassiveDescriptions || {}).forEach(name => {
+        const id = Number(transcendEquipment.uniquePassiveIds[name]);
+        passives[id] = { name, desc: transcendEquipment.uniquePassiveDescriptions[name], format: [] };
+    });
+    return passives;
 }
 
 function getThornsReflect(user, stats) {
@@ -3451,10 +3654,9 @@ function findEquipWithPassiveId(user, passiveId) {
         if (data && data.passive_id === passiveId && isEquipmentEffectActive(user, data)) return data;
         return null;
     };
-    return check('weapon', eq.weapon)
-        || check('armor', eq.armor)
+    return EQUIPMENT_SINGLE_SLOTS.reduce((found, slot) => found || check(slot, eq[slot]), null)
         || Object.values(eq.accessory || {}).reduce((f, e) => f || check('accessory', e), null)
-        || (eq.support && typeof eq.support.id != 'undefined' ? check('support', eq.support) : null);
+        || null;
 }
 
 function getEquippedPassiveIds(user) {
@@ -3466,10 +3668,8 @@ function getEquippedPassiveIds(user) {
         if (data && typeof data.passive_id != 'undefined' && isEquipmentEffectActive(user, data))
             result.add(Number(data.passive_id));
     };
-    check('weapon', eq.weapon);
-    check('armor', eq.armor);
+    EQUIPMENT_SINGLE_SLOTS.forEach(slot => check(slot, eq[slot]));
     Object.values(eq.accessory || {}).forEach(e => check('accessory', e));
-    if (eq.support && typeof eq.support.id != 'undefined') check('support', eq.support);
     return result;
 }
 
@@ -3531,6 +3731,8 @@ function applyAttackPotentialRecovery(user, stats, lines) {
 }
 
 function applyRecoveryEfficiency(amount, user, stats) {
+    const equipmentState = user && user.field && user.field.equipmentState;
+    if (equipmentState && Date.now() < Number(equipmentState.ignoreHealingUntil || 0)) return 0;
     const currentStats = stats || calculateUserStats(user);
     return Math.round(Number(amount || 0) * (1 + Number(currentStats.recoveryEfficiency || 0)));
 }
@@ -3626,6 +3828,99 @@ function investStatPoint(user, statArg, countArg) {
     return '✅ ' + option.label + '에 스탯포인트를 ' + comma(count) + ' 투자해 ' + option.label + '이 ' + comma(flatValue) + ' 증가했습니다.';
 }
 
+function getEquippedEquipmentData(user) {
+    return getEquippedEquipmentRefs(user).map(ref => ({ ref, data: getEquipmentData(ref.type, ref.equip.id) })).filter(entry => entry.data);
+}
+
+function getTranscendStage(equip, data) {
+    return data && data.rarity == '초월' ? Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1))) : 1;
+}
+
+function applyTranscendEquipmentStats(user, stats, plusStats) {
+    const equipped = getEquippedEquipmentData(user);
+    const setCounts = {};
+    equipped.forEach(({ data }) => { if (data.set) setCounts[data.set] = Number(setCounts[data.set] || 0) + 1; });
+    const add = (target, values) => addStats(target, values);
+
+    equipped.forEach(({ ref, data }) => {
+        if (data.rarity != '초월' && data.rarity != '신화') return;
+        const step = getTranscendStage(ref.equip, data) - 1;
+        const v = (base, per) => Number(base || 0) + Number(per || 0) * step;
+        const stageEffect = transcendEquipment.uniqueStaticPerStageEffects[data.name];
+        if (step > 0 && stageEffect) {
+            if (stageEffect.stat) Object.keys(stageEffect.stat).forEach(key => stats[key] = Number(stats[key] || 0) + Number(stageEffect.stat[key] || 0) * step);
+            if (stageEffect.plusStat) Object.keys(stageEffect.plusStat).forEach(key => plusStats[key] = Number(plusStats[key] || 0) + Number(stageEffect.plusStat[key] || 0) * step);
+        }
+        switch (data.name) {
+            case '콰트로 1악장': stats.disableShield = 1; break;
+            case '일레이나 전용 동전': stats.disableShield = 1; break;
+            case '야구공': stats.forceZeroCrit = 1; break;
+            case '피의 흐름': {
+                stats.bloodFlowReduction = v(.15, .03);
+                break;
+            }
+            case '블러디 슈즈': stats.bloodyShoesExtraDamage = v(.12, .03); break;
+            case '블라디미르': stats.vladimirExtraDamage = .20; break;
+            case '검은 잔향 하의': stats.blackEchoSkillDamage = v(.10, .03); break;
+            case '777 목걸이': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { extraDamage: .07 }); break;
+            case '777 반지': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { crit: v(.07, .07) }); break;
+            case '777 팔찌': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { pntPercent: v(.07, .07) }); break;
+            case '777 장갑': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { atk: v(77, 77) }); break;
+            case '행운의 장갑': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { atk: .77 }); break;
+        }
+    });
+
+    Object.keys(setCounts).forEach(set => {
+        const count = setCounts[set];
+        if (count >= 2) {
+            if (set == '마나번') { add(stats, { atk: 250 }); add(plusStats, { takenDamage: -.10 }); }
+            if (set == '피의 맹세') { add(stats, { atk: 350 }); add(plusStats, { atk: .16 }); }
+            if (set == '최후 통첩') add(stats, { atk: 200, pnt: 80 });
+            if (set == '성역의 인도자') { add(stats, { hp: 1000, mp: 500, shieldEfficiency: .12, recoveryEfficiency: .12 }); }
+            if (set == '잿불의 장송곡') add(stats, { atk: 200, fireAtk: 70 });
+            if (set == '심해의 순환') add(stats, { atk: 180, waterAtk: 100 });
+            if (set == '천공의 심판') { add(stats, { atk: 200, lightAtk: 40 }); add(plusStats, { critMul: .10 }); }
+            if (set == '검은 잔향') { add(stats, { atk: 220, darkAtk: 100 }); add(plusStats, { recoveryEfficiency: -.20 }); }
+            if (set == 'TCG의 유산') { add(stats, { crit: .05, equipmentEffectCooldownFlat: 2 }); }
+            if (set == '아드레날린') { add(stats, { crit: .07, allElementAtk: 77 }); add(plusStats, { critMul: .07 }); }
+            if (set == '딜레이') add(plusStats, { afterSkill: .10 });
+            if (set == '킹메이커') { add(stats, { hp: 1000, mp: 300, shieldEfficiency: .10, recoveryEfficiency: .10 }); }
+            if (set == '유랄') { add(stats, { cmb: .10, maxCmb: 1 }); add(plusStats, { atk: -.07 }); }
+            if (set == '복선 회수') { add(stats, { crit: .10 }); add(plusStats, { extraDamage: .08 }); }
+        }
+        if (count >= 4) {
+            if (set == '마나번') { add(stats, { mp: 1000, manaBurnAttackRecovery: .01 }); add(plusStats, { atk: .05 }); }
+            if (set == '피의 맹세') { add(plusStats, { hp: -.50, takenDamage: -.10 }); }
+            if (set == '아드레날린') { add(stats, { pnt: 77 }); add(plusStats, { atk: .07, finalDamage: .07, afterSkill: .07 }); }
+            if (set == '유랄') { add(stats, { cmb: .15, maxCmb: 1 }); add(plusStats, { atk: -.08 }); }
+        }
+    });
+    const combatState = user.field && user.field.equipmentState;
+    if (combatState && combatState.liberationBuff && Date.now() < Number(combatState.liberationBuff.expiredAt || 0)) {
+        const choices = combatState.liberationBuff.choices || [combatState.liberationBuff.choice];
+        if (choices.includes('element')) add(stats, { allElementAtk: Number(combatState.liberationBuff.elementValue || 70) });
+        if (choices.includes('resist')) add(stats, { allElementRes: Number(combatState.liberationBuff.resistValue || 80) });
+    }
+    if (combatState) {
+        const active = key => combatState[key] && Date.now() < Number(combatState[key].expiredAt || 0) ? combatState[key] : null;
+        const manaAtk = active('manaBurnAttackBuff');
+        const manaElement = active('manaBurnElementBuff');
+        const manaCrit = active('manaBurnCritBuff');
+        const manaExtra = active('manaBurnExtraBuff');
+        const coin = active('coinBuff');
+        const encore = active('encoreBuff');
+        const bloodHat = active('bloodHatBuff');
+        if (manaAtk) add(plusStats, { atk: Number(manaAtk.value || 0) });
+        if (manaElement) add(stats, { allElementAtk: Number(manaElement.value || 0) });
+        if (manaCrit) add(stats, { crit: Number(manaCrit.value || 0) });
+        if (manaExtra) add(plusStats, { extraDamage: Number(manaExtra.value || 0) });
+        if (coin && coin.type == 'water') add(stats, { waterAtk: Number(coin.value || 0) });
+        if (coin && coin.type == 'crit') add(stats, { crit: Number(coin.value || 0) });
+        if (encore) { add(plusStats, { atk: Number(encore.attack || 0), critMul: Number(encore.critMul || 0) }); }
+        if (bloodHat) add(plusStats, { atk: Number(bloodHat.value || 0) });
+    }
+}
+
 function formatStatPointStatus(user) {
     normalizeStatPointData(user);
     const lines = ['[ 스탯포인트 현황 ]'];
@@ -3672,6 +3967,8 @@ async function enterField(user, fieldName, options, channel) {
     const level = Number(user.level || 1);
     if (level < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
     if (typeof dungeon.maxLevel != 'undefined' && level > Number(dungeon.maxLevel)) return '❌ 입장 가능한 최대 레벨을 초과했습니다. (Lv. ' + Number(dungeon.maxLevel) + ' 이하만 입장 가능)';
+    const hellInvitationId = dungeon.isHell ? getItemIdByName('헬 초대장') : -1;
+    if (dungeon.isHell && (hellInvitationId == -1 || getInventoryItemCount(user, hellInvitationId) < 30)) return '❌ 헬 초대장 30장이 필요합니다.';
     const stats = calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
@@ -3696,6 +3993,15 @@ async function enterField(user, fieldName, options, channel) {
     if (user.pendingAction && user.pendingAction.type == '필드입장확인') user.pendingAction = null;
     user.hp = hp;
     const cooldowns = getFieldCooldowns(user);
+    if (dungeon.isHell) {
+        if (!removeInventoryItem(user, hellInvitationId, 30)) return '❌ 헬 초대장 차감에 실패했습니다.';
+        user.field = {
+            name: dungeon.name, hell: true, phase: 'elite', enteredAt: Date.now(),
+            nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns,
+            elite: { hp: Number(dungeon.elite.hp || 1) }, killCount: 0
+        };
+        return '✅ 부타게임[H]에 입장했습니다.\n- 헬 초대장 x30 소모\n- ' + dungeon.elite.name + ' 등장!\n- HP ' + comma(dungeon.elite.hp);
+    }
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
     return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
 }
@@ -3716,6 +4022,7 @@ function leaveField(user) {
     releaseEliteEncounter(user);
     clearFieldIktaeBot(user.name);
     clearFieldMark(user.name);
+    clearFieldEquipmentDotTimer(user.name);
     delete activeFieldChannels[user.name];
     user.field = null;
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
@@ -3909,6 +4216,10 @@ function getActiveFieldDamageMultiplier(user) {
 }
 
 function applyFieldShieldAbsorption(user, damage, lines) {
+    if (calculateUserStats(user).disableShield) {
+        if (user.field) user.field.shield = null;
+        return damage;
+    }
     const s = user.field && user.field.shield;
     if (!s || Number(s.amount || 0) <= 0 || Number(s.expired_at || 0) <= Date.now()) {
         if (user.field && user.field.shield) user.field.shield = null;
@@ -4226,14 +4537,14 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
 // 나인 멘스 모리스: 명중 1회당 중첩 1 (연격 각각), 최대 9
 function applyNmmStackGain(user, extra, hitResult) {
     if (!extra || !extra.buildNmmStack || !user || !user.field) return;
-    const hits = Math.max(1, Number(hitResult && hitResult.hitCount || 1));
+    const hits = Math.max(1, Number(hitResult && hitResult.attackUnitCount || 1));
     user.field.nmmStacks = Math.min(9, Number(user.field.nmmStacks || 0) + hits);
 }
 
 // 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터를 전진시켜 저장
 function applyTenthAtkCounter(user, extra, hitResult) {
     if (!extra || typeof extra.tenthAtkStart == 'undefined' || !user || !user.field) return;
-    const hits = Math.max(1, Number(hitResult && hitResult.hitDetails && hitResult.hitDetails.length || 1));
+    const hits = Math.max(1, Number(hitResult && hitResult.attackUnitCount || 1));
     user.field.attackCount = Number(extra.tenthAtkStart || 0) + hits;
 }
 
@@ -4243,7 +4554,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
     const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
-    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
+    const damageWithSlotBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
     const eliteExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     // '월도랜드' 필드 공격 시 추가 피해
     if (user.field && /월도랜드/.test(String(user.field.name || ''))) eliteExtra.extraDamageBonus = Number(eliteExtra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
@@ -4253,6 +4564,8 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     applyNmmStackGain(user, extra, hitResult);
     applyTenthAtkCounter(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
+    queueBlackShadow(user, extra, finalDamage);
+    recordFieldJudgmentDamage(user, eliteExtra, finalDamage);
     let remainHp = Math.max(0, currentHp - finalDamage);
     const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
     if (executedByTaxationGun) remainHp = 0;
@@ -4370,7 +4683,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
-    const damageWithSlotBonus = Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
+    const damageWithSlotBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.damageBonus || 0));
     const huntExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     // '월도랜드' 필드 공격 시 추가 피해
     if (user.field && /월도랜드/.test(String(user.field.name || ''))) huntExtra.extraDamageBonus = Number(huntExtra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
@@ -4380,6 +4693,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     applyNmmStackGain(user, extra, hitResult);
     applyTenthAtkCounter(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
+    queueBlackShadow(user, extra, finalDamage);
+    recordFieldJudgmentDamage(user, huntExtra, finalDamage);
     let killCount = Math.floor(finalDamage / Number(monster.hp || 1));
     const requireLevel = Number(dungeon.requireLevel || 1);
     const levelDiff = Number(user.level || 1) - requireLevel;
@@ -4629,6 +4944,7 @@ function useBasicAttackInField(user, channel) {
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.sunata) ensureFieldSunataTimer(user, channel);
     if (user.field.mark) ensureFieldMarkTimer(user, channel);
+    ensureFieldEquipmentDotTimer(user, channel);
     const now = Date.now();
     if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
     const context = getFieldCombatContext(user);
@@ -4643,6 +4959,7 @@ function useBasicAttackInField(user, channel) {
     const rawDamage = Math.round(Number(stats.atk || 0) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus));
     const extra = {};
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
+    extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
     if (nextBasicBonus > 0) extra.notice = '자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%';
     return applyFieldDamageAction(user, context, rawDamage, extra, 'basic', null);
 }
@@ -4650,6 +4967,7 @@ function useBasicAttackInField(user, channel) {
 function getFieldCombatContext(user) {
     if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
     if (user.field.skillSelecting) return { error: '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])' };
+    if (user.field.hell) return { type: 'hell', dungeon: getHellDungeon(), phase: user.field.phase };
     if (user.field.worldBoss) {
         const boss = findWorldBossByName(user.field.name);
         if (!boss) return { error: '❌ 월드보스 데이터를 찾을 수 없습니다.' };
@@ -4660,11 +4978,583 @@ function getFieldCombatContext(user) {
     return { type: user.field.elite ? 'elite' : 'normal', dungeon: dungeon };
 }
 
+function pickHellRarity(table) {
+    const roll = Math.random();
+    let sum = 0;
+    for (const entry of table) {
+        sum += entry.chance;
+        if (roll < sum) return entry.rarity;
+    }
+    return table[table.length - 1].rarity;
+}
+
+function grantHellEquipment(user, rarity, lines) {
+    const equipments = getDataCache('Equipment', {});
+    const pools = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].map(type => ({
+        type,
+        entries: (equipments[type] || []).map((data, id) => ({ type, id, data })).filter(entry => entry.data && entry.data.rarity == rarity)
+    })).filter(pool => pool.entries.length > 0);
+    if (pools.length == 0) return;
+    const pool = pools[randomInt(0, pools.length - 1)];
+    const picked = pool.entries[randomInt(0, pool.entries.length - 1)];
+    addEquipmentInventory(user, picked.type, picked.id);
+    const label = picked.data.rarity == '초월' ? '초월 1단계' : picked.data.rarity;
+    lines.push('- <' + label + '> ' + picked.data.name);
+}
+
+function grantHellPillarRewards(user) {
+    const lines = ['🏛️ 기둥을 파괴했습니다!', '', '[ 부타게임[H] 보상 ]'];
+    const grantItem = (name, min, max, chance) => {
+        if (Math.random() >= chance) return;
+        const id = getItemIdByName(name);
+        if (id == -1) return;
+        const count = randomInt(min, max);
+        addInventoryItem(user, id, count);
+        lines.push('- ' + name + ' x' + comma(count));
+    };
+    grantItem('헬 초대장', 1, 3, .75);
+    grantItem('헬 도전장', 1, 2, .75);
+    grantItem('초월 조각', 1, 1, .03);
+    const guaranteed = [
+        { rarity: '일반', chance: .45 }, { rarity: '레어', chance: .44 },
+        { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .01 }
+    ];
+    lines.push('', '[ 확정 장비 ]');
+    grantHellEquipment(user, pickHellRarity(guaranteed), lines);
+    if (Math.random() < .20) {
+        const extra = [
+            { rarity: '일반', chance: .449 }, { rarity: '레어', chance: .44 },
+            { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .01 },
+            { rarity: '신화', chance: .001 }
+        ];
+        lines.push('', '[ 추가 장비 ]');
+        grantHellEquipment(user, pickHellRarity(extra), lines);
+    }
+    saveFieldCooldowns(user);
+    clearFieldIktaeBot(user.name);
+    clearFieldMark(user.name);
+    clearFieldEquipmentDotTimer(user.name);
+    user.field = null;
+    lines.push('', '✅ 보상 획득 후 자동으로 퇴장했습니다.');
+    return lines.join('\n');
+}
+
+function buildHellHuntResult(user, dungeon, rawDamage, extra) {
+    extra = extra || {};
+    if (!user.field || !user.field.hell) return '❌ 부타게임[H]에 입장한 상태가 아닙니다.';
+    if (user.field.phase == 'pillar') {
+        if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 자동 공격과 소환수 공격은 기둥에 피해를 줄 수 없습니다.';
+        user.field.pillarHp = Math.max(0, Number(user.field.pillarHp || 3) - 1);
+        const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/3'];
+        if (extra.notice) lines.push('- ' + extra.notice);
+        if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+        if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
+        setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        return lines.join('\n');
+    }
+
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    const elite = getCombatStats(dungeon.elite);
+    const hit = calculateAttackHitResult(rawDamage, elite.def, Number(stats.pnt || 0) + Number(extra.pntBonus || 0), stats, slotEffects, extra, elite);
+    queueBlackShadow(user, extra, hit.finalDamage);
+    recordFieldJudgmentDamage(user, extra, hit.finalDamage);
+    const before = Number(user.field.elite && user.field.elite.hp || elite.hp);
+    const after = Math.max(0, before - Number(hit.finalDamage || 0));
+    user.field.elite.hp = after;
+    const lines = ['⚔️ ' + comma(hit.finalDamage) + (hit.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- ' + elite.name + ' HP: ' + comma(after) + '/' + comma(elite.hp)];
+    if (extra.notice) lines.push('- ' + extra.notice);
+    if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (after <= 0) {
+        user.field.phase = 'pillar';
+        user.field.elite = null;
+        user.field.pillarHp = 3;
+        lines.push('', '🏛️ 최대 체력 3의 기둥이 나타났습니다!', '- 모든 수동 공격은 정확히 1 피해만 줍니다.');
+        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        return lines.join('\n');
+    }
+
+    if (!extra.summonAttack) {
+        const incoming = calculateMonsterAttackHitResult(elite, stats, slotEffects, extra);
+        let fieldDamage = consumeNextDamageReduction(user, incoming.finalDamage);
+        fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
+        user.hp = Math.max(0, Number(user.hp || stats.hp) - fieldDamage);
+        lines.push('❗ ' + comma(fieldDamage) + ' 피해를 입었습니다!', '- 남은 체력: ' + comma(user.hp) + '/' + comma(stats.hp));
+        if (user.hp <= 0) {
+            user.hp = 1;
+            saveFieldCooldowns(user);
+            user.field = null;
+            lines.push('', '💀 보상을 획득하지 못하고 퇴장했습니다. 소모한 헬 초대장은 반환되지 않습니다.');
+            return lines.join('\n');
+        }
+    }
+    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    return lines.join('\n');
+}
+
+function getEquippedNamed(user, name) {
+    return getEquippedEquipmentData(user).find(entry => entry.data.name == name) || null;
+}
+
+function getEquippedSetCount(user, setName) {
+    return getEquippedEquipmentData(user).filter(entry => entry.data.set == setName).length;
+}
+
+function getTranscendEquipmentSnapshot(user) {
+    const entries = getEquippedEquipmentData(user)
+        .filter(entry => entry.data.rarity == '초월' || entry.data.rarity == '신화')
+        .map(entry => ({
+            name: entry.data.name,
+            rarity: entry.data.rarity,
+            stage: getTranscendStage(entry.ref.equip, entry.data),
+            set: entry.data.set || null
+        }));
+    const setCounts = {};
+    entries.forEach(entry => {
+        if (entry.set) setCounts[entry.set] = Number(setCounts[entry.set] || 0) + 1;
+    });
+    return { entries, setCounts };
+}
+
+function getCombatTargetHpRatio(user, context) {
+    if (context.type == 'worldBoss') {
+        const state = getWorldBossState(context.boss.name);
+        return Number(state.hp || 0) / Math.max(1, Number(context.boss.hp || 1));
+    }
+    if (context.type == 'hell') {
+        if (user.field.phase == 'pillar') return 1;
+        return Number(user.field.elite && user.field.elite.hp || context.dungeon.elite.hp) / Math.max(1, Number(context.dungeon.elite.hp || 1));
+    }
+    if (context.type == 'elite') return Number(user.field.elite && user.field.elite.hp || context.dungeon.elite.hp) / Math.max(1, Number(context.dungeon.elite.hp || 1));
+    return 1;
+}
+
+function getFieldCombatTargetKey(user, context) {
+    if (!user || !user.field || !context) return null;
+    if (context.type == 'worldBoss') return 'worldBoss:' + context.boss.name;
+    if (context.type == 'hell') return 'hell:' + user.field.name + ':' + user.field.phase;
+    if (context.type == 'elite') return 'elite:' + user.field.name + ':' + Number(user.field.elite && user.field.elite.encounteredAt || 0);
+    return 'field:' + user.field.name;
+}
+
+function queueBlackShadow(user, extra, finalDamage) {
+    if (!user || !user.field || !extra || extra.disableEquipmentBonusDamage || Number(extra.shadowDamageRate || 0) <= 0 || Number(finalDamage || 0) <= 0) return;
+    const state = getEquipmentCombatState(user);
+    if (!Array.isArray(state.shadowQueue)) state.shadowQueue = [];
+    state.shadowQueue.push({ dueAt: Date.now() + 2000, damage: Math.max(1, Math.round(Number(finalDamage) * Number(extra.shadowDamageRate))), targetKey: extra.combatTargetKey });
+    ensureFieldEquipmentDotTimer(user);
+}
+
+function recordFieldJudgmentDamage(user, extra, finalDamage) {
+    if (!user || !user.field || !extra || extra.disableEquipmentBonusDamage || Number(finalDamage || 0) <= 0) return;
+    const state = getEquipmentCombatState(user);
+    if (!state.judgment || state.judgment.targetKey !== extra.combatTargetKey || Date.now() >= Number(state.judgment.expiresAt || 0)) return;
+    state.judgment.damage = Number(state.judgment.damage || 0) + Number(finalDamage || 0);
+}
+
+function getEquipmentCombatState(user) {
+    if (!user.field.equipmentState || typeof user.field.equipmentState != 'object') user.field.equipmentState = {};
+    return user.field.equipmentState;
+}
+
+function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill) {
+    const stats = calculateUserStats(user);
+    const state = getEquipmentCombatState(user);
+    const targetHpRatio = getCombatTargetHpRatio(user, context);
+    const stageOf = name => {
+        const found = getEquippedNamed(user, name);
+        return found ? getTranscendStage(found.ref.equip, found.data) : 0;
+    };
+    const stepValue = (name, base, per) => base + per * Math.max(0, stageOf(name) - 1);
+    const appendNotice = text => { extra.notice = extra.notice ? extra.notice + ' / ' + text : text; };
+    const equipmentCooldownMs = seconds => Math.max(0, Number(seconds || 0) - (getEquippedSetCount(user, 'TCG의 유산') >= 2 ? 2 : 0)) * 1000;
+    const equipmentDurationMs = seconds => (Number(seconds || 0) + (getEquippedNamed(user, '행운의 복주머니') ? 3 : 0)) * 1000;
+    const triggerEquipmentGoldEffect = () => {
+        if (stageOf('행운의 복주머니')) state.fortuneExtraDamage = { value: stepValue('행운의 복주머니', .10, .05), expiredAt: Date.now() + equipmentDurationMs(10) };
+    };
+    const attackUnitCount = Math.max(1, Number(extra.attackUnitCount || 1));
+    const perAttackUnitExtras = Array.from({ length: attackUnitCount }, () => ({}));
+    const addUnit = (unit, key, value) => { perAttackUnitExtras[unit][key] = Number(perAttackUnitExtras[unit][key] || 0) + Number(value || 0); };
+    const activeAtStart = key => !!(state[key] && Date.now() < Number(state[key].expiredAt || 0));
+    const includedAtStart = {
+        manaBurnAttackBuff: activeAtStart('manaBurnAttackBuff'),
+        manaBurnElementBuff: activeAtStart('manaBurnElementBuff'),
+        manaBurnCritBuff: activeAtStart('manaBurnCritBuff'),
+        manaBurnExtraBuff: activeAtStart('manaBurnExtraBuff'),
+        coinBuff: activeAtStart('coinBuff'),
+        encoreBuff: activeAtStart('encoreBuff'),
+        bloodHatBuff: activeAtStart('bloodHatBuff'),
+        liberationBuff: activeAtStart('liberationBuff')
+    };
+
+    if (extra && (extra.summonAttack || extra.dotAttack)) return rawDamage;
+
+    if (getEquippedSetCount(user, '천공의 심판') >= 4 && !(context && context.type == 'hell' && context.phase == 'pillar')) {
+        if (!state.judgment && Date.now() >= Number(state.judgmentReadyAt || 0)) {
+            state.judgment = {
+                targetKey: extra.combatTargetKey,
+                damage: 0,
+                expiresAt: Date.now() + equipmentDurationMs(8)
+            };
+            state.judgmentReadyAt = Date.now() + equipmentCooldownMs(15);
+            ensureFieldEquipmentDotTimer(user);
+        }
+    }
+
+    if (state.culprit && Date.now() < Number(state.culprit.expiredAt || 0)) {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.culprit.takenFinalDamage || 0);
+        extra.defReductionBonus = Number(extra.defReductionBonus || 0) + Number(state.culprit.defReduction || 0);
+    }
+    if (state.kyochonGoldBuff && Date.now() < Number(state.kyochonGoldBuff.expiredAt || 0)) extra.goldBonus = Number(extra.goldBonus || 0) + Number(state.kyochonGoldBuff.value || 0);
+    if (state.fortuneExtraDamage && Date.now() < Number(state.fortuneExtraDamage.expiredAt || 0)) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(state.fortuneExtraDamage.value || 0);
+    if (state.ultimatumHatBuff && Date.now() < Number(state.ultimatumHatBuff.expiredAt || 0)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+    }
+    if (Date.now() < Number(state.beomStacksUntil || 0) && Number(state.beomStacks || 0) > 0) {
+        const stacks = Math.min(7, Number(state.beomStacks || 0));
+        if (extra.attackElement == '명') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stacks * .02;
+        extra.goldBonus = Number(extra.goldBonus || 0) + stacks * .01;
+    }
+    if (Date.now() < Number(state.trueBeomUntil || 0)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('범부의 대나무', .30, .05) * (1 + Number(stats.attackBuffEfficiency || 0));
+        if (actionType == 'skill') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('범부의 대나무', .30, .10);
+    }
+
+    if (actionType == 'skill' && stageOf('감옥열쇠')) {
+        const overflowCrit = Math.max(0, Number(stats.crit || 0) - 1);
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + overflowCrit * stepValue('감옥열쇠', .20, .10);
+    }
+    if (actionType == 'skill' && isUltimateSkillForUser(user, skill) && getEquippedNamed(user, '초심권')) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .50;
+    }
+    if (actionType == 'skill' && skill && skill.name == '끝판왕' && stageOf('Lv1 초보')) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('Lv1 초보', 1.30, .40);
+        const hpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+        if (hpRatio <= .30) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('Lv1 초보', .40, .15);
+    }
+    if (actionType == 'skill' && skill && skill.name == '청정수 투척' && stageOf('정수 필터망')) {
+        extra.pntBonus = Number(extra.pntBonus || 0) + stepValue('정수 필터망', 25, 10);
+        state.cleanWaterBuff = { value: stepValue('정수 필터망', .08, .03), expiredAt: Date.now() + equipmentDurationMs(6) };
+    }
+    if (state.cleanWaterBuff && Date.now() < Number(state.cleanWaterBuff.expiredAt || 0) && extra.attackElement == '수') {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.cleanWaterBuff.value || 0);
+    }
+    if (state.deepWaterAttackBuff && Date.now() < Number(state.deepWaterAttackBuff.expiredAt || 0) && extra.attackElement == '수') {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.deepWaterAttackBuff.value || 0);
+    }
+    if (actionType == 'skill' && skill && skill.name == '댄져' && stageOf('썩어버린 물')) {
+        const stacks = Math.min(3, Number(state.rottenWaterStacks || 0));
+        if (stacks >= 3) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + .20;
+        state.rottenWaterStacks = 0;
+    }
+    if (actionType == 'skill' && skill && skill.name == '비리' && stageOf('치명적인 매력')) {
+        const crit = Math.max(0, Number(stats.crit || 0));
+        extra.critChanceBonus = Number(extra.critChanceBonus || 0) - crit;
+        extra.critMulBonus = Number(extra.critMulBonus || 0) + crit * stepValue('치명적인 매력', .70, .15);
+    }
+    if (actionType == 'skill' && skill && skill.name == '비리' && stageOf('비리의 맛')) {
+        state.bribeNextBasic = {
+            damage: stepValue('비리의 맛', .40, .12),
+            darkBonus: stepValue('비리의 맛', .65, .15)
+        };
+    }
+    if (actionType == 'basic' && state.bribeNextBasic) {
+        rawDamage = Math.round(Number(rawDamage || 0) * (1 + Number(state.bribeNextBasic.damage || 0)));
+        extra.bribeDarkBonus = Number(state.bribeNextBasic.darkBonus || 0);
+        delete state.bribeNextBasic;
+    }
+    if (actionType == 'skill' && state.burn && Date.now() < Number(state.burn.expiredAt || 0)) {
+        const mythicBurnShoes = getEquippedNamed(user, '종말을 걷는 장송곡');
+        const emberShoesStage = stageOf('잿불 신발');
+        const readyKey = mythicBurnShoes ? 'mythicBurnShoesReadyAt' : 'emberShoesReadyAt';
+        const cooldown = mythicBurnShoes ? 8 : 10;
+        if ((mythicBurnShoes || emberShoesStage) && Date.now() >= Number(state[readyKey] || 0)) {
+            const nextTickAt = Math.max(Date.now(), Number(state.burn.nextTickAt || Date.now()));
+            const remainingTicks = Math.max(0, Math.floor((Number(state.burn.expiredAt || 0) - nextTickAt) / Number(state.burn.intervalMs || 2000)) + 1);
+            const detonationRate = mythicBurnShoes ? 1 : (.60 + .10 * Math.max(0, emberShoesStage - 1));
+            extra.oneTimeFinalDamage = Number(extra.oneTimeFinalDamage || 0) + Math.round(Number(state.burn.tickDamage || 0) * remainingTicks * detonationRate);
+            delete state.burn;
+            state[readyKey] = Date.now() + equipmentCooldownMs(cooldown);
+            if (mythicBurnShoes) {
+                state.hellfire = { tickDamage: Math.max(1, Math.round(Number(stats.atk || 0) * .50)), intervalMs: 2000, nextTickAt: Date.now() + 2000, expiredAt: Date.now() + 6000 };
+                ensureFieldEquipmentDotTimer(user);
+            }
+        }
+    }
+
+    const currentHpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+    if (stageOf('진사이') && currentHpRatio <= .20) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('진사이', .30, .05);
+    if (currentHpRatio <= .50) {
+        extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0);
+        const bloodReduction = Number(stats.bloodFlowReduction || 0) * (currentHpRatio <= .30 ? 2 : 1);
+        extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + bloodReduction;
+    }
+    if (actionType == 'skill' && currentHpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
+        const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
+        rawDamage = Math.round(rawDamage * ((currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul));
+    }
+    if (stageOf('강릉함씨 32대손') && user.field.shield && Number(user.field.shield.amount || 0) > 0 && Date.now() < Number(user.field.shield.expired_at || 0)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('강릉함씨 32대손', .18, .05);
+    }
+    if (stageOf('천공의 갑옷') && extra.attackElement == '명') {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('천공의 갑옷', .20, .05);
+    }
+    if (stageOf('검은 잔향 갑옷') && Date.now() < Number(state.ignoreHealingUntil || 0)) {
+        extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + stepValue('검은 잔향 갑옷', .12, .03);
+    }
+    if (stageOf('심연의 신발') && currentHpRatio <= .50 && state.abyssBuff && Date.now() < Number(state.abyssBuff.expiredAt || 0)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .08;
+    }
+
+    if (getEquippedSetCount(user, '최후 통첩') >= 4) {
+        if (targetHpRatio >= .70) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + .10;
+        if (targetHpRatio <= .30) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + .18;
+    }
+    if (targetHpRatio <= .60 && getEquippedNamed(user, '정복자의 최후통첩')) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + .20;
+    if (targetHpRatio <= .50 && stageOf('최후통첩 아머')) extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + stepValue('최후통첩 아머', .10, .04);
+    if (targetHpRatio <= .30 && stageOf('최후통첩 트라우저')) extra.pntBonus = Number(extra.pntBonus || 0) + stepValue('최후통첩 트라우저', 150, 40);
+    if (targetHpRatio <= .30 && stageOf('최후통첩 슈즈')) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('최후통첩 슈즈', .20, .05);
+    if (targetHpRatio <= .50 && stageOf('최후통첩 모자') && Date.now() >= Number(state.ultimatumHatReadyAt || 0)) {
+        state.ultimatumHatBuff = { value: stepValue('최후통첩 모자', .15, .04), expiredAt: Date.now() + equipmentDurationMs(8) };
+        state.ultimatumHatReadyAt = Date.now() + equipmentCooldownMs(12);
+        appendNotice('최후통첩 모자: 공격력 증가');
+    }
+
+    if (stageOf('과소평가')) {
+        const elapsed = Date.now() - Number(user.field.enteredAt || Date.now());
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + (elapsed < 10000 ? -.15 : stepValue('과소평가', .25, .08));
+        if (elapsed >= 10000) extra.critMulBonus = Number(extra.critMulBonus || 0) + stepValue('과소평가', .20, .06);
+    }
+
+    const hpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+    const mpRatio = Number(user.mp || 0) / Math.max(1, Number(stats.mp || 1));
+    if (stageOf('마나 증폭 장치')) {
+        if (mpRatio > .20) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.manaAmplifierFinalAtk || stepValue('마나 증폭 장치', .10, .06));
+        if (mpRatio >= .50) extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + stepValue('마나 증폭 장치', .08, .04);
+    }
+    if (stageOf('포상 정산 반지')) {
+        const diff = Math.abs(hpRatio - mpRatio);
+        if (diff >= .30) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('포상 정산 반지', .12, .04);
+        if (diff >= .50) extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('포상 정산 반지', .16, .04);
+        const intervalMs = 4000;
+        if (!state.settlementRecoveryAt) state.settlementRecoveryAt = Number(user.field.enteredAt || Date.now()) + intervalMs;
+        if (Date.now() >= Number(state.settlementRecoveryAt || 0)) {
+            const ticks = Math.floor((Date.now() - Number(state.settlementRecoveryAt)) / intervalMs) + 1;
+            if (hpRatio < mpRatio) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
+            else if (mpRatio < hpRatio) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .01 * ticks)));
+            state.settlementRecoveryAt += ticks * intervalMs;
+        }
+    }
+
+    if (state.darkAttackBuff && Date.now() < Number(state.darkAttackBuff.expiredAt || 0) && extra.attackElement == '암') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.darkAttackBuff.value || 0);
+    if (user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0) && !(extra && extra.summonAttack)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+    }
+    if (actionType == 'basic' && Number(state.deepNextBasic || 0) > 0) {
+        extra.oneTimeTrueDmg = Number(extra.oneTimeTrueDmg || 0) + Math.round(Number(stats.atk || 0) * Number(state.deepNextBasic));
+        delete state.deepNextBasic;
+    }
+    const markHpCostPassive = () => {
+        if (stageOf('흐르는 피')) state.flowingBloodNext = stepValue('흐르는 피', .12, .04);
+    };
+    const manaBurnConfigs = [
+        ['마나번 햇', 'manaBurnAttackBuff', .02, 'damageBonusMul', stepValue('마나번 햇', .15, .03) * (1 + Number(stats.attackBuffEfficiency || 0))],
+        ['마나번 로브', 'manaBurnElementBuff', .02, 'allElementAtk', stepValue('마나번 로브', 60, 10)],
+        ['마나번 트라우저', 'manaBurnCritBuff', .02, 'critChanceBonus', stepValue('마나번 트라우저', .10, .02)],
+        ['마나번 슈즈', 'manaBurnExtraBuff', .02, 'extraDamageBonus', stepValue('마나번 슈즈', .10, .03)],
+        ['현자의 마나번 로브', 'manaBurnElementBuff', .01, 'allElementAtk', 100]
+    ];
+    for (let unit = 0; unit < attackUnitCount; unit++) {
+        if (Number(state.flowingBloodNext || 0) > 0) {
+            addUnit(unit, 'finalDamageBonus', Number(state.flowingBloodNext));
+            delete state.flowingBloodNext;
+        }
+
+        for (const config of manaBurnConfigs) {
+            const [name, buffKey, costRate, modifierKey, value] = config;
+            if (!stageOf(name)) continue;
+            const readyKey = buffKey + 'ReadyAt';
+            if (Date.now() >= Number(state[readyKey] || 0)) {
+                const cost = Math.max(1, Math.round(Number(stats.mp || 0) * costRate));
+                const currentMp = typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0);
+                if (currentMp >= cost) {
+                    user.mp = currentMp - cost;
+                    state[buffKey] = { value, expiredAt: Date.now() + equipmentDurationMs(60) };
+                    state[readyKey] = Date.now() + equipmentCooldownMs(60);
+                }
+            }
+            if (!includedAtStart[buffKey] && state[buffKey] && Date.now() < Number(state[buffKey].expiredAt || 0)) addUnit(unit, modifierKey, Number(state[buffKey].value || 0));
+        }
+
+        if (stageOf('핏빛 모자') && Date.now() >= Number(state.bloodHatReadyAt || 0)) {
+            const before = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+            const cost = Math.max(1, Math.floor(before * .03));
+            user.hp = Math.max(1, before - cost);
+            state.bloodHatBuff = { value: stepValue('핏빛 모자', .18, .04) * (1 + Number(stats.attackBuffEfficiency || 0)), expiredAt: Date.now() + equipmentDurationMs(15) };
+            state.bloodHatReadyAt = Date.now() + equipmentCooldownMs(15);
+            markHpCostPassive();
+        }
+        if (!includedAtStart.bloodHatBuff && state.bloodHatBuff && Date.now() < Number(state.bloodHatBuff.expiredAt || 0)) addUnit(unit, 'damageBonusMul', Number(state.bloodHatBuff.value || 0));
+
+        if (stageOf('일레이나 전용 동전') && Date.now() >= Number(state.coinReadyAt || 0)) {
+            state.coinBuff = Math.random() < .5
+                ? { type: 'water', value: stepValue('일레이나 전용 동전', 250, 50), expiredAt: Date.now() + equipmentDurationMs(300) }
+                : { type: 'crit', value: stepValue('일레이나 전용 동전', .20, .05), expiredAt: Date.now() + equipmentDurationMs(300) };
+            state.coinReadyAt = Date.now() + equipmentCooldownMs(300);
+        }
+        if (!includedAtStart.coinBuff && state.coinBuff && Date.now() < Number(state.coinBuff.expiredAt || 0)) {
+            if (state.coinBuff.type == 'water') addUnit(unit, 'waterAtk', Number(state.coinBuff.value || 0));
+            if (state.coinBuff.type == 'crit') addUnit(unit, 'critChanceBonus', Number(state.coinBuff.value || 0));
+        }
+
+        if (stageOf('메가카운트 추첨기')) {
+            const pool = ['extra', 'final', 'mp', 'gold'];
+            const picked = [];
+            const pickCount = getEquippedSetCount(user, 'TCG의 유산') >= 4 ? 2 : 1;
+            while (picked.length < pickCount) {
+                const choice = pool[randomInt(0, pool.length - 1)];
+                if (!picked.includes(choice)) picked.push(choice);
+            }
+            picked.forEach(choice => {
+                if (choice == 'extra') addUnit(unit, 'extraDamageBonus', stepValue('메가카운트 추첨기', .15, .05));
+                if (choice == 'final') addUnit(unit, 'finalDamageBonus', stepValue('메가카운트 추첨기', .15, .05));
+                if (choice == 'mp') user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * stepValue('메가카운트 추첨기', .005, .005))));
+                if (choice == 'gold') { user.gold = Number(user.gold || 0) + 500; triggerEquipmentGoldEffect(); }
+            });
+            appendNotice('메가카운트: ' + picked.join(', '));
+        }
+
+        if (stageOf('해방의 열쇠') && Date.now() >= Number(state.liberationReadyAt || 0)) {
+            const pool = ['element', 'attack', 'resist'];
+            const choices = [];
+            const pickCount = getEquippedSetCount(user, 'TCG의 유산') >= 4 ? 2 : 1;
+            while (choices.length < pickCount) {
+                const choice = pool[randomInt(0, pool.length - 1)];
+                if (!choices.includes(choice)) choices.push(choice);
+            }
+            state.liberationBuff = { choices, elementValue: stepValue('해방의 열쇠', 70, 20), resistValue: stepValue('해방의 열쇠', 80, 20), expiredAt: Date.now() + equipmentDurationMs(10) };
+            state.liberationReadyAt = Date.now() + equipmentCooldownMs(15);
+        }
+        if (state.liberationBuff && Date.now() < Number(state.liberationBuff.expiredAt || 0)) {
+            const choices = state.liberationBuff.choices || [];
+            if (choices.includes('attack')) addUnit(unit, 'damageBonusMul', stepValue('해방의 열쇠', .10, .03) * (1 + Number(stats.attackBuffEfficiency || 0)));
+            if (!includedAtStart.liberationBuff && choices.includes('element')) addUnit(unit, 'allElementAtk', Number(state.liberationBuff.elementValue || 0));
+        }
+
+        if (stageOf('킹메이커 팔찌')) {
+            state.kingmakerDefenseDebuff = { value: stepValue('킹메이커 팔찌', .10, .02), expiredAt: Date.now() + equipmentDurationMs(5) };
+        }
+        if (state.kingmakerDefenseDebuff && Date.now() < Number(state.kingmakerDefenseDebuff.expiredAt || 0)) addUnit(unit, 'defReductionBonus', Number(state.kingmakerDefenseDebuff.value || 0));
+
+        const unitElementBonus = Number(perAttackUnitExtras[unit].allElementAtk || 0) * 4 + Number(perAttackUnitExtras[unit].waterAtk || 0);
+        const totalElement = ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].reduce((sum, key) => sum + Number(stats[key] || 0) + Number(stats.allElementAtk || 0), 0) + unitElementBonus;
+        if (stageOf('레인보우 프리즘') && totalElement >= 1000) {
+            addUnit(unit, 'finalDamageBonus', stepValue('레인보우 프리즘', .15, .05));
+            if (Date.now() >= Number(state.rainbowReadyAt || 0)) {
+                addUnit(unit, 'rainbowAttackRatio', stepValue('레인보우 프리즘', 1.8, .4));
+                state.rainbowReadyAt = Date.now() + equipmentCooldownMs(5);
+            }
+        }
+
+        state.attackCount = Number(state.attackCount || 0) + 1;
+        if (stageOf('예고편')) {
+            addUnit(unit, 'finalDamageBonus', -.04 + Number(state.previewNextFinal || 0));
+            state.previewNextFinal = stepValue('예고편', .06, .02);
+        }
+        if (stageOf('예고의 예고') && state.attackCount % 2 == 0) addUnit(unit, 'extraDamageBonus', stepValue('예고의 예고', .15, .05));
+        if (stageOf('예고의 예고의 예고') && state.attackCount % 3 == 0) addUnit(unit, 'critChanceBonus', stepValue('예고의 예고의 예고', .10, .05));
+        if (getEquippedSetCount(user, '복선 회수') >= 4) {
+            const cycle = getEquippedNamed(user, '리턴즈파겜') ? ((state.attackCount % 3) + 1) : (((state.attackCount - 1) % 3) + 1);
+            if (cycle == 1) addUnit(unit, 'finalDamageBonus', -.08);
+            if (cycle == 2) { addUnit(unit, 'critChanceBonus', .20); addUnit(unit, 'critMulBonus', .20); }
+            if (cycle == 3) { addUnit(unit, 'finalDamageBonus', .25); addUnit(unit, 'pntBonus', 120); }
+        }
+        if (Number(stats.manaBurnAttackRecovery || 0) > 0) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * Number(stats.manaBurnAttackRecovery))));
+    }
+    extra.perAttackUnitExtras = perAttackUnitExtras;
+
+    extra.beforeAttackUnit = ({ hitExtra }) => {
+        if (!includedAtStart.encoreBuff && state.encoreBuff && Date.now() < Number(state.encoreBuff.expiredAt || 0)) {
+            hitExtra.damageBonusMul = Number(hitExtra.damageBonusMul || 0) + Number(state.encoreBuff.attack || 0);
+            hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Number(state.encoreBuff.critMul || 0);
+        }
+        if (getEquippedSetCount(user, '잿불의 장송곡') >= 4 && state.burn && Date.now() < Number(state.burn.expiredAt || 0)) hitExtra.finalDamageBonus = Number(hitExtra.finalDamageBonus || 0) + .10;
+        if (stageOf('왓 타임 이즈 잇 나우') && Number(state.dropoutStacks || 0) > 0) {
+            hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Math.min(4, Number(state.dropoutStacks || 0)) * stepValue('왓 타임 이즈 잇 나우', .08, .03);
+        }
+    };
+    extra.afterAttackUnit = ({ isCritical }) => {
+        let additionalDamage = 0;
+        if (stageOf('앵콜') && isCritical) {
+            state.encoreBuff = { attack: stepValue('앵콜', .12, .03) * (1 + Number(stats.attackBuffEfficiency || 0)), critMul: .20, expiredAt: Date.now() + equipmentDurationMs(6) };
+        }
+        if (stageOf('왓 타임 이즈 잇 나우')) {
+            const stacks = Math.min(4, Number(state.dropoutStacks || 0));
+            if (isCritical) {
+                if (stacks > 0) additionalDamage += Math.round(Number(stats.atk || 0) * stepValue('왓 타임 이즈 잇 나우', .50, .05) * stacks * getElementDamageMultiplier(extra.attackElement, stats, {}));
+                state.dropoutStacks = 0;
+            } else state.dropoutStacks = Math.min(4, stacks + 1);
+        }
+        if (stageOf('진사이') && Math.random() < .05) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0))));
+        if (stageOf('잿불 모자') && Date.now() >= Number(state.burnReadyAt || 0)) {
+            const duration = 8 + Number(stats.burnDurationFlat || 0) + (getEquippedNamed(user, '행운의 복주머니') ? 3 : 0);
+            const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * stepValue('잿불 모자', .30, .05) * (1 + Number(stats.burnDamage || 0) + (getEquippedSetCount(user, '잿불의 장송곡') >= 4 ? .35 : 0))));
+            state.burn = { tickDamage, intervalMs: 2000, nextTickAt: Date.now() + 2000, expiredAt: Date.now() + duration * 1000 };
+            state.burnReadyAt = Date.now() + equipmentCooldownMs(6);
+            ensureFieldEquipmentDotTimer(user);
+        }
+        return { additionalDamage };
+    };
+    if (actionType == 'basic' && stageOf('쿨다운 목걸이')) {
+        const skills = getMainCardSkills(user).map(entry => entry.skill.name);
+        const allCooling = skills.length > 0 && skills.every(name => Number(user.field.skillCooldowns && user.field.skillCooldowns[name] || 0) > Date.now());
+        if (allCooling) {
+            extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('쿨다운 목걸이', .12, .03);
+            rawDamage = Math.round(rawDamage * (1 + stepValue('쿨다운 목걸이', .35, .10)));
+            user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)))));
+        }
+    }
+    return rawDamage;
+}
+
+function getEquipmentAttackOrderPreview(user) {
+    if (!getEquippedNamed(user, '판테온 레거시') && !getEquippedNamed(user, '리턴즈파겜')) return null;
+    const count = Number(user && user.field && user.field.equipmentState && user.field.equipmentState.attackCount || 0);
+    return getEquippedNamed(user, '리턴즈파겜') ? ((count + 1) % 3) + 1 : (count % 3) + 1;
+}
+
+function applyCurrentSkillHitEquipment(user, skill, extra) {
+    if (!skill || !getEquippedNamed(user, '해류를 거스르는 신발')) return;
+    const state = getEquipmentCombatState(user);
+    const now = Date.now();
+    if (now < Number(state.currentShoesReadyAt || 0)) return;
+    const cooldownEnd = Number(user.field.skillCooldowns && user.field.skillCooldowns[skill.name] || now);
+    const remaining = Math.max(0, cooldownEnd - now);
+    const reduction = Math.min(5000, remaining * .08);
+    user.field.skillCooldowns[skill.name] = Math.max(now, cooldownEnd - reduction);
+    const stats = calculateUserStats(user);
+    user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .03)));
+    if (extra) {
+        extra.mpAfter = user.mp;
+        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '해류를 거스르는 신발: 쿨타임 ' + (reduction / 1000).toFixed(1) + '초 감소, MP 3% 회복';
+    }
+    const cooldownSeconds = Math.max(0, 8 - (getEquippedSetCount(user, 'TCG의 유산') >= 2 ? 2 : 0));
+    state.currentShoesReadyAt = now + cooldownSeconds * 1000;
+    if (!user.field.worldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+}
+
 function applyFieldDamageAction(user, context, rawDamage, extra, actionType, skill) {
     extra = extra || {};
     if (actionType === 'skill') extra.isSkill = true;
     if (actionType === 'basic') extra.isBasic = true;
     extra.attackElement = getAttackElement(user, actionType === 'skill' ? skill : null);
+    extra.combatTargetKey = getFieldCombatTargetKey(user, context);
+    const isHellPillar = context && context.type === 'hell' && context.phase === 'pillar';
+    if (isHellPillar) {
+        extra.hitCount = 1;
+        delete extra.comboHitCount;
+    } else if (!extra.hitCount && !extra.comboHitCount) extra.comboHitCount = getComboHitCount(calculateUserStats(user));
+    extra.attackUnitCount = extra.hitCount ? 1 : Math.max(1, Number(extra.comboHitCount || 1));
     // 카드 슬롯효과 기반 per-공격 보정 (안성재/흠시원)
     const fieldSlot = calculateCardSlotEffects(user);
     // [무]속성 공격 시 최종 피해 증가
@@ -4686,10 +5576,13 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
         extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldBuffsForAttack.nextFinalDamageBonus.value || 0);
         delete fieldBuffsForAttack.nextFinalDamageBonus;
     }
-    // 수나타 소환 중: 본인 공격력 +buff% (소환수 자동공격은 build*를 직접 호출하므로 제외)
-    if (user.field && user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0)) {
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0);
+    rawDamage = applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill);
+    if (!(extra && (extra.summonAttack || extra.dotAttack))) {
+        const nextOrder = getEquipmentAttackOrderPreview(user);
+        if (nextOrder) extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '다음 공격 순서: ' + nextOrder + '번째';
     }
+    if (actionType == 'skill' && !(extra && extra.summonAttack)) applyCurrentSkillHitEquipment(user, skill, extra);
+    if (context.type == 'hell') return buildHellHuntResult(user, context.dungeon, rawDamage, extra);
     if (context.type == 'worldBoss') return applyWorldBossDamageAction(user, context.boss, rawDamage, extra, actionType, skill);
     if (context.type == 'elite') return buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
     return buildHuntResult(user, context.dungeon, rawDamage, extra);
@@ -4734,6 +5627,7 @@ function useSkillInField(user, skillName, channel) {
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.sunata) ensureFieldSunataTimer(user, channel);
     if (user.field.mark) ensureFieldMarkTimer(user, channel);
+    if (skillName == '자폭') return executeSelfDestructInField(user);
     if (user.field.worldBoss) {
         ensureWorldBossSkillTimer(user, channel);
         if (skillName && findUsableSkill(user, skillName)) return executeMainCardSkillInField(user, skillName);
@@ -4742,12 +5636,196 @@ function useSkillInField(user, skillName, channel) {
     return executeMainCardSkillInField(user, skillName);
 }
 
+function executeSelfDestructInField(user) {
+    if (!getEquippedNamed(user, '카카오의 계략')) return '❌ 사용할 수 없는 스킬입니다.';
+    const now = Date.now();
+    if (now < Number(user.field.nextActionAt || 0)) return '❌ 아직 행동할 수 없습니다. (' + Math.ceil((user.field.nextActionAt - now) / 1000) + '초)';
+    const botActive = !!(user.field.iktaeBot && Number(user.field.iktaeBot.expired_at || 0) > now && Number(user.field.iktaeBot.hp || 0) > 0);
+    const sunataActive = !!(user.field.sunata && Number(user.field.sunata.expired_at || 0) > now);
+    if (!botActive && !sunataActive) return '❌ 익테봇 또는 수나타가 소환 중일 때만 자폭을 사용할 수 있습니다.';
+    const context = getFieldCombatContext(user);
+    if (context.error) return context.error;
+    const stats = calculateUserStats(user);
+    const syntheticSkill = { name: '자폭', mp_cost: 0, cooltime: 0 };
+    const equipmentSkill = prepareTranscendSkillEffects(user, syntheticSkill, stats);
+    user.field.equipmentState = equipmentSkill.state;
+    if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+    if (equipmentSkill.selfShield) user.field.shield = equipmentSkill.selfShield;
+    const stage = getTranscendStage(getEquippedNamed(user, '카카오의 계략').ref.equip, getEquippedNamed(user, '카카오의 계략').data);
+    const summonCount = Number(botActive) + Number(sunataActive);
+    const slotEffects = calculateCardSlotEffects(user);
+    const rawDamage = Math.round(Number(stats.atk || 0) * (.30 * (stage - 1) + 3.30) * summonCount * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
+    if (!user.field.skillCooldowns) user.field.skillCooldowns = {};
+    if (botActive) user.field.skillCooldowns['익테봇 소환'] = Math.max(now, Number(user.field.skillCooldowns['익테봇 소환'] || now) - 5000);
+    if (sunataActive) user.field.skillCooldowns['수나타 소환'] = Math.max(now, Number(user.field.skillCooldowns['수나타 소환'] || now) - 5000);
+    if (!user.field.worldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+    user.field.iktaeBot = null;
+    user.field.sunata = null;
+    clearFieldIktaeBot(user.name);
+    clearFieldSunata(user.name);
+    const extra = Object.assign({}, equipmentSkill.extra || {}, { mpCost: 0, mpAfter: typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), maxMp: Number(stats.mp || 0), notice: '자폭: 소환수 ' + summonCount + '기 파괴' });
+    if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
+    const result = applyFieldDamageAction(user, context, rawDamage, extra, 'skill', syntheticSkill);
+    if (user.field) {
+        if (context.type == 'worldBoss') setWorldBossNextActionAt(user);
+        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    }
+    return result;
+}
+
 function consumeNextDamageReduction(user, damage) {
     const buffs = getFieldBuffs(user);
     if (!buffs.nextDamageReduction) return damage;
     const reduction = Number(buffs.nextDamageReduction.value || 0);
     delete buffs.nextDamageReduction;
     return Math.round(damage * (1 - reduction));
+}
+
+function isUltimateSkillForUser(user, skill) {
+    const skills = getMainCardSkills(user);
+    return skills.length > 0 && skills[skills.length - 1].skill.name == (skill && skill.name);
+}
+
+function getSkillCooldownRate(stats) {
+    return Math.max(.2, 1 - Number(stats && stats.cooldown || 0));
+}
+
+function prepareTranscendSkillEffects(user, skill, stats) {
+    const state = JSON.parse(JSON.stringify(getEquipmentCombatState(user)));
+    const now = Date.now();
+    const found = name => getEquippedNamed(user, name);
+    const stage = name => { const entry = found(name); return entry ? getTranscendStage(entry.ref.equip, entry.data) : 0; };
+    const value = (name, base, per) => base + per * Math.max(0, stage(name) - 1);
+    const result = { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state };
+    let virtualHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+    const sinceSkill = now - Number(state.lastSkillAt || user.field.enteredAt || now);
+    const equipmentCooldownMs = seconds => Math.max(0, Number(seconds || 0) - (getEquippedSetCount(user, 'TCG의 유산') >= 2 ? 2 : 0)) * 1000;
+    const equipmentDurationMs = seconds => (Number(seconds || 0) + (found('행운의 복주머니') ? 3 : 0)) * 1000;
+    const markEquipmentHpCost = () => {
+        if (found('흐르는 피')) state.flowingBloodNext = value('흐르는 피', .12, .04);
+    };
+    const spendCurrentHpRate = rate => {
+        const cost = Math.max(1, Math.floor(virtualHp * Number(rate || 0)));
+        virtualHp = Math.max(1, virtualHp - cost);
+        result.hpAfter = virtualHp;
+        markEquipmentHpCost();
+        return cost;
+    };
+
+    if (stage('불량 배터리') && Math.random() < .20) {
+        result.noMp = true;
+        result.extra.damageBonusMul = Number(result.extra.damageBonusMul || 0) - .12;
+        result.notices.push('불량 배터리: MP 미소모, 피해 -12%');
+    }
+    if (stage('썩어버린 물')) {
+        const stacksBeforeSkill = Math.min(3, Number(state.rottenWaterStacks || 0));
+        result.mpCostMul *= 1 + .06 * stacksBeforeSkill;
+        result.extra.damageBonusMul = Number(result.extra.damageBonusMul || 0) + stacksBeforeSkill * value('썩어버린 물', .05, .02);
+        if (skill && skill.name == '청정수 투척') state.rottenWaterStacks = Math.min(3, stacksBeforeSkill + 1);
+    }
+    if (stage('모노레일 타이머') && sinceSkill >= 15000) result.extra.critMulBonus = Number(result.extra.critMulBonus || 0) + value('모노레일 타이머', .40, .08);
+    if (stage('결합 타이머') && sinceSkill >= 10000) result.extra.extraDamageBonus = Number(result.extra.extraDamageBonus || 0) + value('결합 타이머', .20, .07);
+    if (found('십결모 타이머') && sinceSkill >= 10000) {
+        result.extra.damageBonusMul = Number(result.extra.damageBonusMul || 0) + .30;
+        result.extra.critChanceBonus = Number(result.extra.critChanceBonus || 0) + .25;
+    }
+    if (getEquippedSetCount(user, '딜레이') >= 4 && sinceSkill >= 15000) {
+        result.extra.finalDamageBonus = Number(result.extra.finalDamageBonus || 0) + .25;
+        result.extra.pntBonus = Number(result.extra.pntBonus || 0) + 100;
+        result.mpCostMul *= 1.25;
+    }
+    if (getEquippedSetCount(user, '복선 회수') >= 4 && getEquipmentAttackOrderPreview(user) === 1) result.mpCostMul *= .80;
+    if (stage('DMC 마이크')) {
+        state.dmcSkillCount = Number(state.dmcSkillCount || 0) + 1;
+        if (state.dmcSkillCount % 3 == 0) result.extra.finalDamageBonus = Number(result.extra.finalDamageBonus || 0) + value('DMC 마이크', .40, .10);
+    }
+    if (skill && skill.name == '백억이요' && stage('범부의 대나무')) {
+        if (now >= Number(state.beomStacksUntil || 0)) state.beomStacks = 0;
+        state.beomStacks = Math.min(7, Number(state.beomStacks || 0) + 1);
+        state.beomStacksUntil = now + equipmentDurationMs(10);
+        if (state.beomStacks >= 7) state.trueBeomUntil = now + equipmentDurationMs(10);
+    }
+    if (skill && skill.name == '초특급한탕') {
+        result.superJackpot = Math.random() < .10;
+        if (!result.superJackpot && stage('교촌 주머니')) {
+            result.cooldownFlatReduction += 30000;
+            state.kyochonGoldBuff = { value: value('교촌 주머니', .10, .05), expiredAt: now + equipmentDurationMs(30) };
+            if (stage('행운의 복주머니')) state.fortuneExtraDamage = { value: value('행운의 복주머니', .10, .05), expiredAt: now + equipmentDurationMs(10) };
+        }
+    }
+    if (stage('운명의 주사위') && now >= Number(state.destinyDiceReadyAt || 0)) {
+        const types = getEquippedSetCount(user, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        state.destinyDiceBuff = { types, expiredAt: now + equipmentDurationMs(8) };
+        state.destinyDiceReadyAt = now + equipmentCooldownMs(15);
+    }
+    if (state.destinyDiceBuff && now < Number(state.destinyDiceBuff.expiredAt || 0)) {
+        const types = state.destinyDiceBuff.types || [state.destinyDiceBuff.type];
+        if (types.includes('crit')) result.extra.critChanceBonus = Number(result.extra.critChanceBonus || 0) + value('운명의 주사위', .15, .04);
+        if (types.includes('critMul')) result.extra.critMulBonus = Number(result.extra.critMulBonus || 0) + value('운명의 주사위', .30, .08);
+    }
+    if (found('심판의 주사위') && now >= Number(state.judgeDiceReadyAt || 0)) {
+        const types = getEquippedSetCount(user, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        state.judgeDiceBuff = { types, expiredAt: now + equipmentDurationMs(10) };
+        state.judgeDiceReadyAt = now + equipmentCooldownMs(14);
+    }
+    if (state.judgeDiceBuff && now < Number(state.judgeDiceBuff.expiredAt || 0)) {
+        const types = state.judgeDiceBuff.types || [state.judgeDiceBuff.type];
+        if (types.includes('crit')) result.extra.critChanceBonus = Number(result.extra.critChanceBonus || 0) + .30;
+        if (types.includes('critMul')) result.extra.critMulBonus = Number(result.extra.critMulBonus || 0) + .50;
+    }
+    if (skill && skill.name == '자인' && found('궁택토')) result.cooldownOverride = 0;
+    if (isUltimateSkillForUser(user, skill) && found('초심권')) result.cooldownFlatReduction += 10000;
+    if (getEquippedSetCount(user, '심해의 순환') >= 4 && now >= Number(state.deepSetReadyAt || 0)) {
+        result.ultimateCooldownReduction = 3000;
+        state.deepSetReadyAt = now + equipmentCooldownMs(12);
+    }
+    if (stage('심해의 신발')) {
+        result.selfCooldownRate = value('심해의 신발', .04, .01);
+        result.selfCooldownCap = 3000;
+    }
+    if (stage('심해의 갑옷')) {
+        const amount = Math.round(Number(stats.hp || 0) * value('심해의 갑옷', .05, .01) * (1 + Number(stats.shieldEfficiency || 0)));
+        if (!stats.disableShield) result.selfShield = { amount, expired_at: now + equipmentDurationMs(5) };
+        result.notices.push('심해의 갑옷 보호막 +' + comma(amount));
+    }
+    if (stage('심해의 모자')) {
+        state.deepNextBasic = value('심해의 모자', .60, .15);
+        state.deepWaterAttackBuff = { value: .08, expiredAt: now + equipmentDurationMs(6) };
+    }
+    if (stage('검은 잔향 신발') && now >= Number(state.blackEchoShoesReadyAt || 0)) {
+        state.ignoreHealingUntil = now + equipmentDurationMs(5);
+        state.darkAttackBuff = { value: value('검은 잔향 신발', .15, .04), expiredAt: now + equipmentDurationMs(10) };
+        state.blackEchoShoesReadyAt = now + equipmentCooldownMs(10);
+    }
+    if (getEquippedSetCount(user, '검은 잔향') >= 4 && now >= Number(state.blackEchoSetReadyAt || 0)) {
+        spendCurrentHpRate(.02);
+        result.shadowDamageRate = virtualHp / Math.max(1, Number(stats.hp || 1)) <= .50 ? .50 : .35;
+        state.blackEchoSetReadyAt = now + equipmentCooldownMs(12);
+    }
+    if (found('심연의 신발')) {
+        const lowHp = virtualHp / Math.max(1, Number(stats.hp || 1)) <= .50;
+        if (!lowHp) spendCurrentHpRate(.02);
+        state.darkAttackBuff = { value: .25, expiredAt: now + equipmentDurationMs(12) };
+        state.abyssBuff = { expiredAt: now + equipmentDurationMs(12) };
+    }
+    state.lastSkillAt = now;
+    return result;
+}
+
+function commitFieldSkillCooldown(user, skill, stats, equipmentSkill, now) {
+    const baseCooldown = equipmentSkill.cooldownOverride != null
+        ? Number(equipmentSkill.cooldownOverride)
+        : Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0);
+    const cooldownRate = getSkillCooldownRate(stats);
+    let duration = Math.max(0, baseCooldown * cooldownRate - Number(equipmentSkill.cooldownFlatReduction || 0));
+    if (Number(equipmentSkill.selfCooldownRate || 0) > 0) duration -= Math.min(Number(equipmentSkill.selfCooldownCap || 0), duration * Number(equipmentSkill.selfCooldownRate));
+    user.field.skillCooldowns[skill.name] = Math.max(now, now + duration);
+    if (Number(equipmentSkill.ultimateCooldownReduction || 0) > 0) {
+        const skills = getMainCardSkills(user);
+        const ultimate = skills.length > 0 && skills[skills.length - 1].skill;
+        if (ultimate) user.field.skillCooldowns[ultimate.name] = Math.max(now, Number(user.field.skillCooldowns[ultimate.name] || now) - Number(equipmentSkill.ultimateCooldownReduction));
+    }
+    if (!user.field.worldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
 }
 
 function executeMainCardSkillInField(user, skillName) {
@@ -4769,46 +5847,64 @@ function executeMainCardSkillInField(user, skillName) {
     const slotEffects = calculateCardSlotEffects(user);
     const maxMp = Number(stats.mp || 0);
     const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-    const mpCost = Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0))));
+    const equipmentSkill = prepareTranscendSkillEffects(user, skillData.skill, stats);
+    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1)));
     if (mp < mpCost) return '❌ MP가 부족합니다.';
+    user.field.equipmentState = equipmentSkill.state;
+    if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
+    if (equipmentSkill.selfShield) user.field.shield = equipmentSkill.selfShield;
     user.mp = mp - mpCost;
 
     const star = Number(user.main_card && user.main_card.star || 0);
     let multiplier = getSkillValue(skillData.skill, 0, star);
-    const extra = {};
+    const extra = Object.assign({}, equipmentSkill.extra || {});
+    if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     extra.mpCost = mpCost;
     extra.mpAfter = user.mp;
     extra.maxMp = maxMp;
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
+    extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
+    if (equipmentSkill.notices.length > 0) extra.notice = equipmentSkill.notices.join(' / ');
     if (skillData.skill.name == '글버지') {
         const ratio = getSkillValue(skillData.skill, 1, star);
-        const amount = Math.round(Number(stats.hp || 0) * ratio);
-        user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        const amount = Math.round(Number(stats.hp || 0) * ratio * (1 + Number(stats.shieldEfficiency || 0)));
+        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (skillData.skill.name == '나인 멘스 모리스') {
         const stacks = Math.min(9, Number(user.field.nmmStacks || 0));
-        const perStack = getSkillValue(skillData.skill, 1, star);
+        const roseKnife = getEquippedNamed(user, '장미칼');
+        const perStack = getSkillValue(skillData.skill, 1, star) + (roseKnife ? .06 + .02 * (getTranscendStage(roseKnife.ref.equip, roseKnife.data) - 1) : 0);
         multiplier = getSkillValue(skillData.skill, 0, star) * (1 + perStack * stacks);
         if (stacks >= 9) extra.defReductionBonus = Number(extra.defReductionBonus || 0) + 0.5;
-        user.field.nmmStacks = 0;
-        extra.notice = '나인 멘스 모리스: ' + stacks + '중첩 소모' + (stacks >= 9 ? ' (방어력 50% 무시)' : '');
+        user.field.nmmStacks = roseKnife && stacks >= 9 ? 3 : 0;
+        extra.notice = '나인 멘스 모리스: ' + stacks + '중첩 소모' + (stacks >= 9 ? ' (방어력 50% 무시' + (roseKnife ? ', 3중첩 유지' : '') + ')' : '');
     }
     if (skillData.skill.name == '포커 못 하시네') {
         extra.hitCount = 9;
         extra.basicAttackSkill = true;
     }
-    if (skillData.skill.name == '자인') getFieldBuffs(user).nextBasicDamageBonus = { value: getSkillValue(skillData.skill, 1, star) };
+    if (skillData.skill.name == '자인' && !getEquippedNamed(user, '궁택토')) {
+        let zainBonus = getSkillValue(skillData.skill, 1, star);
+        const staff = getEquippedNamed(user, '쿠루미의 힘이 깃든 지팡이');
+        if (staff) zainBonus += .75 + .25 * (getTranscendStage(staff.ref.equip, staff.data) - 1);
+        getFieldBuffs(user).nextBasicDamageBonus = { value: zainBonus };
+    }
     if (skillData.skill.name == '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skillData.skill, 1, star);
     if (skillData.skill.name == '불사조') {
-        extra.damageBonusMul = Number(stats.crit || 0) * 0.5;
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0) * 0.5;
         extra.receivedDamageMul = 1.5;
-        if (isWorldBoss) getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Date.now() + 8000 };
+        const prisonKey = getEquippedNamed(user, '감옥열쇠');
+        if (prisonKey) {
+            extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10;
+            extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30;
+        }
+        getFieldBuffs(user).receivedDamageMultiplier = { value: 1.5, expired_at: Date.now() + (prisonKey ? (getEquippedNamed(user, '행운의 복주머니') ? 11000 : 8000) : 4000) };
     }
     if (skillData.skill.name == '피아스트') {
         const ratio = getSkillValue(skillData.skill, 1, star);
-        const amount = Math.round(maxMp * ratio);
-        user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        const amount = Math.round(maxMp * ratio * (1 + Number(stats.shieldEfficiency || 0)));
+        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (skillData.skill.name == '수업끝') {
@@ -4821,13 +5917,11 @@ function executeMainCardSkillInField(user, skillName) {
         const hpRatio = getSkillValue(skillData.skill, 0, star);
         const atkMul = getSkillValue(skillData.skill, 1, star);
         const botHp = Math.round(Number(stats.hp || 0) * hpRatio);
-        const summonDurationBonus = 1 + Number(stats.summonDuration || 0) / 100;
+        const summonDurationBonus = 1 + Number(stats.summonDuration || 0);
         const durationMs = Math.round(20000 * summonDurationBonus);
         user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + durationMs };
         const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        const cooltime = Math.max(0, (Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
-        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         startFieldIktaeBot(user.name);
@@ -4853,8 +5947,10 @@ function executeMainCardSkillInField(user, skillName) {
     }
     if (skillData.skill.name == '감사합니다 친구야') {
         const ratio = getSkillValue(skillData.skill, 1, star);
-        const amount = Math.round(Number(stats.hp || 0) * ratio);
-        user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        const ham = getEquippedNamed(user, '강릉함씨 32대손');
+        const hamBonus = ham ? .08 + .02 * (getTranscendStage(ham.ref.equip, ham.data) - 1) : 0;
+        const amount = Math.round(Number(stats.hp || 0) * ratio * (1 + Number(stats.shieldEfficiency || 0)) * (1 + hamBonus));
+        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
         extra.receivedDamageReduction = 0.3;
         getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 12000 };
@@ -4873,46 +5969,47 @@ function executeMainCardSkillInField(user, skillName) {
         if (isWorldBoss) getFieldBuffs(user).receivedDamageMultiplier = { value: 2.0, expired_at: Date.now() + 8000 };
     }
     if (skillData.skill.name == '핫식스의정력') {
-        const amount = Math.round(Number(stats.hp || 0) * getSkillValue(skillData.skill, 1, star));
-        user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        const amount = Math.round(Number(stats.hp || 0) * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.shieldEfficiency || 0)));
+        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
     }
     if (skillData.skill.name == '이어브피') {
-        const amount = Math.round(maxMp * getSkillValue(skillData.skill, 1, star));
-        user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        const amount = Math.round(maxMp * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.shieldEfficiency || 0)));
+        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
     }
     if (skillData.skill.name == '댄져') {
         extra.pnt = Number(stats.pnt || 0) + getSkillValue(skillData.skill, 1, star);
     }
     if (skillData.skill.name == '초특급한탕') {
-        if (Math.random() < 0.1) {
+        if (equipmentSkill.superJackpot) {
             multiplier = getSkillValue(skillData.skill, 1, star);
             extra.notice = '💥 초특급 대박! 폭딜 발동!';
+        } else if (getEquippedNamed(user, '교촌 주머니')) {
+            extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '교촌 주머니: 쿨타임 30초 감소, 골드 획득량 증가';
         }
     }
     if (skillData.skill.name == '수나타 소환') {
         const atkMul = getSkillValue(skillData.skill, 0, star);
         const buffMul = getSkillValue(skillData.skill, 1, star);
-        const durationMs = Math.round(45000 * (1 + Number(stats.summonDuration || 0) / 100));
+        const durationMs = Math.round(45000 * (1 + Number(stats.summonDuration || 0)));
         user.field.sunata = { atkMul: atkMul, buff: buffMul, expired_at: Date.now() + durationMs };
         const lines = ['🎵 수나타를 소환했습니다!\n- 5초마다 공격력의 ' + (Math.round(atkMul * 1000) / 10) + '% 자동 공격\n- 소환 동안 본인 공격력 +' + (Math.round(buffMul * 1000) / 10) + '%\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        const cooltime = Math.max(0, (Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
-        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         startFieldSunata(user.name);
         return lines.join('\n');
     }
     if (skillData.skill.name == '유서새김') {
-        const defDown = getSkillValue(skillData.skill, 0, star);
-        const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.dotDamage || 0))));
+        const emoticon = getEquippedNamed(user, '흐음티콘');
+        const emoticonStep = emoticon ? getTranscendStage(emoticon.ref.equip, emoticon.data) - 1 : 0;
+        const defDown = getSkillValue(skillData.skill, 0, star) + (emoticon ? .12 + .04 * emoticonStep : 0);
+        const dotMul = 1 + Number(stats.dotDamage || 0) + (emoticon ? .40 + .15 * emoticonStep : 0);
+        const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skillData.skill, 1, star) * dotMul));
         user.field.mark = { defReduce: defDown, dot: dotDmg, expired_at: Date.now() + 10000 };
         const lines = ['✍️ 유서새김! 대상에게 표식을 새겼습니다.\n- 10초간 방어력 ' + (Math.round(defDown * 1000) / 10) + '% 감소\n- 2초마다 지속 피해 ' + comma(dotDmg), '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
-        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         startFieldMark(user.name);
@@ -4922,15 +6019,22 @@ function executeMainCardSkillInField(user, skillName) {
         const pnt = getSkillValue(skillData.skill, 0, star);
         const fdmg = getSkillValue(skillData.skill, 1, star);
         const buffs = getFieldBuffs(user);
-        buffs.pntBuff = { value: pnt, expired_at: Date.now() + 10000 };
+        const bloodOath = getEquippedNamed(user, '피의 서약');
+        if (bloodOath) {
+            const step = getTranscendStage(bloodOath.ref.equip, bloodOath.data) - 1;
+            getEquipmentCombatState(user).culprit = { takenFinalDamage: .12 + .04 * step, defReduction: .15 + .05 * step, expiredAt: Date.now() + 10000 };
+        } else {
+            buffs.pntBuff = { value: pnt, expired_at: Date.now() + 10000 };
+        }
         buffs.nextFinalDamageBonus = { value: fdmg };
         const curHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
         const hpCost = Math.floor(curHp * 0.1);
         user.hp = Math.max(1, curHp - hpCost);
-        const lines = ['🔎 범인은 이 안에!\n- 10초간 방어 관통력 +' + comma(pnt) + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
-        const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
-        user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-        if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+        const effectLine = bloodOath
+            ? '- 10초간 적 받는 최종 피해 +' + (12 + 4 * (getTranscendStage(bloodOath.ref.equip, bloodOath.data) - 1)) + '%, 방어력 감소'
+            : '- 10초간 방어 관통력 +' + comma(pnt);
+        const lines = ['🔎 범인은 이 안에!\n' + effectLine + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
         return lines.join('\n');
@@ -4945,9 +6049,7 @@ function executeMainCardSkillInField(user, skillName) {
     const rawDamage = extra.basicAttackSkill
         ? Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)))
         : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus));
-    const cooltime = Math.max(0, Number(skillData.skill.cooltime || 0) + Number(stats.skillCooldown || 0));
-    user.field.skillCooldowns[skillData.skill.name] = now + cooltime;
-    if (!isWorldBoss) getFieldCooldowns(user).skillCooldowns = user.field.skillCooldowns;
+    commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
     return applyFieldDamageAction(user, context, rawDamage, extra, 'skill', skillData.skill);
 }
 
@@ -4989,7 +6091,9 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     let destinyDamageCount = 0;
     let bonusTripleZero = 0;
     let hitResult = null;
-    if (extra.trueDamage) {
+    if (extra.precalculatedDamage) {
+        finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
+    } else if (extra.trueDamage) {
         finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
         trueDamageCount = 1;
     } else {
@@ -5000,8 +6104,10 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         destinyDamageCount = Number(hitResult.destinyDamageCount || 0);
         bonusTripleZero = Number(hitResult.bonusTripleZero || 0);
     }
+    recordFieldJudgmentDamage(user, extra, finalDamage);
     applyNmmStackGain(user, extra, hitResult);
     applyTenthAtkCounter(user, extra, hitResult);
+    queueBlackShadow(user, extra, finalDamage);
     const state = ensureWorldBossRevived(boss);
     const before = Number(state.hp || 0);
     const dealt = Math.min(before, finalDamage);
@@ -5054,7 +6160,7 @@ async function useWorldBossChosenSkill(user, skillName) {
     const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0))));
     if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.mp = mp - mpCost;
-    const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
+    const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * getSkillCooldownRate(stats));
     user.field.skillCooldowns[skill.name] = now + cooltime;
     const wbElement = getAttackElement(user, skill);
     const lines = [];
@@ -5454,7 +6560,12 @@ function formatDescription(name) {
 
     const equipment = findEquipmentByName(name);
     if (equipment) {
-        return ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + equipment.type + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentBaseStatLines(equipment.equipment, 0)].join('\n');
+        const lines = ['《 ' + formatNameWithTrade(equipment.equipment) + ' 》 [' + equipment.equipment.rarity + ' ' + getEquipmentTypeLabel(equipment.type) + ']', '- ' + equipment.equipment.desc, VIEWMORE, formatEquipmentBaseStatLines(equipment.equipment, 0)];
+        if (equipment.equipment.set && equipment.equipment.setEffects) {
+            lines.push('', '[ ' + equipment.equipment.set + ' 세트 ]');
+            Object.keys(equipment.equipment.setEffects).sort((a, b) => Number(a) - Number(b)).forEach(tier => lines.push('- ' + tier + '세트: ' + equipment.equipment.setEffects[tier]));
+        }
+        return lines.join('\n');
     }
 
     const pet = findPetByName(name);
@@ -5530,6 +6641,13 @@ const SUPPORT_STAT_LABELS = {
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
+    attackBuffEfficiency: '공격력 증가 효과 효율', shieldEfficiency: '보호막 효율',
+    ultimateCooldownFlat: '궁극기 쿨타임 감소', burnDurationFlat: '화상 지속시간',
+    critLightBonus: '치명타 시 명속성 추가 피해', nonCritLightBonus: '비치명타 시 명속성 추가 피해',
+    manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
+    partyAllElementAtk: '파티원 모든 속성 강화', comboCritMul: '연격 추가 타격 치명타 피해',
+    comboDamage: '연격 추가 타격 피해', comboLastCrit: '최대 연격 마지막 타격 치명타 확정',
+    comboLastCritMul: '최대 연격 마지막 타격 치명타 피해',
     atkDefReduce: '공격 시 5초간 방어력 감소'
 };
 
@@ -5546,6 +6664,8 @@ const SUPPORT_PLUS_STAT_LABELS = {
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해', extraDamage: '추가 피해',
+    ultimateDamage: '궁극기 스킬 피해', elementalExtraDamage: '속성 공격 추가 피해',
+    burnDamage: '화상 피해', lightFinalDamage: '명속성 공격 최종 피해',
     summonDuration: '소환 지속시간', cooldown: '쿨타임 감소',
     dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
     butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
@@ -5559,6 +6679,11 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
     const level = Number(equip.level || 0);
     const statLines = formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
     let out = title + (statLines ? '\n' + statLines : '');
+    if (data.desc) out += '\n- 고유 옵션: ' + data.desc;
+    if (data.set && data.setEffects) {
+        out += '\n[ ' + data.set + ' 세트 ]';
+        Object.keys(data.setEffects).sort((a, b) => Number(a) - Number(b)).forEach(tier => { out += '\n- ' + tier + '세트: ' + data.setEffects[tier]; });
+    }
     const soulRemaining = formatSoulRemainingText(equip && equip.soul);
     if (soulRemaining) out += '\n' + soulRemaining;
     const potentialLines = formatPotentialLines(equip && equip.potential);
@@ -5609,7 +6734,7 @@ function formatEquipmentInfo(user) {
         cardData.skills.forEach(skillIndex => {
             const skill = skills[skillIndex];
             if (!skill) return;
-            const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * (1 - Math.min(0.8, Math.max(0, Number(stats.cooldown || 0)))));
+            const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * getSkillCooldownRate(stats));
             lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ] 쿨타임 ' + formatCooltime(cooltime));
             formatCurrentSkillDesc(skill, star).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
         });
@@ -5619,8 +6744,9 @@ function formatEquipmentInfo(user) {
 
     lines.push('', '〈 장비 〉');
     lines.push(formatEquippedEquipmentDetail('무기', 'weapon', user.equipments && user.equipments.weapon, user));
-    lines.push('');
-    lines.push(formatEquippedEquipmentDetail('갑옷', 'armor', user.equipments && user.equipments.armor, user));
+    [['모자', 'hat'], ['갑옷', 'armor'], ['하의', 'pants'], ['신발', 'shoes']].forEach(([label, type]) => {
+        lines.push('', formatEquippedEquipmentDetail(label, type, user.equipments && user.equipments[type], user));
+    });
 
     const accessories = user.equipments && user.equipments.accessory || {};
     const accessoryKeys = Object.keys(accessories).filter(key => accessories[key] && typeof accessories[key].id != 'undefined');
@@ -5663,8 +6789,10 @@ function formatEquipmentInfo(user) {
 
 function getEquippedEquipmentRefs(user) {
     const refs = [];
-    if (user.equipments && user.equipments.weapon && typeof user.equipments.weapon.id != 'undefined') refs.push({ type: 'weapon', equip: bindEquipmentToUser(user.equipments.weapon, user) });
-    if (user.equipments && user.equipments.armor && typeof user.equipments.armor.id != 'undefined') refs.push({ type: 'armor', equip: bindEquipmentToUser(user.equipments.armor, user) });
+    EQUIPMENT_SINGLE_SLOTS.filter(type => type != 'support').forEach(type => {
+        const equip = user.equipments && user.equipments[type];
+        if (equip && typeof equip.id != 'undefined') refs.push({ type, equip: bindEquipmentToUser(equip, user) });
+    });
     const accessories = user.equipments && user.equipments.accessory || {};
     Object.keys(accessories).forEach(key => {
         if (accessories[key] && typeof accessories[key].id != 'undefined') refs.push({ type: 'accessory', equip: bindEquipmentToUser(accessories[key], user), slotKey: key });
@@ -5685,12 +6813,8 @@ function removeSelectedEquipment(user, selected) {
         user.inventory.equipment.splice(selected.index, 1);
         return true;
     }
-    if (selected.source == 'equipped' && selected.type == 'weapon') {
-        user.equipments.weapon = null;
-        return true;
-    }
-    if (selected.source == 'equipped' && selected.type == 'armor') {
-        user.equipments.armor = null;
+    if (selected.source == 'equipped' && EQUIPMENT_SINGLE_SLOTS.includes(selected.type) && selected.type != 'support') {
+        user.equipments[selected.type] = null;
         return true;
     }
     if (selected.source == 'equipped' && selected.type == 'accessory' && typeof selected.slotKey != 'undefined') {
@@ -5705,16 +6829,12 @@ function removeSelectedEquipment(user, selected) {
 }
 
 function getEquipmentTypeLabel(type) {
-    if (type == 'weapon') return '무기';
-    if (type == 'armor') return '갑옷';
-    if (type == 'accessory') return '장신구';
-    if (type == 'support') return '보조';
-    return type;
+    return EQUIPMENT_TYPE_LABELS[type] || type;
 }
 
 const EQUIPMENT_TRADE_MAX_COUNT = 5;
 const EQUIPMENT_BINDING_ENABLED = true;
-const EQUIPMENT_TRADE_RARITY_ORDER = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '신화', '고유'];
+const EQUIPMENT_TRADE_RARITY_ORDER = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '초월', '신화', '고유'];
 
 function isEquipmentTradeCountLimited(rarity) {
     const index = EQUIPMENT_TRADE_RARITY_ORDER.indexOf(String(rarity || ''));
@@ -5722,18 +6842,23 @@ function isEquipmentTradeCountLimited(rarity) {
     return index >= uniqueIndex && uniqueIndex >= 0;
 }
 
+function getEquipmentTradeMax(data) {
+    if (!data || data.no_trade || data.rarity == '신화') return 0;
+    if (data.rarity == '초월') return 1;
+    return isEquipmentTradeCountLimited(data.rarity) ? EQUIPMENT_TRADE_MAX_COUNT : null;
+}
+
 function isEquipmentBindingEnabled() {
     return EQUIPMENT_BINDING_ENABLED === true;
 }
 
 function cloneEquipmentInstance(equip, fallbackType) {
-    const entry = { type: equip.type || fallbackType, id: Number(equip.id), level: Number(equip.level || 0) };
-    if (equip.rolled) entry.rolled = clonePlain(equip.rolled);
-    if (equip.potential) entry.potential = clonePlain(equip.potential);
-    if (equip.soul && !isSoulExpired(equip.soul)) entry.soul = clonePlain(equip.soul);
-    if (equip.locked) entry.locked = true;
-    if (equip.boundOwner) entry.boundOwner = equip.boundOwner;
-    if (typeof equip.tradeCount != 'undefined') entry.tradeCount = Number(equip.tradeCount || 0);
+    const entry = clonePlain(equip || {}) || {};
+    entry.type = equip.type || fallbackType;
+    entry.id = Number(equip.id);
+    entry.level = Number(equip.level || 0);
+    if (typeof equip.transcendStage != 'undefined') entry.transcendStage = Math.max(1, Math.min(3, Number(equip.transcendStage || 1)));
+    if (entry.soul && isSoulExpired(entry.soul)) delete entry.soul;
     return entry;
 }
 
@@ -5743,21 +6868,22 @@ function getEquipmentTradeBlockReason(equip, ownerName) {
     if (!data) return '잘못된 장비 데이터입니다.';
     if (data.no_trade) return '거래 불가 장비입니다.';
     if (isEquipmentBindingEnabled() && equip.boundOwner) return '귀속된 장비입니다. 귀속 해제의 주문서로 귀속을 해제해야 거래할 수 있습니다.';
-    if (isEquipmentTradeCountLimited(data.rarity) && Number(equip.tradeCount || 0) >= EQUIPMENT_TRADE_MAX_COUNT) return '거래 횟수가 ' + EQUIPMENT_TRADE_MAX_COUNT + '회에 도달한 장비입니다.';
+    const tradeMax = getEquipmentTradeMax(data);
+    if (tradeMax != null && Number(equip.tradeCount || 0) >= tradeMax) return '거래 횟수가 ' + tradeMax + '회에 도달한 장비입니다.';
     return null;
 }
 
 function markEquipmentTraded(equip) {
     const data = getEquipmentData(equip && equip.type, equip && equip.id);
-    if (data && isEquipmentTradeCountLimited(data.rarity)) equip.tradeCount = Number(equip.tradeCount || 0) + 1;
+    if (data && getEquipmentTradeMax(data) != null) equip.tradeCount = Number(equip.tradeCount || 0) + 1;
     delete equip.boundOwner;
     return equip;
 }
 
 function getEquipmentTradeLimitInfo(equip) {
     const data = getEquipmentData(equip && equip.type, equip && equip.id);
-    if (!data || !isEquipmentTradeCountLimited(data.rarity)) return null;
-    const max = EQUIPMENT_TRADE_MAX_COUNT;
+    const max = getEquipmentTradeMax(data);
+    if (!data || max == null) return null;
     const count = Math.max(0, Number(equip.tradeCount || 0));
     return { count, max, remaining: Math.max(0, max - count) };
 }
@@ -5791,7 +6917,8 @@ function formatBoundEquipmentScissorList(targets) {
         const lvl = Number(equip.level || 0);
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
         const tradeCount = Number(equip.tradeCount || 0);
-        const tradeText = isEquipmentTradeCountLimited(target.equipment.rarity) ? ' · 거래 ' + comma(tradeCount) + '/' + comma(EQUIPMENT_TRADE_MAX_COUNT) + '회' : '';
+        const tradeLimit = getEquipmentTradeLimitInfo(Object.assign({ type: equip.type || target.entry.type }, equip));
+        const tradeText = tradeLimit ? ' · 거래 ' + comma(tradeCount) + '/' + comma(tradeLimit.max) + '회' : '';
         lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + ' · 귀속: ' + equip.boundOwner + tradeText);
     });
     return lines.join('\n');
@@ -5821,13 +6948,13 @@ function formatEquipmentInventoryLine(number, entry) {
     if (!data) return null;
     const level = Number(entry.equip.level || 0);
     const lockMark = entry.equip.locked ? ' 🔒' : '';
-    return '[' + number + '] <' + data.rarity + '> ' + getEquipmentDisplayName(data, entry.equip) + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '') + lockMark;
+    return '[' + number + '] <' + getEquipmentRarityLabel(data, entry.equip) + '> ' + getEquipmentDisplayName(data, entry.equip) + (level > 0 ? ' +' + level : '') + (entry.source == 'equipped' ? ' (장착)' : '') + lockMark;
 }
 
 function formatEquipmentInventory(user) {
     const lines = ['[ ' + user.name + '님의 보유 장비 ]', VIEWMORE];
     const all = getAllUserEquipments(user);
-    const types = [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']];
+    const types = Object.keys(EQUIPMENT_TYPE_LABELS).map(key => [key, EQUIPMENT_TYPE_LABELS[key]]);
     let hasEquipment = false;
     types.forEach(type => {
         const filtered = all
@@ -6237,7 +7364,7 @@ function equipPetByNumber(user, numberArg) {
     if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호는 1 이상의 정수여야 합니다.';
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
     if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
-    if (!user.equipments) user.equipments = { weapon: null, armor: null, accessory: {}, support: null, pet: [] };
+    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
     if (!Array.isArray(user.equipments.pet)) user.equipments.pet = [];
     const all = getAllUserPets(user);
     const selected = all[number - 1];
@@ -7112,8 +8239,10 @@ function addEquipmentInventory(user, type, id) {
     if (!user.inventory) user.inventory = { card: [], item: [] };
     if (!user.inventory.equipment) user.inventory.equipment = [];
     const entry = { type: type, id: id, level: 0 };
+    const equipmentData = getEquipmentData(type, id);
+    if (equipmentData && equipmentData.rarity == '초월') entry.transcendStage = 1;
     if (type == 'support') {
-        const data = getEquipmentData('support', id);
+        const data = equipmentData;
         if (data) entry.rolled = rollSupportEquipmentStats(data);
     }
     user.inventory.equipment.push(entry);
@@ -7171,7 +8300,20 @@ function equipItemByNumber(user, numberArg) {
         return '❌ 장착 가능 최대 레벨을 초과했습니다. (Lv. ' + Number(data.underLevel) + ' 이하)';
     }
 
-    if (!user.equipments) user.equipments = { weapon: {}, armor: {}, accessory: {}, support: null };
+    if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
+        const mainId = user.main_card && typeof user.main_card.id != 'undefined' ? Number(user.main_card.id) : null;
+        if (mainId == null || !data.requireMainCard.map(Number).includes(mainId)) return '❌ 해당 장비 전용 캐릭터 카드만 장착할 수 있습니다.';
+    }
+
+    if (data.rarity == '신화') {
+        const equippedMythic = getEquippedEquipmentRefs(user).some(ref => {
+            const equippedData = getEquipmentData(ref.type, ref.equip.id);
+            return equippedData && equippedData.rarity == '신화';
+        });
+        if (equippedMythic) return '❌ 신화 장비는 모든 부위를 통틀어 1개만 장착할 수 있습니다.';
+    }
+
+    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
 
     if (target.type == 'support') {
         if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
@@ -7189,10 +8331,10 @@ function equipItemByNumber(user, numberArg) {
             user.inventory.equipment.push(back);
         }
         clampHpToMaxStat(user);
-        return '✅ 보조 장비를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ 보조 장비를 장착했습니다.\n<' + getEquipmentRarityLabel(data, target) + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
-    if (target.type == 'weapon' || target.type == 'armor') {
+    if (EQUIPMENT_SINGLE_SLOTS.includes(target.type) && target.type != 'support') {
         const prev = user.equipments[target.type];
         const equipEntry = bindEquipmentToUser(cloneEquipmentInstance(target, target.type), user);
         user.equipments[target.type] = equipEntry;
@@ -7202,7 +8344,7 @@ function equipItemByNumber(user, numberArg) {
             user.inventory.equipment.push(back);
         }
         clampHpToMaxStat(user);
-        return '✅ ' + (target.type == 'weapon' ? "무기를" : "갑옷을") + ' 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ ' + getEquipmentTypeLabel(target.type) + ' 장비를 장착했습니다.\n<' + getEquipmentRarityLabel(data, target) + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     if (target.type == 'accessory') {
@@ -7231,7 +8373,7 @@ function equipItemByNumber(user, numberArg) {
         accessories[slotKey] = equipEntry;
         user.inventory.equipment.splice(invIndex, 1);
         clampHpToMaxStat(user);
-        return '✅ 장신구를 장착했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
+        return '✅ 장신구를 장착했습니다.\n<' + getEquipmentRarityLabel(data, target) + '> ' + getEquipmentDisplayName(data, target) + (Number(target.level || 0) > 0 ? ' +' + target.level : '');
     }
 
     return '❌ 알 수 없는 장비 타입입니다.';
@@ -7287,11 +8429,9 @@ function unequipEquipmentByNumber(user, numberArg) {
     if (!data) return '❌ 잘못된 장비 데이터입니다.';
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
-    if (type != 'weapon' && type != 'armor' && type != 'support' && !(type == 'accessory' && typeof selected.slotKey != 'undefined')) return '❌ 알 수 없는 장비 타입입니다.';
+    if (!EQUIPMENT_SINGLE_SLOTS.includes(type) && !(type == 'accessory' && typeof selected.slotKey != 'undefined')) return '❌ 알 수 없는 장비 타입입니다.';
     user.inventory.equipment.push(cloneEquipmentInstance(selected.equip, type));
-    if (type == 'weapon') user.equipments.weapon = null;
-    else if (type == 'armor') user.equipments.armor = null;
-    else if (type == 'support') user.equipments.support = null;
+    if (EQUIPMENT_SINGLE_SLOTS.includes(type)) user.equipments[type] = null;
     else if (type == 'accessory') delete user.equipments.accessory[selected.slotKey];
     const stats = calculateUserStats(user);
     user.hp = Math.min(typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0), Number(stats.hp || 0));
@@ -7312,11 +8452,17 @@ const EQUIPMENT_DISASSEMBLE_REWARD = {
     '레어': { min: 270, max: 330 },
     '유니크': { min: 350, max: 430 },
     '레전더리': { min: 560, max: 650 },
+    '초월': { min: 650, max: 700 },
     '고유': { min: 800, max: 950 }
 };
 const SUPPORT_DISASSEMBLE_BLACK_FIRE_REWARD = { '일반': 1, '레어': 2, '유니크': 5, '레전더리': 10 };
 const EQUIPMENT_STONE_MULTIPLIERS = [1.0, 1.4, 1.9, 2.5, 3.2, 4.0, 5.0, 6.2, 7.6, 10.3, 13.9, 18.7, 25.2, 34.1, 46.0];
 const ACCESSORY_UPGRADE_RATE_INDEX = [1, 3, 5, 8, 11];
+const HIGH_GRADE_UPGRADE_COSTS = [
+    [1, 100000], [2, 200000], [3, 300000], [4, 400000], [5, 500000],
+    [6, 600000], [7, 700000], [8, 800000], [9, 1000000], [10, 1250000],
+    [12, 1600000], [15, 1950000], [20, 2400000], [30, 2880000], [50, 3350000]
+];
 
 function getEquipmentMaxLevel(equipment) {
     return Array.isArray(equipment && equipment.upgrade) ? equipment.upgrade.length : 0;
@@ -7440,10 +8586,31 @@ function getEquipmentByNumber(user, numberArg) {
 function formatEquipmentName(type, id, level, equip) {
     const data = getEquipmentData(type, id);
     if (!data) return '알 수 없는 장비';
-    return '<' + data.rarity + '> ' + getEquipmentDisplayName(data, equip) + (Number(level || 0) > 0 ? ' +' + Number(level || 0) : '');
+    return '<' + getEquipmentRarityLabel(data, equip) + '> ' + getEquipmentDisplayName(data, equip) + (Number(level || 0) > 0 ? ' +' + Number(level || 0) : '');
+}
+
+function getTranscendSynthesisSelection(user, numberArgs) {
+    const numbers = numberArgs.map(Number);
+    if (numbers.some(number => !Number.isInteger(number) || number < 1) || new Set(numbers).size != 2) return { error: '❌ 서로 다른 장비 번호 2개를 입력해주세요.' };
+    const selected = numbers.map(number => getEquipmentByNumber(user, number));
+    if (selected.some(entry => !entry)) return { error: '❌ 존재하지 않는 장비 번호가 있습니다.' };
+    if (selected.some(entry => entry.source == 'equipped')) return { error: '❌ 장착 중인 장비는 합성할 수 없습니다.' };
+    if (selected.some(entry => entry.equip.locked)) return { error: '❌ 잠긴 장비는 합성할 수 없습니다.' };
+    const first = selected[0].equip;
+    const second = selected[1].equip;
+    const type = first.type || selected[0].type;
+    const equipment = getEquipmentData(type, first.id);
+    const secondData = getEquipmentData(second.type || selected[1].type, second.id);
+    if (!equipment || !secondData || equipment.rarity != '초월' || secondData.rarity != '초월') return { error: '❌ 초월 장비 2개만 이 방식으로 합성할 수 있습니다.' };
+    if (type != (second.type || selected[1].type) || equipment.name != secondData.name) return { error: '❌ 반드시 같은 이름의 초월 장비끼리만 합성할 수 있습니다.' };
+    const firstStage = Math.max(1, Number(first.transcendStage || 1));
+    const secondStage = Math.max(1, Number(second.transcendStage || 1));
+    if (![1, 2].includes(firstStage) || secondStage != 1) return { error: '❌ 초월 1단계+1단계 또는 초월 2단계+1단계만 합성할 수 있습니다.' };
+    return { mode: 'transcend', numbers, selected, type, id: Number(first.id), equipment, resultEquipment: equipment, resultStage: firstStage + 1 };
 }
 
 function getEquipmentSynthesisSelection(user, numberArgs) {
+    if (Array.isArray(numberArgs) && numberArgs.length == 2) return getTranscendSynthesisSelection(user, numberArgs);
     if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ /RPGenius 장비합성 [장비번호1] [장비번호2] [장비번호3]' };
     const numbers = numberArgs.map(arg => Number(arg));
     if (numbers.some(number => !Number.isInteger(number) || number < 1)) return { error: '❌ 장비 번호는 1 이상의 정수여야 합니다.' };
@@ -7474,7 +8641,7 @@ function formatEquipmentSynthesisPreview(user, numberArgs) {
         lines.push('- ' + formatEquipmentName(selection.type, selection.id, entry.equip.level, entry.equip));
     });
     lines.push('', '[ 합성 결과 ]');
-    lines.push('- <' + selection.resultEquipment.rarity + '> ' + selection.resultEquipment.name);
+    lines.push('- <' + (selection.mode == 'transcend' ? '초월 ' + selection.resultStage + '단계' : selection.resultEquipment.rarity) + '> ' + selection.resultEquipment.name);
     lines.push('', '합성을 진행하시겠습니까?', '/RPGenius 합성');
     return lines.join('\n');
 }
@@ -7485,6 +8652,13 @@ function runEquipmentSynthesis(user) {
     const selection = getEquipmentSynthesisSelection(user, pending.numbers);
     user.pendingAction = null;
     if (selection.error) return selection.error;
+    if (selection.mode == 'transcend') {
+        const result = cloneEquipmentInstance(selection.selected[0].equip, selection.type);
+        result.transcendStage = selection.resultStage;
+        selection.selected.slice().sort((a, b) => b.index - a.index).forEach(entry => user.inventory.equipment.splice(entry.index, 1));
+        user.inventory.equipment.push(result);
+        return '✅ 초월 장비 합성이 완료되었습니다.\n[ 합성 결과 ]\n- <초월 ' + selection.resultStage + '단계> ' + selection.resultEquipment.name;
+    }
     selection.selected
         .slice()
         .sort((a, b) => b.index - a.index)
@@ -7493,7 +8667,39 @@ function runEquipmentSynthesis(user) {
     return '✅ 장비 합성이 완료되었습니다.\n[ 합성 결과 ]\n- <' + selection.resultEquipment.rarity + '> ' + selection.resultEquipment.name;
 }
 
+function getTranscendUpgradeKitTargets(user) {
+    return getAllUserEquipments(user).map((entry, index) => {
+        if (entry.source != 'inventory' || entry.equip.locked) return null;
+        const type = entry.equip.type || entry.type;
+        const data = getEquipmentData(type, entry.equip.id);
+        const stage = Number(entry.equip.transcendStage || 1);
+        if (!data || data.rarity != '초월' || stage >= 3) return null;
+        return { number: index + 1, entry, data, stage };
+    }).filter(Boolean);
+}
+
+function formatTranscendUpgradeKitTargets(targets) {
+    const lines = ['[ 초월 업그레이드 대상 ]', VIEWMORE];
+    targets.forEach(target => lines.push('[' + target.number + '] <초월 ' + target.stage + '단계> ' + target.data.name));
+    return lines.join('\n');
+}
+
+function useTranscendUpgradeKit(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '초월업그레이드') return '❌ 진행 중인 초월 업그레이드가 없습니다.';
+    const number = Number(numberArg);
+    const target = getTranscendUpgradeKitTargets(user).find(entry => entry.number == number);
+    if (!target) return '❌ 업그레이드 가능한 초월 장비 번호가 아닙니다.';
+    target.entry.equip.transcendStage = target.stage + 1;
+    user.pendingAction = null;
+    return '✅ 초월 업그레이드가 완료되었습니다.\n- <초월 ' + (target.stage + 1) + '단계> ' + target.data.name;
+}
+
 function getEquipmentUpgradeCost(equipment, type, level) {
+    if (equipment && (equipment.rarity == '초월' || equipment.rarity == '신화')) {
+        const cost = HIGH_GRADE_UPGRADE_COSTS[Number(level || 0)];
+        return { stone: cost[0], gold: cost[1], stoneItemId: getItemIdByName('상급 강화석'), stoneName: '상급 강화석' };
+    }
     const targetLevel = Number(level || 0) + 1;
     const rarityCorrection = EQUIPMENT_RARITY_CORRECTION[equipment.rarity] || 1;
     const stoneMultiplier = EQUIPMENT_STONE_MULTIPLIERS[level] || 1;
@@ -7502,7 +8708,7 @@ function getEquipmentUpgradeCost(equipment, type, level) {
     const stone = Math.floor(((level + 10) * 3 * rarityCorrection) * stoneMultiplier * armorMultiplier * accessoryMultiplier);
     const goldRate = EQUIPMENT_GOLD_RATE[equipment.rarity] || 1;
     const gold = Math.floor(goldRate * ((Math.pow(targetLevel, 4) / 5) + 1)) * 8 * accessoryMultiplier;
-    return { stone, gold };
+    return { stone, gold, stoneItemId: EQUIPMENT_STONE_ITEM_ID, stoneName: '강화석' };
 }
 
 function getBlackFireItemId() {
@@ -7517,6 +8723,14 @@ function getDisassembleStoneAmount(rewardRange, type) {
 function getDisassembleRewardRange(rewardRange, type) {
     if (type != 'support') return rewardRange;
     return { min: Math.floor(rewardRange.min * 0.5), max: Math.floor(rewardRange.max * 0.5) };
+}
+
+function getTranscendDisassembleInfo(equip) {
+    const stage = Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1)));
+    return {
+        stone: [{ min: 650, max: 700 }, { min: 750, max: 800 }, { min: 850, max: 1000 }][stage - 1],
+        fragment: [{ min: 1, max: 5 }, { min: 2, max: 7 }, { min: 3, max: 10 }][stage - 1]
+    };
 }
 
 function getSupportDisassembleBlackFireCount(equipment, type) {
@@ -7548,9 +8762,10 @@ function parseDisassembleSelection(user, numberArgs) {
         const type = entry.equip.type || entry.type;
         const equipment = getEquipmentData(type, entry.equip.id);
         if (!equipment) return { error: '❌ 잘못된 장비 데이터입니다: [' + number + ']' };
-        const rewardRange = EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
+        const transcendReward = equipment.rarity == '초월' ? getTranscendDisassembleInfo(entry.equip) : null;
+        const rewardRange = transcendReward ? transcendReward.stone : EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
         if (!rewardRange) return { error: '❌ 분해할 수 없는 등급(' + equipment.rarity + ')이 포함되어 있습니다: [' + number + ']' };
-        entries.push({ number, entry, type, equipment, rewardRange });
+        entries.push({ number, entry, type, equipment, rewardRange, fragmentRange: transcendReward && transcendReward.fragment });
     }
     return { numbers, entries };
 }
@@ -7564,21 +8779,25 @@ function formatDisassemblePreview(user, numberArgs) {
     let maxTotal = 0;
     let blackFireTotal = 0;
     let darkPieceTotal = 0;
+    let fragmentMinTotal = 0;
+    let fragmentMaxTotal = 0;
     const equipmentLines = [];
     parsed.entries.forEach(e => {
         const lvl = Number(e.entry.equip.level || 0);
-        const range = getDisassembleRewardRange(e.rewardRange, e.type);
+        const range = e.equipment.rarity == '초월' ? e.rewardRange : getDisassembleRewardRange(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
         const darkPiece = getDarkPieceDisassembleCount(e.equipment);
-        equipmentLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 ' + comma(darkPiece) : '') + ')');
+        equipmentLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (e.fragmentRange ? ', 초월 조각 ' + comma(e.fragmentRange.min) + '~' + comma(e.fragmentRange.max) : '') + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 ' + comma(darkPiece) : '') + ')');
         minTotal += range.min;
         maxTotal += range.max;
         blackFireTotal += blackFire;
         darkPieceTotal += darkPiece;
+        if (e.fragmentRange) { fragmentMinTotal += e.fragmentRange.min; fragmentMaxTotal += e.fragmentRange.max; }
     });
     pushLimitedEquipmentLines(lines, equipmentLines);
     lines.push('', '[ 예상 획득 ]');
     lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
+    if (fragmentMaxTotal > 0) lines.push('- 초월 조각 ' + comma(fragmentMinTotal) + ' ~ ' + comma(fragmentMaxTotal));
     if (blackFireTotal > 0) lines.push('- 검은 불 x' + comma(blackFireTotal));
     if (darkPieceTotal > 0) lines.push('- 어둠 조각 x' + comma(darkPieceTotal));
     lines.push('', '분해하시겠습니까?', '/RPGenius 분해확인');
@@ -7599,24 +8818,29 @@ function runDisassemble(user) {
     let totalStone = 0;
     let totalBlackFire = 0;
     let totalDarkPiece = 0;
+    let totalTranscendFragment = 0;
     const dismantledLines = [];
     entries.forEach(e => {
-        const stone = getDisassembleStoneAmount(e.rewardRange, e.type);
+        const stone = e.equipment.rarity == '초월' ? randomInt(e.rewardRange.min, e.rewardRange.max) : getDisassembleStoneAmount(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
         const darkPiece = getDarkPieceDisassembleCount(e.equipment);
         totalStone += stone;
         totalBlackFire += blackFire;
         totalDarkPiece += darkPiece;
+        const transcendFragment = e.fragmentRange ? randomInt(e.fragmentRange.min, e.fragmentRange.max) : 0;
+        totalTranscendFragment += transcendFragment;
         user.inventory.equipment.splice(e.entry.index, 1);
         const lvl = Number(e.entry.equip.level || 0);
-        dismantledLines.push('- <' + e.equipment.rarity + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 x' + comma(darkPiece) : ''));
+        dismantledLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (transcendFragment > 0 ? ', 초월 조각 x' + comma(transcendFragment) : '') + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 x' + comma(darkPiece) : ''));
     });
     if (totalStone > 0) addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
     if (totalBlackFire > 0) addInventoryItem(user, blackFireItemId, totalBlackFire);
     if (totalDarkPiece > 0) addInventoryItem(user, darkPieceItemId, totalDarkPiece);
+    if (totalTranscendFragment > 0) addInventoryItem(user, getItemIdByName('초월 조각'), totalTranscendFragment);
     const lines = ['✅ 장비 ' + comma(entries.length) + '개를 분해했습니다.', '', '[ 분해 장비 ]'];
     pushLimitedEquipmentLines(lines, dismantledLines);
     lines.push('', '[ 획득 결과 ]', '- 강화석 x' + comma(totalStone));
+    if (totalTranscendFragment > 0) lines.push('- 초월 조각 x' + comma(totalTranscendFragment));
     if (totalBlackFire > 0) lines.push('- 검은 불 x' + comma(totalBlackFire));
     if (totalDarkPiece > 0) lines.push('- 어둠 조각 x' + comma(totalDarkPiece));
     return lines.join('\n');
@@ -7696,6 +8920,13 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
         fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
         allElementAtk: '모든 속성 강화', allElementRes: '모든 속성 저항',
+        attackBuffEfficiency: '공격력 증가 효과 효율', shieldEfficiency: '보호막 효율',
+        ultimateCooldownFlat: '궁극기 쿨타임 감소', burnDurationFlat: '화상 지속시간',
+        critLightBonus: '치명타 시 명속성 추가 피해', nonCritLightBonus: '비치명타 시 명속성 추가 피해',
+        manaAmplifierFinalAtk: 'MP 20% 초과 시 최종 공격력', equipmentEffectDurationFlat: '장비 효과 지속시간',
+        partyAllElementAtk: '파티원 모든 속성 강화', comboCritMul: '연격 추가 타격 치명타 피해',
+        comboDamage: '연격 추가 타격 피해', comboLastCrit: '최대 연격 마지막 타격 치명타 확정',
+        comboLastCritMul: '최대 연격 마지막 타격 치명타 피해',
         atkDefReduce: '공격 시 5초간 방어력 감소'
     };
     const plusStatNames = {
@@ -7711,6 +8942,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
         finalDamage: '최종 피해', extraDamage: '추가 피해',
+        ultimateDamage: '궁극기 스킬 피해', elementalExtraDamage: '속성 공격 추가 피해',
+        burnDamage: '화상 피해', lightFinalDamage: '명속성 공격 최종 피해',
         cooldown: '쿨타임 감소',
         dotDamage: '지속 피해', waldolandDmg: "'월도랜드' 필드 공격 시 추가 피해",
         butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
@@ -7718,7 +8951,8 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
     const rates = getEquipmentUpgradeRates(type, level);
     const cost = getEquipmentUpgradeCost(equipment, type, level);
     const isFreeUpgrade = options && options.free;
-    const stoneCount = getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID);
+    const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : EQUIPMENT_STONE_ITEM_ID;
+    const stoneCount = getInventoryItemCount(user, stoneItemId);
     const hasStone = stoneCount >= cost.stone;
     const hasGold = Number(user.gold || 0) >= cost.gold;
     const lines = ['⚒️ ' + getEquipmentDisplayName(equipment, selected.equip) + ' +' + level + ' -> +' + nextLevel];
@@ -7758,7 +8992,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         lines.push('', '✨ 유생의 강화기 효과가 적용됩니다.');
     } else {
         lines.push('', '[ 필요 재료 ]');
-        lines.push((hasStone ? '✅ ' : '❌ ') + '강화석 x' + comma(cost.stone));
+        lines.push((hasStone ? '✅ ' : '❌ ') + (cost.stoneName || '강화석') + ' x' + comma(cost.stone));
         lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
     }
     if (getInventoryItemCount(user, EQUIPMENT_BLESSED_PROTECT_ITEM_ID) > 0) lines.push('', '🛡️ 축복받은 장비 보호권 보유\n- 파괴/하락 시 유지');
@@ -7800,12 +9034,13 @@ function runEquipmentUpgrade(user) {
     }
     const cost = getEquipmentUpgradeCost(equipment, type, level);
     const isFreeUpgrade = !!pending.free;
-    if (!isFreeUpgrade && (getInventoryItemCount(user, EQUIPMENT_STONE_ITEM_ID) < cost.stone || Number(user.gold || 0) < cost.gold)) {
+    const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : EQUIPMENT_STONE_ITEM_ID;
+    if (!isFreeUpgrade && (getInventoryItemCount(user, stoneItemId) < cost.stone || Number(user.gold || 0) < cost.gold)) {
         user.pendingAction = null;
         return '❌ 재료가 부족합니다!';
     }
     if (!isFreeUpgrade) {
-        removeInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, cost.stone);
+        removeInventoryItem(user, stoneItemId, cost.stone);
         user.gold = Number(user.gold || 0) - cost.gold;
     }
     const rates = getEquipmentUpgradeRates(type, level);
@@ -8209,6 +9444,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '초월업그레이드' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
@@ -8219,7 +9455,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -8243,7 +9479,20 @@ async function useItem(user, itemName, countArg) {
     }
     if (item.type == '가챠') {
         const summary = {};
-        if (typeof item.pack == 'number') {
+        if (item.use == '초월상자') {
+            const rarity = '초월';
+            const candidates = [];
+            const equipments = getDataCache('Equipment', {});
+            ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].forEach(type => {
+                (equipments[type] || []).forEach((data, id) => { if (data && data.rarity == rarity) candidates.push({ type, id, data }); });
+            });
+            if (candidates.length == 0) { addInventoryItem(user, itemId, useCount); return '❌ 초월 장비 데이터가 없어 상자를 반환했습니다.'; }
+            for (let i = 0; i < useCount; i++) {
+                const picked = candidates[randomInt(0, candidates.length - 1)];
+                addEquipmentInventory(user, picked.type, picked.id);
+                addRewardSummary(summary, picked.type + ':' + picked.id, '<초월 1단계> ' + picked.data.name, 1);
+            }
+        } else if (typeof item.pack == 'number') {
             const packs = getDataCache('Pack', []);
             const pack = packs[item.pack];
             if (!Array.isArray(pack)) return '❌ 사용할 수 없는 가챠입니다.';
@@ -8422,6 +9671,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatPetInventory(user));
+            }
+        }
+        if (item.use == '초월업그레이드') {
+            const targets = getTranscendUpgradeKitTargets(user);
+            if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 업그레이드 가능한 초월 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '초월업그레이드', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('업그레이드할 초월 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatTranscendUpgradeKitTargets(targets));
             }
         }
         if (item.name == '프레스티지 증표') {
@@ -8690,6 +9952,7 @@ class RPGUser {
         this.field = null;
         this.card_slot = [];
         this.equipments = {
+            hat: null,
             armor: {
                 id: 0,
                 level: 0
@@ -8698,6 +9961,8 @@ class RPGUser {
                 id: 0,
                 level: 0
             },
+            pants: null,
+            shoes: null,
             accessory: {},
             support: null,
             pet: []
@@ -8752,9 +10017,10 @@ class RPGUser {
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
         if (!Array.isArray(this.inventory.pet)) this.inventory.pet = [];
-        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, armor: null, accessory: {}, support: null, pet: [] };
-        if (typeof this.equipments.weapon == 'undefined') this.equipments.weapon = null;
-        if (typeof this.equipments.armor == 'undefined') this.equipments.armor = null;
+        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+        EQUIPMENT_SINGLE_SLOTS.filter(type => type != 'support').forEach(type => {
+            if (typeof this.equipments[type] == 'undefined') this.equipments[type] = null;
+        });
         if (!this.equipments.accessory || typeof this.equipments.accessory != 'object') this.equipments.accessory = {};
         if (typeof this.equipments.support == 'undefined') this.equipments.support = null;
         if (!Array.isArray(this.equipments.pet)) this.equipments.pet = [];
@@ -9051,7 +10317,7 @@ function registerTradeOffer(user, args) {
         user.inventory.equipment.splice(idx, 1);
         side.offer.equipments.push(equipCopy);
         resetTradeConfirmations(session);
-        return '✅ <' + data.rarity + '> ' + getEquipmentDisplayName(data, selected.equip) + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
+        return '✅ <' + getEquipmentRarityLabel(data, equipCopy) + '> ' + getEquipmentDisplayName(data, selected.equip) + (equipCopy.level > 0 ? ' +' + equipCopy.level : '') + ' 장비를 등록했습니다.\n\n' + formatTradeStatus(session);
     }
     if (parsed.kind == '아이템') {
         const items = getDataCache('Item', []);
@@ -9075,7 +10341,7 @@ function buildTradeGainLines(receivedOffer) {
         const data = getEquipmentData(entry.type, entry.id);
         if (!data) return;
         const level = Number(entry.level || 0);
-        lines.push('- <' + data.rarity + '> ' + data.name + (level > 0 ? ' +' + level : ''));
+        lines.push('- <' + getEquipmentRarityLabel(data, entry) + '> ' + data.name + (level > 0 ? ' +' + level : ''));
     });
     (receivedOffer.cards || []).forEach(card => {
         const cost = getCardTicketCost(card);
@@ -10272,6 +11538,24 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '초월업그레이드') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 초월 업그레이드를 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] == '선택') {
+            const result = useTranscendUpgradeKit(user, args[1]);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        reply('❌ 업그레이드할 초월 장비를 선택해주세요.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '장비강화') {
         if (args[0] == '강화') {
             const result = runEquipmentUpgrade(user);
@@ -11082,6 +12366,10 @@ module.exports = {
     getEquipmentTradeBlockReason,
     markEquipmentTraded,
     getEquipmentTradeLimitInfo,
+    enterField,
+    leaveField,
+    useBasicAttackInField,
+    useSkillInField,
     isEquipmentBindingEnabled,
     formatSkillDescWithIncrease,
     formatCurrentSkillDesc,
@@ -11092,6 +12380,10 @@ module.exports = {
     purchaseShopItem,
     formatEquipmentUpgradePreview,
     runEquipmentUpgrade,
+    formatEquipmentSynthesisPreview,
+    runEquipmentSynthesis,
+    formatDisassemblePreview,
+    runDisassemble,
     getEquipmentUpgradeRates,
     getEquipmentUpgradeCost,
     getEquipmentMaxLevel,
@@ -11099,6 +12391,7 @@ module.exports = {
     getEquipmentPlusStatsAtLevel,
     getEquipmentByNumber,
     getEquipmentData,
+    getEquipmentRarityLabel,
     EQUIPMENT_STONE_ITEM_ID,
     EQUIPMENT_PROTECT_ITEM_ID,
     EQUIPMENT_ADVANCED_PROTECT_ITEM_ID,
@@ -11116,7 +12409,14 @@ module.exports = {
     getEquipmentPassives,
     getManaResonanceBonus,
     getEquipmentElementChain,
+    getTranscendEquipmentSnapshot,
+    useTranscendUpgradeKit,
     getElementDamageMultiplier,
+    calculateAttackHitResult,
+    getSkillCooldownRate,
+    prepareTranscendSkillEffects,
+    applyTranscendPreAttack,
+    executeSelfDestructInField,
     buildPotentialDex,
     ELEMENT_ATK_KEYS,
     ELEMENT_RES_KEYS,
