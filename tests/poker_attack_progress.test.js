@@ -51,13 +51,41 @@ const rpg = require('../rpgenius');
         skillCooldowns: {},
         attackCount: 5,
         nmmStacks: 0,
-        equipmentState: {}
+        equipmentState: {},
+        elite: { hp: 1000000000 }
     };
 
     const resultText = rpg.useSkillInField(user, '포커 못 하시네');
     assert.ok(!resultText.startsWith('❌'), resultText);
+    assert.strictEqual(resultText.split('피해를 입혔습니다!').length - 1, 9, '일반 엘리트전에서도 포커 못 하시네는 9타를 표시해야 한다.');
     assert.strictEqual(user.field.nmmStacks, 9, '포커 못 하시네 9타가 나인 멘스 모리스 중첩을 9회 쌓아야 한다.');
     assert.strictEqual(user.field.attackCount, 14, '포커 못 하시네 9타가 10번째 공격 슬롯 효과 카운터를 9회 진행해야 한다.');
+
+    const hellUser = new rpg.RPGUser('포커헬엘리트테스트', 'poker-hell-elite-test');
+    hellUser.level = 141;
+    hellUser.main_card = { id: 12, star: 6, type: '전직' };
+    hellUser.card_slot = [{ id: 13, star: 4, type: '일반' }];
+    hellUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+    hellUser.hp = 1000000000;
+    hellUser.mp = 1000000000;
+    hellUser.field = {
+        name: '부타게임[H]',
+        hell: true,
+        phase: 'elite',
+        enteredAt: Date.now(),
+        nextActionAt: 0,
+        skillCooldowns: {},
+        attackCount: 5,
+        nmmStacks: 0,
+        equipmentState: {},
+        elite: { hp: 1000000000 }
+    };
+
+    const hellResultText = rpg.useSkillInField(hellUser, '포커 못 하시네');
+    assert.ok(!hellResultText.startsWith('❌'), hellResultText);
+    assert.strictEqual(hellResultText.split('피해를 입혔습니다!').length - 1, 9, '부타게임[H] 엘리트전에서도 포커 못 하시네는 9타를 표시해야 한다.');
+    assert.strictEqual(hellUser.field.nmmStacks, 9, '부타게임[H] 엘리트전에서도 나인 멘스 모리스 중첩을 9회 쌓아야 한다.');
+    assert.strictEqual(hellUser.field.attackCount, 14, '부타게임[H] 엘리트전에서도 10번째 공격 슬롯 효과 카운터를 9회 진행해야 한다.');
 
     console.log('poker_attack_progress.test.js: OK');
 })().catch(error => {

@@ -5079,12 +5079,17 @@ function buildHellHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
     const hit = calculateAttackHitResult(rawDamage, elite.def, Number(stats.pnt || 0) + Number(extra.pntBonus || 0), stats, slotEffects, extra, elite);
+    applyNmmStackGain(user, extra, hit);
+    applyTenthAtkCounter(user, extra, hit);
     queueBlackShadow(user, extra, hit.finalDamage);
     recordFieldJudgmentDamage(user, extra, hit.finalDamage);
     const before = Number(user.field.elite && user.field.elite.hp || elite.hp);
     const after = Math.max(0, before - Number(hit.finalDamage || 0));
     user.field.elite.hp = after;
-    const lines = ['⚔️ ' + comma(hit.finalDamage) + (hit.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!', '- ' + elite.name + ' HP: ' + comma(after) + '/' + comma(elite.hp)];
+    const lines = hit.hitCount > 1
+        ? formatHitDetailLines(hit, '⚔️ ', '피해를 입혔습니다!')
+        : ['⚔️ ' + comma(hit.finalDamage) + (hit.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
+    lines.push('- ' + elite.name + ' HP: ' + comma(after) + '/' + comma(elite.hp));
     if (extra.notice) lines.push('- ' + extra.notice);
     if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (after <= 0) {
