@@ -5038,15 +5038,15 @@ function grantHellPillarRewards(user) {
     grantItem('헬 도전장', 1, 2, .75);
     grantItem('초월 조각', 1, 1, .03);
     const guaranteed = [
-        { rarity: '일반', chance: .45 }, { rarity: '레어', chance: .44 },
-        { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .01 }
+        { rarity: '일반', chance: .43 }, { rarity: '레어', chance: .44 },
+        { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .03 }
     ];
     lines.push('', '[ 확정 장비 ]');
     grantHellEquipment(user, pickHellRarity(guaranteed), lines);
     if (Math.random() < .20) {
         const extra = [
-            { rarity: '일반', chance: .449 }, { rarity: '레어', chance: .44 },
-            { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .01 },
+            { rarity: '일반', chance: .429 }, { rarity: '레어', chance: .44 },
+            { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .03 },
             { rarity: '신화', chance: .001 }
         ];
         lines.push('', '[ 추가 장비 ]');
