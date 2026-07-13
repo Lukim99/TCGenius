@@ -5014,7 +5014,7 @@ function grantHellEquipment(user, rarity, lines) {
     const equipments = getDataCache('Equipment', {});
     const pools = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].map(type => ({
         type,
-        entries: (equipments[type] || []).map((data, id) => ({ type, id, data })).filter(entry => entry.data && entry.data.rarity == rarity)
+        entries: (equipments[type] || []).map((data, id) => ({ type, id, data })).filter(entry => entry.data && entry.data.rarity == rarity && entry.data.isRaid !== true)
     })).filter(pool => pool.entries.length > 0);
     if (pools.length == 0) return;
     const pool = pools[randomInt(0, pools.length - 1)];
