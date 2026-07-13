@@ -3331,7 +3331,7 @@ function getHellDungeon() {
     const base = readJson(DUNGEON_PATH, []).find(dungeon => dungeon && dungeon.name == '부타게임') || {};
     const elite = Object.assign({}, base.elite || {});
     ['atk', 'pnt', 'def', 'hp'].forEach(key => { elite[key] = Math.round(Number(elite[key] || 0) * 1.05); });
-    elite.name = (elite.name || '부타게임 엘리트') + '[H]';
+    elite.name = '부타';
     elite.reward = [];
     return Object.assign({}, base, { name: '부타게임[H]', requireLevel: 141, maxLevel: 300, elite, isHell: true });
 }
@@ -4596,7 +4596,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
             user.field.phase = 'pillar';
             user.field.elite = null;
             user.field.pillarHp = 3;
-            lines.push('', '🏛️ 최대 체력 3의 기둥이 나타났습니다!', '- 모든 수동 공격은 정확히 1 피해만 줍니다.');
+            lines.push('', '🏛️ 기둥이 나타났습니다.');
         } else {
             applyEliteReward(user, dungeon, slotEffects, extra, lines);
             const state = getEliteState(dungeon.name);
@@ -5038,14 +5038,14 @@ function grantHellPillarRewards(user) {
     grantItem('초월 조각', 1, 1, .03);
     const guaranteed = [
         { rarity: '일반', chance: .43 }, { rarity: '레어', chance: .44 },
-        { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .03 }
+        { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .04 }
     ];
     lines.push('', '[ 확정 장비 ]');
     grantHellEquipment(user, pickHellRarity(guaranteed), lines);
     if (Math.random() < .20) {
         const extra = [
             { rarity: '일반', chance: .429 }, { rarity: '레어', chance: .44 },
-            { rarity: '유니크', chance: .10 }, { rarity: '초월', chance: .03 },
+            { rarity: '유니크', chance: .09 }, { rarity: '초월', chance: .04 },
             { rarity: '신화', chance: .001 }
         ];
         lines.push('', '[ 추가 장비 ]');
@@ -5063,7 +5063,7 @@ function grantHellPillarRewards(user) {
 // 부타게임[H] 기둥 페이즈 전용: 엘리트 전투는 buildEliteHuntResult(hell 분기)에서 처리
 function buildHellPillarResult(user, extra) {
     extra = extra || {};
-    if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 자동 공격과 소환수 공격은 기둥에 피해를 줄 수 없습니다.';
+    if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 기둥에 피해를 줄 수 없습니다.';
     user.field.pillarHp = Math.max(0, Number(user.field.pillarHp || 3) - 1);
     const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/3'];
     if (extra.notice) lines.push('- ' + extra.notice);
