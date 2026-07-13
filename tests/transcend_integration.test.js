@@ -111,6 +111,9 @@ const rpg = require('../rpgenius');
     mythicUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
     const mythicHat = mythicIds.find(entry => entry.type === 'hat');
     const mythicShoes = mythicIds.find(entry => entry.type === 'shoes');
+    const mythicAccessory = mythicIds.find(entry => entry.type === 'accessory');
+    const mythicSupport = mythicIds.find(entry => entry.type === 'support');
+    assert.ok(mythicHat && mythicShoes && mythicAccessory && mythicSupport);
     assert.ok(rpg.getEquipmentTradeBlockReason({ type: mythicHat.type, id: mythicHat.id }).includes('거래 불가'));
     mythicUser.inventory.equipment = [
         { type: mythicHat.type, id: mythicHat.id, level: 0 },
@@ -118,6 +121,12 @@ const rpg = require('../rpgenius');
     ];
     assert.ok(rpg.equipItemByNumber(mythicUser, 1).startsWith('✅'));
     assert.ok(rpg.equipItemByNumber(mythicUser, 1).includes('1개만 장착'));
+
+    const mythicCrossSlotUser = new rpg.RPGUser('신화전체부위제한테스트', 'mythic-cross-slot-test');
+    mythicCrossSlotUser.main_card = { id: 0, star: 6, type: '일반' };
+    mythicCrossSlotUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: { 0: { id: mythicAccessory.id, level: 0 } }, support: null, pet: [] };
+    mythicCrossSlotUser.inventory.equipment = [{ type: mythicSupport.type, id: mythicSupport.id, level: 0 }];
+    assert.ok(rpg.equipItemByNumber(mythicCrossSlotUser, 1).includes('1개만 장착'), '장신구에 신화를 장착한 상태에서는 신화 보조장비도 장착할 수 없어야 한다.');
 
     const disassembleUser = new rpg.RPGUser('초월분해테스트', 'disassemble-test');
     disassembleUser.inventory.equipment = [1, 2, 3].map(stage => ({ type: 'weapon', id: weaponId, transcendStage: stage }));

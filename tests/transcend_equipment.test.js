@@ -58,4 +58,12 @@ assert.deepStrictEqual(shop.map(entry => [items[entry.item_id].name, entry.count
     ['초월 업그레이드 키트', 1, 200]
 ]);
 
+const frameDir = path.join(__dirname, '..', 'DB', 'RPGenius', 'itemImage', '프레임');
+const transcendFrame = fs.readFileSync(path.join(frameDir, '[장비]초월.png'));
+const mythicFrame = fs.readFileSync(path.join(frameDir, '[장비]신화.png'));
+const pngDimensions = buffer => ({ width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) });
+assert.deepStrictEqual(pngDimensions(transcendFrame), { width: 800, height: 800 });
+assert.deepStrictEqual(pngDimensions(mythicFrame), { width: 800, height: 800 });
+assert.notDeepStrictEqual(mythicFrame, transcendFrame, '신화 프레임은 초월 프레임과 별도 이미지여야 한다.');
+
 console.log('transcend_equipment.test.js: OK');

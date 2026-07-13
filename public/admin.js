@@ -102,7 +102,7 @@ async function pickEquipment(slot, onPick) {
     const eq = await getEquipment();
     const list = (eq[slot] || []).map(e => Object.assign({}, e, { _search: e.name + ' ' + e.rarity + ' ' + e.id }));
     const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
-    const rarityClass = r => ({ '일반': '', '고급': 'g', '희귀': 'b', '영웅': 'p', '전설': 'y', '신화': 'r' }[r] || '');
+    const rarityClass = r => ({ '일반': '', '고급': 'g', '희귀': 'b', '영웅': 'p', '전설': 'y', '초월': 'r', '신화': 'm' }[r] || '');
     openModal(labels[slot] + ' 선택', list, e => el('div', null,
         el('div', null, el('span', { class: 'tag ' + rarityClass(e.rarity) }, e.rarity), el('span', { class: 'tag' }, '#' + e.id), e.name),
     ), onPick);
@@ -1371,7 +1371,8 @@ function equipmentRequireEditor(getter, setter) {
 let equipData = { weapon: [], armor: [], accessory: [], support: [] };
 let equipCurrentSlot = 'weapon';
 let equipFilterText = '';
-const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
+const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '초월', '신화', '고유'];
+const PET_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유'];
 const EQUIP_KNOWN_FIELDS = new Set(['name', 'desc', 'rarity', 'stat', 'plusStat', 'statRange', 'plusStatRange', 'upgrade', 'evolution', 'requireLevel', 'underLevel', 'exactlyStar', 'require', 'requireMainCard', 'dynamicBonus', 'no_trade', 'category', 'isRaid', 'passive_id']);
 let equipPassivesList = [];
 
@@ -1387,7 +1388,7 @@ function renderEquipTypes() {
 
 function equipCard(eq, index) {
     const card = el('div', { class: 'card' });
-    const rarityClass = ({ '일반': '', '레어': 'b', '에픽': 'p', '유니크': 'y', '레전더리': 'y', '신화': 'r', '고유': 'g' })[eq.rarity] || '';
+    const rarityClass = ({ '일반': '', '레어': 'b', '에픽': 'p', '유니크': 'y', '레전더리': 'y', '초월': 'r', '신화': 'm', '고유': 'g' })[eq.rarity] || '';
     const head = el('div', { class: 'card-head' },
         el('div', { class: 'card-title' },
             el('span', { class: 'tag b' }, '#' + index),
@@ -1636,8 +1637,8 @@ function petCard(pet, index) {
     row1.appendChild(el('div', null, el('label', null, '이름'),
         el('input', { value: pet.name || '', placeholder: '펫 이름', oninput: e => pet.name = e.target.value })));
     const raritySel = el('select');
-    EQUIP_RARITIES.forEach(r => raritySel.appendChild(el('option', { value: r }, r)));
-    if (pet.rarity && !EQUIP_RARITIES.includes(pet.rarity)) raritySel.appendChild(el('option', { value: pet.rarity }, pet.rarity + ' (사용자 지정)'));
+    PET_RARITIES.forEach(r => raritySel.appendChild(el('option', { value: r }, r)));
+    if (pet.rarity && !PET_RARITIES.includes(pet.rarity)) raritySel.appendChild(el('option', { value: pet.rarity }, pet.rarity + ' (사용자 지정)'));
     raritySel.value = pet.rarity || '일반';
     raritySel.onchange = () => pet.rarity = raritySel.value;
     row1.appendChild(el('div', null, el('label', null, '등급'), raritySel));

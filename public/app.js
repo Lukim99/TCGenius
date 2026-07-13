@@ -300,10 +300,19 @@ function textLines(text) {
     return String(text || '').split('\n').filter(line => line && line.indexOf('\u200e') === -1);
 }
 
-const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#22d3ee', '초월 1단계': '#22d3ee', '초월 2단계': '#06b6d4', '초월 3단계': '#0891b2', '신화': '#ef4444', '고유': '#ec4899' };
+const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#ef4444', '초월 1단계': '#ef4444', '초월 2단계': '#ef4444', '초월 3단계': '#ef4444', '신화': '#a78bfa', '고유': '#ec4899' };
 const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧' };
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '재료'];
 const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
+
+function rarityTag(rarity) {
+    return el('span', { class: 'tag rarity' + (rarity === '신화' ? ' rarity-mythic' : '') }, rarity);
+}
+
+function applyRarityCardClass(node, rarity) {
+    if (rarity === '신화') node.classList.add('rarity-mythic-card');
+    return node;
+}
 
 function equipmentThumb(eq) {
     const wrap = el('div', { class: 'equip-thumb' });
@@ -329,7 +338,7 @@ function petCard(pet) {
         el('div', null,
             el('div', { class: 'equip-name' }, pet.name),
             el('div', { class: 'equip-meta' },
-                el('span', { class: 'tag rarity' }, pet.rarity),
+                rarityTag(pet.rarity),
                 pet.equipped ? el('span', { class: 'tag on' }, '장착') : null,
                 expText ? el('span', { class: 'tag' }, expText) : null
             )
@@ -337,6 +346,7 @@ function petCard(pet) {
         pet.level > 0 ? el('span', { class: 'level' }, '+' + pet.level) : el('span')
     );
     card.style.setProperty('--rar', color);
+    applyRarityCardClass(card, pet.rarity);
     return card;
 }
 
@@ -371,13 +381,14 @@ function equipmentCard(eq) {
         el('div', null,
             el('div', { class: 'equip-name' }, eq.name),
             el('div', { class: 'equip-meta' },
-                el('span', { class: 'tag rarity' }, eq.rarity),
+                rarityTag(eq.rarity),
                 eq.equipped ? el('span', { class: 'tag on' }, '장착') : null
             )
         ),
         eq.level > 0 ? el('span', { class: 'level' }, '+' + eq.level) : el('span')
     );
     card.style.setProperty('--rar', color);
+    applyRarityCardClass(card, eq.rarity);
     return card;
 }
 
@@ -393,11 +404,12 @@ function gearSlotNode(typeKey, label, eq) {
         pos, equipmentThumb(eq),
         el('div', { class: 'gear-slot-info' },
             el('div', { class: 'gear-slot-name' }, eq.name),
-            el('div', { class: 'equip-meta' }, el('span', { class: 'tag rarity' }, eq.rarity))
+            el('div', { class: 'equip-meta' }, rarityTag(eq.rarity))
         ),
         eq.level > 0 ? el('span', { class: 'gear-slot-lv' }, '+' + eq.level) : el('span', { class: 'gear-slot-lv' })
     );
     node.style.setProperty('--rar', RARITY_COLORS[eq.rarity] || '#334155');
+    applyRarityCardClass(node, eq.rarity);
     return node;
 }
 
@@ -4318,13 +4330,14 @@ function dexCard(entry) {
     const color = RARITY_COLORS[entry.rarity] || '#334155';
     const card = el('div', { class: 'dex-card' });
     card.style.setProperty('--rar', color);
+    applyRarityCardClass(card, entry.rarity);
 
     const head = el('div', { class: 'dex-head' });
     head.appendChild(dexThumb(entry.iconUrl, entry.frameUrl, SLOT_ICONS[entry.type] || '⚙️'));
     head.appendChild(el('div', null,
         el('div', { class: 'dex-name' }, entry.name),
         el('div', { class: 'dex-meta' },
-            el('span', { class: 'tag rarity' }, entry.rarity),
+            rarityTag(entry.rarity),
             el('span', { class: 'tag' }, entry.typeLabel),
             entry.noTrade ? el('span', { class: 'tag' }, '거래 불가') : null
         )

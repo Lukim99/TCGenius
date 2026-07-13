@@ -78,10 +78,13 @@ textarea{font-family:ui-monospace,'Cascadia Code',monospace;min-height:340px;lin
 .empty{color:var(--mut);text-align:center;padding:30px;font-size:13px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--bd);color:var(--mut);margin-right:5px}
 .tag.r{color:#fca5a5;background:#3f1212}
+.tag.m{color:#fff;background:linear-gradient(120deg,#38bdf8,#8b5cf6,#c084fc);background-size:200% 200%;box-shadow:0 0 9px rgba(125,211,252,.45);animation:mythicTagGlow 3s ease-in-out infinite}
 .tag.g{color:#86efac;background:#14532d}
 .tag.b{color:#93c5fd;background:#1e3a8a}
 .tag.y{color:#fde68a;background:#713f12}
 .tag.p{color:#d8b4fe;background:#581c87}
+@keyframes mythicTagGlow{0%,100%{background-position:0 50%;box-shadow:0 0 7px rgba(125,211,252,.35)}50%{background-position:100% 50%;box-shadow:0 0 13px rgba(192,132,252,.65)}}
+@media(prefers-reduced-motion:reduce){.tag.m{animation:none}}
 .subtabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
 .subtab{background:transparent;border:1px solid var(--bd2);color:var(--mut);border-radius:20px;padding:5px 14px;cursor:pointer;font-size:12.5px;font-family:inherit}
 .subtab:hover{color:var(--fg)}
