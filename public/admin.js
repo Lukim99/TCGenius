@@ -51,6 +51,9 @@ $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST'
 
 // ---------- 룩업 캐시 ----------
 const LOOKUP = { items: null, equipment: null, cards: null, fashion: null, pet: null, equipmentPassives: null };
+const EQUIPMENT_SLOT_DEFS = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
+const EQUIPMENT_SLOT_KEYS = EQUIPMENT_SLOT_DEFS.map(([key]) => key);
+const EQUIPMENT_SLOT_LABELS = Object.fromEntries(EQUIPMENT_SLOT_DEFS);
 async function getItems() { if (!LOOKUP.items) LOOKUP.items = await api('/api/lookup/items'); return LOOKUP.items; }
 async function getEquipment() { if (!LOOKUP.equipment) LOOKUP.equipment = await api('/api/lookup/equipment'); return LOOKUP.equipment; }
 async function fetchEquipmentPassives() { if (!LOOKUP.equipmentPassives) LOOKUP.equipmentPassives = await api('/api/lookup/equipment-passives'); return LOOKUP.equipmentPassives || []; }
@@ -101,9 +104,8 @@ async function pickItem(onPick, filterType) {
 async function pickEquipment(slot, onPick) {
     const eq = await getEquipment();
     const list = (eq[slot] || []).map(e => Object.assign({}, e, { _search: e.name + ' ' + e.rarity + ' ' + e.id }));
-    const labels = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
     const rarityClass = r => ({ '일반': '', '고급': 'g', '희귀': 'b', '영웅': 'p', '전설': 'y', '초월': 'r', '신화': 'm' }[r] || '');
-    openModal(labels[slot] + ' 선택', list, e => el('div', null,
+    openModal(EQUIPMENT_SLOT_LABELS[slot] + ' 선택', list, e => el('div', null,
         el('div', null, el('span', { class: 'tag ' + rarityClass(e.rarity) }, e.rarity), el('span', { class: 'tag' }, '#' + e.id), e.name),
     ), onPick);
 }
@@ -1366,9 +1368,9 @@ function equipmentRequireEditor(getter, setter) {
 }
 
 // ============================================================================
-// EQUIPMENT 에디터  ( data: { weapon: [...], armor: [...], accessory: [...] } )
+// EQUIPMENT 에디터
 // ============================================================================
-let equipData = { weapon: [], armor: [], accessory: [], support: [] };
+let equipData = Object.fromEntries(EQUIPMENT_SLOT_KEYS.map(key => [key, []]));
 let equipCurrentSlot = 'weapon';
 let equipFilterText = '';
 const EQUIP_RARITIES = ['일반', '레어', '에픽', '유니크', '레전더리', '초월', '신화', '고유'];
@@ -1378,7 +1380,7 @@ let equipPassivesList = [];
 
 function renderEquipTypes() {
     const wrap = $('#equipTypes'); wrap.innerHTML = '';
-    [['weapon', '무기'], ['armor', '갑옷'], ['accessory', '장신구'], ['support', '보조']].forEach(([k, label]) => {
+    EQUIPMENT_SLOT_DEFS.forEach(([k, label]) => {
         const arr = (equipData && equipData[k]) || [];
         const b = el('button', { class: 'subtab' + (equipCurrentSlot === k ? ' active' : ''), type: 'button',
             onclick: () => { equipCurrentSlot = k; renderEquipTypes(); renderEquip(); } }, label + ' (' + arr.length + ')');
@@ -1530,8 +1532,8 @@ function equipCard(eq, index) {
 
 function renderEquip() {
     const list = $('#equipList'); list.innerHTML = '';
-    if (!equipData || typeof equipData !== 'object') equipData = { weapon: [], armor: [], accessory: [], support: [] };
-    ['weapon', 'armor', 'accessory', 'support'].forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
+    if (!equipData || typeof equipData !== 'object') equipData = {};
+    EQUIPMENT_SLOT_KEYS.forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
     const arr = equipData[equipCurrentSlot] || [];
     const q = (equipFilterText || '').trim().toLowerCase();
     let shown = 0;
@@ -1556,10 +1558,11 @@ $('#equipReload').onclick = async () => {
     try {
         const [data, passives] = await Promise.all([loadKey('Equipment'), fetchEquipmentPassives()]);
         const eq = data || {};
-        equipData = { weapon: Array.isArray(eq.weapon) ? eq.weapon : [], armor: Array.isArray(eq.armor) ? eq.armor : [], accessory: Array.isArray(eq.accessory) ? eq.accessory : [], support: Array.isArray(eq.support) ? eq.support : [] };
+        equipData = Object.assign({}, eq);
+        EQUIPMENT_SLOT_KEYS.forEach(key => { equipData[key] = Array.isArray(eq[key]) ? eq[key] : []; });
         equipPassivesList = passives;
         renderEquipTypes(); renderEquip();
-        $('#equipStatus').textContent = '로드 완료 (무기 ' + equipData.weapon.length + ' / 갑옷 ' + equipData.armor.length + ' / 장신구 ' + equipData.accessory.length + ' / 보조 ' + equipData.support.length + ')';
+        $('#equipStatus').textContent = '로드 완료 (' + EQUIPMENT_SLOT_DEFS.map(([key, label]) => label + ' ' + equipData[key].length).join(' / ') + ')';
         invalidateLookupCache(['equipment']);
     } catch (e) { toast(e.message, false); }
 };

@@ -2531,6 +2531,11 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     const key = String(req.params.key);
     if (!rpgenius.RPGENIUS_DATA_KEYS.includes(key)) return res.status(400).json({ error: '허용되지 않은 키입니다.' });
     if (!req.body || typeof req.body.data == 'undefined') return res.status(400).json({ error: 'data 필드가 비어있습니다.' });
+    if (key == 'Equipment') {
+        const requiredSlots = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+        const missingSlots = requiredSlots.filter(slot => !Array.isArray(req.body.data && req.body.data[slot]));
+        if (missingSlots.length > 0) return res.status(400).json({ error: 'Equipment 필수 부위가 누락되었습니다: ' + missingSlots.join(', ') });
+    }
     try {
         await rpgenius.saveRpgeniusDataEntry(key, req.body.data);
         res.json({ ok: true, key });
