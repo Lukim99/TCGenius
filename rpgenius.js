@@ -8522,7 +8522,7 @@ function getAccessoryChoiceCandidates(rarity) {
     const equipments = getDataCache('Equipment', {});
     return (equipments.accessory || [])
         .map((equipment, id) => ({ id, equipment }))
-        .filter(entry => entry.equipment && entry.equipment.rarity == rarity && entry.equipment.name != '100억');
+        .filter(entry => entry.equipment && entry.equipment.rarity == rarity && entry.equipment.name != '초보자 경험치 메달');
 }
 
 function formatAccessoryChoiceList(candidates) {
