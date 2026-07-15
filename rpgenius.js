@@ -3738,6 +3738,32 @@ function applyRecoveryEfficiency(amount, user, stats) {
     return Math.round(Number(amount || 0) * (1 + Number(currentStats.recoveryEfficiency || 0)));
 }
 
+function autoUnequipOverLevelEquipment(user) {
+    if (!user || !user.equipments) return;
+    const userLevel = Number(user.level || 1);
+    let changed = false;
+    if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
+    if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+
+    const unequip = (type, equip, remove) => {
+        if (!equip || typeof equip.id == 'undefined') return;
+        const data = getEquipmentData(type, equip.id);
+        if (!data || typeof data.underLevel == 'undefined' || !(userLevel > Number(data.underLevel))) return;
+        user.inventory.equipment.push(cloneEquipmentInstance(equip, type));
+        remove();
+        changed = true;
+    };
+
+    EQUIPMENT_SINGLE_SLOTS.forEach(type => {
+        unequip(type, user.equipments[type], () => { user.equipments[type] = null; });
+    });
+    const accessories = user.equipments.accessory || {};
+    Object.keys(accessories).forEach(slotKey => {
+        unequip('accessory', accessories[slotKey], () => { delete accessories[slotKey]; });
+    });
+    if (changed) clampHpToMaxStat(user);
+}
+
 function addExperience(user, amount) {
     user.level = Number(user.level || 1);
     user.exp = Number(user.exp || 0) + Number(amount || 0);
@@ -3750,7 +3776,10 @@ function addExperience(user, amount) {
         need = getMaxExpForLevel(user.level);
     }
     if (levelUps > 0) user.statPoint = Number(user.statPoint || 0) + levelUps;
-    if (levelUps > 0) checkAndUnlockTitles(user);
+    if (levelUps > 0) {
+        autoUnequipOverLevelEquipment(user);
+        checkAndUnlockTitles(user);
+    }
     return levelUps;
 }
 
@@ -10045,6 +10074,7 @@ class RPGUser {
         if (!Array.isArray(this.claimedLevelRewards)) this.claimedLevelRewards = [];
         if (!this.maxCardLimit) this.maxCardLimit = 52;
         if (!this.maxAccessory || Number(this.maxAccessory) < 3) this.maxAccessory = 3;
+        autoUnequipOverLevelEquipment(this);
         return this;
     }
 
@@ -12272,6 +12302,7 @@ module.exports = {
     mailGoldFee,
     getAllRPGUsers,
     getMaxExpForLevel,
+    addExperience,
     onChat,
     initRpgeniusData,
     resumeAllFishing,
