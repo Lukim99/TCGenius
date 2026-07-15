@@ -1813,79 +1813,95 @@ const HOTDEAL_SECTORS = [
         { id: 3,   count: 1,     goods: 'garnet', amounts: [280,320,380], weight: 30  },
         { id: 4,   count: 1,     goods: 'gold',   amount: 9500000,  weight: 0.5 },
         { id: 4,   count: 1,     goods: 'gold',   amount: 12000000, weight: 1.5 },
-        { id: 4,   count: 1,     goods: 'garnet', amounts: [850,1000,1150], weight: 20 },
+        { id: 4,   count: 1,     goods: 'garnet', amounts: [850,1000,1150], weight: 10 },
         { id: 5,   count: 1,     goods: 'gold',   amount: 100000000,weight: 0.5 },
         { id: 5,   count: 1,     goods: 'garnet', amount: 3500,     weight: 2   },
         { id: 0,   count: 5000,  goods: 'gold',   amount: 300000,   weight: 2   },
-        { id: 0,   count: 5000,  goods: 'garnet', amount: 60,      weight: 19  },
+        { id: 0,   count: 5000,  goods: 'garnet', amount: 40,       weight: 19  },
         { id: 0,   count: 10000, goods: 'gold',   amount: 600000,   weight: 2   },
-        { id: 0,   count: 10000, goods: 'garnet', amount: 120,      weight: 19  },
+        { id: 0,   count: 10000, goods: 'garnet', amount: 60,       weight: 19  },
+        { itemName: '상급 강화석', count: 10, goods: 'gold',   amount: 600000, weight: 1 },
+        { itemName: '상급 강화석', count: 10, goods: 'garnet', amount: 60,     weight: 9 },
     ]},
-    { name: '쥬얼 섹터', items: [
-        { id: 124, count: 5,  goods: 'garnet', amount: 30,  weight: 24  },
-        { id: 124, count: 10, goods: 'garnet', amount: 58,  weight: 15  },
-        { id: 124, count: 20, goods: 'garnet', amount: 110, weight: 10  },
-        { id: 124, count: 30, goods: 'garnet', amount: 160, weight: 5   },
-        { id: 124, count: 50, goods: 'garnet', amount: 260, weight: 3   },
+    { name: '쥬얼/헬 섹터', items: [
+        { id: 124, count: 5,  goods: 'garnet', amount: 10,  weight: 18  },
+        { id: 124, count: 10, goods: 'garnet', amount: 20,  weight: 12  },
+        { id: 124, count: 20, goods: 'garnet', amount: 35,  weight: 5   },
+        { id: 124, count: 30, goods: 'garnet', amount: 50,  weight: 3   },
+        { id: 124, count: 50, goods: 'garnet', amount: 80,  weight: 1   },
         { id: 133, count: 3,  goods: 'gold',   amount: 200000, weight: 1.5 },
-        { id: 133, count: 5,  goods: 'garnet', amount: 50,  weight: 24  },
-        { id: 133, count: 10, goods: 'garnet', amount: 90, weight: 10  },
-        { id: 133, count: 20, goods: 'garnet', amount: 175, weight: 5   },
-        { id: 133, count: 30, goods: 'garnet', amount: 260, weight: 2.5 },
+        { id: 133, count: 5,  goods: 'garnet', amount: 25,  weight: 16  },
+        { id: 133, count: 10, goods: 'garnet', amount: 50,  weight: 6   },
+        { id: 133, count: 20, goods: 'garnet', amount: 90,  weight: 3   },
+        { id: 133, count: 30, goods: 'garnet', amount: 125, weight: 1.5 },
+        { itemName: '헬 초대장', count: 10,  goods: 'gold',   amount: 500000,  weight: 6 },
+        { itemName: '헬 초대장', count: 50,  goods: 'gold',   amount: 2300000, weight: 3 },
+        { itemName: '헬 초대장', count: 100, goods: 'gold',   amount: 4500000, weight: 1 },
+        { itemName: '헬 초대장', count: 10,  goods: 'garnet', amount: 25,      weight: 12 },
+        { itemName: '헬 초대장', count: 50,  goods: 'garnet', amount: 120,     weight: 7 },
+        { itemName: '헬 초대장', count: 100, goods: 'garnet', amount: 230,     weight: 4 },
     ]},
     { name: '보호 카드 섹터', items: [
         { id: 107, count: 1, goods: 'gold',   amount: 100000,  weight: 0.3    },
         { id: 107, count: 1, goods: 'gold',   amount: 300000,  weight: 3      },
-        { id: 107, count: 1, goods: 'garnet', amount: 60,      weight: 10     },
-        { id: 107, count: 1, goods: 'garnet', amount: 100,     weight: 40     },
+        { id: 107, count: 1, goods: 'garnet', amount: 30,      weight: 15     },
+        { id: 107, count: 1, goods: 'garnet', amount: 60,      weight: 30     },
         { id: 108, count: 1, goods: 'gold',   amount: 250000,  weight: 0.1    },
         { id: 108, count: 1, goods: 'gold',   amount: 450000,  weight: 2      },
-        { id: 108, count: 1, goods: 'garnet', amount: 125,     weight: 5      },
-        { id: 108, count: 1, goods: 'garnet', amount: 180,     weight: 20     },
+        { id: 108, count: 1, goods: 'garnet', amount: 65,      weight: 10     },
+        { id: 108, count: 1, goods: 'garnet', amount: 100,     weight: 20     },
         { id: 109, count: 1, goods: 'gold',   amount: 1000000, weight: 0.076  },
         { id: 109, count: 1, goods: 'gold',   amount: 1500000, weight: 0.5    },
-        { id: 109, count: 1, goods: 'garnet', amount: 360,     weight: 2      },
-        { id: 109, count: 1, goods: 'garnet', amount: 480,     weight: 12     },
+        { id: 109, count: 1, goods: 'garnet', amount: 250,     weight: 2      },
+        { id: 109, count: 1, goods: 'garnet', amount: 320,     weight: 12     },
         { id: 110, count: 1, goods: 'gold',   amount: 10000000,weight: 0.001  },
         { id: 110, count: 1, goods: 'gold',   amount: 20000000,weight: 0.02   },
-        { id: 110, count: 1, goods: 'garnet', amount: 860,     weight: 0.8    },
-        { id: 110, count: 1, goods: 'garnet', amount: 1020,    weight: 3      },
+        { id: 110, count: 1, goods: 'garnet', amount: 640,     weight: 0.8    },
+        { id: 110, count: 1, goods: 'garnet', amount: 820,     weight: 3      },
         { id: 111, count: 1, goods: 'gold',   amount: 55000000,weight: 0.0005 },
         { id: 111, count: 1, goods: 'gold',   amount: 75000000,weight: 0.0025 },
-        { id: 111, count: 1, goods: 'garnet', amount: 1800,    weight: 0.2    },
-        { id: 111, count: 1, goods: 'garnet', amount: 2200,    weight: 1      },
+        { id: 111, count: 1, goods: 'garnet', amount: 1650,    weight: 0.2    },
+        { id: 111, count: 1, goods: 'garnet', amount: 1950,    weight: 1      },
     ]},
     { name: '카드팩 섹터', items: [
         { id: 21, count: 1, goods: 'gold',   amount: 200000,  weight: 6    },
-        { id: 21, count: 1, goods: 'garnet', amount: 80,     weight: 10   },
-        { id: 21, count: 1, goods: 'garnet', amount: 140,     weight: 30   },
+        { id: 21, count: 1, goods: 'garnet', amount: 50,      weight: 10   },
+        { id: 21, count: 1, goods: 'garnet', amount: 80,      weight: 30   },
         { id: 22, count: 1, goods: 'gold',   amount: 500000,  weight: 2    },
-        { id: 22, count: 1, goods: 'garnet', amount: 180,     weight: 10   },
-        { id: 22, count: 1, goods: 'garnet', amount: 220,     weight: 30   },
+        { id: 22, count: 1, goods: 'garnet', amount: 80,      weight: 10   },
+        { id: 22, count: 1, goods: 'garnet', amount: 120,     weight: 30   },
         { id: 23, count: 1, goods: 'gold',   amount: 2200000, weight: 1    },
-        { id: 23, count: 1, goods: 'garnet', amount: 400,     weight: 2    },
-        { id: 23, count: 1, goods: 'garnet', amount: 550,     weight: 8    },
+        { id: 23, count: 1, goods: 'garnet', amount: 280,     weight: 2    },
+        { id: 23, count: 1, goods: 'garnet', amount: 320,     weight: 8    },
         { id: 24, count: 1, goods: 'gold',   amount: 6000000, weight: 0.05 },
-        { id: 24, count: 1, goods: 'garnet', amount: 800,     weight: 0.35 },
-        { id: 24, count: 1, goods: 'garnet', amount: 1100,    weight: 0.5  },
+        { id: 24, count: 1, goods: 'garnet', amount: 650,     weight: 0.35 },
+        { id: 24, count: 1, goods: 'garnet', amount: 880,     weight: 0.5  },
         { id: 25, count: 1, goods: 'gold',   amount: 30000000,weight: 0.02 },
-        { id: 25, count: 1, goods: 'garnet', amount: 2600,    weight: 0.08 },
+        { id: 25, count: 1, goods: 'garnet', amount: 2400,    weight: 0.08 },
     ]},
     { name: '캐시템 섹터', items: [
-        { id: 144, count: 20, goods: 'gold',   amount: 100000,  weight: 30   },
-        { id: 144, count: 20, goods: 'garnet', amount: 10,      weight: 30   },
-        { id: 144, count: 100, goods: 'gold',   amount: 450000,  weight: 10   },
-        { id: 144, count: 100, goods: 'garnet', amount: 45,      weight: 10   },
-        { id: 84,  count: 20, goods: 'gold',   amount: 100000,  weight: 30   },
-        { id: 84,  count: 20, goods: 'garnet', amount: 10,      weight: 30   },
-        { id: 84,  count: 100, goods: 'gold',   amount: 450000,  weight: 10   },
-        { id: 84,  count: 100, goods: 'garnet', amount: 45,      weight: 10   },
-        { id: 17,  count: 10, goods: 'gold',   amount: 1500000, weight: 1.5  },
+        { id: 144, count: 10, weight: 29, variants: [
+            { goods: 'gold', amount: 100000 }, { goods: 'garnet', amount: 10 },
+        ]},
+        { id: 144, count: 50, weight: 10, variants: [
+            { goods: 'gold', amount: 450000 }, { goods: 'garnet', amount: 45 },
+        ]},
+        { id: 84, count: 10, weight: 29, variants: [
+            { goods: 'gold', amount: 100000 }, { goods: 'garnet', amount: 10 },
+        ]},
+        { id: 84, count: 50, weight: 10, variants: [
+            { goods: 'gold', amount: 450000 }, { goods: 'garnet', amount: 45 },
+        ]},
+        { id: 17,  count: 10, goods: 'gold',   amount: 1500000, weight: 1.4  },
         { id: 17,  count: 10, goods: 'garnet', amount: 90,      weight: 10   },
         { id: 17,  count: 50, goods: 'gold',   amount: 7000000, weight: 0.25 },
-        { id: 17,  count: 50, goods: 'garnet', amount: 540,     weight: 4    },
-        { id: 112, count: 10, goods: 'gold',   amount: 5500000, weight: 0.25 },
-        { id: 112, count: 10, goods: 'garnet', amount: 750,     weight: 4    },
+        { id: 17,  count: 50, goods: 'garnet', amount: 540,     weight: 3    },
+        { id: 112, count: 10, goods: 'gold',   amount: 5500000, weight: 0.125 },
+        { id: 112, count: 10, goods: 'garnet', amount: 300,     weight: 3    },
+        { id: 36,  count: 5,  goods: 'gold',   amount: 2500000, weight: 0.125 },
+        { id: 36,  count: 5,  goods: 'garnet', amount: 250,     weight: 2    },
+        { id: 177, count: 3,  goods: 'gold',   amount: 3500000, weight: 0.1  },
+        { id: 177, count: 3,  goods: 'garnet', amount: 280,     weight: 2    },
     ]},
 ];
 
@@ -1944,16 +1960,35 @@ function getHotDealSectorIndex(periodKey) {
     return hotdealPeriodIndex(periodKey) % HOTDEAL_SECTORS.length;
 }
 
-// 섹터의 선택 가능한 모든 항목을 amounts 배열까지 펼쳐서 반환 (편집 드롭다운용)
+function hotdealItemId(item) {
+    if (Number.isInteger(item.id) && item.id >= 0) return item.id;
+    const itemName = String(item.itemName || '');
+    const items = rpgenius.getDataCache('Item', []);
+    const id = items.findIndex(data => data && data.name === itemName);
+    if (id < 0) throw new Error('핫딜 아이템 데이터를 찾을 수 없습니다: ' + itemName);
+    return id;
+}
+
+// 병합된 확률 셀은 그룹을 먼저 뽑고, 아래 가격 변형 중 하나를 균등 선택한다.
+function hotdealItemVariants(item) {
+    let variants;
+    if (Array.isArray(item.variants)) variants = item.variants;
+    else if (Array.isArray(item.amounts)) variants = item.amounts.map(amount => ({ goods: item.goods, amount }));
+    else variants = [{ goods: item.goods, amount: item.amount }];
+    const id = hotdealItemId(item);
+    return variants.map(variant => ({
+        id,
+        count: item.count,
+        goods: variant.goods,
+        amount: variant.amount,
+    }));
+}
+
+// 섹터의 선택 가능한 모든 가격 변형을 펼쳐서 반환 (편집 드롭다운용)
 function hotdealSectorOptions(sectorIdx) {
     const sector = HOTDEAL_SECTORS[sectorIdx];
     if (!sector) return [];
-    const out = [];
-    sector.items.forEach(item => {
-        const amounts = item.amounts ? item.amounts : [item.amount];
-        amounts.forEach(amount => out.push({ id: item.id, count: item.count, goods: item.goods, amount }));
-    });
-    return out;
+    return sector.items.flatMap(hotdealItemVariants);
 }
 
 function getHotDealOverride(periodKey) {
@@ -1966,16 +2001,23 @@ function generateHotDeal(periodKey) {
     const sector = HOTDEAL_SECTORS[sectorIdx];
     const override = getHotDealOverride(periodKey);
     if (override && Array.isArray(override.picks) && override.picks.length === 2) {
-        return { sectorName: sector.name, picks: override.picks.map(p => ({ ...p })), edited: true };
+        const options = hotdealSectorOptions(sectorIdx);
+        const picks = override.picks.map(p => options.find(option =>
+            option.id === Number(p.id)
+            && option.count === Number(p.count)
+            && option.goods === String(p.goods)
+            && option.amount === Number(p.amount)
+        ));
+        if (picks.every(Boolean)) return { sectorName: sector.name, picks: picks.map(p => ({ ...p })), edited: true };
     }
     const rng = hotdealRng(hotdealPeriodSeed(periodKey));
     const firstIdx = sector.items.indexOf(hotdealWeightedPick(sector.items, rng));
     const pool2 = sector.items.filter((_, i) => i !== firstIdx);
     const second = hotdealWeightedPick(pool2, rng);
-    const picks = [sector.items[firstIdx], second].map(item => ({
-        ...item,
-        amount: item.amounts ? item.amounts[Math.floor(rng() * item.amounts.length)] : item.amount,
-    }));
+    const picks = [sector.items[firstIdx], second].map(item => {
+        const variants = hotdealItemVariants(item);
+        return variants[Math.floor(rng() * variants.length)];
+    });
     return { sectorName: sector.name, picks, edited: false };
 }
 
