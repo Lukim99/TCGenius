@@ -38,6 +38,65 @@ function collectDcFormFields($, $form) {
     return fields;
 }
 
+function escapeDcHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function normalizeDcExternalUrl(value) {
+    const url = new URL(String(value || '').trim());
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+        throw new Error('허용되지 않은 외부 링크입니다.');
+    }
+    const normalized = url.toString();
+    if (/\^#\^|\{\{_OG_START::|::OG_END_\}\}/.test(normalized)) {
+        throw new Error('허용되지 않은 외부 링크입니다.');
+    }
+    return normalized;
+}
+
+function sanitizeDcOgText(value, fallback) {
+    const text = String(value || fallback || '')
+        .replace(/\^#\^/g, ' ')
+        .replace(/\{\{_OG_START::|::OG_END_\}\}/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return escapeDcHtml(text);
+}
+
+function buildDcHyperlinkMemo(value) {
+    const url = normalizeDcExternalUrl(value);
+    const escapedUrl = escapeDcHtml(url);
+    return `<p><a class="lnk" href="${escapedUrl}" target="_blank">${escapedUrl}</a></p><p><br></p>`;
+}
+
+// 모바일 편집기의 copy_textarea()가 서버에 제출하는 공식 OG 직렬화 형식.
+// 서버가 og-href와 _OG_START 토큰을 최종 하이퍼링크/OG 카드 HTML로 변환한다.
+function buildDcOgLinkMemo(value, metadata = {}) {
+    const url = normalizeDcExternalUrl(value);
+    if (!metadata || ![true, 'true'].includes(metadata.result)) {
+        return buildDcHyperlinkMemo(url);
+    }
+
+    let imageUrl;
+    try {
+        imageUrl = normalizeDcExternalUrl(metadata.image);
+    } catch (error) {
+        return buildDcHyperlinkMemo(url);
+    }
+
+    const title = sanitizeDcOgText(metadata.title, 'X 게시물');
+    const description = sanitizeDcOgText(metadata.description, 'X에서 게시물 보기');
+    const escapedUrl = escapeDcHtml(url);
+    return `<div class="og-href">${escapedUrl}</div>`
+        + `<div class="og">{{_OG_START::${url}^#^${title}^#^${description}^#^${imageUrl}::OG_END_}}</div>`
+        + '<p><br></p>';
+}
+
 function parseDcResponseData(data) {
     if (typeof data !== 'string') return data;
 
@@ -141,11 +200,15 @@ function getDcFailureMessage(data, fallback = '작성 실패') {
 }
 
 module.exports = {
+    buildDcHyperlinkMemo,
+    buildDcOgLinkMemo,
     collectDcFormFields,
+    escapeDcHtml,
     extractDcPostNo,
     findDcPostInList,
     getDcFailureMessage,
     isDcWriteSuccess,
+    normalizeDcExternalUrl,
     parseDcResponseData,
     resolveDcFormAction
 };

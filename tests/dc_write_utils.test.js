@@ -3,11 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 const {
+    buildDcHyperlinkMemo,
+    buildDcOgLinkMemo,
     collectDcFormFields,
+    escapeDcHtml,
     extractDcPostNo,
     findDcPostInList,
     getDcFailureMessage,
     isDcWriteSuccess,
+    normalizeDcExternalUrl,
     parseDcResponseData,
     resolveDcFormAction
 } = require('../dc_write_utils');
@@ -83,6 +87,41 @@ assert.strictEqual(isDcWriteSuccess({ result: false, cause: '차단됨' }), fals
 assert.strictEqual(getDcFailureMessage({ result: false, cause: '차단됨' }), '차단됨');
 assert.strictEqual(getDcFailureMessage('<html>오류</html>'), '작성 실패');
 
+const xPostUrl = 'https://x.com/thsottiaux/status/2077775690058125383';
+const xImageUrl = 'https://play-lh.googleusercontent.com/x-icon.png';
+const ogMemo = buildDcOgLinkMemo(xPostUrl, {
+    result: true,
+    image: xImageUrl,
+    title: 'Tibo님(@thsottiaux)',
+    description: 'How do you pronounce Sol '
+});
+assert.strictEqual(
+    ogMemo,
+    `<div class="og-href">${xPostUrl}</div>`
+        + `<div class="og">{{_OG_START::${xPostUrl}^#^Tibo님(@thsottiaux)^#^How do you pronounce Sol^#^${xImageUrl}::OG_END_}}</div>`
+        + '<p><br></p>'
+);
+assert.strictEqual(
+    buildDcOgLinkMemo(xPostUrl, { result: false }),
+    `<p><a class="lnk" href="${xPostUrl}" target="_blank">${xPostUrl}</a></p><p><br></p>`
+);
+assert.strictEqual(
+    buildDcOgLinkMemo(xPostUrl, { result: true, image: 'javascript:alert(1)' }),
+    buildDcHyperlinkMemo(xPostUrl)
+);
+const escapedOgMemo = buildDcOgLinkMemo(xPostUrl, {
+    result: true,
+    image: xImageUrl,
+    title: '<b>제목</b>^#^추가',
+    description: '"설명" {{_OG_START::삽입'
+});
+assert.ok(escapedOgMemo.includes('&lt;b&gt;제목&lt;/b&gt; 추가'));
+assert.ok(escapedOgMemo.includes('&quot;설명&quot; 삽입'));
+assert.strictEqual((escapedOgMemo.match(/\^#\^/g) || []).length, 3, 'OG 구분자는 정확히 세 개여야 한다.');
+assert.strictEqual(escapeDcHtml('<a "x">'), '&lt;a &quot;x&quot;&gt;');
+assert.strictEqual(normalizeDcExternalUrl(xPostUrl), xPostUrl);
+assert.throws(() => normalizeDcExternalUrl('javascript:alert(1)'), /허용되지 않은/);
+
 const listPage = cheerio.load(`
     <ul>
         <li>
@@ -104,11 +143,13 @@ const engineSource = fs.readFileSync(path.join(__dirname, '..', 'new_engine.js')
 const writeStart = engineSource.indexOf('async function doDcWritePost');
 const writeEnd = engineSource.indexOf('\nfunction get_captcha_key', writeStart);
 const writeSource = engineSource.slice(writeStart, writeEnd);
+const ogIndex = writeSource.indexOf('/api/oglink');
 const accessIndex = writeSource.indexOf('/ajax/access');
 const filterIndex = writeSource.indexOf('/ajax/w_filter');
 const submitIndex = writeSource.indexOf('axios.post(action, multipart');
 
 assert.ok(writeStart >= 0 && writeEnd > writeStart, 'doDcWritePost 함수 범위를 찾을 수 있어야 한다.');
+assert.ok(ogIndex >= 0 && accessIndex > ogIndex, 'OG 메타데이터는 access 검증 전에 편집기와 같은 순서로 조회해야 한다.');
 assert.ok(accessIndex >= 0 && filterIndex > accessIndex && submitIndex > filterIndex, 'access → w_filter → multipart 제출 순서를 유지해야 한다.');
 assert.ok(writeSource.includes('finally {'));
 assert.ok(writeSource.includes('agent.destroy()'), '예외가 발생해도 프록시 에이전트를 정리해야 한다.');

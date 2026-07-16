@@ -176,11 +176,14 @@ const silentLogger = {
     assert.deepStrictEqual(posted, { status: 'posted', posted: 2, lastProcessedPostId: '102' });
     assert.strictEqual(writes.length, 2);
     assert.strictEqual(writes[0][0], 'thesingularity');
-    assert.strictEqual(writes[0][1], 'Tibo: 첫 소식 요약');
+    assert.strictEqual(writes[0][1], '🟢 Tibo 트윗)첫 소식 요약');
     assert.strictEqual(writes[0][2], 'https://x.com/thsottiaux/status/101');
     assert.strictEqual(writes[0][3], 'dc-id');
     assert.strictEqual(writes[0][4], 'dc-password');
-    assert.deepStrictEqual(writes[0][5], { headtext: '10' });
+    assert.deepStrictEqual(writes[0][5], {
+        headtext: '10',
+        ogLinkUrl: 'https://x.com/thsottiaux/status/101'
+    });
     assert.strictEqual(writes[1][2], 'https://x.com/thsottiaux/status/102');
     assert.strictEqual(stateStore.getState().lastProcessedPostId, '102');
     assert.strictEqual(stateStore.getState().pendingPost, null);
@@ -223,7 +226,7 @@ const silentLogger = {
 
     await assert.rejects(() => retryBridge.runOnce(), /DC 게시 실패/);
     assert.strictEqual(retryStore.getState().lastProcessedPostId, '200');
-    assert.strictEqual(retryStore.getState().pendingPost.title, 'Tibo: 재시도 제목');
+    assert.strictEqual(retryStore.getState().pendingPost.title, '🟢 Tibo 트윗)재시도 제목');
 
     await retryBridge.runOnce();
     assert.strictEqual(summaryCalls, 1, '재시도 때 Gemini 요약을 다시 생성하면 안 된다.');
@@ -236,7 +239,7 @@ const silentLogger = {
     assert.ok(engineSource.includes("params.set('headtext', requestedHeadtext);"));
 
     const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'tibo_x_bridge.js'), 'utf8');
-    assert.ok(bridgeSource.includes("{ headtext: '10' }"));
+    assert.ok(bridgeSource.includes("{ headtext: '10', ogLinkUrl: pending.url }"));
 
     console.log('tibo_x_bridge.test.js: OK');
 })().catch(error => {

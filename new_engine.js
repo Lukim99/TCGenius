@@ -18,11 +18,14 @@ const { HttpsProxyAgent } = require('hpagent');
 const puppeteer = require('puppeteer-core');
 const { createClient } = require('@supabase/supabase-js');
 const {
+    buildDcHyperlinkMemo,
+    buildDcOgLinkMemo,
     collectDcFormFields,
     extractDcPostNo,
     findDcPostInList,
     getDcFailureMessage,
     isDcWriteSuccess,
+    normalizeDcExternalUrl,
     parseDcResponseData,
     resolveDcFormAction
 } = require('./dc_write_utils');
@@ -1067,6 +1070,34 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
         if (!csrfToken) {
             log("CSRF 토큰 없음 (차단/페이지 개편 가능)");
             return { success: false, msg: "CSRF 토큰 없음", ip: currentIp, logs };
+        }
+
+        if (options?.ogLinkUrl) {
+            let ogLinkUrl;
+            try {
+                ogLinkUrl = normalizeDcExternalUrl(options.ogLinkUrl);
+            } catch (error) {
+                return { success: false, msg: error.message, ip: currentIp, logs };
+            }
+
+            try {
+                const ogParams = new URLSearchParams({ url: ogLinkUrl });
+                const ogRes = await axios.post('https://m.dcinside.com/api/oglink', ogParams.toString(), {
+                    httpsAgent: agent,
+                    headers: getAjaxHeaders(writePageUrl, csrfToken),
+                    timeout: 20000
+                });
+                mergeCookies(ogRes);
+
+                const ogData = parseDcResponseData(ogRes.data);
+                params.set(contentName, buildDcOgLinkMemo(ogLinkUrl, ogData));
+                log(ogData?.result === true || ogData?.result === 'true'
+                    ? "OG 링크 카드 적용"
+                    : "OG 정보 없음 (하이퍼링크만 적용)");
+            } catch (error) {
+                params.set(contentName, buildDcHyperlinkMemo(ogLinkUrl));
+                log("OG 정보 조회 실패 (하이퍼링크만 적용): " + error.message);
+            }
         }
 
         const robotFieldName = $('.hide-robot[name]').first().attr('name');
@@ -11690,9 +11721,13 @@ async function login() {
 //     process.exit(0);
 // });
 
-keepAlive();
-startTiboXBridge({
-    writePost: doDcWritePost,
-    stateStore: createDynamoStateStore(docClient)
-});
-login().then();
+if (require.main === module) {
+    keepAlive();
+    startTiboXBridge({
+        writePost: doDcWritePost,
+        stateStore: createDynamoStateStore(docClient)
+    });
+    login().then();
+}
+
+module.exports = { doDcWritePost };
