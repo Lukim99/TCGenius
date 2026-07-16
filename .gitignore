@@ -1,2 +1,4 @@
 .env
 *.local
+DB/tibo_x_bridge_state.json
+DB/tibo_x_bridge_state.json.*.tmp

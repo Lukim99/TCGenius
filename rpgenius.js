@@ -2803,6 +2803,7 @@ function normalizeStatPointData(user) {
     user.statPointBuyCount = Math.max(0, Math.floor(Number(user.statPointBuyCount || 0)));
 }
 
+const STAT_POINT_BUY_MAX = 200;
 const STAT_POINT_BUY_BASE_A = 500;
 const STAT_POINT_BUY_BASE_B = 800;
 
@@ -2817,7 +2818,13 @@ function getStatPointBuyPrice(n) {
         a = b;
         b = c;
     }
-    return idx >= 21 ? Math.round(b * Math.pow(0.75, idx - 20)) : b;
+    if (idx < 21) return b;
+    // 피보나치(약 1.618배/스텝)를 감쇠로 눌러 스텝당 증가율을 만든다.
+    // idx 21~49: 1.618 * 0.75 = 약 1.21배/스텝
+    // idx 50~  : 여기에 0.89를 더 곱해 약 1.08배/스텝 → 100개째 수백억, 200개째 수백조 유지
+    let price = b * Math.pow(0.75, idx - 20);
+    if (idx >= 50) price *= Math.pow(0.89, idx - 49);
+    return Math.round(price);
 }
 
 function getStatPointBuyTotalPrice(currentCount, buyCount) {
@@ -2831,6 +2838,7 @@ function buyStatPoint(user, countArg) {
     const count = typeof countArg == 'undefined' ? 1 : Number(countArg);
     if (!Number.isInteger(count) || count < 1) return '❌ 숫자는 1 이상의 정수여야 합니다.';
     const currentCount = Number(user.statPointBuyCount || 0);
+    if (currentCount + count > STAT_POINT_BUY_MAX) return '❌ 스탯포인트는 최대 ' + comma(STAT_POINT_BUY_MAX) + '개까지만 구매할 수 있습니다.\n- 누적 구매 횟수: ' + comma(currentCount) + '회\n- 남은 구매 가능: ' + comma(STAT_POINT_BUY_MAX - currentCount) + '개';
     const totalPrice = getStatPointBuyTotalPrice(currentCount, count);
     if (Number(user.gold || 0) < totalPrice) {
         const nextPrice = getStatPointBuyPrice(currentCount + 1);
@@ -2839,8 +2847,8 @@ function buyStatPoint(user, countArg) {
     user.gold = Number(user.gold || 0) - totalPrice;
     user.statPoint = Number(user.statPoint || 0) + count;
     user.statPointBuyCount = currentCount + count;
-    const nextPrice = getStatPointBuyPrice(user.statPointBuyCount + 1);
-    return '✅ ' + comma(count) + ' 스탯포인트를 🪙 ' + comma(totalPrice) + ' 골드에 구매했습니다.\n- 누적 구매 횟수: ' + comma(user.statPointBuyCount) + '회\n- 다음 1개 가격: 🪙 ' + comma(nextPrice) + '\n- 잔여 스탯포인트: ' + comma(user.statPoint);
+    const nextPriceLine = user.statPointBuyCount < STAT_POINT_BUY_MAX ? '\n- 다음 1개 가격: 🪙 ' + comma(getStatPointBuyPrice(user.statPointBuyCount + 1)) : '';
+    return '✅ ' + comma(count) + ' 스탯포인트를 🪙 ' + comma(totalPrice) + ' 골드에 구매했습니다.\n- 누적 구매 횟수: ' + comma(user.statPointBuyCount) + '/' + comma(STAT_POINT_BUY_MAX) + '회' + nextPriceLine + '\n- 잔여 스탯포인트: ' + comma(user.statPoint);
 }
 
 // ===== 칭호 시스템 =====
@@ -4012,8 +4020,9 @@ function formatStatPointStatus(user) {
         else lines.push('- ' + stat.name + ' +' + comma(flat) + progress);
     });
     lines.push('', '잔여 스탯포인트: ' + comma(user.statPoint || 0));
-    const nextPrice = getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1);
-    lines.push('누적 구매: ' + comma(user.statPointBuyCount || 0) + '회', '다음 1개 가격: 🪙 ' + comma(nextPrice));
+    const buyCount = Number(user.statPointBuyCount || 0);
+    lines.push('누적 구매: ' + comma(buyCount) + '/' + comma(STAT_POINT_BUY_MAX) + '회');
+    if (buyCount < STAT_POINT_BUY_MAX) lines.push('다음 1개 가격: 🪙 ' + comma(getStatPointBuyPrice(buyCount + 1)));
     return lines.join('\n');
 }
 
@@ -4024,7 +4033,8 @@ function getStatPointInfo(user) {
         available: Number(user.statPoint || 0),
         perStatLimit: STAT_POINT_PER_STAT_LIMIT,
         buyCount: Number(user.statPointBuyCount || 0),
-        nextPrice: getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1),
+        buyMax: STAT_POINT_BUY_MAX,
+        nextPrice: Number(user.statPointBuyCount || 0) < STAT_POINT_BUY_MAX ? getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1) : null,
         stats: STAT_POINT_DISPLAY.map(stat => {
             const count = Number(user.statPointStats[stat.key] || 0);
             return {
@@ -12624,6 +12634,9 @@ module.exports = {
     formatStatValue,
     formatValue,
     getStatPointInfo,
+    formatStatPointStatus,
+    buyStatPoint,
+    STAT_POINT_BUY_MAX,
     formatCurrentEquipmentStatLines,
     formatPotentialLines,
     formatPotentialOptionEntries,

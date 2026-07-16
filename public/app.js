@@ -274,7 +274,7 @@ function renderStatPoint(sp) {
     if (!sp) { root.replaceChildren(el('div', { class: 'empty' }, '스탯포인트 정보가 없습니다.')); return; }
     const summary = el('div', { class: 'sp-summary' },
         el('div', { class: 'sp-avail' }, el('span', null, '잔여 스탯포인트'), el('b', null, comma(sp.available))),
-        el('div', { class: 'sp-buy' }, '누적 구매 ' + comma(sp.buyCount) + '회 · 다음 1개 🪙 ' + comma(sp.nextPrice))
+        el('div', { class: 'sp-buy' }, '누적 구매 ' + comma(sp.buyCount) + '/' + comma(sp.buyMax) + '회' + (sp.nextPrice == null ? ' · 구매 완료' : ' · 다음 1개 🪙 ' + comma(sp.nextPrice)))
     );
     const list = el('div', { class: 'sp-list' });
     (sp.stats || []).forEach(s => {

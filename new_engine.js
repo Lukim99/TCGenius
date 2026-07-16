@@ -17,6 +17,16 @@ const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
 const puppeteer = require('puppeteer-core');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    collectDcFormFields,
+    extractDcPostNo,
+    findDcPostInList,
+    getDcFailureMessage,
+    isDcWriteSuccess,
+    parseDcResponseData,
+    resolveDcFormAction
+} = require('./dc_write_utils');
+const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -831,6 +841,358 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         if (id) invalidateSession(id);
         if (browser) await browser.close().catch(() => {});
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp, logs };
+    }
+}
+
+// doDcActionWithPuppeteer의 1단계 로그인 부분을 함수로 추출 (글쓰기와 공유).
+// ponytail: doDcActionWithPuppeteer도 언젠가 이 헬퍼를 쓰게 바꾸면 중복이 사라짐. 지금은 안 건드림.
+async function getDcLoginCookies(id, password, log = () => {}) {
+    const cached = getCachedSession(id);
+    if (cached) {
+        log("캐시 세션 사용");
+        return { ok: true, cookies: cached };
+    }
+    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
+        return { ok: false, msg: "동시 브라우저 한도 초과." };
+    }
+    const apiKey = process.env.BROWSERLESS_API_KEY;
+    if (!apiKey) return { ok: false, msg: "BROWSERLESS_API_KEY 미설정" };
+
+    puppeteerRunning++;
+    let browser = null;
+    try {
+        browser = await puppeteer.connect({
+            browserWSEndpoint: `wss://production-sfo.browserless.io/chromium?token=${apiKey}`,
+            protocolTimeout: 30000
+        });
+        log("브라우저 연결");
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.goto('https://sign.dcinside.com/login', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        log("로그인 페이지 로드");
+
+        const formResult = await page.evaluate((uid, upw) => {
+            const idEl = document.querySelector('input[name="user_id"]') ||
+                         document.querySelector('input[name="code"]') ||
+                         document.querySelector('input[type="text"][name]');
+            const pwEl = document.querySelector('input[type="password"]');
+            if (!idEl || !pwEl) return { ok: false };
+            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeSet.call(idEl, uid);
+            idEl.dispatchEvent(new Event('input', { bubbles: true }));
+            nativeSet.call(pwEl, upw);
+            pwEl.dispatchEvent(new Event('input', { bubbles: true }));
+            return { ok: true };
+        }, id, password);
+
+        if (!formResult.ok) {
+            log("로그인 폼 없음");
+            return { ok: false, msg: "로그인 폼 없음" };
+        }
+
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+            page.evaluate(() => {
+                const btn = document.querySelector('button[type="submit"]') ||
+                            document.querySelector('input[type="submit"]') ||
+                            document.querySelector('.btn_login') ||
+                            document.querySelector('form button');
+                if (btn) btn.click();
+                else document.querySelector('form').submit();
+            })
+        ]);
+
+        const cookies = await page.cookies();
+        const cookieNames = cookies.map(c => c.name);
+        const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
+        const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
+        if (!foundLogin) {
+            log("로그인 실패. URL: " + page.url());
+            return { ok: false, msg: "로그인 실패" };
+        }
+        log("로그인 성공 (" + foundLogin + ")");
+        const loginCookies = {};
+        cookies.forEach(c => { loginCookies[c.name] = c.value; });
+        saveCachedSession(id, loginCookies);
+        return { ok: true, cookies: loginCookies };
+    } finally {
+        if (browser) await browser.close().catch(() => {});
+        puppeteerRunning--;
+    }
+}
+
+// 디시 모바일 갤러리에 게시글 자동 작성.
+// 실제 모바일 페이지와 동일하게 access/w_filter 사전 검증 후 multipart 폼을 제출한다.
+async function doDcWritePost(galleryId, title, content, id = null, password = null, options = {}) {
+    let currentIp = "확인 불가";
+    const logs = [];
+    const log = (msg) => logs.push(msg);
+    const isSessionError = (message, status = null) => status === 401 || /로그인|세션|login|unauthorized/i.test(String(message || ''));
+    let agent = null;
+
+    try {
+        const normalizedGalleryId = String(galleryId || '').trim();
+        if (!normalizedGalleryId) {
+            return { success: false, msg: "갤러리 ID가 필요합니다.", ip: currentIp, logs };
+        }
+        if (typeof title !== 'string' || title.length < 2 || title.length > 40) {
+            return { success: false, msg: "제목은 2자에서 40자까지 입력해야 합니다.", ip: currentIp, logs };
+        }
+        if (typeof content !== 'string' || !content.trim()) {
+            return { success: false, msg: "본문이 필요합니다.", ip: currentIp, logs };
+        }
+        if (!id || !password) {
+            return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
+        }
+
+        // 1. 로그인 세션 확보 (익명글은 캡차가 필요해 로그인 계정만 지원)
+        const loginResult = await getDcLoginCookies(id, password, log);
+        if (!loginResult.ok) {
+            return { success: false, msg: loginResult.msg, ip: currentIp, logs };
+        }
+
+        // 2. axios + 프록시 + 수동 쿠키
+        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+        agent = new HttpsProxyAgent({
+            proxy: proxyUrl, keepAlive: true, keepAliveMsecs: 30000, rejectUnauthorized: false
+        });
+        const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+
+        let liveCookies = { ...loginResult.cookies };
+        const mergeCookies = (res) => {
+            const setCookies = res.headers?.['set-cookie'];
+            if (!setCookies) return;
+
+            for (const str of Array.isArray(setCookies) ? setCookies : [setCookies]) {
+                const nv = str.split(';')[0];
+                const eq = nv.indexOf('=');
+                if (eq > 0) liveCookies[nv.substring(0, eq).trim()] = nv.substring(eq + 1).trim();
+            }
+        };
+        const cookieStr = () => Object.entries(liveCookies).map(([k, v]) => `${k}=${v}`).join('; ');
+        const getAjaxHeaders = (referer, csrfToken) => ({
+            'User-Agent': mobileUA,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'ko-KR,ko;q=0.9',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken,
+            'Referer': referer,
+            'Origin': 'https://m.dcinside.com',
+            'Cookie': cookieStr()
+        });
+
+        // 로그인 쿠키를 모바일 도메인 세션으로 전파한다.
+        const mobileSessionRes = await axios.get('https://m.dcinside.com/', {
+            httpsAgent: agent,
+            headers: {
+                'User-Agent': mobileUA,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9',
+                'Cookie': cookieStr(),
+                'Referer': 'https://sign.dcinside.com/'
+            },
+            timeout: 20000
+        });
+        mergeCookies(mobileSessionRes);
+
+        // 3. 글쓰기 페이지 GET → 폼(action + 히든필드 + CSRF) 파싱
+        const writePageUrl = `https://m.dcinside.com/write/${encodeURIComponent(normalizedGalleryId)}`;
+        const pageRes = await axios.get(writePageUrl, {
+            httpsAgent: agent,
+            headers: {
+                'User-Agent': mobileUA,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9',
+                'Cookie': cookieStr(),
+                'Referer': `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`
+            },
+            timeout: 20000
+        });
+        mergeCookies(pageRes);
+
+        const $ = cheerio.load(pageRes.data);
+        let $form = $('form#writeForm').first();
+        if (!$form.length) {
+            $form = $('form').filter((i, el) => $(el).find('textarea[name], input[name="subject"], input[name="title"]').length > 0).first();
+        }
+        if (!$form.length) {
+            log("글쓰기 폼 없음 (비로그인/차단/개편 가능)");
+            return { success: false, msg: "글쓰기 폼을 찾을 수 없습니다.", ip: currentIp, logs };
+        }
+        if ($form.find('input[name="password"]').length) {
+            invalidateSession(id);
+            log("로그인 세션이 모바일 글쓰기 페이지에 적용되지 않음");
+            return { success: false, msg: "로그인 세션이 유효하지 않습니다.", ip: currentIp, logs };
+        }
+        saveCachedSession(id, liveCookies);
+
+        // 브라우저가 실제로 제출하는 성공한 컨트롤만 수집한다.
+        const params = new URLSearchParams(collectDcFormFields($, $form));
+
+        const subjectName = $form.find('input[name="subject"], input[name="title"]').first().attr('name');
+        const contentName = $form.find('textarea[name="memo"], textarea[name]').first().attr('name');
+        if (!subjectName || !contentName) {
+            log("제목/본문 필드 없음 (페이지 개편 가능)");
+            return { success: false, msg: "글쓰기 필드 구조가 변경되었습니다.", ip: currentIp, logs };
+        }
+        params.set(subjectName, title);
+        params.set(contentName, content);
+
+        if (options?.headtext !== undefined && options?.headtext !== null) {
+            const requestedHeadtext = String(options.headtext).trim();
+            if (!/^\d+$/.test(requestedHeadtext)) {
+                return { success: false, msg: "말머리 값이 올바르지 않습니다.", ip: currentIp, logs };
+            }
+            if (!$form.find('[name="headtext"]').length) {
+                return { success: false, msg: "글쓰기 폼에서 말머리 필드를 찾을 수 없습니다.", ip: currentIp, logs };
+            }
+
+            const headtextPattern = new RegExp(`head_select\\(\\s*${requestedHeadtext}\\s*\\)`);
+            const hasHeadtextOption = headtextPattern.test(pageRes.data)
+                || $form.find(`option[value="${requestedHeadtext}"]`).length > 0;
+            if (!hasHeadtextOption) {
+                return { success: false, msg: "요청한 말머리를 이 갤러리에서 찾을 수 없습니다.", ip: currentIp, logs };
+            }
+            params.set('headtext', requestedHeadtext);
+            log("말머리 적용: " + requestedHeadtext);
+        }
+
+        let csrfToken = $('meta[name="csrf-token"]').attr('content')
+            || params.get('_token') || params.get('csrf_token');
+        if (!csrfToken) {
+            const m = pageRes.data.match(/csrf_token\s*[:=]\s*["']([^"']+)["']/);
+            csrfToken = m ? m[1] : null;
+        }
+        if (!csrfToken) {
+            log("CSRF 토큰 없음 (차단/페이지 개편 가능)");
+            return { success: false, msg: "CSRF 토큰 없음", ip: currentIp, logs };
+        }
+
+        const robotFieldName = $('.hide-robot[name]').first().attr('name');
+        if (!robotFieldName) {
+            log("동적 로봇 검증 필드 없음 (페이지 개편 가능)");
+            return { success: false, msg: "글쓰기 보안 필드를 찾을 수 없습니다.", ip: currentIp, logs };
+        }
+
+        const action = resolveDcFormAction($form.attr('action'), writePageUrl);
+        log("글쓰기 폼/토큰 확보");
+
+        // 4. 실제 페이지 스크립트와 동일한 사전 검증
+        const accessParams = new URLSearchParams({ token_verify: 'dc_check2' });
+        const accessRes = await axios.post('https://m.dcinside.com/ajax/access', accessParams.toString(), {
+            httpsAgent: agent,
+            headers: getAjaxHeaders(writePageUrl, csrfToken),
+            timeout: 20000
+        });
+        mergeCookies(accessRes);
+
+        const accessData = parseDcResponseData(accessRes.data);
+        if (accessData?.msg == 44) {
+            return { success: false, msg: accessData.data || accessData.cause || "접근 검증 실패", ip: currentIp, logs };
+        }
+        if (!accessData?.Block_key) {
+            log("access 응답에 Block_key 없음");
+            return { success: false, msg: "글쓰기 접근 검증에 실패했습니다.", ip: currentIp, logs };
+        }
+        params.set('Block_key', String(accessData.Block_key));
+
+        const filterParams = new URLSearchParams({
+            subject: params.get(subjectName) || '',
+            memo: params.get(contentName) || '',
+            id: params.get('id') || normalizedGalleryId,
+            captcha_code: params.get('captcha_code') || params.get('dcblock') || '',
+            rand_code: params.get('code') || '',
+            mode: params.get('mode') || 'write',
+            is_mini: $('#is_mini').length ? '1' : '0',
+            is_person: $('#is_person').length ? '1' : '0',
+            nickname: params.get('name') || params.get('gall_nickname') || ''
+        });
+        if (params.get('autodel_date')) filterParams.set('autodel_time', params.get('autodel_date'));
+
+        const filterRes = await axios.post('https://m.dcinside.com/ajax/w_filter', filterParams.toString(), {
+            httpsAgent: agent,
+            headers: getAjaxHeaders(writePageUrl, csrfToken),
+            timeout: 20000
+        });
+        mergeCookies(filterRes);
+
+        const filterData = parseDcResponseData(filterRes.data);
+        if (filterData?.result === false || filterData?.result === 'false') {
+            const filterMessage = getDcFailureMessage(filterData, "글쓰기 필터 검증 실패");
+            if (isSessionError(filterMessage)) invalidateSession(id);
+            return { success: false, msg: filterMessage, ip: currentIp, logs };
+        }
+
+        params.set('GEY3JWF', robotFieldName);
+        const multipart = new FormData();
+        for (const [name, value] of params.entries()) multipart.append(name, value);
+
+        const postRes = await axios.post(action, multipart, {
+            httpsAgent: agent,
+            headers: {
+                ...multipart.getHeaders(),
+                'User-Agent': mobileUA,
+                'Accept': 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9',
+                'Referer': writePageUrl,
+                'Origin': 'https://m.dcinside.com',
+                'Cookie': cookieStr()
+            },
+            timeout: 20000,
+            maxBodyLength: Infinity,
+            maxRedirects: 0,
+            validateStatus: (s) => s >= 200 && s < 400
+        });
+        mergeCookies(postRes);
+        log("작성 응답 상태: " + postRes.status);
+
+        const data = parseDcResponseData(postRes.data);
+        const location = postRes.headers?.location || '';
+        if (isDcWriteSuccess(data, location)) {
+            const postNo = extractDcPostNo(data, location);
+            saveCachedSession(id, liveCookies);
+            return { success: true, msg: "글 작성 성공!", postNo, ip: currentIp, logs };
+        }
+
+        // mupload가 성공 시 200 HTML만 반환하는 경우 최신 목록에서 결과를 확인한다.
+        try {
+            const verifyUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}?_=${Date.now()}`;
+            const verifyRes = await axios.get(verifyUrl, {
+                httpsAgent: agent,
+                headers: {
+                    'User-Agent': mobileUA,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ko-KR,ko;q=0.9',
+                    'Cookie': cookieStr(),
+                    'Referer': writePageUrl
+                },
+                timeout: 20000
+            });
+            mergeCookies(verifyRes);
+
+            const verifiedPost = findDcPostInList(cheerio.load(verifyRes.data), title, id);
+            if (verifiedPost) {
+                log("최신 목록에서 작성 결과 확인");
+                saveCachedSession(id, liveCookies);
+                return { success: true, msg: "글 작성 성공!", postNo: verifiedPost.postNo, ip: currentIp, logs };
+            }
+        } catch (verifyError) {
+            log("작성 결과 확인 실패: " + verifyError.message);
+        }
+
+        const failureMessage = getDcFailureMessage(data);
+        if (isSessionError(failureMessage)) invalidateSession(id);
+        return { success: false, msg: failureMessage, ip: currentIp, logs };
+
+    } catch (err) {
+        log("에러: " + err.message);
+        const status = err.response?.status;
+        const responseMessage = getDcFailureMessage(err.response?.data, err.message);
+        if (id && isSessionError(responseMessage, status)) invalidateSession(id);
+        return { success: false, msg: `에러: ${err.message}`, ip: currentIp, logs };
+    } finally {
+        if (agent) agent.destroy();
     }
 }
 
@@ -11329,4 +11691,8 @@ async function login() {
 // });
 
 keepAlive();
+startTiboXBridge({
+    writePost: doDcWritePost,
+    stateStore: createDynamoStateStore(docClient)
+});
 login().then();
