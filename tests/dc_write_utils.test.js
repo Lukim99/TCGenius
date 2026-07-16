@@ -5,13 +5,17 @@ const cheerio = require('cheerio');
 const {
     buildDcHyperlinkMemo,
     buildDcOgLinkMemo,
+    collectDcPostNosInList,
     collectDcFormFields,
     escapeDcHtml,
     extractDcPostNo,
     findDcPostInList,
+    findDcPostsInList,
     getDcFailureMessage,
+    hasDcExternalLink,
     isDcWriteSuccess,
     normalizeDcExternalUrl,
+    normalizeDcVerificationTitle,
     parseDcResponseData,
     resolveDcFormAction
 } = require('../dc_write_utils');
@@ -138,6 +142,35 @@ assert.deepStrictEqual(findDcPostInList(listPage, '안녕하세요', 'shelf7467'
     postNo: '1323631',
     href: 'https://m.dcinside.com/board/thesingularity/1323631'
 });
+assert.deepStrictEqual(collectDcPostNosInList(listPage), ['1323631']);
+assert.strictEqual(normalizeDcVerificationTitle('🟢 Tibo 트윗)테스트'), '? Tibo 트윗)테스트');
+
+const normalizedTitleList = cheerio.load(`
+    <ul>
+        <li>
+            <a href="https://m.dcinside.com/board/thesingularity/1324334">
+                <span class="subjectin">? Tibo 트윗)테스트</span>
+            </a>
+            <span class="blockInfo" data-info="shelf7467"></span>
+        </li>
+    </ul>
+`);
+assert.strictEqual(
+    findDcPostsInList(normalizedTitleList, '🟢 Tibo 트윗)테스트', 'shelf7467')[0].postNo,
+    '1324334'
+);
+assert.strictEqual(
+    findDcPostsInList(normalizedTitleList, null, 'shelf7467')[0].postNo,
+    '1324334'
+);
+
+const linkedPostPage = cheerio.load(`
+    <div class="write_div">
+        <a href="https://x.com/thsottiaux/status/2077775690058125383?ref_src=test">X 게시물</a>
+    </div>
+`);
+assert.strictEqual(hasDcExternalLink(linkedPostPage, xPostUrl), true);
+assert.strictEqual(hasDcExternalLink(linkedPostPage, 'https://x.com/thsottiaux/status/1'), false);
 
 const engineSource = fs.readFileSync(path.join(__dirname, '..', 'new_engine.js'), 'utf8');
 const writeStart = engineSource.indexOf('async function doDcWritePost');
@@ -151,6 +184,9 @@ const submitIndex = writeSource.indexOf('axios.post(action, multipart');
 assert.ok(writeStart >= 0 && writeEnd > writeStart, 'doDcWritePost 함수 범위를 찾을 수 있어야 한다.');
 assert.ok(ogIndex >= 0 && accessIndex > ogIndex, 'OG 메타데이터는 access 검증 전에 편집기와 같은 순서로 조회해야 한다.');
 assert.ok(accessIndex >= 0 && filterIndex > accessIndex && submitIndex > filterIndex, 'access → w_filter → multipart 제출 순서를 유지해야 한다.');
+assert.ok(writeSource.includes('beforePostNos'), '작성 전후 게시물 번호를 비교해야 한다.');
+assert.ok(writeSource.includes('hasDcExternalLink'), '제목이 아닌 외부 링크로 실제 작성 결과를 확인해야 한다.');
+assert.ok(writeSource.includes('allowDuplicate'), '일반 자동 게시에서는 동일 링크 중복을 막아야 한다.');
 assert.ok(writeSource.includes('finally {'));
 assert.ok(writeSource.includes('agent.destroy()'), '예외가 발생해도 프록시 에이전트를 정리해야 한다.');
 

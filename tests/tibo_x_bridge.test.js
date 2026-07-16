@@ -176,7 +176,7 @@ const silentLogger = {
     assert.deepStrictEqual(posted, { status: 'posted', posted: 2, lastProcessedPostId: '102' });
     assert.strictEqual(writes.length, 2);
     assert.strictEqual(writes[0][0], 'thesingularity');
-    assert.strictEqual(writes[0][1], '🟢 Tibo 트윗)첫 소식 요약');
+    assert.strictEqual(writes[0][1], buildDcTitle('첫 소식 요약'));
     assert.strictEqual(writes[0][2], 'https://x.com/thsottiaux/status/101');
     assert.strictEqual(writes[0][3], 'dc-id');
     assert.strictEqual(writes[0][4], 'dc-password');
@@ -226,7 +226,7 @@ const silentLogger = {
 
     await assert.rejects(() => retryBridge.runOnce(), /DC 게시 실패/);
     assert.strictEqual(retryStore.getState().lastProcessedPostId, '200');
-    assert.strictEqual(retryStore.getState().pendingPost.title, '🟢 Tibo 트윗)재시도 제목');
+    assert.strictEqual(retryStore.getState().pendingPost.title, buildDcTitle('재시도 제목'));
 
     await retryBridge.runOnce();
     assert.strictEqual(summaryCalls, 1, '재시도 때 Gemini 요약을 다시 생성하면 안 된다.');

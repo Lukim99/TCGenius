@@ -20,10 +20,12 @@ const { createClient } = require('@supabase/supabase-js');
 const {
     buildDcHyperlinkMemo,
     buildDcOgLinkMemo,
+    collectDcPostNosInList,
     collectDcFormFields,
     extractDcPostNo,
-    findDcPostInList,
+    findDcPostsInList,
     getDcFailureMessage,
+    hasDcExternalLink,
     isDcWriteSuccess,
     normalizeDcExternalUrl,
     parseDcResponseData,
@@ -1155,6 +1157,74 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             return { success: false, msg: filterMessage, ip: currentIp, logs };
         }
 
+        const fetchGalleryList = async () => {
+            const listUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}?_=${Date.now()}`;
+            const response = await axios.get(listUrl, {
+                httpsAgent: agent,
+                headers: {
+                    'User-Agent': mobileUA,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ko-KR,ko;q=0.9',
+                    'Cookie': cookieStr(),
+                    'Referer': writePageUrl
+                },
+                timeout: 20000
+            });
+            mergeCookies(response);
+            return cheerio.load(response.data);
+        };
+        const findPostWithExpectedLink = async (candidates) => {
+            for (const candidate of candidates) {
+                try {
+                    const postUrl = resolveDcFormAction(
+                        candidate.href,
+                        `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`
+                    );
+                    const response = await axios.get(postUrl, {
+                        httpsAgent: agent,
+                        headers: {
+                            'User-Agent': mobileUA,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9',
+                            'Cookie': cookieStr(),
+                            'Referer': `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`
+                        },
+                        timeout: 20000
+                    });
+                    mergeCookies(response);
+                    if (hasDcExternalLink(cheerio.load(response.data), options.ogLinkUrl)) return candidate;
+                } catch (error) {
+                    log(`게시물 ${candidate.postNo} 링크 확인 실패: ${error.message}`);
+                }
+            }
+            return null;
+        };
+
+        let beforePostNos = new Set();
+        try {
+            const $beforeList = await fetchGalleryList();
+            beforePostNos = new Set(collectDcPostNosInList($beforeList));
+
+            if (options?.ogLinkUrl && options?.allowDuplicate !== true) {
+                const existingCandidates = findDcPostsInList($beforeList, null, id);
+                const existingPost = await findPostWithExpectedLink(existingCandidates);
+                if (existingPost) {
+                    log("동일한 외부 링크 게시물 확인 (중복 작성 생략)");
+                    saveCachedSession(id, liveCookies);
+                    return {
+                        success: true,
+                        msg: "이미 작성된 글입니다.",
+                        postNo: existingPost.postNo,
+                        duplicate: true,
+                        ip: currentIp,
+                        logs
+                    };
+                }
+            }
+        } catch (error) {
+            log("작성 전 목록 확인 실패: " + error.message);
+        }
+
         params.set('GEY3JWF', robotFieldName);
         const multipart = new FormData();
         for (const [name, value] of params.entries()) multipart.append(name, value);
@@ -1186,25 +1256,20 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             return { success: true, msg: "글 작성 성공!", postNo, ip: currentIp, logs };
         }
 
-        // mupload가 성공 시 200 HTML만 반환하는 경우 최신 목록에서 결과를 확인한다.
+        // mupload가 성공 시 200 HTML만 반환하는 경우 새로 생긴 계정 게시물로 결과를 확인한다.
         try {
-            const verifyUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}?_=${Date.now()}`;
-            const verifyRes = await axios.get(verifyUrl, {
-                httpsAgent: agent,
-                headers: {
-                    'User-Agent': mobileUA,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'ko-KR,ko;q=0.9',
-                    'Cookie': cookieStr(),
-                    'Referer': writePageUrl
-                },
-                timeout: 20000
-            });
-            mergeCookies(verifyRes);
+            const $afterList = await fetchGalleryList();
+            const verificationTitle = options?.ogLinkUrl ? null : title;
+            let candidates = findDcPostsInList($afterList, verificationTitle, id);
+            if (beforePostNos.size) {
+                candidates = candidates.filter(candidate => !beforePostNos.has(candidate.postNo));
+            }
 
-            const verifiedPost = findDcPostInList(cheerio.load(verifyRes.data), title, id);
+            const verifiedPost = options?.ogLinkUrl
+                ? await findPostWithExpectedLink(candidates)
+                : candidates[0];
             if (verifiedPost) {
-                log("최신 목록에서 작성 결과 확인");
+                log("새 게시물 생성 결과 확인");
                 saveCachedSession(id, liveCookies);
                 return { success: true, msg: "글 작성 성공!", postNo: verifiedPost.postNo, ip: currentIp, logs };
             }

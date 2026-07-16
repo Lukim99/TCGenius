@@ -155,22 +155,67 @@ function extractDcPostNo(data, location = '') {
     return null;
 }
 
-function findDcPostInList($, title, accountId) {
-    let found = null;
+function normalizeDcVerificationTitle(value) {
+    let normalized = '';
+    for (const char of String(value || '')) {
+        normalized += char.codePointAt(0) > 0xFFFF ? '?' : char;
+    }
+    return normalized.replace(/\s+/g, ' ').trim();
+}
+
+function findDcPostsInList($, title, accountId) {
+    const found = [];
+    const expectedTitle = title == null ? null : normalizeDcVerificationTitle(title);
 
     $('li').each((i, element) => {
-        if (found) return;
-
         const $row = $(element);
         const rowTitle = $row.find('.subjectin').first().text().trim();
         const rowAccountId = $row.find('.blockInfo').first().attr('data-info');
-        if (rowTitle !== title || rowAccountId !== accountId) return;
+        if (accountId && rowAccountId !== accountId) return;
+        if (expectedTitle !== null && normalizeDcVerificationTitle(rowTitle) !== expectedTitle) return;
 
         const href = $row.find('a[href*="/board/"]').first().attr('href') || '';
         const postNo = extractDcPostNo(null, href);
-        if (postNo) found = { postNo, href };
+        if (postNo) found.push({ postNo, href, title: rowTitle, accountId: rowAccountId });
     });
 
+    return found;
+}
+
+function findDcPostInList($, title, accountId) {
+    const post = findDcPostsInList($, title, accountId)[0];
+    return post ? { postNo: post.postNo, href: post.href } : null;
+}
+
+function collectDcPostNosInList($) {
+    const postNos = new Set();
+    $('a[href*="/board/"]').each((i, element) => {
+        const postNo = extractDcPostNo(null, $(element).attr('href') || '');
+        if (postNo) postNos.add(postNo);
+    });
+    return [...postNos];
+}
+
+function hasDcExternalLink($, expectedUrl) {
+    let expected;
+    try {
+        const url = new URL(normalizeDcExternalUrl(expectedUrl));
+        expected = `${url.protocol}//${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '')}`;
+    } catch (error) {
+        return false;
+    }
+
+    let found = false;
+    $('a[href]').each((i, element) => {
+        if (found) return;
+        try {
+            const url = new URL($(element).attr('href'), 'https://m.dcinside.com');
+            const comparable = `${url.protocol}//${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '')}`;
+            if (comparable === expected) found = true;
+        } catch (error) {
+            // 잘못된 링크는 무시한다.
+        }
+    });
     return found;
 }
 
@@ -202,13 +247,17 @@ function getDcFailureMessage(data, fallback = '작성 실패') {
 module.exports = {
     buildDcHyperlinkMemo,
     buildDcOgLinkMemo,
+    collectDcPostNosInList,
     collectDcFormFields,
     escapeDcHtml,
     extractDcPostNo,
     findDcPostInList,
+    findDcPostsInList,
     getDcFailureMessage,
+    hasDcExternalLink,
     isDcWriteSuccess,
     normalizeDcExternalUrl,
+    normalizeDcVerificationTitle,
     parseDcResponseData,
     resolveDcFormAction
 };
