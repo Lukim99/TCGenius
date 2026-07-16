@@ -7729,7 +7729,7 @@ function extractPetsByNumbers(user, numberArgs) {
 
 function setPetShortcut(user, key, phrase) {
     if (!key) return '❌ /RPGenius 단축키설정 [단축키] [문구]';
-    if (!/^[0-9A-Za-z가-힣]+$/.test(key)) return '❌ 단축키는 공백 없이 한글/영어/숫자로만 입력해주세요.';
+    if (!/^[0-9A-Za-zㄱ-ㅎ가-힣]+$/.test(key)) return '❌ 단축키는 공백 없이 한글/영어/숫자로만 입력해주세요.';
     if (!phrase) return '❌ /RPGenius 단축키설정 [단축키] [문구]';
     const equipped = getEquippedPets(user).filter(isPetEffectActive);
     if (equipped.length == 0) return '❌ 단축키를 저장할 수 있는 펫이 없습니다. (단축키 슬롯이 있는 펫을 장착하세요)';
