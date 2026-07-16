@@ -32,10 +32,24 @@ function sequence(values, fallback = 0) {
     assert.deepStrictEqual(rpg.getAccessibleDailyDungeons(111).map(d => d.name), ['마동', '리조트']);
     assert.deepStrictEqual(rpg.getAccessibleDailyDungeons(141).map(d => d.name), ['마동', '리조트', '월도랜드4', '월도랜드5', '부타게임']);
 
+    for (const dungeon of rpg.getAccessibleDailyDungeons(141)) {
+        const combatData = rpg.getDailyDungeonCombatData(dungeon);
+        for (const key of ['atk', 'pnt', 'pntPercent', 'def', 'hp', 'crit', 'critDef', 'cmb']) {
+            assert.strictEqual(combatData[key], Number(dungeon[key] || 0) / 20, dungeon.name + ' ' + key + ' 능력치는 일반 필드의 1/20이어야 한다.');
+        }
+        assert.strictEqual(combatData.critMul, 1 + (Number(dungeon.critMul || 1) - 1) / 20);
+        assert.strictEqual(combatData.maxCmb, Math.floor(Number(dungeon.maxCmb || 0) / 20));
+        assert.strictEqual(combatData.reward, dungeon.reward, '보상 데이터는 변경하면 안 된다.');
+        assert.strictEqual(combatData.dailyDungeon, dungeon.dailyDungeon, '클리어 보상 데이터는 변경하면 안 된다.');
+    }
+
     const entryUser = makeUser('일일던전입장테스트', 141);
     assert.ok((await rpg.enterDailyDungeon(entryUser, '부타게임')).startsWith('✅'));
     assert.strictEqual(entryUser.field.dailyDungeon, true);
     assert.strictEqual(entryUser.dailyDungeonDaily.used, true);
+    const dailyCombatContext = rpg.getFieldCombatContext(entryUser);
+    assert.strictEqual(dailyCombatContext.dungeon.hp, rpg.findDailyDungeonByName('부타게임').hp / 20);
+    assert.strictEqual(dailyCombatContext.dungeon.atk, rpg.findDailyDungeonByName('부타게임').atk / 20);
     assert.ok(rpg.leaveField(entryUser).includes('다시 입장할 수 없습니다'));
     assert.ok((await rpg.enterDailyDungeon(entryUser, '마동')).startsWith('❌'));
 
@@ -57,6 +71,7 @@ function sequence(values, fallback = 0) {
     const normalUser = makeUser('일반필드유지테스트', 141);
     assert.ok((await rpg.enterField(normalUser, '마동', { confirmed: true })).startsWith('✅'));
     assert.ok(!normalUser.field.dailyDungeon);
+    assert.strictEqual(rpg.getFieldCombatContext(normalUser).dungeon.hp, rpg.findDailyDungeonByName('마동').hp, '일반 필드 능력치는 변경하면 안 된다.');
     rpg.leaveField(normalUser);
 
     const resetUser = makeUser('일일초기화테스트', 141);

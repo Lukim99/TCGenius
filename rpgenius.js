@@ -53,6 +53,7 @@ const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
 const NO_ITEM_DROP_LEVEL_DIFF = 100;
 const DAILY_DUNGEON_KILL_TARGET = 2000;
+const DAILY_DUNGEON_STAT_DIVISOR = 20;
 const DAILY_DUNGEON_EFFECT_CHANCE = 0.5;
 const DAILY_DUNGEON_EFFECT_DURATION_MS = 10 * 1000;
 const DAILY_DUNGEON_LUCKY_CHANCE = 0.1;
@@ -3338,6 +3339,17 @@ function findDailyDungeonByName(name) {
     return getDailyDungeons().find(dungeon => dungeon.name == name);
 }
 
+function getDailyDungeonCombatData(dungeon) {
+    if (!dungeon) return dungeon;
+    const combatData = Object.assign({}, dungeon);
+    ['atk', 'pnt', 'pntPercent', 'def', 'hp', 'crit', 'critDef', 'cmb'].forEach(key => {
+        combatData[key] = Number(dungeon[key] || 0) / DAILY_DUNGEON_STAT_DIVISOR;
+    });
+    combatData.critMul = 1 + Math.max(0, Number(dungeon.critMul || 1) - 1) / DAILY_DUNGEON_STAT_DIVISOR;
+    combatData.maxCmb = Math.max(0, Math.floor(Number(dungeon.maxCmb || 0) / DAILY_DUNGEON_STAT_DIVISOR));
+    return combatData;
+}
+
 function getDailyDungeonDailyState(user, now) {
     const date = now instanceof Date ? now : new Date(typeof now == 'undefined' ? Date.now() : now);
     const today = getKoreanDateKey(date);
@@ -3417,7 +3429,7 @@ function formatDailyDungeonList(user) {
         return lines.join('\n');
     }
     dungeons.forEach(dungeon => {
-        const recCP = getDungeonRecommendedCP(dungeon);
+        const recCP = getDungeonRecommendedCP(getDailyDungeonCombatData(dungeon));
         lines.push('', '〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
     });
     lines.push('', '/RPGenius 일일던전 입장 [던전이름]');
@@ -5264,7 +5276,7 @@ function getFieldCombatContext(user) {
     if (user.field.dailyDungeon) {
         const dungeon = findDailyDungeonByName(user.field.name);
         if (!dungeon) return { error: '❌ 현재 일일 던전을 찾을 수 없습니다.' };
-        return { type: 'dailyDungeon', dungeon: dungeon };
+        return { type: 'dailyDungeon', dungeon: getDailyDungeonCombatData(dungeon) };
     }
     if (user.field.hell) return { type: 'hell', dungeon: getHellDungeon(), phase: user.field.phase };
     if (user.field.worldBoss) {
@@ -12654,6 +12666,7 @@ module.exports = {
     getEquipmentTradeLimitInfo,
     getAccessibleDailyDungeons,
     findDailyDungeonByName,
+    getDailyDungeonCombatData,
     formatDailyDungeonList,
     getDailyDungeonDailyState,
     enterDailyDungeon,
@@ -12661,6 +12674,7 @@ module.exports = {
     leaveField,
     useBasicAttackInField,
     useSkillInField,
+    getFieldCombatContext,
     buildHuntResult,
     getActiveDailyDungeonEffect,
     tryActivateDailyDungeonEffect,
@@ -12669,6 +12683,7 @@ module.exports = {
     rollDailyDungeonClearReward,
     grantDailyDungeonClearReward,
     DAILY_DUNGEON_KILL_TARGET,
+    DAILY_DUNGEON_STAT_DIVISOR,
     isEquipmentBindingEnabled,
     formatSkillDescWithIncrease,
     formatCurrentSkillDesc,
