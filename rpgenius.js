@@ -49,16 +49,14 @@ const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품',
 const EQUIPMENT_SINGLE_SLOTS = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'support'];
 const EQUIPMENT_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
 const ELITE_KILL_REQUIREMENT = 100;
-const GOLD_MINE_ORE_DROPS = {
-    1: { name: '희미한 금광석', chance: 0.005 },
-    2: { name: '저주받은 금광석', chance: 0.003 },
-    3: { name: '찬란한 금광석', chance: 0.002 },
-    4: { name: '신성한 금광석', chance: 0.001 }
-};
 const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
 const NO_ITEM_DROP_LEVEL_DIFF = 100;
-const GOLD_MINE_DAILY_KILL_LIMIT = 5000;
+const DAILY_DUNGEON_KILL_TARGET = 2000;
+const DAILY_DUNGEON_EFFECT_CHANCE = 0.5;
+const DAILY_DUNGEON_EFFECT_DURATION_MS = 10 * 1000;
+const DAILY_DUNGEON_LUCKY_CHANCE = 0.1;
+const DAILY_DUNGEON_EFFECTS = ['fever', 'punch', 'hit'];
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 사냥 드랍 아이템이 펀치기계 토큰으로 전환된다.
@@ -159,6 +157,7 @@ function clearFieldIktaeBot(userName) {
 
 async function runFieldIktaeBotTick(userName) {
     const user = await getRPGUserByName(userName);
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.iktaeBot) { clearFieldIktaeBot(userName); return; }
     if (Date.now() > user.field.iktaeBot.expired_at || user.field.iktaeBot.hp <= 0) {
         user.field.iktaeBot = null;
@@ -187,7 +186,6 @@ async function runFieldIktaeBotTick(userName) {
         lines.push(result);
     }
     await user.save();
-    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
@@ -211,6 +209,7 @@ function clearFieldSunata(userName) {
 }
 async function runFieldSunataTick(userName) {
     const user = await getRPGUserByName(userName);
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.sunata) { clearFieldSunata(userName); return; }
     if (Date.now() > user.field.sunata.expired_at) {
         user.field.sunata = null;
@@ -239,7 +238,6 @@ async function runFieldSunataTick(userName) {
         lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
     }
     await user.save();
-    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const fieldMarkTimers = {};
@@ -261,6 +259,7 @@ function clearFieldMark(userName) {
 }
 async function runFieldMarkTick(userName) {
     const user = await getRPGUserByName(userName);
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.mark) { clearFieldMark(userName); return; }
     if (Date.now() > user.field.mark.expired_at) {
         user.field.mark = null;
@@ -288,7 +287,6 @@ async function runFieldMarkTick(userName) {
         lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
     }
     await user.save();
-    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
@@ -308,6 +306,7 @@ function clearFieldEquipmentDotTimer(userName) {
 }
 async function runFieldEquipmentDotTick(userName) {
     const user = await getRPGUserByName(userName);
+    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const state = user && user.field && user.field.equipmentState;
     if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
     const context = getFieldCombatContext(user);
@@ -329,7 +328,7 @@ async function runFieldEquipmentDotTick(userName) {
             const stats = calculateUserStats(user);
             const defenderStats = context.type == 'worldBoss'
                 ? getWorldBossDefenderStats(context.boss)
-                : getCombatStats(context.dungeon && (context.type == 'normal' ? context.dungeon : context.dungeon.elite));
+                : getCombatStats(context.dungeon && ((context.type == 'normal' || context.type == 'dailyDungeon') ? context.dungeon : context.dungeon.elite));
             const lightMul = getElementDamageMultiplier('명', stats, defenderStats);
             const damage = Math.max(1, Math.round(Number(state.judgment.damage || 0) * .15 * lightMul));
             if (Number(state.judgment.damage || 0) > 0) pending.push({ label: '심판 폭발', rawDamage: damage, precalculated: true, element: '명' });
@@ -367,7 +366,6 @@ async function runFieldEquipmentDotTick(userName) {
     }
     if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     await user.save();
-    const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const commandQueues = {};
@@ -3327,6 +3325,29 @@ function getAccessibleDungeons(level) {
     return accessible;
 }
 
+function getDailyDungeons() {
+    return readJson(DUNGEON_PATH, []).filter(dungeon => dungeon && dungeon.dailyDungeon);
+}
+
+function getAccessibleDailyDungeons(level) {
+    const lvl = Number(level || 1);
+    return getDailyDungeons().filter(dungeon => lvl >= Number(dungeon.requireLevel || 1));
+}
+
+function findDailyDungeonByName(name) {
+    return getDailyDungeons().find(dungeon => dungeon.name == name);
+}
+
+function getDailyDungeonDailyState(user, now) {
+    const date = now instanceof Date ? now : new Date(typeof now == 'undefined' ? Date.now() : now);
+    const today = getKoreanDateKey(date);
+    if (!user.dailyDungeonDaily || user.dailyDungeonDaily.date != today) {
+        user.dailyDungeonDaily = { date: today, used: false, dungeonName: null, outcome: null };
+    }
+    user.dailyDungeonDaily.used = user.dailyDungeonDaily.used === true;
+    return user.dailyDungeonDaily;
+}
+
 function getHellDungeon() {
     const base = readJson(DUNGEON_PATH, []).find(dungeon => dungeon && dungeon.name == '부타게임') || {};
     const elite = Object.assign({}, base.elite || {});
@@ -3347,18 +3368,8 @@ function formatFieldList(user) {
     const dungeons = getAccessibleDungeons(level);
     const userCP = calculateCombatPower(user).total;
     const lines = ['[ 입장 가능한 필드 목록 ]', '내 전투력: ⚔️ ' + comma(userCP), VIEWMORE];
-    const goldMineDungeons = dungeons.filter(dungeon => typeof dungeon.goldMineLevel != 'undefined');
-    const normalDungeons = dungeons.filter(dungeon => typeof dungeon.goldMineLevel == 'undefined');
-    if (goldMineDungeons.length > 0) {
-        lines.push('', '[ 황금 광산 ]');
-        goldMineDungeons.forEach(dungeon => {
-            const recCP = getDungeonRecommendedCP(dungeon);
-            lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
-        });
-    }
-
     lines.push('', '[ 던전 ]');
-    normalDungeons.forEach(dungeon => {
+    dungeons.forEach(dungeon => {
         const recCP = getDungeonRecommendedCP(dungeon);
         lines.push('〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
     });
@@ -3383,6 +3394,33 @@ function formatFieldList(user) {
             }
         });
     }
+    return lines.join('\n');
+}
+
+function formatDailyDungeonList(user) {
+    const userCP = calculateCombatPower(user).total;
+    const daily = getDailyDungeonDailyState(user);
+    const lines = [
+        '[ 입장 가능한 일일 던전 목록 ]',
+        '내 전투력: ⚔️ ' + comma(userCP),
+        '오늘 입장: ' + (daily.used ? '❌ 사용 완료' : '✅ 1회 가능'),
+        VIEWMORE
+    ];
+    if (daily.used) {
+        if (daily.dungeonName) lines.push('', '- 선택 던전: ' + daily.dungeonName);
+        lines.push('- 결과: ' + (daily.outcome == 'cleared' ? '클리어' : daily.outcome == 'left' ? '중도 퇴장' : daily.outcome == 'failed' ? '사망 퇴장' : '진행 중'));
+        return lines.join('\n');
+    }
+    const dungeons = getAccessibleDailyDungeons(user.level);
+    if (dungeons.length == 0) {
+        lines.push('', '❌ 입장 가능한 일일 던전이 없습니다.');
+        return lines.join('\n');
+    }
+    dungeons.forEach(dungeon => {
+        const recCP = getDungeonRecommendedCP(dungeon);
+        lines.push('', '〈 ' + dungeon.name + ' 〉 ' + formatDungeonLevelRange(dungeon) + ' · ' + formatDungeonCPLine(userCP, recCP));
+    });
+    lines.push('', '/RPGenius 일일던전 입장 [던전이름]');
     return lines.join('\n');
 }
 
@@ -3987,6 +4025,63 @@ function getStatPointInfo(user) {
     };
 }
 
+function getDailyDungeonRewardItemNames(dungeon) {
+    const reward = dungeon && dungeon.dailyDungeon;
+    if (!reward) return [];
+    const names = [];
+    (reward.items || []).forEach(item => { if (item && item.name) names.push(item.name); });
+    (reward.itemChoices || []).forEach(pool => {
+        (pool || []).forEach(item => { if (item && item.name) names.push(item.name); });
+    });
+    return Array.from(new Set(names));
+}
+
+function getMissingDailyDungeonRewardItems(dungeon) {
+    const items = getDataCache('Item', []);
+    return getDailyDungeonRewardItemNames(dungeon).filter(name => items.findIndex(item => item && item.name == name) == -1);
+}
+
+async function enterDailyDungeon(user, dungeonName, channel) {
+    if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
+    const dungeon = findDailyDungeonByName(dungeonName);
+    if (!dungeon) return '❌ 존재하지 않는 일일 던전입니다.';
+    if (Number(user.level || 1) < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
+    const daily = getDailyDungeonDailyState(user);
+    if (daily.used) return '❌ 오늘의 일일 던전 입장 횟수를 이미 사용했습니다.';
+    await initRpgeniusData();
+    const missingItems = getMissingDailyDungeonRewardItems(dungeon);
+    if (missingItems.length > 0) return '❌ 일일 던전 보상 데이터를 찾을 수 없습니다.\n- ' + missingItems.join(', ');
+    const stats = calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    if (hp <= 1) return '❌ 체력이 1 이하일 때는 일일 던전에 입장할 수 없습니다.';
+    const cooldowns = getFieldCooldowns(user);
+    const now = Date.now();
+    daily.used = true;
+    daily.dungeonName = dungeon.name;
+    daily.outcome = 'in_progress';
+    daily.enteredAt = now;
+    delete daily.finishedAt;
+    if (channel) activeFieldChannels[user.name] = channel;
+    user.hp = hp;
+    user.field = {
+        name: dungeon.name,
+        dailyDungeon: true,
+        enteredAt: now,
+        nextActionAt: Number(cooldowns.nextActionAt || 0),
+        skillCooldowns: cooldowns.skillCooldowns,
+        killCount: 0,
+        elite: null,
+        dailyEffect: { triggered: false, type: null, expiresAt: 0 }
+    };
+    return [
+        '✅ 일일 던전에 입장했습니다.',
+        '- ' + dungeon.name,
+        '- 목표: 몬스터 ' + comma(DAILY_DUNGEON_KILL_TARGET) + '마리 처치',
+        '- 중도 퇴장 시 오늘은 다시 입장할 수 없습니다.'
+    ].join('\n');
+}
+
 async function enterField(user, fieldName, options, channel) {
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
@@ -4036,6 +4131,23 @@ async function enterField(user, fieldName, options, channel) {
     return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
 }
 
+function clearFieldRuntimeTimers(userName) {
+    clearFieldIktaeBot(userName);
+    clearFieldSunata(userName);
+    clearFieldMark(userName);
+    clearFieldEquipmentDotTimer(userName);
+    delete activeFieldChannels[userName];
+}
+
+function finishDailyDungeonState(user, outcome) {
+    if (!user || !user.field || !user.field.dailyDungeon) return;
+    const daily = getDailyDungeonDailyState(user);
+    daily.used = true;
+    daily.dungeonName = user.field.name;
+    daily.outcome = outcome;
+    daily.finishedAt = Date.now();
+}
+
 function leaveField(user) {
     if (!user.field || !user.field.name) return '❌ 입장 중인 필드가 없습니다.';
     if (user.field.worldBoss && user.field.skillSelecting) {
@@ -4048,13 +4160,13 @@ function leaveField(user) {
     }
     if (user.field.worldBoss) return '❌ 월드보스 전투 중에는 퇴장할 수 없습니다.';
     const fieldName = user.field.name;
+    const isDailyDungeon = user.field.dailyDungeon === true;
     saveFieldCooldowns(user);
     releaseEliteEncounter(user);
-    clearFieldIktaeBot(user.name);
-    clearFieldMark(user.name);
-    clearFieldEquipmentDotTimer(user.name);
-    delete activeFieldChannels[user.name];
+    if (isDailyDungeon) finishDailyDungeonState(user, 'left');
+    clearFieldRuntimeTimers(user.name);
     user.field = null;
+    if (isDailyDungeon) return '✅ 일일 던전에서 퇴장했습니다.\n- ' + fieldName + '\n- 오늘은 다시 입장할 수 없습니다.';
     return '✅ 필드에서 퇴장했습니다.\n- ' + fieldName;
 }
 
@@ -4209,14 +4321,73 @@ function getFieldCooldowns(user) {
 function saveFieldCooldowns(user) {
     if (!user || !user.field) return;
     const cooldowns = getFieldCooldowns(user);
-    cooldowns.nextActionAt = Number(user.field.nextActionAt || 0);
+    if (!user.field.dailyDungeon) cooldowns.nextActionAt = Number(user.field.nextActionAt || 0);
     cooldowns.skillCooldowns = user.field.skillCooldowns && typeof user.field.skillCooldowns == 'object' ? user.field.skillCooldowns : {};
 }
 
 function setFieldNextActionAt(user, nextActionAt) {
     if (!user || !user.field) return;
     user.field.nextActionAt = nextActionAt;
-    getFieldCooldowns(user).nextActionAt = nextActionAt;
+    if (!user.field.dailyDungeon) getFieldCooldowns(user).nextActionAt = nextActionAt;
+}
+
+function getActiveDailyDungeonEffect(user, now) {
+    if (!user || !user.field || !user.field.dailyDungeon) return null;
+    const effect = user.field.dailyEffect;
+    if (!effect || !effect.type) return null;
+    const timestamp = typeof now == 'undefined' ? Date.now() : Number(now);
+    if (timestamp < Number(effect.expiresAt || 0)) return effect;
+    effect.type = null;
+    effect.expiresAt = 0;
+    return null;
+}
+
+function getFieldActionCooldownMs(user, now) {
+    const effect = getActiveDailyDungeonEffect(user, now);
+    return effect && effect.type == 'punch' ? 1000 : randomInt(2000, 3000);
+}
+
+function setNextFieldActionAt(user) {
+    const now = Date.now();
+    setFieldNextActionAt(user, now + getFieldActionCooldownMs(user, now));
+}
+
+function tryActivateDailyDungeonEffect(user, now, rng) {
+    if (!user || !user.field || !user.field.dailyDungeon) return null;
+    if (!user.field.dailyEffect || typeof user.field.dailyEffect != 'object') {
+        user.field.dailyEffect = { triggered: false, type: null, expiresAt: 0 };
+    }
+    const state = user.field.dailyEffect;
+    if (state.triggered) return getActiveDailyDungeonEffect(user, now);
+    const random = typeof rng == 'function' ? rng : Math.random;
+    if (random() >= DAILY_DUNGEON_EFFECT_CHANCE) return null;
+    const timestamp = typeof now == 'undefined' ? Date.now() : Number(now);
+    const index = Math.min(DAILY_DUNGEON_EFFECTS.length - 1, Math.floor(random() * DAILY_DUNGEON_EFFECTS.length));
+    state.triggered = true;
+    state.type = DAILY_DUNGEON_EFFECTS[index];
+    state.expiresAt = timestamp + DAILY_DUNGEON_EFFECT_DURATION_MS;
+    return state;
+}
+
+function applyDailyDungeonEffectToAttack(user, extra, actionType) {
+    if (!user || !user.field || !user.field.dailyDungeon) return;
+    if (actionType != 'basic' && actionType != 'skill') return;
+    if (extra && (extra.isBotAutoAttack || extra.summonAttack || extra.dotAttack)) return;
+    const now = Date.now();
+    const wasTriggered = !!(user.field.dailyEffect && user.field.dailyEffect.triggered);
+    let effect = getActiveDailyDungeonEffect(user, now);
+    if (!effect && !wasTriggered) effect = tryActivateDailyDungeonEffect(user, now);
+    if (!effect) return;
+    if (!wasTriggered) {
+        const notice = effect.type == 'fever'
+            ? '🔥 피버타임! 10초간 최종 피해 +300%'
+            : effect.type == 'punch'
+                ? '🥊 펀치타임! 10초간 행동 쿨타임 1초'
+                : '🎯 히트타임! 10초간 추가 피해 +200%';
+        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + notice;
+    }
+    if (effect.type == 'fever') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + 3;
+    if (effect.type == 'hit') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + 2;
 }
 
 function getFieldBuffs(user) {
@@ -4634,7 +4805,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
             persistEliteState();
             user.field.elite = null;
         }
-        if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
         return lines.join('\n');
     };
     if (remainHp <= 0) return finishEliteKill();
@@ -4703,7 +4874,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         return lines.join('\n');
     }
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
-    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
     return lines.join('\n');
 }
 
@@ -4727,7 +4898,85 @@ function grantButagameFieldBonusDrops(user, dungeon, killCount, lines, rng = Mat
     return granted;
 }
 
+function rollDailyDungeonRange(value, rng) {
+    if (typeof value == 'number') return Math.max(0, Math.floor(value));
+    const min = Math.floor(Number(value && value.min || 0));
+    const max = Math.floor(Number(value && value.max || min));
+    const low = Math.min(min, max);
+    const high = Math.max(min, max);
+    return low + Math.floor((typeof rng == 'function' ? rng() : Math.random()) * (high - low + 1));
+}
+
+function pickDailyDungeonWeightedItem(pool, rng) {
+    const entries = (pool || []).filter(entry => entry && Number(entry.weight || 0) > 0);
+    const total = entries.reduce((sum, entry) => sum + Number(entry.weight || 0), 0);
+    if (entries.length == 0 || total <= 0) return null;
+    let roll = (typeof rng == 'function' ? rng() : Math.random()) * total;
+    for (const entry of entries) {
+        if (roll < Number(entry.weight || 0)) return entry;
+        roll -= Number(entry.weight || 0);
+    }
+    return entries[entries.length - 1];
+}
+
+function rollDailyDungeonClearReward(dungeon, rng) {
+    const random = typeof rng == 'function' ? rng : Math.random;
+    const reward = dungeon && dungeon.dailyDungeon;
+    if (!reward) return null;
+    const itemCounts = {};
+    (reward.items || []).forEach(item => {
+        if (!item || !item.name) return;
+        itemCounts[item.name] = Number(itemCounts[item.name] || 0) + rollDailyDungeonRange(item.count, random);
+    });
+    (reward.itemChoices || []).forEach(pool => {
+        const picked = pickDailyDungeonWeightedItem(pool, random);
+        if (!picked) return;
+        itemCounts[picked.name] = Number(itemCounts[picked.name] || 0) + rollDailyDungeonRange(picked.count, random);
+    });
+    return {
+        exp: Math.max(0, Math.floor(Number(reward.exp || 0))),
+        gold: rollDailyDungeonRange(reward.gold, random),
+        items: itemCounts,
+        lucky: random() < DAILY_DUNGEON_LUCKY_CHANCE
+    };
+}
+
+function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, rng) {
+    const rolled = rollDailyDungeonClearReward(dungeon, rng);
+    if (!rolled) return { error: '❌ 일일 던전 보상 설정을 찾을 수 없습니다.' };
+    const items = getDataCache('Item', []);
+    const itemRewards = Object.entries(rolled.items).map(([name, count]) => ({
+        name,
+        count: Number(count || 0),
+        id: items.findIndex(item => item && item.name == name)
+    }));
+    const missing = itemRewards.filter(item => item.id == -1).map(item => item.name);
+    if (missing.length > 0) return { error: '❌ 일일 던전 보상 데이터를 찾을 수 없습니다.\n- ' + missing.join(', ') };
+    const expBase = Math.round(rolled.exp * (1 + Number(slotEffects.expBonus || 0) + Number(stats.exp || 0) + getExpPotionBonus(user)));
+    let expReward = applyLowLevelExpBonus(user, applyPrestigeExpBonus(user, expBase));
+    let goldReward = Math.round(rolled.gold * (1 + Number(slotEffects.goldBonus || 0) + Number(extra && extra.goldBonus || 0) + Number(stats.gold || 0) + (user.jobPrestige === true ? 0.05 : 0) + getGoldPotionBonus(user)));
+    const rewardMultiplier = rolled.lucky ? 2 : 1;
+    expReward *= rewardMultiplier;
+    goldReward *= rewardMultiplier;
+    itemRewards.forEach(item => { item.count *= rewardMultiplier; });
+    const levelUps = addExperience(user, expReward);
+    user.gold = Number(user.gold || 0) + goldReward;
+    itemRewards.forEach(item => addInventoryItem(user, item.id, item.count));
+    const lines = ['🎉 일일 던전 클리어!', '- ' + dungeon.name];
+    if (rolled.lucky) lines.push('', '🍀 럭키 타임! 클리어 보상을 2배로 획득합니다!');
+    lines.push('', '[ 클리어 보상 ]', '- XP ' + comma(expReward), '- 🪙 ' + comma(goldReward));
+    itemRewards.forEach(item => lines.push('- ' + item.name + ' x' + comma(item.count)));
+    if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
+    saveFieldCooldowns(user);
+    finishDailyDungeonState(user, 'cleared');
+    clearFieldRuntimeTimers(user.name);
+    user.field = null;
+    lines.push('', '✅ 보상을 획득하고 일일 던전에서 자동 퇴장했습니다.');
+    return { text: lines.join('\n'), exp: expReward, gold: goldReward, items: itemRewards, lucky: rolled.lucky };
+}
+
 function buildHuntResult(user, dungeon, rawDamage, extra) {
+    const isDailyDungeon = !!(user.field && user.field.dailyDungeon);
     const stats = calculateUserStats(user);
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
@@ -4748,25 +4997,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     const requireLevel = Number(dungeon.requireLevel || 1);
     const levelDiff = Number(user.level || 1) - requireLevel;
     const noItemDrop = levelDiff >= NO_ITEM_DROP_LEVEL_DIFF;
-    const overLeveledCap = levelDiff >= BIG_LEVEL_DIFF_THRESHOLD && typeof dungeon.goldMineLevel == 'undefined';
+    const overLeveledCap = !isDailyDungeon && levelDiff >= BIG_LEVEL_DIFF_THRESHOLD;
     let killCapNote = null;
     if (overLeveledCap && killCount > BIG_LEVEL_DIFF_KILL_CAP) {
         killCount = BIG_LEVEL_DIFF_KILL_CAP;
     }
-    let goldMineCapNote = null;
-    let goldMineLimitReached = false;
-    if (typeof dungeon.goldMineLevel != 'undefined') {
-        const today = getKoreanDateKey(new Date());
-        if (!user.goldMineDaily || user.goldMineDaily.date != today) user.goldMineDaily = { date: today, count: 0 };
-        const used = Number(user.goldMineDaily.count || 0);
-        const remaining = Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - used);
-        if (remaining <= 0) {
-            killCount = 0;
-            goldMineLimitReached = true;
-        } else if (killCount > remaining) {
-            killCount = remaining;
-            goldMineCapNote = '- ⛏️ 황금 광산 일일 처치 한도(' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리) 도달. ' + comma(remaining) + '마리만 처치되었습니다.';
-        }
+    if (isDailyDungeon) {
+        const remaining = Math.max(0, DAILY_DUNGEON_KILL_TARGET - Number(user.field.killCount || 0));
+        killCount = Math.min(killCount, remaining);
     }
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
@@ -4808,26 +5046,24 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     // 가시 반사: 받은 반격 히트 각각에 대해 개별적으로 반사 (몰아서 한 번에 계산하지 않음). 표시는 아래 피해 로그와 히트별로 이어붙인다.
     const thornsHitLines = [];
     if (fieldDamage > 0 && !avoided) {
-        let goldMineRemaining = typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily
-            ? Math.max(0, GOLD_MINE_DAILY_KILL_LIMIT - Number(user.goldMineDaily.count || 0) - killCount)
+        let remainingKills = isDailyDungeon
+            ? Math.max(0, DAILY_DUNGEON_KILL_TARGET - Number(user.field.killCount || 0) - killCount)
             : Infinity;
         const incomingHitCount = Math.max(1, Number(monsterHitResult && monsterHitResult.hitCount || 1));
         for (let i = 0; i < incomingHitCount; i++) {
             const thornsReflect = applyDamageVariance(getThornsReflect(user, stats));
             if (thornsReflect <= 0) { thornsHitLines.push(null); continue; }
             const bonusKills = Math.floor(thornsReflect / Number(monster.hp || 1));
-            const granted = Math.min(bonusKills, Math.max(0, goldMineRemaining));
+            const granted = Math.min(bonusKills, Math.max(0, remainingKills));
             killCount += granted;
-            goldMineRemaining -= granted;
-            thornsHitLines.push('💥 가시 반사로 ' + comma(thornsReflect) + ' 피해 (추가 처치 ' + comma(bonusKills) + '마리)');
+            remainingKills -= granted;
+            thornsHitLines.push('💥 가시 반사로 ' + comma(thornsReflect) + ' 피해 (추가 처치 ' + comma(granted) + '마리)');
         }
     }
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
-    if (goldMineCapNote) lines.push(goldMineCapNote);
-    if (goldMineLimitReached) lines.push('- ⛏️ 오늘은 황금 광산에서 더 이상 사냥할 수 없습니다. (일일 한도 ' + comma(GOLD_MINE_DAILY_KILL_LIMIT) + '마리 도달)');
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (hitResult.bonusTripleZero > 0) lines.push('- 0️⃣ 추가 피해 +' + comma(hitResult.bonusTripleZero));
     applyAttackPotentialRecovery(user, stats, lines);
@@ -4854,20 +5090,41 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
         user.hp = 1;
         saveFieldCooldowns(user);
+        if (isDailyDungeon) {
+            finishDailyDungeonState(user, 'failed');
+            clearFieldRuntimeTimers(user.name);
+        }
         user.field = null;
         lines.push('- 남은 체력: 1/' + comma(maxHp));
-        lines.push('', '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
+        lines.push('', isDailyDungeon
+            ? '💀 보상을 획득하지 못하고 일일 던전에서 퇴장했습니다. 오늘은 다시 입장할 수 없습니다.'
+            : '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
         return lines.join('\n');
     }
 
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
+    if (isDailyDungeon) {
+        if (killCount > 0) user.field.killCount = Math.min(DAILY_DUNGEON_KILL_TARGET, Number(user.field.killCount || 0) + killCount);
+        const progress = Number(user.field.killCount || 0);
+        lines.push('', '[ 일일 던전 진행 ]', '- ' + comma(progress) + '/' + comma(DAILY_DUNGEON_KILL_TARGET) + '마리');
+        if (progress >= DAILY_DUNGEON_KILL_TARGET) {
+            const clearResult = grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra);
+            if (clearResult.error) {
+                lines.push('', clearResult.error);
+                if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
+            } else {
+                lines.push('', clearResult.text);
+            }
+            return lines.join('\n');
+        }
+        if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
+        return lines.join('\n');
+    }
+
     const levelMultiplier = getLevelExpMultiplier(user.level, dungeon.requireLevel);
     if (killCount > 0) {
         user.field.killCount = Number(user.field.killCount || 0) + killCount;
-        if (typeof dungeon.goldMineLevel != 'undefined' && user.goldMineDaily) {
-            user.goldMineDaily.count = Number(user.goldMineDaily.count || 0) + killCount;
-        }
         if (dungeon.name && String(dungeon.name).includes('뉴비즈')) {
             const prog = getTitleProgress(user);
             prog.newbieKills = Math.min(1000, Number(prog.newbieKills || 0) + killCount);
@@ -4925,19 +5182,6 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        const oreInfo = GOLD_MINE_ORE_DROPS[Number(dungeon.goldMineLevel || 0)];
-        if (oreInfo) {
-            const items = getDataCache('Item', []);
-            const oreItemId = items.findIndex(item => item.name == oreInfo.name);
-            if (oreItemId != -1) {
-                let oreDropCount = 0;
-                for (let i = 0; i < killCount; i++) if (Math.random() < oreInfo.chance * dropMultiplier * levelMultiplier) oreDropCount++;
-                if (oreDropCount > 0) {
-                    addInventoryItem(user, oreItemId, oreDropCount);
-                    lines.push('- ⛏️ ' + oreInfo.name + ' x' + comma(oreDropCount));
-                }
-            }
-        }
         const eventDiceDaily = getEventDiceDropDailyState(user);
         if (Number(eventDiceDaily.count || 0) < EVENT_DICE_DROP_DAILY_LIMIT && Math.random() < EVENT_DICE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
@@ -4952,14 +5196,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         }
     }
 
-    if (!(extra && extra.isBotAutoAttack)) setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
     if (killCount > 0 && !noItemDrop) tryEncounterFragment(user, dungeon, lines);
     if (killCount > 0) tryEncounterElite(user, dungeon, lines);
     return lines.join('\n');
 }
 
 function getFragmentTierForDungeon(dungeon) {
-    if (!dungeon || typeof dungeon.goldMineLevel != 'undefined') return null;
+    if (!dungeon) return null;
     const lvl = Number(dungeon.requireLevel || 0);
     if (!lvl) return null;
     for (const tier of ['low', 'mid', 'high']) {
@@ -5017,6 +5261,11 @@ function useBasicAttackInField(user, channel) {
 function getFieldCombatContext(user) {
     if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
     if (user.field.skillSelecting) return { error: '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])' };
+    if (user.field.dailyDungeon) {
+        const dungeon = findDailyDungeonByName(user.field.name);
+        if (!dungeon) return { error: '❌ 현재 일일 던전을 찾을 수 없습니다.' };
+        return { type: 'dailyDungeon', dungeon: dungeon };
+    }
     if (user.field.hell) return { type: 'hell', dungeon: getHellDungeon(), phase: user.field.phase };
     if (user.field.worldBoss) {
         const boss = findWorldBossByName(user.field.name);
@@ -5098,7 +5347,7 @@ function buildHellPillarResult(user, extra) {
     if (extra.notice) lines.push('- ' + extra.notice);
     if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
-    setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+    setNextFieldActionAt(user);
     return lines.join('\n');
 }
 
@@ -5586,6 +5835,7 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
         extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(fieldBuffsForAttack.nextFinalDamageBonus.value || 0);
         delete fieldBuffsForAttack.nextFinalDamageBonus;
     }
+    applyDailyDungeonEffectToAttack(user, extra, actionType);
     rawDamage = applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill);
     if (!(extra && (extra.summonAttack || extra.dotAttack))) {
         const nextOrder = getEquipmentAttackOrderPreview(user);
@@ -5681,7 +5931,7 @@ function executeSelfDestructInField(user) {
     const result = applyFieldDamageAction(user, context, rawDamage, extra, 'skill', syntheticSkill);
     if (user.field) {
         if (context.type == 'worldBoss') setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        else setNextFieldActionAt(user);
     }
     return result;
 }
@@ -5937,7 +6187,7 @@ function executeMainCardSkillInField(user, skillName) {
         const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        else setNextFieldActionAt(user);
         startFieldIktaeBot(user.name);
         return lines.join('\n');
     }
@@ -6011,7 +6261,7 @@ function executeMainCardSkillInField(user, skillName) {
         const lines = ['🎵 수나타를 소환했습니다!\n- 5초마다 공격력의 ' + (Math.round(atkMul * 1000) / 10) + '% 자동 공격\n- 소환 동안 본인 공격력 +' + (Math.round(buffMul * 1000) / 10) + '%\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        else setNextFieldActionAt(user);
         startFieldSunata(user.name);
         return lines.join('\n');
     }
@@ -6025,7 +6275,7 @@ function executeMainCardSkillInField(user, skillName) {
         const lines = ['✍️ 유서새김! 대상에게 표식을 새겼습니다.\n- 10초간 방어력 ' + (Math.round(defDown * 1000) / 10) + '% 감소\n- 2초마다 지속 피해 ' + comma(dotDmg), '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        else setNextFieldActionAt(user);
         startFieldMark(user.name);
         return lines.join('\n');
     }
@@ -6050,7 +6300,7 @@ function executeMainCardSkillInField(user, skillName) {
         const lines = ['🔎 범인은 이 안에!\n' + effectLine + '\n- 다음 공격 시 최종 피해 +' + (Math.round(fdmg * 1000) / 10) + '%\n- HP ' + comma(hpCost) + ' 소모', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setFieldNextActionAt(user, Date.now() + randomInt(2000, 3000));
+        else setNextFieldActionAt(user);
         return lines.join('\n');
     }
     if (Number(stats.skillTrueDmg || 0) > 0) extra.skillTrueDmg = Number(stats.skillTrueDmg);
@@ -10001,7 +10251,7 @@ class RPGUser {
         this.pendingAction = null;
         this.pendingFragment = null;
         this.fragmentCounts = {};
-        this.goldMineDaily = null;
+        this.dailyDungeonDaily = null;
         this.eventDiceDropDaily = null;
         this.expPotion = null;
         this.goldPotion = null;
@@ -10065,7 +10315,7 @@ class RPGUser {
         if (typeof this.pendingFragment == 'undefined') this.pendingFragment = null;
         if (!this.fragmentCounts || typeof this.fragmentCounts != 'object') this.fragmentCounts = {};
         cleanupExpiredSouls(this);
-        if (typeof this.goldMineDaily == 'undefined') this.goldMineDaily = null;
+        if (typeof this.dailyDungeonDaily == 'undefined') this.dailyDungeonDaily = null;
         if (typeof this.eventDiceDropDaily == 'undefined') this.eventDiceDropDaily = null;
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
@@ -11751,6 +12001,26 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
+    if (args[0] == '일일던전') {
+        if (!args[1]) {
+            reply(formatDailyDungeonList(user));
+            return true;
+        }
+        if (args[1] != '입장') {
+            reply('❌ /RPGenius 일일던전 입장 [던전이름]');
+            return true;
+        }
+        const dungeonName = args.slice(2).join(' ').trim();
+        if (!dungeonName) {
+            reply('❌ /RPGenius 일일던전 입장 [던전이름]');
+            return true;
+        }
+        const result = await enterDailyDungeon(user, dungeonName, channel);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (args[0] == '필드입장') {
         const fieldName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1).trim();
         if (!fieldName) {
@@ -12382,10 +12652,23 @@ module.exports = {
     getEquipmentTradeBlockReason,
     markEquipmentTraded,
     getEquipmentTradeLimitInfo,
+    getAccessibleDailyDungeons,
+    findDailyDungeonByName,
+    formatDailyDungeonList,
+    getDailyDungeonDailyState,
+    enterDailyDungeon,
     enterField,
     leaveField,
     useBasicAttackInField,
     useSkillInField,
+    buildHuntResult,
+    getActiveDailyDungeonEffect,
+    tryActivateDailyDungeonEffect,
+    applyDailyDungeonEffectToAttack,
+    getFieldActionCooldownMs,
+    rollDailyDungeonClearReward,
+    grantDailyDungeonClearReward,
+    DAILY_DUNGEON_KILL_TARGET,
     isEquipmentBindingEnabled,
     formatSkillDescWithIncrease,
     formatCurrentSkillDesc,

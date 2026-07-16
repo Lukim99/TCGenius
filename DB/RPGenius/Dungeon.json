@@ -300,111 +300,6 @@
         "maxCmb": 1
     },
     {
-        "name": "버려진 황금 광산",
-        "requireLevel": 1,
-        "maxLevel": 50,
-        "goldMineLevel": 0,
-        "reward": { "exp": 3, "gold": { "min": 34, "max": 52 } },
-        "atk": 35, "pnt": 2, "def": 7, "hp": 45,
-        "elite": {
-            "name": "광부 망령",
-            "atk": 165, "pnt": 6, "def": 36, "hp": 720,
-            "reward": [
-                { "type": "경험치", "count": { "min": 28, "max": 56 } },
-                { "type": "골드",   "count": { "min": 290, "max": 460 } },
-                { "type": "아이템", "item_id": 0,  "count": { "min": 18, "max": 40 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1,  "max": 1  }, "roll": 0.3 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1,  "max": 1  }, "roll": 0.4 }
-            ],
-            "crit": 0.1, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-        },
-        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-    },
-    {
-        "name": "희미한 황금 광산",
-        "requireLevel": 51,
-        "maxLevel": 100,
-        "goldMineLevel": 1,
-        "reward": { "exp": 9, "gold": { "min": 150, "max": 208 } },
-        "atk": 38, "pnt": 6, "def": 24, "hp": 50,
-        "elite": {
-            "name": "광부 고블린",
-            "atk": 495, "pnt": 18, "def": 108, "hp": 2160,
-            "reward": [
-                { "type": "경험치", "count": { "min": 84, "max": 168 } },
-                { "type": "골드",   "count": { "min": 1250, "max": 1980 } },
-                { "type": "아이템", "item_id": 0,  "count": { "min": 54, "max": 120 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1,  "max": 2  }, "roll": 0.4 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1,  "max": 1  }, "roll": 0.45 }
-            ],
-            "crit": 0.1, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-        },
-        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-    },
-    {
-        "name": "저주받은 황금 광산",
-        "requireLevel": 101,
-        "maxLevel": 150,
-        "goldMineLevel": 2,
-        "reward": { "exp": 18, "gold": { "min": 323, "max": 454 } },
-        "atk": 46, "pnt": 12, "def": 48, "hp": 60,
-        "elite": {
-            "name": "감염된 광부 고블린",
-            "atk": 990, "pnt": 36, "def": 216, "hp": 4320,
-            "reward": [
-                { "type": "경험치", "count": { "min": 168, "max": 336 } },
-                { "type": "골드",   "count": { "min": 2670, "max": 4910 } },
-                { "type": "아이템", "item_id": 0,  "count": { "min": 108, "max": 240 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1,   "max": 3   }, "roll": 0.5 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1,   "max": 1   }, "roll": 0.5 }
-            ],
-            "crit": 0.15, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-        },
-        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-    },
-    {
-        "name": "찬란한 황금 광산",
-        "requireLevel": 151,
-        "maxLevel": 200,
-        "goldMineLevel": 3,
-        "reward": { "exp": 30, "gold": { "min": 646, "max": 908 } },
-        "atk": 61, "pnt": 20, "def": 68, "hp": 78,
-        "elite": {
-            "name": "금광의 수호자",
-            "atk": 1650, "pnt": 60, "def": 360, "hp": 7200,
-            "reward": [
-                { "type": "경험치", "count": { "min": 280, "max": 560 } },
-                { "type": "골드",   "count": { "min": 5800, "max": 10000 } },
-                { "type": "아이템", "item_id": 0,  "count": { "min": 180, "max": 400 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1,   "max": 4   }, "roll": 0.6 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1,   "max": 1   }, "roll": 0.55 }
-            ],
-            "crit": 0.2, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-        },
-        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-    },
-    {
-        "name": "신성한 황금 광산",
-        "requireLevel": 201,
-        "maxLevel": 250,
-        "goldMineLevel": 4,
-        "reward": { "exp": 45, "gold": { "min": 1292, "max": 1816 } },
-        "atk": 85, "pnt": 30, "def": 92, "hp": 105,
-        "elite": {
-            "name": "신성한 금광의 수호자",
-            "atk": 2475, "pnt": 90, "def": 540, "hp": 10800,
-            "reward": [
-                { "type": "경험치", "count": { "min": 420, "max": 840 } },
-                { "type": "골드",   "count": { "min": 11600, "max": 20000 } },
-                { "type": "아이템", "item_id": 0,  "count": { "min": 270, "max": 600 }, "roll": 0.9 },
-                { "type": "아이템", "item_id": 67, "count": { "min": 1,   "max": 5   }, "roll": 0.7 },
-                { "type": "아이템", "item_id": 66, "count": { "min": 1,   "max": 1   }, "roll": 0.6 }
-            ],
-            "crit": 0.25, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-        },
-        "crit": 0, "critMul": 1.5, "critDef": 0, "cmb": 0, "maxCmb": 1
-    },
-    {
         "name": "관찰자들의 도시",
         "requireLevel": 21,
         "reward": {
@@ -1614,6 +1509,17 @@
                 "max": 1598
             }
         },
+        "dailyDungeon": {
+            "exp": 2500000,
+            "gold": { "min": 1500000, "max": 3000000 },
+            "items": [
+                { "name": "일반 떡밥", "count": { "min": 500, "max": 1000 } },
+                { "name": "강화석", "count": { "min": 500, "max": 1000 } }
+            ],
+            "itemChoices": [
+                [{ "name": "5성 카드팩", "weight": 100, "count": 1 }]
+            ]
+        },
         "atk": 1330,
         "pnt": 66,
         "def": 155,
@@ -1763,6 +1669,20 @@
                 "min": 1775,
                 "max": 2662
             }
+        },
+        "dailyDungeon": {
+            "exp": 4500000,
+            "gold": { "min": 3000000, "max": 4500000 },
+            "items": [
+                { "name": "일반 떡밥", "count": { "min": 500, "max": 1000 } },
+                { "name": "강화석", "count": { "min": 500, "max": 1000 } }
+            ],
+            "itemChoices": [
+                [
+                    { "name": "5성 카드팩", "weight": 80, "count": 1 },
+                    { "name": "6성 카드팩", "weight": 20, "count": 1 }
+                ]
+            ]
         },
         "atk": 1680,
         "pnt": 80,
@@ -1914,6 +1834,20 @@
                 "max": 4857
             }
         },
+        "dailyDungeon": {
+            "exp": 8000000,
+            "gold": { "min": 4500000, "max": 6000000 },
+            "items": [
+                { "name": "일반 떡밥", "count": { "min": 1000, "max": 1500 } },
+                { "name": "강화석", "count": { "min": 1000, "max": 1500 } }
+            ],
+            "itemChoices": [
+                [
+                    { "name": "5성 카드팩", "weight": 60, "count": 1 },
+                    { "name": "6성 카드팩", "weight": 40, "count": 1 }
+                ]
+            ]
+        },
         "atk": 2450,
         "pnt": 120,
         "def": 260,
@@ -1990,6 +1924,20 @@
                 "max": 7140
             }
         },
+        "dailyDungeon": {
+            "exp": 13000000,
+            "gold": { "min": 6000000, "max": 7500000 },
+            "items": [
+                { "name": "일반 떡밥", "count": { "min": 1000, "max": 1500 } },
+                { "name": "강화석", "count": { "min": 1000, "max": 1500 } }
+            ],
+            "itemChoices": [
+                [
+                    { "name": "5성 카드팩", "weight": 40, "count": 1 },
+                    { "name": "6성 카드팩", "weight": 60, "count": 1 }
+                ]
+            ]
+        },
         "atk": 3500,
         "pnt": 180,
         "def": 180,
@@ -2065,6 +2013,25 @@
                 "min": 8300,
                 "max": 10140
             }
+        },
+        "dailyDungeon": {
+            "exp": 25000000,
+            "gold": { "min": 7500000, "max": 9000000 },
+            "items": [
+                { "name": "일반 떡밥", "count": { "min": 1500, "max": 2000 } },
+                { "name": "강화석", "count": { "min": 1500, "max": 2000 } },
+                { "name": "상급 강화석", "count": { "min": 1, "max": 3 } }
+            ],
+            "itemChoices": [
+                [
+                    { "name": "5성 카드팩", "weight": 20, "count": 1 },
+                    { "name": "6성 카드팩", "weight": 80, "count": 1 }
+                ],
+                [
+                    { "name": "헬 초대장", "weight": 50, "count": 100 },
+                    { "name": "헬 도전장", "weight": 50, "count": 60 }
+                ]
+            ]
         },
         "atk": 3700,
         "pnt": 200,
