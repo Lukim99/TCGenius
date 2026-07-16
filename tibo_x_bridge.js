@@ -8,7 +8,7 @@ const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/mo
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_POLL_INTERVAL_MS = 60 * 1000;
 const MIN_POLL_INTERVAL_MS = 60 * 1000;
-const TITLE_PREFIX = '■ Tibo 트윗) ';
+const TITLE_PREFIX = '&#128994; Tibo 트윗) ';
 const MAX_DC_TITLE_LENGTH = 40;
 
 function truncateUtf16(value, maxLength) {
