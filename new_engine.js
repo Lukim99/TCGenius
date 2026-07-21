@@ -1604,7 +1604,7 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
     const normalizedHeadtext = String(headtext || '').trim();
     const normalizedPostNos = [...new Set((Array.isArray(postNos) ? postNos : [postNos])
         .map(postNo => String(postNo || '').trim()))];
-    let agent = null;
+    let browser = null;
 
     if (!/^[a-z0-9_]+$/i.test(normalizedGalleryId)) {
         return { success: false, msg: "올바른 갤러리 ID가 필요합니다.", logs };
@@ -1618,95 +1618,111 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
     if (!id || !password) {
         return { success: false, msg: "관리 계정(id/password)이 필요합니다.", logs };
     }
+    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
+        return { success: false, msg: "동시 브라우저 한도 초과.", logs };
+    }
+    const apiKey = process.env.BROWSERLESS_API_KEY;
+    if (!apiKey) return { success: false, msg: "BROWSERLESS_API_KEY 미설정", logs };
 
+    puppeteerRunning++;
     try {
-        const loginResult = await getDcLoginCookies(id, password, log);
-        if (!loginResult.ok) return { success: false, msg: loginResult.msg, logs };
-
-        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
-        agent = new HttpsProxyAgent({
-            proxy: proxyUrl,
-            keepAlive: true,
-            keepAliveMsecs: 30000,
-            rejectUnauthorized: false
+        browser = await puppeteer.connect({
+            browserWSEndpoint: `wss://production-sfo.browserless.io/chromium?token=${apiKey}`,
+            protocolTimeout: 30000
         });
         const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        let liveCookies = { ...loginResult.cookies };
-        const mergeCookies = response => {
-            const setCookies = response.headers?.['set-cookie'];
-            if (!setCookies) return;
-            for (const value of Array.isArray(setCookies) ? setCookies : [setCookies]) {
-                const nameValue = value.split(';')[0];
-                const separator = nameValue.indexOf('=');
-                if (separator > 0) {
-                    liveCookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
-                }
-            }
-        };
-        const cookieString = () => Object.entries(liveCookies).map(([key, value]) => `${key}=${value}`).join('; ');
+        const page = await browser.newPage();
+        await page.setUserAgent(desktopUA);
+        await page.goto('https://sign.dcinside.com/login', {
+            waitUntil: 'domcontentloaded',
+            timeout: 15000
+        });
+        log("로그인 페이지 로드");
+
+        const formReady = await page.evaluate((userId, userPassword) => {
+            const idElement = document.querySelector('input[name="user_id"]')
+                || document.querySelector('input[name="code"]')
+                || document.querySelector('input[type="text"][name]');
+            const passwordElement = document.querySelector('input[type="password"]');
+            if (!idElement || !passwordElement) return false;
+            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeSet.call(idElement, userId);
+            idElement.dispatchEvent(new Event('input', { bubbles: true }));
+            nativeSet.call(passwordElement, userPassword);
+            passwordElement.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        }, id, password);
+        if (!formReady) return { success: false, msg: "로그인 폼 없음", logs };
+
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+            page.evaluate(() => {
+                const button = document.querySelector('button[type="submit"]')
+                    || document.querySelector('input[type="submit"]')
+                    || document.querySelector('.btn_login')
+                    || document.querySelector('form button');
+                if (button) button.click();
+                else document.querySelector('form')?.submit();
+            })
+        ]);
+        if (await page.$('input[type="password"]')) {
+            return { success: false, msg: "관리 계정 로그인 실패", logs };
+        }
+        log("관리 계정 로그인 성공");
+
         const listUrl = `https://gall.dcinside.com/mgallery/board/lists/?id=${encodeURIComponent(normalizedGalleryId)}`;
-        const listResponse = await axios.get(`${listUrl}&_=${Date.now()}`, {
-            httpsAgent: agent,
-            headers: {
-                'User-Agent': desktopUA,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'ko-KR,ko;q=0.9',
-                'Referer': listUrl,
-                'Cookie': cookieString()
-            },
+        await page.goto(`${listUrl}&_=${Date.now()}`, {
+            waitUntil: 'domcontentloaded',
             timeout: 20000
         });
-        mergeCookies(listResponse);
 
-        const $ = cheerio.load(listResponse.data);
-        const headtextOption = $('#listHeadTxtLyr li').filter((index, element) => (
-            String($(element).attr('data-value') || '') === normalizedHeadtext
-        ));
-        if (!headtextOption.length) {
-            return { success: false, msg: "관리 권한 또는 대상 말머리 옵션을 확인할 수 없습니다.", logs };
+        const changeResult = await page.evaluate(async ({ galleryId, requestedHeadtext, postNumbers }) => {
+            const hasHeadtext = [...document.querySelectorAll('#listHeadTxtLyr li[data-value]')]
+                .some(element => element.getAttribute('data-value') === requestedHeadtext);
+            if (!hasHeadtext) return { error: 'headtext_not_found' };
+
+            const ciToken = (document.cookie.match(/(?:^|;\s*)ci_c=([^;]+)/) || [])[1] || '';
+            if (!ciToken) return { error: 'ci_token_not_found' };
+
+            const params = new URLSearchParams({
+                ci_t: ciToken,
+                id: galleryId,
+                _GALLTYPE_: 'M',
+                headtext: requestedHeadtext
+            });
+            for (const postNo of postNumbers) params.append('nos[]', postNo);
+
+            const response = await fetch('/ajax/minor_manager_board_ajax/chg_headtext_batch', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: params.toString()
+            });
+            return { status: response.status, body: await response.text() };
+        }, {
+            galleryId: normalizedGalleryId,
+            requestedHeadtext: normalizedHeadtext,
+            postNumbers: normalizedPostNos
+        });
+
+        if (changeResult?.error === 'headtext_not_found') {
+            return { success: false, msg: "대상 말머리 옵션을 확인할 수 없습니다.", logs };
         }
-
-        const ciToken = String(liveCookies.ci_c || '');
-        if (!ciToken) {
-            invalidateSession(id);
+        if (changeResult?.error === 'ci_token_not_found') {
             return { success: false, msg: "관리 요청 인증 토큰을 찾을 수 없습니다.", logs };
         }
-
-        const params = new URLSearchParams({
-            ci_t: ciToken,
-            id: normalizedGalleryId,
-            _GALLTYPE_: 'M',
-            headtext: normalizedHeadtext
-        });
-        for (const postNo of normalizedPostNos) params.append('nos[]', postNo);
-
-        const changeResponse = await axios.post(
-            'https://gall.dcinside.com/ajax/minor_manager_board_ajax/chg_headtext_batch',
-            params.toString(),
-            {
-                httpsAgent: agent,
-                headers: {
-                    'User-Agent': desktopUA,
-                    'Accept': 'application/json, text/javascript, */*; q=0.01',
-                    'Accept-Language': 'ko-KR,ko;q=0.9',
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Origin': 'https://gall.dcinside.com',
-                    'Referer': listUrl,
-                    'Cookie': cookieString()
-                },
-                timeout: 20000
-            }
-        );
-        mergeCookies(changeResponse);
-        const data = parseDcResponseData(changeResponse.data);
-        if (data?.result !== 'success') {
-            const message = getDcFailureMessage(data, "말머리 변경 실패");
-            if (/로그인|세션|login|unauthorized/i.test(message)) invalidateSession(id);
-            return { success: false, msg: message, logs };
+        const data = parseDcResponseData(changeResult?.body);
+        if (changeResult?.status !== 200 || data?.result !== 'success') {
+            return {
+                success: false,
+                msg: getDcFailureMessage(data, `말머리 변경 실패 (HTTP ${changeResult?.status || 0})`),
+                logs
+            };
         }
 
-        saveCachedSession(id, liveCookies);
         log(`말머리 변경 완료: ${normalizedPostNos.join(', ')}`);
         return {
             success: true,
@@ -1717,12 +1733,10 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
         };
     } catch (error) {
         const message = getDcFailureMessage(error.response?.data, error.message);
-        if (id && (error.response?.status === 401 || /로그인|세션|login|unauthorized/i.test(message))) {
-            invalidateSession(id);
-        }
         return { success: false, msg: `말머리 변경 오류: ${message}`, logs };
     } finally {
-        if (agent) agent.destroy();
+        if (browser) await browser.close().catch(() => {});
+        puppeteerRunning--;
     }
 }
 

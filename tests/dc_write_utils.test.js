@@ -159,6 +159,10 @@ assert.deepStrictEqual(extractDcPostNosForGallery(
     'https://gall.dcinside.com/board/view/?id=agent_stack&amp;no=7006), https://m.dcinside.com/board/agent_stack/7007.',
     'agent_stack'
 ), ['7006', '7007']);
+assert.deepStrictEqual(extractDcPostNosForGallery([
+    'https://gall.dcinside.com/mgallery/board/view/?id=agent_stack&no=6597',
+    'https://m.dcinside.com/board/agent_stack/6597'
+], 'agent_stack'), ['6597']);
 
 const xPostUrl = 'https://x.com/thsottiaux/status/2077775690058125383';
 const xImageUrl = 'https://play-lh.googleusercontent.com/x-icon.png';
@@ -280,7 +284,10 @@ assert.ok(changeHeadtextStart >= 0 && changeHeadtextEnd > changeHeadtextStart, '
 assert.ok(changeHeadtextSource.includes('/ajax/minor_manager_board_ajax/chg_headtext_batch'));
 assert.ok(changeHeadtextSource.includes("params.append('nos[]', postNo)"), 'Post numbers must use the official array form.');
 assert.ok(changeHeadtextSource.includes("data?.result !== 'success'"), 'Only an explicit DC success response may succeed.');
-assert.ok(changeHeadtextSource.includes('agent.destroy()'), 'The proxy agent must be released.');
+assert.ok(changeHeadtextSource.includes('await page.evaluate(async'), 'Login and manager request must share one browser session.');
+assert.ok(!changeHeadtextSource.includes('httpsAgent: agent'), 'The authenticated manager request must not switch to another proxy session.');
+assert.ok(changeHeadtextSource.includes('browser.close()'), 'The Browserless session must be released.');
+assert.ok(changeHeadtextSource.includes('puppeteerRunning--'), 'The Browserless concurrency slot must be released.');
 assert.ok(engineSource.includes('module.exports = { doDcChangePostHeadtext, doDcWriteComment, doDcWritePost, getDcPostComments };'));
 
 console.log('dc_write_utils.test.js: OK');

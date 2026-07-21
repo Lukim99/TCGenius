@@ -216,7 +216,9 @@ function createTiboXBridge(options = {}) {
     const dcId = options.dcId ?? process.env.TIBO_DC_ID;
     const dcPassword = options.dcPassword ?? process.env.TIBO_DC_PASSWORD;
     const adminDcId = options.adminDcId ?? process.env.ADMIN_DC_ID;
-    const adminDcPassword = options.adminDcPassword ?? process.env.ADMIN_DC_PASSWORD;
+    const adminDcPassword = options.adminDcPassword
+        ?? process.env.ADMIN_DC_PW
+        ?? process.env.ADMIN_DC_PASSWORD;
     const pollIntervalMs = normalizePollInterval(
         options.pollIntervalMs ?? process.env.TIBO_X_POLL_INTERVAL_MS
     );

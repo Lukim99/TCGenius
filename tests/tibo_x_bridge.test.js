@@ -515,6 +515,7 @@ const silentLogger = {
     assert.ok(!bridgeSource.includes('runCommentOnce'));
     assert.ok(!bridgeSource.includes('DEFAULT_COMMENT_REPLY_TEXT'));
     assert.ok(bridgeSource.includes('process.env.ADMIN_DC_ID'));
+    assert.ok(bridgeSource.includes('process.env.ADMIN_DC_PW'));
     assert.ok(bridgeSource.includes('process.env.ADMIN_DC_PASSWORD'));
 
     console.log('tibo_x_bridge.test.js: OK');
