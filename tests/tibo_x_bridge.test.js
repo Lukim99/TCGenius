@@ -5,6 +5,9 @@ const {
     DEFAULT_COMMENT_GALLERY_ID,
     DEFAULT_COMMENT_POST_NO,
     DEFAULT_COMMENT_REPLY_TEXT,
+    DEFAULT_MODERATION_GALLERY_ID,
+    DEFAULT_MODERATION_HEADTEXT,
+    DEFAULT_MODERATION_POST_NO,
     GEMINI_MODEL,
     buildDcTitle,
     buildXPostUrl,
@@ -44,6 +47,9 @@ const silentLogger = {
 (async () => {
     assert.strictEqual(DEFAULT_COMMENT_GALLERY_ID, 'agent_stack');
     assert.strictEqual(DEFAULT_COMMENT_POST_NO, '5181');
+    assert.strictEqual(DEFAULT_MODERATION_GALLERY_ID, 'agent_stack');
+    assert.strictEqual(DEFAULT_MODERATION_POST_NO, '6492');
+    assert.strictEqual(DEFAULT_MODERATION_HEADTEXT, '130');
     assert.strictEqual(DEFAULT_COMMENT_REPLY_TEXT, '테스트');
     assert.strictEqual(GEMINI_MODEL, 'gemini-3.1-flash-lite');
     assert.strictEqual(normalizePollInterval(undefined), 60000);
@@ -377,6 +383,121 @@ const silentLogger = {
     });
     assert.strictEqual(duplicateWriteCount, 0, '상태 저장 직전 종료됐더라도 이미 달린 대댓글을 중복 작성하면 안 된다.');
 
+    let moderationSnapshot = [{
+        commentNo: '300',
+        content: 'existing comment',
+        links: [],
+        isReply: false
+    }];
+    const moderationCalls = [];
+    const moderationStore = createMemoryStateStore({
+        version: 1,
+        username: 'thsottiaux',
+        userId: 'user-42',
+        lastProcessedPostId: '201'
+    });
+    const moderationBridge = createTiboXBridge({
+        logger: silentLogger,
+        stateStore: moderationStore,
+        adminDcId: 'admin-id',
+        adminDcPassword: 'admin-password',
+        fetchComments: async () => ({ success: true, comments: clone(moderationSnapshot) }),
+        changePostHeadtext: async (...args) => {
+            moderationCalls.push(args);
+            return { success: true };
+        }
+    });
+
+    assert.deepStrictEqual(await moderationBridge.runModerationOnce(), {
+        status: 'initialized',
+        updated: 0,
+        lastSeenCommentNo: '300'
+    });
+    assert.strictEqual(moderationCalls.length, 0, 'Existing comments must only establish the initial cursor.');
+    assert.strictEqual(moderationStore.getState().lastProcessedPostId, '201');
+
+    moderationSnapshot = [
+        ...moderationSnapshot,
+        {
+            commentNo: '301',
+            content: 'https://m.dcinside.com/board/agent_stack/7001 https://gall.dcinside.com/mgallery/board/view/?id=another_gallery&no=9001',
+            links: [
+                'https://gall.dcinside.com/mgallery/board/view/?id=agent_stack&no=7002',
+                'https://m.dcinside.com/board/agent_stack/7001'
+            ],
+            isReply: false
+        },
+        {
+            commentNo: '302',
+            content: 'https://gall.dcinside.com/board/view/?id=agent_stack&no=7003',
+            links: [],
+            isReply: true,
+            parentCommentNo: '301'
+        }
+    ];
+    assert.deepStrictEqual(await moderationBridge.runModerationOnce(), {
+        status: 'updated',
+        updated: 3,
+        postNos: ['7001', '7002', '7003'],
+        lastSeenCommentNo: '302'
+    });
+    assert.deepStrictEqual(moderationCalls, [[
+        'agent_stack',
+        ['7001', '7002', '7003'],
+        '130',
+        'admin-id',
+        'admin-password'
+    ]]);
+    assert.strictEqual(moderationStore.getState().moderationMonitor.lastSeenCommentNo, '302');
+
+    let disabledFetches = 0;
+    const disabledModerationBridge = createTiboXBridge({
+        fetchComments: async () => {
+            disabledFetches++;
+            return { success: true, comments: [] };
+        },
+        changePostHeadtext: async () => ({ success: true })
+    });
+    assert.deepStrictEqual(await disabledModerationBridge.runModerationOnce(), {
+        status: 'disabled',
+        reason: 'missing_admin_credentials',
+        updated: 0
+    });
+    assert.strictEqual(disabledFetches, 0, 'Missing admin credentials must disable only moderation without fetching comments.');
+
+    const failedModerationStore = createMemoryStateStore({
+        version: 1,
+        moderationMonitor: {
+            galleryId: 'agent_stack',
+            postNo: '6492',
+            lastSeenCommentNo: '300'
+        }
+    });
+    const failedModerationBridge = createTiboXBridge({
+        logger: silentLogger,
+        stateStore: failedModerationStore,
+        adminDcId: 'admin-id',
+        adminDcPassword: 'admin-password',
+        fetchComments: async () => ({
+            success: true,
+            comments: [{
+                commentNo: '301',
+                content: 'https://m.dcinside.com/board/agent_stack/7001',
+                links: []
+            }]
+        }),
+        changePostHeadtext: async () => ({ success: false, msg: 'rejected' })
+    });
+    await assert.rejects(
+        failedModerationBridge.runModerationOnce(),
+        /DC 말머리 변경 실패/
+    );
+    assert.strictEqual(
+        failedModerationStore.getState().moderationMonitor.lastSeenCommentNo,
+        '300',
+        'A failed update must retain the cursor so the comment can be retried.'
+    );
+
     const mergedStore = createMemoryStateStore({
         version: 1,
         username: 'thsottiaux',
@@ -386,6 +507,11 @@ const silentLogger = {
             galleryId: 'agent_stack',
             postNo: '5181',
             lastSeenCommentNo: '19446'
+        },
+        moderationMonitor: {
+            galleryId: 'agent_stack',
+            postNo: '6492',
+            lastSeenCommentNo: '300'
         }
     });
     let mergedTimelineCalls = 0;
@@ -403,26 +529,32 @@ const silentLogger = {
         geminiApiKey: 'gemini-key',
         dcId: 'dc-id',
         dcPassword: 'dc-password',
+        adminDcId: 'admin-id',
+        adminDcPassword: 'admin-password',
         writePost: async () => ({ success: true }),
         fetchComments: async () => {
             mergedCommentCalls++;
             return { success: true, comments: [] };
         },
-        writeComment: async () => ({ success: true })
+        writeComment: async () => ({ success: true }),
+        changePostHeadtext: async () => ({ success: true })
     });
     assert.deepStrictEqual(await mergedBridge.runOnce(), { status: 'idle', posted: 0 });
     assert.strictEqual(mergedTimelineCalls, 1, '한 폴링 주기에서 X 타임라인을 한 번 조회해야 한다.');
-    assert.strictEqual(mergedCommentCalls, 1, '같은 폴링 주기에서 DC 댓글도 한 번 조회해야 한다.');
+    assert.strictEqual(mergedCommentCalls, 2, '같은 폴링 주기에서 대댓글 및 관리 댓글 대상을 각각 조회해야 한다.');
 
     const engineSource = fs.readFileSync(path.join(__dirname, '..', 'new_engine.js'), 'utf8');
     assert.ok(engineSource.includes("const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');"));
     assert.ok(engineSource.includes('stateStore: createDynamoStateStore(docClient)'));
     assert.ok(engineSource.includes('fetchComments: getDcPostComments'));
     assert.ok(engineSource.includes('writeComment: doDcWriteComment'));
+    assert.ok(engineSource.includes('changePostHeadtext: doDcChangePostHeadtext'));
     assert.ok(engineSource.includes("params.set('headtext', requestedHeadtext);"));
 
     const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'tibo_x_bridge.js'), 'utf8');
     assert.ok(bridgeSource.includes("{ headtext: '10', ogLinkUrl: pending.url }"));
+    assert.ok(bridgeSource.includes('process.env.ADMIN_DC_ID'));
+    assert.ok(bridgeSource.includes('process.env.ADMIN_DC_PASSWORD'));
 
     console.log('tibo_x_bridge.test.js: OK');
 })().catch(error => {

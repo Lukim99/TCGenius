@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { GetCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { extractDcPostNosForGallery } = require('./dc_write_utils');
 
 const X_API_BASE_URL = 'https://api.x.com/2';
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -13,6 +14,9 @@ const MAX_DC_TITLE_LENGTH = 40;
 const DEFAULT_COMMENT_GALLERY_ID = 'agent_stack';
 const DEFAULT_COMMENT_POST_NO = '5181';
 const DEFAULT_COMMENT_REPLY_TEXT = '테스트';
+const DEFAULT_MODERATION_GALLERY_ID = 'agent_stack';
+const DEFAULT_MODERATION_POST_NO = '6492';
+const DEFAULT_MODERATION_HEADTEXT = '130';
 
 function truncateUtf16(value, maxLength) {
     const text = String(value || '');
@@ -213,6 +217,8 @@ function createTiboXBridge(options = {}) {
     const geminiApiKey = options.geminiApiKey ?? process.env.GEMINI_FREE_KEY;
     const dcId = options.dcId ?? process.env.TIBO_DC_ID;
     const dcPassword = options.dcPassword ?? process.env.TIBO_DC_PASSWORD;
+    const adminDcId = options.adminDcId ?? process.env.ADMIN_DC_ID;
+    const adminDcPassword = options.adminDcPassword ?? process.env.ADMIN_DC_PASSWORD;
     const pollIntervalMs = normalizePollInterval(
         options.pollIntervalMs ?? process.env.TIBO_X_POLL_INTERVAL_MS
     );
@@ -223,6 +229,10 @@ function createTiboXBridge(options = {}) {
     const commentGalleryId = options.commentGalleryId || DEFAULT_COMMENT_GALLERY_ID;
     const commentPostNo = String(options.commentPostNo || DEFAULT_COMMENT_POST_NO);
     const commentReplyText = options.commentReplyText || DEFAULT_COMMENT_REPLY_TEXT;
+    const changePostHeadtext = options.changePostHeadtext;
+    const moderationGalleryId = options.moderationGalleryId || DEFAULT_MODERATION_GALLERY_ID;
+    const moderationPostNo = String(options.moderationPostNo || DEFAULT_MODERATION_POST_NO);
+    const moderationHeadtext = String(options.moderationHeadtext || DEFAULT_MODERATION_HEADTEXT);
     const now = options.now || (() => new Date().toISOString());
     const summarize = options.summarize || (postText => summarizeWithGemini(http, geminiApiKey, postText));
 
@@ -342,6 +352,96 @@ function createTiboXBridge(options = {}) {
         };
     }
 
+    async function runModerationOnce() {
+        if (typeof fetchComments !== 'function' || typeof changePostHeadtext !== 'function') {
+            return { status: 'disabled', updated: 0 };
+        }
+        if (!adminDcId || !adminDcPassword) {
+            return { status: 'disabled', reason: 'missing_admin_credentials', updated: 0 };
+        }
+
+        const response = await fetchComments(moderationGalleryId, moderationPostNo);
+        if (response?.success === false) {
+            throw new Error(response.msg || 'DC 관리 댓글 조회 실패');
+        }
+        const comments = Array.isArray(response) ? response : response?.comments;
+        if (!Array.isArray(comments)) throw new Error('DC 관리 댓글 조회 결과가 올바르지 않습니다.');
+
+        const validComments = comments.filter(comment => /^\d+$/.test(String(comment?.commentNo || '')));
+        const maxCommentNo = validComments.reduce((max, comment) => {
+            const value = BigInt(comment.commentNo);
+            return value > max ? value : max;
+        }, 0n);
+
+        let state = await stateStore.load() || { version: 1 };
+        const monitor = state.moderationMonitor;
+        if (!monitor
+            || monitor.galleryId !== moderationGalleryId
+            || String(monitor.postNo) !== moderationPostNo
+            || !/^\d+$/.test(String(monitor.lastSeenCommentNo ?? ''))) {
+            state = {
+                ...state,
+                moderationMonitor: {
+                    galleryId: moderationGalleryId,
+                    postNo: moderationPostNo,
+                    lastSeenCommentNo: maxCommentNo.toString(),
+                    initializedAt: now(),
+                    updatedAt: now()
+                },
+                updatedAt: now()
+            };
+            await stateStore.save(state);
+            logger.info?.(`[dc-moderation] 최초 기준점 설정 완료 (${moderationGalleryId}/${moderationPostNo})`);
+            return { status: 'initialized', updated: 0, lastSeenCommentNo: maxCommentNo.toString() };
+        }
+
+        const lastSeenCommentNo = BigInt(monitor.lastSeenCommentNo);
+        const linkedPostNos = new Set();
+        validComments
+            .filter(comment => BigInt(comment.commentNo) > lastSeenCommentNo)
+            .forEach(comment => {
+                const values = [comment.content, ...(Array.isArray(comment.links) ? comment.links : [])];
+                for (const postNo of extractDcPostNosForGallery(values, moderationGalleryId)) {
+                    linkedPostNos.add(postNo);
+                }
+            });
+
+        if (linkedPostNos.size) {
+            const postNos = [...linkedPostNos];
+            const result = await changePostHeadtext(
+                moderationGalleryId,
+                postNos,
+                moderationHeadtext,
+                adminDcId,
+                adminDcPassword
+            );
+            if (!result?.success) {
+                throw new Error(`DC 말머리 변경 실패: ${result?.msg || '알 수 없는 오류'}`);
+            }
+            logger.info?.(`[dc-moderation] 🗑️ 말머리 변경 완료: ${postNos.join(', ')}`);
+        }
+
+        if (maxCommentNo > lastSeenCommentNo) {
+            state = {
+                ...state,
+                moderationMonitor: {
+                    ...monitor,
+                    lastSeenCommentNo: maxCommentNo.toString(),
+                    updatedAt: now()
+                },
+                updatedAt: now()
+            };
+            await stateStore.save(state);
+        }
+
+        return {
+            status: linkedPostNos.size ? 'updated' : 'idle',
+            updated: linkedPostNos.size,
+            postNos: [...linkedPostNos],
+            lastSeenCommentNo: (maxCommentNo > lastSeenCommentNo ? maxCommentNo : lastSeenCommentNo).toString()
+        };
+    }
+
     async function runOnce() {
         const missing = getMissingConfig();
         if (missing.length) throw new Error(`필수 설정 누락: ${missing.join(', ')}`);
@@ -427,6 +527,11 @@ function createTiboXBridge(options = {}) {
             } catch (error) {
                 logger.error?.(`[dc-comment] 처리 실패: ${error.message}`);
             }
+            try {
+                await runModerationOnce();
+            } catch (error) {
+                logger.error?.(`[dc-moderation] 처리 실패: ${error.message}`);
+            }
             running = false;
         }
     }
@@ -463,7 +568,7 @@ function createTiboXBridge(options = {}) {
         timer = null;
     }
 
-    return { getMissingConfig, pollIntervalMs, runCommentOnce, runOnce, start, stop };
+    return { getMissingConfig, pollIntervalMs, runCommentOnce, runModerationOnce, runOnce, start, stop };
 }
 
 function startTiboXBridge(options = {}) {
@@ -476,6 +581,9 @@ module.exports = {
     DEFAULT_COMMENT_GALLERY_ID,
     DEFAULT_COMMENT_POST_NO,
     DEFAULT_COMMENT_REPLY_TEXT,
+    DEFAULT_MODERATION_GALLERY_ID,
+    DEFAULT_MODERATION_HEADTEXT,
+    DEFAULT_MODERATION_POST_NO,
     GEMINI_MODEL,
     buildDcTitle,
     buildXPostUrl,

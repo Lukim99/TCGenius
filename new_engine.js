@@ -1596,6 +1596,136 @@ async function getDcPostComments(galleryId, postNo) {
     }
 }
 
+// 마이너 갤러리 관리자 권한으로 여러 게시물의 말머리를 한 번에 변경한다.
+async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, password = null) {
+    const logs = [];
+    const log = message => logs.push(message);
+    const normalizedGalleryId = String(galleryId || '').trim();
+    const normalizedHeadtext = String(headtext || '').trim();
+    const normalizedPostNos = [...new Set((Array.isArray(postNos) ? postNos : [postNos])
+        .map(postNo => String(postNo || '').trim()))];
+    let agent = null;
+
+    if (!/^[a-z0-9_]+$/i.test(normalizedGalleryId)) {
+        return { success: false, msg: "올바른 갤러리 ID가 필요합니다.", logs };
+    }
+    if (!normalizedPostNos.length || normalizedPostNos.some(postNo => !/^[1-9]\d*$/.test(postNo))) {
+        return { success: false, msg: "올바른 게시물 번호가 필요합니다.", logs };
+    }
+    if (!/^\d+$/.test(normalizedHeadtext)) {
+        return { success: false, msg: "올바른 말머리 값이 필요합니다.", logs };
+    }
+    if (!id || !password) {
+        return { success: false, msg: "관리 계정(id/password)이 필요합니다.", logs };
+    }
+
+    try {
+        const loginResult = await getDcLoginCookies(id, password, log);
+        if (!loginResult.ok) return { success: false, msg: loginResult.msg, logs };
+
+        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+        agent = new HttpsProxyAgent({
+            proxy: proxyUrl,
+            keepAlive: true,
+            keepAliveMsecs: 30000,
+            rejectUnauthorized: false
+        });
+        const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        let liveCookies = { ...loginResult.cookies };
+        const mergeCookies = response => {
+            const setCookies = response.headers?.['set-cookie'];
+            if (!setCookies) return;
+            for (const value of Array.isArray(setCookies) ? setCookies : [setCookies]) {
+                const nameValue = value.split(';')[0];
+                const separator = nameValue.indexOf('=');
+                if (separator > 0) {
+                    liveCookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
+                }
+            }
+        };
+        const cookieString = () => Object.entries(liveCookies).map(([key, value]) => `${key}=${value}`).join('; ');
+        const listUrl = `https://gall.dcinside.com/mgallery/board/lists/?id=${encodeURIComponent(normalizedGalleryId)}`;
+        const listResponse = await axios.get(`${listUrl}&_=${Date.now()}`, {
+            httpsAgent: agent,
+            headers: {
+                'User-Agent': desktopUA,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9',
+                'Referer': listUrl,
+                'Cookie': cookieString()
+            },
+            timeout: 20000
+        });
+        mergeCookies(listResponse);
+
+        const $ = cheerio.load(listResponse.data);
+        const headtextOption = $('#listHeadTxtLyr li').filter((index, element) => (
+            String($(element).attr('data-value') || '') === normalizedHeadtext
+        ));
+        if (!headtextOption.length) {
+            return { success: false, msg: "관리 권한 또는 대상 말머리 옵션을 확인할 수 없습니다.", logs };
+        }
+
+        const ciToken = String(liveCookies.ci_c || '');
+        if (!ciToken) {
+            invalidateSession(id);
+            return { success: false, msg: "관리 요청 인증 토큰을 찾을 수 없습니다.", logs };
+        }
+
+        const params = new URLSearchParams({
+            ci_t: ciToken,
+            id: normalizedGalleryId,
+            _GALLTYPE_: 'M',
+            headtext: normalizedHeadtext
+        });
+        for (const postNo of normalizedPostNos) params.append('nos[]', postNo);
+
+        const changeResponse = await axios.post(
+            'https://gall.dcinside.com/ajax/minor_manager_board_ajax/chg_headtext_batch',
+            params.toString(),
+            {
+                httpsAgent: agent,
+                headers: {
+                    'User-Agent': desktopUA,
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'Accept-Language': 'ko-KR,ko;q=0.9',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Origin': 'https://gall.dcinside.com',
+                    'Referer': listUrl,
+                    'Cookie': cookieString()
+                },
+                timeout: 20000
+            }
+        );
+        mergeCookies(changeResponse);
+        const data = parseDcResponseData(changeResponse.data);
+        if (data?.result !== 'success') {
+            const message = getDcFailureMessage(data, "말머리 변경 실패");
+            if (/로그인|세션|login|unauthorized/i.test(message)) invalidateSession(id);
+            return { success: false, msg: message, logs };
+        }
+
+        saveCachedSession(id, liveCookies);
+        log(`말머리 변경 완료: ${normalizedPostNos.join(', ')}`);
+        return {
+            success: true,
+            msg: "말머리 변경 성공!",
+            updatedPostNos: normalizedPostNos,
+            headtext: normalizedHeadtext,
+            logs
+        };
+    } catch (error) {
+        const message = getDcFailureMessage(error.response?.data, error.message);
+        if (id && (error.response?.status === 401 || /로그인|세션|login|unauthorized/i.test(message))) {
+            invalidateSession(id);
+        }
+        return { success: false, msg: `말머리 변경 오류: ${message}`, logs };
+    } finally {
+        if (agent) agent.destroy();
+    }
+}
+
 function get_captcha_key() {
     var api_url = 'https://openapi.naver.com/v1/captcha/nkey?code=0';
     var client_id = 't2YQpo4W6MkVWKlw92F3';
@@ -12096,6 +12226,7 @@ if (require.main === module) {
         writePost: doDcWritePost,
         fetchComments: getDcPostComments,
         writeComment: doDcWriteComment,
+        changePostHeadtext: doDcChangePostHeadtext,
         stateStore: createDynamoStateStore(docClient)
     });
     if (KAKAO_AUTO_LOGIN_ENABLED) {
@@ -12107,4 +12238,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { doDcWriteComment, doDcWritePost, getDcPostComments };
+module.exports = { doDcChangePostHeadtext, doDcWriteComment, doDcWritePost, getDcPostComments };

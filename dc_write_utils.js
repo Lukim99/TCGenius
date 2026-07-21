@@ -265,6 +265,49 @@ function findNewDcComment(comments, content, accountId, previousCommentNos = [])
     return null;
 }
 
+function extractDcPostNosForGallery(values, galleryId) {
+    const expectedGalleryId = String(galleryId || '').trim().toLowerCase();
+    if (!expectedGalleryId) return [];
+
+    const postNos = new Set();
+    for (const value of Array.isArray(values) ? values : [values]) {
+        const text = String(value || '').replace(/&amp;/gi, '&');
+        const candidates = text.match(/https?:\/\/[^\s<>"'`]+/gi) || [];
+
+        for (const candidate of candidates) {
+            const normalized = candidate.replace(/[\])}>.,!?;:。！？]+$/g, '');
+            try {
+                const url = new URL(normalized);
+                if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port) continue;
+
+                const hostname = url.hostname.toLowerCase();
+                let linkedGalleryId = '';
+                let postNo = '';
+                if (hostname === 'm.dcinside.com') {
+                    const match = url.pathname.match(/^\/board\/([^/]+)\/([1-9]\d*)\/?$/i);
+                    if (!match) continue;
+                    linkedGalleryId = decodeURIComponent(match[1]).toLowerCase();
+                    postNo = match[2];
+                } else if (hostname === 'gall.dcinside.com') {
+                    if (!/^\/(?:mgallery\/)?board\/view\/?$/i.test(url.pathname)) continue;
+                    linkedGalleryId = String(url.searchParams.get('id') || '').toLowerCase();
+                    postNo = String(url.searchParams.get('no') || '');
+                } else {
+                    continue;
+                }
+
+                if (linkedGalleryId === expectedGalleryId && /^[1-9]\d*$/.test(postNo)) {
+                    postNos.add(postNo);
+                }
+            } catch (error) {
+                // URL로 해석할 수 없는 텍스트는 무시한다.
+            }
+        }
+    }
+
+    return [...postNos];
+}
+
 function parseDcMobileComments($) {
     const comments = [];
     let parentCommentNo = null;
@@ -276,11 +319,18 @@ function parseDcMobileComments($) {
 
         const isReply = $comment.hasClass('comment-add');
         if (!isReply) parentCommentNo = commentNo;
+        const $content = $comment.find('p.txt').first();
+        const links = [];
+        $content.find('a[href]').each((linkIndex, link) => {
+            const href = String($(link).attr('href') || '').trim();
+            if (href && !links.includes(href)) links.push(href);
+        });
         comments.push({
             commentNo,
             memberNo: String($comment.attr('m_no') || '0'),
             accountId: String($comment.find('.blockCommentId').first().attr('data-info') || ''),
-            content: $comment.find('p.txt').first().text().replace(/\r\n/g, '\n').trim(),
+            content: $content.text().replace(/\r\n/g, '\n').trim(),
+            links,
             isReply,
             parentCommentNo: isReply ? parentCommentNo : null
         });
@@ -321,6 +371,7 @@ module.exports = {
     collectDcPostNosInList,
     collectDcFormFields,
     escapeDcHtml,
+    extractDcPostNosForGallery,
     extractDcPostNo,
     findNewDcComment,
     findDcPostInList,

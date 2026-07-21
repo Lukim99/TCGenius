@@ -9,6 +9,7 @@ const {
     collectDcPostNosInList,
     collectDcFormFields,
     escapeDcHtml,
+    extractDcPostNosForGallery,
     extractDcPostNo,
     findNewDcComment,
     findDcPostInList,
@@ -128,7 +129,7 @@ const mobileComments = parseDcMobileComments(cheerio.load(`
     <ul>
         <li class="comment" no="200" m_no="1">
             <span class="blockCommentId" data-info="user-a"></span>
-            <p class="txt">새 댓글</p>
+            <p class="txt">새 댓글 <a href="https://m.dcinside.com/board/agent_stack/7001">링크</a></p>
         </li>
         <li class="comment-add on" no="201" m_no="1">
             <span class="blockCommentId" data-info="shelf7467"></span>
@@ -140,11 +141,24 @@ const mobileComments = parseDcMobileComments(cheerio.load(`
     </ul>
 `));
 assert.deepStrictEqual(mobileComments, [
-    { commentNo: '200', memberNo: '1', accountId: 'user-a', content: '새 댓글', isReply: false, parentCommentNo: null },
-    { commentNo: '201', memberNo: '1', accountId: 'shelf7467', content: '테스트', isReply: true, parentCommentNo: '200' },
-    { commentNo: '202', memberNo: '0', accountId: '', content: '비회원 댓글', isReply: false, parentCommentNo: null }
+    { commentNo: '200', memberNo: '1', accountId: 'user-a', content: '새 댓글 링크', links: ['https://m.dcinside.com/board/agent_stack/7001'], isReply: false, parentCommentNo: null },
+    { commentNo: '201', memberNo: '1', accountId: 'shelf7467', content: '테스트', links: [], isReply: true, parentCommentNo: '200' },
+    { commentNo: '202', memberNo: '0', accountId: '', content: '비회원 댓글', links: [], isReply: false, parentCommentNo: null }
 ]);
 assert.deepStrictEqual(collectDcCommentNos(mobileComments), ['200', '201', '202']);
+
+assert.deepStrictEqual(extractDcPostNosForGallery([
+    '모바일 https://m.dcinside.com/board/agent_stack/7001?from=comment',
+    'PC https://gall.dcinside.com/mgallery/board/view/?id=agent_stack&no=7002&page=1',
+    '중복 https://m.dcinside.com/board/agent_stack/7001',
+    '다른 갤러리 https://m.dcinside.com/board/thesingularity/7003',
+    '호스트 위장 https://gall.dcinside.com.evil.example/mgallery/board/view/?id=agent_stack&no=7004',
+    '목록 링크 https://gall.dcinside.com/mgallery/board/lists/?id=agent_stack&no=7005'
+], 'agent_stack'), ['7001', '7002']);
+assert.deepStrictEqual(extractDcPostNosForGallery(
+    'https://gall.dcinside.com/board/view/?id=agent_stack&amp;no=7006), https://m.dcinside.com/board/agent_stack/7007.',
+    'agent_stack'
+), ['7006', '7007']);
 
 const xPostUrl = 'https://x.com/thsottiaux/status/2077775690058125383';
 const xImageUrl = 'https://play-lh.googleusercontent.com/x-icon.png';
@@ -259,6 +273,14 @@ assert.ok(commentSource.includes('findNewDcComment'), '계정과 본문이 일�
 assert.ok(commentSource.includes('finally {'));
 assert.ok(commentSource.includes('agent.destroy()'), '댓글 작성 중 예외가 발생해도 프록시 에이전트를 정리해야 한다.');
 assert.ok(engineSource.includes("'https://m.dcinside.com/ajax/response-comment'"), '댓글 감시에는 모바일 댓글 목록 엔드포인트를 사용해야 한다.');
-assert.ok(engineSource.includes('module.exports = { doDcWriteComment, doDcWritePost, getDcPostComments };'));
+const changeHeadtextStart = engineSource.indexOf('async function doDcChangePostHeadtext');
+const changeHeadtextEnd = engineSource.indexOf('\nfunction get_captcha_key', changeHeadtextStart);
+const changeHeadtextSource = engineSource.slice(changeHeadtextStart, changeHeadtextEnd);
+assert.ok(changeHeadtextStart >= 0 && changeHeadtextEnd > changeHeadtextStart, 'doDcChangePostHeadtext must be present.');
+assert.ok(changeHeadtextSource.includes('/ajax/minor_manager_board_ajax/chg_headtext_batch'));
+assert.ok(changeHeadtextSource.includes("params.append('nos[]', postNo)"), 'Post numbers must use the official array form.');
+assert.ok(changeHeadtextSource.includes("data?.result !== 'success'"), 'Only an explicit DC success response may succeed.');
+assert.ok(changeHeadtextSource.includes('agent.destroy()'), 'The proxy agent must be released.');
+assert.ok(engineSource.includes('module.exports = { doDcChangePostHeadtext, doDcWriteComment, doDcWritePost, getDcPostComments };'));
 
 console.log('dc_write_utils.test.js: OK');
