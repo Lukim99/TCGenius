@@ -416,75 +416,11 @@ Object.values(definitions).forEach(list => list.forEach(data => {
     if (data.set && setEffects[data.set]) data.setEffects = setEffects[data.set];
 }));
 
-function mergeEquipmentDefinitions(equipments) {
-    const result = equipments && typeof equipments == 'object' ? equipments : {};
-    Object.keys(definitions).forEach(type => {
-        if (!Array.isArray(result[type])) result[type] = [];
-        definitions[type].forEach(source => {
-            const data = JSON.parse(JSON.stringify(source));
-            delete data.armorSlot;
-            const index = result[type].findIndex(entry => entry && entry.name == data.name);
-            if (index == -1) result[type].push(data);
-            else result[type][index] = Object.assign({}, result[type][index], data);
-        });
-    });
-    return result;
-}
-
-function ensureItem(items, data) {
-    const index = items.findIndex(item => item && item.name == data.name);
-    if (index == -1) { items.push(data); return items.length - 1; }
-    items[index] = Object.assign({}, items[index], data);
-    return index;
-}
-
-function mergeItems(items) {
-    const result = Array.isArray(items) ? items : [];
-    ensureItem(result, { name: '상급 강화석', type: '재료', desc: '초월 및 신화 장비 강화에 사용한다.' });
-    ensureItem(result, { name: '헬 초대장', type: '티켓', no_trade: true, desc: '부타게임[H] 입장에 사용한다.' });
-    ensureItem(result, { name: '헬 도전장', type: '티켓', no_trade: true, desc: '1장으로 헬 초대장 1장을 제작할 수 있다.' });
-    ensureItem(result, { name: '초월 조각', type: '재료', no_trade: true, desc: '초월 상점에서 사용하는 조각이다.' });
-    ensureItem(result, { name: '초월 상자', type: '가챠', use: '초월상자', no_trade: true, desc: '초월 1단계 장비를 무작위로 1개 획득한다.' });
-    ensureItem(result, { name: '초월 업그레이드 키트', type: '사용', use: '초월업그레이드', no_trade: true, desc: '같은 장비 대신 사용해 초월 단계를 올린다.' });
-    return result;
-}
-
-function mergeRecipes(recipes, items) {
-    const result = Array.isArray(recipes) ? recipes : [];
-    const itemId = name => items.findIndex(item => item && item.name == name);
-    const upserts = [
-        { name: '상급 강화석', materials: [{ type: '아이템', item_id: itemId('강화석'), count: 1000 }], crafted: [{ type: '아이템', item_id: itemId('상급 강화석'), count: 1 }] },
-        { name: '헬 초대장', materials: [{ type: '아이템', item_id: itemId('헬 도전장'), count: 1 }], crafted: [{ type: '아이템', item_id: itemId('헬 초대장'), count: 1 }] }
-    ];
-    upserts.forEach(recipe => {
-        const index = result.findIndex(entry => entry && entry.name == recipe.name);
-        if (index == -1) result.push(recipe); else result[index] = recipe;
-    });
-    return result;
-}
-
-function mergeShop(shop, items) {
-    const result = shop && typeof shop == 'object' ? shop : {};
-    const itemId = name => items.findIndex(item => item && item.name == name);
-    const fragmentId = itemId('초월 조각');
-    result['초월'] = [
-        { type: '아이템', item_id: itemId('헬 초대장'), count: 30, price: { goods: 'item', item_id: fragmentId, amount: 1 }, limits: {} },
-        { type: '아이템', item_id: itemId('헬 도전장'), count: 15, price: { goods: 'item', item_id: fragmentId, amount: 1 }, limits: {} },
-        { type: '아이템', item_id: itemId('초월 상자'), count: 1, price: { goods: 'item', item_id: fragmentId, amount: 20 }, limits: {} },
-        { type: '아이템', item_id: itemId('초월 업그레이드 키트'), count: 1, price: { goods: 'item', item_id: fragmentId, amount: 200 }, limits: {} }
-    ];
-    return result;
-}
-
 module.exports = {
     definitions,
     setEffects,
     uniqueStaticEffects,
     uniqueStaticPerStageEffects,
     uniquePassiveDescriptions,
-    uniquePassiveIds,
-    mergeEquipmentDefinitions,
-    mergeItems,
-    mergeRecipes,
-    mergeShop
+    uniquePassiveIds
 };

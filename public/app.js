@@ -2925,14 +2925,19 @@ function auctionThumbEl(entry, options) {
 
 function auctionCardEl(entry) {
     const d = entry.display;
+    const title = el('div', { class: 'auc-title' },
+        el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : ''))
+    );
+    if (entry.mine) title.appendChild(el('span', { class: 'auc-mine-badge' }, '내 판매'));
     const node = el('div', { class: 'auc-card' + (entry.mine ? ' mine' : ''), onclick: () => openAuctionDetail(entry) },
         auctionThumbEl(entry),
-        el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')),
-        d.sub ? el('div', { class: 'auc-sub' }, d.sub + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : '')) : null,
-        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
-        el('div', { class: 'auc-seller' }, '판매자: ' + entry.sellerName + (entry.ticketCost > 0 ? ' · 거래권 ' + entry.ticketCost + '장' : ''))
+        el('div', { class: 'auc-info' },
+            title,
+            d.sub ? el('div', { class: 'auc-sub' }, d.sub + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : '')) : null,
+            el('div', { class: 'auc-seller' }, '판매자: ' + entry.sellerName + (entry.ticketCost > 0 ? ' · 거래권 ' + entry.ticketCost + '장' : ''))
+        ),
+        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : ''))
     );
-    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 판매'));
     return node;
 }
 
@@ -3762,14 +3767,19 @@ let buyOrderState = { all: [], filter: 'all', query: '' };
 
 function buyOrderCardEl(entry) {
     const d = entry.display;
+    const title = el('div', { class: 'auc-title' },
+        el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : ''))
+    );
+    if (entry.mine) title.appendChild(el('span', { class: 'auc-mine-badge' }, '내 구매'));
     const node = el('div', { class: 'auc-card' + (entry.mine ? ' mine' : ''), onclick: () => openBuyOrderDetail(entry) },
         auctionThumbEl(entry),
-        el('div', { class: 'auc-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')),
-        d.sub ? el('div', { class: 'auc-sub' }, d.sub) : null,
-        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : '')),
-        el('div', { class: 'auc-seller' }, '구매자: ' + entry.buyerName)
+        el('div', { class: 'auc-info' },
+            title,
+            d.sub ? el('div', { class: 'auc-sub' }, d.sub) : null,
+            el('div', { class: 'auc-seller' }, '구매자: ' + entry.buyerName)
+        ),
+        el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : ''))
     );
-    if (entry.mine) node.appendChild(el('span', { class: 'auc-mine-badge' }, '내 구매'));
     return node;
 }
 

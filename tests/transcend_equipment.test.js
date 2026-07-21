@@ -34,30 +34,6 @@ assert.ok(allEntries.find(entry => entry.data.name === '최후통첩 모자').da
 assert.ok(allEntries.find(entry => entry.data.name === '해류를 거스르는 신발').data.desc.includes('최대 MP의 3%'));
 assert.ok(allEntries.find(entry => entry.data.name === '777 팔찌').data.desc.includes('방어 관통력 +7%'));
 
-const baseItems = [{ name: '강화석', type: '재료' }];
-const items = content.mergeItems(baseItems);
-const itemByName = name => items.find(item => item && item.name === name);
-assert.ok(itemByName('상급 강화석'));
-assert.ok(!itemByName('상급 강화석').no_trade, '상급 강화석은 거래 가능해야 한다.');
-for (const name of ['헬 초대장', '헬 도전장', '초월 조각', '초월 상자', '초월 업그레이드 키트']) {
-    assert.strictEqual(itemByName(name).no_trade, true, `${name}: 거래 불가여야 한다.`);
-}
-
-const recipes = content.mergeRecipes([], items);
-const advancedStoneRecipe = recipes.find(recipe => recipe.name === '상급 강화석');
-const invitationRecipe = recipes.find(recipe => recipe.name === '헬 초대장');
-assert.strictEqual(advancedStoneRecipe.materials[0].count, 1000);
-assert.strictEqual(invitationRecipe.materials[0].count, 1);
-assert.strictEqual(invitationRecipe.crafted[0].count, 1);
-
-const shop = content.mergeShop({}, items).초월;
-assert.deepStrictEqual(shop.map(entry => [items[entry.item_id].name, entry.count, entry.price.amount]), [
-    ['헬 초대장', 30, 1],
-    ['헬 도전장', 15, 1],
-    ['초월 상자', 1, 20],
-    ['초월 업그레이드 키트', 1, 200]
-]);
-
 const frameDir = path.join(__dirname, '..', 'DB', 'RPGenius', 'itemImage', '프레임');
 const transcendFrame = fs.readFileSync(path.join(frameDir, '[장비]초월.png'));
 const mythicFrame = fs.readFileSync(path.join(frameDir, '[장비]신화.png'));

@@ -391,12 +391,7 @@ let rpgeniusDataLoadPromise = null;
 async function loadRpgeniusDataEntry(key) {
     const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
-        let data = res.Item.data;
-        if (key == 'Equipment') data = transcendEquipment.mergeEquipmentDefinitions(data);
-        if (key == 'Item') data = transcendEquipment.mergeItems(data);
-        if (key == 'Recipe') data = transcendEquipment.mergeRecipes(data, getDataCache('Item', []));
-        if (key == 'Shop') data = transcendEquipment.mergeShop(data, getDataCache('Item', []));
-        rpgeniusDataCache[key] = data;
+        rpgeniusDataCache[key] = res.Item.data;
         return true;
     }
     return false;

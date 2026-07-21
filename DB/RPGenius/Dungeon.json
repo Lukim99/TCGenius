@@ -2072,7 +2072,7 @@
                     "type": "아이템",
                     "item_id": 268,
                     "count": {
-                        "min": 3,
+                        "min": 5,
                         "max": 10
                     },
                     "roll": 0.3
