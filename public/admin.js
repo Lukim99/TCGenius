@@ -357,6 +357,97 @@ async function loadKey(key) { const r = await api('/api/data/' + encodeURICompon
 async function saveKey(key, data) { await api('/api/data/' + encodeURIComponent(key), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) }); }
 
 // ============================================================================
+// 메인 배너
+// ============================================================================
+let bannerData = [];
+
+function formatFileSize(bytes) {
+    const size = Number(bytes || 0);
+    if (size < 1024) return size + ' B';
+    if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+    return (size / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function renderBanners() {
+    const list = $('#bannerList');
+    list.replaceChildren();
+    if (!bannerData.length) {
+        list.appendChild(el('div', { class: 'empty' }, '등록된 배너가 없습니다.'));
+        return;
+    }
+    bannerData.forEach(item => {
+        const remove = el('button', { class: 'btn sm danger', type: 'button' }, '삭제');
+        remove.onclick = async () => {
+            if (!confirm("'" + (item.originalName || '배너') + "'을(를) 삭제할까요?")) return;
+            remove.disabled = true;
+            try {
+                await api('/api/admin/banners/' + encodeURIComponent(item.id), { method: 'DELETE' });
+                bannerData = bannerData.filter(entry => entry.id !== item.id);
+                renderBanners();
+                toast('✅ 배너를 삭제했습니다.');
+            } catch (e) {
+                remove.disabled = false;
+                toast(e.message, false);
+            }
+        };
+        const created = item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '';
+        list.appendChild(el('div', { class: 'banner-admin-card' },
+            el('img', { src: item.imageUrl, alt: item.originalName || '배너' }),
+            el('div', { class: 'banner-admin-meta' },
+                el('div', { style: { minWidth: '0', flex: '1' } },
+                    el('div', { class: 'banner-admin-name' }, item.originalName || '배너'),
+                    el('div', { class: 'banner-admin-sub' }, [formatFileSize(item.size), created].filter(Boolean).join(' · '))
+                ),
+                remove
+            )
+        ));
+    });
+}
+
+async function loadBanners() {
+    $('#bannerStatus').textContent = '불러오는 중...';
+    try {
+        const data = await api('/api/admin/banners');
+        bannerData = Array.isArray(data.items) ? data.items : [];
+        renderBanners();
+        $('#bannerStatus').textContent = bannerData.length + '개';
+    } catch (e) {
+        $('#bannerStatus').textContent = '';
+        toast(e.message, false);
+    }
+}
+
+$('#bannerUpload').onclick = async () => {
+    const input = $('#bannerFile');
+    const file = input.files && input.files[0];
+    if (!file) return toast('업로드할 이미지를 선택하세요.', false);
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) return toast('JPG, PNG, WEBP, GIF 이미지만 업로드할 수 있습니다.', false);
+    if (file.size > 10 * 1024 * 1024) return toast('배너 이미지는 10MB 이하여야 합니다.', false);
+    const button = $('#bannerUpload');
+    button.disabled = true;
+    $('#bannerStatus').textContent = '업로드 중...';
+    try {
+        const response = await fetch('/api/admin/banners', {
+            method: 'POST',
+            headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name) },
+            body: file
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        input.value = '';
+        await loadBanners();
+        toast('✅ 배너를 추가했습니다.');
+    } catch (e) {
+        $('#bannerStatus').textContent = '';
+        toast(e.message, false);
+    } finally {
+        button.disabled = false;
+    }
+};
+$('#bannerReload').onclick = loadBanners;
+TAB_LOADERS.banner = loadBanners;
+
+// ============================================================================
 // PACK 에디터  ( data: Array<Array<entry>> )
 // ============================================================================
 let packData = [];

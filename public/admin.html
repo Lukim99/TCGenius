@@ -184,6 +184,13 @@ details.collapsible .body{padding:12px}
 .hd-prev-icon{width:48px;height:48px;object-fit:contain}
 .hd-prev-name{font-size:12px;font-weight:800;color:#f1f5f9;text-align:center;line-height:1.3}
 .hd-prev-price{font-size:11px;font-weight:700;color:#94a3b8;text-align:center}
+.banner-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:16px}
+.banner-admin-card{overflow:hidden;background:var(--panel2);border:1px solid var(--bd);border-radius:12px}
+.banner-admin-card img{display:block;width:100%;aspect-ratio:16/5;object-fit:contain;background:#070a12}
+.banner-admin-meta{display:flex;align-items:center;gap:10px;padding:11px 12px}
+.banner-admin-name{min-width:0;flex:1;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.banner-admin-sub{font-size:11px;color:var(--mut);margin-top:2px}
+@media(max-width:640px){.banner-admin-grid{grid-template-columns:1fr}.banner-admin-meta{align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -194,6 +201,7 @@ details.collapsible .body{padding:12px}
 <div class="tabs">
   <button class="tab active" data-tab="grant">유저 / 재화</button>
   <button class="tab" data-tab="mailbroadcast">메일 발송</button>
+  <button class="tab" data-tab="banner">배너</button>
   <button class="tab" data-tab="pack">Pack</button>
   <button class="tab" data-tab="bundle">Bundle</button>
   <button class="tab" data-tab="coupon">Coupon</button>
@@ -274,6 +282,18 @@ details.collapsible .body{padding:12px}
     </div>
   </section>
 </div>
+
+<div class="panel" data-panel="banner"><section>
+  <h2>메인 배너</h2>
+  <div class="muted" style="margin-bottom:12px">로그인 후 메인 탭에 표시할 배너입니다. JPG, PNG, WEBP, GIF 파일을 최대 10MB까지 업로드할 수 있습니다.</div>
+  <div class="bar">
+    <input id="bannerFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="flex:1;min-width:220px">
+    <button class="btn primary" id="bannerUpload">배너 추가</button>
+    <button class="btn" id="bannerReload">다시 불러오기</button>
+    <span class="muted" id="bannerStatus"></span>
+  </div>
+  <div id="bannerList" class="banner-admin-grid"></div>
+</section></div>
 
 <div class="panel" data-panel="pack"><section><h2>Pack 편집</h2><div class="muted" style="margin-bottom:10px">가챠 팩 — 각 보상은 <code>roll</code>(0~1) 확률로 지급됩니다.</div><div id="packList" class="list"></div><button class="add-btn" id="packAdd">+ 새 Pack 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="packSave">저장</button><button class="btn" id="packReload">다시 불러오기</button><span class="muted" id="packStatus"></span></div></section></div>
 

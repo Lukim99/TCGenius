@@ -5,6 +5,7 @@ const rpgenius = require('./rpgenius.js');
 const partyquest = require('./partyquest.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const AWS = require('aws-sdk');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabaseP = (process.env.SUPABASE_URL_P && process.env.SUPABASE_KEY_P)
@@ -20,6 +21,7 @@ const fs = require('fs');
 const server = express();
 server.use(express.json({ limit: '5mb' }));
 server.use('/static', express.static(path.join(__dirname, 'public')));
+const bannerUploadBody = express.raw({ type: () => true, limit: 10 * 1024 * 1024 });
 
 const AUCTION_NOTIFY_CHANNEL_ID = '18470462260425659';
 const SEND_KAKAO_API_KEY = 'delutive-kakao-1mdk2kfe';
@@ -37,6 +39,22 @@ const dynamoClient = new DynamoDBClient({
     }
 });
 const dynamoDocClient = DynamoDBDocumentClient.from(dynamoClient);
+const BANNER_BUCKET = process.env.S3_BANNER_BUCKET || 'eefl-image';
+const BANNER_PREFIX = 'tcgenius/banners/';
+const BANNER_MAX_BYTES = 10 * 1024 * 1024;
+const BANNER_TYPES = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif'
+};
+const bannerS3 = new AWS.S3({
+    region: process.env.AWS_REGION || 'ap-northeast-2',
+    credentials: new AWS.Credentials({
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+    })
+});
 
 function setKakaoClient(client) {
     kakaoClient = client || null;
@@ -195,6 +213,48 @@ function requireUser(req, res, next) {
     next();
 }
 
+function parseBannerUpload(req, res, next) {
+    bannerUploadBody(req, res, error => {
+        if (!error) return next();
+        if (error.type == 'entity.too.large') return res.status(413).json({ error: '배너 이미지는 10MB 이하여야 합니다.' });
+        return res.status(400).json({ error: '이미지 업로드 요청을 읽을 수 없습니다.' });
+    });
+}
+
+function isValidBannerImage(buffer, contentType) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
+    if (contentType == 'image/jpeg') return buffer[0] == 0xff && buffer[1] == 0xd8 && buffer[2] == 0xff;
+    if (contentType == 'image/png') return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    if (contentType == 'image/gif') return buffer.subarray(0, 6).toString('ascii') == 'GIF87a' || buffer.subarray(0, 6).toString('ascii') == 'GIF89a';
+    if (contentType == 'image/webp') return buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') == 'RIFF' && buffer.subarray(8, 12).toString('ascii') == 'WEBP';
+    return false;
+}
+
+function normalizeBannerList(data) {
+    if (!Array.isArray(data)) return [];
+    return data.filter(entry => entry && typeof entry.id == 'string' && typeof entry.key == 'string' && entry.key.startsWith(BANNER_PREFIX));
+}
+
+async function loadBannerList() {
+    const found = await rpgenius.loadRpgeniusDataEntry('Banner');
+    if (!found) return [];
+    return normalizeBannerList(rpgenius.getDataCache('Banner', []));
+}
+
+function serializeBanner(entry, admin) {
+    const result = {
+        id: entry.id,
+        imageUrl: '/api/banners/' + encodeURIComponent(entry.id) + '/image'
+    };
+    if (admin) {
+        result.originalName = entry.originalName || '';
+        result.contentType = entry.contentType || '';
+        result.size = Number(entry.size || 0);
+        result.createdAt = Number(entry.createdAt || 0);
+    }
+    return result;
+}
+
 async function requirePartyQuest(req, res, next) {
     const sess = getSession(req);
     if (!sess || !sess.name) {
@@ -325,6 +385,101 @@ server.post('/api/logout', (req, res) => {
 
 server.get('/api/me', requireUser, (req, res) => {
     res.json({ name: req.session.name, admin: !!req.session.admin });
+});
+
+server.get('/api/banners', requireUser, async (req, res) => {
+    try {
+        const banners = await loadBannerList();
+        res.json({ items: banners.map(entry => serializeBanner(entry, false)) });
+    } catch (e) {
+        console.error('banner list error:', e);
+        res.status(500).json({ error: '배너를 불러오지 못했습니다.' });
+    }
+});
+
+server.get('/api/banners/:id/image', requireUser, async (req, res) => {
+    try {
+        const banners = await loadBannerList();
+        const entry = banners.find(item => item.id == String(req.params.id));
+        if (!entry) return res.status(404).end();
+        const object = await bannerS3.getObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise();
+        const contentType = BANNER_TYPES[entry.contentType] ? entry.contentType : (BANNER_TYPES[object.ContentType] ? object.ContentType : 'application/octet-stream');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        if (object.ETag) res.setHeader('ETag', object.ETag);
+        if (object.ContentLength != null) res.setHeader('Content-Length', String(object.ContentLength));
+        res.end(object.Body);
+    } catch (e) {
+        console.error('banner image error:', e);
+        if (!res.headersSent) res.status(e && e.name == 'NoSuchKey' ? 404 : 500).end();
+    }
+});
+
+server.get('/api/admin/banners', requireAdmin, async (req, res) => {
+    try {
+        const banners = await loadBannerList();
+        res.json({ items: banners.map(entry => serializeBanner(entry, true)) });
+    } catch (e) {
+        console.error('admin banner list error:', e);
+        res.status(500).json({ error: '배너를 불러오지 못했습니다.' });
+    }
+});
+
+server.post('/api/admin/banners', requireAdmin, parseBannerUpload, async (req, res) => {
+    const contentType = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const extension = BANNER_TYPES[contentType];
+    if (!extension) return res.status(400).json({ error: 'JPG, PNG, WEBP, GIF 이미지만 업로드할 수 있습니다.' });
+    if (!Buffer.isBuffer(req.body) || req.body.length < 1) return res.status(400).json({ error: '이미지 파일이 비어있습니다.' });
+    if (req.body.length > BANNER_MAX_BYTES) return res.status(413).json({ error: '배너 이미지는 10MB 이하여야 합니다.' });
+    if (!isValidBannerImage(req.body, contentType)) return res.status(400).json({ error: '파일 내용과 이미지 형식이 일치하지 않습니다.' });
+
+    const id = Date.now().toString(36) + '_' + crypto.randomBytes(5).toString('hex');
+    const key = BANNER_PREFIX + id + '.' + extension;
+    let originalName = 'banner.' + extension;
+    try { originalName = decodeURIComponent(String(req.headers['x-file-name'] || originalName)); } catch (_) {}
+    originalName = path.basename(originalName).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160) || ('banner.' + extension);
+    const entry = { id, key, originalName, contentType, size: req.body.length, createdAt: Date.now() };
+
+    try {
+        await bannerS3.putObject({
+            Bucket: BANNER_BUCKET,
+            Key: key,
+            Body: req.body,
+            ContentType: contentType,
+            CacheControl: 'private, max-age=300',
+            ServerSideEncryption: 'AES256'
+        }).promise();
+        const banners = await loadBannerList();
+        banners.push(entry);
+        try {
+            await rpgenius.saveRpgeniusDataEntry('Banner', banners);
+        } catch (e) {
+            await bannerS3.deleteObject({ Bucket: BANNER_BUCKET, Key: key }).promise().catch(() => {});
+            throw e;
+        }
+        res.json({ ok: true, item: serializeBanner(entry, true) });
+    } catch (e) {
+        console.error('banner upload error:', e);
+        res.status(500).json({ error: '배너 업로드에 실패했습니다.' });
+    }
+});
+
+server.delete('/api/admin/banners/:id', requireAdmin, async (req, res) => {
+    try {
+        const banners = await loadBannerList();
+        const index = banners.findIndex(entry => entry.id == String(req.params.id));
+        if (index < 0) return res.status(404).json({ error: '배너를 찾을 수 없습니다.' });
+        const entry = banners[index];
+        const next = banners.slice();
+        next.splice(index, 1);
+        await rpgenius.saveRpgeniusDataEntry('Banner', next);
+        await bannerS3.deleteObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise().catch(error => console.error('banner object delete error:', error));
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('banner delete error:', e);
+        res.status(500).json({ error: '배너 삭제에 실패했습니다.' });
+    }
 });
 
 server.get('/api/profile', requireUser, async (req, res) => {
@@ -5258,7 +5413,7 @@ header{position:sticky;top:0;z-index:5;display:flex;justify-content:space-betwee
 @keyframes loadingSpin{to{transform:rotate(360deg)}}
 h1{margin:0;font-size:21px;font-weight:900;white-space:nowrap;background:linear-gradient(135deg,#818cf8,#a78bfa 60%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:.01em}.who{color:#a5b4fc;font-weight:700;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}.bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0;flex-shrink:0}.top-left{display:flex;gap:16px;align-items:center;min-width:0;flex:1}.group-tabs{display:flex;gap:2px;min-width:0;overflow:hidden}.group-tab{white-space:nowrap;background:transparent;border:0;color:#64748b;padding:8px 12px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;flex-shrink:0}.group-tab:hover{background:rgba(255,255,255,.06);color:#e5e7eb}.group-tab.active{background:rgba(88,101,242,.2);color:#e5e7eb;box-shadow:0 0 0 1px rgba(99,102,241,.28)}.subnav-bar{display:flex;gap:2px;padding:0 20px;background:rgba(4,6,14,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.05);overflow-x:auto;scrollbar-width:none;flex-shrink:0}.subnav-bar::-webkit-scrollbar{display:none}.subnav-tab{flex-shrink:0;padding:9px 14px;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;margin-bottom:-1px}.subnav-tab:hover{color:#cbd5e1;background:rgba(255,255,255,.05)}.subnav-tab.active{color:#e5e7eb;border-bottom-color:#818cf8}.bottom-tabs{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(5,6,12,.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,.07);justify-content:space-around;align-items:flex-start}.bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;background:transparent;border:0;color:#475569;cursor:pointer;transition:color .15s;border-radius:0;font-weight:700;min-width:0}.bottom-tab:hover{color:#94a3b8;background:transparent}.tab-icon-wrap{display:flex;align-items:center;justify-content:center;width:44px;height:28px;border-radius:14px;background:transparent;transition:background .15s}.tab-icon-wrap svg{width:22px;height:22px;display:block;flex-shrink:0;transition:filter .15s}.tab-label{font-size:10px;letter-spacing:.03em;white-space:nowrap}.bottom-tab.active{color:#818cf8}.bottom-tab.active .tab-icon-wrap{background:rgba(88,101,242,.22);box-shadow:0 0 10px rgba(88,101,242,.3)}.bottom-tab.active .tab-icon-wrap svg{filter:drop-shadow(0 0 3px rgba(129,140,248,.7))}.group-tab{gap:6px;display:flex;align-items:center}.group-tab svg{width:15px;height:15px;display:block;flex-shrink:0;opacity:.75;transition:opacity .15s}.group-tab:hover svg,.group-tab.active svg{opacity:1}
 button{border:0;border-radius:10px;padding:10px 13px;background:#141c2e;color:#e5e7eb;font-weight:700;cursor:pointer;transition:background .15s,box-shadow .15s,transform .1s}button:hover{background:#1a2540}.primary{background:linear-gradient(135deg,#5865f2,#4338ca);box-shadow:0 4px 12px rgba(88,101,242,.32)}.primary:hover{background:linear-gradient(135deg,#4752c4,#3730a3);box-shadow:0 6px 18px rgba(88,101,242,.48)}
-main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.pet-row{display:flex;flex-direction:column;gap:8px;margin-top:14px}.pet-item{display:flex;align-items:center;gap:10px}.pet-thumb{position:relative;width:52px;height:52px;flex:0 0 auto;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.pet-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.pet-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:120%;height:120%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.pet-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:26px;line-height:1}.pet-thumb.expired .icon{filter:grayscale(1) brightness(.6)}.pet-name{font-size:15px;color:#f8fafc}.pet-item.expired .pet-name{color:#94a3b8}.panel{background:rgba(8,10,20,.82);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:20px;box-shadow:0 4px 24px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.02) inset;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+main{width:min(1180px,94vw);margin:26px auto 50px;display:grid;gap:18px}.page{display:none;gap:18px}.page.active{display:grid}.home-banner-list{display:grid;gap:14px;width:100%}.home-banner{overflow:hidden;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(8,10,20,.82);box-shadow:0 10px 34px rgba(0,0,0,.36)}.home-banner img{display:block;width:100%;height:auto}.home-banner-empty{padding:48px 20px;text-align:center;color:#64748b;background:rgba(8,10,20,.5);border:1px dashed rgba(148,163,184,.18);border-radius:18px}.profile-hero{display:grid;grid-template-columns:170px 1fr;gap:18px;align-items:start}.profile-card{text-align:center}.profile-card .card-tile{padding:0;background:transparent;border:0;box-shadow:none}.profile-card img{width:160px;aspect-ratio:3/4;object-fit:cover;border-radius:4px;border:4px solid #020617;background:#f8fafc}.profile-card .card-name{font-size:16px;color:#f8fafc}.profile-summary{padding-top:4px}.name-line{font-size:20px;margin-bottom:8px}.status-row{display:grid;grid-template-columns:32px minmax(160px,300px) auto;gap:10px;align-items:center;margin:10px 0;font-size:18px}.meter{height:22px;border-radius:6px;background:rgba(2,6,23,.65);overflow:hidden}.meter-fill{height:100%;width:0%}.meter.hp .meter-fill{background:#ef171e}.meter.mp .meter-fill{background:#4140c8}.power-line{font-size:18px;margin-top:14px}.pet-row{display:flex;flex-direction:column;gap:8px;margin-top:14px}.pet-item{display:flex;align-items:center;gap:10px}.pet-thumb{position:relative;width:52px;height:52px;flex:0 0 auto;background:rgba(15,23,42,.7);border-radius:10px;overflow:visible}.pet-thumb .frame{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1}.pet-thumb .icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;width:120%;height:120%;object-fit:contain;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}.pet-thumb .icon-fallback{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;font-size:26px;line-height:1}.pet-thumb.expired .icon{filter:grayscale(1) brightness(.6)}.pet-name{font-size:15px;color:#f8fafc}.pet-item.expired .pet-name{color:#94a3b8}.panel{background:rgba(8,10,20,.82);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:20px;box-shadow:0 4px 24px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.02) inset;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 h2{margin:0 0 16px;font-size:16px;font-weight:800;letter-spacing:.01em;color:#f1f5f9}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px}.kv span{color:#94a3b8}.kv b{font-variant-numeric:tabular-nums}
 .stat-panel{padding-top:0}
 .stat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 2px 14px}
@@ -6064,7 +6219,8 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
-  <div class="page active" data-page="info">
+  <div class="page active" data-page="home"><div id="homeBannerList" class="home-banner-list"></div></div>
+  <div class="page" data-page="info">
     <div class="pf-sheet">
       <div class="pf-hero">
         <div class="pf-hero-bg" id="pfHeroBg"></div>

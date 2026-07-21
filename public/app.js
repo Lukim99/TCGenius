@@ -97,9 +97,10 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { home: '메인', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
+    home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     market:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
@@ -112,6 +113,7 @@ const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 // 펀치기계 탭: 지금은 관리자에게만, 이벤트 종료(7/10 23:59) 이후 모든 유저에게 노출.
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
+    { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
@@ -119,7 +121,7 @@ const GROUPS = [
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
 
-let activePage = 'info';
+let activePage = 'home';
 
 function getGroupForPage(pageId) {
     return GROUPS.find(g => g.pages.includes(pageId)) || GROUPS[0];
@@ -174,6 +176,7 @@ function navigatePage(pageId) {
     activePage = pageId;
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
+    if (pageId === 'home') loadHomeBanners();
     if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
     if (pageId === 'inventory') {
         if (currentProfileName && myName && currentProfileName !== myName) {
@@ -209,6 +212,27 @@ function activatePage(name) {
 }
 
 buildNav();
+
+async function loadHomeBanners() {
+    const root = $('#homeBannerList');
+    if (!root) return;
+    root.replaceChildren(el('div', { class: 'home-banner-empty' }, '배너를 불러오는 중...'));
+    try {
+        const data = await api('/api/banners');
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (!items.length) {
+            root.replaceChildren(el('div', { class: 'home-banner-empty' }, '등록된 배너가 없습니다.'));
+            return;
+        }
+        root.replaceChildren(...items.map((item, index) =>
+            el('div', { class: 'home-banner' },
+                el('img', { src: item.imageUrl, alt: '메인 배너 ' + (index + 1), loading: index === 0 ? 'eager' : 'lazy', decoding: 'async' })
+            )
+        ));
+    } catch (e) {
+        root.replaceChildren(el('div', { class: 'home-banner-empty err' }, e.message));
+    }
+}
 
 function cardNode(card, compact, onClick) {
     if (!card || !card.name) return el('div', { class: 'empty-card' }, '카드 없음');
@@ -5250,6 +5274,7 @@ async function openMailCompose() {
         const initialPage = (typeof window !== 'undefined' && window.__INITIAL_PAGE) || '';
         if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
         else if (initialPage && GROUPS.some(g => g.pages.includes(initialPage))) activatePage(initialPage);
+        else activatePage('home');
     } catch (e) {
         $('#app').replaceChildren(el('section', { class: 'panel' }, el('h2', null, '오류'), el('p', { class: 'err' }, e.message)));
     }
