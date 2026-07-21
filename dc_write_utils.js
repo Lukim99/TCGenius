@@ -243,7 +243,7 @@ function parseDcCommentSubmitResponse(data) {
 function collectDcCommentNos(comments) {
     if (!Array.isArray(comments)) return [];
     return comments
-        .map(comment => String(comment?.no ?? ''))
+        .map(comment => String(comment?.no ?? comment?.commentNo ?? ''))
         .filter(no => /^\d+$/.test(no) && no !== '0');
 }
 
@@ -253,9 +253,9 @@ function findNewDcComment(comments, content, accountId, previousCommentNos = [])
     const expectedContent = String(content ?? '').replace(/\r\n/g, '\n').trim();
 
     for (const comment of comments) {
-        const commentNo = String(comment?.no ?? '');
-        const commentContent = String(comment?.memo ?? '').replace(/\r\n/g, '\n').trim();
-        const commentAccountId = String(comment?.user_id ?? '');
+        const commentNo = String(comment?.no ?? comment?.commentNo ?? '');
+        const commentContent = String(comment?.memo ?? comment?.content ?? '').replace(/\r\n/g, '\n').trim();
+        const commentAccountId = String(comment?.user_id ?? comment?.accountId ?? '');
         if (!/^\d+$/.test(commentNo) || commentNo === '0' || previous.has(commentNo)) continue;
         if (commentContent !== expectedContent) continue;
         if (accountId && commentAccountId !== accountId) continue;
@@ -263,6 +263,30 @@ function findNewDcComment(comments, content, accountId, previousCommentNos = [])
     }
 
     return null;
+}
+
+function parseDcMobileComments($) {
+    const comments = [];
+    let parentCommentNo = null;
+
+    $('li.comment[no], li.comment-add[no]').each((index, element) => {
+        const $comment = $(element);
+        const commentNo = String($comment.attr('no') || '');
+        if (!/^\d+$/.test(commentNo)) return;
+
+        const isReply = $comment.hasClass('comment-add');
+        if (!isReply) parentCommentNo = commentNo;
+        comments.push({
+            commentNo,
+            memberNo: String($comment.attr('m_no') || '0'),
+            accountId: String($comment.find('.blockCommentId').first().attr('data-info') || ''),
+            content: $comment.find('p.txt').first().text().replace(/\r\n/g, '\n').trim(),
+            isReply,
+            parentCommentNo: isReply ? parentCommentNo : null
+        });
+    });
+
+    return comments;
 }
 
 function isDcWriteSuccess(data, location = '') {
@@ -307,6 +331,7 @@ module.exports = {
     normalizeDcExternalUrl,
     normalizeDcVerificationTitle,
     parseDcCommentSubmitResponse,
+    parseDcMobileComments,
     parseDcResponseData,
     resolveDcFormAction
 };

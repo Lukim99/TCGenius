@@ -10,6 +10,9 @@ const DEFAULT_POLL_INTERVAL_MS = 60 * 1000;
 const MIN_POLL_INTERVAL_MS = 60 * 1000;
 const TITLE_PREFIX = '&#128994; Tibo 트윗) ';
 const MAX_DC_TITLE_LENGTH = 40;
+const DEFAULT_COMMENT_GALLERY_ID = 'agent_stack';
+const DEFAULT_COMMENT_POST_NO = '5181';
+const DEFAULT_COMMENT_REPLY_TEXT = '테스트';
 
 function truncateUtf16(value, maxLength) {
     const text = String(value || '');
@@ -215,6 +218,11 @@ function createTiboXBridge(options = {}) {
     );
     const stateStore = options.stateStore || createFileStateStore();
     const writePost = options.writePost;
+    const fetchComments = options.fetchComments;
+    const writeComment = options.writeComment;
+    const commentGalleryId = options.commentGalleryId || DEFAULT_COMMENT_GALLERY_ID;
+    const commentPostNo = String(options.commentPostNo || DEFAULT_COMMENT_POST_NO);
+    const commentReplyText = options.commentReplyText || DEFAULT_COMMENT_REPLY_TEXT;
     const now = options.now || (() => new Date().toISOString());
     const summarize = options.summarize || (postText => summarizeWithGemini(http, geminiApiKey, postText));
 
@@ -233,6 +241,107 @@ function createTiboXBridge(options = {}) {
         return missing;
     }
 
+    async function runCommentOnce() {
+        if (typeof fetchComments !== 'function' || typeof writeComment !== 'function') {
+            return { status: 'disabled', replied: 0 };
+        }
+
+        const response = await fetchComments(commentGalleryId, commentPostNo);
+        if (response?.success === false) {
+            throw new Error(response.msg || 'DC 댓글 조회 실패');
+        }
+        const comments = Array.isArray(response) ? response : response?.comments;
+        if (!Array.isArray(comments)) throw new Error('DC 댓글 조회 결과가 올바르지 않습니다.');
+
+        const validComments = comments.filter(comment => /^\d+$/.test(String(comment?.commentNo || '')));
+        const maxCommentNo = validComments.reduce((max, comment) => {
+            const value = BigInt(comment.commentNo);
+            return value > max ? value : max;
+        }, 0n);
+
+        let state = await stateStore.load() || { version: 1 };
+        const monitor = state.commentMonitor;
+        if (!monitor
+            || monitor.galleryId !== commentGalleryId
+            || String(monitor.postNo) !== commentPostNo
+            || !/^\d+$/.test(String(monitor.lastSeenCommentNo ?? ''))) {
+            state = {
+                ...state,
+                commentMonitor: {
+                    galleryId: commentGalleryId,
+                    postNo: commentPostNo,
+                    lastSeenCommentNo: maxCommentNo.toString(),
+                    initializedAt: now(),
+                    updatedAt: now()
+                },
+                updatedAt: now()
+            };
+            await stateStore.save(state);
+            logger.info?.(`[dc-comment] 최초 기준점 설정 완료 (${commentGalleryId}/${commentPostNo})`);
+            return { status: 'initialized', replied: 0, lastSeenCommentNo: maxCommentNo.toString() };
+        }
+
+        const lastSeenCommentNo = BigInt(monitor.lastSeenCommentNo);
+        const newTopLevelComments = validComments
+            .filter(comment => BigInt(comment.commentNo) > lastSeenCommentNo)
+            .filter(comment => !comment.isReply && comment.accountId !== dcId)
+            .sort((a, b) => {
+                const aNo = BigInt(a.commentNo);
+                const bNo = BigInt(b.commentNo);
+                return aNo < bNo ? -1 : aNo > bNo ? 1 : 0;
+            });
+
+        let replied = 0;
+        for (const comment of newTopLevelComments) {
+            const alreadyReplied = validComments.some(candidate => (
+                candidate.isReply
+                && candidate.parentCommentNo === comment.commentNo
+                && candidate.accountId === dcId
+                && String(candidate.content || '').trim() === commentReplyText
+            ));
+            if (alreadyReplied) {
+                logger.info?.(`[dc-comment] 기존 대댓글 확인, 중복 생략: ${comment.commentNo}`);
+                continue;
+            }
+
+            const result = await writeComment(
+                commentGalleryId,
+                commentPostNo,
+                commentReplyText,
+                dcId,
+                dcPassword,
+                {
+                    replyToCommentNo: comment.commentNo,
+                    replyToMemberNo: comment.memberNo || '0'
+                }
+            );
+            if (!result?.success) {
+                throw new Error(`DC 대댓글 작성 실패 (${comment.commentNo}): ${result?.msg || '알 수 없는 오류'}`);
+            }
+            replied++;
+            logger.info?.(`[dc-comment] 대댓글 작성 완료: ${comment.commentNo}`);
+        }
+
+        if (maxCommentNo > lastSeenCommentNo) {
+            state = {
+                ...state,
+                commentMonitor: {
+                    ...monitor,
+                    lastSeenCommentNo: maxCommentNo.toString(),
+                    updatedAt: now()
+                },
+                updatedAt: now()
+            };
+            await stateStore.save(state);
+        }
+
+        return {
+            status: replied ? 'replied' : 'idle',
+            replied,
+            lastSeenCommentNo: (maxCommentNo > lastSeenCommentNo ? maxCommentNo : lastSeenCommentNo).toString()
+        };
+    }
+
     async function runOnce() {
         const missing = getMissingConfig();
         if (missing.length) throw new Error(`필수 설정 누락: ${missing.join(', ')}`);
@@ -244,6 +353,7 @@ function createTiboXBridge(options = {}) {
             if (!state?.userId || state.username !== username) {
                 const user = await fetchXUser(http, xBearerToken, username);
                 state = {
+                    ...state,
                     version: 1,
                     username,
                     userId: String(user.id),
@@ -312,6 +422,11 @@ function createTiboXBridge(options = {}) {
 
             return { status: 'posted', posted, lastProcessedPostId: state.lastProcessedPostId };
         } finally {
+            try {
+                await runCommentOnce();
+            } catch (error) {
+                logger.error?.(`[dc-comment] 처리 실패: ${error.message}`);
+            }
             running = false;
         }
     }
@@ -348,7 +463,7 @@ function createTiboXBridge(options = {}) {
         timer = null;
     }
 
-    return { getMissingConfig, pollIntervalMs, runOnce, start, stop };
+    return { getMissingConfig, pollIntervalMs, runCommentOnce, runOnce, start, stop };
 }
 
 function startTiboXBridge(options = {}) {
@@ -358,6 +473,9 @@ function startTiboXBridge(options = {}) {
 }
 
 module.exports = {
+    DEFAULT_COMMENT_GALLERY_ID,
+    DEFAULT_COMMENT_POST_NO,
+    DEFAULT_COMMENT_REPLY_TEXT,
     GEMINI_MODEL,
     buildDcTitle,
     buildXPostUrl,

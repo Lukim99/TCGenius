@@ -19,6 +19,7 @@ const {
     normalizeDcExternalUrl,
     normalizeDcVerificationTitle,
     parseDcCommentSubmitResponse,
+    parseDcMobileComments,
     parseDcResponseData,
     resolveDcFormAction
 } = require('../dc_write_utils');
@@ -123,6 +124,28 @@ assert.strictEqual(
     null
 );
 
+const mobileComments = parseDcMobileComments(cheerio.load(`
+    <ul>
+        <li class="comment" no="200" m_no="1">
+            <span class="blockCommentId" data-info="user-a"></span>
+            <p class="txt">새 댓글</p>
+        </li>
+        <li class="comment-add on" no="201" m_no="1">
+            <span class="blockCommentId" data-info="shelf7467"></span>
+            <p class="txt">테스트</p>
+        </li>
+        <li class="comment" no="202" m_no="0">
+            <p class="txt">비회원 댓글</p>
+        </li>
+    </ul>
+`));
+assert.deepStrictEqual(mobileComments, [
+    { commentNo: '200', memberNo: '1', accountId: 'user-a', content: '새 댓글', isReply: false, parentCommentNo: null },
+    { commentNo: '201', memberNo: '1', accountId: 'shelf7467', content: '테스트', isReply: true, parentCommentNo: '200' },
+    { commentNo: '202', memberNo: '0', accountId: '', content: '비회원 댓글', isReply: false, parentCommentNo: null }
+]);
+assert.deepStrictEqual(collectDcCommentNos(mobileComments), ['200', '201', '202']);
+
 const xPostUrl = 'https://x.com/thsottiaux/status/2077775690058125383';
 const xImageUrl = 'https://play-lh.googleusercontent.com/x-icon.png';
 const ogMemo = buildDcOgLinkMemo(xPostUrl, {
@@ -226,12 +249,16 @@ const commentStart = engineSource.indexOf('async function doDcWriteComment');
 const commentEnd = engineSource.indexOf('\nfunction get_captcha_key', commentStart);
 const commentSource = engineSource.slice(commentStart, commentEnd);
 assert.ok(commentStart >= 0 && commentEnd > commentStart, 'doDcWriteComment 함수 범위를 찾을 수 있어야 한다.');
-assert.ok(commentSource.includes('/board/forms/comment_submit'), '디시 댓글 등록 엔드포인트를 사용해야 한다.');
-assert.ok(commentSource.includes('/board/comment/'), '댓글 목록 API로 등록 결과를 확인해야 한다.');
+assert.ok(commentSource.includes("token_verify: 'com_submit'"), '댓글 등록 전 모바일 access 검증을 거쳐야 한다.');
+assert.ok(commentSource.includes('/ajax/comment-write'), '모바일 댓글 등록 엔드포인트를 사용해야 한다.');
+assert.ok(commentSource.includes("mode: replyToCommentNo ? 'com_reple' : 'com_write'"), '대댓글은 모바일 답글 모드로 등록해야 한다.');
+assert.ok(commentSource.includes('replyToMemberNo'), '대댓글 대상 회원 번호를 전달해야 한다.');
+assert.ok(commentSource.includes('liveCookies.cmtw_chk = blockKey'), '브라우저와 같은 댓글 검증 쿠키를 적용해야 한다.');
 assert.ok(commentSource.includes('previousCommentNos'), '등록 전후 댓글 번호를 비교해야 한다.');
 assert.ok(commentSource.includes('findNewDcComment'), '계정과 본문이 일치하는 새 댓글을 확인해야 한다.');
 assert.ok(commentSource.includes('finally {'));
 assert.ok(commentSource.includes('agent.destroy()'), '댓글 작성 중 예외가 발생해도 프록시 에이전트를 정리해야 한다.');
-assert.ok(engineSource.includes('module.exports = { doDcWriteComment, doDcWritePost };'));
+assert.ok(engineSource.includes("'https://m.dcinside.com/ajax/response-comment'"), '댓글 감시에는 모바일 댓글 목록 엔드포인트를 사용해야 한다.');
+assert.ok(engineSource.includes('module.exports = { doDcWriteComment, doDcWritePost, getDcPostComments };'));
 
 console.log('dc_write_utils.test.js: OK');

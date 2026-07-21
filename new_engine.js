@@ -31,6 +31,7 @@ const {
     isDcWriteSuccess,
     normalizeDcExternalUrl,
     parseDcCommentSubmitResponse,
+    parseDcMobileComments,
     parseDcResponseData,
     resolveDcFormAction
 } = require('./dc_write_utils');
@@ -111,6 +112,8 @@ let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21
 const DEVICE_NAME = "uDevice";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
+// 재개할 때 배포 환경에 KAKAO_AUTO_LOGIN_ENABLED=true를 설정한다.
+const KAKAO_AUTO_LOGIN_ENABLED = String(process.env.KAKAO_AUTO_LOGIN_ENABLED || '').toLowerCase() === 'true';
 let client = new node_kakao.TalkClient();
 if (keepAlive && typeof keepAlive.setKakaoClient == 'function') keepAlive.setKakaoClient(client);
 
@@ -1296,7 +1299,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
 }
 
 // 로그인 계정으로 디시 게시물에 댓글을 작성한다.
-async function doDcWriteComment(galleryId, postNo, content, id = null, password = null) {
+async function doDcWriteComment(galleryId, postNo, content, id = null, password = null, options = {}) {
     let currentIp = "확인 불가";
     const logs = [];
     const log = (message) => logs.push(message);
@@ -1307,14 +1310,19 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
         const normalizedGalleryId = String(galleryId || '').trim();
         const normalizedPostNo = String(postNo || '').trim();
         const normalizedContent = String(content || '').trim();
+        const replyToCommentNo = String(options?.replyToCommentNo || '').trim();
+        const replyToMemberNo = String(options?.replyToMemberNo ?? '0').trim();
         if (!normalizedGalleryId) {
             return { success: false, msg: "갤러리 ID가 필요합니다.", ip: currentIp, logs };
         }
         if (!/^\d+$/.test(normalizedPostNo)) {
             return { success: false, msg: "올바른 게시물 번호가 필요합니다.", ip: currentIp, logs };
         }
-        if (!normalizedContent || normalizedContent.length > 400) {
-            return { success: false, msg: "댓글은 1자 이상 400자 이하로 입력해야 합니다.", ip: currentIp, logs };
+        if (replyToCommentNo && !/^\d+$/.test(replyToCommentNo)) {
+            return { success: false, msg: "올바른 대상 댓글 번호가 필요합니다.", ip: currentIp, logs };
+        }
+        if (!normalizedContent || normalizedContent.length > 200) {
+            return { success: false, msg: "댓글은 1자 이상 200자 이하로 입력해야 합니다.", ip: currentIp, logs };
         }
         if (!id || !password) {
             return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
@@ -1332,7 +1340,7 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
             keepAliveMsecs: 30000,
             rejectUnauthorized: false
         });
-        const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
         let liveCookies = { ...loginResult.cookies };
         const mergeCookies = (response) => {
             const setCookies = response.headers?.['set-cookie'];
@@ -1346,126 +1354,105 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
             }
         };
         const cookieString = () => Object.entries(liveCookies).map(([key, value]) => `${key}=${value}`).join('; ');
-        const entryUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}/${normalizedPostNo}`;
+        const viewUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}/${normalizedPostNo}`;
         const pageHeaders = (referer) => ({
-            'User-Agent': desktopUA,
+            'User-Agent': mobileUA,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'ko-KR,ko;q=0.9',
             'Cookie': cookieString(),
             'Referer': referer
         });
 
-        const entryResponse = await axios.get(entryUrl, {
+        const mobileSessionResponse = await axios.get('https://m.dcinside.com/', {
+            httpsAgent: agent,
+            headers: pageHeaders('https://sign.dcinside.com/'),
+            timeout: 20000
+        });
+        mergeCookies(mobileSessionResponse);
+
+        const pageResponse = await axios.get(viewUrl, {
             httpsAgent: agent,
             headers: pageHeaders(`https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`),
-            timeout: 20000,
-            maxRedirects: 0,
-            validateStatus: status => status >= 200 && status < 400
+            timeout: 20000
         });
-        mergeCookies(entryResponse);
-
-        let viewUrl = entryUrl;
-        let pageResponse = entryResponse;
-        if (entryResponse.headers?.location) {
-            viewUrl = resolveDcFormAction(entryResponse.headers.location, entryUrl);
-            pageResponse = await axios.get(viewUrl, {
-                httpsAgent: agent,
-                headers: pageHeaders(entryUrl),
-                timeout: 20000
-            });
-            mergeCookies(pageResponse);
-        }
+        mergeCookies(pageResponse);
         log("게시물 댓글 폼 로드");
 
         const $ = cheerio.load(pageResponse.data);
-        if ($('#member_division').val() !== 'Y') {
-            invalidateSession(id);
-            return { success: false, msg: "댓글 페이지 로그인 세션 확인 실패", ip: currentIp, logs };
+        const field = (selector) => String($(selector).first().val() ?? '');
+        const csrfToken = String($('meta[name="csrf-token"]').attr('content') || '');
+        const robotFieldName = String($('.hide-robot').first().attr('name') || '');
+        if (!csrfToken || !robotFieldName) {
+            return { success: false, msg: "댓글 폼 보안 토큰을 찾을 수 없습니다.", ip: currentIp, logs };
         }
 
-        const field = (selector) => String($(selector).first().val() ?? '');
-        const commentListParams = () => new URLSearchParams({
-            id: normalizedGalleryId,
-            no: normalizedPostNo,
-            cmt_id: normalizedGalleryId,
-            cmt_no: normalizedPostNo,
-            focus_cno: '',
-            focus_pno: '',
-            e_s_n_o: field('#e_s_n_o'),
-            comment_page: '1',
-            sort: 'N',
-            prevCnt: '',
-            board_type: field('#board_type'),
-            _GALLTYPE_: field('#_GALLTYPE_') || 'M',
-            secret_article_key: field('#secret_article_key'),
-            clean: '',
-            nptest: ''
-        });
         const ajaxHeaders = () => ({
-            'User-Agent': desktopUA,
+            'User-Agent': mobileUA,
             'Accept': 'application/json, text/javascript, */*; q=0.01',
             'Accept-Language': 'ko-KR,ko;q=0.9',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-Requested-With': 'XMLHttpRequest',
-            'Origin': 'https://gall.dcinside.com',
+            'X-CSRF-TOKEN': csrfToken,
+            'Origin': 'https://m.dcinside.com',
             'Referer': viewUrl,
             'Cookie': cookieString()
         });
         const fetchComments = async () => {
-            const response = await axios.post(
-                'https://gall.dcinside.com/board/comment/',
-                commentListParams().toString(),
-                { httpsAgent: agent, headers: ajaxHeaders(), timeout: 20000 }
-            );
+            const response = await axios.get(`${viewUrl}?_=${Date.now()}`, {
+                httpsAgent: agent,
+                headers: pageHeaders(viewUrl),
+                timeout: 20000
+            });
             mergeCookies(response);
-            return response.data;
+            return parseDcMobileComments(cheerio.load(response.data));
         };
 
-        let previousCommentNos = [];
-        try {
-            previousCommentNos = collectDcCommentNos((await fetchComments())?.comments);
-        } catch (error) {
-            log("작성 전 댓글 목록 확인 실패: " + error.message);
-        }
+        const previousCommentNos = collectDcCommentNos(parseDcMobileComments($));
 
-        const requiredFields = ['#e_s_n_o', '#cur_t', '#check_6', '#check_7', '#check_8', '#check_9', '#check_10', '#c_r_k_x_z'];
-        const missingField = requiredFields.find(selector => !field(selector));
-        const serviceCode = field('input[name="service_code"]');
-        if (missingField || !serviceCode) {
-            return { success: false, msg: "댓글 보안 필드를 찾을 수 없습니다.", ip: currentIp, logs };
+        const accessResponse = await axios.post(
+            'https://m.dcinside.com/ajax/access',
+            new URLSearchParams({ token_verify: 'com_submit' }).toString(),
+            { httpsAgent: agent, headers: ajaxHeaders(), timeout: 20000 }
+        );
+        mergeCookies(accessResponse);
+        const accessData = parseDcResponseData(accessResponse.data);
+        const blockKey = String(accessData?.Block_key || '');
+        if (!blockKey) {
+            return {
+                success: false,
+                msg: getDcFailureMessage(accessData, "댓글 접근 검증 실패"),
+                ip: currentIp,
+                logs
+            };
         }
+        liveCookies.cmtw_chk = blockKey;
+        log("댓글 접근 검증 완료");
 
         const submitParams = new URLSearchParams({
+            comment_memo: normalizedContent,
+            comment_nick: field('#comment_nick'),
+            comment_pw: field('#comment_pw'),
+            mode: replyToCommentNo ? 'com_reple' : 'com_write',
+            comment_no: replyToCommentNo || field('#comment_no'),
             id: normalizedGalleryId,
             no: normalizedPostNo,
-            reply_no: '',
-            name: field(`#name_${normalizedPostNo}`),
-            memo: normalizedContent,
-            cur_t: field('#cur_t'),
-            check_6: field('#check_6'),
-            check_7: field('#check_7'),
-            check_8: field('#check_8'),
-            check_9: field('#check_9'),
-            check_10: field('#check_10'),
-            recommend: field('#recommend'),
-            c_r_k_x_z: field('#c_r_k_x_z'),
-            t_vch2: '',
-            t_vch2_chk: '',
-            c_gall_id: normalizedGalleryId,
-            c_gall_no: normalizedPostNo,
-            service_code: serviceCode,
-            'g-recaptcha-response': '',
-            _GALLTYPE_: field('#_GALLTYPE_') || 'M',
-            headTail: '{}'
+            best_chk: field('#best_chk'),
+            board_id: field('#board_id'),
+            reple_id: replyToCommentNo ? replyToMemberNo : field('#reple_id'),
+            cpage: field('#cpage') || '1',
+            con_key: blockKey
         });
+        if (!replyToCommentNo) {
+            submitParams.set('subject', $('.gallview-tit-box .tit').first().text().trim().substring(0, 40));
+        }
+        submitParams.set(robotFieldName, '1');
         const submitResponse = await axios.post(
-            'https://gall.dcinside.com/board/forms/comment_submit',
+            'https://m.dcinside.com/ajax/comment-write',
             submitParams.toString(),
             {
                 httpsAgent: agent,
                 headers: ajaxHeaders(),
-                timeout: 20000,
-                transformResponse: value => value
+                timeout: 20000
             }
         );
         mergeCookies(submitResponse);
@@ -1485,8 +1472,12 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
 
         let verifiedComment = null;
         try {
+            const newComments = (await fetchComments()).filter(comment => {
+                if (!replyToCommentNo) return !comment.isReply;
+                return comment.isReply && comment.parentCommentNo === replyToCommentNo;
+            });
             verifiedComment = findNewDcComment(
-                (await fetchComments())?.comments,
+                newComments,
                 normalizedContent,
                 id,
                 previousCommentNos
@@ -1512,6 +1503,94 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
         const responseMessage = getDcFailureMessage(error.response?.data, error.message);
         if (id && isSessionError(responseMessage, status)) invalidateSession(id);
         return { success: false, msg: `에러: ${error.message}`, ip: currentIp, logs };
+    } finally {
+        if (agent) agent.destroy();
+    }
+}
+
+// 모바일 댓글 목록을 최신순으로 조회한다.
+async function getDcPostComments(galleryId, postNo) {
+    const normalizedGalleryId = String(galleryId || '').trim();
+    const normalizedPostNo = String(postNo || '').trim();
+    if (!normalizedGalleryId || !/^\d+$/.test(normalizedPostNo)) {
+        return { success: false, msg: "올바른 갤러리 ID와 게시물 번호가 필요합니다.", comments: [] };
+    }
+
+    let agent = null;
+    try {
+        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+        agent = new HttpsProxyAgent({
+            proxy: proxyUrl,
+            keepAlive: true,
+            keepAliveMsecs: 30000,
+            rejectUnauthorized: false
+        });
+        const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+        const viewUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}/${normalizedPostNo}`;
+        let cookies = {};
+        const mergeCookies = (response) => {
+            const setCookies = response.headers?.['set-cookie'];
+            if (!setCookies) return;
+            for (const value of Array.isArray(setCookies) ? setCookies : [setCookies]) {
+                const nameValue = value.split(';')[0];
+                const separator = nameValue.indexOf('=');
+                if (separator > 0) {
+                    cookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
+                }
+            }
+        };
+        const cookieString = () => Object.entries(cookies).map(([key, value]) => `${key}=${value}`).join('; ');
+        const pageResponse = await axios.get(`${viewUrl}?_=${Date.now()}`, {
+            httpsAgent: agent,
+            headers: {
+                'User-Agent': mobileUA,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9'
+            },
+            timeout: 20000
+        });
+        mergeCookies(pageResponse);
+
+        const $ = cheerio.load(pageResponse.data);
+        const csrfToken = String($('meta[name="csrf-token"]').attr('content') || '');
+        if (!csrfToken) {
+            return { success: false, msg: "댓글 조회 CSRF 토큰을 찾을 수 없습니다.", comments: [] };
+        }
+        const field = (selector) => String($(selector).first().val() ?? '');
+        const listParams = new URLSearchParams({
+            id: normalizedGalleryId,
+            no: normalizedPostNo,
+            cpage: '1',
+            managerskill: field('#managerskill'),
+            csort: 'new',
+            permission_pw: field('#secret_pw')
+        });
+        const listResponse = await axios.post(
+            'https://m.dcinside.com/ajax/response-comment',
+            listParams.toString(),
+            {
+                httpsAgent: agent,
+                headers: {
+                    'User-Agent': mobileUA,
+                    'Accept': 'text/html, */*; q=0.01',
+                    'Accept-Language': 'ko-KR,ko;q=0.9',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Origin': 'https://m.dcinside.com',
+                    'Referer': viewUrl,
+                    'Cookie': cookieString()
+                },
+                timeout: 20000
+            }
+        );
+        mergeCookies(listResponse);
+        return {
+            success: true,
+            comments: parseDcMobileComments(cheerio.load(listResponse.data))
+        };
+    } catch (error) {
+        return { success: false, msg: `댓글 조회 오류: ${error.message}`, comments: [] };
     } finally {
         if (agent) agent.destroy();
     }
@@ -11968,7 +12047,7 @@ async function login() {
             if (!result.success) {
                 console.log(result.message);
             } else {
-                login();
+                return login();
             }
         } else {
             console.log(`Login Failed! Data: ${JSON.stringify(loginData, null, 2)}`);
@@ -12015,9 +12094,17 @@ if (require.main === module) {
     keepAlive();
     startTiboXBridge({
         writePost: doDcWritePost,
+        fetchComments: getDcPostComments,
+        writeComment: doDcWriteComment,
         stateStore: createDynamoStateStore(docClient)
     });
-    login().then();
+    if (KAKAO_AUTO_LOGIN_ENABLED) {
+        void login().catch(error => {
+            console.error('[kakao] 자동 로그인 실패. 서버는 계속 실행합니다:', error);
+        });
+    } else {
+        console.log('[kakao] 자동 로그인이 비활성화되어 있습니다.');
+    }
 }
 
-module.exports = { doDcWriteComment, doDcWritePost };
+module.exports = { doDcWriteComment, doDcWritePost, getDcPostComments };
