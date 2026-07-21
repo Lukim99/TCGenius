@@ -20,14 +20,17 @@ const { createClient } = require('@supabase/supabase-js');
 const {
     buildDcHyperlinkMemo,
     buildDcOgLinkMemo,
+    collectDcCommentNos,
     collectDcPostNosInList,
     collectDcFormFields,
     extractDcPostNo,
+    findNewDcComment,
     findDcPostsInList,
     getDcFailureMessage,
     hasDcExternalLink,
     isDcWriteSuccess,
     normalizeDcExternalUrl,
+    parseDcCommentSubmitResponse,
     parseDcResponseData,
     resolveDcFormAction
 } = require('./dc_write_utils');
@@ -1287,6 +1290,228 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
         const responseMessage = getDcFailureMessage(err.response?.data, err.message);
         if (id && isSessionError(responseMessage, status)) invalidateSession(id);
         return { success: false, msg: `에러: ${err.message}`, ip: currentIp, logs };
+    } finally {
+        if (agent) agent.destroy();
+    }
+}
+
+// 로그인 계정으로 디시 게시물에 댓글을 작성한다.
+async function doDcWriteComment(galleryId, postNo, content, id = null, password = null) {
+    let currentIp = "확인 불가";
+    const logs = [];
+    const log = (message) => logs.push(message);
+    const isSessionError = (message, status = null) => status === 401 || /로그인|세션|login|unauthorized/i.test(String(message || ''));
+    let agent = null;
+
+    try {
+        const normalizedGalleryId = String(galleryId || '').trim();
+        const normalizedPostNo = String(postNo || '').trim();
+        const normalizedContent = String(content || '').trim();
+        if (!normalizedGalleryId) {
+            return { success: false, msg: "갤러리 ID가 필요합니다.", ip: currentIp, logs };
+        }
+        if (!/^\d+$/.test(normalizedPostNo)) {
+            return { success: false, msg: "올바른 게시물 번호가 필요합니다.", ip: currentIp, logs };
+        }
+        if (!normalizedContent || normalizedContent.length > 400) {
+            return { success: false, msg: "댓글은 1자 이상 400자 이하로 입력해야 합니다.", ip: currentIp, logs };
+        }
+        if (!id || !password) {
+            return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
+        }
+
+        const loginResult = await getDcLoginCookies(id, password, log);
+        if (!loginResult.ok) {
+            return { success: false, msg: loginResult.msg, ip: currentIp, logs };
+        }
+
+        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
+        agent = new HttpsProxyAgent({
+            proxy: proxyUrl,
+            keepAlive: true,
+            keepAliveMsecs: 30000,
+            rejectUnauthorized: false
+        });
+        const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        let liveCookies = { ...loginResult.cookies };
+        const mergeCookies = (response) => {
+            const setCookies = response.headers?.['set-cookie'];
+            if (!setCookies) return;
+            for (const value of Array.isArray(setCookies) ? setCookies : [setCookies]) {
+                const nameValue = value.split(';')[0];
+                const separator = nameValue.indexOf('=');
+                if (separator > 0) {
+                    liveCookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
+                }
+            }
+        };
+        const cookieString = () => Object.entries(liveCookies).map(([key, value]) => `${key}=${value}`).join('; ');
+        const entryUrl = `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}/${normalizedPostNo}`;
+        const pageHeaders = (referer) => ({
+            'User-Agent': desktopUA,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9',
+            'Cookie': cookieString(),
+            'Referer': referer
+        });
+
+        const entryResponse = await axios.get(entryUrl, {
+            httpsAgent: agent,
+            headers: pageHeaders(`https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`),
+            timeout: 20000,
+            maxRedirects: 0,
+            validateStatus: status => status >= 200 && status < 400
+        });
+        mergeCookies(entryResponse);
+
+        let viewUrl = entryUrl;
+        let pageResponse = entryResponse;
+        if (entryResponse.headers?.location) {
+            viewUrl = resolveDcFormAction(entryResponse.headers.location, entryUrl);
+            pageResponse = await axios.get(viewUrl, {
+                httpsAgent: agent,
+                headers: pageHeaders(entryUrl),
+                timeout: 20000
+            });
+            mergeCookies(pageResponse);
+        }
+        log("게시물 댓글 폼 로드");
+
+        const $ = cheerio.load(pageResponse.data);
+        if ($('#member_division').val() !== 'Y') {
+            invalidateSession(id);
+            return { success: false, msg: "댓글 페이지 로그인 세션 확인 실패", ip: currentIp, logs };
+        }
+
+        const field = (selector) => String($(selector).first().val() ?? '');
+        const commentListParams = () => new URLSearchParams({
+            id: normalizedGalleryId,
+            no: normalizedPostNo,
+            cmt_id: normalizedGalleryId,
+            cmt_no: normalizedPostNo,
+            focus_cno: '',
+            focus_pno: '',
+            e_s_n_o: field('#e_s_n_o'),
+            comment_page: '1',
+            sort: 'N',
+            prevCnt: '',
+            board_type: field('#board_type'),
+            _GALLTYPE_: field('#_GALLTYPE_') || 'M',
+            secret_article_key: field('#secret_article_key'),
+            clean: '',
+            nptest: ''
+        });
+        const ajaxHeaders = () => ({
+            'User-Agent': desktopUA,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'ko-KR,ko;q=0.9',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Origin': 'https://gall.dcinside.com',
+            'Referer': viewUrl,
+            'Cookie': cookieString()
+        });
+        const fetchComments = async () => {
+            const response = await axios.post(
+                'https://gall.dcinside.com/board/comment/',
+                commentListParams().toString(),
+                { httpsAgent: agent, headers: ajaxHeaders(), timeout: 20000 }
+            );
+            mergeCookies(response);
+            return response.data;
+        };
+
+        let previousCommentNos = [];
+        try {
+            previousCommentNos = collectDcCommentNos((await fetchComments())?.comments);
+        } catch (error) {
+            log("작성 전 댓글 목록 확인 실패: " + error.message);
+        }
+
+        const requiredFields = ['#e_s_n_o', '#cur_t', '#check_6', '#check_7', '#check_8', '#check_9', '#check_10', '#c_r_k_x_z'];
+        const missingField = requiredFields.find(selector => !field(selector));
+        const serviceCode = field('input[name="service_code"]');
+        if (missingField || !serviceCode) {
+            return { success: false, msg: "댓글 보안 필드를 찾을 수 없습니다.", ip: currentIp, logs };
+        }
+
+        const submitParams = new URLSearchParams({
+            id: normalizedGalleryId,
+            no: normalizedPostNo,
+            reply_no: '',
+            name: field(`#name_${normalizedPostNo}`),
+            memo: normalizedContent,
+            cur_t: field('#cur_t'),
+            check_6: field('#check_6'),
+            check_7: field('#check_7'),
+            check_8: field('#check_8'),
+            check_9: field('#check_9'),
+            check_10: field('#check_10'),
+            recommend: field('#recommend'),
+            c_r_k_x_z: field('#c_r_k_x_z'),
+            t_vch2: '',
+            t_vch2_chk: '',
+            c_gall_id: normalizedGalleryId,
+            c_gall_no: normalizedPostNo,
+            service_code: serviceCode,
+            'g-recaptcha-response': '',
+            _GALLTYPE_: field('#_GALLTYPE_') || 'M',
+            headTail: '{}'
+        });
+        const submitResponse = await axios.post(
+            'https://gall.dcinside.com/board/forms/comment_submit',
+            submitParams.toString(),
+            {
+                httpsAgent: agent,
+                headers: ajaxHeaders(),
+                timeout: 20000,
+                transformResponse: value => value
+            }
+        );
+        mergeCookies(submitResponse);
+        log("댓글 작성 응답 상태: " + submitResponse.status);
+
+        const submitResult = parseDcCommentSubmitResponse(submitResponse.data);
+        if (!submitResult.success) {
+            if (isSessionError(submitResult.message, submitResponse.status)) invalidateSession(id);
+            return {
+                success: false,
+                msg: submitResult.message,
+                cause: submitResult.code || undefined,
+                ip: currentIp,
+                logs
+            };
+        }
+
+        let verifiedComment = null;
+        try {
+            verifiedComment = findNewDcComment(
+                (await fetchComments())?.comments,
+                normalizedContent,
+                id,
+                previousCommentNos
+            );
+            if (verifiedComment) log("새 댓글 생성 결과 확인");
+            else log("댓글 작성 응답 성공 (댓글 번호 미확인)");
+        } catch (error) {
+            log("댓글 작성 결과 확인 실패: " + error.message);
+        }
+
+        saveCachedSession(id, liveCookies);
+        return {
+            success: true,
+            msg: "댓글 작성 성공!",
+            commentNo: verifiedComment?.commentNo || null,
+            verified: Boolean(verifiedComment),
+            ip: currentIp,
+            logs
+        };
+    } catch (error) {
+        log("에러: " + error.message);
+        const status = error.response?.status;
+        const responseMessage = getDcFailureMessage(error.response?.data, error.message);
+        if (id && isSessionError(responseMessage, status)) invalidateSession(id);
+        return { success: false, msg: `에러: ${error.message}`, ip: currentIp, logs };
     } finally {
         if (agent) agent.destroy();
     }
@@ -11795,4 +12020,4 @@ if (require.main === module) {
     login().then();
 }
 
-module.exports = { doDcWritePost };
+module.exports = { doDcWriteComment, doDcWritePost };

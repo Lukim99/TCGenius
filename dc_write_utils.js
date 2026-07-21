@@ -219,6 +219,52 @@ function hasDcExternalLink($, expectedUrl) {
     return found;
 }
 
+function parseDcCommentSubmitResponse(data) {
+    if (data && typeof data === 'object') {
+        const failed = data.result === false || data.result === 0 || data.result === '0' || data.result === 'false';
+        if (failed) {
+            const message = String(data.cause || data.message || data.msg || '댓글 작성 실패').trim();
+            return { success: false, code: message, message };
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'result')) return { success: true };
+    }
+
+    const text = String(data ?? '').trim();
+    const parts = text.split('||');
+    if (parts[0].trim().toLowerCase() === 'false') {
+        const code = (parts[1] || '').trim();
+        const message = (code === 'nomember' ? parts[2] : parts[1]) || '댓글 작성 실패';
+        return { success: false, code, message: String(message).trim() };
+    }
+
+    return { success: true };
+}
+
+function collectDcCommentNos(comments) {
+    if (!Array.isArray(comments)) return [];
+    return comments
+        .map(comment => String(comment?.no ?? ''))
+        .filter(no => /^\d+$/.test(no) && no !== '0');
+}
+
+function findNewDcComment(comments, content, accountId, previousCommentNos = []) {
+    if (!Array.isArray(comments)) return null;
+    const previous = new Set([...previousCommentNos].map(String));
+    const expectedContent = String(content ?? '').replace(/\r\n/g, '\n').trim();
+
+    for (const comment of comments) {
+        const commentNo = String(comment?.no ?? '');
+        const commentContent = String(comment?.memo ?? '').replace(/\r\n/g, '\n').trim();
+        const commentAccountId = String(comment?.user_id ?? '');
+        if (!/^\d+$/.test(commentNo) || commentNo === '0' || previous.has(commentNo)) continue;
+        if (commentContent !== expectedContent) continue;
+        if (accountId && commentAccountId !== accountId) continue;
+        return { commentNo, content: commentContent, accountId: commentAccountId };
+    }
+
+    return null;
+}
+
 function isDcWriteSuccess(data, location = '') {
     if (extractDcPostNo(data, location)) return true;
 
@@ -247,10 +293,12 @@ function getDcFailureMessage(data, fallback = '작성 실패') {
 module.exports = {
     buildDcHyperlinkMemo,
     buildDcOgLinkMemo,
+    collectDcCommentNos,
     collectDcPostNosInList,
     collectDcFormFields,
     escapeDcHtml,
     extractDcPostNo,
+    findNewDcComment,
     findDcPostInList,
     findDcPostsInList,
     getDcFailureMessage,
@@ -258,6 +306,7 @@ module.exports = {
     isDcWriteSuccess,
     normalizeDcExternalUrl,
     normalizeDcVerificationTitle,
+    parseDcCommentSubmitResponse,
     parseDcResponseData,
     resolveDcFormAction
 };

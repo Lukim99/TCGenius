@@ -4349,6 +4349,7 @@ $$('.rank-tab').forEach(btn => btn.onclick = () => {
 let dexData = null;
 let potentialDexData = null;
 let dexTab = 'weapon';
+let dexRarity = 'all';
 
 function dexThumb(iconUrl, frameUrl, fallback, sizeClass) {
     const wrap = el('div', { class: sizeClass || 'dex-thumb' });
@@ -4629,9 +4630,43 @@ function dexPotentialCard(typeData) {
     return card;
 }
 
+function hideDexRarityFilter() {
+    const bar = $('#dexRarityFilterBar');
+    if (bar) bar.hidden = true;
+}
+
+function applyDexRarityFilter(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const bar = $('#dexRarityFilterBar');
+    const select = $('#dexRarityFilter');
+    const count = $('#dexRarityCount');
+    const present = new Set(list.map(entry => entry && entry.rarity).filter(Boolean));
+    if (!bar || !select || !present.size) {
+        hideDexRarityFilter();
+        return list;
+    }
+
+    const rarityOrder = Array.isArray(dexData && dexData.rarityOrder) ? dexData.rarityOrder : [];
+    const rarities = rarityOrder.filter(rarity => present.has(rarity));
+    Array.from(present).filter(rarity => !rarities.includes(rarity)).sort((a, b) => a.localeCompare(b, 'ko-KR')).forEach(rarity => rarities.push(rarity));
+    if (dexRarity !== 'all' && !present.has(dexRarity)) dexRarity = 'all';
+
+    select.replaceChildren(
+        el('option', { value: 'all' }, '전체 등급'),
+        ...rarities.map(rarity => el('option', { value: rarity }, rarity))
+    );
+    select.value = dexRarity;
+    bar.hidden = false;
+
+    const filtered = dexRarity === 'all' ? list : list.filter(entry => entry.rarity === dexRarity);
+    if (count) count.textContent = dexRarity === 'all' ? comma(list.length) + '개' : comma(filtered.length) + ' / ' + comma(list.length) + '개';
+    return filtered;
+}
+
 function renderDex() {
     const grid = $('#dexList');
     if (dexTab === 'potential') {
+        hideDexRarityFilter();
         grid.className = 'dex-grid dex-pot-grid';
         if (!potentialDexData) return;
         grid.innerHTML = '';
@@ -4639,6 +4674,7 @@ function renderDex() {
         return;
     }
     if (dexTab === 'title') {
+        hideDexRarityFilter();
         if (!titlesData) return;
         grid.className = 'dex-grid dex-title-grid';
         grid.innerHTML = '';
@@ -4649,7 +4685,7 @@ function renderDex() {
     }
     grid.className = 'dex-grid';
     if (!dexData) return;
-    const list = dexData[dexTab] || [];
+    const list = applyDexRarityFilter(dexData[dexTab] || []);
     grid.innerHTML = '';
     if (!list.length) {
         grid.appendChild(el('div', { class: 'empty' }, '데이터가 없습니다.'));
@@ -4660,6 +4696,7 @@ function renderDex() {
 
 async function loadDex() {
     if (dexTab === 'potential') {
+        hideDexRarityFilter();
         if (!potentialDexData) {
             $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
             try { potentialDexData = await api('/api/dex/potential'); }
@@ -4669,6 +4706,7 @@ async function loadDex() {
         return;
     }
     if (dexTab === 'title') {
+        hideDexRarityFilter();
         if (!titlesData) {
             $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
             try { titlesData = await api('/api/titles'); }
@@ -4690,6 +4728,11 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
     loadDex();
 });
+
+$('#dexRarityFilter').onchange = event => {
+    dexRarity = event.target.value || 'all';
+    renderDex();
+};
 
 let patchnoteData = null;
 let patchnoteAdmin = false;
