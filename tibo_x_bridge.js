@@ -11,12 +11,10 @@ const DEFAULT_POLL_INTERVAL_MS = 60 * 1000;
 const MIN_POLL_INTERVAL_MS = 60 * 1000;
 const TITLE_PREFIX = '&#128994; Tibo 트윗) ';
 const MAX_DC_TITLE_LENGTH = 40;
-const DEFAULT_COMMENT_GALLERY_ID = 'agent_stack';
-const DEFAULT_COMMENT_POST_NO = '5181';
-const DEFAULT_COMMENT_REPLY_TEXT = '테스트';
 const DEFAULT_MODERATION_GALLERY_ID = 'agent_stack';
 const DEFAULT_MODERATION_POST_NO = '6492';
 const DEFAULT_MODERATION_HEADTEXT = '130';
+const MAX_MODERATION_POSTS_PER_RUN = 10;
 
 function truncateUtf16(value, maxLength) {
     const text = String(value || '');
@@ -225,10 +223,6 @@ function createTiboXBridge(options = {}) {
     const stateStore = options.stateStore || createFileStateStore();
     const writePost = options.writePost;
     const fetchComments = options.fetchComments;
-    const writeComment = options.writeComment;
-    const commentGalleryId = options.commentGalleryId || DEFAULT_COMMENT_GALLERY_ID;
-    const commentPostNo = String(options.commentPostNo || DEFAULT_COMMENT_POST_NO);
-    const commentReplyText = options.commentReplyText || DEFAULT_COMMENT_REPLY_TEXT;
     const changePostHeadtext = options.changePostHeadtext;
     const moderationGalleryId = options.moderationGalleryId || DEFAULT_MODERATION_GALLERY_ID;
     const moderationPostNo = String(options.moderationPostNo || DEFAULT_MODERATION_POST_NO);
@@ -249,107 +243,6 @@ function createTiboXBridge(options = {}) {
         if (!dcPassword) missing.push('TIBO_DC_PASSWORD');
         if (typeof writePost !== 'function') missing.push('writePost');
         return missing;
-    }
-
-    async function runCommentOnce() {
-        if (typeof fetchComments !== 'function' || typeof writeComment !== 'function') {
-            return { status: 'disabled', replied: 0 };
-        }
-
-        const response = await fetchComments(commentGalleryId, commentPostNo);
-        if (response?.success === false) {
-            throw new Error(response.msg || 'DC 댓글 조회 실패');
-        }
-        const comments = Array.isArray(response) ? response : response?.comments;
-        if (!Array.isArray(comments)) throw new Error('DC 댓글 조회 결과가 올바르지 않습니다.');
-
-        const validComments = comments.filter(comment => /^\d+$/.test(String(comment?.commentNo || '')));
-        const maxCommentNo = validComments.reduce((max, comment) => {
-            const value = BigInt(comment.commentNo);
-            return value > max ? value : max;
-        }, 0n);
-
-        let state = await stateStore.load() || { version: 1 };
-        const monitor = state.commentMonitor;
-        if (!monitor
-            || monitor.galleryId !== commentGalleryId
-            || String(monitor.postNo) !== commentPostNo
-            || !/^\d+$/.test(String(monitor.lastSeenCommentNo ?? ''))) {
-            state = {
-                ...state,
-                commentMonitor: {
-                    galleryId: commentGalleryId,
-                    postNo: commentPostNo,
-                    lastSeenCommentNo: maxCommentNo.toString(),
-                    initializedAt: now(),
-                    updatedAt: now()
-                },
-                updatedAt: now()
-            };
-            await stateStore.save(state);
-            logger.info?.(`[dc-comment] 최초 기준점 설정 완료 (${commentGalleryId}/${commentPostNo})`);
-            return { status: 'initialized', replied: 0, lastSeenCommentNo: maxCommentNo.toString() };
-        }
-
-        const lastSeenCommentNo = BigInt(monitor.lastSeenCommentNo);
-        const newTopLevelComments = validComments
-            .filter(comment => BigInt(comment.commentNo) > lastSeenCommentNo)
-            .filter(comment => !comment.isReply && comment.accountId !== dcId)
-            .sort((a, b) => {
-                const aNo = BigInt(a.commentNo);
-                const bNo = BigInt(b.commentNo);
-                return aNo < bNo ? -1 : aNo > bNo ? 1 : 0;
-            });
-
-        let replied = 0;
-        for (const comment of newTopLevelComments) {
-            const alreadyReplied = validComments.some(candidate => (
-                candidate.isReply
-                && candidate.parentCommentNo === comment.commentNo
-                && candidate.accountId === dcId
-                && String(candidate.content || '').trim() === commentReplyText
-            ));
-            if (alreadyReplied) {
-                logger.info?.(`[dc-comment] 기존 대댓글 확인, 중복 생략: ${comment.commentNo}`);
-                continue;
-            }
-
-            const result = await writeComment(
-                commentGalleryId,
-                commentPostNo,
-                commentReplyText,
-                dcId,
-                dcPassword,
-                {
-                    replyToCommentNo: comment.commentNo,
-                    replyToMemberNo: comment.memberNo || '0'
-                }
-            );
-            if (!result?.success) {
-                throw new Error(`DC 대댓글 작성 실패 (${comment.commentNo}): ${result?.msg || '알 수 없는 오류'}`);
-            }
-            replied++;
-            logger.info?.(`[dc-comment] 대댓글 작성 완료: ${comment.commentNo}`);
-        }
-
-        if (maxCommentNo > lastSeenCommentNo) {
-            state = {
-                ...state,
-                commentMonitor: {
-                    ...monitor,
-                    lastSeenCommentNo: maxCommentNo.toString(),
-                    updatedAt: now()
-                },
-                updatedAt: now()
-            };
-            await stateStore.save(state);
-        }
-
-        return {
-            status: replied ? 'replied' : 'idle',
-            replied,
-            lastSeenCommentNo: (maxCommentNo > lastSeenCommentNo ? maxCommentNo : lastSeenCommentNo).toString()
-        };
     }
 
     async function runModerationOnce() {
@@ -385,6 +278,8 @@ function createTiboXBridge(options = {}) {
                     galleryId: moderationGalleryId,
                     postNo: moderationPostNo,
                     lastSeenCommentNo: maxCommentNo.toString(),
+                    processedPostNos: [],
+                    pendingPostNos: [],
                     initializedAt: now(),
                     updatedAt: now()
                 },
@@ -396,18 +291,26 @@ function createTiboXBridge(options = {}) {
         }
 
         const lastSeenCommentNo = BigInt(monitor.lastSeenCommentNo);
-        const linkedPostNos = new Set();
+        const normalizeStoredPostNos = values => (Array.isArray(values) ? values : [])
+            .map(value => String(value || '').trim())
+            .filter(value => /^[1-9]\d*$/.test(value));
+        const processedPostNos = new Set(normalizeStoredPostNos(monitor.processedPostNos));
+        const pendingPostNos = new Set(
+            normalizeStoredPostNos(monitor.pendingPostNos)
+                .filter(postNo => !processedPostNos.has(postNo))
+        );
         validComments
             .filter(comment => BigInt(comment.commentNo) > lastSeenCommentNo)
+            .filter(comment => /^[1-9]\d*$/.test(String(comment.memberNo || '')))
             .forEach(comment => {
                 const values = [comment.content, ...(Array.isArray(comment.links) ? comment.links : [])];
                 for (const postNo of extractDcPostNosForGallery(values, moderationGalleryId)) {
-                    linkedPostNos.add(postNo);
+                    if (!processedPostNos.has(postNo)) pendingPostNos.add(postNo);
                 }
             });
 
-        if (linkedPostNos.size) {
-            const postNos = [...linkedPostNos];
+        const postNos = [...pendingPostNos].slice(0, MAX_MODERATION_POSTS_PER_RUN);
+        if (postNos.length) {
             const result = await changePostHeadtext(
                 moderationGalleryId,
                 postNos,
@@ -418,15 +321,28 @@ function createTiboXBridge(options = {}) {
             if (!result?.success) {
                 throw new Error(`DC 말머리 변경 실패: ${result?.msg || '알 수 없는 오류'}`);
             }
+            for (const postNo of postNos) {
+                processedPostNos.add(postNo);
+                pendingPostNos.delete(postNo);
+            }
             logger.info?.(`[dc-moderation] 🗑️ 말머리 변경 완료: ${postNos.join(', ')}`);
         }
 
-        if (maxCommentNo > lastSeenCommentNo) {
+        const nextLastSeenCommentNo = (
+            maxCommentNo > lastSeenCommentNo ? maxCommentNo : lastSeenCommentNo
+        ).toString();
+        const shouldSaveState = nextLastSeenCommentNo !== String(monitor.lastSeenCommentNo)
+            || postNos.length > 0
+            || !Array.isArray(monitor.processedPostNos)
+            || !Array.isArray(monitor.pendingPostNos);
+        if (shouldSaveState) {
             state = {
                 ...state,
                 moderationMonitor: {
                     ...monitor,
-                    lastSeenCommentNo: maxCommentNo.toString(),
+                    lastSeenCommentNo: nextLastSeenCommentNo,
+                    processedPostNos: [...processedPostNos],
+                    pendingPostNos: [...pendingPostNos],
                     updatedAt: now()
                 },
                 updatedAt: now()
@@ -435,10 +351,10 @@ function createTiboXBridge(options = {}) {
         }
 
         return {
-            status: linkedPostNos.size ? 'updated' : 'idle',
-            updated: linkedPostNos.size,
-            postNos: [...linkedPostNos],
-            lastSeenCommentNo: (maxCommentNo > lastSeenCommentNo ? maxCommentNo : lastSeenCommentNo).toString()
+            status: postNos.length ? 'updated' : 'idle',
+            updated: postNos.length,
+            postNos,
+            lastSeenCommentNo: nextLastSeenCommentNo
         };
     }
 
@@ -523,11 +439,6 @@ function createTiboXBridge(options = {}) {
             return { status: 'posted', posted, lastProcessedPostId: state.lastProcessedPostId };
         } finally {
             try {
-                await runCommentOnce();
-            } catch (error) {
-                logger.error?.(`[dc-comment] 처리 실패: ${error.message}`);
-            }
-            try {
                 await runModerationOnce();
             } catch (error) {
                 logger.error?.(`[dc-moderation] 처리 실패: ${error.message}`);
@@ -568,7 +479,7 @@ function createTiboXBridge(options = {}) {
         timer = null;
     }
 
-    return { getMissingConfig, pollIntervalMs, runCommentOnce, runModerationOnce, runOnce, start, stop };
+    return { getMissingConfig, pollIntervalMs, runModerationOnce, runOnce, start, stop };
 }
 
 function startTiboXBridge(options = {}) {
@@ -578,9 +489,6 @@ function startTiboXBridge(options = {}) {
 }
 
 module.exports = {
-    DEFAULT_COMMENT_GALLERY_ID,
-    DEFAULT_COMMENT_POST_NO,
-    DEFAULT_COMMENT_REPLY_TEXT,
     DEFAULT_MODERATION_GALLERY_ID,
     DEFAULT_MODERATION_HEADTEXT,
     DEFAULT_MODERATION_POST_NO,

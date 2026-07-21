@@ -12225,7 +12225,6 @@ if (require.main === module) {
     startTiboXBridge({
         writePost: doDcWritePost,
         fetchComments: getDcPostComments,
-        writeComment: doDcWriteComment,
         changePostHeadtext: doDcChangePostHeadtext,
         stateStore: createDynamoStateStore(docClient)
     });
