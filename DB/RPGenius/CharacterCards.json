@@ -21,8 +21,8 @@
                 {
                     "effect": "hpDamageReduction",
                     "name": "받는 피해량",
-                    "base": 0.025,
-                    "per_level": 0.0125
+                    "base": -0.025,
+                    "per_level": -0.0125
                 }
             ],
             "skills": [
@@ -52,8 +52,8 @@
                 {
                     "effect": "hpDamageReduction",
                     "name": "받는 피해량",
-                    "base": 0.025,
-                    "per_level": 0.0125
+                    "base": -0.025,
+                    "per_level": -0.0125
                 }
             ],
             "skills": [
