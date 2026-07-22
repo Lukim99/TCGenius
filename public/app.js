@@ -232,6 +232,28 @@ let webChatMessages = new Map();
 let webChatHasOlder = false;
 let webChatGeneration = 0;
 let webChatPinnedBottom = true;
+let webChatModalReturnFocus = null;
+
+function closeWebChatFullMessage() {
+    const modal = $('#webChatFullModal');
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    document.body.classList.remove('webchat-modal-open');
+    if (webChatModalReturnFocus && document.contains(webChatModalReturnFocus)) webChatModalReturnFocus.focus();
+    webChatModalReturnFocus = null;
+}
+
+function openWebChatFullMessage(message, trigger) {
+    const modal = $('#webChatFullModal');
+    const content = $('#webChatFullContent');
+    if (!modal || !content) return;
+    const parts = [message.text, message.moreText].filter(Boolean);
+    content.textContent = parts.join('\n\n');
+    webChatModalReturnFocus = trigger || null;
+    modal.hidden = false;
+    document.body.classList.add('webchat-modal-open');
+    $('#webChatFullClose').focus();
+}
 
 function closeWebChatStream() {
     if (webChatStream) webChatStream.close();
@@ -279,6 +301,12 @@ function webChatMessageNode(message) {
     const text = el('div', { class: 'webchat-text' });
     text.textContent = message.text || '';
     bubble.append(text);
+    if (message.moreText) {
+        bubble.append(el('button', {
+            type: 'button', class: 'webchat-view-more',
+            onclick: event => openWebChatFullMessage(message, event.currentTarget)
+        }, '전체보기'));
+    }
     row.append(
         el('div', { class: 'webchat-sender' }, own ? '' : ((message.sender && message.sender.name) || '알 수 없음')),
         el('div', { class: 'webchat-bubble-line' }, bubble, el('time', null, webChatTime(message.createdAt)))
@@ -426,6 +454,13 @@ if ($('#webChatBack')) $('#webChatBack').onclick = () => {
     $('#webChatShell').classList.remove('room-open');
 };
 if ($('#webChatNewMessage')) $('#webChatNewMessage').onclick = scrollWebChatToBottom;
+if ($('#webChatFullClose')) $('#webChatFullClose').onclick = closeWebChatFullMessage;
+if ($('#webChatFullModal')) $('#webChatFullModal').onclick = event => {
+    if (event.target === event.currentTarget) closeWebChatFullMessage();
+};
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !$('#webChatFullModal').hidden) closeWebChatFullMessage();
+});
 
 async function loadHomeBanners() {
     const root = $('#homeBannerList');

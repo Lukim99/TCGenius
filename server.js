@@ -6320,12 +6320,17 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .webchat-bubble{padding:9px 12px;border-radius:5px 15px 15px 15px;background:#232d45;color:#e5e7eb;box-shadow:0 4px 12px rgba(0,0,0,.16)}
 .webchat-message.bot .webchat-bubble{background:#312e58;border:1px solid rgba(167,139,250,.18)}.webchat-message.own .webchat-bubble{border-radius:15px 5px 15px 15px;background:#5865f2;color:#fff}
 .webchat-text{font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.webchat-view-more{display:block;width:100%;margin-top:9px;padding:8px 0 0;border:0;border-top:1px solid rgba(167,139,250,.2);border-radius:0;background:transparent;color:#c4b5fd;font-size:12px;font-weight:800;text-align:center;box-shadow:none}.webchat-view-more:hover{background:transparent;color:#ddd6fe;box-shadow:none;transform:none}
+.webchat-modal-open{overflow:hidden}.webchat-modal-bg{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:rgba(2,6,23,.78);backdrop-filter:blur(5px)}.webchat-modal-bg[hidden]{display:none}
+.webchat-modal{display:flex;flex-direction:column;width:min(720px,100%);max-height:min(86dvh,820px);overflow:hidden;border:1px solid rgba(148,163,184,.2);border-radius:18px;background:#111827;box-shadow:0 24px 80px rgba(0,0,0,.55)}
+.webchat-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(148,163,184,.14)}.webchat-modal-head h3{margin:0;color:#f8fafc;font-size:17px}.webchat-modal-close{width:34px;height:34px;padding:0;border:0;border-radius:10px;background:rgba(148,163,184,.1);color:#cbd5e1;font-size:22px;line-height:1;box-shadow:none}.webchat-modal-close:hover{background:rgba(148,163,184,.18);box-shadow:none;transform:none}
+.webchat-modal-content{min-height:0;overflow-y:auto;padding:20px;color:#e5e7eb;font-size:14px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 .webchat-bubble-line time{flex:0 0 auto;color:#64748b;font-size:10px;white-space:nowrap}
 .webchat-new{position:absolute;right:24px;bottom:12px;padding:8px 13px;border-radius:999px;border:1px solid rgba(129,140,248,.38);background:#1e293b;color:#c7d2fe;font-size:12px;font-weight:800;box-shadow:0 8px 22px rgba(0,0,0,.35)}
 .webchat-older[hidden],.webchat-new[hidden]{display:none}
 .webchat-composer{padding:10px 14px 12px;background:rgba(8,12,24,.92);border-top:1px solid rgba(148,163,184,.12)}
 .webchat-input-line{display:flex;align-items:flex-end;gap:9px;max-width:920px;margin:0 auto}
-.webchat-input-line textarea{flex:1;min-height:42px;max-height:120px;resize:none;padding:10px 13px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#151d30;color:#f1f5f9;font:14px/1.45 inherit;outline:none}.webchat-input-line textarea:focus{border-color:rgba(129,140,248,.6)}
+.webchat-input-line textarea{flex:1;min-height:42px;max-height:120px;resize:none;padding:10px 13px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#151d30;color:#f1f5f9;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR','Malgun Gothic',sans-serif;font-size:14px;font-weight:400;line-height:1.5;letter-spacing:-.01em;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;outline:none}.webchat-input-line textarea::placeholder{color:#718096;letter-spacing:-.015em}.webchat-input-line textarea:focus{border-color:rgba(129,140,248,.6)}
 .webchat-send{height:42px;padding:0 17px;border-radius:13px;font-size:13px;font-weight:800}.webchat-error{min-height:16px;max-width:920px;margin:4px auto 0;color:#fca5a5;font-size:11px}
 @media(max-width:700px){
   .page[data-page="chat"]{margin-top:-14px;margin-bottom:-30px}.webchat-shell{height:calc(var(--webchat-vh,100svh) - 120px);display:block;position:relative}.webchat-rooms,.webchat-conversation{position:absolute;inset:0}.webchat-conversation{display:none}.webchat-shell.room-open .webchat-rooms{display:none}.webchat-shell.room-open .webchat-conversation{display:flex}.webchat-back{display:block}.webchat-list-head{padding-top:17px}.webchat-messages{padding:14px 12px}.webchat-bubble-line{max-width:88%}.webchat-new{right:12px}.webchat-composer{padding:8px}.webchat-input-line{gap:7px}.webchat-send{padding:0 13px}
@@ -6344,9 +6349,15 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
       <section class="webchat-conversation">
         <div class="webchat-head"><button class="webchat-back" id="webChatBack" type="button" aria-label="채팅방 목록">‹</button><div class="webchat-head-copy"><b id="webChatRoomTitle">채팅방을 선택하세요</b><span id="webChatRoomDetail">공용 채팅방 또는 개인 채팅을 선택할 수 있습니다.</span></div></div>
         <div class="webchat-message-wrap"><div class="webchat-messages" id="webChatMessages" role="log" aria-live="polite"><div class="webchat-empty">왼쪽에서 채팅방을 선택하세요.</div></div><button class="webchat-new" id="webChatNewMessage" type="button" hidden>새 메시지 ↓</button></div>
-        <div class="webchat-composer"><div class="webchat-input-line"><textarea id="webChatInput" maxlength="500" rows="1" aria-label="채팅 메시지" placeholder="메시지를 입력하세요. Enter 전송 · Shift+Enter 줄바꿈"></textarea><button class="primary webchat-send" id="webChatSend" type="button">전송</button></div><div class="webchat-error" id="webChatError"></div></div>
+        <div class="webchat-composer"><div class="webchat-input-line"><textarea id="webChatInput" maxlength="500" rows="1" aria-label="채팅 메시지" placeholder="메시지를 입력하세요."></textarea><button class="primary webchat-send" id="webChatSend" type="button">전송</button></div><div class="webchat-error" id="webChatError"></div></div>
       </section>
     </div>
+  </div>
+  <div class="webchat-modal-bg" id="webChatFullModal" hidden>
+    <section class="webchat-modal" role="dialog" aria-modal="true" aria-labelledby="webChatFullTitle">
+      <div class="webchat-modal-head"><h3 id="webChatFullTitle">전체보기</h3><button class="webchat-modal-close" id="webChatFullClose" type="button" aria-label="전체보기 닫기">×</button></div>
+      <div class="webchat-modal-content" id="webChatFullContent"></div>
+    </section>
   </div>
   <div class="page" data-page="info">
     <div class="pf-sheet">

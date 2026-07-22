@@ -7,6 +7,19 @@ const PUBLIC_ROOMS = Object.freeze([
     { id: 'public-4', name: '자유 채팅 4' },
     { id: 'public-5', name: '자유 채팅 5' }
 ]);
+const VIEW_MORE_MARKER = /[\u200b\u200e]{500,}/;
+
+function splitViewMoreText(text) {
+    const value = String(text);
+    const marker = VIEW_MORE_MARKER.exec(value);
+    if (!marker) return { text: value };
+    const moreText = value
+        .slice(marker.index + marker[0].length)
+        .replace(/[\u200b\u200e]{500,}/g, '\n')
+        .trim();
+    if (!moreText) return { text: value.slice(0, marker.index).trimEnd() };
+    return { text: value.slice(0, marker.index).trimEnd(), moreText };
+}
 
 class WebChatError extends Error {
     constructor(status, message) {
@@ -64,7 +77,7 @@ function createWebChat(options) {
         for (const listener of Array.from(listeners)) listener(message);
     }
 
-    function addMessage(room, sender, text) {
+    function addMessage(room, sender, text, moreText) {
         const message = {
             id: String(nextMessageId++),
             roomId: room.id,
@@ -72,6 +85,7 @@ function createWebChat(options) {
             text: String(text),
             createdAt: now()
         };
+        if (moreText) message.moreText = String(moreText);
         const messages = roomMessages(room.key);
         messages.push(message);
         if (messages.length > maxMessages) messages.splice(0, messages.length - maxMessages);
@@ -84,7 +98,8 @@ function createWebChat(options) {
         const channel = {
             channelId: room.channelId,
             sendChat(text) {
-                return Promise.resolve(addMessage(room, { id: 'rpgenius', name: 'RPGenius', type: 'bot' }, text));
+                const content = splitViewMoreText(text);
+                return Promise.resolve(addMessage(room, { id: 'rpgenius', name: 'RPGenius', type: 'bot' }, content.text, content.moreText));
             },
             sendMedia() {
                 return this.sendChat('이 채팅에서는 미디어 전송을 지원하지 않습니다.');
