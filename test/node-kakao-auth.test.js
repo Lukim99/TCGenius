@@ -11,7 +11,7 @@ const axiosClientPath = path.join(root, 'node_modules/node-kakao/dist/api/axios-
 
 const defaultConfiguration = {
     agent: 'android',
-    version: '25.8.1',
+    version: '11.0.0',
     osVersion: '7.1.2',
     language: 'ko',
     countryIso: 'KR',
@@ -24,9 +24,7 @@ const defaultProvider = {
     },
 };
 
-const loadState = {
-    createdWebClient: null,
-};
+const loadState = { createdWebClient: null };
 
 class DataWebRequestStub {
     constructor(client) {
@@ -98,6 +96,7 @@ test('AuthApiClient.create accepts the declared four-argument signature', async 
 
     assert.equal(client.config.language, 'en');
     assert.equal(client.config.countryIso, 'US');
+    assert.equal(client.config.version, '11.0.0');
     assert.equal(client.xvcProvider, provider);
     assert.equal(typeof client.advertisementId, 'string');
     assert.notEqual(client.advertisementId, '[object Object]');
@@ -116,9 +115,10 @@ test('login preserves forced and sends device_name separately from model_name', 
     assert.equal(fake.calls[0].body.device_name, 'TCGenius');
     assert.equal(fake.calls[0].body.model_name, 'SM-T870');
     assert.equal(fake.calls[0].headers.Adid, 'ad-id');
+    assert.equal(fake.calls[0].headers.A, 'android/11.0.0/ko');
 });
 
-test('generatePasscode uses the passcodeLogin JSON contract', async () => {
+test('generatePasscode uses the passcodeLogin JSON contract without changing the global profile', async () => {
     const { AuthApiClient } = loadAuthModule();
     const fake = new FakeDataClient([{ status: 0, passcode: '12345678', remainingSeconds: 60 }]);
     const client = new AuthApiClient(fake, 'TCGenius', 'device-uuid', 'ad-id', defaultConfiguration, defaultProvider);
@@ -135,6 +135,7 @@ test('generatePasscode uses the passcodeLogin JSON contract', async () => {
     });
     assert.equal(fake.calls[0].path, 'android/account/passcodeLogin/generate');
     assert.equal(fake.calls[0].headers['Content-Type'], 'application/json; charset=utf-8');
+    assert.equal(fake.calls[0].headers.A, 'android/11.0.0/ko');
     assert.deepEqual(fake.calls[0].body, {
         email: 'user@example.com',
         password: 'pw',
@@ -164,7 +165,7 @@ test('requestPasscode exposes the generated challenge through a callback', async
     assert.deepEqual(challenge, { passcode: '87654321', remainingSeconds: 90 });
 });
 
-test('registerDevice polls registerDevice until official-app approval is observed', async () => {
+test('registerDevice polls until official-app approval is observed', async () => {
     const { AuthApiClient } = loadAuthModule();
     const fake = new FakeDataClient([
         { status: -100, nextRequestIntervalInSeconds: 0, remainingSeconds: 60 },
@@ -232,9 +233,9 @@ test('AxiosWebClient serializes application/json request bodies as JSON', async 
     }
 });
 
-test('default auth profile is the live-validated Android 25.8.1 profile', () => {
+test('default LOCO profile remains the known-working Android 11.0.0 profile', () => {
     const { DefaultConfiguration } = require('../node_modules/node-kakao/dist/config.js');
-    assert.equal(DefaultConfiguration.version, '25.8.1');
+    assert.equal(DefaultConfiguration.version, '11.0.0');
     assert.equal(DefaultConfiguration.osVersion, '7.1.2');
     assert.equal(DefaultConfiguration.deviceModel, 'SM-T870');
 });
