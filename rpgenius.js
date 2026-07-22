@@ -11368,8 +11368,30 @@ function enqueueUserCommand(senderId, task) {
     return next;
 }
 
-async function handleRPGCommand(data, channel) {
-    if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
+async function resolveCommandQueueKey(senderId, context) {
+    if (context && context.queueKey) return String(context.queueKey);
+    const user = await getRPGUserById(senderId);
+    return user && user.id != null ? 'account:' + user.id : 'sender:' + senderId;
+}
+
+function handleCommandQueueError(error, channel, context, label) {
+    console.log(label + ':', error);
+    if (context && context.isWeb && channel && typeof channel.sendChat == 'function') {
+        try {
+            Promise.resolve(channel.sendChat('명령을 처리하는 중 오류가 발생했습니다.')).catch(sendError => console.log('RPG web error reply failed:', sendError));
+        } catch (sendError) {
+            console.log('RPG web error reply failed:', sendError);
+        }
+    }
+}
+
+function isRPGChannel(channel) {
+    const channelId = channel && channel.channelId + '';
+    return !!channel && (TARGET_CHANNEL_IDS.includes(channelId) || channelId.startsWith('web-chat:'));
+}
+
+async function handleRPGCommand(data, channel, context = {}) {
+    if (!isRPGChannel(channel)) return false;
     const msg = (data.text || '').trim();
     if (!msg.startsWith('/')) return false;
     const cmd = msg.substr(1).trim();
@@ -11398,13 +11420,13 @@ async function handleRPGCommand(data, channel) {
 
     // 로그인된 유저가 채팅하면 미알림 메일 1회 알림
     try {
-        const mailUser = await getRPGUserById(senderId);
+        const mailUser = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
         if (mailUser) await maybeNotifyMail(mailUser, reply);
     } catch (_) { }
 
     if (args[0] == '등록') {
         const nickname = cmd.substr(cmd.split(' ')[0].length + 4).trim();
-        const existingById = await getRPGUserById(senderId);
+        const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
         if (existingById) {
             reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
         } else {
@@ -11427,7 +11449,7 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '로그인') {
-        const existingById = await getRPGUserById(senderId);
+        const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
         if (existingById) {
             reply('❌ 이미 로그인된 상태입니다.\n- ' + existingById.name);
             return true;
@@ -11450,7 +11472,7 @@ async function handleRPGCommand(data, channel) {
     if (pendingChecks[senderId] && args[0] == '확인') {
         if (pendingChecks[senderId].type == 'rpg등록') {
             const nickname = pendingChecks[senderId].arg.name;
-            const existingById = await getRPGUserById(senderId);
+            const existingById = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
             if (existingById) {
                 reply('❌ 이미 등록된 계정이 있습니다.\n- ' + existingById.name);
                 delete pendingChecks[senderId];
@@ -11480,7 +11502,7 @@ async function handleRPGCommand(data, channel) {
 
     if (args[0] == '캐릭터카드' && args[1] == '선택') {
         const cardName = cmd.substr(cmd.split(' ')[0].length + 1 + args[0].length + 1 + args[1].length + 1).trim();
-        const user = await getRPGUserById(senderId);
+        const user = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
         if (!user) {
             reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         } else {
@@ -11510,13 +11532,13 @@ async function handleRPGCommand(data, channel) {
         return true;
     }
 
-    const user = await getRPGUserById(senderId);
+    const user = await (context.getUser ? context.getUser() : getRPGUserById(senderId));
     if (!user) {
         reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         return true;
     }
     // 봇/보스 타이머 틱이 이 유저의 명령과 같은 큐(senderId)에서 직렬화되도록 매핑 기록.
-    fieldQueueKeys[user.name] = senderId;
+    fieldQueueKeys[user.name] = context.queueKey || 'sender:' + senderId;
 
     petShortcutCache[senderId] = getActivePetShortcutMap(user);
 
@@ -12516,6 +12538,10 @@ async function handleRPGCommand(data, channel) {
     }
 
     if (args[0] == '로그아웃') {
+        if (context.isWeb) {
+            reply('ℹ️ 웹 채팅은 현재 웹 로그인 계정으로 이용합니다. 웹 로그아웃은 화면 상단의 로그아웃 버튼을 사용해주세요.');
+            return true;
+        }
         user.logged_in = user.logged_in.filter(id => id != senderId);
         await user.save();
         await deleteSidMapping(senderId); // 매핑 제거
@@ -12539,14 +12565,31 @@ function expandPetShortcut(rawText, senderId) {
     return parts.join(' ');
 }
 
-async function onChat(data, channel) {
-    if (!channel || !TARGET_CHANNEL_IDS.includes(channel.channelId + '')) return false;
+async function onChat(data, channel, context = {}) {
+    if (!isRPGChannel(channel)) return false;
     const rawMsg = (data.text || '').trim();
     let workingText = data.text;
     if (!rawMsg.startsWith('/')) {
         const sender = data.getSenderInfo(channel) || data._chat?.sender;
         if (!sender || !sender.userId) return false;
-        const expanded = expandPetShortcut(rawMsg, sender.userId + '');
+        const senderId = sender.userId + '';
+        const expanded = expandPetShortcut(rawMsg, senderId);
+        if (expanded == null && context.getUser && !Object.prototype.hasOwnProperty.call(petShortcutCache, senderId)) {
+            const commandQueueKey = context.queueKey || 'sender:' + senderId;
+            enqueueUserCommand(commandQueueKey, async () => {
+                const user = await context.getUser();
+                if (!user) return;
+                petShortcutCache[senderId] = getActivePetShortcutMap(user);
+                const queuedExpanded = expandPetShortcut(rawMsg, senderId);
+                if (queuedExpanded == null) return;
+                const blockMessage = getCommandBlockMessage(senderId);
+                if (blockMessage === null) return;
+                if (blockMessage) return channel.sendChat(blockMessage);
+                const queuedData = { text: queuedExpanded, getSenderInfo: c => data.getSenderInfo(c), _chat: data._chat };
+                return handleRPGCommand(queuedData, channel, Object.assign({}, context, { queueKey: commandQueueKey }));
+            }).catch(error => handleCommandQueueError(error, channel, context, 'RPG shortcut queue error'));
+            return true;
+        }
         if (expanded == null) return false;
         workingText = expanded;
     }
@@ -12564,7 +12607,9 @@ async function onChat(data, channel) {
         return true;
     }
     const finalData = workingText === data.text ? data : { text: workingText, getSenderInfo: c => data.getSenderInfo(c), _chat: data._chat };
-    enqueueUserCommand(senderId, () => handleRPGCommand(finalData, channel)).catch(error => console.log('RPG command queue error:', error));
+    const commandQueueKey = await resolveCommandQueueKey(senderId, context);
+    const commandContext = context.queueKey === commandQueueKey ? context : Object.assign({}, context, { queueKey: commandQueueKey });
+    enqueueUserCommand(commandQueueKey, () => handleRPGCommand(finalData, channel, commandContext)).catch(error => handleCommandQueueError(error, channel, context, 'RPG command queue error'));
     return true;
 }
 

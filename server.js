@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const partyquest = require('./partyquest.js');
+const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const AWS = require('aws-sdk');
@@ -19,6 +20,7 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const fs = require('fs');
 
 const server = express();
+const webchat = createWebChat({ onChat: rpgenius.onChat, getUserByName: rpgenius.getRPGUserByName });
 server.use(express.json({ limit: '5mb' }));
 server.use('/static', express.static(path.join(__dirname, 'public')));
 const bannerUploadBody = express.raw({ type: () => true, limit: 10 * 1024 * 1024 });
@@ -385,6 +387,82 @@ server.post('/api/logout', (req, res) => {
 
 server.get('/api/me', requireUser, (req, res) => {
     res.json({ name: req.session.name, admin: !!req.session.admin });
+});
+
+async function getWebChatUser(req) {
+    const user = await rpgenius.getRPGUserByName(req.session.name);
+    if (!user) throw Object.assign(new Error('웹 계정을 찾을 수 없습니다.'), { status: 401 });
+    return { id: user.id, name: user.name };
+}
+
+function sendWebChatError(res, error) {
+    const status = Number(error && error.status) || 500;
+    if (status == 500) console.error('web chat error:', error);
+    res.status(status).json({ error: status == 500 ? '채팅 서버 오류' : error.message });
+}
+
+server.get('/api/chat/:roomId/history', requireUser, async (req, res) => {
+    try {
+        const user = await getWebChatUser(req);
+        res.json(webchat.history(req.params.roomId, user, { before: req.query.before, limit: req.query.limit }));
+    } catch (e) {
+        sendWebChatError(res, e);
+    }
+});
+
+server.post('/api/chat/:roomId/message', requireUser, async (req, res) => {
+    try {
+        const user = await getWebChatUser(req);
+        const message = webchat.sendMessage(req.params.roomId, user, req.body && req.body.text);
+        res.status(202).json({ ok: true, message });
+    } catch (e) {
+        sendWebChatError(res, e);
+    }
+});
+
+server.get('/api/chat/:roomId/stream', requireUser, async (req, res) => {
+    let closed = false;
+    let unsubscribe = null;
+    let heartbeat = null;
+    const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = null;
+        if (unsubscribe) unsubscribe();
+        unsubscribe = null;
+    };
+    req.on('close', cleanup);
+    res.on('close', cleanup);
+    try {
+        const user = await getWebChatUser(req);
+        webchat.resolveRoom(req.params.roomId, user);
+        if (closed || req.destroyed || res.destroyed || res.writableEnded) return cleanup();
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        if (typeof res.flushHeaders == 'function') res.flushHeaders();
+        unsubscribe = webchat.subscribe(req.params.roomId, user, message => {
+            if (closed || res.destroyed || res.writableEnded) return;
+            try {
+                res.write('id: ' + message.id + '\ndata: ' + JSON.stringify(message) + '\n\n');
+            } catch (_) {
+                cleanup();
+            }
+        });
+        if (closed || res.destroyed || res.writableEnded) return cleanup();
+        res.write('event: ready\ndata: {}\n\n');
+        heartbeat = setInterval(() => {
+            if (closed || res.destroyed || res.writableEnded) return cleanup();
+            try { res.write(': heartbeat\n\n'); } catch (_) { cleanup(); }
+        }, 25000);
+    } catch (e) {
+        if (closed || req.destroyed || res.destroyed || res.writableEnded) return cleanup();
+        if (!res.headersSent) sendWebChatError(res, e);
+        else res.end();
+        cleanup();
+    }
 });
 
 server.get('/api/banners', requireUser, async (req, res) => {
@@ -5741,7 +5819,7 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 @keyframes mythicCardGlow{0%,100%{box-shadow:0 8px 24px rgba(0,0,0,.3),0 0 8px rgba(56,189,248,.18)}50%{box-shadow:0 8px 26px rgba(0,0,0,.36),0 0 22px rgba(139,92,246,.48),0 0 8px rgba(125,211,252,.5) inset}}
 @keyframes mythicFrameGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(56,189,248,.5)) brightness(1)}50%{filter:drop-shadow(0 0 11px rgba(192,132,252,.95)) brightness(1.22)}}
 @media(prefers-reduced-motion:reduce){.tag.rarity.rarity-mythic,.rarity-mythic-card,img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:none}}
-@media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:12px 14px;gap:8px}.top-left{flex:1 1 auto;min-width:0;gap:10px}.bar{flex:0 0 auto;gap:6px}.group-tabs{display:none}.bottom-tabs{display:flex}main{padding-bottom:74px}.subnav-bar{padding:0 14px}.who{max-width:36vw;font-size:13px;line-height:1.2}.grid{grid-template-columns:1fr}}
+@media(max-width:860px){.profile-hero,.section-row{grid-template-columns:1fr}header{padding:12px 14px;gap:8px}.top-left{flex:1 1 auto;min-width:0;gap:10px}.bar{flex:0 0 auto;gap:6px}.group-tabs{display:none}.bottom-tabs{display:flex;overflow:hidden}.bottom-tab{flex:1 1 0}.tab-label{max-width:100%;overflow:hidden;text-overflow:ellipsis}.bottom-tab .tab-icon-wrap{max-width:100%}main{padding-bottom:74px}.subnav-bar{padding:0 14px}.who{max-width:36vw;font-size:13px;line-height:1.2}.grid{grid-template-columns:1fr}}
 .patch-wrap{display:grid;gap:14px}.patch-editor{display:none;gap:8px;padding:14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.08);border-radius:14px}.patch-editor.active{display:grid}.patch-editor input,.patch-editor textarea,.reply-box textarea{width:100%;padding:10px 12px;background:rgba(4,6,14,.85);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#e5e7eb;outline:none;transition:border-color .15s}.patch-editor input:focus,.patch-editor textarea:focus,.reply-box textarea:focus{border-color:rgba(88,101,242,.6)}.patch-editor textarea{min-height:140px;resize:vertical;line-height:1.5}
 .patch-board{display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(8,11,26,.7),rgba(4,6,18,.6));border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;box-shadow:0 8px 26px rgba(0,0,0,.32)}
 .patch-post{display:grid;grid-template-columns:1fr auto;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;transition:background .12s}
@@ -6216,11 +6294,60 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
   .mail-detail{padding:18px}
   .mail-detail-subject{font-size:20px}
 }
+.page[data-page="chat"]{width:100vw;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);margin-top:-26px;margin-bottom:-50px}
+.page[data-page="chat"].active{display:block}
+.webchat-shell{height:calc(100svh - 65px);display:grid;grid-template-columns:300px minmax(0,1fr);background:#0b1020;overflow:hidden}
+.webchat-rooms{display:flex;flex-direction:column;min-width:0;background:#080c18;border-right:1px solid rgba(148,163,184,.13)}
+.webchat-list-head{padding:20px 18px 14px;border-bottom:1px solid rgba(148,163,184,.1)}
+.webchat-list-head h2{margin:0;font-size:20px;color:#f8fafc}.webchat-list-head p{margin:5px 0 0;color:#64748b;font-size:12px}
+.webchat-room-list{display:flex;flex-direction:column;gap:3px;padding:8px;overflow-y:auto}
+.webchat-room{display:grid;grid-template-columns:44px minmax(0,1fr);gap:11px;align-items:center;padding:11px;border:0;border-radius:12px;background:transparent;color:inherit;text-align:left;box-shadow:none;transform:none}
+.webchat-room:hover{background:rgba(99,102,241,.09);box-shadow:none;transform:none}.webchat-room.active{background:rgba(99,102,241,.18)}
+.webchat-room-avatar{width:44px;height:44px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#394365,#1c2440);color:#c7d2fe;font-size:15px;font-weight:900}
+.webchat-room:last-child .webchat-room-avatar{background:linear-gradient(145deg,#6d28d9,#4338ca);color:#fff}
+.webchat-room-copy{min-width:0;display:grid;gap:4px}.webchat-room-copy b{font-size:14px;color:#f1f5f9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.webchat-room-copy span{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.webchat-conversation{display:flex;min-width:0;min-height:0;flex-direction:column;background:radial-gradient(circle at 50% 0%,rgba(50,64,105,.3),transparent 42%),#101729}
+.webchat-head{height:66px;display:flex;align-items:center;gap:11px;padding:0 20px;background:rgba(8,12,24,.78);border-bottom:1px solid rgba(148,163,184,.12);backdrop-filter:blur(12px)}
+.webchat-head-copy{display:grid;gap:2px}.webchat-head-copy b{font-size:15px;color:#f8fafc}.webchat-head-copy span{font-size:11px;color:#64748b}
+.webchat-back{display:none;border:0;background:transparent;color:#c7d2fe;font-size:25px;padding:4px 8px;box-shadow:none}.webchat-back:hover{background:rgba(99,102,241,.12);box-shadow:none;transform:none}
+.webchat-message-wrap{position:relative;flex:1;min-height:0}
+.webchat-messages{position:absolute;inset:0;overflow-y:auto;padding:18px clamp(16px,4vw,48px);scroll-behavior:smooth}
+.webchat-empty{padding:50px 20px;text-align:center;color:#64748b}
+.webchat-older{display:block;margin:0 auto 18px;padding:7px 13px;border:1px solid rgba(148,163,184,.18);border-radius:999px;background:rgba(15,23,42,.72);color:#94a3b8;font-size:12px;box-shadow:none}.webchat-older:hover{background:rgba(30,41,59,.9);box-shadow:none;transform:none}
+.webchat-message{display:flex;flex-direction:column;align-items:flex-start;margin:0 0 13px}.webchat-message.own{align-items:flex-end}
+.webchat-sender{height:18px;margin:0 0 3px 4px;color:#94a3b8;font-size:11px;font-weight:700}.webchat-message.own .webchat-sender{display:none}
+.webchat-bubble-line{display:flex;align-items:flex-end;gap:6px;max-width:min(76%,680px)}.webchat-message.own .webchat-bubble-line{flex-direction:row-reverse}
+.webchat-bubble{padding:9px 12px;border-radius:5px 15px 15px 15px;background:#232d45;color:#e5e7eb;box-shadow:0 4px 12px rgba(0,0,0,.16)}
+.webchat-message.bot .webchat-bubble{background:#312e58;border:1px solid rgba(167,139,250,.18)}.webchat-message.own .webchat-bubble{border-radius:15px 5px 15px 15px;background:#5865f2;color:#fff}
+.webchat-text{font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.webchat-bubble-line time{flex:0 0 auto;color:#64748b;font-size:10px;white-space:nowrap}
+.webchat-new{position:absolute;right:24px;bottom:12px;padding:8px 13px;border-radius:999px;border:1px solid rgba(129,140,248,.38);background:#1e293b;color:#c7d2fe;font-size:12px;font-weight:800;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+.webchat-older[hidden],.webchat-new[hidden]{display:none}
+.webchat-composer{padding:10px 14px 12px;background:rgba(8,12,24,.92);border-top:1px solid rgba(148,163,184,.12)}
+.webchat-input-line{display:flex;align-items:flex-end;gap:9px;max-width:920px;margin:0 auto}
+.webchat-input-line textarea{flex:1;min-height:42px;max-height:120px;resize:none;padding:10px 13px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#151d30;color:#f1f5f9;font:14px/1.45 inherit;outline:none}.webchat-input-line textarea:focus{border-color:rgba(129,140,248,.6)}
+.webchat-send{height:42px;padding:0 17px;border-radius:13px;font-size:13px;font-weight:800}.webchat-error{min-height:16px;max-width:920px;margin:4px auto 0;color:#fca5a5;font-size:11px}
+@media(max-width:700px){
+  .page[data-page="chat"]{margin-top:-14px;margin-bottom:-30px}.webchat-shell{height:calc(var(--webchat-vh,100svh) - 120px);display:block;position:relative}.webchat-rooms,.webchat-conversation{position:absolute;inset:0}.webchat-conversation{display:none}.webchat-shell.room-open .webchat-rooms{display:none}.webchat-shell.room-open .webchat-conversation{display:flex}.webchat-back{display:block}.webchat-list-head{padding-top:17px}.webchat-messages{padding:14px 12px}.webchat-bubble-line{max-width:88%}.webchat-new{right:12px}.webchat-composer{padding:8px}.webchat-input-line{gap:7px}.webchat-send{padding:0 13px}
+}
 </style></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
   <div class="page active" data-page="home"><div id="homeBannerList" class="home-banner-list"></div></div>
+  <div class="page" data-page="chat">
+    <div class="webchat-shell" id="webChatShell">
+      <aside class="webchat-rooms">
+        <div class="webchat-list-head"><h2>채팅</h2><p>웹 사용자 전용 채팅방입니다.</p></div>
+        <div class="webchat-room-list" id="webChatRoomList"></div>
+      </aside>
+      <section class="webchat-conversation">
+        <div class="webchat-head"><button class="webchat-back" id="webChatBack" type="button" aria-label="채팅방 목록">‹</button><div class="webchat-head-copy"><b id="webChatRoomTitle">채팅방을 선택하세요</b><span id="webChatRoomDetail">공용 채팅방 또는 개인 채팅을 선택할 수 있습니다.</span></div></div>
+        <div class="webchat-message-wrap"><div class="webchat-messages" id="webChatMessages" role="log" aria-live="polite"><div class="webchat-empty">왼쪽에서 채팅방을 선택하세요.</div></div><button class="webchat-new" id="webChatNewMessage" type="button" hidden>새 메시지 ↓</button></div>
+        <div class="webchat-composer"><div class="webchat-input-line"><textarea id="webChatInput" maxlength="500" rows="1" aria-label="채팅 메시지" placeholder="메시지를 입력하세요. Enter 전송 · Shift+Enter 줄바꿈"></textarea><button class="primary webchat-send" id="webChatSend" type="button">전송</button></div><div class="webchat-error" id="webChatError"></div></div>
+      </section>
+    </div>
+  </div>
   <div class="page" data-page="info">
     <div class="pf-sheet">
       <div class="pf-hero">

@@ -57,7 +57,8 @@ const comma = value => {
     return sign + parts.join(' ');
 };
 
-$('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
+$('#logout').onclick = async () => { closeWebChatStream(); await fetch('/api/logout', { method: 'POST' }); location.reload(); };
+window.addEventListener('pagehide', closeWebChatStream);
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
 function setHeaderPoint(n) {
@@ -97,10 +98,11 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
+    chat:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>`,
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     market:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
@@ -114,6 +116,7 @@ const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
 const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
+    { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
@@ -136,7 +139,7 @@ function buildNav() {
             el('button', { class: 'group-tab', 'data-group': g.id, onclick: handler }, svgIcon(g.iconSvg), g.label)
         );
         if (bottomTabsEl) bottomTabsEl.appendChild(
-            el('button', { class: 'bottom-tab', 'data-group': g.id, onclick: handler },
+            el('button', { class: 'bottom-tab', 'data-group': g.id, 'aria-label': g.label, title: g.label, onclick: handler },
                 el('span', { class: 'tab-icon-wrap' }, svgIcon(g.iconSvg)),
                 el('span', { class: 'tab-label' }, g.label))
         );
@@ -173,10 +176,12 @@ function activateGroup(groupId) {
 }
 
 function navigatePage(pageId) {
+    if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
     activePage = pageId;
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') loadHomeBanners();
+    if (pageId === 'chat') loadWebChat();
     if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
     if (pageId === 'inventory') {
         if (currentProfileName && myName && currentProfileName !== myName) {
@@ -212,6 +217,215 @@ function activatePage(name) {
 }
 
 buildNav();
+
+const WEB_CHAT_ROOMS = [
+    { id: 'public-1', name: '자유 채팅 1', detail: '웹 공용 채팅방' },
+    { id: 'public-2', name: '자유 채팅 2', detail: '웹 공용 채팅방' },
+    { id: 'public-3', name: '자유 채팅 3', detail: '웹 공용 채팅방' },
+    { id: 'public-4', name: '자유 채팅 4', detail: '웹 공용 채팅방' },
+    { id: 'public-5', name: '자유 채팅 5', detail: '웹 공용 채팅방' },
+    { id: 'me', name: 'RPGenius 개인 채팅', detail: '나와 봇만 볼 수 있어요', private: true }
+];
+let webChatRoomId = null;
+let webChatStream = null;
+let webChatMessages = new Map();
+let webChatHasOlder = false;
+let webChatGeneration = 0;
+let webChatPinnedBottom = true;
+
+function closeWebChatStream() {
+    if (webChatStream) webChatStream.close();
+    webChatStream = null;
+    webChatGeneration++;
+}
+
+function renderWebChatRooms() {
+    const list = $('#webChatRoomList');
+    if (!list) return;
+    list.replaceChildren(...WEB_CHAT_ROOMS.map(room => el('button', {
+        type: 'button',
+        class: 'webchat-room' + (room.id === webChatRoomId ? ' active' : ''),
+        onclick: () => openWebChatRoom(room.id)
+    },
+    el('span', { class: 'webchat-room-avatar' }, room.private ? 'R' : room.name.slice(-1)),
+    el('span', { class: 'webchat-room-copy' },
+        el('b', null, room.name),
+        el('span', null, room.detail))
+    )));
+}
+
+function webChatNearBottom() {
+    const list = $('#webChatMessages');
+    return !list || list.scrollHeight - list.scrollTop - list.clientHeight < 90;
+}
+
+function scrollWebChatToBottom() {
+    const list = $('#webChatMessages');
+    if (list) list.scrollTop = list.scrollHeight;
+    webChatPinnedBottom = true;
+    const button = $('#webChatNewMessage');
+    if (button) button.hidden = true;
+}
+
+function webChatTime(timestamp) {
+    return new Date(Number(timestamp || 0)).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function webChatMessageNode(message) {
+    const own = message.sender && message.sender.type === 'user' && message.sender.name === myName;
+    const bot = message.sender && message.sender.type === 'bot';
+    const row = el('div', { class: 'webchat-message' + (own ? ' own' : '') + (bot ? ' bot' : '') });
+    const bubble = el('div', { class: 'webchat-bubble' });
+    const text = el('div', { class: 'webchat-text' });
+    text.textContent = message.text || '';
+    bubble.append(text);
+    row.append(
+        el('div', { class: 'webchat-sender' }, own ? '' : ((message.sender && message.sender.name) || '알 수 없음')),
+        el('div', { class: 'webchat-bubble-line' }, bubble, el('time', null, webChatTime(message.createdAt)))
+    );
+    return row;
+}
+
+function renderWebChatMessages(keepPosition) {
+    const list = $('#webChatMessages');
+    if (!list) return;
+    const oldHeight = list.scrollHeight;
+    const messages = Array.from(webChatMessages.values()).sort((a, b) => Number(a.id) - Number(b.id));
+    const older = el('button', {
+        id: 'webChatOlder', type: 'button', class: 'webchat-older', hidden: !webChatHasOlder,
+        onclick: loadOlderWebChatMessages
+    }, '이전 메시지 보기');
+    list.replaceChildren(older, ...messages.map(webChatMessageNode));
+    if (keepPosition) list.scrollTop += list.scrollHeight - oldHeight;
+}
+
+function appendWebChatMessage(message) {
+    if (!message || webChatMessages.has(String(message.id))) return;
+    const shouldScroll = webChatNearBottom();
+    webChatMessages.set(String(message.id), message);
+    renderWebChatMessages(false);
+    if (shouldScroll || (message.sender && message.sender.name === myName)) scrollWebChatToBottom();
+    else $('#webChatNewMessage').hidden = false;
+}
+
+async function loadOlderWebChatMessages() {
+    const roomId = webChatRoomId;
+    const generation = webChatGeneration;
+    const messageMap = webChatMessages;
+    const ordered = Array.from(messageMap.values()).sort((a, b) => Number(a.id) - Number(b.id));
+    if (!ordered.length || !roomId) return;
+    try {
+        const data = await api('/api/chat/' + encodeURIComponent(roomId) + '/history?limit=50&before=' + encodeURIComponent(ordered[0].id));
+        if (roomId !== webChatRoomId || generation !== webChatGeneration || messageMap !== webChatMessages) return;
+        data.messages.forEach(message => messageMap.set(String(message.id), message));
+        webChatHasOlder = data.messages.length === 50;
+        renderWebChatMessages(true);
+    } catch (e) {
+        if (roomId !== webChatRoomId || generation !== webChatGeneration || messageMap !== webChatMessages) return;
+        webChatHasOlder = false;
+        renderWebChatMessages(false);
+        $('#webChatError').textContent = e.message;
+    }
+}
+
+async function openWebChatRoom(roomId) {
+    const room = WEB_CHAT_ROOMS.find(item => item.id === roomId);
+    if (!room) return;
+    closeWebChatStream();
+    webChatRoomId = roomId;
+    webChatMessages = new Map();
+    webChatHasOlder = false;
+    const generation = webChatGeneration;
+    const messageMap = webChatMessages;
+    renderWebChatRooms();
+    const shell = $('#webChatShell');
+    if (shell) shell.classList.add('room-open');
+    $('#webChatRoomTitle').textContent = room.name;
+    $('#webChatRoomDetail').textContent = room.detail;
+    $('#webChatMessages').replaceChildren(el('div', { class: 'webchat-empty' }, '메시지를 불러오는 중...'));
+
+    const source = new EventSource('/api/chat/' + encodeURIComponent(roomId) + '/stream');
+    webChatStream = source;
+    source.onmessage = event => {
+        if (source !== webChatStream || generation !== webChatGeneration || messageMap !== webChatMessages) return;
+        try { appendWebChatMessage(JSON.parse(event.data)); } catch (_) { }
+    };
+    source.addEventListener('ready', async () => {
+        const shouldScroll = webChatPinnedBottom || !messageMap.size;
+        try {
+            const data = await api('/api/chat/' + encodeURIComponent(roomId) + '/history?limit=50');
+            if (source !== webChatStream || roomId !== webChatRoomId || generation !== webChatGeneration || messageMap !== webChatMessages) return;
+            data.messages.forEach(message => messageMap.set(String(message.id), message));
+            webChatHasOlder = data.messages.length === 50;
+            renderWebChatMessages(false);
+            if (shouldScroll) scrollWebChatToBottom();
+            else if ($('#webChatNewMessage')) $('#webChatNewMessage').hidden = false;
+            $('#webChatInput').focus();
+        } catch (e) {
+            if (source !== webChatStream || roomId !== webChatRoomId || generation !== webChatGeneration || messageMap !== webChatMessages) return;
+            $('#webChatMessages').replaceChildren(el('div', { class: 'webchat-empty err' }, e.message));
+        }
+    });
+}
+
+function loadWebChat() {
+    renderWebChatRooms();
+    if (webChatRoomId) openWebChatRoom(webChatRoomId);
+    else if (!matchMedia('(max-width: 700px)').matches) openWebChatRoom('public-1');
+}
+
+async function sendWebChatMessage() {
+    const input = $('#webChatInput');
+    const error = $('#webChatError');
+    const button = $('#webChatSend');
+    if (!input || !button || button.disabled || !webChatRoomId || !input.value.trim()) return;
+    const roomId = webChatRoomId;
+    const generation = webChatGeneration;
+    const text = input.value;
+    error.textContent = '';
+    button.disabled = true;
+    try {
+        await postApi('/api/chat/' + encodeURIComponent(roomId) + '/message', { text });
+        if (roomId === webChatRoomId && generation === webChatGeneration && input.value === text) {
+            input.value = '';
+            input.style.height = '';
+        }
+    } catch (e) {
+        if (roomId === webChatRoomId && generation === webChatGeneration) error.textContent = e.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+
+const webChatInput = $('#webChatInput');
+if (webChatInput) {
+    webChatInput.addEventListener('input', () => {
+        webChatInput.style.height = '';
+        webChatInput.style.height = Math.min(webChatInput.scrollHeight, 120) + 'px';
+    });
+    webChatInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            sendWebChatMessage();
+        }
+    });
+}
+const webChatMessageList = $('#webChatMessages');
+if (webChatMessageList) webChatMessageList.addEventListener('scroll', () => { webChatPinnedBottom = webChatNearBottom(); });
+function updateWebChatViewport() {
+    const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--webchat-vh', Math.round(height) + 'px');
+    if (webChatPinnedBottom) requestAnimationFrame(scrollWebChatToBottom);
+}
+if (window.visualViewport) window.visualViewport.addEventListener('resize', updateWebChatViewport);
+window.addEventListener('resize', updateWebChatViewport);
+updateWebChatViewport();
+if ($('#webChatSend')) $('#webChatSend').onclick = sendWebChatMessage;
+if ($('#webChatBack')) $('#webChatBack').onclick = () => {
+    closeWebChatStream();
+    $('#webChatShell').classList.remove('room-open');
+};
+if ($('#webChatNewMessage')) $('#webChatNewMessage').onclick = scrollWebChatToBottom;
 
 async function loadHomeBanners() {
     const root = $('#homeBannerList');
