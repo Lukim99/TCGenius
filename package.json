@@ -2,6 +2,9 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "scripts": {
+    "test": "node --test test/node-kakao-auth.test.js"
+  },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.913.0",
     "@aws-sdk/lib-dynamodb": "^3.913.0",
