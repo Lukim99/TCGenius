@@ -1781,7 +1781,7 @@ function findEquipmentByName(name) {
 }
 
 function formatNameWithTrade(data) {
-    return data.name + (data.no_trade ? ' [거래불가]' : '');
+    return data.name + (data.no_trade && data.rarity != '신화' ? ' [거래불가]' : '');
 }
 
 function getFashionData() {
@@ -4089,7 +4089,7 @@ async function enterDailyDungeon(user, dungeonName, channel) {
         skillCooldowns: cooldowns.skillCooldowns,
         killCount: 0,
         elite: null,
-        dailyEffect: { triggered: false, type: null, expiresAt: 0 }
+        dailyEffects: []
     };
     return [
         '✅ 일일 던전에 입장했습니다.',
@@ -4348,20 +4348,27 @@ function setFieldNextActionAt(user, nextActionAt) {
     if (!user.field.dailyDungeon) getFieldCooldowns(user).nextActionAt = nextActionAt;
 }
 
-function getActiveDailyDungeonEffect(user, now) {
-    if (!user || !user.field || !user.field.dailyDungeon) return null;
-    const effect = user.field.dailyEffect;
-    if (!effect || !effect.type) return null;
+function getActiveDailyDungeonEffects(user, now) {
+    if (!user || !user.field || !user.field.dailyDungeon) return [];
+    if (!Array.isArray(user.field.dailyEffects)) {
+        const legacyEffect = user.field.dailyEffect;
+        user.field.dailyEffects = legacyEffect && legacyEffect.type
+            ? [{ type: legacyEffect.type, expiresAt: Number(legacyEffect.expiresAt || 0) }]
+            : [];
+        delete user.field.dailyEffect;
+    }
     const timestamp = typeof now == 'undefined' ? Date.now() : Number(now);
-    if (timestamp < Number(effect.expiresAt || 0)) return effect;
-    effect.type = null;
-    effect.expiresAt = 0;
-    return null;
+    user.field.dailyEffects = user.field.dailyEffects.filter(effect => effect && effect.type && timestamp < Number(effect.expiresAt || 0));
+    return user.field.dailyEffects;
+}
+
+function getActiveDailyDungeonEffect(user, now) {
+    const effects = getActiveDailyDungeonEffects(user, now);
+    return effects.length > 0 ? effects[effects.length - 1] : null;
 }
 
 function getFieldActionCooldownMs(user, now) {
-    const effect = getActiveDailyDungeonEffect(user, now);
-    return effect && effect.type == 'punch' ? 1000 : randomInt(2000, 3000);
+    return getActiveDailyDungeonEffects(user, now).some(effect => effect.type == 'punch') ? 1000 : randomInt(2000, 3000);
 }
 
 function setNextFieldActionAt(user) {
@@ -4371,19 +4378,14 @@ function setNextFieldActionAt(user) {
 
 function tryActivateDailyDungeonEffect(user, now, rng) {
     if (!user || !user.field || !user.field.dailyDungeon) return null;
-    if (!user.field.dailyEffect || typeof user.field.dailyEffect != 'object') {
-        user.field.dailyEffect = { triggered: false, type: null, expiresAt: 0 };
-    }
-    const state = user.field.dailyEffect;
-    if (state.triggered) return getActiveDailyDungeonEffect(user, now);
+    const effects = getActiveDailyDungeonEffects(user, now);
     const random = typeof rng == 'function' ? rng : Math.random;
     if (random() >= DAILY_DUNGEON_EFFECT_CHANCE) return null;
     const timestamp = typeof now == 'undefined' ? Date.now() : Number(now);
     const index = Math.min(DAILY_DUNGEON_EFFECTS.length - 1, Math.floor(random() * DAILY_DUNGEON_EFFECTS.length));
-    state.triggered = true;
-    state.type = DAILY_DUNGEON_EFFECTS[index];
-    state.expiresAt = timestamp + DAILY_DUNGEON_EFFECT_DURATION_MS;
-    return state;
+    const effect = { type: DAILY_DUNGEON_EFFECTS[index], expiresAt: timestamp + DAILY_DUNGEON_EFFECT_DURATION_MS };
+    effects.push(effect);
+    return effect;
 }
 
 function applyDailyDungeonEffectToAttack(user, extra, actionType) {
@@ -4391,20 +4393,21 @@ function applyDailyDungeonEffectToAttack(user, extra, actionType) {
     if (actionType != 'basic' && actionType != 'skill') return;
     if (extra && (extra.isBotAutoAttack || extra.summonAttack || extra.dotAttack)) return;
     const now = Date.now();
-    const wasTriggered = !!(user.field.dailyEffect && user.field.dailyEffect.triggered);
-    let effect = getActiveDailyDungeonEffect(user, now);
-    if (!effect && !wasTriggered) effect = tryActivateDailyDungeonEffect(user, now);
-    if (!effect) return;
-    if (!wasTriggered) {
-        const notice = effect.type == 'fever'
+    const activatedEffect = tryActivateDailyDungeonEffect(user, now);
+    const effects = getActiveDailyDungeonEffects(user, now);
+    if (effects.length == 0) return;
+    if (activatedEffect) {
+        const notice = activatedEffect.type == 'fever'
             ? '🔥 피버타임! 10초간 최종 피해 +300%'
-            : effect.type == 'punch'
+            : activatedEffect.type == 'punch'
                 ? '🥊 펀치타임! 10초간 행동 쿨타임 1초'
                 : '🎯 히트타임! 10초간 추가 피해 +200%';
         extra.notice = (extra.notice ? extra.notice + ' / ' : '') + notice;
     }
-    if (effect.type == 'fever') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + 3;
-    if (effect.type == 'hit') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + 2;
+    effects.forEach(effect => {
+        if (effect.type == 'fever') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + 3;
+        if (effect.type == 'hit') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + 2;
+    });
 }
 
 function getFieldBuffs(user) {
@@ -7124,9 +7127,24 @@ function isEquipmentTradeCountLimited(rarity) {
 }
 
 function getEquipmentTradeMax(data) {
-    if (!data || data.no_trade || data.rarity == '신화') return 0;
-    if (data.rarity == '초월') return 1;
+    if (!data) return 0;
+    if (data.rarity == '초월' || data.rarity == '신화') return 1;
+    if (data.no_trade) return 0;
     return isEquipmentTradeCountLimited(data.rarity) ? EQUIPMENT_TRADE_MAX_COUNT : null;
+}
+
+function consumesEquipmentTradeOnEquip(data) {
+    return !!data && (data.rarity == '초월' || data.rarity == '신화');
+}
+
+function markEquipmentEquipped(equip, fallbackType) {
+    if (!equip) return equip;
+    const type = equip.type || fallbackType;
+    const data = getEquipmentData(type, equip.id);
+    if (consumesEquipmentTradeOnEquip(data)) {
+        equip.tradeCount = Math.max(Number(equip.tradeCount || 0), Number(getEquipmentTradeMax(data) || 0));
+    }
+    return equip;
 }
 
 function isEquipmentBindingEnabled() {
@@ -7140,6 +7158,7 @@ function cloneEquipmentInstance(equip, fallbackType) {
     entry.level = Number(equip.level || 0);
     if (typeof equip.transcendStage != 'undefined') entry.transcendStage = Math.max(1, Math.min(3, Number(equip.transcendStage || 1)));
     if (entry.soul && isSoulExpired(entry.soul)) delete entry.soul;
+    if (entry.boundOwner) markEquipmentEquipped(entry, fallbackType);
     return entry;
 }
 
@@ -7147,10 +7166,10 @@ function getEquipmentTradeBlockReason(equip, ownerName) {
     const type = equip && equip.type;
     const data = getEquipmentData(type, equip && equip.id);
     if (!data) return '잘못된 장비 데이터입니다.';
-    if (data.no_trade) return '거래 불가 장비입니다.';
+    if (data.no_trade && data.rarity != '신화') return '거래 불가 장비입니다.';
+    const tradeLimit = getEquipmentTradeLimitInfo(equip);
+    if (tradeLimit && tradeLimit.remaining <= 0) return '거래 횟수가 ' + tradeLimit.max + '회에 도달한 장비입니다.';
     if (isEquipmentBindingEnabled() && equip.boundOwner) return '귀속된 장비입니다. 귀속 해제의 주문서로 귀속을 해제해야 거래할 수 있습니다.';
-    const tradeMax = getEquipmentTradeMax(data);
-    if (tradeMax != null && Number(equip.tradeCount || 0) >= tradeMax) return '거래 횟수가 ' + tradeMax + '회에 도달한 장비입니다.';
     return null;
 }
 
@@ -7165,11 +7184,13 @@ function getEquipmentTradeLimitInfo(equip) {
     const data = getEquipmentData(equip && equip.type, equip && equip.id);
     const max = getEquipmentTradeMax(data);
     if (!data || max == null) return null;
-    const count = Math.max(0, Number(equip.tradeCount || 0));
+    let count = Math.max(0, Number(equip.tradeCount || 0));
+    if (consumesEquipmentTradeOnEquip(data) && equip.boundOwner) count = Math.max(count, max);
     return { count, max, remaining: Math.max(0, max - count) };
 }
 
 function bindEquipmentToUser(equip, user) {
+    markEquipmentEquipped(equip);
     if (!isEquipmentBindingEnabled()) return equip;
     if (equip && user && user.name && !equip.boundOwner) equip.boundOwner = user.name;
     return equip;
@@ -7197,9 +7218,8 @@ function formatBoundEquipmentScissorList(targets) {
         const equip = target.entry.equip;
         const lvl = Number(equip.level || 0);
         const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
-        const tradeCount = Number(equip.tradeCount || 0);
         const tradeLimit = getEquipmentTradeLimitInfo(Object.assign({ type: equip.type || target.entry.type }, equip));
-        const tradeText = tradeLimit ? ' · 거래 ' + comma(tradeCount) + '/' + comma(tradeLimit.max) + '회' : '';
+        const tradeText = tradeLimit ? ' · 거래 ' + comma(tradeLimit.count) + '/' + comma(tradeLimit.max) + '회' : '';
         lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + ' · 귀속: ' + equip.boundOwner + tradeText);
     });
     return lines.join('\n');
@@ -12730,6 +12750,7 @@ module.exports = {
     getFieldCombatContext,
     buildHuntResult,
     getActiveDailyDungeonEffect,
+    getActiveDailyDungeonEffects,
     tryActivateDailyDungeonEffect,
     applyDailyDungeonEffectToAttack,
     getFieldActionCooldownMs,

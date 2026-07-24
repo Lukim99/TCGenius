@@ -448,7 +448,13 @@ function updateWebChatViewport() {
 if (window.visualViewport) window.visualViewport.addEventListener('resize', updateWebChatViewport);
 window.addEventListener('resize', updateWebChatViewport);
 updateWebChatViewport();
-if ($('#webChatSend')) $('#webChatSend').onclick = sendWebChatMessage;
+const webChatSendButton = $('#webChatSend');
+if (webChatSendButton) {
+    webChatSendButton.addEventListener('pointerdown', event => {
+        if (document.activeElement === webChatInput) event.preventDefault();
+    });
+    webChatSendButton.onclick = sendWebChatMessage;
+}
 if ($('#webChatBack')) $('#webChatBack').onclick = () => {
     closeWebChatStream();
     $('#webChatShell').classList.remove('room-open');

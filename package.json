@@ -13,7 +13,6 @@
     "express": "^5.1.0",
     "hpagent": "^1.2.0",
     "node-kakao": "file:./libs/node-kakao",
-    "puppeteer-core": "^22.15.0",
     "request": "^2.88.2"
   }
 }

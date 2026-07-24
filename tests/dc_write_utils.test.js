@@ -284,10 +284,13 @@ assert.ok(changeHeadtextStart >= 0 && changeHeadtextEnd > changeHeadtextStart, '
 assert.ok(changeHeadtextSource.includes('/ajax/minor_manager_board_ajax/chg_headtext_batch'));
 assert.ok(changeHeadtextSource.includes("params.append('nos[]', postNo)"), 'Post numbers must use the official array form.');
 assert.ok(changeHeadtextSource.includes("data?.result !== 'success'"), 'Only an explicit DC success response may succeed.');
-assert.ok(changeHeadtextSource.includes('await page.evaluate(async'), 'Login and manager request must share one browser session.');
-assert.ok(!changeHeadtextSource.includes('httpsAgent: agent'), 'The authenticated manager request must not switch to another proxy session.');
-assert.ok(changeHeadtextSource.includes('browser.close()'), 'The Browserless session must be released.');
-assert.ok(changeHeadtextSource.includes('puppeteerRunning--'), 'The Browserless concurrency slot must be released.');
+assert.ok(changeHeadtextSource.includes('followGetRedirects'), 'HTTP login redirects must retain one cookie session.');
+assert.ok(changeHeadtextSource.includes('liveCookies.PHPSESSKEY'), 'HTTP login must verify the authenticated session cookie.');
+assert.ok(changeHeadtextSource.includes('@${PROXY_CONFIG.host}:10000'), 'The login flow must use a sticky proxy port.');
+assert.ok(changeHeadtextSource.includes('httpsAgent: agent'), 'Login and manager requests must share one proxy agent.');
+assert.ok(!changeHeadtextSource.includes('BROWSERLESS_API_KEY'), 'Headtext changes must not use Browserless.');
+assert.ok(!changeHeadtextSource.includes('puppeteer.connect'), 'Headtext changes must not launch a browser.');
+assert.ok(changeHeadtextSource.includes('agent.destroy()'), 'The proxy agent must be released.');
 assert.ok(engineSource.includes('module.exports = { doDcChangePostHeadtext, doDcWriteComment, doDcWritePost, getDcPostComments };'));
 
 console.log('dc_write_utils.test.js: OK');

@@ -81,46 +81,72 @@ function sequence(values, fallback = 0) {
     assert.strictEqual(nextDayState.used, false);
 
     const effectUser = makeUser('일일효과테스트', 141);
-    effectUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: false, type: null, expiresAt: 0 } };
+    effectUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [] };
     try {
         Math.random = sequence([0.49, 0]);
         const extra = {};
         rpg.applyDailyDungeonEffectToAttack(effectUser, extra, 'basic');
-        assert.strictEqual(effectUser.field.dailyEffect.type, 'fever');
+        assert.strictEqual(effectUser.field.dailyEffects.length, 1);
+        assert.strictEqual(effectUser.field.dailyEffects[0].type, 'fever');
         assert.strictEqual(extra.finalDamageBonus, 3);
         assert.ok(extra.notice.includes('피버타임'));
     } finally {
         Math.random = originalRandom;
     }
-    const expiresAt = effectUser.field.dailyEffect.expiresAt;
-    assert.ok(rpg.getActiveDailyDungeonEffect(effectUser, expiresAt - 1));
-    assert.strictEqual(rpg.getActiveDailyDungeonEffect(effectUser, expiresAt), null);
-    assert.strictEqual(rpg.tryActivateDailyDungeonEffect(effectUser, expiresAt + 1, () => 0), null, '만료 후 재발동하면 안 된다.');
+    const firstEffect = effectUser.field.dailyEffects[0];
+    const firstExpiresAt = firstEffect.expiresAt;
+    const duplicateEffect = rpg.tryActivateDailyDungeonEffect(effectUser, firstExpiresAt - 9000, sequence([0.49, 0]));
+    assert.strictEqual(duplicateEffect.type, 'fever');
+    assert.strictEqual(firstEffect.expiresAt, firstExpiresAt, '같은 버프가 다시 발동해도 기존 지속시간을 갱신하면 안 된다.');
+    assert.strictEqual(effectUser.field.dailyEffects.length, 2, '같은 종류의 타임도 독립 버프로 중복되어야 한다.');
+    try {
+        Math.random = () => 0.99;
+        const stackedExtra = {};
+        rpg.applyDailyDungeonEffectToAttack(effectUser, stackedExtra, 'basic');
+        assert.strictEqual(stackedExtra.finalDamageBonus, 6, '중복 피버타임은 각각 효과를 적용해야 한다.');
+    } finally {
+        Math.random = originalRandom;
+    }
+    assert.strictEqual(rpg.getActiveDailyDungeonEffects(effectUser, firstExpiresAt - 1).length, 2);
+    assert.strictEqual(rpg.getActiveDailyDungeonEffects(effectUser, firstExpiresAt).length, 1);
+    assert.strictEqual(rpg.getActiveDailyDungeonEffects(effectUser, duplicateEffect.expiresAt).length, 0);
+    assert.strictEqual(rpg.tryActivateDailyDungeonEffect(effectUser, duplicateEffect.expiresAt + 1, sequence([0, 0])).type, 'fever', '만료 후에도 다시 발동할 수 있어야 한다.');
 
     const hitUser = makeUser('히트타임테스트', 141);
-    hitUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: true, type: 'hit', expiresAt: Date.now() + 10000 } };
+    hitUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [{ type: 'hit', expiresAt: Date.now() + 10000 }] };
     const hitExtra = {};
-    rpg.applyDailyDungeonEffectToAttack(hitUser, hitExtra, 'skill');
+    try {
+        Math.random = () => 0.99;
+        rpg.applyDailyDungeonEffectToAttack(hitUser, hitExtra, 'skill');
+    } finally {
+        Math.random = originalRandom;
+    }
     assert.strictEqual(hitExtra.extraDamageBonus, 2);
 
     const punchUser = makeUser('펀치타임테스트', 141);
-    punchUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: true, type: 'punch', expiresAt: Date.now() + 10000 } };
+    punchUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [{ type: 'punch', expiresAt: Date.now() + 10000 }] };
     assert.strictEqual(rpg.getFieldActionCooldownMs(punchUser), 1000);
 
     const autoUser = makeUser('자동공격효과제외테스트', 141);
-    autoUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: false, type: null, expiresAt: 0 } };
+    autoUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [] };
     rpg.applyDailyDungeonEffectToAttack(autoUser, { isBotAutoAttack: true }, 'basic');
-    assert.strictEqual(autoUser.field.dailyEffect.triggered, false);
+    assert.strictEqual(autoUser.field.dailyEffects.length, 0);
 
     const retryEffectUser = makeUser('효과재시도테스트', 141);
-    retryEffectUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: false, type: null, expiresAt: 0 } };
+    retryEffectUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [] };
     assert.strictEqual(rpg.tryActivateDailyDungeonEffect(retryEffectUser, 1000, sequence([0.5])), null);
-    assert.strictEqual(retryEffectUser.field.dailyEffect.triggered, false);
+    assert.strictEqual(retryEffectUser.field.dailyEffects.length, 0);
     assert.strictEqual(rpg.tryActivateDailyDungeonEffect(retryEffectUser, 2000, sequence([0.49, 0.34])).type, 'punch');
 
     const hitSelectionUser = makeUser('히트선택테스트', 141);
-    hitSelectionUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: false, type: null, expiresAt: 0 } };
+    hitSelectionUser.field = { name: '부타게임', dailyDungeon: true, dailyEffects: [] };
     assert.strictEqual(rpg.tryActivateDailyDungeonEffect(hitSelectionUser, 1000, sequence([0.49, 0.99])).type, 'hit');
+
+    const legacyEffectUser = makeUser('기존효과호환테스트', 141);
+    legacyEffectUser.field = { name: '부타게임', dailyDungeon: true, dailyEffect: { triggered: true, type: 'hit', expiresAt: 2000 } };
+    assert.strictEqual(rpg.getActiveDailyDungeonEffect(legacyEffectUser, 1000).type, 'hit');
+    assert.strictEqual(legacyEffectUser.field.dailyEffect, undefined);
+    assert.strictEqual(legacyEffectUser.field.dailyEffects.length, 1);
 
     assert.ok(rpg.leaveField(hitUser).includes('다시 입장할 수 없습니다'));
     assert.strictEqual(hitUser.field, null);
@@ -157,7 +183,7 @@ function sequence(values, fallback = 0) {
     assert.strictEqual(butaBoundaryReward.items['헬 도전장'], 60, '50% 경계에서는 헬 도전장을 선택해야 한다.');
 
     const rewardUser = makeUser('일일보상증가테스트', 101);
-    rewardUser.field = { name: '마동', dailyDungeon: true, nextActionAt: 0, skillCooldowns: {}, killCount: 2000, dailyEffect: { triggered: true, type: null, expiresAt: 0 } };
+    rewardUser.field = { name: '마동', dailyDungeon: true, nextActionAt: 0, skillCooldowns: {}, killCount: 2000, dailyEffects: [] };
     rewardUser.dailyDungeonDaily = { date: rpg.getDailyDungeonDailyState(rewardUser).date, used: true, dungeonName: '마동', outcome: 'in_progress' };
     const rewardResult = rpg.grantDailyDungeonClearReward(
         rewardUser,

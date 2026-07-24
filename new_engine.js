@@ -15,7 +15,6 @@ const axios = require('axios');
 const FormData = require('form-data');
 const cheerio = require('cheerio');
 const { HttpsProxyAgent } = require('hpagent');
-const puppeteer = require('puppeteer-core');
 const { createClient } = require('@supabase/supabase-js');
 const {
     buildDcHyperlinkMemo,
@@ -609,12 +608,11 @@ async function doDcAction(targetUrl, mode = 'normal', id = null, password = null
 }
 
 
-let puppeteerRunning = 0;
-const PUPPETEER_MAX_CONCURRENT = 2;
+const DC_ACTION_MAX_CONCURRENT = 2;
 
 // 세션 쿠키 캐시: { accountId: { cookies: {}, savedAt: timestamp } }
 const dcSessionCache = {};
-const DC_SESSION_TTL = 3 * 60 * 60 * 1000; // 3시간
+const DC_SESSION_TTL = 20 * 60 * 1000; // 고정 프록시의 평균 유지 시간보다 짧게 캐시
 
 function getCachedSession(accountId) {
     const entry = dcSessionCache[accountId];
@@ -634,118 +632,25 @@ function invalidateSession(accountId) {
     delete dcSessionCache[accountId];
 }
 
-async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, password = null) {
-    let browser = null;
+async function doDcActionWithLogin(targetUrl, mode = 'normal', id = null, password = null) {
+    let agent = null;
     let currentIp = "확인 불가";
     const logs = [];
     const log = (msg) => logs.push(msg);
     
     try {
-        // --- 1단계: 세션 캐시 확인 또는 Browserless 로그인 ---
+        // --- 1단계: 동일 고정 프록시에서 HTTP 로그인 ---
+        agent = createDcStickyAgent();
         let loginCookies = {};
-        
         if (id && password) {
-            const cached = getCachedSession(id);
-            if (cached) {
-                loginCookies = cached;
-                log("캐시 세션 사용");
-            } else {
-                // Browserless 동시 실행 제한
-                if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
-                    return { success: false, msg: "동시 브라우저 한도 초과.", token: "없음", ip: "대기중", logs: ["대기열 초과"] };
-                }
-                puppeteerRunning++;
-                
-                try {
-                    const apiKey = process.env.BROWSERLESS_API_KEY;
-                    if (!apiKey) {
-                        return { success: false, msg: "BROWSERLESS_API_KEY 미설정", token: "없음", ip: currentIp, logs: ["API키 없음"] };
-                    }
-                    
-                    const wsEndpoint = `wss://production-sfo.browserless.io/chromium?token=${apiKey}`;
-                    log("브라우저 연결");
-                    
-                    browser = await puppeteer.connect({
-                        browserWSEndpoint: wsEndpoint,
-                        protocolTimeout: 30000
-                    });
-                    
-                    const page = await browser.newPage();
-                    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-                    
-                    await page.goto('https://sign.dcinside.com/login', { 
-                        waitUntil: 'domcontentloaded', 
-                        timeout: 15000 
-                    });
-                    log("로그인 페이지 로드");
-                    
-                    const formResult = await page.evaluate((uid, upw) => {
-                        const idEl = document.querySelector('input[name="user_id"]') || 
-                                     document.querySelector('input[name="code"]') ||
-                                     document.querySelector('input[type="text"][name]');
-                        const pwEl = document.querySelector('input[type="password"]');
-                        if (!idEl || !pwEl) return { ok: false };
-                        
-                        const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                        nativeSet.call(idEl, uid);
-                        idEl.dispatchEvent(new Event('input', { bubbles: true }));
-                        nativeSet.call(pwEl, upw);
-                        pwEl.dispatchEvent(new Event('input', { bubbles: true }));
-                        
-                        return { ok: true };
-                    }, id, password);
-                    
-                    if (!formResult.ok) {
-                        log("로그인 폼 없음");
-                        await browser.close();
-                        return { success: false, msg: "로그인 폼 없음", token: "없음", ip: currentIp, logs };
-                    }
-                    
-                    await Promise.all([
-                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-                        page.evaluate(() => {
-                            const btn = document.querySelector('button[type="submit"]') ||
-                                        document.querySelector('input[type="submit"]') ||
-                                        document.querySelector('.btn_login') ||
-                                        document.querySelector('form button');
-                            if (btn) btn.click();
-                            else document.querySelector('form').submit();
-                        })
-                    ]);
-                    
-                    const cookies = await page.cookies();
-                    const cookieNames = cookies.map(c => c.name);
-                    
-                    const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
-                    const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
-                    
-                    if (foundLogin) {
-                        log("로그인 성공 (" + foundLogin + ")");
-                        cookies.forEach(c => { loginCookies[c.name] = c.value; });
-                        saveCachedSession(id, loginCookies);
-                    } else {
-                        log("로그인 실패. URL: " + page.url());
-                        await browser.close();
-                        return { success: false, msg: "로그인 실패", token: "없음", ip: currentIp, logs };
-                    }
-                    
-                    await browser.close();
-                    browser = null;
-                } finally {
-                    puppeteerRunning--;
-                }
+            const loginResult = await getDcLoginCookies(id, password, log, agent);
+            if (!loginResult.ok) {
+                return { success: false, msg: loginResult.msg, token: "없음", ip: currentIp, logs };
             }
+            loginCookies = loginResult.cookies;
         }
         
         // --- 2단계: axios + keepAlive 프록시 + 수동 쿠키로 추천 ---
-        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
-        const agent = new HttpsProxyAgent({
-            proxy: proxyUrl,
-            keepAlive: true,
-            keepAliveMsecs: 30000,
-            rejectUnauthorized: false
-        });
-        
         const randomUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
         
         // 수동 쿠키 관리 (set-cookie 자동 병합)
@@ -835,11 +740,13 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
         if (postRes.data?.cause === 'captcha') {
             log("캡차 감지 → 실패 처리");
             agent.destroy();
+            agent = null;
             return { success: false, msg: "캡차 발생", token: csrfToken, ip: currentIp, logs };
         }
         
         // keepAlive 에이전트 정리
         agent.destroy();
+        agent = null;
         
         if (postRes.data && (postRes.data.result === true || postRes.data === 'success')) {
             return { success: true, msg: (mode === 'best' ? "실베추 성공!" : "추천 성공!"), token: csrfToken, ip: currentIp, logs };
@@ -850,85 +757,138 @@ async function doDcActionWithPuppeteer(targetUrl, mode = 'normal', id = null, pa
     } catch (err) {
         log("에러: " + err.message);
         if (id) invalidateSession(id);
-        if (browser) await browser.close().catch(() => {});
+        if (agent) agent.destroy();
         return { success: false, msg: `에러: ${err.message}`, token: "없음", ip: currentIp, logs };
     }
 }
 
-// doDcActionWithPuppeteer의 1단계 로그인 부분을 함수로 추출 (글쓰기와 공유).
-// ponytail: doDcActionWithPuppeteer도 언젠가 이 헬퍼를 쓰게 바꾸면 중복이 사라짐. 지금은 안 건드림.
-async function getDcLoginCookies(id, password, log = () => {}) {
+function createDcStickyAgent() {
+    const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
+    const proxyUrl = `http://${proxyUsername}:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:10000`;
+    return new HttpsProxyAgent({
+        proxy: proxyUrl,
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+        rejectUnauthorized: false
+    });
+}
+
+// 동일 고정 프록시 세션에서 로그인 폼과 SSO 리다이렉트를 HTTP로 처리한다.
+async function getDcLoginCookies(id, password, log = () => {}, existingAgent = null) {
     const cached = getCachedSession(id);
     if (cached) {
         log("캐시 세션 사용");
         return { ok: true, cookies: cached };
     }
-    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
-        return { ok: false, msg: "동시 브라우저 한도 초과." };
-    }
-    const apiKey = process.env.BROWSERLESS_API_KEY;
-    if (!apiKey) return { ok: false, msg: "BROWSERLESS_API_KEY 미설정" };
 
-    puppeteerRunning++;
-    let browser = null;
+    const agent = existingAgent || createDcStickyAgent();
+    const ownsAgent = !existingAgent;
+    let liveCookies = {};
+    const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    const mergeCookies = response => {
+        const setCookies = response?.headers?.['set-cookie'];
+        for (const value of Array.isArray(setCookies) ? setCookies : (setCookies ? [setCookies] : [])) {
+            const nameValue = value.split(';')[0];
+            const separator = nameValue.indexOf('=');
+            if (separator > 0) {
+                liveCookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
+            }
+        }
+    };
+    const cookieString = () => Object.entries(liveCookies)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('; ');
+    const navigateHeaders = referer => ({
+        'User-Agent': desktopUA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Referer': referer,
+        'Cookie': cookieString()
+    });
+    const followGetRedirects = async (initialUrl, initialReferer = initialUrl) => {
+        let currentUrl = initialUrl;
+        let referer = initialReferer;
+        let response = null;
+        for (let index = 0; index < 15; index++) {
+            const previousCookies = cookieString();
+            response = await axios.get(currentUrl, {
+                httpsAgent: agent,
+                headers: navigateHeaders(referer),
+                maxRedirects: 0,
+                validateStatus: status => status >= 200 && status < 400,
+                timeout: 20000
+            });
+            mergeCookies(response);
+            const location = response.headers?.location;
+            if (!location) return { response, url: currentUrl };
+            const nextUrl = new URL(location, currentUrl).href;
+            if (nextUrl === currentUrl && previousCookies === cookieString()) {
+                throw new Error('로그인 리다이렉트가 반복됩니다.');
+            }
+            referer = currentUrl;
+            currentUrl = nextUrl;
+        }
+        throw new Error('로그인 리다이렉트 한도를 초과했습니다.');
+    };
+
     try {
-        browser = await puppeteer.connect({
-            browserWSEndpoint: `wss://production-sfo.browserless.io/chromium?token=${apiKey}`,
-            protocolTimeout: 30000
+        const loginPage = await followGetRedirects('https://sign.dcinside.com/login');
+        const $login = cheerio.load(loginPage.response.data || '');
+        const $form = $login('form').first();
+        if (!$form.length) return { ok: false, msg: "로그인 폼 없음" };
+
+        const loginAction = new URL(
+            String($form.attr('action') || '/login/member_check'),
+            loginPage.url
+        ).href;
+        const loginParams = new URLSearchParams();
+        $form.find('input[name]').each((index, element) => {
+            const name = String($login(element).attr('name') || '');
+            const type = String($login(element).attr('type') || 'text').toLowerCase();
+            if (name === 'user_id') loginParams.append(name, id);
+            else if (name === 'pw') loginParams.append(name, password);
+            else if (name === 'ci_t') loginParams.append(name, String(liveCookies.ci_c || ''));
+            else if (type !== 'checkbox' || $login(element).is(':checked')) {
+                loginParams.append(name, String($login(element).val() || ''));
+            }
         });
-        log("브라우저 연결");
-        const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.goto('https://sign.dcinside.com/login', { waitUntil: 'domcontentloaded', timeout: 15000 });
-        log("로그인 페이지 로드");
 
-        const formResult = await page.evaluate((uid, upw) => {
-            const idEl = document.querySelector('input[name="user_id"]') ||
-                         document.querySelector('input[name="code"]') ||
-                         document.querySelector('input[type="text"][name]');
-            const pwEl = document.querySelector('input[type="password"]');
-            if (!idEl || !pwEl) return { ok: false };
-            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-            nativeSet.call(idEl, uid);
-            idEl.dispatchEvent(new Event('input', { bubbles: true }));
-            nativeSet.call(pwEl, upw);
-            pwEl.dispatchEvent(new Event('input', { bubbles: true }));
-            return { ok: true };
-        }, id, password);
-
-        if (!formResult.ok) {
-            log("로그인 폼 없음");
-            return { ok: false, msg: "로그인 폼 없음" };
+        const loginResponse = await axios.post(loginAction, loginParams.toString(), {
+            httpsAgent: agent,
+            headers: {
+                ...navigateHeaders(loginPage.url),
+                'Origin': new URL(loginAction).origin,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            maxRedirects: 0,
+            validateStatus: status => status >= 200 && status < 400,
+            timeout: 20000
+        });
+        mergeCookies(loginResponse);
+        const scriptedLocation = String(loginResponse.data || '').match(
+            /location(?:\.replace)?\s*\(\s*['"]([^'"]+)['"]\s*\)/i
+        )?.[1];
+        const loginRedirect = loginResponse.headers?.location || scriptedLocation;
+        if (loginRedirect) {
+            await followGetRedirects(new URL(loginRedirect, loginAction).href, loginAction);
         }
 
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-            page.evaluate(() => {
-                const btn = document.querySelector('button[type="submit"]') ||
-                            document.querySelector('input[type="submit"]') ||
-                            document.querySelector('.btn_login') ||
-                            document.querySelector('form button');
-                if (btn) btn.click();
-                else document.querySelector('form').submit();
-            })
-        ]);
-
-        const cookies = await page.cookies();
-        const cookieNames = cookies.map(c => c.name);
-        const loginIndicators = ['mc_ses', 'ci_c', 'GALLOG_ID', 'gallog_sess', 'dcinside_login'];
-        const foundLogin = loginIndicators.find(key => cookieNames.some(n => n.includes(key)));
-        if (!foundLogin) {
-            log("로그인 실패. URL: " + page.url());
+        const galleryResponse = await axios.get('https://gall.dcinside.com/', {
+            httpsAgent: agent,
+            headers: navigateHeaders(loginPage.url),
+            timeout: 20000
+        });
+        mergeCookies(galleryResponse);
+        if (!liveCookies.PHPSESSKEY) {
             return { ok: false, msg: "로그인 실패" };
         }
-        log("로그인 성공 (" + foundLogin + ")");
-        const loginCookies = {};
-        cookies.forEach(c => { loginCookies[c.name] = c.value; });
-        saveCachedSession(id, loginCookies);
-        return { ok: true, cookies: loginCookies };
+        log("HTTP 로그인 성공");
+        saveCachedSession(id, liveCookies);
+        return { ok: true, cookies: { ...liveCookies } };
+    } catch (error) {
+        return { ok: false, msg: `로그인 실패: ${error.message}` };
     } finally {
-        if (browser) await browser.close().catch(() => {});
-        puppeteerRunning--;
+        if (ownsAgent) agent.destroy();
     }
 }
 
@@ -956,17 +916,14 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
         }
 
-        // 1. 로그인 세션 확보 (익명글은 캡차가 필요해 로그인 계정만 지원)
-        const loginResult = await getDcLoginCookies(id, password, log);
+        // 1. 동일 고정 프록시에서 로그인 세션 확보 (익명글은 캡차가 필요해 로그인 계정만 지원)
+        agent = createDcStickyAgent();
+        const loginResult = await getDcLoginCookies(id, password, log, agent);
         if (!loginResult.ok) {
             return { success: false, msg: loginResult.msg, ip: currentIp, logs };
         }
 
-        // 2. axios + 프록시 + 수동 쿠키
-        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
-        agent = new HttpsProxyAgent({
-            proxy: proxyUrl, keepAlive: true, keepAliveMsecs: 30000, rejectUnauthorized: false
-        });
+        // 2. axios + 동일 프록시 + 수동 쿠키
         const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
 
         let liveCookies = { ...loginResult.cookies };
@@ -1328,18 +1285,12 @@ async function doDcWriteComment(galleryId, postNo, content, id = null, password 
             return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
         }
 
-        const loginResult = await getDcLoginCookies(id, password, log);
+        agent = createDcStickyAgent();
+        const loginResult = await getDcLoginCookies(id, password, log, agent);
         if (!loginResult.ok) {
             return { success: false, msg: loginResult.msg, ip: currentIp, logs };
         }
 
-        const proxyUrl = `http://${PROXY_CONFIG.username}__cr.kr:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`;
-        agent = new HttpsProxyAgent({
-            proxy: proxyUrl,
-            keepAlive: true,
-            keepAliveMsecs: 30000,
-            rejectUnauthorized: false
-        });
         const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
         let liveCookies = { ...loginResult.cookies };
         const mergeCookies = (response) => {
@@ -1604,7 +1555,7 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
     const normalizedHeadtext = String(headtext || '').trim();
     const normalizedPostNos = [...new Set((Array.isArray(postNos) ? postNos : [postNos])
         .map(postNo => String(postNo || '').trim()))];
-    let browser = null;
+    let agent = null;
 
     if (!/^[a-z0-9_]+$/i.test(normalizedGalleryId)) {
         return { success: false, msg: "올바른 갤러리 ID가 필요합니다.", logs };
@@ -1618,107 +1569,168 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
     if (!id || !password) {
         return { success: false, msg: "관리 계정(id/password)이 필요합니다.", logs };
     }
-    if (puppeteerRunning >= PUPPETEER_MAX_CONCURRENT) {
-        return { success: false, msg: "동시 브라우저 한도 초과.", logs };
-    }
-    const apiKey = process.env.BROWSERLESS_API_KEY;
-    if (!apiKey) return { success: false, msg: "BROWSERLESS_API_KEY 미설정", logs };
-
-    puppeteerRunning++;
     try {
-        browser = await puppeteer.connect({
-            browserWSEndpoint: `wss://production-sfo.browserless.io/chromium?token=${apiKey}`,
-            protocolTimeout: 30000
+        const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
+        const proxyUrl = `http://${proxyUsername}:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:10000`;
+        agent = new HttpsProxyAgent({
+            proxy: proxyUrl,
+            keepAlive: true,
+            rejectUnauthorized: false
         });
         const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        const page = await browser.newPage();
-        await page.setUserAgent(desktopUA);
-        await page.goto('https://sign.dcinside.com/login', {
-            waitUntil: 'domcontentloaded',
-            timeout: 15000
+        let liveCookies = {};
+        const mergeCookies = response => {
+            const setCookies = response?.headers?.['set-cookie'];
+            for (const value of Array.isArray(setCookies) ? setCookies : (setCookies ? [setCookies] : [])) {
+                const nameValue = value.split(';')[0];
+                const separator = nameValue.indexOf('=');
+                if (separator > 0) {
+                    liveCookies[nameValue.substring(0, separator).trim()] = nameValue.substring(separator + 1).trim();
+                }
+            }
+        };
+        const cookieString = () => Object.entries(liveCookies)
+            .map(([key, value]) => `${key}=${value}`)
+            .join('; ');
+        const navigateHeaders = referer => ({
+            'User-Agent': desktopUA,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9',
+            'Referer': referer,
+            'Cookie': cookieString()
         });
-        log("로그인 페이지 로드");
+        const followGetRedirects = async (initialUrl, initialReferer = initialUrl) => {
+            let currentUrl = initialUrl;
+            let referer = initialReferer;
+            let response = null;
+            for (let index = 0; index < 15; index++) {
+                const previousCookies = cookieString();
+                response = await axios.get(currentUrl, {
+                    httpsAgent: agent,
+                    headers: navigateHeaders(referer),
+                    maxRedirects: 0,
+                    validateStatus: status => status >= 200 && status < 400,
+                    timeout: 20000
+                });
+                mergeCookies(response);
+                const location = response.headers?.location;
+                if (!location) return { response, url: currentUrl };
+                const nextUrl = new URL(location, currentUrl).href;
+                if (nextUrl === currentUrl && previousCookies === cookieString()) {
+                    throw new Error('로그인 리다이렉트가 반복됩니다.');
+                }
+                referer = currentUrl;
+                currentUrl = nextUrl;
+            }
+            throw new Error('로그인 리다이렉트 한도를 초과했습니다.');
+        };
 
-        const formReady = await page.evaluate((userId, userPassword) => {
-            const idElement = document.querySelector('input[name="user_id"]')
-                || document.querySelector('input[name="code"]')
-                || document.querySelector('input[type="text"][name]');
-            const passwordElement = document.querySelector('input[type="password"]');
-            if (!idElement || !passwordElement) return false;
-            const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-            nativeSet.call(idElement, userId);
-            idElement.dispatchEvent(new Event('input', { bubbles: true }));
-            nativeSet.call(passwordElement, userPassword);
-            passwordElement.dispatchEvent(new Event('input', { bubbles: true }));
-            return true;
-        }, id, password);
-        if (!formReady) return { success: false, msg: "로그인 폼 없음", logs };
+        const loginPage = await followGetRedirects('https://sign.dcinside.com/login');
+        const $login = cheerio.load(loginPage.response.data || '');
+        const $form = $login('form').first();
+        if (!$form.length) return { success: false, msg: "로그인 폼 없음", logs };
+        log(`로그인 페이지 준비 (${loginPage.response.status})`);
 
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-            page.evaluate(() => {
-                const button = document.querySelector('button[type="submit"]')
-                    || document.querySelector('input[type="submit"]')
-                    || document.querySelector('.btn_login')
-                    || document.querySelector('form button');
-                if (button) button.click();
-                else document.querySelector('form')?.submit();
-            })
-        ]);
-        if (await page.$('input[type="password"]')) {
-            return { success: false, msg: "관리 계정 로그인 실패", logs };
-        }
-        log("관리 계정 로그인 성공");
+        const loginAction = new URL(
+            String($form.attr('action') || '/login/member_check'),
+            loginPage.url
+        ).href;
+        const loginParams = new URLSearchParams();
+        $form.find('input[name]').each((index, element) => {
+            const name = String($login(element).attr('name') || '');
+            const type = String($login(element).attr('type') || 'text').toLowerCase();
+            if (name === 'user_id') loginParams.append(name, id);
+            else if (name === 'pw') loginParams.append(name, password);
+            else if (name === 'ci_t') loginParams.append(name, String(liveCookies.ci_c || ''));
+            else if (type !== 'checkbox' || $login(element).is(':checked')) {
+                loginParams.append(name, String($login(element).val() || ''));
+            }
+        });
 
-        const listUrl = `https://gall.dcinside.com/mgallery/board/lists/?id=${encodeURIComponent(normalizedGalleryId)}`;
-        await page.goto(`${listUrl}&_=${Date.now()}`, {
-            waitUntil: 'domcontentloaded',
+        const loginResponse = await axios.post(loginAction, loginParams.toString(), {
+            httpsAgent: agent,
+            headers: {
+                ...navigateHeaders(loginPage.url),
+                'Origin': new URL(loginAction).origin,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            maxRedirects: 0,
+            validateStatus: status => status >= 200 && status < 400,
             timeout: 20000
         });
+        mergeCookies(loginResponse);
+        log(`로그인 POST 응답 (${loginResponse.status})`);
+        const scriptedLocation = String(loginResponse.data || '').match(
+            /location(?:\.replace)?\s*\(\s*['"]([^'"]+)['"]\s*\)/i
+        )?.[1];
+        const loginRedirect = loginResponse.headers?.location || scriptedLocation;
+        if (loginRedirect) {
+            await followGetRedirects(
+                new URL(loginRedirect, loginAction).href,
+                loginAction
+            );
+        }
 
-        const changeResult = await page.evaluate(async ({ galleryId, requestedHeadtext, postNumbers }) => {
-            const hasHeadtext = [...document.querySelectorAll('#listHeadTxtLyr li[data-value]')]
-                .some(element => element.getAttribute('data-value') === requestedHeadtext);
-            if (!hasHeadtext) return { error: 'headtext_not_found' };
-
-            const ciToken = (document.cookie.match(/(?:^|;\s*)ci_c=([^;]+)/) || [])[1] || '';
-            if (!ciToken) return { error: 'ci_token_not_found' };
-
-            const params = new URLSearchParams({
-                ci_t: ciToken,
-                id: galleryId,
-                _GALLTYPE_: 'M',
-                headtext: requestedHeadtext
-            });
-            for (const postNo of postNumbers) params.append('nos[]', postNo);
-
-            const response = await fetch('/ajax/minor_manager_board_ajax/chg_headtext_batch', {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: params.toString()
-            });
-            return { status: response.status, body: await response.text() };
-        }, {
-            galleryId: normalizedGalleryId,
-            requestedHeadtext: normalizedHeadtext,
-            postNumbers: normalizedPostNos
+        const listUrl = `https://gall.dcinside.com/mgallery/board/lists/?id=${encodeURIComponent(normalizedGalleryId)}`;
+        const listResponse = await axios.get(`${listUrl}&_=${Date.now()}`, {
+            httpsAgent: agent,
+            headers: navigateHeaders(loginPage.url),
+            timeout: 20000
         });
+        mergeCookies(listResponse);
+        if (!liveCookies.PHPSESSKEY) {
+            const restricted = liveCookies.login_fail === 'Y' || liveCookies.login_too_much === 'Y';
+            const loginBody = String(loginResponse.data || '');
+            const alertMatch = loginBody.match(/alert\s*\(\s*['"]([^'"]+)['"]\s*\)/i);
+            if (alertMatch?.[1]) log(`로그인 응답: ${alertMatch[1]}`);
+            const $loginFailure = cheerio.load(loginBody);
+            $loginFailure('script, style').remove();
+            const failureText = $loginFailure('body').text()
+                .replaceAll(String(id), '[ID]')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 300);
+            if (failureText) log(`로그인 응답 본문: ${failureText}`);
+            log(`로그인 인증 쿠키 없음 (${Object.keys(liveCookies).sort().join(', ')})`);
+            if (restricted) return { success: false, msg: "관리 계정 로그인 제한 또는 캡차가 필요합니다.", logs };
+            return { success: false, msg: "관리 계정 로그인 실패", logs };
+        }
+        log("관리 계정 HTTP 로그인 성공");
 
-        if (changeResult?.error === 'headtext_not_found') {
-            return { success: false, msg: "대상 말머리 옵션을 확인할 수 없습니다.", logs };
-        }
-        if (changeResult?.error === 'ci_token_not_found') {
-            return { success: false, msg: "관리 요청 인증 토큰을 찾을 수 없습니다.", logs };
-        }
-        const data = parseDcResponseData(changeResult?.body);
-        if (changeResult?.status !== 200 || data?.result !== 'success') {
+        const ciToken = String(liveCookies.ci_c || '');
+        if (!ciToken) return { success: false, msg: "관리 요청 인증 토큰을 찾을 수 없습니다.", logs };
+        const params = new URLSearchParams({
+            ci_t: ciToken,
+            id: normalizedGalleryId,
+            _GALLTYPE_: 'M',
+            headtext: normalizedHeadtext
+        });
+        for (const postNo of normalizedPostNos) params.append('nos[]', postNo);
+
+        const changeResult = await axios.post(
+            'https://gall.dcinside.com/ajax/minor_manager_board_ajax/chg_headtext_batch',
+            params.toString(),
+            {
+                httpsAgent: agent,
+                headers: {
+                    'User-Agent': desktopUA,
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'Accept-Language': 'ko-KR,ko;q=0.9',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Origin': 'https://gall.dcinside.com',
+                    'Referer': listUrl,
+                    'Cookie': cookieString()
+                },
+                timeout: 20000
+            }
+        );
+        mergeCookies(changeResult);
+        const data = parseDcResponseData(changeResult.data);
+        if (data?.result !== 'success') {
             return {
                 success: false,
-                msg: getDcFailureMessage(data, `말머리 변경 실패 (HTTP ${changeResult?.status || 0})`),
+                msg: getDcFailureMessage(data, "말머리 변경 실패"),
                 logs
             };
         }
@@ -1735,8 +1747,7 @@ async function doDcChangePostHeadtext(galleryId, postNos, headtext, id = null, p
         const message = getDcFailureMessage(error.response?.data, error.message);
         return { success: false, msg: `말머리 변경 오류: ${message}`, logs };
     } finally {
-        if (browser) await browser.close().catch(() => {});
-        puppeteerRunning--;
+        if (agent) agent.destroy();
     }
 }
 
@@ -5446,7 +5457,7 @@ client.on('chat', async (data, channel) => {
             channel.sendChat(`🤖 로그인하여 개추 누르는 중..`);
 
             // 추천 실행
-            const result = await doDcActionWithPuppeteer(link, 'normal', 'venus1684', 'yanga0800!');
+            const result = await doDcActionWithLogin(link, 'normal', 'venus1684', 'yanga0800!');
 
             // 결과 보고
             if (result.success) {
@@ -5517,12 +5528,12 @@ client.on('chat', async (data, channel) => {
             let successCount = 0;
             const failLogs = [];
             
-            for (let i = 0; i < selectedAccounts.length; i += PUPPETEER_MAX_CONCURRENT) {
+            for (let i = 0; i < selectedAccounts.length; i += DC_ACTION_MAX_CONCURRENT) {
                 if (i > 0) await delay(1000);
-                const chunk = selectedAccounts.slice(i, i + PUPPETEER_MAX_CONCURRENT);
+                const chunk = selectedAccounts.slice(i, i + DC_ACTION_MAX_CONCURRENT);
                 await Promise.all(chunk.map(async ([accId, accPw]) => {
                     try {
-                        const result = await doDcActionWithPuppeteer(link, 'normal', accId, accPw);
+                        const result = await doDcActionWithLogin(link, 'normal', accId, accPw);
                         if (result.success) {
                             successCount++;
                         } else {

@@ -106,6 +106,19 @@ const rpg = require('../rpgenius');
     assert.deepStrictEqual(rpg.getEquipmentTradeLimitInfo(tradeEquip), { count: 1, max: 1, remaining: 0 });
     assert.ok(rpg.getEquipmentTradeBlockReason(tradeEquip).includes('1회'));
 
+    const transcendHatId = equipment.hat.findIndex(data => data && data.rarity === '초월');
+    const equippedTradeUser = new rpg.RPGUser('초월착용거래테스트', 'transcend-equip-trade-test');
+    equippedTradeUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+    equippedTradeUser.inventory.equipment = [{ type: 'hat', id: transcendHatId, level: 0 }];
+    assert.ok(rpg.equipItemByNumber(equippedTradeUser, 1).startsWith('✅'));
+    assert.deepStrictEqual(rpg.getEquipmentTradeLimitInfo(equippedTradeUser.equipments.hat), { count: 1, max: 1, remaining: 0 });
+    assert.ok(rpg.unequipEquipmentByNumber(equippedTradeUser, 1).startsWith('✅'));
+    assert.ok(rpg.getEquipmentTradeBlockReason(equippedTradeUser.inventory.equipment[0]).includes('1회'), '한 번 착용한 초월 장비는 해제 후에도 거래할 수 없어야 한다.');
+    const scissorId = items.findIndex(item => item && item.name === '귀속 해제의 주문서');
+    rpg.addInventoryItem(equippedTradeUser, scissorId, 1);
+    assert.ok((await rpg.useItem(equippedTradeUser, '귀속 해제의 주문서', 1)).includes('귀속 해제할 장비가 없어'));
+    assert.strictEqual(rpg.getInventoryItemCount(equippedTradeUser, scissorId), 1, '착용한 초월 장비에는 주문서를 쓰지 않고 반환해야 한다.');
+
     const mythicUser = new rpg.RPGUser('신화장착테스트', 'mythic-test');
     mythicUser.main_card = { id: 0, star: 6, type: '일반' };
     mythicUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
@@ -114,13 +127,19 @@ const rpg = require('../rpgenius');
     const mythicAccessory = mythicIds.find(entry => entry.type === 'accessory');
     const mythicSupport = mythicIds.find(entry => entry.type === 'support');
     assert.ok(mythicHat && mythicShoes && mythicAccessory && mythicSupport);
-    assert.ok(rpg.getEquipmentTradeBlockReason({ type: mythicHat.type, id: mythicHat.id }).includes('거래 불가'));
+    assert.deepStrictEqual(rpg.getEquipmentTradeLimitInfo({ type: mythicHat.type, id: mythicHat.id }), { count: 0, max: 1, remaining: 1 });
+    assert.strictEqual(rpg.getEquipmentTradeBlockReason({ type: mythicHat.type, id: mythicHat.id }), null, '착용 전 신화 장비는 1회 거래할 수 있어야 한다.');
     mythicUser.inventory.equipment = [
         { type: mythicHat.type, id: mythicHat.id, level: 0 },
         { type: mythicShoes.type, id: mythicShoes.id, level: 0 }
     ];
     assert.ok(rpg.equipItemByNumber(mythicUser, 1).startsWith('✅'));
+    assert.deepStrictEqual(rpg.getEquipmentTradeLimitInfo(mythicUser.equipments.hat), { count: 1, max: 1, remaining: 0 });
+    assert.ok(rpg.getEquipmentTradeBlockReason(mythicUser.equipments.hat).includes('1회'));
     assert.ok(rpg.equipItemByNumber(mythicUser, 1).includes('1개만 장착'));
+
+    const legacyWornMythic = { type: mythicHat.type, id: mythicHat.id, boundOwner: '기존사용자' };
+    assert.deepStrictEqual(rpg.getEquipmentTradeLimitInfo(legacyWornMythic), { count: 1, max: 1, remaining: 0 }, '기존에 착용 이력이 있는 신화 장비도 영구 거래 불가로 인식해야 한다.');
 
     const mythicCrossSlotUser = new rpg.RPGUser('신화전체부위제한테스트', 'mythic-cross-slot-test');
     mythicCrossSlotUser.main_card = { id: 0, star: 6, type: '일반' };

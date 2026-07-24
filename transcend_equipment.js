@@ -35,7 +35,7 @@ function weapon(name, atk, desc, owner) {
 function armor(name, slot, def, hp, set, desc, mythic) {
     const data = {
         name, rarity: mythic ? '신화' : '초월', desc, set, armorSlot: slot,
-        stat: { def, hp }, plusStat: {}, no_trade: !!mythic,
+        stat: { def, hp }, plusStat: {},
         upgrade: Array.from({ length: 15 }, (_, i) => ({
             stat: {
                 def: Math.round(def * ARMOR_DEF_UPGRADE_RATIOS[i]),
@@ -51,7 +51,7 @@ function armor(name, slot, def, hp, set, desc, mythic) {
 function accessory(name, atk, set, desc, mythic) {
     const data = {
         name, rarity: mythic ? '신화' : '초월', desc, set,
-        stat: { atk }, plusStat: {}, no_trade: !!mythic,
+        stat: { atk }, plusStat: {},
         upgrade: [], mythic: !!mythic
     };
     if (!mythic) data.transcend = true;
@@ -62,7 +62,7 @@ function support(name, minAtk, maxAtk, set, desc, mythic) {
     const data = {
         name, rarity: mythic ? '신화' : '초월', desc, set,
         stat: { atk: minAtk }, statRange: { atk: maxAtk - minAtk }, plusStat: {},
-        no_trade: !!mythic, upgrade: [], mythic: !!mythic
+        upgrade: [], mythic: !!mythic
     };
     if (!mythic) data.transcend = true;
     return data;

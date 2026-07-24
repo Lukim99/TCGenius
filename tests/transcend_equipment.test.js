@@ -13,7 +13,7 @@ assert.strictEqual(allEntries.filter(entry => entry.data.rarity === '초월').le
 
 for (const { type, data } of allEntries) {
     assert.ok(['초월', '신화'].includes(data.rarity), `${data.name}: 잘못된 등급`);
-    assert.strictEqual(Boolean(data.no_trade), data.rarity === '신화', `${data.name}: 거래 제한 불일치`);
+    assert.strictEqual(Boolean(data.no_trade), false, `${data.name}: 착용 전 거래 가능 상태여야 한다.`);
     if (type === 'accessory' || type === 'support') {
         assert.deepStrictEqual(data.upgrade, [], `${data.name}: 장신구·보조장비에는 강화가 없어야 한다.`);
     } else {
