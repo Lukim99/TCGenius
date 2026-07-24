@@ -210,11 +210,14 @@ function createTiboXBridge(options = {}) {
     const http = options.http || axios;
     const logger = options.logger || console;
     const username = options.username || 'thsottiaux';
-    const galleryId = options.galleryId || 'agent_stack';
+    const galleryId = options.galleryId || 'ai_utilize';
     const xBearerToken = options.xBearerToken ?? process.env.X_BEARER_TOKEN;
     const geminiApiKey = options.geminiApiKey ?? process.env.GEMINI_FREE_KEY;
-    const dcId = options.dcId ?? process.env.TIBO_DC_ID;
-    const dcPassword = options.dcPassword ?? process.env.TIBO_DC_PASSWORD;
+    const dcPostPassword = options.dcPostPassword
+        ?? options.dcPassword
+        ?? process.env.TIBO_DC_POST_PASSWORD
+        ?? process.env.TIBO_DC_PASSWORD;
+    const dcGuestNickname = options.dcGuestNickname || 'Tibo';
     const adminDcId = options.adminDcId ?? process.env.ADMIN_DC_ID;
     const adminDcPassword = options.adminDcPassword
         ?? process.env.ADMIN_DC_PW
@@ -241,8 +244,7 @@ function createTiboXBridge(options = {}) {
         const missing = [];
         if (!xBearerToken) missing.push('X_BEARER_TOKEN');
         if (!geminiApiKey) missing.push('GEMINI_FREE_KEY');
-        if (!dcId) missing.push('TIBO_DC_ID');
-        if (!dcPassword) missing.push('TIBO_DC_PASSWORD');
+        if (!dcPostPassword) missing.push('TIBO_DC_POST_PASSWORD');
         if (typeof writePost !== 'function') missing.push('writePost');
         return missing;
     }
@@ -418,9 +420,13 @@ function createTiboXBridge(options = {}) {
                     galleryId,
                     pending.title,
                     pending.url,
-                    dcId,
-                    dcPassword,
-                    { headtext: '10', ogLinkUrl: pending.url }
+                    null,
+                    dcPostPassword,
+                    {
+                        headtext: '10',
+                        ogLinkUrl: pending.url,
+                        guestNickname: dcGuestNickname
+                    }
                 );
                 if (!result?.success) {
                     throw new Error(`DC 게시 실패 (${post.id}): ${result?.msg || '알 수 없는 오류'}`);
@@ -440,11 +446,6 @@ function createTiboXBridge(options = {}) {
 
             return { status: 'posted', posted, lastProcessedPostId: state.lastProcessedPostId };
         } finally {
-            try {
-                await runModerationOnce();
-            } catch (error) {
-                logger.error?.(`[dc-moderation] 처리 실패: ${error.message}`);
-            }
             running = false;
         }
     }

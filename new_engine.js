@@ -899,6 +899,8 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
     const logs = [];
     const log = (msg) => logs.push(msg);
     const isSessionError = (message, status = null) => status === 401 || /로그인|세션|login|unauthorized/i.test(String(message || ''));
+    const guestNickname = String(options?.guestNickname || '').trim();
+    const isGuestPost = Boolean(guestNickname);
     let agent = null;
 
     try {
@@ -912,21 +914,28 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
         if (typeof content !== 'string' || !content.trim()) {
             return { success: false, msg: "본문이 필요합니다.", ip: currentIp, logs };
         }
-        if (!id || !password) {
+        if (!password) {
+            return { success: false, msg: "글 비밀번호가 필요합니다.", ip: currentIp, logs };
+        }
+        if (!isGuestPost && !id) {
             return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
         }
 
-        // 1. 동일 고정 프록시에서 로그인 세션 확보 (익명글은 캡차가 필요해 로그인 계정만 지원)
+        // 1. 동일 고정 프록시에서 로그인 또는 익명 세션 확보
         agent = createDcStickyAgent();
-        const loginResult = await getDcLoginCookies(id, password, log, agent);
-        if (!loginResult.ok) {
-            return { success: false, msg: loginResult.msg, ip: currentIp, logs };
+        let initialCookies = {};
+        if (!isGuestPost) {
+            const loginResult = await getDcLoginCookies(id, password, log, agent);
+            if (!loginResult.ok) {
+                return { success: false, msg: loginResult.msg, ip: currentIp, logs };
+            }
+            initialCookies = loginResult.cookies;
         }
 
         // 2. axios + 동일 프록시 + 수동 쿠키
         const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
 
-        let liveCookies = { ...loginResult.cookies };
+        let liveCookies = { ...initialCookies };
         const mergeCookies = (res) => {
             const setCookies = res.headers?.['set-cookie'];
             if (!setCookies) return;
@@ -958,7 +967,9 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'ko-KR,ko;q=0.9',
                 'Cookie': cookieStr(),
-                'Referer': 'https://sign.dcinside.com/'
+                'Referer': isGuestPost
+                    ? `https://m.dcinside.com/board/${encodeURIComponent(normalizedGalleryId)}`
+                    : 'https://sign.dcinside.com/'
             },
             timeout: 20000
         });
@@ -988,12 +999,12 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             log("글쓰기 폼 없음 (비로그인/차단/개편 가능)");
             return { success: false, msg: "글쓰기 폼을 찾을 수 없습니다.", ip: currentIp, logs };
         }
-        if ($form.find('input[name="password"]').length) {
+        if (!isGuestPost && $form.find('input[name="password"]').length) {
             invalidateSession(id);
             log("로그인 세션이 모바일 글쓰기 페이지에 적용되지 않음");
             return { success: false, msg: "로그인 세션이 유효하지 않습니다.", ip: currentIp, logs };
         }
-        saveCachedSession(id, liveCookies);
+        if (!isGuestPost) saveCachedSession(id, liveCookies);
 
         // 브라우저가 실제로 제출하는 성공한 컨트롤만 수집한다.
         const params = new URLSearchParams(collectDcFormFields($, $form));
@@ -1006,6 +1017,17 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
         }
         params.set(subjectName, title);
         params.set(contentName, content);
+
+        if (isGuestPost) {
+            const guestNameField = $form.find('input[name="name"], input[name="gall_nickname"]').first().attr('name');
+            const guestPasswordField = $form.find('input[name="password"]').first().attr('name');
+            if (!guestNameField || !guestPasswordField) {
+                return { success: false, msg: "익명 글쓰기 필드를 찾을 수 없습니다.", ip: currentIp, logs };
+            }
+            params.set(guestNameField, guestNickname);
+            params.set(guestPasswordField, password);
+            log("유동 닉네임 적용: " + guestNickname);
+        }
 
         if (options?.headtext !== undefined && options?.headtext !== null) {
             const requestedHeadtext = String(options.headtext).trim();
@@ -1173,7 +1195,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
                 const existingPost = await findPostWithExpectedLink(existingCandidates);
                 if (existingPost) {
                     log("동일한 외부 링크 게시물 확인 (중복 작성 생략)");
-                    saveCachedSession(id, liveCookies);
+                    if (!isGuestPost) saveCachedSession(id, liveCookies);
                     return {
                         success: true,
                         msg: "이미 작성된 글입니다.",
@@ -1215,7 +1237,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
         const location = postRes.headers?.location || '';
         if (isDcWriteSuccess(data, location)) {
             const postNo = extractDcPostNo(data, location);
-            saveCachedSession(id, liveCookies);
+            if (!isGuestPost) saveCachedSession(id, liveCookies);
             return { success: true, msg: "글 작성 성공!", postNo, ip: currentIp, logs };
         }
 
@@ -1233,7 +1255,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
                 : candidates[0];
             if (verifiedPost) {
                 log("새 게시물 생성 결과 확인");
-                saveCachedSession(id, liveCookies);
+                if (!isGuestPost) saveCachedSession(id, liveCookies);
                 return { success: true, msg: "글 작성 성공!", postNo: verifiedPost.postNo, ip: currentIp, logs };
             }
         } catch (verifyError) {
@@ -12249,8 +12271,6 @@ if (require.main === module) {
     keepAlive();
     startTiboXBridge({
         writePost: doDcWritePost,
-        fetchComments: getDcPostComments,
-        changePostHeadtext: doDcChangePostHeadtext,
         stateStore: createDynamoStateStore(docClient)
     });
     if (KAKAO_AUTO_LOGIN_ENABLED) {

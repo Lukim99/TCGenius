@@ -164,8 +164,7 @@ const silentLogger = {
         stateStore,
         xBearerToken: 'x-token',
         geminiApiKey: 'gemini-key',
-        dcId: 'dc-id',
-        dcPassword: 'dc-password',
+        dcPostPassword: 'dc-password',
         now: () => '2026-07-16T00:00:00.000Z',
         writePost: async (...args) => {
             writes.push(args);
@@ -181,14 +180,15 @@ const silentLogger = {
     const posted = await bridge.runOnce();
     assert.deepStrictEqual(posted, { status: 'posted', posted: 2, lastProcessedPostId: '102' });
     assert.strictEqual(writes.length, 2);
-    assert.strictEqual(writes[0][0], 'agent_stack');
+    assert.strictEqual(writes[0][0], 'ai_utilize');
     assert.strictEqual(writes[0][1], buildDcTitle('첫 소식 요약'));
     assert.strictEqual(writes[0][2], 'https://x.com/thsottiaux/status/101');
-    assert.strictEqual(writes[0][3], 'dc-id');
+    assert.strictEqual(writes[0][3], null);
     assert.strictEqual(writes[0][4], 'dc-password');
     assert.deepStrictEqual(writes[0][5], {
         headtext: '10',
-        ogLinkUrl: 'https://x.com/thsottiaux/status/101'
+        ogLinkUrl: 'https://x.com/thsottiaux/status/101',
+        guestNickname: 'Tibo'
     });
     assert.strictEqual(writes[1][2], 'https://x.com/thsottiaux/status/102');
     assert.strictEqual(stateStore.getState().lastProcessedPostId, '102');
@@ -216,8 +216,7 @@ const silentLogger = {
         stateStore: retryStore,
         xBearerToken: 'x-token',
         geminiApiKey: 'gemini-key',
-        dcId: 'dc-id',
-        dcPassword: 'dc-password',
+        dcPostPassword: 'dc-password',
         summarize: async () => {
             summaryCalls++;
             return '재시도 제목';
@@ -487,8 +486,7 @@ const silentLogger = {
         stateStore: mergedStore,
         xBearerToken: 'x-token',
         geminiApiKey: 'gemini-key',
-        dcId: 'dc-id',
-        dcPassword: 'dc-password',
+        dcPostPassword: 'dc-password',
         adminDcId: 'admin-id',
         adminDcPassword: 'admin-password',
         writePost: async () => ({ success: true }),
@@ -500,18 +498,22 @@ const silentLogger = {
     });
     assert.deepStrictEqual(await mergedBridge.runOnce(), { status: 'idle', posted: 0 });
     assert.strictEqual(mergedTimelineCalls, 1, '한 폴링 주기에서 X 타임라인을 한 번 조회해야 한다.');
-    assert.strictEqual(mergedCommentCalls, 1, '같은 폴링 주기에서 관리 댓글 대상만 조회해야 한다.');
+    assert.strictEqual(mergedCommentCalls, 0, 'Tibo X 폴링에서 관리 댓글을 조회하면 안 된다.');
 
     const engineSource = fs.readFileSync(path.join(__dirname, '..', 'new_engine.js'), 'utf8');
     assert.ok(engineSource.includes("const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');"));
     assert.ok(engineSource.includes('stateStore: createDynamoStateStore(docClient)'));
-    assert.ok(engineSource.includes('fetchComments: getDcPostComments'));
+    assert.ok(!engineSource.includes('fetchComments: getDcPostComments'));
     assert.ok(!engineSource.includes('writeComment: doDcWriteComment'));
-    assert.ok(engineSource.includes('changePostHeadtext: doDcChangePostHeadtext'));
+    assert.ok(!engineSource.includes('changePostHeadtext: doDcChangePostHeadtext'));
     assert.ok(engineSource.includes("params.set('headtext', requestedHeadtext);"));
 
     const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'tibo_x_bridge.js'), 'utf8');
-    assert.ok(bridgeSource.includes("{ headtext: '10', ogLinkUrl: pending.url }"));
+    assert.ok(bridgeSource.includes("const galleryId = options.galleryId || 'ai_utilize'"));
+    assert.ok(bridgeSource.includes("const dcGuestNickname = options.dcGuestNickname || 'Tibo'"));
+    assert.ok(bridgeSource.includes("process.env.TIBO_DC_POST_PASSWORD"));
+    assert.ok(!bridgeSource.includes('process.env.TIBO_DC_ID'));
+    assert.ok(bridgeSource.includes('guestNickname: dcGuestNickname'));
     assert.ok(!bridgeSource.includes('runCommentOnce'));
     assert.ok(!bridgeSource.includes('DEFAULT_COMMENT_REPLY_TEXT'));
     assert.ok(bridgeSource.includes('process.env.ADMIN_DC_ID'));

@@ -260,6 +260,10 @@ assert.ok(accessIndex >= 0 && filterIndex > accessIndex && submitIndex > filterI
 assert.ok(writeSource.includes('beforePostNos'), '작성 전후 게시물 번호를 비교해야 한다.');
 assert.ok(writeSource.includes('hasDcExternalLink'), '제목이 아닌 외부 링크로 실제 작성 결과를 확인해야 한다.');
 assert.ok(writeSource.includes('allowDuplicate'), '일반 자동 게시에서는 동일 링크 중복을 막아야 한다.');
+assert.ok(writeSource.includes("const guestNickname = String(options?.guestNickname || '').trim()"), '익명 닉네임 옵션을 지원해야 한다.');
+assert.ok(writeSource.includes('if (!isGuestPost) {'), '익명 작성에서는 DC 계정 로그인을 건너뛰어야 한다.');
+assert.ok(writeSource.includes('params.set(guestNameField, guestNickname)'), '익명 닉네임을 공식 글쓰기 폼에 넣어야 한다.');
+assert.ok(writeSource.includes('params.set(guestPasswordField, password)'), '익명 글 비밀번호를 공식 글쓰기 폼에 넣어야 한다.');
 assert.ok(writeSource.includes('finally {'));
 assert.ok(writeSource.includes('agent.destroy()'), '예외가 발생해도 프록시 에이전트를 정리해야 한다.');
 
