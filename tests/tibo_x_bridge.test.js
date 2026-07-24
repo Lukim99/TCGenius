@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { buildDcHyperlinkMemo } = require('../dc_write_utils');
 const {
     DEFAULT_MODERATION_GALLERY_ID,
     DEFAULT_MODERATION_HEADTEXT,
@@ -51,6 +52,7 @@ const silentLogger = {
     assert.strictEqual(normalizePollInterval(300000), 300000);
     assert.strictEqual(buildXPostUrl('thsottiaux', '123'), 'https://x.com/thsottiaux/status/123');
     assert.strictEqual(sanitizeSummary('"Tibo: 새 Codex 기능 공개"'), '새 Codex 기능 공개');
+    assert.strictEqual(sanitizeSummary('SF 기술 개발 팀원 모집'), 'SF 기술 개발 팀 관련 소식');
     assert.strictEqual(fallbackSummary('새 기능을 공개했습니다. 자세한 내용 https://x.com/test'), '새 기능을 공개했습니다.');
     assert.ok(buildDcTitle('🚀'.repeat(30)).length <= 40, 'UTF-16 기준으로도 DC 제목 40자를 넘으면 안 된다.');
 
@@ -182,15 +184,15 @@ const silentLogger = {
     assert.strictEqual(writes.length, 2);
     assert.strictEqual(writes[0][0], 'ai_utilize');
     assert.strictEqual(writes[0][1], buildDcTitle('첫 소식 요약'));
-    assert.strictEqual(writes[0][2], 'https://x.com/thsottiaux/status/101');
+    assert.strictEqual(writes[0][2], buildDcHyperlinkMemo('https://x.com/thsottiaux/status/101'));
     assert.strictEqual(writes[0][3], null);
     assert.strictEqual(writes[0][4], 'dc-password');
     assert.deepStrictEqual(writes[0][5], {
-        headtext: '10',
-        ogLinkUrl: 'https://x.com/thsottiaux/status/101',
+        headtext: '20',
+        expectedLinkUrl: 'https://x.com/thsottiaux/status/101',
         guestNickname: 'Tibo'
     });
-    assert.strictEqual(writes[1][2], 'https://x.com/thsottiaux/status/102');
+    assert.strictEqual(writes[1][2], buildDcHyperlinkMemo('https://x.com/thsottiaux/status/102'));
     assert.strictEqual(stateStore.getState().lastProcessedPostId, '102');
     assert.strictEqual(stateStore.getState().pendingPost, null);
 

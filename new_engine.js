@@ -762,9 +762,9 @@ async function doDcActionWithLogin(targetUrl, mode = 'normal', id = null, passwo
     }
 }
 
-function createDcStickyAgent() {
+function createDcStickyAgent(port = 10000) {
     const proxyUsername = `${PROXY_CONFIG.username}__cr.kr`;
-    const proxyUrl = `http://${proxyUsername}:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:10000`;
+    const proxyUrl = `http://${proxyUsername}:${PROXY_CONFIG.password}@${PROXY_CONFIG.host}:${port}`;
     return new HttpsProxyAgent({
         proxy: proxyUrl,
         keepAlive: true,
@@ -921,8 +921,19 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             return { success: false, msg: "로그인 계정(id/password)이 필요합니다.", ip: currentIp, logs };
         }
 
+        let expectedLinkUrl = null;
+        if (options?.expectedLinkUrl || options?.ogLinkUrl) {
+            try {
+                expectedLinkUrl = normalizeDcExternalUrl(options.expectedLinkUrl || options.ogLinkUrl);
+            } catch (error) {
+                return { success: false, msg: error.message, ip: currentIp, logs };
+            }
+        }
+
         // 1. 동일 고정 프록시에서 로그인 또는 익명 세션 확보
-        agent = createDcStickyAgent();
+        const guestProxyPort = 10000 + Math.floor(Math.random() * 10001);
+        agent = createDcStickyAgent(isGuestPost ? guestProxyPort : 10000);
+        if (isGuestPost) log("익명 프록시 세션 포트: " + guestProxyPort);
         let initialCookies = {};
         if (!isGuestPost) {
             const loginResult = await getDcLoginCookies(id, password, log, agent);
@@ -1026,6 +1037,9 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             }
             params.set(guestNameField, guestNickname);
             params.set(guestPasswordField, password);
+            if ($form.find('input[name="use_gall_nickname"]').length) {
+                params.set('use_gall_nickname', '0');
+            }
             log("유동 닉네임 적용: " + guestNickname);
         }
 
@@ -1177,7 +1191,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
                         timeout: 20000
                     });
                     mergeCookies(response);
-                    if (hasDcExternalLink(cheerio.load(response.data), options.ogLinkUrl)) return candidate;
+                    if (hasDcExternalLink(cheerio.load(response.data), expectedLinkUrl)) return candidate;
                 } catch (error) {
                     log(`게시물 ${candidate.postNo} 링크 확인 실패: ${error.message}`);
                 }
@@ -1190,7 +1204,7 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             const $beforeList = await fetchGalleryList();
             beforePostNos = new Set(collectDcPostNosInList($beforeList));
 
-            if (options?.ogLinkUrl && options?.allowDuplicate !== true) {
+            if (expectedLinkUrl && options?.allowDuplicate !== true) {
                 const existingCandidates = findDcPostsInList($beforeList, null, id);
                 const existingPost = await findPostWithExpectedLink(existingCandidates);
                 if (existingPost) {
@@ -1241,16 +1255,32 @@ async function doDcWritePost(galleryId, title, content, id = null, password = nu
             return { success: true, msg: "글 작성 성공!", postNo, ip: currentIp, logs };
         }
 
+        const responseSummary = typeof data === 'string'
+            ? data.replace(/\s+/g, ' ').trim().slice(0, 500)
+            : JSON.stringify(data)?.slice(0, 500);
+        if (responseSummary) log("작성 실패 응답: " + responseSummary);
+        if (typeof data === 'string') {
+            const $failurePage = cheerio.load(data);
+            const failureTitle = $failurePage('title').first().text().replace(/\s+/g, ' ').trim();
+            const failureBody = $failurePage('body').text().replace(/\s+/g, ' ').trim().slice(0, 700);
+            const failureScript = $failurePage('script').map((index, element) => $failurePage(element).html() || '')
+                .get()
+                .find(script => /alert\s*\(|location(?:\.href|\.replace)?\s*[=(]/i.test(script));
+            if (failureTitle) log("작성 실패 페이지 제목: " + failureTitle);
+            if (failureBody) log("작성 실패 페이지 본문: " + failureBody);
+            if (failureScript) log("작성 실패 스크립트: " + failureScript.replace(/\s+/g, ' ').trim().slice(0, 700));
+        }
+
         // mupload가 성공 시 200 HTML만 반환하는 경우 새로 생긴 계정 게시물로 결과를 확인한다.
         try {
             const $afterList = await fetchGalleryList();
-            const verificationTitle = options?.ogLinkUrl ? null : title;
+            const verificationTitle = expectedLinkUrl ? null : title;
             let candidates = findDcPostsInList($afterList, verificationTitle, id);
             if (beforePostNos.size) {
                 candidates = candidates.filter(candidate => !beforePostNos.has(candidate.postNo));
             }
 
-            const verifiedPost = options?.ogLinkUrl
+            const verifiedPost = expectedLinkUrl
                 ? await findPostWithExpectedLink(candidates)
                 : candidates[0];
             if (verifiedPost) {

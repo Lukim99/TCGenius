@@ -344,6 +344,28 @@ function isDcWriteSuccess(data, location = '') {
 
     const parsed = parseDcResponseData(data);
     if (parsed === true || parsed === 'true' || parsed === 'success') return true;
+    if (typeof parsed === 'string') {
+        const metaTags = parsed.match(/<meta\b[^>]*>/gi) || [];
+        for (const tag of metaTags) {
+            if (!/\bhttp-equiv\s*=\s*(?:["']\s*)?refresh\b/i.test(tag)) continue;
+
+            const quotedContent = tag.match(/\bcontent\s*=\s*(["'])(.*?)\1/i);
+            const bareContent = tag.match(/\bcontent\s*=\s*([^\s>]+)/i);
+            const content = (quotedContent?.[2] || bareContent?.[1] || '').replace(/&amp;/gi, '&');
+            const redirectValue = content.match(/(?:^|;)\s*url\s*=\s*(.+)$/i)?.[1]?.trim();
+            if (!redirectValue) continue;
+
+            try {
+                const redirectUrl = new URL(redirectValue.replace(/^["']|["']$/g, ''), 'https://m.dcinside.com');
+                if (redirectUrl.hostname.toLowerCase() === 'm.dcinside.com'
+                    && /^\/board(?:\/|$)/i.test(redirectUrl.pathname)) {
+                    return true;
+                }
+            } catch (error) {
+                // 올바른 DC 게시판 URL이 아닌 meta refresh는 성공으로 보지 않는다.
+            }
+        }
+    }
     if (!parsed || typeof parsed !== 'object') return false;
 
     return parsed.success === true
