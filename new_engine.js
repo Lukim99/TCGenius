@@ -107,12 +107,12 @@ const ClaudeAPIKEY = process.env.CLAUDE_API_KEY;
 const DeepSeekAPIKEY = process.env.DEEPSEEK_API_KEY;
 
 const DEVICE_TYPE = "tablet";
-let DEVICE_UUID = "5606ca740cfb9cc2fe620e6d83b68a9041303bf045170d40ad6f9c4f99a21a";
+let DEVICE_UUID = "687ca63c5734e98c5ad6f47851586dbd6dfa481fbba6828cf67379f20f02da96";
 const DEVICE_NAME = "uDevice";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 // 재개할 때 배포 환경에 KAKAO_AUTO_LOGIN_ENABLED=true를 설정한다.
-const KAKAO_AUTO_LOGIN_ENABLED = String(process.env.KAKAO_AUTO_LOGIN_ENABLED || '').toLowerCase() === 'true';
+const KAKAO_AUTO_LOGIN_ENABLED = true;
 let client = new node_kakao.TalkClient();
 if (keepAlive && typeof keepAlive.setKakaoClient == 'function') keepAlive.setKakaoClient(client);
 
