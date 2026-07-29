@@ -1174,6 +1174,7 @@ function categorySection(title, children) {
 }
 
 let myName = null;
+let myGoods = null;
 let currentProfileName = null;
 let currentInventoryName = null;
 let suppressInfoSelfReset = false;
@@ -1191,7 +1192,10 @@ function renderProfile(data) {
     const isInitialOwnProfile = myName == null;
     if (myName == null) myName = data.user.name;
     $('#who').textContent = myName;
-    if (data.user.name === myName) setHeaderPoint(data.user.point);
+    if (data.user.name === myName) {
+        setHeaderPoint(data.user.point);
+        myGoods = { gold: Number(data.user.gold || 0), garnet: Number(data.user.garnet || 0) };
+    }
     $('#profileName').textContent = data.user.name;
     const pTitle = $('#profileTitle');
     if (pTitle) { const img = titleImg(data.user.title); pTitle.replaceChildren(...(img ? [img] : [])); }
@@ -3171,10 +3175,24 @@ function renderBurning(data) {
 
 const AUCTION_KIND_ICON = { 'card': '🃏', 'equipment': '⚔️', 'item': '📦', 'pet': '🐾' };
 const AUCTION_KIND_LABEL = { 'card': '카드', 'equipment': '장비', 'item': '아이템', 'pet': '펫' };
-let auctionState = { all: [], filter: 'all', me: null, query: '' };
+let auctionState = { all: [], filter: 'all', me: null, query: '', sort: 'new', currency: 'all', page: 1 };
+const AUC_SORTS = {
+    new: (a, b) => b.createdAt - a.createdAt,
+    priceAsc: (a, b) => a.unitPrice - b.unitPrice,
+    priceDesc: (a, b) => b.unitPrice - a.unitPrice,
+};
+const AUC_PAGE_SIZE = 20;
 
-function currencyText(currency, amount) {
-    return (currency === 'gold' ? '🪙 ' : '💠 ') + comma(amount);
+function renderListPager(pager, state, totalPages, rerender) {
+    if (!pager) return;
+    if (totalPages <= 1) { pager.style.display = 'none'; pager.replaceChildren(); return; }
+    pager.style.display = '';
+    const go = p => { state.page = p; rerender(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    pager.replaceChildren(
+        el('button', { disabled: state.page <= 1, onclick: () => go(state.page - 1) }, '‹ 이전'),
+        el('span', { class: 'mail-page-info' }, state.page + ' / ' + totalPages),
+        el('button', { disabled: state.page >= totalPages, onclick: () => go(state.page + 1) }, '다음 ›')
+    );
 }
 
 function currencyInline(currency, amount) {
@@ -3217,6 +3235,7 @@ function auctionCardEl(entry) {
         ),
         el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : ''))
     );
+    if (d.rarity && RARITY_COLORS[d.rarity]) node.style.setProperty('--rar', RARITY_COLORS[d.rarity]);
     return node;
 }
 
@@ -3226,17 +3245,26 @@ function renderAuctionList() {
     const filtered = auctionState.all.filter(entry => {
         if (filter === 'mine' && !entry.mine) return false;
         if (filter !== 'all' && filter !== 'mine' && entry.kind !== filter) return false;
+        if (auctionState.currency !== 'all' && entry.currency !== auctionState.currency) return false;
         if (query) {
             const hay = [entry.display && entry.display.name, entry.display && entry.display.sub, entry.sellerName].filter(Boolean).join(' ').toLowerCase();
             if (hay.indexOf(query) === -1) return false;
         }
         return true;
-    }).sort((a, b) => b.createdAt - a.createdAt);
+    }).sort(AUC_SORTS[auctionState.sort] || AUC_SORTS.new);
     if (filtered.length === 0) {
-        $('#auctionList').replaceChildren(el('div', { class: 'empty' }, query ? '검색 결과가 없습니다.' : '등록된 판매가 없습니다.'));
+        renderListPager($('#aucPager'), auctionState, 1, renderAuctionList);
+        $('#auctionList').replaceChildren(el('div', { class: 'empty' },
+            el('div', null, query ? '검색 결과가 없습니다.' : '등록된 판매가 없습니다.'),
+            query ? null : el('button', { class: 'primary', style: 'margin-top:12px', onclick: openRegisterModal }, '+ 판매 등록하기')));
         return;
     }
-    $('#auctionList').replaceChildren(...filtered.map(auctionCardEl));
+    const totalPages = Math.ceil(filtered.length / AUC_PAGE_SIZE);
+    if (auctionState.page > totalPages) auctionState.page = totalPages;
+    if (auctionState.page < 1) auctionState.page = 1;
+    const pageItems = filtered.slice((auctionState.page - 1) * AUC_PAGE_SIZE, auctionState.page * AUC_PAGE_SIZE);
+    $('#auctionList').replaceChildren(...pageItems.map(auctionCardEl));
+    renderListPager($('#aucPager'), auctionState, totalPages, renderAuctionList);
 }
 
 async function loadAuctions() {
@@ -3253,9 +3281,17 @@ async function loadAuctions() {
 $$('#aucFilter button').forEach(btn => btn.onclick = () => {
     $$('#aucFilter button').forEach(b => b.classList.toggle('on', b === btn));
     auctionState.filter = btn.dataset.filter;
+    auctionState.page = 1;
     renderAuctionList();
 });
-if ($('#aucSearch')) $('#aucSearch').addEventListener('input', e => { auctionState.query = e.target.value; renderAuctionList(); });
+$$('#aucCurrFilter button').forEach(btn => btn.onclick = () => {
+    $$('#aucCurrFilter button').forEach(b => b.classList.toggle('on', b === btn));
+    auctionState.currency = btn.dataset.curr;
+    auctionState.page = 1;
+    renderAuctionList();
+});
+if ($('#aucSearch')) $('#aucSearch').addEventListener('input', e => { auctionState.query = e.target.value; auctionState.page = 1; renderAuctionList(); });
+if ($('#aucSort')) $('#aucSort').onchange = e => { auctionState.sort = e.target.value; auctionState.page = 1; renderAuctionList(); };
 
 function showDetail(content) {
     $('#aucDetail').replaceChildren(...content);
@@ -3263,28 +3299,62 @@ function showDetail(content) {
 }
 function closeDetail() { $('#aucDetailBg').classList.remove('active'); }
 
-function openAuctionDetail(entry) {
+// 거래소 상세 모달 공용 빌더 (상점 구매 모달 패턴 재사용)
+function aucModalItemRow(entry, metaLines) {
     const d = entry.display;
-    const content = [
-        el('h3', null, d.name + (entry.count > 1 ? ' (재고 ' + comma(entry.count) + ')' : '')),
-        el('div', { class: 'sub' }, AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : '') + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : ''))
-    ];
-    content.push(auctionThumbEl(entry, { style: { maxWidth: '180px', margin: '0 auto 12px' } }));
-    if (d.statLines && d.statLines.length) d.statLines.forEach(line => content.push(el('div', { class: 'stat-line' }, line)));
+    const info = el('div', { style: 'flex:1;min-width:0' },
+        el('div', { class: 'shop-buy-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')));
+    metaLines.filter(Boolean).forEach(t => info.appendChild(el('div', { class: 'shop-buy-meta' }, t)));
+    return el('div', { class: 'shop-buy-item-row' }, auctionThumbEl(entry), info);
+}
+
+function aucModalStatBlock(d) {
+    const nodes = [];
+    if (d.statLines && d.statLines.length) d.statLines.forEach(line => nodes.push(el('div', { class: 'stat-line' }, line)));
     if (d.soul && d.soul.expiredAt) {
         const soulText = formatSoulRemaining(d.soul.expiredAt);
-        if (soulText) content.push(el('div', { class: 'stat-line', style: 'opacity:0.85;font-style:italic' }, soulText));
+        if (soulText) nodes.push(el('div', { class: 'stat-line', style: 'opacity:0.85;font-style:italic' }, soulText));
     }
-    const aucPotBlock = potentialBlockNode(d.potentialDisplay);
-    if (aucPotBlock) content.push(aucPotBlock);
-    content.push(el('div', { class: 'stat-line' }, '판매자: ' + entry.sellerName));
-    content.push(el('div', { class: 'stat-line' }, entry.kind === 'item' ? '개당 가격: ' : '가격: ', currencyNode(entry.currency, entry.unitPrice)));
-    if (entry.ticketCost > 0) content.push(el('div', { class: 'stat-line' }, '⚠️ 구매 시 거래권 ' + entry.ticketCost + '장이 소모됩니다.'));
+    const potBlock = potentialBlockNode(d.potentialDisplay);
+    if (potBlock) nodes.push(potBlock);
+    return nodes.length ? el('div', null, ...nodes) : null;
+}
+
+function aucQtyRow(label, maxQty, hint, onChange) {
+    const clamp = v => Math.max(1, Math.min(maxQty, Math.floor(Number(v) || 1)));
+    const input = el('input', { type: 'number', class: 'shop-qty-input', value: '1', min: '1', max: String(maxQty) });
+    const set = v => { input.value = v; onChange(v); };
+    input.oninput = () => set(clamp(input.value));
+    return el('div', { class: 'shop-qty-row' },
+        el('span', { class: 'shop-qty-label' }, label),
+        el('button', { class: 'shop-qty-btn', onclick: () => set(clamp(Number(input.value) - 1)) }, '−'),
+        input,
+        el('button', { class: 'shop-qty-btn', onclick: () => set(clamp(Number(input.value) + 1)) }, '+'),
+        el('span', { class: 'shop-qty-max' }, hint)
+    );
+}
+
+function openAuctionDetail(entry) {
+    const d = entry.display;
+    const body = el('div', { class: 'shop-buy-modal' });
+    body.appendChild(aucModalItemRow(entry, [
+        AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : '') + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : ''),
+        '판매자: ' + entry.sellerName
+    ]));
+    const statBlock = aucModalStatBlock(d);
+    if (statBlock) body.appendChild(statBlock);
+
+    const errBox = el('div', { class: 'reg-inline-err' });
+    const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
+    const footer = el('div', { class: 'shop-buy-footer' });
 
     if (entry.mine) {
-        content.push(el('div', { class: 'stat-line' }, '취소 시 등록한 자산이 그대로 반환됩니다.'));
-        const cancelBtn = el('button', { class: 'danger close', onclick: async () => {
-            cancelBtn.disabled = true;
+        body.appendChild(el('div', { class: 'shop-receipt' },
+            buildReceiptRow(entry.kind === 'item' ? '개당 가격' : '판매가', { goods: entry.currency }, entry.unitPrice)));
+        body.appendChild(el('div', { class: 'shop-buy-meta', style: 'text-align:center' }, '취소 시 등록한 자산이 그대로 반환됩니다.'));
+        const cancelBtn = el('button', { class: 'danger', onclick: async () => {
+            errBox.classList.remove('visible');
+            cancelBtn.disabled = true; cancelBtn.textContent = '처리 중...';
             try {
                 const r = await fetch('/api/auction/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: entry.id }) });
                 const x = await r.json();
@@ -3292,60 +3362,61 @@ function openAuctionDetail(entry) {
                 closeDetail();
                 await loadAuctions();
             } catch (e) {
-                alert(e.message);
-                cancelBtn.disabled = false;
+                showErr(e.message);
+                cancelBtn.disabled = false; cancelBtn.textContent = '판매 취소';
             }
         } }, '판매 취소');
-        content.push(cancelBtn);
+        footer.appendChild(el('button', { onclick: closeDetail }, '닫기'));
+        footer.appendChild(cancelBtn);
     } else {
-        let buyCountInput = null;
-        const totalLine = el('div', { class: 'stat-line', style: { color: '#fbbf24', fontWeight: '800' } }, '총 결제: ', currencyNode(entry.currency, entry.unitPrice));
-        const updateTotal = (count) => {
-            const total = entry.unitPrice * count;
-            const fee = Math.floor(total * 0.05);
-            totalLine.replaceChildren('총 결제: ', currencyNode(entry.currency, total), '  /  판매자 입금: ', currencyNode(entry.currency, total - fee));
+        let qty = 1;
+        const receipt = el('div', { class: 'shop-receipt' });
+        const bal = myGoods ? Number(myGoods[entry.currency] || 0) : null;
+        const updateReceipt = () => {
+            receipt.replaceChildren();
+            const total = entry.unitPrice * qty;
+            if (entry.kind === 'item') receipt.appendChild(buildReceiptRow('개당 가격', { goods: entry.currency }, entry.unitPrice));
+            if (bal != null) receipt.appendChild(buildReceiptRow('현재 보유', { goods: entry.currency }, bal));
+            receipt.appendChild(buildReceiptRow('총 결제', { goods: entry.currency }, total, 'deduct'));
+            if (bal != null) {
+                receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
+                const after = bal - total;
+                receipt.appendChild(buildReceiptRow('구매 후 잔액', { goods: entry.currency }, after, after < 0 ? 'neg' : 'result'));
+            }
         };
         if (entry.kind === 'item') {
-            content.push(el('label', null, '구매 갯수 (재고 ' + comma(entry.count) + ')'));
-            buyCountInput = el('input', { type: 'number', value: 1, min: 1, max: entry.count });
-            buyCountInput.oninput = () => {
-                let v = Math.floor(Number(buyCountInput.value || 1));
-                if (!Number.isInteger(v) || v < 1) v = 1;
-                if (v > entry.count) v = entry.count;
-                buyCountInput.value = v;
-                updateTotal(v);
-            };
-            content.push(buyCountInput);
-            updateTotal(1);
-        } else {
-            updateTotal(1);
+            body.appendChild(aucQtyRow('구매 수량', entry.count, '재고 ' + comma(entry.count), v => { qty = v; updateReceipt(); }));
         }
-        content.push(totalLine);
-        const buyBtn = el('button', { class: 'primary close', onclick: async () => {
-            const count = buyCountInput ? Math.floor(Number(buyCountInput.value || 1)) : 1;
-            const total = entry.unitPrice * count;
-            const label = entry.kind === 'item' ? (d.name + ' x' + comma(count)) : d.name;
-            if (!confirm(label + ' 을(를) ' + currencyText(entry.currency, total) + ' 에 구매하시겠습니까?')) return;
-            buyBtn.disabled = true;
+        updateReceipt();
+        body.appendChild(receipt);
+        if (entry.ticketCost > 0) body.appendChild(el('div', { class: 'stat-line', style: 'margin:0' }, '⚠️ 구매 시 거래권 ' + entry.ticketCost + '장이 소모됩니다.'));
+        const buyBtn = el('button', { class: 'primary', onclick: async () => {
+            errBox.classList.remove('visible');
+            buyBtn.disabled = true; buyBtn.textContent = '처리 중...';
             try {
-                const body = { id: entry.id };
-                if (entry.kind === 'item') body.count = count;
-                const r = await fetch('/api/auction/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const reqBody = { id: entry.id };
+                if (entry.kind === 'item') reqBody.count = qty;
+                const r = await fetch('/api/auction/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody) });
                 const x = await r.json();
                 if (!r.ok) throw new Error(x.error || '구매 실패');
                 closeDetail();
                 await loadAuctions();
                 api('/api/profile').then(renderProfile).catch(() => {});
             } catch (e) {
-                alert(e.message);
-                buyBtn.disabled = false;
+                showErr(e.message);
+                buyBtn.disabled = false; buyBtn.textContent = '구매';
             }
-        } }, '구매하기');
-        content.push(buyBtn);
+        } }, '구매');
+        footer.appendChild(el('button', { onclick: closeDetail }, '취소'));
+        footer.appendChild(buyBtn);
     }
-    const closeBtn = el('button', { onclick: closeDetail, style: { marginTop: '8px', width: '100%' } }, '닫기');
-    content.push(closeBtn);
-    showDetail(content);
+    body.appendChild(errBox);
+    body.appendChild(footer);
+    showDetail([
+        el('h3', null, d.name),
+        el('div', { class: 'sub' }, entry.mine ? '내 판매 물품' : AUCTION_KIND_LABEL[entry.kind] + ' 구매'),
+        body
+    ]);
 }
 
 // ===== 상점 =====
@@ -4042,7 +4113,7 @@ document.addEventListener('keydown', e => {
 
 // ===== 삽니다 (구매 등록) =====
 
-let buyOrderState = { all: [], filter: 'all', query: '' };
+let buyOrderState = { all: [], filter: 'all', query: '', sort: 'new', currency: 'all', page: 1 };
 
 function buyOrderCardEl(entry) {
     const d = entry.display;
@@ -4059,6 +4130,7 @@ function buyOrderCardEl(entry) {
         ),
         el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : ''))
     );
+    if (d.rarity && RARITY_COLORS[d.rarity]) node.style.setProperty('--rar', RARITY_COLORS[d.rarity]);
     return node;
 }
 
@@ -4068,17 +4140,26 @@ function renderBuyOrderList() {
     const filtered = buyOrderState.all.filter(entry => {
         if (filter === 'mine' && !entry.mine) return false;
         if (filter !== 'all' && filter !== 'mine' && entry.kind !== filter) return false;
+        if (buyOrderState.currency !== 'all' && entry.currency !== buyOrderState.currency) return false;
         if (query) {
             const hay = [entry.display && entry.display.name, entry.display && entry.display.sub, entry.buyerName].filter(Boolean).join(' ').toLowerCase();
             if (hay.indexOf(query) === -1) return false;
         }
         return true;
-    }).sort((a, b) => b.createdAt - a.createdAt);
+    }).sort(AUC_SORTS[buyOrderState.sort] || AUC_SORTS.new);
     if (filtered.length === 0) {
-        $('#buyOrderList').replaceChildren(el('div', { class: 'empty' }, query ? '검색 결과가 없습니다.' : '등록된 구매 요청이 없습니다.'));
+        renderListPager($('#boPager'), buyOrderState, 1, renderBuyOrderList);
+        $('#buyOrderList').replaceChildren(el('div', { class: 'empty' },
+            el('div', null, query ? '검색 결과가 없습니다.' : '등록된 구매 요청이 없습니다.'),
+            query ? null : el('button', { class: 'primary', style: 'margin-top:12px', onclick: openBoRegisterModal }, '+ 구매 등록하기')));
         return;
     }
-    $('#buyOrderList').replaceChildren(...filtered.map(buyOrderCardEl));
+    const totalPages = Math.ceil(filtered.length / AUC_PAGE_SIZE);
+    if (buyOrderState.page > totalPages) buyOrderState.page = totalPages;
+    if (buyOrderState.page < 1) buyOrderState.page = 1;
+    const pageItems = filtered.slice((buyOrderState.page - 1) * AUC_PAGE_SIZE, buyOrderState.page * AUC_PAGE_SIZE);
+    $('#buyOrderList').replaceChildren(...pageItems.map(buyOrderCardEl));
+    renderListPager($('#boPager'), buyOrderState, totalPages, renderBuyOrderList);
 }
 
 async function loadBuyOrders() {
@@ -4095,9 +4176,17 @@ async function loadBuyOrders() {
 $$('#boFilter button').forEach(btn => btn.onclick = () => {
     $$('#boFilter button').forEach(b => b.classList.toggle('on', b === btn));
     buyOrderState.filter = btn.dataset.filter;
+    buyOrderState.page = 1;
     renderBuyOrderList();
 });
-if ($('#boSearch')) $('#boSearch').addEventListener('input', e => { buyOrderState.query = e.target.value; renderBuyOrderList(); });
+$$('#boCurrFilter button').forEach(btn => btn.onclick = () => {
+    $$('#boCurrFilter button').forEach(b => b.classList.toggle('on', b === btn));
+    buyOrderState.currency = btn.dataset.curr;
+    buyOrderState.page = 1;
+    renderBuyOrderList();
+});
+if ($('#boSearch')) $('#boSearch').addEventListener('input', e => { buyOrderState.query = e.target.value; buyOrderState.page = 1; renderBuyOrderList(); });
+if ($('#boSort')) $('#boSort').onchange = e => { buyOrderState.sort = e.target.value; buyOrderState.page = 1; renderBuyOrderList(); };
 
 function showBoDetail(content) {
     $('#boDetail').replaceChildren(...content);
@@ -4107,19 +4196,28 @@ function closeBoDetail() { $('#boDetailBg').classList.remove('active'); }
 
 async function openBuyOrderDetail(entry) {
     const d = entry.display;
-    const content = [
-        el('h3', null, d.name + (entry.count > 1 ? ' (요청 ' + comma(entry.count) + ')' : '')),
-        el('div', { class: 'sub' }, AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : ''))
-    ];
-    content.push(auctionThumbEl(entry, { style: { maxWidth: '180px', margin: '0 auto 12px' } }));
-    if (d.statLines && d.statLines.length) d.statLines.forEach(line => content.push(el('div', { class: 'stat-line' }, line)));
-    content.push(el('div', { class: 'stat-line' }, '구매자: ' + entry.buyerName));
-    content.push(el('div', { class: 'stat-line' }, entry.kind === 'item' ? '개당 가격: ' : '가격: ', currencyNode(entry.currency, entry.unitPrice)));
+    const body = el('div', { class: 'shop-buy-modal' });
+    body.appendChild(aucModalItemRow(entry, [
+        AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : ''),
+        '구매자: ' + entry.buyerName + (entry.count > 1 ? ' · 요청 ' + comma(entry.count) + '개' : '')
+    ]));
+    const statBlock = aucModalStatBlock(d);
+    if (statBlock) body.appendChild(statBlock);
+
+    const errBox = el('div', { class: 'reg-inline-err' });
+    const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
+    const footer = el('div', { class: 'shop-buy-footer' });
+
     if (entry.mine) {
         const totalRefund = entry.unitPrice * entry.count;
-        content.push(el('div', { class: 'stat-line' }, '취소 시 미체결 분만큼 ', currencyNode(entry.currency, totalRefund), (entry.ticketCost > 0 ? ' 및 거래권 ' + (entry.ticketCost * entry.count) + '장' : '') + '이 반환됩니다.'));
-        const cancelBtn = el('button', { class: 'danger close', onclick: async () => {
-            cancelBtn.disabled = true;
+        body.appendChild(el('div', { class: 'shop-receipt' },
+            buildReceiptRow(entry.kind === 'item' ? '개당 가격' : '제시 가격', { goods: entry.currency }, entry.unitPrice),
+            el('div', { class: 'shop-receipt-divider' }),
+            buildReceiptRow('취소 시 반환 (미체결분)', { goods: entry.currency }, totalRefund, 'result')));
+        if (entry.ticketCost > 0) body.appendChild(el('div', { class: 'shop-buy-meta', style: 'text-align:center' }, '거래권 ' + (entry.ticketCost * entry.count) + '장도 함께 반환됩니다.'));
+        const cancelBtn = el('button', { class: 'danger', onclick: async () => {
+            errBox.classList.remove('visible');
+            cancelBtn.disabled = true; cancelBtn.textContent = '처리 중...';
             try {
                 const r = await fetch('/api/buyorder/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: entry.id }) });
                 const x = await r.json();
@@ -4128,158 +4226,124 @@ async function openBuyOrderDetail(entry) {
                 await loadBuyOrders();
                 api('/api/profile').then(renderProfile).catch(() => {});
             } catch (e) {
-                alert(e.message);
-                cancelBtn.disabled = false;
+                showErr(e.message);
+                cancelBtn.disabled = false; cancelBtn.textContent = '구매 등록 취소';
             }
         } }, '구매 등록 취소');
-        content.push(cancelBtn);
-    } else {
-        content.push(el('div', { class: 'loading' }, '판매 가능한 자산 확인 중...'));
-        $('#boDetail').replaceChildren(...content);
-        $('#boDetailBg').classList.add('active');
-        let fulfillable;
-        try {
-            fulfillable = await api('/api/buyorder/fulfillable?id=' + encodeURIComponent(entry.id));
-        } catch (e) {
-            content.pop();
-            content.push(el('div', { class: 'empty err' }, e.message));
-            $('#boDetail').replaceChildren(...content);
-            return;
-        }
-        content.pop();
-        renderFulfillSection(entry, fulfillable, content);
+        footer.appendChild(el('button', { onclick: closeBoDetail }, '닫기'));
+        footer.appendChild(cancelBtn);
+        body.appendChild(errBox);
+        body.appendChild(footer);
+        showBoDetail([el('h3', null, d.name), el('div', { class: 'sub' }, '내 구매 등록'), body]);
+        return;
     }
-    const closeBtn = el('button', { onclick: closeBoDetail, style: { marginTop: '8px', width: '100%' } }, '닫기');
-    content.push(closeBtn);
-    showBoDetail(content);
+
+    const loading = el('div', { class: 'loading' }, '판매 가능한 자산 확인 중...');
+    body.appendChild(loading);
+    showBoDetail([el('h3', null, d.name), el('div', { class: 'sub' }, AUCTION_KIND_LABEL[entry.kind] + ' 판매'), body]);
+    let fulfillable;
+    try {
+        fulfillable = await api('/api/buyorder/fulfillable?id=' + encodeURIComponent(entry.id));
+    } catch (e) {
+        loading.replaceWith(el('div', { class: 'empty err' }, e.message), el('button', { onclick: closeBoDetail, style: 'width:100%' }, '닫기'));
+        return;
+    }
+    loading.remove();
+    const sellBtn = renderFulfillSection(entry, fulfillable, body, errBox);
+    if (sellBtn) {
+        footer.appendChild(el('button', { onclick: closeBoDetail }, '취소'));
+        footer.appendChild(sellBtn);
+    } else {
+        footer.style.gridTemplateColumns = '1fr';
+        footer.appendChild(el('button', { onclick: closeBoDetail }, '닫기'));
+    }
+    body.appendChild(errBox);
+    body.appendChild(footer);
 }
 
-function renderFulfillSection(entry, fulfillable, content) {
+function renderFulfillSection(entry, fulfillable, body, errBox) {
     let selectedIndex = -1;
-    let sellCountInput = null;
-    const totalLine = el('div', { class: 'stat-line', style: { color: '#fbbf24', fontWeight: '800' } }, '');
-    const updateTotal = (count) => {
-        const total = entry.unitPrice * count;
+    let qty = 1;
+    const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
+    const receipt = el('div', { class: 'shop-receipt' });
+    const updateReceipt = () => {
+        const total = entry.unitPrice * qty;
         const fee = Math.floor(total * 0.05);
-        totalLine.replaceChildren('판매 시 입금: ', currencyNode(entry.currency, total - fee), ' (수수료 ', currencyNode(entry.currency, fee), ')');
+        receipt.replaceChildren(
+            buildReceiptRow('판매 대금', { goods: entry.currency }, total),
+            buildReceiptRow('수수료 (5%)', { goods: entry.currency }, fee, 'deduct'),
+            el('div', { class: 'shop-receipt-divider' }),
+            buildReceiptRow('실 입금', { goods: entry.currency }, total - fee, 'result')
+        );
     };
 
-    if (entry.kind === 'card') {
-        if (!fulfillable.cards.length) {
-            content.push(el('div', { class: 'empty' }, '조건에 맞는 보유 카드가 없습니다.'));
-            return;
-        }
-        const pick = el('div', { class: 'pick-list' });
-        fulfillable.cards.forEach(card => {
-            const row = el('div', {
-                class: 'pick-row',
-                onclick: () => {
-                    selectedIndex = card.index;
-                    Array.from(pick.children).forEach(c => c.classList.remove('on'));
-                    row.classList.add('on');
-                }
-            },
-                el('div', null, el('b', null, card.formatted), el('div', { class: 'meta' }, card.starText)),
-                card.imageUrl ? el('img', { src: card.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null
-            );
-            pick.appendChild(row);
-        });
-        content.push(el('label', null, '판매할 카드 선택'));
-        content.push(pick);
-        updateTotal(1);
-        content.push(totalLine);
-    } else if (entry.kind === 'equipment') {
-        if (!fulfillable.equipment.length) {
-            content.push(el('div', { class: 'empty' }, '조건에 맞는 보유 장비가 없습니다.'));
-            return;
-        }
-        const pick = el('div', { class: 'pick-list' });
-        fulfillable.equipment.forEach(eq => {
-            const row = el('div', {
-                class: 'pick-row',
-                onclick: () => {
-                    selectedIndex = eq.index;
-                    Array.from(pick.children).forEach(c => c.classList.remove('on'));
-                    row.classList.add('on');
-                }
-            },
-                el('div', null, el('b', null, eq.name + (eq.level > 0 ? ' +' + eq.level : '')), el('div', { class: 'meta' }, eq.rarity + ' · ' + eq.typeLabel))
-            );
-            pick.appendChild(row);
-        });
-        content.push(el('label', null, '판매할 장비 선택'));
-        content.push(pick);
-        updateTotal(1);
-        content.push(totalLine);
-    } else if (entry.kind === 'pet') {
-        if (!fulfillable.pets || !fulfillable.pets.length) {
-            content.push(el('div', { class: 'empty' }, '조건에 맞는 보유 펫이 없습니다.\n(거래 가능 횟수가 1 이상이어야 합니다)'));
-            return;
-        }
-        const pick = el('div', { class: 'pick-list' });
-        fulfillable.pets.forEach(pet => {
-            const row = el('div', {
-                class: 'pick-row',
-                onclick: () => {
-                    selectedIndex = pet.index;
-                    Array.from(pick.children).forEach(c => c.classList.remove('on'));
-                    row.classList.add('on');
-                }
-            },
-                el('div', null, el('b', null, pet.name + (pet.level > 0 ? ' +' + pet.level : '')), el('div', { class: 'meta' }, pet.rarity + ' · 거래 가능 ' + comma(pet.tradeCount) + '회'))
-            );
-            pick.appendChild(row);
-        });
-        content.push(el('label', null, '판매할 펫 선택'));
-        content.push(pick);
-        updateTotal(1);
-        content.push(totalLine);
-    } else if (entry.kind === 'item') {
+    if (entry.kind === 'item') {
         if (fulfillable.itemCount < 1) {
-            content.push(el('div', { class: 'empty' }, '판매 가능한 수량이 없습니다.'));
-            return;
+            body.appendChild(el('div', { class: 'empty' }, '판매 가능한 수량이 없습니다.'));
+            return null;
         }
         const maxSell = Math.min(fulfillable.itemCount, entry.count);
-        content.push(el('label', null, '판매 갯수 (보유 ' + comma(fulfillable.itemCount) + ' / 요청 ' + comma(entry.count) + ')'));
-        sellCountInput = el('input', { type: 'number', value: 1, min: 1, max: maxSell });
-        sellCountInput.oninput = () => {
-            let v = Math.floor(Number(sellCountInput.value || 1));
-            if (!Number.isInteger(v) || v < 1) v = 1;
-            if (v > maxSell) v = maxSell;
-            sellCountInput.value = v;
-            updateTotal(v);
-        };
-        content.push(sellCountInput);
-        updateTotal(1);
-        content.push(totalLine);
-    }
-
-    const sellBtn = el('button', { class: 'primary close', onclick: async () => {
-        const body = { id: entry.id };
-        if (entry.kind === 'item') {
-            const count = Math.floor(Number(sellCountInput.value || 1));
-            if (!Number.isInteger(count) || count < 1) return alert('판매 갯수를 입력해주세요.');
-            body.count = count;
-            if (!confirm(entry.display.name + ' x' + comma(count) + ' 을(를) 판매하시겠습니까?')) return;
-        } else {
-            if (selectedIndex < 0) return alert('판매할 ' + AUCTION_KIND_LABEL[entry.kind] + '을(를) 선택해주세요.');
-            body.index = selectedIndex;
-            if (!confirm(entry.display.name + ' 을(를) 판매하시겠습니까?')) return;
+        body.appendChild(aucQtyRow('판매 수량', maxSell, '보유 ' + comma(fulfillable.itemCount) + ' · 요청 ' + comma(entry.count), v => { qty = v; updateReceipt(); }));
+    } else {
+        const pool = entry.kind === 'card' ? (fulfillable.cards || [])
+            : entry.kind === 'equipment' ? (fulfillable.equipment || [])
+            : (fulfillable.pets || []);
+        if (!pool.length) {
+            const msg = entry.kind === 'card' ? '조건에 맞는 보유 카드가 없습니다.'
+                : entry.kind === 'equipment' ? '조건에 맞는 보유 장비가 없습니다.'
+                : '조건에 맞는 보유 펫이 없습니다.\n(거래 가능 횟수가 1 이상이어야 합니다)';
+            body.appendChild(el('div', { class: 'empty' }, msg));
+            return null;
         }
-        sellBtn.disabled = true;
+        const pick = el('div', { class: 'pick-list', style: 'margin-top:0' });
+        pool.forEach(it => {
+            let title, meta, img = null;
+            if (entry.kind === 'card') {
+                title = it.formatted; meta = it.starText;
+                img = it.imageUrl ? el('img', { src: it.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null;
+            } else if (entry.kind === 'equipment') {
+                title = it.name + (it.level > 0 ? ' +' + it.level : ''); meta = it.rarity + ' · ' + it.typeLabel;
+            } else {
+                title = it.name + (it.level > 0 ? ' +' + it.level : ''); meta = it.rarity + ' · 거래 가능 ' + comma(it.tradeCount) + '회';
+            }
+            const row = el('div', {
+                class: 'pick-row',
+                onclick: () => {
+                    selectedIndex = it.index;
+                    Array.from(pick.children).forEach(c => c.classList.remove('on'));
+                    row.classList.add('on');
+                }
+            }, el('div', null, el('b', null, title), el('div', { class: 'meta' }, meta)), img);
+            pick.appendChild(row);
+        });
+        body.appendChild(el('div', { class: 'reg-section-label', style: 'margin:0' }, '판매할 ' + AUCTION_KIND_LABEL[entry.kind] + ' 선택'));
+        body.appendChild(pick);
+    }
+    updateReceipt();
+    body.appendChild(receipt);
+
+    const sellBtn = el('button', { class: 'primary', onclick: async () => {
+        errBox.classList.remove('visible');
+        const reqBody = { id: entry.id };
+        if (entry.kind === 'item') reqBody.count = qty;
+        else {
+            if (selectedIndex < 0) return showErr('판매할 ' + AUCTION_KIND_LABEL[entry.kind] + '을(를) 선택해주세요.');
+            reqBody.index = selectedIndex;
+        }
+        sellBtn.disabled = true; sellBtn.textContent = '처리 중...';
         try {
-            const r = await fetch('/api/buyorder/fulfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const r = await fetch('/api/buyorder/fulfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody) });
             const x = await r.json();
             if (!r.ok) throw new Error(x.error || '판매 실패');
             closeBoDetail();
             await loadBuyOrders();
             api('/api/profile').then(renderProfile).catch(() => {});
         } catch (e) {
-            alert(e.message);
-            sellBtn.disabled = false;
+            showErr(e.message);
+            sellBtn.disabled = false; sellBtn.textContent = '판매하기';
         }
-    } }, '이 요청에 판매하기');
-    content.push(sellBtn);
+    } }, '판매하기');
+    return sellBtn;
 }
 
 // ===== 구매 등록 모달 =====
