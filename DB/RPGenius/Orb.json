@@ -1,0 +1,230 @@
+{
+    "orbs": [
+        {
+            "name": "대탐정F 보주",
+            "parts": ["weapon", "armor", "pants", "support"],
+            "stat": { "atk": 100 }
+        },
+        {
+            "name": "장충동왕족발보쌈 보주",
+            "parts": ["weapon", "armor", "pants", "support"],
+            "stat": { "atk": 100 }
+        },
+        {
+            "name": "멸치볶음 보주",
+            "parts": ["weapon", "armor", "pants", "support"],
+            "stat": { "atk": 75 }
+        },
+        {
+            "name": "조각 보주",
+            "parts": ["weapon", "armor", "pants", "support"],
+            "stat": { "atk": 75 }
+        },
+        {
+            "name": "아리스 보주",
+            "parts": ["weapon", "armor", "pants", "support"],
+            "stat": { "atk": 50 }
+        },
+        {
+            "name": "뉴비 보주",
+            "parts": ["hat", "shoes"],
+            "stat": { "mp": 150 }
+        },
+        {
+            "name": "현식이아버지 보주",
+            "parts": ["hat", "shoes"],
+            "stat": { "mp": 100 }
+        },
+        {
+            "name": "직장인 보주",
+            "parts": ["hat", "shoes"],
+            "stat": { "hp": 600 }
+        },
+        {
+            "name": "쌩쑈메이커 보주",
+            "parts": ["weapon"],
+            "element": "암"
+        },
+        {
+            "name": "첫 만남은 다시 guitar 보주",
+            "parts": ["weapon"],
+            "element": "수"
+        },
+        {
+            "name": "흐음 보주",
+            "parts": ["weapon"],
+            "plusStat": { "finalDamage": 0.02 }
+        },
+        {
+            "name": "눈뜬 장님 보주",
+            "parts": ["accessory"],
+            "plusStat": { "crit": 0.03 }
+        },
+        {
+            "name": "예토전생 보주",
+            "parts": ["accessory"],
+            "plusStat": { "critMul": 0.07 }
+        },
+        {
+            "name": "오로라 보주",
+            "parts": ["accessory"],
+            "stat": { "lightAtk": 80 }
+        },
+        {
+            "name": "X39825 보주",
+            "parts": ["accessory"],
+            "stat": { "fireAtk": 80 }
+        },
+        {
+            "name": "쿠마가와 미소기 보주",
+            "parts": ["accessory"],
+            "stat": { "darkAtk": 80 }
+        },
+        {
+            "name": "피아스트 보주",
+            "parts": ["accessory"],
+            "stat": { "waterAtk": 80 }
+        },
+        {
+            "name": "레인 보주",
+            "parts": ["support"],
+            "stat": { "allStat": 1 }
+        },
+        {
+            "name": "우정잉여왕 보주",
+            "parts": ["support"],
+            "stat": { "fireAtk": 60, "fireRes": 60 }
+        },
+        {
+            "name": "물장구 보주",
+            "parts": ["support"],
+            "stat": { "waterAtk": 60, "waterRes": 60 }
+        },
+        {
+            "name": "X 보주",
+            "parts": ["support"],
+            "stat": { "darkAtk": 60, "darkRes": 60 }
+        },
+        {
+            "name": "SitoSoym 보주",
+            "parts": ["support"],
+            "stat": { "pnt": 30 }
+        },
+        {
+            "name": "페비 보주",
+            "parts": ["support"],
+            "stat": { "lightAtk": 60, "lightRes": 60 }
+        },
+        {
+            "name": "수나타 보주",
+            "parts": ["support"],
+            "plusStat": { "nonElementDamage": 0.03 }
+        },
+        {
+            "name": "지오 보주",
+            "parts": ["support"],
+            "plusStat": { "crit": 0.05 }
+        },
+        {
+            "name": "우정 보주",
+            "parts": ["support"],
+            "stat": { "shieldEfficiency": 0.05 },
+            "plusStat": { "recoveryEfficiency": 0.05 }
+        },
+        {
+            "name": "블루로즈 보주",
+            "parts": ["support"],
+            "stat": { "atk": 65 }
+        },
+        {
+            "name": "레지에로 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "stat": { "allElementRes": 45 }
+        },
+        {
+            "name": "플로로 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "stat": { "darkRes": 50 }
+        },
+        {
+            "name": "유스티티아 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "takenDamage": -0.01 }
+        },
+        {
+            "name": "Ori 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "stat": { "waterRes": 50 }
+        },
+        {
+            "name": "멜론빵 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "potion": 0.05 }
+        },
+        {
+            "name": "엘리스 유 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "recoveryEfficiency": 0.05 }
+        },
+        {
+            "name": "헬로키티 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "mpReduce": -0.01 }
+        },
+        {
+            "name": "박보검 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "avd": 0.01 }
+        },
+        {
+            "name": "송예빈 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "plusStat": { "critDef": 0.01 }
+        },
+        {
+            "name": "케이티 위즈 보주",
+            "parts": ["hat", "armor", "pants", "shoes"],
+            "stat": { "hp": 300 }
+        },
+        {
+            "name": "매그내릭 보주",
+            "parts": ["weapon"],
+            "element": "명"
+        },
+        {
+            "name": "필규햄 보주",
+            "parts": ["weapon"],
+            "plusStat": { "atk": 0.05 }
+        },
+        {
+            "name": "이어브피 보주",
+            "parts": ["weapon"],
+            "element": "화"
+        },
+        {
+            "name": "황정민 보주",
+            "parts": ["weapon"],
+            "stat": { "maxCmb": 1 }
+        },
+        {
+            "name": "조디악 보주",
+            "parts": ["weapon"],
+            "plusStat": { "nonElementDamage": 0.03 }
+        },
+        {
+            "name": "클로브 보주",
+            "parts": ["weapon"],
+            "plusStat": { "pnt": 0.05 }
+        },
+        {
+            "name": "단테 보주",
+            "parts": ["weapon"],
+            "plusStat": { "cooldown": 0.05 }
+        },
+        {
+            "name": "YR 보주",
+            "parts": ["weapon"],
+            "plusStat": { "crit": 0.05 }
+        }
+    ]
+}

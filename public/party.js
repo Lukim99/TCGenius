@@ -13,6 +13,9 @@
     let localBuffTickAt = 0;
     let skillBarSig = '';
     let potionBarSig = '';
+    let bossStageSig = '';
+    let voteSig = '';
+    let supportBarSig = '';
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
     let localCdTimer = null;
@@ -136,6 +139,11 @@
         for (const m of currentRoom.members || []) {
             const buffs = m.runtime && Array.isArray(m.runtime.buffs) ? m.runtime.buffs : [];
             for (const b of buffs) b.remain = Math.max(0, Number(b.remain || 0) - dt);
+            if (m.runtime && Number(m.runtime.sealRemain || 0) > 0) m.runtime.sealRemain = Math.max(0, Number(m.runtime.sealRemain) - dt);
+        }
+        if (currentRoom.voteState) {
+            currentRoom.voteState.deadline = Math.max(0, Number(currentRoom.voteState.deadline || 0) - dt);
+            updateVoteTimer();
         }
     }
 
@@ -176,25 +184,34 @@
         const acd = Number(r.actionCdRemain || 0);
         const pcd = Number(r.potionCdRemain || 0);
         const dead = !!r.dead;
+        const seal = Number(r.sealRemain || 0);
+        const bar = $('#pqSkillBar');
+        if (bar) bar.style.opacity = seal > 0 ? '.45' : '';
+        const sealOverlay = $('#pqSealOverlay');
+        if (sealOverlay) {
+            sealOverlay.style.display = seal > 0 ? '' : 'none';
+            if (seal > 0) sealOverlay.textContent = '🔒 봉인됨 ' + seal.toFixed(1) + 's';
+        }
         $$('.pq-skill-btn[data-kind="skill"]').forEach(btn => {
             const skillName = btn.dataset.skill || '';
             const isPassive = btn.dataset.passive === '1';
             const remain = Number((r.cooldowns && r.cooldowns[skillName]) || 0);
-            const blocked = isPassive || dead || remain > 0 || acd > 0;
+            const blocked = isPassive || dead || seal > 0 || remain > 0 || acd > 0;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
-            const text = remain > 0 ? remain.toFixed(1) : (acd > 0 && !isPassive ? acd.toFixed(1) : '');
+            const text = seal > 0 && !isPassive ? ('🔒 ' + seal.toFixed(1)) : (remain > 0 ? remain.toFixed(1) : (acd > 0 && !isPassive ? acd.toFixed(1) : ''));
             if (cd) {
                 cd.textContent = text;
                 cd.style.display = text ? '' : 'none';
             }
         });
         $$('.pq-skill-btn[data-kind="potion"]').forEach(btn => {
-            btn.disabled = dead || pcd > 0;
+            btn.disabled = dead || seal > 0 || pcd > 0;
             const cd = btn.querySelector('.cd');
             if (cd) {
-                cd.textContent = pcd > 0 ? pcd.toFixed(1) : '';
-                cd.style.display = pcd > 0 ? '' : 'none';
+                const text = seal > 0 ? '🔒' : (pcd > 0 ? pcd.toFixed(1) : '');
+                cd.textContent = text;
+                cd.style.display = text ? '' : 'none';
             }
         });
     }
@@ -211,9 +228,10 @@
         const r = myMember.runtime || {};
         const acd = Number(r.actionCdRemain || 0);
         const dead = !!r.dead;
-        const blocked = dead || currentRoom.awaitingChoices || acd > 0;
+        const seal = Number(r.sealRemain || 0);
+        const blocked = dead || currentRoom.awaitingChoices || seal > 0 || acd > 0;
         btn.disabled = blocked;
-        btn.textContent = acd > 0 ? ('⏳ ' + acd.toFixed(1) + 's') : '⚔ 공격';
+        btn.textContent = seal > 0 ? ('🔒 봉인 ' + seal.toFixed(1) + 's') : (acd > 0 ? ('⏳ ' + acd.toFixed(1) + 's') : '⚔ 공격');
     }
 
     function getMyActionCooldownMs() {
@@ -412,7 +430,7 @@
                 el('div', { class: 'pq-avatar' }, (m.name || '?').slice(0, 1)),
                 el('div', null,
                     el('div', { class: 'pq-name' }, titleImg(m.title), el('span', { class: 'pq-lv' }, 'Lv.' + (m.level || 1) + ' '), m.name, tags),
-                    el('div', { class: 'pq-pos' + (m.position ? ' set' : '') }, m.position || '포지션 미선택')
+                    snap.noPositions ? null : el('div', { class: 'pq-pos' + (m.position ? ' set' : '') }, m.position || '포지션 미선택')
                 ),
                 el('div', null)
             );
@@ -421,6 +439,9 @@
     }
 
     function renderPositions(snap) {
+        const panel = $('#pqPositionPanel');
+        if (panel) panel.style.display = snap.noPositions ? 'none' : '';
+        if (snap.noPositions) return;
         const grid = $('#pqPositionGrid');
         grid.replaceChildren();
         const myMember = snap.members.find(m => m.name === me);
@@ -496,9 +517,9 @@
         if (myMember) {
             readyBtn.textContent = myMember.ready ? '준비 해제' : '준비';
             readyBtn.classList.toggle('primary', !myMember.ready);
-            readyBtn.disabled = !myMember.position;
+            readyBtn.disabled = !snap.noPositions && !myMember.position;
         }
-        const allReady = snap.members.length > 0 && snap.members.every(m => m.position && m.ready);
+        const allReady = snap.members.length > 0 && snap.members.every(m => (snap.noPositions || m.position) && m.ready);
         startBtn.style.display = isHost ? 'inline-flex' : 'none';
         startBtn.disabled = !allReady;
     }
@@ -521,18 +542,26 @@
 
         const stage = $('#pqPhaseStage');
         if (snap.state === 'cleared' || snap.state === 'failed') {
+            bossStageSig = '';
+            updateEnrageLabel(null);
             stage.replaceChildren(renderResult(snap));
         } else if (snap.phaseType === 'mob') {
+            bossStageSig = '';
+            updateEnrageLabel(null);
             if (!document.getElementById('pqMobStage')) stage.replaceChildren(renderMobStage(snap));
             else updateMobStage(snap);
         } else if (snap.phaseType === 'elite' || snap.phaseType === 'boss') {
-            if (!snap.monster) { stage.replaceChildren(); }
-            else if (!document.getElementById('pqBossStage')) stage.replaceChildren(renderBossStage(snap));
+            if (!snap.monster) { bossStageSig = ''; updateEnrageLabel(null); stage.replaceChildren(); }
+            else if (!document.getElementById('pqBossStage') || bossStageSig !== bossStageSigOf(snap.monster)) stage.replaceChildren(renderBossStage(snap));
             else updateBossStage(snap);
         } else {
+            bossStageSig = '';
+            updateEnrageLabel(null);
             stage.replaceChildren();
         }
 
+        syncVoteModal(snap);
+        renderSupportBar(snap);
         renderPlayMembers(snap);
         renderSkillBar(snap);
         renderPotionBar(snap);
@@ -574,7 +603,9 @@
         const root = $('#pqRewardList');
         root.replaceChildren();
         (rewards || []).forEach(rv => {
-            const item = rv.item || {};
+            // 부타게임은 기본 보상 여러 개 + 추가 보상 1개 → items 배열, 그 외는 단일 item
+            const list = Array.isArray(rv.items) && rv.items.length ? rv.items : (rv.item ? [rv.item] : []);
+            const item = list.find(x => x && x.bonus) || rv.item || list[0] || {};
             const thumb = el('div', { class: 'pq-reward-thumb' });
             const frameUrl = item.frameUrl || ('/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent(Number(item.rewardIndex || 0) === 1 ? '특수.png' : '아이템.png'));
             thumb.append(el('img', { class: 'frame', src: frameUrl, alt: '' }));
@@ -588,7 +619,9 @@
                 thumb,
                 el('div', { class: 'info' },
                     el('div', { class: 'owner' }, rv.name || '-'),
-                    el('div', { class: 'item' }, item.name ? item.name + (item.count > 1 ? ' x' + item.count : '') : (rv.error || '보상 없음')),
+                    list.length
+                        ? el('div', { class: 'item' }, ...list.map(it => el('div', null, (it.bonus ? '✨ ' : '') + it.name + (it.count > 1 ? ' x' + Number(it.count).toLocaleString() : ''))))
+                        : el('div', { class: 'item' }, rv.error || '보상 없음'),
                     lines.length ? el('div', { class: 'meta' }, lines.join(' · ')) : null
                 )
             ));
@@ -734,33 +767,76 @@
         }
     }
 
+    function bossStageSigOf(m) {
+        return m ? (m.name || '') + '|' + (m.image || '') : '';
+    }
+
+    // HP바 안 중앙에 들어가는 수치
+    function bossHpText(m) {
+        return Number(m.hp || 0).toLocaleString() + ' / ' + Number(m.hpMax || 0).toLocaleString();
+    }
+
+    // hpLines가 있으면 HP바 우측 끝에 남은 줄 수 "X99"
+    function bossHpLinesText(m) {
+        const lines = Number(m.hpLines || 0);
+        if (lines <= 0) return '';
+        return 'X' + Math.max(0, Math.ceil(m.hp / Math.max(1, m.hpMax) * lines));
+    }
+
+    function updateEnrageLabel(m) {
+        const node = document.getElementById('pqEnrage');
+        if (!node) return;
+        if (m && m.enraged) {
+            node.style.display = '';
+            node.classList.add('urgent');
+            node.textContent = '💢 광폭화!';
+        } else if (m && m.enrageRemain != null) {
+            const s = Math.max(0, Math.round(Number(m.enrageRemain || 0)));
+            node.style.display = '';
+            node.classList.toggle('urgent', s < 60);
+            node.textContent = '광폭화까지 ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+        } else {
+            node.style.display = 'none';
+            node.classList.remove('urgent');
+        }
+    }
+
     function renderBossStage(snap) {
         const m = snap.monster;
         if (!m) return el('div');
+        bossStageSig = bossStageSigOf(m);
         const myMember = snap.members.find(mm => mm.name === me);
         const r = myMember && myMember.runtime;
         const dead = !myMember || (r && r.dead);
         const acd = r && r.actionCdRemain ? r.actionCdRemain : 0;
-        const hasIllust = snap.questId === 'blackHodu' && snap.phaseType === 'boss';
+        const hasIllust = !!m.image;
         const wrap = el('div', { id: 'pqBossStage', class: 'pq-mob-stage' + (hasIllust ? ' has-illust' : '') });
         const boss = el('div', { class: 'pq-boss' + (hasIllust ? ' boss-illust-mode' : '') });
         boss.append(el('div', { class: 'pq-boss-head' },
-            el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : '')),
-            el('div', { id: 'pqBossHpVal', class: 'pq-boss-hpval' }, m.hp + ' / ' + m.hpMax)
+            el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : ''))
         ));
-        const hpBar = el('div', { class: 'pq-prog hp' + (hasIllust ? ' boss-hp' : '') }, el('div', { id: 'pqBossHpFill', class: 'fill' }));
+        const shieldBar = el('div', { id: 'pqBossShieldBar', class: 'pq-prog shield', style: Number(m.shieldMax || 0) > 0 ? '' : 'display:none' }, el('div', { id: 'pqBossShieldFill', class: 'fill' }));
+        shieldBar.firstChild.style.width = (Number(m.shieldMax || 0) > 0 ? (m.shield / m.shieldMax * 100) : 0) + '%';
+        boss.append(shieldBar);
+        const linesText = bossHpLinesText(m);
+        const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' + (hasIllust ? ' boss-hp' : '') },
+            el('div', { id: 'pqBossHpFill', class: 'fill' }),
+            el('div', { id: 'pqBossHpVal', class: 'pq-hp-text' }, bossHpText(m)),
+            el('div', { id: 'pqBossHpLines', class: 'pq-hp-lines', style: linesText ? '' : 'display:none' }, linesText)
+        );
         hpBar.firstChild.style.width = (m.hpMax > 0 ? (m.hp / m.hpMax * 100) : 0) + '%';
         boss.append(hpBar);
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
         boss.append(gBar);
-        boss.append(el('div', { id: 'pqBossPattern', style: m.nextPattern ? 'color:#fbbf24;font-size:12px;font-weight:800;text-align:center' : 'display:none' }, m.nextPattern || ''));
+        boss.append(el('div', { id: 'pqBossPattern', class: 'pq-boss-pattern', style: m.nextPattern ? '' : 'display:none' }, m.nextPattern || ''));
         if (hasIllust) {
             const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-boss-illust-wrap' });
-            const img = el('img', { class: 'pq-boss-illust', src: '/rpg-ui?file=' + encodeURIComponent('흑화 호두.png'), alt: '흑화 호두', draggable: 'false' });
+            const img = el('img', { id: 'pqBossIllustImg', class: 'pq-boss-illust', src: m.image, alt: m.name, draggable: 'false' });
             illustWrap.append(img);
             boss.append(illustWrap);
         }
+        updateEnrageLabel(m);
         const btn = el('button', {
             id: 'pqAttackBtn',
             class: 'pq-attack-btn',
@@ -773,6 +849,23 @@
 
     function updateBossMonster(monster) {
         if (!monster) return;
+        updateEnrageLabel(monster);
+        // 폭주 모드 등으로 일러스트/이름이 바뀌면 스테이지를 다시 그린다
+        const sig = bossStageSigOf(monster);
+        if (bossStageSig && bossStageSig !== sig && currentRoom) {
+            const stage = document.getElementById('pqPhaseStage');
+            if (stage && document.getElementById('pqBossStage')) {
+                stage.replaceChildren(renderBossStage(currentRoom));
+                return;
+            }
+        }
+        const shieldBar = document.getElementById('pqBossShieldBar');
+        const shieldFill = document.getElementById('pqBossShieldFill');
+        if (shieldBar && shieldFill) {
+            const max = Number(monster.shieldMax || 0);
+            shieldBar.style.display = max > 0 && Number(monster.shield || 0) > 0 ? '' : 'none';
+            shieldFill.style.width = (max > 0 ? Math.max(0, Math.min(100, monster.shield / max * 100)) : 0) + '%';
+        }
         const hpVal = document.getElementById('pqBossHpVal');
         const hpFill = document.getElementById('pqBossHpFill');
         const gaugeFill = document.getElementById('pqBossGaugeFill');
@@ -785,7 +878,13 @@
             bossNameEl.textContent = monster.name;
             if (stunSpan) bossNameEl.appendChild(stunSpan);
         }
-        if (hpVal) hpVal.textContent = monster.hp + ' / ' + monster.hpMax;
+        if (hpVal) hpVal.textContent = bossHpText(monster);
+        const hpLines = document.getElementById('pqBossHpLines');
+        if (hpLines) {
+            const t = bossHpLinesText(monster);
+            hpLines.textContent = t;
+            hpLines.style.display = t ? '' : 'none';
+        }
         if (hpFill) hpFill.style.width = (monster.hpMax > 0 ? (monster.hp / monster.hpMax * 100) : 0) + '%';
         if (gaugeFill) gaugeFill.style.width = (monster.gauge || 0) + '%';
         if (stun) {
@@ -814,13 +913,18 @@
             });
             row.append(el('div', { class: 'ph' },
                 el('div', { class: 'nm' }, titleImg(m.title), m.name + (m.name === me ? ' (나)' : '')),
-                el('div', { class: 'pos' }, m.position || '-')
+                snap.noPositions ? null : el('div', { class: 'pos' }, m.position || '-')
             ));
             if (r) {
                 row.append(makeHpBar(r));
                 const mp = el('div', { class: 'pq-prog mp' }, el('div', { class: 'fill' }));
                 mp.firstChild.style.width = (r.mpMax > 0 ? (r.mp / r.mpMax * 100) : 0) + '%';
                 row.append(mp);
+                const chips = [];
+                const tdu = (r.buffs || []).find(b => b.id === 'takenDamageUp');
+                if (tdu) chips.push(el('span', { class: 'pq-buff-chip', style: 'color:#fca5a5', 'data-member': m.name, 'data-buff-id': 'takenDamageUp', 'data-label': tdu.label || '받는 피해 증가' }, tdu.label || '받는 피해 증가'));
+                if (Number(r.sealRemain || 0) > 0) chips.push(el('span', { class: 'pq-buff-chip', style: 'color:#c4b5fd' }, '🔒 봉인 ' + Number(r.sealRemain).toFixed(1) + 's'));
+                if (chips.length) row.append(el('div', { class: 'pq-buff-row' }, ...chips));
             }
             grid.append(row);
         }
@@ -1038,6 +1142,66 @@
         }
     }
 
+    // ====== 공대장 지원군 스킬 ======
+    function renderSupportBar(snap) {
+        const panel = $('#pqSupportPanel');
+        if (!panel) return;
+        const skills = snap.supportSkills;
+        if (!skills || !skills.length || snap.state !== 'inProgress') {
+            supportBarSig = '';
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = '';
+        const isHost = snap.hostName === me;
+        const sig = skills.map(s => s.name).join(',') + '|' + (isHost ? '1' : '0');
+        if (sig !== supportBarSig) {
+            supportBarSig = sig;
+            const bar = $('#pqSupportSkills');
+            bar.replaceChildren();
+            for (const s of skills) {
+                const btn = el('button', {
+                    class: 'pq-skill-btn pq-support-btn',
+                    'data-support': s.name,
+                    type: 'button',
+                    disabled: true,
+                    onClick: () => useSupportSkillFlow(s.name)
+                },
+                    s.icon ? el('img', { src: s.icon, alt: s.name, style: 'width:34px;height:34px;object-fit:cover;border-radius:6px' }) : null,
+                    el('div', null, s.name)
+                );
+                if (!isHost) btn.title = '공대장만 사용할 수 있습니다.';
+                bar.append(btn);
+            }
+        }
+        updateSupportGauge();
+    }
+
+    function updateSupportGauge() {
+        const panel = $('#pqSupportPanel');
+        if (!panel || panel.style.display === 'none' || !currentRoom) return;
+        const gauge = Number(currentRoom.supportGauge || 0);
+        const ready = gauge >= 100;
+        const isHost = currentRoom.hostName === me;
+        const val = $('#pqSupportGaugeVal');
+        const fill = $('#pqSupportGaugeFill');
+        if (val) val.textContent = Math.min(100, Math.floor(gauge)) + '%' + (ready ? ' READY' : '');
+        if (fill) {
+            fill.style.width = Math.min(100, gauge) + '%';
+            fill.style.background = ready ? 'linear-gradient(90deg,#fbbf24,#f97316)' : '';
+        }
+        $$('.pq-support-btn').forEach(btn => {
+            btn.disabled = !(ready && isHost);
+            btn.style.outline = ready && isHost ? '2px solid #fbbf24' : '';
+        });
+    }
+
+    async function useSupportSkillFlow(skillName) {
+        try {
+            await api('/api/party/support-skill', { method: 'POST', body: JSON.stringify({ skill: skillName }) });
+        } catch (e) { toast(e.message); }
+    }
+
     async function useSkillFlow(skillName, sd) {
         try {
             const targetType = sd && sd.target;
@@ -1099,6 +1263,56 @@
             $('#pqTargetCancel').onclick = () => { $('#pqTargetBg').classList.remove('active'); resolve(null); };
             $('#pqTargetBg').classList.add('active');
         });
+    }
+
+    // ====== 시간제한 투표 ======
+    function syncVoteModal(snap) {
+        const bg = $('#pqVoteBg');
+        if (!bg) return;
+        const vote = snap && snap.voteState;
+        if (!vote) {
+            voteSig = '';
+            bg.classList.remove('active');
+            return;
+        }
+        const mine = snap.members.find(m => m.name === me);
+        const voted = !!(vote.votes && vote.votes[me]);
+        const dead = !mine || !mine.runtime || mine.runtime.dead;
+        const sig = vote.prompt + '|' + (vote.candidates || []).join(',') + '|' + (voted ? '1' : '0') + '|' + (dead ? '1' : '0') + '|' + Object.values(vote.votes || {}).join(',');
+        if (sig !== voteSig) {
+            voteSig = sig;
+            $('#pqVoteTitle').textContent = vote.prompt;
+            $('#pqVoteDone').style.display = voted || dead ? '' : 'none';
+            $('#pqVoteDone').textContent = dead && !voted ? '전투불능 상태에서는 투표할 수 없습니다.' : '투표 완료 — 결과를 기다리는 중...';
+            const list = $('#pqVoteList');
+            list.replaceChildren();
+            const myVote = (vote.votes || {})[me];
+            for (const name of (vote.candidates || [])) {
+                const count = Object.values(vote.votes || {}).filter(v => v === name).length;
+                const isMine = myVote === name;
+                const row = el('div', {
+                    class: 'pq-target-row pq-vote-row' + (voted || dead ? ' disabled' : '') + (isMine ? ' mine' : ''),
+                    style: (voted || dead) && !isMine ? 'opacity:.55' : '',
+                    onClick: async () => {
+                        if (voted || dead) return;
+                        try { await api('/api/party/vote', { method: 'POST', body: JSON.stringify({ target: name }) }); }
+                        catch (e) { toast(e.message); }
+                    }
+                },
+                    el('div', null, name + (name === me ? ' (나)' : ''), isMine ? el('span', { class: 'pq-vote-mine' }, '✓ 내 선택') : null),
+                    el('div', { class: 'pq-target-hp' }, el('div', { class: 'txt' }, count > 0 ? count + '표' : ''))
+                );
+                list.append(row);
+            }
+        }
+        updateVoteTimer();
+        bg.classList.add('active');
+    }
+
+    function updateVoteTimer() {
+        const node = $('#pqVoteTimer');
+        if (!node || !currentRoom || !currentRoom.voteState) return;
+        node.textContent = '남은 시간 ' + Math.max(0, Number(currentRoom.voteState.deadline || 0)).toFixed(1) + 's';
     }
 
     function openChoiceModal(choices) {
@@ -1175,6 +1389,7 @@
                         currentRoom.monster = t.monster || currentRoom.monster;
                         if (typeof t.tauntTarget !== 'undefined') currentRoom.tauntTarget = t.tauntTarget;
                         if (typeof t.tauntRemain !== 'undefined') currentRoom.tauntRemain = t.tauntRemain;
+                        if (typeof t.supportGauge !== 'undefined') { currentRoom.supportGauge = t.supportGauge; updateSupportGauge(); }
                         localBuffTickAt = now;
                         if ((currentRoom.phaseType === 'elite' || currentRoom.phaseType === 'boss') && document.getElementById('pqBossStage')) {
                             updateBossMonster(currentRoom.monster);

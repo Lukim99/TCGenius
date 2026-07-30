@@ -112,6 +112,33 @@
       "name": "흑두 익스트림",
       "description": "흑화 호두 (익스트림) 파티 퀘스트 1회 클리어",
       "stat": { "hp": 1000 }
+    },
+    {
+      "id": "butaFirstClear",
+      "name": "타보자고",
+      "description": "부타게임 파티 퀘스트 1회 클리어",
+      "condition": { "progressKey": "butaClears", "count": 1 },
+      "stat": { "atk": 20 },
+      "plusStat": { "bossDmg": 0.06 }
+    },
+    {
+      "id": "butaTribe",
+      "name": "부타족",
+      "description": "부타게임 파티 퀘스트 5회 클리어",
+      "condition": { "progressKey": "butaClears", "count": 5 },
+      "plusStat": { "bossDmg": 0.10 }
+    },
+    {
+      "id": "rainDefender",
+      "name": "나는 레인 수비해",
+      "description": "???",
+      "plusStat": { "butagamePartyQuestDmg": 0.05 }
+    },
+    {
+      "id": "mzStaffBbangGyul",
+      "name": "MZ사원",
+      "description": "???",
+      "plusStat": { "afterSkill": 0.03 }
     }
   ]
 }

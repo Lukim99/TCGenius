@@ -2608,6 +2608,20 @@ server.post('/api/party/pick-skill', requirePartyQuest, (req, res) => {
     res.json(out);
 });
 
+server.post('/api/party/vote', requirePartyQuest, (req, res) => {
+    const target = String((req.body && req.body.target) || '').trim();
+    const out = partyquest.castVote(req.session.name, target);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/support-skill', requirePartyQuest, (req, res) => {
+    const skill = String((req.body && req.body.skill) || '').trim();
+    const out = partyquest.useSupportSkill(req.session.name, skill);
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
 server.post('/api/party/chat', requirePartyQuest, (req, res) => {
     const text = String((req.body && req.body.text) || '');
     const out = partyquest.chat(req.session.name, text);
@@ -2640,11 +2654,12 @@ server.get('/item-image', requireUser, (req, res) => {
 
 const RPG_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui');
 
+// 하위 폴더(예: '부타게임/타부자고.png')도 허용. 경로 이탈은 '..' 차단 + 해석 경로 검사로 막는다.
 server.get('/rpg-ui', requireUser, (req, res) => {
     const file = String(req.query.file || '');
-    if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
-    const filePath = path.join(RPG_UI_PATH, file);
-    if (!filePath.startsWith(RPG_UI_PATH) || !fs.existsSync(filePath)) return res.status(404).end();
+    if (!file || file.includes('..')) return res.status(400).end();
+    const filePath = path.resolve(RPG_UI_PATH, file);
+    if (!filePath.startsWith(RPG_UI_PATH + path.sep) || !fs.existsSync(filePath)) return res.status(404).end();
     res.sendFile(filePath);
 });
 
@@ -3377,7 +3392,9 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
-    return getItemImageUrl(String(item.type), String(item.name) + '.png');
+    // 보주는 type이 '사용'(use 디스패치용)이지만 이미지는 itemImage/보주/에 있다
+    const dir = item.use == '보주' ? '보주' : String(item.type);
+    return getItemImageUrl(dir, String(item.name) + '.png');
 }
 
 function getEquipmentIconUrl(data) {
@@ -3658,6 +3675,7 @@ function buildInventoryEquipment(user) {
         const level = Number(equip.level || 0);
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
+        rpgenius.formatOrbLines(equip && equip.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         if (data.desc) statLines.push('고유 옵션: ' + data.desc);
         if (data.set && data.setEffects) {
             statLines.push('세트 효과 · ' + data.set);
@@ -4406,6 +4424,7 @@ function serializeAuctionEntry(entry, currentUserName) {
         if (data) {
             const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            rpgenius.formatOrbLines(entry.payload && entry.payload.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         }
         const potential = entry.payload && entry.payload.potential;
         if (potential) {
@@ -4482,6 +4501,7 @@ function buildSellableAssets(user) {
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            rpgenius.formatOrbLines(eq.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             const potentialDisplay = eq.potential ? {
                 tierKey: rpgenius.getPotentialRarityKey(eq.potential.rarity),
                 tierLabel: rpgenius.getPotentialRarityLabel(eq.potential.rarity),
@@ -5210,6 +5230,7 @@ function buildFulfillableAssets(user, entry) {
             const level = Number(eq.level || 0);
             const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+            rpgenius.formatOrbLines(eq.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             result.equipment.push({
                 index,
@@ -5258,7 +5279,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '기본', keys: ['atk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
-    { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'extraDamage', 'dotDamage', 'skillTrueDmg'] },
+    { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'extraDamage', 'dotDamage', 'skillTrueDmg', 'nonElementDamage'] },
     { title: '속성', keys: ['allElementAtk', 'allElementRes', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk', 'fireRes', 'waterRes', 'lightRes', 'darkRes'] },
     { title: '생존 · 유틸', keys: ['avd', 'takenDamage', 'recoveryEfficiency', 'potion', 'mpReduce', 'skillCooldown', 'cooldown', 'summonDuration'] },
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
@@ -5269,6 +5290,7 @@ const PROFILE_STAT_LABELS = {
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
     eliteDmg: '엘리트 추가 피해', bossDmg: '보스 추가 피해', finalDamage: '최종 피해', extraDamage: '추가 피해', dotDamage: '지속 피해',
+    nonElementDamage: '[무]속성 공격 피해',
     butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해",
     fireAtk: '[화]속성 강화', waterAtk: '[수]속성 강화', lightAtk: '[명]속성 강화', darkAtk: '[암]속성 강화',
     fireRes: '[화]속성 저항', waterRes: '[수]속성 저항', lightRes: '[명]속성 저항', darkRes: '[암]속성 저항',
@@ -6585,7 +6607,6 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-boss{display:flex;flex-direction:column;gap:8px;padding:14px;background:linear-gradient(180deg,rgba(127,29,29,.35),rgba(2,6,23,.7));border:1px solid rgba(239,68,68,.35);border-radius:14px}
 .pq-boss-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .pq-boss-name{font-weight:900;font-size:16px;color:#fecaca;letter-spacing:.02em}
-.pq-boss-hpval{font-variant-numeric:tabular-nums;font-size:12px;color:#fecaca}
 .pq-prog{position:relative;height:14px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.18)}
 .pq-prog .fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:999px;transition:width .15s linear}
 .pq-prog.hp .fill{background:linear-gradient(90deg,#dc2626,#f97316)}
@@ -6696,6 +6717,56 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
 .pq-back:hover{color:#e5e7eb}
 .pq-bar{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .pq-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* ===== 전투 화면 시인성 + PC 와이드 레이아웃 ===== */
+#pqPlayMembers{display:flex;flex-direction:column;gap:6px}
+#pqActionRow{display:flex;flex-direction:column;gap:12px}
+/* 광폭화 타이머 */
+.pq-enrage{margin-left:auto;color:#f87171;font-weight:900;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap;text-shadow:0 0 12px rgba(248,113,113,.45)}
+.pq-enrage.urgent{color:#fecaca;animation:pqEnragePulse 1s ease-in-out infinite}
+@keyframes pqEnragePulse{0%,100%{opacity:1}50%{opacity:.45}}
+/* 보스 HP바 — 수치는 바 안 중앙, 남은 줄 수는 우측 끝 */
+.pq-prog.pq-boss-hpbar{height:24px}
+.pq-hp-text{position:absolute;inset:0;display:grid;place-items:center;z-index:2;pointer-events:none;font-size:11.5px;font-weight:900;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
+.pq-hp-lines{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2;pointer-events:none;font-size:11.5px;font-weight:900;color:#fde047;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
+/* 보호막 게이지 */
+.pq-prog.shield{height:8px;border-color:rgba(226,232,240,.45)}
+.pq-prog.shield .fill{background:linear-gradient(90deg,#fff,#cbd5e1);box-shadow:0 0 8px rgba(255,255,255,.45)}
+/* 패턴 문구 바 */
+.pq-boss-pattern{width:100%;padding:7px 10px;border-radius:8px;background:rgba(0,0,0,.72);border:1px solid rgba(251,191,36,.35);color:#fde047;font-size:12.5px;font-weight:800;letter-spacing:.02em;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+/* 봉인 오버레이 */
+#pqSkillPanel{position:relative}
+.pq-seal-overlay{position:absolute;inset:0;z-index:5;display:grid;place-items:center;border-radius:14px;background:rgba(2,6,23,.74);color:#ddd6fe;font-size:15px;font-weight:900;letter-spacing:.04em;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none}
+/* 투표 모달 */
+.pq-vote-timer{font-size:26px;font-weight:900;color:#f87171;text-align:center;font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(248,113,113,.4)}
+.pq-vote-row{padding:14px 16px;border-radius:14px;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.22);font-weight:800;font-size:14px;transition:border-color .12s,transform .12s}
+.pq-vote-row:hover{transform:translateY(-1px)}
+.pq-vote-row.mine{border-color:#5865f2;background:rgba(88,101,242,.18);box-shadow:0 0 0 1px rgba(88,101,242,.45) inset}
+.pq-vote-mine{margin-left:8px;color:#a5b4fc;font-size:11px;font-weight:800}
+/* 파티원 미니 그리드 — 모바일 2×2 */
+.pq-party-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* ===== 데스크톱 와이드 (play 스크린만 재배치) ===== */
+@media (min-width:900px) and (min-height:700px){
+  .frame{width:min(1040px,100vw);height:min(960px,100dvh);border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(148,163,184,.1) inset}
+  .pq-screen[data-screen="lobby"],.pq-screen[data-screen="room"]{max-width:460px;width:100%;margin-inline:auto}
+  #pqPhaseTop{position:relative;min-height:26px}
+  .pq-enrage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin-left:0;font-size:19px}
+  .pq-boss-head{order:-2}
+  .pq-boss-illust-wrap{order:-1;height:320px}
+  .pq-prog.pq-boss-hpbar{height:30px}
+  .pq-hp-text,.pq-hp-lines{font-size:14px}
+  .pq-boss-pattern{padding:9px 12px;font-size:14px}
+  .pq-attack-btn{height:72px;font-size:20px}
+  #pqActionRow{flex-direction:row-reverse;align-items:flex-start}
+  #pqSkillPanel{flex:1;min-width:0}
+  #pqSupportPanel{flex:none;width:250px}
+  .pq-combat-hud{order:5;position:static}
+  #pqPlayMembers{flex-direction:row;align-items:stretch;gap:8px}
+  .pq-party-mini-grid{flex:1;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}
+  .pq-party-mini .ph{font-size:12px}
+  .pq-party-mini .ph .pos{font-size:11px}
+  .pq-my-hp{flex:0 0 260px;margin-top:0}
+  #pqPlayChatPanel,#pqCombatLog,.pq-screen[data-screen="play"] .pq-actions{order:6}
+}
 </style></head><body>
 <div class="frame" id="frame">
   <div class="pq-header">
@@ -6726,7 +6797,7 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
         <div class="pq-section-title" style="margin:0">파티원</div>
         <div id="pqMemberList" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
-      <div class="pq-panel">
+      <div class="pq-panel" id="pqPositionPanel">
         <div class="pq-section-title" style="margin:0">포지션 선택</div>
         <div id="pqPositionGrid" class="pq-position-grid"></div>
         <div id="pqPositionDetail" class="pq-stat-list" style="display:none"></div>
@@ -6756,20 +6827,31 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
       <div id="pqPhaseTop" class="pq-bar" style="margin-top:-2px">
         <div style="font-size:11px;color:#94a3b8;letter-spacing:.06em;font-weight:800;text-transform:uppercase" id="pqPhaseLabel">PHASE</div>
         <div style="color:#a5b4fc;font-weight:800;font-size:13px" id="pqPhaseName">-</div>
+        <div class="pq-enrage" style="display:none" id="pqEnrage"></div>
       </div>
       <div class="pq-combat-hud">
-        <div id="pqPlayMembers" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div id="pqPlayMembers"></div>
       </div>
       <div id="pqPhaseStage"></div>
-      <div class="pq-panel" style="padding:10px;gap:8px">
-        <div class="pq-section-title" style="margin:0">내 스킬</div>
-        <div id="pqSkillBar" class="pq-skill-bar"></div>
+      <div id="pqActionRow">
+        <div class="pq-panel" id="pqSupportPanel" style="display:none;padding:10px;gap:8px">
+          <div class="pq-section-title" style="margin:0;display:flex;justify-content:space-between;align-items:center">
+            <span>지원군 스킬</span><span id="pqSupportGaugeVal" style="color:#fbbf24;font-weight:800">0%</span>
+          </div>
+          <div class="pq-prog gauge"><div id="pqSupportGaugeFill" class="fill" style="width:0%"></div></div>
+          <div id="pqSupportSkills" class="pq-skill-bar"></div>
+        </div>
+        <div class="pq-panel" id="pqSkillPanel" style="padding:10px;gap:8px">
+          <div class="pq-section-title" style="margin:0">내 스킬</div>
+          <div id="pqSkillBar" class="pq-skill-bar"></div>
+          <div id="pqSealOverlay" class="pq-seal-overlay" style="display:none"></div>
+        </div>
       </div>
       <div class="pq-panel" style="padding:10px;gap:8px">
         <div class="pq-section-title" style="margin:0">휴대 물약</div>
         <div id="pqPotionBar" class="pq-skill-bar"></div>
       </div>
-      <div class="pq-panel" style="padding:10px;gap:8px">
+      <div class="pq-panel" id="pqPlayChatPanel" style="padding:10px;gap:8px">
         <div class="pq-section-title" style="margin:0">채팅</div>
         <div id="pqPlayChat" class="pq-chat"></div>
         <form id="pqPlayChatForm" class="pq-chat-form">
@@ -6828,6 +6910,15 @@ body{background:#000;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,
       <h3>스킬 선택</h3>
       <div style="font-size:12px;color:#94a3b8">페이즈 보상으로 1개를 습득합니다.</div>
       <div id="pqChoiceList" class="pq-choice-grid"></div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqVoteBg">
+    <div class="pq-modal">
+      <h3 id="pqVoteTitle">투표</h3>
+      <div class="pq-vote-timer" id="pqVoteTimer"></div>
+      <div id="pqVoteList" class="pq-target-list"></div>
+      <div style="font-size:12px;color:#94a3b8;display:none" id="pqVoteDone">투표 완료 — 결과를 기다리는 중...</div>
     </div>
   </div>
 

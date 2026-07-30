@@ -39,6 +39,7 @@ const TITLES_PATH = path.join(__dirname, 'DB', 'RPGenius', 'titles.json');
 const TITLE_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '칭호');
 const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json');
 const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
+const ORB_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Orb.json');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -644,7 +645,7 @@ function formatStatValue(key, value) {
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
         'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
-        'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%',
+        'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%', 'nonElementDamage%',
         'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%',
         'ultimateDamage%', 'elementalExtraDamage%', 'burnDamage%', 'lightFinalDamage%',
         'attackBuffEfficiency', 'shieldEfficiency', 'critLightBonus', 'nonCritLightBonus',
@@ -782,6 +783,7 @@ const EQUIP_STAT_LABELS = {
     darkRes: '[암]속성 저항',
     allElementAtk: '모든 속성 강화',
     allElementRes: '모든 속성 저항',
+    allStat: '올스탯',
     attackBuffEfficiency: '공격력 증가 효과 효율',
     shieldEfficiency: '보호막 효율',
     ultimateCooldownFlat: '궁극기 쿨타임 감소',
@@ -825,6 +827,7 @@ const EQUIP_PLUSSTAT_LABELS = {
     damageBonus: '일반 몬스터에게 주는 피해 증가',
     finalDamage: '최종 피해',
     extraDamage: '추가 피해',
+    nonElementDamage: '[무]속성 공격 피해',
     ultimateDamage: '궁극기 스킬 피해',
     elementalExtraDamage: '속성 공격 추가 피해',
     burnDamage: '화상 피해',
@@ -1039,8 +1042,11 @@ function getEquipItemElement(user, type, equip) {
     if (!equip || typeof equip.id == 'undefined') return null;
     const data = getEquipmentData(type, equip.id);
     if (!data || !isEquipmentEffectActive(user, data)) return null;
+    // 속성 부여 보주(무기 전용)는 강화 스탯 판정보다 우선한다
+    if (type == 'weapon' && equip.orb && equip.orb.element && ELEMENT_ATK_KEYS[equip.orb.element]) return equip.orb.element;
     const s = {};
     addStats(s, getEquipmentStatsAtLevel(data, equip.level));
+    addOrbStats(s, {}, equip.orb);
     if (type == 'support') {
         const resolved = resolveRolledStats(data, Number(equip.level || 0), equip.rolled);
         addStats(s, resolved.stat || {});
@@ -1461,6 +1467,62 @@ function applySoulToEquipment(user, numberArg) {
     const soulStatText = formatEquipmentStatLines({ stat: slot.stat || {}, plusStat: slot.plusStat || {} });
     if (soulStatText) lines.push('', '[ 영혼 효과 ]', ...String(soulStatText).split('\n').filter(Boolean));
     return lines.join('\n');
+}
+
+function getOrbTargets(user, orbData) {
+    const parts = Array.isArray(orbData && orbData.parts) ? orbData.parts : [];
+    return getAllUserEquipments(user)
+        .map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            if (!parts.includes(type)) return null;
+            const equipment = getEquipmentData(type, entry.equip.id);
+            if (!equipment) return null;
+            return { number: index + 1, entry, type, equipment };
+        })
+        .filter(Boolean);
+}
+
+function formatOrbTargetList(targets) {
+    const lines = ['[ 보주 부여 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const lvl = Number(target.entry.equip.level || 0);
+        const lockMark = target.entry.equip.locked ? ' 🔒' : '';
+        const equippedMark = target.entry.source == 'equipped' ? ' (장착)' : '';
+        const orbMark = target.entry.equip.orb ? ' [' + (target.entry.equip.orb.name || '보주') + ']' : '';
+        lines.push('[' + target.number + '] <' + target.equipment.rarity + '> ' + getEquipmentDisplayName(target.equipment, target.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + equippedMark + lockMark + orbMark);
+    });
+    return lines.join('\n');
+}
+
+// 장비당 보주 1개. 이미 부여된 장비를 고르면 확인 단계를 거쳐 교체한다
+function applyOrbToEquipment(user, numberArg, confirmed) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '보주부여') return '❌ 진행 중인 보주 사용이 없습니다.';
+    const orbData = findOrbByName(pending.orbName);
+    if (!orbData) { user.pendingAction = null; return '❌ 보주 데이터가 잘못되었습니다.'; }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [장비번호]';
+    const selected = getAllUserEquipments(user)[number - 1];
+    if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
+    const type = selected.equip.type || selected.type;
+    if (!(orbData.parts || []).includes(type)) return '❌ ' + orbData.name + '을(를) 부여할 수 없는 부위입니다.';
+    const equipment = getEquipmentData(type, selected.equip.id);
+    if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
+    const lvl = Number(selected.equip.level || 0);
+    const title = '<' + equipment.rarity + '> ' + getEquipmentDisplayName(equipment, selected.equip) + (lvl > 0 ? ' +' + lvl : '');
+    if (selected.equip.orb && !confirmed) {
+        pending.equipNumber = number;
+        return ['❗ 이미 보주가 부여된 장비입니다. 교체하시겠습니까?', '- 대상: ' + title, '']
+            .concat(formatOrbLines(selected.equip.orb))
+            .concat(['', '기존 보주는 사라집니다.', '/RPGenius 확인', '/RPGenius 사용취소']).join('\n');
+    }
+    const orb = { name: orbData.name };
+    if (orbData.stat) orb.stat = Object.assign({}, orbData.stat);
+    if (orbData.plusStat) orb.plusStat = Object.assign({}, orbData.plusStat);
+    if (orbData.element) orb.element = orbData.element;
+    selected.equip.orb = orb;
+    user.pendingAction = null;
+    return ['✨ ' + orbData.name + '을(를) 부여했습니다.', '- 대상: ' + title, ''].concat(formatOrbLines(orb)).join('\n');
 }
 
 function getPotentialAwakenTargets(user, tier) {
@@ -1932,6 +1994,36 @@ function addSoulStats(stat, plusStat, soul) {
     if (!soul || isSoulExpired(soul)) return;
     addStats(stat, soul.stat || {});
     addStats(plusStat, soul.plusStat || {});
+}
+
+// 보주는 만료가 없다(영구). allStat(올스탯)은 표시 전용 키라 여기서 atk/def/hp/mp로 풀어 넣는다
+function addOrbStats(stat, plusStat, orb) {
+    if (!orb) return;
+    const orbStat = Object.assign({}, orb.stat || {});
+    const allStat = Number(orbStat.allStat || 0);
+    delete orbStat.allStat;
+    if (allStat) ['atk', 'def', 'hp', 'mp'].forEach(key => { orbStat[key] = Number(orbStat[key] || 0) + allStat; });
+    addStats(stat, orbStat);
+    addStats(plusStat, orb.plusStat || {});
+}
+
+function getOrbData() {
+    const data = readJson(ORB_PATH, {});
+    return Array.isArray(data.orbs) ? data.orbs : [];
+}
+
+function findOrbByName(name) {
+    const target = String(name || '').trim();
+    return getOrbData().find(orb => orb && orb.name == target) || null;
+}
+
+function formatOrbLines(orb) {
+    if (!orb) return [];
+    const lines = ['[ 보주 ] ' + (orb.name || '')];
+    if (orb.element) lines.push('- [' + orb.element + ']속성 부여');
+    const statText = formatEquipmentStatLines({ stat: orb.stat || {}, plusStat: orb.plusStat || {} });
+    if (statText) String(statText).split('\n').filter(Boolean).forEach(line => lines.push(line));
+    return lines;
 }
 
 function cleanupExpiredSouls(user) {
@@ -3010,6 +3102,7 @@ function calculateUserStats(user, _out) {
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, entry[1].level));
             addPotentialStats(stats, plusStats, entry[1].potential);
             addSoulStats(stats, plusStats, entry[1].soul);
+            addOrbStats(stats, plusStats, entry[1].orb);
         }
     });
     const accessories = user.equipments && user.equipments.accessory || {};
@@ -3020,6 +3113,7 @@ function calculateUserStats(user, _out) {
             addStats(stats, getEquipmentStatsAtLevel(data, equip.level));
             addStats(plusStats, getEquipmentPlusStatsAtLevel(data, equip.level));
             addPotentialStats(stats, plusStats, equip.potential);
+            addOrbStats(stats, plusStats, equip.orb);
         }
     });
     getEquippedPets(user).forEach(pet => {
@@ -3046,6 +3140,7 @@ function calculateUserStats(user, _out) {
             addStats(stats, resolved.stat);
             addStats(plusStats, resolved.plusStat);
             addPotentialStats(stats, plusStats, support.potential);
+            addOrbStats(stats, plusStats, support.orb);
             const dyn = getEquipmentDynamicBonusAtLevel(data, level);
             const star = String(Number(user.main_card && user.main_card.star || 0));
             if (dyn[star]) {
@@ -3079,7 +3174,7 @@ function calculateUserStats(user, _out) {
         if (Number(plusStats[key] || 0) != 0) stats[key] = Math.round(Number(stats[key] || 0) * (1 + Number(plusStats[key] || 0)));
     });
     stats.pntPercent = Number(stats.pntPercent || 0) + Number(plusStats.pnt || 0);
-    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg', 'butagamePartyQuestDmg', 'ultimateDamage', 'elementalExtraDamage', 'burnDamage', 'lightFinalDamage'].forEach(key => {
+    ['gold', 'potion', 'afterBasic', 'avd', 'afterSkill', '000', 'exp', 'eliteDmg', 'mpReduce', 'itemDropChance', 'recoveryEfficiency', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb', 'skillCooldown', 'skillTrueDmg', 'takenDamage', 'damageBonus', 'finalDamage', 'extraDamage', 'bossDmg', 'summonDuration', 'cooldown', 'dotDamage', 'waldolandDmg', 'butagamePartyQuestDmg', 'ultimateDamage', 'elementalExtraDamage', 'burnDamage', 'lightFinalDamage', 'nonElementDamage'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(plusStats[key] || 0);
     });
     const slotEffects = calculateCardSlotEffects(user);
@@ -3544,7 +3639,10 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         if (extra && typeof extra.beforeAttackUnit == 'function') extra.beforeAttackUnit({ unitIndex, hitIndex: i, isFixedMultiHit, hitExtra });
         const hitStats = Object.assign({}, stats || {});
         ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
-        const elementMul = getElementDamageMultiplier(hitExtra.attackElement, hitStats, defenderStats);
+        // 무속성 공격일 때만 [무]속성 공격 피해가 적용된다 (속성 배수 자리에 곱연산)
+        const elementMul = hitExtra.attackElement
+            ? getElementDamageMultiplier(hitExtra.attackElement, hitStats, defenderStats)
+            : 1 + Number(hitStats.nonElementDamage || 0);
         const lightMul = getElementDamageMultiplier('명', hitStats, defenderStats);
         const darkMul = getElementDamageMultiplier('암', hitStats, defenderStats);
         let hitBonusMul = Number(hitExtra.damageBonusMul || 0);
@@ -6947,7 +7045,7 @@ const SUPPORT_PLUS_STAT_LABELS = {
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
     skillTrueDmg: '스킬 사용 시 추가 고정 피해',
     takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
-    finalDamage: '최종 피해', extraDamage: '추가 피해',
+    finalDamage: '최종 피해', extraDamage: '추가 피해', nonElementDamage: '[무]속성 공격 피해',
     ultimateDamage: '궁극기 스킬 피해', elementalExtraDamage: '속성 공격 추가 피해',
     burnDamage: '화상 피해', lightFinalDamage: '명속성 공격 최종 피해',
     summonDuration: '소환 지속시간', cooldown: '쿨타임 감소',
@@ -6970,6 +7068,8 @@ function formatEquippedEquipmentDetail(label, type, equip, user) {
     }
     const soulRemaining = formatSoulRemainingText(equip && equip.soul);
     if (soulRemaining) out += '\n' + soulRemaining;
+    const orbLines = formatOrbLines(equip && equip.orb);
+    if (orbLines.length > 0) out += '\n' + orbLines.join('\n');
     const potentialLines = formatPotentialLines(equip && equip.potential);
     if (potentialLines.length > 0) out += '\n' + potentialLines.join('\n');
     if (type == 'support' && user && user.main_card) {
@@ -9242,7 +9342,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
         skillTrueDmg: '스킬 사용 시 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '일반 몬스터에게 주는 피해 증가',
-        finalDamage: '최종 피해', extraDamage: '추가 피해',
+        finalDamage: '최종 피해', extraDamage: '추가 피해', nonElementDamage: '[무]속성 공격 피해',
         ultimateDamage: '궁극기 스킬 피해', elementalExtraDamage: '속성 공격 추가 피해',
         burnDamage: '화상 피해', lightFinalDamage: '명속성 공격 최종 피해',
         cooldown: '쿨타임 감소',
@@ -9743,6 +9843,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '보주' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '초월업그레이드' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -9756,7 +9857,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -9947,6 +10048,24 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatSoulTargetList(targets));
+            }
+        }
+        if (item.use == '보주') {
+            const orbData = findOrbByName(item.name);
+            const targets = orbData ? getOrbTargets(user, orbData) : [];
+            if (!orbData) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 보주 정보가 없어 아이템을 반환했습니다.');
+            } else if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ ' + orbData.name + '을(를) 부여할 수 있는 장비가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '보주부여', orbName: orbData.name, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push(orbData.name + '을(를) 부여할 장비를 선택해주세요.');
+                lines.push('- 부여 가능 부위: ' + (orbData.parts || []).map(getEquipmentTypeLabel).join(', '));
+                lines.push('/RPGenius 선택 [장비번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatOrbTargetList(targets));
             }
         }
         if (item.use == '가위') {
@@ -11826,6 +11945,34 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '보주부여') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 보주 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] == '확인') {
+            if (!user.pendingAction.equipNumber) {
+                reply('❌ 보주를 부여할 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+                return true;
+            }
+            const result = applyOrbToEquipment(user, user.pendingAction.equipNumber, true);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 보주를 부여할 장비를 먼저 선택해야 합니다.\n/RPGenius 선택 [장비번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = applyOrbToEquipment(user, args[1], false);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '귀속해제') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -12710,6 +12857,8 @@ module.exports = {
     getPotentialRarityLabel,
     getEquipmentDisplayName,
     isSoulExpired,
+    formatOrbLines,
+    addOrbStats,
     getCardSlotEffectValue,
     addInventoryItem,
     removeInventoryItem,

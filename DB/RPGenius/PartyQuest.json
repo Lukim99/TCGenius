@@ -46,6 +46,7 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
+            "image": "흑화 호두.png",
             "hp": 314100,
             "atk": 1270,
             "def": 970,
@@ -214,6 +215,7 @@
           "name": "보스",
           "monster": {
             "name": "흑화 호두",
+            "image": "흑화 호두.png",
             "hp": 569200,
             "atk": 3140,
             "def": 1940,
@@ -336,6 +338,517 @@
         "reward": [
           { "roll": 0.95, "pack": 17 },
           { "roll": 0.05, "pack": 18 }
+        ]
+      }
+    },
+    {
+      "id": "butaGame",
+      "name": "부타게임",
+      "description": "타부자고와 잉여왕을 상대하는 협동 미니게임 레이드.",
+      "minLevel": 141,
+      "recommendedPower": 400000,
+      "coverImage": "부타게임/부타게임표지.png",
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 15,
+      "supportSkills": ["지오", "SitoSoym", "X"],
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "reviveOnPhaseClear": true,
+      "phases": [
+        {
+          "type": "boss",
+          "name": "1관문",
+          "monster": {
+            "name": "타부자고",
+            "image": "부타게임/타부자고.png",
+            "hp": 1405286,
+            "hpLines": 140,
+            "atk": 3520,
+            "def": 590,
+            "actionInterval": 3,
+            "enrageSec": 600,
+            "stat": {
+              "pnt": 760,
+              "crit": 0.65,
+              "critMul": 2
+            },
+            "patterns": [
+              {
+                "name": "퍼즐 던지기",
+                "type": "puzzleThrow",
+                "interval": 17,
+                "atkRatio": 0.5,
+                "hits": 15
+              },
+              {
+                "name": "무난한 딜링",
+                "type": "dealingCharge",
+                "interval": 20,
+                "count": 3,
+                "finishName": "확실한 딜링",
+                "targetMaxHpPct": 0.3
+              },
+              {
+                "name": "반사",
+                "type": "reflectWindow",
+                "interval": 50,
+                "windowSec": 5,
+                "threshold": 60000,
+                "fixedDamage": 18000
+              },
+              {
+                "name": "김쁠뿡",
+                "type": "chatCallGimmick",
+                "lineThreshold": 90,
+                "seconds": 7,
+                "groggy": 8,
+                "takenDamageUp": 0.2,
+                "gauge": 20
+              },
+              {
+                "name": "부타 투표",
+                "type": "voteGimmick",
+                "lineThreshold": 40,
+                "seconds": 7,
+                "gauge": 20
+              }
+            ]
+          }
+        },
+        {
+          "type": "boss",
+          "name": "2관문",
+          "monster": {
+            "name": "잉여왕",
+            "image": "부타게임/잉여왕(기본).png",
+            "defeatLine": "크윽... 아직... 끝이 아니다...!",
+            "hp": 1950320,
+            "hpLines": 195,
+            "atk": 4080,
+            "def": 700,
+            "actionInterval": 2.8,
+            "enrageSec": 840,
+            "element": "화",
+            "stat": {
+              "pnt": 920,
+              "crit": 0.65,
+              "critMul": 2,
+              "fireAtk": 300
+            },
+            "patterns": [
+              {
+                "name": "튀어오르기",
+                "type": "bounceDebuff",
+                "interval": 10,
+                "takenDamageUp": 0.5
+              },
+              {
+                "name": "화염 폭발",
+                "type": "flameBurst",
+                "interval": 30,
+                "castTime": 3,
+                "atkRatio": 1.5
+              },
+              {
+                "name": "기모아 공격",
+                "type": "chargeBlock",
+                "interval": 30,
+                "castTime": 4,
+                "skillName": "저지",
+                "groggy": 5,
+                "healPct": 0.2,
+                "failAtkRatio": 5
+              },
+              {
+                "name": "천국의 대포",
+                "type": "heavenCannon",
+                "interval": 21,
+                "castTime": 2,
+                "atkRatio": 1.5,
+                "targets": 2
+              },
+              {
+                "name": "잉여왕 표식",
+                "type": "markDot",
+                "interval": 3,
+                "atkRatio": 0.1,
+                "element": "화"
+              },
+              {
+                "name": "레인! 도와줘!",
+                "type": "rainShield",
+                "lineThresholds": [
+                  145,
+                  115,
+                  75,
+                  45
+                ],
+                "sealSec": 10,
+                "shield": 80000,
+                "windowSec": 10,
+                "groggy": 8,
+                "takenDamageUp": 0.2,
+                "failWipe": false,
+                "failFixedDamage": 40000,
+                "gauge": 20
+              }
+            ]
+          }
+        }
+      ],
+      "rewards": {
+        "gold": 30000000,
+        "base": [
+          {
+            "type": "아이템",
+            "item_id": 272,
+            "count": {
+              "min": 200,
+              "max": 250
+            }
+          },
+          {
+            "type": "아이템",
+            "item_id": 273,
+            "count": {
+              "min": 50,
+              "max": 100
+            }
+          },
+          {
+            "type": "아이템",
+            "item_id": 274,
+            "count": 5
+          }
+        ],
+        "bonus": [
+          {
+            "roll": 0.3,
+            "type": "아이템",
+            "item_id": 274,
+            "count": 5
+          },
+          {
+            "roll": 0.25,
+            "type": "아이템",
+            "item_id": 275,
+            "count": 1
+          },
+          {
+            "roll": 0.15,
+            "type": "랜덤장비",
+            "part": "보조",
+            "rarity": "고유"
+          },
+          {
+            "roll": 0.1,
+            "type": "아이템",
+            "item_id": 204,
+            "count": 1
+          },
+          {
+            "roll": 0.07,
+            "type": "보주랜덤",
+            "count": 1
+          },
+          {
+            "roll": 0.05,
+            "type": "아이템",
+            "item_id": 25,
+            "count": 1
+          },
+          {
+            "roll": 0.05,
+            "type": "아이템",
+            "item_id": 271,
+            "count": 50
+          },
+          {
+            "roll": 0.03,
+            "type": "펫",
+            "pet_id": 16,
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "butaGameHard",
+      "name": "부타게임 (하드)",
+      "description": "타부자고와 잉여왕이 기다리는 부타게임 최고 난이도. 폭주한 잉여왕까지 잡아야 끝난다.",
+      "minLevel": 141,
+      "recommendedPower": 700000,
+      "coverImage": "부타게임/부타게임표지.png",
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 15,
+      "supportSkills": ["지오", "SitoSoym", "X"],
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "reviveOnPhaseClear": true,
+      "phases": [
+        {
+          "type": "boss",
+          "name": "1관문",
+          "monster": {
+            "name": "타부자고",
+            "image": "부타게임/타부자고.png",
+            "hp": 2301684,
+            "hpLines": 230,
+            "atk": 4120,
+            "def": 815,
+            "actionInterval": 3,
+            "enrageSec": 600,
+            "stat": {
+              "pnt": 880,
+              "crit": 0.7,
+              "critMul": 2.25
+            },
+            "patterns": [
+              {
+                "name": "퍼즐 던지기",
+                "type": "puzzleThrow",
+                "interval": 17,
+                "atkRatio": 0.7,
+                "hits": 20
+              },
+              {
+                "name": "무난한 딜링",
+                "type": "dealingCharge",
+                "interval": 20,
+                "count": 3,
+                "finishName": "확실한 딜링",
+                "targetMaxHpPct": 0.4
+              },
+              {
+                "name": "반사",
+                "type": "reflectWindow",
+                "interval": 45,
+                "windowSec": 5,
+                "threshold": 50000,
+                "fixedDamage": 25000
+              },
+              {
+                "name": "모찌나간다",
+                "type": "mochiShield",
+                "interval": 61,
+                "shield": 150000,
+                "windowSec": 8,
+                "groggy": 6,
+                "takenDamageUp": 0.3,
+                "stun": 5
+              },
+              {
+                "name": "김쁠뿡",
+                "type": "chatCallGimmick",
+                "lineThreshold": 90,
+                "seconds": 5,
+                "groggy": 8,
+                "takenDamageUp": 0.2,
+                "gauge": 20
+              },
+              {
+                "name": "부타 투표",
+                "type": "voteGimmick",
+                "lineThreshold": 40,
+                "seconds": 5,
+                "gauge": 20
+              }
+            ]
+          }
+        },
+        {
+          "type": "boss",
+          "name": "2관문",
+          "monster": {
+            "name": "잉여왕",
+            "image": "부타게임/잉여왕(기본).png",
+            "hp": 3023555,
+            "hpLines": 302,
+            "atk": 5170,
+            "def": 1030,
+            "actionInterval": 2.8,
+            "enrageSec": 840,
+            "element": "화",
+            "stat": {
+              "pnt": 990,
+              "crit": 0.7,
+              "critMul": 2.25,
+              "fireAtk": 500
+            },
+            "patterns": [
+              {
+                "name": "튀어오르기",
+                "type": "bounceDebuff",
+                "interval": 10,
+                "takenDamageUp": 1
+              },
+              {
+                "name": "화염 폭발",
+                "type": "flameBurst",
+                "interval": 30,
+                "castTime": 3,
+                "atkRatio": 1.5
+              },
+              {
+                "name": "기모아 공격",
+                "type": "chargeBlock",
+                "interval": 30,
+                "castTime": 3,
+                "skillName": "저지",
+                "groggy": 5,
+                "healPct": 0.2,
+                "failAtkRatio": 5
+              },
+              {
+                "name": "천국의 대포",
+                "type": "heavenCannon",
+                "interval": 19,
+                "castTime": 2,
+                "atkRatio": 1.5,
+                "targets": 2
+              },
+              {
+                "name": "잉여왕 표식",
+                "type": "markDot",
+                "interval": 3,
+                "atkRatio": 0.1,
+                "element": "화"
+              },
+              {
+                "name": "레인! 도와줘!",
+                "type": "rainShield",
+                "lineThresholds": [
+                  145,
+                  115,
+                  75,
+                  45
+                ],
+                "sealSec": 10,
+                "shield": 200000,
+                "windowSec": 10,
+                "groggy": 8,
+                "takenDamageUp": 0.2,
+                "failWipe": true,
+                "failFixedDamage": 0,
+                "gauge": 0
+              }
+            ],
+            "berserkForm": {
+              "name": "폭주 잉여왕",
+              "image": "부타게임/잉여왕(하드 부활).png",
+              "hp": 1,
+              "shield": 2000000,
+              "atk": 8030,
+              "def": 1030,
+              "actionInterval": 2,
+              "enrageSec": 60,
+              "takenDamageUp": 1,
+              "stat": {
+                "pnt": 1090,
+                "crit": 0.75,
+                "critMul": 2.25,
+                "fireAtk": 500
+              },
+              "patterns": [
+                {
+                  "name": "죽어",
+                  "type": "dieAoe",
+                  "interval": 5,
+                  "atkRatio": 0.75
+                },
+                {
+                  "name": "폭주지대",
+                  "type": "burnZone",
+                  "interval": 3,
+                  "atkRatio": 0.1,
+                  "element": "화"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "rewards": {
+        "gold": 55000000,
+        "base": [
+          {
+            "type": "아이템",
+            "item_id": 272,
+            "count": {
+              "min": 400,
+              "max": 450
+            }
+          },
+          {
+            "type": "아이템",
+            "item_id": 273,
+            "count": {
+              "min": 150,
+              "max": 200
+            }
+          },
+          {
+            "type": "아이템",
+            "item_id": 274,
+            "count": 10
+          }
+        ],
+        "bonus": [
+          {
+            "roll": 0.35,
+            "type": "아이템",
+            "item_id": 274,
+            "count": 10
+          },
+          {
+            "roll": 0.3,
+            "type": "아이템",
+            "item_id": 275,
+            "count": 1
+          },
+          {
+            "roll": 0.1,
+            "type": "랜덤장비",
+            "part": "보조",
+            "rarity": "고유"
+          },
+          {
+            "roll": 0.1,
+            "type": "보주랜덤",
+            "count": 1
+          },
+          {
+            "roll": 0.06,
+            "type": "아이템",
+            "item_id": 205,
+            "count": 1
+          },
+          {
+            "roll": 0.04,
+            "type": "펫",
+            "pet_id": 16,
+            "count": 1
+          },
+          {
+            "roll": 0.02,
+            "type": "아이템",
+            "item_id": 26,
+            "count": 1
+          },
+          {
+            "roll": 0.02,
+            "type": "아이템",
+            "item_id": 271,
+            "count": 150
+          },
+          {
+            "roll": 0.01,
+            "type": "펫",
+            "pet_id": 17,
+            "count": 1
+          }
         ]
       }
     }

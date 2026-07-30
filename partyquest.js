@@ -598,6 +598,35 @@ function grantPartyQuestPackReward(user, reward, summary) {
         addPartyQuestRewardSummary(summary, 'mileage', 'Ⓜ️ 마일리지', count);
         return { kind: 'currency', currency: 'mileage', name: '마일리지', count };
     }
+    if (reward.type === '펫') {
+        for (let i = 0; i < count; i++) rpgenius.addPetInventory(user, Number(reward.pet_id));
+        const pet = typeof rpgenius.getPetData === 'function' ? rpgenius.getPetData(Number(reward.pet_id)) : null;
+        const name = pet ? '<' + pet.rarity + '> ' + pet.name + ' (펫)' : '알 수 없는 펫';
+        addPartyQuestRewardSummary(summary, 'pet:' + reward.pet_id, name, count);
+        return { kind: 'pet', petId: Number(reward.pet_id), name, count };
+    }
+    // 등급 지정 랜덤 장비 (예: 고유 등급 보조장비)
+    if (reward.type === '랜덤장비') {
+        const map = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory', '보조': 'support' };
+        const slot = map[reward.part] || 'support';
+        const list = (equipments[slot] || []);
+        const ids = list.map((d, i) => (d && d.rarity === reward.rarity ? i : -1)).filter(i => i >= 0);
+        if (!ids.length) return null;
+        const id = ids[randomInt(0, ids.length - 1)];
+        addPartyQuestEquipment(user, slot, id);
+        const name = '<' + list[id].rarity + '> ' + list[id].name;
+        addPartyQuestRewardSummary(summary, slot + ':' + id, name, 1);
+        return { kind: 'equipment', equipType: slot, equipmentId: id, rarity: list[id].rarity, name, count: 1 };
+    }
+    // 보주 랜덤 (use:'보주' 아이템 중 균등 1개)
+    if (reward.type === '보주랜덤') {
+        const ids = items.map((it, i) => (it && it.use === '보주' ? i : -1)).filter(i => i >= 0);
+        if (!ids.length) return null;
+        const id = ids[randomInt(0, ids.length - 1)];
+        rpgenius.addInventoryItem(user, id, count);
+        addPartyQuestRewardSummary(summary, 'item:' + id, items[id].name, count);
+        return { kind: 'item', itemId: id, name: items[id].name, count };
+    }
     const equipmentMap = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'] };
     const eq = equipmentMap[reward.type];
     if (eq) {
@@ -625,9 +654,11 @@ function getPartyQuestItemAsset(itemId, rewardIndex) {
     const items = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Item', []) : [];
     const item = items[Number(itemId)];
     const frameFile = Number(rewardIndex || 0) === 1 ? '특수.png' : '아이템.png';
+    // 보주는 type이 '사용'이지만 이미지는 itemImage/보주/에 있다
+    const dir = item && item.use === '보주' ? '보주' : String((item && item.type) || '아이템');
     return {
         frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent(frameFile),
-        iconUrl: item ? '/item-image?dir=' + encodeURIComponent(String(item.type || '아이템')) + '&file=' + encodeURIComponent(String(item.name) + '.png') : null
+        iconUrl: item ? '/item-image?dir=' + encodeURIComponent(dir) + '&file=' + encodeURIComponent(String(item.name) + '.png') : null
     };
 }
 
@@ -672,10 +703,28 @@ function grantPartyQuestClearRewards(room) {
                         itemReward.pack = Number(selected.entry.pack);
                     }
                 }
+                // 기본 보상(전부 지급) + 추가 보상(가중 1개 추첨)
+                const extraRewards = [];
+                for (const entry of (Array.isArray(rewards.base) ? rewards.base : [])) {
+                    const granted = grantPartyQuestPackReward(user, entry, summary);
+                    if (granted) extraRewards.push(granted);
+                }
+                if (Array.isArray(rewards.bonus) && rewards.bonus.length) {
+                    const granted = grantPartyQuestPackReward(user, pickPartyQuestPackEntry(rewards.bonus), summary);
+                    if (granted) { granted.bonus = true; extraRewards.push(granted); }
+                }
+                for (const r of extraRewards) if (r.kind === 'item') Object.assign(r, getPartyQuestItemAsset(r.itemId, r.bonus ? 1 : 0));
+                if (!itemReward && extraRewards.length) itemReward = extraRewards[extraRewards.length - 1];
                 // 칭호 진행 추적 (흑화 호두)
                 if (room.questId === 'blackHodu') {
                     const prog = rpgenius.getTitleProgress(user);
                     prog.hoduClears = Number(prog.hoduClears || 0) + 1;
+                    rpgenius.checkAndUnlockTitles(user);
+                }
+                // 칭호 진행 추적 (부타게임 — 노말/하드 공용 카운터)
+                if (room.questId === 'butaGame' || room.questId === 'butaGameHard') {
+                    const prog = rpgenius.getTitleProgress(user);
+                    prog.butaClears = Number(prog.butaClears || 0) + 1;
                     rpgenius.checkAndUnlockTitles(user);
                 }
                 // 흑화 호두 (익스트림) 개인 최초 클리어 보너스 (기존 보상과 별도)
@@ -709,6 +758,7 @@ function grantPartyQuestClearRewards(room) {
                     equipmentGold,
                     levelUps,
                     item: itemReward,
+                    items: extraRewards,
                     firstClear,
                     summary: Object.keys(summary).map(key => ({ label: summary[key].label, count: summary[key].count }))
                 });
@@ -781,8 +831,9 @@ function serializeMember(m) {
             mpMax: Math.round(m.runtime.mpMax),
             gauge: Math.max(0, Math.min(100, Math.round(m.runtime.gauge || 0))),
             cooldowns: serializeCooldownsFromUntil(m.runtime.cooldownsUntil),
-            buffs: (m.runtime.buffs || []).map(b => ({ id: b.id, label: b.label, remain: Math.max(0, Math.round(b.remain * 10) / 10) })),
+            buffs: (m.runtime.buffs || []).map(b => ({ id: b.id, label: b.label, remain: Math.max(0, Math.round(b.remain * 10) / 10), stack: Number(b.stack || 0) })),
             shield: Math.round(m.runtime.shield || 0),
+            sealRemain: Math.max(0, Math.round(Number(m.runtime.sealRemain || 0) * 10) / 10),
             dead: !!m.runtime.dead,
             potionCdRemain: remainSeconds(m.runtime.potionUntil),
             actionCdRemain: remainSeconds(m.runtime.actionUntil),
@@ -840,13 +891,21 @@ function cloneCooldowns(cd) {
 
 function serializeMonster(mon) {
     if (!mon) return null;
+    const gimmick = mon.bossState && mon.bossState.chatGimmick;
     return {
         name: mon.name,
         hp: Math.max(0, Math.round(mon.hp)),
         hpMax: Math.round(mon.hpMax),
         gauge: Math.max(0, Math.min(100, Math.round(mon.gauge || 0))),
         stunRemain: Math.max(0, Math.round(Number(mon.stunRemain || 0) * 10) / 10),
-        nextPattern: mon.nextPattern || null
+        nextPattern: mon.nextPattern || null,
+        image: mon.image ? '/rpg-ui?file=' + encodeURIComponent(mon.image) : null,
+        shield: Math.max(0, Math.round(Number(mon.shield || 0))),
+        shieldMax: Math.max(0, Math.round(Number(mon.shieldMax || 0))),
+        hpLines: Number(mon.hpLines || 0),
+        enrageRemain: Number(mon.enrageSec || 0) > 0 ? Math.max(0, Math.round(Number(mon.enrageRemain || 0))) : null,
+        enraged: !!mon.enraged,
+        chatGimmick: gimmick ? { label: gimmick.label || '', remain: Math.max(0, Math.round(gimmick.remain * 10) / 10), responded: gimmick.responded.size, need: gimmick.need } : null
     };
 }
 
@@ -865,18 +924,62 @@ function mergeMonsterStats(monsterDef) {
     return out;
 }
 
-function createPhaseMonster(phase) {
-    const monDef = (phase && phase.monster) || {};
-    const stats = mergeMonsterStats(monDef);
-    const hp = Math.max(1, Math.round(Number(stats.hp || 1)));
-    const mp = Math.max(0, Math.round(Number(stats.mp || 0)));
-    const patterns = monDef.patterns || [];
+// 보스별 패턴 핸들러. step(room, mon, dt) -> true면 이번 tick의 일반 행동을 소비.
+// init(monDef)는 해당 보스 전용 bossState 필드를 반환한다.
+const BOSS_HANDLERS = {
+    '흑화 호두': { step: stepBlackHoduBoss, init: createBlackHoduBossState },
+    '타부자고': { step: stepTabuzago, init: createTabuzagoBossState, onSpawn: onSpawnTabuzago },
+    '잉여왕': { step: stepIngyeoWang, init: createIngyeoWangBossState, onSpawn: onSpawnIngyeoWang }
+};
+
+// 모든 보스가 공유하는 bossState 필드
+function createCommonBossState() {
+    return {
+        disabled: false,
+        casting: null,
+        chatGimmick: null,
+        hpGimmicks: null,
+        gimmickActive: null
+    };
+}
+
+function createBlackHoduBossState(monDef) {
+    const patterns = (monDef && monDef.patterns) || [];
     const findPattern = type => patterns.find(p => p && p.type === type) || {};
     const fixedAoe = findPattern('fixedAoe');
     const regenBelowHp = findPattern('regenBelowHp');
     const selfBuff = findPattern('selfBuff');
     const hpThresholdCast = findPattern('hpThresholdCast');
     const roleDamageLock = findPattern('roleDamageLock');
+    return {
+        revived: false,
+        phase50Started: false,
+        phase10Started: false,
+        healActive: false,
+        shockTimer: Number(fixedAoe.interval || 20),
+        healTimer: Number(regenBelowHp.interval || 5),
+        buffTimer: Number(selfBuff.interval || 30),
+        buffRemain: 0,
+        purgeTimer: Number(hpThresholdCast.intervalSec || 0),
+        shieldInterval: Number(roleDamageLock.interval || 0),
+        shieldDuration: Number(roleDamageLock.duration || 10),
+        shieldTimer: Number(roleDamageLock.interval || 0),
+        shieldRemain: 0,
+        shieldRole: null,
+        curseTriggered: false,
+        curseRemain: 0,
+        curseWipeArmed: false
+    };
+}
+
+function createPhaseMonster(phase) {
+    const monDef = (phase && phase.monster) || {};
+    const stats = mergeMonsterStats(monDef);
+    const hp = Math.max(1, Math.round(Number(stats.hp || 1)));
+    const mp = Math.max(0, Math.round(Number(stats.mp || 0)));
+    const patterns = monDef.patterns || [];
+    const handler = phase && phase.type === 'boss' ? BOSS_HANDLERS[monDef.name] : null;
+    const enrageSec = Number(monDef.enrageSec || 0);
     return {
         name: monDef.name || phase.name || '몬스터',
         hp,
@@ -894,27 +997,18 @@ function createPhaseMonster(phase) {
         tauntTarget: null,
         tauntRemain: 0,
         stunRemain: 0,
-        bossState: phase.type === 'boss' && monDef.name === '흑화 호두' ? {
-            revived: false,
-            disabled: false,
-            phase50Started: false,
-            phase10Started: false,
-            healActive: false,
-            shockTimer: Number(fixedAoe.interval || 20),
-            healTimer: Number(regenBelowHp.interval || 5),
-            buffTimer: Number(selfBuff.interval || 30),
-            buffRemain: 0,
-            casting: null,
-            purgeTimer: Number(hpThresholdCast.intervalSec || 0),
-            shieldInterval: Number(roleDamageLock.interval || 0),
-            shieldDuration: Number(roleDamageLock.duration || 10),
-            shieldTimer: Number(roleDamageLock.interval || 0),
-            shieldRemain: 0,
-            shieldRole: null,
-            curseTriggered: false,
-            curseRemain: 0,
-            curseWipeArmed: false
-        } : null,
+        image: monDef.image || null,
+        // 전투 중 이름이 바뀌어도(폭주 전환) 핸들러를 찾을 수 있도록 고정 키를 둔다
+        bossKey: handler ? monDef.name : null,
+        shield: 0,
+        shieldMax: 0,
+        hpLines: Number(monDef.hpLines || 0),
+        defeatLine: monDef.defeatLine || null,
+        berserkForm: monDef.berserkForm || null,
+        enrageSec,
+        enrageRemain: enrageSec,
+        enraged: false,
+        bossState: handler ? Object.assign(createCommonBossState(), handler.init ? handler.init(monDef) : {}) : null,
         stackCounters: {},
         patterns,
         skills: monDef.skills || [],
@@ -939,13 +1033,28 @@ function serializeRoomForMember(room) {
         members: room.members.map(serializeMember),
         chat: room.chatLog.slice(-100),
         potionLimit: room.potionLimit,
-        positions: POSITION_LIST.slice(),
+        noPositions: !!(quest && quest.noPositions),
+        positions: quest && quest.noPositions ? [] : POSITION_LIST.slice(),
         questDef: safePublicQuestInfo(room.questId),
         monster: serializeMonster(room.monster),
         tauntTarget: room.tauntTarget || (room.monster && room.monster.tauntTarget) || null,
         tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (room.monster && room.monster.tauntRemain) || 0) * 10) / 10),
         awaitingChoices: !!room.awaitingChoices,
+        supportSkills: serializeSupportSkills(room),
+        supportGauge: getQuestSupportSkills(room).length ? Math.floor(Number(room.supportGauge || 0)) : null,
+        voteState: serializeVoteState(room),
         result: room.result || null
+    };
+}
+
+function serializeVoteState(room) {
+    const vs = room.voteState;
+    if (!vs) return null;
+    return {
+        prompt: vs.prompt || '투표',
+        deadline: Math.max(0, Math.round(Number(vs.deadline || 0) * 10) / 10),
+        candidates: vs.candidates.slice(),
+        votes: Object.assign({}, vs.votes)
     };
 }
 
@@ -957,6 +1066,7 @@ function safePublicQuestInfo(questId) {
         name: q.name,
         description: q.description || '',
         phases: (q.phases || []).map(p => ({ name: p.name, type: p.type })),
+        noPositions: !!q.noPositions,
         positions: Object.fromEntries(POSITION_LIST.map(pos => {
             const def = (q.positions && q.positions[pos]) || {};
             return [pos, { stats: def.stats || {}, baseSkill: def.baseSkill || null }];
@@ -1154,9 +1264,16 @@ function leaveRoom(name) {
     return { ok: true };
 }
 
+// 포지션 개념이 없는 퀘스트(부타게임 등)
+function questHasNoPositions(room) {
+    const quest = getQuestById(room && room.questId);
+    return !!(quest && quest.noPositions);
+}
+
 function setPosition(name, position) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
+    if (questHasNoPositions(room)) return { error: '이 퀘스트는 포지션이 없습니다.' };
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '준비 단계에서만 변경할 수 있습니다.' };
     if (position && !POSITION_LIST.includes(position)) return { error: '존재하지 않는 포지션입니다.' };
     if (position) {
@@ -1175,7 +1292,7 @@ function setReady(name, ready) {
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '준비 단계에서만 변경할 수 있습니다.' };
     const me = findMember(room, name);
-    if (!me.position) return { error: '포지션을 먼저 선택해주세요.' };
+    if (!me.position && !questHasNoPositions(room)) return { error: '포지션을 먼저 선택해주세요.' };
     me.ready = !!ready;
     broadcastRoom(room);
     return { ok: true };
@@ -1224,11 +1341,14 @@ async function start(hostName) {
     if (room.hostName !== hostName) return { error: '공대장만 시작할 수 있습니다.' };
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '이미 진행 중입니다.' };
     if (room.members.length < room.minPlayers) return { error: '최소 ' + room.minPlayers + '명이 필요합니다.' };
+    const noPositions = questHasNoPositions(room);
     const occupiedPositions = new Set();
     for (const m of room.members) {
-        if (!m.position) return { error: m.name + '님이 포지션을 선택하지 않았습니다.' };
-        if (occupiedPositions.has(m.position)) return { error: m.position + ' 포지션은 한 명만 선택할 수 있습니다.' };
-        occupiedPositions.add(m.position);
+        if (!noPositions) {
+            if (!m.position) return { error: m.name + '님이 포지션을 선택하지 않았습니다.' };
+            if (occupiedPositions.has(m.position)) return { error: m.position + ' 포지션은 한 명만 선택할 수 있습니다.' };
+            occupiedPositions.add(m.position);
+        }
         if (!m.ready) return { error: m.name + '님이 준비되지 않았습니다.' };
     }
 
@@ -1340,6 +1460,7 @@ async function start(hostName) {
     room.state = 'inProgress';
     room.phaseIndex = 0;
     room.sharedKillCount = 0;
+    room.supportGauge = 0;
     room.result = null;
     pushNotice(room, '⚔️ 「' + quest.name + '」 시작!', 'big', 3500);
     setupPhase(room);
@@ -1364,6 +1485,8 @@ function setupPhase(room) {
         room.monster = createPhaseMonster(phase);
         // 게이지 초기화
         for (const m of room.members) { m.runtime.gauge = 0; }
+        const handler = BOSS_HANDLERS[room.monster.bossKey];
+        if (handler && handler.onSpawn) handler.onSpawn(room, room.monster);
         startTick(room);
         pushNotice(room, '🔥 ' + phase.name + ' — ' + room.monster.name + ' 등장!', 'big', 4500);
     }
@@ -1374,6 +1497,12 @@ function endPhase(room) {
     const quest = getQuestById(room.questId);
     const next = quest.phases[room.phaseIndex + 1];
     pushNotice(room, '✨ ' + (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어!', 'big', 4500);
+    // 3택 스킵 퀘스트: 바로 다음 관문으로
+    if (next && quest.noPhaseChoices) {
+        for (const m of room.members) m.pendingChoices = null;
+        proceedToNextPhase(room);
+        return;
+    }
     // 랜덤 스킬 선택지 부여 (죽은 멤버는 선택 없이 스킵)
     room.awaitingChoices = true;
     for (const m of room.members) {
@@ -1418,6 +1547,16 @@ function pickRandomSkill(name, skillName) {
 function proceedToNextPhase(room) {
     room.awaitingChoices = false;
     room.phaseIndex += 1;
+    const quest = getQuestById(room.questId);
+    if (quest && quest.reviveOnPhaseClear) {
+        for (const m of room.members) {
+            if (!m.runtime || !m.runtime.dead) continue;
+            m.runtime.dead = false;
+            m.runtime.hp = m.runtime.hpMax;
+            m.runtime.mp = m.runtime.mpMax;
+            pushCombat(room, '✨ ' + m.name + ' 부활 (관문 클리어)', 'heal');
+        }
+    }
     setupPhase(room);
     broadcastRoom(room);
 }
@@ -1443,6 +1582,19 @@ function endQuest(room, cleared, reason) {
     if (cleared) grantPartyQuestClearRewards(room);
     pushNotice(room, cleared ? '🎉 파티 퀘스트 클리어!' : '💀 파티 전멸…', cleared ? 'success' : 'danger', 6000);
     broadcastRoom(room);
+}
+
+// 조건 없이 코드로 지급하는 칭호 (히든 등)
+function grantTitleAsync(room, name, titleId) {
+    (async () => {
+        try {
+            const user = await rpgenius.getRPGUserByName(name);
+            if (!user || !rpgenius.unlockTitle(user, titleId)) return;
+            await user.save();
+            const def = typeof rpgenius.getTitleDefs === 'function' ? rpgenius.getTitleDefs().find(t => t.id === titleId) : null;
+            if (room) pushNotice(room, '🏅 ' + name + ' — 칭호 「' + ((def && def.name) || titleId) + '」 획득!', 'success', 6000);
+        } catch (e) { console.error('[partyquest] title grant error:', e); }
+    })();
 }
 
 function grantPendingEquipmentGoldAsync(member) {
@@ -1511,6 +1663,7 @@ function attackMobPhase(name) {
     if (!me) return { error: '멤버가 아닙니다.' };
     if (me.runtime && me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime && me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
+    if (me.runtime && me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (me.runtime && nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
     if (me.runtime) me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
@@ -1666,8 +1819,13 @@ function stepRoom(room) {
                 }
             }
         }
+        if (!r.dead) {
+            stepMemberDots(room, m, dt);
+            if (room.state !== 'inProgress') return;
+        }
         if (r.tauntRemain > 0) r.tauntRemain = Math.max(0, r.tauntRemain - dt);
         if (r.stunRemain > 0) r.stunRemain = Math.max(0, r.stunRemain - dt);
+        if (r.sealRemain > 0) r.sealRemain = Math.max(0, r.sealRemain - dt);
         for (let i = r.buffs.length - 1; i >= 0; i--) {
             r.buffs[i].remain -= dt;
             if (r.buffs[i].remain <= 0) {
@@ -1692,7 +1850,7 @@ function stepRoom(room) {
                     const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
-                    if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
+                    if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '익테봇 소환', false);
                     pushCombat(room, '🤖 ' + m.name + '의 익테봇 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
@@ -1715,7 +1873,7 @@ function stepRoom(room) {
                     const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
-                    if (room.monster) room.monster.hp = Math.max(0, room.monster.hp - res.damage);
+                    if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '수나타 소환', false);
                     pushCombat(room, '🎵 ' + m.name + '의 수나타 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
@@ -1727,8 +1885,41 @@ function stepRoom(room) {
         room.tauntRemain = Math.max(0, room.tauntRemain - dt);
         if (room.tauntRemain <= 0) room.tauntTarget = null;
     }
+    if (room.voteState) {
+        room.voteState.deadline = Math.max(0, Number(room.voteState.deadline || 0) - dt);
+        if (room.voteState.deadline <= 0) {
+            resolveVote(room);
+            if (room.state !== 'inProgress') return;
+        }
+    }
+    // 지원군 게이지 자연 증가 (전투 중에만, 5초당 +1%)
+    if (getQuestSupportSkills(room).length) {
+        room.supportGaugeAccum = Number(room.supportGaugeAccum || 0) + dt;
+        while (room.supportGaugeAccum >= SUPPORT_GAUGE_SEC_PER_PERCENT) {
+            room.supportGaugeAccum -= SUPPORT_GAUGE_SEC_PER_PERCENT;
+            addSupportGauge(room, 1, true);
+        }
+    }
+    if (room.supportSito) {
+        stepSupportSito(room, dt);
+        if (room.state !== 'inProgress') return;
+    }
+    if (room.supportXBarrage) {
+        stepSupportXBarrage(room, dt);
+        if (room.state !== 'inProgress') return;
+    }
     const mon = room.monster;
     if (mon) {
+        // 처치 판정을 하지 않는 경로(익테봇/수나타/지원군 등)로 HP가 0이 된 경우의 안전망
+        if (mon.hp <= 0) { onMonsterDefeated(room); return; }
+        // 폭주 형태는 HP가 아니라 보호막이 생명줄 — 그로기 중에도 소진 판정을 한다
+        if (mon.bossState && mon.bossState.berserk && Number(mon.shield || 0) <= 0) {
+            mon.hpFloor = 0;
+            mon.hp = 0;
+            onMonsterDefeated(room);
+            return;
+        }
+        stepEnrage(room, mon, dt);
         if (mon.stunRemain > 0) mon.stunRemain = Math.max(0, mon.stunRemain - dt);
         if (mon.bossState && mon.bossState.buffRemain > 0) mon.bossState.buffRemain = Math.max(0, mon.bossState.buffRemain - dt);
         if (mon.tauntRemain > 0) mon.tauntRemain = Math.max(0, mon.tauntRemain - dt);
@@ -1745,7 +1936,7 @@ function stepRoom(room) {
                     if (d.tick <= 0) {
                         d.tick += Number(d.interval || 2);
                         const dotDmg = Math.max(1, Math.round(Number(d.dmg || 0)));
-                        mon.hp = Math.max(0, mon.hp - dotDmg);
+                        applyBossHpDamage(room, mon, dotDmg);
                         pushCombat(room, '✍️ ' + (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dotDmg + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
@@ -1754,7 +1945,7 @@ function stepRoom(room) {
                 if (d.remain <= 0) {
                     if (!dotKilled && Number(d.explodeDamage || 0) > 0 && mon.hp > 0) {
                         const explosion = Math.max(1, Math.round(Number(d.explodeDamage || 0)));
-                        mon.hp = Math.max(0, mon.hp - explosion);
+                        applyBossHpDamage(room, mon, explosion);
                         pushCombat(room, '🔥 ' + (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + explosion + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
@@ -1765,14 +1956,15 @@ function stepRoom(room) {
         }
 
         if (mon.stunRemain <= 0) {
-            const patternConsumed = stepBlackHoduBoss(room, mon, dt);
+            const patternConsumed = stepBoss(room, mon, dt);
             if (room.state !== 'inProgress' || room.monster !== mon) return;
             if (patternConsumed) {
                 broadcast(room, 'tick', {
                     members: room.members.map(serializeMember),
                     monster: serializeMonster(mon),
                     tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
-                    tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10)
+                    tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10),
+                    supportGauge: getQuestSupportSkills(room).length ? Math.floor(Number(room.supportGauge || 0)) : null
                 });
                 return;
             }
@@ -1794,7 +1986,8 @@ function stepRoom(room) {
         members: room.members.map(serializeMember),
         monster: serializeMonster(mon),
         tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
-        tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10)
+        tauntRemain: Math.max(0, Math.round(Number(room.tauntRemain || (mon && mon.tauntRemain) || 0) * 10) / 10),
+        supportGauge: getQuestSupportSkills(room).length ? Math.floor(Number(room.supportGauge || 0)) : null
     });
 }
 
@@ -2182,7 +2375,7 @@ function calculateNormalDamageToMonster(attacker, monster, room, rawDamage) {
 
 function calculateNormalDamageToMember(room, mon, target, rawDamage) {
     const quest = getQuestById(room.questId);
-    const posDef = quest.positions[target.position];
+    const posDef = (quest.positions && quest.positions[target.position]) || {};
     const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
     const targetStats = target.baseSnapshot.stats || {};
     const targetSlotEffects = target.baseSnapshot.slotEffects || {};
@@ -2427,7 +2620,10 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         hitStats.allElementAtk = Number(hitStats.allElementAtk || 0) + getActiveKingElementBonus(attacker);
         ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
         const attackElement = resolvePartyAttackElement(attacker, hitExtra.skillElement);
-        const elementMul = attackElement && typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier(attackElement, hitStats, monsterStats) : 1;
+        // 무속성 공격일 때만 [무]속성 공격 피해가 적용된다 (속성 배수 자리에 곱연산)
+        const elementMul = attackElement
+            ? (typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier(attackElement, hitStats, monsterStats) : 1)
+            : 1 + Number(hitStats.nonElementDamage || 0);
         const darkMul = typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier('암', hitStats, monsterStats) : 1;
         const waterMul = typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier('수', hitStats, monsterStats) : 1;
         const unitDamageBonus = Number(hitExtra.damageBonusMul || 0) - Number(extra && extra.damageBonusMul || 0);
@@ -2665,11 +2861,16 @@ function triggerBlackHoduCurse(room, mon) {
 }
 
 function wipePartyByCurse(room, mon) {
+    wipeParty(room, '암흑의 저주', (mon ? mon.name : '보스') + ' [암흑의 저주] 발동 — 보스를 공격하여 파티 전멸');
+}
+
+// 기믹 실패 전멸 공용 처리
+function wipeParty(room, reason, combatLine) {
     for (const m of room.members) {
         if (m.runtime && !m.runtime.dead) { m.runtime.hp = 0; m.runtime.dead = true; }
     }
-    pushCombat(room, (mon ? mon.name : '보스') + ' [암흑의 저주] 발동 — 보스를 공격하여 파티 전멸', 'danger');
-    endQuest(room, false, '암흑의 저주');
+    pushCombat(room, combatLine || (reason + ' — 파티 전멸'), 'danger');
+    endQuest(room, false, reason);
 }
 
 // 플레이어가 보스에게 피해를 줄 때의 익스트림 기믹 처리. 실제 적용된 피해를 반환.
@@ -2698,7 +2899,22 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage) {
             }
         }
     }
-    mon.hp = Math.max(0, mon.hp - damage);
+    return applyBossHpDamage(room, mon, damage);
+}
+
+// 몬스터 HP를 깎는 유일한 경로. 보호막이 남아있으면 먼저 소모하고 HP는 무손상(초과분 소멸).
+// mon.hpFloor가 있으면 그 아래로 내려가지 않는다(폭주 잉여왕: 보호막 소진 전 즉사 방지).
+function applyBossHpDamage(room, mon, damage) {
+    damage = Math.max(0, Math.round(Number(damage) || 0));
+    if (!mon || damage <= 0) return 0;
+    if (Number(mon.shield || 0) > 0) {
+        const absorbed = Math.min(Number(mon.shield), damage);
+        mon.shield = Math.max(0, Number(mon.shield) - damage);
+        return absorbed;
+    }
+    mon.hp = Math.max(Number(mon.hpFloor || 0), mon.hp - damage);
+    const st = mon.bossState;
+    if (st && typeof st.onDamageTaken === 'function') st.onDamageTaken(room, mon, damage);
     return damage;
 }
 
@@ -2712,18 +2928,32 @@ function executeMember(room, member, source) {
     if (room.members.every(m => m.runtime.dead)) endQuest(room, false, '파티 전멸');
 }
 
-function startBlackHoduCast(room, mon, id, name, duration) {
+// 보스 공용 캐스팅. onFinish(room, mon, cast)는 캐스팅 완료 시 호출된다(기절로 중단되면 호출되지 않음).
+function startBossCast(room, mon, id, name, duration, onFinish) {
     const st = mon && mon.bossState;
     if (!st || st.disabled || st.casting) return;
-    st.casting = { id, name, remain: Number(duration || 0) };
+    st.casting = { id, name, remain: Number(duration || 0), onFinish: onFinish || null };
     mon.nextPattern = name + ' ' + Number(duration || 0).toFixed(1) + 's';
     pushCombat(room, mon.name + ' [' + name + '] 캐스팅 시작', 'danger');
+}
+
+// 보스 공용 캐스팅 진행. 항상 true(이번 tick 소비)를 반환한다.
+function tickBossCast(room, mon, dt) {
+    const st = mon.bossState;
+    const cast = st.casting;
+    cast.remain = Math.max(0, Number(cast.remain || 0) - dt);
+    mon.nextPattern = cast.name + ' ' + cast.remain.toFixed(1) + 's';
+    if (cast.remain <= 0) {
+        st.casting = null;
+        mon.nextPattern = null;
+        if (typeof cast.onFinish === 'function') cast.onFinish(room, mon, cast);
+    }
+    return true;
 }
 
 function finishBlackHoduCast(room, mon, cast) {
     const st = mon && mon.bossState;
     if (!st || !cast) return;
-    mon.nextPattern = null;
     if (cast.id === 'half') {
         const pattern = getMonsterPattern(mon, 'hpThresholdCast');
         const pct = Number(pattern.damageTargetMaxHpPct || 0.5);
@@ -2752,16 +2982,7 @@ function stepBlackHoduBoss(room, mon, dt) {
     if (!st || st.disabled) return false;
     // 암흑의 저주: 발동 창 중 보스를 공격했다면 이 시점에 전멸 처리(데미지 핸들러 밖에서 안전하게).
     if (st.curseWipeArmed) { wipePartyByCurse(room, mon); return true; }
-    if (st.casting) {
-        st.casting.remain = Math.max(0, Number(st.casting.remain || 0) - dt);
-        mon.nextPattern = st.casting.name + ' ' + st.casting.remain.toFixed(1) + 's';
-        if (st.casting.remain <= 0) {
-            const cast = st.casting;
-            st.casting = null;
-            finishBlackHoduCast(room, mon, cast);
-        }
-        return true;
-    }
+    if (st.casting) return tickBossCast(room, mon, dt);
     const hpRatio = mon.hpMax > 0 ? mon.hp / mon.hpMax : 1;
     const halfPattern = getMonsterPattern(mon, 'hpThresholdCast');
     const executePattern = getMonsterPattern(mon, 'executePositionCast');
@@ -2806,17 +3027,17 @@ function stepBlackHoduBoss(room, mon, dt) {
         st.purgeTimer = Math.max(0, Number(st.purgeTimer || 0) - dt);
         if (st.purgeTimer <= 0) {
             st.purgeTimer += Number(halfPattern.intervalSec);
-            startBlackHoduCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2));
+            startBossCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2), finishBlackHoduCast);
             return true;
         }
     } else if (!st.phase50Started && hpRatio <= halfThreshold) {
         st.phase50Started = true;
-        startBlackHoduCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2));
+        startBossCast(room, mon, 'half', halfPattern.name || '파멸의 정화', Number(halfPattern.castTime || 2), finishBlackHoduCast);
         return true;
     }
     if (!st.phase10Started && hpRatio <= executeThreshold) {
         st.phase10Started = true;
-        startBlackHoduCast(room, mon, 'execute', executePattern.name || '종언', Number(executePattern.castTime || 3));
+        startBossCast(room, mon, 'execute', executePattern.name || '종언', Number(executePattern.castTime || 3), finishBlackHoduCast);
         return true;
     }
     const regenPattern = getMonsterPattern(mon, 'regenBelowHp');
@@ -2863,6 +3084,379 @@ function stepBlackHoduBoss(room, mon, dt) {
     return false;
 }
 
+// ===== 공용 보스 시스템 (광폭화 / 보호막 / 체력 기믹 / 투표 / 채팅 기믹) =====
+
+// 보스 tick 진입점. true면 이번 tick의 일반 행동(게이지 누적)을 소비한다.
+function stepBoss(room, mon, dt) {
+    const st = mon && mon.bossState;
+    if (!st || st.disabled) return false;
+    if (st.chatGimmick) {
+        tickChatGimmick(room, mon, dt);
+        if (room.state !== 'inProgress' || room.monster !== mon) return true;
+    }
+    if (st.gimmickActive) {
+        // 체력 기믹 진행 중 — 일반 공격/짤패턴 정지. 기믹 자체의 진행은 tick 콜백이 담당.
+        if (typeof st.gimmickActive.tick === 'function') st.gimmickActive.tick(room, mon, dt);
+        return true;
+    }
+    if (!st.casting && stepBossHpGimmick(room, mon)) return true;
+    const handler = BOSS_HANDLERS[mon.bossKey || mon.name];
+    return handler && handler.step ? handler.step(room, mon, dt) : false;
+}
+
+// 광폭화: enrageSec 경과 시 1회 — HP 10% 회복 / 공격력 ×5 / 행동주기 -1.0초
+function stepEnrage(room, mon, dt) {
+    if (mon.enraged || !(Number(mon.enrageSec || 0) > 0)) return;
+    mon.enrageRemain = Math.max(0, Number(mon.enrageRemain || 0) - dt);
+    if (mon.enrageRemain > 0) return;
+    mon.enraged = true;
+    mon.hp = Math.min(mon.hpMax, mon.hp + Math.round(mon.hpMax * 0.1));
+    mon.atk = Number(mon.atk || 0) * 5;
+    if (mon.stats) mon.stats.atk = Number(mon.stats.atk || 0) * 5;
+    mon.actionInterval = Math.max(0.5, Number(mon.actionInterval || 2) - 1.0);
+    pushNotice(room, '💢 ' + mon.name + ' 광폭화! 공격력이 폭증합니다!', 'danger', 6000);
+    pushCombat(room, mon.name + ' [광폭화] 체력 10% 회복 / 공격력 ×5 / 행동주기 -1.0s', 'danger');
+}
+
+function bossAtk(mon) {
+    return Number((mon && mon.stats && mon.stats.atk) || (mon && mon.atk) || 0);
+}
+
+// 그로기(=몬스터 기절) + 선택적 받는 피해 증가 디버프
+function applyBossGroggy(room, mon, seconds, takenDamageUp) {
+    const sec = Number(seconds || 0);
+    mon.stunRemain = Math.max(Number(mon.stunRemain || 0), sec);
+    const up = Number(takenDamageUp || 0);
+    if (up > 0) addMonsterDebuff(mon, { id: 'groggyTakenUp', type: 'takenDamage', value: up, remain: sec });
+    pushNotice(room, '💫 ' + mon.name + ' 그로기 ' + sec + '초' + (up > 0 ? ' / 받는 피해 +' + Math.round(up * 100) + '%' : ''), 'success', 4500);
+}
+
+// 공대장 지원군 스킬 게이지
+function addSupportGauge(room, amount, silent) {
+    const n = Number(amount || 0);
+    if (n <= 0 || !getQuestSupportSkills(room).length) return;
+    room.supportGauge = Math.min(100, Number(room.supportGauge || 0) + n);
+    if (!silent) pushCombat(room, '🔆 지원군 게이지 +' + n + '% (' + Math.round(room.supportGauge) + '%)', 'buff');
+}
+
+// ===== 공대장 전용 지원군 스킬 =====
+
+const SUPPORT_SKILL_ICONS = {
+    '지오': '부타게임/지오.png',
+    'SitoSoym': '부타게임/사이토소음.jpg',
+    'X': '부타게임/X.jpg'
+};
+const SUPPORT_GAUGE_SEC_PER_PERCENT = 5;   // 5초당 +1%
+const SUPPORT_GEO_DAMAGE = 200000;
+const SUPPORT_SITO_SHIELD = 25000;
+const SUPPORT_SITO_SEC = 10;
+const SUPPORT_SITO_TICK_HP_PCT = 0.03;     // 보호막 유지 중 초당 최대HP 3%
+const SUPPORT_SITO_END_PCT = 0.2;          // 종료 시 전원 HP/MP 20%
+const SUPPORT_X_DAMAGE = 20000;
+const SUPPORT_X_HIDDEN_DAMAGE = 1250000;
+const SUPPORT_X_HIDDEN_SEC = 10;
+
+function getQuestSupportSkills(room) {
+    const quest = getQuestById(room && room.questId);
+    return Array.isArray(quest && quest.supportSkills) ? quest.supportSkills : [];
+}
+
+function serializeSupportSkills(room) {
+    const skills = getQuestSupportSkills(room);
+    if (!skills.length) return null;
+    return skills.map(name => ({
+        name,
+        icon: SUPPORT_SKILL_ICONS[name] ? '/rpg-ui?file=' + encodeURIComponent(SUPPORT_SKILL_ICONS[name]) : null
+    }));
+}
+
+// 봉인/기절 상태에서도 사용 가능한 것이 스펙 — 일부러 sealRemain/stunRemain을 검사하지 않는다.
+function useSupportSkill(name, skillName) {
+    const room = getRoomOf(name);
+    if (!room) return { error: '참여 중인 파티가 없습니다.' };
+    if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
+    if (room.hostName !== name) return { error: '공대장만 사용할 수 있습니다.' };
+    const skills = getQuestSupportSkills(room);
+    if (!skills.length) return { error: '이 퀘스트에는 지원군 스킬이 없습니다.' };
+    if (!skills.includes(skillName)) return { error: '존재하지 않는 지원군 스킬입니다.' };
+    const me = findMember(room, name);
+    if (!me || !me.runtime || me.runtime.dead) return { error: '행동할 수 없습니다.' };
+    if (Number(room.supportGauge || 0) < 100) return { error: '지원군 게이지가 부족합니다. (' + Math.floor(Number(room.supportGauge || 0)) + '%)' };
+    room.supportGauge = 0;
+    room.supportGaugeAccum = 0;
+    pushNotice(room, '📣 공대장 ' + name + ' — 지원군 [' + skillName + '] 호출!', 'big', 4000);
+    if (skillName === '지오') useSupportGeo(room);
+    else if (skillName === 'SitoSoym') useSupportSito(room);
+    else if (skillName === 'X') useSupportX(room);
+    broadcastRoom(room);
+    return { ok: true };
+}
+
+function useSupportGeo(room) {
+    const mon = room.monster;
+    if (!mon) return;
+    const dealt = applyBossHpDamage(room, mon, SUPPORT_GEO_DAMAGE);
+    pushCombat(room, '🪨 지원군 [지오] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
+}
+
+function useSupportSito(room) {
+    for (const m of getAliveMembers(room)) {
+        // 보호막 무효 스탯(disableShield)을 가진 대상만 제외 — 시전자는 파티원이 아니므로 source는 없다.
+        if (!canPartyApplyShield(null, m)) continue;
+        const r = m.runtime;
+        r.shield = Number(r.shield || 0) + SUPPORT_SITO_SHIELD;
+        r.shieldHits = 99;
+        r.shieldExpireAt = nowMs() + SUPPORT_SITO_SEC * 1000;
+        r.shieldExpireHeal = 0;
+        upsertMemberBuff(m, { id: 'supportSito', label: '사이토 소음', remain: SUPPORT_SITO_SEC });
+    }
+    room.supportSito = { remain: SUPPORT_SITO_SEC, tick: 1 };
+    pushCombat(room, '🎧 지원군 [SitoSoym] 전원 보호막 ' + comma(SUPPORT_SITO_SHIELD) + ' (' + SUPPORT_SITO_SEC + '초)', 'buff');
+}
+
+function stepSupportSito(room, dt) {
+    const sp = room.supportSito;
+    sp.remain = Math.max(0, sp.remain - dt);
+    sp.tick -= dt;
+    if (sp.tick <= 0) {
+        sp.tick += 1;
+        for (const m of getAliveMembers(room)) {
+            if (Number(m.runtime.shield || 0) <= 0) continue;
+            healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT));
+        }
+    }
+    if (sp.remain > 0) return;
+    room.supportSito = null;
+    for (const m of getAliveMembers(room)) {
+        healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT));
+        m.runtime.mp = Math.min(m.runtime.mpMax, m.runtime.mp + Math.round(Number(m.runtime.mpMax || 0) * SUPPORT_SITO_END_PCT));
+    }
+    pushCombat(room, '🎧 [SitoSoym] 종료 — 전원 HP/MP ' + Math.round(SUPPORT_SITO_END_PCT * 100) + '% 회복', 'heal');
+}
+
+function useSupportX(room) {
+    for (const m of room.members) if (m.runtime) m.runtime.cooldownsUntil = {};
+    pushCombat(room, '❌ 지원군 [X] 전 파티원 스킬 쿨타임 초기화', 'buff');
+    const mon = room.monster;
+    if (!mon) return;
+    const dealt = applyBossHpDamage(room, mon, SUPPORT_X_DAMAGE);
+    pushCombat(room, '❌ 지원군 [X] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
+    const st = mon.bossState;
+    if (!st || !st.berserk || mon.bossKey !== '잉여왕') return;
+    room.xHiddenTriggered = true;
+    pushNotice(room, '(히든지원군스킬 발동)죽어라 부타!!!!!!!!!!!!', 'big', 6000);
+    pushCombat(room, '(히든지원군스킬 발동)죽어라 부타!!!!!!!!!!!!', 'danger');
+    grantTitleAsync(room, room.hostName, 'rainDefender');
+    applyBossGroggy(room, mon, SUPPORT_X_HIDDEN_SEC, 0);
+    room.supportXBarrage = { remain: SUPPORT_X_HIDDEN_SEC, duration: SUPPORT_X_HIDDEN_SEC, total: SUPPORT_X_HIDDEN_DAMAGE, dealt: 0 };
+}
+
+function stepSupportXBarrage(room, dt) {
+    const b = room.supportXBarrage;
+    b.remain = Math.max(0, b.remain - dt);
+    const want = Math.round(b.total * (1 - b.remain / b.duration));
+    const chunk = want - b.dealt;
+    if (chunk > 0 && room.monster) {
+        b.dealt = want;
+        applyBossHpDamage(room, room.monster, chunk);
+        pushCombat(room, '❌ [X] 연속 타격 → ' + room.monster.name + ' [-' + comma(chunk) + ']', 'skill');
+    }
+    if (b.remain <= 0 || !room.monster) room.supportXBarrage = null;
+}
+
+// 보호막 부여. applyPlayerDamageToBoss에서 HP보다 먼저 차감되며, 남아있는 동안 HP는 무손상.
+function setBossShield(room, mon, amount, label) {
+    if (!mon) return;
+    mon.shield = Math.max(0, Math.round(Number(amount || 0)));
+    mon.shieldMax = mon.shield;
+    if (label) pushCombat(room, mon.name + ' [' + label + '] 보호막 ' + comma(mon.shield), 'buff');
+}
+
+function clearBossShield(mon) {
+    if (!mon) return;
+    mon.shield = 0;
+    mon.shieldMax = 0;
+}
+
+// 체력 임계 기믹 등록. list: [{ ratio, run(room, mon) }] — HP가 ratio 이하로 내려가면 run 호출.
+function registerHpGimmicks(mon, list) {
+    const st = mon && mon.bossState;
+    if (!st) return;
+    st.hpGimmicks = (list || []).map(g => ({ ratio: Number(g.ratio || 0), run: g.run, fired: false }));
+}
+
+function stepBossHpGimmick(room, mon) {
+    const st = mon.bossState;
+    const list = st.hpGimmicks;
+    if (!Array.isArray(list) || !list.length) return false;
+    const ratio = mon.hpMax > 0 ? mon.hp / mon.hpMax : 1;
+    const pending = list.find(g => !g.fired && ratio <= g.ratio);
+    if (!pending) return false;
+    pending.fired = true;
+    st.gimmickActive = { ratio: pending.ratio };
+    if (typeof pending.run === 'function') pending.run(room, mon);
+    return true;
+}
+
+// 기믹 종료 — 일반 공격/짤패턴 타이머 재개
+function endBossGimmick(mon) {
+    if (mon && mon.bossState) mon.bossState.gimmickActive = null;
+}
+
+// 채팅 기믹: 제한 시간 내 발화한 생존자를 집계. onFinish(room, mon, gimmick)에서 gimmick.responded / gimmick.need 판정.
+function chatGimmickMajority(aliveCount) {
+    return Math.max(1, Math.ceil(Number(aliveCount || 0) / 2));
+}
+
+function startChatGimmick(room, mon, opts) {
+    const st = mon && mon.bossState;
+    if (!st) return null;
+    const o = opts || {};
+    st.chatGimmick = {
+        label: o.label || '채팅',
+        remain: Number(o.seconds || 10),
+        responded: new Set(),
+        need: chatGimmickMajority(getAliveMembers(room).length),
+        onFinish: o.onFinish || null
+    };
+    return st.chatGimmick;
+}
+
+function tickChatGimmick(room, mon, dt) {
+    const st = mon.bossState;
+    const g = st.chatGimmick;
+    g.remain = Math.max(0, Number(g.remain || 0) - dt);
+    if (g.remain > 0) return;
+    st.chatGimmick = null;
+    if (typeof g.onFinish === 'function') g.onFinish(room, mon, g);
+}
+
+// 시간제한 투표. resolver(room, topName, counts, voteState) — 시간 종료 또는 생존자 전원 투표 시 호출.
+function startVote(room, opts) {
+    const o = opts || {};
+    room.voteState = {
+        prompt: o.prompt || '투표',
+        deadline: Number(o.seconds || 15),
+        votes: {},
+        candidates: getAliveMembers(room).map(m => m.name),
+        resolver: o.resolver || null
+    };
+    pushNotice(room, '🗳 ' + room.voteState.prompt + ' (' + Math.round(room.voteState.deadline) + '초)', 'danger', 5000);
+    broadcastRoom(room);
+    return room.voteState;
+}
+
+// 첫 투표 고정 — 중복 투표는 무시된다.
+function castVote(name, target) {
+    const room = getRoomOf(name);
+    if (!room || !room.voteState) return { error: '진행 중인 투표가 없습니다.' };
+    const me = findMember(room, name);
+    if (!me || !me.runtime || me.runtime.dead) return { error: '투표할 수 없는 상태입니다.' };
+    const vs = room.voteState;
+    if (vs.votes[name]) return { error: '이미 투표했습니다.' };
+    if (!vs.candidates.includes(String(target))) return { error: '투표할 수 없는 대상입니다.' };
+    vs.votes[name] = String(target);
+    broadcastRoom(room);
+    if (getAliveMembers(room).every(m => vs.votes[m.name])) resolveVote(room);
+    return { ok: true };
+}
+
+function resolveVote(room) {
+    const vs = room.voteState;
+    if (!vs) return;
+    room.voteState = null;
+    const counts = {};
+    for (const target of Object.values(vs.votes)) counts[target] = (counts[target] || 0) + 1;
+    let top = null, best = 0;
+    for (const key of Object.keys(counts)) if (counts[key] > best) { best = counts[key]; top = key; }
+    if (typeof vs.resolver === 'function') vs.resolver(room, top, counts, vs);
+    broadcastRoom(room);
+}
+
+// 봉인: 스킬/기본공격/물약 사용 차단
+function applySealToMember(room, member, seconds, label) {
+    if (!member || !member.runtime || member.runtime.dead) return;
+    member.runtime.sealRemain = Math.max(Number(member.runtime.sealRemain || 0), Number(seconds || 0));
+    pushCombat(room, '🔒 ' + member.name + ' 봉인' + (label ? ' [' + label + ']' : '') + ' ' + Number(seconds || 0).toFixed(1) + 's', 'damage');
+}
+
+// 받는 피해 증가 스택 디버프 (runtime.buffs 재사용)
+function addTakenDamageUpStack(member, perStack, remain, label) {
+    const r = member && member.runtime;
+    if (!r) return null;
+    const name = label || '받는 피해 증가';
+    const exist = (r.buffs || []).find(b => b.id === 'takenDamageUp');
+    const rate = Number(perStack || 0);
+    if (exist) {
+        exist.stack = Number(exist.stack || 1) + 1;
+        exist.perStack = rate;
+        exist.value = 1 + exist.stack * rate;
+        exist.remain = Math.max(Number(exist.remain || 0), Number(remain || 0));
+        exist.label = name + ' x' + exist.stack;
+        return exist;
+    }
+    upsertMemberBuff(member, { id: 'takenDamageUp', label: name + ' x1', stack: 1, perStack: rate, value: 1 + rate, remain: Number(remain || 0) });
+    return (r.buffs || []).find(b => b.id === 'takenDamageUp');
+}
+
+function getTakenDamageUpMul(member) {
+    const b = member && member.runtime && (member.runtime.buffs || []).find(x => x.id === 'takenDamageUp');
+    return b ? Math.max(0, Number(b.value || 1)) : 1;
+}
+
+// 플레이어 측 속성 도트. ratio는 보스 공격력 대비 비율, remain 미지정 시 무한.
+function applyElementalDotToMember(room, member, opts) {
+    const r = member && member.runtime;
+    if (!r || r.dead) return null;
+    const o = opts || {};
+    const mon = room.monster;
+    const srcStats = (mon && mon.stats) || {};
+    const baseAtk = Number(srcStats.atk || (mon && mon.atk) || 0);
+    const interval = Math.max(0.2, Number(o.interval || 1));
+    const dot = {
+        id: o.id || o.label || 'dot',
+        label: o.label || '속성 지속 피해',
+        interval,
+        tick: interval,
+        power: Math.max(0, baseAtk * Number(o.ratio || 0)),
+        element: o.element || null,
+        srcStats,
+        remain: o.remain == null ? Infinity : Number(o.remain),
+        source: o.source || (mon && mon.name) || '지속 피해'
+    };
+    if (!Array.isArray(r.dots)) r.dots = [];
+    const exist = r.dots.find(d => d.id === dot.id);
+    if (exist) { Object.assign(exist, dot); return exist; }
+    r.dots.push(dot);
+    return dot;
+}
+
+function clearMemberDot(member, id) {
+    const r = member && member.runtime;
+    if (!r || !Array.isArray(r.dots)) return;
+    r.dots = id ? r.dots.filter(d => d.id !== id) : [];
+}
+
+function stepMemberDots(room, member, dt) {
+    const r = member.runtime;
+    if (!Array.isArray(r.dots) || !r.dots.length) return;
+    for (let i = r.dots.length - 1; i >= 0; i--) {
+        const d = r.dots[i];
+        d.remain -= dt;
+        d.tick -= dt;
+        if (d.tick <= 0) {
+            d.tick += d.interval;
+            let dmg = d.power;
+            if (d.element && typeof rpgenius.getElementDamageMultiplier === 'function') {
+                dmg *= rpgenius.getElementDamageMultiplier(d.element, d.srcStats, getPartyDynamicDefenseStats(member));
+            }
+            applyFixedDamageToMember(room, member, Math.max(1, Math.round(dmg)), d.source + ' [' + d.label + ']');
+            if (room.state !== 'inProgress' || r.dead) return;
+        }
+        if (d.remain <= 0) r.dots.splice(i, 1);
+    }
+}
+
 function applyBlackHoduCritReflect(room, attacker, result) {
     const mon = room && room.monster;
     const st = mon && mon.bossState;
@@ -2876,9 +3470,500 @@ function applyBlackHoduCritReflect(room, attacker, result) {
     applyDamageToMember(room, target, calculateNormalDamageToMember(room, mon, target, reflect), mon.name + ' [치명 반사]');
 }
 
+// ===== 부타게임: 타부자고 =====
+
+function createTabuzagoBossState(monDef) {
+    const find = type => ((monDef && monDef.patterns) || []).find(p => p && p.type === type) || {};
+    return {
+        puzzleTimer: Number(find('puzzleThrow').interval || 17),
+        dealingTimer: Number(find('dealingCharge').interval || 20),
+        dealingCount: 0,
+        reflectTimer: Number(find('reflectWindow').interval || 50),
+        reflectWindow: 0,
+        reflectAccum: 0,
+        mochiTimer: Number(find('mochiShield').interval || 0),
+        mochiWindow: 0
+    };
+}
+
+function onSpawnTabuzago(room, mon) {
+    const lines = Math.max(1, Number(mon.hpLines || 1));
+    const chat = getMonsterPattern(mon, 'chatCallGimmick');
+    const vote = getMonsterPattern(mon, 'voteGimmick');
+    registerHpGimmicks(mon, [
+        { ratio: Number(chat.lineThreshold || 90) / lines, run: startTabuzagoChatGimmick },
+        { ratio: Number(vote.lineThreshold || 40) / lines, run: startTabuzagoVoteGimmick }
+    ]);
+}
+
+// 체력 x90 — '김쁠뿡' 채팅 기믹
+function startTabuzagoChatGimmick(room, mon) {
+    const p = getMonsterPattern(mon, 'chatCallGimmick');
+    const sec = Number(p.seconds || 7);
+    pushNotice(room, '“야, 김쁠뿡!!!!!!” 타부자고가 파티원을 부릅니다. ' + sec + '초 안에 대답해줘야만 할 것 같습니다.', 'danger', 6000);
+    startChatGimmick(room, mon, {
+        label: p.name || '김쁠뿡',
+        seconds: sec,
+        onFinish: (rm, mo, g) => {
+            endBossGimmick(mo);
+            if (g.responded.size >= g.need) {
+                pushCombat(rm, mo.name + " '으악!'", 'buff');
+                applyBossGroggy(rm, mo, Number(p.groggy || 8), Number(p.takenDamageUp || 0.2));
+                addSupportGauge(rm, Number(p.gauge || 0));
+            } else {
+                wipeParty(rm, '김쁠뿡', mo.name + ' [' + (p.name || '김쁠뿡') + '] 아무도 대답하지 않았다 — 파티 전멸');
+            }
+        }
+    });
+}
+
+// 체력 x40 — 부타 투표
+function startTabuzagoVoteGimmick(room, mon) {
+    const p = getMonsterPattern(mon, 'voteGimmick');
+    pushNotice(room, '지금부터 부타를 투표하겠습니다. 각자 싫어하는 플레이어를 투표해주세요. 동률이 나온 플레이어는 모두 죽습니다.', 'danger', 6000);
+    startVote(room, {
+        prompt: '부타 투표 — 싫어하는 플레이어를 투표하세요',
+        seconds: Number(p.seconds || 7),
+        resolver: (rm, top, counts, vs) => {
+            endBossGimmick(mon);
+            resolveTabuzagoVote(rm, mon, counts, vs, p);
+        }
+    });
+}
+
+function resolveTabuzagoVote(room, mon, counts, vs, p) {
+    const voters = vs.candidates || [];
+    if (voters.some(name => !vs.votes[name])) {
+        pushCombat(room, mon.name + " '누군가 투표를 안했네?'", 'danger');
+        wipeParty(room, '부타 투표', mon.name + ' [부타 투표] 미투표자 발생 — 파티 전멸');
+        return;
+    }
+    const tally = Object.values(counts);
+    const max = tally.length ? Math.max.apply(null, tally) : 0;
+    const n = voters.length;
+    let survived = false;
+    let doomed = [];
+    if (n <= 1) survived = vs.votes[voters[0]] === voters[0];
+    else if (n === 2) survived = max === 2;
+    else if (n === 3) survived = max >= 2;
+    else {
+        const twos = Object.keys(counts).filter(k => counts[k] === 2);
+        if (twos.length === 2) { survived = true; doomed = twos; }
+        else survived = max > 1;
+    }
+    if (!survived) {
+        wipeParty(room, '부타 투표', mon.name + ' [부타 투표] 파훼 실패 — 파티 전멸');
+        return;
+    }
+    for (const name of doomed) {
+        const target = findMember(room, name);
+        if (target) executeMember(room, target, mon.name + ' [부타 투표] 동률');
+        if (room.state !== 'inProgress') return;
+    }
+    pushCombat(room, mon.name + ' [부타 투표] 파훼!', 'buff');
+    addSupportGauge(room, Number(p.gauge || 0));
+}
+
+function stepTabuzago(room, mon, dt) {
+    const st = mon.bossState;
+    if (st.casting) return tickBossCast(room, mon, dt);
+    if (tickTabuzagoMochi(room, mon, dt)) return true;
+    if (tickTabuzagoReflect(room, mon, dt)) return true;
+
+    // 퍼즐 던지기
+    st.puzzleTimer = Math.max(0, Number(st.puzzleTimer || 0) - dt);
+    if (st.puzzleTimer <= 0) {
+        const p = getMonsterPattern(mon, 'puzzleThrow');
+        st.puzzleTimer += Number(p.interval || 17);
+        pushCombat(room, mon.name + '가 퍼즐을 요리조리 던져댑니다.', 'danger');
+        const hits = Number(p.hits || 15);
+        const raw = bossAtk(mon) * Number(p.atkRatio || 0.5);
+        for (let i = 0; i < hits; i++) {
+            const alive = getAliveMembers(room);
+            if (!alive.length) break;
+            const target = alive[Math.floor(Math.random() * alive.length)];
+            applyDamageToMember(room, target, calculateNormalDamageToMember(room, mon, target, raw), mon.name + ' [' + (p.name || '퍼즐 던지기') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon) return true;
+        }
+        return true;
+    }
+    // 무난한 딜링 → 3회 누적 시 확실한 딜링
+    st.dealingTimer = Math.max(0, Number(st.dealingTimer || 0) - dt);
+    if (st.dealingTimer <= 0) {
+        const p = getMonsterPattern(mon, 'dealingCharge');
+        const need = Number(p.count || 3);
+        st.dealingTimer += Number(p.interval || 20);
+        st.dealingCount += 1;
+        if (st.dealingCount >= need) {
+            st.dealingCount = 0;
+            pushNotice(room, mon.name + '가 확실한 딜링을 예고합니다!', 'danger', 4500);
+            const pct = Number(p.targetMaxHpPct || 0.3);
+            for (const m of getAliveMembers(room)) {
+                applyFixedDamageToMember(room, m, Math.ceil(Number(m.runtime.hpMax || 0) * pct), mon.name + ' [' + (p.finishName || '확실한 딜링') + ']');
+                if (room.state !== 'inProgress' || room.monster !== mon) return true;
+            }
+        } else {
+            pushCombat(room, mon.name + '가 딜링을 준비 중입니다... (' + st.dealingCount + '/' + need + ')', 'danger');
+        }
+        return true;
+    }
+    // 반사 준비
+    st.reflectTimer = Math.max(0, Number(st.reflectTimer || 0) - dt);
+    if (st.reflectTimer <= 0) {
+        const p = getMonsterPattern(mon, 'reflectWindow');
+        st.reflectTimer += Number(p.interval || 50);
+        st.reflectWindow = Number(p.windowSec || 5);
+        st.reflectAccum = 0;
+        st.onDamageTaken = (rm, mo, dmg) => { mo.bossState.reflectAccum += dmg; };
+        pushCombat(room, mon.name + '가 움츠러 듭니다...', 'danger');
+        return true;
+    }
+    // 모찌나간다 (하드 전용 — interval 0이면 비활성)
+    const mochi = getMonsterPattern(mon, 'mochiShield');
+    if (Number(mochi.interval || 0) > 0) {
+        st.mochiTimer = Math.max(0, Number(st.mochiTimer || 0) - dt);
+        if (st.mochiTimer <= 0) {
+            st.mochiTimer += Number(mochi.interval);
+            st.mochiWindow = Number(mochi.windowSec || 8);
+            pushNotice(room, '모찌나가요...!!!', 'danger', 4500);
+            setBossShield(room, mon, Number(mochi.shield || 150000), mochi.name || '모찌나간다');
+            return true;
+        }
+    }
+    return false;
+}
+
+function tickTabuzagoReflect(room, mon, dt) {
+    const st = mon.bossState;
+    if (!(Number(st.reflectWindow || 0) > 0)) return false;
+    st.reflectWindow = Math.max(0, st.reflectWindow - dt);
+    if (st.reflectWindow > 0) return false;
+    const p = getMonsterPattern(mon, 'reflectWindow');
+    st.onDamageTaken = null;
+    if (st.reflectAccum > Number(p.threshold || 60000)) {
+        const dmg = Number(p.fixedDamage || 18000);
+        pushCombat(room, mon.name + ' [' + (p.name || '반사') + '] 반격! (누적 ' + comma(Math.round(st.reflectAccum)) + ')', 'danger');
+        for (const m of getAliveMembers(room)) {
+            applyFixedDamageToMember(room, m, dmg, mon.name + ' [' + (p.name || '반사') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon) return true;
+        }
+    } else {
+        pushCombat(room, mon.name + ' [' + (p.name || '반사') + '] 아무 일도 일어나지 않았다 (누적 ' + comma(Math.round(st.reflectAccum)) + ')', 'buff');
+    }
+    st.reflectAccum = 0;
+    return true;
+}
+
+function tickTabuzagoMochi(room, mon, dt) {
+    const st = mon.bossState;
+    if (!(Number(st.mochiWindow || 0) > 0)) return false;
+    const p = getMonsterPattern(mon, 'mochiShield');
+    if (Number(mon.shield || 0) <= 0) {
+        st.mochiWindow = 0;
+        clearBossShield(mon);
+        pushCombat(room, mon.name + ' [' + (p.name || '모찌나간다') + '] 보호막 파괴!', 'buff');
+        applyBossGroggy(room, mon, Number(p.groggy || 6), Number(p.takenDamageUp || 0.3));
+        return true;
+    }
+    st.mochiWindow = Math.max(0, st.mochiWindow - dt);
+    if (st.mochiWindow > 0) return false;
+    clearBossShield(mon);
+    const stun = Number(p.stun || 5);
+    for (const m of getAliveMembers(room)) m.runtime.stunRemain = Math.max(Number(m.runtime.stunRemain || 0), stun);
+    pushNotice(room, '💥 모찌나간다 저지 실패! 전원 ' + stun + '초간 기절', 'danger', 4500);
+    return true;
+}
+
+// ===== 부타게임: 잉여왕 =====
+
+function createIngyeoWangBossState(monDef) {
+    const find = type => ((monDef && monDef.patterns) || []).find(p => p && p.type === type) || {};
+    return {
+        bounceTimer: Number(find('bounceDebuff').interval || 10),
+        flameTimer: Number(find('flameBurst').interval || 30),
+        chargeTimer: Number(find('chargeBlock').interval || 30),
+        cannonTimer: Number(find('heavenCannon').interval || 21),
+        markName: null,
+        markCycle: null,
+        blockUsers: null,
+        berserk: false,
+        dieTimer: 0
+    };
+}
+
+function onSpawnIngyeoWang(room, mon) {
+    const lines = Math.max(1, Number(mon.hpLines || 1));
+    const rain = getMonsterPattern(mon, 'rainShield');
+    registerHpGimmicks(mon, (rain.lineThresholds || []).map(line => ({
+        ratio: Number(line) / lines,
+        run: startIngyeoRain
+    })));
+    // 하드: HP 0이 아니라 1에서 멈추고 폭주 형태로 전환
+    if (mon.berserkForm) mon.hpFloor = 1;
+    moveIngyeoMark(room, mon);
+}
+
+// 표식 순환: 입장 순서대로, 사망자는 건너뛰고, 한 바퀴 돌기 전에는 재지목하지 않는다.
+function moveIngyeoMark(room, mon) {
+    const st = mon.bossState;
+    const order = room.members.map(m => m.name);
+    const aliveAt = idx => {
+        const m = findMember(room, st.markCycle[idx]);
+        return m && m.runtime && !m.runtime.dead;
+    };
+    if (!Array.isArray(st.markCycle) || !st.markCycle.length) st.markCycle = order.slice();
+    let idx = st.markCycle.findIndex((_, i) => aliveAt(i));
+    if (idx < 0) { st.markCycle = order.slice(); idx = st.markCycle.findIndex((_, i) => aliveAt(i)); }
+    if (idx < 0) return;
+    const name = st.markCycle.splice(idx, 1)[0];
+    const prev = st.markName && findMember(room, st.markName);
+    if (prev) clearMemberDot(prev, 'ingyeoMark');
+    st.markName = name;
+    const target = findMember(room, name);
+    if (!target) return;
+    const p = getMonsterPattern(mon, 'markDot');
+    applyElementalDotToMember(room, target, {
+        id: 'ingyeoMark',
+        interval: Number(p.interval || 3),
+        ratio: Number(p.atkRatio || 0.1),
+        element: p.element || '화',
+        label: p.name || '잉여왕 표식',
+        source: mon.name
+    });
+    pushNotice(room, '잉여왕이 ' + name + '를 주시합니다...', 'danger', 4500);
+}
+
+// 체력 고정 패턴 — '레인! 도와줘!'
+function startIngyeoRain(room, mon) {
+    const st = mon.bossState;
+    const p = getMonsterPattern(mon, 'rainShield');
+    pushNotice(room, '레인! 도와줘!', 'danger', 5000);
+    for (const m of getAliveMembers(room)) {
+        if (m.name !== st.markName) applySealToMember(room, m, Number(p.sealSec || 10), p.name || '레인! 도와줘!');
+    }
+    setBossShield(room, mon, Number(p.shield || 80000), p.name || '레인! 도와줘!');
+    st.gimmickActive.remain = Number(p.windowSec || 10);
+    st.gimmickActive.tick = tickIngyeoRain;
+}
+
+function tickIngyeoRain(room, mon, dt) {
+    const g = mon.bossState.gimmickActive;
+    if (Number(mon.shield || 0) <= 0) { finishIngyeoRain(room, mon, true); return; }
+    g.remain = Math.max(0, Number(g.remain || 0) - dt);
+    if (g.remain <= 0) finishIngyeoRain(room, mon, false);
+}
+
+function finishIngyeoRain(room, mon, success) {
+    const p = getMonsterPattern(mon, 'rainShield');
+    clearBossShield(mon);
+    endBossGimmick(mon);
+    for (const m of room.members) if (m.runtime) m.runtime.sealRemain = 0;
+    if (success) {
+        pushCombat(room, mon.name + ' [' + (p.name || '레인! 도와줘!') + '] 보호막 파괴!', 'buff');
+        applyBossGroggy(room, mon, Number(p.groggy || 8), Number(p.takenDamageUp || 0.2));
+        addSupportGauge(room, Number(p.gauge || 0));
+    } else if (p.failWipe) {
+        wipeParty(room, '레인! 도와줘!', mon.name + ' [' + (p.name || '레인! 도와줘!') + '] 보호막 제거 실패 — 파티 전멸');
+        return;
+    } else {
+        const dmg = Number(p.failFixedDamage || 40000);
+        for (const m of getAliveMembers(room)) {
+            applyFixedDamageToMember(room, m, dmg, mon.name + ' [' + (p.name || '레인! 도와줘!') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon) return;
+        }
+    }
+    moveIngyeoMark(room, mon);
+}
+
+// '저지' 임시 스킬 부여/회수 ('자폭' 선례와 동일한 동적 스킬 방식)
+function grantBlockSkill(room) {
+    for (const m of getAliveMembers(room)) {
+        if (m.skills.includes('저지')) continue;
+        m.skills.push('저지');
+        m.skillDefs['저지'] = { type: 'active', source: 'boss', mp: 0, cd: 0, target: 'self', desc: '잉여왕의 기 모으기를 저지합니다. 과반수가 사용해야 성공합니다.' };
+    }
+    broadcastRoom(room);
+}
+
+function revokeBlockSkill(room) {
+    for (const m of room.members) {
+        m.skills = m.skills.filter(s => s !== '저지');
+        if (m.skillDefs) delete m.skillDefs['저지'];
+    }
+    broadcastRoom(room);
+}
+
+function usePartyBlockSkill(room, member) {
+    const st = room.monster && room.monster.bossState;
+    if (!st || !st.blockUsers) return { error: '지금은 사용할 수 없습니다.' };
+    if (!member.skills.includes('저지')) return { error: '습득하지 않은 스킬입니다.' };
+    if (st.blockUsers.has(member.name)) return { error: '이미 저지했습니다.' };
+    st.blockUsers.add(member.name);
+    pushCombat(room, '🛑 ' + member.name + ' [저지]', 'buff');
+    broadcastRoom(room);
+    return { ok: true };
+}
+
+function finishIngyeoCharge(room, mon) {
+    const st = mon.bossState;
+    const p = getMonsterPattern(mon, 'chargeBlock');
+    const used = st.blockUsers ? st.blockUsers.size : 0;
+    st.blockUsers = null;
+    revokeBlockSkill(room);
+    if (used >= chatGimmickMajority(getAliveMembers(room).length)) {
+        pushCombat(room, mon.name + " '앗..!!'", 'buff');
+        applyBossGroggy(room, mon, Number(p.groggy || 5), 0);
+        // '튀어오르기' 디버프 전체 삭제 + 보유자 체력 회복
+        for (const m of room.members) {
+            const r = m.runtime;
+            if (!r || !Array.isArray(r.buffs)) continue;
+            if (!r.buffs.some(b => b.id === 'takenDamageUp')) continue;
+            r.buffs = r.buffs.filter(b => b.id !== 'takenDamageUp');
+            const healed = healMember(m, Math.round(Number(r.hpMax || 0) * Number(p.healPct || 0.2)));
+            if (healed > 0) pushCombat(room, '💚 ' + m.name + ' 튀어오르기 해제 → HP +' + comma(healed), 'heal');
+        }
+        return;
+    }
+    const raw = bossAtk(mon) * Number(p.failAtkRatio || 5);
+    for (const m of getAliveMembers(room)) {
+        applyDamageToMember(room, m, calculateNormalDamageToMember(room, mon, m, raw), mon.name + ' [' + (p.name || '기모아 공격') + ']');
+        if (room.state !== 'inProgress' || room.monster !== mon) return;
+    }
+}
+
+function finishIngyeoFlame(room, mon) {
+    const p = getMonsterPattern(mon, 'flameBurst');
+    const raw = bossAtk(mon) * Number(p.atkRatio || 1.5);
+    for (const m of getAliveMembers(room)) {
+        applyDamageToMember(room, m, calculateNormalDamageToMember(room, mon, m, raw), mon.name + ' [' + (p.name || '화염 폭발') + ']');
+        if (room.state !== 'inProgress' || room.monster !== mon) return;
+    }
+}
+
+function finishIngyeoCannon(room, mon) {
+    const p = getMonsterPattern(mon, 'heavenCannon');
+    const raw = bossAtk(mon) * Number(p.atkRatio || 1.5);
+    const picked = shuffle(getAliveMembers(room)).slice(0, Math.max(1, Number(p.targets || 2)));
+    for (const m of picked) {
+        applyDamageToMember(room, m, calculateNormalDamageToMember(room, mon, m, raw), mon.name + ' [' + (p.name || '천국의 대포') + ']');
+        if (room.state !== 'inProgress' || room.monster !== mon) return;
+    }
+}
+
+// 폭주 잉여왕 전환 (하드 전용)
+function enterIngyeoBerserk(room, mon) {
+    const st = mon.bossState;
+    const form = mon.berserkForm || {};
+    st.berserk = true;
+    st.dieTimer = 0;
+    pushNotice(room, '이렇게 죽을 순 없어...!!!!', 'danger', 6000);
+    if (form.name) mon.name = form.name;
+    if (form.image) mon.image = form.image;
+    mon.patterns = form.patterns || [];
+    st.hpGimmicks = null;
+    st.gimmickActive = null;
+    const stats = mergeMonsterStats(form);
+    mon.stats = stats;
+    mon.atk = Number(stats.atk || 0);
+    mon.def = Number(stats.def || 0);
+    mon.pnt = Number(stats.pnt || 0);
+    mon.hp = 1;
+    mon.hpMax = 1;
+    mon.hpFloor = 1;
+    mon.hpLines = 0;
+    mon.actionInterval = Number(form.actionInterval || 2);
+    mon.enrageSec = Number(form.enrageSec || 60);
+    mon.enrageRemain = mon.enrageSec;
+    mon.enraged = false;
+    setBossShield(room, mon, Number(form.shield || 2000000), '폭주');
+    addMonsterDebuff(mon, { id: 'berserkTaken', type: 'takenDamage', value: Number(form.takenDamageUp || 1), remain: 999999 });
+    // 폭주지대: 전 생존자 상시 화상
+    const burn = ((form.patterns || []).find(p => p && p.type === 'burnZone')) || {};
+    for (const m of getAliveMembers(room)) {
+        applyElementalDotToMember(room, m, {
+            id: 'berserkBurn',
+            interval: Number(burn.interval || 3),
+            ratio: Number(burn.atkRatio || 0.1),
+            element: burn.element || '화',
+            label: burn.name || '폭주지대',
+            source: mon.name
+        });
+    }
+}
+
+function stepIngyeoWang(room, mon, dt) {
+    const st = mon.bossState;
+    if (mon.berserkForm && !st.berserk && mon.hp <= 1) { enterIngyeoBerserk(room, mon); return true; }
+    if (st.berserk) return stepIngyeoBerserk(room, mon, dt);
+    if (st.casting) return tickBossCast(room, mon, dt);
+
+    // 튀어오르기
+    st.bounceTimer = Math.max(0, Number(st.bounceTimer || 0) - dt);
+    if (st.bounceTimer <= 0) {
+        const p = getMonsterPattern(mon, 'bounceDebuff');
+        st.bounceTimer += Number(p.interval || 10);
+        const alive = getAliveMembers(room);
+        if (alive.length) {
+            const target = alive[Math.floor(Math.random() * alive.length)];
+            // remain 무한 대신 충분히 큰 값 — 관문 내내 유지된다
+            const buff = addTakenDamageUpStack(target, Number(p.takenDamageUp || 0.5), 999999, p.name || '튀어오르기');
+            pushCombat(room, mon.name + '가 ' + target.name + '를 튀어오르게 합니다 (x' + (buff ? buff.stack : 1) + ')', 'danger');
+        }
+        return true;
+    }
+    // 화염 폭발
+    st.flameTimer = Math.max(0, Number(st.flameTimer || 0) - dt);
+    if (st.flameTimer <= 0) {
+        const p = getMonsterPattern(mon, 'flameBurst');
+        st.flameTimer += Number(p.interval || 30);
+        pushCombat(room, mon.name + '이 화를 냅니다. 대비하세요.', 'danger');
+        startBossCast(room, mon, 'flame', p.name || '화염 폭발', Number(p.castTime || 3), finishIngyeoFlame);
+        return true;
+    }
+    // 기모아 공격
+    st.chargeTimer = Math.max(0, Number(st.chargeTimer || 0) - dt);
+    if (st.chargeTimer <= 0) {
+        const p = getMonsterPattern(mon, 'chargeBlock');
+        st.chargeTimer += Number(p.interval || 30);
+        pushNotice(room, '잉여왕이 기를 모으기 시작합니다... [저지]를 사용하세요!', 'danger', 5000);
+        st.blockUsers = new Set();
+        grantBlockSkill(room);
+        startBossCast(room, mon, 'charge', p.name || '기모아 공격', Number(p.castTime || 4), finishIngyeoCharge);
+        return true;
+    }
+    // 천국의 대포
+    st.cannonTimer = Math.max(0, Number(st.cannonTimer || 0) - dt);
+    if (st.cannonTimer <= 0) {
+        const p = getMonsterPattern(mon, 'heavenCannon');
+        st.cannonTimer += Number(p.interval || 21);
+        pushCombat(room, '미니게임천국에서 대포가 날라옵니다.', 'danger');
+        startBossCast(room, mon, 'cannon', p.name || '천국의 대포', Number(p.castTime || 2), finishIngyeoCannon);
+        return true;
+    }
+    return false;
+}
+
+function stepIngyeoBerserk(room, mon, dt) {
+    // 보호막 소진 판정은 stepRoom에서 (그로기 중에도 성립해야 하므로)
+    const st = mon.bossState;
+    st.dieTimer = Math.max(0, Number(st.dieTimer || 0) - dt);
+    if (st.dieTimer <= 0) {
+        const p = getMonsterPattern(mon, 'dieAoe');
+        st.dieTimer += Number(p.interval || 5);
+        pushCombat(room, mon.name + " '죽어버려'", 'danger');
+        const raw = bossAtk(mon) * Number(p.atkRatio || 0.75);
+        for (const m of getAliveMembers(room)) {
+            applyDamageToMember(room, m, calculateNormalDamageToMember(room, mon, m, raw), mon.name + ' [' + (p.name || '죽어') + ']');
+            if (room.state !== 'inProgress' || room.monster !== mon) return true;
+        }
+        return true;
+    }
+    return false;
+}
+
 function computeMonsterDamage(room, mon, target) {
     const quest = getQuestById(room.questId);
-    const posDef = quest.positions[target.position];
+    const posDef = (quest.positions && quest.positions[target.position]) || {};
     const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
     const targetStats = target.baseSnapshot.stats || {};
     const targetSlotEffects = target.baseSnapshot.slotEffects || {};
@@ -2926,7 +4011,7 @@ function computeMonsterDamage(room, mon, target) {
 
 function applyDamageToMember(room, member, dmg, source) {
     const r = member.runtime;
-    dmg = Math.max(0, Math.round(Number(dmg || 0)));
+    dmg = Math.max(0, Math.round(Number(dmg || 0) * getTakenDamageUpMul(member)));
     if (r.dodgeNext) {
         r.dodgeNext = false;
         pushCombat(room, source + ' → ' + member.name + ' [회피]', 'damage');
@@ -2996,7 +4081,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const tPosDef = tQuest && tQuest.positions && tQuest.positions[member.position];
         const finalDefMul = (tPosDef && tPosDef.stats && tPosDef.stats.finalDef) || 1;
         const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
-        room.monster.hp = Math.max(0, room.monster.hp - reflect);
+        applyBossHpDamage(room, room.monster, reflect);
         pushCombat(room, '💥 가시 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
@@ -3004,10 +4089,10 @@ function applyDamageToMember(room, member, dmg, source) {
     if (dmg > 0 && hasPassive(member, '가시 갑옷') && room.monster) {
         const stats = member.baseSnapshot.stats;
         const quest = getQuestById(room.questId);
-        const posDef = quest.positions[member.position];
+        const posDef = (quest.positions && quest.positions[member.position]) || {};
         const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
         const reflect = Math.max(1, calculateNormalDamageToMonster(member, room.monster, room, Math.round(Number(stats.def || 50) * finalDefMul * 0.20)));
-        room.monster.hp = Math.max(0, room.monster.hp - reflect);
+        applyBossHpDamage(room, room.monster, reflect);
         pushCombat(room, '💥 가시 갑옷 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
@@ -3084,7 +4169,8 @@ function applyDamageTakenSlotRecovery(room, damaged, damage) {
 
 function onMonsterDefeated(room) {
     const mon = room.monster;
-    if (mon && mon.bossState && !mon.bossState.revived) {
+    // reviveOnce 패턴을 가진 보스만 부활한다 (패턴이 없는 보스는 그대로 처치)
+    if (mon && mon.bossState && !mon.bossState.revived && getMonsterPattern(mon, 'reviveOnce').type) {
         const pattern = getMonsterPattern(mon, 'reviveOnce');
         const disablePatterns = pattern.disablePatternsAfterRevive !== false;
         const reviveHpPct = Number(pattern.reviveHpPct || 0.3);
@@ -3104,6 +4190,7 @@ function onMonsterDefeated(room) {
         pushCombat(room, mon.name + ' 최대 체력의 ' + pctLabel + '로 부활', 'danger');
         return;
     }
+    if (mon && mon.defeatLine) pushNotice(room, mon.defeatLine, 'big', 5000);
     pushNotice(room, '🏆 ' + (room.monster ? room.monster.name : '적') + ' 처치!', 'success', 4000);
     room.monster = null;
     endPhase(room);
@@ -3118,8 +4205,10 @@ function useSkill(name, skillName, targetName) {
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
+    if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (skillName === '자폭') return usePartySelfDestruct(room, me);
+    if (skillName === '저지') return usePartyBlockSkill(room, me);
     if (!me.skills.includes(skillName)) return { error: '습득하지 않은 스킬입니다.' };
     const def = resolveSkillDef(room, skillName, me);
     if (!def) return { error: '존재하지 않는 스킬입니다.' };
@@ -3127,7 +4216,7 @@ function useSkill(name, skillName, targetName) {
     if (nowMs() < (me.runtime.cooldownsUntil[skillName] || 0)) return { error: '쿨타임 중입니다.' };
     if (nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
     const quest = getQuestById(room.questId);
-    const posDef = quest.positions[me.position];
+    const posDef = (quest.positions && quest.positions[me.position]) || {};
     const stats = me.baseSnapshot.stats || {};
     const slotEffects = me.baseSnapshot.slotEffects || {};
     const mainCardSkillNames = (me.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
@@ -3239,7 +4328,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
     const stats = caster.baseSnapshot.stats;
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const quest = getQuestById(room.questId);
-    const posDef = quest.positions[caster.position];
+    const posDef = (quest.positions && quest.positions[caster.position]) || {};
     const finalAtkMul = (posDef && posDef.stats && posDef.stats.finalAtk) || 1;
     let skillDmgMul = (posDef && posDef.stats && posDef.stats.skillDmg) || 1;
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
@@ -3814,6 +4903,7 @@ async function usePotion(name, potionName) {
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
+    if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (nowMs() < (me.runtime.potionUntil || 0)) return { error: '물약 쿨타임 중입니다.' };
     const slot = (me.potions || []).find(p => p.name === potionName);
     if (!slot || slot.count <= 0) return { error: '보유한 물약이 없습니다.' };
@@ -3862,6 +4952,12 @@ function chat(name, text) {
     const trimmed = String(text || '').slice(0, 500).trim();
     if (!trimmed) return { error: '내용이 비어있습니다.' };
     pushChat(room, name, trimmed);
+    // 채팅 기믹: 전투 중 생존자의 발화만 집계
+    const gimmick = room.state === 'inProgress' && room.monster && room.monster.bossState && room.monster.bossState.chatGimmick;
+    if (gimmick) {
+        const me = findMember(room, name);
+        if (me && me.runtime && !me.runtime.dead) gimmick.responded.add(name);
+    }
     return { ok: true };
 }
 
@@ -3893,6 +4989,8 @@ module.exports = {
     attackMobPhase,
     useSkill,
     pickRandomSkill,
+    castVote,
+    useSupportSkill,
     getAvailablePotions,
     usePotion,
     getMyRoomSnapshot,
@@ -3909,6 +5007,32 @@ module.exports = {
         usePartySelfDestruct,
         addMonsterDebuff,
         recordPartyJudgmentDamage,
-        stepRoom
+        stepRoom,
+        createPhaseMonster,
+        setBossShield,
+        clearBossShield,
+        registerHpGimmicks,
+        endBossGimmick,
+        startBossCast,
+        startVote,
+        resolveVote,
+        startChatGimmick,
+        chatGimmickMajority,
+        applySealToMember,
+        addTakenDamageUpStack,
+        getTakenDamageUpMul,
+        applyElementalDotToMember,
+        clearMemberDot,
+        applyPlayerDamageToBoss,
+        applyBossHpDamage,
+        wipeParty,
+        addSupportGauge,
+        getQuestSupportSkills,
+        grantPartyQuestPackReward,
+        pickPartyQuestPackEntry,
+        getPartyQuestItemAsset,
+        applyBossGroggy,
+        __moveMark: moveIngyeoMark,
+        BOSS_HANDLERS
     }
 };
