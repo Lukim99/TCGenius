@@ -2779,6 +2779,10 @@ server.get('/api/lookup/equipment-passives', requireAdmin, (req, res) => {
     res.json(passives.map((p, i) => ({ id: i, name: p ? p.name : '?' })));
 });
 
+server.get('/api/lookup/titles', requireAdmin, (req, res) => {
+    res.json(rpgenius.getTitleDefs().map(t => ({ id: t.id, name: t.name })));
+});
+
 server.get('/api/lookup/cards', requireAdmin, (req, res) => {
     const cards = readJson(CHARACTER_CARDS_PATH, []);
     res.json(cards.map((card, id) => card ? { id, name: card.name } : null).filter(Boolean));
@@ -4095,6 +4099,48 @@ function buildBundleContents(data) {
         if (entry.type === '골드') return { type: '골드', name: '골드', count: countStr, imgUrl: SHOP_CURR_IMG.gold };
         if (entry.type === '가넷') return { type: '가넷', name: '가넷', count: countStr, imgUrl: SHOP_CURR_IMG.garnet };
         if (entry.type === '마일리지') return { type: '마일리지', name: '마일리지', count: countStr, label: 'Ⓜ️' };
+        if (entry.type === '포인트') return { type: '포인트', name: '포인트', count: countStr, imgUrl: SHOP_CURR_IMG.point };
+        if (entry.type === '칭호') {
+            const title = rpgenius.getTitleById(entry.title_id);
+            return { type: '칭호', name: (title ? title.name : '알 수 없는') + ' 칭호', count: '1', iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, frameUrl: null, label: title ? null : '🏅' };
+        }
+        const eqSlotMap = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
+        if (eqSlotMap[entry.type]) {
+            const [slot, idKey] = eqSlotMap[entry.type];
+            const eq = rpgenius.getDataCache('Equipment', {});
+            const eqData = eq[slot] && eq[slot][entry[idKey]];
+            return { type: entry.type, name: eqData ? '<' + eqData.rarity + '> ' + eqData.name : '알 수 없는 ' + entry.type, count: '1', iconUrl: eqData ? getEquipmentIconUrl(eqData) : null, frameUrl: eqData ? getAuctionFrameUrl('equipment', eqData.rarity) : null };
+        }
+        if (entry.type === '펫') {
+            if (typeof entry.pet_id !== 'undefined') {
+                const petData = rpgenius.getPetData(entry.pet_id);
+                return { type: '펫', name: petData ? '<' + petData.rarity + '> ' + petData.name + ' (펫)' : '알 수 없는 펫', count: countStr, iconUrl: petData ? getPetIconUrl(petData) : null, frameUrl: petData ? getAuctionFrameUrl('equipment', petData.rarity) : null };
+            }
+            return { type: '펫', name: '<' + (entry.rarity || '?') + '> 랜덤 펫', count: countStr, label: '🐾' };
+        }
+        if (entry.type === '캐릭터카드') {
+            const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+            const cardId = entry.card_id != null ? Number(entry.card_id) : (entry.character_card_id != null ? Number(entry.character_card_id) : (entry.id != null ? Number(entry.id) : -1));
+            const cardData = Number.isInteger(cardId) && cardId >= 0 ? characterCards[cardId] : null;
+            // 성급 표기/이미지: 랜덤 범위는 최소 성급 기준 (지급 시 실제 롤은 grantPackReward에서)
+            let starText, starForImg;
+            if (entry.display_star != null || entry.star_display != null) {
+                const s = Number(entry.display_star != null ? entry.display_star : entry.star_display);
+                starText = s + '성'; starForImg = Math.max(0, s - 1);
+            } else if (entry.star && typeof entry.star === 'object') {
+                const min = Number(entry.star.min || 1), max = Number(entry.star.max || entry.star.min || 1);
+                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1);
+            } else if (entry.range && typeof entry.range === 'object') {
+                const min = Number(entry.range.min || 1), max = Number(entry.range.max || entry.range.min || 1);
+                starText = (min === max ? min : min + '~' + max) + '성'; starForImg = Math.max(0, min - 1);
+            } else {
+                starForImg = Math.max(0, Number(entry.star || 0)); starText = (starForImg + 1) + '성';
+            }
+            const cardType = entry.card_type || entry.cardType || '일반';
+            if (!cardData) return { type: '캐릭터카드', name: '랜덤 캐릭터 카드 ' + starText, count: countStr, label: '🃏' };
+            const iconUrl = getCardImageUrl({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false });
+            return { type: '캐릭터카드', name: (cardType === '전직' ? '[전직] ' : '') + cardData.name + ' ' + starText, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
+        }
         return null;
     }).filter(Boolean);
 }
@@ -4129,6 +4175,9 @@ function buildRewardSummaryDisplay(summary) {
             frameUrl = data ? getAuctionFrameUrl('equipment', data.rarity) : null;
         } else if (type === 'card') {
             iconUrl = getCardImageUrl({ id: Number(parts[1]), star: Number(parts[2]), type: parts[3], skin: parts.slice(4).join(':') }, { prestige: false });
+        } else if (type === 'title') {
+            const title = rpgenius.getTitleById(parts.slice(1).join(':'));
+            iconUrl = title ? rpgenius.getTitleImageUrl(title.name) : null;
         }
         return { name: entry.label, count: entry.count, iconUrl, frameUrl };
     });
