@@ -4719,8 +4719,9 @@ function dexCard(entry) {
         block.appendChild(el('div', { class: 'dex-passive-label' }, '패시브 · ' + entry.passive.name));
         block.appendChild(el('div', { class: 'dex-passive-desc' }, entry.passive.desc));
         if (entry.passive.cooltime) {
-            const ctMin = Math.round(entry.passive.cooltime / 60000);
-            block.appendChild(el('div', { class: 'dex-passive-cd' }, '재사용 대기시간: ' + ctMin + '분'));
+            const ctSec = Math.round(entry.passive.cooltime / 1000);
+            const ctText = ctSec % 60 === 0 ? (ctSec / 60) + '분' : ctSec + '초';
+            block.appendChild(el('div', { class: 'dex-passive-cd' }, '재사용 대기시간: ' + ctText));
         }
         card.appendChild(block);
     }

@@ -296,7 +296,7 @@ const fieldEquipmentDotTimers = {};
 function ensureFieldEquipmentDotTimer(user, channel) {
     if (!user || !user.field) return;
     const state = user.field.equipmentState || {};
-    if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    if (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldEquipmentDotTimers[user.name]) return;
     fieldEquipmentDotTimers[user.name] = setInterval(() => enqueueFieldTick(user.name, () => runFieldEquipmentDotTick(user.name)).catch(e => console.error('[equipment dot tick]', e.message)), 200);
@@ -310,7 +310,7 @@ async function runFieldEquipmentDotTick(userName) {
     const user = await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const state = user && user.field && user.field.equipmentState;
-    if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
+    if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
     const context = getFieldCombatContext(user);
     if (context.error) { clearFieldEquipmentDotTimer(userName); return; }
     const now = Date.now();
@@ -355,6 +355,24 @@ async function runFieldEquipmentDotTick(userName) {
         }
     }
     const lines = [];
+    if (state.dragonRegen) {
+        const regen = state.dragonRegen;
+        let healTicks = 0;
+        while (regen.ticksLeft > 0 && Number(regen.nextTickAt || 0) <= now) {
+            healTicks++;
+            regen.ticksLeft--;
+            regen.nextTickAt = Number(regen.nextTickAt || 0) + 1000;
+        }
+        if (healTicks > 0) {
+            const stats = calculateUserStats(user);
+            const maxHp = Number(stats.hp || 0);
+            const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+            user.hp = Math.min(maxHp, beforeHp + applyRecoveryEfficiency(maxHp * IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * healTicks, user, stats));
+            const recovered = user.hp - beforeHp;
+            if (recovered > 0) lines.push('🔥 불굴 효과로 HP +' + comma(recovered) + ' 회복 (' + comma(user.hp) + '/' + comma(maxHp) + ')');
+        }
+        if (regen.ticksLeft <= 0) delete state.dragonRegen;
+    }
     for (const effect of pending) {
         if (!user.field) break;
         const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated };
@@ -3825,8 +3843,10 @@ function getPassiveMpRecovery(user) {
     return 0;
 }
 
-const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
-const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
+const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 65 * 1000;
+const IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO = 0.2;
+const IMMORTAL_DRAGON_ARMOR_REGEN_TICKS = 5;
+const IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT = 0.03;
 
 function getEquipmentPassives() {
     const passives = readJson(EQUIPMENT_PASSIVE_PATH, []).slice();
@@ -3883,22 +3903,20 @@ function getEquippedPassiveIds(user) {
     return result;
 }
 
-function tryImmortalArmorRevive(user, maxHp, lines) {
+function tryImmortalArmorRegen(user, maxHp, lines) {
+    if (!user.field) return false;
+    const curHp = Number(user.hp || 0);
+    if (curHp <= 0 || curHp > Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO) return false;
     const data = findEquipWithPassiveId(user, 3);
     if (!data) return false;
     if (!user.equipmentPassiveCd || typeof user.equipmentPassiveCd != 'object') user.equipmentPassiveCd = {};
     const now = Date.now();
-    const readyAt = Number(user.equipmentPassiveCd.immortalDragonArmor || 0);
-    if (readyAt > now) {
-        const remainMs = readyAt - now;
-        const remainMin = Math.ceil(remainMs / 60000);
-        lines.push('🔥 ' + data.name + ' 효과 재사용 대기 중... (' + remainMin + '분 남음)');
-        return false;
-    }
-    const reviveHp = Math.max(1, Math.floor(Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO));
-    user.hp = reviveHp;
+    if (Number(user.equipmentPassiveCd.immortalDragonArmor || 0) > now) return false;
     user.equipmentPassiveCd.immortalDragonArmor = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
-    lines.push('🔥 ' + data.name + '의 불멸 효과 발동! HP ' + comma(reviveHp) + ' (' + Math.round(IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO * 100) + '%)로 부활했습니다.');
+    const state = user.field.equipmentState = user.field.equipmentState || {};
+    state.dragonRegen = { ticksLeft: IMMORTAL_DRAGON_ARMOR_REGEN_TICKS, nextTickAt: now + 1000 };
+    lines.push('🔥 ' + data.name + '의 불굴 효과 발동! ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초에 걸쳐 초당 최대 체력의 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '%를 회복합니다.');
+    ensureFieldEquipmentDotTimer(user);
     return true;
 }
 
@@ -5040,7 +5058,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     if (eliteDefeatedByThorns) return finishEliteKill();
     applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
-    if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
+    if (user.hp <= 0) {
         user.hp = 1;
         saveFieldCooldowns(user);
         releaseEliteEncounter(user);
@@ -5049,6 +5067,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
         lines.push('', isHell ? '💀 보상을 획득하지 못하고 퇴장했습니다. 소모한 헬 초대장은 반환되지 않습니다.' : '💀 보상을 획득하지 못하고 필드에서 퇴장했습니다.');
         return lines.join('\n');
     }
+    tryImmortalArmorRegen(user, maxHp, lines);
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
     if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
     return lines.join('\n');
@@ -5263,7 +5282,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     applyDamageTakenSlotRecovery(user, maxHp, fieldDamage, slotEffects, stats, lines);
     applySkillRecovery(user, maxHp, extra, lines);
 
-    if (user.hp <= 0 && !tryImmortalArmorRevive(user, maxHp, lines)) {
+    if (user.hp <= 0) {
         user.hp = 1;
         saveFieldCooldowns(user);
         if (isDailyDungeon) {
@@ -5278,6 +5297,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         return lines.join('\n');
     }
 
+    tryImmortalArmorRegen(user, maxHp, lines);
     lines.push('- 남은 체력: ' + comma(user.hp) + '/' + comma(maxHp));
 
     if (isDailyDungeon) {
@@ -6868,19 +6888,13 @@ async function runWorldBossSkillTick(userName, bossName) {
     }
     tickLines.push('- ' + boss.name + ' HP ' + comma(Math.max(0, Number(state.hp || 0))) + '/' + comma(Number(boss.hp || 0)));
     if (latest.hp <= 0) {
-        const reviveLines = [];
-        const revived = tryImmortalArmorRevive(latest, Number(userStats.hp || 0), reviveLines);
-        if (revived) {
-            reviveLines.forEach(line => tickLines.push(line));
-            tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
-        } else {
-            clearWorldBossSkillTimer(userName);
-            latest.field = null;
-            latest.hp = 1;
-            tickLines.push('- 남은 체력: 1/' + comma(Number(userStats.hp || 0)));
-            tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
-        }
+        clearWorldBossSkillTimer(userName);
+        latest.field = null;
+        latest.hp = 1;
+        tickLines.push('- 남은 체력: 1/' + comma(Number(userStats.hp || 0)));
+        tickLines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
     } else {
+        tryImmortalArmorRegen(latest, Number(userStats.hp || 0), tickLines);
         tickLines.push('- 남은 체력: ' + comma(latest.hp) + '/' + comma(Number(userStats.hp || 0)));
     }
     if (latest.field && latest.field.worldBoss) scheduleNextWorldBossSkillTimer(latest, boss);

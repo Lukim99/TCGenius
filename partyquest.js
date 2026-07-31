@@ -16,8 +16,10 @@ const POSITION_LIST = ['탱커', '브루저', '메인딜러', '서브딜러', '�
 const PERMANENT_BUFF_SEC = 86400;
 const TICK_MS = 200;
 const IMMORTAL_DRAGON_ARMOR_NAME = '불멸하는 업화의 용갑';
-const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
-const IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO = 0.2;
+const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 65 * 1000;
+const IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO = 0.2;
+const IMMORTAL_DRAGON_ARMOR_REGEN_TICKS = 5;
+const IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT = 0.03;
 
 let questsCache = null;
 let questsCacheMtime = 0;
@@ -1783,6 +1785,17 @@ function stepRoom(room) {
         if (!r.dead) {
             if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax && canPartyReceiveHealing(m)) r.hp = Math.min(r.hpMax, r.hp + r.hpMax * r.petHpRegenRate * dt);
             if (r.petMpRegenRate > 0 && r.mp < r.mpMax) r.mp = Math.min(r.mpMax, r.mp + r.mpMax * r.petMpRegenRate * dt);
+            if (r.dragonRegen) {
+                const now = nowMs();
+                while (r.dragonRegen.ticksLeft > 0 && now >= Number(r.dragonRegen.nextTickAt || 0)) {
+                    const amount = Math.max(1, Math.round(r.hpMax * IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * getPartyRecoveryMultiplier(m)));
+                    const healed = healMember(m, amount);
+                    if (healed > 0) pushCombat(room, '🔥 ' + m.name + ' [' + IMMORTAL_DRAGON_ARMOR_NAME + '] HP +' + comma(healed), 'heal');
+                    r.dragonRegen.ticksLeft -= 1;
+                    r.dragonRegen.nextTickAt = Number(r.dragonRegen.nextTickAt || 0) + 1000;
+                }
+                if (r.dragonRegen.ticksLeft <= 0) r.dragonRegen = null;
+            }
             const infernoHealRatio = getTranscendStageValue(m, '솔로 인페르노', .03, .02);
             if (infernoHealRatio > 0) {
                 const equipmentState = r.equipmentState || (r.equipmentState = {});
@@ -2941,7 +2954,6 @@ function applyBossHpDamage(room, mon, damage) {
 function executeMember(room, member, source) {
     if (!member || !member.runtime || member.runtime.dead) return;
     member.runtime.hp = 0;
-    if (tryPartyImmortalArmorRevive(room, member)) return;
     member.runtime.dead = true;
     pushCombat(room, source + ' → ' + member.name + ' [즉사]', 'damage');
     pushNotice(room, '☠ ' + member.name + ' 전투불능', 'danger', 3500);
@@ -4046,15 +4058,13 @@ function applyDamageToMember(room, member, dmg, source) {
             protector.runtime.hp = Math.max(0, protector.runtime.hp - absorbed);
             pushCombat(room, '🤝 ' + protector.name + ' 결속 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
             if (protector.runtime.hp <= 0) {
-                if (!tryPartyImmortalArmorRevive(room, protector)) {
-                    protector.runtime.dead = true;
-                    pushNotice(room, '☠ ' + protector.name + ' 전투불능', 'danger', 3500);
-                    if (room.members.every(m => m.runtime.dead)) {
-                        endQuest(room, false, '파티 전멸');
-                        return;
-                    }
+                protector.runtime.dead = true;
+                pushNotice(room, '☠ ' + protector.name + ' 전투불능', 'danger', 3500);
+                if (room.members.every(m => m.runtime.dead)) {
+                    endQuest(room, false, '파티 전멸');
+                    return;
                 }
-            }
+            } else maybeStartImmortalArmorRegen(room, protector);
         }
     }
     if (dmg <= 0) {
@@ -4093,6 +4103,7 @@ function applyDamageToMember(room, member, dmg, source) {
     }
     r.hp = Math.max(0, r.hp - dmg);
     pushCombat(room, source + ' → ' + member.name + ' [-' + dmg + ']', 'damage');
+    if (r.hp > 0) maybeStartImmortalArmorRegen(room, member);
     applyDamageTakenSlotRecovery(room, member, dmg);
     // 장비 패시브: 가시 (passive_id 5) — 방어력 × ratio 고정 피해 반사
     const thornSnap = member.baseSnapshot && member.baseSnapshot.thorns;
@@ -4118,7 +4129,6 @@ function applyDamageToMember(room, member, dmg, source) {
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     if (r.hp <= 0) {
-        if (tryPartyImmortalArmorRevive(room, member)) return;
         r.dead = true;
         pushNotice(room, '☠ ' + member.name + ' 전투불능', 'danger', 3500);
         const allDead = room.members.every(m => m.runtime.dead);
@@ -4128,18 +4138,18 @@ function applyDamageToMember(room, member, dmg, source) {
     }
 }
 
-function tryPartyImmortalArmorRevive(room, member) {
+function maybeStartImmortalArmorRegen(room, member) {
     const snap = member.baseSnapshot && member.baseSnapshot.immortalArmor;
-    if (!snap) return false;
+    if (!snap) return;
+    const r = member.runtime;
+    if (!r || r.dead || r.hp <= 0 || r.hp > Number(r.hpMax || 0) * IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO) return;
+    if (r.dragonRegen) return;
     const now = nowMs();
-    if (Number(snap.readyAt || 0) > now) return false;
-    const reviveHp = Math.max(1, Math.floor(Number(member.runtime.hpMax || 0) * IMMORTAL_DRAGON_ARMOR_REVIVE_RATIO));
-    member.runtime.hp = reviveHp;
-    member.runtime.dead = false;
+    if (Number(snap.readyAt || 0) > now) return;
     snap.readyAt = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
-    pushNotice(room, '🔥 ' + member.name + ' — ' + IMMORTAL_DRAGON_ARMOR_NAME + ' 발동! HP ' + comma(reviveHp) + '로 부활', 'success', 4500);
+    r.dragonRegen = { ticksLeft: IMMORTAL_DRAGON_ARMOR_REGEN_TICKS, nextTickAt: now + 1000 };
+    pushNotice(room, '🔥 ' + member.name + ' — ' + IMMORTAL_DRAGON_ARMOR_NAME + ' 발동! ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초간 초당 최대 체력의 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '% 회복', 'success', 4500);
     persistImmortalArmorCooldown(member.name, snap.readyAt);
-    return true;
 }
 
 async function persistImmortalArmorCooldown(name, readyAt) {
