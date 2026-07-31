@@ -580,7 +580,7 @@ function textLines(text) {
 }
 
 const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#ef4444', '초월 1단계': '#ef4444', '초월 2단계': '#ef4444', '초월 3단계': '#ef4444', '신화': '#a78bfa', '고유': '#ec4899' };
-const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧' };
+const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧', 'orb': '🔮' };
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '재료'];
 const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
 
@@ -4691,7 +4691,7 @@ function dexCard(entry) {
     head.appendChild(el('div', null,
         el('div', { class: 'dex-name' }, entry.name),
         el('div', { class: 'dex-meta' },
-            rarityTag(entry.rarity),
+            entry.rarity ? rarityTag(entry.rarity) : null,
             el('span', { class: 'tag' }, entry.typeLabel),
             entry.noTrade ? el('span', { class: 'tag' }, '거래 불가') : null
         )

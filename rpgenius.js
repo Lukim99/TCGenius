@@ -9977,6 +9977,8 @@ async function useItem(user, itemName, countArg) {
             for (let i = 0; i < useCount; i++) {
                 const picked = candidates[randomInt(0, candidates.length - 1)];
                 addEquipmentInventory(user, picked.type, picked.id);
+                // item.tradeUsed: 지급 장비의 거래 가능 횟수를 소진 상태(잔여 0)로 만든다
+                if (item.tradeUsed) user.inventory.equipment[user.inventory.equipment.length - 1].tradeCount = Number(getEquipmentTradeMax(picked.data) || 0);
                 addRewardSummary(summary, picked.type + ':' + picked.id, '<초월 1단계> ' + picked.data.name, 1);
             }
         } else if (item.use == '보주상자') {
@@ -12983,6 +12985,7 @@ module.exports = {
     getEquipmentDisplayName,
     isSoulExpired,
     formatOrbLines,
+    getOrbData,
     addOrbStats,
     getCardSlotEffectValue,
     addInventoryItem,
