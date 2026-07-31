@@ -1951,9 +1951,15 @@ function formatFashionApplyTargetList(user, highOnly, fashionName) {
 
 function finishFashionApply(user, card, fashion) {
     const before = Object.assign({}, card);
+    const pending = user.pendingAction;
     card.skin = fashion.name;
     user.pendingAction = null;
-    return '✅ 패션을 적용했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 적용: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
+    let result = '✅ 패션을 적용했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 적용: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
+    if (pending && pending.noConsume && pending.consumedItemId != null) {
+        addInventoryItem(user, pending.consumedItemId, pending.consumedItemCount || 1);
+        result += '\n- 적용권은 소모되지 않았습니다.';
+    }
+    return result;
 }
 
 // 1단계: 카드 선택. 적용 가능한 패션이 2개 이상이면 2단계(패션 선택)로 넘어간다.
@@ -10044,7 +10050,7 @@ async function useItem(user, itemName, countArg) {
                 addInventoryItem(user, itemId, useCount);
                 lines.push('❌ 적용 가능한 캐릭터 카드가 없어 아이템을 반환했습니다.');
             } else {
-                user.pendingAction = { type: '패션적용', highOnly, fashionName, consumedItemId: itemId, consumedItemCount: useCount };
+                user.pendingAction = { type: '패션적용', highOnly, fashionName, consumedItemId: itemId, consumedItemCount: useCount, noConsume: item.no_consume === true };
                 lines.push('패션을 적용할 캐릭터 카드를 선택해주세요.');
                 lines.push('/RPGenius 선택 [카드번호]');
                 lines.push('/RPGenius 사용취소');
