@@ -138,13 +138,18 @@
         }
         for (const m of currentRoom.members || []) {
             const buffs = m.runtime && Array.isArray(m.runtime.buffs) ? m.runtime.buffs : [];
-            for (const b of buffs) b.remain = Math.max(0, Number(b.remain || 0) - dt);
+            for (const b of buffs) { if (b.remain == null) continue; b.remain = Math.max(0, Number(b.remain || 0) - dt); }
             if (m.runtime && Number(m.runtime.sealRemain || 0) > 0) m.runtime.sealRemain = Math.max(0, Number(m.runtime.sealRemain) - dt);
         }
         if (currentRoom.voteState) {
             currentRoom.voteState.deadline = Math.max(0, Number(currentRoom.voteState.deadline || 0) - dt);
             updateVoteTimer();
         }
+    }
+
+    // 영구 버프는 remain이 null로 내려온다 → 잔여시간 없이 라벨(스택)만 표시
+    function buffChipText(label, remain) {
+        return remain == null ? label : label + ' ' + Number(remain || 0).toFixed(1) + 's';
     }
 
     function updateBuffChips() {
@@ -164,11 +169,11 @@
                 remain = taunted ? Number(currentRoom.tauntRemain || (currentRoom.monster && currentRoom.monster.tauntRemain) || 0) : 0;
             } else if (m && m.runtime && Array.isArray(m.runtime.buffs)) {
                 const b = m.runtime.buffs.find(bb => String(bb.id || bb.label || '') === buffId);
-                remain = Number(b && b.remain || 0);
+                remain = b ? b.remain : 0;
             }
-            if (remain > 0) {
-                const label = chip.dataset.label || buffId || '버프';
-                chip.textContent = label + ' ' + remain.toFixed(1) + 's';
+            const label = chip.dataset.label || buffId || '버프';
+            if (remain == null || Number(remain) > 0) {
+                chip.textContent = buffChipText(label, remain);
                 chip.style.display = '';
             } else {
                 chip.style.display = 'none';
@@ -619,9 +624,11 @@
                 thumb,
                 el('div', { class: 'info' },
                     el('div', { class: 'owner' }, rv.name || '-'),
-                    list.length
-                        ? el('div', { class: 'item' }, ...list.map(it => el('div', null, (it.bonus ? '✨ ' : '') + it.name + (it.count > 1 ? ' x' + Number(it.count).toLocaleString() : ''))))
-                        : el('div', { class: 'item' }, rv.error || '보상 없음'),
+                    rv.weeklyLocked
+                        ? el('div', { class: 'item', style: 'color:#fbbf24' }, '이번 주 보상을 이미 수령했습니다')
+                        : list.length
+                            ? el('div', { class: 'item' }, ...list.map(it => el('div', null, (it.bonus ? '✨ ' : '') + it.name + (it.count > 1 ? ' x' + Number(it.count).toLocaleString() : ''))))
+                            : el('div', { class: 'item' }, rv.error || '보상 없음'),
                     lines.length ? el('div', { class: 'meta' }, lines.join(' · ')) : null
                 )
             ));
@@ -951,7 +958,7 @@
                             'data-member': me,
                             'data-buff-id': b.id === 'taunt' || label === '도발' ? 'taunt' : String(b.id || b.label || ''),
                             'data-label': label
-                        }, label + (Number(b.remain || 0) > 0 ? ' ' + Number(b.remain || 0).toFixed(1) + 's' : ''));
+                        }, buffChipText(label, b.remain));
                     })
                 ) : null
             ));

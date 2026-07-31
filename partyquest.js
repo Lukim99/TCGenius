@@ -12,6 +12,8 @@ const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
 const EQUIPMENT_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Equipment.json');
 const PACKS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Pack.json');
 const POSITION_LIST = ['탱커', '브루저', '메인딜러', '서브딜러', '서포터'];
+// 이 값 이상의 buff.remain은 '영구'로 간주해 잔여시간을 표시하지 않는다 (튀어오르기 등)
+const PERMANENT_BUFF_SEC = 86400;
 const TICK_MS = 200;
 const IMMORTAL_DRAGON_ARMOR_NAME = '불멸하는 업화의 용갑';
 const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 15 * 60 * 1000;
@@ -662,6 +664,10 @@ function getPartyQuestItemAsset(itemId, rewardIndex) {
     };
 }
 
+function isButaQuest(questId) {
+    return questId === 'butaGame' || questId === 'butaGameHard';
+}
+
 function grantPartyQuestClearRewards(room) {
     (async () => {
         const quest = getQuestById(room.questId);
@@ -673,13 +679,18 @@ function grantPartyQuestClearRewards(room) {
                 const user = await rpgenius.getRPGUserByName(member.name);
                 if (!user) continue;
                 const summary = {};
-                const exp = Math.max(0, Math.round(Number(rewards.exp || 0)));
+                // 부타게임 주간 보상 제한 (노말/하드 통합 주 1회, 월요일 0시 KST 초기화).
+                // 입장/클리어는 무제한이고 칭호 진행도는 계속 쌓인다.
+                const prog = rpgenius.getTitleProgress(user);
+                const weekKey = rpgenius.getKoreanWeekKey(new Date());
+                const weeklyLocked = isButaQuest(room.questId) && prog.butaRewardWeek === weekKey;
+                const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
                 const goldDef = rewards.gold || {};
-                const baseGold = typeof goldDef === 'number'
+                const baseGold = weeklyLocked ? 0 : (typeof goldDef === 'number'
                     ? Math.max(0, Math.round(goldDef))
-                    : randomInt(Math.max(0, Number(goldDef.min || 0)), Math.max(0, Number(goldDef.max || goldDef.min || 0)));
+                    : randomInt(Math.max(0, Number(goldDef.min || 0)), Math.max(0, Number(goldDef.max || goldDef.min || 0))));
                 const gold = Math.max(0, Math.round(baseGold * (1 + getPartyGoldBonus(member))));
                 if (gold > 0) {
                     user.gold = Number(user.gold || 0) + gold;
@@ -693,7 +704,7 @@ function grantPartyQuestClearRewards(room) {
                 }
                 const selected = pickPartyQuestRewardEntry(rewards.reward);
                 let itemReward = null;
-                if (selected.entry && typeof selected.entry.pack !== 'undefined') {
+                if (!weeklyLocked && selected.entry && typeof selected.entry.pack !== 'undefined') {
                     const pack = packs[Number(selected.entry.pack)];
                     const packEntry = Array.isArray(pack) ? pickPartyQuestPackEntry(pack) : null;
                     itemReward = grantPartyQuestPackReward(user, packEntry, summary);
@@ -705,13 +716,15 @@ function grantPartyQuestClearRewards(room) {
                 }
                 // 기본 보상(전부 지급) + 추가 보상(가중 1개 추첨)
                 const extraRewards = [];
-                for (const entry of (Array.isArray(rewards.base) ? rewards.base : [])) {
-                    const granted = grantPartyQuestPackReward(user, entry, summary);
-                    if (granted) extraRewards.push(granted);
-                }
-                if (Array.isArray(rewards.bonus) && rewards.bonus.length) {
-                    const granted = grantPartyQuestPackReward(user, pickPartyQuestPackEntry(rewards.bonus), summary);
-                    if (granted) { granted.bonus = true; extraRewards.push(granted); }
+                if (!weeklyLocked) {
+                    for (const entry of (Array.isArray(rewards.base) ? rewards.base : [])) {
+                        const granted = grantPartyQuestPackReward(user, entry, summary);
+                        if (granted) extraRewards.push(granted);
+                    }
+                    if (Array.isArray(rewards.bonus) && rewards.bonus.length) {
+                        const granted = grantPartyQuestPackReward(user, pickPartyQuestPackEntry(rewards.bonus), summary);
+                        if (granted) { granted.bonus = true; extraRewards.push(granted); }
+                    }
                 }
                 for (const r of extraRewards) if (r.kind === 'item') Object.assign(r, getPartyQuestItemAsset(r.itemId, r.bonus ? 1 : 0));
                 if (!itemReward && extraRewards.length) itemReward = extraRewards[extraRewards.length - 1];
@@ -721,10 +734,10 @@ function grantPartyQuestClearRewards(room) {
                     prog.hoduClears = Number(prog.hoduClears || 0) + 1;
                     rpgenius.checkAndUnlockTitles(user);
                 }
-                // 칭호 진행 추적 (부타게임 — 노말/하드 공용 카운터)
-                if (room.questId === 'butaGame' || room.questId === 'butaGameHard') {
-                    const prog = rpgenius.getTitleProgress(user);
+                // 칭호 진행 추적 (부타게임 — 노말/하드 공용 카운터, 주간 제한과 무관하게 적립)
+                if (isButaQuest(room.questId)) {
                     prog.butaClears = Number(prog.butaClears || 0) + 1;
+                    if (!weeklyLocked) prog.butaRewardWeek = weekKey;
                     rpgenius.checkAndUnlockTitles(user);
                 }
                 // 흑화 호두 (익스트림) 개인 최초 클리어 보너스 (기존 보상과 별도)
@@ -759,6 +772,7 @@ function grantPartyQuestClearRewards(room) {
                     levelUps,
                     item: itemReward,
                     items: extraRewards,
+                    weeklyLocked,
                     firstClear,
                     summary: Object.keys(summary).map(key => ({ label: summary[key].label, count: summary[key].count }))
                 });
@@ -831,7 +845,13 @@ function serializeMember(m) {
             mpMax: Math.round(m.runtime.mpMax),
             gauge: Math.max(0, Math.min(100, Math.round(m.runtime.gauge || 0))),
             cooldowns: serializeCooldownsFromUntil(m.runtime.cooldownsUntil),
-            buffs: (m.runtime.buffs || []).map(b => ({ id: b.id, label: b.label, remain: Math.max(0, Math.round(b.remain * 10) / 10), stack: Number(b.stack || 0) })),
+            // 영구 디버프(remain 센티넬)는 remain: null로 내려 클라가 '몇십만 초'를 찍지 않게 한다
+            buffs: (m.runtime.buffs || []).map(b => ({
+                id: b.id,
+                label: b.label,
+                remain: Number(b.remain || 0) >= PERMANENT_BUFF_SEC ? null : Math.max(0, Math.round(b.remain * 10) / 10),
+                stack: Math.max(0, Math.round(Number(b.stack || 0)))
+            })),
             shield: Math.round(m.runtime.shield || 0),
             sealRemain: Math.max(0, Math.round(Number(m.runtime.sealRemain || 0) * 10) / 10),
             dead: !!m.runtime.dead,
@@ -3146,7 +3166,7 @@ const SUPPORT_SKILL_ICONS = {
     'SitoSoym': '부타게임/사이토소음.jpg',
     'X': '부타게임/X.jpg'
 };
-const SUPPORT_GAUGE_SEC_PER_PERCENT = 5;   // 5초당 +1%
+const SUPPORT_GAUGE_SEC_PER_PERCENT = 4.5;   // 4.5초당 +1%
 const SUPPORT_GEO_DAMAGE = 200000;
 const SUPPORT_SITO_SHIELD = 25000;
 const SUPPORT_SITO_SEC = 10;
@@ -3388,7 +3408,7 @@ function addTakenDamageUpStack(member, perStack, remain, label) {
     const exist = (r.buffs || []).find(b => b.id === 'takenDamageUp');
     const rate = Number(perStack || 0);
     if (exist) {
-        exist.stack = Number(exist.stack || 1) + 1;
+        exist.stack = Math.round(Number(exist.stack || 1)) + 1;
         exist.perStack = rate;
         exist.value = 1 + exist.stack * rate;
         exist.remain = Math.max(Number(exist.remain || 0), Number(remain || 0));
@@ -3877,6 +3897,7 @@ function enterIngyeoBerserk(room, mon) {
     mon.enraged = false;
     setBossShield(room, mon, Number(form.shield || 2000000), '폭주');
     addMonsterDebuff(mon, { id: 'berserkTaken', type: 'takenDamage', value: Number(form.takenDamageUp || 1), remain: 999999 });
+    addSupportGauge(room, 80); // 잉여왕 부활 시 공대장 지원군 게이지 +80%
     // 폭주지대: 전 생존자 상시 화상
     const burn = ((form.patterns || []).find(p => p && p.type === 'burnZone')) || {};
     for (const m of getAliveMembers(room)) {
@@ -5029,6 +5050,7 @@ module.exports = {
         addSupportGauge,
         getQuestSupportSkills,
         grantPartyQuestPackReward,
+        grantPartyQuestClearRewards,
         pickPartyQuestPackEntry,
         getPartyQuestItemAsset,
         applyBossGroggy,

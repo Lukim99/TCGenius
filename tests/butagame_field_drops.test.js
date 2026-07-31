@@ -27,7 +27,7 @@ const rpg = require('../rpgenius');
     assert.strictEqual(rpg.getInventoryItemCount(user, challengeId), 2);
     assert.strictEqual(rpg.getInventoryItemCount(user, advancedStoneId), 1);
 
-    const boundaryRolls = [.04, .025, .015];
+    const boundaryRolls = [.07, .04, .015];
     assert.deepStrictEqual(
         rpg.grantButagameFieldBonusDrops(user, { name: '부타게임' }, 1, [], () => boundaryRolls.shift()),
         { invitation: 0, challenge: 0, advancedStone: 0 },

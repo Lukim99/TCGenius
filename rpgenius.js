@@ -696,6 +696,10 @@ function formatPackEntry(entry) {
         }
         return '<' + (entry.rarity || '?') + '> 랜덤 펫';
     }
+    if (entry.type == '칭호') {
+        const title = getTitleById(entry.title_id);
+        return '🏅 ' + (title ? title.name : '알 수 없는') + ' 칭호';
+    }
     if (entry.type == '골드') return '🪙 ' + formatCount(entry.count);
     if (entry.type == '가넷') return '💠 ' + formatCount(entry.count);
     if (entry.type == '마일리지') return 'Ⓜ️ ' + formatCount(entry.count) + '마일리지';
@@ -1896,12 +1900,14 @@ function applyPackSkinToCard(card, skinName) {
     if (Number(card.star || 0) >= Number(fashion.requireStar || 0)) card.skin = fashion.name;
 }
 
-function getApplicableFashionsForCard(card, highOnly) {
+// fashionName을 주면 해당 이름의 패션만 후보로 삼는다 (특정 패션 전용 적용권용).
+function getApplicableFashionsForCard(card, highOnly, fashionName) {
     if (!card || typeof card.id == 'undefined' || (typeof card.skin == 'string' && card.skin.trim())) return [];
     if (Number(card.star || 0) < 6) return [];
     const isJob = card.type === '전직';
     return getFashionData().filter(fashion => {
         if (!fashion || !Array.isArray(fashion.primary_card)) return false;
+        if (fashionName && fashion.name != fashionName) return false;
         if (!!fashion.isHigh !== !!highOnly) return false;
         if (!fashion.primary_card.map(id => Number(id)).includes(Number(card.id))) return false;
         if (isJob ? fashion.type !== '전직' : fashion.type === '전직') return false;
@@ -1909,15 +1915,15 @@ function getApplicableFashionsForCard(card, highOnly) {
     });
 }
 
-function getFashionApplyTargets(user, highOnly) {
+function getFashionApplyTargets(user, highOnly, fashionName) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     return cards
-        .map((card, index) => ({ number: index + 1, card, fashions: getApplicableFashionsForCard(card, highOnly) }))
+        .map((card, index) => ({ number: index + 1, card, fashions: getApplicableFashionsForCard(card, highOnly, fashionName) }))
         .filter(entry => entry.fashions.length > 0);
 }
 
-function formatFashionApplyTargetList(user, highOnly) {
-    const targets = getFashionApplyTargets(user, highOnly);
+function formatFashionApplyTargetList(user, highOnly, fashionName) {
+    const targets = getFashionApplyTargets(user, highOnly, fashionName);
     const lines = [highOnly ? '[ 고급 패션 적용 대상 ]' : '[ 패션 적용 대상 ]', VIEWMORE];
     targets.forEach(target => {
         lines.push('[' + target.number + '] ' + formatUserCard(target.card) + ' → ' + target.fashions.map(fashion => fashion.name).join(', '));
@@ -1925,20 +1931,72 @@ function formatFashionApplyTargetList(user, highOnly) {
     return lines.join('\n');
 }
 
+function finishFashionApply(user, card, fashion) {
+    const before = Object.assign({}, card);
+    card.skin = fashion.name;
+    user.pendingAction = null;
+    return '✅ 패션을 적용했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 적용: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
+}
+
+// 1단계: 카드 선택. 적용 가능한 패션이 2개 이상이면 2단계(패션 선택)로 넘어간다.
 function applyFashionStoneToCard(user, numberArg) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '패션적용') return '❌ 진행 중인 패션 적용이 없습니다.';
     const number = Number(numberArg);
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (pending.cardNumber) {
+        const card = cards[pending.cardNumber - 1];
+        const fashions = getApplicableFashionsForCard(card, pending.highOnly, pending.fashionName);
+        if (fashions.length == 0) return '❌ 해당 카드에 적용 가능한 패션이 없습니다.\n/RPGenius 사용취소';
+        if (!Number.isInteger(number) || number < 1 || number > fashions.length) {
+            return '❌ 존재하지 않는 패션 번호입니다.\n' + formatFashionChoiceList(card, fashions);
+        }
+        return finishFashionApply(user, card, fashions[number - 1]);
+    }
     if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
     const card = cards[number - 1];
-    const fashions = getApplicableFashionsForCard(card, pending.highOnly);
+    const fashions = getApplicableFashionsForCard(card, pending.highOnly, pending.fashionName);
     if (fashions.length == 0) return '❌ 해당 카드에 적용 가능한 패션이 없습니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
+    if (fashions.length > 1) {
+        pending.cardNumber = number;
+        return '적용할 패션을 선택해주세요.\n' + formatFashionChoiceList(card, fashions);
+    }
+    return finishFashionApply(user, card, fashions[0]);
+}
+
+function formatFashionChoiceList(card, fashions) {
+    const lines = ['/RPGenius 선택 [패션번호]', '/RPGenius 사용취소', '', '[ ' + formatUserCard(card) + ' 적용 가능 패션 ]'];
+    fashions.forEach((fashion, index) => lines.push('[' + (index + 1) + '] ' + fashion.name));
+    return lines.join('\n');
+}
+
+// 패션 제거 가위: 패션이 적용된 카드 목록
+function getFashionRemoveTargets(user) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards
+        .map((card, index) => ({ number: index + 1, card }))
+        .filter(entry => !!getCardFashion(entry.card));
+}
+
+function formatFashionRemoveTargetList(user) {
+    const lines = ['[ 패션 제거 대상 ]', VIEWMORE];
+    getFashionRemoveTargets(user).forEach(target => lines.push('[' + target.number + '] ' + formatUserCard(target.card)));
+    return lines.join('\n');
+}
+
+function removeCardFashion(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '패션제거') return '❌ 진행 중인 패션 제거가 없습니다.';
+    const number = Number(numberArg);
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
+    const card = cards[number - 1];
+    const fashion = getCardFashion(card);
+    if (!fashion) return '❌ 해당 카드에는 적용된 패션이 없습니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
     const before = Object.assign({}, card);
-    const fashion = fashions[randomInt(0, fashions.length - 1)];
-    card.skin = fashion.name;
+    delete card.skin;
     user.pendingAction = null;
-    return '✅ 패션을 적용했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 적용: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
+    return '✅ 패션을 제거했습니다.\n- 대상: ' + formatUserCard(before) + '\n- 제거: ' + fashion.name + '\n- 결과: ' + formatUserCard(card);
 }
 
 function formatUserCard(card) {
@@ -9552,6 +9610,12 @@ function grantPackReward(user, reward, summary) {
         }
         return;
     }
+    if (reward.type == '칭호') {
+        const title = getTitleById(reward.title_id);
+        unlockTitle(user, reward.title_id);
+        addRewardSummary(summary, 'title:' + reward.title_id, '🏅 ' + (title ? title.name : '알 수 없는') + ' 칭호', 1);
+        return;
+    }
     if (reward.type == '골드') {
         user.gold = Number(user.gold || 0) + count;
         addRewardSummary(summary, 'gold', '🪙 골드', count);
@@ -9845,6 +9909,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보주' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '패션제거' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '초월업그레이드' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
@@ -9857,7 +9922,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -9893,6 +9958,15 @@ async function useItem(user, itemName, countArg) {
                 const picked = candidates[randomInt(0, candidates.length - 1)];
                 addEquipmentInventory(user, picked.type, picked.id);
                 addRewardSummary(summary, picked.type + ':' + picked.id, '<초월 1단계> ' + picked.data.name, 1);
+            }
+        } else if (item.use == '보주상자') {
+            // use:'보주' 아이템 중 균등 랜덤 1개 (파티퀘 '보주랜덤' 보상과 동일 규칙)
+            const orbIds = items.map((it, i) => (it && it.use == '보주' ? i : -1)).filter(i => i >= 0);
+            if (orbIds.length == 0) { addInventoryItem(user, itemId, useCount); return '❌ 보주 데이터가 없어 상자를 반환했습니다.'; }
+            for (let i = 0; i < useCount; i++) {
+                const id = orbIds[randomInt(0, orbIds.length - 1)];
+                addInventoryItem(user, id, 1);
+                addRewardSummary(summary, 'item:' + id, items[id].name, 1);
             }
         } else if (typeof item.pack == 'number') {
             const packs = getDataCache('Pack', []);
@@ -9950,16 +10024,29 @@ async function useItem(user, itemName, countArg) {
         }
         if (item.use == '패션적용' || item.use == '고급패션적용') {
             const highOnly = item.use == '고급패션적용';
-            const targets = getFashionApplyTargets(user, highOnly);
+            const fashionName = item.fashion || null; // 특정 패션 전용 적용권
+            const targets = getFashionApplyTargets(user, highOnly, fashionName);
             if (targets.length == 0) {
                 addInventoryItem(user, itemId, useCount);
                 lines.push('❌ 적용 가능한 캐릭터 카드가 없어 아이템을 반환했습니다.');
             } else {
-                user.pendingAction = { type: '패션적용', highOnly, consumedItemId: itemId, consumedItemCount: useCount };
+                user.pendingAction = { type: '패션적용', highOnly, fashionName, consumedItemId: itemId, consumedItemCount: useCount };
                 lines.push('패션을 적용할 캐릭터 카드를 선택해주세요.');
                 lines.push('/RPGenius 선택 [카드번호]');
                 lines.push('/RPGenius 사용취소');
-                lines.push('', formatFashionApplyTargetList(user, highOnly));
+                lines.push('', formatFashionApplyTargetList(user, highOnly, fashionName));
+            }
+        }
+        if (item.use == '패션제거') {
+            if (getFashionRemoveTargets(user).length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 패션이 적용된 캐릭터 카드가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '패션제거', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('패션을 제거할 캐릭터 카드를 선택해주세요.');
+                lines.push('/RPGenius 선택 [카드번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatFashionRemoveTargetList(user));
             }
         }
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID) {
@@ -11829,6 +11916,24 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '패션제거') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 패션 제거를 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 패션을 제거할 캐릭터 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = removeCardFashion(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '무료장비강화') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -12935,6 +13040,7 @@ module.exports = {
     EQUIPMENT_BLESSED_PROTECT_ITEM_ID,
     getTitleDefs,
     getTitleById,
+    getKoreanWeekKey,
     getTitleProgress,
     getUnlockedTitles,
     unlockTitle,
