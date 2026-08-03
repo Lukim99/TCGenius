@@ -34,7 +34,8 @@ const {
     parseDcResponseData,
     resolveDcFormAction
 } = require('./dc_write_utils');
-const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');
+// Tibo X 자동 게시 임시 비활성화. 재개 시 아래 import와 부팅 코드를 함께 복구한다.
+// const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -12299,10 +12300,11 @@ async function login() {
 
 if (require.main === module) {
     keepAlive();
-    startTiboXBridge({
-        writePost: doDcWritePost,
-        stateStore: createDynamoStateStore(docClient)
-    });
+    // Tibo X 자동 게시 임시 비활성화.
+    // startTiboXBridge({
+    //     writePost: doDcWritePost,
+    //     stateStore: createDynamoStateStore(docClient)
+    // });
     if (KAKAO_AUTO_LOGIN_ENABLED) {
         void login().catch(error => {
             console.error('[kakao] 자동 로그인 실패. 서버는 계속 실행합니다:', error);

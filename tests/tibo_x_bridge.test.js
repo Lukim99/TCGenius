@@ -503,8 +503,9 @@ const silentLogger = {
     assert.strictEqual(mergedCommentCalls, 0, 'Tibo X 폴링에서 관리 댓글을 조회하면 안 된다.');
 
     const engineSource = fs.readFileSync(path.join(__dirname, '..', 'new_engine.js'), 'utf8');
-    assert.ok(engineSource.includes("const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');"));
-    assert.ok(engineSource.includes('stateStore: createDynamoStateStore(docClient)'));
+    assert.ok(engineSource.includes("// const { createDynamoStateStore, startTiboXBridge } = require('./tibo_x_bridge');"));
+    assert.ok(engineSource.includes('// startTiboXBridge({'));
+    assert.ok(engineSource.includes('//     stateStore: createDynamoStateStore(docClient)'));
     assert.ok(!engineSource.includes('fetchComments: getDcPostComments'));
     assert.ok(!engineSource.includes('writeComment: doDcWriteComment'));
     assert.ok(!engineSource.includes('changePostHeadtext: doDcChangePostHeadtext'));
