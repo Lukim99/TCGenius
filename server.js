@@ -637,8 +637,8 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
             .filter(i => !i.noTrade)
             .map(i => ({ id: i.id, name: i.name, count: i.count, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
         res.json({
-            gold: Number(user.gold || 0), garnet: Number(user.garnet || 0),
-            goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'),
+            gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
+            goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
             feeRate: 0.05, feeMin: 5, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
         });
     } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }

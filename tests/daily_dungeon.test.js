@@ -68,11 +68,19 @@ function sequence(values, fallback = 0) {
     assert.strictEqual(deathUser.dailyDungeonDaily.outcome, 'failed');
     assert.ok((await rpg.enterDailyDungeon(deathUser, '마동')).startsWith('❌'));
 
-    const normalUser = makeUser('일반필드유지테스트', 141);
-    assert.ok((await rpg.enterField(normalUser, '마동', { confirmed: true })).startsWith('✅'));
-    assert.ok(!normalUser.field.dailyDungeon);
-    assert.strictEqual(rpg.getFieldCombatContext(normalUser).dungeon.hp, rpg.findDailyDungeonByName('마동').hp, '일반 필드 능력치는 변경하면 안 된다.');
-    rpg.leaveField(normalUser);
+    const regularDungeons = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'Dungeon.json'), 'utf8'));
+    for (const [index, dungeon] of regularDungeons.entries()) {
+        const normalUser = makeUser('일반필드체력' + index, dungeon.requireLevel);
+        assert.ok((await rpg.enterField(normalUser, dungeon.name, { confirmed: true })).startsWith('✅'));
+        assert.ok(!normalUser.field.dailyDungeon);
+        const normalContext = rpg.getFieldCombatContext(normalUser);
+        assert.strictEqual(normalContext.dungeon.hp, Math.round(dungeon.hp * 0.9), dungeon.name + ' 일반 몬스터 체력은 10% 하향되어야 한다.');
+        normalUser.field.elite = { hp: Math.round(dungeon.elite.hp * 0.9), encounteredAt: Date.now() };
+        const eliteContext = rpg.getFieldCombatContext(normalUser);
+        assert.strictEqual(eliteContext.dungeon.elite.hp, Math.round(dungeon.elite.hp * 0.9), dungeon.name + ' 엘리트 몬스터 체력은 10% 하향되어야 한다.');
+        normalUser.field.elite = null;
+        rpg.leaveField(normalUser);
+    }
 
     const resetUser = makeUser('일일초기화테스트', 141);
     const todayState = rpg.getDailyDungeonDailyState(resetUser, new Date('2026-07-16T00:00:00+09:00'));

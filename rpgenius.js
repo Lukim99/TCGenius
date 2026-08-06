@@ -1,5 +1,5 @@
 ﻿const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand, BatchGetCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
@@ -59,6 +59,8 @@ const DAILY_DUNGEON_EFFECT_CHANCE = 0.5;
 const DAILY_DUNGEON_EFFECT_DURATION_MS = 10 * 1000;
 const DAILY_DUNGEON_LUCKY_CHANCE = 0.1;
 const DAILY_DUNGEON_EFFECTS = ['fever', 'punch', 'hit'];
+const REGULAR_HUNT_HP_MULTIPLIER = 0.9;
+const HELL_PILLAR_MAX_HP = 2;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 사냥 드랍 아이템이 펀치기계 토큰으로 전환된다.
@@ -3501,7 +3503,7 @@ function getAccessibleDungeons(level) {
         if (lvl < Number(dungeon.requireLevel || 1)) return false;
         if (typeof dungeon.maxLevel != 'undefined' && lvl > Number(dungeon.maxLevel)) return false;
         return true;
-    });
+    }).map(applyRegularHuntHpBalance);
     if (lvl >= 141 && lvl <= 300) accessible.push(getHellDungeon());
     return accessible;
 }
@@ -3547,6 +3549,19 @@ function getHellDungeon() {
     elite.name = '부타';
     elite.reward = [];
     return Object.assign({}, base, { name: '부타게임[H]', requireLevel: 141, maxLevel: 300, elite, isHell: true });
+}
+
+function applyRegularHuntHpBalance(dungeon) {
+    if (!dungeon) return dungeon;
+    const balanced = Object.assign({}, dungeon, {
+        hp: Math.round(Number(dungeon.hp || 0) * REGULAR_HUNT_HP_MULTIPLIER)
+    });
+    if (dungeon.elite) {
+        balanced.elite = Object.assign({}, dungeon.elite, {
+            hp: Math.round(Number(dungeon.elite.hp || 0) * REGULAR_HUNT_HP_MULTIPLIER)
+        });
+    }
+    return balanced;
 }
 
 function formatDungeonLevelRange(dungeon) {
@@ -3629,7 +3644,7 @@ function formatTimestampLocal(ts) {
 function findDungeonByName(name) {
     if (name == '부타게임[H]') return getHellDungeon();
     const dungeons = readJson(DUNGEON_PATH, []);
-    return dungeons.find(dungeon => dungeon.name == name);
+    return applyRegularHuntHpBalance(dungeons.find(dungeon => dungeon.name == name));
 }
 
 function getDamageAfterDefense(damage, defense, penetration) {
@@ -4955,7 +4970,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
     const isHell = !!(user.field && user.field.hell);
-    const currentHp = Number(user.field.elite && user.field.elite.hp || elite.hp || 0);
+    const currentHp = Math.min(Number(user.field.elite && user.field.elite.hp || elite.hp || 0), Number(elite.hp || 0));
     const damageWithSlotBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
     const eliteExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     // '월도랜드' 필드 공격 시 추가 피해
@@ -4995,7 +5010,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
             // 부타게임[H]: 처치 시 보상 대신 기둥 페이즈로 전환
             user.field.phase = 'pillar';
             user.field.elite = null;
-            user.field.pillarHp = 3;
+            user.field.pillarHp = HELL_PILLAR_MAX_HP;
             lines.push('', '🏛️ 기둥이 나타났습니다.');
         } else {
             applyEliteReward(user, dungeon, slotEffects, extra, lines);
@@ -5544,8 +5559,8 @@ function grantHellPillarRewards(user) {
 function buildHellPillarResult(user, extra) {
     extra = extra || {};
     if (extra.isBotAutoAttack || extra.summonAttack) return '🏛️ 기둥에 피해를 줄 수 없습니다.';
-    user.field.pillarHp = Math.max(0, Number(user.field.pillarHp || 3) - 1);
-    const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/3'];
+    user.field.pillarHp = Math.max(0, Math.min(Number(user.field.pillarHp || HELL_PILLAR_MAX_HP), HELL_PILLAR_MAX_HP) - 1);
+    const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/' + HELL_PILLAR_MAX_HP];
     if (extra.notice) lines.push('- ' + extra.notice);
     if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
@@ -11228,7 +11243,7 @@ async function claimMailGifts(user, id) {
 }
 
 // 메일 발송(플레이어 간). giftSpecs: 웹에서 전달된 선물 지정 배열.
-//   {type:'gold'|'garnet', amount} | {type:'equipment', number} | {type:'pet', index} | {type:'item', id, count}
+//   {type:'gold'|'garnet'|'point', amount} | {type:'equipment', number} | {type:'pet', index} | {type:'item', id, count}
 async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     const toName = String(recipientName || '').trim();
     if (!toName) return { error: '받는 사람을 입력해주세요.' };
@@ -11246,15 +11261,18 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     const usedEquip = new Set();
     const usedPet = new Set();
     const itemReq = {};
+    const currencyReq = { gold: 0, garnet: 0, point: 0 };
     for (const spec of specs) {
-        if (spec.type == 'gold' || spec.type == 'garnet') {
+        if (spec.type == 'gold' || spec.type == 'garnet' || spec.type == 'point') {
+            const currencyName = spec.type == 'gold' ? '골드' : spec.type == 'garnet' ? '가넷' : '포인트';
             const amount = Math.floor(Number(spec.amount || 0));
-            if (!(amount > 0)) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 수량이 올바르지 않습니다.' };
-            const balance = Number((spec.type == 'gold' ? sender.gold : sender.garnet) || 0);
-            if (balance < amount) return { error: (spec.type == 'gold' ? '골드' : '가넷') + '가 부족합니다.' };
-            const fee = mailGoldFee(amount);
+            if (!(amount > 0)) return { error: currencyName + ' 수량이 올바르지 않습니다.' };
+            currencyReq[spec.type] += amount;
+            const balance = Number(sender[spec.type] || 0);
+            if (balance < currencyReq[spec.type]) return { error: currencyName + '가 부족합니다.' };
+            const fee = spec.type == 'point' ? 0 : mailGoldFee(amount);
             const recv = amount - fee;
-            if (recv < 1) return { error: (spec.type == 'gold' ? '골드' : '가넷') + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
+            if (recv < 1) return { error: currencyName + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
             feeTotal += fee;
             resolved.push({ kind: spec.type, amount, recv });
         } else if (spec.type == 'equipment') {
@@ -11292,12 +11310,19 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     }
 
     // 2차: 실제 차감 + 선물 객체 생성 (역순 splice로 인덱스 안정)
+    const senderBefore = {
+        gold: Number(sender.gold || 0),
+        garnet: Number(sender.garnet || 0),
+        point: Number(sender.point || 0),
+        inventory: JSON.parse(JSON.stringify(sender.inventory || { card: [], item: [], equipment: [], pet: [] }))
+    };
     const gifts = [];
     const equipIndices = [];
     const petIndices = [];
     resolved.forEach(r => {
         if (r.kind == 'gold') { sender.gold = Number(sender.gold || 0) - r.amount; gifts.push({ type: 'gold', amount: r.recv }); }
         else if (r.kind == 'garnet') { sender.garnet = Number(sender.garnet || 0) - r.amount; gifts.push({ type: 'garnet', amount: r.recv }); }
+        else if (r.kind == 'point') { sender.point = Number(sender.point || 0) - r.amount; gifts.push({ type: 'point', amount: r.recv }); }
         else if (r.kind == 'equipment') {
             const idx = sender.inventory.equipment.indexOf(r.selected.equip);
             const copy = cloneEquipmentInstance(r.selected.equip, r.selected.type);
@@ -11326,12 +11351,64 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         gifts,
         createdAt: Date.now()
     };
-    await putMailRecord(record);
-    if (!Array.isArray(recipient.mail)) recipient.mail = [];
-    recipient.mail.push({ id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt });
-    recipient.mailNotified = false;
-    await recipient.save();
-    await sender.save();
+    const mailEntry = { id: record.id, read: false, readAt: null, claimed: gifts.length === 0, createdAt: record.createdAt };
+    const senderChanges = {};
+    const senderExpected = {};
+    ['gold', 'garnet', 'point'].forEach(key => {
+        if (currencyReq[key] > 0) {
+            senderChanges[key] = Number(sender[key] || 0);
+            senderExpected[key] = senderBefore[key];
+        }
+    });
+    if (resolved.some(r => r.kind == 'equipment' || r.kind == 'pet' || r.kind == 'item')) {
+        senderChanges.inventory = sender.inventory;
+        senderExpected.inventory = senderBefore.inventory;
+    }
+
+    const transactItems = [];
+    const changedKeys = Object.keys(senderChanges);
+    if (changedKeys.length > 0) {
+        const names = {};
+        const values = {};
+        changedKeys.forEach(key => {
+            names['#' + key] = key;
+            values[':new_' + key] = senderChanges[key];
+            values[':old_' + key] = senderExpected[key];
+        });
+        transactItems.push({ Update: {
+            TableName: TABLE_NAME,
+            Key: { id: sender.id },
+            UpdateExpression: 'SET ' + changedKeys.map(key => '#' + key + '=:new_' + key).join(','),
+            ConditionExpression: 'attribute_exists(id) AND ' + changedKeys.map(key => '#' + key + '=:old_' + key).join(' AND '),
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: values
+        } });
+    }
+    transactItems.push({ Put: {
+        TableName: MAIL_TABLE_NAME,
+        Item: record,
+        ConditionExpression: 'attribute_not_exists(id)'
+    } });
+    transactItems.push({ Update: {
+        TableName: TABLE_NAME,
+        Key: { id: recipient.id },
+        UpdateExpression: 'SET #mail=list_append(if_not_exists(#mail,:empty),:entries),#mailNotified=:notified',
+        ConditionExpression: 'attribute_exists(id)',
+        ExpressionAttributeNames: { '#mail': 'mail', '#mailNotified': 'mailNotified' },
+        ExpressionAttributeValues: { ':empty': [], ':entries': [mailEntry], ':notified': false }
+    } });
+
+    try {
+        await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+    } catch (e) {
+        sender.gold = senderBefore.gold;
+        sender.garnet = senderBefore.garnet;
+        sender.point = senderBefore.point;
+        sender.inventory = senderBefore.inventory;
+        console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
+        return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
+    }
+    if (sender.__loaded) changedKeys.forEach(key => { sender.__loaded[key] = JSON.stringify(senderChanges[key]); });
     return { ok: true, mailId: record.id, fee: feeTotal };
 }
 

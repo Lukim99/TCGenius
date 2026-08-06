@@ -5490,6 +5490,7 @@ async function openMailCompose() {
     function giftDisplay(g) {
         if (g.type === 'gold') return { type: 'gold', iconUrl: giftable.goldIconUrl, label: comma(g.amount) + ' 골드' };
         if (g.type === 'garnet') return { type: 'garnet', iconUrl: giftable.garnetIconUrl, label: comma(g.amount) + ' 가넷' };
+        if (g.type === 'point') return { type: 'point', iconUrl: giftable.pointIconUrl, label: comma(g.amount) + 'P' };
         return { type: g.type, iconUrl: g._icon, frameUrl: g._frame, label: g._label };
     }
 
@@ -5514,7 +5515,7 @@ async function openMailCompose() {
     }
 
     const field = (label, input) => el('div', { class: 'mc-field' }, el('label', { class: 'mc-label' }, label), input);
-    const addBtn = (type, label, iconNode) => el('button', { class: 'mc-add-btn', type: 'button', onclick: () => { if (!canAdd()) return; if (type === 'gold' || type === 'garnet') viewCurrency(type); else viewPicker(type); } }, el('span', { class: 'mc-add-ic' }, iconNode), el('span', null, label));
+    const addBtn = (type, label, iconNode) => el('button', { class: 'mc-add-btn', type: 'button', onclick: () => { if (!canAdd()) return; if (type === 'gold' || type === 'garnet' || type === 'point') viewCurrency(type); else viewPicker(type); } }, el('span', { class: 'mc-add-ic' }, iconNode), el('span', null, label));
 
     function viewCompose() {
         renderSlots();
@@ -5526,6 +5527,7 @@ async function openMailCompose() {
             el('div', { class: 'mc-add-row' },
                 addBtn('gold', '골드', giftable.goldIconUrl ? el('img', { class: 'mc-add-img', src: giftable.goldIconUrl, alt: '' }) : mailSvg('item')),
                 addBtn('garnet', '가넷', giftable.garnetIconUrl ? el('img', { class: 'mc-add-img', src: giftable.garnetIconUrl, alt: '' }) : mailSvg('item')),
+                addBtn('point', '포인트', giftable.pointIconUrl ? el('img', { class: 'mc-add-img', src: giftable.pointIconUrl, alt: '' }) : mailSvg('item')),
                 addBtn('equipment', '장비', mailSvg('equipment')),
                 addBtn('pet', '펫', mailSvg('pet')),
                 addBtn('item', '아이템', mailSvg('item'))),
@@ -5537,28 +5539,32 @@ async function openMailCompose() {
     }
 
     function viewCurrency(type) {
-        const name = type === 'gold' ? '골드' : '가넷';
-        const max = type === 'gold' ? giftable.gold : giftable.garnet;
-        const iconUrl = type === 'gold' ? giftable.goldIconUrl : giftable.garnetIconUrl;
+        const name = type === 'gold' ? '골드' : type === 'garnet' ? '가넷' : '포인트';
+        const balance = type === 'gold' ? giftable.gold : type === 'garnet' ? giftable.garnet : giftable.point;
+        const reserved = gifts.filter(g => g.type === type).reduce((sum, g) => sum + Number(g.amount || 0), 0);
+        const max = Math.max(0, balance - reserved);
+        const iconUrl = type === 'gold' ? giftable.goldIconUrl : type === 'garnet' ? giftable.garnetIconUrl : giftable.pointIconUrl;
+        const hasFee = type !== 'point';
         const input = el('input', { class: 'mc-input', type: 'text', inputmode: 'numeric', placeholder: '0' });
         const errEl = el('div', { class: 'mc-error' });
         const preview = el('div', { class: 'mc-preview' });
         input.addEventListener('input', () => {
             const a = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
-            if (a > 0) { const fee = Math.max(giftable.feeMin, Math.floor(a * giftable.feeRate)); preview.textContent = '수수료 ' + comma(fee) + ' · 받는 사람 ' + comma(Math.max(0, a - fee)) + ' 수령'; }
+            if (a > 0 && hasFee) { const fee = Math.max(giftable.feeMin, Math.floor(a * giftable.feeRate)); preview.textContent = '수수료 ' + comma(fee) + ' · 받는 사람 ' + comma(Math.max(0, a - fee)) + ' 수령'; }
+            else if (a > 0) preview.textContent = '받는 사람 ' + comma(a) + 'P 수령';
             else preview.textContent = '';
         });
         const content = el('div', { class: 'mc-view' },
             el('div', { class: 'mc-asset-head' }, iconUrl ? el('img', { class: 'mc-asset-img', src: iconUrl, alt: '' }) : null,
-                el('div', null, el('div', { class: 'mc-asset-name' }, name), el('div', { class: 'mc-asset-bal' }, '보유 ' + comma(max)))),
+                el('div', null, el('div', { class: 'mc-asset-name' }, name), el('div', { class: 'mc-asset-bal' }, '보유 ' + comma(balance) + (reserved > 0 ? ' · 이미 담음 ' + comma(reserved) : '')))),
             el('label', { class: 'mc-label' }, name + ' 수량'), input, preview, errEl);
         const back = el('button', { class: 'mm-btn ghost', type: 'button', onclick: viewCompose }, '뒤로');
         const add = el('button', { class: 'mm-btn primary', type: 'button', onclick: () => {
             const amount = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
             if (!(amount > 0)) { errEl.textContent = '수량을 입력하세요.'; return; }
             if (amount > max) { errEl.textContent = '보유량을 초과했습니다.'; return; }
-            const fee = Math.max(giftable.feeMin, Math.floor(amount * giftable.feeRate));
-            if (amount - fee < 1) { errEl.textContent = '수수료(' + comma(fee) + ') 이상이어야 합니다.'; return; }
+            const fee = hasFee ? Math.max(giftable.feeMin, Math.floor(amount * giftable.feeRate)) : 0;
+            if (hasFee && amount - fee < 1) { errEl.textContent = '수수료(' + comma(fee) + ') 이상이어야 합니다.'; return; }
             gifts.push({ type, amount });
             viewCompose();
         } }, '담기');
