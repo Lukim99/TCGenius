@@ -8,6 +8,8 @@ const chatbot2 = require('./chatbot2.js');
 const rpgenius = require('./rpgenius.js');
 const hunterColosseum = require('./hunter_colosseum.js');
 const wollu = require('./wollu.js');
+// 임시 킬 스위치: rpgenius와 전역 명령은 유지하고 전용 방 기능만 비활성화한다.
+const ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES = false;
 const express = require('express');
 const request = require('request');
 const https = require('https');
@@ -113,7 +115,7 @@ const DEVICE_NAME = "SM-T870";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 // 재개할 때 배포 환경에 KAKAO_AUTO_LOGIN_ENABLED=true를 설정한다.
-const KAKAO_AUTO_LOGIN_ENABLED = false;
+const KAKAO_AUTO_LOGIN_ENABLED = true;
 let client = new node_kakao.TalkClient();
 if (keepAlive && typeof keepAlive.setKakaoClient == 'function') keepAlive.setKakaoClient(client);
 
@@ -4653,13 +4655,13 @@ async function upsertOfficialQuestion(roomId, question, answer, userId) {
 
 //chat on
 client.on('chat', async (data, channel) => {
-    if (JSON.parse(read("DB/wordchain_enabled_rooms.json")).enabled.includes(channel.channelId + "")) wordchain.onChat(data, channel);
-    if (lolChatbot.TARGET_CHANNEL_ID == channel.channelId && await lolChatbot.onChat(data, channel)) return;
-    if (chatbot1.TARGET_CHANNEL_IDS.includes(channel.channelId) && await chatbot1.onChat(data, channel, { client })) return;
-    if (chatbot2.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await chatbot2.onChat(data, channel)) return;
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && JSON.parse(read("DB/wordchain_enabled_rooms.json")).enabled.includes(channel.channelId + "")) wordchain.onChat(data, channel);
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && lolChatbot.TARGET_CHANNEL_ID == channel.channelId && await lolChatbot.onChat(data, channel)) return;
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && chatbot1.TARGET_CHANNEL_IDS.includes(channel.channelId) && await chatbot1.onChat(data, channel, { client })) return;
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && chatbot2.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await chatbot2.onChat(data, channel)) return;
     if (rpgenius.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await rpgenius.onChat(data, channel)) return;
-    if (hunterColosseum.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await hunterColosseum.onChat(data, channel)) return;
-    if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await wollu.onChat(data, channel)) return;
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && hunterColosseum.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await hunterColosseum.onChat(data, channel)) return;
+    if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '') && await wollu.onChat(data, channel)) return;
     try {
         const msg = data.text.trim();
         const sender = data.getSenderInfo(channel) || data._chat.sender;
@@ -4677,7 +4679,7 @@ client.on('chat', async (data, channel) => {
         
         if (! bot) return;
 
-        if (channel.channelId + '' === '18448110985554752' && ! ['봇', '오픈채팅봇'].includes(sender.nickname)) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && channel.channelId + '' === '18448110985554752' && ! ['봇', '오픈채팅봇'].includes(sender.nickname)) {
             try {
                 const today = new Date().toISOString().slice(0, 10);
                 const { data: existing } = await supabase
@@ -4737,13 +4739,13 @@ client.on('chat', async (data, channel) => {
 
         const senderID = sender.userId + "";
 
-        if (channel.channelId == "435426013866936") {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && channel.channelId == "435426013866936") {
             if (node_kakao.KnownChatType[data.chat.type] != "TEXT") {
                 channel.sendChat(`KnownChatType: ${node_kakao.KnownChatType[data.chat.type]}\n\nattachment:\n${VIEWMORE}${JSON.stringify(data.attachment(), null, 4)}`);
             }
         }
 
-        if (channel.channelId == "313241466341882") {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && channel.channelId == "313241466341882") {
             try {
                 const form = new FormData();
                 form.append('text', msg);
@@ -4785,7 +4787,7 @@ client.on('chat', async (data, channel) => {
             }
         }
 
-        if (channel.channelId + '' === '18436121437302863') {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && channel.channelId + '' === '18436121437302863') {
             if (/^[A-Z0-9]{6}$/.test(msg)) {
                 try {
                     const { data: users, error } = await supabase
@@ -4812,7 +4814,7 @@ client.on('chat', async (data, channel) => {
             }
         }
 
-        if (channel.channelId + '' === '18477786254222718') {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && channel.channelId + '' === '18477786254222718') {
             if (msg.startsWith('/')) {
                 try {
                     const slashBody = data.text.slice(1);
@@ -5296,7 +5298,7 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        if (msg.startsWith("!닉변") && channel.channelId + '' === '18448110985554752') {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith("!닉변") && channel.channelId + '' === '18448110985554752') {
             const mentionId = data.chat.attachment?.mentions?.[0]?.user_id;
             if (!mentionId) {
                 channel.sendChat("❌ 멘션한 유저가 없습니다.\n사용법: !닉변 @유저");
@@ -5323,7 +5325,7 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        if (msg.startsWith("/닉변") && channel.channelId + '' === '18477786254222718') {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith("/닉변") && channel.channelId + '' === '18477786254222718') {
             const mentionId = data.chat.attachment?.mentions?.[0]?.user_id;
             if (!mentionId) {
                 channel.sendChat("❌ 멘션한 유저가 없습니다.\n사용법: /닉변 @유저");
@@ -5350,7 +5352,7 @@ client.on('chat', async (data, channel) => {
             return;
         }
 
-        if (msg.startsWith("!채팅수")) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith("!채팅수")) {
             try {
                 const args = msg.split(' ');
                 let dateFilter = null;
@@ -5639,7 +5641,7 @@ client.on('chat', async (data, channel) => {
                 channel.sendChat(`에러 발생: ${e}`);
             }
         }
-        if (msg.startsWith(">tcg ")) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith(">tcg ")) {
             try {
                 let user = await getTCGUserByName(msg.split(" ")[1]);
                 let evalResult = eval(msg.substring(6 + msg.split(" ")[1].length));
@@ -5650,7 +5652,7 @@ client.on('chat', async (data, channel) => {
                 channel.sendChat("오류 발생!\n" + fuck.message);
             }
         }
-        if (msg.startsWith(">tcgs ")) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith(">tcgs ")) {
             try {
                 let user = await getTCGUserByName(msg.split(" ")[1]);
                 let evalResult = eval(msg.substring(7 + msg.split(" ")[1].length));
@@ -5663,7 +5665,7 @@ client.on('chat', async (data, channel) => {
             }
         }
         // tcgenius
-        if (msg.startsWith("/") && ["442097040687921","18456115567715763","18459877269595903","18459877099603713"].includes(roomid+"")) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && msg.startsWith("/") && ["442097040687921","18456115567715763","18459877269595903","18459877099603713"].includes(roomid+"")) {
             const cmd = msg.substr(1).trim();
             if (cmd.toLowerCase().startsWith("tcg") || cmd.toLowerCase().startsWith("tcgenius")) {
                 const args = cmd.substr(cmd.split(" ")[0].length + 1).split(" ");
@@ -11723,7 +11725,7 @@ client.on('chat', async (data, channel) => {
 
 
         // 택배물량 자동 확인
-        if (["285186748232974","435426013866936"].includes(roomid+"")) {
+        if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES && ["285186748232974","435426013866936"].includes(roomid+"")) {
             // 현재 메시지의 컨텍스트 저장 (클로저로 캡처)
             const capturedMsg = msg;
             const capturedSender = sender;
@@ -12077,6 +12079,7 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('user_join', async (joinLog, channel, user, feed) => {
+    if (!ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES) return;
     if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
         try { await wollu.onUserJoin(channel, user); }
         catch (e) { console.log('wollu 입장 연동 실패:', e); }
@@ -12134,6 +12137,7 @@ client.on('user_join', async (joinLog, channel, user, feed) => {
 });
 
 client.on('user_left', async (leftLog, channel, user, feed) => {
+    if (!ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES) return;
     if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
         try { await wollu.onUserLeft(channel, user, leftLog); }
         catch (e) { console.log('wollu 퇴장 연동 실패:', e); }
@@ -12176,6 +12180,7 @@ client.on('user_left', async (leftLog, channel, user, feed) => {
 });
 
 client.on('profile_changed', async (channel, lastInfo, user) => {
+    if (!ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES) return;
     if (wollu.TARGET_CHANNEL_IDS.includes(channel.channelId + '')) {
         try { await wollu.onProfileChanged(channel, lastInfo, user); }
         catch (e) { console.log('wollu 프로필변경 연동 실패:', e); }
@@ -12270,7 +12275,7 @@ async function login() {
             try {
                 await rpgenius.initRpgeniusData();
                 await rpgenius.resumeAllFishing(id => { try { return client.channelList.get(id); } catch (e) { return null; } });
-                await hunterColosseum.initHunterData();
+                if (ENABLE_NON_RPGENIUS_DEDICATED_ROOM_FEATURES) await hunterColosseum.initHunterData();
             } catch (e) {
                 console.error('[rpgenius] resume on login error:', e);
             }
