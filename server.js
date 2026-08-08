@@ -1693,13 +1693,14 @@ server.post('/api/combine', requireUser, async (req, res) => {
     }
 });
 
-function getEquipmentActionBlockedReason(user, action) {
+function getEquipmentActionBlockedReason(user, action, noun) {
     const verb = action || '변경';
+    const target = noun || '장비를';
     if (user && user.field && user.field.name) {
-        return user.field.worldBoss ? '월드보스 전투 중에는 장비를 ' + verb + '할 수 없습니다.' : '사냥 중에는 장비를 ' + verb + '할 수 없습니다.';
+        return user.field.worldBoss ? '월드보스 전투 중에는 ' + target + ' ' + verb + '할 수 없습니다.' : '사냥 중에는 ' + target + ' ' + verb + '할 수 없습니다.';
     }
     const room = partyquest.getMyRoomSnapshot(user && user.name);
-    if (room && room.state == 'inProgress') return '파티퀘스트 진행 중에는 장비를 ' + verb + '할 수 없습니다.';
+    if (room && room.state == 'inProgress') return '파티퀘스트 진행 중에는 ' + target + ' ' + verb + '할 수 없습니다.';
     return null;
 }
 
@@ -1735,6 +1736,60 @@ server.post('/api/inventory/equipment/unequip', requireUser, async (req, res) =>
         res.json({ ok: true, message: result, equipment: buildInventoryEquipment(user), profile: buildUserProfile(user) });
     } catch (e) {
         console.error('equipment unequip error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/cards/equip-main', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '카드 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '장착', '카드를');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        const result = rpgenius.equipMainCharacterCard(user, number);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('card equip-main error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/cards/slot/equip', requireUser, async (req, res) => {
+    try {
+        const number = Number(req.body && req.body.number);
+        if (!Number.isInteger(number) || number < 1) return res.status(400).json({ error: '카드 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '장착', '카드를');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        const result = rpgenius.equipCharacterCardSlot(user, number);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('card slot equip error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/cards/slot/remove', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        if (!Number.isInteger(slot) || slot < 1) return res.status(400).json({ error: '슬롯 번호가 올바르지 않습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '해제', '카드를');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        const result = rpgenius.removeCharacterCardSlot(user, slot);
+        if (String(result || '').startsWith('❌')) return res.status(400).json({ error: result.replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('card slot remove error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -3622,7 +3677,10 @@ function buildInventoryItems(user) {
 
 function buildInventoryCards(user) {
     return (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [])
-        .map(card => serializeCard(card, user))
+        .map((card, i) => {
+            const serialized = serializeCard(card, user);
+            return serialized ? Object.assign(serialized, { number: i + 1 }) : null;
+        })
         .filter(Boolean);
 }
 

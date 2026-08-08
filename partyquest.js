@@ -147,6 +147,26 @@ function scalePartyAttackBuff(source, value) {
     return Number(value || 0) * (1 + efficiency);
 }
 
+// 시벌론 상태: 일반 공격 쿨타임 0.5초 (만료는 lazy 체크)
+function isPartySivalonActive(member) {
+    return !!(member && member.runtime && Date.now() < Number(member.runtime.sivalonUntil || 0));
+}
+
+// 건력 상태 해제: 봉인된 최대 HP 복구 (버프 칩 정리는 호출부 책임 — expireBuff 경유 시 tick 루프가 제거)
+function clearPartyGunryeok(member) {
+    const r = member && member.runtime;
+    if (!r || !r.gunryeok) return false;
+    r.hpMax = Math.max(1, Number(r.gunryeok.originalHpMax || r.hpMax));
+    delete r.gunryeok;
+    return true;
+}
+
+function clearPartyGunryeokOnSkillUse(room, member) {
+    if (!clearPartyGunryeok(member)) return;
+    if (member.runtime && Array.isArray(member.runtime.buffs)) member.runtime.buffs = member.runtime.buffs.filter(b => b.id !== 'gunryeok');
+    pushCombat(room, '🔓 ' + member.name + ' [건력] 상태 해제 (스킬 사용)', 'buff');
+}
+
 function getPartyDynamicDefenseStats(member) {
     const stats = Object.assign({}, member && member.baseSnapshot && member.baseSnapshot.stats || {});
     const state = member && member.runtime && member.runtime.equipmentState || {};
@@ -860,7 +880,8 @@ function serializeMember(m) {
             potionCdRemain: remainSeconds(m.runtime.potionUntil),
             actionCdRemain: remainSeconds(m.runtime.actionUntil),
             actionCdMul: Number(m.runtime.actCdMul || 1),
-            attackOrder: getPartyAttackOrderPreview(m)
+            attackOrder: getPartyAttackOrderPreview(m),
+            sivalonCharge: Math.max(0, Math.min(5, Math.round(Number(m.runtime.sivalonCharge || 0))))
         } : null,
         pendingChoices: m.pendingChoices || null
     };
@@ -1688,7 +1709,12 @@ function attackMobPhase(name) {
     if (me.runtime && me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (me.runtime && nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
-    if (me.runtime) me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
+    // 시벌론: 상태 중 일반 공격 쿨타임 0.5초, 상태가 아니면 충전 +1
+    const sivalonActive = isPartySivalonActive(me);
+    if (me.runtime) me.runtime.actionUntil = nowMs() + (sivalonActive ? 500 : getActionCooldownSeconds(me) * 1000);
+    if (me.runtime && !sivalonActive && Array.isArray(me.skills) && me.skills.includes('시벌론')) {
+        me.runtime.sivalonCharge = Math.min(5, Number(me.runtime.sivalonCharge || 0) + 1);
+    }
     if (phase.type === 'mob') {
         const fakeMon = createPhaseMonster(phase);
         const result = computeBasicDamage(me, fakeMon, room);
@@ -2043,6 +2069,7 @@ function expireBuff(member, buff) {
     if (buff.id === 'atkBuff') r.atkBuff = getActiveBuffValue(r, 'atkBuff', 0);
     if (buff.id === 'takenDmgSelf') r.takenDmgMul = getActiveBuffValue(r, 'takenDmgSelf', 1);
     if (buff.id === 'absorbAlly') r.absorbAlly = getActiveBuffValue(r, 'absorbAlly', 0);
+    if (buff.id === 'gunryeok') clearPartyGunryeok(member);
 }
 
 function getActiveBuffValue(runtime, id, fallback) {
@@ -2088,6 +2115,10 @@ function getFinalDamageMul(attacker) {
     // 수나타 소환: 소환 중 본인 공격력(피해) +buff
     if (attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
         mul *= 1 + Number(attacker.runtime.sunata.buff || 0);
+    }
+    // 건력: 상태 동안 공격력 증가
+    if (attacker.runtime && attacker.runtime.gunryeok) {
+        mul *= 1 + Number(attacker.runtime.gunryeok.atkBuff || 0);
     }
     return mul;
 }
@@ -2421,6 +2452,7 @@ function calculateNormalDamageToMember(room, mon, target, rawDamage) {
     if (Date.now() < Number(target.runtime.equipmentState && target.runtime.equipmentState.ignoreHealingUntil || 0)) equipmentReduction += getTranscendStageValue(target, '검은 잔향 갑옷', .12, .03);
     const attackerHpRatio = Number(mon && mon.hp || 0) / Math.max(1, Number(mon && mon.hpMax || 1));
     if (attackerHpRatio <= .50) equipmentReduction += getTranscendStageValue(target, '최후통첩 아머', .10, .04);
+    if (target.runtime.gunryeok) equipmentReduction += Number(target.runtime.gunryeok.dmgReduce || 0);
     const kingBuffs = target.runtime.kingmakerBuffs || {};
     for (const key of Object.keys(kingBuffs)) {
         const buff = kingBuffs[key];
@@ -3830,6 +3862,7 @@ function usePartyBlockSkill(room, member) {
     if (!st || !st.blockUsers) return { error: '지금은 사용할 수 없습니다.' };
     if (!member.skills.includes('저지')) return { error: '습득하지 않은 스킬입니다.' };
     if (st.blockUsers.has(member.name)) return { error: '이미 저지했습니다.' };
+    clearPartyGunryeokOnSkillUse(room, member);
     st.blockUsers.add(member.name);
     pushCombat(room, '🛑 ' + member.name + ' [저지]', 'buff');
     broadcastRoom(room);
@@ -4011,6 +4044,7 @@ function computeMonsterDamage(room, mon, target) {
     if (Date.now() < Number(target.runtime.equipmentState && target.runtime.equipmentState.ignoreHealingUntil || 0)) equipmentReduction += getTranscendStageValue(target, '검은 잔향 갑옷', .12, .03);
     const attackerHpRatio = Number(mon && mon.hp || 0) / Math.max(1, Number(mon && mon.hpMax || 1));
     if (attackerHpRatio <= .50) equipmentReduction += getTranscendStageValue(target, '최후통첩 아머', .10, .04);
+    if (target.runtime.gunryeok) equipmentReduction += Number(target.runtime.gunryeok.dmgReduce || 0);
     for (const key of Object.keys(target.runtime.kingmakerBuffs || {})) {
         const buff = target.runtime.kingmakerBuffs[key];
         if (buff && Date.now() < Number(buff.expiredAt || 0)) equipmentReduction += Number(buff.takenDamageReduction || 0);
@@ -4246,6 +4280,9 @@ function useSkill(name, skillName, targetName) {
     if (def.type === 'passive') return { error: '패시브 스킬은 사용할 수 없습니다.' };
     if (nowMs() < (me.runtime.cooldownsUntil[skillName] || 0)) return { error: '쿨타임 중입니다.' };
     if (nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
+    if (skillName === '시벌론' && Number(me.runtime.sivalonCharge || 0) < 5) {
+        return { error: '일반 공격을 5회 사용해야 시벌론이 활성화됩니다. (충전 ' + Number(me.runtime.sivalonCharge || 0) + '/5)' };
+    }
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[me.position]) || {};
     const stats = me.baseSnapshot.stats || {};
@@ -4264,6 +4301,8 @@ function useSkill(name, skillName, targetName) {
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
     me.runtime.mp -= mp;
     me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
+    // 건력 상태에서 스킬 사용 시 해제 (건력 자체는 executeMainCardSkillEffect에서 토글 처리)
+    if (skillName !== '건력') clearPartyGunryeokOnSkillUse(room, me);
     const cdMul = (posDef && posDef.stats && posDef.stats.skillCd) || 1;
     const statCd = Number(stats.skillCooldown || 0) / 1000;
     const cdPct = typeof rpgenius.getSkillCooldownRate === 'function' ? rpgenius.getSkillCooldownRate(stats) : Math.max(.2, 1 - Number(stats.cooldown || 0));
@@ -4297,6 +4336,7 @@ function usePartySelfDestruct(room, member) {
     const botActive = !!(runtime.iktaeBot && Number(runtime.iktaeBot.expired_at || 0) > now && Number(runtime.iktaeBot.hp || 0) > 0);
     const sunataActive = !!(runtime.sunata && Number(runtime.sunata.expired_at || 0) > now);
     if (!botActive && !sunataActive) return { error: '익테봇 또는 수나타가 소환 중일 때만 자폭을 사용할 수 있습니다.' };
+    clearPartyGunryeokOnSkillUse(room, member);
     const mainSkills = (member.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const equipmentSkill = preparePartyTranscendSkill(member, '자폭', false, room);
     runtime.equipmentState = equipmentSkill.state;
@@ -4577,7 +4617,32 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         if (getTranscendEquipmentEntry(caster, '궁택토')) caster.runtime.nextBasicDamageBonus = 0;
         else caster.runtime.nextBasicDamageBonus = getSkillValue(skill, 1, star) + getTranscendStageValue(caster, '쿠루미의 힘이 깃든 지팡이', .75, .25);
     }
-    if (skillName === '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skill, 1, star);
+    if (skillName === '시벌론') {
+        const durationSec = getSkillValue(skill, 0, star);
+        caster.runtime.sivalonUntil = Date.now() + Math.round(durationSec * 1000);
+        caster.runtime.sivalonCharge = 0;
+        upsertMemberBuff(caster, { id: 'sivalon', label: '시벌론 (공속)', remain: Math.round(durationSec * 10) / 10 });
+        pushCombat(room, '🌀 ' + caster.name + ' [시벌론] ' + (Math.round(durationSec * 10) / 10) + '초간 일반 공격 쿨타임 0.5초', 'buff');
+        return;
+    }
+    if (skillName === '건력') {
+        if (caster.runtime.gunryeok) {
+            clearPartyGunryeok(caster);
+            if (Array.isArray(caster.runtime.buffs)) caster.runtime.buffs = caster.runtime.buffs.filter(b => b.id !== 'gunryeok');
+            pushCombat(room, '🔓 ' + caster.name + ' [건력] 상태 해제', 'buff');
+            return;
+        }
+        const dmgReduce = getSkillValue(skill, 0, star);
+        const atkBuff = scalePartyAttackBuff(caster, getSkillValue(skill, 1, star));
+        const originalHpMax = Number(caster.runtime.hpMax || 0);
+        const sealedMax = Math.max(1, Math.round(originalHpMax * 0.3));
+        caster.runtime.gunryeok = { originalHpMax: originalHpMax, dmgReduce: dmgReduce, atkBuff: atkBuff };
+        caster.runtime.hpMax = sealedMax;
+        caster.runtime.hp = Math.min(Number(caster.runtime.hp || 0), sealedMax);
+        upsertMemberBuff(caster, { id: 'gunryeok', label: '건력 (공+/피해감소)', value: atkBuff, remain: 60 });
+        pushCombat(room, '💪 ' + caster.name + ' [건력] 60초간 최대 HP 70% 봉인 / 공격력 +' + Math.round(atkBuff * 100) + '% / 받는 피해 -' + Math.round(dmgReduce * 100) + '%', 'buff');
+        return;
+    }
     if (skillName === '불사조') {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0) * 0.5;
         caster.runtime.takenDmgMul = 1.5;

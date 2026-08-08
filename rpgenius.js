@@ -3274,6 +3274,11 @@ function calculateUserStats(user, _out) {
             if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
         }
     }
+    // 건력 봉인: 상태 동안 최대 HP의 일부 삭제 (회복 상한 포함 모든 최대 HP 소비처에 적용)
+    const gunryeokSeal = user.field && user.field.gunryeok;
+    if (gunryeokSeal && Date.now() < Number(gunryeokSeal.expired_at || 0)) {
+        stats.hp = Math.max(1, Math.round(Number(stats.hp || 0) * (1 - Number(gunryeokSeal.sealRate || 0))));
+    }
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
     return stats;
 }
@@ -4612,14 +4617,27 @@ function getFieldBuffs(user) {
     return user.field.buffs;
 }
 
+// 시벌론 상태: 일반 공격 쿨타임 0.5초 (만료는 lazy 체크)
+function isSivalonActive(user) {
+    return !!(user.field && user.field.sivalon && Date.now() < Number(user.field.sivalon.expired_at || 0));
+}
+
+// 건력 상태: 최대 HP 봉인 + 받는 피해 감소 + 공격력 증가 (만료는 lazy 체크)
+function getGunryeokState(user) {
+    const state = user.field && user.field.gunryeok;
+    return state && Date.now() < Number(state.expired_at || 0) ? state : null;
+}
+
 function getActiveFieldDamageReduction(user) {
+    const gunryeok = getGunryeokState(user);
+    const gunryeokReduction = gunryeok ? Number(gunryeok.dmgReduce || 0) : 0;
     const buffs = getFieldBuffs(user);
     const buff = buffs.receivedDamageReduction;
     if (!buff || Number(buff.expired_at || 0) <= Date.now()) {
         if (buffs.receivedDamageReduction) delete buffs.receivedDamageReduction;
-        return 0;
+        return gunryeokReduction;
     }
-    return Number(buff.value || 0);
+    return Number(buff.value || 0) + gunryeokReduction;
 }
 
 function getActiveFieldDamageMultiplier(user) {
@@ -5449,7 +5467,7 @@ function tryEncounterFragment(user, dungeon, lines) {
     lines.push('🔓 /RPGenius 편린 명령어로 사용해야 다른 명령을 사용할 수 있습니다.');
 }
 
-function useBasicAttackInField(user, channel) {
+async function useBasicAttackInField(user, channel) {
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
     if (user.field.skillSelecting) return '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])';
     if (channel) activeFieldChannels[user.name] = channel;
@@ -5473,7 +5491,15 @@ function useBasicAttackInField(user, channel) {
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
     if (nextBasicBonus > 0) extra.notice = '자인 효과: 다음 일반 공격 피해 +' + (Math.round(nextBasicBonus * 1000) / 10) + '%';
-    return applyFieldDamageAction(user, context, rawDamage, extra, 'basic', null);
+    // 시벌론: 상태 중 일반 공격은 충전 미포함, 상태가 아니면 충전 +1
+    const sivalonActive = isSivalonActive(user);
+    if (!sivalonActive && findUsableSkill(user, '시벌론')) {
+        user.field.sivalonCharge = Math.min(5, Number(user.field.sivalonCharge || 0) + 1);
+        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '시벌론 충전 ' + user.field.sivalonCharge + '/5';
+    }
+    const result = await applyFieldDamageAction(user, context, rawDamage, extra, 'basic', null);
+    if (sivalonActive && user.field) setFieldNextActionAt(user, Date.now() + 500);
+    return result;
 }
 
 function getFieldCombatContext(user) {
@@ -5827,6 +5853,10 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     if (user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0) && !(extra && extra.summonAttack)) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
     }
+    const gunryeokBuff = getGunryeokState(user);
+    if (gunryeokBuff && !(extra && extra.summonAttack)) {
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(gunryeokBuff.atkBuff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
+    }
     if (actionType == 'basic' && Number(state.deepNextBasic || 0) > 0) {
         extra.oneTimeTrueDmg = Number(extra.oneTimeTrueDmg || 0) + Math.round(Number(stats.atk || 0) * Number(state.deepNextBasic));
         delete state.deepNextBasic;
@@ -6144,7 +6174,9 @@ function executeSelfDestructInField(user) {
     user.field.sunata = null;
     clearFieldIktaeBot(user.name);
     clearFieldSunata(user.name);
-    const extra = Object.assign({}, equipmentSkill.extra || {}, { mpCost: 0, mpAfter: typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), maxMp: Number(stats.mp || 0), notice: '자폭: 소환수 ' + summonCount + '기 파괴' });
+    const gunryeokCleared = !!getGunryeokState(user);
+    if (gunryeokCleared) delete user.field.gunryeok;
+    const extra = Object.assign({}, equipmentSkill.extra || {}, { mpCost: 0, mpAfter: typeof user.mp == 'undefined' ? Number(stats.mp || 0) : Number(user.mp || 0), maxMp: Number(stats.mp || 0), notice: '자폭: 소환수 ' + summonCount + '기 파괴' + (gunryeokCleared ? ' / 건력 상태 해제' : '') });
     if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     const result = applyFieldDamageAction(user, context, rawDamage, extra, 'skill', syntheticSkill);
     if (user.field) {
@@ -6318,6 +6350,9 @@ function executeMainCardSkillInField(user, skillName) {
     if (!skillData) return '❌ 사용할 수 없는 스킬입니다.';
     const cooldownEnd = Number(user.field.skillCooldowns[skillData.skill.name] || 0);
     if (now < cooldownEnd) return '❌ 스킬 쿨타임입니다. (' + Math.ceil((cooldownEnd - now) / 1000) + '초)';
+    if (skillData.skill.name == '시벌론' && Number(user.field.sivalonCharge || 0) < 5) {
+        return '❌ 일반 공격을 5회 사용해야 시벌론이 활성화됩니다. (충전 ' + Number(user.field.sivalonCharge || 0) + '/5)';
+    }
 
     const context = getFieldCombatContext(user);
     if (context.error) return context.error;
@@ -6346,6 +6381,11 @@ function executeMainCardSkillInField(user, skillName) {
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
     if (equipmentSkill.notices.length > 0) extra.notice = equipmentSkill.notices.join(' / ');
+    // 건력 상태에서 스킬 사용 시 해제 (건력 자체는 아래 블록에서 토글 처리)
+    if (skillData.skill.name != '건력' && getGunryeokState(user)) {
+        delete user.field.gunryeok;
+        extra.notice = (extra.notice ? extra.notice + ' / ' : '') + '건력 상태 해제';
+    }
     if (skillData.skill.name == '글버지') {
         const ratio = getSkillValue(skillData.skill, 1, star);
         const amount = Math.round(Number(stats.hp || 0) * ratio * (1 + Number(stats.shieldEfficiency || 0)));
@@ -6372,7 +6412,38 @@ function executeMainCardSkillInField(user, skillName) {
         if (staff) zainBonus += .75 + .25 * (getTranscendStage(staff.ref.equip, staff.data) - 1);
         getFieldBuffs(user).nextBasicDamageBonus = { value: zainBonus };
     }
-    if (skillData.skill.name == '시벌론') extra.lifeStealFromPreMitigation = getSkillValue(skillData.skill, 1, star);
+    if (skillData.skill.name == '시벌론') {
+        const durationMs = Math.round(getSkillValue(skillData.skill, 0, star) * 1000);
+        user.field.sivalon = { expired_at: now + durationMs };
+        user.field.sivalonCharge = 0;
+        const lines = ['🌀 시벌론! ' + (durationMs / 1000).toFixed(1) + '초간 일반 공격 쿨타임이 0.5초가 됩니다.\n- 상태 중 일반 공격은 충전에 포함되지 않습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setNextFieldActionAt(user);
+        return lines.join('\n');
+    }
+    if (skillData.skill.name == '건력') {
+        const gunryeokActive = getGunryeokState(user);
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+        if (isWorldBoss) setWorldBossNextActionAt(user);
+        else setNextFieldActionAt(user);
+        if (gunryeokActive) {
+            delete user.field.gunryeok;
+            return ['🔓 건력 상태를 해제했습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'].join('\n');
+        }
+        const dmgReduce = getSkillValue(skillData.skill, 0, star);
+        const atkBuff = getSkillValue(skillData.skill, 1, star);
+        user.field.gunryeok = { expired_at: now + 60000, sealRate: 0.7, dmgReduce: dmgReduce, atkBuff: atkBuff };
+        const sealedMax = Number(calculateUserStats(user).hp || 0);
+        const curHp = typeof user.hp == 'undefined' ? Number(stats.hp || 0) : Number(user.hp || 0);
+        user.hp = Math.min(curHp, sealedMax);
+        const lines = ['💪 건력! 60초간 \'건력\' 상태에 진입합니다.',
+            '- 최대 HP 70% 봉인 (실질 최대 HP ' + comma(sealedMax) + ')',
+            '- 받는 피해 감소 +' + (Math.round(dmgReduce * 1000) / 10) + '% / 공격력 +' + (Math.round(atkBuff * 1000) / 10) + '%',
+            '- 상태 중 스킬 사용 시 해제됩니다.',
+            '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        return lines.join('\n');
+    }
     if (skillData.skill.name == '불사조') {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(stats.crit || 0) * 0.5;
         extra.receivedDamageMul = 1.5;
@@ -6646,6 +6717,11 @@ async function useWorldBossChosenSkill(user, skillName) {
     user.field.skillCooldowns[skill.name] = now + cooltime;
     const wbElement = getAttackElement(user, skill);
     const lines = [];
+    // 건력 상태에서 스킬 사용 시 해제
+    if (getGunryeokState(user)) {
+        delete user.field.gunryeok;
+        lines.push('- 건력 상태 해제');
+    }
     let dealtSomething = false;
     let result = null;
     if (skill.name == '빙결') {
@@ -13020,6 +13096,9 @@ module.exports = {
     getRPGUserByName,
     getRPGUserByCode,
     webRegisterRPGUser,
+    equipMainCharacterCard,
+    equipCharacterCardSlot,
+    removeCharacterCardSlot,
     getMailbox,
     countUnreadMail,
     markMailRead,

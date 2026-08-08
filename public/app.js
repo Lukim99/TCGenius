@@ -781,7 +781,7 @@ function openMainCardModal(card) {
     openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
 }
 
-function openCardSlotModal(card) {
+function openCardSlotModal(card, slotNumber) {
     const isJob = card && card.type === '전직';
     const nodes = [];
     // 전직 카드는 전직 슬롯 효과만, 일반 카드는 일반 슬롯 효과만 적용
@@ -794,6 +794,36 @@ function openCardSlotModal(card) {
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
     openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
+    if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
+        const row = el('div', { class: 'row' });
+        row.appendChild(el('button', { class: 'close', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
+        $('#modalBody').appendChild(row);
+    }
+}
+
+function openInventoryCardModal(card) {
+    openMainCardModal(card);
+    const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
+    if (!ownInventory || !Number(card.number || 0)) return;
+    const row = el('div', { class: 'row' });
+    row.appendChild(el('button', { class: 'primary', onclick: e => handleCardAction('equip-main', { number: card.number }, e) }, '메인카드 장착'));
+    row.appendChild(el('button', { onclick: e => handleCardAction('slot/equip', { number: card.number }, e) }, '슬롯 장착'));
+    $('#modalBody').appendChild(row);
+}
+
+async function handleCardAction(action, body, event) {
+    const btn = event && event.currentTarget;
+    if (btn) btn.disabled = true;
+    try {
+        const data = await postApi('/api/cards/' + action, body);
+        closeModal();
+        if (data.profile) renderProfile(data.profile);
+        const inventoryPageActive = document.querySelector('.page[data-page="inventory"]') && document.querySelector('.page[data-page="inventory"]').classList.contains('active');
+        if (inventoryPageActive) await loadInventory('cards');
+    } catch (e) {
+        alert(e.message);
+        if (btn) btn.disabled = false;
+    }
 }
 
 const POTENTIAL_TIER_COLORS = { rare: '#ffffff', epic: '#86efac', unique: '#c084fc', legendary: '#fbbf24' };
@@ -1211,7 +1241,7 @@ function renderProfile(data) {
     renderStatCard();
     renderStatPoint(data.statPoint);
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
-    $('#slotCards').replaceChildren(...data.cardSlots.map(card => cardNode(card, true, openCardSlotModal)));
+    $('#slotCards').replaceChildren(...data.cardSlots.map((card, i) => cardNode(card, true, c => openCardSlotModal(c, i + 1))));
     renderGearSlots(data);
     if (data.user.isAdmin) $('#adminLink').style.display = '';
     if (isInitialOwnProfile && !data.user.canPartyQuest)
@@ -1378,7 +1408,7 @@ async function loadInventory(kind) {
     }
     if (kind === 'cards') {
         $('#viewerTitle').textContent = '보유 캐릭터 카드';
-        $('#viewer').replaceChildren(data.cards.length ? el('div', { class: 'card-grid' }, data.cards.map(card => cardNode(card, true))) : el('div', { class: 'empty' }, '보유 카드가 없습니다.'));
+        $('#viewer').replaceChildren(data.cards.length ? el('div', { class: 'card-grid' }, data.cards.map(card => cardNode(card, true, openInventoryCardModal))) : el('div', { class: 'empty' }, '보유 카드가 없습니다.'));
     }
     if (kind === 'equipment') {
         $('#viewerTitle').textContent = '보유 장비';

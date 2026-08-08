@@ -201,10 +201,15 @@
             const skillName = btn.dataset.skill || '';
             const isPassive = btn.dataset.passive === '1';
             const remain = Number((r.cooldowns && r.cooldowns[skillName]) || 0);
-            const blocked = isPassive || dead || seal > 0 || remain > 0 || acd > 0;
+            // 시벌론: 일반 공격 5회 충전 후 활성화 — 충전 부족 시 게이지 표시
+            const needCharge = skillName === '시벌론' && Number(r.sivalonCharge || 0) < 5;
+            const blocked = isPassive || dead || seal > 0 || remain > 0 || acd > 0 || needCharge;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
-            const text = seal > 0 && !isPassive ? ('🔒 ' + seal.toFixed(1)) : (remain > 0 ? remain.toFixed(1) : (acd > 0 && !isPassive ? acd.toFixed(1) : ''));
+            const text = seal > 0 && !isPassive ? ('🔒 ' + seal.toFixed(1))
+                : (remain > 0 ? remain.toFixed(1)
+                : (needCharge ? '⚡ ' + Number(r.sivalonCharge || 0) + '/5'
+                : (acd > 0 && !isPassive ? acd.toFixed(1) : '')));
             if (cd) {
                 cd.textContent = text;
                 cd.style.display = text ? '' : 'none';
@@ -1131,8 +1136,10 @@
             const sd = skillDefs[skillName] || {};
             const remain = cooldowns[skillName] || 0;
             const isPassive = sd.type === 'passive';
-            const blocked = isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0;
-            const overlay = remain > 0 ? remain.toFixed(1) : (acd > 0 && !isPassive ? acd.toFixed(1) : null);
+            const charge = Number(myMember.runtime && myMember.runtime.sivalonCharge || 0);
+            const needCharge = skillName === '시벌론' && charge < 5;
+            const blocked = isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge;
+            const overlay = remain > 0 ? remain.toFixed(1) : (needCharge ? '⚡ ' + charge + '/5' : (acd > 0 && !isPassive ? acd.toFixed(1) : null));
             const btn = el('button', {
                 class: 'pq-skill-btn',
                 'data-kind': 'skill',
