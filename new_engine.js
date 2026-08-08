@@ -115,7 +115,7 @@ const DEVICE_NAME = "SM-T870";
 const EMAIL = process.env.EMAIL;
 const PASSWORD = process.env.PASSWORD;
 // 재개할 때 배포 환경에 KAKAO_AUTO_LOGIN_ENABLED=true를 설정한다.
-const KAKAO_AUTO_LOGIN_ENABLED = false;
+const KAKAO_AUTO_LOGIN_ENABLED = true;
 let client = new node_kakao.TalkClient();
 if (keepAlive && typeof keepAlive.setKakaoClient == 'function') keepAlive.setKakaoClient(client);
 
