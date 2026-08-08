@@ -1887,13 +1887,13 @@ function getCardFashion(card) {
 }
 
 function pickFashionForCard(cardId) {
-    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && fashion.type !== '전직' && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && fashion.exclusive !== true && fashion.type !== '전직' && (fashion.primary_card || []).map(id => Number(id)).includes(Number(cardId)));
     return candidates.length > 0 ? candidates[randomInt(0, candidates.length - 1)] : null;
 }
 
 function pickRandomFashionCard(cardType) {
     const isJob = cardType === '전직';
-    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0 && (isJob ? fashion.type === '전직' : fashion.type !== '전직'));
+    const candidates = getFashionData().filter(fashion => fashion && fashion.isHigh !== true && fashion.exclusive !== true && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0 && (isJob ? fashion.type === '전직' : fashion.type !== '전직'));
     if (candidates.length == 0) return null;
     const fashion = candidates[randomInt(0, candidates.length - 1)];
     const primaryCards = fashion.primary_card.map(id => Number(id)).filter(id => Number.isInteger(id) && id >= 0);
@@ -1928,6 +1928,7 @@ function getApplicableFashionsForCard(card, highOnly, fashionName) {
     return getFashionData().filter(fashion => {
         if (!fashion || !Array.isArray(fashion.primary_card)) return false;
         if (fashionName && fashion.name != fashionName) return false;
+        if (!fashionName && fashion.exclusive === true) return false; // 전용 적용권으로만 적용 가능
         if (!!fashion.isHigh !== !!highOnly) return false;
         if (!fashion.primary_card.map(id => Number(id)).includes(Number(card.id))) return false;
         if (isJob ? fashion.type !== '전직' : fashion.type === '전직') return false;
@@ -11625,6 +11626,30 @@ async function getAllRPGUsers() {
     return users;
 }
 
+// 웹 회원가입. /RPGenius 등록과 동일한 검증 + 같은 UA로 로그인된 계정이 있으면 등록 불가.
+async function webRegisterRPGUser(nickname, ua) {
+    const name = String(nickname || '').trim();
+    if (await getRPGUserByName(name)) return { error: '이미 존재하는 이름입니다.' };
+    if (name.match(/[^가-힣ㄱ-ㅎa-zA-Z0-9\s]/) || name.length == 0) return { error: '닉네임은 한글, 영어, 숫자 및 공백만 들어갈 수 있습니다.' };
+    if (name.length > 10) return { error: '닉네임은 최대 10글자로 설정하셔야 합니다.' };
+    const agent = String(ua || '').trim();
+    if (agent) {
+        const users = await getAllRPGUsers();
+        if (users.some(u => Array.isArray(u.logged_in_agent) && u.logged_in_agent.includes(agent))) {
+            return { error: '이미 이 기기(브라우저)로 로그인된 계정이 있어 등록할 수 없습니다.' };
+        }
+    }
+    const user = new RPGUser(name, 'web_' + getRandomString(16));
+    if (agent) user.logged_in_agent.push(agent);
+    const res = await putNewItem(TABLE_NAME, user);
+    if (!res.success) {
+        const errorName = res.result && res.result[0] && res.result[0].name;
+        if (errorName == 'ConditionalCheckFailedException') return { error: '이미 등록된 계정이 있습니다.' };
+        return { error: '등록 과정에서 오류가 발생했습니다.' };
+    }
+    return { user };
+}
+
 async function formatCombatPowerRanking(currentUser) {
     const users = await getAllRPGUsers();
     if (users.length == 0) return '❌ 랭킹 데이터를 불러올 수 없습니다.';
@@ -12994,6 +13019,7 @@ module.exports = {
     getRPGUserById,
     getRPGUserByName,
     getRPGUserByCode,
+    webRegisterRPGUser,
     getMailbox,
     countUnreadMail,
     markMailRead,

@@ -380,6 +380,21 @@ server.post('/api/login', async (req, res) => {
     }
 });
 
+server.post('/api/register', async (req, res) => {
+    const name = String((req.body && req.body.name) || '').trim();
+    const ua = String(req.headers['user-agent'] || '').trim();
+    if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
+    try {
+        const result = await rpgenius.webRegisterRPGUser(name, ua);
+        if (result.error) return res.status(400).json({ error: result.error });
+        setSession(res, { name: result.user.name, admin: false, canPartyQuest: false, exp: Date.now() + SESSION_TTL_MS });
+        res.json({ ok: true, name: result.user.name });
+    } catch (e) {
+        console.error('register error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.post('/api/logout', (req, res) => {
     clearSession(res);
     res.json({ ok: true });
@@ -5507,6 +5522,7 @@ button{width:100%;margin-top:18px;padding:13px;background:linear-gradient(135deg
 button:hover{background:linear-gradient(135deg,#4752c4 0%,#6d28d9 100%);box-shadow:0 6px 24px rgba(88,101,242,.58);transform:translateY(-1px)}
 button:disabled{opacity:.6;cursor:wait;transform:none;box-shadow:none}
 .err{margin-top:12px;color:#f87171;font-size:13px;min-height:18px}
+.alt{margin:14px 0 0;text-align:center;font-size:13px}.alt a{color:#818cf8;text-decoration:none}.alt a:hover{text-decoration:underline}
 </style></head><body>
 <div class="card" id="card">
   <h1>RPGenius</h1>
@@ -5521,7 +5537,13 @@ button:disabled{opacity:.6;cursor:wait;transform:none;box-shadow:none}
     <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345" required>
     <button type="submit">로그인</button>
   </form>
+  <form id="f3" style="display:none">
+    <label>닉네임</label>
+    <input id="regInput" autocomplete="off" spellcheck="false" placeholder="사용할 닉네임 (최대 10자)" required>
+    <button type="submit">등록</button>
+  </form>
   <div class="err" id="err"></div>
+  <p class="alt"><a href="#" id="toggleLink">계정이 없으신가요? 등록하기</a></p>
 </div>
 <script>
 const err=document.getElementById('err');
@@ -5551,6 +5573,24 @@ f2.addEventListener('submit',async e=>{
     const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:savedName,code:codeInput.value.trim()})});
     const j=await r.json();
     if(!r.ok)throw new Error(j.error||'로그인 실패');
+    location.reload();
+  }catch(x){err.textContent='❌ '+x.message;btn.disabled=false;}
+});
+const f3=document.getElementById('f3'),regInput=document.getElementById('regInput'),toggleLink=document.getElementById('toggleLink'),sub=document.getElementById('sub');
+let regMode=false;
+toggleLink.addEventListener('click',e=>{
+  e.preventDefault();err.textContent='';
+  regMode=!regMode;
+  if(regMode){f1.style.display='none';f2.style.display='none';f3.style.display='';sub.textContent='사용할 닉네임을 입력하세요.';toggleLink.textContent='이미 계정이 있으신가요? 로그인';regInput.focus();}
+  else{f3.style.display='none';f1.style.display='';sub.textContent='닉네임을 입력하세요.';toggleLink.textContent='계정이 없으신가요? 등록하기';nameInput.focus();}
+});
+f3.addEventListener('submit',async e=>{
+  e.preventDefault();err.textContent='';
+  const btn=f3.querySelector('button');btn.disabled=true;
+  try{
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:regInput.value.trim()})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||'등록 실패');
     location.reload();
   }catch(x){err.textContent='❌ '+x.message;btn.disabled=false;}
 });
