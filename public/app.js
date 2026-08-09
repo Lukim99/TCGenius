@@ -2510,7 +2510,7 @@ function showEnhanceResult(kind, message, number, nextPreview, appliedDiffs, ite
         fxLayers.push(buildShardLayer(14));
     } else if (kind === 'protected') {
         fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(8, ['#a5b4fc', '#c7d2fe', '#e0e7ff']));
+        fxLayers.push(buildSparkleLayer(8, ['#e8b04b', '#f0cd87', '#fff2d4']));
     } else { // down / fail
         fxLayers.push(weapon);
         fxLayers.push(buildSparkleLayer(6, ['#fca5a5', '#fecaca']));
@@ -3477,7 +3477,7 @@ function buildShopThumb(display, cls) {
         if (display.iconUrl) wrap.appendChild(el('img', { class: 'shop-card-thumb-icon', src: display.iconUrl, alt: '' }));
     } else {
         const fb = svgIcon(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`);
-        fb.style.cssText = 'width:32px;height:32px;display:block;opacity:.6;position:relative;z-index:2;color:#818cf8';
+        fb.style.cssText = 'width:32px;height:32px;display:block;opacity:.6;position:relative;z-index:2;color:var(--text-3)';
         wrap.appendChild(fb);
     }
     return wrap;
@@ -4790,7 +4790,7 @@ function dexCard(entry) {
             el('div', { style: { fontWeight: 800, color: '#f8fafc' } }, entry.evolution.targetName),
             el('div', { style: { fontSize: '11px', color: '#94a3b8' } }, entry.evolution.targetRarity || '')
         ));
-        target.appendChild(el('div', { style: { fontSize: '11px', color: '#a5b4fc' } }, '+' + entry.evolution.requireLevel + ' x' + entry.evolution.requireCount));
+        target.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--text-2)' } }, '+' + entry.evolution.requireLevel + ' x' + entry.evolution.requireCount));
         evol.appendChild(target);
         card.appendChild(evol);
     }
@@ -4817,7 +4817,7 @@ function dexCard(entry) {
 
 function dexCharacterCard(entry) {
     const card = el('div', { class: 'dex-card' });
-    card.style.setProperty('--rar', '#5865f2');
+    card.style.setProperty('--rar', 'var(--border-strong)');
 
     let view = '일반';
 

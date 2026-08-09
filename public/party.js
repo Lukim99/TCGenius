@@ -315,7 +315,7 @@
                     el('div', { class: 'pq-room-quest' }, r.questName),
                     el('div', { class: 'pq-room-title' }, r.hostName + '님의 파티')
                 ),
-                el('div', { style: 'align-self:center;color:#a5b4fc;font-weight:800' }, '→'),
+                el('div', { style: 'align-self:center;color:var(--text-2);font-weight:700' }, '→'),
                 meta
             );
             root.append(card);
