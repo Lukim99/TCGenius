@@ -3801,7 +3801,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         if (i == 0 && Number(extra && extra.oneTimeFinalDamage || 0) > 0) hitDamage += Math.max(0, Math.round(Number(extra.oneTimeFinalDamage)));
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit });
+        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit, isComboLastCrit: forceComboLastCrit });
         finalDamage += hitDamage;
     }
     if (isFixedMultiHit && extra && typeof extra.afterAttackUnit == 'function') {
@@ -3841,7 +3841,7 @@ function calculateMonsterAttackHitResult(monster, defenderStats, slotEffects, ex
 function formatHitDetailLines(hitResult, prefix, suffix) {
     if (!hitResult || Number(hitResult.hitCount || 1) <= 1) return [];
     const details = Array.isArray(hitResult.hitDetails) ? hitResult.hitDetails : [];
-    return details.map(detail => (detail.isTenthAtk ? '✨ ' : '') + prefix + comma(detail.damage) + (detail.isDestinyDamage ? ' 운명' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
+    return details.map(detail => (detail.isComboLastCrit ? '✦ ' : '') + (detail.isTenthAtk ? '✨ ' : '') + prefix + comma(detail.damage) + (detail.isDestinyDamage ? ' 운명' : '') + (detail.isCritical ? ' 치명타 ' : ' ') + suffix);
 }
 
 function getSkillValue(skill, index, star) {
@@ -6416,10 +6416,9 @@ function executeMainCardSkillInField(user, skillName) {
         const durationMs = Math.round(getSkillValue(skillData.skill, 0, star) * 1000);
         user.field.sivalon = { expired_at: now + durationMs };
         user.field.sivalonCharge = 0;
-        const lines = ['🌀 시벌론! ' + (durationMs / 1000).toFixed(1) + '초간 일반 공격 쿨타임이 0.5초가 됩니다.\n- 상태 중 일반 공격은 충전에 포함되지 않습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
+        const lines = ['🌀 시벌론! ' + (durationMs / 1000).toFixed(1) + '초간 일반 공격 쿨타임이 0.5초가 됩니다.\n- 상태 중 일반 공격은 충전에 포함되지 않습니다.\n- 즉시 일반 공격을 사용할 수 있습니다.', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
-        if (isWorldBoss) setWorldBossNextActionAt(user);
-        else setNextFieldActionAt(user);
+        setFieldNextActionAt(user, now); // 편의성: 사용 즉시 평타 가능 (행동 쿨타임 초기화)
         return lines.join('\n');
     }
     if (skillData.skill.name == '건력') {

@@ -599,7 +599,7 @@
             "atk": 4532,
             "def": 815,
             "actionInterval": 3,
-            "enrageSec": 600,
+            "enrageSec": 450,
             "stat": {
               "pnt": 880,
               "crit": 0.7,
@@ -642,7 +642,7 @@
               {
                 "name": "김쁠뿡",
                 "type": "chatCallGimmick",
-                "lineThreshold": 90,
+                "lineThreshold": 150,
                 "seconds": 5,
                 "groggy": 8,
                 "takenDamageUp": 0.2,
@@ -651,7 +651,7 @@
               {
                 "name": "부타 투표",
                 "type": "voteGimmick",
-                "lineThreshold": 40,
+                "lineThreshold": 65,
                 "seconds": 5,
                 "gauge": 20
               }
@@ -669,7 +669,7 @@
             "atk": 5687,
             "def": 1030,
             "actionInterval": 2.8,
-            "enrageSec": 840,
+            "enrageSec": 690,
             "element": "화",
             "stat": {
               "pnt": 990,
@@ -720,10 +720,10 @@
                 "name": "레인! 도와줘!",
                 "type": "rainShield",
                 "lineThresholds": [
-                  145,
-                  115,
-                  75,
-                  45
+                  210,
+                  160,
+                  110,
+                  60
                 ],
                 "sealSec": 10,
                 "shield": 200000,

@@ -52,6 +52,7 @@ function makeFieldUser(name, cardName, dungeonName) {
     const expectedDurMs = Math.round((6 + 0.3 * 6) * 1000);
     assert.ok(Math.abs(munma.field.sivalon.expired_at - Date.now() - expectedDurMs) < 1500, '지속시간 6+0.3*성');
     assert.strictEqual(Number(munma.field.sivalonCharge || 0), 0, '발동 후 충전 0');
+    assert.ok(Number(munma.field.nextActionAt || 0) <= Date.now(), '발동 즉시 평타 가능 (행동 쿨타임 초기화)');
 
     // 상태 중 일반 공격 → 쿨타임 0.5초 + 충전 미증가
     munma.field.nextActionAt = 0;

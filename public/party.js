@@ -735,6 +735,7 @@
                     fixedDamage: hit.fixedDamage || 0,
                     destinyDamage: hit.destinyDamage || 0,
                     crit: !!hit.crit,
+                    comboLastCrit: !!hit.comboLastCrit,
                     kills: index === details.length - 1 ? payload.kills : 0,
                     skill: index === details.length - 1 ? payload.skill : null,
                     comboIndex: index + 1,
@@ -760,6 +761,7 @@
         main.textContent = (payload.crit ? '✦ ' : '') + '-' + Number(payload.damage || 0).toLocaleString();
         pop.append(main);
         if (payload.comboTotal > 1) pop.append(el('span', { class: 'sub combo-label' }, payload.comboIndex + '/' + payload.comboTotal + ' HIT'));
+        if (payload.comboLastCrit) pop.append(el('span', { class: 'sub combo-label' }, '최대 연격 ✦'));
         if (payload.kills > 1) pop.append(el('span', { class: 'sub' }, '×' + payload.kills.toLocaleString() + ' 처치'));
         else if (payload.skill) pop.append(el('span', { class: 'sub' }, payload.skill));
         if (hasFixed) pop.append(el('span', { class: 'sub fixed-label' }, '고정 ' + Number(payload.fixedDamage || 0).toLocaleString()));
@@ -1227,9 +1229,9 @@
             } else {
                 payload = { skill: skillName };
             }
-            // 낙관적 로컬 쿨다운 — 행동 쿨 + 스킬 쿨
+            // 낙관적 로컬 쿨다운 — 행동 쿨 + 스킬 쿨 (시벌론은 서버가 행동 쿨을 초기화하므로 로컬도 초기화)
             const now = Date.now();
-            myCD.action = Math.max(myCD.action, now + getMyActionCooldownMs());
+            myCD.action = skillName === '시벌론' ? 0 : Math.max(myCD.action, now + getMyActionCooldownMs());
             const cdSec = Math.max(0.5, Number((sd && sd.cd) || 0) * getMySkillCdMul());
             myCD.skills[skillName] = Math.max(myCD.skills[skillName] || 0, now + cdSec * 1000);
             applyMyDeadlinesToRuntime();

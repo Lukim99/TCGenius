@@ -2765,7 +2765,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         let finalHitDamage = applyDamageVariance(hitDamage);
         if (i === 0 && Number(extra && extra.oneTimeFinalDamage || 0) > 0) finalHitDamage += Math.max(0, Math.round(Number(extra.oneTimeFinalDamage)));
         hitDamages.push(finalHitDamage);
-        hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit, isComboHit: isComboExtraHit });
+        hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit, isComboHit: isComboExtraHit, comboLastCrit: forceComboLastCrit });
         damage += finalHitDamage;
     }
     if (isFixedMultiHit && typeof extra.partyAfterAttackUnit === 'function') {
@@ -3679,7 +3679,7 @@ function stepTabuzago(room, mon, dt) {
         st.reflectWindow = Number(p.windowSec || 5);
         st.reflectAccum = 0;
         st.onDamageTaken = (rm, mo, dmg) => { mo.bossState.reflectAccum += dmg; };
-        pushCombat(room, mon.name + '가 움츠러 듭니다...', 'danger');
+        pushNotice(room, mon.name + '가 움츠러 듭니다...', 'danger', 4500);
         return true;
     }
     // 모찌나간다 (하드 전용 — interval 0이면 비활성)
@@ -4621,6 +4621,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const durationSec = getSkillValue(skill, 0, star);
         caster.runtime.sivalonUntil = Date.now() + Math.round(durationSec * 1000);
         caster.runtime.sivalonCharge = 0;
+        caster.runtime.actionUntil = 0; // 편의성: 사용 즉시 평타 가능 (행동 쿨타임 초기화)
         upsertMemberBuff(caster, { id: 'sivalon', label: '시벌론 (공속)', remain: Math.round(durationSec * 10) / 10 });
         pushCombat(room, '🌀 ' + caster.name + ' [시벌론] ' + (Math.round(durationSec * 10) / 10) + '초간 일반 공격 쿨타임 0.5초', 'buff');
         return;
