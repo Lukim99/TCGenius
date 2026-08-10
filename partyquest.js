@@ -397,9 +397,8 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         result.selfShieldDuration = 5 + durationBonus;
     }
     if (getTranscendEquipmentEntry(member, '검은 잔향 신발') && now >= Number(state.blackEchoShoesReadyAt || 0)) {
-        state.ignoreHealingUntil = now + (5 + durationBonus) * 1000;
-        state.darkAttackBuff = { value: getTranscendStageValue(member, '검은 잔향 신발', .15, .04), expiredAt: now + (10 + durationBonus) * 1000 };
-        state.blackEchoShoesReadyAt = now + Math.max(0, 10 - cooldownReduction) * 1000;
+        state.blackEchoShoesBuff = { value: getTranscendStageValue(member, '검은 잔향 신발', .07, .03), expiredAt: now + (60 + durationBonus) * 1000 };
+        state.blackEchoShoesReadyAt = now + Math.max(0, 60 - cooldownReduction) * 1000;
     }
     if (getTranscendSetCount(member, '검은 잔향') >= 4 && now >= Number(state.blackEchoSetReadyAt || 0)) {
         spendHp(.02);
@@ -2449,7 +2448,6 @@ function calculateNormalDamageToMember(room, mon, target, rawDamage) {
     const targetHpRatio = Number(target.runtime.hp || 0) / Math.max(1, Number(target.runtime.hpMax || 1));
     let equipmentReduction = 0;
     if (targetHpRatio <= .50) equipmentReduction += Number(targetStats.bloodFlowReduction || 0) * (targetHpRatio <= .30 ? 2 : 1);
-    if (Date.now() < Number(target.runtime.equipmentState && target.runtime.equipmentState.ignoreHealingUntil || 0)) equipmentReduction += getTranscendStageValue(target, '검은 잔향 갑옷', .12, .03);
     const attackerHpRatio = Number(mon && mon.hp || 0) / Math.max(1, Number(mon && mon.hpMax || 1));
     if (attackerHpRatio <= .50) equipmentReduction += getTranscendStageValue(target, '최후통첩 아머', .10, .04);
     if (target.runtime.gunryeok) equipmentReduction += Number(target.runtime.gunryeok.dmgReduce || 0);
@@ -2640,6 +2638,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     }
     if (equipmentState.darkAttackBuff && Date.now() < Number(equipmentState.darkAttackBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '암') {
         extraFinalDamage += Number(equipmentState.darkAttackBuff.value || 0);
+    }
+    if (equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '암') {
+        extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(equipmentState.blackEchoShoesBuff.value || 0);
     }
     if (resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명' && getTranscendEquipmentEntry(attacker, '천공의 갑옷')) {
         extraFinalDamage += getTranscendStageValue(attacker, '천공의 갑옷', .20, .05);
@@ -4041,7 +4042,6 @@ function computeMonsterDamage(room, mon, target) {
     const targetHpRatio = Number(target.runtime.hp || 0) / Math.max(1, Number(target.runtime.hpMax || 1));
     let equipmentReduction = 0;
     if (targetHpRatio <= .50) equipmentReduction += Number(targetStats.bloodFlowReduction || 0) * (targetHpRatio <= .30 ? 2 : 1);
-    if (Date.now() < Number(target.runtime.equipmentState && target.runtime.equipmentState.ignoreHealingUntil || 0)) equipmentReduction += getTranscendStageValue(target, '검은 잔향 갑옷', .12, .03);
     const attackerHpRatio = Number(mon && mon.hp || 0) / Math.max(1, Number(mon && mon.hpMax || 1));
     if (attackerHpRatio <= .50) equipmentReduction += getTranscendStageValue(target, '최후통첩 아머', .10, .04);
     if (target.runtime.gunryeok) equipmentReduction += Number(target.runtime.gunryeok.dmgReduce || 0);

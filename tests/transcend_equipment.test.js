@@ -33,6 +33,28 @@ assert.ok(allEntries.find(entry => entry.data.name === '심해의 모자').data.
 assert.ok(allEntries.find(entry => entry.data.name === '최후통첩 모자').data.desc.includes('쿨타임 12초'));
 assert.ok(allEntries.find(entry => entry.data.name === '해류를 거스르는 신발').data.desc.includes('최대 MP의 3%'));
 assert.ok(allEntries.find(entry => entry.data.name === '777 팔찌').data.desc.includes('방어 관통력 +7%'));
+assert.strictEqual(allEntries.find(entry => entry.data.name === '검은 잔향 갑옷').data.desc, '암속성 저항 +100, 암속성 저항의 20%(+10%) 수치만큼 암속성 강화.');
+assert.strictEqual(allEntries.find(entry => entry.data.name === '검은 잔향 갑옷').data.stat.darkRes, 100);
+assert.strictEqual(allEntries.find(entry => entry.data.name === '검은 잔향 신발').data.desc, '스킬 사용 시, 60초간 암속성 공격 시 추가 피해 +7%(+3%) (쿨타임 60초).');
+assert.strictEqual(allEntries.find(entry => entry.data.name === '777 목걸이').data.desc, '추가 피해 +7%(+7%). 7성 카드 장착 시 추가 피해 +77%.');
+assert.strictEqual(allEntries.find(entry => entry.data.name === '777 반지').data.desc, '치명타 확률 +7%, 치명타 피해 +7%(+7%). 7성 카드 착용 시 치명타 확률 +7%(+7%).');
+assert.strictEqual(allEntries.find(entry => entry.data.name === '777 장갑').data.desc, '최종 공격력 +7%(+7%). 7성 카드 장착 시 공격력 +777(+77).');
+assert.strictEqual(allEntries.find(entry => entry.data.name === '행운의 장갑').data.desc, '공격력 +77. 7성 카드 장착 시 공격력 +777, 최종 공격력 +77%.');
+
+const staleEquipment = {
+    armor: [{ name: '검은 잔향 갑옷', desc: '이전 설명', stat: { def: 230, hp: 2100 } }],
+    shoes: [{ name: '검은 잔향 신발', desc: '이전 설명', stat: { def: 230, hp: 1500 } }],
+    accessory: [{ name: '777 목걸이', desc: '이전 설명' }, { name: '777 반지', desc: '이전 설명' }],
+    support: [{ name: '777 장갑', desc: '이전 설명' }, { name: '행운의 장갑', desc: '이전 설명' }]
+};
+content.applyEquipmentBalancePatch(staleEquipment);
+assert.strictEqual(staleEquipment.armor[0].stat.darkRes, 100);
+assert.strictEqual(staleEquipment.armor[0].desc, allEntries.find(entry => entry.data.name === '검은 잔향 갑옷').data.desc);
+assert.strictEqual(staleEquipment.shoes[0].desc, allEntries.find(entry => entry.data.name === '검은 잔향 신발').data.desc);
+assert.strictEqual(staleEquipment.accessory[0].desc, allEntries.find(entry => entry.data.name === '777 목걸이').data.desc);
+assert.strictEqual(staleEquipment.accessory[1].desc, allEntries.find(entry => entry.data.name === '777 반지').data.desc);
+assert.strictEqual(staleEquipment.support[0].desc, allEntries.find(entry => entry.data.name === '777 장갑').data.desc);
+assert.strictEqual(staleEquipment.support[1].desc, allEntries.find(entry => entry.data.name === '행운의 장갑').data.desc);
 
 const frameDir = path.join(__dirname, '..', 'DB', 'RPGenius', 'itemImage', '프레임');
 const transcendFrame = fs.readFileSync(path.join(frameDir, '[장비]초월.png'));

@@ -20,6 +20,31 @@ const el = (tag, props, ...children) => {
     });
     return e;
 };
+const PAGE_SIZE = 30;
+const PAGE_STATE = {};
+function pagedAppend(list, key, rows, build, rerender) {
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if ((PAGE_STATE[key] || 0) > pages - 1) PAGE_STATE[key] = pages - 1;
+    const page = PAGE_STATE[key] || 0;
+    rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).forEach(r => list.appendChild(build(r)));
+    if (pages <= 1) return;
+    const pager = el('div', { class: 'pager' });
+    const btn = (label, p, opts) => el('button', {
+        class: 'pager-btn' + (opts && opts.on ? ' on' : ''),
+        disabled: !!(opts && opts.dis),
+        onclick: () => { PAGE_STATE[key] = p; rerender(); }
+    }, label);
+    pager.appendChild(btn('이전', page - 1, { dis: page === 0 }));
+    let last = -1;
+    [...new Set([0, pages - 1, page - 1, page, page + 1])].filter(p => p >= 0 && p < pages).sort((a, b) => a - b).forEach(p => {
+        if (last >= 0 && p - last > 1) pager.appendChild(el('span', { class: 'pager-gap' }, '...'));
+        pager.appendChild(btn(String(p + 1), p, { on: p === page }));
+        last = p;
+    });
+    pager.appendChild(btn('다음', page + 1, { dis: page === pages - 1 }));
+    pager.appendChild(el('span', { class: 'pager-info' }, '총 ' + rows.length + '건'));
+    list.appendChild(pager);
+}
 const toast = (msg, ok = true) => {
     const t = $('#toast');
     t.textContent = msg;
@@ -499,7 +524,7 @@ function renderPack() {
 }
 $('#packAdd').onclick = () => { packData.push([]); renderPack(); };
 $('#packReload').onclick = async () => { try { packData = (await loadKey('Pack')) || []; renderPack(); $('#packStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#packSave').onclick = async () => { if (!confirm('Pack 데이터를 저장합니다. 계속?')) return; try { await saveKey('Pack', packData); toast('✅ Pack 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#packSave').onclick = async () => { if (!confirm('Pack 데이터를 저장합니다. 계속?')) return; try { await saveKey('Pack', packData); PACK_REF_CACHE.Pack = null; toast('✅ Pack 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.pack = () => $('#packReload').click();
 
 // ============================================================================
@@ -531,7 +556,7 @@ function renderBundle() {
 }
 $('#bundleAdd').onclick = () => { bundleData.push([]); renderBundle(); };
 $('#bundleReload').onclick = async () => { try { bundleData = (await loadKey('Bundle')) || []; renderBundle(); $('#bundleStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#bundleSave').onclick = async () => { if (!confirm('Bundle 데이터를 저장합니다. 계속?')) return; try { await saveKey('Bundle', bundleData); toast('✅ Bundle 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#bundleSave').onclick = async () => { if (!confirm('Bundle 데이터를 저장합니다. 계속?')) return; try { await saveKey('Bundle', bundleData); PACK_REF_CACHE.Bundle = null; toast('✅ Bundle 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.bundle = () => $('#bundleReload').click();
 
 // ============================================================================
@@ -875,11 +900,11 @@ function jsonSubEditor(label, getter, setter, placeholder, rows) {
             const parsed = JSON.parse(text);
             setter(parsed);
             status.textContent = '✓ 적용됨';
-            status.style.color = '#86efac';
+            status.style.color = 'var(--ok)';
             ta.value = JSON.stringify(parsed, null, 2);
         } catch (e) {
             status.textContent = '⚠ JSON 파싱 실패: ' + e.message;
-            status.style.color = '#fca5a5';
+            status.style.color = 'var(--err-soft)';
         }
     });
     wrap.appendChild(el('label', null, label));
@@ -918,7 +943,7 @@ function switchToggle(opts) {
 let itemData = [];
 let itemFilterText = '';
 const ITEM_TYPES = ['재료', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '이벤트'];
-const ITEM_KNOWN_FIELDS = new Set(['name', 'desc', 'type', 'no_trade', 'pack', 'num', 'use', 'use_func', 'require', 'protect']);
+const ITEM_KNOWN_FIELDS = new Set(['name', 'desc', 'type', 'no_trade', 'pack', 'num', 'use', 'use_func', 'require', 'protect', 'charId', 'rarity', 'ug', 'soul']);
 
 function itemCard(item, index) {
     const card = el('div', { class: 'card' });
@@ -930,11 +955,20 @@ function itemCard(item, index) {
             item.type ? el('span', { class: 'tag', style: { marginLeft: '8px' } }, item.type) : null,
             item.no_trade ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '거래불가') : null
         ),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-            if (!confirm('아이템 #' + index + ' (' + (item.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
-            itemData.splice(index, 1);
-            renderItem();
-        } }, '삭제')
+        el('div', { class: 'actions', style: { gap: '4px' } },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                itemData.push(JSON.parse(JSON.stringify(item)));
+                itemFilterText = ''; if ($('#itemFilter')) $('#itemFilter').value = '';
+                PAGE_STATE.item = 1e9; renderItem();
+                toast('#' + (itemData.length - 1) + '번으로 복제했습니다.');
+            } }, '복제'),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+                const refs = await scanRefs('item_id', index);
+                if (!confirm('아이템 #' + index + ' (' + (item.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                itemData.splice(index, 1);
+                renderItem();
+            } }, '삭제')
+        )
     );
     card.appendChild(head);
 
@@ -948,7 +982,7 @@ function itemCard(item, index) {
     ITEM_TYPES.forEach(t => typeSel.appendChild(el('option', { value: t }, t)));
     if (item.type && !ITEM_TYPES.includes(item.type)) typeSel.appendChild(el('option', { value: item.type }, item.type + ' (사용자 지정)'));
     typeSel.value = item.type || '재료';
-    typeSel.onchange = () => item.type = typeSel.value;
+    typeSel.onchange = () => { item.type = typeSel.value; renderItem(); };
     row1.appendChild(el('div', null, el('label', null, '분류'), typeSel));
     row1.appendChild(el('div', { class: 'nf', style: { minWidth: '140px' } },
         el('label', null, '거래 불가'),
@@ -967,45 +1001,25 @@ function itemCard(item, index) {
         el('textarea', { value: item.desc || '', placeholder: '아이템 설명', style: { minHeight: '50px', fontFamily: 'inherit', fontSize: '13px' }, oninput: e => item.desc = e.target.value })
     ));
 
-    // 가챠 / 번들 설정
-    card.appendChild(sectionTitle('가챠 / 번들 설정'));
-    const row3 = el('div', { class: 'row' });
-    const packTypeSel = el('select');
-    ['없음', '목록 번호 (Pack/Bundle 인덱스)', '카드팩 / 장비 상자 객체'].forEach(t => packTypeSel.appendChild(el('option', null, t)));
-    const currentPackKind = (typeof item.pack === 'undefined') ? 0 : (typeof item.pack === 'number' ? 1 : 2);
-    packTypeSel.selectedIndex = currentPackKind;
-    const packTarget = el('div', { style: { flex: '1', minWidth: '180px' } });
-    function paintPackTarget() {
-        packTarget.innerHTML = '';
-        const kind = packTypeSel.selectedIndex;
-        if (kind === 0) { delete item.pack; return; }
-        if (kind === 1) {
-            if (typeof item.pack !== 'number') item.pack = 0;
-            packTarget.appendChild(el('input', { type: 'number', min: 0, value: Number(item.pack || 0), oninput: e => item.pack = Number(e.target.value || 0) }));
-            return;
-        }
-        if (kind === 2) {
-            if (!item.pack || typeof item.pack !== 'object') item.pack = { type: '캐릭터 카드팩', range: { min: 1, max: 1 } };
-            packTarget.appendChild(jsonSubEditor('', () => item.pack, v => { if (v == null) delete item.pack; else item.pack = v; }, '예: { "type": "캐릭터 카드팩", "range": { "min": 1, "max": 1 } }\n펫 상자: { "type": "펫", "rarity": "레어" }', 4));
-        }
+    // 가챠 / 번들 설정 (해당 타입이거나 기존 값이 있을 때만)
+    const itemType = item.type || '재료';
+    if (itemType === '가챠' || itemType === '번들' || typeof item.pack !== 'undefined' || typeof item.num !== 'undefined') {
+        card.appendChild(sectionTitle(itemType === '번들' ? '번들 설정' : '가챠 설정'));
+        card.appendChild(itemPackEditor(item, itemType));
     }
-    packTypeSel.onchange = paintPackTarget;
-    row3.appendChild(el('div', null, el('label', null, '가챠 종류'), packTypeSel));
-    row3.appendChild(packTarget);
-    row3.appendChild(el('div', { class: 'nf' }, el('label', null, '가챠 추첨 횟수'),
-        el('input', { type: 'number', min: 1, value: Number(item.num || 0) || '', placeholder: '기본 1', oninput: e => { const v = Number(e.target.value); if (!v) delete item.num; else item.num = v; } })
-    ));
-    card.appendChild(row3);
-    paintPackTarget();
 
-    // 사용 효과 / 조건
-    card.appendChild(sectionTitle('사용 효과 / 조건', '✨'));
-    const row4 = el('div', { class: 'row' });
-    row4.appendChild(jsonSubEditor('사용 키 (use)', () => item.use, v => { if (v == null || v === '') delete item.use; else item.use = v; }, '예: "캐릭터변환"', 1));
-    row4.appendChild(jsonSubEditor('소모품 효과 (use_func)', () => item.use_func, v => { if (v == null) delete item.use_func; else item.use_func = v; }, '예: [{ "type": "체력회복", "amount": 100 }]', 4));
-    row4.appendChild(jsonSubEditor('사용 조건 (require)', () => item.require, v => { if (v == null) delete item.require; else item.require = v; }, '예: [{ "id": 17, "count": 3 }]', 3));
-    row4.appendChild(jsonSubEditor('카드 보호 (protect)', () => item.protect, v => { if (v == null) delete item.protect; else item.protect = v; }, '예: { "star": 5 }', 2));
-    card.appendChild(row4);
+    // 사용 효과 / 조건 (해당 타입이거나 기존 값이 있는 필드만)
+    const showUse = itemType === '사용' || itemType === '티켓' || itemType === '가챠' || typeof item.use !== 'undefined';
+    const showUseFunc = itemType === '소모품' || typeof item.use_func !== 'undefined';
+    const showRequire = itemType === '사용' || itemType === '소모품' || itemType === '티켓' || typeof item.require !== 'undefined';
+    const showProtect = itemType === '사용' || typeof item.protect !== 'undefined';
+    if (showUse || showUseFunc || showRequire || showProtect) {
+        card.appendChild(sectionTitle('사용 효과 / 조건', '✨'));
+        if (showUse) card.appendChild(itemUseEditor(item));
+        if (showUseFunc) card.appendChild(useFuncEditor(item));
+        if (showRequire) card.appendChild(requireEditor(item));
+        if (showProtect) card.appendChild(protectEditor(item));
+    }
 
     // 기타 필드
     const extraKeys = Object.keys(item).filter(k => !ITEM_KNOWN_FIELDS.has(k));
@@ -1025,19 +1039,19 @@ function renderItem() {
     const list = $('#itemList'); list.innerHTML = '';
     if (!Array.isArray(itemData)) itemData = [];
     const q = (itemFilterText || '').trim().toLowerCase();
-    let shown = 0;
+    const rows = [];
     itemData.forEach((item, idx) => {
         if (!item) return;
         if (q) {
             const hay = (idx + ' ' + (item.name || '') + ' ' + (item.type || '') + ' ' + (item.desc || '')).toLowerCase();
             if (!hay.includes(q)) return;
         }
-        list.appendChild(itemCard(item, idx));
-        shown++;
+        rows.push(idx);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '아이템이 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '아이템이 없습니다.')); return; }
+    pagedAppend(list, 'item', rows, idx => itemCard(itemData[idx], idx), renderItem);
 }
-$('#itemAdd').onclick = () => { itemData.push({ name: '', type: '재료', desc: '' }); itemFilterText = ''; if ($('#itemFilter')) $('#itemFilter').value = ''; renderItem(); };
+$('#itemAdd').onclick = () => { itemData.push({ name: '', type: '재료', desc: '' }); itemFilterText = ''; if ($('#itemFilter')) $('#itemFilter').value = ''; PAGE_STATE.item = 1e9; renderItem(); };
 $('#itemReload').onclick = async () => {
     try { itemData = (await loadKey('Item')) || []; renderItem(); $('#itemStatus').textContent = '로드 완료 (' + itemData.length + '개)'; invalidateLookupCache(['items']); }
     catch (e) { toast(e.message, false); }
@@ -1047,7 +1061,7 @@ $('#itemSave').onclick = async () => {
     try { await saveKey('Item', itemData); invalidateLookupCache(['items']); toast('✅ Item 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#itemFilter')) $('#itemFilter').addEventListener('input', e => { itemFilterText = e.target.value; renderItem(); });
+if ($('#itemFilter')) $('#itemFilter').addEventListener('input', e => { itemFilterText = e.target.value; PAGE_STATE.item = 0; renderItem(); });
 TAB_LOADERS.item = () => $('#itemReload').click();
 
 // ============================================================================
@@ -1516,11 +1530,21 @@ function equipCard(eq, index) {
             eq.isRaid ? el('span', { class: 'tag r', style: { marginLeft: '4px' } }, '레이드') : null,
             eq.category ? el('span', { class: 'tag', style: { marginLeft: '4px' } }, String(eq.category)) : null
         ),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-            if (!confirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
-            equipData[equipCurrentSlot].splice(index, 1);
-            renderEquipTypes(); renderEquip();
-        } }, '삭제')
+        el('div', { class: 'actions', style: { gap: '4px' } },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                equipData[equipCurrentSlot].push(JSON.parse(JSON.stringify(eq)));
+                equipFilterText = ''; if ($('#equipFilter')) $('#equipFilter').value = '';
+                PAGE_STATE['equip:' + equipCurrentSlot] = 1e9; renderEquipTypes(); renderEquip();
+                toast('#' + (equipData[equipCurrentSlot].length - 1) + '번으로 복제했습니다.');
+            } }, '복제'),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+                const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id' }[equipCurrentSlot];
+                const refs = idKey ? await scanRefs(idKey, index) : { direct: 0, above: 0 };
+                if (!confirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                equipData[equipCurrentSlot].splice(index, 1);
+                renderEquipTypes(); renderEquip();
+            } }, '삭제')
+        )
     );
     card.appendChild(head);
 
@@ -1651,22 +1675,23 @@ function renderEquip() {
     EQUIPMENT_SLOT_KEYS.forEach(k => { if (!Array.isArray(equipData[k])) equipData[k] = []; });
     const arr = equipData[equipCurrentSlot] || [];
     const q = (equipFilterText || '').trim().toLowerCase();
-    let shown = 0;
+    const rows = [];
     arr.forEach((eq, idx) => {
         if (!eq) return;
         if (q) {
             const hay = (idx + ' ' + (eq.name || '') + ' ' + (eq.rarity || '')).toLowerCase();
             if (!hay.includes(q)) return;
         }
-        list.appendChild(equipCard(eq, idx));
-        shown++;
+        rows.push(idx);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '장비가 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '장비가 없습니다.')); return; }
+    pagedAppend(list, 'equip:' + equipCurrentSlot, rows, idx => equipCard(arr[idx], idx), renderEquip);
 }
 $('#equipAdd').onclick = () => {
     if (!equipData[equipCurrentSlot]) equipData[equipCurrentSlot] = [];
     equipData[equipCurrentSlot].push({ name: '', desc: '', rarity: '일반', stat: {}, plusStat: {} });
     equipFilterText = ''; if ($('#equipFilter')) $('#equipFilter').value = '';
+    PAGE_STATE['equip:' + equipCurrentSlot] = 1e9;
     renderEquipTypes(); renderEquip();
 };
 $('#equipReload').onclick = async () => {
@@ -1686,7 +1711,7 @@ $('#equipSave').onclick = async () => {
     try { await saveKey('Equipment', equipData); invalidateLookupCache(['equipment']); toast('✅ Equipment 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#equipFilter')) $('#equipFilter').addEventListener('input', e => { equipFilterText = e.target.value; renderEquip(); });
+if ($('#equipFilter')) $('#equipFilter').addEventListener('input', e => { equipFilterText = e.target.value; PAGE_STATE['equip:' + equipCurrentSlot] = 0; renderEquip(); });
 TAB_LOADERS.equipment = () => $('#equipReload').click();
 
 // ============================================================================
@@ -1743,10 +1768,19 @@ function petCard(pet, index) {
             pet.name || '(이름 없음)',
             pet.rarity ? el('span', { class: 'tag ' + rarityClass, style: { marginLeft: '8px' } }, pet.rarity) : null
         ),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-            if (!confirm('펫 #' + index + ' (' + (pet.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.')) return;
-            petData.splice(index, 1); renderPet();
-        } }, '삭제')
+        el('div', { class: 'actions', style: { gap: '4px' } },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                petData.push(JSON.parse(JSON.stringify(pet)));
+                petFilterText = ''; if ($('#petFilter')) $('#petFilter').value = '';
+                PAGE_STATE.pet = 1e9; renderPet();
+                toast('#' + (petData.length - 1) + '번으로 복제했습니다.');
+            } }, '복제'),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+                const refs = await scanRefs('pet_id', index);
+                if (!confirm('펫 #' + index + ' (' + (pet.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                petData.splice(index, 1); renderPet();
+            } }, '삭제')
+        )
     );
     card.appendChild(head);
 
@@ -1801,22 +1835,23 @@ function renderPet() {
     const list = $('#petList'); list.innerHTML = '';
     if (!Array.isArray(petData)) petData = [];
     const q = (petFilterText || '').trim().toLowerCase();
-    let shown = 0;
+    const rows = [];
     petData.forEach((pet, idx) => {
         if (!pet) return;
         if (q) {
             const hay = (idx + ' ' + (pet.name || '') + ' ' + (pet.rarity || '')).toLowerCase();
             if (!hay.includes(q)) return;
         }
-        list.appendChild(petCard(pet, idx));
-        shown++;
+        rows.push(idx);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '펫이 없습니다. "+ 새 펫 추가"로 만들어 보세요.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '펫이 없습니다.')); return; }
+    pagedAppend(list, 'pet', rows, idx => petCard(petData[idx], idx), renderPet);
 }
 $('#petAdd').onclick = () => {
     if (!Array.isArray(petData)) petData = [];
     petData.push({ name: '', desc: '', rarity: '일반', stat: {}, plusStat: {}, special: {} });
     petFilterText = ''; if ($('#petFilter')) $('#petFilter').value = '';
+    PAGE_STATE.pet = 1e9;
     renderPet();
 };
 $('#petReload').onclick = async () => {
@@ -1833,7 +1868,7 @@ $('#petSave').onclick = async () => {
     try { await saveKey('Pet', Array.isArray(petData) ? petData : []); invalidateLookupCache(['pet']); toast('✅ Pet 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#petFilter')) $('#petFilter').addEventListener('input', e => { petFilterText = e.target.value; renderPet(); });
+if ($('#petFilter')) $('#petFilter').addEventListener('input', e => { petFilterText = e.target.value; PAGE_STATE.pet = 0; renderPet(); });
 TAB_LOADERS.pet = () => $('#petReload').click();
 
 // ============================================================================
@@ -1874,11 +1909,19 @@ function fashionCard(skin, index) {
             ' ',
             skin.name || '(이름 없음)'
         ),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-            if (!confirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?')) return;
-            fashionData.splice(index, 1);
-            renderFashion();
-        } }, '삭제')
+        el('div', { class: 'actions', style: { gap: '4px' } },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                fashionData.push(JSON.parse(JSON.stringify(skin)));
+                fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = '';
+                PAGE_STATE.fashion = 1e9; renderFashion();
+                toast('#' + (fashionData.length - 1) + '번으로 복제했습니다.');
+            } }, '복제'),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+                if (!confirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?')) return;
+                fashionData.splice(index, 1);
+                renderFashion();
+            } }, '삭제')
+        )
     ));
 
     card.appendChild(sectionTitle('기본 정보', '📝'));
@@ -1928,16 +1971,16 @@ function renderFashion() {
     const list = $('#fashionList'); list.innerHTML = '';
     if (!Array.isArray(fashionData)) fashionData = [];
     const q = (fashionFilterText || '').trim().toLowerCase();
-    let shown = 0;
+    const rows = [];
     fashionData.forEach((skin, idx) => {
         if (!skin) return;
         if (q && !((skin.name || '') + ' ' + idx).toLowerCase().includes(q)) return;
-        list.appendChild(fashionCard(skin, idx));
-        shown++;
+        rows.push(idx);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '스킨이 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '스킨이 없습니다.')); return; }
+    pagedAppend(list, 'fashion', rows, idx => fashionCard(fashionData[idx], idx), renderFashion);
 }
-$('#fashionAdd').onclick = () => { fashionData.push({ name: '', primary_card: [], option: {} }); fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = ''; renderFashion(); };
+$('#fashionAdd').onclick = () => { fashionData.push({ name: '', primary_card: [], option: {} }); fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = ''; PAGE_STATE.fashion = 1e9; renderFashion(); };
 $('#fashionReload').onclick = async () => {
     try { fashionData = (await loadKey('Fashion')) || []; renderFashion(); $('#fashionStatus').textContent = '로드 완료 (' + fashionData.length + '개)'; invalidateLookupCache(['fashion']); }
     catch (e) { toast(e.message, false); }
@@ -1947,7 +1990,7 @@ $('#fashionSave').onclick = async () => {
     try { await saveKey('Fashion', fashionData); invalidateLookupCache(['fashion']); toast('✅ Fashion 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#fashionFilter')) $('#fashionFilter').addEventListener('input', e => { fashionFilterText = e.target.value; renderFashion(); });
+if ($('#fashionFilter')) $('#fashionFilter').addEventListener('input', e => { fashionFilterText = e.target.value; PAGE_STATE.fashion = 0; renderFashion(); });
 TAB_LOADERS.fashion = () => $('#fashionReload').click();
 
 // ============================================================================
@@ -2030,7 +2073,7 @@ function renderTradeLog() {
     const q = (tradeLogFilter.q || '').trim().toLowerCase();
     const tt = tradeLogFilter.tradeType;
     const kk = tradeLogFilter.kind;
-    let shown = 0;
+    const rows = [];
     tradeLogData.forEach(log => {
         if (tt && log.tradeType !== tt) return;
         if (kk && log.kind !== kk) return;
@@ -2038,10 +2081,10 @@ function renderTradeLog() {
             const hay = ((log.buyer || '') + ' ' + (log.seller || '') + ' ' + (log.itemName || '')).toLowerCase();
             if (!hay.includes(q)) return;
         }
-        list.appendChild(tradeLogRow(log));
-        shown++;
+        rows.push(log);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, tradeLogData.length === 0 ? '아직 기록된 거래가 없습니다.' : '검색 결과가 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, tradeLogData.length === 0 ? '아직 기록된 거래가 없습니다.' : '검색 결과가 없습니다.')); return; }
+    pagedAppend(list, 'tradelog', rows, log => tradeLogRow(log), renderTradeLog);
 }
 
 async function loadTradeLog() {
@@ -2063,9 +2106,9 @@ if ($('#tradeLogClear')) $('#tradeLogClear').onclick = async () => {
     try { await api('/api/admin/tradelog', { method: 'DELETE' }); tradeLogData = []; renderTradeLog(); $('#tradeLogStatus').textContent = '삭제 완료'; toast('거래 로그를 삭제했습니다.'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#tradeLogFilter')) $('#tradeLogFilter').addEventListener('input', e => { tradeLogFilter.q = e.target.value; renderTradeLog(); });
-if ($('#tradeLogType')) $('#tradeLogType').onchange = e => { tradeLogFilter.tradeType = e.target.value; renderTradeLog(); };
-if ($('#tradeLogKind')) $('#tradeLogKind').onchange = e => { tradeLogFilter.kind = e.target.value; renderTradeLog(); };
+if ($('#tradeLogFilter')) $('#tradeLogFilter').addEventListener('input', e => { tradeLogFilter.q = e.target.value; PAGE_STATE.tradelog = 0; renderTradeLog(); });
+if ($('#tradeLogType')) $('#tradeLogType').onchange = e => { tradeLogFilter.tradeType = e.target.value; PAGE_STATE.tradelog = 0; renderTradeLog(); };
+if ($('#tradeLogKind')) $('#tradeLogKind').onchange = e => { tradeLogFilter.kind = e.target.value; PAGE_STATE.tradelog = 0; renderTradeLog(); };
 TAB_LOADERS.tradelog = loadTradeLog;
 
 // ============================================================================
@@ -2097,7 +2140,7 @@ function renderEventDiceLog() {
     const list = $('#eventDiceLogList'); list.innerHTML = '';
     const q = (eventDiceLogFilter.q || '').trim().toLowerCase();
     const hitFilter = eventDiceLogFilter.hit;
-    let shown = 0;
+    const rows = [];
     eventDiceLogData.forEach(log => {
         if (hitFilter === 'hit' && !log.hit) return;
         if (hitFilter === 'miss' && log.hit) return;
@@ -2113,10 +2156,10 @@ function renderEventDiceLog() {
             ].join(' ').toLowerCase();
             if (!hay.includes(q)) return;
         }
-        list.appendChild(eventDiceLogRow(log));
-        shown++;
+        rows.push(log);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, eventDiceLogData.length === 0 ? '아직 기록된 주사위 로그가 없습니다.' : '검색 결과가 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, eventDiceLogData.length === 0 ? '아직 기록된 주사위 로그가 없습니다.' : '검색 결과가 없습니다.')); return; }
+    pagedAppend(list, 'dicelog', rows, log => eventDiceLogRow(log), renderEventDiceLog);
 }
 
 async function loadEventDiceLog() {
@@ -2133,8 +2176,8 @@ async function loadEventDiceLog() {
 }
 
 if ($('#eventDiceLogReload')) $('#eventDiceLogReload').onclick = loadEventDiceLog;
-if ($('#eventDiceLogFilter')) $('#eventDiceLogFilter').addEventListener('input', e => { eventDiceLogFilter.q = e.target.value; renderEventDiceLog(); });
-if ($('#eventDiceLogHit')) $('#eventDiceLogHit').onchange = e => { eventDiceLogFilter.hit = e.target.value; renderEventDiceLog(); };
+if ($('#eventDiceLogFilter')) $('#eventDiceLogFilter').addEventListener('input', e => { eventDiceLogFilter.q = e.target.value; PAGE_STATE.dicelog = 0; renderEventDiceLog(); });
+if ($('#eventDiceLogHit')) $('#eventDiceLogHit').onchange = e => { eventDiceLogFilter.hit = e.target.value; PAGE_STATE.dicelog = 0; renderEventDiceLog(); };
 TAB_LOADERS.eventdicelog = loadEventDiceLog;
 
 // ============================================================================
@@ -2188,13 +2231,13 @@ async function cancelPointLog(log, btn) {
 function renderPointLog() {
     const list = $('#pointLogList'); list.innerHTML = '';
     const q = (pointLogFilter || '').trim().toLowerCase();
-    let shown = 0;
+    const rows = [];
     pointLogData.forEach(log => {
         if (q && !String(log.nickname || '').toLowerCase().includes(q)) return;
-        list.appendChild(pointLogRow(log));
-        shown++;
+        rows.push(log);
     });
-    if (shown === 0) list.appendChild(el('div', { class: 'empty' }, pointLogData.length === 0 ? '아직 충전 기록이 없습니다.' : '검색 결과가 없습니다.'));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, pointLogData.length === 0 ? '아직 충전 기록이 없습니다.' : '검색 결과가 없습니다.')); return; }
+    pagedAppend(list, 'pointlog', rows, log => pointLogRow(log), renderPointLog);
 }
 
 async function loadPointLog() {
@@ -2211,7 +2254,7 @@ async function loadPointLog() {
 }
 
 if ($('#pointLogReload')) $('#pointLogReload').onclick = loadPointLog;
-if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { pointLogFilter = e.target.value; renderPointLog(); });
+if ($('#pointLogFilter')) $('#pointLogFilter').addEventListener('input', e => { pointLogFilter = e.target.value; PAGE_STATE.pointlog = 0; renderPointLog(); });
 TAB_LOADERS.pointlog = loadPointLog;
 
 // ============================================================================
@@ -2607,3 +2650,721 @@ $('#bcSendBtn').onclick = async () => {
 };
 
 renderBcGifts();
+
+// ============================================================================
+// 패치노트 에디터
+// ============================================================================
+let patchnoteData = [];
+function normalizePatchnote(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.items)) return data.items;
+    if (data && typeof data === 'object' && (data.title || data.textbody)) return [Object.assign({ id: 'main', replies: [] }, data)];
+    return [];
+}
+function patchnoteCard(post, index) {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' },
+            el('span', { class: 'tag b' }, '#' + index), ' ',
+            post.title || '(제목 없음)',
+            el('span', { class: 'tag', style: { marginLeft: '8px' } }, (Array.isArray(post.replies) ? post.replies.length : 0) + ' 댓글')),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            if (!confirm('패치노트 "' + (post.title || '') + '"를 삭제합니까? 댓글도 함께 삭제됩니다.')) return;
+            patchnoteData.splice(index, 1); renderPatchnote();
+        } }, '삭제')
+    ));
+    const row = el('div', { class: 'row' });
+    row.appendChild(el('div', { style: { flex: '2' } }, el('label', null, '제목'),
+        el('input', { value: post.title || '', placeholder: '패치노트 제목', oninput: e => post.title = e.target.value })));
+    row.appendChild(el('div', null, el('label', null, '날짜'),
+        el('input', { value: post.date || '', placeholder: 'YYYY-MM-DD HH:mm', oninput: e => post.date = e.target.value })));
+    card.appendChild(row);
+    card.appendChild(el('div', null, el('label', null, '내용'),
+        el('textarea', { value: post.textbody || '', placeholder: '패치노트 내용', style: { minHeight: '140px', fontFamily: 'inherit', fontSize: '13px', whiteSpace: 'pre-wrap' }, oninput: e => post.textbody = e.target.value })));
+    return card;
+}
+function renderPatchnote() {
+    const list = $('#patchnoteList'); list.innerHTML = '';
+    if (!Array.isArray(patchnoteData)) patchnoteData = [];
+    const rows = patchnoteData.map((_, i) => i).filter(i => patchnoteData[i]);
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, '패치노트가 없습니다.')); return; }
+    pagedAppend(list, 'patchnote', rows, i => patchnoteCard(patchnoteData[i], i), renderPatchnote);
+}
+if ($('#patchnoteAdd')) {
+    $('#patchnoteAdd').onclick = () => {
+        const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        patchnoteData.unshift({
+            id: Date.now().toString(36) + Math.random().toString(16).slice(2, 10),
+            title: '', textbody: '',
+            date: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()),
+            replies: []
+        });
+        PAGE_STATE.patchnote = 0; renderPatchnote();
+    };
+    $('#patchnoteReload').onclick = async () => {
+        try { patchnoteData = normalizePatchnote(await loadKey('Patchnote')); renderPatchnote(); $('#patchnoteStatus').textContent = '로드 완료 (' + patchnoteData.length + '건)'; }
+        catch (e) { toast(e.message, false); }
+    };
+    $('#patchnoteSave').onclick = async () => {
+        if (!confirm('패치노트를 저장합니다. 계속?')) return;
+        try { await saveKey('Patchnote', patchnoteData); toast('패치노트 저장 완료'); }
+        catch (e) { toast(e.message, false); }
+    };
+    TAB_LOADERS.patchnote = () => $('#patchnoteReload').click();
+}
+
+// ============================================================================
+// 닉네임 매칭 에디터 (NameMatch: RPGenius 닉네임 -> 충전 계정 닉네임)
+// ============================================================================
+let nmPairs = [];
+let nmFilterText = '';
+function nmRow(pair, index) {
+    return el('div', { class: 'entry' },
+        el('input', { type: 'text', value: pair[0], placeholder: 'RPGenius 닉네임', style: { flex: '1', minWidth: '140px' }, oninput: e => pair[0] = e.target.value }),
+        el('span', { class: 'lab' }, '→'),
+        el('input', { type: 'text', value: pair[1], placeholder: '충전 계정 닉네임', style: { flex: '1', minWidth: '140px' }, oninput: e => pair[1] = e.target.value }),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => { nmPairs.splice(index, 1); renderNm(); } }, '삭제')
+    );
+}
+function renderNm() {
+    const list = $('#nmList'); list.innerHTML = '';
+    const q = (nmFilterText || '').trim().toLowerCase();
+    const rows = nmPairs.map((_, i) => i).filter(i => !q || (nmPairs[i][0] + ' ' + nmPairs[i][1]).toLowerCase().includes(q));
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '등록된 매칭이 없습니다.')); return; }
+    pagedAppend(list, 'namematch', rows, i => nmRow(nmPairs[i], i), renderNm);
+}
+if ($('#nmAdd')) {
+    $('#nmAdd').onclick = () => { nmPairs.push(['', '']); PAGE_STATE.namematch = 1e9; renderNm(); };
+    $('#nmReload').onclick = async () => {
+        try {
+            const data = (await loadKey('NameMatch')) || {};
+            nmPairs = Object.entries(data).map(([k, v]) => [k, String(v || '')]);
+            renderNm(); $('#nmStatus').textContent = '로드 완료 (' + nmPairs.length + '건)';
+        } catch (e) { toast(e.message, false); }
+    };
+    $('#nmSave').onclick = async () => {
+        const map = {};
+        for (const [k, v] of nmPairs) {
+            const key = k.trim(), val = v.trim();
+            if (!key || !val) { toast('빈 닉네임이 있습니다.', false); return; }
+            if (map[key]) { toast('중복된 닉네임: ' + key, false); return; }
+            map[key] = val;
+        }
+        if (!confirm('닉네임 매칭 ' + Object.keys(map).length + '건을 저장합니다. 계속?')) return;
+        try { await saveKey('NameMatch', map); toast('닉네임 매칭 저장 완료'); }
+        catch (e) { toast(e.message, false); }
+    };
+    if ($('#nmFilter')) $('#nmFilter').addEventListener('input', e => { nmFilterText = e.target.value; PAGE_STATE.namematch = 0; renderNm(); });
+    TAB_LOADERS.namematch = () => $('#nmReload').click();
+}
+
+// ============================================================================
+// 확률 에디터 (Prob.combine: 닉네임별 합성 성공 확률 보너스)
+// ============================================================================
+let probData = {};
+let probPairs = [];
+function probRow(pair, index) {
+    return el('div', { class: 'entry' },
+        el('input', { type: 'text', value: pair[0], placeholder: '닉네임', style: { flex: '1', minWidth: '140px' }, oninput: e => pair[0] = e.target.value }),
+        el('span', { class: 'lab' }, '보너스'),
+        el('input', { type: 'number', step: 0.01, min: 0, max: 1, value: pair[1], placeholder: '0.05', style: { width: '110px', flex: '0 0 auto' }, oninput: e => pair[1] = Number(e.target.value) || 0 }),
+        el('span', { class: 'lab' }, '(0.05 = +5%)'),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => { probPairs.splice(index, 1); renderProb(); } }, '삭제')
+    );
+}
+function renderProb() {
+    const list = $('#probList'); list.innerHTML = '';
+    const rows = probPairs.map((_, i) => i);
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, '등록된 대상이 없습니다.')); return; }
+    pagedAppend(list, 'prob', rows, i => probRow(probPairs[i], i), renderProb);
+}
+if ($('#probAdd')) {
+    $('#probAdd').onclick = () => { probPairs.push(['', 0]); PAGE_STATE.prob = 1e9; renderProb(); };
+    $('#probReload').onclick = async () => {
+        try {
+            probData = (await loadKey('Prob')) || {};
+            if (typeof probData !== 'object' || Array.isArray(probData)) probData = {};
+            probPairs = Object.entries(probData.combine || {}).map(([k, v]) => [k, Number(v) || 0]);
+            renderProb(); $('#probStatus').textContent = '로드 완료 (' + probPairs.length + '건)';
+        } catch (e) { toast(e.message, false); }
+    };
+    $('#probSave').onclick = async () => {
+        const combine = {};
+        for (const [k, v] of probPairs) {
+            const key = k.trim();
+            if (!key) { toast('빈 닉네임이 있습니다.', false); return; }
+            if (combine[key] != null) { toast('중복된 닉네임: ' + key, false); return; }
+            combine[key] = Number(v) || 0;
+        }
+        if (!confirm('합성 확률 보너스 ' + Object.keys(combine).length + '건을 저장합니다. 계속?')) return;
+        try { probData.combine = combine; await saveKey('Prob', probData); toast('확률 저장 완료'); }
+        catch (e) { toast(e.message, false); }
+    };
+    TAB_LOADERS.prob = () => $('#probReload').click();
+}
+
+// ============================================================================
+// 천장 에디터 (Ceil.EventDice: 주사위 합계별 천장 횟수, 0 = 천장 없음)
+// ============================================================================
+let ceilData = {};
+function renderCeil() {
+    const grid = $('#ceilGrid'); grid.innerHTML = '';
+    const ed = (ceilData && ceilData.EventDice) || {};
+    for (let sum = 3; sum <= 18; sum++) {
+        const key = String(sum);
+        grid.appendChild(el('div', null,
+            el('b', null, '합계 ' + sum),
+            el('input', { type: 'number', min: 0, value: Number(ed[key] || 0), oninput: e => {
+                if (!ceilData || typeof ceilData !== 'object') ceilData = {};
+                if (!ceilData.EventDice) ceilData.EventDice = {};
+                ceilData.EventDice[key] = Math.max(0, Math.floor(Number(e.target.value) || 0));
+            } })
+        ));
+    }
+}
+if ($('#ceilReload')) {
+    $('#ceilReload').onclick = async () => {
+        try {
+            ceilData = (await loadKey('Ceil')) || {};
+            if (typeof ceilData !== 'object' || Array.isArray(ceilData)) ceilData = {};
+            renderCeil(); $('#ceilStatus').textContent = '로드 완료 (0 = 천장 없음)';
+        } catch (e) { toast(e.message, false); }
+    };
+    $('#ceilSave').onclick = async () => {
+        if (!confirm('이벤트 주사위 천장을 저장합니다. 계속?')) return;
+        try { await saveKey('Ceil', ceilData); toast('천장 저장 완료'); }
+        catch (e) { toast(e.message, false); }
+    };
+    TAB_LOADERS.ceil = () => $('#ceilReload').click();
+}
+
+// ============================================================================
+// 상태 데이터 뷰어 (런타임 상태 키: 항목 단위 조회 / 수정 / 삭제)
+// ============================================================================
+const STATE_DATA_KEYS = ['Auction', 'BuyOrder', 'ShopState', 'EliteState', 'WorldBossState', 'VoteState', 'PunchState', 'PunchRank', 'Ices', 'Logs'];
+let sdData = null;
+let sdLoadedKey = '';
+let sdFilterText = '';
+function sdEntries() {
+    if (Array.isArray(sdData)) return sdData.map((v, i) => [i, v]);
+    if (sdData && typeof sdData === 'object') return Object.entries(sdData);
+    return null;
+}
+function sdEntryRow(entry) {
+    const [k, v] = entry;
+    const isArray = Array.isArray(sdData);
+    const preview = (() => { try { const s = JSON.stringify(v); return s.length > 110 ? s.slice(0, 110) + '…' : s; } catch (e) { return String(v); } })();
+    const det = el('details', { class: 'collapsible' });
+    det.appendChild(el('summary', null,
+        el('span', { style: { fontWeight: '600' } }, isArray ? '#' + k : String(k)),
+        el('span', { class: 'summary-meta', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: '1' } }, preview)
+    ));
+    const body = el('div', { class: 'body' });
+    const ta = el('textarea', { spellcheck: false, style: { minHeight: '160px' } });
+    ta.value = JSON.stringify(v, null, 2);
+    body.appendChild(ta);
+    body.appendChild(el('div', { class: 'bar', style: { marginTop: '8px', marginBottom: 0 } },
+        el('button', { class: 'btn sm', type: 'button', onclick: () => {
+            try {
+                const parsed = JSON.parse(ta.value);
+                if (isArray) sdData[Number(k)] = parsed; else sdData[k] = parsed;
+                toast('항목이 적용되었습니다. 전체 저장을 눌러야 반영됩니다.');
+                renderSd();
+            } catch (e) { toast('JSON 파싱 실패: ' + e.message, false); }
+        } }, '적용'),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+            const label = isArray ? '#' + k : String(k);
+            if (!confirm('항목 ' + label + '을(를) 삭제합니까?' + (isArray ? '\n배열 항목 삭제 시 이후 인덱스가 당겨집니다.' : ''))) return;
+            if (isArray) sdData.splice(Number(k), 1); else delete sdData[k];
+            renderSd();
+        } }, '삭제')
+    ));
+    det.appendChild(body);
+    return det;
+}
+function renderSd() {
+    const list = $('#sdList'); list.innerHTML = '';
+    if (sdData === null || typeof sdData === 'undefined') { list.appendChild(el('div', { class: 'empty' }, '키를 선택하고 불러오기를 눌러주세요.')); return; }
+    const entries = sdEntries();
+    if (!entries) {
+        const ta = el('textarea', { spellcheck: false, style: { minHeight: '120px' } });
+        ta.value = JSON.stringify(sdData, null, 2);
+        list.appendChild(ta);
+        list.appendChild(el('div', { class: 'bar', style: { marginTop: '8px' } },
+            el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                try { sdData = JSON.parse(ta.value); toast('적용되었습니다. 전체 저장을 눌러야 반영됩니다.'); renderSd(); }
+                catch (e) { toast('JSON 파싱 실패: ' + e.message, false); }
+            } }, '적용')));
+        return;
+    }
+    const q = (sdFilterText || '').trim().toLowerCase();
+    const rows = entries.filter(([k, v]) => {
+        if (!q) return true;
+        try { return (String(k) + ' ' + JSON.stringify(v)).toLowerCase().includes(q); }
+        catch (e) { return String(k).toLowerCase().includes(q); }
+    });
+    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '항목이 없습니다.')); return; }
+    pagedAppend(list, 'statedata', rows, sdEntryRow, renderSd);
+}
+if ($('#sdKey')) {
+    const sel = $('#sdKey');
+    STATE_DATA_KEYS.filter(k => !window.DATA_KEYS || window.DATA_KEYS.includes(k)).forEach(k => sel.appendChild(el('option', { value: k }, k)));
+    $('#sdReload').onclick = async () => {
+        const key = sel.value;
+        if (!key) return;
+        $('#sdStatus').textContent = '불러오는 중...';
+        try {
+            sdData = await loadKey(key);
+            sdLoadedKey = key;
+            PAGE_STATE.statedata = 0;
+            renderSd();
+            const entries = sdEntries();
+            $('#sdStatus').textContent = key + ' 로드 완료' + (entries ? ' (' + entries.length + '항목)' : '');
+        } catch (e) { $('#sdStatus').textContent = ''; toast(e.message, false); }
+    };
+    $('#sdSave').onclick = async () => {
+        if (!sdLoadedKey) { toast('먼저 키를 불러와 주세요.', false); return; }
+        if (sel.value !== sdLoadedKey && !confirm('현재 화면의 데이터는 ' + sdLoadedKey + '입니다. ' + sdLoadedKey + '에 저장할까요?')) return;
+        if (!confirm('상태 데이터 ' + sdLoadedKey + ' 전체를 덮어씁니다. 실행 중인 게임 상태에 즉시 반영됩니다. 계속?')) return;
+        try { await saveKey(sdLoadedKey, sdData); toast(sdLoadedKey + ' 저장 완료'); }
+        catch (e) { toast(e.message, false); }
+    };
+    if ($('#sdFilter')) $('#sdFilter').addEventListener('input', e => { sdFilterText = e.target.value; PAGE_STATE.statedata = 0; renderSd(); });
+    TAB_LOADERS.statedata = () => renderSd();
+}
+
+// ============================================================================
+// 패키지 등록 마법사 (번들 생성 -> 개봉 아이템 생성 -> 상점 등록)
+// ============================================================================
+let pkgRewards = [];
+function pkgRewardRow(r, index) {
+    const wrap = el('div', { class: 'entry' });
+    const sel = el('select');
+    ['골드', '가넷', '포인트', '마일리지', '아이템'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
+    sel.value = r.type;
+    const target = el('span', { style: { flex: '1', minWidth: '160px', display: 'flex' } });
+    function paintTarget() {
+        target.innerHTML = '';
+        if (r.type === '아이템') {
+            const btn = el('button', { class: 'pickbtn', type: 'button' });
+            const refresh = async () => {
+                btn.innerHTML = '';
+                if (typeof r.item_id === 'number') {
+                    const items = await getItems();
+                    const it = items.find(x => x.id === r.item_id);
+                    btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + r.item_id));
+                } else btn.appendChild(el('span', { class: 'ph' }, '아이템 선택'));
+            };
+            btn.onclick = () => pickItem(it => { r.item_id = it.id; refresh(); });
+            refresh();
+            target.appendChild(btn);
+        } else {
+            delete r.item_id;
+            target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + r.type + ' 직접 지급)'));
+        }
+    }
+    sel.onchange = () => { r.type = sel.value; paintTarget(); };
+    paintTarget();
+    wrap.appendChild(sel);
+    wrap.appendChild(target);
+    wrap.appendChild(el('span', { class: 'lab' }, '수량'));
+    wrap.appendChild(el('input', { type: 'number', min: 1, value: r.count, style: { width: '110px', flex: '0 0 auto' }, oninput: e => r.count = Math.floor(Number(e.target.value) || 0) }));
+    wrap.appendChild(el('button', { class: 'btn icon danger', type: 'button', onclick: () => { pkgRewards.splice(index, 1); renderPkgRewards(); } }, '✕'));
+    return wrap;
+}
+function renderPkgRewards() {
+    const list = $('#pkgRewardList'); list.innerHTML = '';
+    if (pkgRewards.length === 0) { list.appendChild(el('div', { class: 'empty' }, '보상을 추가하세요.')); return; }
+    pkgRewards.forEach((r, i) => list.appendChild(pkgRewardRow(r, i)));
+}
+async function loadPkgShopTypes() {
+    const sel = $('#pkgShopType');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    try {
+        const shop = (await loadKey('Shop')) || {};
+        Object.keys(shop).forEach(t => sel.appendChild(el('option', { value: t }, t)));
+        if (prev && shop[prev]) sel.value = prev;
+    } catch (e) { toast(e.message, false); }
+}
+if ($('#pkgCreate')) {
+    $('#pkgRewardAdd').onclick = () => {
+        if (pkgRewards.length >= 10) { toast('보상은 최대 10개입니다.', false); return; }
+        pkgRewards.push({ type: '골드', count: 1 });
+        renderPkgRewards();
+    };
+    $('#pkgCreate').onclick = async () => {
+        const name = $('#pkgName').value.trim();
+        if (!name) { toast('패키지 이름을 입력하세요.', false); return; }
+        if (pkgRewards.length === 0) { toast('구성 보상을 추가하세요.', false); return; }
+        for (const r of pkgRewards) {
+            if (!r.count || r.count < 1) { toast('보상 수량을 확인하세요.', false); return; }
+            if (r.type === '아이템' && typeof r.item_id !== 'number') { toast('보상 아이템을 선택하세요.', false); return; }
+        }
+        const shopType = $('#pkgShopType').value;
+        if (!shopType) { toast('상점 종류를 선택하세요.', false); return; }
+        const amount = Math.floor(Number($('#pkgAmount').value));
+        if (!amount || amount < 1) { toast('가격을 입력하세요.', false); return; }
+        const limits = {
+            max: Number($('#pkgLimitMax').value) || 0,
+            daily: Number($('#pkgLimitDaily').value) || 0,
+            weekly: Number($('#pkgLimitWeekly').value) || 0,
+            monthly: Number($('#pkgLimitMonthly').value) || 0,
+            global: Number($('#pkgLimitGlobal').value) || 0
+        };
+        const body = {
+            name,
+            desc: $('#pkgDesc').value,
+            noTrade: $('#pkgNoTrade').checked,
+            rewards: pkgRewards,
+            shopType,
+            price: { goods: $('#pkgGoods').value, amount },
+            limits
+        };
+        if (!confirm('패키지 "' + name + '"를 생성합니다.\n번들 생성, 개봉 아이템 생성, ' + shopType + ' 상점 등록이 함께 처리됩니다. 계속?')) return;
+        const btn = $('#pkgCreate');
+        btn.disabled = true;
+        showLoading();
+        try {
+            const r = await api('/api/admin/package/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            invalidateLookupCache(['items']);
+            PACK_REF_CACHE.Bundle = null;
+            $('#pkgStatus').textContent = '생성 완료: 번들 #' + r.bundleIndex + ', 아이템 #' + r.itemIndex + ', ' + r.shopType + ' ' + (r.shopIndex + 1) + '번 상품';
+            toast('패키지가 생성되었습니다.');
+            pkgRewards = [];
+            renderPkgRewards();
+            $('#pkgName').value = ''; $('#pkgDesc').value = ''; $('#pkgAmount').value = '';
+        } catch (e) { toast(e.message, false); }
+        finally { btn.disabled = false; hideLoading(); }
+    };
+    TAB_LOADERS.package = () => { renderPkgRewards(); loadPkgShopTypes(); };
+}
+
+// ============================================================================
+// 참조 스캔: 삭제 전 Pack / Bundle / Shop / Recipe / Bait에서 인덱스 참조 검사
+// ============================================================================
+async function scanRefs(idKey, index) {
+    showLoading();
+    try {
+        const keys = ['Pack', 'Bundle', 'Shop', 'Recipe', 'Bait'];
+        const datas = await Promise.all(keys.map(k => loadKey(k).catch(() => null)));
+        let direct = 0, above = 0;
+        const walk = o => {
+            if (!o || typeof o !== 'object') return;
+            if (Array.isArray(o)) { o.forEach(walk); return; }
+            for (const k in o) {
+                if (k === idKey && typeof o[k] === 'number') {
+                    if (o[k] === index) direct++;
+                    else if (o[k] > index) above++;
+                }
+                walk(o[k]);
+            }
+        };
+        datas.forEach(walk);
+        return { direct, above };
+    } finally { hideLoading(); }
+}
+function refWarnText(refs) {
+    let t = '';
+    if (refs.direct > 0) t += '\n경고: 팩 / 번들 / 상점 / 레시피 / 미끼에서 이 항목을 ' + refs.direct + '곳에서 참조하고 있습니다.';
+    if (refs.above > 0) t += '\n경고: 삭제 시 뒤 인덱스가 당겨져 더 큰 인덱스를 가리키는 참조 ' + refs.above + '곳이 어긋납니다.';
+    return t;
+}
+
+// ============================================================================
+// 아이템 구조화 에디터: 가챠/번들 선택, use, use_func, require, protect
+// ============================================================================
+const PACK_REF_CACHE = {};
+async function getPackRefData(key) {
+    if (!PACK_REF_CACHE[key]) PACK_REF_CACHE[key] = loadKey(key).catch(() => []);
+    return PACK_REF_CACHE[key];
+}
+function packEntrySummary(entries, items) {
+    if (!Array.isArray(entries) || entries.length === 0) return '(비어 있음)';
+    const parts = entries.slice(0, 4).map(e => {
+        let t = e.type || '?';
+        if (e.type === '아이템' && typeof e.item_id === 'number') {
+            const it = items.find(x => x.id === e.item_id);
+            t = it ? it.name : '아이템#' + e.item_id;
+        }
+        let c = '';
+        if (e.count && typeof e.count === 'object') c = e.count.min === e.count.max ? String(e.count.min) : e.count.min + '~' + e.count.max;
+        else if (e.count) c = String(e.count);
+        return t + (c ? ' x' + c : '');
+    });
+    return parts.join(', ') + (entries.length > 4 ? ' 외 ' + (entries.length - 4) + '개' : '');
+}
+async function pickPackList(refKey, onPick) {
+    const [data, items] = await Promise.all([getPackRefData(refKey), getItems()]);
+    const label = refKey === 'Bundle' ? '번들' : '팩';
+    const list = (Array.isArray(data) ? data : []).map((entries, idx) => {
+        const summary = packEntrySummary(entries, items);
+        return { idx, summary, _search: '#' + idx + ' ' + summary };
+    });
+    openModal(label + ' 선택', list, r => el('div', null,
+        el('div', null, el('span', { class: 'tag b' }, '#' + r.idx), label + ' #' + r.idx),
+        el('div', { class: 'meta' }, r.summary)
+    ), r => onPick(r.idx));
+}
+function packObjEditor(pack) {
+    const PACK_OBJ_TYPES = ['캐릭터 카드팩', '전직 캐릭터 카드팩', '장비 상자', '보조 장비 상자', '펫'];
+    const wrap = el('div', { class: 'entry', style: { flexWrap: 'wrap', flex: '1' } });
+    const typeSel = el('select', { style: { width: '160px' } });
+    PACK_OBJ_TYPES.forEach(t => typeSel.appendChild(el('option', { value: t }, t)));
+    if (!PACK_OBJ_TYPES.includes(pack.type)) pack.type = PACK_OBJ_TYPES[0];
+    typeSel.value = pack.type;
+    const rest = el('span', { style: { display: 'flex', gap: '6px', alignItems: 'center', flex: '1', flexWrap: 'wrap' } });
+    function paint() {
+        rest.innerHTML = '';
+        if (pack.type === '캐릭터 카드팩' || pack.type === '전직 캐릭터 카드팩') {
+            delete pack.rarity;
+            if (!pack.range || typeof pack.range !== 'object') pack.range = { min: 1, max: 1 };
+            rest.appendChild(el('span', { class: 'lab' }, '별 범위'));
+            rest.appendChild(el('input', { type: 'number', min: 1, max: 6, value: Number(pack.range.min || 1), style: { width: '70px', flex: '0 0 auto' }, oninput: e => pack.range.min = Number(e.target.value) || 1 }));
+            rest.appendChild(el('span', { class: 'lab' }, '~'));
+            rest.appendChild(el('input', { type: 'number', min: 1, max: 6, value: Number(pack.range.max || 1), style: { width: '70px', flex: '0 0 auto' }, oninput: e => pack.range.max = Number(e.target.value) || 1 }));
+        } else {
+            delete pack.range;
+            const rarities = pack.type === '펫'
+                ? ['일반', '레어', '에픽', '유니크', '레전더리', '신화', '고유']
+                : ['일반', '고급', '희귀', '영웅', '전설', '초월', '신화'];
+            rest.appendChild(el('span', { class: 'lab' }, '등급'));
+            const rsel = el('select', { style: { width: '130px' } });
+            rarities.forEach(r => rsel.appendChild(el('option', { value: r }, r)));
+            if (pack.rarity && !rarities.includes(pack.rarity)) rsel.appendChild(el('option', { value: pack.rarity }, pack.rarity + ' (사용자 지정)'));
+            rsel.value = pack.rarity || rarities[0];
+            pack.rarity = rsel.value;
+            rsel.onchange = () => pack.rarity = rsel.value;
+            rest.appendChild(rsel);
+        }
+    }
+    typeSel.onchange = () => { pack.type = typeSel.value; paint(); };
+    paint();
+    wrap.appendChild(el('span', { class: 'lab' }, '종류'));
+    wrap.appendChild(typeSel);
+    wrap.appendChild(rest);
+    return wrap;
+}
+function itemPackEditor(item, itemType) {
+    const wrap = el('div');
+    const row = el('div', { class: 'row' });
+    const refKey = itemType === '번들' ? 'Bundle' : 'Pack';
+    const kindSel = el('select');
+    [['none', '없음'], ['list', refKey === 'Bundle' ? '번들 선택' : '팩 선택'], ['obj', '카드팩 / 상자 / 펫']].forEach(([v, label]) => kindSel.appendChild(el('option', { value: v }, label)));
+    kindSel.value = typeof item.pack === 'undefined' ? 'none' : (typeof item.pack === 'number' ? 'list' : 'obj');
+    const target = el('div', { style: { flex: '2', minWidth: '220px', display: 'flex' } });
+    function paint() {
+        target.innerHTML = '';
+        if (kindSel.value === 'none') { delete item.pack; return; }
+        if (kindSel.value === 'list') {
+            if (typeof item.pack !== 'number') delete item.pack;
+            const btn = el('button', { class: 'pickbtn', type: 'button', style: { width: '100%' } });
+            const refresh = async () => {
+                btn.innerHTML = '';
+                if (typeof item.pack === 'number') {
+                    const [data, items] = await Promise.all([getPackRefData(refKey), getItems()]);
+                    const entries = Array.isArray(data) ? data[item.pack] : null;
+                    btn.appendChild(document.createTextNode('#' + item.pack + ' ' + (entries ? packEntrySummary(entries, items) : '(없는 번호)')));
+                } else btn.appendChild(el('span', { class: 'ph' }, refKey === 'Bundle' ? '번들 선택' : '팩 선택'));
+            };
+            btn.onclick = () => pickPackList(refKey, idx => { item.pack = idx; refresh(); });
+            refresh();
+            target.appendChild(btn);
+            return;
+        }
+        if (!item.pack || typeof item.pack !== 'object') item.pack = { type: '캐릭터 카드팩', range: { min: 1, max: 1 } };
+        target.appendChild(packObjEditor(item.pack));
+    }
+    kindSel.onchange = paint;
+    paint();
+    row.appendChild(el('div', { class: 'nf', style: { minWidth: '150px' } }, el('label', null, '지급 방식'), kindSel));
+    row.appendChild(el('div', { style: { flex: '2' } }, el('label', null, '지급 대상'), target));
+    if (itemType !== '번들') {
+        row.appendChild(el('div', { class: 'nf' }, el('label', null, '추첨 횟수'),
+            el('input', { type: 'number', min: 1, value: Number(item.num || 0) || '', placeholder: '기본 1', style: { width: '110px' }, oninput: e => { const v = Number(e.target.value); if (!v) delete item.num; else item.num = v; } })
+        ));
+    }
+    wrap.appendChild(row);
+    return wrap;
+}
+const ITEM_USE_KEYS = ['변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지', '패션적용', '고급패션적용', '스탯초기화', '장신구선택권', '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '가위', '패션제거', '생명수', '초월업그레이드', '초월상자', '보주상자'];
+function itemUseEditor(item) {
+    const wrap = el('div');
+    const row = el('div', { class: 'row' });
+    const useSel = el('select');
+    useSel.appendChild(el('option', { value: '' }, '없음'));
+    ITEM_USE_KEYS.forEach(u => useSel.appendChild(el('option', { value: u }, u)));
+    if (item.use && !ITEM_USE_KEYS.includes(item.use)) useSel.appendChild(el('option', { value: item.use }, item.use + ' (사용자 지정)'));
+    useSel.value = item.use || '';
+    row.appendChild(el('div', { class: 'nf', style: { minWidth: '180px' } }, el('label', null, '사용 기능'), useSel));
+    wrap.appendChild(row);
+    const auxWrap = el('div');
+    function paintAux() {
+        auxWrap.innerHTML = '';
+        const u = item.use;
+        if (u === '변환' || u === '캐릭터변환' || typeof item.charId !== 'undefined') {
+            const entry = el('div', { class: 'entry', style: { marginTop: '6px' } });
+            entry.appendChild(el('span', { class: 'lab' }, '대상 캐릭터'));
+            const btn = el('button', { class: 'pickbtn', type: 'button' });
+            const refresh = async () => {
+                btn.innerHTML = '';
+                if (typeof item.charId === 'number') {
+                    const cards = await getCards();
+                    const c = cards.find(x => x.id === item.charId);
+                    btn.appendChild(document.createTextNode(c ? '#' + c.id + ' ' + c.name : '없는 카드 #' + item.charId));
+                } else btn.appendChild(el('span', { class: 'ph' }, '캐릭터 카드 선택'));
+            };
+            btn.onclick = () => pickCard(c => { item.charId = c.id; refresh(); });
+            refresh();
+            entry.appendChild(btn);
+            auxWrap.appendChild(entry);
+        }
+        if (u === '장신구선택권') {
+            const rarities = ['일반', '고급', '희귀', '영웅', '전설', '초월', '신화'];
+            const entry = el('div', { class: 'entry', style: { marginTop: '6px' } });
+            entry.appendChild(el('span', { class: 'lab' }, '장신구 등급'));
+            const rsel = el('select', { style: { width: '130px' } });
+            rarities.forEach(r => rsel.appendChild(el('option', { value: r }, r)));
+            if (item.rarity && !rarities.includes(item.rarity)) rsel.appendChild(el('option', { value: item.rarity }, item.rarity + ' (사용자 지정)'));
+            rsel.value = item.rarity || rarities[0];
+            item.rarity = rsel.value;
+            rsel.onchange = () => item.rarity = rsel.value;
+            entry.appendChild(rsel);
+            auxWrap.appendChild(entry);
+        }
+        if (u === '장비강화권') {
+            if (!item.ug || typeof item.ug !== 'object') item.ug = { level: 1, roll: 1 };
+            const entry = el('div', { class: 'entry', style: { marginTop: '6px' } });
+            entry.appendChild(el('span', { class: 'lab' }, '강화 레벨'));
+            entry.appendChild(el('input', { type: 'number', min: 1, value: Number(item.ug.level || 1), style: { width: '90px', flex: '0 0 auto' }, oninput: e => item.ug.level = Math.max(1, Math.floor(Number(e.target.value) || 1)) }));
+            entry.appendChild(el('span', { class: 'lab' }, '부여 횟수'));
+            entry.appendChild(el('input', { type: 'number', min: 1, value: Number(item.ug.roll || 1), style: { width: '90px', flex: '0 0 auto' }, oninput: e => item.ug.roll = Math.max(1, Math.floor(Number(e.target.value) || 1)) }));
+            auxWrap.appendChild(entry);
+        }
+        if (u === '영혼석') auxWrap.appendChild(soulEditor(item));
+    }
+    useSel.onchange = () => {
+        const v = useSel.value;
+        if (!v) delete item.use; else item.use = v;
+        if (v !== '변환' && v !== '캐릭터변환') delete item.charId;
+        if (v !== '장신구선택권') delete item.rarity;
+        if (v !== '장비강화권') delete item.ug;
+        if (v !== '영혼석') delete item.soul;
+        paintAux();
+    };
+    paintAux();
+    wrap.appendChild(auxWrap);
+    return wrap;
+}
+function soulEditor(item) {
+    if (!item.soul || typeof item.soul !== 'object') item.soul = { name: '', date: 0 };
+    const soul = item.soul;
+    const wrap = el('div', { class: 'card', style: { marginTop: '6px', padding: '10px 12px' } });
+    const row = el('div', { class: 'row' });
+    row.appendChild(el('div', null, el('label', null, '영혼 이름'), el('input', { value: soul.name || '', oninput: e => soul.name = e.target.value })));
+    row.appendChild(el('div', { class: 'nf' }, el('label', null, '지속 일수 (0 = 무제한)'), el('input', { type: 'number', min: 0, value: Number(soul.date || 0), style: { width: '140px' }, oninput: e => soul.date = Math.max(0, Number(e.target.value) || 0) })));
+    wrap.appendChild(row);
+    [['weapon', '무기'], ['armor', '갑옷']].forEach(([slot, label]) => {
+        if (!soul[slot] || typeof soul[slot] !== 'object') soul[slot] = { stat: {}, plusStat: {} };
+        if (!soul[slot].stat || typeof soul[slot].stat !== 'object') soul[slot].stat = {};
+        if (!soul[slot].plusStat || typeof soul[slot].plusStat !== 'object') soul[slot].plusStat = {};
+        const det = el('details', { class: 'collapsible' });
+        det.appendChild(el('summary', null, label + ' 능력치'));
+        const body = el('div', { class: 'body' });
+        body.appendChild(statEditor('기본 능력치', null, soul[slot].stat, FLAT_STAT_DEFS));
+        body.appendChild(statEditor('강화 능력치', null, soul[slot].plusStat, PLUS_STAT_DEFS));
+        det.appendChild(body);
+        wrap.appendChild(det);
+    });
+    return wrap;
+}
+const USE_FUNC_DEFS = [
+    { key: '체력회복', amountLabel: '회복량', pct: false, duration: false },
+    { key: '마나회복', amountLabel: '회복량', pct: false, duration: false },
+    { key: '체력회복%', amountLabel: '최대 체력 대비 %', pct: true, duration: false },
+    { key: '마나회복%', amountLabel: '최대 MP 대비 %', pct: true, duration: false },
+    { key: '경험치획득', amountLabel: '경험치', pct: false, duration: false },
+    { key: '경험치비약', amountLabel: '증가율 %', pct: true, duration: true },
+    { key: '골드비약', amountLabel: '증가율 %', pct: true, duration: true }
+];
+function useFuncEditor(item) {
+    const wrap = el('div', { style: { marginTop: '8px' } });
+    wrap.appendChild(el('label', null, '소모품 효과'));
+    const list = el('div', { class: 'entry-list' });
+    function paint() {
+        list.innerHTML = '';
+        (item.use_func || []).forEach((func, i) => {
+            const def = USE_FUNC_DEFS.find(d => d.key === func.type) || USE_FUNC_DEFS[0];
+            const entry = el('div', { class: 'entry' });
+            const tsel = el('select', { style: { width: '130px' } });
+            USE_FUNC_DEFS.forEach(d => tsel.appendChild(el('option', { value: d.key }, d.key)));
+            if (func.type && !USE_FUNC_DEFS.some(d => d.key === func.type)) tsel.appendChild(el('option', { value: func.type }, func.type + ' (사용자 지정)'));
+            tsel.value = func.type || USE_FUNC_DEFS[0].key;
+            tsel.onchange = () => { func.type = tsel.value; if (!USE_FUNC_DEFS.find(d => d.key === func.type && d.duration)) delete func.duration; paint(); };
+            entry.appendChild(tsel);
+            entry.appendChild(el('span', { class: 'lab' }, def.amountLabel));
+            entry.appendChild(el('input', { type: 'number', step: def.pct ? 0.1 : 1, value: def.pct ? statValueToInputValue('percent', func.amount) : Number(func.amount || 0), style: { width: '110px', flex: '0 0 auto' }, oninput: e => {
+                func.amount = def.pct ? (statInputValueToRaw('percent', e.target.value) || 0) : Number(e.target.value) || 0;
+            } }));
+            if (def.duration) {
+                entry.appendChild(el('span', { class: 'lab' }, '지속 (분)'));
+                entry.appendChild(el('input', { type: 'number', min: 1, value: Math.round(Number(func.duration || 0) / 60000) || '', placeholder: '30', style: { width: '90px', flex: '0 0 auto' }, oninput: e => func.duration = Math.max(0, Math.floor(Number(e.target.value) || 0)) * 60000 }));
+            }
+            entry.appendChild(el('button', { class: 'btn icon danger', type: 'button', onclick: () => { item.use_func.splice(i, 1); if (item.use_func.length === 0) delete item.use_func; paint(); } }, '✕'));
+            list.appendChild(entry);
+        });
+    }
+    paint();
+    wrap.appendChild(list);
+    wrap.appendChild(el('button', { class: 'add-btn', type: 'button', onclick: () => {
+        if (!Array.isArray(item.use_func)) item.use_func = [];
+        item.use_func.push({ type: '체력회복', amount: 0 });
+        paint();
+    } }, '+ 효과 추가'));
+    return wrap;
+}
+function requireEditor(item) {
+    const wrap = el('div', { style: { marginTop: '8px' } });
+    wrap.appendChild(el('label', null, '사용 조건 (함께 소모되는 아이템)'));
+    const list = el('div', { class: 'entry-list' });
+    function paint() {
+        list.innerHTML = '';
+        (item.require || []).forEach((r, i) => {
+            const entry = el('div', { class: 'entry' });
+            const btn = el('button', { class: 'pickbtn', type: 'button' });
+            const refresh = async () => {
+                btn.innerHTML = '';
+                if (typeof r.id === 'number') {
+                    const items = await getItems();
+                    const it = items.find(x => x.id === r.id);
+                    btn.appendChild(document.createTextNode(it ? '#' + it.id + ' ' + it.name : '없는 아이템 #' + r.id));
+                } else btn.appendChild(el('span', { class: 'ph' }, '아이템 선택'));
+            };
+            btn.onclick = () => pickItem(it => { r.id = it.id; refresh(); });
+            refresh();
+            entry.appendChild(btn);
+            entry.appendChild(el('span', { class: 'lab' }, '수량'));
+            entry.appendChild(el('input', { type: 'number', min: 1, value: Number(r.count || 1), style: { width: '90px', flex: '0 0 auto' }, oninput: e => r.count = Math.max(1, Math.floor(Number(e.target.value) || 1)) }));
+            entry.appendChild(el('button', { class: 'btn icon danger', type: 'button', onclick: () => { item.require.splice(i, 1); if (item.require.length === 0) delete item.require; paint(); } }, '✕'));
+            list.appendChild(entry);
+        });
+    }
+    paint();
+    wrap.appendChild(list);
+    wrap.appendChild(el('button', { class: 'add-btn', type: 'button', onclick: () => {
+        if (!Array.isArray(item.require)) item.require = [];
+        item.require.push({ count: 1 });
+        paint();
+    } }, '+ 조건 아이템 추가'));
+    return wrap;
+}
+function protectEditor(item) {
+    const wrap = el('div', { class: 'entry', style: { marginTop: '8px' } });
+    wrap.appendChild(el('span', { class: 'lab' }, '카드 보호권 성급 (비우면 보호권 아님)'));
+    wrap.appendChild(el('input', { type: 'number', min: 1, max: 6, value: item.protect ? Number(item.protect.star || '') : '', style: { width: '90px', flex: '0 0 auto' }, oninput: e => {
+        const v = Math.floor(Number(e.target.value));
+        if (!v) delete item.protect; else item.protect = { star: v };
+    } }));
+    return wrap;
+}

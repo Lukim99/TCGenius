@@ -5,220 +5,272 @@
 <title>RPGenius 관리자</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{color-scheme:dark; --bg:#0b0d12; --bg2:#0e1118; --panel:#13161d; --panel2:#171b25; --bd:#1f2330; --bd2:#2a2f3d; --bd3:#3a4055; --fg:#e5e7eb; --mut:#9aa3b2; --pri:#5865f2; --pri2:#4752c4; --ok:#16a34a; --err:#dc2626; --warn:#eab308}
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
+:root{
+  color-scheme:dark;
+  --bg:#101216;
+  --panel:#181b21;
+  --panel-2:#14161b;
+  --panel-3:#1f232b;
+  --bd:#2a2e37;
+  --bd2:#3a404c;
+  --fg:#eceef2;
+  --fg2:#c3c9d4;
+  --mut:#9aa3b2;
+  --mut2:#646c79;
+  --acc:#e8b04b;
+  --acc-hover:#f0c56e;
+  --acc-ink:#1f1503;
+  --acc-dim:rgba(232,176,75,.14);
+  --ok:#7fc98a;
+  --err:#d84c41;
+  --err-soft:#e57d74;
+  --warn:#e8b04b;
+  --r-s:6px;
+  --r:10px;
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
-header{display:flex;align-items:center;justify-content:space-between;padding:13px 22px;border-bottom:1px solid var(--bd);background:var(--bg2);position:sticky;top:0;z-index:50}
-header h1{margin:0;font-size:16px;font-weight:600}
-header .who{color:var(--mut);font-size:13px;margin-right:12px}
-.btn{background:var(--bd);color:var(--fg);border:1px solid var(--bd2);border-radius:7px;padding:7px 13px;cursor:pointer;font-size:13px;font-family:inherit;transition:.12s}
-.btn:hover{background:var(--bd2);border-color:var(--bd3)}
-.btn.primary{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600}
-.btn.primary:hover{background:var(--pri2);border-color:var(--pri2)}
-.btn.danger{color:#fca5a5;border-color:#7f1d1d}
-.btn.danger:hover{background:#3f1212;color:#fff}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+.app{display:grid;grid-template-columns:184px 1fr;min-height:100svh}
+.side{background:var(--panel-2);border-right:1px solid var(--bd);display:flex;flex-direction:column;position:sticky;top:0;height:100svh;overflow-y:auto;scrollbar-width:thin}
+.side-head{padding:16px 16px 12px;font-size:14px;font-weight:700;letter-spacing:.02em}
+.side-head span{font-size:11.5px;color:var(--mut2);font-weight:600;margin-left:4px}
+.side nav{display:flex;flex-direction:column;gap:1px;padding:0 8px 12px;flex:1}
+.side-group{font-size:10.5px;font-weight:600;color:var(--mut2);letter-spacing:.05em;padding:12px 10px 4px}
+.tab{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--mut);padding:6px 10px;border-radius:var(--r-s);font-size:12.5px;font-weight:500;font-family:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab:hover{background:var(--panel-3);color:var(--fg)}
+.tab.active{background:var(--acc);color:var(--acc-ink);font-weight:600}
+.side-foot{padding:12px 16px;border-top:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.side-foot .who{color:var(--mut);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+main{padding:22px 26px;max-width:1180px;min-width:0}
+@media(max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--bd)}
+  .side nav{flex-direction:row;flex-wrap:wrap;align-items:center;gap:2px;padding:0 12px 10px}
+  .side-group{flex:0 0 100%;padding:8px 4px 2px}
+  .tab{width:auto}
+  main{padding:16px}
+}
+.btn{background:var(--panel-3);color:var(--fg2);border:1px solid var(--bd2);border-radius:var(--r-s);padding:7px 13px;cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;transition:background .12s,border-color .12s}
+.btn:hover{background:#262b34;color:var(--fg)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:700}
+.btn.primary:hover{background:var(--acc-hover);border-color:var(--acc-hover)}
+.btn.danger{background:transparent;color:var(--err-soft);border-color:rgba(216,76,65,.45)}
+.btn.danger:hover{background:var(--err);border-color:var(--err);color:#fff}
 .btn.sm{padding:4px 9px;font-size:12px}
 .btn.icon{padding:4px 8px;font-size:13px;line-height:1}
-.tabs{display:flex;gap:2px;padding:12px 22px 0;border-bottom:1px solid var(--bd);background:var(--bg2);overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tab{padding:9px 16px;background:transparent;border:0;color:var(--mut);cursor:pointer;border-radius:7px 7px 0 0;font-size:13px;font-weight:500;font-family:inherit;white-space:nowrap}
-.tab:hover{color:var(--fg)}
-.tab.active{color:var(--fg);background:var(--panel);border:1px solid var(--bd);border-bottom-color:var(--panel);margin-bottom:-1px}
-main{padding:22px;max-width:1280px;margin:0 auto}
 .panel{display:none}
 .panel.active{display:block}
-section{background:var(--panel);border:1px solid var(--bd);border-radius:11px;padding:18px;margin-bottom:16px}
-h2{margin:0 0 14px;font-size:15px;font-weight:600}
-h3{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
-label{display:block;font-size:12px;color:var(--mut);margin:8px 0 4px}
-input,select,textarea{width:100%;padding:8px 11px;background:var(--bg);border:1px solid var(--bd2);border-radius:7px;color:var(--fg);font-size:13px;outline:none;font-family:inherit}
-input:focus,select:focus,textarea:focus{border-color:var(--pri)}
+section{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:18px;margin-bottom:14px}
+.panel[data-panel="pitr"] section{border-color:rgba(216,76,65,.4)}
+.panel[data-panel="pitr"] h2{color:var(--err-soft)}
+h2{margin:0 0 14px;font-size:14px;font-weight:700}
+h3{margin:0 0 10px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+label{display:block;font-size:11.5px;color:var(--mut);margin:8px 0 4px;font-weight:500}
+input,select,textarea{width:100%;padding:8px 11px;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--fg);font-size:13px;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(232,176,75,.12)}
 input[type=number]{font-variant-numeric:tabular-nums}
 textarea{font-family:ui-monospace,'Cascadia Code',monospace;min-height:340px;line-height:1.5;font-size:12.5px;tab-size:2;white-space:pre;overflow:auto;resize:vertical}
 .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .row > *{flex:1;min-width:140px}
 .row > .nf{flex:0 0 auto;min-width:auto}
 .muted{color:var(--mut);font-size:12.5px}
-.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:10px}
-.kv > div{background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px 11px}
-.kv > div b{display:block;font-size:11px;color:var(--mut);font-weight:500;margin-bottom:3px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:10px}
+.kv > div{background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);padding:8px 11px}
+.kv > div b{display:block;font-size:11px;color:var(--mut2);font-weight:500;margin-bottom:3px}
 .bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .bar > .grow{flex:1;min-width:140px}
-.list{display:flex;flex-direction:column;gap:10px}
-.card{background:var(--panel2);border:1px solid var(--bd);border-radius:9px;padding:13px}
+.list{display:flex;flex-direction:column;gap:8px}
+.card{background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);padding:13px}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.card-title{font-size:13px;font-weight:600}
+.card-title{font-size:13px;font-weight:700}
 .entry-list{display:flex;flex-direction:column;gap:6px}
-.entry{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:7px 9px;flex-wrap:wrap}
+.entry{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-s);padding:7px 9px;flex-wrap:wrap}
 .entry > *{min-width:0}
 .entry select{width:100px;flex:0 0 auto}
 .entry input[type=number]{width:80px;flex:0 0 auto}
 .entry input[type=text]{flex:1;min-width:120px}
-.entry .pickbtn{flex:1;min-width:160px;text-align:left;font-family:inherit;background:var(--bg2);border:1px solid var(--bd2);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12.5px}
-.entry .pickbtn:hover{border-color:var(--bd3)}
-.entry .pickbtn .ph{color:var(--mut)}
+.entry .pickbtn{flex:1;min-width:160px;text-align:left;font-family:inherit;background:var(--panel-2);border:1px solid var(--bd);color:var(--fg);padding:6px 10px;border-radius:var(--r-s);cursor:pointer;font-size:12.5px}
+.entry .pickbtn:hover{border-color:var(--bd2)}
+.entry .pickbtn .ph{color:var(--mut2)}
 .entry .lab{font-size:11.5px;color:var(--mut);flex:0 0 auto}
-.add-btn{background:transparent;border:1px dashed var(--bd2);color:var(--mut);border-radius:7px;padding:8px;cursor:pointer;font-size:12.5px;width:100%;margin-top:6px;font-family:inherit}
-.add-btn:hover{color:var(--fg);border-color:var(--bd3)}
-.toast{position:fixed;bottom:20px;right:20px;padding:11px 16px;border-radius:8px;background:var(--panel);border:1px solid var(--bd2);color:var(--fg);font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:.2s;pointer-events:none;z-index:200}
+.add-btn{background:transparent;border:1px dashed var(--bd2);color:var(--mut);border-radius:var(--r-s);padding:8px;cursor:pointer;font-size:12.5px;width:100%;margin-top:6px;font-family:inherit}
+.add-btn:hover{color:var(--fg);border-color:var(--acc)}
+.toast{position:fixed;bottom:20px;right:20px;padding:11px 16px;border-radius:var(--r-s);background:var(--panel);border:1px solid var(--bd2);color:var(--fg);font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:.2s;pointer-events:none;z-index:200}
 .toast.show{opacity:1}
 .toast.ok{border-color:var(--ok)}
 .toast.err{border-color:var(--err)}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal-bg.show{display:flex}
-.modal{background:var(--panel);border:1px solid var(--bd2);border-radius:12px;width:min(560px,100%);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.modal{background:var(--panel);border:1px solid var(--bd2);border-radius:var(--r);width:min(560px,100%);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.55)}
 .modal h3{margin:0;padding:16px 18px;border-bottom:1px solid var(--bd);font-size:14px;color:var(--fg);text-transform:none;letter-spacing:0}
 .modal .search{padding:12px 14px;border-bottom:1px solid var(--bd)}
 .modal .search input{width:100%}
 .modal .body{overflow:auto;flex:1}
 .modal .item{padding:10px 16px;border-bottom:1px solid var(--bd);cursor:pointer;display:flex;justify-content:space-between;gap:10px}
-.modal .item:hover{background:var(--panel2)}
+.modal .item:hover{background:var(--panel-3)}
 .modal .item .meta{color:var(--mut);font-size:12px}
 .modal .foot{padding:10px 14px;border-top:1px solid var(--bd);text-align:right}
-.empty{color:var(--mut);text-align:center;padding:30px;font-size:13px}
-.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--bd);color:var(--mut);margin-right:5px}
-.tag.r{color:#fca5a5;background:#3f1212}
-.tag.m{color:#fff;background:linear-gradient(120deg,#38bdf8,#8b5cf6,#c084fc);background-size:200% 200%;box-shadow:0 0 9px rgba(125,211,252,.45);animation:mythicTagGlow 3s ease-in-out infinite}
-.tag.g{color:#86efac;background:#14532d}
-.tag.b{color:#93c5fd;background:#1e3a8a}
-.tag.y{color:#fde68a;background:#713f12}
-.tag.p{color:#d8b4fe;background:#581c87}
-@keyframes mythicTagGlow{0%,100%{background-position:0 50%;box-shadow:0 0 7px rgba(125,211,252,.35)}50%{background-position:100% 50%;box-shadow:0 0 13px rgba(192,132,252,.65)}}
-@media(prefers-reduced-motion:reduce){.tag.m{animation:none}}
+.empty{color:var(--mut2);text-align:center;padding:30px;font-size:13px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:var(--panel-3);color:var(--mut);margin-right:5px}
+.tag.r{color:var(--err-soft);background:rgba(216,76,65,.14)}
+.tag.m{color:#c9b3e8;background:rgba(154,110,201,.18)}
+.tag.g{color:var(--ok);background:rgba(127,201,138,.14)}
+.tag.b{color:#8fb8d8;background:rgba(107,155,196,.16)}
+.tag.y{color:var(--acc);background:var(--acc-dim)}
+.tag.p{color:#c9b3e8;background:rgba(154,110,201,.18)}
 .subtabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
-.subtab{background:transparent;border:1px solid var(--bd2);color:var(--mut);border-radius:20px;padding:5px 14px;cursor:pointer;font-size:12.5px;font-family:inherit}
+.subtab{background:transparent;border:1px solid var(--bd2);color:var(--mut);border-radius:999px;padding:5px 14px;cursor:pointer;font-size:12.5px;font-family:inherit}
 .subtab:hover{color:var(--fg)}
-.subtab.active{background:var(--pri);border-color:var(--pri);color:#fff}
+.subtab.active{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:600}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:780px){.split{grid-template-columns:1fr}}
 .section{margin-top:24px}
 .card .section-title:first-child,.card > .section-title{margin-top:18px}
 .card > .section-title:first-of-type{margin-top:6px}
-.section-title{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:24px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--bd)}
-.section-title .hint{margin-left:auto;font-size:11px;color:var(--mut);font-weight:400;text-transform:none;letter-spacing:0}
+.section-title{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin:24px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--bd)}
+.section-title .hint{margin-left:auto;font-size:11px;color:var(--mut2);font-weight:400;text-transform:none;letter-spacing:0}
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 .switch input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
-.switch .track{width:36px;height:20px;background:var(--bd2);border:1px solid var(--bd2);border-radius:12px;position:relative;transition:.15s;flex-shrink:0}
+.switch .track{width:36px;height:20px;background:var(--panel-3);border:1px solid var(--bd2);border-radius:12px;position:relative;transition:.15s;flex-shrink:0}
 .switch .track::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--mut);border-radius:50%;transition:.15s}
-.switch input:checked + .track{background:var(--pri);border-color:var(--pri)}
-.switch input:checked + .track::after{left:18px;background:#fff}
-.switch input:focus-visible + .track{outline:2px solid var(--pri);outline-offset:2px}
+.switch input:checked + .track{background:var(--acc);border-color:var(--acc)}
+.switch input:checked + .track::after{left:18px;background:var(--acc-ink)}
+.switch input:focus-visible + .track{outline:2px solid var(--acc);outline-offset:2px}
 .switch .switch-label{font-size:12.5px;color:var(--fg)}
-details.collapsible{border:1px solid var(--bd);border-radius:8px;background:var(--panel2);overflow:hidden;margin-top:6px}
-details.collapsible > summary{list-style:none;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;user-select:none;font-size:13px;font-weight:500;background:var(--bg2)}
+details.collapsible{border:1px solid var(--bd);border-radius:var(--r-s);background:var(--panel-2);overflow:hidden;margin-top:6px}
+details.collapsible > summary{list-style:none;padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;user-select:none;font-size:13px;font-weight:500;background:var(--panel-2)}
 details.collapsible > summary::-webkit-details-marker{display:none}
-details.collapsible > summary::before{content:'▸';font-size:10px;color:var(--mut);transition:transform .15s}
+details.collapsible > summary::before{content:'▸';font-size:10px;color:var(--mut2);transition:transform .15s}
 details.collapsible[open] > summary::before{transform:rotate(90deg)}
-details.collapsible > summary:hover{background:var(--bd)}
+details.collapsible > summary:hover{background:var(--panel-3)}
+details.collapsible[open] > summary{border-bottom:1px solid var(--bd)}
 details.collapsible > summary .actions{margin-left:auto;display:flex;gap:4px}
-details.collapsible > summary .summary-meta{color:var(--mut);font-size:11.5px;font-weight:400}
+details.collapsible > summary .summary-meta{color:var(--mut2);font-size:11.5px;font-weight:400}
 details.collapsible .body{padding:12px}
 .field-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
-.stat-row{display:grid;grid-template-columns:1fr 110px 32px 28px;gap:8px;align-items:center;padding:5px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:6px}
+.stat-row{display:grid;grid-template-columns:1fr 110px 32px 28px;gap:8px;align-items:center;padding:5px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-s)}
 .stat-row .name{font-size:12.5px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stat-row input[type=number]{width:100%}
-.stat-row .unit{font-size:11.5px;color:var(--mut);text-align:center}
+.stat-row .unit{font-size:11.5px;color:var(--mut2);text-align:center}
 .stat-add{display:flex;gap:6px;margin-top:6px}
 .stat-add select{flex:1;min-width:160px}
 .tag-list{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.tag-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:14px;background:var(--bd);color:var(--fg);font-size:12px;border:1px solid var(--bd2)}
+.tag-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel-3);color:var(--fg);font-size:12px;border:1px solid var(--bd2)}
 .tag-pill button{background:transparent;border:0;color:var(--mut);cursor:pointer;font-size:13px;padding:0;line-height:1}
-.tag-pill button:hover{color:var(--err)}
-.field-name{font-family:ui-monospace,'Cascadia Code',monospace;color:var(--mut);font-size:10.5px;margin-left:6px;opacity:.7}
+.tag-pill button:hover{color:var(--err-soft)}
+.field-name{font-family:ui-monospace,'Cascadia Code',monospace;color:var(--mut2);font-size:10.5px;margin-left:6px;opacity:.8}
 .field-name:hover{opacity:1}
-.log-row{display:grid;grid-template-columns:140px 100px 1fr 90px 130px 110px;gap:12px;padding:11px 14px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;align-items:center;font-size:13px}
+.log-row{display:grid;grid-template-columns:140px 100px 1fr 90px 130px 110px;gap:12px;padding:10px 14px;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);align-items:center;font-size:12.5px}
 .log-row .col-time{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--mut)}
 .log-row .col-tags{display:flex;flex-wrap:wrap;gap:4px}
 .log-row .col-item{min-width:0}
 .log-row .col-item .iname{font-weight:600;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.log-row .col-item .imeta{font-size:11.5px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-row .col-item .imeta{font-size:11.5px;color:var(--mut2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .log-row .col-count{text-align:center;font-variant-numeric:tabular-nums}
 .log-row .col-price{text-align:right;font-variant-numeric:tabular-nums}
 .log-row .col-price .total{font-weight:600}
-.log-row .col-price .unit{display:block;font-size:11px;color:var(--mut)}
+.log-row .col-price .unit{display:block;font-size:11px;color:var(--mut2)}
 .log-row .col-parties{min-width:0}
 .log-row .col-parties .party{display:flex;gap:6px;align-items:baseline;font-size:12.5px}
-.log-row .col-parties .party .role{color:var(--mut);font-size:10.5px;flex-shrink:0;width:32px}
+.log-row .col-parties .party .role{color:var(--mut2);font-size:10.5px;flex-shrink:0;width:32px}
 .log-row .col-parties .party .name{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tag.cur-gold{color:#fde68a;background:#713f12}
-.tag.cur-garnet{color:#a5f3fc;background:#155e75}
-.tag.t-auction{color:#c4b5fd;background:#3b1e8c}
-.tag.t-buyorder{color:#fda4af;background:#7f1d3a}
-.tag.k-card{color:#93c5fd;background:#1e3a8a}
-.tag.k-equipment{color:#86efac;background:#14532d}
-.tag.k-item{color:#d8b4fe;background:#581c87}
-.dice-log-row{display:grid;grid-template-columns:148px 150px 118px 96px 118px minmax(180px,1fr) 76px;gap:10px;align-items:center;padding:10px 12px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;font-size:12.5px}
+.tag.cur-gold{color:var(--acc);background:var(--acc-dim)}
+.tag.cur-garnet{color:#8fb8d8;background:rgba(107,155,196,.16)}
+.tag.t-auction{color:var(--acc);background:var(--acc-dim)}
+.tag.t-buyorder{color:var(--ok);background:rgba(127,201,138,.14)}
+.tag.k-card{color:#8fb8d8;background:rgba(107,155,196,.16)}
+.tag.k-equipment{color:var(--ok);background:rgba(127,201,138,.14)}
+.tag.k-item{color:#c9b3e8;background:rgba(154,110,201,.18)}
+.dice-log-row{display:grid;grid-template-columns:148px 150px 118px 96px 118px minmax(180px,1fr) 76px;gap:10px;align-items:center;padding:10px 12px;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);font-size:12.5px}
 .dice-log-row .mono{font-family:ui-monospace,'Cascadia Code',monospace;font-variant-numeric:tabular-nums}
 .dice-log-row .mut{color:var(--mut)}
 .dice-log-row .user,.dice-log-row .reward{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dice-log-row .status{text-align:center;font-weight:800}
-.dice-log-row.hit{border-color:rgba(22,163,74,.45)}
-.dice-log-row.miss{border-color:rgba(220,38,38,.35)}
-.tag.d-hit{color:#86efac;background:#14532d}
-.tag.d-miss{color:#fca5a5;background:#7f1d1d}
-.tag.d-lightning{color:#a5f3fc;background:#155e75}
+.dice-log-row .status{text-align:center;font-weight:700}
+.dice-log-row.hit{border-color:rgba(127,201,138,.4)}
+.dice-log-row.miss{border-color:rgba(216,76,65,.3)}
+.tag.d-hit{color:var(--ok);background:rgba(127,201,138,.14)}
+.tag.d-miss{color:var(--err-soft);background:rgba(216,76,65,.14)}
+.tag.d-lightning{color:#8fb8d8;background:rgba(107,155,196,.16)}
 @media(max-width:1120px){.dice-log-row{grid-template-columns:1fr 1fr;gap:7px}.dice-log-row .reward{grid-column:1/-1}.dice-log-row .status{text-align:left}}
-.point-log-row{display:grid;grid-template-columns:158px 150px 110px 1fr 72px;gap:10px;align-items:center;padding:10px 12px;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;font-size:12.5px}
+.point-log-row{display:grid;grid-template-columns:158px 150px 110px 1fr 72px;gap:10px;align-items:center;padding:10px 12px;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);font-size:12.5px}
 .point-log-row .mono{font-family:ui-monospace,'Cascadia Code',monospace;font-variant-numeric:tabular-nums}
 .point-log-row .mut{color:var(--mut)}
 .point-log-row .nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
-.point-log-row .amount{color:#86efac;font-weight:800}
+.point-log-row .amount{color:var(--ok);font-weight:700}
 .point-log-row .dist{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .point-log-row .act{text-align:right}
 @media(max-width:1120px){.point-log-row{grid-template-columns:1fr 1fr;gap:7px}.point-log-row .dist{grid-column:1/-1}.point-log-row .act{grid-column:1/-1;text-align:left}}
+.savebar{position:sticky;bottom:0;z-index:5;background:var(--panel);border-top:1px solid var(--bd);padding:10px 0;margin-bottom:0}
+.pager{display:flex;gap:4px;align-items:center;justify-content:center;padding:10px 0 2px;flex-wrap:wrap}
+.pager-btn{background:transparent;border:1px solid var(--bd);color:var(--mut);border-radius:var(--r-s);padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.pager-btn:hover:not(:disabled){color:var(--fg);border-color:var(--bd2)}
+.pager-btn.on{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.pager-btn:disabled{opacity:.4;cursor:default}
+.pager-gap{color:var(--mut2);padding:0 2px}
+.pager-info{color:var(--mut2);font-size:11.5px;margin-left:6px}
 .loading-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(2,4,10,.55)}
 .loading-overlay.active{display:flex}
-.loading-spinner{width:54px;height:54px;border-radius:50%;border:5px solid rgba(129,140,248,.25);border-top-color:#818cf8;animation:loadingSpin .8s linear infinite}
+.loading-spinner{width:54px;height:54px;border-radius:50%;border:5px solid rgba(232,176,75,.25);border-top-color:var(--acc);animation:loadingSpin .8s linear infinite}
 @keyframes loadingSpin{to{transform:rotate(360deg)}}
 @media(max-width:1080px){.log-row{grid-template-columns:1fr 1fr;gap:8px}.log-row .col-time{grid-column:1/-1}.log-row .col-tags{grid-column:1/-1}.log-row .col-parties{grid-column:1/-1}}
-.hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.hd-prev-card{background:rgba(10,14,26,.8);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.hd-prev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.hd-prev-card{background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:10px}
 .hd-prev-header{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.hd-prev-time{font-size:13px;font-weight:800;color:#94a3b8}
-.hd-prev-sector{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(88,101,242,.2);color:#a5b4fc}
-.hd-prev-edited{font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;background:rgba(251,146,60,.22);color:#fdba74}
+.hd-prev-time{font-size:13px;font-weight:700;color:var(--fg2)}
+.hd-prev-sector{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--acc-dim);color:var(--acc)}
+.hd-prev-edited{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:rgba(216,76,65,.14);color:var(--err-soft)}
 .hd-prev-slots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.hd-prev-slot{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;border-radius:11px;border:1px solid}
-.hd-prev-slot.fire{background:rgba(234,88,12,.1);border-color:rgba(251,146,60,.35)}
-.hd-prev-slot.lightning{background:rgba(6,182,212,.08);border-color:rgba(6,182,212,.35)}
+.hd-prev-slot{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;border-radius:var(--r-s);border:1px solid var(--bd);background:var(--bg)}
+.hd-prev-slot.fire{border-color:rgba(232,176,75,.4)}
+.hd-prev-slot.lightning{border-color:rgba(107,155,196,.4)}
 .hd-prev-icon{width:48px;height:48px;object-fit:contain}
-.hd-prev-name{font-size:12px;font-weight:800;color:#f1f5f9;text-align:center;line-height:1.3}
-.hd-prev-price{font-size:11px;font-weight:700;color:#94a3b8;text-align:center}
-.banner-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:16px}
-.banner-admin-card{overflow:hidden;background:var(--panel2);border:1px solid var(--bd);border-radius:12px}
-.banner-admin-card img{display:block;width:100%;aspect-ratio:16/5;object-fit:contain;background:#070a12}
+.hd-prev-name{font-size:12px;font-weight:600;color:var(--fg);text-align:center;line-height:1.3}
+.hd-prev-price{font-size:11px;font-weight:600;color:var(--mut);text-align:center}
+.banner-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:16px}
+.banner-admin-card{overflow:hidden;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r)}
+.banner-admin-card img{display:block;width:100%;aspect-ratio:16/5;object-fit:contain;background:var(--bg)}
 .banner-admin-meta{display:flex;align-items:center;gap:10px;padding:11px 12px}
-.banner-admin-name{min-width:0;flex:1;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.banner-admin-sub{font-size:11px;color:var(--mut);margin-top:2px}
+.banner-admin-name{min-width:0;flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.banner-admin-sub{font-size:11px;color:var(--mut2);margin-top:2px}
 @media(max-width:640px){.banner-admin-grid{grid-template-columns:1fr}.banner-admin-meta{align-items:flex-start}}
 </style>
 </head>
 <body>
-<header>
-  <h1>RPGenius 관리자</h1>
-  <div><span class="who">{{ADMIN_NAME}}</span> <button class="btn" id="logout">로그아웃</button></div>
-</header>
-<div class="tabs">
-  <button class="tab active" data-tab="grant">유저 / 재화</button>
-  <button class="tab" data-tab="mailbroadcast">메일 발송</button>
-  <button class="tab" data-tab="banner">배너</button>
-  <button class="tab" data-tab="pack">Pack</button>
-  <button class="tab" data-tab="bundle">Bundle</button>
-  <button class="tab" data-tab="coupon">Coupon</button>
-  <button class="tab" data-tab="shop">Shop</button>
-  <button class="tab" data-tab="recipe">Recipe</button>
-  <button class="tab" data-tab="bait">Bait</button>
-  <button class="tab" data-tab="item">Item</button>
-  <button class="tab" data-tab="equipment">Equipment</button>
-  <button class="tab" data-tab="pet">Pet</button>
-  <button class="tab" data-tab="fashion">Fashion</button>
-  <button class="tab" data-tab="tradelog">거래 로그</button>
-  <button class="tab" data-tab="eventdicelog">유생 주사위 로그</button>
-  <button class="tab" data-tab="pointlog">포인트 충전 로그</button>
-  <button class="tab" data-tab="pitr">PITR 복원</button>
-  <button class="tab" data-tab="raw">Raw JSON</button>
-  <button class="tab" data-tab="hotdealpreview">핫딜 미리보기</button>
-</div>
+<div class="app">
+<aside class="side">
+  <div class="side-head">RPGenius<span>관리자</span></div>
+  <nav>
+    <div class="side-group">운영</div>
+    <button class="tab active" data-tab="grant">유저 재화</button>
+    <button class="tab" data-tab="mailbroadcast">메일 발송</button>
+    <button class="tab" data-tab="banner">배너</button>
+    <button class="tab" data-tab="patchnote">패치노트</button>
+    <button class="tab" data-tab="namematch">닉네임 매칭</button>
+    <div class="side-group">상품</div>
+    <button class="tab" data-tab="package">패키지 등록</button>
+    <button class="tab" data-tab="pack">팩</button>
+    <button class="tab" data-tab="bundle">번들</button>
+    <button class="tab" data-tab="coupon">쿠폰</button>
+    <button class="tab" data-tab="shop">상점</button>
+    <button class="tab" data-tab="hotdealpreview">핫딜</button>
+    <div class="side-group">게임 데이터</div>
+    <button class="tab" data-tab="item">아이템</button>
+    <button class="tab" data-tab="equipment">장비</button>
+    <button class="tab" data-tab="pet">펫</button>
+    <button class="tab" data-tab="fashion">패션</button>
+    <button class="tab" data-tab="recipe">레시피</button>
+    <button class="tab" data-tab="bait">미끼</button>
+    <div class="side-group">로그</div>
+    <button class="tab" data-tab="tradelog">거래 로그</button>
+    <button class="tab" data-tab="pointlog">포인트 충전 로그</button>
+    <div class="side-group">시스템</div>
+    <button class="tab" data-tab="statedata">상태 데이터</button>
+    <button class="tab" data-tab="pitr">PITR 복원</button>
+    <button class="tab" data-tab="raw">Raw JSON</button>
+  </nav>
+  <div class="side-foot"><span class="who">{{ADMIN_NAME}}</span><button class="btn sm" id="logout">로그아웃</button></div>
+</aside>
 <main>
 
 <div class="panel active" data-panel="grant">
@@ -231,21 +283,20 @@ details.collapsible .body{padding:12px}
     <div id="userInfo" class="kv" style="display:none"></div>
   </section>
   <section>
-    <h2>재화 / 아이템 지급</h2>
-    <p class="muted">차감하려면 음수를 입력하세요. 예) -100</p>
+    <h2>재화 지급</h2>
     <div class="row">
       <div><label>대상 닉네임</label><input id="grantName" placeholder="닉네임"></div>
       <div><label>종류</label><select id="grantKind">
-        <option value="gold">🪙 골드</option><option value="garnet">💠 가넷</option>
-        <option value="point">💰 포인트</option><option value="mileage">Ⓜ️ 마일리지</option>
-        <option value="item">📦 아이템</option>
+        <option value="gold">골드</option><option value="garnet">가넷</option>
+        <option value="point">포인트</option><option value="mileage">마일리지</option>
+        <option value="item">아이템</option>
       </select></div>
       <div id="itemNameWrap" style="display:none"><label>아이템</label>
-        <button class="btn pickbtn" id="grantItemPick" style="width:100%;text-align:left"><span class="ph">아이템 선택...</span></button>
+        <button class="btn pickbtn" id="grantItemPick" style="width:100%;text-align:left"><span class="ph">아이템 선택</span></button>
         <input type="hidden" id="grantItemName">
       </div>
-      <div><label>수량</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
-      <div class="nf"><button class="btn primary" id="grantBtn">지급/차감</button></div>
+      <div><label>수량 (음수 입력 시 차감)</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
+      <div class="nf"><button class="btn primary" id="grantBtn">지급</button></div>
     </div>
   </section>
 </div>
@@ -253,13 +304,12 @@ details.collapsible .body{padding:12px}
 <div class="panel" data-panel="mailbroadcast">
   <section>
     <h2>메일 전체 발송</h2>
-    <p class="muted">모든 유저에게 메일을 발송합니다. 선물은 즉시 합성되며 <b>관리자 인벤토리에서 차감되지 않고, 골드/가넷 수수료도 없습니다.</b> 발신자에는 GM 태그가 붙습니다.</p>
     <div class="row">
       <div><label>GM 발신자명</label><input id="bcGmName" placeholder="운영자" value="운영자"></div>
       <div style="flex:2"><label>제목</label><input id="bcSubject" placeholder="제목 (최대 50자)" maxlength="50"></div>
     </div>
     <div class="row">
-      <div style="flex:1"><label>내용</label><textarea id="bcBody" placeholder="내용 (최대 1000자)" maxlength="1000" rows="5" style="width:100%;resize:vertical"></textarea></div>
+      <div style="flex:1"><label>내용</label><textarea id="bcBody" placeholder="내용 (최대 1000자)" maxlength="1000" rows="5" style="width:100%;resize:vertical;min-height:120px;white-space:pre-wrap"></textarea></div>
     </div>
   </section>
   <section>
@@ -285,7 +335,6 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="banner"><section>
   <h2>메인 배너</h2>
-  <div class="muted" style="margin-bottom:12px">로그인 후 메인 탭에 표시할 배너입니다. JPG, PNG, WEBP, GIF 파일을 최대 10MB까지 업로드할 수 있습니다.</div>
   <div class="bar">
     <input id="bannerFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="flex:1;min-width:220px">
     <button class="btn primary" id="bannerUpload">배너 추가</button>
@@ -295,36 +344,75 @@ details.collapsible .body{padding:12px}
   <div id="bannerList" class="banner-admin-grid"></div>
 </section></div>
 
-<div class="panel" data-panel="pack"><section><h2>Pack 편집</h2><div class="muted" style="margin-bottom:10px">가챠 팩 — 각 보상은 <code>roll</code>(0~1) 확률로 지급됩니다.</div><div id="packList" class="list"></div><button class="add-btn" id="packAdd">+ 새 Pack 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="packSave">저장</button><button class="btn" id="packReload">다시 불러오기</button><span class="muted" id="packStatus"></span></div></section></div>
+<div class="panel" data-panel="package">
+  <section>
+    <h2>기본 정보</h2>
+    <div class="row">
+      <div style="flex:2"><label>패키지 이름</label><input id="pkgName" placeholder="여름 한정 성장 패키지"></div>
+      <div class="nf" style="min-width:140px"><label>거래 불가</label><div style="padding:7px 0"><label class="switch"><input type="checkbox" id="pkgNoTrade" checked><span class="track"></span><span class="switch-label">거래 제한</span></label></div></div>
+    </div>
+    <div><label>설명</label><textarea id="pkgDesc" placeholder="아이템 설명" style="min-height:50px;font-family:inherit;font-size:13px"></textarea></div>
+  </section>
+  <section>
+    <h2>구성 보상</h2>
+    <div id="pkgRewardList" class="entry-list"></div>
+    <button class="add-btn" id="pkgRewardAdd">+ 보상 추가</button>
+  </section>
+  <section>
+    <h2>판매 조건</h2>
+    <div class="row">
+      <div><label>상점 종류</label><select id="pkgShopType"></select></div>
+      <div><label>결제 수단</label><select id="pkgGoods"><option value="garnet">가넷</option><option value="gold">골드</option><option value="point">포인트</option><option value="mileage">마일리지</option></select></div>
+      <div><label>가격</label><input id="pkgAmount" type="number" min="1" placeholder="4900"></div>
+    </div>
+    <div class="entry" style="margin-top:10px">
+      <span class="lab">구매 제한 (0=무제한)</span>
+      <span class="lab">누적</span><input class="nf" id="pkgLimitMax" type="number" min="0" value="1" style="width:80px;flex:0 0 auto">
+      <span class="lab">일일</span><input class="nf" id="pkgLimitDaily" type="number" min="0" value="0" style="width:80px;flex:0 0 auto">
+      <span class="lab">주간</span><input class="nf" id="pkgLimitWeekly" type="number" min="0" value="0" style="width:80px;flex:0 0 auto">
+      <span class="lab">월간</span><input class="nf" id="pkgLimitMonthly" type="number" min="0" value="0" style="width:80px;flex:0 0 auto">
+      <span class="lab">글로벌</span><input class="nf" id="pkgLimitGlobal" type="number" min="0" value="0" style="width:80px;flex:0 0 auto">
+    </div>
+    <div class="bar" style="margin-top:14px;margin-bottom:0">
+      <button class="btn primary" id="pkgCreate">패키지 생성</button>
+      <span class="muted" id="pkgStatus"></span>
+    </div>
+  </section>
+</div>
 
-<div class="panel" data-panel="bundle"><section><h2>Bundle 편집</h2><div class="muted" style="margin-bottom:10px">번들 — 모든 보상이 100% 지급됩니다.</div><div id="bundleList" class="list"></div><button class="add-btn" id="bundleAdd">+ 새 Bundle 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="bundleSave">저장</button><button class="btn" id="bundleReload">다시 불러오기</button><span class="muted" id="bundleStatus"></span></div></section></div>
+<div class="panel" data-panel="patchnote"><section><h2>패치노트</h2><div id="patchnoteList" class="list"></div><button class="add-btn" id="patchnoteAdd">+ 새 패치노트</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="patchnoteSave">저장</button><button class="btn" id="patchnoteReload">다시 불러오기</button><span class="muted" id="patchnoteStatus"></span></div></section></div>
 
-<div class="panel" data-panel="coupon"><section><h2>Coupon 편집</h2><div id="couponList" class="list"></div><button class="add-btn" id="couponAdd">+ 새 쿠폰 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="couponSave">저장</button><button class="btn" id="couponReload">다시 불러오기</button><span class="muted" id="couponStatus"></span></div></section></div>
+<div class="panel" data-panel="namematch"><section><h2>닉네임 매칭</h2><div class="bar"><input id="nmFilter" placeholder="닉네임 검색" style="flex:1;min-width:200px"></div><div id="nmList" class="list"></div><button class="add-btn" id="nmAdd">+ 새 매칭 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="nmSave">저장</button><button class="btn" id="nmReload">다시 불러오기</button><span class="muted" id="nmStatus"></span></div></section></div>
 
-<div class="panel" data-panel="shop"><section><h2>Shop 편집</h2><div class="subtabs" id="shopTypes"></div><div id="shopList" class="list"></div><button class="add-btn" id="shopAdd">+ 새 상품 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="shopSave">저장</button><button class="btn" id="shopReload">다시 불러오기</button><button class="btn" id="shopAddType">+ 새 상점 종류</button><button class="btn danger" id="shopDelType">현재 종류 삭제</button><span class="muted" id="shopStatus"></span></div></section><section><h2>구매 제한 초기화</h2><p class="muted">유저별 구매 기록과 전체 구매 제한 기록을 함께 초기화합니다.</p><div class="row"><div><label>초기화 범위</label><select id="shopLimitResetScope"><option value="item">현재 상점의 특정 상품</option><option value="shop">현재 상점 전체</option><option value="all">모든 상점</option></select></div><div id="shopLimitResetIndexWrap"><label>상품 번호</label><input id="shopLimitResetIndex" type="number" min="1" placeholder="관리자 화면의 상품 번호"></div><div class="nf"><button class="btn danger" id="shopLimitResetBtn">구매 제한 초기화</button></div></div><div class="muted" id="shopLimitResetStatus"></div></section></div>
+<div class="panel" data-panel="statedata"><section><h2>상태 데이터</h2><div class="bar"><select id="sdKey" style="width:200px;flex:0 0 auto"></select><button class="btn" id="sdReload">불러오기</button><input id="sdFilter" placeholder="키, 내용 검색" style="flex:1;min-width:180px"><button class="btn primary" id="sdSave">전체 저장</button><span class="muted" id="sdStatus"></span></div><div id="sdList" class="list" style="margin-top:6px"></div></section></div>
 
-<div class="panel" data-panel="recipe"><section><h2>Recipe 편집</h2><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 레시피 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="recipeSave">저장</button><button class="btn" id="recipeReload">다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
+<div class="panel" data-panel="pack"><section><h2>팩</h2><div id="packList" class="list"></div><button class="add-btn" id="packAdd">+ 새 팩 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="packSave">저장</button><button class="btn" id="packReload">다시 불러오기</button><span class="muted" id="packStatus"></span></div></section></div>
 
-<div class="panel" data-panel="bait"><section><h2>Bait 편집</h2><div class="muted" style="margin-bottom:10px">낚시 미끼 — 각 미끼별로 보상 아이템과 가중치(rate)를 지정합니다. rate 비율에 따라 추첨됩니다.</div><div id="baitList" class="list"></div><button class="add-btn" id="baitAdd">+ 새 미끼 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="baitSave">저장</button><button class="btn" id="baitReload">다시 불러오기</button><span class="muted" id="baitStatus"></span></div></section></div>
+<div class="panel" data-panel="bundle"><section><h2>번들</h2><div id="bundleList" class="list"></div><button class="add-btn" id="bundleAdd">+ 새 번들 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="bundleSave">저장</button><button class="btn" id="bundleReload">다시 불러오기</button><span class="muted" id="bundleStatus"></span></div></section></div>
 
-<div class="panel" data-panel="item"><section><h2>Item 편집</h2><div class="muted" style="margin-bottom:10px">아이템 목록 (배열 인덱스 = item_id). 기존 인덱스 삭제 시 모든 후속 인덱스가 변경되어 Pack/Bundle/Shop/Recipe/Bait 등과 호환되지 않을 수 있으니 주의하세요.</div><div class="bar"><input id="itemFilter" placeholder="이름 / 타입 / 인덱스 검색..." style="flex:1;min-width:200px"></div><div id="itemList" class="list"></div><button class="add-btn" id="itemAdd">+ 새 아이템 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="itemSave">저장</button><button class="btn" id="itemReload">다시 불러오기</button><span class="muted" id="itemStatus"></span></div></section></div>
+<div class="panel" data-panel="coupon"><section><h2>쿠폰</h2><div id="couponList" class="list"></div><button class="add-btn" id="couponAdd">+ 새 쿠폰 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="couponSave">저장</button><button class="btn" id="couponReload">다시 불러오기</button><span class="muted" id="couponStatus"></span></div></section></div>
 
-<div class="panel" data-panel="equipment"><section><h2>Equipment 편집</h2><div class="muted" style="margin-bottom:10px">무기 / 갑옷 / 장신구 — 슬롯별로 인덱스가 분리되어 있습니다. 인덱스 변경 시 weapon_id / armor_id / accessory_id 참조가 깨질 수 있으니 주의하세요.</div><div class="subtabs" id="equipTypes"></div><div class="bar"><input id="equipFilter" placeholder="이름 / 등급 / 인덱스 검색..." style="flex:1;min-width:200px"></div><div id="equipList" class="list"></div><button class="add-btn" id="equipAdd">+ 새 장비 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="equipSave">저장</button><button class="btn" id="equipReload">다시 불러오기</button><span class="muted" id="equipStatus"></span></div></section></div>
+<div class="panel" data-panel="shop"><section><h2>상점</h2><div class="subtabs" id="shopTypes"></div><div id="shopList" class="list"></div><button class="add-btn" id="shopAdd">+ 새 상품 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="shopSave">저장</button><button class="btn" id="shopReload">다시 불러오기</button><button class="btn" id="shopAddType">+ 새 상점 종류</button><button class="btn danger" id="shopDelType">현재 종류 삭제</button><span class="muted" id="shopStatus"></span></div></section><section><h2>구매 제한 초기화</h2><div class="row"><div><label>초기화 범위</label><select id="shopLimitResetScope"><option value="item">현재 상점의 특정 상품</option><option value="shop">현재 상점 전체</option><option value="all">모든 상점</option></select></div><div id="shopLimitResetIndexWrap"><label>상품 번호</label><input id="shopLimitResetIndex" type="number" min="1" placeholder="상품 번호"></div><div class="nf"><button class="btn danger" id="shopLimitResetBtn">구매 제한 초기화</button></div></div><div class="muted" id="shopLimitResetStatus"></div></section></div>
 
-<div class="panel" data-panel="pet"><section><h2>Pet 편집</h2><div class="muted" style="margin-bottom:10px">펫 목록 (배열 인덱스 = pet id). 기본 구조는 장비와 동일하며, 펫 고유의 <code>special</code>(특수 효과)을 추가할 수 있습니다. 데이터가 아직 없어도 저장하면 새로 생성됩니다.</div><div class="bar"><input id="petFilter" placeholder="이름 / 등급 / 인덱스 검색..." style="flex:1;min-width:200px"></div><div id="petList" class="list"></div><button class="add-btn" id="petAdd">+ 새 펫 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="petSave">저장</button><button class="btn" id="petReload">다시 불러오기</button><span class="muted" id="petStatus"></span></div></section></div>
+<div class="panel" data-panel="recipe"><section><h2>레시피</h2><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 레시피 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="recipeSave">저장</button><button class="btn" id="recipeReload">다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
 
-<div class="panel" data-panel="fashion"><section><h2>Fashion 편집</h2><div class="muted" style="margin-bottom:10px">캐릭터 카드 스킨 — 각 스킨은 적용 가능한 캐릭터 카드 ID 목록(primary_card)과 효과 옵션(option)을 가집니다.</div><div class="bar"><input id="fashionFilter" placeholder="이름 검색..." style="flex:1;min-width:200px"></div><div id="fashionList" class="list"></div><button class="add-btn" id="fashionAdd">+ 새 스킨 추가</button><div class="bar" style="margin-top:14px"><button class="btn primary" id="fashionSave">저장</button><button class="btn" id="fashionReload">다시 불러오기</button><span class="muted" id="fashionStatus"></span></div></section></div>
+<div class="panel" data-panel="bait"><section><h2>미끼</h2><div id="baitList" class="list"></div><button class="add-btn" id="baitAdd">+ 새 미끼 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="baitSave">저장</button><button class="btn" id="baitReload">다시 불러오기</button><span class="muted" id="baitStatus"></span></div></section></div>
 
-<div class="panel" data-panel="tradelog"><section><h2>거래 로그</h2><div class="muted" style="margin-bottom:10px">경매장/삽니다에서 체결된 거래 기록입니다. 최신순으로 표시되며 최대 2,000건까지 보관됩니다.</div><div class="bar"><input id="tradeLogFilter" placeholder="구매자 / 판매자 / 물품명 검색..." style="flex:1;min-width:200px"><select id="tradeLogType" style="width:130px;flex:0 0 auto"><option value="">전체 거래타입</option><option value="경매장">경매장</option><option value="삽니다">삽니다</option></select><select id="tradeLogKind" style="width:130px;flex:0 0 auto"><option value="">전체 물품타입</option><option value="card">캐릭터 카드</option><option value="equipment">장비</option><option value="item">아이템</option></select><button class="btn" id="tradeLogReload">다시 불러오기</button><button class="btn danger" id="tradeLogClear">전체 삭제</button><span class="muted" id="tradeLogStatus"></span></div><div id="tradeLogList" class="list" style="margin-top:14px"></div></section></div>
+<div class="panel" data-panel="item"><section><h2>아이템</h2><div class="bar"><input id="itemFilter" placeholder="이름, 타입, 인덱스 검색" style="flex:1;min-width:200px"></div><div id="itemList" class="list"></div><button class="add-btn" id="itemAdd">+ 새 아이템 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="itemSave">저장</button><button class="btn" id="itemReload">다시 불러오기</button><span class="muted" id="itemStatus"></span></div></section></div>
 
-<div class="panel" data-panel="eventdicelog"><section><h2>유생의 주사위 로그</h2><div class="muted" style="margin-bottom:10px">유생의 주사위 사용 기록입니다. 최신순으로 한 줄씩 표시됩니다.</div><div class="bar"><input id="eventDiceLogFilter" placeholder="닉네임 / 유저ID / 보상 검색..." style="flex:1;min-width:220px"><select id="eventDiceLogHit" style="width:120px;flex:0 0 auto"><option value="">전체 결과</option><option value="hit">당첨</option><option value="miss">실패</option></select><button class="btn" id="eventDiceLogReload">다시 불러오기</button><span class="muted" id="eventDiceLogStatus"></span></div><div id="eventDiceLogList" class="list" style="margin-top:14px"></div></section></div>
+<div class="panel" data-panel="equipment"><section><h2>장비</h2><div class="subtabs" id="equipTypes"></div><div class="bar"><input id="equipFilter" placeholder="이름, 등급, 인덱스 검색" style="flex:1;min-width:200px"></div><div id="equipList" class="list"></div><button class="add-btn" id="equipAdd">+ 새 장비 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="equipSave">저장</button><button class="btn" id="equipReload">다시 불러오기</button><span class="muted" id="equipStatus"></span></div></section></div>
 
-<div class="panel" data-panel="pointlog"><section><h2>포인트 충전 로그</h2><div class="muted" style="margin-bottom:10px">웹에서 처리된 포인트 충전 기록입니다. 최신순으로 표시되며 최대 100건까지 보관됩니다.</div><div class="bar"><input id="pointLogFilter" placeholder="닉네임 검색..." style="flex:1;min-width:220px"><button class="btn" id="pointLogReload">다시 불러오기</button><span class="muted" id="pointLogStatus"></span></div><div id="pointLogList" class="list" style="margin-top:14px"></div></section></div>
+<div class="panel" data-panel="pet"><section><h2>펫</h2><div class="bar"><input id="petFilter" placeholder="이름, 등급, 인덱스 검색" style="flex:1;min-width:200px"></div><div id="petList" class="list"></div><button class="add-btn" id="petAdd">+ 새 펫 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="petSave">저장</button><button class="btn" id="petReload">다시 불러오기</button><span class="muted" id="petStatus"></span></div></section></div>
+
+<div class="panel" data-panel="fashion"><section><h2>패션</h2><div class="bar"><input id="fashionFilter" placeholder="이름 검색" style="flex:1;min-width:200px"></div><div id="fashionList" class="list"></div><button class="add-btn" id="fashionAdd">+ 새 스킨 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="fashionSave">저장</button><button class="btn" id="fashionReload">다시 불러오기</button><span class="muted" id="fashionStatus"></span></div></section></div>
+
+<div class="panel" data-panel="tradelog"><section><h2>거래 로그</h2><div class="bar"><input id="tradeLogFilter" placeholder="구매자, 판매자, 물품명 검색" style="flex:1;min-width:200px"><select id="tradeLogType" style="width:130px;flex:0 0 auto"><option value="">전체 거래타입</option><option value="경매장">경매장</option><option value="삽니다">삽니다</option></select><select id="tradeLogKind" style="width:130px;flex:0 0 auto"><option value="">전체 물품타입</option><option value="card">캐릭터 카드</option><option value="equipment">장비</option><option value="item">아이템</option></select><button class="btn" id="tradeLogReload">다시 불러오기</button><button class="btn danger" id="tradeLogClear">전체 삭제</button><span class="muted" id="tradeLogStatus"></span></div><div id="tradeLogList" class="list" style="margin-top:14px"></div></section></div>
+
+<div class="panel" data-panel="pointlog"><section><h2>포인트 충전 로그</h2><div class="bar"><input id="pointLogFilter" placeholder="닉네임 검색" style="flex:1;min-width:220px"><button class="btn" id="pointLogReload">다시 불러오기</button><span class="muted" id="pointLogStatus"></span></div><div id="pointLogList" class="list" style="margin-top:14px"></div></section></div>
 
 <div class="panel" data-panel="pitr">
   <section>
     <h2>DynamoDB PITR 복원</h2>
-    <div class="muted" style="margin-bottom:10px">특정 시점 데이터를 새 복원 테이블로 만든 뒤 미리보고, 문제가 없을 때 운영 테이블로 업서트 마이그레이션합니다. 운영 데이터를 삭제하지는 않습니다.</div>
     <div class="row">
       <div><label>테이블</label><select id="pitrTable"><option value="rpgenius_user">rpgenius_user</option><option value="rpgenius_data">rpgenius_data</option></select></div>
       <div><label>복원 시점</label><input id="pitrTime" type="datetime-local"></div>
@@ -338,27 +426,25 @@ details.collapsible .body{padding:12px}
     <h2>복원 작업</h2>
     <div class="row">
       <div><label>작업 ID</label><input id="pitrJobId" placeholder="복원 생성 후 자동 입력"></div>
-      <div class="nf"><button class="btn" id="pitrJobBtn">복원 상태/미리보기</button></div>
+      <div class="nf"><button class="btn" id="pitrJobBtn">복원 상태 미리보기</button></div>
       <div class="nf"><button class="btn danger" id="pitrMigrateBtn">운영 테이블로 마이그레이션</button></div>
       <div class="nf"><button class="btn" id="pitrDeleteBtn">복원 테이블 삭제</button></div>
     </div>
-    <div class="muted" style="margin-top:10px">마이그레이션은 복원 테이블의 항목을 운영 테이블에 덮어씁니다. 운영에만 있는 항목은 삭제하지 않습니다.</div>
-    <pre id="pitrPreview" style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:12px;max-height:520px;overflow:auto;margin-top:12px"></pre>
+    <pre id="pitrPreview" style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-s);padding:12px;max-height:520px;overflow:auto;margin-top:12px"></pre>
   </section>
 </div>
 
 <div class="panel" data-panel="hotdealpreview"><section>
-  <h2>핫딜샵 미리보기</h2>
-  <div class="muted" style="margin-bottom:14px">날짜와 시간대를 선택해 해당 기간의 핫딜 상품을 미리 확인합니다. (KST 기준)</div>
+  <h2>핫딜 미리보기</h2>
   <div class="bar" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
     <div><label>날짜 (KST)</label><input type="date" id="hdDate" style="width:160px"></div>
     <div><label>시간대</label>
       <select id="hdSeg" style="width:130px">
         <option value="">하루 전체</option>
-        <option value="0">00:00 – 06:00</option>
-        <option value="1">06:00 – 12:00</option>
-        <option value="2">12:00 – 18:00</option>
-        <option value="3">18:00 – 24:00</option>
+        <option value="0">00:00 ~ 06:00</option>
+        <option value="1">06:00 ~ 12:00</option>
+        <option value="2">12:00 ~ 18:00</option>
+        <option value="3">18:00 ~ 24:00</option>
       </select>
     </div>
     <button class="btn primary" id="hdPreviewBtn" style="margin:0">미리보기</button>
@@ -366,16 +452,17 @@ details.collapsible .body{padding:12px}
   <div id="hdResult" style="margin-top:18px"></div>
 </section></div>
 <div class="panel" data-panel="raw"><section>
-  <h2>Raw JSON 에디터</h2><div class="muted" style="margin-bottom:10px">UI 에디터가 없는 키(Item, Equipment 등) 직접 편집용. 잘못 저장하면 게임 로직이 깨질 수 있으니 주의하세요.</div>
+  <h2>Raw JSON</h2>
   <div class="bar"><select id="rawKey" class="grow"></select><button class="btn" id="rawReload">불러오기</button><button class="btn" id="rawFormat">정렬</button><button class="btn primary" id="rawSave">저장</button><span class="muted" id="rawStatus"></span></div>
   <textarea id="rawText" spellcheck="false" placeholder="키를 선택하고 불러오기를 눌러주세요."></textarea>
 </section></div>
 
 </main>
+</div>
 
 <div class="modal-bg" id="modal"><div class="modal">
   <h3 id="modalTitle">선택</h3>
-  <div class="search"><input id="modalSearch" placeholder="검색..." autocomplete="off"></div>
+  <div class="search"><input id="modalSearch" placeholder="검색" autocomplete="off"></div>
   <div class="body" id="modalBody"></div>
   <div class="foot"><button class="btn" id="modalClose">취소</button></div>
 </div></div>

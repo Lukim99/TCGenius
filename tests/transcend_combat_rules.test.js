@@ -89,13 +89,23 @@ try {
     assert.strictEqual(hpCostCooldownSkill.hpAfter, undefined, '검은 잔향 4세트는 12초 쿨타임 중 HP를 다시 소모하면 안 된다.');
     assert.strictEqual(hpCostCooldownSkill.shadowDamageRate, undefined, '검은 잔향 4세트는 12초 쿨타임 중 그림자를 다시 발동하면 안 된다.');
 
-    const blackEchoShoes = makeMember('검은 잔향 신발', [{ name: '검은 잔향 신발', stage: 1 }]);
+    const blackEchoShoes = makeMember('검은 잔향 신발', [{ name: '검은 잔향 신발', stage: 3 }]);
+    blackEchoShoes.baseSnapshot.elementChain = { rest: '암' };
     const firstBlackEchoShoes = party.preparePartyTranscendSkill(blackEchoShoes, '첫 스킬', false, {});
+    assert.strictEqual(firstBlackEchoShoes.state.ignoreHealingUntil, undefined, '검은 잔향 신발은 회복을 무시하면 안 된다.');
+    assert.strictEqual(firstBlackEchoShoes.state.blackEchoShoesBuff.value, .13);
+    assert.strictEqual(firstBlackEchoShoes.state.blackEchoShoesReadyAt, firstBlackEchoShoes.state.blackEchoShoesBuff.expiredAt,
+        '장비 지속시간·쿨타임 보정이 없으면 효과와 쿨타임은 60초로 같아야 한다.');
     blackEchoShoes.runtime.equipmentState = firstBlackEchoShoes.state;
     const secondBlackEchoShoes = party.preparePartyTranscendSkill(blackEchoShoes, '다음 스킬', false, {});
     assert.strictEqual(secondBlackEchoShoes.state.blackEchoShoesReadyAt, firstBlackEchoShoes.state.blackEchoShoesReadyAt,
-        '검은 잔향 신발은 10초 쿨타임 중 효과를 갱신하면 안 된다.');
-    assert.strictEqual(secondBlackEchoShoes.state.darkAttackBuff.expiredAt, firstBlackEchoShoes.state.darkAttackBuff.expiredAt);
+        '검은 잔향 신발은 60초 쿨타임 중 효과를 갱신하면 안 된다.');
+    assert.strictEqual(secondBlackEchoShoes.state.blackEchoShoesBuff.expiredAt, firstBlackEchoShoes.state.blackEchoShoesBuff.expiredAt);
+    const blackEchoTarget = { name: '대상', type: 'boss', hp: 1000, hpMax: 1000, def: 0, stats: { def: 0 }, debuffs: [] };
+    const blackEchoDarkAttack = party.calculateOutgoingDamage(blackEchoShoes, blackEchoTarget, {}, 100, { skillElement: '암', disableCritical: true });
+    const blackEchoLightAttack = party.calculateOutgoingDamage(blackEchoShoes, blackEchoTarget, {}, 100, { skillElement: '명', disableCritical: true });
+    assert.strictEqual(blackEchoDarkAttack.extraDamageDealt, 13, '검은 잔향 신발은 암속성 공격에만 3단계 추가 피해 13%를 적용해야 한다.');
+    assert.strictEqual(blackEchoLightAttack.extraDamageDealt, 0, '검은 잔향 신발은 다른 속성 공격에 추가 피해를 적용하면 안 된다.');
 
     const abyssShoes = makeMember('심연의 신발', [{ name: '심연의 신발', stage: 1 }]);
     const abyssSkill = party.preparePartyTranscendSkill(abyssShoes, '스킬', false, {});

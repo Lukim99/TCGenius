@@ -412,7 +412,9 @@ let rpgeniusDataLoadPromise = null;
 async function loadRpgeniusDataEntry(key) {
     const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
-        rpgeniusDataCache[key] = res.Item.data;
+        rpgeniusDataCache[key] = key == 'Equipment'
+            ? transcendEquipment.applyEquipmentBalancePatch(res.Item.data)
+            : res.Item.data;
         return true;
     }
     return false;
@@ -3251,6 +3253,10 @@ function calculateUserStats(user, _out) {
         addStats(plusStats, titleDef.plusStat || {});
     }
     applyPotentialDerivedStats(stats, user);
+    if (Number(stats.blackEchoArmorDarkAtkRate || 0) > 0) {
+        stats.darkAtk = Number(stats.darkAtk || 0) + Number(stats.darkRes || 0) * Number(stats.blackEchoArmorDarkAtkRate);
+        delete stats.blackEchoArmorDarkAtkRate;
+    }
     // 칭호: 강화 1강 당 공격력 — 기본 공격력에 가산하여 공격력% 증폭을 함께 받도록 % 연산 이전에 적용
     if (titleDef && titleDef.specialEffect && titleDef.specialEffect.type == 'atkPerEnhanceLevel') {
         stats.atk = Number(stats.atk || 0) + Number(titleDef.specialEffect.value || 0) * getEquippedWeaponEnhanceLevel(user);
@@ -4145,12 +4151,18 @@ function applyTranscendEquipmentStats(user, stats, plusStats) {
             }
             case '블러디 슈즈': stats.bloodyShoesExtraDamage = v(.12, .03); break;
             case '블라디미르': stats.vladimirExtraDamage = .20; break;
+            case '검은 잔향 갑옷': {
+                const definedDarkRes = Number(data.stat && data.stat.darkRes || 0);
+                if (definedDarkRes < 100) add(stats, { darkRes: 100 - definedDarkRes });
+                stats.blackEchoArmorDarkAtkRate = v(.20, .10);
+                break;
+            }
             case '검은 잔향 하의': stats.blackEchoSkillDamage = v(.10, .03); break;
-            case '777 목걸이': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { extraDamage: .07 }); break;
+            case '777 목걸이': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { extraDamage: .77 }); break;
             case '777 반지': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { crit: v(.07, .07) }); break;
             case '777 팔찌': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { pntPercent: v(.07, .07) }); break;
-            case '777 장갑': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { atk: v(77, 77) }); break;
-            case '행운의 장갑': if (Number(user.main_card && user.main_card.star) == 6) add(plusStats, { atk: .77 }); break;
+            case '777 장갑': if (Number(user.main_card && user.main_card.star) == 6) add(stats, { atk: v(777, 77) }); break;
+            case '행운의 장갑': if (Number(user.main_card && user.main_card.star) == 6) { add(stats, { atk: 777 }); add(plusStats, { atk: .77 }); } break;
         }
     });
 
@@ -5802,9 +5814,6 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     if (stageOf('천공의 갑옷') && extra.attackElement == '명') {
         extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + stepValue('천공의 갑옷', .20, .05);
     }
-    if (stageOf('검은 잔향 갑옷') && Date.now() < Number(state.ignoreHealingUntil || 0)) {
-        extra.receivedDamageReduction = Number(extra.receivedDamageReduction || 0) + stepValue('검은 잔향 갑옷', .12, .03);
-    }
     if (stageOf('심연의 신발') && currentHpRatio <= .50 && state.abyssBuff && Date.now() < Number(state.abyssBuff.expiredAt || 0)) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .08;
     }
@@ -5850,6 +5859,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
     }
 
     if (state.darkAttackBuff && Date.now() < Number(state.darkAttackBuff.expiredAt || 0) && extra.attackElement == '암') extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(state.darkAttackBuff.value || 0);
+    if (state.blackEchoShoesBuff && Date.now() < Number(state.blackEchoShoesBuff.expiredAt || 0) && extra.attackElement == '암') extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(state.blackEchoShoesBuff.value || 0);
     if (user.field.sunata && Date.now() < Number(user.field.sunata.expired_at || 0) && !(extra && extra.summonAttack)) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(user.field.sunata.buff || 0) * (1 + Number(stats.attackBuffEfficiency || 0));
     }
@@ -6306,9 +6316,8 @@ function prepareTranscendSkillEffects(user, skill, stats) {
         state.deepWaterAttackBuff = { value: .08, expiredAt: now + equipmentDurationMs(6) };
     }
     if (stage('검은 잔향 신발') && now >= Number(state.blackEchoShoesReadyAt || 0)) {
-        state.ignoreHealingUntil = now + equipmentDurationMs(5);
-        state.darkAttackBuff = { value: value('검은 잔향 신발', .15, .04), expiredAt: now + equipmentDurationMs(10) };
-        state.blackEchoShoesReadyAt = now + equipmentCooldownMs(10);
+        state.blackEchoShoesBuff = { value: value('검은 잔향 신발', .07, .03), expiredAt: now + equipmentDurationMs(60) };
+        state.blackEchoShoesReadyAt = now + equipmentCooldownMs(60);
     }
     if (getEquippedSetCount(user, '검은 잔향') >= 4 && now >= Number(state.blackEchoSetReadyAt || 0)) {
         spendCurrentHpRate(.02);

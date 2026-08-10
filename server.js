@@ -3003,6 +3003,73 @@ server.post('/api/admin/hotdeal/override/reset', requireAdmin, async (req, res) 
     }
 });
 
+// 패키지 등록: 번들 생성 -> 개봉 아이템 생성(번들 연결) -> 상점 등록을 한 번에 처리
+server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const name = String(b.name || '').trim();
+        const desc = String(b.desc || '');
+        const rewards = Array.isArray(b.rewards) ? b.rewards : [];
+        const shopType = String(b.shopType || '').trim();
+        const price = b.price || {};
+        const goods = String(price.goods || 'garnet');
+        const amount = Math.floor(Number(price.amount));
+        if (!name) return res.status(400).json({ error: '패키지 이름을 입력하세요.' });
+        if (rewards.length < 1 || rewards.length > 10) return res.status(400).json({ error: '구성 보상은 1~10개여야 합니다.' });
+        if (!['gold', 'garnet', 'point', 'mileage'].includes(goods)) return res.status(400).json({ error: '잘못된 결제 수단입니다.' });
+        if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: '가격을 입력하세요.' });
+
+        await rpgenius.loadRpgeniusDataEntry('Bundle');
+        await rpgenius.loadRpgeniusDataEntry('Item');
+        await rpgenius.loadRpgeniusDataEntry('Shop');
+        const items = rpgenius.getDataCache('Item', []) || [];
+        const shop = rpgenius.getDataCache('Shop', {}) || {};
+        if (!Array.isArray(shop[shopType])) return res.status(400).json({ error: '존재하지 않는 상점 종류: ' + shopType });
+
+        const REWARD_KINDS = ['골드', '가넷', '포인트', '마일리지', '아이템'];
+        const bundleEntries = [];
+        for (const r of rewards) {
+            const type = String(r.type || '');
+            const count = Math.floor(Number(r.count));
+            if (!REWARD_KINDS.includes(type)) return res.status(400).json({ error: '지원하지 않는 보상 타입: ' + type });
+            if (!Number.isFinite(count) || count <= 0) return res.status(400).json({ error: '보상 수량이 잘못되었습니다.' });
+            const entry = { type, count: { min: count, max: count } };
+            if (type === '아이템') {
+                const itemId = Number(r.item_id);
+                if (!items[itemId]) return res.status(400).json({ error: '존재하지 않는 아이템: #' + r.item_id });
+                entry.item_id = itemId;
+            }
+            bundleEntries.push(entry);
+        }
+
+        const bundles = rpgenius.getDataCache('Bundle', []) || [];
+        bundles.push(bundleEntries);
+        const bundleIndex = bundles.length - 1;
+        await rpgenius.saveRpgeniusDataEntry('Bundle', bundles);
+
+        const newItem = { name, type: '번들', desc, pack: bundleIndex };
+        if (b.noTrade) newItem.no_trade = true;
+        items.push(newItem);
+        const itemIndex = items.length - 1;
+        await rpgenius.saveRpgeniusDataEntry('Item', items);
+
+        const shopEntry = { type: '아이템', item_id: itemIndex, count: 1, price: { goods, amount } };
+        const limits = {};
+        ['max', 'daily', 'weekly', 'monthly', 'global'].forEach(k => {
+            const v = Math.floor(Number(b.limits && b.limits[k]));
+            if (Number.isFinite(v) && v > 0) limits[k] = v;
+        });
+        if (Object.keys(limits).length) shopEntry.limits = limits;
+        shop[shopType].push(shopEntry);
+        await rpgenius.saveRpgeniusDataEntry('Shop', shop);
+
+        res.json({ ok: true, bundleIndex, itemIndex, shopType, shopIndex: shop[shopType].length - 1 });
+    } catch (e) {
+        console.error('package create error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
 server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
     const scope = String((req.body && req.body.scope) || '').trim();
     const shopType = String((req.body && req.body.shopType) || '').trim();
