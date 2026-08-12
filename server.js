@@ -6090,6 +6090,10 @@ function renderPartyApp(sess) {
 
   <div class="pq-notice-stack" id="pqNoticeStack"></div>
   <div class="pq-toast" id="pqToast"></div>
+  <div class="pq-intro" id="pqIntro">
+    <div class="pq-intro-quest" id="pqIntroQuest"></div>
+    <div class="pq-intro-count" id="pqIntroCount"></div>
+  </div>
 </div>
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
 <script src="/static/party.js"></script>

@@ -390,10 +390,53 @@
         } catch (e) { toast(e.message); }
     }
 
+    // ====== 전투 시작 연출 ======
+    // 대기방→전투 전환에서만 발동 (전투 중 새로고침/재접속은 제외). pointer-events:none 순수 연출이라 입력 손실 없음.
+    let lastRoomState = null;
+    let introTimer = null;
+
+    function hideBattleIntro() {
+        clearTimeout(introTimer);
+        introTimer = null;
+        const root = $('#pqIntro');
+        if (root) root.classList.remove('active');
+    }
+
+    function playBattleIntro(snap) {
+        const root = $('#pqIntro');
+        if (!root) return;
+        clearTimeout(introTimer);
+        $('#pqIntroQuest').textContent = snap.questName || '파티 퀘스트';
+        const count = $('#pqIntroCount');
+        root.classList.add('active');
+        const seq = ['3', '2', '1', '전투 개시'];
+        let i = 0;
+        const step = () => {
+            if (i >= seq.length) { hideBattleIntro(); return; }
+            const v = seq[i++];
+            count.textContent = v;
+            count.classList.toggle('start', v === '전투 개시');
+            count.classList.remove('pop');
+            void count.offsetWidth;
+            count.classList.add('pop');
+            introTimer = setTimeout(step, v === '전투 개시' ? 950 : 800);
+        };
+        // 페이드 인(.45s)이 자리잡은 뒤 카운트 시작
+        introTimer = setTimeout(step, 450);
+    }
+
+    function maybePlayIntro(snap) {
+        const prev = lastRoomState;
+        lastRoomState = snap ? snap.state : null;
+        if (!snap) return;
+        if (snap.state === 'inProgress' && (prev === 'lobby' || prev === 'preparing')) playBattleIntro(snap);
+    }
+
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
         currentRoom = snap;
         localBuffTickAt = Date.now();
+        maybePlayIntro(snap);
         $('#pqRoomQuestName').textContent = snap.questName || '';
         renderQuestInfo(snap);
         renderMembers(snap);
@@ -1457,6 +1500,8 @@
         try { await api('/api/party/leave', { method: 'POST', body: JSON.stringify({}) }); } catch (_) {}
         closeStream();
         stopLocalCdTimer();
+        hideBattleIntro();
+        lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
         skillBarSig = '';
         potionBarSig = '';
