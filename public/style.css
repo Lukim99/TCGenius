@@ -259,15 +259,10 @@ h2{margin:0 0 16px;font-size:16px;font-weight:700;letter-spacing:.01em;color:var
 .pf-power{display:inline-flex;align-items:center;gap:12px;align-self:flex-start;margin-top:4px;padding:11px 20px;border-radius:var(--radius);background:var(--accent-dim);border:1px solid rgba(232,176,75,.32)}
 .pf-power-label{font-size:11px;font-weight:700;letter-spacing:.1em;color:#f0cd87}.pf-power b{font-size:26px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1}
 .pf-pets{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}.pf-pets:empty{display:none}
-.pf-pet-tile{display:flex;flex-direction:column;align-items:center;gap:6px;width:118px;padding:12px 8px 10px;border:1px solid rgba(255,255,255,.14);border-radius:var(--radius);background:rgba(13,15,19,.6);cursor:pointer;transition:border-color .15s,background .15s;color:var(--text)}
-.pf-pet-tile:hover{border-color:var(--border-strong);background:rgba(13,15,19,.85)}
-.pf-pet-thumb-wrap{position:relative}
+.pf-pet-tile{display:flex;flex-direction:column;align-items:center;gap:7px;width:76px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--text);transition:filter .15s}
+.pf-pet-tile:hover{filter:brightness(1.12)}
 .pf-pet-tile .equip-thumb{width:64px;height:64px;background:transparent}
-.pf-pet-tile-lv{position:absolute;right:-10px;top:-6px;z-index:3;padding:2px 7px;border-radius:5px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
-.pf-pet-tile-name{max-width:100%;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pf-pet-tile-meta{display:flex;align-items:center;gap:4px;min-height:18px}
-.pf-pet-tile-meta .tag{margin-right:0}
-.pf-pet-tile-exp{font-size:10.5px;color:var(--text-2)}
+.pf-pet-tile-name{max-width:100%;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.8)}
 .pf-pet-tile.expired{opacity:.55}
 .pf-body{position:relative;z-index:1;max-width:1240px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:18px;padding:24px 30px 40px}
 .pf-tabs{display:flex;gap:6px;flex-wrap:wrap;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);padding:6px}

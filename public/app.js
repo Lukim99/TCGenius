@@ -841,17 +841,9 @@ function petCardThumb(pet) {
 }
 
 function profilePetTile(pet) {
-    const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
     return el('button', { class: 'pf-pet-tile' + (pet.expired ? ' expired' : ''), type: 'button', onclick: () => openPetModal(pet) },
-        el('div', { class: 'pf-pet-thumb-wrap' },
-            petCardThumb(pet),
-            pet.level > 0 ? el('span', { class: 'pf-pet-tile-lv' }, '+' + pet.level) : null
-        ),
-        el('div', { class: 'pf-pet-tile-name' }, pet.name),
-        el('div', { class: 'pf-pet-tile-meta' },
-            rarityTag(pet.rarity),
-            expText ? el('span', { class: 'pf-pet-tile-exp' }, expText) : null
-        )
+        petCardThumb(pet),
+        el('div', { class: 'pf-pet-tile-name' }, pet.name)
     );
 }
 
