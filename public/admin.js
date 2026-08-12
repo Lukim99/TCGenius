@@ -2543,7 +2543,6 @@ TAB_LOADERS.raw = () => rawLoad();
 // ============================================================================
 const bcGifts = [];
 const BC_MAX = 10;
-const EQUIP_TYPE_LABEL = { weapon: '무기', armor: '갑옷', accessory: '장신구', support: '보조' };
 
 function bcGiftLabel(g) {
     if (g.type === 'gold') return '골드 ' + (Number(g.amount) || 0);
@@ -2551,7 +2550,7 @@ function bcGiftLabel(g) {
     if (g.type === 'point') return (Number(g.amount) || 0) + 'P';
     if (g.type === 'item') return (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
     if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
-    if (g.type === 'equipment') return (g.equipName || (EQUIP_TYPE_LABEL[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
+    if (g.type === 'equipment') return (g.equipName || (EQUIPMENT_SLOT_LABELS[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
     if (g.type === 'pet') return (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
     return '?';
 }
@@ -2586,7 +2585,7 @@ function renderBcGifts() {
             row.appendChild(el('div', null, el('label', null, '종류'), sel));
         } else if (g.type === 'equipment') {
             const typeSel = el('select', { onchange: e => { g.equipType = e.target.value; g.id = undefined; g.equipName = ''; renderBcGifts(); } },
-                ...['weapon', 'armor', 'accessory', 'support'].map(t => el('option', { value: t }, EQUIP_TYPE_LABEL[t])));
+                ...Object.keys(EQUIPMENT_SLOT_LABELS).map(t => el('option', { value: t }, EQUIPMENT_SLOT_LABELS[t])));
             typeSel.value = g.equipType || 'weapon';
             row.appendChild(el('div', null, el('label', null, '부위'), typeSel));
             row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '장비'),
