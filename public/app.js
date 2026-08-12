@@ -5921,22 +5921,34 @@ function dexDescriptionData(text, cooltime) {
     };
     const cooldownMs = Number(cooltime || 0);
     if (cooldownMs > 0) addCooldown(cooldownMs % 60000 === 0 ? cooldownMs / 60000 + '분' : Math.round(cooldownMs / 1000) + '초');
-    value = value.replace(/\(?\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)\s*\)?/g, (full, amount, unit) => {
+    value = value.replace(/\(?\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)(?!\s*(?:을|를)?\s*(?:감소|증가|연장|단축))\s*\)?/g, (full, amount, unit) => {
         addCooldown(amount + unit);
         return '';
     });
     value = value.replace(/,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s+([,.!?])/g, '$1').replace(/([,.!?]){2,}/g, '$1');
-    const lines = value
+    const fragments = value
         .replace(/([.!?])\s+/g, '$1\n')
         .replace(/,\s+/g, ',\n')
         .split('\n')
         .map(line => line.trim().replace(/^[,.!?]\s*/, '').replace(/\s*[,.!?]$/, ''))
         .filter(Boolean);
+    const lines = fragments.reduce((result, line) => {
+        const previous = result[result.length - 1];
+        const continuation = /(?:후|뒤|동안|경우|때|고|며|면서|거나|하여|해서|하되)$/.test(previous || '')
+            || /^(?:최대|최소)\s*\d+(?:\.\d+)?(?:%|초|분|회|개|중첩|단계)?(?:까지)?\s*(?:감소|증가|적용|회복|제한)$/.test(line);
+        if (previous && continuation) {
+            result[result.length - 1] = previous + ', ' + line;
+        } else {
+            result.push(line);
+        }
+        return result;
+    }, []);
     return { lines, cooldowns };
 }
 
 function dexEffectLabel(line) {
     if (/회복|보호막|회복량/.test(line)) return '회복·보호';
+    if (/쿨타임|재사용 대기시간/.test(line)) return '쿨타임';
     if (/저항|방어력|받는 피해|회피|감소/.test(line)) return '방어';
     if (/공격|피해|치명타|관통|연격|속성 강화|화상/.test(line)) return '공격';
     if (/조건|이하|이상|장착|사용 시|적중 시|발동 시/.test(line)) return '조건';
@@ -5950,8 +5962,8 @@ function dexEffectList(text, cooltime) {
         dexRichText(line)
     ));
     data.cooldowns.forEach(cooldown => rows.push(el('div', { class: 'dex-detail-effect-row cooldown' },
-        el('span', { class: 'dex-detail-effect-kind' }, '재사용'),
-        el('span', { class: 'dex-detail-rich' }, '대기시간 ', el('strong', null, cooldown))
+        el('span', { class: 'dex-detail-effect-kind' }, '쿨타임'),
+        el('span', { class: 'dex-detail-rich' }, el('strong', null, cooldown))
     )));
     return el('div', { class: 'dex-detail-effects' }, ...rows);
 }
