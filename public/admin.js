@@ -461,6 +461,9 @@ async function saveKey(key, data) { await api('/api/data/' + encodeURIComponent(
 // 메인 배너
 // ============================================================================
 let bannerData = [];
+let bannerTargetTabs = [];
+let bannerDirty = false;
+let bannerSaving = false;
 
 function formatFileSize(bytes) {
     const size = Number(bytes || 0);
@@ -469,14 +472,75 @@ function formatFileSize(bytes) {
     return (size / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function isValidBannerTargetUrl(value) {
+    const url = String(value || '').trim();
+    if (!url || url.length > 1000 || /[\x00-\x1f\x7f]/.test(url)) return false;
+    if (/^\/(?![\\/])/.test(url)) return true;
+    try {
+        const parsed = new URL(url);
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
+    } catch (_) {
+        return false;
+    }
+}
+
+function updateBannerStatus(message) {
+    $('#bannerStatus').textContent = message || (bannerData.length + '개' + (bannerDirty ? ' · 저장 필요' : ''));
+    $('#bannerSave').disabled = !bannerDirty || bannerSaving;
+}
+
+function markBannerDirty() {
+    bannerDirty = true;
+    updateBannerStatus();
+}
+
+function moveBanner(index, offset) {
+    const nextIndex = index + offset;
+    if (nextIndex < 0 || nextIndex >= bannerData.length) return;
+    const moved = bannerData.splice(index, 1)[0];
+    bannerData.splice(nextIndex, 0, moved);
+    markBannerDirty();
+    renderBanners();
+}
+
 function renderBanners() {
     const list = $('#bannerList');
     list.replaceChildren();
     if (!bannerData.length) {
         list.appendChild(el('div', { class: 'empty' }, '등록된 배너가 없습니다.'));
+        updateBannerStatus();
         return;
     }
-    bannerData.forEach(item => {
+    bannerData.forEach((item, index) => {
+        const up = el('button', { class: 'btn sm', type: 'button', disabled: index === 0, 'aria-label': '위로 이동' }, '↑ 위로');
+        const down = el('button', { class: 'btn sm', type: 'button', disabled: index === bannerData.length - 1, 'aria-label': '아래로 이동' }, '↓ 아래로');
+        up.onclick = () => moveBanner(index, -1);
+        down.onclick = () => moveBanner(index, 1);
+
+        const targetSelect = el('select', { 'aria-label': (item.originalName || '배너') + ' 클릭 시 이동할 탭' },
+            ...bannerTargetTabs.map(target => el('option', { value: target.value }, target.label))
+        );
+        const targetUrlInput = el('input', {
+            class: 'banner-admin-url',
+            type: 'text',
+            inputMode: 'url',
+            placeholder: 'https://example.com 또는 /내부경로',
+            value: item.targetUrl || '',
+            hidden: item.targetTab !== 'custom-url',
+            'aria-label': (item.originalName || '배너') + ' 커스텀 URL'
+        });
+        targetSelect.value = item.targetTab || '';
+        targetSelect.onchange = () => {
+            item.targetTab = targetSelect.value;
+            targetUrlInput.hidden = item.targetTab !== 'custom-url';
+            if (!targetUrlInput.hidden) setTimeout(() => targetUrlInput.focus(), 0);
+            markBannerDirty();
+        };
+        targetUrlInput.oninput = () => {
+            item.targetUrl = targetUrlInput.value;
+            markBannerDirty();
+        };
+
         const remove = el('button', { class: 'btn sm danger', type: 'button' }, '삭제');
         remove.onclick = async () => {
             if (!(await showConfirm("'" + (item.originalName || '배너') + "'을(를) 삭제할까요?"))) return;
@@ -484,6 +548,7 @@ function renderBanners() {
             try {
                 await api('/api/admin/banners/' + encodeURIComponent(item.id), { method: 'DELETE' });
                 bannerData = bannerData.filter(entry => entry.id !== item.id);
+                if (!bannerData.length) bannerDirty = false;
                 renderBanners();
                 toast('✅ 배너를 삭제했습니다.');
             } catch (e) {
@@ -493,6 +558,10 @@ function renderBanners() {
         };
         const created = item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '';
         list.appendChild(el('div', { class: 'banner-admin-card' },
+            el('div', { class: 'banner-admin-order' },
+                el('span', { class: 'banner-admin-number' }, '#' + (index + 1)),
+                el('div', { class: 'banner-admin-move' }, up, down)
+            ),
             el('img', { src: item.imageUrl, alt: item.originalName || '배너' }),
             el('div', { class: 'banner-admin-meta' },
                 el('div', { style: { minWidth: '0', flex: '1' } },
@@ -500,21 +569,60 @@ function renderBanners() {
                     el('div', { class: 'banner-admin-sub' }, [formatFileSize(item.size), created].filter(Boolean).join(' · '))
                 ),
                 remove
+            ),
+            el('div', { class: 'banner-admin-settings' },
+                el('label', null, '클릭 시 이동'),
+                targetSelect,
+                targetUrlInput
             )
         ));
     });
+    updateBannerStatus();
 }
 
 async function loadBanners() {
-    $('#bannerStatus').textContent = '불러오는 중...';
+    updateBannerStatus('불러오는 중...');
     try {
         const data = await api('/api/admin/banners');
         bannerData = Array.isArray(data.items) ? data.items : [];
+        bannerTargetTabs = Array.isArray(data.targetTabs) ? data.targetTabs : [];
+        bannerDirty = false;
         renderBanners();
-        $('#bannerStatus').textContent = bannerData.length + '개';
     } catch (e) {
         $('#bannerStatus').textContent = '';
         toast(e.message, false);
+    }
+}
+
+async function saveBannerSettings(showSuccess = true) {
+    if (!bannerDirty) return true;
+    const invalidUrlItem = bannerData.find(item => item.targetTab === 'custom-url' && !isValidBannerTargetUrl(item.targetUrl));
+    if (invalidUrlItem) {
+        toast('커스텀 URL은 http://, https:// 또는 /로 시작하는 내부 경로를 입력해 주세요.', false);
+        return false;
+    }
+    bannerSaving = true;
+    updateBannerStatus('저장 중...');
+    try {
+        const data = await api('/api/admin/banners', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: bannerData.map(item => ({
+                id: item.id,
+                targetTab: item.targetTab || '',
+                targetUrl: item.targetTab === 'custom-url' ? String(item.targetUrl || '').trim() : ''
+            })) })
+        });
+        bannerData = Array.isArray(data.items) ? data.items : bannerData;
+        bannerDirty = false;
+        if (showSuccess) toast('✅ 배너 순서와 이동 탭을 저장했습니다.');
+        return true;
+    } catch (e) {
+        toast(e.message, false);
+        return false;
+    } finally {
+        bannerSaving = false;
+        renderBanners();
     }
 }
 
@@ -528,6 +636,7 @@ $('#bannerUpload').onclick = async () => {
     button.disabled = true;
     $('#bannerStatus').textContent = '업로드 중...';
     try {
+        if (bannerDirty && !(await saveBannerSettings(false))) return;
         const response = await fetch('/api/admin/banners', {
             method: 'POST',
             headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name) },
@@ -545,7 +654,11 @@ $('#bannerUpload').onclick = async () => {
         button.disabled = false;
     }
 };
-$('#bannerReload').onclick = loadBanners;
+$('#bannerSave').onclick = () => saveBannerSettings();
+$('#bannerReload').onclick = async () => {
+    if (bannerDirty && !(await showConfirm('저장하지 않은 변경사항을 버리고 다시 불러올까요?'))) return;
+    loadBanners();
+};
 TAB_LOADERS.banner = loadBanners;
 
 // ============================================================================

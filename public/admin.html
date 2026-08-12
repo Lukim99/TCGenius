@@ -227,12 +227,19 @@ details.collapsible .body{padding:12px}
 .hd-prev-icon{width:48px;height:48px;object-fit:contain}
 .hd-prev-name{font-size:12px;font-weight:600;color:var(--fg);text-align:center;line-height:1.3}
 .hd-prev-price{font-size:11px;font-weight:600;color:var(--mut);text-align:center}
-.banner-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:16px}
+.banner-admin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:16px}
 .banner-admin-card{overflow:hidden;background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r)}
 .banner-admin-card img{display:block;width:100%;aspect-ratio:16/5;object-fit:contain;background:var(--bg)}
 .banner-admin-meta{display:flex;align-items:center;gap:10px;padding:11px 12px}
 .banner-admin-name{min-width:0;flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .banner-admin-sub{font-size:11px;color:var(--mut2);margin-top:2px}
+.banner-admin-order{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--bd)}
+.banner-admin-number{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;padding:0 8px;border-radius:999px;background:var(--acc-dim);color:var(--acc);font-size:11.5px;font-weight:700}
+.banner-admin-move{display:flex;gap:5px}
+.banner-admin-settings{padding:0 12px 12px;border-top:1px solid var(--bd)}
+.banner-admin-settings label{margin-top:10px}
+.banner-admin-url{margin-top:8px}
+.banner-admin-help{margin:-4px 0 12px;color:var(--mut2);font-size:11.5px}
 @media(max-width:640px){.banner-admin-grid{grid-template-columns:1fr}.banner-admin-meta{align-items:flex-start}}
 /* 공통 메시지 모달 (alert/confirm/prompt 대체) */
 .msg-modal-bg{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
@@ -353,9 +360,11 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="banner"><section>
   <h2>메인 배너</h2>
+  <p class="banner-admin-help">표시 순서를 조정하고, 배너 클릭 시 이동할 탭을 선택한 뒤 설정을 저장하세요.</p>
   <div class="bar">
     <input id="bannerFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="flex:1;min-width:220px">
     <button class="btn primary" id="bannerUpload">배너 추가</button>
+    <button class="btn primary" id="bannerSave" disabled>설정 저장</button>
     <button class="btn" id="bannerReload">다시 불러오기</button>
     <span class="muted" id="bannerStatus"></span>
   </div>

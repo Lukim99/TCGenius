@@ -51,6 +51,28 @@ const BANNER_TYPES = {
     'image/webp': 'webp',
     'image/gif': 'gif'
 };
+const BANNER_TARGET_TABS = [
+    { value: '', label: '이동하지 않음' },
+    { value: 'custom-url', label: '커스텀 URL' },
+    { value: 'chat', label: '채팅' },
+    { value: 'info', label: '캐릭터 · 정보' },
+    { value: 'inventory', label: '캐릭터 · 인벤토리' },
+    { value: 'mail', label: '캐릭터 · 메일함' },
+    { value: '펀치기계', label: '콘텐츠 · 펀치기계' },
+    { value: '버닝', label: '콘텐츠 · 버닝' },
+    { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
+    { value: 'combine', label: '콘텐츠 · 조합' },
+    { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
+    { value: 'dex', label: '콘텐츠 · 도감' },
+    { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
+    { value: 'shop', label: '거래 · 상점' },
+    { value: 'auction', label: '거래 · 팝니다' },
+    { value: 'buyorder', label: '거래 · 삽니다' },
+    { value: 'ranking', label: '커뮤니티 · 랭킹' },
+    { value: 'patchnotes', label: '커뮤니티 · 패치노트' },
+    { value: 'party', label: '파티퀘스트' }
+];
+const BANNER_TARGET_VALUES = new Set(BANNER_TARGET_TABS.map(item => item.value));
 const bannerS3 = new AWS.S3({
     region: process.env.AWS_REGION || 'ap-northeast-2',
     credentials: new AWS.Credentials({
@@ -271,7 +293,25 @@ function isValidBannerImage(buffer, contentType) {
 
 function normalizeBannerList(data) {
     if (!Array.isArray(data)) return [];
-    return data.filter(entry => entry && typeof entry.id == 'string' && typeof entry.key == 'string' && entry.key.startsWith(BANNER_PREFIX));
+    return data
+        .filter(entry => entry && typeof entry.id == 'string' && typeof entry.key == 'string' && entry.key.startsWith(BANNER_PREFIX))
+        .map(entry => {
+            const targetUrl = normalizeBannerTargetUrl(entry.targetUrl);
+            let targetTab = BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : '';
+            if (targetTab == 'custom-url' && !targetUrl) targetTab = '';
+            return Object.assign({}, entry, { targetTab, targetUrl });
+        });
+}
+
+function normalizeBannerTargetUrl(value) {
+    const url = String(value || '').trim();
+    if (!url || url.length > 1000 || /[\x00-\x1f\x7f]/.test(url)) return '';
+    if (/^\/(?![\\/])/.test(url)) return url;
+    try {
+        const parsed = new URL(url);
+        if ((parsed.protocol == 'http:' || parsed.protocol == 'https:') && !parsed.username && !parsed.password) return parsed.href;
+    } catch (_) {}
+    return '';
 }
 
 async function loadBannerList() {
@@ -283,8 +323,10 @@ async function loadBannerList() {
 function serializeBanner(entry, admin) {
     const result = {
         id: entry.id,
-        imageUrl: '/api/banners/' + encodeURIComponent(entry.id) + '/image'
+        imageUrl: '/api/banners/' + encodeURIComponent(entry.id) + '/image',
+        targetTab: BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : ''
     };
+    if (result.targetTab == 'custom-url') result.targetUrl = normalizeBannerTargetUrl(entry.targetUrl);
     if (admin) {
         result.originalName = entry.originalName || '';
         result.contentType = entry.contentType || '';
@@ -612,10 +654,42 @@ server.get('/api/banners/:id/image', requireUser, async (req, res) => {
 server.get('/api/admin/banners', requireAdmin, async (req, res) => {
     try {
         const banners = await loadBannerList();
-        res.json({ items: banners.map(entry => serializeBanner(entry, true)) });
+        res.json({
+            items: banners.map(entry => serializeBanner(entry, true)),
+            targetTabs: BANNER_TARGET_TABS
+        });
     } catch (e) {
         console.error('admin banner list error:', e);
         res.status(500).json({ error: '배너를 불러오지 못했습니다.' });
+    }
+});
+
+server.put('/api/admin/banners', requireAdmin, async (req, res) => {
+    try {
+        const items = req.body && req.body.items;
+        if (!Array.isArray(items)) return res.status(400).json({ error: '저장할 배너 목록이 필요합니다.' });
+
+        const banners = await loadBannerList();
+        const byId = new Map(banners.map(entry => [entry.id, entry]));
+        const requestedIds = items.map(item => item && String(item.id || ''));
+        const uniqueIds = new Set(requestedIds);
+        if (items.length !== banners.length || uniqueIds.size !== items.length || requestedIds.some(id => !byId.has(id))) {
+            return res.status(409).json({ error: '배너 목록이 변경되었습니다. 다시 불러온 뒤 저장해 주세요.' });
+        }
+        const invalidTarget = items.find(item => !item || typeof item.targetTab !== 'string' || !BANNER_TARGET_VALUES.has(item.targetTab));
+        if (invalidTarget) return res.status(400).json({ error: '선택할 수 없는 이동 탭이 포함되어 있습니다.' });
+        const invalidUrl = items.find(item => item.targetTab == 'custom-url' && !normalizeBannerTargetUrl(item.targetUrl));
+        if (invalidUrl) return res.status(400).json({ error: '커스텀 URL은 http://, https:// 또는 /로 시작하는 내부 경로를 입력해 주세요.' });
+
+        const next = items.map(item => Object.assign({}, byId.get(String(item.id)), {
+            targetTab: item.targetTab,
+            targetUrl: item.targetTab == 'custom-url' ? normalizeBannerTargetUrl(item.targetUrl) : ''
+        }));
+        await rpgenius.saveRpgeniusDataEntry('Banner', next);
+        res.json({ ok: true, items: next.map(entry => serializeBanner(entry, true)) });
+    } catch (e) {
+        console.error('admin banner save error:', e);
+        res.status(500).json({ error: '배너 설정 저장에 실패했습니다.' });
     }
 });
 
@@ -632,7 +706,7 @@ server.post('/api/admin/banners', requireAdmin, parseBannerUpload, async (req, r
     let originalName = 'banner.' + extension;
     try { originalName = decodeURIComponent(String(req.headers['x-file-name'] || originalName)); } catch (_) {}
     originalName = path.basename(originalName).replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160) || ('banner.' + extension);
-    const entry = { id, key, originalName, contentType, size: req.body.length, createdAt: Date.now() };
+    const entry = { id, key, originalName, contentType, size: req.body.length, createdAt: Date.now(), targetTab: '', targetUrl: '' };
 
     try {
         await bannerS3.putObject({
@@ -6189,21 +6263,31 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="combine">
     <section class="panel combine-board">
+      <div class="fusion-head"><div><span class="fusion-eyebrow">CARD FUSION</span><h2>캐릭터 카드 조합</h2><p>같은 등급과 종류의 카드 3장을 선택해 상위 카드를 획득하세요.</p></div><span class="fusion-rule-badge">재료 3장</span></div>
       <div class="combine-wrap">
-        <div class="combine-stage" id="combineStage"></div>
+        <div class="fusion-stage-shell"><div class="combine-stage" id="combineStage"></div></div>
         <div class="combine-info" id="combineInfo"></div>
       </div>
     </section>
-    <section class="panel"><h2>보유 캐릭터 카드</h2><div id="combinePool" class="card-grid"></div></section>
+    <section class="panel fusion-inventory">
+      <div class="fusion-pool-head"><div><h2>재료 카드 선택</h2><p>카드를 누르면 빈 슬롯에 바로 추가됩니다.</p></div><span id="combinePoolCount" class="fusion-pool-count"></span></div>
+      <div class="fusion-tools"><label class="fusion-search"><span>검색</span><input id="combineSearch" type="search" placeholder="캐릭터 이름 검색" autocomplete="off"></label><label class="fusion-toggle"><input id="combineCompatibleOnly" type="checkbox"><span>선택 가능한 카드만</span></label><button id="combineClear" class="fusion-clear" type="button">선택 초기화</button></div>
+      <div id="combinePool" class="card-grid fusion-card-grid"></div>
+    </section>
   </div>
   <div class="page" data-page="jobcombine">
     <section class="panel jobcombine-board">
+      <div class="fusion-head job"><div><span class="fusion-eyebrow">JOB AWAKENING</span><h2>전직 카드 조합</h2><p>같은 캐릭터와 같은 등급의 일반 카드 3장을 전직 카드로 변환하세요.</p></div><span class="fusion-rule-badge">성공률 100%</span></div>
       <div class="jobcombine-wrap">
-        <div class="jobcombine-stage" id="jobCombineStage"></div>
+        <div class="fusion-stage-shell job"><div class="jobcombine-stage" id="jobCombineStage"></div></div>
         <div class="jobcombine-info" id="jobCombineInfo"></div>
       </div>
     </section>
-    <section class="panel"><h2>보유 캐릭터 카드 (전직 가능)</h2><div id="jobCombinePool" class="card-grid"></div></section>
+    <section class="panel fusion-inventory job">
+      <div class="fusion-pool-head"><div><h2>전직 재료 선택</h2><p>첫 카드와 동일한 캐릭터·등급만 이어서 선택할 수 있습니다.</p></div><span id="jobCombinePoolCount" class="fusion-pool-count"></span></div>
+      <div class="fusion-tools"><label class="fusion-search"><span>검색</span><input id="jobCombineSearch" type="search" placeholder="캐릭터 이름 검색" autocomplete="off"></label><label class="fusion-toggle"><input id="jobCombineCompatibleOnly" type="checkbox"><span>선택 가능한 카드만</span></label><button id="jobCombineClear" class="fusion-clear" type="button">선택 초기화</button></div>
+      <div id="jobCombinePool" class="card-grid fusion-card-grid"></div>
+    </section>
   </div>
   <div class="page" data-page="레벨보상">
     <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>

@@ -163,7 +163,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -547,11 +547,19 @@ async function loadHomeBanners() {
             root.replaceChildren(el('div', { class: 'home-banner-empty' }, '등록된 배너가 없습니다.'));
             return;
         }
-        root.replaceChildren(...items.map((item, index) =>
-            el('div', { class: 'home-banner' },
-                el('img', { src: item.imageUrl, alt: '메인 배너 ' + (index + 1), loading: index === 0 ? 'eager' : 'lazy', decoding: 'async' })
-            )
-        ));
+        root.replaceChildren(...items.map((item, index) => {
+            const image = el('img', { src: item.imageUrl, alt: '메인 배너 ' + (index + 1), loading: index === 0 ? 'eager' : 'lazy', decoding: 'async' });
+            if (!item.targetTab) return el('div', { class: 'home-banner' }, image);
+            const isCustomUrl = item.targetTab === 'custom-url' && item.targetUrl;
+            const targetLabel = isCustomUrl ? '지정 링크' : (PAGE_LABELS[item.targetTab] || item.targetTab);
+            return el('button', {
+                class: 'home-banner clickable',
+                type: 'button',
+                title: targetLabel + '로 이동',
+                'aria-label': '메인 배너 ' + (index + 1) + ', ' + targetLabel + '로 이동',
+                onclick: () => isCustomUrl ? location.assign(item.targetUrl) : activatePage(item.targetTab)
+            }, image);
+        }));
     } catch (e) {
         root.replaceChildren(el('div', { class: 'home-banner-empty err' }, e.message));
     }
@@ -2799,7 +2807,7 @@ function openCapsuleResultModal(r) {
 
 // ===== 조합 =====
 
-let combineState = { cards: [], meta: { table: {}, protect: {}, lucky: [], gold: 0 }, slots: [null, null, null], protectIndex: null, luckyRate: null, result: null, busy: false, built: false, slotEls: null };
+let combineState = { cards: [], meta: { table: {}, protect: {}, lucky: [], gold: 0 }, slots: [null, null, null], protectIndex: null, luckyRate: null, result: null, busy: false, built: false, slotEls: null, search: '', compatibleOnly: false };
 
 function combineUi(file) { return '/combine-ui?file=' + encodeURIComponent(file); }
 
@@ -3197,7 +3205,7 @@ function buildCombineStage() {
     const stage = $('#combineStage');
     if (!stage) return;
     stage.style.backgroundImage = 'url(' + combineUi('원본.png') + ')';
-    const mkSlot = (cls) => el('div', { class: 'combine-slot ' + cls + ' empty' },
+    const mkSlot = (cls) => el('button', { type: 'button', class: 'combine-slot ' + cls + ' empty' },
         el('img', { class: 'slot-card', alt: '' })
     );
     const lucky = mkSlot('lucky');
@@ -3206,7 +3214,7 @@ function buildCombineStage() {
     lucky.classList.add('clickable');
     lucky.onclick = onLuckyClick;
     m.forEach((slot, i) => slot.onclick = () => removeFromSlotByIndex(i));
-    const btn = el('button', { class: 'combine-btn', id: 'combineBtn', onclick: submitCombine });
+    const btn = el('button', { type: 'button', class: 'combine-btn', id: 'combineBtn', 'aria-label': '카드 조합 실행', onclick: submitCombine });
     btn.style.backgroundImage = 'url(' + combineUi('조합버튼.png') + ')';
     const effect = el('img', { class: 'combine-effect', id: 'combineEffect', alt: '', style: 'display:none' });
     stage.replaceChildren(lucky, result, m[0], m[1], m[2], btn, effect);
@@ -3222,8 +3230,8 @@ function renderCombineStage() {
         const slot = els.m[i];
         const img = slot.querySelector('.slot-card');
         slot.classList.add('clickable');
-        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); }
-        else { img.removeAttribute('src'); slot.classList.add('empty'); }
+        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); slot.title = card.formatted + ' 선택 해제'; slot.setAttribute('aria-label', card.formatted + ' 선택 해제'); }
+        else { img.removeAttribute('src'); slot.classList.add('empty'); slot.title = (i + 1) + '번째 재료 슬롯'; slot.setAttribute('aria-label', (i + 1) + '번째 재료 슬롯'); }
     });
     const limg = els.lucky.querySelector('.slot-card');
     if (combineState.protectIndex != null && combineState.slots[combineState.protectIndex]) {
@@ -3233,11 +3241,15 @@ function renderCombineStage() {
         limg.src = combineUi('럭키' + Math.round(combineState.luckyRate * 100) + '%.png');
         els.lucky.classList.remove('empty');
     } else { limg.removeAttribute('src'); els.lucky.classList.add('empty'); }
+    els.lucky.title = els.lucky.classList.contains('empty') ? '보호 또는 럭키 카드 선택' : '사용 중인 보조 카드 변경';
+    els.lucky.setAttribute('aria-label', els.lucky.title);
     const rimg = els.result.querySelector('.slot-card');
     if (combineState.result) { rimg.src = combineState.result.imageUrl; els.result.classList.remove('empty'); }
     else { rimg.removeAttribute('src'); els.result.classList.add('empty'); }
     const btn = $('#combineBtn');
     if (btn) btn.disabled = !(combineState.slots.every(Boolean) && !combineState.busy);
+    const stage = $('#combineStage');
+    if (stage) stage.classList.toggle('ready', combineState.slots.every(Boolean));
     renderCombineInfo();
     renderCombinePool();
 }
@@ -3247,38 +3259,56 @@ function renderCombineInfo() {
     if (!info) return;
     const grade = combineGrade();
     const filled = combineState.slots.filter(Boolean).length;
-    if (grade == null) { info.textContent = '같은 등급의 캐릭터 카드 3장을 선택하세요.'; return; }
+    const progress = el('div', { class: 'fusion-progress' },
+        ...[0, 1, 2].map(index => el('span', { class: index < filled ? 'filled' : '' }, index + 1)),
+        el('b', null, filled + ' / 3 선택')
+    );
+    if (grade == null) {
+        info.replaceChildren(progress, el('div', { class: 'fusion-guide' }, '아래 목록에서 첫 번째 재료 카드를 선택하세요.'));
+        return;
+    }
     const t = combineState.meta.table[grade];
-    const lines = [];
+    const stats = el('div', { class: 'fusion-stat-row' });
     if (t) {
         const lucky = combineState.luckyRate != null;
         const shownRate = lucky ? Math.min(1, t.rate * (1 + combineState.luckyRate)) : t.rate;
-        let s = (grade + 1) + '성 조합 · 성공 확률 ' + (Math.round(shownRate * 1000) / 10) + '%' + (lucky ? ' 🍀' : '') + ' · 필요 골드 🪙 ' + comma(t.gold);
-        if (t.guarantee) s += ' · 보정 ' + comma(t.count) + '/' + comma(t.guarantee);
-        lines.push(s);
-    } else lines.push('이 등급은 조합할 수 없습니다.');
-    let extra = '';
-    if (combineState.protectIndex != null) extra = ' · 🛡️ ' + (combineState.protectIndex + 1) + '번째 재료 보호';
-    else if (combineState.luckyRate != null) extra = ' · 🍀 럭키 ' + (Math.round(combineState.luckyRate * 1000) / 10) + '% 증가';
-    lines.push('선택 ' + filled + '/3' + extra);
-    info.replaceChildren(...lines.map(l => el('div', null, l)));
+        stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '조합 등급'), el('b', null, (grade + 1) + '성')));
+        stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '성공 확률'), el('b', { class: 'rate' }, (Math.round(shownRate * 1000) / 10) + '%')));
+        stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '필요 골드'), el('b', { class: 'gold' }, shopCurrNode('gold', 16), comma(t.gold))));
+        if (t.guarantee) stats.appendChild(el('div', { class: 'fusion-stat' }, el('span', null, '확정 보정'), el('b', null, comma(t.count) + ' / ' + comma(t.guarantee))));
+    } else {
+        stats.appendChild(el('div', { class: 'fusion-guide warn' }, '이 등급은 조합할 수 없습니다.'));
+    }
+    let support = null;
+    if (combineState.protectIndex != null) support = el('div', { class: 'fusion-support protect' }, '보호 카드 · ' + (combineState.protectIndex + 1) + '번째 재료 보존');
+    else if (combineState.luckyRate != null) support = el('div', { class: 'fusion-support lucky' }, '럭키 카드 · 성공 확률 ' + (Math.round(combineState.luckyRate * 1000) / 10) + '% 증가');
+    info.replaceChildren(...[progress, stats, support].filter(Boolean));
 }
 
 function renderCombinePool() {
     const pool = $('#combinePool');
     if (!pool) return;
-    if (!combineState.cards.length) { pool.replaceChildren(el('div', { class: 'empty' }, '보유한 캐릭터 카드가 없습니다.')); return; }
+    if (!combineState.cards.length) { if ($('#combinePoolCount')) $('#combinePoolCount').textContent = '0장'; pool.replaceChildren(el('div', { class: 'empty' }, '보유한 캐릭터 카드가 없습니다.')); return; }
     const grade = combineGrade();
     const type = combineType();
     const used = new Set(combineState.slots.filter(Boolean).map(c => c.number));
-    pool.replaceChildren(...combineState.cards.map(card => {
+    const query = String(combineState.search || '').trim().toLowerCase();
+    const entries = combineState.cards.map(card => {
         const selected = used.has(card.number);
         const cardType = card.type || '일반';
         const disabled = !selected && (!card.combinable || (grade != null && card.star != grade) || (type != null && cardType !== type));
+        return { card, selected, disabled };
+    }).filter(entry => (!query || String(entry.card.formatted || entry.card.name || '').toLowerCase().includes(query)) && (!combineState.compatibleOnly || entry.selected || !entry.disabled))
+      .sort((a, b) => Number(b.selected) - Number(a.selected) || Number(a.disabled) - Number(b.disabled));
+    const count = $('#combinePoolCount');
+    if (count) count.textContent = entries.length + '장 표시';
+    if (!entries.length) { pool.replaceChildren(el('div', { class: 'fusion-pool-empty' }, '조건에 맞는 카드가 없습니다.')); return; }
+    pool.replaceChildren(...entries.map(({ card, selected, disabled }) => {
         const node = cardNode(card, true, null);
         node.classList.add('combine-pool-card');
-        if (selected) node.classList.add('selected');
-        else if (disabled) node.classList.add('disabled');
+        if (selected) { node.classList.add('selected'); node.appendChild(el('span', { class: 'fusion-card-state selected' }, '선택됨')); }
+        else if (disabled) { node.classList.add('disabled'); node.appendChild(el('span', { class: 'fusion-card-state disabled' }, '조건 불일치')); }
+        else node.appendChild(el('span', { class: 'fusion-card-state ready' }, '선택 가능'));
         node.onclick = () => {
             if (combineState.busy) return;
             if (selected) removeFromSlotByNumber(card.number);
@@ -3417,6 +3447,28 @@ function renderCombineResult(data) {
     ));
 }
 
+function bindCombineControls() {
+    const search = $('#combineSearch');
+    const compatible = $('#combineCompatibleOnly');
+    const clear = $('#combineClear');
+    if (search) {
+        search.value = combineState.search;
+        search.oninput = () => { combineState.search = search.value; renderCombinePool(); };
+    }
+    if (compatible) {
+        compatible.checked = combineState.compatibleOnly;
+        compatible.onchange = () => { combineState.compatibleOnly = compatible.checked; renderCombinePool(); };
+    }
+    if (clear) clear.onclick = () => {
+        if (combineState.busy) return;
+        combineState.slots = [null, null, null];
+        combineState.protectIndex = null;
+        combineState.luckyRate = null;
+        combineState.result = null;
+        renderCombineStage();
+    };
+}
+
 async function loadCombine() {
     try {
         const data = await api('/api/combine/cards');
@@ -3427,6 +3479,7 @@ async function loadCombine() {
         combineState.luckyRate = null;
         combineState.result = null;
         combineState.busy = false;
+        bindCombineControls();
         renderCombineStage();
     } catch (e) {
         combineState.built = false;
@@ -3437,19 +3490,19 @@ async function loadCombine() {
 
 // ===== 전직조합 =====
 
-let jobCombineState = { cards: [], gold: 0, slots: [null, null, null], result: null, busy: false, built: false, slotEls: null };
+let jobCombineState = { cards: [], gold: 0, slots: [null, null, null], result: null, busy: false, built: false, slotEls: null, search: '', compatibleOnly: false };
 
 function buildJobCombineStage() {
     const stage = $('#jobCombineStage');
     if (!stage) return;
     stage.style.backgroundImage = 'url(' + combineUi('전직조합원본.jpg') + ')';
-    const mkSlot = (cls) => el('div', { class: 'jobcombine-slot ' + cls + ' empty' },
+    const mkSlot = (cls) => el('button', { type: 'button', class: 'jobcombine-slot ' + cls + ' empty' },
         el('img', { class: 'slot-card', alt: '' })
     );
     const result = mkSlot('result');
     const m = [mkSlot('m0'), mkSlot('m1'), mkSlot('m2')];
     m.forEach((slot, i) => slot.onclick = () => removeFromJobSlotByIndex(i));
-    const btn = el('button', { class: 'jobcombine-btn', id: 'jobCombineBtn', onclick: submitJobCombine });
+    const btn = el('button', { type: 'button', class: 'jobcombine-btn', id: 'jobCombineBtn', 'aria-label': '전직 카드 조합 실행', onclick: submitJobCombine });
     btn.style.backgroundImage = 'url(' + combineUi('전직조합버튼.png') + ')';
     stage.replaceChildren(result, m[0], m[1], m[2], btn);
     jobCombineState.slotEls = { result, m };
@@ -3464,14 +3517,16 @@ function renderJobCombineStage() {
         const slot = els.m[i];
         const img = slot.querySelector('.slot-card');
         slot.classList.add('clickable');
-        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); }
-        else { img.removeAttribute('src'); slot.classList.add('empty'); }
+        if (card) { img.src = card.imageUrl; slot.classList.remove('empty'); slot.title = card.formatted + ' 선택 해제'; slot.setAttribute('aria-label', card.formatted + ' 선택 해제'); }
+        else { img.removeAttribute('src'); slot.classList.add('empty'); slot.title = (i + 1) + '번째 재료 슬롯'; slot.setAttribute('aria-label', (i + 1) + '번째 재료 슬롯'); }
     });
     const rimg = els.result.querySelector('.slot-card');
     if (jobCombineState.result) { rimg.src = jobCombineState.result.imageUrl; els.result.classList.remove('empty'); }
     else { rimg.removeAttribute('src'); els.result.classList.add('empty'); }
     const btn = $('#jobCombineBtn');
     if (btn) btn.disabled = !(jobCombineState.slots.every(Boolean) && !jobCombineState.busy);
+    const stage = $('#jobCombineStage');
+    if (stage) stage.classList.toggle('ready', jobCombineState.slots.every(Boolean));
     renderJobCombineInfo();
     renderJobCombinePool();
 }
@@ -3491,34 +3546,51 @@ function renderJobCombineInfo() {
     const filled = jobCombineState.slots.filter(Boolean).length;
     const star = jobCombineSelectedStar();
     const characterId = jobCombineSelectedId();
-    const lines = [];
-    if (star == null) lines.push('같은 캐릭터·같은 등급의 일반 카드 3장을 선택하세요.');
+    const progress = el('div', { class: 'fusion-progress job' },
+        ...[0, 1, 2].map(index => el('span', { class: index < filled ? 'filled' : '' }, index + 1)),
+        el('b', null, filled + ' / 3 선택')
+    );
+    let detail;
+    if (star == null) detail = el('div', { class: 'fusion-guide' }, '아래 목록에서 첫 번째 전직 재료를 선택하세요.');
     else {
         const filledCards = jobCombineState.slots.filter(Boolean);
         const allSame = filledCards.every(c => c.id === characterId && c.star === star);
-        if (!allSame) lines.push('⚠️ 같은 캐릭터·같은 등급의 카드 3장이 필요합니다.');
-        else lines.push('전직조합 · 100% 성공 · ' + (star + 1) + '성 전직 카드 획득');
+        if (!allSame) detail = el('div', { class: 'fusion-guide warn' }, '같은 캐릭터와 같은 등급의 카드 3장이 필요합니다.');
+        else detail = el('div', { class: 'fusion-stat-row job' },
+            el('div', { class: 'fusion-stat' }, el('span', null, '재료 등급'), el('b', null, (star + 1) + '성')),
+            el('div', { class: 'fusion-stat' }, el('span', null, '성공 확률'), el('b', { class: 'rate' }, '100%')),
+            el('div', { class: 'fusion-stat' }, el('span', null, '결과'), el('b', null, (star + 1) + '성 전직 카드'))
+        );
     }
-    lines.push('선택 ' + filled + '/3');
-    info.replaceChildren(...lines.map(l => el('div', null, l)));
+    info.replaceChildren(progress, detail);
 }
 
 function renderJobCombinePool() {
     const pool = $('#jobCombinePool');
     if (!pool) return;
-    if (!jobCombineState.cards.length) { pool.replaceChildren(el('div', { class: 'empty' }, '전직조합 가능한 카드가 없습니다. (같은 캐릭터 5성↑ 일반 카드 3장 필요)')); return; }
+    if (!jobCombineState.cards.length) { if ($('#jobCombinePoolCount')) $('#jobCombinePoolCount').textContent = '0장'; pool.replaceChildren(el('div', { class: 'empty' }, '전직조합 가능한 카드가 없습니다. (같은 캐릭터 5성↑ 일반 카드 3장 필요)')); return; }
     const selectedId = jobCombineSelectedId();
     const selectedStar = jobCombineSelectedStar();
     const used = new Set(jobCombineState.slots.filter(Boolean).map(c => c.number));
-    pool.replaceChildren(...jobCombineState.cards.map(card => {
+    const query = String(jobCombineState.search || '').trim().toLowerCase();
+    const entries = jobCombineState.cards.map(card => {
         const selected = used.has(card.number);
         const disabled = !selected && (
             (selectedId != null && card.id !== selectedId) ||
             (selectedStar != null && card.star !== selectedStar)
         );
+        return { card, selected, disabled };
+    }).filter(entry => (!query || String(entry.card.formatted || entry.card.name || '').toLowerCase().includes(query)) && (!jobCombineState.compatibleOnly || entry.selected || !entry.disabled))
+      .sort((a, b) => Number(b.selected) - Number(a.selected) || Number(a.disabled) - Number(b.disabled));
+    const count = $('#jobCombinePoolCount');
+    if (count) count.textContent = entries.length + '장 표시';
+    if (!entries.length) { pool.replaceChildren(el('div', { class: 'fusion-pool-empty' }, '조건에 맞는 카드가 없습니다.')); return; }
+    pool.replaceChildren(...entries.map(({ card, selected, disabled }) => {
         const node = cardNode(card, true, null);
-        if (selected) node.classList.add('selected');
-        else if (disabled) node.classList.add('disabled');
+        node.classList.add('combine-pool-card');
+        if (selected) { node.classList.add('selected'); node.appendChild(el('span', { class: 'fusion-card-state selected' }, '선택됨')); }
+        else if (disabled) { node.classList.add('disabled'); node.appendChild(el('span', { class: 'fusion-card-state disabled' }, '조건 불일치')); }
+        else node.appendChild(el('span', { class: 'fusion-card-state ready' }, '선택 가능'));
         node.onclick = () => {
             if (jobCombineState.busy) return;
             if (selected) removeFromJobSlotByIndex(jobCombineState.slots.findIndex(c => c && c.number === card.number));
@@ -3580,6 +3652,26 @@ async function submitJobCombine() {
     }
 }
 
+function bindJobCombineControls() {
+    const search = $('#jobCombineSearch');
+    const compatible = $('#jobCombineCompatibleOnly');
+    const clear = $('#jobCombineClear');
+    if (search) {
+        search.value = jobCombineState.search;
+        search.oninput = () => { jobCombineState.search = search.value; renderJobCombinePool(); };
+    }
+    if (compatible) {
+        compatible.checked = jobCombineState.compatibleOnly;
+        compatible.onchange = () => { jobCombineState.compatibleOnly = compatible.checked; renderJobCombinePool(); };
+    }
+    if (clear) clear.onclick = () => {
+        if (jobCombineState.busy) return;
+        jobCombineState.slots = [null, null, null];
+        jobCombineState.result = null;
+        renderJobCombineStage();
+    };
+}
+
 async function loadJobCombine() {
     try {
         const data = await api('/api/jobcombine/cards');
@@ -3588,6 +3680,7 @@ async function loadJobCombine() {
         jobCombineState.slots = [null, null, null];
         jobCombineState.result = null;
         jobCombineState.busy = false;
+        bindJobCombineControls();
         renderJobCombineStage();
     } catch (e) {
         jobCombineState.built = false;
@@ -4428,12 +4521,12 @@ async function loadHotDeal(body, tabRow) {
 function renderHotDeal(data, body, tabRow) {
     stopHotdealCountdown();
 
-    const currencyBar = el('div', { class: 'hd-currency-bar' });
+    const currencyBar = el('div', { class: 'hd-currency-bar' }, el('span', { class: 'hd-currency-label' }, '보유 재화'));
     [{ key: 'gold', label: '골드' }, { key: 'garnet', label: '가넷' }].forEach(({ key, label }) => {
         if (data.currencies[key] == null) return;
-        const chip = el('div', { class: 'shop-currency-chip' });
+        const chip = el('div', { class: 'shop-currency-chip hd-currency-chip' });
         chip.appendChild(shopCurrNode(key, 18));
-        chip.appendChild(el('span', { style: 'color:#94a3b8;font-size:12px;margin-right:2px' }, label));
+        chip.appendChild(el('span', { class: 'hd-currency-name' }, label));
         chip.appendChild(el('span', {}, comma(data.currencies[key])));
         currencyBar.appendChild(chip);
     });
@@ -4454,6 +4547,10 @@ function renderHotDeal(data, body, tabRow) {
     data.items.forEach(item => {
         const isLightning = item.slot === 1;
         const slot = el('div', { class: 'hd-slot ' + (isLightning ? 'lightning' : 'fire') });
+        slot.appendChild(el('div', { class: 'hd-corner top-left' }));
+        slot.appendChild(el('div', { class: 'hd-corner top-right' }));
+        slot.appendChild(el('div', { class: 'hd-corner bottom-left' }));
+        slot.appendChild(el('div', { class: 'hd-corner bottom-right' }));
 
         // 불꽃/번개 파티클 요소
         if (isLightning) {
@@ -4469,8 +4566,9 @@ function renderHotDeal(data, body, tabRow) {
         }
 
         const inner = el('div', { class: 'hd-slot-inner' });
-
         // 썸네일
+        const thumbStage = el('div', { class: 'hd-thumb-stage' });
+        thumbStage.appendChild(el('div', { class: 'hd-thumb-aura' }));
         const thumb = el('div', { class: 'hd-item-thumb auc-thumb square' });
         if (item.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: item.frameUrl, alt: '' }));
         if (item.iconUrl) thumb.appendChild(el('img', { class: 'auc-item-img', src: item.iconUrl, alt: item.name }));
@@ -4479,12 +4577,19 @@ function renderHotDeal(data, body, tabRow) {
             sold.appendChild(el('div', { class: 'hd-sold-text' }, '구매 완료'));
             thumb.appendChild(sold);
         }
-        inner.appendChild(thumb);
-        inner.appendChild(el('div', { class: 'hd-item-name' }, item.name));
+        thumbStage.appendChild(thumb);
+        inner.appendChild(thumbStage);
+        inner.appendChild(el('div', { class: 'hd-product-copy' },
+            el('div', { class: 'hd-item-name' }, item.name),
+            el('div', { class: 'hd-item-sub' }, '이번 교체 전까지 구매 가능')
+        ));
 
         const priceRow = el('div', { class: 'hd-price-row' });
-        if (item.price.imgUrl) priceRow.appendChild(el('img', { class: 'hd-price-img', src: item.price.imgUrl, alt: item.price.goods }));
-        priceRow.appendChild(el('div', { class: 'hd-price-val' }, comma(item.price.amount) + (item.price.goods === 'garnet' ? ' 가넷' : ' 골드')));
+        priceRow.appendChild(el('span', { class: 'hd-price-label' }, 'SPECIAL PRICE'));
+        const priceValue = el('div', { class: 'hd-price-value' });
+        if (item.price.imgUrl) priceValue.appendChild(el('img', { class: 'hd-price-img', src: item.price.imgUrl, alt: item.price.goods }));
+        priceValue.appendChild(el('div', { class: 'hd-price-val' }, comma(item.price.amount)));
+        priceRow.appendChild(priceValue);
         inner.appendChild(priceRow);
 
         const btn = el('button', {
@@ -4499,10 +4604,13 @@ function renderHotDeal(data, body, tabRow) {
     });
 
     const root = el('div', { class: 'hd-root' },
+        el('div', { class: 'hd-backdrop-lines', 'aria-hidden': 'true' }),
         el('div', { class: 'hd-header' },
-            el('div', { class: 'hd-title' }, el('span', { class: 'hd-title-fire' }, '🔥'), '핫딜 SHOP', el('span', { class: 'hd-title-fire2' }, '🔥')),
+            el('div', { class: 'hd-title' },
+                el('span', { class: 'hd-title-ko' }, '핫딜'),
+                el('span', { class: 'hd-title-shop' }, 'SHOP')
+            ),
             el('div', { class: 'hd-meta' },
-
                 el('div', { class: 'hd-countdown' }, countdownEl)
             )
         ),
@@ -4526,7 +4634,7 @@ function openHotDealBuyModal(item, hdData, body, tabRow) {
     itemRow.appendChild(thumb);
     const info = el('div', { style: 'flex:1;min-width:0' });
     info.appendChild(el('div', { class: 'shop-buy-name' }, item.name));
-    info.appendChild(el('div', { class: 'shop-buy-meta' }, '핫딜 1회 한정'));
+    info.appendChild(el('div', { class: 'shop-buy-meta' }, '핫딜 특가 상품'));
     itemRow.appendChild(info);
     content.appendChild(itemRow);
 
