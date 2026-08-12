@@ -6488,24 +6488,26 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     loadDex();
 });
 
+const dexSidebarMobileQuery = window.matchMedia('(max-width: 860px)');
+
 function setDexSidebarVisible(visible) {
     const sidebar = document.querySelector('.dex-sidebar');
     if (!sidebar) return;
-    sidebar.classList.toggle('is-concealed', !visible);
+    sidebar.classList.toggle('is-concealed', dexSidebarMobileQuery.matches && !visible);
 }
 
 window.addEventListener('scroll', () => {
-    if (activePage === 'dex') setDexSidebarVisible(false);
+    if (activePage === 'dex' && dexSidebarMobileQuery.matches) setDexSidebarVisible(false);
 }, { passive: true });
 
-document.addEventListener('mousemove', event => {
-    if (activePage === 'dex' && event.clientX <= 28) setDexSidebarVisible(true);
-}, { passive: true });
+dexSidebarMobileQuery.addEventListener('change', event => {
+    if (!event.matches) setDexSidebarVisible(true);
+});
 
 let dexSwipeStart = null;
 document.addEventListener('touchstart', event => {
     const touch = event.touches && event.touches[0];
-    dexSwipeStart = activePage === 'dex' && touch && touch.clientX <= 28
+    dexSwipeStart = activePage === 'dex' && dexSidebarMobileQuery.matches && touch
         ? { x: touch.clientX, y: touch.clientY }
         : null;
 }, { passive: true });
@@ -6516,7 +6518,7 @@ document.addEventListener('touchend', event => {
     if (touch) {
         const moveX = touch.clientX - dexSwipeStart.x;
         const moveY = Math.abs(touch.clientY - dexSwipeStart.y);
-        if (moveX >= 44 && moveY <= 70) setDexSidebarVisible(true);
+        if (moveX >= 32 && moveX > moveY * 1.15) setDexSidebarVisible(true);
     }
     dexSwipeStart = null;
 }, { passive: true });
