@@ -10399,6 +10399,197 @@ async function useItem(user, itemName, countArg) {
     return lines.join('\n');
 }
 
+function webItemCardOption(number, card) {
+    const cards = readJson(CHARACTER_CARDS_PATH, []);
+    const data = cards[Number(card && card.id)];
+    return {
+        value: number,
+        kind: 'card',
+        name: data ? data.name : '알 수 없는 캐릭터',
+        meta: formatUserCard(card),
+        card: { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: card.skin || '' }
+    };
+}
+
+function webItemEquipmentOption(target) {
+    const entry = target.entry;
+    const equip = entry.equip;
+    const type = equip.type || entry.type || target.type;
+    const data = target.equipment || target.data || getEquipmentData(type, equip.id);
+    const level = Number(equip.level || 0);
+    return {
+        value: target.number,
+        kind: 'equipment',
+        name: data ? data.name : '알 수 없는 장비',
+        meta: (data ? '<' + data.rarity + '> ' : '') + (level > 0 ? '+' + level + ' · ' : '') + (entry.source == 'equipped' ? '장착 중' : '인벤토리'),
+        equipmentType: type,
+        equipmentId: Number(equip.id),
+        rarity: data ? data.rarity : '',
+        level
+    };
+}
+
+function webItemPetOption(number, entry) {
+    const data = getPetData(entry.pet.id);
+    return {
+        value: number,
+        kind: 'pet',
+        name: data ? data.name : '알 수 없는 펫',
+        meta: (data ? '<' + data.rarity + '> · ' : '') + formatPetExpiry(entry.pet),
+        petId: Number(entry.pet.id),
+        rarity: data ? data.rarity : ''
+    };
+}
+
+function getWebItemUsePending(user) {
+    const pending = user && user.pendingAction;
+    if (!pending) return null;
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const makeCardOptions = filter => cards.map((card, index) => ({ card, number: index + 1 })).filter(filter).map(entry => webItemCardOption(entry.number, entry.card));
+    let title = '대상 선택';
+    let description = '아이템을 적용할 대상을 선택해주세요.';
+    let confirmOnly = false;
+    let confirmLabel = '사용하기';
+    let options = [];
+
+    if (pending.type == '지정캐릭터변환') {
+        title = '변환할 카드 선택';
+        options = makeCardOptions(entry => Number(entry.card.id) != Number(pending.charId));
+    } else if (pending.type == '캐릭터변환') {
+        if (pending.cardNumber) {
+            title = '패션 카드 변환 확인';
+            description = '적용된 패션이 사라지고 일반 카드로 변환됩니다.';
+            confirmOnly = true;
+            confirmLabel = '패션을 제거하고 변환';
+        } else {
+            const maxStar = CHARACTER_CONVERT_MAX_STAR[pending.can] || 9;
+            title = '변환할 카드 선택';
+            options = makeCardOptions(entry => entry.card.type !== '전직' && Number(entry.card.star || 0) < maxStar);
+        }
+    } else if (pending.type == '만능캐릭터변환') {
+        if (pending.cardNumber) {
+            title = '패션 카드 변환 확인';
+            description = '적용된 패션이 사라지고 일반 카드로 변환됩니다.';
+            confirmOnly = true;
+            confirmLabel = '패션을 제거하고 변환';
+        } else {
+            title = '변환할 카드 선택';
+            options = makeCardOptions(() => true);
+        }
+    } else if (pending.type == '전직캐릭터변환') {
+        title = '변환할 전직 카드 선택';
+        options = makeCardOptions(entry => entry.card.type === '전직');
+    } else if (pending.type == '패션적용') {
+        if (pending.cardNumber) {
+            const card = cards[pending.cardNumber - 1];
+            title = '적용할 패션 선택';
+            options = getApplicableFashionsForCard(card, pending.highOnly, pending.fashionName).map((fashion, index) => ({
+                value: index + 1, kind: 'fashion', name: fashion.name, meta: formatUserCard(card), card: card ? { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: fashion.name } : null
+            }));
+        } else {
+            title = pending.highOnly ? '고급 패션 적용 카드 선택' : '패션 적용 카드 선택';
+            options = getFashionApplyTargets(user, pending.highOnly, pending.fashionName).map(target => webItemCardOption(target.number, target.card));
+        }
+    } else if (pending.type == '패션제거') {
+        title = '패션을 제거할 카드 선택';
+        options = getFashionRemoveTargets(user).map(target => webItemCardOption(target.number, target.card));
+    } else if (pending.type == '무료장비강화') {
+        title = '무료 강화 장비 선택';
+        description = '강화석과 골드 소모 없이 강화할 장비를 선택해주세요.';
+        options = getAllUserEquipments(user).map((entry, index) => {
+            const type = entry.equip.type || entry.type;
+            const equipment = getEquipmentData(type, entry.equip.id);
+            if (!equipment || Number(entry.equip.level || 0) >= getEquipmentMaxLevel(equipment)) return null;
+            return webItemEquipmentOption({ number: index + 1, entry, type, equipment });
+        }).filter(Boolean);
+    } else if (pending.type == '장신구선택권') {
+        title = '획득할 장신구 선택';
+        description = '선택한 장신구를 즉시 획득합니다.';
+        options = getAccessoryChoiceCandidates(pending.rarity).map((target, index) => webItemEquipmentOption({ number: index + 1, entry: { equip: { id: target.id, type: 'accessory' }, type: 'accessory', source: 'reward' }, equipment: target.equipment }));
+    } else if (pending.type == '보주선택') {
+        const items = getDataCache('Item', []);
+        title = '획득할 보주 선택';
+        options = getOrbChoiceIds().map((id, index) => ({ value: index + 1, kind: 'item', name: items[id] ? items[id].name : '알 수 없는 보주', meta: '보주', itemId: id }));
+    } else if (pending.type == '보조장비리롤') {
+        title = '재설정할 보조 장비 선택';
+        options = getSupportRerollTargets(user).map(webItemEquipmentOption);
+    } else if (pending.type == '잠재능력부여') {
+        title = '잠재능력을 부여할 장비 선택';
+        description = pending.tier ? pending.tier + ' 등급 잠재능력을 부여합니다.' : '잠재능력이 없는 장비를 선택해주세요.';
+        options = getPotentialAwakenTargets(user, pending.tier).map(webItemEquipmentOption);
+    } else if (pending.type == '장비강화권') {
+        title = '+' + pending.ugLevel + ' 강화 대상 선택';
+        description = '성공 확률 ' + (Math.round(Number(pending.ugRoll || 0) * 10000) / 100) + '%';
+        options = getUpgradeTicketTargets(user, pending.ugLevel).map(webItemEquipmentOption);
+    } else if (pending.type == '영혼부여') {
+        title = '영혼을 부여할 장비 선택';
+        options = getSoulTargets(user).map(webItemEquipmentOption);
+    } else if (pending.type == '보주부여') {
+        if (pending.equipNumber) {
+            title = '보주 교체 확인';
+            description = '기존 보주는 사라지며 되돌릴 수 없습니다.';
+            confirmOnly = true;
+            confirmLabel = '기존 보주 교체';
+        } else {
+            const orb = findOrbByName(pending.orbName);
+            title = pending.orbName + ' 부여 대상 선택';
+            options = getOrbTargets(user, orb).map(webItemEquipmentOption);
+        }
+    } else if (pending.type == '귀속해제') {
+        title = '귀속을 해제할 장비 선택';
+        options = getBoundEquipmentScissorTargets(user).map(webItemEquipmentOption);
+    } else if (pending.type == '생명수') {
+        title = '기한을 연장할 펫 선택';
+        description = '선택한 펫의 사용 기한을 30일 연장합니다.';
+        options = getAllUserPets(user).map((entry, index) => webItemPetOption(index + 1, entry));
+    } else if (pending.type == '초월업그레이드') {
+        title = '업그레이드할 초월 장비 선택';
+        options = getTranscendUpgradeKitTargets(user).map(webItemEquipmentOption);
+    } else if (pending.type == '장비강화') {
+        title = '무료 강화 최종 확인';
+        description = '표시된 강화 확률을 확인하고 진행해주세요.';
+        confirmOnly = true;
+        confirmLabel = '강화 진행';
+    } else {
+        return null;
+    }
+    return { type: pending.type, title, description, confirmOnly, confirmLabel, options };
+}
+
+function resolveWebItemUsePending(user, choice, confirmed) {
+    const pending = user && user.pendingAction;
+    if (!pending) return '❌ 진행 중인 아이템 사용이 없습니다.';
+    if (pending.type == '지정캐릭터변환') return convertCharacterCardToTarget(user, choice);
+    if (pending.type == '캐릭터변환') return convertCharacterCard(user, pending.cardNumber || choice, confirmed === true, pending.can);
+    if (pending.type == '만능캐릭터변환') return convertCharacterCardUniversal(user, pending.cardNumber || choice, confirmed === true);
+    if (pending.type == '전직캐릭터변환') return convertJobCharacterCard(user, choice);
+    if (pending.type == '패션적용') return applyFashionStoneToCard(user, choice);
+    if (pending.type == '패션제거') return removeCardFashion(user, choice);
+    if (pending.type == '무료장비강화') {
+        return formatEquipmentUpgradePreview(user, choice, { free: true, consumedItemId: pending.consumedItemId, consumedItemCount: pending.consumedItemCount });
+    }
+    if (pending.type == '장신구선택권') return selectAccessoryChoice(user, choice);
+    if (pending.type == '보주선택') return selectOrbChoice(user, choice);
+    if (pending.type == '보조장비리롤') return rerollSupportEquipment(user, choice);
+    if (pending.type == '잠재능력부여') return awakenEquipmentPotential(user, choice);
+    if (pending.type == '장비강화권') return applyUpgradeTicket(user, choice);
+    if (pending.type == '영혼부여') return applySoulToEquipment(user, choice);
+    if (pending.type == '보주부여') return applyOrbToEquipment(user, pending.equipNumber || choice, confirmed === true);
+    if (pending.type == '귀속해제') return releaseBoundEquipment(user, choice);
+    if (pending.type == '생명수') return extendPetExpiry(user, choice);
+    if (pending.type == '초월업그레이드') return useTranscendUpgradeKit(user, choice);
+    if (pending.type == '장비강화' && confirmed === true) return runEquipmentUpgrade(user);
+    return '❌ 처리할 수 없는 아이템 사용 단계입니다.';
+}
+
+function cancelWebItemUsePending(user) {
+    const pending = user && user.pendingAction;
+    if (!pending) return '진행 중인 아이템 사용이 없습니다.';
+    const refund = refundPendingActionItem(user, pending);
+    user.pendingAction = null;
+    return '아이템 사용을 취소했습니다.' + (refund ? '\n- 반환: ' + refund : '');
+}
+
 async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
@@ -13359,5 +13550,8 @@ module.exports = {
     buildPotentialDex,
     ELEMENT_ATK_KEYS,
     ELEMENT_RES_KEYS,
-    useItem
+    useItem,
+    getWebItemUsePending,
+    resolveWebItemUsePending,
+    cancelWebItemUsePending
 };

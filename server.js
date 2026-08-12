@@ -1130,6 +1130,76 @@ server.get('/api/inventory/:kind', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/inventory/items/:id/detail', requireUser, (req, res) => {
+    const itemId = Number(req.params.id);
+    const items = rpgenius.getDataCache('Item', []);
+    if (!Number.isInteger(itemId) || itemId < 0 || !items[itemId]) {
+        return res.status(404).json({ error: '아이템 정보를 찾을 수 없습니다.' });
+    }
+    res.json({ detail: buildInventoryItemDetail(itemId, items[itemId]) });
+});
+
+server.post('/api/inventory/items/:id/use', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const itemId = Number(req.params.id);
+        const items = rpgenius.getDataCache('Item', []);
+        const item = items[itemId];
+        if (!Number.isInteger(itemId) || !item) return res.status(404).json({ error: '아이템 정보를 찾을 수 없습니다.' });
+        if (!isUsableInventoryItem(item)) return res.status(400).json({ error: '사용할 수 없는 아이템입니다.' });
+        if (item.name === '봉인된 자물쇠') return res.status(400).json({ error: '봉인된 자물쇠는 전용 개봉 화면을 이용해주세요.' });
+        if (user.pendingAction) {
+            const pending = user.pendingAction.webItemUse ? decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user) : null;
+            return res.status(409).json({ error: '먼저 진행 중인 작업을 완료하거나 취소해주세요.', pending });
+        }
+        const count = Number(req.body && req.body.count || 1);
+        if (!Number.isInteger(count) || count < 1) return res.status(400).json({ error: '사용 수량을 확인해주세요.' });
+        const message = await rpgenius.useItem(user, item.name, count);
+        if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
+        if (user.pendingAction) {
+            user.pendingAction.webItemUse = true;
+            await user.save();
+        }
+        const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
+        res.json({ ok: true, message, pending, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
+    } catch (error) {
+        console.error('inventory item use error:', error);
+        res.status(500).json({ error: '아이템 사용 중 오류가 발생했습니다.' });
+    }
+});
+
+server.post('/api/inventory/item-use/resolve', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.status(400).json({ error: '진행 중인 아이템 사용이 없습니다.' });
+        const message = rpgenius.resolveWebItemUsePending(user, req.body && req.body.choice, req.body && req.body.confirm === true);
+        if (user.pendingAction) user.pendingAction.webItemUse = true;
+        await user.save();
+        const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
+        if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, ''), pending });
+        res.json({ ok: true, message, pending });
+    } catch (error) {
+        console.error('inventory item resolve error:', error);
+        res.status(500).json({ error: '아이템 적용 중 오류가 발생했습니다.' });
+    }
+});
+
+server.post('/api/inventory/item-use/cancel', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.json({ ok: true, message: '취소할 아이템 사용이 없습니다.' });
+        const message = rpgenius.cancelWebItemUsePending(user);
+        await user.save();
+        res.json({ ok: true, message });
+    } catch (error) {
+        console.error('inventory item cancel error:', error);
+        res.status(500).json({ error: '아이템 사용 취소 중 오류가 발생했습니다.' });
+    }
+});
+
 server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
     try {
         const name = String(req.params.name || '').trim();
@@ -4081,6 +4151,26 @@ function serializeCard(card, user) {
     };
 }
 
+const WEB_ITEM_USE_KEYS = new Set([
+    '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
+    '패션적용', '고급패션적용', '패션제거', '스탯초기화', '장신구선택권',
+    '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
+    '가위', '생명수', '초월업그레이드'
+]);
+
+function isUsableInventoryItem(item) {
+    if (!item) return false;
+    if (['소모품', '가챠', '번들', '미끼'].includes(item.type)) return true;
+    if (item.type !== '사용') return false;
+    return item.name === '유생의 강화기' || item.name === '프레스티지 증표' || WEB_ITEM_USE_KEYS.has(item.use);
+}
+
+function isBulkUsableInventoryItem(item) {
+    if (!item || !['소모품', '가챠', '번들'].includes(item.type)) return false;
+    if (item.type === '소모품' && (item.use_func || []).some(func => func && (func.type === '경험치비약' || func.type === '골드비약'))) return false;
+    return true;
+}
+
 function buildInventoryItems(user) {
     const items = rpgenius.getDataCache('Item', []);
     return (user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : [])
@@ -4088,7 +4178,11 @@ function buildInventoryItems(user) {
             const data = items[inv.id];
             if (!data) return null;
             const assets = getItemDisplayAssets(data);
-            return { id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0), noTrade: data.no_trade === true, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
+            return {
+                id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0),
+                noTrade: data.no_trade === true, usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
+                iconUrl: assets.iconUrl, frameUrl: assets.frameUrl
+            };
         })
         .filter(item => item && item.count > 0);
 }
@@ -4683,6 +4777,368 @@ function buildBundleContents(data) {
         }
         return null;
     }).filter(Boolean);
+}
+
+function formatItemDetailCount(value) {
+    const min = Number(value && typeof value == 'object' ? (value.min ?? value.max ?? 1) : (value ?? 1));
+    const max = Number(value && typeof value == 'object' ? (value.max ?? value.min ?? 1) : (value ?? 1));
+    return min === max ? comma(min) : comma(min) + '~' + comma(max);
+}
+
+function buildDetailRewardDisplay(entry) {
+    if (!entry || typeof entry != 'object') return null;
+    const items = rpgenius.getDataCache('Item', []);
+    const count = formatItemDetailCount(entry.count);
+    if (entry.type === '아이템') {
+        const data = items[entry.item_id];
+        const assets = data ? getItemDisplayAssets(data) : { iconUrl: null, frameUrl: null };
+        return { type: '아이템', name: data ? data.name : '알 수 없는 아이템', count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
+    }
+    if (entry.type === '골드') return { type: '골드', name: '골드', count, iconUrl: SHOP_CURR_IMG.gold };
+    if (entry.type === '가넷') return { type: '가넷', name: '가넷', count, iconUrl: SHOP_CURR_IMG.garnet };
+    if (entry.type === '마일리지') return { type: '마일리지', name: '마일리지', count, label: 'M' };
+    if (entry.type === '포인트') return { type: '포인트', name: '포인트', count, iconUrl: SHOP_CURR_IMG.point };
+    if (entry.type === '칭호') {
+        const title = rpgenius.getTitleById(entry.title_id);
+        return { type: '칭호', name: (title ? title.name : '알 수 없는') + ' 칭호', count: '1', iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, label: '칭호' };
+    }
+    const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
+    if (equipmentTypes[entry.type]) {
+        const [slot, idKey] = equipmentTypes[entry.type];
+        const equipment = rpgenius.getDataCache('Equipment', {});
+        const data = equipment[slot] && equipment[slot][entry[idKey]];
+        return { type: entry.type, name: data ? '<' + data.rarity + '> ' + data.name : '알 수 없는 ' + entry.type, count, iconUrl: data ? getEquipmentIconUrl(data) : null, frameUrl: data ? getAuctionFrameUrl('equipment', data.rarity) : null };
+    }
+    if (entry.type === '펫') {
+        const data = typeof entry.pet_id !== 'undefined' ? rpgenius.getPetData(entry.pet_id) : null;
+        if (data) return { type: '펫', name: '<' + data.rarity + '> ' + data.name, count, iconUrl: getPetIconUrl(data), frameUrl: getAuctionFrameUrl('equipment', data.rarity), label: '펫' };
+        return { type: '펫', name: '<' + (entry.rarity || '?') + '> 랜덤 펫', count, label: '펫' };
+    }
+    if (entry.type === '캐릭터카드') {
+        const cards = readJson(CHARACTER_CARDS_PATH, []);
+        const cardId = entry.card_id != null ? Number(entry.card_id) : (entry.character_card_id != null ? Number(entry.character_card_id) : Number(entry.id));
+        const data = cards[cardId];
+        let star = 0;
+        if (entry.display_star != null || entry.star_display != null) star = Math.max(0, Number(entry.display_star ?? entry.star_display) - 1);
+        else if (entry.star && typeof entry.star == 'object') star = Math.max(0, Number(entry.star.min || 1) - 1);
+        else if (entry.range && typeof entry.range == 'object') star = Math.max(0, Number(entry.range.min || 1) - 1);
+        else star = Math.max(0, Number(entry.star || 0));
+        const cardType = entry.card_type || entry.cardType || '일반';
+        if (!data) return { type: '캐릭터카드', name: '알 수 없는 캐릭터 카드', count, label: '카드' };
+        return {
+            type: '캐릭터카드',
+            name: (cardType === '전직' ? '[전직] ' : '') + data.name + ' ' + formatStar(star),
+            count,
+            iconUrl: getCardImageUrl({ id: cardId, star, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false, jobPrestige: false }),
+            label: '카드'
+        };
+    }
+    return null;
+}
+
+function buildPackChanceEntries(pack) {
+    let cumulative = 0;
+    return pack.map((entry, index) => {
+        const before = Math.max(0, Math.min(1, cumulative));
+        cumulative += Math.max(0, Number(entry && entry.roll || 0));
+        const chance = index === pack.length - 1
+            ? Math.max(0, 1 - before)
+            : Math.max(0, Math.min(1, cumulative) - before);
+        const display = buildDetailRewardDisplay(entry);
+        return display ? Object.assign(display, { chance }) : null;
+    }).filter(Boolean);
+}
+
+function buildUniformEquipmentOutcomes(types, rarity, excludeRaidUnique) {
+    const equipment = rpgenius.getDataCache('Equipment', {});
+    const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+    const candidates = [];
+    types.forEach(type => {
+        (equipment[type] || []).forEach((data, id) => {
+            if (!data || data.rarity !== rarity) return;
+            if (excludeRaidUnique && rarity === '유니크' && data.isRaid === true) return;
+            candidates.push({ type, id, data });
+        });
+    });
+    const chance = candidates.length ? 1 / candidates.length : 0;
+    return candidates.map(entry => ({
+        type: typeLabels[entry.type] || '장비',
+        name: '<' + entry.data.rarity + '> ' + entry.data.name,
+        count: '1',
+        iconUrl: getEquipmentIconUrl(entry.data),
+        frameUrl: getAuctionFrameUrl('equipment', entry.data.rarity),
+        chance
+    }));
+}
+
+function buildCharacterPackOutcomes(pack) {
+    const cards = readJson(CHARACTER_CARDS_PATH, []);
+    const isJob = pack.type === '전직 캐릭터 카드팩';
+    const candidates = cards.map((data, id) => ({ data, id })).filter(entry => entry.data && (!isJob || entry.data.class));
+    const minStar = Math.max(1, Number(pack.range && pack.range.min || 1));
+    const maxStar = Math.max(minStar, Number(pack.range && pack.range.max || minStar));
+    const outcomeCount = candidates.length * (maxStar - minStar + 1);
+    const chance = outcomeCount ? 1 / outcomeCount : 0;
+    const results = [];
+    candidates.forEach(entry => {
+        for (let displayStar = minStar; displayStar <= maxStar; displayStar++) {
+            const star = displayStar - 1;
+            const skin = pack.skin ? String(pack.skin) : '';
+            results.push({
+                type: isJob ? '전직 캐릭터카드' : '캐릭터카드',
+                name: entry.data.name + ' · ' + formatStar(star),
+                detail: skin ? skin + ' 패션' : '',
+                count: '1',
+                iconUrl: getCardImageUrl({ id: entry.id, star, type: isJob ? '전직' : '일반', skin }, { prestige: false, jobPrestige: false }),
+                label: '카드',
+                chance
+            });
+        }
+    });
+    return results;
+}
+
+function buildPetPackOutcomes(pack) {
+    const pets = rpgenius.getDataCache('Pet', []);
+    const candidates = (Array.isArray(pets) ? pets : []).map((data, id) => ({ data, id })).filter(entry => entry.data && entry.data.rarity === pack.rarity);
+    const chance = candidates.length ? 1 / candidates.length : 0;
+    return candidates.map(entry => ({
+        type: '펫', name: '<' + entry.data.rarity + '> ' + entry.data.name, count: '1',
+        iconUrl: getPetIconUrl(entry.data), frameUrl: getAuctionFrameUrl('equipment', entry.data.rarity), label: '펫', chance
+    }));
+}
+
+function buildBaitDetail(item) {
+    const bait = (rpgenius.getDataCache('Bait', []) || []).find(entry => entry && entry.name === item.name);
+    const rewards = bait && Array.isArray(bait.rewards) ? bait.rewards : [];
+    const totalRate = rewards.reduce((sum, reward) => sum + Math.max(0, Number(reward && reward.rate || 0)), 0);
+    return {
+        kind: 'chance',
+        title: '낚시 획득 확률',
+        rollCount: 1,
+        note: '낚시 1회마다 아래 아이템 중 하나를 획득합니다.',
+        entries: rewards.map(reward => {
+            const display = buildDetailRewardDisplay({ type: '아이템', item_id: reward.id, count: 1 });
+            return display ? Object.assign(display, { chance: totalRate > 0 ? Number(reward.rate || 0) / totalRate : 0 }) : null;
+        }).filter(Boolean)
+    };
+}
+
+function buildGachaDetail(item) {
+    let entries = [];
+    let note = '';
+    if (item.use === '초월상자') {
+        entries = buildUniformEquipmentOutcomes(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'], '초월', false);
+        note = '모든 초월 장비 중 하나를 동일한 확률로 획득합니다.' + (item.tradeUsed ? ' 획득 장비는 거래 가능 횟수가 소진된 상태입니다.' : '');
+    } else if (item.use === '보주상자') {
+        const items = rpgenius.getDataCache('Item', []);
+        const candidates = items.map((data, id) => ({ data, id })).filter(entry => entry.data && entry.data.use === '보주');
+        const chance = candidates.length ? 1 / candidates.length : 0;
+        entries = candidates.map(entry => Object.assign(buildDetailRewardDisplay({ type: '아이템', item_id: entry.id, count: 1 }), { chance }));
+        note = '등록된 모든 보주 중 하나를 동일한 확률로 획득합니다.';
+    } else if (typeof item.pack === 'number') {
+        const pack = (rpgenius.getDataCache('Pack', []) || [])[item.pack];
+        if (Array.isArray(pack)) entries = buildPackChanceEntries(pack);
+        note = '표시 확률은 1회 추첨 기준이며, 각 추첨은 서로 독립적으로 진행됩니다.';
+    } else if (item.pack && (item.pack.type === '캐릭터 카드팩' || item.pack.type === '전직 캐릭터 카드팩')) {
+        entries = buildCharacterPackOutcomes(item.pack);
+        note = '캐릭터와 성급은 가능한 모든 조합에서 동일한 확률로 결정됩니다.';
+    } else if (item.pack && item.pack.type === '장비 상자') {
+        entries = buildUniformEquipmentOutcomes(['weapon', 'armor', 'accessory'], String(item.pack.rarity || ''), true);
+        note = '표시된 장비 중 하나를 동일한 확률로 획득합니다. 유니크 레이드 장비는 대상에서 제외됩니다.';
+    } else if (item.pack && item.pack.type === '보조 장비 상자') {
+        entries = buildUniformEquipmentOutcomes(['support'], String(item.pack.rarity || ''), false);
+        note = '표시된 보조 장비 중 하나를 동일한 확률로 획득합니다.';
+    } else if (item.pack && item.pack.type === '펫') {
+        entries = buildPetPackOutcomes(item.pack);
+        note = '표시된 펫 중 하나를 동일한 확률로 획득합니다.';
+    }
+    const rollCount = Math.max(1, Number(item.num || 1));
+    return { kind: 'chance', title: '획득 확률', entries, rollCount, note: (rollCount > 1 ? '아이템 1개당 ' + rollCount + '회 추첨합니다. ' : '') + note };
+}
+
+function formatUseDuration(ms) {
+    const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+    if (seconds >= 60 && seconds % 60 === 0) return comma(seconds / 60) + '분';
+    return comma(seconds) + '초';
+}
+
+function buildItemUsageFacts(item) {
+    const facts = [];
+    const useFuncLabels = {
+        '체력회복': func => '체력 ' + comma(func.amount) + ' 회복',
+        '마나회복': func => '마나 ' + comma(func.amount) + ' 회복',
+        '체력회복%': func => '최대 체력의 ' + Math.round(Number(func.amount || 0) * 100) + '% 회복',
+        '마나회복%': func => '최대 마나의 ' + Math.round(Number(func.amount || 0) * 100) + '% 회복',
+        '경험치획득': func => '경험치 ' + comma(func.amount) + ' 획득',
+        '경험치비약': func => formatUseDuration(func.duration) + ' 동안 경험치 획득량 +' + Math.round(Number(func.amount || 0) * 100) + '%',
+        '골드비약': func => formatUseDuration(func.duration) + ' 동안 골드 획득량 +' + Math.round(Number(func.amount || 0) * 100) + '%'
+    };
+    (Array.isArray(item.use_func) ? item.use_func : []).forEach(func => {
+        const formatter = func && useFuncLabels[func.type];
+        facts.push({ label: func && func.type || '사용 효과', value: formatter ? formatter(func) : String(func && func.type || '효과 적용') });
+    });
+    const useDetails = {
+        '변환': ['적용 대상', '캐릭터 카드의 캐릭터를 지정 캐릭터로 변환'],
+        '캐릭터변환': ['적용 대상', '조건에 맞는 캐릭터 카드를 다른 캐릭터로 무작위 변환'],
+        '만능캐릭터변환': ['적용 대상', '등급과 전직 여부에 관계없이 캐릭터 카드를 무작위 변환'],
+        '전직캐릭터변환': ['적용 대상', '전직 캐릭터 카드를 다른 전직 캐릭터로 무작위 변환'],
+        '전직프레스티지': ['사용 효과', '제타 이상 전직 카드에 프레스티지 표시 및 영구 효과 적용'],
+        '패션적용': ['적용 대상', '캐릭터 카드에 패션 적용'],
+        '고급패션적용': ['적용 대상', '고급 패션 적용이 가능한 캐릭터 카드'],
+        '패션제거': ['적용 대상', '패션이 적용된 캐릭터 카드에서 패션 제거'],
+        '스탯초기화': ['사용 효과', '투자한 스탯포인트를 모두 회수'],
+        '장신구선택권': ['사용 효과', (item.rarity || '지정 등급') + ' 장신구 중 하나를 선택해 획득'],
+        '보조장비리롤': ['적용 대상', '보유한 보조 장비의 스탯을 재설정'],
+        '잠재능력부여': ['적용 대상', (item.tier ? item.tier + ' 티어로 ' : '') + '잠재능력을 부여할 수 있는 장비'],
+        '영혼석': ['적용 대상', '무기 또는 갑옷에 영혼 효과 부여'],
+        '보주': ['적용 대상', '보주가 허용된 장비 부위에 효과 부여'],
+        '보주선택': ['사용 효과', '원하는 보주를 선택해 획득'],
+        '가위': ['적용 대상', '귀속된 장비의 거래 귀속 해제'],
+        '생명수': ['적용 대상', '보유 펫의 사용 기간 연장'],
+        '초월업그레이드': ['적용 대상', '초월 장비의 초월 단계를 한 단계 상승'],
+        '흑화': ['적용 대상', '흑화가 가능한 장비']
+    };
+    if (item.use && useDetails[item.use]) facts.push({ label: useDetails[item.use][0], value: useDetails[item.use][1] });
+    if (item.use === '장비강화권' && item.ug) {
+        facts.push({ label: '강화 결과', value: '성공 시 장비를 +' + Number(item.ug.level || 0) + '강으로 변경' });
+        facts.push({ label: '성공 확률', value: (Math.round(Number(item.ug.roll || 0) * 10000) / 100) + '%' });
+    }
+    if (item.type === '미끼') facts.push({ label: '사용 효과', value: '낚시에서 사용할 미끼로 장착' });
+    if (item.name === '유생의 강화기') facts.push({ label: '사용 효과', value: '선택한 장비를 강화석과 골드 소모 없이 1회 강화' });
+    if (item.name === '프레스티지 증표') facts.push({ label: '사용 효과', value: '제타 이상 카드에 프레스티지 표시 및 영구 경험치 획득량 +10%' });
+    if (item.no_consume === true) facts.push({ label: '소모 여부', value: '사용 후에도 아이템이 소모되지 않음' });
+    return facts;
+}
+
+function buildItemApplications(itemId, item) {
+    const applications = [];
+    const items = rpgenius.getDataCache('Item', []);
+    const add = application => {
+        const key = [application.category, application.title, application.description].join('|');
+        if (!applications.some(entry => entry._key === key)) applications.push(Object.assign({ _key: key }, application));
+    };
+    const systemUses = {
+        '강화석': ['장비 강화', '일반 장비 강화', '초월·신화 장비를 제외한 장비 강화 시 강화 단계에 따라 소모됩니다.'],
+        '상급 강화석': ['장비 강화', '초월·신화 장비 강화', '초월 또는 신화 등급 장비 강화 시 강화 단계에 따라 소모됩니다.'],
+        '쥬얼': ['잠재능력', '잠재능력 재설정', '1개를 소모해 재설정 골드 비용을 30% 줄입니다. 에픽 이하에서는 승급 확률과 실패 누적이 2배로 적용됩니다.'],
+        '화이트 쥬얼': ['잠재능력', '잠재능력 재설정', '1개를 소모해 재설정 골드 비용을 60% 줄입니다. 에픽 이하에서는 승급 확률과 실패 누적이 2배로 적용됩니다.'],
+        '장비 보호권': ['장비 강화', '강화 파괴 보호', '강화 실패로 파괴될 때 자동 소모되어 장비를 보호하고 강화 단계를 0으로 초기화합니다.'],
+        '고급 장비 보호권': ['장비 강화', '고급 강화 파괴 보호', '강화 실패로 파괴될 때 자동 소모되어 장비와 강화 단계를 유지합니다.'],
+        '축복받은 장비 보호권': ['장비 강화', '강화 하락·파괴 보호', '강화 실패로 단계가 하락하거나 장비가 파괴될 때 자동 소모되어 현재 상태를 유지합니다.'],
+        '헬 초대장': ['던전 입장', '부타게임[H] 입장', '부타게임[H] 1회 입장 시 30장이 소모됩니다.']
+    };
+    if (systemUses[item.name]) {
+        const info = systemUses[item.name];
+        add({ category: info[0], title: info[1], description: info[2], iconUrl: getItemDisplayAssets(item).iconUrl, frameUrl: getItemDisplayAssets(item).frameUrl });
+    }
+    const recipes = rpgenius.getDataCache('Recipe', []);
+    (Array.isArray(recipes) ? recipes : []).forEach(recipe => {
+        const material = (Array.isArray(recipe && recipe.materials) ? recipe.materials : []).find(entry => entry && entry.type === '아이템' && Number(entry.item_id) === itemId);
+        if (!material) return;
+        const outputs = (Array.isArray(recipe.crafted) ? recipe.crafted : []).map(buildDetailRewardDisplay).filter(Boolean);
+        const primary = outputs[0] || {};
+        add({
+            category: '제작 재료',
+            title: recipe.name || outputs.map(entry => entry.name).join(', ') || '아이템 제작',
+            description: '제작 1회당 ' + item.name + ' ×' + formatItemDetailCount(material.count) + ' 소모',
+            resultText: outputs.length ? '제작 결과 · ' + outputs.map(entry => entry.name + ' ×' + entry.count).join(', ') : '',
+            iconUrl: primary.iconUrl || primary.imgUrl || null,
+            frameUrl: primary.frameUrl || null,
+            label: primary.label || '제작'
+        });
+    });
+    items.forEach((target, targetId) => {
+        if (!target || targetId === itemId) return;
+        const requirement = (Array.isArray(target.require) ? target.require : []).find(entry => Number(entry && entry.id) === itemId);
+        if (!requirement) return;
+        const assets = getItemDisplayAssets(target);
+        add({ category: '사용 조건', title: target.name + ' 사용', description: '1회당 ' + item.name + ' ×' + formatItemDetailCount(requirement.count) + ' 소모', iconUrl: assets.iconUrl, frameUrl: assets.frameUrl });
+    });
+    const shops = rpgenius.getDataCache('Shop', {});
+    Object.keys(shops && typeof shops == 'object' ? shops : {}).forEach(shopName => {
+        (Array.isArray(shops[shopName]) ? shops[shopName] : []).forEach(shopEntry => {
+            const price = shopEntry && shopEntry.price;
+            if (!price || price.goods !== 'item' || Number(price.item_id) !== itemId) return;
+            const reward = buildDetailRewardDisplay(shopEntry) || {};
+            add({
+                category: '교환 재료',
+                title: shopName + ' 상점 · ' + (reward.name || '상품'),
+                description: '구매 1회당 ' + item.name + ' ×' + formatItemDetailCount(price.amount) + ' 소모',
+                resultText: reward.name ? '구매 결과 · ' + reward.name + ' ×' + reward.count : '',
+                iconUrl: reward.iconUrl || reward.imgUrl || null,
+                frameUrl: reward.frameUrl || null,
+                label: reward.label || '상점'
+            });
+        });
+    });
+    return applications.map(({ _key, ...entry }) => entry);
+}
+
+function decorateWebItemUsePending(pending, user) {
+    if (!pending) return null;
+    const items = rpgenius.getDataCache('Item', []);
+    const equipment = rpgenius.getDataCache('Equipment', {});
+    return Object.assign({}, pending, {
+        options: (pending.options || []).map(option => {
+            const decorated = Object.assign({}, option);
+            if ((option.kind === 'card' || option.kind === 'fashion') && option.card) {
+                decorated.iconUrl = getCardImageUrl(option.card, user);
+            } else if (option.kind === 'equipment') {
+                const data = equipment[option.equipmentType] && equipment[option.equipmentType][option.equipmentId];
+                if (data) {
+                    decorated.iconUrl = getEquipmentIconUrl(data);
+                    decorated.frameUrl = getAuctionFrameUrl('equipment', data.rarity);
+                }
+            } else if (option.kind === 'pet') {
+                const data = rpgenius.getPetData(option.petId);
+                if (data) {
+                    decorated.iconUrl = getPetIconUrl(data);
+                    decorated.frameUrl = getAuctionFrameUrl('equipment', data.rarity);
+                }
+            } else if (option.kind === 'item') {
+                const data = items[option.itemId];
+                const assets = data ? getItemDisplayAssets(data) : null;
+                if (assets) {
+                    decorated.iconUrl = assets.iconUrl;
+                    decorated.frameUrl = assets.frameUrl;
+                }
+            }
+            return decorated;
+        })
+    });
+}
+
+function buildInventoryItemDetail(itemId, item) {
+    const assets = getItemDisplayAssets(item);
+    const requirements = (Array.isArray(item.require) ? item.require : []).map(entry => buildDetailRewardDisplay({ type: '아이템', item_id: entry.id, count: entry.count })).filter(Boolean);
+    let rewards = null;
+    if (item.type === '가챠') rewards = buildGachaDetail(item);
+    if (item.type === '미끼') rewards = buildBaitDetail(item);
+    if (item.type === '번들') {
+        const bundle = (rpgenius.getDataCache('Bundle', []) || [])[item.pack];
+        rewards = {
+            kind: 'bundle', title: '번들 구성품', rollCount: 1,
+            note: '아이템 1개를 사용하면 아래 구성품을 모두 획득합니다.',
+            entries: (Array.isArray(bundle) ? bundle : []).map(buildDetailRewardDisplay).filter(Boolean)
+        };
+    }
+    return {
+        id: itemId,
+        name: item.name,
+        type: item.type,
+        desc: item.desc || '',
+        noTrade: item.no_trade === true,
+        usable: isUsableInventoryItem(item),
+        bulkUsable: isBulkUsableInventoryItem(item),
+        iconUrl: assets.iconUrl,
+        frameUrl: assets.frameUrl,
+        requirements,
+        usageFacts: buildItemUsageFacts(item),
+        rewards,
+        applications: buildItemApplications(itemId, item),
+        showApplicationEmpty: item.type === '재료' || item.type === '티켓'
+    };
 }
 
 // 즉시 지급된 보상 요약(grantPackReward가 만든 summary)을 아이콘 포함 표시용 배열로 변환
@@ -6202,7 +6658,7 @@ function renderUserDashboard(sess, opts) {
           <div class="pf-ident">
             <div id="profileTitle" class="pf-title"></div>
             <div class="pf-name-row"><span id="profileName" class="pf-name">-</span><span id="level" class="pf-level">-</span></div>
-            <div id="exp" class="pf-exp">-</div>
+            <div class="pf-exp-wrap"><div class="pf-exp-bar"><i id="expFill"></i></div><div id="exp" class="pf-exp">-</div></div>
             <div class="pf-power"><span class="pf-power-label">전투력</span><b id="totalPower">-</b></div>
             <div id="petRow" class="pf-pets"></div>
           </div>
@@ -6226,7 +6682,22 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="inventory">
     <div id="inventoryBanner" class="profile-banner" style="display:none"><span id="inventoryBannerText"></span><button id="inventoryBackBtn" class="primary">내 인벤토리로 돌아가기</button></div>
-    <section class="panel" style="min-width:0"><h2 id="viewerTitle" style="margin:0 0 10px">인벤토리</h2><div class="inv-kind-tabs"><button class="view-btn inv-kind-tab" data-kind="items">인벤토리</button><button class="view-btn inv-kind-tab" data-kind="cards">캐릭터 카드</button><button class="view-btn inv-kind-tab" data-kind="equipment">보유 장비</button><button class="view-btn inv-kind-tab" data-kind="pet">보유 펫</button></div><div id="viewer" class="viewer" style="margin-top:14px"></div></section>
+    <section class="panel inventory-shell">
+      <div class="inventory-head">
+        <div class="inventory-title-block"><h2 id="viewerTitle">인벤토리</h2></div>
+        <div class="inventory-total"><span id="inventoryTotalLabel">보유 슬롯</span><b id="inventoryTotal">0</b></div>
+      </div>
+      <div class="inventory-console">
+        <div class="inv-kind-tabs" role="tablist" aria-label="인벤토리 분류">
+          <button class="view-btn inv-kind-tab" data-kind="items" role="tab">아이템</button>
+          <button class="view-btn inv-kind-tab" data-kind="cards" role="tab">캐릭터 카드</button>
+          <button class="view-btn inv-kind-tab" data-kind="equipment" role="tab">장비</button>
+          <button class="view-btn inv-kind-tab" data-kind="pet" role="tab">펫</button>
+        </div>
+        <label class="inventory-search"><span aria-hidden="true">⌕</span><input id="inventorySearch" type="search" placeholder="이름으로 검색" autocomplete="off"><button id="inventorySearchClear" type="button" aria-label="검색어 지우기">×</button></label>
+      </div>
+      <div id="viewer" class="viewer inventory-viewer"></div>
+    </section>
   </div>
   <div class="page" data-page="mail">
     <div class="mailbox" id="mailbox">

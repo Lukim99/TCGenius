@@ -840,6 +840,21 @@ function petCardThumb(pet) {
     return wrap;
 }
 
+function profilePetTile(pet) {
+    const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
+    return el('button', { class: 'pf-pet-tile' + (pet.expired ? ' expired' : ''), type: 'button', onclick: () => openPetModal(pet) },
+        el('div', { class: 'pf-pet-thumb-wrap' },
+            petCardThumb(pet),
+            pet.level > 0 ? el('span', { class: 'pf-pet-tile-lv' }, '+' + pet.level) : null
+        ),
+        el('div', { class: 'pf-pet-tile-name' }, pet.name),
+        el('div', { class: 'pf-pet-tile-meta' },
+            rarityTag(pet.rarity),
+            expText ? el('span', { class: 'pf-pet-tile-exp' }, expText) : null
+        )
+    );
+}
+
 function petCard(pet) {
     const color = RARITY_COLORS[pet.rarity] || '#334155';
     const expText = pet.expired ? '만료됨' : (pet.expiryText || '');
@@ -951,7 +966,19 @@ function renderGearSlots(data) {
     root.replaceChildren(...nodes);
 }
 
+let modalRequestToken = 0;
+let activeItemUsePending = false;
+let cancellingItemUse = false;
+
+function setModalVariant(variant) {
+    const modal = $('#modalBg .modal');
+    if (!modal) return;
+    modal.classList.toggle('item-detail-modal', variant === 'item-detail');
+}
+
 function openModal(title, sub, lines) {
+    modalRequestToken++;
+    setModalVariant();
     $('#modalTitle').textContent = title;
     $('#modalSub').textContent = sub || '';
     $('#modalSub').style.display = sub ? '' : 'none';
@@ -959,9 +986,32 @@ function openModal(title, sub, lines) {
     $('#modalBg').classList.add('active');
 }
 
-function closeModal() { $('#modalBg').classList.remove('active'); }
+function finishCloseModal() {
+    modalRequestToken++;
+    $('#modalBg').classList.remove('active');
+    setModalVariant();
+}
+
+async function closeModal() {
+    if (activeItemUsePending && !cancellingItemUse) {
+        cancellingItemUse = true;
+        try {
+            await postApi('/api/inventory/item-use/cancel');
+            loadInventory('items').catch(() => {});
+        } catch (error) {
+            showAlert(error.message);
+            cancellingItemUse = false;
+            return;
+        }
+        activeItemUsePending = false;
+        cancellingItemUse = false;
+    }
+    finishCloseModal();
+}
 
 function openRichModal(title, sub, nodes) {
+    modalRequestToken++;
+    setModalVariant();
     $('#modalTitle').textContent = title;
     $('#modalSub').textContent = sub || '';
     $('#modalSub').style.display = sub ? '' : 'none';
@@ -1701,7 +1751,12 @@ async function handleEquipmentAction(eq, action, event) {
 }
 
 function categorySection(title, children) {
-    return el('div', { class: 'cat' }, el('div', { class: 'cat-title' }, title), ...children);
+    const normalizedTitle = String(title || '').replace(/[《》]/g, '').trim();
+    const count = children.reduce((sum, child) => sum + (child && child.children ? child.children.length : 0), 0);
+    return el('div', { class: 'cat inventory-category' },
+        el('div', { class: 'cat-title' }, el('span', null, normalizedTitle), el('b', null, count)),
+        ...children
+    );
 }
 
 let myName = null;
@@ -1733,11 +1788,17 @@ function renderProfile(data) {
     if (pTitle) { const img = titleImg(data.user.title); pTitle.replaceChildren(...(img ? [img] : [])); }
     $('#level').textContent = 'Lv. ' + comma(data.user.level);
     $('#exp').textContent = 'EXP ' + comma(data.user.exp) + ' / ' + comma(data.user.maxExp);
+    const expFill = $('#expFill');
+    if (expFill) {
+        const maxExp = Number(data.user.maxExp || 0);
+        const pct = maxExp > 0 ? Math.max(0, Math.min(100, Number(data.user.exp || 0) / maxExp * 100)) : 0;
+        expFill.style.width = pct + '%';
+    }
     $('#totalPower').textContent = comma(data.combatPower.total);
     const heroBg = $('#pfHeroBg');
     if (heroBg) heroBg.style.backgroundImage = (data.mainCard && data.mainCard.imageUrl) ? 'url("' + data.mainCard.imageUrl + '")' : 'none';
     const petRow = $('#petRow');
-    if (petRow) petRow.replaceChildren(...(data.equippedPets || []).map(petCard));
+    if (petRow) petRow.replaceChildren(...(data.equippedPets || []).map(profilePetTile));
     renderGoods(data.user, data.currencyIcons || {});
     currentStatGroups = data.statGroups || [];
     renderStatCard();
@@ -1768,28 +1829,273 @@ function invItemCell(item) {
         imgParts.push(el('img', { class: 'inv-cell-icon', src: item.iconUrl, alt: item.name }));
     }
     if (item.count > 1) imgParts.push(el('span', { class: 'inv-cell-count' }, comma(item.count)));
-    return el('div', { class: 'inv-cell', onclick: () => openInvItemModal(item) },
+    return el('button', { class: 'inv-cell', type: 'button', title: item.name, onclick: () => openInvItemModal(item) },
         el('div', { class: 'inv-cell-img' }, ...imgParts),
         el('div', { class: 'inv-cell-name' }, item.name)
     );
 }
 
-function openInvItemModal(item) {
-    const thumbParts = [];
-    if (item.iconUrl) {
-        if (item.frameUrl) thumbParts.push(el('img', { class: 'inv-cell-frame', src: item.frameUrl, alt: '' }));
-        thumbParts.push(el('img', { class: 'inv-cell-icon', src: item.iconUrl, alt: item.name }));
+function itemDetailArtwork(data, className) {
+    const iconUrl = data && (data.iconUrl || data.imgUrl);
+    const parts = [];
+    if (data && data.frameUrl) parts.push(el('img', { class: 'item-detail-frame', src: data.frameUrl, alt: '' }));
+    if (iconUrl) parts.push(el('img', { class: 'item-detail-icon', src: iconUrl, alt: data.name || '', loading: 'lazy' }));
+    if (!iconUrl) parts.push(el('span', { class: 'item-detail-fallback' }, data && data.label ? data.label : String(data && data.name || '?').slice(0, 1)));
+    return el('div', { class: 'item-detail-art ' + (className || '') }, ...parts);
+}
+
+function itemDetailHero(item) {
+    const chips = [el('span', { class: 'item-detail-chip type' }, item.type || '아이템')];
+    if (item.noTrade) chips.push(el('span', { class: 'item-detail-chip bound' }, '거래 불가'));
+    return el('header', { class: 'item-detail-hero' },
+        itemDetailArtwork(item, 'hero-art'),
+        el('div', { class: 'item-detail-summary' },
+            el('div', { class: 'item-detail-chips' }, ...chips),
+            el('h4', null, item.name),
+            el('p', { class: 'item-detail-desc' }, item.desc || '등록된 아이템 설명이 없습니다.'),
+            el('div', { class: 'item-detail-owned' },
+                el('span', null, '보유 수량'),
+                el('b', null, comma(item.count) + '개')
+            )
+        )
+    );
+}
+
+function itemDetailSection(title, meta, ...children) {
+    return el('section', { class: 'item-detail-section' },
+        el('div', { class: 'item-detail-section-head' },
+            el('h5', null, title),
+            meta ? el('span', null, meta) : null
+        ),
+        ...children
+    );
+}
+
+function itemChanceText(chance) {
+    const percent = Math.max(0, Number(chance || 0) * 100);
+    return percent.toLocaleString('ko-KR', { maximumFractionDigits: percent < 0.01 ? 6 : 4 }) + '%';
+}
+
+function itemRewardRow(entry, kind) {
+    const trailing = [];
+    if (entry.count) trailing.push(el('span', { class: 'item-reward-count' }, '×' + entry.count));
+    if (kind === 'chance') trailing.push(el('b', { class: 'item-reward-chance' }, itemChanceText(entry.chance)));
+    return el('div', { class: 'item-reward-row' },
+        itemDetailArtwork(entry, 'reward-art'),
+        el('div', { class: 'item-reward-info' },
+            el('span', { class: 'item-reward-type' }, entry.type || '보상'),
+            el('strong', null, entry.name || '알 수 없는 보상'),
+            entry.detail ? el('small', null, entry.detail) : null
+        ),
+        el('div', { class: 'item-reward-trailing' }, ...trailing)
+    );
+}
+
+function cleanItemUseMessage(message) {
+    return String(message || '')
+        .replace(/\u200e/g, '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('/RPGenius'));
+}
+
+function itemUseMessagePanel(message, className) {
+    const lines = cleanItemUseMessage(message);
+    return el('div', { class: 'item-use-message ' + (className || '') }, ...lines.map(line => {
+        if (/^\[.+\]$/.test(line)) return el('strong', { class: 'item-use-message-title' }, line.replace(/[\[\]]/g, ''));
+        return el('p', null, line.replace(/^[-✅✨❗]\s*/, ''));
+    }));
+}
+
+function itemUseControls(item) {
+    const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
+    if (!ownInventory || !item.usable) return null;
+    let amount = 1;
+    const max = Math.max(1, Number(item.count || 1));
+    const amountText = el('b', { class: 'item-use-amount' }, '1');
+    const syncAmount = next => {
+        amount = Math.max(1, Math.min(max, Math.floor(Number(next) || 1)));
+        amountText.textContent = comma(amount);
+        useButton.textContent = item.name === '봉인된 자물쇠' ? comma(amount) + '회 개봉' : comma(amount) + '개 사용';
+    };
+    const quantity = item.bulkUsable ? el('div', { class: 'item-use-stepper' },
+        el('button', { type: 'button', onclick: () => syncAmount(amount - 1), 'aria-label': '수량 줄이기' }, '−'),
+        amountText,
+        el('button', { type: 'button', onclick: () => syncAmount(amount + 1), 'aria-label': '수량 늘리기' }, '+'),
+        el('button', { class: 'item-use-max', type: 'button', onclick: () => syncAmount(max) }, 'MAX')
+    ) : null;
+    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
+    return el('section', { class: 'item-use-bar' },
+        el('div', { class: 'item-use-bar-copy' }, el('span', null, '아이템 사용'), el('small', null, item.bulkUsable ? '사용할 수량을 선택해주세요.' : '이 아이템은 한 번에 1개씩 사용할 수 있습니다.')),
+        quantity,
+        useButton
+    );
+}
+
+async function postItemUse(url, body) {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(data.error || ('HTTP ' + response.status));
+        error.data = data;
+        throw error;
     }
-    const bodyNodes = [
-        el('div', { class: 'inv-cell-img', style: 'width:96px;height:96px;margin:0 auto 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1)' }, ...thumbParts),
-        el('div', { class: 'kv' }, el('span', null, '종류'), el('b', null, item.type || '-')),
-        el('div', { class: 'kv' }, el('span', null, '보유 수량'), el('b', null, comma(item.count) + '개')),
-    ];
-    if (item.desc) bodyNodes.push(el('div', { style: 'padding:10px 14px;background:rgba(4,6,18,.65);border:1px solid rgba(255,255,255,.06);border-radius:12px;font-size:13px;color:#cbd5e1;line-height:1.6;margin-top:4px' }, item.desc));
-    $('#modalTitle').textContent = item.name;
+    return data;
+}
+
+function renderItemUseResult(item, message) {
+    activeItemUsePending = false;
+    modalLocked = false;
+    $('#modalBody').replaceChildren(el('div', { class: 'item-detail item-use-result' },
+        itemDetailHero(Object.assign({}, item, { count: Math.max(0, Number(item.count || 0)) })),
+        el('div', { class: 'item-detail-content' },
+            el('section', { class: 'item-use-result-card' },
+                el('span', { class: 'item-use-result-mark' }, '✓'),
+                el('h5', null, '사용 완료'),
+                itemUseMessagePanel(message, 'result')
+            )
+        )
+    ));
+}
+
+function itemUseOptionNode(item, option) {
+    return el('button', { class: 'item-use-option', type: 'button', onclick: event => resolveInventoryItemUse(item, option.value, false, event.currentTarget) },
+        itemDetailArtwork(option, 'use-option-art'),
+        el('div', { class: 'item-use-option-copy' }, el('strong', null, option.name), option.meta ? el('span', null, option.meta) : null),
+        el('span', { class: 'item-use-option-arrow' }, '›')
+    );
+}
+
+function renderItemUsePending(item, pending, message) {
+    if (!pending) return renderItemUseResult(item, message);
+    activeItemUsePending = true;
+    modalLocked = false;
+    const actionNode = pending.confirmOnly
+        ? el('button', { class: 'item-use-confirm', type: 'button', onclick: event => resolveInventoryItemUse(item, null, true, event.currentTarget) }, pending.confirmLabel || '확인')
+        : el('div', { class: 'item-use-options' }, ...(pending.options || []).map(option => itemUseOptionNode(item, option)));
+    $('#modalBody').replaceChildren(el('div', { class: 'item-detail item-use-select' },
+        itemDetailHero(item),
+        el('div', { class: 'item-detail-content' },
+            itemDetailSection(pending.title || '대상 선택', (pending.options || []).length ? (pending.options || []).length + '개 대상' : '',
+                el('p', { class: 'item-detail-note' }, pending.description || '아이템을 적용할 대상을 선택해주세요.'),
+                pending.confirmOnly && message ? itemUseMessagePanel(message, 'preview') : null,
+                actionNode,
+                !pending.confirmOnly && !(pending.options || []).length ? el('div', { class: 'item-detail-empty' }, '선택할 수 있는 대상이 없습니다.') : null,
+                el('button', { class: 'item-use-cancel', type: 'button', onclick: () => closeModal() }, '사용 취소')
+            )
+        )
+    ));
+}
+
+async function useInventoryItem(item, count, button) {
+    button.disabled = true;
+    modalLocked = true;
+    if (item.name === '봉인된 자물쇠') {
+        modalLocked = false;
+        finishCloseModal();
+        openLockbox(count);
+        return;
+    }
+    try {
+        const response = await postItemUse('/api/inventory/items/' + encodeURIComponent(item.id) + '/use', { count });
+        item.count = Number.isFinite(Number(response.remainingCount)) ? Number(response.remainingCount) : Math.max(0, Number(item.count || 0) - Number(count || 1));
+        loadInventory('items').catch(() => {});
+        if (response.pending) renderItemUsePending(item, response.pending, response.message);
+        else renderItemUseResult(item, response.message);
+    } catch (error) {
+        modalLocked = false;
+        button.disabled = false;
+        if (error.data && error.data.pending) renderItemUsePending(item, error.data.pending, error.message);
+        else showAlert(error.message);
+    }
+}
+
+async function resolveInventoryItemUse(item, choice, confirm, button) {
+    button.disabled = true;
+    modalLocked = true;
+    try {
+        const response = await postItemUse('/api/inventory/item-use/resolve', { choice, confirm });
+        loadInventory('items').catch(() => {});
+        if (response.pending) renderItemUsePending(item, response.pending, response.message);
+        else renderItemUseResult(item, response.message);
+    } catch (error) {
+        modalLocked = false;
+        button.disabled = false;
+        if (error.data && error.data.pending) renderItemUsePending(item, error.data.pending, error.message);
+        else showAlert(error.message);
+    }
+}
+
+function renderItemDetail(item, detail) {
+    const data = Object.assign({}, item, detail || {}, { count: item.count });
+    const sections = [];
+    if (Array.isArray(data.usageFacts) && data.usageFacts.length) {
+        sections.push(itemDetailSection('사용 효과', '',
+            el('div', { class: 'item-detail-facts' }, ...data.usageFacts.map(fact =>
+                el('div', { class: 'item-detail-fact' }, el('span', null, fact.label), el('b', null, fact.value))
+            ))
+        ));
+    }
+    if (Array.isArray(data.requirements) && data.requirements.length) {
+        sections.push(itemDetailSection('추가 필요 아이템', data.requirements.length + '종',
+            el('p', { class: 'item-detail-note' }, '사용할 때 아래 아이템도 함께 소모됩니다.'),
+            el('div', { class: 'item-reward-list compact' }, ...data.requirements.map(entry => itemRewardRow(entry, 'bundle')))
+        ));
+    }
+    if (data.rewards) {
+        const entries = Array.isArray(data.rewards.entries) ? data.rewards.entries : [];
+        const rewardNodes = entries.length
+            ? [el('div', { class: 'item-reward-list' }, ...entries.map(entry => itemRewardRow(entry, data.rewards.kind)))]
+            : [el('div', { class: 'item-detail-empty' }, '등록된 보상 정보가 없습니다.')];
+        sections.push(itemDetailSection(data.rewards.title || '획득 정보', entries.length + '개 결과',
+            data.rewards.note ? el('p', { class: 'item-detail-note' }, data.rewards.note) : null,
+            ...rewardNodes
+        ));
+    }
+    if (Array.isArray(data.applications) && data.applications.length) {
+        sections.push(itemDetailSection('사용처', data.applications.length + '곳',
+            el('div', { class: 'item-application-list' }, ...data.applications.map(application =>
+                el('div', { class: 'item-application' },
+                    itemDetailArtwork(application, 'application-art'),
+                    el('div', { class: 'item-application-info' },
+                        el('span', { class: 'item-application-category' }, application.category || '사용처'),
+                        el('strong', null, application.title),
+                        el('p', null, application.description || ''),
+                        application.resultText ? el('small', null, application.resultText) : null
+                    )
+                )
+            ))
+        ));
+    } else if (data.showApplicationEmpty) {
+        sections.push(itemDetailSection('사용처', '',
+            el('div', { class: 'item-detail-empty' }, '현재 등록된 제작식이나 시스템 소모처가 없습니다.')
+        ));
+    }
+    const useControls = itemUseControls(data);
+    $('#modalBody').replaceChildren(el('div', { class: 'item-detail' }, itemDetailHero(data), el('div', { class: 'item-detail-content' }, ...sections), useControls));
+}
+
+async function openInvItemModal(item) {
+    const requestToken = ++modalRequestToken;
+    setModalVariant('item-detail');
+    $('#modalTitle').textContent = '';
     $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(...bodyNodes);
+    $('#modalBody').replaceChildren(el('div', { class: 'item-detail' },
+        itemDetailHero(item),
+        el('div', { class: 'item-detail-loading' }, el('span', { class: 'item-detail-spinner' }), el('b', null, '상세 정보를 불러오는 중'))
+    ));
     $('#modalBg').classList.add('active');
+    try {
+        const response = await api('/api/inventory/items/' + encodeURIComponent(item.id) + '/detail');
+        if (requestToken !== modalRequestToken || !$('#modalBg').classList.contains('active')) return;
+        renderItemDetail(item, response.detail);
+    } catch (error) {
+        if (requestToken !== modalRequestToken) return;
+        $('#modalBody').replaceChildren(el('div', { class: 'item-detail' },
+            itemDetailHero(item),
+            el('div', { class: 'item-detail-error' }, '상세 정보를 불러오지 못했습니다.', el('small', null, error.message))
+        ));
+    }
 }
 
 async function openLockbox(count = 1) {
@@ -1895,44 +2201,93 @@ function showLockboxResult(opens) {
     overlay.classList.add('active');
 }
 
+const INVENTORY_KIND_META = {
+    items: { title: '아이템 보관함', countLabel: '보유 종류' },
+    cards: { title: '캐릭터 카드', countLabel: '보유 카드' },
+    equipment: { title: '장비 보관함', countLabel: '보유 장비' },
+    pet: { title: '펫 보관함', countLabel: '보유 펫' }
+};
+let currentInventoryKind = 'items';
+let currentInventoryData = null;
+
+function inventoryCount(kind, data) {
+    const list = kind === 'items' ? data.items : (kind === 'cards' ? data.cards : (kind === 'equipment' ? data.equipment : data.pet));
+    return Array.isArray(list) ? list.length : 0;
+}
+
+function updateInventoryChrome(kind, data) {
+    const meta = INVENTORY_KIND_META[kind] || INVENTORY_KIND_META.items;
+    $('#viewerTitle').textContent = meta.title;
+    $('#inventoryTotalLabel').textContent = meta.countLabel;
+    $('#inventoryTotal').textContent = comma(inventoryCount(kind, data));
+    $$('.inv-kind-tab').forEach(button => {
+        const active = button.dataset.kind === kind;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+    });
+}
+
+function inventoryMatches(value, query) {
+    return !query || String(value || '').toLocaleLowerCase('ko-KR').includes(query);
+}
+
+function renderInventoryData(kind, data) {
+    const query = String($('#inventorySearch') && $('#inventorySearch').value || '').trim().toLocaleLowerCase('ko-KR');
+    const emptySearch = el('div', { class: 'empty inventory-empty' }, query ? '검색 결과가 없습니다.' : '보유 항목이 없습니다.');
+    updateInventoryChrome(kind, data);
+    if (kind === 'items') {
+        const sections = [];
+        const matchedItems = data.items.filter(item => inventoryMatches(item.name, query));
+        ITEM_TYPE_ORDER.forEach(type => {
+            const filtered = matchedItems.filter(item => item.type === type).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+            if (filtered.length) sections.push(categorySection(type, [el('div', { class: 'inv-grid' }, ...filtered.map(invItemCell))]));
+        });
+        const unknown = matchedItems.filter(item => !ITEM_TYPE_ORDER.includes(item.type)).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+        if (unknown.length) sections.push(categorySection('기타', [el('div', { class: 'inv-grid' }, ...unknown.map(invItemCell))]));
+        $('#viewer').replaceChildren(...(sections.length ? sections : [emptySearch]));
+    }
+    if (kind === 'cards') {
+        const cards = data.cards.filter(card => inventoryMatches(card.formatted || card.name, query));
+        $('#viewer').replaceChildren(cards.length ? el('div', { class: 'card-grid inventory-card-grid' }, cards.map(card => cardNode(card, true, openInventoryCardModal))) : emptySearch);
+    }
+    if (kind === 'equipment') {
+        const sections = [];
+        const equipment = data.equipment.filter(eq => inventoryMatches(eq.name, query));
+        EQUIP_TYPE_ORDER.forEach(([type, label]) => {
+            const filtered = equipment.filter(eq => eq.type === type);
+            if (filtered.length) sections.push(categorySection(label, [el('div', { class: 'equip-grid inventory-equip-grid' }, filtered.map(equipmentCard))]));
+        });
+        $('#viewer').replaceChildren(...(sections.length ? sections : [emptySearch]));
+    }
+    if (kind === 'pet') {
+        const pets = data.pet.filter(pet => inventoryMatches(pet.name, query));
+        $('#viewer').replaceChildren(pets.length ? el('div', { class: 'equip-grid inventory-equip-grid inventory-pet-grid' }, pets.map(petCard)) : emptySearch);
+    }
+}
+
 async function loadInventory(kind) {
+    currentInventoryKind = kind;
+    currentInventoryData = null;
+    if ($('#inventorySearch')) $('#inventorySearch').value = '';
     $$('.inv-kind-tab').forEach(b => b.classList.toggle('active', b.dataset.kind === kind));
     $('#viewer').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     const url = currentInventoryName && myName && currentInventoryName !== myName
         ? '/api/inventory/' + kind + '/' + encodeURIComponent(currentInventoryName)
         : '/api/inventory/' + kind;
     const data = await api(url);
-    if (kind === 'items') {
-        $('#viewerTitle').textContent = '인벤토리';
-        const sections = [];
-        ITEM_TYPE_ORDER.forEach(type => {
-            const filtered = data.items.filter(item => item.type === type).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
-            if (filtered.length) sections.push(categorySection('《 ' + type + ' 》', [el('div', { class: 'inv-grid' }, ...filtered.map(invItemCell))]));
-        });
-        const unknown = data.items.filter(item => !ITEM_TYPE_ORDER.includes(item.type)).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
-        if (unknown.length) sections.push(categorySection('《 기타 》', [el('div', { class: 'inv-grid' }, ...unknown.map(invItemCell))]));
-        $('#viewer').replaceChildren(...(sections.length ? sections : [el('div', { class: 'empty' }, '보유 아이템이 없습니다.')]));
-    }
-    if (kind === 'cards') {
-        $('#viewerTitle').textContent = '보유 캐릭터 카드';
-        $('#viewer').replaceChildren(data.cards.length ? el('div', { class: 'card-grid' }, data.cards.map(card => cardNode(card, true, openInventoryCardModal))) : el('div', { class: 'empty' }, '보유 카드가 없습니다.'));
-    }
-    if (kind === 'equipment') {
-        $('#viewerTitle').textContent = '보유 장비';
-        const sections = [];
-        EQUIP_TYPE_ORDER.forEach(([type, label]) => {
-            const filtered = data.equipment.filter(eq => eq.type === type);
-            if (filtered.length) sections.push(categorySection('《 ' + label + ' 》', [el('div', { class: 'equip-grid' }, filtered.map(equipmentCard))]));
-        });
-        $('#viewer').replaceChildren(...(sections.length ? sections : [el('div', { class: 'empty' }, '보유 장비가 없습니다.')]));
-    }
-    if (kind === 'pet') {
-        $('#viewerTitle').textContent = '보유 펫';
-        $('#viewer').replaceChildren(data.pet.length ? el('div', { class: 'equip-grid' }, data.pet.map(petCard)) : el('div', { class: 'empty' }, '보유 펫이 없습니다.'));
-    }
+    currentInventoryData = data;
+    renderInventoryData(kind, data);
 }
 
 $$('.inv-kind-tab').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
+if ($('#inventorySearch')) $('#inventorySearch').oninput = () => {
+    if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
+};
+if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
+    $('#inventorySearch').value = '';
+    $('#inventorySearch').focus();
+    if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
+};
 
 // ===== 이벤트: 유생의 주사위 =====
 
