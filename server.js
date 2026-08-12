@@ -1900,6 +1900,7 @@ function buildBurningTrack(reward, track, claimedSet) {
 
 // ===== [H]필드 =====
 const H_FIELD_NAME = '부타게임[H]';
+const H_FIELD_RECOVERY_TYPES = new Set(['체력회복', '마나회복', '체력회복%', '마나회복%']);
 
 function getHFieldTicketInfo(user) {
     const items = rpgenius.getDataCache('Item', []);
@@ -1913,6 +1914,25 @@ function getHFieldTicketInfo(user) {
         iconUrl: assets.iconUrl,
         frameUrl: assets.frameUrl
     };
+}
+
+function getHFieldRecoveryItems(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    return buildInventoryItems(user).filter(entry => {
+        const data = items[Number(entry.id)];
+        return data && data.type == '소모품' && (data.use_func || []).some(func => func && H_FIELD_RECOVERY_TYPES.has(func.type));
+    }).map(entry => {
+        const data = items[Number(entry.id)];
+        const effects = (data.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)).map(func => {
+            const resource = String(func.type).startsWith('체력') ? 'HP' : 'MP';
+            const amount = String(func.type).endsWith('%') ? Math.round(Number(func.amount || 0) * 100) + '%' : Number(func.amount || 0).toLocaleString('ko-KR');
+            return resource + ' +' + amount;
+        });
+        return {
+            id: Number(entry.id), name: entry.name, count: Number(entry.count || 0),
+            effect: effects.join(' / '), iconUrl: entry.iconUrl, frameUrl: entry.frameUrl
+        };
+    });
 }
 
 function getHFieldSkills(user, mainCard) {
@@ -2000,7 +2020,8 @@ function buildHFieldState(user) {
         },
         nextActionAt: inField ? Number(user.field.nextActionAt || 0) : 0,
         charge: inField ? Number(user.field.sivalonCharge || 0) : 0,
-        skills: getHFieldSkills(user, mainCard)
+        skills: getHFieldSkills(user, mainCard),
+        consumables: inField ? getHFieldRecoveryItems(user) : []
     };
 }
 
@@ -2122,6 +2143,36 @@ server.post('/api/hfield/skill', requireUser, (req, res) => runHFieldMutation(re
     const message = await rpgenius.useSkillInField(user, skillName);
     await user.save();
     return buildHFieldActionResult(user, before, message, 'skill', skillName);
+}));
+
+server.post('/api/hfield/use-consumable', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    if (!user.field || user.field.name != H_FIELD_NAME) return { ok: false, message: '부타게임[H]에 입장한 상태가 아닙니다.', state: buildHFieldState(user) };
+    const itemId = Number(req.body && req.body.itemId);
+    const items = rpgenius.getDataCache('Item', []);
+    const item = Number.isInteger(itemId) ? items[itemId] : null;
+    const recoveryFuncs = item && item.type == '소모품'
+        ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 회복 소모품이 아닙니다.', state: buildHFieldState(user) };
+    if (rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '아이템이 부족합니다.', state: buildHFieldState(user) };
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
+    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const restoresHp = recoveryFuncs.some(func => String(func.type).startsWith('체력'));
+    const restoresMp = recoveryFuncs.some(func => String(func.type).startsWith('마나'));
+    if ((!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
+        return { ok: false, message: '회복할 HP나 MP가 없습니다.', state: buildHFieldState(user) };
+    }
+    const message = await rpgenius.useItem(user, item.name, 1);
+    const state = buildHFieldState(user);
+    return {
+        ok: !String(message).startsWith('❌'), message, state,
+        event: {
+            action: 'consumable', itemId, itemName: item.name,
+            recoveredHp: Math.max(0, Number(state.player.hp || 0) - beforeHp),
+            recoveredMp: Math.max(0, Number(state.player.mp || 0) - beforeMp)
+        }
+    };
 }));
 
 server.post('/api/hfield/leave', requireUser, (req, res) => runHFieldMutation(req, res, async user => {

@@ -20,6 +20,7 @@ assert.ok(app.includes("if (pageId === '[H]필드') { location.href = '/hfield';
     "server.post('/api/hfield/cancel-entry'",
     "server.post('/api/hfield/attack'",
     "server.post('/api/hfield/skill'",
+    "server.post('/api/hfield/use-consumable'",
     "server.post('/api/hfield/leave'",
     'rpgenius.enqueueFieldAction',
     'rpgenius.enterField',
@@ -48,6 +49,11 @@ assert.ok(field.includes('const bw=narrow?168:184') && field.includes('labelYRat
 assert.ok(!field.includes('state.ticket.frameUrl') && !field.includes('transition.ticket.frameUrl'), '입장 버튼과 입장 연출에는 아이템 프레임을 겹치면 안 됩니다.');
 assert.ok(field.includes('Array.from({length:30}') && field.includes('startEntryTransition(ticket)') && field.includes('entryTransitionLayer(w,h)'), '초대장 30장이 화면을 덮고 떨어지는 입장 전환 연출이 필요합니다.');
 assert.ok(field.includes('hud.inEntryTransition()||!state') && field.includes('if(hud.inEntryTransition())return;'), '입장 전환 중에는 전투와 퇴장 입력을 잠가야 합니다.');
+assert.ok(server.includes('H_FIELD_RECOVERY_TYPES') && server.includes('consumables: inField ? getHFieldRecoveryItems(user) : []'), '필드 상태에 보유 중인 회복 소모품을 제공해야 합니다.');
+assert.ok(server.includes('회복할 HP나 MP가 없습니다.'), '이미 가득 찬 자원에는 회복 소모품을 낭비하지 않아야 합니다.');
+assert.ok(field.includes('consumableLauncher') && field.includes('consumableLayer') && field.includes("event.code==='KeyP'"), 'PC와 터치에서 열 수 있는 회복 소모품 메뉴가 필요합니다.');
+assert.ok(field.includes("request('/api/hfield/use-consumable'") && field.includes('recoveryBurst') && field.includes('addRecovery'), '아이템 사용 결과에 회복 수치와 전투 연출을 표시해야 합니다.');
+assert.ok(field.includes("potion: uiAsset('sfx/potion.mp3')"), '회복 소모품 사용 시 포션 효과음을 재생해야 합니다.');
 assert.ok(css.includes('overflow:hidden') && css.includes('position:fixed;inset:0'), '독립 화면은 스크롤 없이 전체 화면을 사용해야 합니다.');
 assert.ok(!server.includes('class="page hfield-page"'), '대시보드 안에 H필드 페이지를 중복 배치하면 안 됩니다.');
 
