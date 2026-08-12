@@ -1339,7 +1339,7 @@ function ownEquipContext() {
     return false;
 }
 
-function openEquipmentModal(eq) {
+function equipmentModalView(eq, interactive) {
     const nodes = [];
     const thumb = equipmentThumb(eq);
     const hero = el('div', { class: 'eqm-hero' }, thumb,
@@ -1377,7 +1377,7 @@ function openEquipmentModal(eq) {
     }
     const potBlock = potentialBlockNode(eq.potentialDisplay);
     if (potBlock) nodes.push(potBlock);
-    if (ownEquipContext() && Number(eq.number || 0) > 0) {
+    if (interactive !== false && ownEquipContext() && Number(eq.number || 0) > 0) {
         const row = el('div', { class: 'row' });
         if (eq.equipped) {
             row.appendChild(el('button', { class: 'close', onclick: e => handleEquipmentAction(eq, 'unequip', e) }, '장착 해제'));
@@ -1397,9 +1397,15 @@ function openEquipmentModal(eq) {
             nodes.push(potRow);
         }
     }
+    return [hero, ...(eq.setInfo ? equipmentModalTabbedNodes(nodes, eq.setInfo) : nodes)];
+}
+
+function openEquipmentModal(eq) {
+    modalRequestToken++;
+    setModalVariant();
     $('#modalTitle').textContent = '';
     $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(hero, ...(eq.setInfo ? equipmentModalTabbedNodes(nodes, eq.setInfo) : nodes));
+    $('#modalBody').replaceChildren(...equipmentModalView(eq, true));
     $('#modalBg').classList.add('active');
 }
 
@@ -4395,11 +4401,16 @@ $$('#aucCurrFilter button').forEach(btn => btn.onclick = () => {
 if ($('#aucSearch')) $('#aucSearch').addEventListener('input', e => { auctionState.query = e.target.value; auctionState.page = 1; renderAuctionList(); });
 if ($('#aucSort')) $('#aucSort').onchange = e => { auctionState.sort = e.target.value; auctionState.page = 1; renderAuctionList(); };
 
-function showDetail(content) {
-    $('#aucDetail').replaceChildren(...content);
+function showDetail(content, variant) {
+    const detail = $('#aucDetail');
+    detail.classList.toggle('auction-equipment-modal', variant === 'equipment');
+    detail.replaceChildren(...content);
     $('#aucDetailBg').classList.add('active');
 }
-function closeDetail() { $('#aucDetailBg').classList.remove('active'); }
+function closeDetail() {
+    $('#aucDetailBg').classList.remove('active');
+    $('#aucDetail').classList.remove('auction-equipment-modal');
+}
 
 // 거래소 상세 모달 공용 빌더 (상점 구매 모달 패턴 재사용)
 function aucModalItemRow(entry, metaLines) {
@@ -4439,12 +4450,21 @@ function aucQtyRow(label, maxQty, hint, onChange) {
 function openAuctionDetail(entry) {
     const d = entry.display;
     const body = el('div', { class: 'shop-buy-modal' });
-    body.appendChild(aucModalItemRow(entry, [
-        AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : '') + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : ''),
-        '판매자: ' + entry.sellerName
-    ]));
-    const statBlock = aucModalStatBlock(d);
-    if (statBlock) body.appendChild(statBlock);
+    const equipmentDetail = entry.kind === 'equipment' && d.equipmentDetail;
+    if (equipmentDetail) {
+        body.append(...equipmentModalView(equipmentDetail, false));
+        body.appendChild(el('div', { class: 'auc-equipment-seller' },
+            el('span', null, '판매자'),
+            el('strong', null, entry.sellerName)
+        ));
+    } else {
+        body.appendChild(aucModalItemRow(entry, [
+            AUCTION_KIND_LABEL[entry.kind] + (d.sub ? ' · ' + d.sub : '') + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : ''),
+            '판매자: ' + entry.sellerName
+        ]));
+        const statBlock = aucModalStatBlock(d);
+        if (statBlock) body.appendChild(statBlock);
+    }
 
     const errBox = el('div', { class: 'reg-inline-err' });
     const showErr = msg => { errBox.textContent = msg; errBox.classList.add('visible'); };
@@ -4514,11 +4534,11 @@ function openAuctionDetail(entry) {
     }
     body.appendChild(errBox);
     body.appendChild(footer);
-    showDetail([
+    showDetail(equipmentDetail ? [body] : [
         el('h3', null, d.name),
         el('div', { class: 'sub' }, entry.mine ? '내 판매 물품' : AUCTION_KIND_LABEL[entry.kind] + ' 구매'),
         body
-    ]);
+    ], equipmentDetail ? 'equipment' : null);
 }
 
 // ===== 상점 =====

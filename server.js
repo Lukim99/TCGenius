@@ -2809,7 +2809,9 @@ server.get('/api/auction', requireUser, async (req, res) => {
     try {
         const list = await getAuctionList();
         const me = req.session.name;
-        res.json({ items: list.map(entry => serializeAuctionEntry(entry, me)) });
+        const user = await rpgenius.getRPGUserByName(me);
+        const equipmentContext = { entries: user ? buildInventoryEquipment(user) : [], setCache: {} };
+        res.json({ items: list.map(entry => serializeAuctionEntry(entry, me, equipmentContext)) });
     } catch (e) {
         console.error('auction list error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -4253,6 +4255,47 @@ function getEquipmentData(type, id) {
     return list[id];
 }
 
+function buildEquipmentSetOverview(setName, inventoryEntries) {
+    const equipments = rpgenius.getDataCache('Equipment', {});
+    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+    const entries = inventoryEntries || [];
+    const tierMap = {};
+    const components = [];
+    typeOrder.forEach(type => {
+        (equipments[type] || []).forEach((data, id) => {
+            if (!data || String(data.set || '') !== setName) return;
+            Object.assign(tierMap, data.setEffects || {});
+            const matching = entries.filter(entry => entry.type === type && Number(entry.id) === Number(id));
+            const status = matching.some(entry => entry.equipped) ? 'equipped' : (matching.length ? 'owned' : 'missing');
+            components.push({
+                type,
+                typeLabel: labels[type] || type,
+                id: Number(id),
+                name: data.name,
+                rarity: data.rarity,
+                status,
+                iconUrl: getEquipmentIconUrl(data),
+                frameUrl: getAuctionFrameUrl('equipment', data.rarity)
+            });
+        });
+    });
+    const equippedCount = entries.filter(entry => entry.equipped && entry.setName === setName).length;
+    const tierKeys = Object.keys(tierMap).sort((a, b) => Number(a) - Number(b));
+    return {
+        name: setName,
+        equippedCount,
+        total: components.length,
+        requiredCount: tierKeys.length ? Math.max(...tierKeys.map(Number)) : components.length,
+        components,
+        tiers: tierKeys.map(tier => ({
+            tier: Number(tier),
+            description: String(tierMap[tier]),
+            active: equippedCount >= Number(tier)
+        }))
+    };
+}
+
 function buildInventoryEquipment(user) {
     const result = [];
     const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
@@ -5531,7 +5574,7 @@ function describeAuctionPayload(entry) {
     return { name: '알 수 없음', sub: '' };
 }
 
-function serializeAuctionEntry(entry, currentUserName) {
+function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
     const desc = describeAuctionPayload(entry);
     let imageUrl = null;
     let frameUrl = null;
@@ -5539,16 +5582,22 @@ function serializeAuctionEntry(entry, currentUserName) {
     let statLines = null;
     let potentialDisplay = null;
     let soul = null;
+    let equipmentDetail = null;
     if (entry.kind == 'card') {
         imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
+        const type = entry.payload && entry.payload.type;
+        const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+        const level = Number(entry.payload && entry.payload.level || 0);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
+        let orbLines = [];
         if (data) {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload && entry.payload.level || 0), entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, level, entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
-            rpgenius.formatOrbLines(entry.payload && entry.payload.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
+            orbLines = rpgenius.formatOrbLines(entry.payload && entry.payload.orb).map(line => line.replace(/^-\s*/, ''));
+            orbLines.forEach(line => statLines.push(line));
         }
         const potential = entry.payload && entry.payload.potential;
         if (potential) {
@@ -5566,6 +5615,45 @@ function serializeAuctionEntry(entry, currentUserName) {
         if (tradeLimit) {
             statLines = statLines || [];
             statLines.push('남은 거래 가능 횟수: ' + comma(tradeLimit.remaining) + '/' + comma(tradeLimit.max));
+        }
+        if (data) {
+            let passive = null;
+            if (typeof data.passive_id !== 'undefined') {
+                const passiveData = rpgenius.getEquipmentPassives()[Number(data.passive_id)];
+                if (passiveData) passive = {
+                    name: passiveData.name,
+                    desc: formatPassiveDesc(passiveData),
+                    cooltime: passiveData.cooltime || null
+                };
+            }
+            let setInfo = null;
+            if (data.set && equipmentContext) {
+                const setName = String(data.set);
+                if (!equipmentContext.setCache[setName]) {
+                    const owned = (equipmentContext.entries || []).find(item => item.setName === setName);
+                    equipmentContext.setCache[setName] = owned && owned.setInfo || buildEquipmentSetOverview(setName, equipmentContext.entries || []);
+                }
+                setInfo = equipmentContext.setCache[setName];
+            }
+            equipmentDetail = {
+                type,
+                typeLabel: typeLabels[type] || type,
+                id: Number(entry.payload && entry.payload.id),
+                name: rpgenius.getEquipmentDisplayName(data, entry.payload || {}),
+                rarity: rpgenius.getEquipmentRarityLabel(data, entry.payload || {}),
+                level,
+                equipped: false,
+                statLines: statLines || [],
+                description: data.desc || '',
+                passive,
+                potentialDisplay,
+                soul,
+                orb: entry.payload && entry.payload.orb || null,
+                orbLines,
+                iconUrl,
+                frameUrl,
+                setInfo
+            };
         }
     } else if (entry.kind == 'item') {
         const item = rpgenius.getDataCache('Item', [])[entry.payload && entry.payload.id];
@@ -5605,7 +5693,8 @@ function serializeAuctionEntry(entry, currentUserName) {
             iconUrl,
             statLines,
             potentialDisplay,
-            soul
+            soul,
+            equipmentDetail
         }
     };
 }

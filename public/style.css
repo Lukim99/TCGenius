@@ -522,6 +522,10 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .shop-limit-detail-val.exhausted{color:var(--bad)}
 /* 상점 구매 모달 */
 .shop-buy-modal{display:flex;flex-direction:column;gap:14px;padding:4px 0}
+.modal.auction-equipment-modal{width:min(680px,100%);max-height:92dvh;padding:18px}
+.auction-equipment-modal .shop-buy-modal{padding:0}
+.auc-equipment-seller{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--panel-2);color:var(--text-3);font-size:12px}
+.auc-equipment-seller strong{color:var(--text);font-size:13px}
 .shop-buy-item-row{display:flex;align-items:center;gap:14px;padding:14px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border)}
 .shop-buy-thumb{width:64px;height:64px;border-radius:var(--radius-s);overflow:hidden;background:var(--panel-2);display:grid;place-items:center;position:relative;flex-shrink:0}
 .shop-buy-name{font-size:16px;font-weight:700;color:var(--text);line-height:1.3}
