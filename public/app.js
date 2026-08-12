@@ -6097,7 +6097,14 @@ function dexSetNode(entry) {
     const set = entry.set;
     const components = (set.components || []).map(component => {
         const current = component.type === entry.type && Number(component.id) === Number(entry.id);
-        return el('div', { class: 'dex-set-component' + (current ? ' current' : '') },
+        const target = dexData && (dexData[component.type] || []).find(item => Number(item.id) === Number(component.id));
+        return el('button', {
+            class: 'dex-set-component' + (current ? ' current' : ''),
+            type: 'button',
+            disabled: !target,
+            onclick: target ? () => openDexEquipmentModal(target) : null,
+            'aria-label': component.name + ' 상세 정보 열기'
+        },
             dexThumb(component.iconUrl, component.frameUrl, SLOT_ICONS[component.type] || '⚙️', 'dex-set-component-thumb'),
             el('div', null, el('strong', null, component.name), el('span', null, component.typeLabel))
         );
