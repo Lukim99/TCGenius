@@ -131,7 +131,8 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-prog.mp .fill{background:linear-gradient(90deg,#0ea5e9,var(--accent))}
 .pq-prog.gauge{height:6px}
 .pq-prog.gauge .fill{background:linear-gradient(90deg,#f0cd87,var(--accent))}
-.pq-prog.shield .fill{background:linear-gradient(90deg,#22d3ee,#67e8f9)}
+/* LoL식 보호막 — 체력바 위 흰색 세그먼트 */
+.pq-prog.hp .shield-fill{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.9);box-shadow:inset 0 1px 0 #fff;transition:width .15s linear,left .15s linear}
 .pq-dmg-pop{position:absolute;left:50%;top:38%;transform:translate(-50%,0);pointer-events:none;font-family:var(--font-game);font-weight:400;font-size:32px;color:#fde047;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9);letter-spacing:.02em;animation:pqDmgPop 950ms cubic-bezier(.22,.61,.36,1) forwards;white-space:nowrap;z-index:5}
 .pq-dmg-pop .by,.pq-dmg-pop .sub{font-family:Pretendard,sans-serif}
 .pq-dmg-pop.crit{color:var(--bad);font-size:42px;text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 22px rgba(220,38,38,.75)}
@@ -221,9 +222,6 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-prog.pq-boss-hpbar::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),rgba(0,0,0,.5) calc(10% - 1px) 10%);pointer-events:none}
 .pq-hp-text{position:absolute;inset:0;display:grid;place-items:center;z-index:2;pointer-events:none;font-size:11.5px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
 .pq-hp-lines{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2;pointer-events:none;font-size:11.5px;font-weight:700;color:#fde047;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
-/* 보호막 게이지 */
-.pq-prog.shield{height:8px;border-color:rgba(226,232,240,.45)}
-.pq-prog.shield .fill{background:linear-gradient(90deg,#fff,var(--text-2));box-shadow:0 0 8px rgba(255,255,255,.45)}
 /* 패턴 예고 — 경고 스트라이프 */
 .pq-boss-pattern{width:100%;padding:7px 10px;border-radius:4px;border:1px solid rgba(251,191,36,.5);background:linear-gradient(rgba(10,8,4,.82),rgba(10,8,4,.82)),repeating-linear-gradient(-45deg,rgba(251,191,36,.3) 0 12px,transparent 12px 24px);color:#fde047;font-size:12.5px;font-weight:700;letter-spacing:.04em;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 /* 봉인 오버레이 — 스킬/물약 스트립 전체를 덮는다 */
@@ -312,8 +310,28 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-char-card .nm .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pq-char-card .title-badge{height:12px;margin-right:0}
 .pq-char-card .pq-prog{height:5px;border-radius:3px}
-.pq-char-card .vals{display:flex;justify-content:space-between;gap:4px;font-size:8.5px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;min-width:0}
-.pq-char-card .vals span{overflow:hidden;text-overflow:ellipsis}
+.pq-char-card{cursor:pointer}
+.pq-char-card.sel{border-color:#67e8f9}
+/* 내 HP/MP 플레이트 — 스테이지 우하단 */
+.pq-my-vitals{position:absolute;right:8px;bottom:8px;z-index:6;width:196px;display:flex;flex-direction:column;gap:3px;padding:8px 10px;background:rgba(10,12,16,.84);border:1px solid var(--border);border-radius:8px}
+.pq-my-vitals .vrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;min-width:0}
+.pq-my-vitals .vrow .lbl{flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--text-3)}
+.pq-my-vitals .vrow b{font-size:12.5px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pq-my-vitals .vrow b.hpv{font-size:13.5px}
+.pq-my-vitals .pq-prog{height:7px;border-radius:4px}
+/* 파티원 상세 팝업 — 스테이지 하단 중앙 */
+.pq-member-detail{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;z-index:7;width:230px;display:flex;flex-direction:column;gap:4px;padding:9px 11px;background:rgba(10,12,16,.94);border:1px solid var(--border-strong);border-radius:8px}
+.pq-member-detail .head{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text)}
+.pq-member-detail .head .pos{font-size:10px;color:#fde047;background:rgba(0,0,0,.55);padding:1px 6px;border-radius:4px;font-weight:700}
+.pq-member-detail .head .x{margin-left:auto;width:22px;height:22px;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:15px;line-height:1;cursor:pointer}
+.pq-member-detail .head .x:hover{background:var(--panel-3);color:var(--text)}
+.pq-member-detail .line{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-2);font-weight:700}
+.pq-member-detail .line b{color:var(--text);font-variant-numeric:tabular-nums}
+.pq-member-detail .line b.hpv{color:#f0cd87}
+.pq-member-detail .line b.shv{color:#e2e8f0}
+.pq-member-detail .line.dead{justify-content:center;color:#f0b3ae}
+.pq-member-detail .pq-prog{height:7px;border-radius:4px}
+.pq-member-detail .title-badge{height:14px}
 /* 하단 액션 바 */
 .pq-game-actions{flex:0 0 auto;display:flex;gap:8px;align-items:stretch}
 .pq-game-bars{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;gap:6px;justify-content:flex-end}
@@ -373,8 +391,8 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
   .pq-game-chat.open .pq-chat,.pq-game-chat.open .pq-combat-log{height:120px}
   .pq-game-party{max-width:520px;width:100%;margin-inline:auto;gap:8px}
   .pq-char-card .nm{font-size:11px}
-  .pq-char-card .vals{font-size:9.5px}
   .pq-char-card .img .pos{font-size:9px}
+  .pq-my-vitals{right:10px;bottom:10px;width:210px}
   .pq-char-card .pq-buff-chip{font-size:9px}
   .pq-game-actions{max-width:760px;width:100%;margin-inline:auto}
   .pq-skill-strip .pq-skill-btn{flex-basis:92px;min-height:54px}

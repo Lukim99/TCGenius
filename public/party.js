@@ -957,18 +957,22 @@
         return r && r.hpMax > 0 ? Math.max(0, Math.min(100, r.hp / r.hpMax * 100)) : 0;
     }
 
-    // 좁은 카드용 수치 축약: 45200 → 4.5만
-    function fmtNum(n) {
-        n = Number(n || 0);
-        if (n >= 100000000) return (Math.round(n / 10000000) / 10) + '억';
-        if (n >= 10000) return (Math.round(n / 1000) / 10) + '만';
-        return n.toLocaleString();
-    }
-
+    // HP바 — 보호막은 LoL식으로 체력 위에 흰색 세그먼트로 얹는다.
+    // 체력+보호막이 최대치를 넘으면 총합 기준으로 스케일.
     function makeHpBar(r, className) {
-        const hp = el('div', { class: 'pq-prog hp' + (className ? ' ' + className : '') }, el('div', { class: 'fill' }));
-        hp.firstChild.style.width = hpPct(r) + '%';
-        return hp;
+        const bar = el('div', { class: 'pq-prog hp' + (className ? ' ' + className : '') }, el('div', { class: 'fill' }));
+        const hp = Math.max(0, Number(r && r.hp || 0));
+        const max = Math.max(1, Number(r && r.hpMax || 1));
+        const shield = Math.max(0, Number(r && r.shield || 0));
+        const total = Math.max(max, hp + shield);
+        bar.firstChild.style.width = (hp / total * 100) + '%';
+        if (shield > 0) {
+            const sf = el('div', { class: 'shield-fill' });
+            sf.style.left = (hp / total * 100) + '%';
+            sf.style.width = (shield / total * 100) + '%';
+            bar.append(sf);
+        }
+        return bar;
     }
 
     function makeMpBar(r, className) {
@@ -1044,6 +1048,23 @@
         return m ? (m.name || '') + '|' + (m.image || '') : '';
     }
 
+    // 보스 HP바 채움 폭 — 보호막은 LoL식 흰색 세그먼트
+    function applyBossHpWidths(m, fillEl, shieldEl) {
+        fillEl = fillEl || document.getElementById('pqBossHpFill');
+        shieldEl = shieldEl || document.getElementById('pqBossShieldFill');
+        if (!fillEl) return;
+        const hp = Math.max(0, Number(m.hp || 0));
+        const max = Math.max(1, Number(m.hpMax || 1));
+        const shield = Math.max(0, Number(m.shield || 0));
+        const total = Math.max(max, hp + shield);
+        fillEl.style.width = (hp / total * 100) + '%';
+        if (shieldEl) {
+            shieldEl.style.left = (hp / total * 100) + '%';
+            shieldEl.style.width = (shield / total * 100) + '%';
+            shieldEl.style.display = shield > 0 ? '' : 'none';
+        }
+    }
+
     // HP바 안 중앙에 들어가는 수치
     function bossHpText(m) {
         return Number(m.hp || 0).toLocaleString() + ' / ' + Number(m.hpMax || 0).toLocaleString();
@@ -1089,16 +1110,14 @@
         hud.append(el('div', { class: 'pq-boss-head' },
             el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : ''))
         ));
-        const shieldBar = el('div', { id: 'pqBossShieldBar', class: 'pq-prog shield', style: Number(m.shieldMax || 0) > 0 ? '' : 'display:none' }, el('div', { id: 'pqBossShieldFill', class: 'fill' }));
-        shieldBar.firstChild.style.width = (Number(m.shieldMax || 0) > 0 ? (m.shield / m.shieldMax * 100) : 0) + '%';
-        hud.append(shieldBar);
         const linesText = bossHpLinesText(m);
         const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' },
             el('div', { id: 'pqBossHpFill', class: 'fill' }),
+            el('div', { id: 'pqBossShieldFill', class: 'shield-fill', style: 'display:none' }),
             el('div', { id: 'pqBossHpVal', class: 'pq-hp-text' }, bossHpText(m)),
             el('div', { id: 'pqBossHpLines', class: 'pq-hp-lines', style: linesText ? '' : 'display:none' }, linesText)
         );
-        hpBar.firstChild.style.width = (m.hpMax > 0 ? (m.hp / m.hpMax * 100) : 0) + '%';
+        applyBossHpWidths(m, hpBar.children[0], hpBar.children[1]);
         hud.append(hpBar);
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
@@ -1122,15 +1141,8 @@
                 return;
             }
         }
-        const shieldBar = document.getElementById('pqBossShieldBar');
-        const shieldFill = document.getElementById('pqBossShieldFill');
-        if (shieldBar && shieldFill) {
-            const max = Number(monster.shieldMax || 0);
-            shieldBar.style.display = max > 0 && Number(monster.shield || 0) > 0 ? '' : 'none';
-            shieldFill.style.width = (max > 0 ? Math.max(0, Math.min(100, monster.shield / max * 100)) : 0) + '%';
-        }
+        applyBossHpWidths(monster);
         const hpVal = document.getElementById('pqBossHpVal');
-        const hpFill = document.getElementById('pqBossHpFill');
         const gaugeFill = document.getElementById('pqBossGaugeFill');
         const stun = document.getElementById('pqBossStun');
         const pattern = document.getElementById('pqBossPattern');
@@ -1148,7 +1160,6 @@
             hpLines.textContent = t;
             hpLines.style.display = t ? '' : 'none';
         }
-        if (hpFill) hpFill.style.width = (monster.hpMax > 0 ? (monster.hp / monster.hpMax * 100) : 0) + '%';
         if (gaugeFill) gaugeFill.style.width = (monster.gauge || 0) + '%';
         if (stun) {
             const remain = Number(monster.stunRemain || 0);
@@ -1170,8 +1181,9 @@
             const isMe = m.name === me;
             const isTaunt = (snap.monster && snap.monster.tauntTarget === m.name) || (snap.tauntTarget === m.name && Number(snap.tauntRemain || 0) > 0);
             const card = el('div', {
-                class: 'pq-char-card' + (isMe ? ' me' : '') + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : ''),
-                'data-member': m.name
+                class: 'pq-char-card' + (isMe ? ' me' : '') + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : '') + (detailMemberName === m.name ? ' sel' : ''),
+                'data-member': m.name,
+                onClick: () => toggleMemberDetail(m.name)
             });
             const img = el('div', { class: 'img' },
                 m.card && m.card.imageUrl
@@ -1211,16 +1223,71 @@
             if (r) {
                 card.append(makeHpBar(r));
                 card.append(makeMpBar(r));
-                if (isMe) card.append(el('div', { class: 'vals' },
-                    el('span', null, fmtNum(r.hp) + '/' + fmtNum(r.hpMax)),
-                    el('span', null, 'MP ' + fmtNum(r.mp))
-                ));
             }
             root.append(card);
         }
         const mine = snap.members.find(m => m.name === me);
         const ao = $('#pqAttackOrder');
         if (ao) ao.textContent = mine && mine.runtime && mine.runtime.attackOrder ? '다음 공격 ' + mine.runtime.attackOrder + '번째' : '';
+        renderMyVitals(mine);
+        renderMemberDetail();
+    }
+
+    // 내 HP/MP 플레이트 — 스테이지 우하단, 전체 수치 표시
+    function renderMyVitals(mine) {
+        const box = $('#pqMyVitals');
+        if (!box) return;
+        const r = mine && mine.runtime;
+        const inPlay = currentRoom && (currentRoom.state === 'inProgress');
+        if (!r || !inPlay) { box.style.display = 'none'; return; }
+        box.style.display = '';
+        const shield = Math.max(0, Number(r.shield || 0));
+        box.replaceChildren(
+            el('div', { class: 'vrow' },
+                el('span', { class: 'lbl' }, 'HP'),
+                el('b', { class: 'hpv' }, Number(r.hp).toLocaleString() + ' / ' + Number(r.hpMax).toLocaleString() + (shield > 0 ? ' +' + shield.toLocaleString() : ''))
+            ),
+            makeHpBar(r),
+            el('div', { class: 'vrow' },
+                el('span', { class: 'lbl' }, 'MP'),
+                el('b', null, Number(r.mp).toLocaleString() + ' / ' + Number(r.mpMax).toLocaleString())
+            ),
+            makeMpBar(r)
+        );
+    }
+
+    // 파티원 카드 클릭 → 상세 HP/MP 팝업 (틱마다 갱신)
+    let detailMemberName = null;
+    function toggleMemberDetail(name) {
+        detailMemberName = detailMemberName === name ? null : name;
+        if (currentRoom) renderPlayMembers(currentRoom);
+    }
+    function renderMemberDetail() {
+        const box = $('#pqMemberDetail');
+        if (!box) return;
+        const m = detailMemberName && currentRoom ? currentRoom.members.find(mm => mm.name === detailMemberName) : null;
+        if (!m || !m.runtime) {
+            if (!m) detailMemberName = null;
+            box.style.display = 'none';
+            return;
+        }
+        const r = m.runtime;
+        const shield = Math.max(0, Number(r.shield || 0));
+        box.style.display = '';
+        box.replaceChildren(...[
+            el('div', { class: 'head' },
+                titleImg(m.title),
+                el('b', null, m.name + (m.name === me ? ' (나)' : '')),
+                m.position ? el('span', { class: 'pos' }, m.position) : null,
+                el('button', { class: 'x', type: 'button', onClick: () => { detailMemberName = null; renderMemberDetail(); } }, '×')
+            ),
+            el('div', { class: 'line' }, el('span', null, 'HP'), el('b', { class: 'hpv' }, Number(r.hp).toLocaleString() + ' / ' + Number(r.hpMax).toLocaleString() + ' (' + hpPct(r).toFixed(1) + '%)')),
+            makeHpBar(r),
+            shield > 0 ? el('div', { class: 'line' }, el('span', null, '보호막'), el('b', { class: 'shv' }, shield.toLocaleString())) : null,
+            el('div', { class: 'line' }, el('span', null, 'MP'), el('b', null, Number(r.mp).toLocaleString() + ' / ' + Number(r.mpMax).toLocaleString())),
+            makeMpBar(r),
+            r.dead ? el('div', { class: 'line dead' }, '전투불능') : null
+        ].filter(Boolean));
     }
 
     function renderPotionSummary(snap) {

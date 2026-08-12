@@ -5973,6 +5973,8 @@ function renderPartyApp(sess) {
             <button type="submit" class="pq-btn primary">전송</button>
           </form>
         </div>
+        <div class="pq-my-vitals" id="pqMyVitals" style="display:none"></div>
+        <div class="pq-member-detail" id="pqMemberDetail" style="display:none"></div>
       </div>
       <div id="pqPlayMembers" class="pq-game-party"></div>
       <div class="pq-game-actions" id="pqActionRow">
