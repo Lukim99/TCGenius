@@ -62,10 +62,11 @@
         const stack = $('#pqNoticeStack');
         const node = el('div', { class: 'pq-notice ' + (kind || 'info') }, text);
         stack.append(node);
-        setTimeout(() => { node.style.transition = 'opacity .3s'; node.style.opacity = '0'; }, Math.max(800, (ttl || 4000) - 300));
-        setTimeout(() => { node.remove(); }, ttl || 4000);
-        // 5개 초과 시 가장 오래된 제거
-        while (stack.childElementCount > 5) stack.firstElementChild.remove();
+        // 시야 방해 최소화: 표시 시간 상한 + 스택 3개 제한
+        ttl = Math.min(Number(ttl) || 4000, 3200);
+        setTimeout(() => { node.style.transition = 'opacity .3s'; node.style.opacity = '0'; }, Math.max(800, ttl - 300));
+        setTimeout(() => { node.remove(); }, ttl);
+        while (stack.childElementCount > 3) stack.firstElementChild.remove();
     }
 
     function syncMyDeadlinesFromSnapshot(snap) {
@@ -391,7 +392,8 @@
     }
 
     // ====== 전투 시작 연출 ======
-    // 대기방→전투 전환에서만 발동 (전투 중 새로고침/재접속은 제외). pointer-events:none 순수 연출이라 입력 손실 없음.
+    // 대기방→전투 전환에서만 발동 (전투 중 새로고침/재접속은 제외).
+    // 연출 중에는 오버레이가 입력을 막고, 서버도 introUntil까지 전투를 동결한다 (partyquest.js INTRO_GRACE_MS와 동기).
     let lastRoomState = null;
     let introTimer = null;
 
@@ -558,7 +560,10 @@
         const log = $('#pqCombatLog');
         if (!log) return;
         const ln = el('div', { class: 'ln ' + (entry.severity || 'info') }, entry.text);
-        const shouldStick = log.scrollTop + log.clientHeight >= log.scrollHeight - 12;
+        // 접힌 오버레이에선 스크롤 조작이 불가능하므로 항상 바닥 고정 (펼침 상태에서만 stick 판정)
+        const box = log.closest('.pq-game-chat');
+        const collapsed = box && !box.classList.contains('open');
+        const shouldStick = collapsed || log.scrollTop + log.clientHeight >= log.scrollHeight - 12;
         log.append(ln);
         while (log.childElementCount > 120) log.firstElementChild.remove();
         if (shouldStick) log.scrollTop = log.scrollHeight;
@@ -1538,7 +1543,13 @@
             const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight;
         });
         const collapseBtn = $('#pqChatCollapse');
-        if (collapseBtn) collapseBtn.onclick = e => { e.stopPropagation(); gameChat.classList.remove('open'); };
+        if (collapseBtn) collapseBtn.onclick = e => {
+            e.stopPropagation();
+            gameChat.classList.remove('open');
+            // 높이가 줄어든 접힌 뷰에서도 최신 줄이 보이게 재고정
+            const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight;
+            const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight;
+        };
     }
 
     $('#pqReadyBtn').onclick = async () => {

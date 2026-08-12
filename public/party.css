@@ -108,11 +108,11 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 @keyframes pqToastIn{from{opacity:0;transform:translateX(-50%) translateY(10px) scale(.95)}to{opacity:1;transform:translateX(-50%)}}
 /* 휘발성 알림 (전투 진행) */
 .pq-notice-stack{position:absolute;left:0;right:0;top:62px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:25;padding:0 14px}
-.pq-notice{pointer-events:none;background:var(--panel-2);border:1px solid var(--border-strong);border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;color:var(--text);box-shadow:0 10px 30px rgba(0,0,0,.45);animation:pqnotice .3s ease;max-width:92%;text-align:center}
-.pq-notice.big{font-size:14px;padding:10px 18px;background:rgba(232,176,75,.92);border-color:transparent;color:var(--accent-ink)}
-.pq-notice.success{background:rgba(39,142,89,.92);border-color:transparent;color:#ecfdf5}
-.pq-notice.warn{background:rgba(180,83,9,.85);border-color:transparent;color:#fef3c7}
-.pq-notice.danger{background:rgba(127,29,29,.92);border-color:rgba(216,76,65,.6);color:#f0b3ae}
+.pq-notice{pointer-events:none;background:rgba(12,14,18,.82);border:1px solid var(--border);border-radius:0;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);padding:6px 14px;font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--text);box-shadow:0 6px 18px rgba(0,0,0,.35);animation:pqnotice .3s ease;max-width:86%;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.pq-notice.big{font-size:13px;padding:7px 16px;background:rgba(20,17,9,.86);border-color:rgba(232,176,75,.55);color:#f0cd87}
+.pq-notice.success{background:rgba(10,20,14,.84);border-color:rgba(127,201,138,.5);color:#bbf7d0}
+.pq-notice.warn{background:rgba(22,16,7,.84);border-color:rgba(180,83,9,.55);color:#fcd9a8}
+.pq-notice.danger{background:rgba(22,10,9,.86);border-color:rgba(216,76,65,.6);color:#f0b3ae}
 @keyframes pqnotice{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
 /* 전투 진행 로그 */
 .pq-combat-log{height:86px;overflow-y:auto;overflow-x:hidden;font-size:11.5px;color:var(--text-2);line-height:1.35;display:flex;flex-direction:column;gap:2px;padding:6px 10px;background:rgba(0,0,0,.35);border-radius:var(--radius-s);border:1px solid var(--border);scrollbar-width:thin}
@@ -237,7 +237,7 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 /* ===== 게임 HUD (전투 화면) ===== */
 .frame.game .pq-header{display:none}
 .frame.game .pq-body{padding:0;overflow:hidden}
-.frame.game .pq-notice-stack{top:48px}
+.frame.game .pq-notice-stack{top:210px;gap:5px}
 .pq-screen[data-screen="play"]{flex:1;min-height:0;gap:8px;padding:10px}
 /* 상단 바 */
 .pq-game-top{flex:0 0 auto;display:flex;align-items:center;gap:10px;min-height:34px}
@@ -325,9 +325,10 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 @keyframes pqIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes pqShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-6px,3px)}50%{transform:translate(5px,-2px)}75%{transform:translate(-3px,1px)}}
 /* 전투 시작 카운트다운 — pointer-events:none 순수 연출 */
-.pq-intro{position:absolute;inset:0;z-index:50;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;visibility:hidden;transition:opacity .45s ease,visibility .45s ease;background:radial-gradient(ellipse at 50% 45%,rgba(8,8,12,.6),rgba(4,4,8,.95))}
-.pq-intro::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 115%,rgba(160,30,25,.4),transparent 55%);animation:pqIntroPulse .95s ease-in-out infinite}
-.pq-intro.active{opacity:1;visibility:visible}
+.pq-intro{position:absolute;inset:0;z-index:50;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;opacity:0;transition:opacity .45s ease;background:radial-gradient(ellipse at 50% 45%,rgba(8,8,12,.6),rgba(4,4,8,.95))}
+.pq-intro::after{content:'';position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at 50% 115%,rgba(160,30,25,.4),transparent 55%)}
+.pq-intro.active{opacity:1;pointer-events:auto}
+.pq-intro.active::after{animation:pqIntroPulse .95s ease-in-out infinite}
 .pq-intro-quest{position:relative;z-index:1;display:flex;align-items:center;gap:12px;font-size:13px;font-weight:700;letter-spacing:.32em;text-indent:.32em;color:var(--text-2);text-transform:uppercase}
 .pq-intro-quest::before,.pq-intro-quest::after{content:'';height:1px;width:46px;flex:0 0 auto}
 .pq-intro-quest::before{background:linear-gradient(90deg,transparent,rgba(232,176,75,.85))}
@@ -349,6 +350,7 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
   .pq-stage-hud .pq-boss-name::before,.pq-stage-hud .pq-boss-name::after{width:52px}
   .pq-boss-pattern{padding:9px 12px;font-size:14px}
   .pq-stage-hud{padding:14px 18px 18px;max-width:760px;margin-inline:auto}
+  .frame.game .pq-notice-stack{top:255px}
   .pq-game-chat{left:10px;bottom:10px;width:280px}
   .pq-game-chat.open{width:340px}
   .pq-game-chat.open .pq-chat,.pq-game-chat.open .pq-combat-log{height:120px}

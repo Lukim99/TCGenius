@@ -164,7 +164,7 @@ function clearPartyGunryeok(member) {
 function clearPartyGunryeokOnSkillUse(room, member) {
     if (!clearPartyGunryeok(member)) return;
     if (member.runtime && Array.isArray(member.runtime.buffs)) member.runtime.buffs = member.runtime.buffs.filter(b => b.id !== 'gunryeok');
-    pushCombat(room, '🔓 ' + member.name + ' [건력] 상태 해제 (스킬 사용)', 'buff');
+    pushCombat(room, member.name + ' [건력] 상태 해제 (스킬 사용)', 'buff');
 }
 
 function getPartyDynamicDefenseStats(member) {
@@ -803,7 +803,7 @@ function grantPartyQuestClearRewards(room) {
             }
         }
         room.result.rewards = results;
-        pushNotice(room, '🎁 클리어 보상이 지급되었습니다.', 'success', 4500);
+        pushNotice(room, '보상 지급 완료', 'success', 4500);
         broadcastRoom(room);
     })();
 }
@@ -905,6 +905,13 @@ function publicSkillDefs(defs) {
 }
 
 function nowMs() { return Date.now(); }
+
+// 전투 시작 카운트다운(클라 3-2-1 연출) 동안 전투를 동결한다.
+// 클라 연출(페이드 450 + 카운트 2400 + 개시 950 = 3800ms)과 맞춘 값.
+const INTRO_GRACE_MS = 3800;
+function isIntroActive(room) {
+    return !!(room && room.introUntil && nowMs() < room.introUntil);
+}
 
 function remainSeconds(untilMs) {
     if (!untilMs) return 0;
@@ -1275,7 +1282,7 @@ async function joinRoom(roomId, name, password) {
         if (user) joinInfo = { level, title: buildMemberTitle(user), card: buildMemberCard(user) };
     } catch (_) {}
     addMember(room, name, joinInfo);
-    pushNotice(room, name + '님이 입장했습니다.', 'info', 3500);
+    pushNotice(room, name + ' 입장', 'info', 3500);
     broadcastRoom(room);
     return { ok: true, roomId };
 }
@@ -1310,7 +1317,7 @@ function leaveRoom(name) {
         return { ok: true };
     }
     if (room.hostName === name) room.hostName = room.members[0].name;
-    pushNotice(room, name + '님이 퇴장했습니다.', 'warn', 3500);
+    pushNotice(room, name + ' 퇴장', 'warn', 3500);
     if (room.state === 'inProgress') {
         const aliveCount = room.members.filter(m => m.runtime && !m.runtime.dead).length;
         if (aliveCount === 0) {
@@ -1523,7 +1530,8 @@ async function start(hostName) {
     room.sharedKillCount = 0;
     room.supportGauge = 0;
     room.result = null;
-    pushNotice(room, '⚔️ 「' + quest.name + '」 시작!', 'big', 3500);
+    room.introUntil = Date.now() + INTRO_GRACE_MS;
+    pushNotice(room, '「' + quest.name + '」 시작', 'big', 3500);
     setupPhase(room);
     broadcastRoom(room);
     return { ok: true };
@@ -1541,7 +1549,7 @@ function setupPhase(room) {
     if (phase.type === 'mob') {
         room.monster = null;
         startTick(room);
-        pushNotice(room, '🎯 ' + phase.name + ' (목표 ' + phase.killTarget + '마리)', 'big', 4500);
+        pushNotice(room, phase.name + ' (목표 ' + phase.killTarget + '마리)', 'big', 4500);
     } else {
         room.monster = createPhaseMonster(phase);
         // 게이지 초기화
@@ -1549,7 +1557,7 @@ function setupPhase(room) {
         const handler = BOSS_HANDLERS[room.monster.bossKey];
         if (handler && handler.onSpawn) handler.onSpawn(room, room.monster);
         startTick(room);
-        pushNotice(room, '🔥 ' + phase.name + ' — ' + room.monster.name + ' 등장!', 'big', 4500);
+        pushNotice(room, phase.name + ' — ' + room.monster.name + ' 등장', 'big', 4500);
     }
 }
 
@@ -1557,7 +1565,7 @@ function endPhase(room) {
     stopTick(room);
     const quest = getQuestById(room.questId);
     const next = quest.phases[room.phaseIndex + 1];
-    pushNotice(room, '✨ ' + (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어!', 'big', 4500);
+    pushNotice(room, (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어', 'big', 4500);
     // 3택 스킵 퀘스트: 바로 다음 관문으로
     if (next && quest.noPhaseChoices) {
         for (const m of room.members) m.pendingChoices = null;
@@ -1599,7 +1607,7 @@ function pickRandomSkill(name, skillName) {
     if (!m.pendingChoices.includes(skillName)) return { error: '제공된 선택지가 아닙니다.' };
     m.skills.push(skillName);
     m.pendingChoices = null;
-    pushNotice(room, name + '님이 [' + skillName + ']을(를) 습득했습니다.', 'info', 3500);
+    pushNotice(room, name + ' [' + skillName + '] 습득', 'info', 3500);
     broadcastRoom(room);
     if (room.members.every(mm => !mm.pendingChoices)) proceedToNextPhase(room);
     return { ok: true };
@@ -1615,7 +1623,7 @@ function proceedToNextPhase(room) {
             m.runtime.dead = false;
             m.runtime.hp = m.runtime.hpMax;
             m.runtime.mp = m.runtime.mpMax;
-            pushCombat(room, '✨ ' + m.name + ' 부활 (관문 클리어)', 'heal');
+            pushCombat(room, m.name + ' 부활 (관문 클리어)', 'heal');
         }
     }
     setupPhase(room);
@@ -1641,7 +1649,7 @@ function endQuest(room, cleared, reason) {
         rewards: []
     };
     if (cleared) grantPartyQuestClearRewards(room);
-    pushNotice(room, cleared ? '🎉 파티 퀘스트 클리어!' : '💀 파티 전멸…', cleared ? 'success' : 'danger', 6000);
+    pushNotice(room, cleared ? '퀘스트 클리어' : '파티 전멸', cleared ? 'success' : 'danger', 6000);
     broadcastRoom(room);
 }
 
@@ -1653,7 +1661,7 @@ function grantTitleAsync(room, name, titleId) {
             if (!user || !rpgenius.unlockTitle(user, titleId)) return;
             await user.save();
             const def = typeof rpgenius.getTitleDefs === 'function' ? rpgenius.getTitleDefs().find(t => t.id === titleId) : null;
-            if (room) pushNotice(room, '🏅 ' + name + ' — 칭호 「' + ((def && def.name) || titleId) + '」 획득!', 'success', 6000);
+            if (room) pushNotice(room, name + ' — 칭호 「' + ((def && def.name) || titleId) + '」 획득', 'success', 6000);
         } catch (e) { console.error('[partyquest] title grant error:', e); }
     })();
 }
@@ -1695,7 +1703,7 @@ function restartQuest(hostName) {
         m.skills = [];
         m.skillDefs = {};
     }
-    pushNotice(room, '🔄 공대장이 다시 시작을 요청했습니다. 준비해주세요!', 'info', 4000);
+    pushNotice(room, '재도전 요청 — 준비 필요', 'info', 4000);
     broadcastRoom(room);
     return { ok: true };
 }
@@ -1717,6 +1725,7 @@ function attackMobPhase(name) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
+    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
     const quest = getQuestById(room.questId);
     const phase = quest.phases[room.phaseIndex];
     if (!phase) return { error: '진행 중인 페이즈가 없습니다.' };
@@ -1770,7 +1779,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
         skill: skillName || null
     };
     broadcast(room, 'kill', payload);
-    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' ✦' : ''), type || 'attack');
+    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' (치명타)' : ''), type || 'attack');
     applyAttackPotentialRecovery(room, attacker);
     if (room.sharedKillCount >= room.killTarget) {
         room.sharedKillCount = room.killTarget;
@@ -1804,6 +1813,7 @@ function stopTick(room) {
 function stepRoom(room) {
     if (room.state !== 'inProgress') { stopTick(room); return; }
     if (room.awaitingChoices) return;
+    if (isIntroActive(room)) return; // 시작 카운트다운 동안 전투 동결 (몬스터 게이지·버프·광폭화 타이머 전부)
     const dt = TICK_MS / 1000;
     if (Array.isArray(room.delayedEquipmentDamage) && room.delayedEquipmentDamage.length > 0) {
         const now = Date.now();
@@ -1834,7 +1844,7 @@ function stepRoom(room) {
                 while (r.dragonRegen.ticksLeft > 0 && now >= Number(r.dragonRegen.nextTickAt || 0)) {
                     const amount = Math.max(1, Math.round(r.hpMax * IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * getPartyRecoveryMultiplier(m)));
                     const healed = healMember(m, amount);
-                    if (healed > 0) pushCombat(room, '🔥 ' + m.name + ' [' + IMMORTAL_DRAGON_ARMOR_NAME + '] HP +' + comma(healed), 'heal');
+                    if (healed > 0) pushCombat(room, m.name + ' [' + IMMORTAL_DRAGON_ARMOR_NAME + '] HP +' + comma(healed), 'heal');
                     r.dragonRegen.ticksLeft -= 1;
                     r.dragonRegen.nextTickAt = Number(r.dragonRegen.nextTickAt || 0) + 1000;
                 }
@@ -1854,7 +1864,7 @@ function stepRoom(room) {
                         applyTranscendAllyEffect(room, m, ally, 'heal');
                         if (ally.runtime.hp > before) healed.push(ally.name);
                     }
-                    if (healed.length > 0) pushCombat(room, '🔥 ' + m.name + ' [솔로 인페르노] → ' + healed.join(', ') + ' HP +' + comma(amount), 'heal');
+                    if (healed.length > 0) pushCombat(room, m.name + ' [솔로 인페르노] → ' + healed.join(', ') + ' HP +' + comma(amount), 'heal');
                     equipmentState.soloInfernoNextAt += 15000;
                     if (equipmentState.soloInfernoNextAt <= Date.now()) equipmentState.soloInfernoNextAt = Date.now() + 15000;
                 }
@@ -1886,7 +1896,7 @@ function stepRoom(room) {
                         let damage = Math.max(1, Math.round(Number(judgment.damage) * .15 * lightMul));
                         if (room.monster) {
                             damage = applyPlayerDamageToBoss(room, room.monster, m, damage);
-                            pushCombat(room, '⚖️ ' + m.name + ' [심판 폭발] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
+                            pushCombat(room, m.name + ' [심판 폭발] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
                             if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
                         } else {
                             applyMobPhaseDamage(room, m, target, { damage, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false, equipmentTriggerAllowed: false }, 'skill', '심판 폭발', false);
@@ -1915,7 +1925,7 @@ function stepRoom(room) {
             const now = Date.now();
             if (now > r.iktaeBot.expired_at) {
                 r.iktaeBot = null;
-                pushCombat(room, '💥 ' + m.name + '의 익테봇 지속시간이 만료되었습니다.', 'buff');
+                pushCombat(room, m.name + ' 익테봇 만료', 'buff');
             } else if (now >= r.iktaeBot.nextAttackAt) {
                 r.iktaeBot.nextAttackAt = now + 4000;
                 let targetMon = room.monster;
@@ -1929,7 +1939,7 @@ function stepRoom(room) {
                     if (invincible) res.damage = 0;
                     if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '익테봇 소환', false);
-                    pushCombat(room, '🤖 ' + m.name + '의 익테봇 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
+                    pushCombat(room, m.name + ' 익테봇 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
                 }
             }
@@ -1938,7 +1948,7 @@ function stepRoom(room) {
             const now = Date.now();
             if (now > r.sunata.expired_at) {
                 r.sunata = null;
-                pushCombat(room, '🎵 ' + m.name + '의 수나타 소환이 만료되었습니다.', 'buff');
+                pushCombat(room, m.name + ' 수나타 만료', 'buff');
             } else if (now >= r.sunata.nextAttackAt) {
                 r.sunata.nextAttackAt = now + 5000;
                 let targetMon = room.monster;
@@ -1952,7 +1962,7 @@ function stepRoom(room) {
                     if (invincible) res.damage = 0;
                     if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '수나타 소환', false);
-                    pushCombat(room, '🎵 ' + m.name + '의 수나타 공격! → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
+                    pushCombat(room, m.name + ' 수나타 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
                 }
             }
@@ -2014,7 +2024,7 @@ function stepRoom(room) {
                         d.tick += Number(d.interval || 2);
                         const dotDmg = Math.max(1, Math.round(Number(d.dmg || 0)));
                         applyBossHpDamage(room, mon, dotDmg);
-                        pushCombat(room, '✍️ ' + (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dotDmg + ']', 'skill');
+                        pushCombat(room, (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dotDmg + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
                 }
@@ -2023,7 +2033,7 @@ function stepRoom(room) {
                     if (!dotKilled && Number(d.explodeDamage || 0) > 0 && mon.hp > 0) {
                         const explosion = Math.max(1, Math.round(Number(d.explodeDamage || 0)));
                         applyBossHpDamage(room, mon, explosion);
-                        pushCombat(room, '🔥 ' + (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + explosion + ']', 'skill');
+                        pushCombat(room, (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + explosion + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
                     mon.debuffs.splice(i, 1);
@@ -2076,7 +2086,7 @@ function triggerShieldExpire(room, m) {
     r.shieldExpireAt = 0;
     if (heal > 0 && !r.dead) {
         const healed = healMember(m, heal);
-        if (healed > 0) pushCombat(room, '🛡 ' + m.name + ' 보호막 소멸 → 생명력 +' + comma(healed), 'heal');
+        if (healed > 0) pushCombat(room, m.name + ' 보호막 소멸 → 생명력 +' + comma(healed), 'heal');
     }
     r.shieldExpireHeal = 0;
 }
@@ -2870,7 +2880,7 @@ function applyAttackPotentialRecovery(room, member) {
         member.runtime.mp = Math.min(member.runtime.mpMax, member.runtime.mp + Math.round(Number(stats.attackMpRecovery || 0) * recoveryMul));
         mpRecovered = member.runtime.mp - before;
     }
-    if (hpRecovered > 0 || mpRecovered > 0) pushCombat(room, '✨ ' + member.name + ' 공격 회복' + (hpRecovered > 0 ? ' HP +' + comma(hpRecovered) : '') + (mpRecovered > 0 ? ' MP +' + comma(mpRecovered) : ''), 'heal');
+    if (hpRecovered > 0 || mpRecovered > 0) pushCombat(room, member.name + ' 공격 회복' + (hpRecovered > 0 ? ' HP +' + comma(hpRecovered) : '') + (mpRecovered > 0 ? ' MP +' + comma(mpRecovered) : ''), 'heal');
 }
 
 // ===== 몬스터 행동 =====
@@ -2941,7 +2951,7 @@ function triggerBlackHoduCurse(room, mon) {
     st.curseTriggered = true;
     st.curseRemain = Number(pattern.windowSec || 5);
     mon.hp = Math.max(1, Math.ceil(mon.hpMax * floorRatio));
-    pushNotice(room, '🩸 암흑의 저주! ' + st.curseRemain + '초간 보스를 공격하면 파티가 전멸합니다!', 'danger', 5000);
+    pushNotice(room, '암흑의 저주 — ' + st.curseRemain + '초간 공격 시 전멸', 'danger', 5000);
     pushCombat(room, mon.name + ' [' + (pattern.name || '암흑의 저주') + '] 체력을 ' + Math.round(floorRatio * 100) + '%로 되돌립니다', 'danger');
 }
 
@@ -3008,7 +3018,7 @@ function executeMember(room, member, source) {
     member.runtime.hp = 0;
     member.runtime.dead = true;
     pushCombat(room, source + ' → ' + member.name + ' [즉사]', 'damage');
-    pushNotice(room, '☠ ' + member.name + ' 전투불능', 'danger', 3500);
+    pushNotice(room, member.name + ' 전투불능', 'danger', 3500);
     if (room.members.every(m => m.runtime.dead)) endQuest(room, false, '파티 전멸');
 }
 
@@ -3099,8 +3109,8 @@ function stepBlackHoduBoss(room, mon, dt) {
                 if (roles.length) {
                     st.shieldRole = roles[Math.floor(Math.random() * roles.length)];
                     st.shieldRemain = st.shieldDuration;
-                    pushNotice(room, '🛡 칠흑의 방패! ' + st.shieldDuration + '초간 ' + st.shieldRole + '의 공격만 통합니다!', 'danger', 4500);
-                    pushCombat(room, mon.name + ' [칠흑의 방패] ' + st.shieldRole + '만 피해를 줄 수 있습니다 (' + st.shieldDuration + 's)', 'danger');
+                    pushNotice(room, '칠흑의 방패 — ' + st.shieldDuration + '초간 ' + st.shieldRole + ' 공격만 유효', 'danger', 4500);
+                    pushCombat(room, mon.name + ' [칠흑의 방패] ' + st.shieldRole + ' 공격만 유효 (' + st.shieldDuration + 's)', 'danger');
                     return true;
                 }
             }
@@ -3198,7 +3208,7 @@ function stepEnrage(room, mon, dt) {
     mon.atk = Number(mon.atk || 0) * 5;
     if (mon.stats) mon.stats.atk = Number(mon.stats.atk || 0) * 5;
     mon.actionInterval = Math.max(0.5, Number(mon.actionInterval || 2) - 1.0);
-    pushNotice(room, '💢 ' + mon.name + ' 광폭화! 공격력이 폭증합니다!', 'danger', 6000);
+    pushNotice(room, mon.name + ' 광폭화 — 공격력 급증', 'danger', 6000);
     pushCombat(room, mon.name + ' [광폭화] 체력 10% 회복 / 공격력 ×5 / 행동주기 -1.0s', 'danger');
 }
 
@@ -3212,7 +3222,7 @@ function applyBossGroggy(room, mon, seconds, takenDamageUp) {
     mon.stunRemain = Math.max(Number(mon.stunRemain || 0), sec);
     const up = Number(takenDamageUp || 0);
     if (up > 0) addMonsterDebuff(mon, { id: 'groggyTakenUp', type: 'takenDamage', value: up, remain: sec });
-    pushNotice(room, '💫 ' + mon.name + ' 그로기 ' + sec + '초' + (up > 0 ? ' / 받는 피해 +' + Math.round(up * 100) + '%' : ''), 'success', 4500);
+    pushNotice(room, mon.name + ' 그로기 ' + sec + '초' + (up > 0 ? ' / 받는 피해 +' + Math.round(up * 100) + '%' : ''), 'success', 4500);
 }
 
 // 공대장 지원군 스킬 게이지
@@ -3220,7 +3230,7 @@ function addSupportGauge(room, amount, silent) {
     const n = Number(amount || 0);
     if (n <= 0 || !getQuestSupportSkills(room).length) return;
     room.supportGauge = Math.min(100, Number(room.supportGauge || 0) + n);
-    if (!silent) pushCombat(room, '🔆 지원군 게이지 +' + n + '% (' + Math.round(room.supportGauge) + '%)', 'buff');
+    if (!silent) pushCombat(room, '지원군 게이지 +' + n + '% (' + Math.round(room.supportGauge) + '%)', 'buff');
 }
 
 // ===== 공대장 전용 지원군 스킬 =====
@@ -3259,6 +3269,7 @@ function useSupportSkill(name, skillName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
+    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
     if (room.hostName !== name) return { error: '공대장만 사용할 수 있습니다.' };
     const skills = getQuestSupportSkills(room);
     if (!skills.length) return { error: '이 퀘스트에는 지원군 스킬이 없습니다.' };
@@ -3268,7 +3279,7 @@ function useSupportSkill(name, skillName) {
     if (Number(room.supportGauge || 0) < 100) return { error: '지원군 게이지가 부족합니다. (' + Math.floor(Number(room.supportGauge || 0)) + '%)' };
     room.supportGauge = 0;
     room.supportGaugeAccum = 0;
-    pushNotice(room, '📣 공대장 ' + name + ' — 지원군 [' + skillName + '] 호출!', 'big', 4000);
+    pushNotice(room, name + ' — 지원군 [' + skillName + '] 호출', 'big', 4000);
     if (skillName === '지오') useSupportGeo(room);
     else if (skillName === 'SitoSoym') useSupportSito(room);
     else if (skillName === 'X') useSupportX(room);
@@ -3280,7 +3291,7 @@ function useSupportGeo(room) {
     const mon = room.monster;
     if (!mon) return;
     const dealt = applyBossHpDamage(room, mon, SUPPORT_GEO_DAMAGE);
-    pushCombat(room, '🪨 지원군 [지오] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
+    pushCombat(room, '지원군 [지오] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
 }
 
 function useSupportSito(room) {
@@ -3295,7 +3306,7 @@ function useSupportSito(room) {
         upsertMemberBuff(m, { id: 'supportSito', label: '사이토 소음', remain: SUPPORT_SITO_SEC });
     }
     room.supportSito = { remain: SUPPORT_SITO_SEC, tick: 1 };
-    pushCombat(room, '🎧 지원군 [SitoSoym] 전원 보호막 ' + comma(SUPPORT_SITO_SHIELD) + ' (' + SUPPORT_SITO_SEC + '초)', 'buff');
+    pushCombat(room, '지원군 [SitoSoym] 전원 보호막 ' + comma(SUPPORT_SITO_SHIELD) + ' (' + SUPPORT_SITO_SEC + '초)', 'buff');
 }
 
 function stepSupportSito(room, dt) {
@@ -3315,16 +3326,16 @@ function stepSupportSito(room, dt) {
         healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT));
         m.runtime.mp = Math.min(m.runtime.mpMax, m.runtime.mp + Math.round(Number(m.runtime.mpMax || 0) * SUPPORT_SITO_END_PCT));
     }
-    pushCombat(room, '🎧 [SitoSoym] 종료 — 전원 HP/MP ' + Math.round(SUPPORT_SITO_END_PCT * 100) + '% 회복', 'heal');
+    pushCombat(room, '[SitoSoym] 종료 — 전원 HP/MP ' + Math.round(SUPPORT_SITO_END_PCT * 100) + '% 회복', 'heal');
 }
 
 function useSupportX(room) {
     for (const m of room.members) if (m.runtime) m.runtime.cooldownsUntil = {};
-    pushCombat(room, '❌ 지원군 [X] 전 파티원 스킬 쿨타임 초기화', 'buff');
+    pushCombat(room, '지원군 [X] 전 파티원 스킬 쿨타임 초기화', 'buff');
     const mon = room.monster;
     if (!mon) return;
     const dealt = applyBossHpDamage(room, mon, SUPPORT_X_DAMAGE);
-    pushCombat(room, '❌ 지원군 [X] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
+    pushCombat(room, '지원군 [X] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
     const st = mon.bossState;
     if (!st || !st.berserk || mon.bossKey !== '잉여왕') return;
     room.xHiddenTriggered = true;
@@ -3343,7 +3354,7 @@ function stepSupportXBarrage(room, dt) {
     if (chunk > 0 && room.monster) {
         b.dealt = want;
         applyBossHpDamage(room, room.monster, chunk);
-        pushCombat(room, '❌ [X] 연속 타격 → ' + room.monster.name + ' [-' + comma(chunk) + ']', 'skill');
+        pushCombat(room, '[X] 연속 타격 → ' + room.monster.name + ' [-' + comma(chunk) + ']', 'skill');
     }
     if (b.remain <= 0 || !room.monster) room.supportXBarrage = null;
 }
@@ -3425,7 +3436,7 @@ function startVote(room, opts) {
         candidates: getAliveMembers(room).map(m => m.name),
         resolver: o.resolver || null
     };
-    pushNotice(room, '🗳 ' + room.voteState.prompt + ' (' + Math.round(room.voteState.deadline) + '초)', 'danger', 5000);
+    pushNotice(room, room.voteState.prompt + ' (' + Math.round(room.voteState.deadline) + '초)', 'danger', 5000);
     broadcastRoom(room);
     return room.voteState;
 }
@@ -3461,7 +3472,7 @@ function resolveVote(room) {
 function applySealToMember(room, member, seconds, label) {
     if (!member || !member.runtime || member.runtime.dead) return;
     member.runtime.sealRemain = Math.max(Number(member.runtime.sealRemain || 0), Number(seconds || 0));
-    pushCombat(room, '🔒 ' + member.name + ' 봉인' + (label ? ' [' + label + ']' : '') + ' ' + Number(seconds || 0).toFixed(1) + 's', 'damage');
+    pushCombat(room, member.name + ' 봉인' + (label ? ' [' + label + ']' : '') + ' ' + Number(seconds || 0).toFixed(1) + 's', 'damage');
 }
 
 // 받는 피해 증가 스택 디버프 (runtime.buffs 재사용)
@@ -3680,7 +3691,7 @@ function stepTabuzago(room, mon, dt) {
         st.dealingCount += 1;
         if (st.dealingCount >= need) {
             st.dealingCount = 0;
-            pushNotice(room, mon.name + '가 확실한 딜링을 예고합니다!', 'danger', 4500);
+            pushNotice(room, mon.name + ' — 확실한 딜링 예고', 'danger', 4500);
             const pct = Number(p.targetMaxHpPct || 0.3);
             for (const m of getAliveMembers(room)) {
                 applyFixedDamageToMember(room, m, Math.ceil(Number(m.runtime.hpMax || 0) * pct), mon.name + ' [' + (p.finishName || '확실한 딜링') + ']');
@@ -3726,7 +3737,7 @@ function tickTabuzagoReflect(room, mon, dt) {
     st.onDamageTaken = null;
     if (st.reflectAccum > Number(p.threshold || 60000)) {
         const dmg = Number(p.fixedDamage || 18000);
-        pushCombat(room, mon.name + ' [' + (p.name || '반사') + '] 반격! (누적 ' + comma(Math.round(st.reflectAccum)) + ')', 'danger');
+        pushCombat(room, mon.name + ' [' + (p.name || '반사') + '] 반격 (누적 ' + comma(Math.round(st.reflectAccum)) + ')', 'danger');
         for (const m of getAliveMembers(room)) {
             applyFixedDamageToMember(room, m, dmg, mon.name + ' [' + (p.name || '반사') + ']');
             if (room.state !== 'inProgress' || room.monster !== mon) return true;
@@ -3745,7 +3756,7 @@ function tickTabuzagoMochi(room, mon, dt) {
     if (Number(mon.shield || 0) <= 0) {
         st.mochiWindow = 0;
         clearBossShield(mon);
-        pushCombat(room, mon.name + ' [' + (p.name || '모찌나간다') + '] 보호막 파괴!', 'buff');
+        pushCombat(room, mon.name + ' [' + (p.name || '모찌나간다') + '] 보호막 파괴', 'buff');
         applyBossGroggy(room, mon, Number(p.groggy || 6), Number(p.takenDamageUp || 0.3));
         return true;
     }
@@ -3754,7 +3765,7 @@ function tickTabuzagoMochi(room, mon, dt) {
     clearBossShield(mon);
     const stun = Number(p.stun || 5);
     for (const m of getAliveMembers(room)) m.runtime.stunRemain = Math.max(Number(m.runtime.stunRemain || 0), stun);
-    pushNotice(room, '💥 모찌나간다 저지 실패! 전원 ' + stun + '초간 기절', 'danger', 4500);
+    pushNotice(room, '저지 실패 — 전원 ' + stun + '초 기절', 'danger', 4500);
     return true;
 }
 
@@ -3843,7 +3854,7 @@ function finishIngyeoRain(room, mon, success) {
     endBossGimmick(mon);
     for (const m of room.members) if (m.runtime) m.runtime.sealRemain = 0;
     if (success) {
-        pushCombat(room, mon.name + ' [' + (p.name || '레인! 도와줘!') + '] 보호막 파괴!', 'buff');
+        pushCombat(room, mon.name + ' [' + (p.name || '레인! 도와줘!') + '] 보호막 파괴', 'buff');
         applyBossGroggy(room, mon, Number(p.groggy || 8), Number(p.takenDamageUp || 0.2));
         addSupportGauge(room, Number(p.gauge || 0));
     } else if (p.failWipe) {
@@ -3884,7 +3895,7 @@ function usePartyBlockSkill(room, member) {
     if (st.blockUsers.has(member.name)) return { error: '이미 저지했습니다.' };
     clearPartyGunryeokOnSkillUse(room, member);
     st.blockUsers.add(member.name);
-    pushCombat(room, '🛑 ' + member.name + ' [저지]', 'buff');
+    pushCombat(room, member.name + ' [저지]', 'buff');
     broadcastRoom(room);
     return { ok: true };
 }
@@ -3905,7 +3916,7 @@ function finishIngyeoCharge(room, mon) {
             if (!r.buffs.some(b => b.id === 'takenDamageUp')) continue;
             r.buffs = r.buffs.filter(b => b.id !== 'takenDamageUp');
             const healed = healMember(m, Math.round(Number(r.hpMax || 0) * Number(p.healPct || 0.2)));
-            if (healed > 0) pushCombat(room, '💚 ' + m.name + ' 튀어오르기 해제 → HP +' + comma(healed), 'heal');
+            if (healed > 0) pushCombat(room, m.name + ' 튀어오르기 해제 → HP +' + comma(healed), 'heal');
         }
         return;
     }
@@ -4011,7 +4022,7 @@ function stepIngyeoWang(room, mon, dt) {
     if (st.chargeTimer <= 0) {
         const p = getMonsterPattern(mon, 'chargeBlock');
         st.chargeTimer += Number(p.interval || 30);
-        pushNotice(room, '잉여왕이 기를 모으기 시작합니다... [저지]를 사용하세요!', 'danger', 5000);
+        pushNotice(room, '잉여왕이 기를 모은다 — [저지] 사용', 'danger', 5000);
         st.blockUsers = new Set();
         grantBlockSkill(room);
         startBossCast(room, mon, 'charge', p.name || '기모아 공격', Number(p.castTime || 4), finishIngyeoCharge);
@@ -4109,10 +4120,10 @@ function applyDamageToMember(room, member, dmg, source) {
             const absorbed = Math.max(1, Math.round(dmg * Number(protector.runtime.absorbAlly || 0)));
             dmg = Math.max(0, dmg - absorbed);
             protector.runtime.hp = Math.max(0, protector.runtime.hp - absorbed);
-            pushCombat(room, '🤝 ' + protector.name + ' 결속 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
+            pushCombat(room, protector.name + ' 결속 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
             if (protector.runtime.hp <= 0) {
                 protector.runtime.dead = true;
-                pushNotice(room, '☠ ' + protector.name + ' 전투불능', 'danger', 3500);
+                pushNotice(room, protector.name + ' 전투불능', 'danger', 3500);
                 if (room.members.every(m => m.runtime.dead)) {
                     endQuest(room, false, '파티 전멸');
                     return;
@@ -4147,10 +4158,10 @@ function applyDamageToMember(room, member, dmg, source) {
         if (absorbed > 0) {
             dmg = Math.max(0, dmg - absorbed);
             r.iktaeBot.hp -= absorbed;
-            pushCombat(room, '🤖 익테봇 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
+            pushCombat(room, '익테봇 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
             if (r.iktaeBot.hp <= 0) {
                 r.iktaeBot = null;
-                pushCombat(room, '💥 ' + member.name + '의 익테봇이 파괴되었습니다.', 'buff');
+                pushCombat(room, member.name + ' 익테봇 파괴', 'buff');
             }
         }
     }
@@ -4167,7 +4178,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const finalDefMul = (tPosDef && tPosDef.stats && tPosDef.stats.finalDef) || 1;
         const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
         applyBossHpDamage(room, room.monster, reflect);
-        pushCombat(room, '💥 가시 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        pushCombat(room, '가시 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     // 패시브: 가시 갑옷 — 받은 피해 발생 시 방어력 20% 반사
@@ -4178,12 +4189,12 @@ function applyDamageToMember(room, member, dmg, source) {
         const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
         const reflect = Math.max(1, calculateNormalDamageToMonster(member, room.monster, room, Math.round(Number(stats.def || 50) * finalDefMul * 0.20)));
         applyBossHpDamage(room, room.monster, reflect);
-        pushCombat(room, '💥 가시 갑옷 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        pushCombat(room, '가시 갑옷 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     if (r.hp <= 0) {
         r.dead = true;
-        pushNotice(room, '☠ ' + member.name + ' 전투불능', 'danger', 3500);
+        pushNotice(room, member.name + ' 전투불능', 'danger', 3500);
         const allDead = room.members.every(m => m.runtime.dead);
         if (allDead) {
             endQuest(room, false, '파티 전멸');
@@ -4201,7 +4212,7 @@ function maybeStartImmortalArmorRegen(room, member) {
     if (Number(snap.readyAt || 0) > now) return;
     snap.readyAt = now + IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS;
     r.dragonRegen = { ticksLeft: IMMORTAL_DRAGON_ARMOR_REGEN_TICKS, nextTickAt: now + 1000 };
-    pushNotice(room, '🔥 ' + member.name + ' — ' + IMMORTAL_DRAGON_ARMOR_NAME + ' 발동! ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초간 초당 최대 체력의 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '% 회복', 'success', 4500);
+    pushNotice(room, member.name + ' [' + IMMORTAL_DRAGON_ARMOR_NAME + '] ' + IMMORTAL_DRAGON_ARMOR_REGEN_TICKS + '초간 초당 ' + Math.round(IMMORTAL_DRAGON_ARMOR_REGEN_HP_PCT * 100) + '% 회복', 'success', 4500);
     persistImmortalArmorCooldown(member.name, snap.readyAt);
 }
 
@@ -4231,7 +4242,7 @@ function recoverPartyMp(room, amount) {
         if (!m.runtime || m.runtime.dead) continue;
         m.runtime.mp = Math.min(m.runtime.mpMax, m.runtime.mp + n);
     }
-    pushCombat(room, '🔷 파티 MP +' + comma(n), 'heal');
+    pushCombat(room, '파티 MP +' + comma(n), 'heal');
 }
 
 function applyMainCardPassiveMpRecovery(room, caster) {
@@ -4247,7 +4258,7 @@ function applyDamageTakenSlotRecovery(room, damaged, damage) {
         const amount = Math.round(Number(damage || 0) * 0.2);
         let total = 0;
         for (const ally of room.members) total += healMember(ally, amount);
-        if (total > 0) pushCombat(room, '💚 글렌첵 효과 → 파티 체력 회복 [+' + comma(amount) + ']', 'heal');
+        if (total > 0) pushCombat(room, '글렌첵 효과 → 파티 체력 회복 [+' + comma(amount) + ']', 'heal');
     }
 }
 
@@ -4275,7 +4286,7 @@ function onMonsterDefeated(room) {
         return;
     }
     if (mon && mon.defeatLine) pushNotice(room, mon.defeatLine, 'big', 5000);
-    pushNotice(room, '🏆 ' + (room.monster ? room.monster.name : '적') + ' 처치!', 'success', 4000);
+    pushNotice(room, (room.monster ? room.monster.name : '적') + ' 처치', 'success', 4000);
     room.monster = null;
     endPhase(room);
 }
@@ -4286,6 +4297,7 @@ function useSkill(name, skillName, targetName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
+    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
@@ -4467,7 +4479,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         if (def.debuff && def.debuff.def) room.monster.def = Math.max(0, Number(room.monster.def || 0) + Number(def.debuff.def));
         if (def.debuff && def.debuff.takenDmg) {
             addMonsterDebuff(room.monster, { id: skillName, type: 'takenDamage', value: Number(def.debuff.takenDmg || 0), remain: Number(def.debuff.duration || 5) });
-            pushCombat(room, '💥 ' + room.monster.name + ' 받는 피해 증가 +' + Math.round(Number(def.debuff.takenDmg || 0) * 100) + '%', 'buff');
+            pushCombat(room, room.monster.name + ' 받는 피해 증가 +' + Math.round(Number(def.debuff.takenDmg || 0) * 100) + '%', 'buff');
         }
         if (def.stun && def.stun > 0) {
             room.monster.stunRemain = Math.max(Number(room.monster.stunRemain || 0), Number(def.stun || 0));
@@ -4476,7 +4488,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
                 room.monster.bossState.casting = null;
                 room.monster.nextPattern = null;
             }
-            pushNotice(room, room.monster.name + ' 기절! (' + def.stun + 's)', 'info', 2500);
+            pushNotice(room, room.monster.name + ' 기절 (' + def.stun + 's)', 'info', 2500);
         }
         applyBlackHoduCritReflect(room, caster, result);
         if (room.state !== 'inProgress' || !room.monster) return;
@@ -4502,7 +4514,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
             const exist = room.monster.debuffs.find(d => d.id === '잔류 전격');
             if (exist) { exist.remain = 3; }
             else { room.monster.debuffs.push({ id: '잔류 전격', type: 'dealtDmg', value: -0.15, remain: 3 }); }
-            pushCombat(room, '⚡ 잔류 전격 — ' + room.monster.name + ' 감전', 'buff');
+            pushCombat(room, '잔류 전격 — ' + room.monster.name + ' 감전', 'buff');
         }
         if (room.monster.hp <= 0) onMonsterDefeated(room);
     }
@@ -4532,7 +4544,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
             target.runtime.shield = (target.runtime.shield || 0) + amount;
             target.runtime.shieldHits = Number(def.shieldHits || 99);
             applyTranscendAllyEffect(room, caster, target, 'shield');
-            pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' 🛡 +' + amount, 'buff');
+            pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' 보호막 +' + amount, 'buff');
         }
     }
     if (def.buff) {
@@ -4630,7 +4642,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             upsertMemberBuff(m, { id: 'atkBuff', label: '글버지 (공+)', value: m.runtime.atkBuff, remain: 8 });
             applyTranscendAllyEffect(room, caster, m, canPartyApplyShield(caster, m) ? 'shield' : 'buff');
         }
-        pushCombat(room, caster.name + ' [글버지] → 파티 🛡 +' + comma(shieldAmt) + ' / 공격력 ▲', 'buff');
+        pushCombat(room, caster.name + ' [글버지] → 파티 보호막 +' + comma(shieldAmt) + ' / 공격력 ▲', 'buff');
     }
     if (skillName === '자인') {
         if (getTranscendEquipmentEntry(caster, '궁택토')) caster.runtime.nextBasicDamageBonus = 0;
@@ -4642,14 +4654,14 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         caster.runtime.sivalonCharge = 0;
         caster.runtime.actionUntil = 0; // 편의성: 사용 즉시 평타 가능 (행동 쿨타임 초기화)
         upsertMemberBuff(caster, { id: 'sivalon', label: '시벌론 (공속)', remain: Math.round(durationSec * 10) / 10 });
-        pushCombat(room, '🌀 ' + caster.name + ' [시벌론] ' + (Math.round(durationSec * 10) / 10) + '초간 일반 공격 쿨타임 0.5초', 'buff');
+        pushCombat(room, caster.name + ' [시벌론] ' + (Math.round(durationSec * 10) / 10) + '초간 일반 공격 쿨타임 0.5초', 'buff');
         return;
     }
     if (skillName === '건력') {
         if (caster.runtime.gunryeok) {
             clearPartyGunryeok(caster);
             if (Array.isArray(caster.runtime.buffs)) caster.runtime.buffs = caster.runtime.buffs.filter(b => b.id !== 'gunryeok');
-            pushCombat(room, '🔓 ' + caster.name + ' [건력] 상태 해제', 'buff');
+            pushCombat(room, caster.name + ' [건력] 상태 해제', 'buff');
             return;
         }
         const dmgReduce = getSkillValue(skill, 0, star);
@@ -4660,7 +4672,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         caster.runtime.hpMax = sealedMax;
         caster.runtime.hp = Math.min(Number(caster.runtime.hp || 0), sealedMax);
         upsertMemberBuff(caster, { id: 'gunryeok', label: '건력 (공+/피해감소)', value: atkBuff, remain: 60 });
-        pushCombat(room, '💪 ' + caster.name + ' [건력] 60초간 최대 HP 70% 봉인 / 공격력 +' + Math.round(atkBuff * 100) + '% / 받는 피해 -' + Math.round(dmgReduce * 100) + '%', 'buff');
+        pushCombat(room, caster.name + ' [건력] 60초간 최대 HP 70% 봉인 / 공격력 +' + Math.round(atkBuff * 100) + '% / 받는 피해 -' + Math.round(dmgReduce * 100) + '%', 'buff');
         return;
     }
     if (skillName === '불사조') {
@@ -4707,7 +4719,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         }
         caster.runtime.takenDmgMul = 0.7;
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '감사합니다 친구야 (피해감소)', value: 0.7, remain: 12 });
-        pushCombat(room, caster.name + ' [감사합니다 친구야] → 🛡 +' + comma(shieldAmt) + ' / 받는 피해 ▼', 'buff');
+        pushCombat(room, caster.name + ' [감사합니다 친구야] → 보호막 +' + comma(shieldAmt) + ' / 받는 피해 ▼', 'buff');
     }
     if (skillName === 'KICK BACK') {
         extra.critChanceMul = 0.5;
@@ -4719,7 +4731,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const summonDurationBonus = 1 + Number(caster.baseSnapshot.stats.summonDuration || 0);
         const durationMs = Math.round(20000 * summonDurationBonus);
         caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio), atkMul: atkMul, expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 4000 };
-        pushCombat(room, '✨ ' + caster.name + '님이 익테봇을 소환했습니다! (' + (durationMs / 1000).toFixed(1) + '초간 유지)', 'buff');
+        pushCombat(room, caster.name + ' 익테봇 소환 (' + (durationMs / 1000).toFixed(1) + '초)', 'buff');
         return;
     }
     if (skillName === 'SUPER EASY') {
@@ -4748,7 +4760,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             m.runtime.shieldExpireHeal = 0;
             applyTranscendAllyEffect(room, caster, m, 'shield');
         }
-        pushCombat(room, caster.name + ' [핫식스의정력] → 파티 🛡 +' + comma(shieldAmt) + ' (12초)', 'buff');
+        pushCombat(room, caster.name + ' [핫식스의정력] → 파티 보호막 +' + comma(shieldAmt) + ' (12초)', 'buff');
     }
     if (skillName === '이어브피') {
         const shieldAmt = Math.max(1, Math.round(caster.runtime.mpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster)));
@@ -4761,7 +4773,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             m.runtime.shieldExpireHeal = 0;
             applyTranscendAllyEffect(room, caster, m, 'shield');
         }
-        pushCombat(room, caster.name + ' [이어브피] → 파티 🛡 +' + comma(shieldAmt) + ' (12초)', 'buff');
+        pushCombat(room, caster.name + ' [이어브피] → 파티 보호막 +' + comma(shieldAmt) + ' (12초)', 'buff');
     }
     if (skillName === '댄져') {
         extra.pnt = Number(stats.pnt || 0) + getSkillValue(skill, 1, star);
@@ -4774,7 +4786,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     }
     if (skillName === '초특급한탕' && equipmentSkill && equipmentSkill.superJackpot) {
         rawDamage = Math.round(rawDamage * (getSkillValue(skill, 1, star) / (multiplier || 1)));
-        pushCombat(room, '💥 ' + caster.name + ' [초특급한탕] 폭딜 발동!', 'buff');
+        pushCombat(room, caster.name + ' [초특급한탕] 폭딜 발동', 'buff');
     }
     if (skillName === '수나타 소환') {
         const atkMul = getSkillValue(skill, 0, star);
@@ -4782,7 +4794,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const durationMs = Math.round(45000 * (1 + Number(caster.baseSnapshot.stats.summonDuration || 0)));
         caster.runtime.sunata = { atkMul: atkMul, buff: scalePartyAttackBuff(caster, buffMul), expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 5000 };
         upsertMemberBuff(caster, { id: 'sunata', label: '수나타 (공+)', value: caster.runtime.sunata.buff, remain: Math.round(durationMs / 1000) });
-        pushCombat(room, '🎵 ' + caster.name + '님이 수나타를 소환했습니다! (' + (durationMs / 1000).toFixed(1) + '초간 유지)', 'buff');
+        pushCombat(room, caster.name + ' 수나타 소환 (' + (durationMs / 1000).toFixed(1) + '초)', 'buff');
         return;
     }
     if (skillName === '유서새김') {
@@ -5017,6 +5029,7 @@ async function usePotion(name, potionName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
+    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
