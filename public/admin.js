@@ -383,17 +383,39 @@ $('#searchBtn').onclick = async () => {
         $('#grantName').value = u.name;
     } catch (e) { $('#userInfo').style.display = 'none'; toast(e.message, false); }
 };
-$('#grantKind').onchange = () => $('#itemNameWrap').style.display = $('#grantKind').value === 'item' ? '' : 'none';
+let grantEquipId;
+$('#grantKind').onchange = () => {
+    const kind = $('#grantKind').value;
+    $('#itemNameWrap').style.display = kind === 'item' ? '' : 'none';
+    ['#equipWrap', '#equipPickWrap', '#equipLevelWrap'].forEach(id => $(id).style.display = kind === 'equipment' ? '' : 'none');
+    $('#amountWrap').style.display = kind === 'equipment' ? 'none' : '';
+};
 $('#grantItemPick').onclick = () => pickItem(it => {
     $('#grantItemName').value = it.name;
     $('#grantItemPick').innerHTML = '';
     $('#grantItemPick').appendChild(document.createTextNode('#' + it.id + ' ' + it.name));
 });
+$('#grantEquipType').onchange = () => {
+    grantEquipId = undefined;
+    $('#grantEquipPick').innerHTML = '<span class="ph">장비 선택</span>';
+};
+$('#grantEquipPick').onclick = () => pickEquipment($('#grantEquipType').value, eq => {
+    grantEquipId = eq.id;
+    $('#grantEquipPick').innerHTML = '';
+    $('#grantEquipPick').appendChild(document.createTextNode('#' + eq.id + ' ' + eq.name));
+});
 $('#grantBtn').onclick = async () => {
     const body = { name: $('#grantName').value.trim(), kind: $('#grantKind').value, amount: Number($('#grantAmount').value), itemName: $('#grantItemName').value.trim() };
+    if (body.kind === 'equipment') {
+        if (typeof grantEquipId === 'undefined') return toast('장비를 선택하세요.', false);
+        body.equipType = $('#grantEquipType').value;
+        body.equipId = grantEquipId;
+        body.level = Number($('#grantEquipLevel').value || 0);
+    }
     try {
         const r = await api('/api/users/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (r.kind === 'item') toast('✅ ' + r.name + ' ' + r.itemName + ' ' + (r.delta > 0 ? '+' : '') + r.delta);
+        else if (r.kind === 'equipment') toast('✅ ' + r.name + ' ' + r.equipName + ' +' + r.level + ' 지급');
         else toast('✅ ' + r.name + ' ' + r.kind + ': ' + r.before + ' → ' + r.after);
     } catch (e) { toast(e.message, false); }
 };
@@ -2634,13 +2656,21 @@ $('#bcSendBtn').onclick = async () => {
             gifts.push(spec);
         }
     }
-    if (!confirm('모든 유저에게 메일을 발송합니다. 계속할까요?')) return;
+    const to = $('#bcTo').value.trim();
+    if (!confirm(to ? "'" + to + "'님에게 메일을 발송합니다. 계속할까요?" : '모든 유저에게 메일을 발송합니다. 계속할까요?')) return;
     $('#bcSendBtn').disabled = true;
     $('#bcStatus').textContent = '발송 중...';
     try {
-        const r = await api('/api/admin/mail/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, body, gmName, gifts }) });
-        toast('✅ ' + r.recipients + '명에게 발송 완료');
-        $('#bcStatus').textContent = r.recipients + '명 발송 완료';
+        let statusText;
+        if (to) {
+            await api('/api/admin/mail/send-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, subject, body, gmName, gifts }) });
+            statusText = to + '님에게 발송 완료';
+        } else {
+            const r = await api('/api/admin/mail/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, body, gmName, gifts }) });
+            statusText = r.recipients + '명 발송 완료';
+        }
+        toast('✅ ' + statusText);
+        $('#bcStatus').textContent = statusText;
         bcGifts.length = 0;
         $('#bcSubject').value = '';
         $('#bcBody').value = '';

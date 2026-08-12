@@ -700,6 +700,18 @@ server.post('/api/admin/mail/broadcast', requireAdmin, async (req, res) => {
     } catch (e) { console.error('mail broadcast error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
 
+// 관리자 개인 발송 (전체 발송과 동일한 선물 스펙, 특정 유저 1명)
+server.post('/api/admin/mail/send-user', requireAdmin, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const to = String(b.to || '').trim();
+        if (!to) return res.status(400).json({ error: '받는 사람을 입력해주세요.' });
+        const result = await rpgenius.sendGmMailToUser(to, { subject: b.subject, body: b.body, gmName: b.gmName, gifts: Array.isArray(b.gifts) ? b.gifts : [] });
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true });
+    } catch (e) { console.error('mail send-user error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
 server.get('/api/ranking', requireUser, async (req, res) => {
     try {
         const users = await rpgenius.getAllRPGUsers();
@@ -2792,11 +2804,25 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
     const kind = String((req.body && req.body.kind) || '').trim();
     const amount = Number((req.body && req.body.amount) || 0);
     if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
-    if (!Number.isInteger(amount) || amount == 0) return res.status(400).json({ error: '수량은 0이 아닌 정수여야 합니다.' });
+    if (kind != 'equipment' && (!Number.isInteger(amount) || amount == 0)) return res.status(400).json({ error: '수량은 0이 아닌 정수여야 합니다.' });
 
     try {
         const user = await rpgenius.getRPGUserByName(name);
         if (!user) return res.status(404).json({ error: '존재하지 않는 유저입니다.' });
+
+        if (kind == 'equipment') {
+            const equipType = String((req.body && req.body.equipType) || '');
+            const equipId = Number(req.body && req.body.equipId);
+            const level = Math.max(0, Math.floor(Number((req.body && req.body.level) || 0)));
+            const equipments = rpgenius.getDataCache('Equipment', {});
+            const data = equipments[equipType] && equipments[equipType][equipId];
+            if (!data) return res.status(404).json({ error: '존재하지 않는 장비입니다.' });
+            if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
+            if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
+            user.inventory.equipment.push({ type: equipType, id: equipId, level });
+            await user.save();
+            return res.json({ ok: true, name: user.name, kind: 'equipment', equipName: data.name, level });
+        }
 
         if (GOODS_KEYS.includes(kind)) {
             const before = Number(user[kind] || 0);

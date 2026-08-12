@@ -290,12 +290,21 @@ details.collapsible .body{padding:12px}
         <option value="gold">골드</option><option value="garnet">가넷</option>
         <option value="point">포인트</option><option value="mileage">마일리지</option>
         <option value="item">아이템</option>
+        <option value="equipment">장비</option>
       </select></div>
       <div id="itemNameWrap" style="display:none"><label>아이템</label>
         <button class="btn pickbtn" id="grantItemPick" style="width:100%;text-align:left"><span class="ph">아이템 선택</span></button>
         <input type="hidden" id="grantItemName">
       </div>
-      <div><label>수량 (음수 입력 시 차감)</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
+      <div id="equipWrap" style="display:none"><label>부위</label><select id="grantEquipType">
+        <option value="weapon">무기</option><option value="armor">갑옷</option>
+        <option value="accessory">장신구</option><option value="support">보조</option>
+      </select></div>
+      <div id="equipPickWrap" style="display:none"><label>장비</label>
+        <button class="btn pickbtn" id="grantEquipPick" style="width:100%;text-align:left"><span class="ph">장비 선택</span></button>
+      </div>
+      <div id="equipLevelWrap" style="display:none"><label>강화 (+레벨)</label><input id="grantEquipLevel" type="number" min="0" value="0"></div>
+      <div id="amountWrap"><label>수량 (음수 입력 시 차감)</label><input id="grantAmount" type="number" placeholder="100" value="0"></div>
       <div class="nf"><button class="btn primary" id="grantBtn">지급</button></div>
     </div>
   </section>
@@ -303,9 +312,10 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="mailbroadcast">
   <section>
-    <h2>메일 전체 발송</h2>
+    <h2>메일 발송</h2>
     <div class="row">
       <div><label>GM 발신자명</label><input id="bcGmName" placeholder="운영자" value="운영자"></div>
+      <div><label>받는 사람 (비우면 전체 발송)</label><input id="bcTo" placeholder="닉네임"></div>
       <div style="flex:2"><label>제목</label><input id="bcSubject" placeholder="제목 (최대 50자)" maxlength="50"></div>
     </div>
     <div class="row">

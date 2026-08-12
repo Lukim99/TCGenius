@@ -11506,12 +11506,8 @@ const BROADCAST_GIFT_MAX = 10;
 //   {type:'card', cardId, star, jobType}     // jobType==='전직'이면 전직 카드
 //   {type:'equipment', equipType, id, level, advanced:{potential,rolled,soul,locked}}
 //   {type:'pet', id, level}
-async function sendBroadcastMail(opts) {
-    opts = opts || {};
-    const subject = String(opts.subject || '').trim().slice(0, 50) || '(제목 없음)';
-    const body = String(opts.body || '').trim().slice(0, 1000);
-    const gmName = String(opts.gmName || '').trim().slice(0, 20) || '운영자';
-    const specs = Array.isArray(opts.gifts) ? opts.gifts : [];
+// 관리자 발송 선물 스펙(specs)을 검증해 최종 gifts 배열로 변환. 실패 시 {error}.
+function buildGmMailGifts(specs) {
     if (specs.length > BROADCAST_GIFT_MAX) return { error: '선물은 최대 ' + BROADCAST_GIFT_MAX + '개까지 담을 수 있습니다.' };
 
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
@@ -11553,6 +11549,17 @@ async function sendBroadcastMail(opts) {
             return { error: '지원하지 않는 선물 종류입니다.' };
         }
     }
+    return { gifts };
+}
+
+async function sendBroadcastMail(opts) {
+    opts = opts || {};
+    const subject = String(opts.subject || '').trim().slice(0, 50) || '(제목 없음)';
+    const body = String(opts.body || '').trim().slice(0, 1000);
+    const gmName = String(opts.gmName || '').trim().slice(0, 20) || '운영자';
+    const built = buildGmMailGifts(Array.isArray(opts.gifts) ? opts.gifts : []);
+    if (built.error) return built;
+    const gifts = built.gifts;
 
     const record = { id: genMailId(), gm: true, fromName: gmName, subject, body, gifts, createdAt: Date.now(), broadcast: true };
     await putMailRecord(record);
@@ -11591,6 +11598,14 @@ async function sendSystemMailToUser(userName, opts) {
     recipient.mailNotified = false;
     await recipient.save();
     return { ok: true, mailId: record.id };
+}
+
+// 관리자 개인 발송: 전체 발송과 동일한 선물 스펙을 검증해 특정 유저 1명에게 발송.
+async function sendGmMailToUser(userName, opts) {
+    opts = opts || {};
+    const built = buildGmMailGifts(Array.isArray(opts.gifts) ? opts.gifts : []);
+    if (built.error) return built;
+    return sendSystemMailToUser(userName, { subject: opts.subject, body: opts.body, gmName: opts.gmName, gifts: built.gifts });
 }
 
 // 카톡 채팅 시 미알림 메일이 있으면 1회 알림
@@ -13114,6 +13129,7 @@ module.exports = {
     sendMail,
     sendBroadcastMail,
     sendSystemMailToUser,
+    sendGmMailToUser,
     MAIL_GIFT_MAX,
     mailGoldFee,
     getAllRPGUsers,
