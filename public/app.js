@@ -1204,7 +1204,7 @@ function equipmentOrbInfo(eq) {
     return { orb, lines };
 }
 
-function equipmentOrbNode(info, variant) {
+function equipmentOrbNode(info) {
     if (!info) return null;
     const orb = info.orb;
     const name = String(orb.name || '보주');
@@ -1220,23 +1220,6 @@ function equipmentOrbNode(info, variant) {
     else if (keys.some(key => /atk|Damage/.test(key)) || info.lines.some(line => /공격력|데미지|피해/.test(line))) { kind = 'power'; kindLabel = '공격 효과'; }
     const details = info.lines.filter(line => line && !/^\[\s*보주\s*\]/.test(line));
     const imageUrl = '/item-image?dir=' + encodeURIComponent('보주') + '&file=' + encodeURIComponent(name + '.png');
-    if (variant === 'dex') {
-        return el('section', { class: 'dex-orb-card auc-orb-card' },
-            el('div', { class: 'dex-orb-head' },
-                dexThumb(imageUrl, null, '🔮', 'dex-orb-thumb'),
-                el('div', { class: 'dex-orb-identity' },
-                    el('div', { class: 'auc-orb-label' }, '장착 보주'),
-                    el('div', { class: 'dex-orb-name' }, name)
-                )
-            ),
-            el('div', { class: 'dex-orb-effect' },
-                el('div', { class: 'dex-orb-effect-title' }, '부여 시 효과'),
-                el('div', { class: 'dex-orb-effect-lines' },
-                    ...(details.length ? details.map(line => el('div', null, line)) : [el('div', null, '등록된 효과 없음')])
-                )
-            )
-        );
-    }
     const node = el('div', { class: 'eqm-orb-card orb-' + kind + ' orb-v' + (hash % 4) },
         el('div', { class: 'eqm-orb-visual', 'aria-hidden': 'true' },
             el('span', { class: 'eqm-orb-ring' }),
@@ -1356,7 +1339,7 @@ function ownEquipContext() {
     return false;
 }
 
-function equipmentModalView(eq, interactive, orbVariant) {
+function equipmentModalView(eq, interactive) {
     const nodes = [];
     const thumb = equipmentThumb(eq);
     const hero = el('div', { class: 'eqm-hero' }, thumb,
@@ -1384,7 +1367,7 @@ function equipmentModalView(eq, interactive, orbVariant) {
         nodes.push(el('div', { class: 'eqm-label' }, '능력치'));
         nodes.push(el('div', { class: 'eqm-stats' }, ...lines.map(line => el('div', { class: 'eqm-stat' }, line))));
     }
-    const orbBlock = equipmentOrbNode(orbInfo, orbVariant);
+    const orbBlock = equipmentOrbNode(orbInfo);
     if (orbBlock) nodes.push(orbBlock);
     const passiveBlock = equipmentPassiveNode(eq.passive);
     if (passiveBlock) nodes.push(passiveBlock);
@@ -4438,6 +4421,29 @@ function aucModalItemRow(entry, metaLines) {
     return el('div', { class: 'shop-buy-item-row' }, auctionThumbEl(entry), info);
 }
 
+function aucOrbItemNode(entry) {
+    const d = entry.display;
+    const orb = d.orbDetail;
+    return el('section', { class: 'dex-orb-card auc-item-orb-card' },
+        el('div', { class: 'dex-orb-head' },
+            dexThumb(d.iconUrl, d.frameUrl, '🔮', 'dex-orb-thumb'),
+            el('div', { class: 'dex-orb-identity' },
+                el('div', { class: 'dex-orb-name' }, d.name + (entry.count > 1 ? ' x' + comma(entry.count) : '')),
+                el('div', { class: 'dex-orb-parts' },
+                    el('span', { class: 'dex-orb-parts-label' }, '부여 가능'),
+                    ...(orb.partLabels || []).map(part => el('span', { class: 'dex-orb-part' }, part))
+                )
+            )
+        ),
+        el('div', { class: 'dex-orb-effect' },
+            el('div', { class: 'dex-orb-effect-title' }, '부여 시 효과'),
+            el('div', { class: 'dex-orb-effect-lines' },
+                ...(orb.effectLines || []).map(line => el('div', null, line))
+            )
+        )
+    );
+}
+
 function aucModalStatBlock(d) {
     const nodes = [];
     if (d.statLines && d.statLines.length) d.statLines.forEach(line => nodes.push(el('div', { class: 'stat-line' }, line)));
@@ -4469,8 +4475,14 @@ function openAuctionDetail(entry) {
     const body = el('div', { class: 'shop-buy-modal' });
     const equipmentDetail = entry.kind === 'equipment' && d.equipmentDetail;
     if (equipmentDetail) {
-        body.append(...equipmentModalView(equipmentDetail, false, 'dex'));
-        body.appendChild(el('div', { class: 'auc-equipment-seller' },
+        body.append(...equipmentModalView(equipmentDetail, false));
+        body.appendChild(el('div', { class: 'auc-detail-seller' },
+            el('span', null, '판매자'),
+            el('strong', null, entry.sellerName)
+        ));
+    } else if (d.orbDetail) {
+        body.appendChild(aucOrbItemNode(entry));
+        body.appendChild(el('div', { class: 'auc-detail-seller' },
             el('span', null, '판매자'),
             el('strong', null, entry.sellerName)
         ));

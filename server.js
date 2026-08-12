@@ -5583,6 +5583,7 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
     let potentialDisplay = null;
     let soul = null;
     let equipmentDetail = null;
+    let orbDetail = null;
     if (entry.kind == 'card') {
         imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
     } else if (entry.kind == 'equipment') {
@@ -5660,6 +5661,16 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
         const assets = getItemDisplayAssets(item);
         frameUrl = assets.frameUrl;
         iconUrl = assets.iconUrl;
+        if (item && item.use == '보주') {
+            const orb = rpgenius.getOrbData().find(data => data && data.name == item.name);
+            if (orb) {
+                const partLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조장비' };
+                orbDetail = {
+                    partLabels: (orb.parts || []).map(part => partLabels[part] || part),
+                    effectLines: dexStatLines(rpgenius.formatOrbLines(orb).slice(1).join('\n'))
+                };
+            }
+        }
     } else if (entry.kind == 'pet') {
         const data = rpgenius.getPetData(entry.payload && entry.payload.id);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
@@ -5694,7 +5705,8 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
             statLines,
             potentialDisplay,
             soul,
-            equipmentDetail
+            equipmentDetail,
+            orbDetail
         }
     };
 }
