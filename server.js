@@ -1378,6 +1378,108 @@ server.post('/api/punch/claim', requireUser, async (req, res) => {
     }
 });
 
+// ===== 100일 기념 캡슐 기계 =====
+const CAPSULE100_COIN_ITEM_NAME = '100일 기념 코인';
+// 오픈 전까지 관리자에게만 노출/이용. 오픈 시 false로 변경 (app.js CAPSULE_VISIBLE도 함께).
+const CAPSULE100_ADMIN_ONLY = true;
+// 순서 = 캡슐 목록 번호. 1번(보주 선택 상자)이 뽑히면 전체 재고가 초기화된다.
+const CAPSULE100_PRIZES = [
+    { name: '보주 선택 상자', count: 1, stock: 1 },
+    { name: '[7월]만능 캐릭터 변환석', count: 1, stock: 2 },
+    { name: '9성 전직 카드팩', count: 1, stock: 3 },
+    { name: '9성 카드팩', count: 1, stock: 3 },
+    { name: '고급 장비 보호권', count: 1, stock: 5 },
+    { name: '장비 보호권', count: 1, stock: 5 },
+    { name: '지니어스의 열쇠', count: 30, stock: 5 },
+    { name: '유생의 강화기', count: 1, stock: 35 },
+    { name: '밍플 지렁이', count: 3, stock: 125 },
+    { name: '밍플 지렁이', count: 1, stock: 316 },
+];
+const CAPSULE100_TOTAL = CAPSULE100_PRIZES.reduce((sum, p) => sum + p.stock, 0);
+
+function getCapsule100Remaining() {
+    const state = rpgenius.getDataCache('Capsule100', null);
+    const remaining = state && Array.isArray(state.remaining) ? state.remaining.map(n => Number(n) || 0) : null;
+    if (!remaining || remaining.length != CAPSULE100_PRIZES.length || remaining.reduce((a, b) => a + b, 0) <= 0) {
+        return CAPSULE100_PRIZES.map(p => p.stock);
+    }
+    return remaining;
+}
+
+function buildCapsule100Status(user) {
+    const coinId = findItemIdByName(CAPSULE100_COIN_ITEM_NAME);
+    const remaining = getCapsule100Remaining();
+    return {
+        ok: true,
+        coinItemName: CAPSULE100_COIN_ITEM_NAME,
+        coinIconUrl: getItemImageUrl('이벤트', CAPSULE100_COIN_ITEM_NAME + '.png'),
+        coinCount: coinId >= 0 ? rpgenius.getInventoryItemCount(user, coinId) : 0,
+        total: CAPSULE100_TOTAL,
+        totalRemaining: remaining.reduce((a, b) => a + b, 0),
+        prizes: CAPSULE100_PRIZES.map((p, i) => Object.assign(buildPunchRewardDisplay(p.name, p.count), { stock: p.stock, remaining: remaining[i] }))
+    };
+}
+
+server.get('/api/capsule100', requireUser, async (req, res) => {
+    try {
+        if (CAPSULE100_ADMIN_ONLY && !req.session.admin) return res.status(403).json({ error: '아직 오픈되지 않았습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildCapsule100Status(user));
+    } catch (e) {
+        console.error('capsule100 status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// 코인 N개(1~3)를 소비해 N회 뽑기. 확률은 잔여 재고 가중, 1번 당첨 시 즉시 전체 초기화.
+server.post('/api/capsule100/draw', requireUser, async (req, res) => {
+    try {
+        if (CAPSULE100_ADMIN_ONLY && !req.session.admin) return res.status(403).json({ error: '아직 오픈되지 않았습니다.' });
+        const count = Number(req.body && req.body.count);
+        if (![1, 2, 3].includes(count)) return res.status(400).json({ error: '1~3회만 이용할 수 있습니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const coinId = findItemIdByName(CAPSULE100_COIN_ITEM_NAME);
+        if (coinId < 0) return res.status(500).json({ error: CAPSULE100_COIN_ITEM_NAME + ' 아이템 데이터가 없습니다.' });
+        if (rpgenius.getInventoryItemCount(user, coinId) < count) return res.status(400).json({ error: CAPSULE100_COIN_ITEM_NAME + '이 부족합니다.' });
+        for (const p of CAPSULE100_PRIZES) {
+            if (findItemIdByName(p.name) < 0) return res.status(500).json({ error: p.name + ' 아이템 데이터가 없습니다.' });
+        }
+
+        rpgenius.removeInventoryItem(user, coinId, count);
+        let remaining = getCapsule100Remaining();
+        const results = [];
+        let jackpot = false;
+        for (let d = 0; d < count; d++) {
+            const totalLeft = remaining.reduce((a, b) => a + b, 0);
+            let roll = Math.floor(Math.random() * totalLeft);
+            let picked = 0;
+            for (let i = 0; i < remaining.length; i++) {
+                roll -= remaining[i];
+                if (roll < 0) { picked = i; break; }
+            }
+            const prize = CAPSULE100_PRIZES[picked];
+            rpgenius.addInventoryItem(user, findItemIdByName(prize.name), prize.count);
+            results.push(Object.assign(buildPunchRewardDisplay(prize.name, prize.count), { number: picked + 1, jackpot: picked == 0 }));
+            if (picked == 0) {
+                jackpot = true;
+                remaining = CAPSULE100_PRIZES.map(p => p.stock);
+            } else {
+                remaining[picked] -= 1;
+            }
+        }
+        rpgenius.cleanupInventoryItems(user);
+        await user.save();
+        await rpgenius.saveRpgeniusDataEntry('Capsule100', { remaining });
+        if (jackpot) console.log('[capsule100] 1등 당첨, 재고 초기화: ' + user.name);
+        res.json(Object.assign(buildCapsule100Status(user), { results, jackpot }));
+    } catch (e) {
+        console.error('capsule100 draw error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 server.get('/api/combine/cards', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -3847,10 +3949,14 @@ function buildInventoryEquipment(user) {
         const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
         rpgenius.formatOrbLines(equip && equip.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
-        if (data.desc) statLines.push('고유 옵션: ' + data.desc);
-        if (data.set && data.setEffects) {
-            statLines.push('세트 효과 · ' + data.set);
-            Object.keys(data.setEffects).sort((a, b) => Number(a) - Number(b)).forEach(tier => statLines.push(tier + '세트: ' + data.setEffects[tier]));
+        let passive = null;
+        if (typeof data.passive_id !== 'undefined') {
+            const passiveData = rpgenius.getEquipmentPassives()[Number(data.passive_id)];
+            if (passiveData) passive = {
+                name: passiveData.name,
+                desc: formatPassiveDesc(passiveData),
+                cooltime: passiveData.cooltime || null
+            };
         }
         const potentialLines = equip && equip.potential ? rpgenius.formatPotentialLines(equip.potential) : [];
         const potentialDisplay = equip && equip.potential ? {
@@ -3871,9 +3977,12 @@ function buildInventoryEquipment(user) {
             baseName: data.name,
             rarity: rpgenius.getEquipmentRarityLabel(data, equip),
             baseRarity: data.rarity,
+            setName: data.set || null,
             level,
             equipped: !!equipped,
             statLines,
+            description: data.desc || '',
+            passive,
             potentialLines,
             potentialDisplay,
             potential: equip && equip.potential || null,
@@ -3895,6 +4004,48 @@ function buildInventoryEquipment(user) {
         if (accessories[key] && typeof accessories[key].id != 'undefined') add(accessories[key], 'accessory', true, { source: 'equipped', slotKey: key });
     });
     if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') add(user.equipments.support, 'support', true, { source: 'equipped' });
+    const equipments = rpgenius.getDataCache('Equipment', {});
+    const setCache = {};
+    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+    const buildSetOverview = setName => {
+        if (setCache[setName]) return setCache[setName];
+        const tierMap = {};
+        const components = [];
+        typeOrder.forEach(type => {
+            (equipments[type] || []).forEach((data, id) => {
+                if (!data || String(data.set || '') !== setName) return;
+                Object.assign(tierMap, data.setEffects || {});
+                const matching = result.filter(entry => entry.type === type && Number(entry.id) === Number(id));
+                const status = matching.some(entry => entry.equipped) ? 'equipped' : (matching.length ? 'owned' : 'missing');
+                components.push({
+                    type,
+                    typeLabel: labels[type] || type,
+                    id: Number(id),
+                    name: data.name,
+                    rarity: data.rarity,
+                    status,
+                    iconUrl: getEquipmentIconUrl(data),
+                    frameUrl: getAuctionFrameUrl('equipment', data.rarity)
+                });
+            });
+        });
+        const equippedCount = result.filter(entry => entry.equipped && entry.setName === setName).length;
+        const tierKeys = Object.keys(tierMap).sort((a, b) => Number(a) - Number(b));
+        setCache[setName] = {
+            name: setName,
+            equippedCount,
+            total: components.length,
+            requiredCount: tierKeys.length ? Math.max(...tierKeys.map(Number)) : components.length,
+            components,
+            tiers: tierKeys.map(tier => ({
+                tier: Number(tier),
+                description: String(tierMap[tier]),
+                active: equippedCount >= Number(tier)
+            }))
+        };
+        return setCache[setName];
+    };
+    result.forEach(entry => { if (entry.setName) entry.setInfo = buildSetOverview(String(entry.setName)); });
     return result;
 }
 
@@ -5843,6 +5994,9 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="펀치기계">
     <section class="punch-panel"><div id="punchRoot"></div></section>
+  </div>
+  <div class="page" data-page="캡슐">
+    <section class="capsule-panel"><div id="capsuleRoot"></div></section>
   </div>
   <div class="page" data-page="combine">
     <section class="panel combine-board">

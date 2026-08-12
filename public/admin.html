@@ -234,6 +234,12 @@ details.collapsible .body{padding:12px}
 .banner-admin-name{min-width:0;flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .banner-admin-sub{font-size:11px;color:var(--mut2);margin-top:2px}
 @media(max-width:640px){.banner-admin-grid{grid-template-columns:1fr}.banner-admin-meta{align-items:flex-start}}
+/* 공통 메시지 모달 (alert/confirm/prompt 대체) */
+.msg-modal-bg{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}
+.msg-modal{width:min(380px,100%);background:var(--panel);border:1px solid var(--bd2);border-radius:var(--r);padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.55)}
+.msg-modal-text{font-size:13px;font-weight:600;color:var(--fg);line-height:1.6;white-space:pre-line;word-break:keep-all}
+.msg-modal-input{width:100%;margin-top:12px;padding:9px 11px;border-radius:var(--r-s);border:1px solid var(--bd2);background:var(--panel-2);color:var(--fg);font-size:13px;font-family:inherit}
+.msg-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 </style>
 </head>
 <body>

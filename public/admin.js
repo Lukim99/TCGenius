@@ -63,6 +63,37 @@ const isInt = v => Number.isInteger(Number(v));
 function showLoading() { const o = $('#loadingOverlay'); if (o) o.classList.add('active'); }
 function hideLoading() { const o = $('#loadingOverlay'); if (o) o.classList.remove('active'); }
 
+// ---------- 공통 메시지 모달 (네이티브 alert/confirm/prompt 대체) ----------
+function openMsgModal(message, opts) {
+    return new Promise(resolve => {
+        const mode = (opts && opts.mode) || 'alert';
+        const bg = el('div', { class: 'msg-modal-bg' });
+        let input = null;
+        if (mode === 'prompt') input = el('input', { class: 'msg-modal-input', type: 'text', value: (opts && opts.value) || '' });
+        const done = val => { bg.remove(); resolve(val); };
+        const okValue = () => mode === 'prompt' ? input.value : true;
+        const cancelValue = mode === 'prompt' ? null : false;
+        const okBtn = el('button', { class: 'btn primary', type: 'button', onclick: () => done(okValue()) }, '확인');
+        const actions = mode === 'alert'
+            ? [okBtn]
+            : [el('button', { class: 'btn', type: 'button', onclick: () => done(cancelValue) }, '취소'), okBtn];
+        bg.appendChild(el('div', { class: 'msg-modal' },
+            el('div', { class: 'msg-modal-text' }, String(message)),
+            input,
+            el('div', { class: 'msg-modal-actions' }, ...actions)));
+        bg.addEventListener('click', e => { if (e.target === bg && mode === 'alert') done(true); });
+        bg.addEventListener('keydown', e => {
+            if (e.key === 'Escape') done(mode === 'alert' ? true : cancelValue);
+            if (e.key === 'Enter' && mode === 'prompt') done(okValue());
+        });
+        document.body.appendChild(bg);
+        setTimeout(() => (input || okBtn).focus(), 30);
+    });
+}
+const showAlert = message => openMsgModal(message);
+const showConfirm = message => openMsgModal(message, { mode: 'confirm' });
+const showPrompt = (message, value) => openMsgModal(message, { mode: 'prompt', value });
+
 // ---------- 탭 전환 ----------
 $$('.tab').forEach(t => t.onclick = () => {
     $$('.tab').forEach(b => b.classList.toggle('active', b === t));
@@ -448,7 +479,7 @@ function renderBanners() {
     bannerData.forEach(item => {
         const remove = el('button', { class: 'btn sm danger', type: 'button' }, '삭제');
         remove.onclick = async () => {
-            if (!confirm("'" + (item.originalName || '배너') + "'을(를) 삭제할까요?")) return;
+            if (!(await showConfirm("'" + (item.originalName || '배너') + "'을(를) 삭제할까요?"))) return;
             remove.disabled = true;
             try {
                 await api('/api/admin/banners/' + encodeURIComponent(item.id), { method: 'DELETE' });
@@ -528,7 +559,7 @@ function renderPack() {
         const card = el('div', { class: 'card' });
         card.appendChild(el('div', { class: 'card-head' },
             el('div', { class: 'card-title' }, 'Pack #' + packIdx + ' (' + (entries ? entries.length : 0) + '개)'),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('Pack #' + packIdx + ' 삭제?')) { packData.splice(packIdx, 1); renderPack(); } } }, '삭제')
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('Pack #' + packIdx + ' 삭제?'))) { packData.splice(packIdx, 1); renderPack(); } } }, '삭제')
         ));
         const entryList = el('div', { class: 'entry-list' });
         if (!Array.isArray(entries)) { entries = []; packData[packIdx] = entries; }
@@ -546,7 +577,7 @@ function renderPack() {
 }
 $('#packAdd').onclick = () => { packData.push([]); renderPack(); };
 $('#packReload').onclick = async () => { try { packData = (await loadKey('Pack')) || []; renderPack(); $('#packStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#packSave').onclick = async () => { if (!confirm('Pack 데이터를 저장합니다. 계속?')) return; try { await saveKey('Pack', packData); PACK_REF_CACHE.Pack = null; toast('✅ Pack 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#packSave').onclick = async () => { if (!(await showConfirm('Pack 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Pack', packData); PACK_REF_CACHE.Pack = null; toast('✅ Pack 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.pack = () => $('#packReload').click();
 
 // ============================================================================
@@ -560,7 +591,7 @@ function renderBundle() {
         const card = el('div', { class: 'card' });
         card.appendChild(el('div', { class: 'card-head' },
             el('div', { class: 'card-title' }, 'Bundle #' + idx + ' (' + (entries ? entries.length : 0) + '개)'),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('Bundle #' + idx + ' 삭제?')) { bundleData.splice(idx, 1); renderBundle(); } } }, '삭제')
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('Bundle #' + idx + ' 삭제?'))) { bundleData.splice(idx, 1); renderBundle(); } } }, '삭제')
         ));
         const entryList = el('div', { class: 'entry-list' });
         if (!Array.isArray(entries)) { entries = []; bundleData[idx] = entries; }
@@ -578,7 +609,7 @@ function renderBundle() {
 }
 $('#bundleAdd').onclick = () => { bundleData.push([]); renderBundle(); };
 $('#bundleReload').onclick = async () => { try { bundleData = (await loadKey('Bundle')) || []; renderBundle(); $('#bundleStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#bundleSave').onclick = async () => { if (!confirm('Bundle 데이터를 저장합니다. 계속?')) return; try { await saveKey('Bundle', bundleData); PACK_REF_CACHE.Bundle = null; toast('✅ Bundle 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#bundleSave').onclick = async () => { if (!(await showConfirm('Bundle 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Bundle', bundleData); PACK_REF_CACHE.Bundle = null; toast('✅ Bundle 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.bundle = () => $('#bundleReload').click();
 
 // ============================================================================
@@ -598,7 +629,7 @@ function renderCoupon() {
         const usedLabel = (c.maxUse != null && c.maxUse > 0) ? (usedCount + ' / ' + c.maxUse) : (usedCount + ' / ∞');
         card.appendChild(el('div', { class: 'card-head' },
             el('div', { class: 'card-title' }, '쿠폰 #' + idx + (c.code ? ' — ' + c.code : ''), el('span', { class: 'tag', style: { marginLeft: '8px' } }, '사용: ' + usedLabel)),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('이 쿠폰을 삭제합니까?')) { couponData.splice(idx, 1); renderCoupon(); } } }, '삭제')
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('이 쿠폰을 삭제합니까?'))) { couponData.splice(idx, 1); renderCoupon(); } } }, '삭제')
         ));
         const grid = el('div', { class: 'split' });
         grid.appendChild(el('div', null, el('label', null, '코드'), codeIn));
@@ -624,7 +655,7 @@ function renderCoupon() {
 }
 $('#couponAdd').onclick = () => { couponData.push({ code: '', reward: [], expired_At: null }); renderCoupon(); };
 $('#couponReload').onclick = async () => { try { couponData = (await loadKey('Coupon')) || []; renderCoupon(); $('#couponStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#couponSave').onclick = async () => { if (!confirm('Coupon 데이터를 저장합니다. 계속?')) return; try { await saveKey('Coupon', couponData); toast('✅ Coupon 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#couponSave').onclick = async () => { if (!(await showConfirm('Coupon 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Coupon', couponData); toast('✅ Coupon 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.coupon = () => $('#couponReload').click();
 
 // ============================================================================
@@ -752,19 +783,19 @@ $('#shopAdd').onclick = () => {
     shopData[shopCurrentType].push({ type: '아이템', count: 1, price: { goods: 'gold', amount: 0 } });
     renderShop(); renderShopTypes();
 };
-$('#shopAddType').onclick = () => {
-    const name = prompt('새 상점 종류 이름?');
+$('#shopAddType').onclick = async () => {
+    const name = (await showPrompt('새 상점 종류 이름?'));
     if (!name) return;
     if (shopData[name]) return toast('이미 존재합니다', false);
     shopData[name] = []; shopCurrentType = name; renderShopTypes(); renderShop();
 };
-$('#shopDelType').onclick = () => {
+$('#shopDelType').onclick = async () => {
     if (!shopCurrentType) return;
-    if (!confirm("'" + shopCurrentType + "' 상점을 삭제합니까? (포함된 모든 상품이 삭제됩니다)")) return;
+    if (!(await showConfirm("'" + shopCurrentType + "' 상점을 삭제합니까? (포함된 모든 상품이 삭제됩니다)"))) return;
     delete shopData[shopCurrentType]; shopCurrentType = null; renderShopTypes(); renderShop();
 };
 $('#shopReload').onclick = async () => { try { shopData = (await loadKey('Shop')) || {}; shopCurrentType = null; renderShopTypes(); renderShop(); $('#shopStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#shopSave').onclick = async () => { if (!confirm('Shop 데이터를 저장합니다. 계속?')) return; try { await saveKey('Shop', shopData); toast('✅ Shop 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#shopSave').onclick = async () => { if (!(await showConfirm('Shop 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Shop', shopData); toast('✅ Shop 저장 완료'); } catch (e) { toast(e.message, false); } };
 if ($('#shopLimitResetScope')) $('#shopLimitResetScope').onchange = () => {
     const scope = $('#shopLimitResetScope').value;
     $('#shopLimitResetIndexWrap').style.display = scope === 'item' ? '' : 'none';
@@ -782,7 +813,7 @@ if ($('#shopLimitResetBtn')) $('#shopLimitResetBtn').onclick = async () => {
         body.index = displayIndex - 1;
         targetText = "'" + shopCurrentType + "' 상점 " + displayIndex + '번 상품';
     }
-    if (!confirm(targetText + '의 구매 제한 기록을 초기화합니다.\n유저별 기록과 전체 제한 기록이 함께 삭제됩니다. 계속?')) return;
+    if (!(await showConfirm(targetText + '의 구매 제한 기록을 초기화합니다.\n유저별 기록과 전체 제한 기록이 함께 삭제됩니다. 계속?'))) return;
     try {
         const result = await api('/api/admin/shop-limits/reset', {
             method: 'POST',
@@ -812,7 +843,7 @@ function renderRecipe() {
         const nameIn = el('input', { value: r.name || '', placeholder: '레시피 이름', oninput: () => r.name = nameIn.value });
         card.appendChild(el('div', { class: 'card-head' },
             el('div', { class: 'card-title' }, '레시피 #' + idx + (r.name ? ' — ' + r.name : '')),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('레시피 삭제?')) { recipeData.splice(idx, 1); renderRecipe(); } } }, '삭제')
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('레시피 삭제?'))) { recipeData.splice(idx, 1); renderRecipe(); } } }, '삭제')
         ));
         card.appendChild(el('div', null, el('label', null, '이름'), nameIn));
 
@@ -844,7 +875,7 @@ function renderRecipe() {
 }
 $('#recipeAdd').onclick = () => { recipeData.push({ name: '', materials: [], crafted: [] }); renderRecipe(); };
 $('#recipeReload').onclick = async () => { try { recipeData = (await loadKey('Recipe')) || []; renderRecipe(); $('#recipeStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#recipeSave').onclick = async () => { if (!confirm('Recipe 데이터를 저장합니다. 계속?')) return; try { await saveKey('Recipe', recipeData); toast('✅ Recipe 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#recipeSave').onclick = async () => { if (!(await showConfirm('Recipe 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Recipe', recipeData); toast('✅ Recipe 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.recipe = () => $('#recipeReload').click();
 
 // ============================================================================
@@ -884,7 +915,7 @@ function renderBait() {
         const total = b.rewards.reduce((s, r) => s + Number(r.rate || 0), 0);
         card.appendChild(el('div', { class: 'card-head' },
             el('div', { class: 'card-title' }, '미끼 #' + idx + (b.name ? ' — ' + b.name : ''), el('span', { class: 'tag', style: { marginLeft: '8px' } }, '합계 rate: ' + total)),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => { if (confirm('미끼 삭제?')) { baitData.splice(idx, 1); renderBait(); } } }, '삭제')
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('미끼 삭제?'))) { baitData.splice(idx, 1); renderBait(); } } }, '삭제')
         ));
         card.appendChild(el('div', null, el('label', null, '이름'), nameIn));
         card.appendChild(el('h3', { style: { marginTop: '12px' } }, '보상'));
@@ -899,7 +930,7 @@ function renderBait() {
 }
 $('#baitAdd').onclick = () => { baitData.push({ name: '', rewards: [] }); renderBait(); };
 $('#baitReload').onclick = async () => { try { baitData = (await loadKey('Bait')) || []; renderBait(); $('#baitStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#baitSave').onclick = async () => { if (!confirm('Bait 데이터를 저장합니다. 계속?')) return; try { await saveKey('Bait', baitData); toast('✅ Bait 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#baitSave').onclick = async () => { if (!(await showConfirm('Bait 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Bait', baitData); toast('✅ Bait 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.bait = () => $('#baitReload').click();
 
 // ============================================================================
@@ -986,7 +1017,7 @@ function itemCard(item, index) {
             } }, '복제'),
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
                 const refs = await scanRefs('item_id', index);
-                if (!confirm('아이템 #' + index + ' (' + (item.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                if (!(await showConfirm('아이템 #' + index + ' (' + (item.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs)))) return;
                 itemData.splice(index, 1);
                 renderItem();
             } }, '삭제')
@@ -1079,7 +1110,7 @@ $('#itemReload').onclick = async () => {
     catch (e) { toast(e.message, false); }
 };
 $('#itemSave').onclick = async () => {
-    if (!confirm('Item 데이터를 저장합니다. 인덱스 변경이 있다면 다른 데이터(Pack/Shop 등)와의 호환성을 다시 확인하세요. 계속할까요?')) return;
+    if (!(await showConfirm('Item 데이터를 저장합니다. 인덱스 변경이 있다면 다른 데이터(Pack/Shop 등)와의 호환성을 다시 확인하세요. 계속할까요?'))) return;
     try { await saveKey('Item', itemData); invalidateLookupCache(['items']); toast('✅ Item 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
@@ -1218,8 +1249,8 @@ function statEditor(title, _ignoredIcon, obj, defs) {
             obj[def.key] = 0;
             repaint();
         };
-        const customBtn = el('button', { class: 'btn sm', type: 'button', title: '임의 키 추가 (고급)', onclick: () => {
-            const k = prompt('커스텀 키:');
+        const customBtn = el('button', { class: 'btn sm', type: 'button', title: '임의 키 추가 (고급)', onclick: async () => {
+            const k = (await showPrompt('커스텀 키:'));
             if (!k) return;
             if (Object.prototype.hasOwnProperty.call(obj, k)) return toast('이미 존재하는 키', false);
             obj[k] = 0; repaint();
@@ -1313,7 +1344,7 @@ function upgradeEditor(getter, setter, options) {
                 const stop = e => { e.preventDefault(); e.stopPropagation(); };
                 actions.appendChild(el('button', { class: 'btn sm', type: 'button', title: '위로', onclick: e => { stop(e); if (i === 0) return; const t = items[i]; items[i] = items[i - 1]; items[i - 1] = t; repaint(); } }, '↑'));
                 actions.appendChild(el('button', { class: 'btn sm', type: 'button', title: '아래로', onclick: e => { stop(e); if (i === items.length - 1) return; const t = items[i]; items[i] = items[i + 1]; items[i + 1] = t; repaint(); } }, '↓'));
-                actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: e => { stop(e); if (!confirm('+' + (i + 1) + ' 단계를 삭제할까요?')) return; items.splice(i, 1); repaint(); } }, '삭제'));
+                actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: async e => { stop(e); if (!(await showConfirm('+' + (i + 1) + ' 단계를 삭제할까요?'))) return; items.splice(i, 1); repaint(); } }, '삭제'));
                 sum.appendChild(actions);
                 det.appendChild(sum);
 
@@ -1423,7 +1454,7 @@ function dynamicBonusEditor(getter, setter, options) {
             sum.appendChild(el('span', { class: 'summary-meta' }, upgradeStepSummary(entry)));
             const actions = el('span', { class: 'actions' });
             const stop = e => { e.preventDefault(); e.stopPropagation(); };
-            actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: e => { stop(e); if (!confirm((Number(starKey) + 1) + '성 보너스를 삭제할까요?')) return; delete map[starKey]; repaint(); } }, '삭제'));
+            actions.appendChild(el('button', { class: 'btn sm danger', type: 'button', title: '삭제', onclick: async e => { stop(e); if (!(await showConfirm((Number(starKey) + 1) + '성 보너스를 삭제할까요?'))) return; delete map[starKey]; repaint(); } }, '삭제'));
             sum.appendChild(actions);
             det.appendChild(sum);
             const body = el('div', { class: 'body' });
@@ -1442,9 +1473,9 @@ function dynamicBonusEditor(getter, setter, options) {
             const raw = String(starIn.value || '').trim();
             if (raw === '') return;
             const s = Number(raw);
-            if (!Number.isInteger(s) || s < 0) { alert('0 이상의 정수를 입력하세요.'); return; }
+            if (!Number.isInteger(s) || s < 0) { showAlert('0 이상의 정수를 입력하세요.'); return; }
             const key = String(s);
-            if (map[key]) { alert('이미 존재하는 성급입니다.'); return; }
+            if (map[key]) { showAlert('이미 존재하는 성급입니다.'); return; }
             map[key] = { stat: {}, plusStat: {} };
             starIn.value = '';
             repaint();
@@ -1562,7 +1593,7 @@ function equipCard(eq, index) {
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
                 const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id' }[equipCurrentSlot];
                 const refs = idKey ? await scanRefs(idKey, index) : { direct: 0, above: 0 };
-                if (!confirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                if (!(await showConfirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs)))) return;
                 equipData[equipCurrentSlot].splice(index, 1);
                 renderEquipTypes(); renderEquip();
             } }, '삭제')
@@ -1729,7 +1760,7 @@ $('#equipReload').onclick = async () => {
     } catch (e) { toast(e.message, false); }
 };
 $('#equipSave').onclick = async () => {
-    if (!confirm('Equipment 데이터를 저장합니다. 계속?')) return;
+    if (!(await showConfirm('Equipment 데이터를 저장합니다. 계속?'))) return;
     try { await saveKey('Equipment', equipData); invalidateLookupCache(['equipment']); toast('✅ Equipment 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
@@ -1799,7 +1830,7 @@ function petCard(pet, index) {
             } }, '복제'),
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
                 const refs = await scanRefs('pet_id', index);
-                if (!confirm('펫 #' + index + ' (' + (pet.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs))) return;
+                if (!(await showConfirm('펫 #' + index + ' (' + (pet.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs)))) return;
                 petData.splice(index, 1); renderPet();
             } }, '삭제')
         )
@@ -1886,7 +1917,7 @@ $('#petReload').onclick = async () => {
     } catch (e) { toast(e.message, false); }
 };
 $('#petSave').onclick = async () => {
-    if (!confirm('Pet 데이터를 저장합니다. 계속?')) return;
+    if (!(await showConfirm('Pet 데이터를 저장합니다. 계속?'))) return;
     try { await saveKey('Pet', Array.isArray(petData) ? petData : []); invalidateLookupCache(['pet']); toast('✅ Pet 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
@@ -1938,8 +1969,8 @@ function fashionCard(skin, index) {
                 PAGE_STATE.fashion = 1e9; renderFashion();
                 toast('#' + (fashionData.length - 1) + '번으로 복제했습니다.');
             } }, '복제'),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-                if (!confirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?')) return;
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+                if (!(await showConfirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?'))) return;
                 fashionData.splice(index, 1);
                 renderFashion();
             } }, '삭제')
@@ -2008,7 +2039,7 @@ $('#fashionReload').onclick = async () => {
     catch (e) { toast(e.message, false); }
 };
 $('#fashionSave').onclick = async () => {
-    if (!confirm('Fashion 데이터를 저장합니다. 계속?')) return;
+    if (!(await showConfirm('Fashion 데이터를 저장합니다. 계속?'))) return;
     try { await saveKey('Fashion', fashionData); invalidateLookupCache(['fashion']); toast('✅ Fashion 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
@@ -2124,7 +2155,7 @@ async function loadTradeLog() {
 
 if ($('#tradeLogReload')) $('#tradeLogReload').onclick = loadTradeLog;
 if ($('#tradeLogClear')) $('#tradeLogClear').onclick = async () => {
-    if (!confirm('거래 로그 전체를 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+    if (!(await showConfirm('거래 로그 전체를 삭제할까요? 이 작업은 되돌릴 수 없습니다.'))) return;
     try { await api('/api/admin/tradelog', { method: 'DELETE' }); tradeLogData = []; renderTradeLog(); $('#tradeLogStatus').textContent = '삭제 완료'; toast('거래 로그를 삭제했습니다.'); }
     catch (e) { toast(e.message, false); }
 };
@@ -2235,7 +2266,7 @@ function pointLogRow(log) {
 }
 
 async function cancelPointLog(log, btn) {
-    if (!confirm(log.nickname + '님의 ' + comma(log.amount) + 'P 충전을 취소(환불)할까요?\n충전 계정 잔액과 분배가 되돌려집니다.')) return;
+    if (!(await showConfirm(log.nickname + '님의 ' + comma(log.amount) + 'P 충전을 취소(환불)할까요?\n충전 계정 잔액과 분배가 되돌려집니다.'))) return;
     btn.disabled = true;
     showLoading();
     try {
@@ -2327,8 +2358,8 @@ async function loadPitrLive() {
 
 async function createPitrRestore() {
     const restoreTime = $('#pitrTime').value;
-    if (!restoreTime && !confirm('복원 시점이 비어있습니다. 최신 복원 가능 시점으로 복원 테이블을 만들까요?')) return;
-    if (!confirm('PITR 복원 테이블을 새로 생성합니다. AWS 비용이 발생할 수 있습니다. 계속할까요?')) return;
+    if (!restoreTime && !(await showConfirm('복원 시점이 비어있습니다. 최신 복원 가능 시점으로 복원 테이블을 만들까요?'))) return;
+    if (!(await showConfirm('PITR 복원 테이블을 새로 생성합니다. AWS 비용이 발생할 수 있습니다. 계속할까요?'))) return;
     try {
         const data = await api('/api/admin/pitr/restore', {
             method: 'POST',
@@ -2358,7 +2389,7 @@ async function loadPitrJob() {
 async function migratePitrJob() {
     const id = $('#pitrJobId').value.trim();
     if (!id) return toast('작업 ID를 입력하세요.', false);
-    const confirmText = prompt('복원 테이블 데이터를 운영 테이블에 덮어씁니다.\n운영에만 있는 항목은 삭제하지 않습니다.\n진행하려면 "마이그레이션"을 입력하세요.');
+    const confirmText = (await showPrompt('복원 테이블 데이터를 운영 테이블에 덮어씁니다.\n운영에만 있는 항목은 삭제하지 않습니다.\n진행하려면 "마이그레이션"을 입력하세요.'));
     if (confirmText !== '마이그레이션') return;
     try {
         const data = await api('/api/admin/pitr/jobs/' + encodeURIComponent(id) + '/migrate', {
@@ -2376,7 +2407,7 @@ async function migratePitrJob() {
 async function deletePitrTable() {
     const id = $('#pitrJobId').value.trim();
     if (!id) return toast('작업 ID를 입력하세요.', false);
-    if (!confirm('복원용 임시 테이블을 삭제합니다. 계속할까요?')) return;
+    if (!(await showConfirm('복원용 임시 테이블을 삭제합니다. 계속할까요?'))) return;
     try {
         const data = await api('/api/admin/pitr/jobs/' + encodeURIComponent(id) + '/table', { method: 'DELETE' });
         pitrPrint(data);
@@ -2411,7 +2442,7 @@ $('#rawFormat').onclick = () => { try { $('#rawText').value = JSON.stringify(JSO
 $('#rawSave').onclick = async () => {
     const k = rawSel.value;
     let data; try { data = JSON.parse($('#rawText').value); } catch (e) { return toast('JSON 파싱 실패: ' + e.message, false); }
-    if (!confirm(k + ' 데이터를 DynamoDB에 저장합니다. 계속할까요?')) return;
+    if (!(await showConfirm(k + ' 데이터를 DynamoDB에 저장합니다. 계속할까요?'))) return;
     try { await saveKey(k, data); toast('✅ ' + k + ' 저장 완료'); } catch (e) { toast(e.message, false); }
 };
 TAB_LOADERS.raw = () => rawLoad();
@@ -2496,16 +2527,16 @@ async function hdSaveOverride(item, selects, bg) {
         await api('/api/admin/hotdeal/override', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey: item.periodKey, picks }) });
         bg.remove();
         loadHdPreview();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
 }
 
 async function hdResetOverride(periodKey, bg) {
-    if (!confirm('이 핫딜을 기본값(시드 생성)으로 되돌릴까요?')) return;
+    if (!(await showConfirm('이 핫딜을 기본값(시드 생성)으로 되돌릴까요?'))) return;
     try {
         await api('/api/admin/hotdeal/override/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periodKey }) });
         bg.remove();
         loadHdPreview();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
 }
 
 async function loadHdPreview() {
@@ -2656,7 +2687,7 @@ $('#bcSendBtn').onclick = async () => {
         }
     }
     const to = $('#bcTo').value.trim();
-    if (!confirm(to ? "'" + to + "'님에게 메일을 발송합니다. 계속할까요?" : '모든 유저에게 메일을 발송합니다. 계속할까요?')) return;
+    if (!(await showConfirm(to ? "'" + to + "'님에게 메일을 발송합니다. 계속할까요?" : '모든 유저에게 메일을 발송합니다. 계속할까요?'))) return;
     $('#bcSendBtn').disabled = true;
     $('#bcStatus').textContent = '발송 중...';
     try {
@@ -2697,8 +2728,8 @@ function patchnoteCard(post, index) {
             el('span', { class: 'tag b' }, '#' + index), ' ',
             post.title || '(제목 없음)',
             el('span', { class: 'tag', style: { marginLeft: '8px' } }, (Array.isArray(post.replies) ? post.replies.length : 0) + ' 댓글')),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
-            if (!confirm('패치노트 "' + (post.title || '') + '"를 삭제합니까? 댓글도 함께 삭제됩니다.')) return;
+        el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+            if (!(await showConfirm('패치노트 "' + (post.title || '') + '"를 삭제합니까? 댓글도 함께 삭제됩니다.'))) return;
             patchnoteData.splice(index, 1); renderPatchnote();
         } }, '삭제')
     ));
@@ -2736,7 +2767,7 @@ if ($('#patchnoteAdd')) {
         catch (e) { toast(e.message, false); }
     };
     $('#patchnoteSave').onclick = async () => {
-        if (!confirm('패치노트를 저장합니다. 계속?')) return;
+        if (!(await showConfirm('패치노트를 저장합니다. 계속?'))) return;
         try { await saveKey('Patchnote', patchnoteData); toast('패치노트 저장 완료'); }
         catch (e) { toast(e.message, false); }
     };
@@ -2780,7 +2811,7 @@ if ($('#nmAdd')) {
             if (map[key]) { toast('중복된 닉네임: ' + key, false); return; }
             map[key] = val;
         }
-        if (!confirm('닉네임 매칭 ' + Object.keys(map).length + '건을 저장합니다. 계속?')) return;
+        if (!(await showConfirm('닉네임 매칭 ' + Object.keys(map).length + '건을 저장합니다. 계속?'))) return;
         try { await saveKey('NameMatch', map); toast('닉네임 매칭 저장 완료'); }
         catch (e) { toast(e.message, false); }
     };
@@ -2826,7 +2857,7 @@ if ($('#probAdd')) {
             if (combine[key] != null) { toast('중복된 닉네임: ' + key, false); return; }
             combine[key] = Number(v) || 0;
         }
-        if (!confirm('합성 확률 보너스 ' + Object.keys(combine).length + '건을 저장합니다. 계속?')) return;
+        if (!(await showConfirm('합성 확률 보너스 ' + Object.keys(combine).length + '건을 저장합니다. 계속?'))) return;
         try { probData.combine = combine; await saveKey('Prob', probData); toast('확률 저장 완료'); }
         catch (e) { toast(e.message, false); }
     };
@@ -2861,7 +2892,7 @@ if ($('#ceilReload')) {
         } catch (e) { toast(e.message, false); }
     };
     $('#ceilSave').onclick = async () => {
-        if (!confirm('이벤트 주사위 천장을 저장합니다. 계속?')) return;
+        if (!(await showConfirm('이벤트 주사위 천장을 저장합니다. 계속?'))) return;
         try { await saveKey('Ceil', ceilData); toast('천장 저장 완료'); }
         catch (e) { toast(e.message, false); }
     };
@@ -2902,9 +2933,9 @@ function sdEntryRow(entry) {
                 renderSd();
             } catch (e) { toast('JSON 파싱 실패: ' + e.message, false); }
         } }, '적용'),
-        el('button', { class: 'btn sm danger', type: 'button', onclick: () => {
+        el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
             const label = isArray ? '#' + k : String(k);
-            if (!confirm('항목 ' + label + '을(를) 삭제합니까?' + (isArray ? '\n배열 항목 삭제 시 이후 인덱스가 당겨집니다.' : ''))) return;
+            if (!(await showConfirm('항목 ' + label + '을(를) 삭제합니까?' + (isArray ? '\n배열 항목 삭제 시 이후 인덱스가 당겨집니다.' : '')))) return;
             if (isArray) sdData.splice(Number(k), 1); else delete sdData[k];
             renderSd();
         } }, '삭제')
@@ -2954,8 +2985,8 @@ if ($('#sdKey')) {
     };
     $('#sdSave').onclick = async () => {
         if (!sdLoadedKey) { toast('먼저 키를 불러와 주세요.', false); return; }
-        if (sel.value !== sdLoadedKey && !confirm('현재 화면의 데이터는 ' + sdLoadedKey + '입니다. ' + sdLoadedKey + '에 저장할까요?')) return;
-        if (!confirm('상태 데이터 ' + sdLoadedKey + ' 전체를 덮어씁니다. 실행 중인 게임 상태에 즉시 반영됩니다. 계속?')) return;
+        if (sel.value !== sdLoadedKey && !(await showConfirm('현재 화면의 데이터는 ' + sdLoadedKey + '입니다. ' + sdLoadedKey + '에 저장할까요?'))) return;
+        if (!(await showConfirm('상태 데이터 ' + sdLoadedKey + ' 전체를 덮어씁니다. 실행 중인 게임 상태에 즉시 반영됩니다. 계속?'))) return;
         try { await saveKey(sdLoadedKey, sdData); toast(sdLoadedKey + ' 저장 완료'); }
         catch (e) { toast(e.message, false); }
     };
@@ -3051,7 +3082,7 @@ if ($('#pkgCreate')) {
             price: { goods: $('#pkgGoods').value, amount },
             limits
         };
-        if (!confirm('패키지 "' + name + '"를 생성합니다.\n번들 생성, 개봉 아이템 생성, ' + shopType + ' 상점 등록이 함께 처리됩니다. 계속?')) return;
+        if (!(await showConfirm('패키지 "' + name + '"를 생성합니다.\n번들 생성, 개봉 아이템 생성, ' + shopType + ' 상점 등록이 함께 처리됩니다. 계속?'))) return;
         const btn = $('#pkgCreate');
         btn.disabled = true;
         showLoading();

@@ -15,7 +15,7 @@ const MAIL_READ_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 읽은 메일은 3일 뒤 �
 const MAIL_GOLD_FEE_RATE = 0.05;         // 골드/가넷 선물 수수료
 const MAIL_GOLD_FEE_MIN = 5;             // 최소 수수료
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -9115,6 +9115,37 @@ function selectAccessoryChoice(user, numberArg) {
     return '✅ 장신구를 선택했습니다.\n[ 획득 결과 ]\n- <' + selected.equipment.rarity + '> ' + selected.equipment.name;
 }
 
+function getOrbChoiceIds() {
+    const items = getDataCache('Item', []);
+    return items.map((it, i) => (it && it.use == '보주' ? i : -1)).filter(i => i >= 0);
+}
+
+function formatOrbChoiceList(orbIds, items) {
+    const lines = ['[ 보주 선택 ]', VIEWMORE];
+    orbIds.forEach((id, index) => {
+        lines.push((index + 1) + '. ' + items[id].name);
+    });
+    return lines.join('\n');
+}
+
+function selectOrbChoice(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '보주선택') return '❌ 진행 중인 보주 선택이 없습니다.';
+    const orbIds = getOrbChoiceIds();
+    if (orbIds.length == 0) {
+        const refund = refundPendingActionItem(user, pending);
+        user.pendingAction = null;
+        return '❌ 선택 가능한 보주가 없습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : '');
+    }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1 || number > orbIds.length) return '❌ 존재하지 않는 보주 번호입니다.\n/RPGenius 선택 [번호]';
+    const items = getDataCache('Item', []);
+    const selectedId = orbIds[number - 1];
+    addInventoryItem(user, selectedId, 1);
+    user.pendingAction = null;
+    return '✅ 보주를 선택했습니다.\n[ 획득 결과 ]\n- ' + items[selectedId].name + ' x1';
+}
+
 function getSupportRerollTargets(user) {
     return getAllUserEquipments(user)
         .map((entry, index) => {
@@ -10028,6 +10059,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보주' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '보주선택' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '패션제거' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -10042,7 +10074,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -10275,6 +10307,19 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatOrbTargetList(targets));
+            }
+        }
+        if (item.use == '보주선택') {
+            const orbIds = items.map((it, i) => (it && it.use == '보주' ? i : -1)).filter(i => i >= 0);
+            if (orbIds.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 보주 데이터가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '보주선택', consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('획득할 보주를 선택해주세요.');
+                lines.push('/RPGenius 선택 [번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatOrbChoiceList(orbIds, items));
             }
         }
         if (item.use == '가위') {
@@ -12196,6 +12241,24 @@ async function handleRPGCommand(data, channel, context = {}) {
             return true;
         }
         const result = selectAccessoryChoice(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && user.pendingAction.type == '보주선택') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 보주 선택 상자 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 획득할 보주를 먼저 선택해야 합니다.\n/RPGenius 선택 [번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = selectOrbChoice(user, args[1]);
         await user.save();
         reply(result);
         return true;

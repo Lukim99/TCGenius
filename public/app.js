@@ -37,6 +37,28 @@ const postApi = async (url, body) => {
     if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
     return x;
 };
+// ===== 공통 메시지 모달 (네이티브 alert/confirm 대체) =====
+function openMsgModal(message, opts) {
+    return new Promise(resolve => {
+        const isConfirm = !!(opts && opts.confirm);
+        const bg = el('div', { class: 'msg-modal-bg' });
+        const done = val => { bg.remove(); resolve(val); };
+        const okBtn = el('button', { class: 'msg-modal-btn primary', type: 'button', onclick: () => done(true) }, (opts && opts.okLabel) || '확인');
+        const actions = isConfirm
+            ? [el('button', { class: 'msg-modal-btn', type: 'button', onclick: () => done(false) }, '취소'), okBtn]
+            : [okBtn];
+        bg.appendChild(el('div', { class: 'msg-modal' },
+            el('div', { class: 'msg-modal-text' }, String(message)),
+            el('div', { class: 'msg-modal-actions' }, ...actions)));
+        bg.addEventListener('click', e => { if (e.target === bg && !isConfirm) done(true); });
+        bg.addEventListener('keydown', e => { if (e.key === 'Escape') done(!isConfirm); });
+        document.body.appendChild(bg);
+        setTimeout(() => okBtn.focus(), 30);
+    });
+}
+const showAlert = message => openMsgModal(message);
+const showConfirm = (message, okLabel) => openMsgModal(message, { confirm: true, okLabel });
+
 const KOREAN_BIG_UNITS = ['', '만', '억', '조', '경', '해', '자', '양', '구', '간', '정', '재', '극'];
 const comma = value => {
     const n = Number(value || 0);
@@ -76,17 +98,17 @@ function openPointChargeModal() {
     const btn = el('button', { class: 'primary' }, '충전하기');
     btn.onclick = async () => {
         const amount = Math.floor(Number(input.value));
-        if (!Number.isFinite(amount) || amount < 50) { alert('최소 50P부터 충전할 수 있습니다.'); return; }
+        if (!Number.isFinite(amount) || amount < 50) { showAlert('최소 50P부터 충전할 수 있습니다.'); return; }
         btn.disabled = true;
         showLoading();
         try {
             const r = await postApi('/api/point/charge', { amount });
             setHeaderPoint(r.point);
             closeModal();
-            alert(comma(r.charged) + 'P를 충전했습니다.');
+            showAlert(comma(r.charged) + 'P를 충전했습니다.');
             if (currentProfileName === myName) { try { renderProfile(await api('/api/profile')); } catch (e) {} }
         } catch (e) {
-            alert(e.message);
+            showAlert(e.message);
             btn.disabled = false;
         } finally {
             hideLoading();
@@ -98,7 +120,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -114,11 +136,13 @@ const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
 const EVENT_DICE_ENDED = Date.now() >= EVENT_DICE_END_TS;
 // 펀치기계 탭: 지금은 관리자에게만, 이벤트 종료(7/10 23:59) 이후 모든 유저에게 노출.
 const PUNCH_VISIBLE = window.IS_ADMIN || EVENT_DICE_ENDED;
+// 100일 기념 캡슐 탭: 오픈 전까지 관리자 전용 (오픈 시 server.js CAPSULE100_ADMIN_ONLY도 함께 해제).
+const CAPSULE_VISIBLE = !!window.IS_ADMIN;
 const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -182,7 +206,7 @@ function navigatePage(pageId) {
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') loadHomeBanners();
     if (pageId === 'chat') loadWebChat();
-    if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => alert(e.message));
+    if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => showAlert(e.message));
     if (pageId === 'inventory') {
         if (currentProfileName && myName && currentProfileName !== myName) {
             currentInventoryName = currentProfileName;
@@ -197,6 +221,7 @@ function navigatePage(pageId) {
     if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '펀치기계') loadPunch();
+    if (pageId === '캡슐') loadCapsule();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === '레벨보상') loadLevelRewards();
@@ -848,7 +873,7 @@ async function openCardSlotPicker(replaceSlot, replacingCard) {
                     if (res.profile) renderProfile(res.profile);
                     if (pageIsActive('inventory')) await loadInventory('cards');
                 } catch (e) {
-                    alert(e.message);
+                    showAlert(e.message);
                     try { renderProfile(await api('/api/profile')); } catch (_) {}
                 }
             }))
@@ -877,7 +902,7 @@ async function handleCardAction(action, body, event) {
         if (data.profile) renderProfile(data.profile);
         if (pageIsActive('inventory')) await loadInventory('cards');
     } catch (e) {
-        alert(e.message);
+        showAlert(e.message);
         if (btn) btn.disabled = false;
     }
 }
@@ -911,6 +936,150 @@ function formatSoulRemaining(expiredAt) {
     return null;
 }
 
+function equipmentOrbInfo(eq) {
+    const statLines = (eq && eq.statLines || []).map(line => String(line).replace(/^-\s*/, ''));
+    let orb = eq && eq.orb;
+    let lines = (eq && eq.orbLines || []).map(line => String(line).replace(/^-\s*/, ''));
+    if (!orb) {
+        const start = statLines.findIndex(line => /^\[\s*보주\s*\]/.test(line));
+        if (start < 0) return null;
+        const endOffset = statLines.slice(start + 1).findIndex(line => /^(고유 옵션:|설명:|세트 효과|\d+세트:)/.test(line));
+        lines = statLines.slice(start, endOffset < 0 ? statLines.length : start + 1 + endOffset);
+        const effectText = lines.slice(1).join(' ');
+        const elementMatch = effectText.match(/\[([화수암명])\]속성/);
+        orb = { name: statLines[start].replace(/^\[\s*보주\s*\]\s*/, ''), element: elementMatch && elementMatch[1] };
+    }
+    return { orb, lines };
+}
+
+function equipmentOrbNode(info) {
+    if (!info) return null;
+    const orb = info.orb;
+    const name = String(orb.name || '보주');
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = ((hash * 31) + name.charCodeAt(i)) >>> 0;
+    const keys = Object.keys(orb.stat || {}).concat(Object.keys(orb.plusStat || {}));
+    const elementPalette = { '화': [8, 42], '수': [191, 224], '암': [267, 322], '명': [46, 184] };
+    const palette = elementPalette[orb.element] || [hash % 360, (hash % 360 + 54 + hash % 48) % 360];
+    let kind = 'mystic', kindLabel = '신비 효과';
+    if (orb.element) { kind = 'element'; kindLabel = orb.element + '속성 부여'; }
+    else if (keys.some(key => /hp|mp|Res|takenDamage|shield|recovery|potion|critDef|mpReduce/.test(key)) || info.lines.some(line => /HP|MP|저항|받는 피해|회복|보호막|포션|방어|소모/.test(line))) { kind = 'guard'; kindLabel = '수호 효과'; }
+    else if (keys.some(key => /crit|pnt|avd|maxCmb|cooldown/.test(key)) || info.lines.some(line => /치명|가넷|회피|콤보|쿨타임/.test(line))) { kind = 'precision'; kindLabel = '정밀 효과'; }
+    else if (keys.some(key => /atk|Damage/.test(key)) || info.lines.some(line => /공격력|데미지|피해/.test(line))) { kind = 'power'; kindLabel = '공격 효과'; }
+    const details = info.lines.filter(line => line && !/^\[\s*보주\s*\]/.test(line));
+    const imageUrl = '/item-image?dir=' + encodeURIComponent('보주') + '&file=' + encodeURIComponent(name + '.png');
+    const node = el('div', { class: 'eqm-orb-card orb-' + kind + ' orb-v' + (hash % 4) },
+        el('div', { class: 'eqm-orb-visual', 'aria-hidden': 'true' },
+            el('span', { class: 'eqm-orb-ring' }),
+            el('span', { class: 'eqm-orb-image' }, el('img', { src: imageUrl, alt: '' }))),
+        el('div', { class: 'eqm-orb-copy' },
+            el('div', { class: 'eqm-orb-kicker' }, '장착 보주 · ' + kindLabel),
+            el('div', { class: 'eqm-orb-name' }, name),
+            el('div', { class: 'eqm-orb-effects' }, ...details.map(line => el('span', null, line)))
+        )
+    );
+    node.style.setProperty('--orb-h', palette[0]);
+    node.style.setProperty('--orb-h2', palette[1]);
+    node.style.setProperty('--orb-tilt', ((hash % 19) - 9) + 'deg');
+    return node;
+}
+
+function comparableEquipmentText(text) {
+    return String(text || '').replace(/\s+/g, '').replace(/[.!?。·]/g, '').toLowerCase();
+}
+
+function equipmentDescriptionNode(text) {
+    if (!text) return null;
+    return el('div', { class: 'eqm-description' }, el('div', { class: 'eqm-description-text' }, text));
+}
+
+function equipmentPassiveNode(passive) {
+    if (!passive) return null;
+    const cooldown = Number(passive.cooltime || 0);
+    let cooldownText = cooldown > 0 ? (cooldown % 60000 === 0 ? cooldown / 60000 + '분' : Math.round(cooldown / 1000) + '초') : '';
+    let passiveDesc = String(passive.desc || '');
+    const captureCooldown = text => {
+        const match = String(text).match(/^쿨타임\s*(\d+(?:\.\d+)?)\s*(초|분)$/);
+        if (!match) return false;
+        if (!cooldownText) cooldownText = match[1] + match[2];
+        return true;
+    };
+    passiveDesc = passiveDesc.replace(/\(([^()]*)\)/g, (full, inner) => {
+        const remaining = inner.split(',').map(part => part.trim()).filter(part => !captureCooldown(part));
+        return remaining.length === inner.split(',').length ? full : (remaining.length ? '(' + remaining.join(', ') + ')' : '');
+    });
+    passiveDesc = passiveDesc.replace(/(^|[.!?]\s*)쿨타임\s*(\d+(?:\.\d+)?)\s*(초|분)\s*[.!?]?/g, (full, prefix, value, unit) => {
+        if (!cooldownText) cooldownText = value + unit;
+        return prefix.trim();
+    }).replace(/\s+([.!?])/g, '$1').replace(/([.!?]){2,}/g, '$1').trim();
+    return el('div', { class: 'eqm-passive-card' },
+        el('div', { class: 'eqm-passive-mark', 'aria-hidden': 'true' }, el('span', null, 'P')),
+        el('div', { class: 'eqm-passive-copy' },
+            el('div', { class: 'eqm-passive-head' },
+                el('strong', { class: 'eqm-passive-name' }, passive.name || '패시브')),
+            el('div', { class: 'eqm-passive-desc' }, passiveDesc),
+            cooldownText ? el('div', { class: 'eqm-passive-meta' },
+                el('span', null, '재사용 대기시간'), el('b', null, cooldownText)) : null
+        )
+    );
+}
+
+function equipmentSetNode(setInfo) {
+    if (!setInfo) return null;
+    const equippedCount = Number(setInfo.equippedCount || 0);
+    const total = Number(setInfo.total || 0);
+    const requiredCount = Number(setInfo.requiredCount || total);
+    const progress = requiredCount > 0 ? Math.min(100, equippedCount / requiredCount * 100) : 0;
+    const statusLabel = { equipped: '장착 중', owned: '보유', missing: '미보유' };
+    const components = (setInfo.components || []).map(item => {
+        const thumb = equipmentThumb(item);
+        return el('div', { class: 'eqm-set-item ' + (item.status || 'missing') },
+            el('div', { class: 'eqm-set-item-visual' }, thumb,
+                el('span', { class: 'eqm-set-item-status' }, statusLabel[item.status] || '미보유')),
+            el('div', { class: 'eqm-set-item-name' }, item.name),
+            el('div', { class: 'eqm-set-item-type' }, item.typeLabel)
+        );
+    });
+    const tiers = (setInfo.tiers || []).map(tier => el('div', { class: 'eqm-set-tier ' + (tier.active ? 'active' : 'locked') },
+        el('div', { class: 'eqm-set-tier-badge' }, tier.tier + ' SET'),
+        el('div', { class: 'eqm-set-tier-copy' },
+            el('div', { class: 'eqm-set-tier-state' }, tier.active ? '활성화' : '미활성'),
+            el('div', { class: 'eqm-set-tier-desc' }, tier.description || '효과 없음'))
+    ));
+    return el('div', { class: 'eqm-set-view' },
+        el('div', { class: 'eqm-set-summary' },
+            el('div', { class: 'eqm-set-summary-top' },
+                el('div', null, el('div', { class: 'eqm-set-eyebrow' }, 'SET COLLECTION'), el('div', { class: 'eqm-set-name' }, setInfo.name)),
+                el('div', { class: 'eqm-set-count' }, el('b', null, equippedCount), el('span', null, ' / ' + requiredCount + ' 장착'))),
+            el('div', { class: 'eqm-set-progress' }, el('span', { style: 'width:' + progress + '%' }))
+        ),
+        el('div', { class: 'eqm-set-section-title' }, '세트 구성 · ' + total + '종'),
+        el('div', { class: 'eqm-set-items' }, ...components),
+        el('div', { class: 'eqm-set-legend' },
+            el('span', { class: 'equipped' }, '장착 중'), el('span', { class: 'owned' }, '보유'), el('span', { class: 'missing' }, '미보유')),
+        el('div', { class: 'eqm-set-section-title' }, '세트 효과'),
+        el('div', { class: 'eqm-set-tiers' }, ...tiers)
+    );
+}
+
+function equipmentModalTabbedNodes(infoNodes, setInfo) {
+    const infoButton = el('button', { class: 'eqm-tab active', type: 'button', role: 'tab', 'aria-selected': 'true' }, '장비 정보');
+    const setButton = el('button', { class: 'eqm-tab', type: 'button', role: 'tab', 'aria-selected': 'false' }, '세트 효과');
+    const infoPanel = el('div', { class: 'eqm-tab-panel active', role: 'tabpanel' }, ...infoNodes);
+    const setPanel = el('div', { class: 'eqm-tab-panel', role: 'tabpanel' }, equipmentSetNode(setInfo));
+    const select = showSet => {
+        infoButton.classList.toggle('active', !showSet);
+        setButton.classList.toggle('active', showSet);
+        infoButton.setAttribute('aria-selected', String(!showSet));
+        setButton.setAttribute('aria-selected', String(showSet));
+        infoPanel.classList.toggle('active', !showSet);
+        setPanel.classList.toggle('active', showSet);
+    };
+    infoButton.onclick = () => select(false);
+    setButton.onclick = () => select(true);
+    return [el('div', { class: 'eqm-tabs', role: 'tablist' }, infoButton, setButton), infoPanel, setPanel];
+}
+
 // 장비 조작 가능 여부: 인벤토리 페이지면 내 인벤토리일 때, 정보 페이지면 내 프로필일 때
 function ownEquipContext() {
     if (pageIsActive('inventory')) return !currentInventoryName || !myName || currentInventoryName === myName;
@@ -933,12 +1102,23 @@ function openEquipmentModal(eq) {
         )
     );
     hero.style.setProperty('--rar', RARITY_COLORS[eq.rarity] || '#334155');
-    nodes.push(hero);
-    const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
+    const legacyDescriptionLine = (eq.statLines || []).map(line => String(line).replace(/^-\s*/, '')).find(line => /^(고유 옵션|설명):/.test(line));
+    const description = eq.description || (legacyDescriptionLine ? legacyDescriptionLine.replace(/^(고유 옵션|설명):\s*/, '') : '');
+    const orbInfo = equipmentOrbInfo(eq);
+    const orbLineSet = new Set((orbInfo && orbInfo.lines || []).map(line => String(line).replace(/^-\s*/, '')));
+    const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, '')).filter(line => !orbLineSet.has(line) && !/^(고유 옵션|설명):/.test(line) && !/^(세트 효과 ·|\d+세트:)/.test(line));
+    const showDescription = description
+        && !/^(초월|신화)/.test(String(eq.rarity || ''))
+        && (!eq.passive || comparableEquipmentText(description) !== comparableEquipmentText(eq.passive.desc));
+    if (showDescription) nodes.push(equipmentDescriptionNode(description));
     if (lines.length) {
         nodes.push(el('div', { class: 'eqm-label' }, '능력치'));
         nodes.push(el('div', { class: 'eqm-stats' }, ...lines.map(line => el('div', { class: 'eqm-stat' }, line))));
     }
+    const orbBlock = equipmentOrbNode(orbInfo);
+    if (orbBlock) nodes.push(orbBlock);
+    const passiveBlock = equipmentPassiveNode(eq.passive);
+    if (passiveBlock) nodes.push(passiveBlock);
     if (eq.soul) {
         const soulText = formatSoulRemaining(eq.soul.expiredAt);
         if (soulText) nodes.push(el('div', { class: 'eqm-soul' }, soulText));
@@ -967,7 +1147,7 @@ function openEquipmentModal(eq) {
     }
     $('#modalTitle').textContent = '';
     $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(...nodes);
+    $('#modalBody').replaceChildren(hero, ...(eq.setInfo ? equipmentModalTabbedNodes(nodes, eq.setInfo) : nodes));
     $('#modalBg').classList.add('active');
 }
 
@@ -993,7 +1173,7 @@ async function openEquipPicker(typeKey, label, replaceEq) {
                     try {
                         const r = await postApi('/api/inventory/equipment/unequip', { number: replaceEq.number });
                         if (r.profile) renderProfile(r.profile);
-                    } catch (err) { alert(err.message); return; }
+                    } catch (err) { showAlert(err.message); return; }
                 }
                 handleEquipmentAction(eq, 'equip', e);
             };
@@ -1005,7 +1185,7 @@ async function openEquipPicker(typeKey, label, replaceEq) {
 }
 
 async function awakenPotential(eq, event) {
-    if (!confirm('돋보기 1개를 소모하여 잠재능력을 부여하시겠습니까?')) return;
+    if (!(await showConfirm('돋보기 1개를 소모하여 잠재능력을 부여하시겠습니까?'))) return;
     const btn = event && event.currentTarget;
     if (btn) btn.disabled = true;
     try {
@@ -1014,7 +1194,7 @@ async function awakenPotential(eq, event) {
         if (data.profile) renderProfile(data.profile);
         if (pageIsActive('inventory')) await loadInventory('equipment');
     } catch (e) {
-        alert(e.message);
+        showAlert(e.message);
         if (btn) btn.disabled = false;
     }
 }
@@ -1220,7 +1400,7 @@ async function doReroll(event) {
     } catch (e) {
         potentialState.busy = false;
         if (btn) btn.disabled = false;
-        alert(e.message);
+        showAlert(e.message);
     }
 }
 
@@ -1296,7 +1476,7 @@ async function finishReroll(kind, event) {
     } catch (e) {
         potentialState.busy = false;
         if (btn) btn.disabled = false;
-        alert(e.message);
+        showAlert(e.message);
     }
 }
 
@@ -1309,7 +1489,7 @@ async function handleEquipmentAction(eq, action, event) {
         if (data.profile) renderProfile(data.profile);
         if (pageIsActive('inventory')) await loadInventory('equipment');
     } catch (e) {
-        alert(e.message);
+        showAlert(e.message);
         if (btn) btn.disabled = false;
     }
 }
@@ -2287,7 +2467,136 @@ async function claimPunch9999(choice) {
         setModalCloseVisible(true);
         if (data.reward) openPunchRewardModal(data.reward);
         else closeModal();
-    } catch (e) { alert(e.message); }
+    } catch (e) { showAlert(e.message); }
+}
+
+// ===== 100일 기념 캡슐 =====
+const capsuleUi = f => '/rpg-ui?file=' + encodeURIComponent('100일 캡슐/' + f);
+let capsuleState = { data: null, drawing: false };
+
+async function loadCapsule() {
+    const root = $('#capsuleRoot');
+    if (!root) return;
+    try {
+        capsuleState.data = await api('/api/capsule100');
+    } catch (e) {
+        root.replaceChildren(el('div', { class: 'empty err' }, e.message));
+        return;
+    }
+    renderCapsule();
+}
+
+// 캡슐 번호(1-base) → 프레임 등급. 상위 상품일수록 고급 유리 프레임.
+function capsuleGrade(number) {
+    return number === 1 ? 'g1' : number <= 4 ? 'g2' : number <= 7 ? 'g3' : 'g4';
+}
+
+function capsuleTile(prize, index) {
+    const soldout = Number(prize.remaining) <= 0;
+    return el('div', { class: 'cap-tile ' + capsuleGrade(index + 1) + (soldout ? ' soldout' : ''), title: prize.name + (Number(prize.count) > 1 ? ' x' + prize.count : '') },
+        el('div', { class: 'cap-tile-icon' },
+            prize.iconUrl ? el('img', { src: prize.iconUrl, alt: prize.name }) : el('span', { class: 'cap-tile-fallback' }, '🎁')),
+        el('div', { class: 'cap-tile-count' }, comma(prize.remaining) + '/' + comma(prize.stock)));
+}
+
+function renderCapsule() {
+    const root = $('#capsuleRoot');
+    const d = capsuleState.data;
+    if (!root || !d) return;
+
+    // 캡슐 기계: 레버 + 스크린(코인/보유량/이용 토글)
+    const machine = el('div', { class: 'cap-machine', id: 'capMachine' },
+        el('div', { class: 'cap-lever' }, el('div', { class: 'cap-lever-slot' }, el('div', { class: 'cap-lever-ball' }))),
+        el('div', { class: 'cap-machine-body' },
+            el('div', { class: 'cap-screen' },
+                el('div', { class: 'cap-screen-row coin' }, el('span', null, d.coinItemName), el('span', { class: 'cap-coin-caret' }, '▾')),
+                el('div', { class: 'cap-screen-row hold' }, el('span', null, '보유량'), el('b', { class: 'cap-hold-val' }, comma(d.coinCount))),
+                el('div', { class: 'cap-toggles' },
+                    [1, 2, 3].map(n => el('button', {
+                        class: 'cap-toggle-btn', type: 'button', 'aria-label': n + '회 이용',
+                        style: "background-image:url('" + capsuleUi(n + '회 이용 토글.png') + "')",
+                        disabled: capsuleState.drawing,
+                        onclick: () => drawCapsule(n)
+                    }))))));
+
+    const counters = el('div', { class: 'cap-counters' },
+        el('div', { class: 'cap-counter' }, el('span', { class: 'cap-counter-label' }, '남은 캡슐'), el('b', { class: 'cap-counter-val' }, comma(d.totalRemaining))),
+        el('div', { class: 'cap-counter' }, el('span', { class: 'cap-counter-label' }, '전체 캡슐'), el('b', { class: 'cap-counter-val' }, comma(d.total))));
+
+    const side = el('aside', { class: 'cap-side' },
+        el('div', { class: 'cap-side-block' },
+            el('b', null, d.coinItemName + ' 수급처'),
+            el('div', null, '* 일반 상점 (일일 1개)'),
+            el('div', null, '* 사냥 (일일 1개)'),
+            el('div', null, '* 포인트 상점')),
+        el('div', { class: 'cap-side-block' }, '누군가 1번 당첨 시 모든 캡슐이 초기화됩니다.'),
+        el('div', { class: 'cap-side-block' },
+            el('b', null, '캡슐 목록'),
+            ...d.prizes.map((p, i) => el('div', null, (i + 1) + '. ' + p.name + (Number(p.count) > 1 ? ' ' + comma(p.count) + '개' : '')))));
+
+    const panel = el('div', { class: 'cap-window' },
+        el('div', { class: 'cap-titlebar' },
+            el('span', { class: 'cap-titlebar-deco red' }),
+            el('span', { class: 'cap-title-text' }, '100일 기념 캡슐 기계'),
+            el('span', { class: 'cap-titlebar-deco teal' })),
+        el('div', { class: 'cap-window-body' },
+            el('div', { class: 'cap-window-main' },
+                el('div', { class: 'cap-notice' }, 'RPGENIUS가 드디어 100일을 맞이했습니다!', el('br'), '100일 캡슐에서 여러분이 원하는 아이템을 획득해보세요!'),
+                counters,
+                el('div', { class: 'cap-tiles' }, d.prizes.map(capsuleTile))),
+            side),
+        el('div', { class: 'cap-footer' }, '캡슐 뽑기는 게임 내 잔여 수량이 표기되며, 확률은 잔여 아이템 개수에 따라 변동됩니다.', el('br'), '(아이템 개별 잔여 수량/캡슐 기계 전체 잔여 수량)'));
+
+    // 배경 장식 (시안의 도트/엑스/도형)
+    const deco = [
+        el('span', { class: 'cap-deco sq d1' }),
+        el('span', { class: 'cap-deco dots d2' }),
+        el('span', { class: 'cap-deco x d3' }, '✕'),
+        el('span', { class: 'cap-deco circle d4' }),
+        el('span', { class: 'cap-deco dots orange d5' }),
+        el('span', { class: 'cap-deco x d6' }, '✕'),
+        el('span', { class: 'cap-deco sq red d7' })
+    ];
+    root.replaceChildren(el('div', { class: 'cap-board' },
+        ...deco,
+        el('img', { class: 'cap-hero', src: capsuleUi('쵸단.png'), alt: 'RPGENIUS 100일' }),
+        machine, panel));
+}
+
+async function drawCapsule(n) {
+    const d = capsuleState.data;
+    if (!d || capsuleState.drawing) return;
+    if (Number(d.coinCount) < n) { showAlert(d.coinItemName + '이 부족합니다. (보유 ' + comma(d.coinCount) + '개)'); return; }
+    capsuleState.drawing = true;
+    const machine = $('#capMachine');
+    if (machine) machine.classList.add('pulling');
+    const started = Date.now();
+    try {
+        const r = await postApi('/api/capsule100/draw', { count: n });
+        capsuleState.data = r;
+        // 레버 연출이 끝난 뒤 결과 표시
+        setTimeout(() => {
+            capsuleState.drawing = false;
+            renderCapsule();
+            openCapsuleResultModal(r);
+        }, Math.max(0, 700 - (Date.now() - started)));
+    } catch (e) {
+        capsuleState.drawing = false;
+        if (machine) machine.classList.remove('pulling');
+        showAlert(e.message);
+    }
+}
+
+function openCapsuleResultModal(r) {
+    const cards = (r.results || []).map((res, i) => el('div', { class: 'cap-result-card' + (res.jackpot ? ' jackpot' : ''), style: { animationDelay: (i * 0.18) + 's' } },
+        res.jackpot ? el('div', { class: 'cap-result-badge' }, '1등!') : null,
+        el('div', { class: 'cap-tile ' + capsuleGrade(Number(res.number) || 10) }, el('div', { class: 'cap-tile-icon' }, res.iconUrl ? el('img', { src: res.iconUrl, alt: res.name }) : el('span', { class: 'cap-tile-fallback' }, '🎁'))),
+        el('div', { class: 'cap-result-name' }, res.name + (Number(res.count) > 1 ? ' x' + comma(res.count) : ''))));
+    openRichModal('캡슐 뽑기 결과', '', [
+        el('div', { class: 'cap-result-row' }, ...cards),
+        r.jackpot ? el('div', { class: 'cap-result-jackpot-note' }, '🎉 1등 당첨! 모든 캡슐이 초기화되었습니다.') : null,
+        el('div', { class: 'cap-result-sub' }, '획득한 아이템은 인벤토리에서 확인하세요.')
+    ].filter(Boolean));
 }
 
 // ===== 조합 =====
@@ -2520,7 +2829,7 @@ async function runEnhancement(number) {
     } catch (e) {
         enhanceState.busy = false;
         if (btn) { btn.disabled = false; }
-        alert(e.message);
+        showAlert(e.message);
     }
 }
 
@@ -2784,12 +3093,12 @@ function renderCombinePool() {
 function addCardToSlot(card) {
     const grade = combineGrade();
     const type = combineType();
-    if (!card.combinable) { alert('이 등급은 조합할 수 없습니다.'); return; }
-    if (grade != null && card.star != grade) { alert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
-    if (type != null && (card.type || '일반') !== type) { alert('같은 종류의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (!card.combinable) { showAlert('이 등급은 조합할 수 없습니다.'); return; }
+    if (grade != null && card.star != grade) { showAlert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (type != null && (card.type || '일반') !== type) { showAlert('같은 종류의 카드끼리만 조합할 수 있습니다.'); return; }
     if (combineState.slots.some(c => c && c.number === card.number)) return;
     const idx = combineState.slots.findIndex(c => !c);
-    if (idx === -1) { alert('재료 슬롯이 가득 찼습니다.'); return; }
+    if (idx === -1) { showAlert('재료 슬롯이 가득 찼습니다.'); return; }
     combineState.slots[idx] = card;
     combineState.result = null;
     renderCombineStage();
@@ -2810,11 +3119,11 @@ function removeFromSlotByNumber(number) {
 
 function onLuckyClick() {
     if (combineState.busy) return;
-    if (!combineState.slots.every(Boolean)) { alert('재료 카드 3장을 먼저 선택하세요.'); return; }
+    if (!combineState.slots.every(Boolean)) { showAlert('재료 카드 3장을 먼저 선택하세요.'); return; }
     const grade = combineGrade();
     const hasProtect = !!combineState.meta.protect[grade];
     const hasLucky = (combineState.meta.lucky || []).length > 0;
-    if (!hasProtect && !hasLucky) { alert('사용할 수 있는 보호/럭키 카드가 없습니다.'); return; }
+    if (!hasProtect && !hasLucky) { showAlert('사용할 수 있는 보호/럭키 카드가 없습니다.'); return; }
     openProtectModal(grade);
 }
 
@@ -2887,7 +3196,7 @@ async function submitCombine() {
     } catch (e) {
         combineState.busy = false;
         renderCombineStage();
-        alert(e.message);
+        showAlert(e.message);
     }
 }
 
@@ -3024,11 +3333,11 @@ function renderJobCombinePool() {
 function addJobCardToSlot(card) {
     const selectedId = jobCombineSelectedId();
     const selectedStar = jobCombineSelectedStar();
-    if (selectedId != null && card.id !== selectedId) { alert('같은 캐릭터 카드끼리만 조합할 수 있습니다.'); return; }
-    if (selectedStar != null && card.star !== selectedStar) { alert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
+    if (selectedId != null && card.id !== selectedId) { showAlert('같은 캐릭터 카드끼리만 조합할 수 있습니다.'); return; }
+    if (selectedStar != null && card.star !== selectedStar) { showAlert('같은 등급의 카드끼리만 조합할 수 있습니다.'); return; }
     if (jobCombineState.slots.some(c => c && c.number === card.number)) return;
     const idx = jobCombineState.slots.findIndex(c => !c);
-    if (idx === -1) { alert('재료 슬롯이 가득 찼습니다.'); return; }
+    if (idx === -1) { showAlert('재료 슬롯이 가득 찼습니다.'); return; }
     jobCombineState.slots[idx] = card;
     jobCombineState.result = null;
     renderJobCombineStage();
@@ -3069,7 +3378,7 @@ async function submitJobCombine() {
     } catch (e) {
         jobCombineState.busy = false;
         renderJobCombineStage();
-        alert(e.message);
+        showAlert(e.message);
     }
 }
 
@@ -3178,7 +3487,7 @@ function renderLevelRewardList(rewards, userLevel) {
                     if (result.profile) renderProfile(result.profile);
                     await loadLevelRewards();
                 } catch (e) {
-                    alert(e.message);
+                    showAlert(e.message);
                     btn.disabled = false;
                 }
             };
@@ -3254,7 +3563,7 @@ function openBurningModal(level, track, info, opts) {
                 if (result.profile) renderProfile(result.profile);
                 closeModal();
                 await loadBurning();
-            } catch (e) { alert(e.message); btn.disabled = false; }
+            } catch (e) { showAlert(e.message); btn.disabled = false; }
         };
         body.appendChild(btn);
     }
@@ -3277,7 +3586,7 @@ function openBurningUnlockModal(cost, pointIconUrl) {
             if (result.profile) renderProfile(result.profile);
             closeModal();
             await loadBurning();
-        } catch (e) { alert(e.message); btn.disabled = false; }
+        } catch (e) { showAlert(e.message); btn.disabled = false; }
     };
     const body = el('div', { class: 'burning-unlock-modal' },
         el('div', { class: 'burning-unlock-icon' }, '🔥'),
@@ -3860,7 +4169,7 @@ function openShopBuyModal(item) {
         } catch (e) {
             buyBtn.disabled = false;
             buyBtn.textContent = '구매';
-            alert(e.message);
+            showAlert(e.message);
         }
     }}, '구매');
     footer.appendChild(buyBtn);
@@ -4041,7 +4350,7 @@ function openHotDealBuyModal(item, hdData, body, tabRow) {
             renderHotDeal(res.hotdeal, body, tabRow);
         } catch (e) {
             buyBtn.disabled = false; buyBtn.textContent = '구매';
-            alert(e.message);
+            showAlert(e.message);
         }
     }}, '구매');
     footer.appendChild(buyBtn);
@@ -4767,7 +5076,7 @@ function rankRow(entry, isMe, valueFormatter) {
     const rk = entry.rank;
     const rkClass = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
     const medal = rk === 1 ? '🥇' : rk === 2 ? '🥈' : rk === 3 ? '🥉' : rk + '위';
-    return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => alert(e.message)) },
+    return el('div', { class: 'rank-row ' + (isMe ? 'me' : ''), onclick: () => loadProfile(entry.name).catch(e => showAlert(e.message)) },
         el('div', { class: 'rk ' + rkClass }, medal),
         el('div', { class: 'ttl' }, rankTitleImg(entry.title)),
         el('div', { class: 'nm' }, entry.name, el('span', { class: 'lv' }, 'Lv. ' + comma(entry.level))),
@@ -5064,7 +5373,7 @@ function dexTitleCard(entry) {
                 await postApi('/api/titles/equip', { id: entry.equipped ? null : entry.id });
                 titlesData = await api('/api/titles');
                 renderDex();
-            } catch (e) { alert(e.message); btn.disabled = false; }
+            } catch (e) { showAlert(e.message); btn.disabled = false; }
         };
         card.appendChild(btn);
     }
@@ -5289,7 +5598,7 @@ function replyForm(noteId, parentId) {
     const ta = el('textarea', { placeholder: parentId ? '대댓글 작성...' : '댓글 작성...' });
     const btn = el('button', { class: 'primary', onclick: async () => {
         const textbody = ta.value.trim();
-        if (!textbody) return alert('내용을 입력해주세요.');
+        if (!textbody) return showAlert('내용을 입력해주세요.');
         btn.disabled = true;
         try {
             const data = await postApi('/api/patchnotes/' + encodeURIComponent(noteId) + '/replies', { parentId, textbody });
@@ -5297,7 +5606,7 @@ function replyForm(noteId, parentId) {
             patchReplyActive = null;
             renderPatchnotes();
         } catch (e) {
-            alert(e.message);
+            showAlert(e.message);
             btn.disabled = false;
         }
     } }, parentId ? '대댓글 등록' : '댓글 등록');
@@ -5401,8 +5710,8 @@ if ($('#patchSubmit')) $('#patchSubmit').onclick = async () => {
     const title = $('#patchTitle').value.trim();
     const date = $('#patchDate').value.trim();
     const textbody = $('#patchBody').value.trim();
-    if (!title) return alert('제목을 입력해주세요.');
-    if (!textbody) return alert('본문을 입력해주세요.');
+    if (!title) return showAlert('제목을 입력해주세요.');
+    if (!textbody) return showAlert('본문을 입력해주세요.');
     $('#patchSubmit').disabled = true;
     try {
         const data = await postApi('/api/patchnotes', { title, date, textbody });
@@ -5413,7 +5722,7 @@ if ($('#patchSubmit')) $('#patchSubmit').onclick = async () => {
         $('#patchEditor').classList.remove('active');
         renderPatchnotes();
     } catch (e) {
-        alert(e.message);
+        showAlert(e.message);
     } finally {
         $('#patchSubmit').disabled = false;
     }

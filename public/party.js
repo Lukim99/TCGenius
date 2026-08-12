@@ -52,6 +52,27 @@
         toast._t = setTimeout(() => t.classList.remove('active'), 2400);
     }
 
+    // 공통 메시지 모달 (네이티브 alert/confirm 대체)
+    function openMsgModal(message, isConfirm) {
+        return new Promise(resolve => {
+            const bg = el('div', { class: 'msg-modal-bg' });
+            const done = val => { bg.remove(); resolve(val); };
+            const okBtn = el('button', { class: 'msg-modal-btn primary', type: 'button', onClick: () => done(true) }, '확인');
+            const actions = isConfirm
+                ? [el('button', { class: 'msg-modal-btn', type: 'button', onClick: () => done(false) }, '취소'), okBtn]
+                : [okBtn];
+            bg.append(el('div', { class: 'msg-modal' },
+                el('div', { class: 'msg-modal-text' }, String(message)),
+                el('div', { class: 'msg-modal-actions' }, ...actions)));
+            bg.addEventListener('click', e => { if (e.target === bg && !isConfirm) done(true); });
+            bg.addEventListener('keydown', e => { if (e.key === 'Escape') done(!isConfirm); });
+            document.body.appendChild(bg);
+            setTimeout(() => okBtn.focus(), 30);
+        });
+    }
+    const showAlert = message => openMsgModal(message, false);
+    const showConfirm = message => openMsgModal(message, true);
+
     // 칭호 이미지 뱃지. title: { name, imageUrl } | null
     function titleImg(title) {
         if (!title || !title.imageUrl) return null;
@@ -854,7 +875,7 @@
                 try {
                     const res = await fetch('/api/party/restart', { method: 'POST' });
                     const data = await res.json();
-                    if (data.error) { alert(data.error); btn.disabled = false; }
+                    if (data.error) { showAlert(data.error); btn.disabled = false; }
                 } catch (_) { btn.disabled = false; }
             });
             wrap.append(btn);
@@ -1791,8 +1812,8 @@
         await loadLobby();
     }
     $('#pqLeave').onclick = leaveRoom;
-    $('#pqPlayLeave').onclick = () => {
-        if (currentRoom && currentRoom.state === 'inProgress' && !confirm('전투 중입니다. 파티에서 나가시겠습니까?')) return;
+    $('#pqPlayLeave').onclick = async () => {
+        if (currentRoom && currentRoom.state === 'inProgress' && !(await showConfirm('전투 중입니다. 파티에서 나가시겠습니까?'))) return;
         leaveRoom();
     };
     $('#pqAttackBtn').onclick = manualAttack;
