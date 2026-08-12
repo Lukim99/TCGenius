@@ -391,22 +391,80 @@
         } catch (e) { toast(e.message); }
     }
 
+    // ====== 사운드 설정 ======
+    const SOUND_DEFAULTS = { bgm: 0.18, sfx: 0.5 };
+    function clamp01(n) { n = Number(n); return isFinite(n) ? Math.max(0, Math.min(1, n)) : 0; }
+    function loadSound() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('pqSound') || 'null');
+            if (raw) return { bgm: clamp01(raw.bgm), sfx: clamp01(raw.sfx) };
+        } catch (_) {}
+        return Object.assign({}, SOUND_DEFAULTS);
+    }
+    const sound = loadSound();
+    function saveSound() { try { localStorage.setItem('pqSound', JSON.stringify(sound)); } catch (_) {} }
+
     // ====== 전투 BGM ======
     const bgm = new Audio('/rpg-ui?file=' + encodeURIComponent('boss fight.mp3'));
     bgm.loop = true;
-    bgm.volume = 0.18;
+    bgm.volume = sound.bgm;
     bgm.preload = 'none';
     let bgmWanted = false;
     function syncBgm(snap) {
         const want = !!(snap && snap.state === 'inProgress');
+        if (want) preloadSfx();
         if (want === bgmWanted && !(want && bgm.paused)) return;
         bgmWanted = want;
-        if (want) bgm.play().catch(() => {});
+        if (want) { if (sound.bgm > 0) bgm.play().catch(() => {}); }
         else { bgm.pause(); try { bgm.currentTime = 0; } catch (_) {} }
     }
     // 자동재생 차단(새로고침 재접속 등) 대비 — 첫 상호작용에서 재시도
     for (const evt of ['pointerdown', 'keydown']) {
-        document.addEventListener(evt, () => { if (bgmWanted && bgm.paused) bgm.play().catch(() => {}); }, true);
+        document.addEventListener(evt, () => { if (bgmWanted && sound.bgm > 0 && bgm.paused) bgm.play().catch(() => {}); }, true);
+    }
+
+    // ====== 효과음 (Kenney CC0 → DB/RPGenius/ui/sfx) ======
+    const SFX_FILES = {
+        hit: ['sfx/hit_0.mp3', 'sfx/hit_1.mp3', 'sfx/hit_2.mp3'],
+        crit: ['sfx/crit.mp3'],
+        skill: ['sfx/skill.mp3'],
+        potion: ['sfx/potion.mp3'],
+        count: ['sfx/count.mp3'],
+        start: ['sfx/start.mp3'],
+        clear: ['sfx/clear.mp3'],
+        fail: ['sfx/fail.mp3']
+    };
+    const sfxCache = {};
+    let sfxPreloaded = false;
+    let lastHitSfxAt = 0;
+    function sfxBase(file) {
+        let base = sfxCache[file];
+        if (!base) {
+            base = new Audio('/rpg-ui?file=' + encodeURIComponent(file));
+            base.preload = 'auto';
+            sfxCache[file] = base;
+        }
+        return base;
+    }
+    function preloadSfx() {
+        if (sfxPreloaded) return;
+        sfxPreloaded = true;
+        Object.values(SFX_FILES).forEach(files => files.forEach(sfxBase));
+    }
+    function playSfx(name) {
+        if (sound.sfx <= 0) return;
+        const files = SFX_FILES[name];
+        if (!files) return;
+        // 타격음은 연타·파티원 동시 타격 시 과밀 방지
+        if (name === 'hit' || name === 'crit') {
+            const now = Date.now();
+            if (now - lastHitSfxAt < 70) return;
+            lastHitSfxAt = now;
+        }
+        const file = files.length > 1 ? files[Math.floor(Math.random() * files.length)] : files[0];
+        const a = sfxBase(file).cloneNode();
+        a.volume = sound.sfx;
+        a.play().catch(() => {});
     }
 
     // ====== 키 바인딩 ======
@@ -561,6 +619,7 @@
             count.classList.remove('pop');
             void count.offsetWidth;
             count.classList.add('pop');
+            playSfx(v === '전투 개시' ? 'start' : 'count');
             introTimer = setTimeout(step, v === '전투 개시' ? 950 : 800);
         };
         // 페이드 인(.45s)이 자리잡은 뒤 카운트 시작
@@ -572,6 +631,7 @@
         lastRoomState = snap ? snap.state : null;
         if (!snap) return;
         if (snap.state === 'inProgress' && (prev === 'lobby' || prev === 'preparing')) playBattleIntro(snap);
+        if (prev === 'inProgress' && (snap.state === 'cleared' || snap.state === 'failed')) playSfx(snap.state === 'cleared' ? 'clear' : 'fail');
     }
 
     // ====== 방 화면 ======
@@ -963,6 +1023,7 @@
         if (offsetY !== null) pop.style.top = offsetY + '%';
         host.append(pop);
         setTimeout(() => { if (pop.parentNode) pop.parentNode.removeChild(pop); }, 1000);
+        playSfx(payload.crit ? 'crit' : 'hit');
         // 피격 셰이크 — 보스 일러스트를 잠깐 흔든다
         const bossImg = document.getElementById('pqBossIllustImg');
         if (bossImg) {
@@ -1289,6 +1350,7 @@
                 'data-kind': 'potion',
                 disabled: cdRemain > 0 || (r && r.dead) ? true : false,
                 onClick: async () => {
+                    playSfx('potion');
                     myCD.potion = Math.max(myCD.potion, Date.now() + 3000);
                     applyMyDeadlinesToRuntime();
                     updateSkillPotionButtons();
@@ -1423,6 +1485,7 @@
             } else {
                 payload = { skill: skillName };
             }
+            playSfx('skill');
             // 낙관적 로컬 쿨다운 — 행동 쿨 + 스킬 쿨 (시벌론은 서버가 행동 쿨을 초기화하므로 로컬도 초기화)
             const now = Date.now();
             myCD.action = skillName === '시벌론' ? 0 : Math.max(myCD.action, now + getMyActionCooldownMs());
@@ -1680,9 +1743,40 @@
     $('#pqTabChat').onclick = () => showGameTab('chat');
     $('#pqTabLog').onclick = () => showGameTab('log');
 
-    // 단축키 설정 모달
+    // 설정 모달 (사운드 + 단축키)
+    function syncVolumeUI() {
+        const bgmSlider = $('#pqVolBgm'), sfxSlider = $('#pqVolSfx');
+        if (!bgmSlider) return;
+        bgmSlider.value = String(Math.round(sound.bgm * 100));
+        sfxSlider.value = String(Math.round(sound.sfx * 100));
+        $('#pqVolBgmVal').textContent = Math.round(sound.bgm * 100) + '%';
+        $('#pqVolSfxVal').textContent = Math.round(sound.sfx * 100) + '%';
+    }
+    if ($('#pqVolBgm')) {
+        $('#pqVolBgm').addEventListener('input', e => {
+            sound.bgm = clamp01(Number(e.target.value) / 100);
+            bgm.volume = sound.bgm;
+            if (sound.bgm <= 0) bgm.pause();
+            else if (bgmWanted && bgm.paused) bgm.play().catch(() => {});
+            $('#pqVolBgmVal').textContent = Math.round(sound.bgm * 100) + '%';
+            saveSound();
+        });
+        $('#pqVolSfx').addEventListener('input', e => {
+            sound.sfx = clamp01(Number(e.target.value) / 100);
+            $('#pqVolSfxVal').textContent = Math.round(sound.sfx * 100) + '%';
+            saveSound();
+        });
+        // 슬라이더에서 손 뗄 때 미리듣기
+        $('#pqVolSfx').addEventListener('change', () => playSfx('hit'));
+    }
+    function openSettings() {
+        renderKeybindList();
+        syncVolumeUI();
+        $('#pqKeybindBg').classList.add('active');
+    }
+    if ($('#pqSettingsBtn')) $('#pqSettingsBtn').onclick = openSettings; // 전투 중에도 조절 가능
     if ($('#pqKeybindOpen')) {
-        $('#pqKeybindOpen').onclick = () => { renderKeybindList(); $('#pqKeybindBg').classList.add('active'); };
+        $('#pqKeybindOpen').onclick = openSettings;
         $('#pqKeybindClose').onclick = () => { stopKeyCapture(); $('#pqKeybindBg').classList.remove('active'); };
         $('#pqKeybindReset').onclick = () => {
             keybinds = JSON.parse(JSON.stringify(KEYBIND_DEFAULTS));

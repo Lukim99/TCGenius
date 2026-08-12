@@ -5905,7 +5905,7 @@ function renderPartyApp(sess) {
       <div class="pq-bar">
         <div class="pq-section-title" style="margin:0">파티 퀘스트</div>
         <div class="pq-row" style="gap:6px">
-          <button class="pq-btn" id="pqKeybindOpen" style="height:32px;padding:0 12px;font-size:12px">단축키</button>
+          <button class="pq-btn" id="pqKeybindOpen" style="height:32px;padding:0 12px;font-size:12px">설정</button>
           <button class="pq-btn" id="pqRefresh" style="height:32px;padding:0 12px;font-size:12px">새로고침</button>
         </div>
       </div>
@@ -5956,6 +5956,7 @@ function renderPartyApp(sess) {
         <button class="pq-game-leave" id="pqPlayLeave" type="button">← 나가기</button>
         <div class="pq-game-phase"><span id="pqPhaseLabel">PHASE</span><b id="pqPhaseName">-</b></div>
         <div class="pq-enrage" style="display:none" id="pqEnrage"></div>
+        <button class="pq-game-leave" id="pqSettingsBtn" type="button">설정</button>
       </div>
       <div class="pq-game-stagewrap">
         <div id="pqPhaseStage" class="pq-game-stage"></div>
@@ -6067,11 +6068,15 @@ function renderPartyApp(sess) {
 
   <div class="pq-modal-bg" id="pqKeybindBg">
     <div class="pq-modal">
-      <h3>단축키 설정</h3>
+      <h3>설정</h3>
+      <div class="pq-section-title" style="margin:0">사운드</div>
+      <div class="pq-sound-row"><span>배경음악</span><input type="range" id="pqVolBgm" min="0" max="100" step="1"><b id="pqVolBgmVal">18%</b></div>
+      <div class="pq-sound-row"><span>효과음</span><input type="range" id="pqVolSfx" min="0" max="100" step="1"><b id="pqVolSfxVal">50%</b></div>
+      <div class="pq-section-title" style="margin:6px 0 0">단축키</div>
       <div style="font-size:12px;color:#94a3b8">항목을 클릭한 뒤 원하는 키를 누르세요. Backspace로 해제, Esc로 취소.</div>
       <div id="pqKeybindList" class="pq-keybind-list"></div>
       <div class="pq-actions">
-        <button class="pq-btn" id="pqKeybindReset" type="button">기본값</button>
+        <button class="pq-btn" id="pqKeybindReset" type="button">키 기본값</button>
         <button class="pq-btn primary" id="pqKeybindClose" type="button">닫기</button>
       </div>
     </div>
