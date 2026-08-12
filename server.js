@@ -5904,7 +5904,10 @@ function renderPartyApp(sess) {
     <section class="pq-screen active" data-screen="lobby">
       <div class="pq-bar">
         <div class="pq-section-title" style="margin:0">파티 퀘스트</div>
-        <button class="pq-btn" id="pqRefresh" style="height:32px;padding:0 12px;font-size:12px">새로고침</button>
+        <div class="pq-row" style="gap:6px">
+          <button class="pq-btn" id="pqKeybindOpen" style="height:32px;padding:0 12px;font-size:12px">단축키</button>
+          <button class="pq-btn" id="pqRefresh" style="height:32px;padding:0 12px;font-size:12px">새로고침</button>
+        </div>
       </div>
       <div id="pqRoomList" class="pq-screen" style="display:flex;gap:10px"></div>
     </section>
@@ -5986,7 +5989,8 @@ function renderPartyApp(sess) {
           <div id="pqSealOverlay" class="pq-seal-overlay" style="display:none"></div>
         </div>
         <div class="pq-game-attack">
-          <button id="pqAttackBtn" class="pq-attack-btn" type="button" disabled>⚔ 공격</button>
+          <span id="pqAttackKey" class="pq-attack-key"></span>
+          <button id="pqAttackBtn" class="pq-attack-btn" type="button" disabled>공격</button>
           <div id="pqAttackOrder" class="pq-attack-order"></div>
         </div>
       </div>
@@ -6057,6 +6061,18 @@ function renderPartyApp(sess) {
       <div class="pq-actions">
         <button class="pq-btn" id="pqPotionCancel" type="button">취소</button>
         <button class="pq-btn primary" id="pqPotionSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pq-modal-bg" id="pqKeybindBg">
+    <div class="pq-modal">
+      <h3>단축키 설정</h3>
+      <div style="font-size:12px;color:#94a3b8">항목을 클릭한 뒤 원하는 키를 누르세요. Backspace로 해제, Esc로 취소.</div>
+      <div id="pqKeybindList" class="pq-keybind-list"></div>
+      <div class="pq-actions">
+        <button class="pq-btn" id="pqKeybindReset" type="button">기본값</button>
+        <button class="pq-btn primary" id="pqKeybindClose" type="button">닫기</button>
       </div>
     </div>
   </div>

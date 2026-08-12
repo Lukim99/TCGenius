@@ -889,3 +889,28 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 @media(max-width:700px){
   .page[data-page="chat"]{margin-top:-14px;margin-bottom:-30px}.webchat-shell{height:calc(var(--webchat-vh,100svh) - 120px);display:block;position:relative}.webchat-rooms,.webchat-conversation{position:absolute;inset:0}.webchat-conversation{display:none}.webchat-shell.room-open .webchat-rooms{display:none}.webchat-shell.room-open .webchat-conversation{display:flex}.webchat-back{display:block}.webchat-list-head{padding-top:17px}.webchat-messages{padding:14px 12px}.webchat-bubble-line{max-width:88%}.webchat-new{right:12px}.webchat-composer{padding:8px}.webchat-input-line{gap:7px}.webchat-send{padding:0 13px}
 }
+
+/* ===== 장비 상세 모달 리디자인 + 슬롯 장착 픽커 ===== */
+.modal h3:empty{display:none}
+.eqm-hero{display:grid;grid-template-columns:64px 1fr;gap:14px;align-items:center;padding:14px;background:var(--panel-2);border:1px solid var(--border);border-left:4px solid var(--rar,var(--border-strong));border-radius:var(--radius)}
+.eqm-hero .equip-thumb{width:64px;height:64px}
+.eqm-hero .equip-thumb .icon-fallback{font-size:34px}
+.eqm-name{font-size:17px;font-weight:700;color:var(--text);margin-bottom:7px;line-height:1.3}
+.eqm-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.eqm-lv{color:var(--accent)}
+.eqm-label{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.05em;margin:14px 2px 6px}
+.eqm-stats{padding:2px 14px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius)}
+.eqm-stat{padding:9px 0;font-size:14px;color:var(--text)}
+.eqm-stat+.eqm-stat{border-top:1px dashed var(--border)}
+.eqm-soul{margin-top:10px;font-size:13px;color:var(--text-2);font-style:italic;text-align:center}
+.eqm-pick-grid{display:grid;gap:10px;margin-top:4px}
+.eqm-card-pick{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+.gear-slot.empty.own{cursor:pointer;transition:border-color .15s,opacity .15s}
+.gear-slot.empty.own:hover{opacity:1;border-color:var(--border-strong)}
+.gear-add{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;font-weight:700;color:var(--text-3);line-height:1}
+.gear-slot.empty.own:hover .gear-add{color:var(--accent)}
+.card-tile.slot-addable{cursor:pointer}
+.empty-card.slot-add{gap:6px;color:var(--text-3)}
+.slot-add-plus{font-size:26px;font-weight:700;line-height:1}
+.slot-add-label{font-size:12px;font-weight:700}
+.card-tile.slot-addable:hover .empty-card{border-color:var(--border-strong);color:var(--text-2)}

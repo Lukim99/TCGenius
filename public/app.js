@@ -671,13 +671,21 @@ function equipmentCard(eq) {
     return card;
 }
 
+function pageIsActive(name) {
+    const page = document.querySelector('.page[data-page="' + name + '"]');
+    return !!(page && page.classList.contains('active'));
+}
+
 function gearSlotNode(typeKey, label, eq) {
     const pos = el('div', { class: 'gear-slot-pos' }, label);
     if (!eq) {
-        const thumb = el('div', { class: 'equip-thumb gear-empty-thumb' }, el('span', { class: 'icon-fallback' }, SLOT_ICONS[typeKey] || '🎒'));
-        return el('div', { class: 'gear-slot empty' }, pos, thumb,
+        const own = !!myName && currentProfileName === myName;
+        const thumb = el('div', { class: 'equip-thumb gear-empty-thumb' }, own ? el('span', { class: 'gear-add' }, '+') : null);
+        const node = el('div', { class: 'gear-slot empty' + (own ? ' own' : '') }, pos, thumb,
             el('div', { class: 'gear-slot-info' }, el('div', { class: 'gear-slot-empty' }, '미장착')),
             el('span', { class: 'gear-slot-lv' }));
+        if (own) node.onclick = () => openEquipPicker(typeKey, label);
+        return node;
     }
     const node = el('div', { class: 'gear-slot filled', onclick: () => openEquipmentModal(eq) },
         pos, equipmentThumb(eq),
@@ -797,7 +805,56 @@ function openCardSlotModal(card, slotNumber) {
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
         const row = el('div', { class: 'row' });
         row.appendChild(el('button', { class: 'close', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
+        row.appendChild(el('button', { onclick: () => openCardSlotPicker(slotNumber, card) }, '변경'));
         $('#modalBody').appendChild(row);
+    }
+}
+
+function emptyCardSlotNode() {
+    return el('div', { class: 'card-tile compact slot-addable', onclick: () => openCardSlotPicker(null, null) },
+        el('div', { class: 'empty-card slot-add' },
+            el('span', { class: 'slot-add-plus' }, '+'),
+            el('span', { class: 'slot-add-label' }, '카드 장착')
+        )
+    );
+}
+
+// 슬롯 장착 가능한 인벤토리 카드 선택. replaceSlot이 있으면 해당 슬롯의 카드를 제거 후 장착(변경).
+async function openCardSlotPicker(replaceSlot, replacingCard) {
+    $('#modalTitle').textContent = replaceSlot ? '슬롯 카드 변경' : '슬롯 카드 장착';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    $('#modalBg').classList.add('active');
+    try {
+        const data = await api('/api/inventory/cards');
+        // 서버 규칙 선반영: 5성 이상 + 메인/다른 슬롯과 같은 캐릭터 제외 (변경 대상 슬롯의 캐릭터는 허용)
+        const usedIds = new Set();
+        if (lastProfileData) {
+            if (lastProfileData.mainCard) usedIds.add(Number(lastProfileData.mainCard.id));
+            (lastProfileData.cardSlots || []).forEach(c => { if (c && c.name) usedIds.add(Number(c.id)); });
+        }
+        if (replacingCard) usedIds.delete(Number(replacingCard.id));
+        const cards = (data.cards || []).filter(c => c && Number(c.number || 0) > 0 && Number(c.star || 0) >= 4 && !usedIds.has(Number(c.id)));
+        if (!cards.length) {
+            $('#modalBody').replaceChildren(el('div', { class: 'empty' }, '슬롯에 장착할 수 있는 카드가 없습니다.\n(5성 이상, 메인/슬롯과 다른 캐릭터)'));
+            return;
+        }
+        $('#modalBody').replaceChildren(el('div', { class: 'card-grid eqm-card-pick' },
+            ...cards.map(card => cardNode(card, true, async c => {
+                try {
+                    if (replaceSlot) await postApi('/api/cards/slot/remove', { slot: replaceSlot });
+                    const res = await postApi('/api/cards/slot/equip', { number: c.number });
+                    closeModal();
+                    if (res.profile) renderProfile(res.profile);
+                    if (pageIsActive('inventory')) await loadInventory('cards');
+                } catch (e) {
+                    alert(e.message);
+                    try { renderProfile(await api('/api/profile')); } catch (_) {}
+                }
+            }))
+        ));
+    } catch (e) {
+        $('#modalBody').replaceChildren(el('div', { class: 'empty err' }, e.message));
     }
 }
 
@@ -818,8 +875,7 @@ async function handleCardAction(action, body, event) {
         const data = await postApi('/api/cards/' + action, body);
         closeModal();
         if (data.profile) renderProfile(data.profile);
-        const inventoryPageActive = document.querySelector('.page[data-page="inventory"]') && document.querySelector('.page[data-page="inventory"]').classList.contains('active');
-        if (inventoryPageActive) await loadInventory('cards');
+        if (pageIsActive('inventory')) await loadInventory('cards');
     } catch (e) {
         alert(e.message);
         if (btn) btn.disabled = false;
@@ -855,28 +911,50 @@ function formatSoulRemaining(expiredAt) {
     return null;
 }
 
+// 장비 조작 가능 여부: 인벤토리 페이지면 내 인벤토리일 때, 정보 페이지면 내 프로필일 때
+function ownEquipContext() {
+    if (pageIsActive('inventory')) return !currentInventoryName || !myName || currentInventoryName === myName;
+    if (pageIsActive('info')) return !!myName && currentProfileName === myName;
+    return false;
+}
+
 function openEquipmentModal(eq) {
-    const title = eq.name + (eq.level > 0 ? ' +' + eq.level : '');
-    const sub = eq.rarity + ' · ' + eq.typeLabel;
-    const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
-    openModal(title, sub, lines);
+    const nodes = [];
     const thumb = equipmentThumb(eq);
-    thumb.classList.add('modal-equip-thumb');
-    $('#modalBody').prepend(thumb);
+    const hero = el('div', { class: 'eqm-hero' }, thumb,
+        el('div', { class: 'eqm-hero-info' },
+            el('div', { class: 'eqm-name' }, eq.name),
+            el('div', { class: 'eqm-chips' },
+                rarityTag(eq.rarity),
+                el('span', { class: 'tag' }, eq.typeLabel),
+                eq.level > 0 ? el('span', { class: 'tag eqm-lv' }, '+' + eq.level) : null,
+                eq.equipped ? el('span', { class: 'tag on' }, '장착 중') : null
+            )
+        )
+    );
+    hero.style.setProperty('--rar', RARITY_COLORS[eq.rarity] || '#334155');
+    nodes.push(hero);
+    const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, ''));
+    if (lines.length) {
+        nodes.push(el('div', { class: 'eqm-label' }, '능력치'));
+        nodes.push(el('div', { class: 'eqm-stats' }, ...lines.map(line => el('div', { class: 'eqm-stat' }, line))));
+    }
     if (eq.soul) {
         const soulText = formatSoulRemaining(eq.soul.expiredAt);
-        if (soulText) $('#modalBody').appendChild(el('div', { class: 'stat-line', style: 'opacity:0.85;font-style:italic' }, soulText));
+        if (soulText) nodes.push(el('div', { class: 'eqm-soul' }, soulText));
     }
     const potBlock = potentialBlockNode(eq.potentialDisplay);
-    if (potBlock) $('#modalBody').appendChild(potBlock);
-    const inventoryPageActive = document.querySelector('.page[data-page="inventory"]') && document.querySelector('.page[data-page="inventory"]').classList.contains('active');
-    const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
-    if (inventoryPageActive && ownInventory && Number(eq.number || 0) > 0) {
-        const action = eq.equipped ? 'unequip' : 'equip';
+    if (potBlock) nodes.push(potBlock);
+    if (ownEquipContext() && Number(eq.number || 0) > 0) {
         const row = el('div', { class: 'row' });
-        row.appendChild(el('button', { class: eq.equipped ? 'close' : 'primary', onclick: e => handleEquipmentAction(eq, action, e) }, eq.equipped ? '장착 해제' : '장착'));
+        if (eq.equipped) {
+            row.appendChild(el('button', { class: 'close', onclick: e => handleEquipmentAction(eq, 'unequip', e) }, '장착 해제'));
+            row.appendChild(el('button', { onclick: () => openEquipPicker(eq.type, eq.typeLabel, eq) }, '변경'));
+        } else {
+            row.appendChild(el('button', { class: 'primary', onclick: e => handleEquipmentAction(eq, 'equip', e) }, '장착'));
+        }
         row.appendChild(el('button', { onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
-        $('#modalBody').appendChild(row);
+        nodes.push(row);
         if (eq.canPotential) {
             const potRow = el('div', { class: 'row' });
             if (eq.potential) {
@@ -884,8 +962,45 @@ function openEquipmentModal(eq) {
             } else {
                 potRow.appendChild(el('button', { class: 'pot-awaken', onclick: e => awakenPotential(eq, e) }, '잠재능력 부여'));
             }
-            $('#modalBody').appendChild(potRow);
+            nodes.push(potRow);
         }
+    }
+    $('#modalTitle').textContent = '';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(...nodes);
+    $('#modalBg').classList.add('active');
+}
+
+// 부위별 미장착 장비 선택 → 장착 (빈 슬롯/변경 공용).
+// replaceEq: '변경'으로 진입 시 현재 장착 장비. 단일 슬롯은 서버가 자동 교체하지만
+// 장신구는 빈 슬롯이 없으면 실패하므로 먼저 해제한다.
+async function openEquipPicker(typeKey, label, replaceEq) {
+    $('#modalTitle').textContent = label + ' 장착';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    $('#modalBg').classList.add('active');
+    try {
+        const data = await api('/api/inventory/equipment');
+        const list = (data.equipment || []).filter(e => e.type === typeKey && !e.equipped);
+        if (!list.length) {
+            $('#modalBody').replaceChildren(el('div', { class: 'empty' }, '장착할 수 있는 ' + label + ' 장비가 없습니다.'));
+            return;
+        }
+        $('#modalBody').replaceChildren(el('div', { class: 'eqm-pick-grid' }, ...list.map(eq => {
+            const card = equipmentCard(eq);
+            card.onclick = async e => {
+                if (replaceEq && typeKey === 'accessory') {
+                    try {
+                        const r = await postApi('/api/inventory/equipment/unequip', { number: replaceEq.number });
+                        if (r.profile) renderProfile(r.profile);
+                    } catch (err) { alert(err.message); return; }
+                }
+                handleEquipmentAction(eq, 'equip', e);
+            };
+            return card;
+        })));
+    } catch (e) {
+        $('#modalBody').replaceChildren(el('div', { class: 'empty err' }, e.message));
     }
 }
 
@@ -897,7 +1012,7 @@ async function awakenPotential(eq, event) {
         const data = await postApi('/api/potential/awaken', { number: eq.number });
         closeModal();
         if (data.profile) renderProfile(data.profile);
-        await loadInventory('equipment');
+        if (pageIsActive('inventory')) await loadInventory('equipment');
     } catch (e) {
         alert(e.message);
         if (btn) btn.disabled = false;
@@ -981,7 +1096,7 @@ function closeRerollModal() {
     if (wrap) wrap.style.height = '';
     const c = $('#potentialContent'); if (c) c.style.zoom = '1';
     potentialState = { eq: null, info: null, jewel: 'none', busy: false };
-    loadInventory('equipment').catch(() => {});
+    if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
 }
 
 async function loadRerollInfo() {
@@ -1192,7 +1307,7 @@ async function handleEquipmentAction(eq, action, event) {
         const data = await postApi('/api/inventory/equipment/' + action, { number: eq.number });
         closeModal();
         if (data.profile) renderProfile(data.profile);
-        await loadInventory('equipment');
+        if (pageIsActive('inventory')) await loadInventory('equipment');
     } catch (e) {
         alert(e.message);
         if (btn) btn.disabled = false;
@@ -1205,6 +1320,7 @@ function categorySection(title, children) {
 
 let myName = null;
 let myGoods = null;
+let lastProfileData = null;
 let currentProfileName = null;
 let currentInventoryName = null;
 let suppressInfoSelfReset = false;
@@ -1241,7 +1357,12 @@ function renderProfile(data) {
     renderStatCard();
     renderStatPoint(data.statPoint);
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
-    $('#slotCards').replaceChildren(...data.cardSlots.map((card, i) => cardNode(card, true, c => openCardSlotModal(c, i + 1))));
+    lastProfileData = data;
+    const ownProfile = !!myName && data.user.name === myName;
+    $('#slotCards').replaceChildren(...data.cardSlots.map((card, i) =>
+        (card && card.name) ? cardNode(card, true, c => openCardSlotModal(c, i + 1))
+        : ownProfile ? emptyCardSlotNode() : cardNode(null)
+    ));
     renderGearSlots(data);
     if (data.user.isAdmin) $('#adminLink').style.display = '';
     if (isInitialOwnProfile && !data.user.canPartyQuest)
@@ -2562,7 +2683,7 @@ function closeEnhanceModal() {
     enhanceState.preview = null;
     enhanceState.busy = false;
     enhanceState.selectedProtectLevel = 'auto';
-    loadInventory('equipment').catch(() => {});
+    if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
 }
 
 function buildCombineStage() {

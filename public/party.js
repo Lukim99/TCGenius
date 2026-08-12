@@ -391,6 +391,146 @@
         } catch (e) { toast(e.message); }
     }
 
+    // ====== 전투 BGM ======
+    const bgm = new Audio('/rpg-ui?file=' + encodeURIComponent('boss fight.mp3'));
+    bgm.loop = true;
+    bgm.volume = 0.18;
+    bgm.preload = 'none';
+    let bgmWanted = false;
+    function syncBgm(snap) {
+        const want = !!(snap && snap.state === 'inProgress');
+        if (want === bgmWanted && !(want && bgm.paused)) return;
+        bgmWanted = want;
+        if (want) bgm.play().catch(() => {});
+        else { bgm.pause(); try { bgm.currentTime = 0; } catch (_) {} }
+    }
+    // 자동재생 차단(새로고침 재접속 등) 대비 — 첫 상호작용에서 재시도
+    for (const evt of ['pointerdown', 'keydown']) {
+        document.addEventListener(evt, () => { if (bgmWanted && bgm.paused) bgm.play().catch(() => {}); }, true);
+    }
+
+    // ====== 키 바인딩 ======
+    const KEYBIND_DEFAULTS = {
+        attack: 'Space',
+        skills: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'],
+        potions: ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT']
+    };
+    let keybinds = loadKeybinds();
+
+    function loadKeybinds() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('pqKeybinds') || 'null');
+            if (raw && Array.isArray(raw.skills) && Array.isArray(raw.potions)) {
+                return {
+                    attack: typeof raw.attack === 'string' || raw.attack === null ? raw.attack : KEYBIND_DEFAULTS.attack,
+                    skills: KEYBIND_DEFAULTS.skills.map((d, i) => raw.skills[i] === null || typeof raw.skills[i] === 'string' ? raw.skills[i] : d),
+                    potions: KEYBIND_DEFAULTS.potions.map((d, i) => raw.potions[i] === null || typeof raw.potions[i] === 'string' ? raw.potions[i] : d)
+                };
+            }
+        } catch (_) {}
+        return JSON.parse(JSON.stringify(KEYBIND_DEFAULTS));
+    }
+    function saveKeybinds() { try { localStorage.setItem('pqKeybinds', JSON.stringify(keybinds)); } catch (_) {} }
+
+    function keyLabel(code) {
+        if (!code) return '없음';
+        if (code.startsWith('Digit')) return code.slice(5);
+        if (code.startsWith('Key')) return code.slice(3);
+        if (code.startsWith('Numpad')) return 'Num' + code.slice(6);
+        if (code.startsWith('Arrow')) return { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' }[code] || code;
+        const map = { Space: 'Space', ShiftLeft: 'LShift', ShiftRight: 'RShift', ControlLeft: 'LCtrl', ControlRight: 'RCtrl', AltLeft: 'LAlt', AltRight: 'RAlt', Backquote: '`', Minus: '-', Equal: '=', Tab: 'Tab', CapsLock: 'Caps', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\', BracketLeft: '[', BracketRight: ']' };
+        return map[code] || code;
+    }
+
+    function updateAttackKeyHint() {
+        const node = document.getElementById('pqAttackKey');
+        if (node) node.textContent = keybinds.attack ? keyLabel(keybinds.attack) : '';
+    }
+
+    // 전투 중 키 입력 → 해당 슬롯 버튼 클릭 (버튼의 disabled/쿨다운 로직을 그대로 탄다)
+    document.addEventListener('keydown', e => {
+        if (e.repeat) return;
+        if (!currentRoom || currentRoom.state !== 'inProgress') return;
+        const play = document.querySelector('.pq-screen[data-screen="play"]');
+        if (!play || !play.classList.contains('active')) return;
+        const tag = (document.activeElement && document.activeElement.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (document.querySelector('.pq-modal-bg.active')) return;
+        const intro = document.getElementById('pqIntro');
+        if (intro && intro.classList.contains('active')) return;
+        let btn = null;
+        if (keybinds.attack && e.code === keybinds.attack) btn = document.getElementById('pqAttackBtn');
+        else {
+            const si = e.code ? keybinds.skills.indexOf(e.code) : -1;
+            if (si >= 0) btn = document.querySelectorAll('#pqSkillBar .pq-skill-btn')[si];
+            else {
+                const pi = e.code ? keybinds.potions.indexOf(e.code) : -1;
+                if (pi >= 0) btn = document.querySelectorAll('#pqPotionBar .pq-skill-btn')[pi];
+            }
+        }
+        if (!btn) return;
+        e.preventDefault();
+        const ae = document.activeElement;
+        if (ae && ae.tagName === 'BUTTON') ae.blur(); // Space 네이티브 재활성화 방지
+        if (!btn.disabled) btn.click();
+    });
+
+    // ====== 단축키 설정 모달 (로비) ======
+    let kbCapture = null; // { set: fn, node: 버튼 }
+
+    function keybindRows() {
+        const rows = [{ label: '공격', get: () => keybinds.attack, set: v => { keybinds.attack = v; } }];
+        keybinds.skills.forEach((_, i) => rows.push({ label: '스킬 ' + (i + 1), get: () => keybinds.skills[i], set: v => { keybinds.skills[i] = v; } }));
+        keybinds.potions.forEach((_, i) => rows.push({ label: '물약 ' + (i + 1), get: () => keybinds.potions[i], set: v => { keybinds.potions[i] = v; } }));
+        return rows;
+    }
+
+    function unbindCode(code) {
+        if (!code) return;
+        if (keybinds.attack === code) keybinds.attack = null;
+        keybinds.skills = keybinds.skills.map(c => c === code ? null : c);
+        keybinds.potions = keybinds.potions.map(c => c === code ? null : c);
+    }
+
+    function renderKeybindList() {
+        const root = $('#pqKeybindList');
+        if (!root) return;
+        root.replaceChildren();
+        for (const row of keybindRows()) {
+            const code = row.get();
+            const kb = el('button', { type: 'button', class: 'kb' + (code ? '' : ' empty') }, keyLabel(code));
+            kb.addEventListener('click', () => startKeyCapture(row, kb));
+            root.append(el('div', { class: 'pq-keybind-row' }, el('span', null, row.label), kb));
+        }
+    }
+
+    function startKeyCapture(row, node) {
+        stopKeyCapture();
+        kbCapture = { row, node };
+        node.classList.add('listening');
+        node.textContent = '키 입력...';
+    }
+    function stopKeyCapture() {
+        if (kbCapture && kbCapture.node) kbCapture.node.classList.remove('listening');
+        kbCapture = null;
+    }
+
+    // 캡처 단계 keydown — 전투 핸들러보다 먼저(capture) 가로챈다
+    document.addEventListener('keydown', e => {
+        if (!kbCapture) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const { row } = kbCapture;
+        if (e.code === 'Escape') { stopKeyCapture(); renderKeybindList(); return; }
+        if (e.code === 'Backspace' || e.code === 'Delete') row.set(null);
+        else { unbindCode(e.code); row.set(e.code); }
+        saveKeybinds();
+        stopKeyCapture();
+        renderKeybindList();
+        updateAttackKeyHint();
+        skillBarSig = ''; potionBarSig = ''; // 다음 렌더에서 키 힌트 갱신
+    }, true);
+
     // ====== 전투 시작 연출 ======
     // 대기방→전투 전환에서만 발동 (전투 중 새로고침/재접속은 제외).
     // 연출 중에는 오버레이가 입력을 막고, 서버도 introUntil까지 전투를 동결한다 (partyquest.js INTRO_GRACE_MS와 동기).
@@ -439,6 +579,7 @@
         currentRoom = snap;
         localBuffTickAt = Date.now();
         maybePlayIntro(snap);
+        syncBgm(snap);
         $('#pqRoomQuestName').textContent = snap.questName || '';
         renderQuestInfo(snap);
         renderMembers(snap);
@@ -1141,7 +1282,8 @@
         }
         const r = myMember && myMember.runtime;
         const cdRemain = r && r.potionCdRemain ? r.potionCdRemain : 0;
-        for (const p of list) {
+        list.forEach((p, i) => {
+            const keyCode = keybinds.potions[i];
             const btn = el('button', {
                 class: 'pq-skill-btn',
                 'data-kind': 'potion',
@@ -1153,12 +1295,13 @@
                     try { await api('/api/party/use-potion', { method: 'POST', body: JSON.stringify({ name: p.name }) }); } catch (e) { toast(e.message); }
                 }
             },
+                keyCode ? el('span', { class: 'key' }, keyLabel(keyCode)) : null,
                 el('div', null, p.name),
                 el('div', { class: 'mp' }, '× ' + p.count),
                 el('div', { class: 'cd', style: cdRemain > 0 ? '' : 'display:none' }, cdRemain > 0 ? cdRemain.toFixed(1) : '')
             );
             bar.append(btn);
-        }
+        });
     }
 
     function renderSkillBar(snap) {
@@ -1183,14 +1326,15 @@
         bar.replaceChildren();
         const cooldowns = (myMember.runtime && myMember.runtime.cooldowns) || {};
         const acd = (myMember.runtime && myMember.runtime.actionCdRemain) || 0;
-        for (const skillName of myMember.skills) {
+        myMember.skills.forEach((skillName, i) => {
             const sd = skillDefs[skillName] || {};
             const remain = cooldowns[skillName] || 0;
             const isPassive = sd.type === 'passive';
             const charge = Number(myMember.runtime && myMember.runtime.sivalonCharge || 0);
             const needCharge = skillName === '시벌론' && charge < 5;
             const blocked = isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge;
-            const overlay = remain > 0 ? remain.toFixed(1) : (needCharge ? '⚡ ' + charge + '/5' : (acd > 0 && !isPassive ? acd.toFixed(1) : null));
+            const overlay = remain > 0 ? remain.toFixed(1) : (needCharge ? '충전 ' + charge + '/5' : (acd > 0 && !isPassive ? acd.toFixed(1) : null));
+            const keyCode = isPassive ? null : keybinds.skills[i];
             const btn = el('button', {
                 class: 'pq-skill-btn',
                 'data-kind': 'skill',
@@ -1199,12 +1343,13 @@
                 disabled: blocked ? true : false,
                 onClick: () => useSkillFlow(skillName, sd)
             },
+                keyCode ? el('span', { class: 'key' }, keyLabel(keyCode)) : null,
                 el('div', null, skillName),
                 isPassive ? el('div', { class: 'mp' }, '패시브') : (sd.mp ? el('div', { class: 'mp' }, 'MP ' + sd.mp) : null),
                 el('div', { class: 'cd', style: overlay ? '' : 'display:none' }, overlay || '')
             );
             bar.append(btn);
-        }
+        });
     }
 
     // ====== 공대장 지원군 스킬 ======
@@ -1506,6 +1651,7 @@
         closeStream();
         stopLocalCdTimer();
         hideBattleIntro();
+        syncBgm(null);
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
         skillBarSig = '';
@@ -1533,6 +1679,20 @@
     }
     $('#pqTabChat').onclick = () => showGameTab('chat');
     $('#pqTabLog').onclick = () => showGameTab('log');
+
+    // 단축키 설정 모달
+    if ($('#pqKeybindOpen')) {
+        $('#pqKeybindOpen').onclick = () => { renderKeybindList(); $('#pqKeybindBg').classList.add('active'); };
+        $('#pqKeybindClose').onclick = () => { stopKeyCapture(); $('#pqKeybindBg').classList.remove('active'); };
+        $('#pqKeybindReset').onclick = () => {
+            keybinds = JSON.parse(JSON.stringify(KEYBIND_DEFAULTS));
+            saveKeybinds();
+            renderKeybindList();
+            updateAttackKeyHint();
+            skillBarSig = ''; potionBarSig = '';
+        };
+    }
+    updateAttackKeyHint();
     // 기본은 접힌 상태(최근 몇 줄만 반투명 표시) — 일러스트를 가리지 않게. 클릭하면 펼침.
     const gameChat = $('#pqGameChat');
     if (gameChat) {
