@@ -1935,12 +1935,9 @@ function getHFieldSkills(user, mainCard) {
 
 function getHFieldCharacterSprite(mainCard) {
     if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent('필드/hfield-hunter.png');
-    const cardType = mainCard.type == '전직' ? '전직' : '일반';
-    const skin = String(mainCard.skin || '기본').trim() || '기본';
-    const relative = path.join('필드', '캐릭터', mainCard.name, cardType + '__' + skin + '.png');
+    const relative = path.join('필드', '캐릭터', mainCard.name + '.png');
     const fullPath = path.join(RPG_UI_PATH, relative);
-    const fallback = path.join('필드', '캐릭터', mainCard.name, cardType + '__기본.png');
-    const selected = fs.existsSync(fullPath) ? relative : fs.existsSync(path.join(RPG_UI_PATH, fallback)) ? fallback : '필드/hfield-hunter.png';
+    const selected = fs.existsSync(fullPath) ? relative : '필드/hfield-hunter.png';
     return '/rpg-ui?file=' + encodeURIComponent(selected.replace(/\\/g, '/'));
 }
 

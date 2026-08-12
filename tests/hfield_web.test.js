@@ -66,12 +66,13 @@ pngs.forEach(file => {
 });
 
 const spriteRoot = path.join(root, 'DB', 'RPGenius', 'ui', '필드', '캐릭터');
-const sprites = fs.readdirSync(spriteRoot, { recursive: true }).filter(file => String(file).endsWith('.png'));
-assert.strictEqual(sprites.length, 74, '현재 카드의 기본/전직/스킨 외형 74개가 모두 필요합니다.');
+const sprites = fs.readdirSync(spriteRoot).filter(file => String(file).endsWith('.png'));
+assert.strictEqual(sprites.length, 14, 'H필드 전용 기본 캐릭터 14개가 모두 필요합니다.');
 sprites.forEach(file => {
     const buffer = fs.readFileSync(path.join(spriteRoot, file));
     assert.strictEqual(buffer[25], 6, file + ' 스프라이트는 RGBA PNG여야 합니다.');
 });
+assert.ok(server.includes("path.join('필드', '캐릭터', mainCard.name + '.png')") && !server.includes("cardType + '__' + skin + '.png'"), 'H필드 캐릭터는 스킨과 전직 여부를 무시하고 캐릭터명으로만 선택해야 합니다.');
 
 const rpg = read('rpgenius.js');
 assert.ok(rpg.includes('const HELL_INVITATION_COST = 30;'));
