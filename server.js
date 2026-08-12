@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const partyquest = require('./partyquest.js');
+partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
@@ -5922,44 +5923,46 @@ function renderPartyApp(sess) {
     </section>
 
     <section class="pq-screen" data-screen="play">
-      <div id="pqPhaseTop" class="pq-bar" style="margin-top:-2px">
-        <div style="font-size:11px;color:#94a3b8;letter-spacing:.06em;font-weight:800;text-transform:uppercase" id="pqPhaseLabel">PHASE</div>
-        <div style="color:#a5b4fc;font-weight:800;font-size:13px" id="pqPhaseName">-</div>
+      <div class="pq-game-top">
+        <button class="pq-game-leave" id="pqPlayLeave" type="button">← 나가기</button>
+        <div class="pq-game-phase"><span id="pqPhaseLabel">PHASE</span><b id="pqPhaseName">-</b></div>
         <div class="pq-enrage" style="display:none" id="pqEnrage"></div>
       </div>
-      <div class="pq-combat-hud">
-        <div id="pqPlayMembers"></div>
-      </div>
-      <div id="pqPhaseStage"></div>
-      <div id="pqActionRow">
-        <div class="pq-panel" id="pqSupportPanel" style="display:none;padding:10px;gap:8px">
-          <div class="pq-section-title" style="margin:0;display:flex;justify-content:space-between;align-items:center">
-            <span>지원군 스킬</span><span id="pqSupportGaugeVal" style="color:#fbbf24;font-weight:800">0%</span>
+      <div class="pq-game-stagewrap">
+        <div id="pqPhaseStage" class="pq-game-stage"></div>
+        <div class="pq-game-chat" id="pqGameChat">
+          <div class="tabs">
+            <button type="button" class="on" id="pqTabChat">채팅</button>
+            <button type="button" id="pqTabLog">로그</button>
+            <button type="button" id="pqChatCollapse">접기</button>
           </div>
-          <div class="pq-prog gauge"><div id="pqSupportGaugeFill" class="fill" style="width:0%"></div></div>
-          <div id="pqSupportSkills" class="pq-skill-bar"></div>
+          <div id="pqPlayChat" class="pq-chat"></div>
+          <div id="pqCombatLog" class="pq-combat-log" style="display:none"></div>
+          <form id="pqPlayChatForm" class="pq-chat-form">
+            <input id="pqPlayChatInput" class="pq-input" placeholder="메시지..." autocomplete="off" maxlength="500">
+            <button type="submit" class="pq-btn primary">전송</button>
+          </form>
         </div>
-        <div class="pq-panel" id="pqSkillPanel" style="padding:10px;gap:8px">
-          <div class="pq-section-title" style="margin:0">내 스킬</div>
-          <div id="pqSkillBar" class="pq-skill-bar"></div>
+      </div>
+      <div id="pqPlayMembers" class="pq-game-party"></div>
+      <div class="pq-game-actions" id="pqActionRow">
+        <div class="pq-game-bars">
+          <div id="pqSupportPanel" style="display:none">
+            <div class="sup-head">
+              <span>지원군</span>
+              <div class="pq-prog gauge"><div id="pqSupportGaugeFill" class="fill" style="width:0%"></div></div>
+              <span id="pqSupportGaugeVal">0%</span>
+            </div>
+            <div id="pqSupportSkills" class="pq-skill-strip"></div>
+          </div>
+          <div id="pqSkillBar" class="pq-skill-strip"></div>
+          <div id="pqPotionBar" class="pq-skill-strip potion"></div>
           <div id="pqSealOverlay" class="pq-seal-overlay" style="display:none"></div>
         </div>
-      </div>
-      <div class="pq-panel" style="padding:10px;gap:8px">
-        <div class="pq-section-title" style="margin:0">휴대 물약</div>
-        <div id="pqPotionBar" class="pq-skill-bar"></div>
-      </div>
-      <div class="pq-panel" id="pqPlayChatPanel" style="padding:10px;gap:8px">
-        <div class="pq-section-title" style="margin:0">채팅</div>
-        <div id="pqPlayChat" class="pq-chat"></div>
-        <form id="pqPlayChatForm" class="pq-chat-form">
-          <input id="pqPlayChatInput" class="pq-input" placeholder="메시지..." autocomplete="off" maxlength="500">
-          <button type="submit" class="pq-btn primary" style="height:38px">전송</button>
-        </form>
-      </div>
-      <div id="pqCombatLog" class="pq-combat-log"></div>
-      <div class="pq-actions">
-        <button class="pq-btn danger" id="pqPlayLeave">파티 나가기</button>
+        <div class="pq-game-attack">
+          <button id="pqAttackBtn" class="pq-attack-btn" type="button" disabled>⚔ 공격</button>
+          <div id="pqAttackOrder" class="pq-attack-order"></div>
+        </div>
       </div>
     </section>
 

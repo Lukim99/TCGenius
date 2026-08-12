@@ -1,4 +1,5 @@
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
+@import url("https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap");
 :root{
   --bg:#101216;
   --panel:#181b21;
@@ -18,7 +19,7 @@
   --radius-s:6px;
   --radius:10px;
 }
-:root{color-scheme:dark;--frame-w:440px;--frame-h:900px}
+:root{color-scheme:dark;--frame-w:440px;--frame-h:900px;--font-game:'Black Han Sans',Pretendard,sans-serif}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%;overflow:hidden}
 body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:grid;place-items:center}
@@ -96,7 +97,7 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-quest-card{flex:1;border-radius:var(--radius-s);overflow:hidden;border:1px solid var(--border);background:#0b0d12;cursor:default;user-select:none}
 .pq-quest-card-img{width:100%;height:140px;background:#0a0010;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
 .pq-quest-card-img img{width:100%;height:100%;object-fit:contain;object-position:center bottom;filter:drop-shadow(0 0 14px rgba(168,85,247,.3))}
-.pq-quest-card-img .pq-quest-no-img{font-size:48px;opacity:.3}
+.pq-quest-card-img .pq-quest-no-img{font-size:12px;letter-spacing:.24em;color:var(--text-3);font-weight:700}
 .pq-quest-card-body{padding:10px 12px;display:flex;flex-direction:column;gap:4px}
 .pq-quest-card-name{font-size:15px;font-weight:700;color:var(--text);letter-spacing:.02em}
 .pq-quest-card-meta{display:flex;gap:8px;flex-wrap:wrap}
@@ -120,26 +121,19 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-combat-log .ln.damage{color:#f0b3ae}
 .pq-combat-log .ln.buff{color:var(--text)}
 /* 전투 화면 */
-.pq-boss{display:flex;flex-direction:column;gap:8px;padding:14px;background:linear-gradient(180deg,rgba(127,29,29,.35),var(--panel-2));border:1px solid rgba(216,76,65,.35);border-radius:var(--radius)}
 .pq-boss-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.pq-boss-name{font-weight:700;font-size:16px;color:#f0b3ae;letter-spacing:.02em}
+.pq-boss-name{font-weight:700;font-size:16px;color:#f0b3ae;letter-spacing:.02em;text-shadow:0 1px 4px rgba(0,0,0,.9)}
 .pq-prog{position:relative;height:14px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid var(--border)}
 .pq-prog .fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:999px;transition:width .15s linear}
 .pq-prog.hp .fill{background:linear-gradient(90deg,#c23e34,#f97316)}
-.pq-prog.boss-hp{height:20px;border:1px solid rgba(216,76,65,.5);box-shadow:0 0 10px rgba(220,38,38,.3)}
-.pq-prog.boss-hp .fill{background:linear-gradient(90deg,#7f1d1d,#c23e34,#f97316);box-shadow:inset 0 1px 0 var(--border-strong)}
-.pq-boss-illust-wrap{position:relative;width:100%;height:220px;border-radius:var(--radius-s);overflow:hidden;background:linear-gradient(180deg,rgba(30,0,40,.6),rgba(10,0,20,.85));border:1px solid rgba(168,85,247,.2)}
-.pq-boss-illust{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom;user-select:none;filter:drop-shadow(0 0 18px rgba(168,85,247,.35))}
-.pq-boss-illust-wrap::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 100%,rgba(232,176,75,.12),transparent 70%);pointer-events:none;z-index:1}
-.pq-boss-illust-wrap::after{content:'';position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(0deg,rgba(10,0,20,.8),transparent);pointer-events:none;z-index:1}
 .pq-prog.mp .fill{background:linear-gradient(90deg,#0ea5e9,var(--accent))}
 .pq-prog.gauge{height:6px}
 .pq-prog.gauge .fill{background:linear-gradient(90deg,#f0cd87,var(--accent))}
 .pq-prog.shield .fill{background:linear-gradient(90deg,#22d3ee,#67e8f9)}
-.pq-mob-stage{position:relative;display:flex;flex-direction:column;gap:10px}
-.pq-mob-counter{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px;background:radial-gradient(circle at 50% 0%,rgba(124,58,237,.25),var(--panel-2));border:1px solid var(--border);border-radius:var(--radius)}
-.pq-dmg-pop{position:absolute;left:50%;top:38%;transform:translate(-50%,0);pointer-events:none;font-size:32px;font-weight:700;color:#fde047;text-shadow:0 2px 10px rgba(0,0,0,.85);letter-spacing:.02em;animation:pqDmgPop 950ms cubic-bezier(.22,.61,.36,1) forwards;white-space:nowrap;z-index:5}
+.pq-dmg-pop{position:absolute;left:50%;top:38%;transform:translate(-50%,0);pointer-events:none;font-family:var(--font-game);font-weight:400;font-size:32px;color:#fde047;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9);letter-spacing:.02em;animation:pqDmgPop 950ms cubic-bezier(.22,.61,.36,1) forwards;white-space:nowrap;z-index:5}
+.pq-dmg-pop .by,.pq-dmg-pop .sub{font-family:Pretendard,sans-serif}
 .pq-dmg-pop.crit{color:var(--bad);font-size:42px;text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 22px rgba(220,38,38,.75)}
+.pq-dmg-pop.crit::before{content:'CRITICAL';display:block;text-align:center;font-family:Pretendard,sans-serif;font-weight:700;font-size:10px;letter-spacing:.3em;color:#fca5a5;margin-bottom:2px;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 .pq-dmg-pop.fixed{color:#67e8f9;text-shadow:0 2px 12px rgba(0,0,0,.95),0 0 22px rgba(6,182,212,.75)}
 .pq-dmg-pop.other{font-size:22px;color:var(--text-2);opacity:.85}
 .pq-dmg-pop .by{display:block;font-size:11px;color:var(--text-2);font-weight:700;letter-spacing:.04em;margin-bottom:2px;text-shadow:none}
@@ -148,44 +142,26 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-dmg-pop .sub.fixed-label{display:inline-block;color:var(--text-2);border:1px solid rgba(103,232,249,.45);background:rgba(8,145,178,.18);border-radius:999px;padding:1px 7px}
 @keyframes pqDmgPop{0%{transform:translate(-50%,10px) scale(.6);opacity:0}15%{transform:translate(-50%,-12px) scale(1.2);opacity:1}40%{transform:translate(-50%,-32px) scale(1);opacity:1}100%{transform:translate(-50%,-90px) scale(.95);opacity:0}}
 .pq-attack-btn{position:relative}
-.pq-attack-btn::after{content:'';position:absolute;inset:0;border-radius:var(--radius);background:radial-gradient(circle,rgba(255,255,255,.35),transparent 60%);opacity:0;transition:opacity .15s}
+.pq-attack-btn::after{content:'';position:absolute;inset:0;background:radial-gradient(circle,rgba(255,255,255,.35),transparent 60%);opacity:0;transition:opacity .15s}
 .pq-attack-btn.flash::after{opacity:1;transition:opacity 0s}
-.pq-mob-counter .n{font-size:34px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:.02em}
-.pq-mob-counter .lbl{font-size:11px;color:var(--text-2);letter-spacing:.1em;text-transform:uppercase;font-weight:700}
-.pq-attack-btn{width:100%;height:64px;border:0;border-radius:var(--radius);background:linear-gradient(135deg,#c23e34,#7c2d12);color:#fff;font-weight:700;font-size:18px;letter-spacing:.04em;cursor:pointer;box-shadow:0 14px 30px rgba(220,38,38,.4);transition:transform .08s}
+.pq-attack-btn{width:100%;height:100%;border:0;border-radius:0;clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);background:linear-gradient(165deg,#e0655c,#a3261d 55%,#6d1710);color:#fff;font-family:var(--font-game);font-weight:400;font-size:19px;letter-spacing:.14em;text-shadow:0 2px 6px rgba(0,0,0,.6);cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 -12px 24px rgba(0,0,0,.35);transition:transform .08s}
 .pq-attack-btn:active{transform:scale(.97)}
-.pq-attack-btn:disabled{opacity:.5;cursor:not-allowed}
-.pq-party-row{display:flex;flex-direction:column;gap:6px;padding:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s)}
-.pq-party-row.dead{opacity:.45;filter:grayscale(.7)}
-.pq-party-row.taunt{border-color:rgba(232,176,75,.55)}
-.pq-party-row .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
-.pq-party-row .ph .nm{font-weight:700;color:var(--text)}
-.pq-party-row .ph .pos{font-size:11px;color:var(--text-2);font-weight:700}
-.pq-party-row .vals{font-size:11px;color:var(--text-2);display:flex;gap:8px;font-variant-numeric:tabular-nums}
-.pq-combat-hud{position:sticky;top:0;z-index:30;padding:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 10px 24px rgba(0,0,0,.28)}
-.pq-party-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
-.pq-party-mini{padding:6px;gap:4px;border-radius:var(--radius-s);min-width:0}
-.pq-party-mini .ph{font-size:clamp(7px,2.2vw,10px);gap:3px}
-.pq-party-mini .ph .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pq-party-mini .ph .pos{font-size:clamp(7px,2vw,10px);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pq-party-mini .vals{font-size:9px;gap:3px;justify-content:space-between}
-.pq-my-hp{margin-top:7px;padding:9px;background:var(--panel-2);border:1px solid rgba(127,201,138,.26);border-radius:var(--radius-s)}
-.pq-my-hp .top{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:700;color:var(--text)}
-.pq-my-hp .vals{margin-top:5px;font-size:11px;color:var(--text-2);display:flex;justify-content:space-between}
-.pq-my-hp .pq-prog.mp{margin-top:5px}
-.pq-my-buffs{margin-top:6px}
+.pq-attack-btn:disabled{opacity:.55;filter:grayscale(.45);cursor:not-allowed}
 .pq-target-hp{min-width:126px;text-align:right}
 .pq-target-hp .txt{color:var(--text);font-size:12px;font-weight:700}
 .pq-target-hp .pct{color:var(--text-2);font-size:10px;margin-top:2px}
 .pq-target-hp .pq-prog{margin-top:5px;height:6px}
 .pq-buff-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
 .pq-buff-chip{display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background:rgba(232,176,75,.16);border:1px solid rgba(232,176,75,.35);color:var(--text);font-size:10px;font-weight:700}
-.pq-skill-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:6px}
-.pq-skill-btn{position:relative;padding:8px 8px;border-radius:var(--radius-s);border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-weight:700;font-size:11px;cursor:pointer;text-align:center;line-height:1.25;min-height:54px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;transition:border-color .12s}
+.pq-skill-strip{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px;scrollbar-width:thin}
+.pq-skill-strip::-webkit-scrollbar{height:5px}.pq-skill-strip::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:3px}
+.pq-skill-strip .pq-skill-btn{flex:0 0 84px;min-height:50px}
+.pq-skill-strip.potion .pq-skill-btn{flex-basis:76px;min-height:42px}
+.pq-skill-btn{position:relative;padding:6px 8px;border-radius:0;clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px);border:1px solid var(--border-strong);background:linear-gradient(180deg,#222733,#161a21);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);color:var(--text);font-weight:700;font-size:11px;cursor:pointer;text-align:center;line-height:1.25;min-height:54px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;transition:border-color .12s}
 .pq-skill-btn:hover{border-color:var(--accent)}
 .pq-skill-btn:disabled{opacity:.55;cursor:not-allowed}
 .pq-skill-btn .mp{font-size:10px;color:var(--text-2);font-weight:700}
-.pq-skill-btn .cd{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);border-radius:var(--radius-s);color:#f0cd87;font-weight:700;font-size:14px;pointer-events:none}
+.pq-skill-btn .cd{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.62);color:#fde047;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;pointer-events:none}
 .pq-target-list{display:flex;flex-direction:column;gap:6px}
 .pq-target-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);cursor:pointer}
 .pq-target-row:hover{border-color:var(--accent)}
@@ -195,9 +171,9 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-choice .ttl{font-weight:700;color:var(--text);font-size:14px}
 .pq-choice .desc{font-size:12px;color:var(--text-2);line-height:1.4}
 .pq-result{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center}
-.pq-result .big{font-size:24px;font-weight:700;letter-spacing:.04em}
-.pq-result.cleared .big{color:#bbf7d0}
-.pq-result.failed .big{color:#f0b3ae}
+.pq-result .big{font-family:var(--font-game);font-weight:400;font-size:36px;letter-spacing:.14em}
+.pq-result.cleared .big{color:#f5d78a;text-shadow:0 0 26px rgba(232,176,75,.45)}
+.pq-result.failed .big{color:#e0655c;text-shadow:0 0 22px rgba(224,101,92,.35)}
 .pq-reward-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto}
 .pq-reward-row{display:grid;grid-template-columns:58px 1fr;gap:10px;align-items:center;padding:9px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s)}
 .pq-reward-thumb{position:relative;width:54px;height:54px;display:grid;place-items:center}
@@ -233,53 +209,141 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-back:hover{color:var(--text)}
 .pq-bar{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .pq-actions{display:flex;gap:8px;flex-wrap:wrap}
-/* ===== 전투 화면 시인성 + PC 와이드 레이아웃 ===== */
-#pqPlayMembers{display:flex;flex-direction:column;gap:6px}
-#pqActionRow{display:flex;flex-direction:column;gap:12px}
 /* 광폭화 타이머 */
-.pq-enrage{margin-left:auto;color:var(--bad);font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap;text-shadow:0 0 12px rgba(248,113,113,.45)}
-.pq-enrage.urgent{color:#f0b3ae;animation:pqEnragePulse 1s ease-in-out infinite}
+.pq-enrage{margin-left:auto;padding:3px 10px;border:1px solid rgba(224,101,92,.5);border-radius:4px;background:rgba(127,29,29,.35);color:var(--bad);font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pq-enrage.urgent{color:#fff;background:rgba(127,29,29,.75);animation:pqEnragePulse 1s ease-in-out infinite}
 @keyframes pqEnragePulse{0%,100%{opacity:1}50%{opacity:.45}}
-/* 보스 HP바 — 수치는 바 안 중앙, 남은 줄 수는 우측 끝 */
-.pq-prog.pq-boss-hpbar{height:24px}
+/* 보스 HP바 — 각진 프레임 + 10칸 세그먼트, 수치는 바 안 중앙, 남은 줄 수는 우측 끝 */
+.pq-prog.pq-boss-hpbar{height:24px;border-radius:4px;border:1px solid rgba(232,176,75,.45);background:rgba(0,0,0,.72);box-shadow:inset 0 2px 6px rgba(0,0,0,.7)}
+.pq-prog.pq-boss-hpbar .fill{border-radius:3px;background:linear-gradient(180deg,#f0655c,#a3261d 60%,#7f1d1d);box-shadow:inset 0 1px 0 rgba(255,255,255,.28)}
+.pq-prog.pq-boss-hpbar::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),rgba(0,0,0,.5) calc(10% - 1px) 10%);pointer-events:none}
 .pq-hp-text{position:absolute;inset:0;display:grid;place-items:center;z-index:2;pointer-events:none;font-size:11.5px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
 .pq-hp-lines{position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:2;pointer-events:none;font-size:11.5px;font-weight:700;color:#fde047;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.95)}
 /* 보호막 게이지 */
 .pq-prog.shield{height:8px;border-color:rgba(226,232,240,.45)}
 .pq-prog.shield .fill{background:linear-gradient(90deg,#fff,var(--text-2));box-shadow:0 0 8px rgba(255,255,255,.45)}
-/* 패턴 문구 바 */
-.pq-boss-pattern{width:100%;padding:7px 10px;border-radius:var(--radius-s);background:rgba(0,0,0,.72);border:1px solid rgba(232,176,75,.35);color:#fde047;font-size:12.5px;font-weight:700;letter-spacing:.02em;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.9)}
-/* 봉인 오버레이 */
-#pqSkillPanel{position:relative}
-.pq-seal-overlay{position:absolute;inset:0;z-index:5;display:grid;place-items:center;border-radius:var(--radius);background:var(--panel-2);color:#ddd6fe;font-size:15px;font-weight:700;letter-spacing:.04em;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none}
+/* 패턴 예고 — 경고 스트라이프 */
+.pq-boss-pattern{width:100%;padding:7px 10px;border-radius:4px;border:1px solid rgba(251,191,36,.5);background:linear-gradient(rgba(10,8,4,.82),rgba(10,8,4,.82)),repeating-linear-gradient(-45deg,rgba(251,191,36,.3) 0 12px,transparent 12px 24px);color:#fde047;font-size:12.5px;font-weight:700;letter-spacing:.04em;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+/* 봉인 오버레이 — 스킬/물약 스트립 전체를 덮는다 */
+.pq-seal-overlay{position:absolute;inset:0;z-index:5;display:grid;place-items:center;border-radius:var(--radius);background:rgba(20,22,27,.88);color:#ddd6fe;font-size:15px;font-weight:700;letter-spacing:.04em;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none}
 /* 투표 모달 */
 .pq-vote-timer{font-size:26px;font-weight:700;color:var(--bad);text-align:center;font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(248,113,113,.4)}
 .pq-vote-row{padding:14px 16px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border-strong);font-weight:700;font-size:14px;transition:border-color .12s,transform .12s}
 .pq-vote-row:hover{transform:translateY(-1px)}
 .pq-vote-row.mine{border-color:var(--accent);background:rgba(232,176,75,.18);box-shadow:none}
 .pq-vote-mine{margin-left:8px;color:var(--text-2);font-size:11px;font-weight:700}
-/* 파티원 미니 그리드 — 모바일 2×2 */
-.pq-party-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-/* ===== 데스크톱 와이드 (play 스크린만 재배치) ===== */
+/* ===== 게임 HUD (전투 화면) ===== */
+.frame.game .pq-header{display:none}
+.frame.game .pq-body{padding:0;overflow:hidden}
+.frame.game .pq-notice-stack{top:48px}
+.pq-screen[data-screen="play"]{flex:1;min-height:0;gap:8px;padding:10px}
+/* 상단 바 */
+.pq-game-top{flex:0 0 auto;display:flex;align-items:center;gap:10px;min-height:34px}
+.pq-game-leave{flex:0 0 auto;height:30px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--panel-2);color:var(--text-2);font-size:12px;font-weight:700;cursor:pointer}
+.pq-game-leave:hover{background:var(--panel-3);color:var(--text)}
+.pq-game-phase{display:flex;align-items:baseline;gap:8px;min-width:0}
+.pq-game-phase span{font-size:10px;color:var(--text-3);letter-spacing:.08em;font-weight:700;text-transform:uppercase}
+.pq-game-phase b{font-family:var(--font-game);font-weight:400;font-size:15px;letter-spacing:.04em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 스테이지 */
+.pq-game-stagewrap{position:relative;flex:1;min-height:0;display:flex}
+.pq-game-stage{flex:1;position:relative;min-height:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:radial-gradient(ellipse at 50% 100%,rgba(45,20,60,.55),rgba(10,8,18,.95)),#0a0812}
+.pq-game-stage::before{content:'';position:absolute;inset:6px;z-index:4;pointer-events:none;background:
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 0/16px 2px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 0/2px 16px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 100% 0/16px 2px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 100% 0/2px 16px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 100%/16px 2px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 100%/2px 16px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 100% 100%/16px 2px no-repeat,
+  linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 100% 100%/2px 16px no-repeat}
+.pq-game-stage::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;box-shadow:inset 0 0 90px rgba(0,0,0,.75)}
+.pq-stage-boss{position:absolute;inset:0}
+.pq-stage-boss::before{content:'';position:absolute;left:50%;bottom:10px;width:64%;height:38px;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(232,176,75,.16),transparent 70%);pointer-events:none}
+.pq-stage-illust{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;animation:pqIdle 4.5s ease-in-out infinite}
+.pq-stage-illust img{max-width:100%;max-height:88%;object-fit:contain;user-select:none;filter:drop-shadow(0 14px 26px rgba(0,0,0,.65))}
+.pq-stage-illust img.shake{animation:pqShake .18s linear}
+.pq-stage-boss::after{content:'';position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(0deg,rgba(10,8,18,.75),transparent);pointer-events:none}
+.pq-stage-hud{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;flex-direction:column;gap:6px;padding:10px 12px 14px;background:linear-gradient(180deg,rgba(0,0,0,.62),rgba(0,0,0,.28) 70%,transparent)}
+.pq-stage-boss.no-illust .pq-stage-hud{top:50%;transform:translateY(-50%);background:none}
+.pq-stage-hud .pq-boss-head{justify-content:center}
+.pq-stage-hud .pq-boss-name{display:flex;align-items:center;gap:10px;font-family:var(--font-game);font-weight:400;font-size:19px;color:#fff;letter-spacing:.06em}
+.pq-stage-hud .pq-boss-name::before,.pq-stage-hud .pq-boss-name::after{content:'';height:1px;width:34px;flex:0 0 auto}
+.pq-stage-hud .pq-boss-name::before{background:linear-gradient(90deg,transparent,rgba(232,176,75,.85))}
+.pq-stage-hud .pq-boss-name::after{background:linear-gradient(90deg,rgba(232,176,75,.85),transparent)}
+.pq-stage-mob{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px}
+.pq-stage-mob .lbl{font-size:11px;color:var(--text-2);letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.pq-stage-mob .n{font-family:var(--font-game);font-weight:400;font-size:44px;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.pq-stage-mob .pq-prog{width:min(80%,340px)}
+.pq-game-stage>.pq-result{position:absolute;inset:0;justify-content:center;border:0;border-radius:0;background:rgba(13,15,20,.82)}
+/* 채팅/로그 오버레이 — 기본 접힘(최근 줄만 반투명), 클릭 시 펼침 */
+.pq-game-chat{position:absolute;left:8px;bottom:8px;z-index:6;display:flex;flex-direction:column;gap:4px;width:min(64%,250px);background:transparent;border:0;border-radius:8px;padding:0;cursor:pointer;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.pq-game-chat .tabs{display:none;gap:4px}
+.pq-game-chat .tabs button{height:22px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--text-3);font-size:11px;font-weight:700;cursor:pointer}
+.pq-game-chat .tabs button.on{background:var(--panel-3);color:var(--text)}
+.pq-game-chat .tabs #pqChatCollapse{margin-left:auto}
+.pq-game-chat .pq-chat,.pq-game-chat .pq-combat-log{height:56px;background:transparent;border:0;padding:2px 4px;font-size:11.5px;pointer-events:none;scrollbar-width:none;-webkit-mask-image:linear-gradient(180deg,transparent,#000 40%);mask-image:linear-gradient(180deg,transparent,#000 40%)}
+.pq-game-chat .pq-chat-form{display:none;gap:4px}
+.pq-game-chat .pq-chat-form .pq-input{height:30px;padding:4px 8px;font-size:12px}
+.pq-game-chat .pq-chat-form .pq-btn{height:30px;padding:0 10px;font-size:12px}
+.pq-game-chat.open{width:min(78%,300px);background:rgba(10,12,16,.92);border:1px solid var(--border);padding:6px;cursor:default;text-shadow:none}
+.pq-game-chat.open .tabs{display:flex}
+.pq-game-chat.open .pq-chat,.pq-game-chat.open .pq-combat-log{height:96px;pointer-events:auto;scrollbar-width:thin;-webkit-mask-image:none;mask-image:none;font-size:12px}
+.pq-game-chat.open .pq-chat-form{display:flex}
+/* 파티원 캐릭터 카드 행 */
+.pq-game-party{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.pq-char-card{position:relative;min-width:0;display:flex;flex-direction:column;gap:3px;padding:4px;background:linear-gradient(180deg,#1c2029,#14161b);border:1px solid var(--border-strong);border-radius:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.pq-char-card.me{border-color:var(--accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),inset 0 0 12px rgba(232,176,75,.12)}
+.pq-char-card.taunt{border-color:#fbbf24;box-shadow:0 0 10px rgba(251,191,36,.25)}
+.pq-char-card.dead{opacity:.5;filter:grayscale(.85)}
+.pq-char-card .img{position:relative;width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--panel-3)}
+.pq-char-card .img img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block;user-select:none}
+.pq-char-card .img .ph{position:absolute;inset:0;display:grid;place-items:center;font-size:22px;font-weight:700;color:var(--text-3)}
+.pq-char-card .img .pos{position:absolute;top:2px;left:2px;max-width:calc(100% - 26px);padding:1px 4px;border-radius:4px;background:rgba(0,0,0,.68);color:#fde047;font-size:8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pq-char-card .img .star{position:absolute;top:2px;right:2px;padding:1px 3px;border-radius:4px;background:rgba(0,0,0,.68);color:var(--accent);font-size:8px;font-weight:700}
+.pq-char-card .img .ko{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#f0b3ae;font-size:10px;font-weight:700;letter-spacing:.06em}
+.pq-char-card .img .pq-buff-row{position:absolute;left:2px;right:2px;bottom:2px;margin:0;gap:2px;max-height:30px;overflow:hidden}
+.pq-char-card .pq-buff-chip{font-size:8px;padding:1px 4px;background:rgba(0,0,0,.66);border-color:rgba(232,176,75,.4)}
+.pq-char-card .pq-buff-chip.seal{color:#c4b5fd;border-color:rgba(196,181,253,.4)}
+.pq-char-card .nm{display:flex;align-items:center;gap:3px;min-width:0;font-size:10px;font-weight:700;color:var(--text)}
+.pq-char-card .nm .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pq-char-card .title-badge{height:12px;margin-right:0}
+.pq-char-card .pq-prog{height:5px;border-radius:3px}
+.pq-char-card .vals{display:flex;justify-content:space-between;gap:4px;font-size:8.5px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;min-width:0}
+.pq-char-card .vals span{overflow:hidden;text-overflow:ellipsis}
+/* 하단 액션 바 */
+.pq-game-actions{flex:0 0 auto;display:flex;gap:8px;align-items:stretch}
+.pq-game-bars{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;gap:6px;justify-content:flex-end}
+#pqSupportPanel{display:flex;flex-direction:column;gap:4px}
+#pqSupportPanel .sup-head{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:var(--text-2)}
+#pqSupportPanel .sup-head .pq-prog{flex:1;height:5px}
+#pqSupportPanel .sup-head #pqSupportGaugeVal{color:#fbbf24;font-variant-numeric:tabular-nums}
+.pq-game-attack{flex:0 0 96px;display:flex;flex-direction:column;gap:3px}
+.pq-game-attack .pq-attack-btn{flex:1}
+.pq-attack-order{min-height:11px;font-size:9px;color:var(--text-2);text-align:center;font-variant-numeric:tabular-nums}
+@keyframes pqIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes pqShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-6px,3px)}50%{transform:translate(5px,-2px)}75%{transform:translate(-3px,1px)}}
+/* ===== 데스크톱 와이드 ===== */
 @media (min-width:900px) and (min-height:700px){
   .frame{width:min(1040px,100vw);height:min(960px,100dvh);border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px var(--border) inset}
   .pq-screen[data-screen="lobby"],.pq-screen[data-screen="room"]{max-width:460px;width:100%;margin-inline:auto}
-  #pqPhaseTop{position:relative;min-height:26px}
-  .pq-enrage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin-left:0;font-size:19px}
-  .pq-boss-head{order:-2}
-  .pq-boss-illust-wrap{order:-1;height:320px}
+  .pq-screen[data-screen="play"]{padding:14px;gap:10px}
+  .pq-enrage{font-size:17px}
   .pq-prog.pq-boss-hpbar{height:30px}
   .pq-hp-text,.pq-hp-lines{font-size:14px}
+  .pq-stage-hud .pq-boss-name{font-size:23px}
+  .pq-stage-hud .pq-boss-name::before,.pq-stage-hud .pq-boss-name::after{width:52px}
   .pq-boss-pattern{padding:9px 12px;font-size:14px}
-  .pq-attack-btn{height:72px;font-size:20px}
-  #pqActionRow{flex-direction:row-reverse;align-items:flex-start}
-  #pqSkillPanel{flex:1;min-width:0}
-  #pqSupportPanel{flex:none;width:250px}
-  .pq-combat-hud{order:5;position:static}
-  #pqPlayMembers{flex-direction:row;align-items:stretch;gap:8px}
-  .pq-party-mini-grid{flex:1;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}
-  .pq-party-mini .ph{font-size:12px}
-  .pq-party-mini .ph .pos{font-size:11px}
-  .pq-my-hp{flex:0 0 260px;margin-top:0}
-  #pqPlayChatPanel,#pqCombatLog,.pq-screen[data-screen="play"] .pq-actions{order:6}
+  .pq-stage-hud{padding:14px 18px 18px;max-width:760px;margin-inline:auto}
+  .pq-game-chat{left:10px;bottom:10px;width:280px}
+  .pq-game-chat.open{width:340px}
+  .pq-game-chat.open .pq-chat,.pq-game-chat.open .pq-combat-log{height:120px}
+  .pq-game-party{max-width:520px;width:100%;margin-inline:auto;gap:8px}
+  .pq-char-card .nm{font-size:11px}
+  .pq-char-card .vals{font-size:9.5px}
+  .pq-char-card .img .pos{font-size:9px}
+  .pq-char-card .pq-buff-chip{font-size:9px}
+  .pq-game-actions{max-width:760px;width:100%;margin-inline:auto}
+  .pq-skill-strip .pq-skill-btn{flex-basis:92px;min-height:54px}
+  .pq-game-attack{flex-basis:120px}
+  .pq-attack-btn{font-size:22px}
 }

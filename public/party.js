@@ -154,7 +154,7 @@
 
     function updateBuffChips() {
         if (!currentRoom) return;
-        $$('.pq-party-row[data-member]').forEach(row => {
+        $$('.pq-char-card[data-member]').forEach(row => {
             const memberName = row.dataset.member || '';
             const taunted = currentRoom.tauntTarget === memberName && Number(currentRoom.tauntRemain || 0) > 0;
             row.classList.toggle('taunt', taunted);
@@ -195,7 +195,7 @@
         const sealOverlay = $('#pqSealOverlay');
         if (sealOverlay) {
             sealOverlay.style.display = seal > 0 ? '' : 'none';
-            if (seal > 0) sealOverlay.textContent = '🔒 봉인됨 ' + seal.toFixed(1) + 's';
+            if (seal > 0) sealOverlay.textContent = '봉인 ' + seal.toFixed(1) + 's';
         }
         $$('.pq-skill-btn[data-kind="skill"]').forEach(btn => {
             const skillName = btn.dataset.skill || '';
@@ -206,9 +206,9 @@
             const blocked = isPassive || dead || seal > 0 || remain > 0 || acd > 0 || needCharge;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
-            const text = seal > 0 && !isPassive ? ('🔒 ' + seal.toFixed(1))
+            const text = seal > 0 && !isPassive ? ('봉인 ' + seal.toFixed(1))
                 : (remain > 0 ? remain.toFixed(1)
-                : (needCharge ? '⚡ ' + Number(r.sivalonCharge || 0) + '/5'
+                : (needCharge ? '충전 ' + Number(r.sivalonCharge || 0) + '/5'
                 : (acd > 0 && !isPassive ? acd.toFixed(1) : '')));
             if (cd) {
                 cd.textContent = text;
@@ -219,7 +219,7 @@
             btn.disabled = dead || seal > 0 || pcd > 0;
             const cd = btn.querySelector('.cd');
             if (cd) {
-                const text = seal > 0 ? '🔒' : (pcd > 0 ? pcd.toFixed(1) : '');
+                const text = seal > 0 ? '봉인' : (pcd > 0 ? pcd.toFixed(1) : '');
                 cd.textContent = text;
                 cd.style.display = text ? '' : 'none';
             }
@@ -241,7 +241,7 @@
         const seal = Number(r.sealRemain || 0);
         const blocked = dead || currentRoom.awaitingChoices || seal > 0 || acd > 0;
         btn.disabled = blocked;
-        btn.textContent = seal > 0 ? ('🔒 봉인 ' + seal.toFixed(1) + 's') : (acd > 0 ? ('⏳ ' + acd.toFixed(1) + 's') : '⚔ 공격');
+        btn.textContent = seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (acd > 0 ? (acd.toFixed(1) + 's') : '공격');
     }
 
     function getMyActionCooldownMs() {
@@ -269,6 +269,8 @@
     function showScreen(name) {
         $$('.pq-screen[data-screen]').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
         $('#pqCreateFab').style.display = name === 'lobby' ? 'block' : 'none';
+        // 전투 화면은 스크롤 없는 게임 HUD 모드
+        $('#frame').classList.toggle('game', name === 'play');
         const titleByScreen = { lobby: '파티 퀘스트', room: '파티 준비', play: '파티 진행 중' };
         $('#pqTitle').textContent = titleByScreen[name] || '파티 퀘스트';
     }
@@ -307,8 +309,8 @@
         }
         for (const r of list) {
             const meta = el('div', { class: 'pq-room-meta' });
-            meta.append(el('span', { class: 'pq-pill' }, '👥 ' + r.memberCount + '/' + r.maxPlayers));
-            if (r.hasPassword) meta.append(el('span', { class: 'pq-pill lock' }, '🔒 비공개'));
+            meta.append(el('span', { class: 'pq-pill' }, r.memberCount + '/' + r.maxPlayers + '명'));
+            if (r.hasPassword) meta.append(el('span', { class: 'pq-pill lock' }, '비공개'));
             meta.append(el('span', { class: 'pq-pill' }, r.state === 'lobby' ? '대기 중' : '준비 중'));
             const card = el('div', { class: 'pq-room-card', onClick: () => attemptJoin(r) },
                 el('div', null,
@@ -332,7 +334,7 @@
         if (q.coverImage) {
             imgWrap.append(el('img', { src: '/rpg-ui?file=' + encodeURIComponent(q.coverImage), alt: q.name }));
         } else {
-            imgWrap.append(el('div', { class: 'pq-quest-no-img' }, '⚔'));
+            imgWrap.append(el('div', { class: 'pq-quest-no-img' }, 'NO IMAGE'));
         }
         $('#pqQuestCardName').textContent = q.name;
         const meta = $('#pqQuestCardMeta');
@@ -551,6 +553,8 @@
         $('#pqPhaseName').textContent = snap.phaseName || '-';
 
         const stage = $('#pqPhaseStage');
+        const actionRow = $('#pqActionRow');
+        if (actionRow) actionRow.style.display = (snap.state === 'cleared' || snap.state === 'failed') ? 'none' : '';
         if (snap.state === 'cleared' || snap.state === 'failed') {
             bossStageSig = '';
             updateEnrageLabel(null);
@@ -587,15 +591,15 @@
         const r = snap.result || {};
         const cls = r.cleared ? 'cleared' : 'failed';
         const wrap = el('div', { class: 'pq-panel pq-result ' + cls });
-        wrap.append(el('div', { class: 'big' }, r.cleared ? '🎉 클리어!' : '💀 실패'));
+        wrap.append(el('div', { class: 'big' }, r.cleared ? '클리어' : '실패'));
         wrap.append(el('div', { style: 'color:#cbd5e1;font-size:13px' }, r.reason || ''));
         if (r.cleared && r.rewards && r.rewards.length) {
-            wrap.append(el('button', { class: 'pq-btn primary', type: 'button', onClick: () => openRewardModal(r.rewards) }, '🎁 파티 보상 확인'));
+            wrap.append(el('button', { class: 'pq-btn primary', type: 'button', onClick: () => openRewardModal(r.rewards) }, '파티 보상 확인'));
         } else if (r.cleared) {
             wrap.append(el('div', { style: 'color:#94a3b8;font-size:12px' }, '보상 지급 중...'));
         }
         if (snap.hostName === me) {
-            const btn = el('button', { class: 'pq-btn', type: 'button', style: 'margin-top:12px' }, '🔄 다시 도전');
+            const btn = el('button', { class: 'pq-btn', type: 'button', style: 'margin-top:12px' }, '다시 도전');
             btn.addEventListener('click', async () => {
                 btn.disabled = true;
                 try {
@@ -644,7 +648,7 @@
     function openFirstClearModal(fc) {
         if (!fc) return;
         const titleEl = $('#pqFirstClearTitle');
-        if (titleEl) titleEl.textContent = '🎉 ' + (fc.questName || '') + ' 최초 클리어!';
+        if (titleEl) titleEl.textContent = (fc.questName || '') + ' 최초 클리어!';
         const root = $('#pqFirstClearList');
         root.replaceChildren();
         (fc.rewards || []).forEach(rw => {
@@ -672,25 +676,15 @@
     }
 
     function renderMobStage(snap) {
-        const wrap = el('div', { class: 'pq-mob-counter' });
+        const wrap = el('div', { id: 'pqMobStage', class: 'pq-stage-mob' });
         wrap.append(el('div', { class: 'lbl' }, '잡몹 처치'));
         wrap.append(el('div', { id: 'pqMobCount', class: 'n' }, (snap.sharedKillCount || 0).toLocaleString() + ' / ' + (snap.killTarget || 0).toLocaleString()));
-        const bar = el('div', { class: 'pq-prog gauge', style: 'width:100%' }, el('div', { id: 'pqMobBarFill', class: 'fill' }));
+        const bar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqMobBarFill', class: 'fill' }));
         wrap.append(bar);
         const pct = (snap.killTarget > 0 ? (snap.sharedKillCount / snap.killTarget) : 0) * 100;
         bar.firstChild.style.width = Math.min(100, pct) + '%';
-        const myMember = snap.members.find(m => m.name === me);
-        const r = myMember && myMember.runtime;
-        const dead = !myMember || (r && r.dead);
-        const acd = r && r.actionCdRemain ? r.actionCdRemain : 0;
-        const btn = el('button', {
-            id: 'pqAttackBtn',
-            class: 'pq-attack-btn',
-            disabled: dead || snap.awaitingChoices || acd > 0 ? true : false,
-            onClick: manualAttack
-        }, acd > 0 ? ('⏳ ' + acd.toFixed(1) + 's') : '⚔ 공격');
-        const container = el('div', { id: 'pqMobStage', class: 'pq-mob-stage' }, wrap, btn);
-        return container;
+        updateAttackBtn();
+        return wrap;
     }
 
     function updateMobCounter(total, target) {
@@ -712,6 +706,14 @@
 
     function hpPct(r) {
         return r && r.hpMax > 0 ? Math.max(0, Math.min(100, r.hp / r.hpMax * 100)) : 0;
+    }
+
+    // 좁은 카드용 수치 축약: 45200 → 4.5만
+    function fmtNum(n) {
+        n = Number(n || 0);
+        if (n >= 100000000) return (Math.round(n / 10000000) / 10) + '억';
+        if (n >= 10000) return (Math.round(n / 1000) / 10) + '만';
+        return n.toLocaleString();
     }
 
     function makeHpBar(r, className) {
@@ -758,10 +760,10 @@
         const pop = el('div', { class: cls });
         if (!isMe) pop.append(el('span', { class: 'by' }, payload.by));
         const main = document.createElement('span');
-        main.textContent = (payload.crit ? '✦ ' : '') + '-' + Number(payload.damage || 0).toLocaleString();
+        main.textContent = '-' + Number(payload.damage || 0).toLocaleString();
         pop.append(main);
         if (payload.comboTotal > 1) pop.append(el('span', { class: 'sub combo-label' }, payload.comboIndex + '/' + payload.comboTotal + ' HIT'));
-        if (payload.comboLastCrit) pop.append(el('span', { class: 'sub combo-label' }, '최대 연격 ✦'));
+        if (payload.comboLastCrit) pop.append(el('span', { class: 'sub combo-label' }, '최대 연격'));
         if (payload.kills > 1) pop.append(el('span', { class: 'sub' }, '×' + payload.kills.toLocaleString() + ' 처치'));
         else if (payload.skill) pop.append(el('span', { class: 'sub' }, payload.skill));
         if (hasFixed) pop.append(el('span', { class: 'sub fixed-label' }, '고정 ' + Number(payload.fixedDamage || 0).toLocaleString()));
@@ -772,6 +774,13 @@
         if (offsetY !== null) pop.style.top = offsetY + '%';
         host.append(pop);
         setTimeout(() => { if (pop.parentNode) pop.parentNode.removeChild(pop); }, 1000);
+        // 피격 셰이크 — 보스 일러스트를 잠깐 흔든다
+        const bossImg = document.getElementById('pqBossIllustImg');
+        if (bossImg) {
+            bossImg.classList.remove('shake');
+            void bossImg.offsetWidth;
+            bossImg.classList.add('shake');
+        }
         if (isMe) {
             const btn = document.getElementById('pqAttackBtn');
             if (btn) {
@@ -803,7 +812,7 @@
         if (m && m.enraged) {
             node.style.display = '';
             node.classList.add('urgent');
-            node.textContent = '💢 광폭화!';
+            node.textContent = '광폭화!';
         } else if (m && m.enrageRemain != null) {
             const s = Math.max(0, Math.round(Number(m.enrageRemain || 0)));
             node.style.display = '';
@@ -819,45 +828,35 @@
         const m = snap.monster;
         if (!m) return el('div');
         bossStageSig = bossStageSigOf(m);
-        const myMember = snap.members.find(mm => mm.name === me);
-        const r = myMember && myMember.runtime;
-        const dead = !myMember || (r && r.dead);
-        const acd = r && r.actionCdRemain ? r.actionCdRemain : 0;
         const hasIllust = !!m.image;
-        const wrap = el('div', { id: 'pqBossStage', class: 'pq-mob-stage' + (hasIllust ? ' has-illust' : '') });
-        const boss = el('div', { class: 'pq-boss' + (hasIllust ? ' boss-illust-mode' : '') });
-        boss.append(el('div', { class: 'pq-boss-head' },
+        const wrap = el('div', { id: 'pqBossStage', class: 'pq-stage-boss' + (hasIllust ? '' : ' no-illust') });
+        if (hasIllust) {
+            const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-stage-illust' });
+            illustWrap.append(el('img', { id: 'pqBossIllustImg', src: m.image, alt: m.name, draggable: 'false' }));
+            wrap.append(illustWrap);
+        }
+        const hud = el('div', { class: 'pq-stage-hud' });
+        hud.append(el('div', { class: 'pq-boss-head' },
             el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : ''))
         ));
         const shieldBar = el('div', { id: 'pqBossShieldBar', class: 'pq-prog shield', style: Number(m.shieldMax || 0) > 0 ? '' : 'display:none' }, el('div', { id: 'pqBossShieldFill', class: 'fill' }));
         shieldBar.firstChild.style.width = (Number(m.shieldMax || 0) > 0 ? (m.shield / m.shieldMax * 100) : 0) + '%';
-        boss.append(shieldBar);
+        hud.append(shieldBar);
         const linesText = bossHpLinesText(m);
-        const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' + (hasIllust ? ' boss-hp' : '') },
+        const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' },
             el('div', { id: 'pqBossHpFill', class: 'fill' }),
             el('div', { id: 'pqBossHpVal', class: 'pq-hp-text' }, bossHpText(m)),
             el('div', { id: 'pqBossHpLines', class: 'pq-hp-lines', style: linesText ? '' : 'display:none' }, linesText)
         );
         hpBar.firstChild.style.width = (m.hpMax > 0 ? (m.hp / m.hpMax * 100) : 0) + '%';
-        boss.append(hpBar);
+        hud.append(hpBar);
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
-        boss.append(gBar);
-        boss.append(el('div', { id: 'pqBossPattern', class: 'pq-boss-pattern', style: m.nextPattern ? '' : 'display:none' }, m.nextPattern || ''));
-        if (hasIllust) {
-            const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-boss-illust-wrap' });
-            const img = el('img', { id: 'pqBossIllustImg', class: 'pq-boss-illust', src: m.image, alt: m.name, draggable: 'false' });
-            illustWrap.append(img);
-            boss.append(illustWrap);
-        }
+        hud.append(gBar);
+        hud.append(el('div', { id: 'pqBossPattern', class: 'pq-boss-pattern', style: m.nextPattern ? '' : 'display:none' }, m.nextPattern || ''));
+        wrap.append(hud);
         updateEnrageLabel(m);
-        const btn = el('button', {
-            id: 'pqAttackBtn',
-            class: 'pq-attack-btn',
-            disabled: dead || snap.awaitingChoices || acd > 0 ? true : false,
-            onClick: manualAttack
-        }, acd > 0 ? ('⏳ ' + acd.toFixed(1) + 's') : '⚔ 공격');
-        wrap.append(boss, btn);
+        updateAttackBtn();
         return wrap;
     }
 
@@ -916,60 +915,62 @@
         const root = $('#pqPlayMembers');
         if (!root) return;
         root.replaceChildren();
-        const grid = el('div', { class: 'pq-party-mini-grid' });
         for (const m of snap.members) {
-            if (m.name === me) continue;
             const r = m.runtime;
+            const isMe = m.name === me;
             const isTaunt = (snap.monster && snap.monster.tauntTarget === m.name) || (snap.tauntTarget === m.name && Number(snap.tauntRemain || 0) > 0);
-            const row = el('div', {
-                class: 'pq-party-row pq-party-mini' + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : ''),
+            const card = el('div', {
+                class: 'pq-char-card' + (isMe ? ' me' : '') + (r && r.dead ? ' dead' : '') + (isTaunt ? ' taunt' : ''),
                 'data-member': m.name
             });
-            row.append(el('div', { class: 'ph' },
-                el('div', { class: 'nm' }, titleImg(m.title), m.name + (m.name === me ? ' (나)' : '')),
-                snap.noPositions ? null : el('div', { class: 'pos' }, m.position || '-')
-            ));
+            const img = el('div', { class: 'img' },
+                m.card && m.card.imageUrl
+                    ? el('img', { src: m.card.imageUrl, alt: '', draggable: 'false' })
+                    : el('span', { class: 'ph' }, (m.name || '?').slice(0, 1))
+            );
+            if (!snap.noPositions && m.position) img.append(el('span', { class: 'pos' }, m.position));
+            if (m.card) img.append(el('span', { class: 'star' }, '★' + (Number(m.card.star || 0) + 1)));
+            if (r && r.dead) img.append(el('span', { class: 'ko' }, '전투불능'));
+            // 버프 칩 — 카드 일러스트 하단 오버레이. 내 카드는 전체 버프, 타인은 주요 디버프만.
+            const chips = [];
             if (r) {
-                row.append(makeHpBar(r));
-                const mp = el('div', { class: 'pq-prog mp' }, el('div', { class: 'fill' }));
-                mp.firstChild.style.width = (r.mpMax > 0 ? (r.mp / r.mpMax * 100) : 0) + '%';
-                row.append(mp);
-                const chips = [];
-                const tdu = (r.buffs || []).find(b => b.id === 'takenDamageUp');
-                if (tdu) chips.push(el('span', { class: 'pq-buff-chip', style: 'color:#fca5a5', 'data-member': m.name, 'data-buff-id': 'takenDamageUp', 'data-label': tdu.label || '받는 피해 증가' }, tdu.label || '받는 피해 증가'));
-                if (Number(r.sealRemain || 0) > 0) chips.push(el('span', { class: 'pq-buff-chip', style: 'color:#c4b5fd' }, '🔒 봉인 ' + Number(r.sealRemain).toFixed(1) + 's'));
-                if (chips.length) row.append(el('div', { class: 'pq-buff-row' }, ...chips));
+                if (isMe) {
+                    if (isTaunt) chips.push({ id: 'taunt', label: '도발', remain: snap.tauntRemain || (snap.monster && snap.monster.tauntRemain) || 0 });
+                    (r.buffs || []).forEach(b => chips.push(b));
+                } else {
+                    const tdu = (r.buffs || []).find(b => b.id === 'takenDamageUp');
+                    if (tdu) chips.push(tdu);
+                    if (Number(r.sealRemain || 0) > 0) chips.push({ id: '_seal', label: '봉인', remain: r.sealRemain });
+                }
             }
-            grid.append(row);
-        }
-        root.append(grid);
-        const mine = snap.members.find(m => m.name === me);
-        if (mine && mine.runtime) {
-            const buffs = [];
-            if ((snap.monster && snap.monster.tauntTarget === me) || (snap.tauntTarget === me && Number(snap.tauntRemain || 0) > 0)) buffs.push({ id: 'taunt', label: '도발', remain: snap.tauntRemain || (snap.monster && snap.monster.tauntRemain) || 0 });
-            (mine.runtime.buffs || []).forEach(b => buffs.push(b));
-            root.append(el('div', { class: 'pq-my-hp' },
-                el('div', { class: 'top' }, el('span', null, '내 체력'), el('span', null, hpPct(mine.runtime).toFixed(1) + '%')),
-                makeHpBar(mine.runtime),
-                el('div', { class: 'vals' },
-                    el('span', null, mine.runtime.hp + ' / ' + mine.runtime.hpMax),
-                    el('span', null, 'MP ' + mine.runtime.mp + ' / ' + mine.runtime.mpMax),
-                    mine.runtime.attackOrder ? el('span', null, '다음 공격 ' + mine.runtime.attackOrder + '번째') : null
-                ),
-                makeMpBar(mine.runtime),
-                buffs.length ? el('div', { class: 'pq-buff-row pq-my-buffs' },
-                    ...buffs.map(b => {
-                        const label = b.label || b.id || '버프';
-                        return el('span', {
-                            class: 'pq-buff-chip',
-                            'data-member': me,
-                            'data-buff-id': b.id === 'taunt' || label === '도발' ? 'taunt' : String(b.id || b.label || ''),
-                            'data-label': label
-                        }, buffChipText(label, b.remain));
-                    })
-                ) : null
+            if (chips.length) img.append(el('div', { class: 'pq-buff-row' },
+                ...chips.map(b => {
+                    const label = b.label || b.id || '버프';
+                    // 봉인 칩은 스냅샷 재렌더에만 의존 (updateBuffChips가 buffs 배열에서 못 찾아 숨기지 않도록 data 속성 생략)
+                    if (b.id === '_seal') return el('span', { class: 'pq-buff-chip seal' }, buffChipText(label, b.remain));
+                    return el('span', {
+                        class: 'pq-buff-chip',
+                        'data-member': m.name,
+                        'data-buff-id': b.id === 'taunt' || label === '도발' ? 'taunt' : String(b.id || b.label || ''),
+                        'data-label': label
+                    }, buffChipText(label, b.remain));
+                })
             ));
+            card.append(img);
+            card.append(el('div', { class: 'nm' }, titleImg(m.title), el('span', { class: 't' }, m.name)));
+            if (r) {
+                card.append(makeHpBar(r));
+                card.append(makeMpBar(r));
+                if (isMe) card.append(el('div', { class: 'vals' },
+                    el('span', null, fmtNum(r.hp) + '/' + fmtNum(r.hpMax)),
+                    el('span', null, 'MP ' + fmtNum(r.mp))
+                ));
+            }
+            root.append(card);
         }
+        const mine = snap.members.find(m => m.name === me);
+        const ao = $('#pqAttackOrder');
+        if (ao) ao.textContent = mine && mine.runtime && mine.runtime.attackOrder ? '다음 공격 ' + mine.runtime.attackOrder + '번째' : '';
     }
 
     function renderPotionSummary(snap) {
@@ -987,7 +988,7 @@
         }
         const wrap = el('div');
         for (const p of list) {
-            wrap.append(el('span', { class: 'pq-potion-chip' }, '🧪 ' + p.name + ' × ' + p.count));
+            wrap.append(el('span', { class: 'pq-potion-chip' }, p.name + ' × ' + p.count));
         }
         sum.append(wrap);
     }
@@ -1104,7 +1105,7 @@
                     try { await api('/api/party/use-potion', { method: 'POST', body: JSON.stringify({ name: p.name }) }); } catch (e) { toast(e.message); }
                 }
             },
-                el('div', null, '🧪 ' + p.name),
+                el('div', null, p.name),
                 el('div', { class: 'mp' }, '× ' + p.count),
                 el('div', { class: 'cd', style: cdRemain > 0 ? '' : 'display:none' }, cdRemain > 0 ? cdRemain.toFixed(1) : '')
             );
@@ -1464,7 +1465,36 @@
         await loadLobby();
     }
     $('#pqLeave').onclick = leaveRoom;
-    $('#pqPlayLeave').onclick = leaveRoom;
+    $('#pqPlayLeave').onclick = () => {
+        if (currentRoom && currentRoom.state === 'inProgress' && !confirm('전투 중입니다. 파티에서 나가시겠습니까?')) return;
+        leaveRoom();
+    };
+    $('#pqAttackBtn').onclick = manualAttack;
+
+    // 전투 화면 채팅/로그 탭
+    function showGameTab(which) {
+        $('#pqTabChat').classList.toggle('on', which === 'chat');
+        $('#pqTabLog').classList.toggle('on', which === 'log');
+        $('#pqPlayChat').style.display = which === 'chat' ? '' : 'none';
+        $('#pqPlayChatForm').style.display = which === 'chat' ? '' : 'none';
+        $('#pqCombatLog').style.display = which === 'log' ? '' : 'none';
+        if (which === 'chat') { const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight; }
+        else { const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight; }
+    }
+    $('#pqTabChat').onclick = () => showGameTab('chat');
+    $('#pqTabLog').onclick = () => showGameTab('log');
+    // 기본은 접힌 상태(최근 몇 줄만 반투명 표시) — 일러스트를 가리지 않게. 클릭하면 펼침.
+    const gameChat = $('#pqGameChat');
+    if (gameChat) {
+        gameChat.addEventListener('click', () => {
+            if (gameChat.classList.contains('open')) return;
+            gameChat.classList.add('open');
+            const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight;
+            const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight;
+        });
+        const collapseBtn = $('#pqChatCollapse');
+        if (collapseBtn) collapseBtn.onclick = e => { e.stopPropagation(); gameChat.classList.remove('open'); };
+    }
 
     $('#pqReadyBtn').onclick = async () => {
         if (!currentRoom) return;

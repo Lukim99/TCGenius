@@ -853,6 +853,7 @@ function serializeMember(m) {
         name: m.name,
         level: Number(m.level || 1),
         title: m.title || null,
+        card: m.card || null,
         position: m.position || null,
         ready: !!m.ready,
         potions: m.potions.slice(),
@@ -1178,6 +1179,23 @@ function buildMemberTitle(user) {
     return { name: def.name, imageUrl: rpgenius.getTitleImageUrl(def.name) };
 }
 
+// 카드 이미지 URL 빌더는 server.js의 getCardImageUrl을 주입받는다 (순환 require 회피)
+let cardImageUrlResolver = null;
+function setCardImageResolver(fn) { cardImageUrlResolver = fn; }
+
+function buildMemberCard(user) {
+    const mc = user && user.main_card;
+    if (!mc) return null;
+    const cards = loadJsonCached(CHARACTER_CARDS_PATH, 'cards');
+    const data = cards[mc.id];
+    if (!data) return null;
+    let imageUrl = null;
+    try {
+        if (cardImageUrlResolver) imageUrl = cardImageUrlResolver({ id: mc.id, star: mc.star, type: mc.type, skin: mc.skin }, user);
+    } catch (_) {}
+    return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl };
+}
+
 async function createRoom(hostName, questId, password) {
     if (memberIndex.has(hostName)) return { error: '이미 참여 중인 파티가 있습니다.' };
     const quest = getQuestById(questId);
@@ -1187,7 +1205,7 @@ async function createRoom(hostName, questId, password) {
         const user = await rpgenius.getRPGUserByName(hostName);
         const level = user ? Number(user.level || 1) : 1;
         if (quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
-        if (user) hostInfo = { level, title: buildMemberTitle(user) };
+        if (user) hostInfo = { level, title: buildMemberTitle(user), card: buildMemberCard(user) };
     } catch (_) {}
     const id = newRoomId();
     const room = {
@@ -1230,6 +1248,7 @@ function addMember(room, name, info) {
             pendingChoices: null,
             level: info && info.level || 1,
             title: info && info.title || null,
+            card: info && info.card || null,
             joinedAt: Date.now()
         });
     }
@@ -1253,7 +1272,7 @@ async function joinRoom(roomId, name, password) {
         const user = await rpgenius.getRPGUserByName(name);
         const level = user ? Number(user.level || 1) : 1;
         if (quest && quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
-        if (user) joinInfo = { level, title: buildMemberTitle(user) };
+        if (user) joinInfo = { level, title: buildMemberTitle(user), card: buildMemberCard(user) };
     } catch (_) {}
     addMember(room, name, joinInfo);
     pushNotice(room, name + '님이 입장했습니다.', 'info', 3500);
@@ -5073,6 +5092,7 @@ function getMyRoomSnapshot(name) {
 module.exports = {
     listQuestSummaries,
     publicRoomList,
+    setCardImageResolver,
     createRoom,
     joinRoom,
     leaveRoom,
