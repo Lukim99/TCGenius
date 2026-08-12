@@ -6332,7 +6332,7 @@ function renderPartyApp(sess) {
       <div class="pq-bar">
         <div class="pq-section-title" style="margin:0">파티 퀘스트</div>
         <div class="pq-row" style="gap:6px">
-          <button class="pq-btn" id="pqKeybindOpen" style="height:32px;padding:0 12px;font-size:12px">설정</button>
+          <button class="pq-btn pq-lobby-tool" id="pqKeybindOpen" type="button">⚙ 설정</button>
           <button class="pq-btn" id="pqRefresh" style="height:32px;padding:0 12px;font-size:12px">새로고침</button>
         </div>
       </div>
@@ -6340,7 +6340,10 @@ function renderPartyApp(sess) {
     </section>
 
     <section class="pq-screen" data-screen="room">
-      <button class="pq-back" id="pqLeave">← 파티 나가기</button>
+      <div class="pq-room-toolbar">
+        <button class="pq-back" id="pqLeave">← 파티 나가기</button>
+        <button class="pq-btn pq-lobby-tool" id="pqRoomSettings" type="button">⚙ 설정</button>
+      </div>
       <div class="pq-panel">
         <div class="pq-bar">
           <div class="pq-section-title" style="margin:0">퀘스트</div>
@@ -6431,25 +6434,37 @@ function renderPartyApp(sess) {
   <button class="pq-fab" id="pqCreateFab" style="display:none">＋ 파티 생성</button>
 
   <div class="pq-modal-bg" id="pqCreateBg">
-    <div class="pq-modal">
-      <h3>파티 생성</h3>
-      <label class="pq-section-title">퀘스트 선택</label>
+    <div class="pq-modal pq-create-modal" role="dialog" aria-modal="true" aria-labelledby="pqCreateTitle">
+      <div class="pq-create-head">
+        <div>
+          <span>PARTY MISSION</span>
+          <h3 id="pqCreateTitle">새로운 원정대 생성</h3>
+        </div>
+        <button class="pq-create-close" id="pqCreateClose" type="button" aria-label="파티 생성 닫기">×</button>
+      </div>
+      <div class="pq-create-section-head">
+        <span>퀘스트 선택</span>
+        <b id="pqQuestPager">1 / 1</b>
+      </div>
       <div class="pq-quest-picker">
-        <button class="pq-quest-arrow" id="pqQuestPrev" type="button">&#8249;</button>
+        <button class="pq-quest-arrow prev" id="pqQuestPrev" type="button" aria-label="이전 퀘스트">&#8249;</button>
         <div class="pq-quest-card" id="pqQuestCard">
           <div class="pq-quest-card-img" id="pqQuestCardImg"></div>
           <div class="pq-quest-card-body">
+            <div class="pq-quest-difficulty" id="pqQuestDifficulty">NORMAL</div>
             <div class="pq-quest-card-name" id="pqQuestCardName">-</div>
             <div class="pq-quest-card-meta" id="pqQuestCardMeta"></div>
           </div>
         </div>
-        <button class="pq-quest-arrow" id="pqQuestNext" type="button">&#8250;</button>
+        <button class="pq-quest-arrow next" id="pqQuestNext" type="button" aria-label="다음 퀘스트">&#8250;</button>
       </div>
-      <label class="pq-section-title">비밀번호 (선택)</label>
-      <input id="pqCreatePw" class="pq-input" type="text" placeholder="비워두면 공개">
-      <div class="pq-actions">
+      <div class="pq-create-private">
+        <label for="pqCreatePw"><span>파티 비밀번호</span><b>선택</b></label>
+        <input id="pqCreatePw" class="pq-input" type="text" placeholder="비워두면 누구나 참가할 수 있습니다" autocomplete="off">
+      </div>
+      <div class="pq-actions pq-create-actions">
         <button class="pq-btn" id="pqCreateCancel" type="button">취소</button>
-        <button class="pq-btn primary" id="pqCreateConfirm" type="button">생성</button>
+        <button class="pq-btn primary" id="pqCreateConfirm" type="button">원정대 생성</button>
       </div>
     </div>
   </div>

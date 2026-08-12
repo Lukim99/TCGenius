@@ -351,19 +351,25 @@
     function renderQuestCard() {
         const q = questDefs[questPickerIdx];
         if (!q) return;
+        const difficulty = /Extreme/i.test(q.id) ? 'extreme' : (/Hard/i.test(q.id) ? 'hard' : 'normal');
+        const card = $('#pqQuestCard');
+        card.dataset.difficulty = difficulty;
         const imgWrap = $('#pqQuestCardImg');
         imgWrap.replaceChildren();
         if (q.coverImage) {
-            imgWrap.append(el('img', { src: '/rpg-ui?file=' + encodeURIComponent(q.coverImage), alt: q.name }));
+            imgWrap.append(el('img', { src: '/rpg-ui?file=' + encodeURIComponent(q.coverImage), alt: q.name, draggable: false, decoding: 'async' }));
         } else {
             imgWrap.append(el('div', { class: 'pq-quest-no-img' }, 'NO IMAGE'));
         }
+        $('#pqQuestDifficulty').textContent = difficulty.toUpperCase();
         $('#pqQuestCardName').textContent = q.name;
         const meta = $('#pqQuestCardMeta');
         meta.replaceChildren();
-        if (q.minLevel) meta.append(el('span', null, 'Lv.' + q.minLevel + ' 이상'));
-        if (q.recommendedPower) meta.append(el('span', null, '권장 ' + Number(q.recommendedPower).toLocaleString()));
-        meta.append(el('span', null, q.minPlayers + '~' + q.maxPlayers + '인'));
+        if (q.minLevel) meta.append(el('span', null, '입장 Lv.' + q.minLevel));
+        if (q.recommendedPower) meta.append(el('span', null, '전투력 ' + Number(q.recommendedPower).toLocaleString()));
+        meta.append(el('span', null, q.minPlayers + '–' + q.maxPlayers + ' PLAYER'));
+        const pager = $('#pqQuestPager');
+        if (pager) pager.textContent = (questPickerIdx + 1) + ' / ' + questDefs.length;
         const prev = $('#pqQuestPrev');
         const next = $('#pqQuestNext');
         if (prev) prev.disabled = questPickerIdx === 0;
@@ -1069,19 +1075,52 @@
         return m ? (m.name || '') + '|' + (m.image || '') : '';
     }
 
-    // 보스 HP바 채움 폭 — 보호막은 LoL식 흰색 세그먼트
-    function applyBossHpWidths(m, fillEl, shieldEl) {
+    const BOSS_HP_LINE_SIZE = 10000;
+
+    function bossHpLayerState(m) {
+        const hp = Math.max(0, Number(m.hp || 0));
+        const configuredLines = Math.max(0, Number(m.hpLines || 0));
+        if (configuredLines <= 0) return { layered: false, hp, lines: 0, current: hp };
+        if (hp <= 0) return { layered: true, hp: 0, lines: 0, current: 0 };
+        const lines = Math.min(configuredLines, Math.max(0, Math.ceil(hp / BOSS_HP_LINE_SIZE) - 1));
+        return {
+            layered: true,
+            hp,
+            lines,
+            current: Math.max(1, hp - lines * BOSS_HP_LINE_SIZE)
+        };
+    }
+
+    // hpLines 보스는 1만 단위의 현재 층만 표시하고, 뒤에 남은 층을 다른 색으로 비친다.
+    function applyBossHpWidths(m, fillEl, shieldEl, backEl) {
         fillEl = fillEl || document.getElementById('pqBossHpFill');
         shieldEl = shieldEl || document.getElementById('pqBossShieldFill');
+        backEl = backEl || document.getElementById('pqBossHpBack');
         if (!fillEl) return;
-        const hp = Math.max(0, Number(m.hp || 0));
+        const state = bossHpLayerState(m);
+        const hp = state.hp;
         const max = Math.max(1, Number(m.hpMax || 1));
         const shield = Math.max(0, Number(m.shield || 0));
-        const total = Math.max(max, hp + shield);
-        fillEl.style.width = (hp / total * 100) + '%';
+        const bar = fillEl.parentElement;
+        if (bar) {
+            bar.classList.toggle('layered', state.layered);
+            bar.dataset.layerTone = String(state.lines % 4);
+            bar.dataset.backTone = String(Math.max(0, state.lines - 1) % 4);
+        }
+        if (backEl) backEl.style.display = state.layered && state.lines > 0 ? '' : 'none';
+
+        const hpPct = state.layered ? (state.current / BOSS_HP_LINE_SIZE * 100) : (hp / max * 100);
+        fillEl.style.width = Math.max(0, Math.min(100, hpPct)) + '%';
         if (shieldEl) {
-            shieldEl.style.left = (hp / total * 100) + '%';
-            shieldEl.style.width = (shield / total * 100) + '%';
+            if (state.layered) {
+                const shieldPct = Math.min(100, shield / BOSS_HP_LINE_SIZE * 100);
+                shieldEl.style.left = shieldPct >= 100 ? '0%' : Math.min(100, hpPct) + '%';
+                shieldEl.style.width = shieldPct >= 100 ? '100%' : Math.min(shieldPct, Math.max(0, 100 - hpPct)) + '%';
+            } else {
+                const total = Math.max(max, hp + shield);
+                shieldEl.style.left = (hp / total * 100) + '%';
+                shieldEl.style.width = (shield / total * 100) + '%';
+            }
             shieldEl.style.display = shield > 0 ? '' : 'none';
         }
     }
@@ -1091,11 +1130,11 @@
         return Number(m.hp || 0).toLocaleString() + ' / ' + Number(m.hpMax || 0).toLocaleString();
     }
 
-    // hpLines가 있으면 HP바 우측 끝에 남은 줄 수 "X99"
+    // hpLines가 있으면 현재 1만 HP 층 뒤에 남은 체력바 수를 표시한다.
     function bossHpLinesText(m) {
-        const lines = Number(m.hpLines || 0);
-        if (lines <= 0) return '';
-        return 'X' + Math.max(0, Math.ceil(m.hp / Math.max(1, m.hpMax) * lines));
+        const state = bossHpLayerState(m);
+        if (!state.layered) return '';
+        return '×' + state.lines;
     }
 
     function updateEnrageLabel(m) {
@@ -1133,12 +1172,13 @@
         ));
         const linesText = bossHpLinesText(m);
         const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' },
+            el('div', { id: 'pqBossHpBack', class: 'pq-hp-layer-back', style: 'display:none' }),
             el('div', { id: 'pqBossHpFill', class: 'fill' }),
             el('div', { id: 'pqBossShieldFill', class: 'shield-fill', style: 'display:none' }),
             el('div', { id: 'pqBossHpVal', class: 'pq-hp-text' }, bossHpText(m)),
             el('div', { id: 'pqBossHpLines', class: 'pq-hp-lines', style: linesText ? '' : 'display:none' }, linesText)
         );
-        applyBossHpWidths(m, hpBar.children[0], hpBar.children[1]);
+        applyBossHpWidths(m, hpBar.querySelector('.fill'), hpBar.querySelector('.shield-fill'), hpBar.querySelector('.pq-hp-layer-back'));
         hud.append(hpBar);
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
@@ -1254,7 +1294,14 @@
         renderMemberDetail();
     }
 
-    // 내 HP/MP 플레이트 — 스테이지 우하단, 전체 수치 표시
+    // 내 HP/MP 플레이트 — 스테이지 우하단, 전체 수치 표시. 접으면 작은 칩만 남는다.
+    let vitalsFolded = false;
+    try { vitalsFolded = localStorage.getItem('pqVitalsFolded') === '1'; } catch (_) {}
+    function toggleVitals() {
+        vitalsFolded = !vitalsFolded;
+        try { localStorage.setItem('pqVitalsFolded', vitalsFolded ? '1' : '0'); } catch (_) {}
+        if (currentRoom) renderPlayMembers(currentRoom);
+    }
     function renderMyVitals(mine) {
         const box = $('#pqMyVitals');
         if (!box) return;
@@ -1262,11 +1309,18 @@
         const inPlay = currentRoom && (currentRoom.state === 'inProgress');
         if (!r || !inPlay) { box.style.display = 'none'; return; }
         box.style.display = '';
+        box.classList.toggle('folded', vitalsFolded);
         const shield = Math.max(0, Number(r.shield || 0));
+        if (vitalsFolded) {
+            box.replaceChildren(el('button', { class: 'vt-chip', type: 'button', onClick: toggleVitals },
+                '▸ HP ' + hpPct(r).toFixed(0) + '%' + (shield > 0 ? ' +' : '')));
+            return;
+        }
         box.replaceChildren(
             el('div', { class: 'vrow' },
                 el('span', { class: 'lbl' }, 'HP'),
-                el('b', { class: 'hpv' }, Number(r.hp).toLocaleString() + ' / ' + Number(r.hpMax).toLocaleString() + (shield > 0 ? ' +' + shield.toLocaleString() : ''))
+                el('b', { class: 'hpv' }, Number(r.hp).toLocaleString() + ' / ' + Number(r.hpMax).toLocaleString() + (shield > 0 ? ' +' + shield.toLocaleString() : '')),
+                el('button', { class: 'vt-fold', type: 'button', title: '접기', onClick: toggleVitals }, '▾')
             ),
             makeHpBar(r),
             el('div', { class: 'vrow' },
@@ -1779,15 +1833,26 @@
         renderQuestCard();
         $('#pqCreateBg').classList.add('active');
     };
-    $('#pqCreateCancel').onclick = () => $('#pqCreateBg').classList.remove('active');
+    function closeCreateModal() { $('#pqCreateBg').classList.remove('active'); }
+    $('#pqCreateCancel').onclick = closeCreateModal;
+    $('#pqCreateClose').onclick = closeCreateModal;
+    $('#pqCreateBg').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
     $('#pqCreateConfirm').onclick = async () => {
         const questId = questDefs[questPickerIdx] && questDefs[questPickerIdx].id;
         const password = $('#pqCreatePw').value;
+        const button = $('#pqCreateConfirm');
+        button.disabled = true;
+        button.textContent = '생성 중...';
         try {
             await api('/api/party/rooms', { method: 'POST', body: JSON.stringify({ questId, password }) });
-            $('#pqCreateBg').classList.remove('active');
+            closeCreateModal();
             await afterEnterRoom();
-        } catch (e) { toast(e.message); }
+        } catch (e) {
+            toast(e.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = '원정대 생성';
+        }
     };
 
     $('#pqJoinCancel').onclick = () => $('#pqJoinBg').classList.remove('active');
@@ -1863,6 +1928,7 @@
         $('#pqKeybindBg').classList.add('active');
     }
     if ($('#pqSettingsBtn')) $('#pqSettingsBtn').onclick = openSettings; // 전투 중에도 조절 가능
+    if ($('#pqRoomSettings')) $('#pqRoomSettings').onclick = openSettings;
     if ($('#pqKeybindOpen')) {
         $('#pqKeybindOpen').onclick = openSettings;
         $('#pqKeybindClose').onclick = () => { stopKeyCapture(); $('#pqKeybindBg').classList.remove('active'); };
