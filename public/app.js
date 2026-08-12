@@ -272,7 +272,10 @@ function navigatePage(pageId) {
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
     if (pageId === 'ranking') loadRanking();
-    if (pageId === 'dex') loadDex();
+    if (pageId === 'dex') {
+        setDexSidebarVisible(true);
+        loadDex();
+    }
     if (pageId === 'patchnotes') loadPatchnotes();
 }
 
@@ -966,6 +969,7 @@ function setModalVariant(variant) {
     const modal = $('#modalBg .modal');
     if (!modal) return;
     modal.classList.toggle('item-detail-modal', variant === 'item-detail');
+    modal.classList.toggle('dex-equipment-modal', variant === 'dex-equipment');
 }
 
 function openModal(title, sub, lines) {
@@ -5898,6 +5902,313 @@ function dexCard(entry) {
     return card;
 }
 
+const DEX_EQUIPMENT_TABS = new Set(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support']);
+
+function dexRichText(text) {
+    const valuePattern = /((?:Lv\.\s*)?[+-]?\d+(?:\.\d+)?(?:%|초|분|회|개|성|단계)?|HP|MP)/g;
+    return el('span', { class: 'dex-detail-rich' }, ...String(text || '').split(valuePattern).filter(Boolean).map(part =>
+        /^(?:Lv\.\s*)?[+-]?\d|^(?:HP|MP)$/.test(part)
+            ? el('strong', null, part)
+            : document.createTextNode(part)
+    ));
+}
+
+function dexDescriptionData(text, cooltime) {
+    let value = String(text || '').replace(/\s+/g, ' ').trim();
+    const cooldowns = [];
+    const addCooldown = cooldown => {
+        if (cooldown && !cooldowns.includes(cooldown)) cooldowns.push(cooldown);
+    };
+    const cooldownMs = Number(cooltime || 0);
+    if (cooldownMs > 0) addCooldown(cooldownMs % 60000 === 0 ? cooldownMs / 60000 + '분' : Math.round(cooldownMs / 1000) + '초');
+    value = value.replace(/\(?\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)\s*\)?/g, (full, amount, unit) => {
+        addCooldown(amount + unit);
+        return '';
+    });
+    value = value.replace(/,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s+([,.!?])/g, '$1').replace(/([,.!?]){2,}/g, '$1');
+    const lines = value
+        .replace(/([.!?])\s+/g, '$1\n')
+        .replace(/,\s+/g, ',\n')
+        .split('\n')
+        .map(line => line.trim().replace(/^[,.!?]\s*/, '').replace(/\s*[,.!?]$/, ''))
+        .filter(Boolean);
+    return { lines, cooldowns };
+}
+
+function dexEffectLabel(line) {
+    if (/회복|보호막|회복량/.test(line)) return '회복·보호';
+    if (/저항|방어력|받는 피해|회피|감소/.test(line)) return '방어';
+    if (/공격|피해|치명타|관통|연격|속성 강화|화상/.test(line)) return '공격';
+    if (/조건|이하|이상|장착|사용 시|적중 시|발동 시/.test(line)) return '조건';
+    return '효과';
+}
+
+function dexEffectList(text, cooltime) {
+    const data = dexDescriptionData(text, cooltime);
+    const rows = data.lines.map(line => el('div', { class: 'dex-detail-effect-row' },
+        el('span', { class: 'dex-detail-effect-kind' }, dexEffectLabel(line)),
+        dexRichText(line)
+    ));
+    data.cooldowns.forEach(cooldown => rows.push(el('div', { class: 'dex-detail-effect-row cooldown' },
+        el('span', { class: 'dex-detail-effect-kind' }, '재사용'),
+        el('span', { class: 'dex-detail-rich' }, '대기시간 ', el('strong', null, cooldown))
+    )));
+    return el('div', { class: 'dex-detail-effects' }, ...rows);
+}
+
+function dexStatList(lines) {
+    return el('div', { class: 'dex-detail-stats' }, ...(lines || []).map(line => {
+        const match = String(line).match(/^(.*?)([+-]?\d.*)$/);
+        return el('div', { class: 'dex-detail-stat-row' },
+            el('span', null, match ? match[1].trim() : line),
+            match ? el('strong', null, match[2].trim()) : null
+        );
+    }));
+}
+
+function dexTranscendStageText(text, stage) {
+    return String(text || '').replace(/([+-]?\d+(?:\.\d+)?)(%?)\s*\((?:단계당\s*)?([+-]\d+(?:\.\d+)?)(%?)\)/g,
+        (full, baseText, baseUnit, deltaText, deltaUnit) => {
+            const base = Number(baseText);
+            const delta = Number(deltaText);
+            const value = base + delta * (stage - 1);
+            const decimals = Math.max((baseText.split('.')[1] || '').length, (deltaText.split('.')[1] || '').length);
+            const numberText = (baseText.startsWith('+') && value >= 0 ? '+' : '') + (decimals ? value.toFixed(decimals).replace(/\.0+$/, '') : String(Math.round(value)));
+            return numberText + (baseUnit || deltaUnit);
+        });
+}
+
+function dexTranscendStagesNode(entry, text) {
+    if (entry.rarity !== '초월' || !/\((?:단계당\s*)?[+-]\d/.test(text || '')) return null;
+    const body = el('div', { class: 'dex-stage-body' });
+    const buttons = [1, 2, 3].map(stage => {
+        const button = el('button', { class: 'dex-stage-button' + (stage === 1 ? ' active' : ''), type: 'button' }, stage + '단계');
+        button.onclick = () => {
+            buttons.forEach(item => item.classList.toggle('active', item === button));
+            body.replaceChildren(dexEffectList(dexTranscendStageText(text, stage)));
+        };
+        return button;
+    });
+    body.replaceChildren(dexEffectList(dexTranscendStageText(text, 1)));
+    return el('section', { class: 'dex-detail-section dex-stage-section' },
+        el('div', { class: 'dex-detail-section-head' },
+            el('div', null, el('strong', null, '초월 단계별 효과'), el('span', null, '선택한 단계에서 실제 적용되는 효과')),
+            el('span', { class: 'dex-detail-section-mark' }, '3 STAGE')),
+        el('div', { class: 'dex-stage-buttons' }, ...buttons),
+        body
+    );
+}
+
+function dexEquipmentCard(entry) {
+    const card = el('button', { class: 'dex-gear-card', type: 'button', onclick: () => openDexEquipmentModal(entry), 'aria-label': entry.name + ' 상세 정보' },
+        dexThumb(entry.iconUrl, entry.frameUrl, SLOT_ICONS[entry.type] || '⚙️', 'dex-gear-thumb'),
+        el('div', { class: 'dex-gear-copy' },
+            el('div', { class: 'dex-gear-name' }, entry.name),
+            el('div', { class: 'dex-gear-meta' },
+                el('span', { class: 'dex-gear-rarity' }, entry.rarity || '등급 없음'),
+                el('span', { class: 'dex-gear-type' }, entry.typeLabel)
+            ),
+            el('div', { class: 'dex-gear-stats' }, ...(entry.baseStatLines || []).map(line => el('div', null, line)))
+        )
+    );
+    card.style.setProperty('--rar', RARITY_COLORS[entry.rarity] || '#64748b');
+    return card;
+}
+
+function dexEquipmentInfoNode(entry) {
+    const nodes = [
+        el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '기본 능력치'), el('span', null, '강화하지 않은 상태의 능력치'))),
+            dexStatList(entry.baseStatLines || []))
+    ];
+    if (entry.conditionLines && entry.conditionLines.length) {
+        nodes.push(el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '적용 조건'), el('span', null, '장착 및 추가 효과 조건'))),
+            el('div', { class: 'dex-detail-condition-list' }, ...entry.conditionLines.map(line => el('div', null, dexRichText(line))))));
+    }
+    if (entry.desc && !entry.passive) {
+        nodes.push(el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '장비 효과'), el('span', null, '장착 시 적용되는 고유 효과'))),
+            dexEffectList(entry.desc)));
+        const stages = dexTranscendStagesNode(entry, entry.desc);
+        if (stages) nodes.push(stages);
+    }
+    return el('div', { class: 'dex-detail-stack' }, ...nodes);
+}
+
+function dexEnhancementNode(entry) {
+    const levels = [{ level: 0, statLines: entry.baseStatLines || [] }].concat(entry.upgrades || []);
+    const body = el('div', { class: 'dex-enhance-body' });
+    const buttons = levels.map(item => {
+        const button = el('button', { class: 'dex-enhance-level' + (item.level === 0 ? ' active' : ''), type: 'button' }, item.level === 0 ? '기본' : '+' + item.level);
+        button.onclick = () => {
+            buttons.forEach(levelButton => levelButton.classList.toggle('active', levelButton === button));
+            body.replaceChildren(
+                el('div', { class: 'dex-enhance-selected' }, item.level === 0 ? '기본 능력치' : '+' + item.level + ' 최종 능력치'),
+                dexStatList(item.statLines || [])
+            );
+        };
+        return button;
+    });
+    buttons[0].click();
+    return el('div', { class: 'dex-detail-stack' },
+        el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '강화 단계'), el('span', null, '단계를 선택하면 누적된 최종 능력치를 표시합니다'))),
+            el('div', { class: 'dex-enhance-levels' }, ...buttons),
+            body)
+    );
+}
+
+function dexPassiveNode(entry) {
+    const advanced = entry.rarity === '초월' || entry.rarity === '신화';
+    const passiveText = advanced && entry.desc ? entry.desc : (entry.passive && entry.passive.desc || entry.desc || '');
+    const nodes = [el('section', { class: 'dex-detail-section dex-passive-section' },
+        el('div', { class: 'dex-detail-section-head' },
+            el('div', null, el('strong', null, entry.passive && entry.passive.name || '패시브'), el('span', null, '장착 중 조건을 만족하면 자동으로 발동합니다')),
+            el('span', { class: 'dex-detail-section-mark' }, 'PASSIVE')),
+        dexEffectList(passiveText, entry.passive && entry.passive.cooltime))];
+    const stages = dexTranscendStagesNode(entry, passiveText);
+    if (stages) nodes.push(stages);
+    return el('div', { class: 'dex-detail-stack' }, ...nodes);
+}
+
+function dexEvolutionNode(entry) {
+    const target = entry.evolution;
+    return el('div', { class: 'dex-detail-stack' },
+        el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '합성 진화'), el('span', null, '동일 장비를 성장시켜 상위 장비로 진화합니다'))),
+            el('div', { class: 'dex-evolution-flow' },
+                el('div', { class: 'dex-evolution-item source' },
+                    dexThumb(entry.iconUrl, entry.frameUrl, SLOT_ICONS[entry.type] || '⚙️', 'dex-evolution-thumb'),
+                    el('div', null, el('strong', null, entry.name), el('span', null, entry.rarity))),
+                el('div', { class: 'dex-evolution-arrow', 'aria-hidden': 'true' }, '→'),
+                el('div', { class: 'dex-evolution-item target' },
+                    dexThumb(target.targetIconUrl, target.targetFrameUrl, SLOT_ICONS[target.targetType] || '⚙️', 'dex-evolution-thumb'),
+                    el('div', null, el('strong', null, target.targetName), el('span', null, target.targetRarity || '')))
+            ),
+            el('div', { class: 'dex-evolution-requirements' },
+                el('div', null, el('span', null, '필요 강화'), el('strong', null, '+' + target.requireLevel)),
+                el('div', null, el('span', null, '필요 수량'), el('strong', null, target.requireCount + '개'))
+            ))
+    );
+}
+
+function dexSetNode(entry) {
+    const set = entry.set;
+    const components = (set.components || []).map(component => {
+        const current = component.type === entry.type && Number(component.id) === Number(entry.id);
+        return el('div', { class: 'dex-set-component' + (current ? ' current' : '') },
+            dexThumb(component.iconUrl, component.frameUrl, SLOT_ICONS[component.type] || '⚙️', 'dex-set-component-thumb'),
+            el('div', null, el('strong', null, component.name), el('span', null, component.typeLabel))
+        );
+    });
+    const tiers = (set.tiers || []).map(tier => el('div', { class: 'dex-set-tier-detail' },
+        el('div', { class: 'dex-set-tier-number' }, tier.tier + ' SET'),
+        el('div', { class: 'dex-set-tier-body' }, ...(tier.lines || []).map(line => dexEffectList(line)))
+    ));
+    return el('div', { class: 'dex-detail-stack' },
+        el('section', { class: 'dex-detail-section dex-set-section' },
+            el('div', { class: 'dex-set-title' }, el('span', null, 'SET'), el('strong', null, set.name)),
+            components.length ? el('div', { class: 'dex-set-components' }, ...components) : null),
+        el('section', { class: 'dex-detail-section' },
+            el('div', { class: 'dex-detail-section-head' }, el('div', null, el('strong', null, '세트 효과'), el('span', null, '장착한 세트 부위 수에 따라 활성화됩니다'))),
+            el('div', { class: 'dex-set-tier-list' }, ...tiers))
+    );
+}
+
+function dexDetailTabs(tabs) {
+    const tabList = el('div', { class: 'dex-detail-tabs', role: 'tablist' });
+    const panels = el('div', { class: 'dex-detail-panels' });
+    tabs.forEach((tab, index) => {
+        const button = el('button', { class: 'dex-detail-tab' + (index === 0 ? ' active' : ''), type: 'button', role: 'tab', 'aria-selected': String(index === 0) }, tab.label);
+        const panel = el('div', { class: 'dex-detail-panel' + (index === 0 ? ' active' : ''), role: 'tabpanel' }, tab.node);
+        button.onclick = () => {
+            tabList.querySelectorAll('.dex-detail-tab').forEach(item => {
+                const active = item === button;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-selected', String(active));
+            });
+            panels.querySelectorAll('.dex-detail-panel').forEach(item => item.classList.toggle('active', item === panel));
+        };
+        tabList.appendChild(button);
+        panels.appendChild(panel);
+    });
+    return el('div', { class: 'dex-detail-tabbed' }, tabList, panels);
+}
+
+function openDexEquipmentModal(entry) {
+    const hero = el('div', { class: 'dex-detail-hero' },
+        dexThumb(entry.iconUrl, entry.frameUrl, SLOT_ICONS[entry.type] || '⚙️', 'dex-detail-thumb'),
+        el('div', { class: 'dex-detail-hero-copy' },
+            el('div', { class: 'dex-detail-name' }, entry.name),
+            el('div', { class: 'dex-detail-meta' },
+                el('span', null, entry.rarity || '등급 없음'),
+                el('span', null, entry.typeLabel),
+                entry.set ? el('span', null, entry.set.name + ' 세트') : null
+            ))
+    );
+    hero.style.setProperty('--rar', RARITY_COLORS[entry.rarity] || '#64748b');
+    const tabs = [{ label: '상세 정보', node: dexEquipmentInfoNode(entry) }];
+    if (entry.upgrades && entry.upgrades.length) tabs.push({ label: '강화 단계', node: dexEnhancementNode(entry) });
+    if (entry.passive) tabs.push({ label: '패시브', node: dexPassiveNode(entry) });
+    if (entry.evolution) tabs.push({ label: '합성 진화', node: dexEvolutionNode(entry) });
+    if (entry.set) tabs.push({ label: '세트 효과', node: dexSetNode(entry) });
+    modalRequestToken++;
+    setModalVariant('dex-equipment');
+    $('#modalTitle').textContent = '';
+    $('#modalSub').textContent = '';
+    $('#modalBody').replaceChildren(hero, dexDetailTabs(tabs));
+    $('#modalBg').classList.add('active');
+}
+
+function dexOrbCard(entry) {
+    const card = el('article', { class: 'dex-orb-card' });
+    const head = el('div', { class: 'dex-orb-head' },
+        dexThumb(entry.iconUrl, entry.frameUrl, '🔮', 'dex-orb-thumb'),
+        el('div', { class: 'dex-orb-identity' },
+            el('div', { class: 'dex-orb-name' }, entry.name),
+            el('div', { class: 'dex-orb-parts' },
+                el('span', { class: 'dex-orb-parts-label' }, '부여 가능'),
+                ...(entry.partLabels || []).map(part => el('span', { class: 'dex-orb-part' }, part))
+            )
+        )
+    );
+    const effect = el('div', { class: 'dex-orb-effect' },
+        el('div', { class: 'dex-orb-effect-title' }, '부여 시 효과'),
+        el('div', { class: 'dex-orb-effect-lines' },
+            ...(entry.baseStatLines || []).map(line => el('div', null, line))
+        )
+    );
+    card.append(head, effect);
+    return card;
+}
+
+function renderOrbDex(grid, entries) {
+    hideDexRarityFilter();
+    grid.className = 'dex-orb-sections';
+    grid.innerHTML = '';
+    const grouped = new Map();
+    entries.forEach(entry => {
+        const category = entry.category || '기타';
+        if (!grouped.has(category)) grouped.set(category, []);
+        grouped.get(category).push(entry);
+    });
+    grouped.forEach((orbs, category) => {
+        const parts = orbs[0] && orbs[0].categoryParts || [];
+        const section = el('section', { class: 'dex-orb-section' },
+            el('header', { class: 'dex-orb-section-head' },
+                el('div', { class: 'dex-orb-section-title' }, category),
+                el('div', { class: 'dex-orb-section-parts' },
+                    el('span', null, '장착 부위'),
+                    el('strong', null, parts.join(' · '))
+                )
+            ),
+            el('div', { class: 'dex-orb-grid' }, ...orbs.map(dexOrbCard))
+        );
+        grid.appendChild(section);
+    });
+}
+
 function dexCharacterCard(entry) {
     const card = el('div', { class: 'dex-card' });
     card.style.setProperty('--rar', 'var(--border-strong)');
@@ -6116,7 +6427,13 @@ function renderDex() {
         list.forEach(entry => grid.appendChild(dexTitleCard(entry)));
         return;
     }
-    grid.className = 'dex-grid';
+    if (dexTab === 'orb') {
+        if (!dexData) return;
+        renderOrbDex(grid, dexData.orb || []);
+        return;
+    }
+    const equipmentTab = DEX_EQUIPMENT_TABS.has(dexTab);
+    grid.className = equipmentTab ? 'dex-grid dex-gear-grid' : 'dex-grid';
     if (!dexData) return;
     const list = applyDexRarityFilter(dexData[dexTab] || []);
     grid.innerHTML = '';
@@ -6124,7 +6441,9 @@ function renderDex() {
         grid.appendChild(el('div', { class: 'empty' }, '데이터가 없습니다.'));
         return;
     }
-    list.forEach(entry => grid.appendChild(dexTab === 'character' ? dexCharacterCard(entry) : dexCard(entry)));
+    list.forEach(entry => grid.appendChild(
+        equipmentTab ? dexEquipmentCard(entry) : (dexTab === 'character' ? dexCharacterCard(entry) : dexCard(entry))
+    ));
 }
 
 async function loadDex() {
@@ -6161,6 +6480,39 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
     loadDex();
 });
+
+function setDexSidebarVisible(visible) {
+    const sidebar = document.querySelector('.dex-sidebar');
+    if (!sidebar) return;
+    sidebar.classList.toggle('is-concealed', !visible);
+}
+
+window.addEventListener('scroll', () => {
+    if (activePage === 'dex') setDexSidebarVisible(false);
+}, { passive: true });
+
+document.addEventListener('mousemove', event => {
+    if (activePage === 'dex' && event.clientX <= 28) setDexSidebarVisible(true);
+}, { passive: true });
+
+let dexSwipeStart = null;
+document.addEventListener('touchstart', event => {
+    const touch = event.touches && event.touches[0];
+    dexSwipeStart = activePage === 'dex' && touch && touch.clientX <= 28
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+}, { passive: true });
+
+document.addEventListener('touchend', event => {
+    if (!dexSwipeStart) return;
+    const touch = event.changedTouches && event.changedTouches[0];
+    if (touch) {
+        const moveX = touch.clientX - dexSwipeStart.x;
+        const moveY = Math.abs(touch.clientY - dexSwipeStart.y);
+        if (moveX >= 44 && moveY <= 70) setDexSidebarVisible(true);
+    }
+    dexSwipeStart = null;
+}, { passive: true });
 
 $('#dexRarityFilter').onchange = event => {
     dexRarity = event.target.value || 'all';

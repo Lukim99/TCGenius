@@ -4378,14 +4378,36 @@ function formatPassiveDesc(passive) {
     return desc;
 }
 
+function splitDexEquipmentLines(lines) {
+    const stats = [];
+    const conditions = [];
+    let conditionalBlock = false;
+    (lines || []).forEach(raw => {
+        const line = String(raw || '').replace(/^[-\s]+/, '').trim();
+        if (!line) return;
+        if (/^\[\s*\d+성 보너스\s*\]$/.test(line)) {
+            conditionalBlock = true;
+            conditions.push(line);
+            return;
+        }
+        if (/^(장착 필요 레벨|장착 가능 최대 레벨|효과 적용 조건|장착 가능 메인 카드):/.test(line)) {
+            conditionalBlock = false;
+            conditions.push(line);
+            return;
+        }
+        (conditionalBlock ? conditions : stats).push(line);
+    });
+    return { stats, conditions };
+}
+
 function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
     if (!data) return null;
     const upgrades = Array.isArray(data.upgrade) ? data.upgrade : [];
-    const baseLines = String(rpgenius.formatEquipmentBaseStatLines(data, 0) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
+    const baseLineData = splitDexEquipmentLines(String(rpgenius.formatEquipmentBaseStatLines(data, 0) || '').split('\n'));
     const upgradeLines = upgrades.map((_, i) => {
         const lvl = i + 1;
-        const lines = String(rpgenius.formatEquipmentBaseStatLines(data, lvl) || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
-        return { level: lvl, statLines: lines };
+        const lineData = splitDexEquipmentLines(String(rpgenius.formatEquipmentBaseStatLines(data, lvl) || '').split('\n'));
+        return { level: lvl, statLines: lineData.stats };
     });
     let evolution = null;
     if (typeof data.evolution != 'undefined') {
@@ -4431,9 +4453,12 @@ function buildEquipmentDexEntry(type, typeLabel, id, data, recipeIndex) {
         noTrade: data.no_trade === true,
         iconUrl: getEquipmentIconUrl(data),
         frameUrl: getAuctionFrameUrl('equipment', data.rarity),
-        baseStatLines: baseLines,
+        baseStatLines: baseLineData.stats,
+        conditionLines: baseLineData.conditions,
         upgrades: upgradeLines,
         maxUpgradeLevel: upgrades.length,
+        transcend: data.transcend === true,
+        mythic: data.mythic === true,
         evolution,
         recipe,
         passive,
@@ -4596,23 +4621,35 @@ function buildPetDex() {
         });
 }
 
+const ORB_DEX_CATEGORIES = [
+    { name: '대저택1', parts: ['weapon', 'armor', 'pants', 'support'], orbs: ['대탐정F 보주', '장충동왕족발보쌈 보주', '멸치볶음 보주', '조각 보주', '아리스 보주'] },
+    { name: '월도랜드2', parts: ['hat', 'shoes'], orbs: ['뉴비 보주', '현식이아버지 보주', '직장인 보주'] },
+    { name: '밍닝스플랜', parts: ['weapon'], orbs: ['쌩쑈메이커 보주', '첫 만남은 다시 guitar 보주', '흐음 보주'] },
+    { name: '이세계대저택', parts: ['accessory'], orbs: ['눈뜬 장님 보주', '예토전생 보주', '오로라 보주', 'X39825 보주', '쿠마가와 미소기 보주', '피아스트 보주'] },
+    { name: '부타게임', parts: ['support'], orbs: ['레인 보주', '우정잉여왕 보주', '물장구 보주', 'X 보주', 'SitoSoym 보주', '페비 보주', '수나타 보주', '지오 보주', '우정 보주', '블루로즈 보주'] },
+    { name: '대저택 리턴즈', parts: ['hat', 'armor', 'pants', 'shoes'], orbs: ['레지에로 보주', '플로로 보주', '유스티티아 보주', 'Ori 보주', '멜론빵 보주', '엘리스 유 보주', '헬로키티 보주', '박보검 보주', '송예빈 보주', '케이티 위즈 보주'] },
+    { name: '대저택2', parts: ['weapon'], orbs: ['매그내릭 보주', '필규햄 보주', '이어브피 보주', '황정민 보주', '조디악 보주', '클로브 보주', '단테 보주', 'YR 보주'] }
+];
+
 function buildOrbDex() {
     const items = rpgenius.getDataCache('Item', []);
     const partLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
     return rpgenius.getOrbData().map((orb, id) => {
         if (!orb) return null;
         const item = items.find(it => it && it.use == '보주' && it.name == orb.name) || null;
+        const category = ORB_DEX_CATEGORIES.find(group => group.orbs.includes(orb.name));
         return {
             type: 'orb',
             typeLabel: '보주',
             id,
             name: orb.name,
             rarity: null,
-            desc: item && item.desc || '',
             iconUrl: item ? getItemIconUrl(item) : null,
             frameUrl: getAuctionFrameUrl('item'),
+            category: category ? category.name : '기타',
+            categoryParts: (category ? category.parts : orb.parts || []).map(part => partLabels[part] || part),
+            partLabels: (orb.parts || []).map(part => partLabels[part] || part),
             baseStatLines: dexStatLines(rpgenius.formatOrbLines(orb).slice(1).join('\n')),
-            specialLines: ['장착 부위: ' + (orb.parts || []).map(p => partLabels[p] || p).join(', ')]
         };
     }).filter(Boolean);
 }
@@ -4629,7 +4666,7 @@ function buildEquipmentDex() {
         return a.id - b.id;
     };
     const pack = (list, type, label) => (list || []).map((data, id) => buildEquipmentDexEntry(type, label, id, data, recipeIndex)).filter(Boolean).sort(sortByRarity);
-    return {
+    const result = {
         weapon: pack(eq.weapon, 'weapon', '무기'),
         hat: pack(eq.hat, 'hat', '모자'),
         armor: pack(eq.armor, 'armor', '갑옷'),
@@ -4642,6 +4679,26 @@ function buildEquipmentDex() {
         character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
     };
+    const equipmentEntries = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].flatMap(type => result[type]);
+    const setGroups = {};
+    equipmentEntries.forEach(entry => {
+        if (!entry.set) return;
+        const name = entry.set.name;
+        if (!setGroups[name]) setGroups[name] = [];
+        setGroups[name].push({
+            type: entry.type,
+            typeLabel: entry.typeLabel,
+            id: entry.id,
+            name: entry.name,
+            rarity: entry.rarity,
+            iconUrl: entry.iconUrl,
+            frameUrl: entry.frameUrl
+        });
+    });
+    equipmentEntries.forEach(entry => {
+        if (entry.set) entry.set.components = setGroups[entry.set.name] || [];
+    });
+    return result;
 }
 
 async function getPatchnoteList() {
@@ -6765,7 +6822,15 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="aucSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><div class="seg" id="aucCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div><div id="aucPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
-  <div class="page" data-page="dex"><section class="panel"><div class="auction-bar"><h2 style="margin:0">도감</h2><div class="dex-tabs"><button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character">캐릭터 카드</button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button></div></div><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></section></div>
+  <div class="page" data-page="dex"><section class="panel dex-shell">
+    <aside class="dex-sidebar" aria-label="도감 종류">
+      <h2>도감</h2>
+      <div class="dex-tabs">
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
+      </div>
+    </aside>
+    <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
+  </section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
