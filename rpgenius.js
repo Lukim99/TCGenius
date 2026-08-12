@@ -4237,12 +4237,14 @@ function formatStatPointStatus(user) {
 // 웹 정보 탭용: 스탯포인트 현황을 구조화된 객체로 반환
 function getStatPointInfo(user) {
     normalizeStatPointData(user);
+    const buyCount = Number(user.statPointBuyCount || 0);
     return {
         available: Number(user.statPoint || 0),
         perStatLimit: STAT_POINT_PER_STAT_LIMIT,
-        buyCount: Number(user.statPointBuyCount || 0),
+        buyCount,
         buyMax: STAT_POINT_BUY_MAX,
-        nextPrice: Number(user.statPointBuyCount || 0) < STAT_POINT_BUY_MAX ? getStatPointBuyPrice(Number(user.statPointBuyCount || 0) + 1) : null,
+        nextPrice: buyCount < STAT_POINT_BUY_MAX ? getStatPointBuyPrice(buyCount + 1) : null,
+        buyPrices: Array.from({ length: Math.max(0, STAT_POINT_BUY_MAX - buyCount) }, (_, index) => getStatPointBuyPrice(buyCount + index + 1)),
         stats: STAT_POINT_DISPLAY.map(stat => {
             const count = Number(user.statPointStats[stat.key] || 0);
             return {
@@ -13239,6 +13241,7 @@ module.exports = {
     getStatPointInfo,
     formatStatPointStatus,
     buyStatPoint,
+    investStatPoint,
     STAT_POINT_BUY_MAX,
     formatCurrentEquipmentStatLines,
     formatPotentialLines,

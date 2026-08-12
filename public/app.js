@@ -80,6 +80,49 @@ const comma = value => {
 };
 
 $('#logout').onclick = async () => { closeWebChatStream(); await fetch('/api/logout', { method: 'POST' }); location.reload(); };
+
+// ===== 2단계 인증(구글 OTP) 설정 =====
+function otpCodeInput() {
+    return el('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: 'OTP 6자리 코드', autocomplete: 'one-time-code', style: 'letter-spacing:.2em;text-align:center' });
+}
+async function openOtpModal() {
+    let status;
+    try { status = await api('/api/otp/status'); } catch (x) { showAlert(x.message); return; }
+    if (status.enabled) {
+        const input = otpCodeInput();
+        const btn = el('button', { class: 'primary' }, '2단계 인증 끄기');
+        btn.onclick = async () => {
+            btn.disabled = true;
+            try {
+                await postApi('/api/otp/disable', { otp: input.value.trim() });
+                closeModal();
+                showAlert('2단계 인증이 해제되었습니다.');
+            } catch (x) { showAlert(x.message); btn.disabled = false; }
+        };
+        openRichModal('2단계 인증', '현재 켜져 있습니다. 해제하려면 OTP 코드를 입력하세요.', [input, btn]);
+    } else {
+        let setup;
+        try { setup = await postApi('/api/otp/setup'); } catch (x) { showAlert(x.message); return; }
+        const secretBox = el('input', { type: 'text', readonly: '', value: setup.secret, style: 'font-family:ui-monospace,monospace;text-align:center', onclick: e => e.target.select() });
+        const input = otpCodeInput();
+        const btn = el('button', { class: 'primary' }, '2단계 인증 켜기');
+        btn.onclick = async () => {
+            btn.disabled = true;
+            try {
+                await postApi('/api/otp/enable', { otp: input.value.trim() });
+                closeModal();
+                showAlert('2단계 인증이 활성화되었습니다. 새 기기 로그인 시 로그인 코드 대신 OTP 코드를 사용할 수 있습니다.');
+            } catch (x) { showAlert(x.message); btn.disabled = false; }
+        };
+        openRichModal('2단계 인증 설정', 'Google Authenticator 앱에서 아래 키를 등록한 뒤, 앱에 표시되는 6자리 코드를 입력하세요.', [
+            el('div', { class: 'stat-line' }, '앱에서 [+] → 설정 키 입력 → 계정명은 자유롭게, 키는 아래 값을 입력'),
+            secretBox,
+            el('a', { href: setup.uri, style: 'font-size:12px;text-align:center;display:block' }, '모바일에서 보고 있다면 여기를 눌러 앱에 바로 등록'),
+            input, btn
+        ]);
+    }
+}
+if ($('#otpBtn')) $('#otpBtn').onclick = openOtpModal;
 window.addEventListener('pagehide', closeWebChatStream);
 if ($('#adminLink')) $('#adminLink').onclick = () => { location.href = '/admin'; };
 
@@ -576,22 +619,177 @@ function renderStatPoint(sp) {
     const root = $('#statPointBody');
     if (!root) return;
     if (!sp) { root.replaceChildren(el('div', { class: 'empty' }, '스탯포인트 정보가 없습니다.')); return; }
+    const canManage = !!myName && currentProfileName === myName;
+    const goldAmount = (amount, className) => el('span', { class: className || 'sp-gold-amount' },
+        sp.goldIconUrl ? el('img', { src: sp.goldIconUrl, alt: '골드' }) : el('span', { class: 'sp-gold-label' }, '골드'),
+        el('b', null, comma(amount))
+    );
     const summary = el('div', { class: 'sp-summary' },
         el('div', { class: 'sp-avail' }, el('span', null, '잔여 스탯포인트'), el('b', null, comma(sp.available))),
-        el('div', { class: 'sp-buy' }, '누적 구매 ' + comma(sp.buyCount) + '/' + comma(sp.buyMax) + '회' + (sp.nextPrice == null ? ' · 구매 완료' : ' · 다음 1개 🪙 ' + comma(sp.nextPrice)))
+        el('div', { class: 'sp-summary-side' },
+            canManage ? goldAmount(sp.gold, 'sp-owned-gold') : null,
+            el('div', { class: 'sp-buy' },
+                el('span', null, '누적 구매 ' + comma(sp.buyCount) + '/' + comma(sp.buyMax) + '회'),
+                sp.nextPrice == null ? el('span', { class: 'sp-buy-complete' }, '구매 완료') : el('span', { class: 'sp-next-price' }, '다음 1개', goldAmount(sp.nextPrice))
+            ),
+            canManage ? el('button', { class: 'primary sp-purchase-btn', disabled: sp.nextPrice == null, onclick: () => openStatPointBuyModal(sp) }, '스탯포인트 구매') : null
+        )
     );
     const list = el('div', { class: 'sp-list' });
     (sp.stats || []).forEach(s => {
         const pct = sp.perStatLimit > 0 ? Math.min(100, s.invested / sp.perStatLimit * 100) : 0;
         const bonus = '+' + comma(s.flat) + (s.plusPercent != null ? '  /  +' + s.plusPercent + '%' : '');
-        list.appendChild(el('div', { class: 'sp-row' },
+        const investMax = Math.max(0, Math.min(Number(sp.available || 0), Number(sp.perStatLimit || 0) - Number(s.invested || 0)));
+        list.appendChild(el('div', { class: 'sp-row' + (canManage ? ' manageable' : '') },
             el('div', { class: 'sp-name' }, s.name),
             el('div', { class: 'sp-bar' }, el('div', { class: 'sp-bar-fill', style: 'width:' + pct + '%' })),
             el('div', { class: 'sp-count' }, comma(s.invested) + ' / ' + comma(sp.perStatLimit)),
-            el('div', { class: 'sp-bonus' }, bonus)
+            el('div', { class: 'sp-bonus' }, bonus),
+            canManage ? el('button', { class: 'sp-invest-btn', disabled: investMax < 1, onclick: () => openStatPointInvestModal(sp, s) }, investMax < 1 && s.invested >= sp.perStatLimit ? '최대' : '투자') : null
         ));
     });
-    root.replaceChildren(summary, list, el('div', { class: 'sp-note' }, '스탯포인트 구매·투자는 카카오톡에서 가능합니다.'));
+    const investedTotal = (sp.stats || []).reduce((sum, stat) => sum + Number(stat.invested || 0), 0);
+    const reset = canManage && sp.resetItem ? el('div', { class: 'sp-reset' },
+        el('div', { class: 'sp-reset-thumb' },
+            sp.resetItem.frameUrl ? el('img', { class: 'sp-reset-frame', src: sp.resetItem.frameUrl, alt: '' }) : null,
+            sp.resetItem.iconUrl ? el('img', { class: 'sp-reset-icon', src: sp.resetItem.iconUrl, alt: sp.resetItem.name }) : null
+        ),
+        el('div', { class: 'sp-reset-info' },
+            el('b', null, '투자 초기화'),
+            el('span', null, sp.resetItem.name + '  ·  보유 ' + comma(sp.resetItem.count) + '개'),
+            el('small', null, '투자한 ' + comma(investedTotal) + '포인트를 모두 회수합니다.')
+        ),
+        el('button', { class: 'sp-reset-btn', disabled: investedTotal < 1 || Number(sp.resetItem.count || 0) < 1, onclick: () => resetStatPoints(sp, investedTotal) }, '초기화')
+    ) : null;
+    root.replaceChildren(summary, list, reset);
+}
+
+function statPointQtyControl(label, max, onChange) {
+    let value = 1;
+    const clamp = raw => Math.max(1, Math.min(Math.max(1, max), Math.floor(Number(raw) || 1)));
+    const input = el('input', { type: 'number', class: 'shop-qty-input', value: '1', min: '1', max: String(Math.max(1, max)) });
+    const set = raw => { value = clamp(raw); input.value = value; onChange(value); };
+    input.oninput = () => set(input.value);
+    return el('div', { class: 'shop-qty-row' },
+        el('span', { class: 'shop-qty-label' }, label),
+        el('button', { class: 'shop-qty-btn', onclick: () => set(value - 1) }, '−'),
+        input,
+        el('button', { class: 'shop-qty-btn', onclick: () => set(value + 1) }, '+'),
+        el('span', { class: 'shop-qty-max' }, '최대 ' + comma(max))
+    );
+}
+
+function openStatPointBuyModal(sp) {
+    const prices = Array.isArray(sp.buyPrices) ? sp.buyPrices.map(Number) : [];
+    let affordable = 0;
+    let running = 0;
+    for (const price of prices) {
+        if (running + price > Number(sp.gold || 0)) break;
+        running += price;
+        affordable++;
+    }
+    const maxQty = Math.min(prices.length, affordable);
+    let qty = 1;
+    const content = el('div', { class: 'shop-buy-modal' });
+    content.appendChild(el('div', { class: 'shop-buy-item-row' },
+        el('div', { class: 'sp-buy-thumb' }, 'SP'),
+        el('div', null,
+            el('div', { class: 'shop-buy-name' }, '스탯포인트'),
+            el('div', { class: 'shop-buy-meta' }, '구매 즉시 잔여 스탯포인트에 추가됩니다.')
+        )
+    ));
+    const receipt = el('div', { class: 'shop-receipt' });
+    const price = { goods: 'gold' };
+    const update = value => {
+        qty = value;
+        const total = prices.slice(0, qty).reduce((sum, amount) => sum + amount, 0);
+        receipt.replaceChildren(
+            buildReceiptRow('현재 보유', price, sp.gold),
+            buildReceiptRow('소모', price, total, 'deduct'),
+            el('div', { class: 'shop-receipt-divider' }),
+            buildReceiptRow('구매 후 잔액', price, Number(sp.gold || 0) - total, 'result')
+        );
+    };
+    content.appendChild(statPointQtyControl('구매 수량', maxQty, update));
+    content.appendChild(receipt);
+    update(1);
+    if (maxQty < 1) content.appendChild(el('div', { class: 'sp-modal-warning' }, prices.length ? '다음 스탯포인트를 구매할 골드가 부족합니다.' : '구매 가능한 스탯포인트를 모두 구매했습니다.'));
+    const buyBtn = el('button', { class: 'primary', disabled: maxQty < 1, onclick: async () => {
+        buyBtn.disabled = true;
+        buyBtn.textContent = '처리 중...';
+        try {
+            const result = await postApi('/api/stat-points/buy', { count: qty });
+            closeModal();
+            if (result.profile) renderProfile(result.profile);
+            await showAlert(comma(qty) + ' 스탯포인트를 구매했습니다.');
+        } catch (e) {
+            buyBtn.disabled = maxQty < 1;
+            buyBtn.textContent = '구매';
+            showAlert(e.message);
+        }
+    } }, '구매');
+    content.appendChild(el('div', { class: 'shop-buy-footer' }, el('button', { onclick: closeModal }, '취소'), buyBtn));
+    $('#modalTitle').textContent = '스탯포인트 구매';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+function openStatPointInvestModal(sp, stat) {
+    const maxQty = Math.max(0, Math.min(Number(sp.available || 0), Number(sp.perStatLimit || 0) - Number(stat.invested || 0)));
+    let qty = 1;
+    const content = el('div', { class: 'shop-buy-modal' });
+    content.appendChild(el('div', { class: 'sp-invest-modal-head' },
+        el('span', null, stat.name),
+        el('b', null, comma(stat.invested) + ' / ' + comma(sp.perStatLimit))
+    ));
+    const preview = el('div', { class: 'sp-invest-preview' });
+    const update = value => {
+        qty = value;
+        preview.replaceChildren(
+            el('span', null, '현재 ' + comma(stat.invested)),
+            el('strong', null, '+' + comma(qty)),
+            el('b', null, '투자 후 ' + comma(Number(stat.invested || 0) + qty))
+        );
+    };
+    content.appendChild(statPointQtyControl('투자 수량', maxQty, update));
+    content.appendChild(preview);
+    update(1);
+    const investBtn = el('button', { class: 'primary', disabled: maxQty < 1, onclick: async () => {
+        investBtn.disabled = true;
+        investBtn.textContent = '처리 중...';
+        try {
+            const result = await postApi('/api/stat-points/invest', { stat: stat.name, count: qty });
+            closeModal();
+            if (result.profile) renderProfile(result.profile);
+            await showAlert(stat.name + '에 ' + comma(qty) + '포인트를 투자했습니다.');
+        } catch (e) {
+            investBtn.disabled = false;
+            investBtn.textContent = '투자';
+            showAlert(e.message);
+        }
+    } }, '투자');
+    content.appendChild(el('div', { class: 'shop-buy-footer' }, el('button', { onclick: closeModal }, '취소'), investBtn));
+    $('#modalTitle').textContent = stat.name + ' 투자';
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+async function resetStatPoints(sp, investedTotal) {
+    if (!sp.resetItem || Number(sp.resetItem.count || 0) < 1) {
+        showAlert('초기화하려면 순백의 결정이 필요합니다.');
+        return;
+    }
+    const confirmed = await showConfirm('순백의 결정 1개를 사용해 투자한 ' + comma(investedTotal) + '포인트를 모두 회수할까요?', '초기화');
+    if (!confirmed) return;
+    try {
+        const result = await postApi('/api/stat-points/reset', {});
+        if (result.profile) renderProfile(result.profile);
+        showAlert('스탯포인트를 초기화했습니다.');
+    } catch (e) {
+        showAlert(e.message);
+    }
 }
 
 $$('.pf-tab').forEach(btn => btn.onclick = () => {

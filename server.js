@@ -202,6 +202,42 @@ function clearSession(res) {
     res.setHeader('Set-Cookie', SESSION_COOKIE + '=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
 }
 
+// ===== 2단계 인증 (구글 OTP / TOTP, RFC 6238) — 외부 의존성 없이 crypto만 사용 =====
+const B32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function base32Encode(buf) {
+    let bits = 0, value = 0, out = '';
+    for (const b of buf) {
+        value = (value << 8) | b; bits += 8;
+        while (bits >= 5) { out += B32_ALPHABET[(value >>> (bits - 5)) & 31]; bits -= 5; }
+    }
+    if (bits > 0) out += B32_ALPHABET[(value << (5 - bits)) & 31];
+    return out;
+}
+function base32Decode(str) {
+    let bits = 0, value = 0; const out = [];
+    for (const c of String(str).toUpperCase()) {
+        const idx = B32_ALPHABET.indexOf(c);
+        if (idx < 0) continue;
+        value = (value << 5) | idx; bits += 5;
+        if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; }
+    }
+    return Buffer.from(out);
+}
+function totpAt(secret, counter) {
+    const msg = Buffer.alloc(8);
+    msg.writeBigUInt64BE(BigInt(counter));
+    const h = crypto.createHmac('sha1', base32Decode(secret)).update(msg).digest();
+    const off = h[h.length - 1] & 15;
+    return String((h.readUInt32BE(off) & 0x7fffffff) % 1000000).padStart(6, '0');
+}
+function verifyTotp(secret, token) {
+    token = String(token || '').trim();
+    if (!/^\d{6}$/.test(token)) return false;
+    const counter = Math.floor(Date.now() / 30000);
+    // ponytail: ±1스텝(30초) 허용 — 시계 오차 대응, 재사용 방지 카운터는 생략
+    return [counter - 1, counter, counter + 1].some(c => totpAt(secret, c) === token);
+}
+
 function requireAdmin(req, res, next) {
     const sess = getSession(req);
     if (!sess || !sess.admin) return res.status(401).json({ error: '로그인이 필요합니다.' });
@@ -353,21 +389,27 @@ server.get('/party', requirePartyQuest, (req, res) => {
 server.post('/api/login', async (req, res) => {
     const name = String((req.body && req.body.name) || '').trim();
     const code = String((req.body && req.body.code) || '').trim();
+    const otp = String((req.body && req.body.otp) || '').trim();
     const ua = String(req.headers['user-agent'] || '').trim();
     if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
     try {
         const user = await rpgenius.getRPGUserByName(name);
         if (!user) return res.status(401).json({ error: '존재하지 않는 닉네임입니다.' });
         const knownAgent = ua && Array.isArray(user.logged_in_agent) && user.logged_in_agent.includes(ua);
-        if (!code) {
+        if (!code && !otp) {
             if (knownAgent) {
                 setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
                 return res.json({ ok: true, name: user.name });
             }
-            return res.json({ needCode: true });
+            return res.json({ needCode: true, canOtp: !!user.otpSecret });
         }
-        if (user.code !== code) return res.status(401).json({ error: '코드가 올바르지 않습니다.' });
-        if (typeof user.changeCode == 'function') await user.changeCode();
+        if (code) {
+            if (user.code !== code) return res.status(401).json({ error: '코드가 올바르지 않습니다.' });
+            if (typeof user.changeCode == 'function') await user.changeCode();
+        } else {
+            // 로그인 코드 대신 OTP로 새 기기 인증
+            if (!user.otpSecret || !verifyTotp(user.otpSecret, otp)) return res.status(401).json({ error: 'OTP 코드가 올바르지 않습니다.' });
+        }
         const latest = await rpgenius.getRPGUserByName(name);
         if (latest && ua && !latest.logged_in_agent.includes(ua)) {
             latest.logged_in_agent.push(ua);
@@ -403,6 +445,63 @@ server.post('/api/logout', (req, res) => {
 
 server.get('/api/me', requireUser, (req, res) => {
     res.json({ name: req.session.name, admin: !!req.session.admin });
+});
+
+server.get('/api/otp/status', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json({ enabled: !!user.otpSecret });
+    } catch (e) {
+        console.error('otp status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/otp/setup', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (user.otpSecret) return res.status(400).json({ error: '이미 2단계 인증이 켜져 있습니다.' });
+        const secret = base32Encode(crypto.randomBytes(20));
+        user.otpPending = secret;
+        await user.save();
+        res.json({ secret, uri: 'otpauth://totp/RPGenius:' + encodeURIComponent(user.name) + '?secret=' + secret + '&issuer=RPGenius' });
+    } catch (e) {
+        console.error('otp setup error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/otp/enable', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!user.otpPending) return res.status(400).json({ error: '먼저 OTP 설정을 시작해주세요.' });
+        if (!verifyTotp(user.otpPending, req.body && req.body.otp)) return res.status(400).json({ error: 'OTP 코드가 올바르지 않습니다.' });
+        user.otpSecret = user.otpPending;
+        delete user.otpPending;
+        await user.save();
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('otp enable error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/otp/disable', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!user.otpSecret) return res.status(400).json({ error: '2단계 인증이 꺼져 있습니다.' });
+        if (!verifyTotp(user.otpSecret, req.body && req.body.otp)) return res.status(400).json({ error: 'OTP 코드가 올바르지 않습니다.' });
+        delete user.otpSecret;
+        await user.save();
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('otp disable error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
 });
 
 async function getWebChatUser(req) {
@@ -599,6 +698,55 @@ server.get('/api/profile/:name', requireUser, async (req, res) => {
         res.json(profile);
     } catch (e) {
         console.error('profile-by-name error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/stat-points/buy', requireUser, async (req, res) => {
+    try {
+        const count = Number(req.body && req.body.count);
+        if (!Number.isInteger(count) || count < 1) return res.status(400).json({ error: '구매 수량은 1 이상의 정수여야 합니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.buyStatPoint(user, count);
+        if (String(result).startsWith('❌')) return res.status(400).json({ error: String(result).replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('stat point buy error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/stat-points/invest', requireUser, async (req, res) => {
+    try {
+        const stat = String((req.body && req.body.stat) || '').trim();
+        const count = Number(req.body && req.body.count);
+        if (!stat) return res.status(400).json({ error: '투자할 능력치를 선택해주세요.' });
+        if (!Number.isInteger(count) || count < 1) return res.status(400).json({ error: '투자 수량은 1 이상의 정수여야 합니다.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.investStatPoint(user, stat, count);
+        if (String(result).startsWith('❌')) return res.status(400).json({ error: String(result).replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('stat point invest error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/stat-points/reset', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const info = rpgenius.getStatPointInfo(user);
+        if (!info.stats.some(stat => Number(stat.invested || 0) > 0)) return res.status(400).json({ error: '초기화할 투자 스탯이 없습니다.' });
+        const result = await rpgenius.useItem(user, '순백의 결정', 1);
+        if (String(result).startsWith('❌')) return res.status(400).json({ error: String(result).replace(/^❌\s*/, '') });
+        res.json({ ok: true, message: result, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('stat point reset error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -5748,6 +5896,24 @@ function buildProfileStatGroups(stats, plusStats) {
     }));
 }
 
+function buildWebStatPointInfo(user) {
+    const info = rpgenius.getStatPointInfo(user);
+    const items = rpgenius.getDataCache('Item', []);
+    const resetItemId = findItemIdByName('순백의 결정');
+    const resetItem = resetItemId >= 0 ? items[resetItemId] : null;
+    const resetAssets = resetItem ? getItemDisplayAssets(resetItem) : { iconUrl: null, frameUrl: null };
+    return Object.assign(info, {
+        gold: Number(user.gold || 0),
+        goldIconUrl: getItemImageUrl('화폐', '골드.png'),
+        resetItem: {
+            name: '순백의 결정',
+            count: resetItemId >= 0 ? rpgenius.getInventoryItemCount(user, resetItemId) : 0,
+            iconUrl: resetAssets.iconUrl,
+            frameUrl: resetAssets.frameUrl
+        }
+    });
+}
+
 function buildUserProfile(user) {
     const level = Number(user.level || 1);
     const exp = Number(user.exp || 0);
@@ -5792,7 +5958,7 @@ function buildUserProfile(user) {
             critMulText: rpgenius.formatStatValue('critMul', stats.critMul).replace(/^\+/, '')
         },
         statGroups: buildProfileStatGroups(dispStats, plusStats),
-        statPoint: rpgenius.getStatPointInfo(user),
+        statPoint: buildWebStatPointInfo(user),
         currencyIcons: {
             gold: getItemImageUrl('화폐', '골드.png'),
             garnet: getItemImageUrl('화폐', '가넷.png'),
@@ -5836,9 +6002,16 @@ button:disabled{opacity:.6;cursor:wait}
     <button type="submit">다음</button>
   </form>
   <form id="f2" style="display:none">
-    <label>로그인 코드</label>
-    <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345" required>
+    <div id="codeField">
+      <label>로그인 코드</label>
+      <input id="codeInput" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE12345">
+    </div>
+    <div id="otpField" style="display:none">
+      <label>OTP 코드 (Google Authenticator)</label>
+      <input id="otpInput" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" spellcheck="false" placeholder="123456">
+    </div>
     <button type="submit">로그인</button>
+    <p class="alt" id="otpAltWrap" style="display:none"><a href="#" id="otpAlt">OTP 코드로 로그인</a></p>
   </form>
   <form id="f3" style="display:none">
     <label>닉네임</label>
@@ -5851,8 +6024,20 @@ button:disabled{opacity:.6;cursor:wait}
 <script>
 const err=document.getElementById('err');
 const f1=document.getElementById('f1'),f2=document.getElementById('f2');
-const nameInput=document.getElementById('nameInput'),codeInput=document.getElementById('codeInput');
-let savedName='';
+const nameInput=document.getElementById('nameInput'),codeInput=document.getElementById('codeInput'),otpInput=document.getElementById('otpInput');
+const codeField=document.getElementById('codeField'),otpField=document.getElementById('otpField');
+const otpAltWrap=document.getElementById('otpAltWrap'),otpAlt=document.getElementById('otpAlt');
+let savedName='',useOtp=false;
+function showStep2(){
+  codeField.style.display=useOtp?'none':'';
+  otpField.style.display=useOtp?'':'none';
+  codeInput.required=!useOtp;otpInput.required=useOtp;
+  document.getElementById('sub').textContent=useOtp?'OTP 코드를 입력하세요.':'코드를 입력하세요.';
+  otpAlt.textContent=useOtp?'로그인 코드로 로그인':'OTP 코드로 로그인';
+  f1.style.display='none';f2.style.display='';
+  (useOtp?otpInput:codeInput).focus();
+}
+otpAlt.addEventListener('click',e=>{e.preventDefault();err.textContent='';useOtp=!useOtp;showStep2();});
 f1.addEventListener('submit',async e=>{
   e.preventDefault();err.textContent='';
   const btn=f1.querySelector('button');btn.disabled=true;
@@ -5863,8 +6048,9 @@ f1.addEventListener('submit',async e=>{
     if(j.ok){location.reload();return;}
     if(j.needCode){
       savedName=nameInput.value.trim();
-      document.getElementById('sub').textContent='코드를 입력하세요.';
-      f1.style.display='none';f2.style.display='';codeInput.focus();
+      useOtp=false;
+      otpAltWrap.style.display=j.canOtp?'':'none';
+      showStep2();
     }
   }catch(x){err.textContent='❌ '+x.message;}
   btn.disabled=false;
@@ -5873,7 +6059,10 @@ f2.addEventListener('submit',async e=>{
   e.preventDefault();err.textContent='';
   const btn=f2.querySelector('button');btn.disabled=true;
   try{
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:savedName,code:codeInput.value.trim()})});
+    const body={name:savedName};
+    if(useOtp)body.otp=otpInput.value.trim();
+    else body.code=codeInput.value.trim();
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok)throw new Error(j.error||'로그인 실패');
     location.reload();
@@ -5907,7 +6096,7 @@ function renderUserDashboard(sess, opts) {
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="/static/style.css"></head><body>
-<header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
+<header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
   <div class="page active" data-page="home"><div id="homeBannerList" class="home-banner-list"></div></div>
