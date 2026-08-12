@@ -59,6 +59,7 @@ const BANNER_TARGET_TABS = [
     { value: 'inventory', label: '캐릭터 · 인벤토리' },
     { value: 'mail', label: '캐릭터 · 메일함' },
     { value: '펀치기계', label: '콘텐츠 · 펀치기계' },
+    { value: '[H]필드', label: '콘텐츠 · [H]필드' },
     { value: '버닝', label: '콘텐츠 · 버닝' },
     { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
     { value: 'combine', label: '콘텐츠 · 조합' },
@@ -413,6 +414,13 @@ server.get('/mail', async (req, res) => {
     } catch (_) {
         return res.send(renderUserDashboard(sess, { initialPage: 'mail' }));
     }
+});
+
+server.get('/hfield', async (req, res) => {
+    const sess = getSession(req);
+    if (!sess || !sess.name) return res.redirect('/');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderHFieldApp(sess));
 });
 
 server.get('/admin', (req, res) => {
@@ -1890,6 +1898,243 @@ function buildBurningTrack(reward, track, claimedSet) {
     };
 }
 
+// ===== [H]필드 =====
+const H_FIELD_NAME = '부타게임[H]';
+
+function getHFieldTicketInfo(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    const id = items.findIndex(item => item && item.name == '헬 초대장');
+    const data = id >= 0 ? items[id] : null;
+    const assets = data ? getItemDisplayAssets(data) : { iconUrl: null, frameUrl: null };
+    return {
+        name: '헬 초대장',
+        count: id >= 0 ? rpgenius.getInventoryItemCount(user, id) : 0,
+        cost: rpgenius.HELL_INVITATION_COST,
+        iconUrl: assets.iconUrl,
+        frameUrl: assets.frameUrl
+    };
+}
+
+function getHFieldSkills(user, mainCard) {
+    const classSkills = mainCard && mainCard.type == '전직' && mainCard.classInfo ? mainCard.classInfo.skills : [];
+    const entries = [].concat(mainCard && mainCard.skills || [], classSkills || []);
+    const cooldowns = user.field && user.field.name == H_FIELD_NAME && user.field.skillCooldowns || {};
+    const seen = new Set();
+    return entries.filter(skill => {
+        if (!skill || !skill.name || seen.has(skill.name)) return false;
+        seen.add(skill.name);
+        return true;
+    }).map(skill => ({
+        name: skill.name,
+        mpCost: Number(skill.mpCost || 0),
+        cooltimeText: skill.cooltimeText || '',
+        descLines: Array.isArray(skill.descLines) ? skill.descLines : [],
+        cooldownEnd: Number(cooldowns[skill.name] || 0)
+    }));
+}
+
+function getHFieldCharacterSprite(mainCard) {
+    if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent('필드/hfield-hunter.png');
+    const cardType = mainCard.type == '전직' ? '전직' : '일반';
+    const skin = String(mainCard.skin || '기본').trim() || '기본';
+    const relative = path.join('필드', '캐릭터', mainCard.name, cardType + '__' + skin + '.png');
+    const fullPath = path.join(RPG_UI_PATH, relative);
+    const fallback = path.join('필드', '캐릭터', mainCard.name, cardType + '__기본.png');
+    const selected = fs.existsSync(fullPath) ? relative : fs.existsSync(path.join(RPG_UI_PATH, fallback)) ? fallback : '필드/hfield-hunter.png';
+    return '/rpg-ui?file=' + encodeURIComponent(selected.replace(/\\/g, '/'));
+}
+
+function buildHFieldState(user) {
+    const dungeon = rpgenius.getHellDungeon();
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const maxMp = Number(stats.mp || 0);
+    const mainCard = serializeCard(user.main_card, user);
+    const ticket = getHFieldTicketInfo(user);
+    const fieldName = user.field && user.field.name || null;
+    const inField = fieldName == H_FIELD_NAME;
+    const phase = inField ? (user.field.phase == 'pillar' ? 'pillar' : 'elite') : 'lobby';
+    const bossMaxHp = Number(dungeon.elite && dungeon.elite.hp || 1);
+    const targetMaxHp = phase == 'pillar' ? Number(rpgenius.HELL_PILLAR_MAX_HP) : bossMaxHp;
+    const targetHp = phase == 'pillar'
+        ? Number(user.field.pillarHp || targetMaxHp)
+        : inField ? Number(user.field.elite && user.field.elite.hp || bossMaxHp) : bossMaxHp;
+    const level = Number(user.level || 1);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    let entryError = null;
+    if (fieldName && !inField) entryError = '현재 ' + fieldName + ' 필드에 입장 중입니다. 먼저 해당 필드에서 퇴장해주세요.';
+    else if (level < Number(dungeon.requireLevel || 1)) entryError = 'Lv.' + Number(dungeon.requireLevel || 1) + ' 이상부터 입장할 수 있습니다.';
+    else if (level > Number(dungeon.maxLevel || 300)) entryError = 'Lv.' + Number(dungeon.maxLevel || 300) + ' 이하만 입장할 수 있습니다.';
+    else if (hp <= 1) entryError = '체력이 1 이하일 때는 입장할 수 없습니다.';
+    else if (ticket.count < ticket.cost) entryError = '헬 초대장 ' + ticket.cost + '장이 필요합니다.';
+    return {
+        serverNow: Date.now(),
+        inField,
+        fieldName,
+        blockedField: fieldName && !inField ? fieldName : null,
+        phase,
+        canEnter: !inField && !entryError,
+        entryError,
+        requirements: { minLevel: Number(dungeon.requireLevel || 1), maxLevel: Number(dungeon.maxLevel || 300) },
+        ticket,
+        player: {
+            name: user.name,
+            level,
+            hp,
+            maxHp,
+            mp: typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0),
+            maxMp,
+            atk: Number(stats.atk || 0),
+            def: Number(stats.def || 0),
+            combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
+            cardName: mainCard && mainCard.name || '',
+            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            cardType: mainCard && mainCard.type || '일반',
+            cardSkin: mainCard && mainCard.skin || '',
+            spriteUrl: getHFieldCharacterSprite(mainCard)
+        },
+        target: {
+            name: phase == 'pillar' ? '부타의 기둥' : (dungeon.elite && dungeon.elite.name || '부타'),
+            hp: Math.max(0, targetHp),
+            maxHp: targetMaxHp,
+            atk: phase == 'pillar' ? 0 : Number(dungeon.elite && dungeon.elite.atk || 0),
+            def: phase == 'pillar' ? 0 : Number(dungeon.elite && dungeon.elite.def || 0),
+            pillars: phase == 'pillar' ? [targetHp >= 2, targetHp >= 1] : []
+        },
+        nextActionAt: inField ? Number(user.field.nextActionAt || 0) : 0,
+        charge: inField ? Number(user.field.sivalonCharge || 0) : 0,
+        skills: getHFieldSkills(user, mainCard)
+    };
+}
+
+function captureHFieldAction(user) {
+    const inField = !!(user.field && user.field.name == H_FIELD_NAME);
+    const phase = inField && user.field.phase == 'pillar' ? 'pillar' : 'elite';
+    const itemCounts = new Map((user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : []).map(item => [Number(item.id), Number(item.count || 0)]));
+    return {
+        inField,
+        phase,
+        playerHp: Number(user.hp || 0),
+        targetHp: !inField ? 0 : phase == 'pillar'
+            ? Number(user.field.pillarHp || 0)
+            : Number(user.field.elite && user.field.elite.hp || 0),
+        itemCounts,
+        equipmentCount: user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment.length : 0
+    };
+}
+
+function getHFieldRewards(user, before) {
+    const rewards = [];
+    buildInventoryItems(user).forEach(item => {
+        const gained = Number(item.count || 0) - Number(before.itemCounts.get(Number(item.id)) || 0);
+        if (gained > 0) rewards.push({ kind: 'item', name: item.name, count: gained, iconUrl: item.iconUrl, frameUrl: item.frameUrl, rarity: null });
+    });
+    buildInventoryEquipment(user)
+        .filter(item => item.source == 'inventory' && Number(item.index) >= Number(before.equipmentCount || 0))
+        .forEach(item => rewards.push({
+            kind: 'equipment', name: item.name, count: 1, rarity: item.rarity,
+            iconUrl: item.iconUrl, frameUrl: item.frameUrl, typeLabel: item.typeLabel
+        }));
+    return rewards;
+}
+
+function buildHFieldActionResult(user, before, message, action, skillName) {
+    const state = buildHFieldState(user);
+    const rewards = getHFieldRewards(user, before);
+    const sameTarget = state.inField && state.phase == before.phase;
+    const targetAfter = sameTarget ? Number(state.target.hp || 0) : 0;
+    const criticalCount = (String(message).match(/치명타/g) || []).length;
+    return {
+        ok: !String(message).startsWith('❌'),
+        message: String(message),
+        state,
+        event: {
+            action,
+            skillName: skillName || null,
+            damage: Math.max(0, Number(before.targetHp || 0) - targetAfter),
+            received: Math.max(0, Number(before.playerHp || 0) - Number(state.player.hp || 0)),
+            criticalCount,
+            phaseChanged: before.inField && state.inField && before.phase != state.phase,
+            pillarDestroyed: before.phase == 'pillar' && Number(before.targetHp || 0) > targetAfter
+                ? Math.max(0, 2 - Number(before.targetHp || 0)) : null,
+            cleared: before.inField && !state.inField && /자동으로 퇴장했습니다/.test(String(message)) && rewards.length > 0,
+            defeated: before.inField && !state.inField && /보상을 획득하지 못하고.*퇴장했습니다/.test(String(message)),
+            rewards
+        }
+    };
+}
+
+async function runHFieldMutation(req, res, mutate) {
+    try {
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) throw new Error('유저를 찾을 수 없습니다.');
+            return mutate(user);
+        });
+        res.json(payload);
+    } catch (e) {
+        console.error('h-field action error:', e);
+        res.status(500).json({ error: e && e.message == '유저를 찾을 수 없습니다.' ? e.message : '서버 오류' });
+    }
+}
+
+server.get('/api/hfield', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildHFieldState(user));
+    } catch (e) {
+        console.error('h-field status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/hfield/enter', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    const message = await rpgenius.enterField(user, H_FIELD_NAME, { confirmed: req.body && req.body.confirmed === true });
+    await user.save();
+    const state = buildHFieldState(user);
+    return {
+        ok: state.inField,
+        needsConfirmation: !state.inField && !!(user.pendingAction && user.pendingAction.type == '필드입장확인' && user.pendingAction.name == H_FIELD_NAME),
+        message,
+        state
+    };
+}));
+
+server.post('/api/hfield/cancel-entry', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    if (user.pendingAction && user.pendingAction.type == '필드입장확인' && user.pendingAction.name == H_FIELD_NAME) user.pendingAction = null;
+    await user.save();
+    return { ok: true, state: buildHFieldState(user) };
+}));
+
+server.post('/api/hfield/attack', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    if (!user.field || user.field.name != H_FIELD_NAME) return { ok: false, message: '❌ 부타게임[H]에 입장한 상태가 아닙니다.', state: buildHFieldState(user) };
+    const before = captureHFieldAction(user);
+    const message = await rpgenius.useBasicAttackInField(user);
+    await user.save();
+    return buildHFieldActionResult(user, before, message, 'attack');
+}));
+
+server.post('/api/hfield/skill', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    if (!user.field || user.field.name != H_FIELD_NAME) return { ok: false, message: '❌ 부타게임[H]에 입장한 상태가 아닙니다.', state: buildHFieldState(user) };
+    const skillName = String(req.body && req.body.skillName || '').trim().slice(0, 80);
+    if (!skillName) return { ok: false, message: '❌ 사용할 스킬을 선택해주세요.', state: buildHFieldState(user) };
+    const before = captureHFieldAction(user);
+    const message = await rpgenius.useSkillInField(user, skillName);
+    await user.save();
+    return buildHFieldActionResult(user, before, message, 'skill', skillName);
+}));
+
+server.post('/api/hfield/leave', requireUser, (req, res) => runHFieldMutation(req, res, async user => {
+    if (!user.field || user.field.name != H_FIELD_NAME) return { ok: false, message: '❌ 부타게임[H]에 입장한 상태가 아닙니다.', state: buildHFieldState(user) };
+    const message = rpgenius.leaveField(user);
+    await user.save();
+    return { ok: !String(message).startsWith('❌'), message, state: buildHFieldState(user) };
+}));
+
+// ===== 버닝 =====
 server.get('/api/burning', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -6949,6 +7194,20 @@ function renderUserDashboard(sess, opts) {
 <nav class="bottom-tabs" id="bottomTabs"></nav>
 <script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
 <script src="/static/app.js"></script>
+</body></html>`;
+}
+
+function renderHFieldApp(sess) {
+    return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>부타게임 [H]</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<link rel="stylesheet" href="/static/hfield.css"></head><body>
+<main id="hFieldRoot" class="hf-root" aria-label="부타게임 하드 필드">
+  <canvas id="hfCanvas" aria-label="부타게임 하드 필드 전투 화면"></canvas>
+  <canvas id="hfHud"></canvas>
+</main>
+<script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
+<script src="/static/hfield.js"></script>
 </body></html>`;
 }
 

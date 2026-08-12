@@ -163,7 +163,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -185,7 +185,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '[H]필드', '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -243,6 +243,7 @@ function activateGroup(groupId) {
 }
 
 function navigatePage(pageId) {
+    if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
     activePage = pageId;
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));

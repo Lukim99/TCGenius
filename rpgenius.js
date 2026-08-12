@@ -61,6 +61,7 @@ const DAILY_DUNGEON_LUCKY_CHANCE = 0.1;
 const DAILY_DUNGEON_EFFECTS = ['fever', 'punch', 'hit'];
 const REGULAR_HUNT_HP_MULTIPLIER = 0.9;
 const HELL_PILLAR_MAX_HP = 2;
+const HELL_INVITATION_COST = 30;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 사냥 드랍 아이템이 펀치기계 토큰으로 전환된다.
@@ -4325,7 +4326,7 @@ async function enterField(user, fieldName, options, channel) {
     if (level < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
     if (typeof dungeon.maxLevel != 'undefined' && level > Number(dungeon.maxLevel)) return '❌ 입장 가능한 최대 레벨을 초과했습니다. (Lv. ' + Number(dungeon.maxLevel) + ' 이하만 입장 가능)';
     const hellInvitationId = dungeon.isHell ? getItemIdByName('헬 초대장') : -1;
-    if (dungeon.isHell && (hellInvitationId == -1 || getInventoryItemCount(user, hellInvitationId) < 30)) return '❌ 헬 초대장 30장이 필요합니다.';
+    if (dungeon.isHell && (hellInvitationId == -1 || getInventoryItemCount(user, hellInvitationId) < HELL_INVITATION_COST)) return '❌ 헬 초대장 ' + HELL_INVITATION_COST + '장이 필요합니다.';
     const stats = calculateUserStats(user);
     const maxHp = Number(stats.hp || 0);
     const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
@@ -4351,13 +4352,13 @@ async function enterField(user, fieldName, options, channel) {
     user.hp = hp;
     const cooldowns = getFieldCooldowns(user);
     if (dungeon.isHell) {
-        if (!removeInventoryItem(user, hellInvitationId, 30)) return '❌ 헬 초대장 차감에 실패했습니다.';
+        if (!removeInventoryItem(user, hellInvitationId, HELL_INVITATION_COST)) return '❌ 헬 초대장 차감에 실패했습니다.';
         user.field = {
             name: dungeon.name, hell: true, phase: 'elite', enteredAt: Date.now(),
             nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns,
             elite: { hp: Number(dungeon.elite.hp || 1) }, killCount: 0
         };
-        return '✅ 부타게임[H]에 입장했습니다.\n- 헬 초대장 x30 소모\n- ' + dungeon.elite.name + ' 등장!\n- HP ' + comma(dungeon.elite.hp);
+        return '✅ 부타게임[H]에 입장했습니다.\n- 헬 초대장 x' + HELL_INVITATION_COST + ' 소모\n- ' + dungeon.elite.name + ' 등장!\n- HP ' + comma(dungeon.elite.hp);
     }
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
     return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
@@ -12055,6 +12056,13 @@ function enqueueUserCommand(senderId, task) {
     return next;
 }
 
+function enqueueFieldAction(user, task) {
+    if (!user || user.id == null || !user.name) return Promise.reject(new Error('필드 행동 유저 정보가 올바르지 않습니다.'));
+    const queueKey = 'account:' + user.id;
+    fieldQueueKeys[user.name] = queueKey;
+    return enqueueUserCommand(queueKey, task);
+}
+
 async function resolveCommandQueueKey(senderId, context) {
     if (context && context.queueKey) return String(context.queueKey);
     const user = await getRPGUserById(senderId);
@@ -13483,8 +13491,12 @@ module.exports = {
     formatDailyDungeonList,
     getDailyDungeonDailyState,
     enterDailyDungeon,
+    getHellDungeon,
+    HELL_PILLAR_MAX_HP,
+    HELL_INVITATION_COST,
     enterField,
     leaveField,
+    enqueueFieldAction,
     useBasicAttackInField,
     useSkillInField,
     getFieldCombatContext,
