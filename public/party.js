@@ -16,7 +16,6 @@
     let bossStageSig = '';
     let voteSig = '';
     let supportBarSig = '';
-    let selectedResultMember = '';
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
     let localCdTimer = null;
@@ -875,7 +874,7 @@
             el('div', { class: 'big' }, r.cleared ? '클리어' : '실패'),
             el('div', { class: 'pq-result-reason' }, r.reason || '')
         ));
-        if (r.statistics) wrap.append(renderBattleStatistics(r.statistics));
+        if (r.statistics) wrap.append(renderBattleGraph(r.statistics));
         const footer = el('div', { class: 'pq-result-footer' });
         if (r.cleared && r.rewards && r.rewards.length) {
             footer.append(el('button', { class: 'pq-btn primary', type: 'button', onClick: () => openRewardModal(r.rewards) }, '파티 보상 확인'));
@@ -909,152 +908,43 @@
         return minutes > 0 ? minutes + '분 ' + remain + '초' : remain + '초';
     }
 
-    function battleMetric(label, value, cls, suffix) {
-        return el('div', { class: 'pq-battle-metric ' + (cls || '') },
-            el('span', null, label),
-            el('strong', null, battleNumber(value) + (suffix || ''))
-        );
-    }
-
-    function battleRows(items, valueKey, emptyText) {
-        const list = Array.isArray(items) ? items.filter(item => Number(item && item[valueKey] || 0) > 0) : [];
-        if (!list.length) return el('div', { class: 'pq-battle-empty' }, emptyText || '기록 없음');
-        const max = Math.max(...list.map(item => Number(item[valueKey] || 0)), 1);
-        return el('div', { class: 'pq-battle-rows' }, ...list.map(item => {
-            const value = Number(item[valueKey] || 0);
-            return el('div', { class: 'pq-battle-row' },
-                el('div', { class: 'pq-battle-row-head' },
-                    el('span', null, item.name || '-'),
-                    el('b', null, battleNumber(value))
-                ),
-                el('div', { class: 'pq-battle-row-bar' },
-                    el('i', { style: 'width:' + Math.max(2, value / max * 100).toFixed(2) + '%' })
-                )
-            );
-        }));
-    }
-
-    function battleCountList(items, emptyText) {
-        const list = Array.isArray(items) ? items.filter(item => Number(item && item.count || 0) > 0) : [];
-        if (!list.length) return el('div', { class: 'pq-battle-empty compact' }, emptyText || '기록 없음');
-        return el('div', { class: 'pq-battle-count-list' }, ...list.map(item =>
-            el('div', { class: 'pq-battle-count-row' },
-                el('span', null, item.name || '-'),
-                el('b', null, battleNumber(item.count) + '회')
-            )
-        ));
-    }
-
-    function renderBattleMemberDetail(member) {
-        const reduced = member.damageReduced || {};
-        const card = member.card || {};
-        const head = el('div', { class: 'pq-battle-member-head' });
-        const portrait = el('div', { class: 'pq-battle-member-portrait' });
-        if (card.imageUrl) portrait.append(el('img', { src: card.imageUrl, alt: card.name || member.name || '' }));
-        else portrait.append(el('span', null, String(member.name || '?').slice(0, 1)));
-        head.append(portrait, el('div', { class: 'pq-battle-member-name' },
-            el('strong', null, member.name || '-'),
-            el('span', null, (member.position || '자유 포지션') + ' · 딜 기여도 ' + Number(member.damageShare || 0).toFixed(1) + '%')
-        ));
-
-        const metrics = el('div', { class: 'pq-battle-member-metrics' },
-            battleMetric('전체 딜량', member.damage, 'damage'),
-            battleMetric('받은 피해량', member.damageTaken, 'taken'),
-            battleMetric('감소한 피해량', reduced.total, 'reduced'),
-            battleMetric('회복량', member.healing, 'healing'),
-            battleMetric('아군 회복량', member.allyHealing, 'ally-healing')
-        );
-
-        const damageSection = el('section', { class: 'pq-battle-section damage-section' },
-            el('div', { class: 'pq-battle-section-title' }, el('b', null, '피해 분석'), el('span', null, '실제로 적용된 피해 기준')),
-            el('div', { class: 'pq-battle-type-grid' },
-                battleMetric('고정 피해', member.fixedDamage, 'fixed'),
-                battleMetric('치명타 피해', member.criticalDamage, 'critical'),
-                battleMetric('운명 피해', member.destinyDamage, 'destiny')
-            ),
-            el('div', { class: 'pq-battle-subtitle' }, '공격·스킬별 피해'),
-            battleRows(member.damageBySource, 'damage', '피해 기록 없음')
-        );
-
-        const reductionItems = [
-            { name: '방어력', value: reduced.defense },
-            { name: '속성 저항', value: reduced.resistance },
-            { name: '받는 피해 감소 효과', value: reduced.buff },
-            { name: '보호막', value: reduced.shield },
-            { name: '회피·대신 받기 등', value: reduced.other }
-        ];
-        const defenseSection = el('section', { class: 'pq-battle-section defense-section' },
-            el('div', { class: 'pq-battle-section-title' }, el('b', null, '생존 분석'), el('span', null, '피해가 줄어든 원인별 합계')),
-            battleRows(reductionItems, 'value', '감소한 피해 없음')
-        );
-
-        const actionsSection = el('section', { class: 'pq-battle-section actions-section' },
-            el('div', { class: 'pq-battle-section-title' }, el('b', null, '행동 기록'), el('span', null, '전투 중 실제 사용 횟수')),
-            el('div', { class: 'pq-battle-action-grid' },
-                battleMetric('공격 횟수', member.attackCount, 'attack', '회'),
-                battleMetric('스킬 사용', member.skillUseCount, 'skill', '회'),
-                battleMetric('물약 사용', member.potionUseCount, 'potion', '회')
-            ),
-            el('div', { class: 'pq-battle-subtitle' }, '스킬 사용 내역'),
-            battleCountList(member.skillUses, '사용한 스킬 없음'),
-            el('div', { class: 'pq-battle-subtitle potion-title' }, '물약 사용 내역'),
-            battleCountList(member.potionUses, '사용한 물약 없음')
-        );
-
-        return el('div', { class: 'pq-battle-member-detail' }, head, metrics,
-            el('div', { class: 'pq-battle-detail-grid' }, damageSection, defenseSection, actionsSection)
-        );
-    }
-
-    function renderBattleStatistics(statistics) {
+    function renderBattleGraph(statistics) {
         const members = Array.isArray(statistics.members) ? statistics.members : [];
-        const party = statistics.party || {};
         if (!members.length) return el('div', { class: 'pq-battle-empty' }, '전투 통계가 없습니다.');
-        if (!selectedResultMember || !members.some(member => member.name === selectedResultMember)) {
-            selectedResultMember = members.some(member => member.name === me) ? me : members[0].name;
-        }
-        const root = el('div', { class: 'pq-battle-stats' });
+        const maxDamage = Math.max(...members.map(member => Number(member.damage || 0)), 1);
+        const totalDamage = members.reduce((sum, member) => sum + Number(member.damage || 0), 0);
+        const root = el('div', { class: 'pq-battle-stats simple' });
         root.append(el('div', { class: 'pq-battle-title' },
-            el('div', null, el('span', null, 'BATTLE REPORT'), el('h3', null, '전투 통계')),
+            el('div', null, el('span', null, 'BATTLE REPORT'), el('h3', null, '딜량 그래프')),
             el('b', null, battleDuration(statistics.durationSeconds))
         ));
-        root.append(el('div', { class: 'pq-battle-party-summary' },
-            battleMetric('파티 전체 딜량', party.damage, 'damage'),
-            battleMetric('받은 피해량', party.damageTaken, 'taken'),
-            battleMetric('감소한 피해량', party.damageReduced, 'reduced'),
-            battleMetric('총 회복 기여', Number(party.healing || 0) + Number(party.allyHealing || 0), 'healing')
-        ));
-
-        const detail = el('div', { class: 'pq-battle-detail-host' });
-        const selector = el('div', { class: 'pq-battle-member-tabs', role: 'tablist', 'aria-label': '파티원 전투 통계' });
-        const buttons = [];
-        const selectMember = name => {
-            selectedResultMember = name;
-            buttons.forEach(button => {
-                const active = button.getAttribute('data-member') === name;
-                button.classList.toggle('active', active);
-                button.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            const member = members.find(item => item.name === name) || members[0];
-            detail.replaceChildren(renderBattleMemberDetail(member));
-        };
+        const graph = el('div', { class: 'pq-damage-graph' });
         members.forEach((member, index) => {
             const card = member.card || {};
-            const thumb = el('span', { class: 'pq-battle-tab-thumb' });
-            if (card.imageUrl) thumb.append(el('img', { src: card.imageUrl, alt: '' }));
-            else thumb.append(String(index + 1));
-            const button = el('button', { class: 'pq-battle-member-tab', type: 'button', role: 'tab', 'data-member': member.name, onClick: () => selectMember(member.name) },
-                thumb,
-                el('span', { class: 'pq-battle-tab-copy' },
-                    el('b', null, member.name || '-'),
-                    el('small', null, battleNumber(member.damage) + ' · ' + Number(member.damageShare || 0).toFixed(1) + '%')
+            const portrait = el('div', { class: 'pq-damage-portrait' });
+            if (card.imageUrl) portrait.append(el('img', { src: card.imageUrl, alt: card.name || member.name || '' }));
+            else portrait.append(el('span', null, String(index + 1)));
+            const share = totalDamage > 0 ? Number(member.damage || 0) / totalDamage * 100 : 0;
+            graph.append(el('div', { class: 'pq-damage-player' },
+                portrait,
+                el('div', { class: 'pq-damage-player-body' },
+                    el('div', { class: 'pq-damage-player-head' },
+                        el('div', null, el('strong', null, member.name || '-'), el('span', null, member.position || '파티원')),
+                        el('b', null, battleNumber(member.damage))
+                    ),
+                    el('div', { class: 'pq-damage-track' },
+                        el('i', { style: 'width:' + Math.max(0, Number(member.damage || 0) / maxDamage * 100).toFixed(2) + '%' })
+                    ),
+                    el('div', { class: 'pq-damage-share' }, '딜 기여도 ' + share.toFixed(1) + '%'),
+                    el('div', { class: 'pq-damage-secondary' },
+                        el('span', null, '받은 피해 ', el('b', null, battleNumber(member.damageTaken))),
+                        el('span', null, '감소한 피해 ', el('b', null, battleNumber(member.damageReduced))),
+                        el('span', null, '아군 회복 ', el('b', null, battleNumber(member.allyHealing)))
+                    )
                 )
-            );
-            buttons.push(button);
-            selector.append(button);
+            ));
         });
-        root.append(selector, detail);
-        selectMember(selectedResultMember);
+        root.append(graph);
         return root;
     }
 

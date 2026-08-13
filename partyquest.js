@@ -851,19 +851,9 @@ function publicRoomList() {
 function createPartyBattleStats() {
     return {
         damage: 0,
-        fixedDamage: 0,
-        criticalDamage: 0,
-        destinyDamage: 0,
-        damageBySource: {},
         damageTaken: 0,
         damageReduced: { defense: 0, resistance: 0, buff: 0, shield: 0, other: 0 },
-        healing: 0,
-        allyHealing: 0,
-        attackCount: 0,
-        skillUseCount: 0,
-        skillUses: {},
-        potionUseCount: 0,
-        potionUses: {}
+        allyHealing: 0
     };
 }
 
@@ -873,46 +863,11 @@ function getPartyBattleStats(member) {
     return member.runtime.battleStats;
 }
 
-function addPartyStatMapValue(map, key, amount) {
-    const label = String(key || '기타');
-    map[label] = Number(map[label] || 0) + Number(amount || 0);
-}
-
-function recordPartyDamage(member, result, source) {
+function recordPartyDamage(member, result) {
     const stats = getPartyBattleStats(member);
     if (!stats || !result) return;
     const damage = Math.max(0, Math.round(Number(result.damage || 0)));
-    if (damage <= 0) return;
-    const hitDetails = Array.isArray(result.hitDetails) ? result.hitDetails : [];
-    const calculatedDamage = hitDetails.reduce((sum, hit) => sum + Math.max(0, Number(hit && hit.damage || 0)), 0);
-    const scale = calculatedDamage > 0 ? damage / calculatedDamage : 1;
-    const criticalDamage = hitDetails.length
-        ? hitDetails.reduce((sum, hit) => sum + (hit && hit.crit ? Math.max(0, Number(hit.damage || 0)) : 0), 0) * scale
-        : (result.isCrit ? damage : 0);
-    stats.damage += damage;
-    stats.fixedDamage += Math.min(damage, Math.max(0, Number(result.fixedDamage || 0)) * scale);
-    stats.destinyDamage += Math.min(damage, Math.max(0, Number(result.destinyDamage || 0)) * scale);
-    stats.criticalDamage += Math.min(damage, Math.max(0, criticalDamage));
-    addPartyStatMapValue(stats.damageBySource, source || '기본 공격', damage);
-}
-
-function recordPartyAttackUse(member) {
-    const stats = getPartyBattleStats(member);
-    if (stats) stats.attackCount += 1;
-}
-
-function recordPartySkillUse(member, skillName) {
-    const stats = getPartyBattleStats(member);
-    if (!stats) return;
-    stats.skillUseCount += 1;
-    addPartyStatMapValue(stats.skillUses, skillName || '기타 스킬', 1);
-}
-
-function recordPartyPotionUse(member, potionName) {
-    const stats = getPartyBattleStats(member);
-    if (!stats) return;
-    stats.potionUseCount += 1;
-    addPartyStatMapValue(stats.potionUses, potionName || '물약', 1);
+    if (damage > 0) stats.damage += damage;
 }
 
 function recordPartyHealing(source, target, amount) {
@@ -921,8 +876,7 @@ function recordPartyHealing(source, target, amount) {
     const healer = source || target;
     const stats = getPartyBattleStats(healer);
     if (!stats) return;
-    if (healer === target) stats.healing += healed;
-    else stats.allyHealing += healed;
+    if (healer !== target) stats.allyHealing += healed;
 }
 
 function recordPartyDamageReduced(member, kind, amount) {
@@ -931,13 +885,6 @@ function recordPartyDamageReduced(member, kind, amount) {
     if (!stats || reduced <= 0) return;
     const key = Object.prototype.hasOwnProperty.call(stats.damageReduced, kind) ? kind : 'other';
     stats.damageReduced[key] += reduced;
-}
-
-function partyStatMapToList(map, valueKey) {
-    return Object.entries(map || {})
-        .map(([name, value]) => ({ name, [valueKey]: Math.max(0, Math.round(Number(value || 0))) }))
-        .filter(entry => entry[valueKey] > 0)
-        .sort((a, b) => b[valueKey] - a[valueKey]);
 }
 
 function buildPartyBattleStatistics(room) {
@@ -956,36 +903,13 @@ function buildPartyBattleStatistics(room) {
             position: member.position || null,
             card: member.card || null,
             damage: Math.max(0, Math.round(stats.damage)),
-            fixedDamage: Math.max(0, Math.round(stats.fixedDamage)),
-            criticalDamage: Math.max(0, Math.round(stats.criticalDamage)),
-            destinyDamage: Math.max(0, Math.round(stats.destinyDamage)),
-            damageBySource: partyStatMapToList(stats.damageBySource, 'damage'),
             damageTaken: Math.max(0, Math.round(stats.damageTaken)),
-            damageReduced: reduced,
-            healing: Math.max(0, Math.round(stats.healing)),
-            allyHealing: Math.max(0, Math.round(stats.allyHealing)),
-            attackCount: Math.max(0, Math.round(stats.attackCount)),
-            skillUseCount: Math.max(0, Math.round(stats.skillUseCount)),
-            skillUses: partyStatMapToList(stats.skillUses, 'count'),
-            potionUseCount: Math.max(0, Math.round(stats.potionUseCount)),
-            potionUses: partyStatMapToList(stats.potionUses, 'count')
+            damageReduced: reduced.total,
+            allyHealing: Math.max(0, Math.round(stats.allyHealing))
         };
     }).sort((a, b) => b.damage - a.damage);
-    const party = members.reduce((total, member) => {
-        total.damage += member.damage;
-        total.damageTaken += member.damageTaken;
-        total.damageReduced += member.damageReduced.total;
-        total.healing += member.healing;
-        total.allyHealing += member.allyHealing;
-        total.attackCount += member.attackCount;
-        total.skillUseCount += member.skillUseCount;
-        total.potionUseCount += member.potionUseCount;
-        return total;
-    }, { damage: 0, damageTaken: 0, damageReduced: 0, healing: 0, allyHealing: 0, attackCount: 0, skillUseCount: 0, potionUseCount: 0 });
-    for (const member of members) member.damageShare = party.damage > 0 ? Math.round(member.damage / party.damage * 1000) / 10 : 0;
     return {
         durationSeconds: Math.max(0, Math.round((Date.now() - Number(room.startedAt || Date.now())) / 1000)),
-        party,
         members
     };
 }
@@ -1890,14 +1814,12 @@ function attackMobPhase(name) {
         me.runtime.sivalonCharge = Math.min(5, Number(me.runtime.sivalonCharge || 0) + 1);
     }
     if (phase.type === 'mob') {
-        recordPartyAttackUse(me);
         const fakeMon = createPhaseMonster(phase);
         const result = computeBasicDamage(me, fakeMon, room);
         const applied = applyMobPhaseDamage(room, me, fakeMon, result, 'attack', null, true);
         return { ok: true, damage: result.damage, kills: applied.kills, crit: !!result.isCrit };
     }
     if (!room.monster) return { error: '공격할 대상이 없습니다.' };
-    recordPartyAttackUse(me);
     const r = performBasicAttack(room, me);
     if (room.monster && room.monster.hp <= 0) {
         onMonsterDefeated(room);
@@ -3457,7 +3379,6 @@ function useSupportSkill(name, skillName) {
     if (Number(room.supportGauge || 0) < 100) return { error: '지원군 게이지가 부족합니다. (' + Math.floor(Number(room.supportGauge || 0)) + '%)' };
     room.supportGauge = 0;
     room.supportGaugeAccum = 0;
-    recordPartySkillUse(me, '지원군 · ' + skillName);
     pushNotice(room, name + ' — 지원군 [' + skillName + '] 호출', 'big', 4000);
     if (skillName === '지오') useSupportGeo(room, me);
     else if (skillName === 'SitoSoym') useSupportSito(room, me);
@@ -4082,7 +4003,6 @@ function usePartyBlockSkill(room, member) {
     if (!member.skills.includes('저지')) return { error: '습득하지 않은 스킬입니다.' };
     if (st.blockUsers.has(member.name)) return { error: '이미 저지했습니다.' };
     clearPartyGunryeokOnSkillUse(room, member);
-    recordPartySkillUse(member, '저지');
     st.blockUsers.add(member.name);
     pushCombat(room, member.name + ' [저지]', 'buff');
     broadcastRoom(room);
@@ -4565,7 +4485,6 @@ function useSkill(name, skillName, targetName) {
     if (typeof equipmentSkill.hpAfter !== 'undefined') me.runtime.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
     me.runtime.mp -= mp;
-    recordPartySkillUse(me, skillName);
     me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
     // 건력 상태에서 스킬 사용 시 해제 (건력 자체는 executeMainCardSkillEffect에서 토글 처리)
     if (skillName !== '건력') clearPartyGunryeokOnSkillUse(room, me);
@@ -4602,7 +4521,6 @@ function usePartySelfDestruct(room, member) {
     const botActive = !!(runtime.iktaeBot && Number(runtime.iktaeBot.expired_at || 0) > now && Number(runtime.iktaeBot.hp || 0) > 0);
     const sunataActive = !!(runtime.sunata && Number(runtime.sunata.expired_at || 0) > now);
     if (!botActive && !sunataActive) return { error: '익테봇 또는 수나타가 소환 중일 때만 자폭을 사용할 수 있습니다.' };
-    recordPartySkillUse(member, '자폭');
     clearPartyGunryeokOnSkillUse(room, member);
     const mainSkills = (member.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const equipmentSkill = preparePartyTranscendSkill(member, '자폭', false, room);
@@ -5301,7 +5219,6 @@ async function usePotion(name, potionName) {
         }
     }
     const line = '🧪 ' + potionName + ' → ' + name + ' [' + parts.join(', ') + ']';
-    recordPartyPotionUse(me, potionName);
     slot.count -= 1;
     if (slot.count <= 0) me.potions = me.potions.filter(p => p !== slot);
     me.runtime.potionUntil = nowMs() + POTION_GLOBAL_CD * 1000;
