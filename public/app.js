@@ -37,27 +37,37 @@ const postApi = async (url, body) => {
     if (!r.ok) throw new Error(x.error || ('HTTP ' + r.status));
     return x;
 };
-// ===== 공통 메시지 모달 (네이티브 alert/confirm 대체) =====
+// ===== 공통 메시지 모달 (네이티브 alert/confirm/prompt 대체) =====
 function openMsgModal(message, opts) {
     return new Promise(resolve => {
         const isConfirm = !!(opts && opts.confirm);
+        const isPrompt = !!(opts && opts.prompt);
         const bg = el('div', { class: 'msg-modal-bg' });
+        let input = null;
+        if (isPrompt) input = el('input', { class: 'msg-modal-input', type: 'text', value: (opts && opts.value) || '', maxLength: (opts && opts.maxLength) || 200 });
         const done = val => { bg.remove(); resolve(val); };
-        const okBtn = el('button', { class: 'msg-modal-btn primary', type: 'button', onclick: () => done(true) }, (opts && opts.okLabel) || '확인');
-        const actions = isConfirm
-            ? [el('button', { class: 'msg-modal-btn', type: 'button', onclick: () => done(false) }, '취소'), okBtn]
+        const okValue = () => isPrompt ? input.value : true;
+        const cancelValue = isPrompt ? null : false;
+        const okBtn = el('button', { class: 'msg-modal-btn primary', type: 'button', onclick: () => done(okValue()) }, (opts && opts.okLabel) || '확인');
+        const actions = (isConfirm || isPrompt)
+            ? [el('button', { class: 'msg-modal-btn', type: 'button', onclick: () => done(cancelValue) }, '취소'), okBtn]
             : [okBtn];
         bg.appendChild(el('div', { class: 'msg-modal' },
             el('div', { class: 'msg-modal-text' }, String(message)),
+            input,
             el('div', { class: 'msg-modal-actions' }, ...actions)));
-        bg.addEventListener('click', e => { if (e.target === bg && !isConfirm) done(true); });
-        bg.addEventListener('keydown', e => { if (e.key === 'Escape') done(!isConfirm); });
+        bg.addEventListener('click', e => { if (e.target === bg && !isConfirm && !isPrompt) done(true); });
+        bg.addEventListener('keydown', e => {
+            if (e.key === 'Escape') done(isConfirm || isPrompt ? cancelValue : true);
+            if (e.key === 'Enter' && isPrompt) done(okValue());
+        });
         document.body.appendChild(bg);
-        setTimeout(() => okBtn.focus(), 30);
+        setTimeout(() => (input || okBtn).focus(), 30);
     });
 }
 const showAlert = message => openMsgModal(message);
 const showConfirm = (message, okLabel) => openMsgModal(message, { confirm: true, okLabel });
+const showPrompt = (message, value, maxLength) => openMsgModal(message, { prompt: true, value, maxLength });
 
 const KOREAN_BIG_UNITS = ['', '만', '억', '조', '경', '해', '자', '양', '구', '간', '정', '재', '극'];
 const comma = value => {
@@ -163,7 +173,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -184,7 +194,7 @@ const CAPSULE_VISIBLE = !!window.IS_ADMIN;
 const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
-    { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
+    { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '[H]필드', '버닝', '자물쇠', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
@@ -261,6 +271,7 @@ function navigatePage(pageId) {
         loadInventory('items').catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message)));
     }
     if (pageId === 'mail') loadMail();
+    if (pageId === 'preset') loadPresets();
     if (pageId === 'event') loadEventDice();
     if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
@@ -973,6 +984,7 @@ function setModalVariant(variant) {
     if (!modal) return;
     modal.classList.toggle('item-detail-modal', variant === 'item-detail');
     modal.classList.toggle('dex-equipment-modal', variant === 'dex-equipment');
+    modal.classList.toggle('preset-detail-modal', variant === 'preset-detail');
 }
 
 function openModal(title, sub, lines) {
@@ -1054,7 +1066,7 @@ function slotEffectPanelNode(eff) {
     );
 }
 
-function openMainCardModal(card) {
+function mainCardDetailNodes(card) {
     const isJob = card && card.type === '전직';
     const nodes = [];
     if (card && Array.isArray(card.skills) && card.skills.length > 0) {
@@ -1066,10 +1078,15 @@ function openMainCardModal(card) {
         card.classInfo.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '표시할 스킬이 없습니다.'));
+    return nodes;
+}
+
+function openMainCardModal(card) {
+    const nodes = mainCardDetailNodes(card);
     openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
 }
 
-function openCardSlotModal(card, slotNumber) {
+function cardSlotDetailNodes(card) {
     const isJob = card && card.type === '전직';
     const nodes = [];
     // 전직 카드는 전직 슬롯 효과만, 일반 카드는 일반 슬롯 효과만 적용
@@ -1081,6 +1098,11 @@ function openCardSlotModal(card, slotNumber) {
         nodes.push(slotEffectPanelNode(card.slotEffect));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
+    return nodes;
+}
+
+function openCardSlotModal(card, slotNumber) {
+    const nodes = cardSlotDetailNodes(card);
     openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
         const row = el('div', { class: 'row modal-action-row' });
@@ -3057,6 +3079,330 @@ async function claimPunch9999(choice) {
         if (data.reward) openPunchRewardModal(data.reward);
         else closeModal();
     } catch (e) { showAlert(e.message); }
+}
+
+// ===== 장착 프리셋 =====
+let presetState = { data: null, busy: false };
+
+async function loadPresets() {
+    const root = $('#presetRoot');
+    if (!root) return;
+    try {
+        presetState.data = await api('/api/presets');
+    } catch (e) {
+        root.replaceChildren(el('div', { class: 'empty err' }, e.message));
+        return;
+    }
+    renderPresets();
+}
+
+function presetSavedAtText(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' 저장';
+}
+
+async function savePresetSlot(slot, overwrite) {
+    if (presetState.busy) return;
+    if (overwrite && !(await showConfirm('프리셋 ' + (slot + 1) + '번을 현재 장착 상태로 덮어쓸까요?'))) return;
+    presetState.busy = true;
+    showLoading();
+    try {
+        presetState.data = await postApi('/api/presets/save', { slot });
+        renderPresets();
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        presetState.busy = false;
+        hideLoading();
+    }
+}
+
+async function applyPresetSlot(slot) {
+    if (presetState.busy) return;
+    if (!(await showConfirm('프리셋 ' + (slot + 1) + '번을 적용할까요?\n현재 장착 중인 장비/카드가 프리셋 상태로 변경됩니다.'))) return;
+    presetState.busy = true;
+    showLoading();
+    try {
+        const r = await postApi('/api/presets/apply', { slot });
+        presetState.data = r;
+        renderPresets();
+        if (r.profile) renderProfile(r.profile);
+        if (Array.isArray(r.warnings) && r.warnings.length) showAlert('일부 항목을 적용하지 못했습니다.\n- ' + r.warnings.join('\n- '));
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        presetState.busy = false;
+        hideLoading();
+    }
+}
+
+// 해금 구매 모달 (버닝 해금 디자인 + 상점식 가격 계산서)
+function openPresetUnlockModal(slot, cost) {
+    $('#modalTitle').textContent = '프리셋 슬롯 해금';
+    $('#modalSub').style.display = 'none';
+    const d = presetState.data;
+    const bal = cost.currency === 'garnet' ? Number(d.garnet || 0) : Number(d.point || 0);
+    const after = bal - cost.amount;
+    const receiptRow = (label, amount, variant) => el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') },
+        el('span', { class: 'shop-receipt-label' }, label),
+        el('div', { class: 'shop-receipt-val' },
+            cost.iconUrl ? el('img', { src: cost.iconUrl, alt: '', style: 'width:16px;height:16px;object-fit:contain' }) : null,
+            el('span', null, comma(Math.abs(amount)))));
+    const btn = el('button', { class: 'burning-unlock-btn' }, '해금하기');
+    btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+            presetState.data = await postApi('/api/presets/unlock', { slot });
+            closeModal();
+            renderPresets();
+        } catch (e) { showAlert(e.message); btn.disabled = false; }
+    };
+    const body = el('div', { class: 'burning-unlock-modal' },
+        el('div', { class: 'burning-unlock-icon' }, '🔓'),
+        el('div', { class: 'burning-unlock-desc' }, (slot + 1) + '번 프리셋 슬롯을 해금하시겠습니까?'),
+        el('div', { class: 'shop-receipt preset-unlock-receipt' },
+            receiptRow('현재 보유', bal),
+            receiptRow('소모', cost.amount, 'deduct'),
+            el('div', { class: 'shop-receipt-divider' }),
+            receiptRow('해금 후 잔액', after, after < 0 ? 'neg' : 'result')),
+        btn);
+    $('#modalBody').replaceChildren(body);
+    $('#modalBg').classList.add('active');
+}
+
+// 고정 장비 슬롯 배치: 한 줄(무기~신발) + 한 줄(장신구x3, 보조)
+const PRESET_GEAR_LAYOUT = [
+    { type: 'weapon', label: '무기' }, { type: 'hat', label: '모자' }, { type: 'armor', label: '갑옷' },
+    { type: 'pants', label: '하의' }, { type: 'shoes', label: '신발' },
+    { type: 'accessory', label: '장신구' }, { type: 'accessory', label: '장신구' }, { type: 'accessory', label: '장신구' },
+    { type: 'support', label: '보조' }
+];
+const PRESET_EMPTY_GEAR_FRAME_URL = '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]일반.png');
+const PRESET_EMPTY_CARD_URL = '/static/assets/preset-empty-card.png';
+
+function presetSlotIcon(type) {
+    return svgIcon(REG_SLOT_SVGS[type] || REG_SLOT_SVGS.armor);
+}
+
+function presetGearTile(eq, slotDef) {
+    if (!eq) return el('div', { class: 'preset-gear-tile empty', title: slotDef.label + ' 미장착' },
+        el('img', { class: 'preset-gear-frame', src: PRESET_EMPTY_GEAR_FRAME_URL, alt: '' }),
+        el('span', { class: 'preset-gear-ph' }, presetSlotIcon(slotDef.type)));
+    return el('div', { class: 'preset-gear-tile', title: '<' + eq.rarity + '> ' + eq.name + (eq.level > 0 ? ' +' + eq.level : '') },
+        eq.frameUrl ? el('img', { class: 'preset-gear-frame', src: eq.frameUrl, alt: '' }) : null,
+        eq.iconUrl ? el('img', { class: 'preset-gear-icon', src: eq.iconUrl, alt: eq.name }) : el('span', { class: 'preset-gear-fallback' }, presetSlotIcon(eq.type)),
+        eq.level > 0 ? el('b', { class: 'preset-gear-lv' }, '+' + eq.level) : null);
+}
+
+function presetTitle(slot, preset) {
+    return (preset && preset.name) || ('프리셋 ' + (slot + 1));
+}
+
+async function renamePreset(slot) {
+    const preset = presetState.data.presets[slot];
+    if (!preset) return;
+    const name = await showPrompt('프리셋 이름 (최대 12자, 비우면 기본 이름)', preset.name || '', 12);
+    if (name === null) return;
+    try {
+        presetState.data = await postApi('/api/presets/rename', { slot, name: name.trim() });
+        renderPresets();
+    } catch (e) { showAlert(e.message); }
+}
+
+function presetCard(slot) {
+    const d = presetState.data;
+    const preset = d.presets[slot];
+    const unlocked = slot < d.unlocked;
+    const head = el('div', { class: 'preset-card-head' },
+        el('span', { class: 'preset-no' }, String(slot + 1)),
+        el('b', null, presetTitle(slot, preset)),
+        preset ? el('button', { class: 'preset-rename', type: 'button', title: '이름 변경', onclick: e => { e.stopPropagation(); renamePreset(slot); } }, '✎') : null,
+        preset ? el('span', { class: 'preset-savedat' }, presetSavedAtText(preset.savedAt)) : null);
+
+    if (!unlocked) {
+        const cost = d.costs[slot];
+        return el('div', { class: 'preset-card locked' }, head,
+            el('div', { class: 'preset-locked-body' },
+                el('div', { class: 'preset-lock-well' }, '🔒'),
+                cost ? el('div', { class: 'preset-lock-cost' },
+                    cost.iconUrl ? el('img', { src: cost.iconUrl, alt: '' }) : null,
+                    el('b', null, cost.label)) : null,
+                el('button', { class: 'primary preset-btn', onclick: () => openPresetUnlockModal(slot, cost) }, '해금하기')));
+    }
+
+    if (!preset) {
+        return el('div', { class: 'preset-card empty-slot' }, head,
+            el('div', { class: 'preset-empty-body' },
+                el('div', { class: 'preset-empty-plus' }, '+'),
+                el('button', { class: 'primary preset-btn', onclick: () => savePresetSlot(slot, false) }, '현재 장착 저장')));
+    }
+
+    // 장비를 고정 슬롯 배치에 매핑
+    const byType = {};
+    preset.equipment.forEach(eq => { (byType[eq.type] = byType[eq.type] || []).push(eq); });
+    const used = {};
+    const gearGrid = el('div', { class: 'preset-gear-grid' },
+        PRESET_GEAR_LAYOUT.map(slotDef => {
+            const list = byType[slotDef.type] || [];
+            const idx = used[slotDef.type] = (used[slotDef.type] || 0);
+            used[slotDef.type]++;
+            return presetGearTile(list[idx] || null, slotDef);
+        }));
+
+    const mainName = preset.mainCard ? (preset.mainCard.formatted || preset.mainCard.name) : '';
+    const portrait = preset.mainCard
+        ? el('div', { class: 'preset-portrait', title: mainName },
+            el('div', { class: 'preset-portrait-frame' },
+                preset.mainCard.imageUrl ? el('img', { src: preset.mainCard.imageUrl, alt: mainName }) : null),
+            el('span', { class: 'preset-portrait-name' }, mainName))
+        : el('div', { class: 'preset-portrait none' },
+            el('div', { class: 'preset-portrait-frame' }, el('img', { src: PRESET_EMPTY_CARD_URL, alt: '메인 카드 미장착' })),
+            el('span', { class: 'preset-portrait-name' }, '미장착'));
+
+    const slotCardCells = Array.from({ length: 5 }, (_, i) => {
+        const c = preset.slotCards[i];
+        if (!c) return el('div', { class: 'preset-minicard empty', title: '슬롯 카드 미장착' },
+            el('img', { src: PRESET_EMPTY_CARD_URL, alt: '슬롯 카드 미장착' }));
+        return el('div', { class: 'preset-minicard', title: c.formatted || c.name },
+            c.imageUrl ? el('img', { src: c.imageUrl, alt: c.formatted || c.name }) : null);
+    });
+
+    return el('div', {
+        class: 'preset-card saved',
+        role: 'button',
+        tabIndex: 0,
+        title: '프리셋 상세 보기',
+        onclick: e => { if (!e.target.closest('button')) openPresetDetailModal(slot); },
+        onkeydown: e => {
+            if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+            e.preventDefault();
+            openPresetDetailModal(slot);
+        }
+    }, head,
+        el('div', { class: 'preset-loadout' },
+            portrait,
+            el('div', { class: 'preset-loadout-right' },
+                gearGrid,
+                el('div', { class: 'preset-slotcards-label' }, '슬롯 카드'),
+                el('div', { class: 'preset-minicards' }, slotCardCells))),
+        el('div', { class: 'preset-actions' },
+            el('button', { class: 'primary preset-btn apply', onclick: () => applyPresetSlot(slot) }, '적용하기'),
+            el('button', { class: 'preset-btn', onclick: () => savePresetSlot(slot, true) }, '덮어쓰기')));
+}
+
+// 프리셋 상세: 장비와 카드를 한 화면에서 빠르게 확인하는 압축형 로드아웃
+function closePresetNestedModal() {
+    const bg = document.querySelector('.preset-nested-bg');
+    if (bg) bg.remove();
+}
+
+function openPresetNestedModal(title, sub, nodes, kind) {
+    closePresetNestedModal();
+    const close = el('button', { class: 'close', type: 'button', onclick: closePresetNestedModal }, '닫기');
+    const dialog = el('div', {
+        class: 'modal preset-nested-modal ' + kind,
+        role: 'dialog',
+        'aria-modal': 'true',
+        tabIndex: -1
+    },
+    title ? el('h3', null, title) : null,
+    sub ? el('div', { class: 'sub' }, sub) : null,
+    el('div', { class: 'preset-nested-body' }, ...nodes),
+    close);
+    const bg = el('div', { class: 'preset-nested-bg' }, dialog);
+    bg.onclick = e => { if (e.target === bg) closePresetNestedModal(); };
+    document.body.appendChild(bg);
+    dialog.focus({ preventScroll: true });
+}
+
+function openPresetNestedEquipmentModal(eq) {
+    openPresetNestedModal('', '', equipmentModalView(eq, false), 'equipment');
+}
+
+function openPresetNestedCardModal(card, kind) {
+    const main = kind === 'main';
+    openPresetNestedModal(
+        card.formatted || card.name,
+        (card.starText || '') + (main ? ' · 스킬' : ' · 카드 슬롯 효과'),
+        [el('div', { class: 'mc-body' }, ...(main ? mainCardDetailNodes(card) : cardSlotDetailNodes(card)))],
+        'card'
+    );
+}
+
+function presetDetailGearNode(typeKey, label, eq) {
+    if (!eq) {
+        return el('div', { class: 'preset-detail-gear-item empty' },
+            el('span', { class: 'preset-detail-position' }, label),
+            el('span', { class: 'preset-detail-gear-empty' },
+                el('img', { src: PRESET_EMPTY_GEAR_FRAME_URL, alt: '' }),
+                el('span', null, presetSlotIcon(typeKey))),
+            el('strong', null, '미장착'));
+    }
+    const node = el('button', { class: 'preset-detail-gear-item filled', type: 'button', title: eq.name + ' 상세 보기', onclick: () => openPresetNestedEquipmentModal(eq) },
+        el('span', { class: 'preset-detail-position' }, label),
+        equipmentThumb(eq),
+        el('span', { class: 'preset-detail-gear-copy' },
+            el('strong', null, eq.name),
+            el('small', null, eq.rarity)),
+        eq.level > 0 ? el('b', { class: 'preset-detail-level' }, '+' + eq.level) : null);
+    node.style.setProperty('--rar', RARITY_COLORS[eq.rarity] || '#334155');
+    return applyRarityCardClass(node, eq.rarity);
+}
+
+function presetDetailCardNode(card, label, kind) {
+    if (!card) {
+        return el('div', { class: 'preset-detail-card empty ' + kind, title: label + ' 카드 미장착', 'aria-label': label + ' 카드 미장착' },
+            el('img', { src: PRESET_EMPTY_CARD_URL, alt: '' }));
+    }
+    const name = card.formatted || card.name;
+    return el('button', {
+        class: 'preset-detail-card ' + kind,
+        type: 'button',
+        title: name + ' 상세 보기',
+        'aria-label': label + ' 카드, ' + name + ' 상세 보기',
+        onclick: () => openPresetNestedCardModal(card, kind)
+    },
+    card.imageUrl ? el('img', { src: card.imageUrl, alt: name }) : null);
+}
+
+function openPresetDetailModal(slot) {
+    const preset = presetState.data.presets[slot];
+    if (!preset) return;
+    const byType = {};
+    preset.equipment.forEach(e => { (byType[e.type] = byType[e.type] || []).push(e); });
+    const gear = el('div', { class: 'preset-detail-gear' });
+    [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발']]
+        .forEach(([t, l]) => gear.appendChild(presetDetailGearNode(t, l, (byType[t] || [])[0])));
+    for (let i = 0; i < 3; i++) gear.appendChild(presetDetailGearNode('accessory', '장신구 ' + (i + 1), (byType.accessory || [])[i]));
+    gear.appendChild(presetDetailGearNode('support', '보조', (byType.support || [])[0]));
+    const slotCards = Array.from({ length: 5 }, (_, i) => presetDetailCardNode(preset.slotCards[i] || null, String(i + 1), 'slot'));
+    const cards = el('div', { class: 'preset-detail-card-layout' },
+        el('div', { class: 'preset-detail-main-wrap' },
+            el('div', { class: 'preset-detail-slot-title' }, '메인 카드'),
+            presetDetailCardNode(preset.mainCard, '메인', 'main')),
+        el('div', { class: 'preset-detail-slot-wrap' },
+            el('div', { class: 'preset-detail-slot-title' }, '슬롯 카드'),
+            el('div', { class: 'preset-detail-slot-grid' }, slotCards)));
+    const shell = el('div', { class: 'preset-detail-shell' },
+        el('section', { class: 'preset-detail-section' },
+            el('div', { class: 'preset-detail-section-head' }, el('h4', null, '장비 구성'), el('span', null, preset.equipment.length + ' / 9')),
+            gear),
+        el('section', { class: 'preset-detail-section cards' },
+            el('div', { class: 'preset-detail-section-head' }, el('h4', null, '카드 구성'), el('span', null, (preset.mainCard ? 1 : 0) + preset.slotCards.length + ' / 6')),
+            cards));
+    openRichModal(presetTitle(slot, preset), presetSavedAtText(preset.savedAt), [shell]);
+    setModalVariant('preset-detail');
+}
+
+function renderPresets() {
+    const root = $('#presetRoot');
+    const d = presetState.data;
+    if (!root || !d) return;
+    // 해금된 슬롯 + 다음 해금 대상 1개만 표시
+    const visible = Math.min(d.slotCount, d.unlocked + 1);
+    root.replaceChildren(el('div', { class: 'preset-grid' },
+        Array.from({ length: visible }, (_, i) => presetCard(i))));
 }
 
 // ===== 100일 기념 캡슐 =====
@@ -5580,6 +5926,10 @@ $('#boDetailBg').onclick = e => { if (e.target.id === 'boDetailBg') closeBoDetai
 $('#boRegBg').onclick = e => { if (e.target.id === 'boRegBg') closeBoRegister(); };
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+        if (document.querySelector('.preset-nested-bg')) {
+            closePresetNestedModal();
+            return;
+        }
         if (!modalLocked) closeModal();
         closeDetail();
         closeRegister();

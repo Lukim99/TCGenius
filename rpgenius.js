@@ -7735,6 +7735,26 @@ function removeInventoryItem(user, itemId, count) {
     return true;
 }
 
+// ===== 귀속 아이템 (개인 획득분 거래 불가. 예: 보주 선택 상자로 얻은 보주) =====
+// 스택({id,count})에는 인스턴스 구분이 없으므로 유저별 귀속 수량을 따로 센다.
+// 사용 등으로 총 보유량이 귀속 수량보다 줄면 귀속 수량은 보유량으로 클램프된다
+// (= 남은 것부터 귀속으로 취급하는 보수적 규칙).
+function getBoundItemCount(user, itemId) {
+    const bound = user.boundItems ? Number(user.boundItems[itemId] || 0) : 0;
+    if (bound <= 0) return 0;
+    return Math.min(bound, getInventoryItemCount(user, itemId));
+}
+
+function addBoundItemCount(user, itemId, count) {
+    if (!user.boundItems || typeof user.boundItems != 'object') user.boundItems = {};
+    user.boundItems[itemId] = Number(user.boundItems[itemId] || 0) + count;
+}
+
+// 거래(1:1 거래/선물/경매/삽니다)에 내놓을 수 있는 수량
+function getTradableItemCount(user, itemId) {
+    return getInventoryItemCount(user, itemId) - getBoundItemCount(user, itemId);
+}
+
 function getIceCount(ices, size) {
     const entry = ices && ices[size];
     if (entry && typeof entry == 'object' && typeof entry.N != 'undefined') return Number(entry.N || 0);
@@ -9122,6 +9142,181 @@ function unequipEquipmentByNumber(user, numberArg) {
     return '✅ ' + getEquipmentTypeLabel(type) + ' 장비를 해제했습니다.\n<' + data.rarity + '> ' + getEquipmentDisplayName(data, selected.equip) + (Number(selected.equip.level || 0) > 0 ? ' +' + selected.equip.level : '');
 }
 
+// ===== 장착 프리셋 (장비/메인 카드/슬롯 카드 스냅샷) =====
+const PRESET_SLOT_COUNT = 5;
+
+// 장비 인스턴스에 영구 uid를 부여해 동일 종류 다른 장비와 혼동 없이 식별한다.
+// cloneEquipmentInstance가 전체 필드를 복사하므로 장착/해제/거래 이동에도 uid는 유지되고,
+// 분해·거래로 인스턴스가 사라지면 프리셋에서 자동 제거된다.
+function ensureEquipmentUid(equip) {
+    if (!equip.uid) equip.uid = 'eq' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    return equip.uid;
+}
+
+// 카드는 인스턴스 id가 없어 속성 시그니처로 식별한다. 동일 시그니처 카드는 상호 교환 가능.
+function cardPresetSignature(card) {
+    if (!card || typeof card.id == 'undefined') return null;
+    return {
+        id: Number(card.id),
+        star: Number(card.star || 0),
+        type: card.type || '일반',
+        prestige: !!card.prestige,
+        fashion: (card.fashion && card.fashion.name) || null
+    };
+}
+
+function cardMatchesPresetSignature(card, sig, exact) {
+    const cs = cardPresetSignature(card);
+    if (!cs || !sig) return false;
+    if (cs.id != Number(sig.id) || cs.star != Number(sig.star || 0) || cs.type != (sig.type || '일반') || cs.prestige != !!sig.prestige) return false;
+    return exact ? cs.fashion == (sig.fashion || null) : true;
+}
+
+// 인벤토리에서 시그니처와 일치하는 카드 번호(1-base). 패션까지 일치 우선, 없으면 동일 캐릭터/성급 폴백.
+function findCardNumberBySignature(user, sig) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    let idx = cards.findIndex(c => cardMatchesPresetSignature(c, sig, true));
+    if (idx < 0) idx = cards.findIndex(c => cardMatchesPresetSignature(c, sig, false));
+    return idx >= 0 ? idx + 1 : 0;
+}
+
+function getUserPresets(user) {
+    if (!Array.isArray(user.presets)) user.presets = [];
+    while (user.presets.length < PRESET_SLOT_COUNT) user.presets.push(null);
+    return user.presets;
+}
+
+function getAllUserCardsForPreset(user) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card.slice() : [];
+    if (user.main_card && typeof user.main_card.id != 'undefined') cards.push(user.main_card);
+    (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(c => { if (c) cards.push(c); });
+    return cards;
+}
+
+// 소실된 장비(uid 없음)/카드(시그니처 불일치)를 프리셋에서 제거. 변경 여부 반환.
+function pruneUserPreset(user, preset) {
+    if (!preset) return false;
+    let changed = false;
+    const uids = new Set();
+    getAllUserEquipments(user).forEach(e => { if (e.equip && e.equip.uid) uids.add(e.equip.uid); });
+    const eqBefore = (preset.equipment || []).length;
+    preset.equipment = (preset.equipment || []).filter(e => e && e.uid && uids.has(e.uid));
+    if (preset.equipment.length != eqBefore) changed = true;
+    // 카드: 같은 카드를 두 시그니처가 중복 매칭하지 않도록 풀에서 하나씩 소거
+    const pool = getAllUserCardsForPreset(user);
+    const takeMatch = sig => {
+        let i = pool.findIndex(c => cardMatchesPresetSignature(c, sig, true));
+        if (i < 0) i = pool.findIndex(c => cardMatchesPresetSignature(c, sig, false));
+        if (i < 0) return false;
+        pool.splice(i, 1);
+        return true;
+    };
+    if (preset.mainCard && !takeMatch(preset.mainCard)) { preset.mainCard = null; changed = true; }
+    const slotBefore = (preset.slotCards || []).length;
+    preset.slotCards = (preset.slotCards || []).filter(takeMatch);
+    if (preset.slotCards.length != slotBefore) changed = true;
+    return changed;
+}
+
+// 현재 장착 상태를 프리셋 슬롯에 저장
+function saveUserPreset(user, slotIndex) {
+    const presets = getUserPresets(user);
+    const equipment = getEquippedEquipmentRefs(user).map(ref => {
+        const entry = { type: ref.type, uid: ensureEquipmentUid(ref.equip) };
+        if (typeof ref.slotKey != 'undefined') entry.slotKey = String(ref.slotKey);
+        return entry;
+    });
+    const slotCards = (Array.isArray(user.card_slot) ? user.card_slot : []).map(cardPresetSignature).filter(Boolean);
+    presets[slotIndex] = {
+        savedAt: Date.now(),
+        name: (presets[slotIndex] && presets[slotIndex].name) || null,  // 덮어쓰기 시 이름 유지
+        equipment,
+        mainCard: cardPresetSignature(user.main_card),
+        slotCards
+    };
+    return presets[slotIndex];
+}
+
+// 프리셋 적용: 저장 시점의 장착 상태로 복원. 소실분은 자동 제거 후 경고로 알린다.
+function applyUserPreset(user, slotIndex) {
+    const presets = getUserPresets(user);
+    const preset = presets[slotIndex];
+    if (!preset) return { error: '저장된 프리셋이 없습니다.' };
+    pruneUserPreset(user, preset);
+    const warnings = [];
+
+    // 1) 슬롯 카드 전부 해제 (해제분이 들어갈 카드 인벤토리 공간 필요)
+    const slotCount = Array.isArray(user.card_slot) ? user.card_slot.length : 0;
+    if (slotCount > 0 && getRemainingCardInventorySpace(user) < slotCount) {
+        return { error: '캐릭터 카드 인벤토리 공간이 부족하여 프리셋을 적용할 수 없습니다.' };
+    }
+    while (Array.isArray(user.card_slot) && user.card_slot.length > 0) {
+        const r = removeCharacterCardSlot(user, 1);
+        if (String(r).startsWith('❌')) return { error: String(r).replace(/^❌\s*/, '') };
+    }
+
+    // 2) 메인 카드
+    if (preset.mainCard && !cardMatchesPresetSignature(user.main_card, preset.mainCard, true)) {
+        const num = findCardNumberBySignature(user, preset.mainCard);
+        if (!num) warnings.push('메인 카드를 찾을 수 없어 건너뛰었습니다.');
+        else {
+            const r = equipMainCharacterCard(user, num);
+            if (String(r).startsWith('❌')) warnings.push('메인 카드: ' + String(r).replace(/^❌\s*/, ''));
+        }
+    }
+
+    // 3) 슬롯 카드
+    for (const sig of preset.slotCards || []) {
+        const num = findCardNumberBySignature(user, sig);
+        if (!num) { warnings.push('슬롯 카드를 찾을 수 없어 건너뛰었습니다.'); continue; }
+        const r = equipCharacterCardSlot(user, num);
+        if (String(r).startsWith('❌')) warnings.push('슬롯 카드: ' + String(r).replace(/^❌\s*/, ''));
+    }
+
+    // 4) 장비 전부 해제 후 프리셋 장비 장착 (uid로 정확한 인스턴스 식별)
+    for (let guard = 0; guard < 50; guard++) {
+        const all = getAllUserEquipments(user);
+        const idx = all.findIndex(e => e.source == 'equipped');
+        if (idx < 0) break;
+        const r = unequipEquipmentByNumber(user, idx + 1);
+        if (String(r).startsWith('❌')) { warnings.push(String(r).replace(/^❌\s*/, '')); break; }
+    }
+    const entries = (preset.equipment || []).slice().sort((a, b) => String(a.slotKey || '').localeCompare(String(b.slotKey || '')));
+    for (const entry of entries) {
+        const all = getAllUserEquipments(user);
+        const idx = all.findIndex(e => e.source == 'inventory' && e.equip && e.equip.uid == entry.uid);
+        if (idx < 0) { warnings.push(getEquipmentTypeLabel(entry.type) + ' 장비를 찾을 수 없어 건너뛰었습니다.'); continue; }
+        const r = equipItemByNumber(user, idx + 1);
+        if (String(r).startsWith('❌')) warnings.push(getEquipmentTypeLabel(entry.type) + ': ' + String(r).replace(/^❌\s*/, ''));
+    }
+    clampHpToMaxStat(user);
+    return { ok: true, warnings };
+}
+
+// 표시용: 프리셋 항목을 실제 보유 인스턴스로 해석 (소실분 제외, 저장은 하지 않음)
+function resolvePresetForView(user, preset) {
+    if (!preset) return null;
+    const view = { savedAt: Number(preset.savedAt || 0), equipment: [], mainCard: null, slotCards: [] };
+    const all = getAllUserEquipments(user);
+    (preset.equipment || []).forEach(entry => {
+        const found = all.find(e => e.equip && e.equip.uid == entry.uid);
+        if (found) view.equipment.push({ type: entry.type, slotKey: entry.slotKey, equip: found.equip });
+    });
+    const pool = getAllUserCardsForPreset(user);
+    const takeMatch = sig => {
+        let i = pool.findIndex(c => cardMatchesPresetSignature(c, sig, true));
+        if (i < 0) i = pool.findIndex(c => cardMatchesPresetSignature(c, sig, false));
+        if (i < 0) return null;
+        return pool.splice(i, 1)[0];
+    };
+    if (preset.mainCard) view.mainCard = takeMatch(preset.mainCard);
+    (preset.slotCards || []).forEach(sig => {
+        const card = takeMatch(sig);
+        if (card) view.slotCards.push(card);
+    });
+    return view;
+}
+
 const EQUIPMENT_STONE_ITEM_ID = 0;
 const EQUIPMENT_UPGRADER_ITEM_ID = 2;
 const EQUIPMENT_PROTECT_ITEM_ID = 3;
@@ -9246,8 +9441,9 @@ function selectOrbChoice(user, numberArg) {
     const items = getDataCache('Item', []);
     const selectedId = orbIds[number - 1];
     addInventoryItem(user, selectedId, 1);
+    addBoundItemCount(user, selectedId, 1);
     user.pendingAction = null;
-    return '✅ 보주를 선택했습니다.\n[ 획득 결과 ]\n- ' + items[selectedId].name + ' x1';
+    return '✅ 보주를 선택했습니다.\n[ 획득 결과 ]\n- ' + items[selectedId].name + ' x1\n* 선택 상자로 획득한 보주는 거래할 수 없습니다.';
 }
 
 function getSupportRerollTargets(user) {
@@ -11296,6 +11492,7 @@ function registerTradeOffer(user, args) {
         const itemData = items[itemId];
         if (itemData.no_trade) return '❌ 거래 불가 아이템입니다.';
         if (getInventoryItemCount(user, itemId) < parsed.count) return '❌ 보유한 아이템이 부족합니다.';
+        if (getTradableItemCount(user, itemId) < parsed.count) return '❌ 귀속 아이템은 거래할 수 없습니다. (거래 가능 ' + comma(getTradableItemCount(user, itemId)) + '개)';
         removeInventoryItem(user, itemId, parsed.count);
         side.offer.items[itemId] = Number(side.offer.items[itemId] || 0) + parsed.count;
         resetTradeConfirmations(session);
@@ -11728,6 +11925,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             if (!(count > 0)) return { error: '아이템 수량이 올바르지 않습니다.' };
             itemReq[id] = (itemReq[id] || 0) + count; // 같은 아이템 여러 슬롯 누적 검증
             if (getInventoryItemCount(sender, id) < itemReq[id]) return { error: '보유한 아이템이 부족합니다: ' + data.name };
+            if (getTradableItemCount(sender, id) < itemReq[id]) return { error: '귀속 아이템은 선물할 수 없습니다: ' + data.name + ' (거래 가능 ' + comma(getTradableItemCount(sender, id)) + '개)' };
             resolved.push({ kind: 'item', id, count });
         } else {
             return { error: '지원하지 않는 선물 종류입니다.' };
@@ -13565,7 +13763,14 @@ module.exports = {
     addInventoryItem,
     removeInventoryItem,
     getInventoryItemCount,
+    getBoundItemCount,
+    getTradableItemCount,
     cleanupInventoryItems,
+    PRESET_SLOT_COUNT,
+    getUserPresets,
+    saveUserPreset,
+    applyUserPreset,
+    resolvePresetForView,
     runCardCombine,
     getCardCombineSelection,
     getCardCombineInfo,

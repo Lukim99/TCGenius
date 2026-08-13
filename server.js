@@ -2534,6 +2534,140 @@ server.post('/api/cards/slot/remove', requireUser, async (req, res) => {
     }
 });
 
+// ===== 장착 프리셋 =====
+// 슬롯 1은 기본 제공. 2·3번 100가넷, 4번 300포인트, 5번 500포인트로 순차 해금.
+const PRESET_UNLOCK_COSTS = [
+    null,
+    { currency: 'garnet', amount: 100 },
+    { currency: 'garnet', amount: 100 },
+    { currency: 'point', amount: 300 },
+    { currency: 'point', amount: 500 }
+];
+const PRESET_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+
+function getUnlockedPresetSlots(user) {
+    return Math.max(1, Math.min(rpgenius.PRESET_SLOT_COUNT, Number(user.presetSlotsUnlocked || 1)));
+}
+
+function buildPresetPayload(user) {
+    const presets = rpgenius.getUserPresets(user);
+    // 장비는 인벤토리 탭과 동일한 리치 직렬화(스탯/잠재/패시브 포함)를 uid로 매칭해 재사용
+    const richByUid = new Map(buildInventoryEquipment(user).filter(e => e.uid).map(e => [e.uid, e]));
+    const views = presets.map(preset => {
+        const view = rpgenius.resolvePresetForView(user, preset);
+        if (!view) return null;
+        return {
+            name: (preset && preset.name) || null,
+            savedAt: view.savedAt,
+            mainCard: view.mainCard ? serializeCard(view.mainCard, user) : null,
+            slotCards: view.slotCards.map(card => serializeCard(card, user)).filter(Boolean),
+            equipment: view.equipment.map(entry => entry.equip && richByUid.get(entry.equip.uid) || null).filter(Boolean)
+        };
+    });
+    return {
+        ok: true,
+        slotCount: rpgenius.PRESET_SLOT_COUNT,
+        unlocked: getUnlockedPresetSlots(user),
+        costs: PRESET_UNLOCK_COSTS.map(c => c && {
+            currency: c.currency,
+            amount: c.amount,
+            label: c.currency == 'garnet' ? comma(c.amount) + ' 가넷' : comma(c.amount) + 'P',
+            iconUrl: getItemImageUrl('화폐', c.currency == 'garnet' ? '가넷.png' : '포인트.png')
+        }),
+        garnet: Number(user.garnet || 0),
+        point: Number(user.point || 0),
+        presets: views
+    };
+}
+
+server.get('/api/presets', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildPresetPayload(user));
+    } catch (e) {
+        console.error('presets status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/presets/save', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!Number.isInteger(slot) || slot < 0 || slot >= getUnlockedPresetSlots(user)) return res.status(400).json({ error: '사용할 수 없는 프리셋 슬롯입니다.' });
+        rpgenius.saveUserPreset(user, slot);
+        await user.save();
+        res.json(buildPresetPayload(user));
+    } catch (e) {
+        console.error('presets save error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/presets/apply', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!Number.isInteger(slot) || slot < 0 || slot >= getUnlockedPresetSlots(user)) return res.status(400).json({ error: '사용할 수 없는 프리셋 슬롯입니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '변경', '장비를');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        const result = rpgenius.applyUserPreset(user, slot);
+        if (result.error) return res.status(400).json({ error: result.error });
+        await user.save();
+        res.json(Object.assign(buildPresetPayload(user), { warnings: result.warnings || [], profile: buildUserProfile(user) }));
+    } catch (e) {
+        console.error('presets apply error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/presets/rename', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        const name = String((req.body && req.body.name) || '').trim();
+        if (name.length > 12) return res.status(400).json({ error: '이름은 12자 이하로 입력해주세요.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        if (!Number.isInteger(slot) || slot < 0 || slot >= getUnlockedPresetSlots(user)) return res.status(400).json({ error: '사용할 수 없는 프리셋 슬롯입니다.' });
+        const presets = rpgenius.getUserPresets(user);
+        if (!presets[slot]) return res.status(400).json({ error: '저장된 프리셋이 없습니다.' });
+        presets[slot].name = name || null;
+        await user.save();
+        res.json(buildPresetPayload(user));
+    } catch (e) {
+        console.error('presets rename error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/presets/unlock', requireUser, async (req, res) => {
+    try {
+        const slot = Number(req.body && req.body.slot);
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const unlocked = getUnlockedPresetSlots(user);
+        if (!Number.isInteger(slot) || slot != unlocked) return res.status(400).json({ error: '슬롯은 순서대로 해금할 수 있습니다.' });
+        const cost = PRESET_UNLOCK_COSTS[slot];
+        if (!cost) return res.status(400).json({ error: '해금할 수 없는 슬롯입니다.' });
+        if (cost.currency == 'garnet') {
+            if (Number(user.garnet || 0) < cost.amount) return res.status(400).json({ error: '가넷이 부족합니다. (' + comma(cost.amount) + ' 가넷 필요)' });
+            user.garnet = Number(user.garnet || 0) - cost.amount;
+        } else {
+            if (Number(user.point || 0) < cost.amount) return res.status(400).json({ error: '포인트가 부족합니다. (' + comma(cost.amount) + 'P 필요)' });
+            user.point = Number(user.point || 0) - cost.amount;
+        }
+        user.presetSlotsUnlocked = slot + 1;
+        await user.save();
+        res.json(buildPresetPayload(user));
+    } catch (e) {
+        console.error('presets unlock error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 봉인된 자물쇠 =====
 const LOCKBOX_ITEM_NAME = '봉인된 자물쇠';
 
@@ -4683,6 +4817,7 @@ function buildInventoryEquipment(user) {
             soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0), stat: soulActive.stat || {}, plusStat: soulActive.plusStat || {} } : null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
             noTrade: data.no_trade === true,
+            uid: (equip && equip.uid) || null,
             iconUrl: getEquipmentIconUrl(data),
             frameUrl: getAuctionFrameUrl('equipment', data.rarity)
         });
@@ -6208,6 +6343,8 @@ async function registerAuction(sellerName, body) {
         if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템은 판매 등록할 수 없습니다.' };
         const have = rpgenius.getInventoryItemCount(user, itemId);
         if (have < count) return { error: '보유 수량이 부족합니다. (보유 ' + have + ')' };
+        const tradable = rpgenius.getTradableItemCount(user, itemId);
+        if (tradable < count) return { error: '귀속 아이템은 판매 등록할 수 없습니다. (거래 가능 ' + tradable + '개)' };
         if (!rpgenius.removeInventoryItem(user, itemId, count)) return { error: '아이템 차감에 실패했습니다.' };
         payload = { id: itemId };
     } else if (kind == 'pet') {
@@ -6735,6 +6872,8 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         if (itemData && itemData.no_trade === true) return { error: '거래 불가 아이템입니다.' };
         const have = rpgenius.getInventoryItemCount(seller, itemId);
         if (have < sellCount) return { error: '판매 수량이 부족합니다. (보유 ' + have + ')' };
+        const sellerTradable = rpgenius.getTradableItemCount(seller, itemId);
+        if (sellerTradable < sellCount) return { error: '귀속 아이템은 판매할 수 없습니다. (거래 가능 ' + sellerTradable + '개)' };
         if (!rpgenius.removeInventoryItem(seller, itemId, sellCount)) return { error: '아이템 차감에 실패했습니다.' };
         rpgenius.addInventoryItem(buyer, itemId, sellCount);
     } else if (entry.kind == 'pet') {
@@ -7262,6 +7401,9 @@ function renderUserDashboard(sess, opts) {
     </div>
   </div>
   <div class="mail-modal-bg" id="mailModalBg"><div class="mail-modal" id="mailModal"></div></div>
+  <div class="page" data-page="preset">
+    <section class="panel"><h2 style="margin:0 0 14px">프리셋</h2><div id="presetRoot"></div></section>
+  </div>
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
