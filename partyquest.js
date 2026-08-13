@@ -422,7 +422,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
             extra.oneTimeFinalDamage = Number(extra.oneTimeFinalDamage || 0) + Math.round(Number(burn.dmg || 0) * remainingTicks * rate);
             result.removeBurnId = burn.id;
             state[readyKey] = now + Math.max(0, cooldownSeconds - cooldownReduction) * 1000;
-            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50)), interval: 2, tick: 2, remain: 6 };
+            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50)), interval: 2, tick: 2, remain: 6, sourceName: member.name, sourceSkill: '겁화' };
         }
     }
     state.lastSkillAt = now;
@@ -848,6 +848,148 @@ function publicRoomList() {
     return out;
 }
 
+function createPartyBattleStats() {
+    return {
+        damage: 0,
+        fixedDamage: 0,
+        criticalDamage: 0,
+        destinyDamage: 0,
+        damageBySource: {},
+        damageTaken: 0,
+        damageReduced: { defense: 0, resistance: 0, buff: 0, shield: 0, other: 0 },
+        healing: 0,
+        allyHealing: 0,
+        attackCount: 0,
+        skillUseCount: 0,
+        skillUses: {},
+        potionUseCount: 0,
+        potionUses: {}
+    };
+}
+
+function getPartyBattleStats(member) {
+    if (!member || !member.runtime) return null;
+    if (!member.runtime.battleStats) member.runtime.battleStats = createPartyBattleStats();
+    return member.runtime.battleStats;
+}
+
+function addPartyStatMapValue(map, key, amount) {
+    const label = String(key || '기타');
+    map[label] = Number(map[label] || 0) + Number(amount || 0);
+}
+
+function recordPartyDamage(member, result, source) {
+    const stats = getPartyBattleStats(member);
+    if (!stats || !result) return;
+    const damage = Math.max(0, Math.round(Number(result.damage || 0)));
+    if (damage <= 0) return;
+    const hitDetails = Array.isArray(result.hitDetails) ? result.hitDetails : [];
+    const calculatedDamage = hitDetails.reduce((sum, hit) => sum + Math.max(0, Number(hit && hit.damage || 0)), 0);
+    const scale = calculatedDamage > 0 ? damage / calculatedDamage : 1;
+    const criticalDamage = hitDetails.length
+        ? hitDetails.reduce((sum, hit) => sum + (hit && hit.crit ? Math.max(0, Number(hit.damage || 0)) : 0), 0) * scale
+        : (result.isCrit ? damage : 0);
+    stats.damage += damage;
+    stats.fixedDamage += Math.min(damage, Math.max(0, Number(result.fixedDamage || 0)) * scale);
+    stats.destinyDamage += Math.min(damage, Math.max(0, Number(result.destinyDamage || 0)) * scale);
+    stats.criticalDamage += Math.min(damage, Math.max(0, criticalDamage));
+    addPartyStatMapValue(stats.damageBySource, source || '기본 공격', damage);
+}
+
+function recordPartyAttackUse(member) {
+    const stats = getPartyBattleStats(member);
+    if (stats) stats.attackCount += 1;
+}
+
+function recordPartySkillUse(member, skillName) {
+    const stats = getPartyBattleStats(member);
+    if (!stats) return;
+    stats.skillUseCount += 1;
+    addPartyStatMapValue(stats.skillUses, skillName || '기타 스킬', 1);
+}
+
+function recordPartyPotionUse(member, potionName) {
+    const stats = getPartyBattleStats(member);
+    if (!stats) return;
+    stats.potionUseCount += 1;
+    addPartyStatMapValue(stats.potionUses, potionName || '물약', 1);
+}
+
+function recordPartyHealing(source, target, amount) {
+    const healed = Math.max(0, Number(amount || 0));
+    if (healed <= 0) return;
+    const healer = source || target;
+    const stats = getPartyBattleStats(healer);
+    if (!stats) return;
+    if (healer === target) stats.healing += healed;
+    else stats.allyHealing += healed;
+}
+
+function recordPartyDamageReduced(member, kind, amount) {
+    const stats = getPartyBattleStats(member);
+    const reduced = Math.max(0, Number(amount || 0));
+    if (!stats || reduced <= 0) return;
+    const key = Object.prototype.hasOwnProperty.call(stats.damageReduced, kind) ? kind : 'other';
+    stats.damageReduced[key] += reduced;
+}
+
+function partyStatMapToList(map, valueKey) {
+    return Object.entries(map || {})
+        .map(([name, value]) => ({ name, [valueKey]: Math.max(0, Math.round(Number(value || 0))) }))
+        .filter(entry => entry[valueKey] > 0)
+        .sort((a, b) => b[valueKey] - a[valueKey]);
+}
+
+function buildPartyBattleStatistics(room) {
+    const members = room.members.map(member => {
+        const stats = getPartyBattleStats(member) || createPartyBattleStats();
+        const reduced = {
+            defense: Math.max(0, Math.round(stats.damageReduced.defense)),
+            resistance: Math.max(0, Math.round(stats.damageReduced.resistance)),
+            buff: Math.max(0, Math.round(stats.damageReduced.buff)),
+            shield: Math.max(0, Math.round(stats.damageReduced.shield)),
+            other: Math.max(0, Math.round(stats.damageReduced.other))
+        };
+        reduced.total = reduced.defense + reduced.resistance + reduced.buff + reduced.shield + reduced.other;
+        return {
+            name: member.name,
+            position: member.position || null,
+            card: member.card || null,
+            damage: Math.max(0, Math.round(stats.damage)),
+            fixedDamage: Math.max(0, Math.round(stats.fixedDamage)),
+            criticalDamage: Math.max(0, Math.round(stats.criticalDamage)),
+            destinyDamage: Math.max(0, Math.round(stats.destinyDamage)),
+            damageBySource: partyStatMapToList(stats.damageBySource, 'damage'),
+            damageTaken: Math.max(0, Math.round(stats.damageTaken)),
+            damageReduced: reduced,
+            healing: Math.max(0, Math.round(stats.healing)),
+            allyHealing: Math.max(0, Math.round(stats.allyHealing)),
+            attackCount: Math.max(0, Math.round(stats.attackCount)),
+            skillUseCount: Math.max(0, Math.round(stats.skillUseCount)),
+            skillUses: partyStatMapToList(stats.skillUses, 'count'),
+            potionUseCount: Math.max(0, Math.round(stats.potionUseCount)),
+            potionUses: partyStatMapToList(stats.potionUses, 'count')
+        };
+    }).sort((a, b) => b.damage - a.damage);
+    const party = members.reduce((total, member) => {
+        total.damage += member.damage;
+        total.damageTaken += member.damageTaken;
+        total.damageReduced += member.damageReduced.total;
+        total.healing += member.healing;
+        total.allyHealing += member.allyHealing;
+        total.attackCount += member.attackCount;
+        total.skillUseCount += member.skillUseCount;
+        total.potionUseCount += member.potionUseCount;
+        return total;
+    }, { damage: 0, damageTaken: 0, damageReduced: 0, healing: 0, allyHealing: 0, attackCount: 0, skillUseCount: 0, potionUseCount: 0 });
+    for (const member of members) member.damageShare = party.damage > 0 ? Math.round(member.damage / party.damage * 1000) / 10 : 0;
+    return {
+        durationSeconds: Math.max(0, Math.round((Date.now() - Number(room.startedAt || Date.now())) / 1000)),
+        party,
+        members
+    };
+}
+
 function serializeMember(m) {
     return {
         name: m.name,
@@ -1234,6 +1376,7 @@ async function createRoom(hostName, questId, password) {
         tauntRemain: 0,
         awaitingChoices: false,
         result: null,
+        startedAt: null,
         createdAt: Date.now()
     };
     rooms.set(id, room);
@@ -1499,7 +1642,8 @@ async function start(hostName) {
             critBoostNext: 0,
             stackCounters: {},
             atkBuff: 0,
-            equipmentState: { combatStartedAt: Date.now() }
+            equipmentState: { combatStartedAt: Date.now() },
+            battleStats: createPartyBattleStats()
         };
         m.skills = posDef && posDef.baseSkill ? [posDef.baseSkill] : [];
         m.skillDefs = {};
@@ -1530,6 +1674,7 @@ async function start(hostName) {
     room.sharedKillCount = 0;
     room.supportGauge = 0;
     room.result = null;
+    room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
     pushNotice(room, '「' + quest.name + '」 시작', 'big', 3500);
     setupPhase(room);
@@ -1646,7 +1791,8 @@ function endQuest(room, cleared, reason) {
     room.result = {
         cleared: !!cleared,
         reason: reason || (cleared ? '모든 페이즈 클리어!' : '파티 전멸'),
-        rewards: []
+        rewards: [],
+        statistics: buildPartyBattleStatistics(room)
     };
     if (cleared) grantPartyQuestClearRewards(room);
     pushNotice(room, cleared ? '퀘스트 클리어' : '파티 전멸', cleared ? 'success' : 'danger', 6000);
@@ -1695,6 +1841,7 @@ function restartQuest(hostName) {
     room.tauntTarget = null;
     room.tauntRemain = 0;
     room.result = null;
+    room.startedAt = null;
     for (const m of room.members) {
         m.ready = false;
         m.potions = [];
@@ -1743,12 +1890,14 @@ function attackMobPhase(name) {
         me.runtime.sivalonCharge = Math.min(5, Number(me.runtime.sivalonCharge || 0) + 1);
     }
     if (phase.type === 'mob') {
+        recordPartyAttackUse(me);
         const fakeMon = createPhaseMonster(phase);
         const result = computeBasicDamage(me, fakeMon, room);
         const applied = applyMobPhaseDamage(room, me, fakeMon, result, 'attack', null, true);
         return { ok: true, damage: result.damage, kills: applied.kills, crit: !!result.isCrit };
     }
     if (!room.monster) return { error: '공격할 대상이 없습니다.' };
+    recordPartyAttackUse(me);
     const r = performBasicAttack(room, me);
     if (room.monster && room.monster.hp <= 0) {
         onMonsterDefeated(room);
@@ -1760,6 +1909,7 @@ function comma(n) { return Number(n || 0).toLocaleString('en-US'); }
 
 function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, counterAttack) {
     const damage = Math.max(0, Number(result && result.damage || 0));
+    recordPartyDamage(attacker, result, skillName || '기본 공격');
     recordPartyJudgmentDamage(room, attacker, result);
     const mobHp = Math.max(1, Number(monster && monster.hpMax || 1));
     const remaining = Math.max(0, room.killTarget - room.sharedKillCount);
@@ -1837,7 +1987,11 @@ function stepRoom(room) {
         const r = m.runtime;
         if (!r) continue;
         if (!r.dead) {
-            if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax && canPartyReceiveHealing(m)) r.hp = Math.min(r.hpMax, r.hp + r.hpMax * r.petHpRegenRate * dt);
+            if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax && canPartyReceiveHealing(m)) {
+                const before = r.hp;
+                r.hp = Math.min(r.hpMax, r.hp + r.hpMax * r.petHpRegenRate * dt);
+                recordPartyHealing(m, m, r.hp - before);
+            }
             if (r.petMpRegenRate > 0 && r.mp < r.mpMax) r.mp = Math.min(r.mpMax, r.mp + r.mpMax * r.petMpRegenRate * dt);
             if (r.dragonRegen) {
                 const now = nowMs();
@@ -1859,10 +2013,9 @@ function stepRoom(room) {
                     const healed = [];
                     for (const ally of room.members) {
                         if (ally === m || !ally.runtime || ally.runtime.dead) continue;
-                        const before = ally.runtime.hp;
-                        if (canPartyReceiveHealing(ally)) ally.runtime.hp = Math.min(ally.runtime.hpMax, ally.runtime.hp + amount);
+                        const healedAmount = healMember(ally, amount, m);
                         applyTranscendAllyEffect(room, m, ally, 'heal');
-                        if (ally.runtime.hp > before) healed.push(ally.name);
+                        if (healedAmount > 0) healed.push(ally.name);
                     }
                     if (healed.length > 0) pushCombat(room, m.name + ' [솔로 인페르노] → ' + healed.join(', ') + ' HP +' + comma(amount), 'heal');
                     equipmentState.soloInfernoNextAt += 15000;
@@ -1876,7 +2029,7 @@ function stepRoom(room) {
                 if (Date.now() >= equipmentState.settlementRecoveryAt) {
                     const hpRatio = Number(r.hp || 0) / Math.max(1, Number(r.hpMax || 1));
                     const mpRatio = Number(r.mp || 0) / Math.max(1, Number(r.mpMax || 1));
-                    if (hpRatio < mpRatio && canPartyReceiveHealing(m)) r.hp = Math.min(r.hpMax, r.hp + Math.max(1, Math.round(r.hpMax * .01 * getPartyRecoveryMultiplier(m))));
+                    if (hpRatio < mpRatio) healMember(m, Math.max(1, Math.round(r.hpMax * .01 * getPartyRecoveryMultiplier(m))));
                     else if (mpRatio < hpRatio) r.mp = Math.min(r.mpMax, r.mp + Math.max(1, Math.round(r.mpMax * .01)));
                     equipmentState.settlementRecoveryAt = Date.now() + intervalMs;
                 }
@@ -1896,6 +2049,7 @@ function stepRoom(room) {
                         let damage = Math.max(1, Math.round(Number(judgment.damage) * .15 * lightMul));
                         if (room.monster) {
                             damage = applyPlayerDamageToBoss(room, room.monster, m, damage);
+                            recordPartyDamage(m, { damage, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '심판 폭발');
                             pushCombat(room, m.name + ' [심판 폭발] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
                             if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
                         } else {
@@ -1937,7 +2091,10 @@ function stepRoom(room) {
                     const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
-                    if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
+                    if (room.monster) {
+                        res.damage = applyBossHpDamage(room, room.monster, res.damage);
+                        recordPartyDamage(m, res, '익테봇 소환');
+                    }
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '익테봇 소환', false);
                     pushCombat(room, m.name + ' 익테봇 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
@@ -1960,7 +2117,10 @@ function stepRoom(room) {
                     const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
                     const invincible = !!(targetMon.bossState && targetMon.bossState.casting);
                     if (invincible) res.damage = 0;
-                    if (room.monster) applyBossHpDamage(room, room.monster, res.damage);
+                    if (room.monster) {
+                        res.damage = applyBossHpDamage(room, room.monster, res.damage);
+                        recordPartyDamage(m, res, '수나타 소환');
+                    }
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '수나타 소환', false);
                     pushCombat(room, m.name + ' 수나타 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
                     if (room.monster) applyBlackHoduCritReflect(room, m, res);
@@ -2023,8 +2183,10 @@ function stepRoom(room) {
                     if (d.tick <= 0) {
                         d.tick += Number(d.interval || 2);
                         const dotDmg = Math.max(1, Math.round(Number(d.dmg || 0)));
-                        applyBossHpDamage(room, mon, dotDmg);
-                        pushCombat(room, (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dotDmg + ']', 'skill');
+                        const dealt = applyBossHpDamage(room, mon, dotDmg);
+                        const sourceMember = d.sourceName ? findMember(room, d.sourceName) : null;
+                        if (sourceMember) recordPartyDamage(sourceMember, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, d.sourceSkill || d.label || '지속 피해');
+                        pushCombat(room, (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dealt + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
                 }
@@ -2032,8 +2194,10 @@ function stepRoom(room) {
                 if (d.remain <= 0) {
                     if (!dotKilled && Number(d.explodeDamage || 0) > 0 && mon.hp > 0) {
                         const explosion = Math.max(1, Math.round(Number(d.explodeDamage || 0)));
-                        applyBossHpDamage(room, mon, explosion);
-                        pushCombat(room, (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + explosion + ']', 'skill');
+                        const dealt = applyBossHpDamage(room, mon, explosion);
+                        const sourceMember = d.sourceName ? findMember(room, d.sourceName) : null;
+                        if (sourceMember) recordPartyDamage(sourceMember, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, d.explodeLabel || d.sourceSkill || '지속 피해 폭발');
+                        pushCombat(room, (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + dealt + ']', 'skill');
                         if (mon.hp <= 0) dotKilled = true;
                     }
                     mon.debuffs.splice(i, 1);
@@ -2395,7 +2559,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         if (stage('진사이') && Math.random() < .05) healMember(attacker, Math.round(200 * getPartyRecoveryMultiplier(attacker)));
         if (stage('잿불 모자') && monster && Date.now() >= Number(state.burnReadyAt || 0)) {
             const burnDamage = Math.max(1, Math.round(Number(stats.atk || 0) * value('잿불 모자', .30, .05) * (1 + Number(stats.burnDamage || 0) + (getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? .35 : 0))));
-            addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발' });
+            addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발', sourceName: attacker.name, sourceSkill: '화상' });
             state.burnReadyAt = Date.now() + cooldown(6) * 1000;
         }
         return additionalDamage;
@@ -2489,14 +2653,25 @@ function calculateNormalDamageToMember(room, mon, target, rawDamage) {
     const defense = Number(targetStats.def || 50) * finalDefMul;
     const defenseReductionRate = Math.max(0, Math.min(1, Number(monStats.pntPercent || 0)));
     const penetration = Number(monStats.pnt || mon.pnt || 0);
-    let damage = Number(rawDamage || 0) * monDealtMul * mitigation * targetTakenMul;
-    damage = getDamageAfterDefense(damage, defense, penetration, defenseReductionRate);
+    const beforeReduction = Number(rawDamage || 0) * monDealtMul;
+    const afterReduction = beforeReduction * mitigation * targetTakenMul;
+    const afterDefense = getDamageAfterDefense(afterReduction, defense, penetration, defenseReductionRate);
+    let damage = afterDefense;
     // 몬스터가 element 속성을 가지면 플레이어 속성 저항 적용 (맨 마지막)
     const monElement = mon.element || monStats.element;
     if (monElement && typeof rpgenius.getElementDamageMultiplier === 'function') {
         damage *= rpgenius.getElementDamageMultiplier(monElement, monStats, getPartyDynamicDefenseStats(target));
     }
-    return Math.max(0, applyDamageVariance(damage));
+    const finalDamage = Math.max(0, applyDamageVariance(damage));
+    const varianceScale = damage > 0 ? finalDamage / damage : 1;
+    return {
+        damage: finalDamage,
+        mitigation: {
+            buff: Math.max(0, beforeReduction - afterReduction) * varianceScale,
+            defense: Math.max(0, afterReduction - afterDefense) * varianceScale,
+            resistance: Math.max(0, afterDefense - damage) * varianceScale
+        }
+    };
 }
 
 function queuePartyBlackShadow(room, attacker, monster, damage, extra) {
@@ -2509,7 +2684,7 @@ function queuePartyBlackShadow(room, attacker, monster, damage, extra) {
         room.delayedEquipmentDamage.push({ dueAt: Date.now() + 2000, phaseIndex: room.phaseIndex, attackerName: attacker.name, damage: shadowDamage });
         return;
     }
-    if (monster && room.monster === monster) addMonsterDebuff(monster, { id: 'blackShadow:' + attacker.name + ':' + Date.now(), label: '그림자 공격', type: 'dot', dmg: shadowDamage, interval: 2, tick: 2, remain: 2 });
+    if (monster && room.monster === monster) addMonsterDebuff(monster, { id: 'blackShadow:' + attacker.name + ':' + Date.now(), label: '그림자 공격', type: 'dot', dmg: shadowDamage, interval: 2, tick: 2, remain: 2, sourceName: attacker.name, sourceSkill: '그림자 공격' });
 }
 
 function recordPartyJudgmentDamage(room, attacker, result) {
@@ -2833,6 +3008,7 @@ function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
     const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
     if (invincible) result.damage = 0;
     else result.damage = applyPlayerDamageToBoss(room, room.monster, attacker, result.damage);
+    recordPartyDamage(attacker, result, extra.skillName || '스킬 피해');
     recordPartyJudgmentDamage(room, attacker, result);
     applyBlackHoduCritReflect(room, attacker, result);
     return result;
@@ -2845,6 +3021,7 @@ function performBasicAttack(room, attacker) {
     const invincible = !!(mon.bossState && mon.bossState.casting);
     if (invincible) r.damage = 0;
     else r.damage = applyPlayerDamageToBoss(room, mon, attacker, r.damage);
+    recordPartyDamage(attacker, r, '기본 공격');
     recordPartyJudgmentDamage(room, attacker, r);
     applyAttackPotentialRecovery(room, attacker);
     applyMainCardPassiveMpRecovery(room, attacker);
@@ -2871,9 +3048,7 @@ function applyAttackPotentialRecovery(room, member) {
     let hpRecovered = 0;
     let mpRecovered = 0;
     if (Math.random() < 0.1 && Number(stats.attackHpRecovery || 0) > 0) {
-        const before = member.runtime.hp;
-        if (canPartyReceiveHealing(member)) member.runtime.hp = Math.min(member.runtime.hpMax, member.runtime.hp + Math.round(Number(stats.attackHpRecovery || 0) * recoveryMul));
-        hpRecovered = member.runtime.hp - before;
+        hpRecovered = healMember(member, Math.round(Number(stats.attackHpRecovery || 0) * recoveryMul));
     }
     if (Math.random() < 0.1 && Number(stats.attackMpRecovery || 0) > 0) {
         const before = member.runtime.mp;
@@ -2934,7 +3109,10 @@ function pickTauntOrNull(room, mon) {
 function applyFixedDamageToMember(room, member, amount, source) {
     if (!member || !member.runtime || member.runtime.dead) return 0;
     const before = member.runtime.hp;
-    applyDamageToMember(room, member, Math.max(0, Math.round(Number(amount || 0))), source);
+    const incoming = amount && typeof amount === 'object'
+        ? amount
+        : Math.max(0, Math.round(Number(amount || 0)));
+    applyDamageToMember(room, member, incoming, source);
     return Math.max(0, before - member.runtime.hp);
 }
 
@@ -3279,22 +3457,24 @@ function useSupportSkill(name, skillName) {
     if (Number(room.supportGauge || 0) < 100) return { error: '지원군 게이지가 부족합니다. (' + Math.floor(Number(room.supportGauge || 0)) + '%)' };
     room.supportGauge = 0;
     room.supportGaugeAccum = 0;
+    recordPartySkillUse(me, '지원군 · ' + skillName);
     pushNotice(room, name + ' — 지원군 [' + skillName + '] 호출', 'big', 4000);
-    if (skillName === '지오') useSupportGeo(room);
-    else if (skillName === 'SitoSoym') useSupportSito(room);
-    else if (skillName === 'X') useSupportX(room);
+    if (skillName === '지오') useSupportGeo(room, me);
+    else if (skillName === 'SitoSoym') useSupportSito(room, me);
+    else if (skillName === 'X') useSupportX(room, me);
     broadcastRoom(room);
     return { ok: true };
 }
 
-function useSupportGeo(room) {
+function useSupportGeo(room, source) {
     const mon = room.monster;
     if (!mon) return;
     const dealt = applyBossHpDamage(room, mon, SUPPORT_GEO_DAMAGE);
+    recordPartyDamage(source, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '지원군 · 지오');
     pushCombat(room, '지원군 [지오] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
 }
 
-function useSupportSito(room) {
+function useSupportSito(room, source) {
     for (const m of getAliveMembers(room)) {
         // 보호막 무효 스탯(disableShield)을 가진 대상만 제외 — 시전자는 파티원이 아니므로 source는 없다.
         if (!canPartyApplyShield(null, m)) continue;
@@ -3305,36 +3485,38 @@ function useSupportSito(room) {
         r.shieldExpireHeal = 0;
         upsertMemberBuff(m, { id: 'supportSito', label: '사이토 소음', remain: SUPPORT_SITO_SEC });
     }
-    room.supportSito = { remain: SUPPORT_SITO_SEC, tick: 1 };
+    room.supportSito = { remain: SUPPORT_SITO_SEC, tick: 1, sourceName: source && source.name };
     pushCombat(room, '지원군 [SitoSoym] 전원 보호막 ' + comma(SUPPORT_SITO_SHIELD) + ' (' + SUPPORT_SITO_SEC + '초)', 'buff');
 }
 
 function stepSupportSito(room, dt) {
     const sp = room.supportSito;
+    const source = sp.sourceName ? findMember(room, sp.sourceName) : null;
     sp.remain = Math.max(0, sp.remain - dt);
     sp.tick -= dt;
     if (sp.tick <= 0) {
         sp.tick += 1;
         for (const m of getAliveMembers(room)) {
             if (Number(m.runtime.shield || 0) <= 0) continue;
-            healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT));
+            healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT), source);
         }
     }
     if (sp.remain > 0) return;
     room.supportSito = null;
     for (const m of getAliveMembers(room)) {
-        healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT));
+        healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT), source);
         m.runtime.mp = Math.min(m.runtime.mpMax, m.runtime.mp + Math.round(Number(m.runtime.mpMax || 0) * SUPPORT_SITO_END_PCT));
     }
     pushCombat(room, '[SitoSoym] 종료 — 전원 HP/MP ' + Math.round(SUPPORT_SITO_END_PCT * 100) + '% 회복', 'heal');
 }
 
-function useSupportX(room) {
+function useSupportX(room, source) {
     for (const m of room.members) if (m.runtime) m.runtime.cooldownsUntil = {};
     pushCombat(room, '지원군 [X] 전 파티원 스킬 쿨타임 초기화', 'buff');
     const mon = room.monster;
     if (!mon) return;
     const dealt = applyBossHpDamage(room, mon, SUPPORT_X_DAMAGE);
+    recordPartyDamage(source, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '지원군 · X');
     pushCombat(room, '지원군 [X] → ' + mon.name + ' [-' + comma(dealt) + ']', 'skill');
     const st = mon.bossState;
     if (!st || !st.berserk || mon.bossKey !== '잉여왕') return;
@@ -3343,7 +3525,7 @@ function useSupportX(room) {
     pushCombat(room, '(히든지원군스킬 발동)죽어라 부타!!!!!!!!!!!!', 'danger');
     grantTitleAsync(room, room.hostName, 'rainDefender');
     applyBossGroggy(room, mon, SUPPORT_X_HIDDEN_SEC, 0);
-    room.supportXBarrage = { remain: SUPPORT_X_HIDDEN_SEC, duration: SUPPORT_X_HIDDEN_SEC, total: SUPPORT_X_HIDDEN_DAMAGE, dealt: 0 };
+    room.supportXBarrage = { remain: SUPPORT_X_HIDDEN_SEC, duration: SUPPORT_X_HIDDEN_SEC, total: SUPPORT_X_HIDDEN_DAMAGE, dealt: 0, sourceName: source && source.name };
 }
 
 function stepSupportXBarrage(room, dt) {
@@ -3353,8 +3535,10 @@ function stepSupportXBarrage(room, dt) {
     const chunk = want - b.dealt;
     if (chunk > 0 && room.monster) {
         b.dealt = want;
-        applyBossHpDamage(room, room.monster, chunk);
-        pushCombat(room, '[X] 연속 타격 → ' + room.monster.name + ' [-' + comma(chunk) + ']', 'skill');
+        const dealt = applyBossHpDamage(room, room.monster, chunk);
+        const source = b.sourceName ? findMember(room, b.sourceName) : null;
+        recordPartyDamage(source, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '지원군 · X 연속 타격');
+        pushCombat(room, '[X] 연속 타격 → ' + room.monster.name + ' [-' + comma(dealt) + ']', 'skill');
     }
     if (b.remain <= 0 || !room.monster) room.supportXBarrage = null;
 }
@@ -3541,11 +3725,15 @@ function stepMemberDots(room, member, dt) {
         d.tick -= dt;
         if (d.tick <= 0) {
             d.tick += d.interval;
-            let dmg = d.power;
+            const beforeResistance = Number(d.power || 0);
+            let dmg = beforeResistance;
             if (d.element && typeof rpgenius.getElementDamageMultiplier === 'function') {
                 dmg *= rpgenius.getElementDamageMultiplier(d.element, d.srcStats, getPartyDynamicDefenseStats(member));
             }
-            applyFixedDamageToMember(room, member, Math.max(1, Math.round(dmg)), d.source + ' [' + d.label + ']');
+            applyFixedDamageToMember(room, member, {
+                damage: Math.max(1, Math.round(dmg)),
+                mitigation: { resistance: Math.max(0, beforeResistance - dmg) }
+            }, d.source + ' [' + d.label + ']');
             if (room.state !== 'inProgress' || r.dead) return;
         }
         if (d.remain <= 0) r.dots.splice(i, 1);
@@ -3894,6 +4082,7 @@ function usePartyBlockSkill(room, member) {
     if (!member.skills.includes('저지')) return { error: '습득하지 않은 스킬입니다.' };
     if (st.blockUsers.has(member.name)) return { error: '이미 저지했습니다.' };
     clearPartyGunryeokOnSkillUse(room, member);
+    recordPartySkillUse(member, '저지');
     st.blockUsers.add(member.name);
     pushCombat(room, member.name + ' [저지]', 'buff');
     broadcastRoom(room);
@@ -4085,41 +4274,75 @@ function computeMonsterDamage(room, mon, target) {
     const defenseReductionRate = Math.max(0, Math.min(1, Number(monStats.pntPercent || 0)));
     const penetration = Number(monStats.pnt || mon.pnt || 0);
     let total = 0;
+    let reducedByBuff = 0;
+    let reducedByDefense = 0;
     for (let i = 0; i < hitCount; i++) {
-        let hitDamage = rawDamage * (1 + Number(monStats.finalDamage || 0)) * monDealtMul * mitigation * targetTakenMul;
+        let beforeReduction = rawDamage * (1 + Number(monStats.finalDamage || 0)) * monDealtMul;
+        let hitDamage = beforeReduction * mitigation * targetTakenMul;
         const isCrit = Math.random() < Math.max(0, Number(monStats.crit || 0));
-        if (isCrit) hitDamage = Math.round(hitDamage * Math.max(1, Number(monStats.critMul || 1.4) - Number(targetStats.critDef || 0)));
+        if (isCrit) {
+            const critMul = Math.max(1, Number(monStats.critMul || 1.4) - Number(targetStats.critDef || 0));
+            beforeReduction = Math.round(beforeReduction * critMul);
+            hitDamage = Math.round(hitDamage * critMul);
+        }
+        const afterReduction = hitDamage;
         if (Number(monStats.trueDamageChance || 0) > 0 && Math.random() < Number(monStats.trueDamageChance || 0)) {
             hitDamage = getDestinyDamageAfterDefense(hitDamage, defense, penetration, defenseReductionRate);
         } else {
             hitDamage = getDamageAfterDefense(hitDamage, defense, penetration, defenseReductionRate);
         }
+        const afterDefense = hitDamage;
         if (Number(monStats['000'] || 0) > 0 && Math.random() < Number(monStats['000'])) hitDamage += [10, 100, 1000][randomInt(0, 2)];
         if (Number(monStats.skillTrueDmg || 0) > 0) hitDamage += Number(monStats.skillTrueDmg || 0);
-        total += applyDamageVariance(hitDamage);
+        const variedDamage = applyDamageVariance(hitDamage);
+        const varianceScale = hitDamage > 0 ? variedDamage / hitDamage : 1;
+        reducedByBuff += Math.max(0, beforeReduction - afterReduction) * varianceScale;
+        reducedByDefense += Math.max(0, afterReduction - afterDefense) * varianceScale;
+        total += variedDamage;
     }
     // 몬스터가 element 속성을 가지면 플레이어 속성 저항 적용 (맨 마지막)
     const monElement = mon.element || monStats.element;
+    const beforeResistance = total;
     if (monElement && typeof rpgenius.getElementDamageMultiplier === 'function') {
         total *= rpgenius.getElementDamageMultiplier(monElement, monStats, getPartyDynamicDefenseStats(target));
     }
-    return Math.max(0, Math.round(total));
+    const finalDamage = Math.max(0, Math.round(total));
+    const elementScale = beforeResistance > 0 ? finalDamage / beforeResistance : 1;
+    return {
+        damage: finalDamage,
+        mitigation: {
+            buff: reducedByBuff * elementScale,
+            defense: reducedByDefense * elementScale,
+            resistance: Math.max(0, beforeResistance - total)
+        }
+    };
 }
 
 function applyDamageToMember(room, member, dmg, source) {
     const r = member.runtime;
-    dmg = Math.max(0, Math.round(Number(dmg || 0) * getTakenDamageUpMul(member)));
+    const incoming = dmg && typeof dmg === 'object' ? dmg : { damage: dmg };
+    const mitigation = incoming.mitigation || {};
+    recordPartyDamageReduced(member, 'buff', mitigation.buff);
+    recordPartyDamageReduced(member, 'defense', mitigation.defense);
+    recordPartyDamageReduced(member, 'resistance', mitigation.resistance);
+    dmg = Math.max(0, Math.round(Number(incoming.damage || 0) * getTakenDamageUpMul(member)));
     if (r.dodgeNext) {
         r.dodgeNext = false;
+        recordPartyDamageReduced(member, 'other', dmg);
         pushCombat(room, source + ' → ' + member.name + ' [회피]', 'damage');
         return;
     }
     if (dmg > 0) {
         const protector = room.members.find(m => m !== member && m.runtime && !m.runtime.dead && Number(m.runtime.absorbAlly || 0) > 0);
         if (protector) {
+            const beforeRedirect = dmg;
             const absorbed = Math.max(1, Math.round(dmg * Number(protector.runtime.absorbAlly || 0)));
             dmg = Math.max(0, dmg - absorbed);
+            const protectorHpBefore = protector.runtime.hp;
             protector.runtime.hp = Math.max(0, protector.runtime.hp - absorbed);
+            recordPartyDamageReduced(member, 'other', beforeRedirect - dmg);
+            const protectorStats = getPartyBattleStats(protector);
+            if (protectorStats) protectorStats.damageTaken += Math.max(0, protectorHpBefore - protector.runtime.hp);
             pushCombat(room, protector.name + ' 결속 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
             if (protector.runtime.hp <= 0) {
                 protector.runtime.dead = true;
@@ -4136,13 +4359,16 @@ function applyDamageToMember(room, member, dmg, source) {
         return;
     }
     if (r.nextDamageReduction) {
+        const beforeReduction = dmg;
         dmg = Math.round(dmg * (1 - Number(r.nextDamageReduction || 0)));
+        recordPartyDamageReduced(member, 'buff', beforeReduction - dmg);
         r.nextDamageReduction = 0;
     }
     if (r.shield > 0) {
         const absorbed = Math.min(r.shield, dmg);
         r.shield -= absorbed;
         dmg -= absorbed;
+        recordPartyDamageReduced(member, 'shield', absorbed);
         if (r.shieldHits > 0) {
             r.shieldHits -= 1;
             if (r.shieldHits <= 0) r.shield = 0;
@@ -4157,6 +4383,7 @@ function applyDamageToMember(room, member, dmg, source) {
         const absorbed = Math.round(dmg * 0.3);
         if (absorbed > 0) {
             dmg = Math.max(0, dmg - absorbed);
+            recordPartyDamageReduced(member, 'other', absorbed);
             r.iktaeBot.hp -= absorbed;
             pushCombat(room, '익테봇 → ' + member.name + ' 피해 대신 받음 [-' + absorbed + ']', 'damage');
             if (r.iktaeBot.hp <= 0) {
@@ -4165,7 +4392,10 @@ function applyDamageToMember(room, member, dmg, source) {
             }
         }
     }
+    const hpBefore = r.hp;
     r.hp = Math.max(0, r.hp - dmg);
+    const battleStats = getPartyBattleStats(member);
+    if (battleStats) battleStats.damageTaken += Math.max(0, hpBefore - r.hp);
     pushCombat(room, source + ' → ' + member.name + ' [-' + dmg + ']', 'damage');
     if (r.hp > 0) maybeStartImmortalArmorRegen(room, member);
     applyDamageTakenSlotRecovery(room, member, dmg);
@@ -4177,8 +4407,9 @@ function applyDamageToMember(room, member, dmg, source) {
         const tPosDef = tQuest && tQuest.positions && tQuest.positions[member.position];
         const finalDefMul = (tPosDef && tPosDef.stats && tPosDef.stats.finalDef) || 1;
         const reflect = Math.max(1, Math.round(Number(tStats.def || 50) * finalDefMul * thornSnap.ratio));
-        applyBossHpDamage(room, room.monster, reflect);
-        pushCombat(room, '가시 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        const dealt = applyBossHpDamage(room, room.monster, reflect);
+        recordPartyDamage(member, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '가시 반사');
+        pushCombat(room, '가시 반사 → ' + room.monster.name + ' [-' + dealt + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     // 패시브: 가시 갑옷 — 받은 피해 발생 시 방어력 20% 반사
@@ -4188,8 +4419,9 @@ function applyDamageToMember(room, member, dmg, source) {
         const posDef = (quest.positions && quest.positions[member.position]) || {};
         const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
         const reflect = Math.max(1, calculateNormalDamageToMonster(member, room.monster, room, Math.round(Number(stats.def || 50) * finalDefMul * 0.20)));
-        applyBossHpDamage(room, room.monster, reflect);
-        pushCombat(room, '가시 갑옷 반사 → ' + room.monster.name + ' [-' + reflect + ']', 'skill');
+        const dealt = applyBossHpDamage(room, room.monster, reflect);
+        recordPartyDamage(member, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '가시 갑옷 반사');
+        pushCombat(room, '가시 갑옷 반사 → ' + room.monster.name + ' [-' + dealt + ']', 'skill');
         if (room.monster.hp <= 0) { onMonsterDefeated(room); return; }
     }
     if (r.hp <= 0) {
@@ -4228,11 +4460,13 @@ async function persistImmortalArmorCooldown(name, readyAt) {
     }
 }
 
-function healMember(member, amount) {
+function healMember(member, amount, source) {
     if (!member || !member.runtime || member.runtime.dead || !canPartyReceiveHealing(member)) return 0;
     const before = member.runtime.hp;
     member.runtime.hp = Math.min(member.runtime.hpMax, member.runtime.hp + Math.max(0, Math.round(Number(amount || 0))));
-    return member.runtime.hp - before;
+    const healed = member.runtime.hp - before;
+    recordPartyHealing(source || member, member, healed);
+    return healed;
 }
 
 function recoverPartyMp(room, amount) {
@@ -4257,7 +4491,7 @@ function applyDamageTakenSlotRecovery(room, damaged, damage) {
         if (chance <= 0 || Math.random() >= chance) continue;
         const amount = Math.round(Number(damage || 0) * 0.2);
         let total = 0;
-        for (const ally of room.members) total += healMember(ally, amount);
+        for (const ally of room.members) total += healMember(ally, amount, m);
         if (total > 0) pushCombat(room, '글렌첵 효과 → 파티 체력 회복 [+' + comma(amount) + ']', 'heal');
     }
 }
@@ -4331,6 +4565,7 @@ function useSkill(name, skillName, targetName) {
     if (typeof equipmentSkill.hpAfter !== 'undefined') me.runtime.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
     me.runtime.mp -= mp;
+    recordPartySkillUse(me, skillName);
     me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
     // 건력 상태에서 스킬 사용 시 해제 (건력 자체는 executeMainCardSkillEffect에서 토글 처리)
     if (skillName !== '건력') clearPartyGunryeokOnSkillUse(room, me);
@@ -4367,6 +4602,7 @@ function usePartySelfDestruct(room, member) {
     const botActive = !!(runtime.iktaeBot && Number(runtime.iktaeBot.expired_at || 0) > now && Number(runtime.iktaeBot.hp || 0) > 0);
     const sunataActive = !!(runtime.sunata && Number(runtime.sunata.expired_at || 0) > now);
     if (!botActive && !sunataActive) return { error: '익테봇 또는 수나타가 소환 중일 때만 자폭을 사용할 수 있습니다.' };
+    recordPartySkillUse(member, '자폭');
     clearPartyGunryeokOnSkillUse(room, member);
     const mainSkills = (member.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const equipmentSkill = preparePartyTranscendSkill(member, '자폭', false, room);
@@ -4475,6 +4711,8 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         if (invincible) result.damage = 0;
         let damage = result.damage;
         if (!invincible) damage = applyPlayerDamageToBoss(room, room.monster, caster, damage);
+        result.damage = damage;
+        recordPartyDamage(caster, result, skillName);
         pushCombat(room, caster.name + ' [' + skillName + '] → ' + room.monster.name + ' [-' + damage + ']', 'skill');
         if (def.debuff && def.debuff.def) room.monster.def = Math.max(0, Number(room.monster.def || 0) + Number(def.debuff.def));
         if (def.debuff && def.debuff.takenDmg) {
@@ -4523,7 +4761,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         if (def.target === 'allAllies') {
             for (const m of room.members) {
                 if (!m.runtime.dead) {
-                    if (canPartyReceiveHealing(m)) m.runtime.hp = Math.min(m.runtime.hpMax, m.runtime.hp + amount);
+                    healMember(m, amount, caster);
                     applyTranscendAllyEffect(room, caster, m, 'heal');
                 }
             }
@@ -4531,7 +4769,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         } else {
             const target = pickAllyTarget(room, caster, targetName);
             if (target) {
-                if (canPartyReceiveHealing(target)) target.runtime.hp = Math.min(target.runtime.hpMax, target.runtime.hp + amount);
+                healMember(target, amount, caster);
                 applyTranscendAllyEffect(room, caster, target, 'heal');
                 pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' [+' + amount + ']', 'heal');
             }
@@ -4803,7 +5041,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
             const dotMul = 1 + Number(stats.dotDamage || 0) + getTranscendStageValue(caster, '흐음티콘', .40, .15);
             const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skill, 1, star) * dotMul));
             addMonsterDebuff(room.monster, { id: '유서새김-def', type: 'defReduce', value: defDown, remain: 10 });
-            addMonsterDebuff(room.monster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10 });
+            addMonsterDebuff(room.monster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10, sourceName: caster.name, sourceSkill: '유서새김' });
             pushCombat(room, caster.name + ' [유서새김] → ' + room.monster.name + ' 표식 (방어력 ▼ / 2초마다 지속 피해)', 'buff');
         }
         applyMainCardPassiveMpRecovery(room, caster);
@@ -5046,9 +5284,7 @@ async function usePotion(name, potionName) {
     for (const func of funcs) {
         if (func.type === '체력회복') {
             const amt = Math.max(1, Math.round(Number(func.amount || 0) * potionMul));
-            const before = me.runtime.hp;
-            if (canPartyReceiveHealing(me)) me.runtime.hp = Math.min(me.runtime.hpMax, me.runtime.hp + amt);
-            parts.push('+' + (me.runtime.hp - before) + ' HP');
+            parts.push('+' + healMember(me, amt) + ' HP');
         } else if (func.type === '마나회복') {
             const amt = Math.max(1, Math.round(Number(func.amount || 0) * potionMul));
             const before = me.runtime.mp;
@@ -5056,9 +5292,7 @@ async function usePotion(name, potionName) {
             parts.push('+' + (me.runtime.mp - before) + ' MP');
         } else if (func.type === '체력회복%') {
             const amt = Math.max(1, Math.round(me.runtime.hpMax * Number(func.amount || 0) * potionMul));
-            const before = me.runtime.hp;
-            if (canPartyReceiveHealing(me)) me.runtime.hp = Math.min(me.runtime.hpMax, me.runtime.hp + amt);
-            parts.push('+' + (me.runtime.hp - before) + ' HP');
+            parts.push('+' + healMember(me, amt) + ' HP');
         } else if (func.type === '마나회복%') {
             const amt = Math.max(1, Math.round(me.runtime.mpMax * Number(func.amount || 0) * potionMul));
             const before = me.runtime.mp;
@@ -5067,6 +5301,7 @@ async function usePotion(name, potionName) {
         }
     }
     const line = '🧪 ' + potionName + ' → ' + name + ' [' + parts.join(', ') + ']';
+    recordPartyPotionUse(me, potionName);
     slot.count -= 1;
     if (slot.count <= 0) me.potions = me.potions.filter(p => p !== slot);
     me.runtime.potionUntil = nowMs() + POTION_GLOBAL_CD * 1000;
