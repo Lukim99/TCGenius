@@ -64,6 +64,7 @@ const BANNER_TARGET_TABS = [
     { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
     { value: 'combine', label: '콘텐츠 · 조합' },
     { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
+    { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
     { value: 'shop', label: '거래 · 상점' },
@@ -2105,6 +2106,45 @@ server.get('/api/hfield', requireUser, async (req, res) => {
         res.json(buildHFieldState(user));
     } catch (e) {
         console.error('h-field status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.get('/api/equipment-synthesis', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json({ equipment: buildEquipmentSynthesisItems(user) });
+    } catch (e) {
+        console.error('equipment synthesis list error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/equipment-synthesis', requireUser, async (req, res) => {
+    try {
+        const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(Number) : [];
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const blockedReason = getEquipmentActionBlockedReason(user, '합성');
+        if (blockedReason) return res.status(400).json({ error: blockedReason });
+        if (user.pendingAction) return res.status(409).json({ error: '먼저 진행 중인 작업을 완료하거나 취소해주세요.' });
+        const selection = rpgenius.getEquipmentSynthesisSelection(user, numbers);
+        if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
+        user.pendingAction = { type: '장비합성', numbers: selection.numbers };
+        const message = rpgenius.runEquipmentSynthesis(user);
+        if (String(message || '').startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
+        await user.save();
+        const equipment = buildEquipmentSynthesisItems(user);
+        res.json({
+            ok: true,
+            message,
+            resultEquipment: equipment[equipment.length - 1] || null,
+            equipment,
+            profile: buildUserProfile(user)
+        });
+    } catch (e) {
+        console.error('equipment synthesis error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -5037,6 +5077,60 @@ function buildEquipmentDex() {
     return result;
 }
 
+function buildEquipmentSynthesisItems(user) {
+    const inventory = user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : [];
+    return buildInventoryEquipment(user)
+        .filter(entry => entry.source == 'inventory')
+        .map(entry => {
+            const equip = inventory[entry.index] || {};
+            const data = getEquipmentData(entry.type, entry.id);
+            const stage = data && data.rarity == '초월' ? Math.max(1, Number(equip.transcendStage || 1)) : null;
+            let synthesisMode = null;
+            let result = null;
+            let unavailableReason = '';
+            if (data && data.rarity == '초월') {
+                synthesisMode = 'transcend';
+                if (equip.locked) unavailableReason = '잠긴 장비';
+                else if (stage >= 3) unavailableReason = '최종 단계';
+                else result = {
+                    type: entry.type,
+                    id: entry.id,
+                    name: entry.name,
+                    rarity: '초월 ' + (stage + 1) + '단계',
+                    transcendStage: stage + 1,
+                    iconUrl: entry.iconUrl,
+                    frameUrl: entry.frameUrl
+                };
+            } else if (data && typeof data.evolution != 'undefined') {
+                synthesisMode = 'evolution';
+                const resultId = Number(data.evolution);
+                const resultData = getEquipmentData(entry.type, resultId);
+                if (entry.level < 10) unavailableReason = '+10 강화 필요';
+                else if (!resultData) unavailableReason = '합성 결과 정보 없음';
+                else result = {
+                    type: entry.type,
+                    id: resultId,
+                    name: resultData.name,
+                    rarity: resultData.rarity,
+                    transcendStage: null,
+                    iconUrl: getEquipmentIconUrl(resultData),
+                    frameUrl: getAuctionFrameUrl('equipment', resultData.rarity)
+                };
+            } else {
+                unavailableReason = '합성 진화 불가';
+            }
+            return Object.assign({}, entry, {
+                locked: !!equip.locked,
+                transcendStage: stage,
+                synthesisMode,
+                requiredCount: synthesisMode == 'transcend' ? 2 : 3,
+                result,
+                selectable: !!result,
+                unavailableReason
+            });
+        });
+}
+
 async function getPatchnoteList() {
     let data = rpgenius.getDataCache('Patchnote', null);
     if (!data) {
@@ -7209,6 +7303,19 @@ function renderUserDashboard(sess, opts) {
       <div class="fusion-pool-head"><div><h2>전직 재료 선택</h2><p>첫 카드와 동일한 캐릭터·등급만 이어서 선택할 수 있습니다.</p></div><span id="jobCombinePoolCount" class="fusion-pool-count"></span></div>
       <div class="fusion-tools"><label class="fusion-search"><span>검색</span><input id="jobCombineSearch" type="search" placeholder="캐릭터 이름 검색" autocomplete="off"></label><label class="fusion-toggle"><input id="jobCombineCompatibleOnly" type="checkbox"><span>선택 가능한 카드만</span></label><button id="jobCombineClear" class="fusion-clear" type="button">선택 초기화</button></div>
       <div id="jobCombinePool" class="card-grid fusion-card-grid"></div>
+    </section>
+  </div>
+  <div class="page" data-page="equipment-synthesis">
+    <section class="panel equipment-synthesis-board">
+      <div class="equipment-synthesis-head"><div><span>EQUIPMENT SYNTHESIS</span><h2>장비 합성</h2><p>합성 가능한 장비를 선택해 상위 장비로 진화시키세요.</p></div><b id="equipmentSynthesisRule">재료 선택</b></div>
+      <div id="equipmentSynthesisStage" class="equipment-synthesis-stage"></div>
+      <div id="equipmentSynthesisInfo" class="equipment-synthesis-info"></div>
+    </section>
+    <div id="equipmentSynthesisDock" class="equipment-synthesis-dock" aria-hidden="true"></div>
+    <section class="panel equipment-synthesis-inventory">
+      <div class="equipment-synthesis-pool-head"><div><h2>재료 장비 선택</h2><p>일반 합성은 동일한 +10 장비 3개, 초월 합성은 같은 이름의 장비 2개가 필요합니다.</p></div><span id="equipmentSynthesisCount"></span></div>
+      <div class="equipment-synthesis-tools"><label><span>검색</span><input id="equipmentSynthesisSearch" type="search" placeholder="장비 이름 검색" autocomplete="off"></label><label class="equipment-synthesis-toggle"><input id="equipmentSynthesisCompatibleOnly" type="checkbox"><span>선택 가능한 장비만</span></label><button id="equipmentSynthesisClear" type="button">선택 초기화</button></div>
+      <div id="equipmentSynthesisPool" class="equipment-synthesis-grid"></div>
     </section>
   </div>
   <div class="page" data-page="레벨보상">

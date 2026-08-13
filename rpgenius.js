@@ -1792,7 +1792,7 @@ function getPotentialRerollInfo(user, number) {
         ok: true,
         currentTier,
         currentTierLabel: getPotentialRarityLabel(currentTier),
-        current: { tierLabel: getPotentialRarityLabel(currentTier), entries: formatPotentialOptionEntries(selected.equip.potential) },
+        current: { tierKey: currentTier, tierLabel: getPotentialRarityLabel(currentTier), entries: formatPotentialOptionEntries(selected.equip.potential) },
         jewels: { jewel: jewelCount, white: whiteCount },
         options: {
             none: { cost: costOf(0), discountPct: 0 },
@@ -1810,6 +1810,20 @@ function webRerollPotential(user, number, jewelChoice) {
     if (typeof msg === 'string' && msg.startsWith('❌')) return { error: msg.replace(/^❌\s*/, '') };
     const p = user.pendingAction;
     if (!p || p.type !== '잠재능력재설정확인') return { error: '재설정에 실패했습니다.' };
+    const selected = getAllUserEquipments(user)[Number(p.number) - 1];
+    let combatPower = null;
+    if (selected && selected.equip) {
+        const currentPotential = selected.equip.potential;
+        try {
+            selected.equip.potential = p.oldPotential;
+            const oldPower = Number(calculateCombatPower(user).total || 0);
+            selected.equip.potential = p.newPotential;
+            const newPower = Number(calculateCombatPower(user).total || 0);
+            combatPower = { old: oldPower, new: newPower, diff: newPower - oldPower };
+        } finally {
+            selected.equip.potential = currentPotential;
+        }
+    }
     return {
         ok: true,
         cost: p.cost,
@@ -1818,8 +1832,9 @@ function webRerollPotential(user, number, jewelChoice) {
         guaranteed: p.guaranteed,
         currentTierLabel: getPotentialRarityLabel(p.currentTier),
         nextTierLabel: getPotentialRarityLabel(p.nextTier),
-        old: { tierLabel: getPotentialRarityLabel(p.oldPotential.rarity), entries: formatPotentialOptionEntries(p.oldPotential) },
-        new: { tierLabel: getPotentialRarityLabel(p.newPotential.rarity), entries: formatPotentialOptionEntries(p.newPotential) }
+        old: { tierKey: getPotentialRarityKey(p.oldPotential.rarity), tierLabel: getPotentialRarityLabel(p.oldPotential.rarity), entries: formatPotentialOptionEntries(p.oldPotential) },
+        new: { tierKey: getPotentialRarityKey(p.newPotential.rarity), tierLabel: getPotentialRarityLabel(p.newPotential.rarity), entries: formatPotentialOptionEntries(p.newPotential) },
+        combatPower
     };
 }
 
@@ -3314,8 +3329,51 @@ const CP_WEIGHTS = {
     ECON_SCALE: 30,
     POTION_SCALE: 25,
     PLUS_GOLD_DIVISOR: 1000,
-    DROP_SCALE: 80
+    DROP_SCALE: 80,
+    ELEMENT_COVERAGE: 0.25,
+    ELEMENT_RESIST_CAP: 0.8,
+    ATTACK_BUFF_REFERENCE: 0.2,
+    SHIELD_EHP_RATIO: 0.25,
+    ULTIMATE_ACTION_RATIO: 0.15,
+    ELEMENTAL_ACTION_RATIO: 0.5,
+    LIGHT_ACTION_RATIO: 0.25,
+    NON_ELEMENT_ACTION_RATIO: 0.25,
+    DOT_ACTION_RATIO: 0.2,
+    SUMMON_ACTION_RATIO: 0.25,
+    SKILL_FREQUENCY_RATIO: 0.3,
+    CONTEXT_ACTION_RATIO: 0.16,
+    PARTY_SUPPORT_RATIO: 0.35,
+    MANA_AMPLIFIER_UPTIME: 0.8,
+    ULTIMATE_REFERENCE_COOLDOWN: 60000,
+    BURN_REFERENCE_DURATION: 8,
+    EQUIPMENT_TIMING_RATIO: 0.005
 };
+
+function getAdvancedEquipmentCombatPowerModifiers(user, stats) {
+    const result = { offense: 0, defense: 0, utility: 0 };
+    const setCounts = {};
+    getEquippedEquipmentData(user).forEach(({ ref, data }) => {
+        if ((data.rarity != '초월' && data.rarity != '신화') || !isEquipmentEffectActive(user, data)) return;
+        const stage = getTranscendStage(ref.equip, data);
+        const effect = transcendEquipment.resolveConditionalCombatPowerEffect(data.name, stage, stats);
+        result.offense += Number(effect.offense || 0);
+        result.defense += Number(effect.defense || 0);
+        result.utility += Number(effect.utility || 0);
+        if (data.name == '감옥열쇠' && Number(stats && stats.crit || 0) > 1) {
+            const overflowSkillDamage = (Number(stats.crit) - 1) * (.2 + .1 * Math.max(0, stage - 1));
+            result.offense += overflowSkillDamage * CP_WEIGHTS.AFTER_SKILL_RATIO;
+        }
+        if (data.set) setCounts[data.set] = Number(setCounts[data.set] || 0) + 1;
+    });
+    Object.keys(setCounts).forEach(set => {
+        const effect = transcendEquipment.conditionalSetCombatPowerEffects[set];
+        if (!effect || setCounts[set] < Number(effect.count || 0)) return;
+        result.offense += Number(effect.offense || 0);
+        result.defense += Number(effect.defense || 0);
+        result.utility += Number(effect.utility || 0);
+    });
+    return result;
+}
 
 function calculateCombatPower(user) {
     const stats = calculateUserStats(user);
@@ -3324,16 +3382,17 @@ function calculateCombatPower(user) {
         const passive = getEquipmentPassives()[4];
         if (passive) stats.finalDamage = (Number(stats.finalDamage || 0) + Number(passive.format && passive.format[1] && passive.format[1].base || 0.05));
     }
-    return computeCombatPowerFromStats(stats, slot);
+    return computeCombatPowerFromStats(stats, slot, getAdvancedEquipmentCombatPowerModifiers(user, stats));
 }
 
 function getTotalDefenseReductionRate(stats, slotEffects) {
     return Math.max(0, Math.min(1, Number(stats && stats.pntPercent || 0) + Number(slotEffects && slotEffects.defReduction || 0)));
 }
 
-function computeCombatPowerFromStats(stats, slot) {
+function computeCombatPowerFromStats(stats, slot, equipmentModifiers) {
     stats = stats || {};
     slot = slot || {};
+    equipmentModifiers = equipmentModifiers || {};
     const W = CP_WEIGHTS;
 
     const atk = Math.max(0, Number(stats.atk || 0));
@@ -3350,16 +3409,49 @@ function computeCombatPowerFromStats(stats, slot) {
 
     const mAttack = (1 + Number(stats.afterBasic || 0) + Number(slot.basicDamageBonus || 0)) * (1 + (Number(stats.afterSkill || 0) + Number(slot.skillDamageBonus || 0)) * W.AFTER_SKILL_RATIO);
     const mContext = 1 + (Number(stats.damageBonus || 0) + Number(slot.damageBonus || 0)) * W.DAMAGE_BONUS_RATIO + Number(stats.eliteDmg || 0) * W.ELITE_DMG_RATIO + Number(stats.bossDmg || 0) * W.BOSS_DMG_RATIO + Number(stats.finalDamage || 0) * W.FINAL_DAMAGE_RATIO + Number(stats.extraDamage || 0) * W.EXTRA_DAMAGE_RATIO;
-    const mCrit = 1 + Math.min(1, crit) * (critMul - 1);
-    const mCombo = Array.from({ length: maxCmb }, (_, i) => Math.pow(cmb, i)).reduce((sum, value) => sum + value, 0);
+    const critChance = Math.min(1, crit);
+    const regularCritMultiplier = 1 + critChance * (critMul - 1);
+    const comboCritMul = Number(stats.comboCritMul || 0);
+    const comboDamageMultiplier = Math.max(0.2, 1 + Number(stats.comboDamage || 0));
+    let mHits = regularCritMultiplier;
+    for (let i = 1; i < maxCmb; i++) {
+        const reachesHit = Math.pow(cmb, i);
+        const isLastHit = i == maxCmb - 1;
+        const hitCritMultiplier = isLastHit && stats.comboLastCrit
+            ? Math.max(1, critMul + comboCritMul + Number(stats.comboLastCritMul || 0))
+            : 1 + critChance * Math.max(0, critMul + comboCritMul - 1);
+        mHits += reachesHit * hitCritMultiplier * comboDamageMultiplier;
+    }
     const mPen = 1 + (pnt + Math.max(0, Number(stats.atkDefReduce || 0))) / W.PEN_DIVISOR + pntPercent * W.DEF_REDUCTION_RATIO;
     const abyssDoomBonus = stats.hasAbyssDoom ? Math.min(1, crit) * 0.3 / (1 - Math.min(0.9, Math.min(1, crit) * 0.3)) : 0;
     const celestiaBonus = stats.hasCelestia ? 0.03 : 0;
+    const lightProcBonus = critChance * Number(stats.critLightBonus || 0) + (1 - critChance) * Number(stats.nonCritLightBonus || 0);
     const mExtra = 1 + Math.min(1, Number(stats['000'] || 0)) * W.TRIPLE_ZERO_RATIO
                      + Number(stats.skillTrueDmg || 0) / Math.max(atk, 1) * W.SKILL_TRUE_DMG_RATIO
                      + Math.min(1, Number(stats.trueDamageChance || 0)) * W.TRUE_DAMAGE_RATIO
-                     + abyssDoomBonus + celestiaBonus;
-    const offense = atk * mAttack * mContext * mCrit * mCombo * mPen * mExtra * W.OFFENSE_SCALE;
+                     + lightProcBonus + abyssDoomBonus + celestiaBonus;
+    const elementAttack = Number(stats.allElementAtk || 0) + ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk']
+        .reduce((sum, key) => sum + Number(stats[key] || 0) * W.ELEMENT_COVERAGE, 0);
+    const mElement = Math.max(0.2, 1 + elementAttack * ELEMENT_DAMAGE_PER_POINT);
+    const cooldownRate = Math.max(0.2, 1 - Number(stats.cooldown || 0));
+    const flatCooldownPower = Math.max(-0.8, Math.min(0.8, -Number(stats.skillCooldown || 0) / W.COOLDOWN_DIVISOR));
+    const skillFrequencyPower = (1 / cooldownRate - 1 + flatCooldownPower) * W.SKILL_FREQUENCY_RATIO;
+    const specialDamage = Number(stats.attackBuffEfficiency || 0) * W.ATTACK_BUFF_REFERENCE
+        + Number(stats.manaAmplifierFinalAtk || 0) * W.MANA_AMPLIFIER_UPTIME
+        + Number(stats.ultimateDamage || 0) * W.ULTIMATE_ACTION_RATIO
+        + Number(stats.elementalExtraDamage || 0) * W.ELEMENTAL_ACTION_RATIO
+        + Number(stats.lightFinalDamage || 0) * W.LIGHT_ACTION_RATIO
+        + Number(stats.nonElementDamage || 0) * W.NON_ELEMENT_ACTION_RATIO
+        + (Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0)) * W.DOT_ACTION_RATIO
+        + Number(stats.summonDuration || 0) * W.SUMMON_ACTION_RATIO
+        + skillFrequencyPower
+        + (Number(stats.waldolandDmg || 0) + Number(stats.butagamePartyQuestDmg || 0)) * W.CONTEXT_ACTION_RATIO
+        + Number(stats.partyAllElementAtk || 0) * ELEMENT_DAMAGE_PER_POINT * W.PARTY_SUPPORT_RATIO
+        + Math.max(0, Number(stats.ultimateCooldownFlat || 0)) / W.ULTIMATE_REFERENCE_COOLDOWN * W.ULTIMATE_ACTION_RATIO
+        + Math.max(0, Number(stats.burnDurationFlat || 0)) / W.BURN_REFERENCE_DURATION * W.DOT_ACTION_RATIO;
+    const mSpecialDamage = Math.max(0.2, 1 + specialDamage);
+    const mEquipmentOffense = Math.max(0.2, 1 + Number(equipmentModifiers.offense || 0));
+    const offense = atk * mAttack * mContext * mHits * mPen * mExtra * mElement * mSpecialDamage * mEquipmentOffense * W.OFFENSE_SCALE;
 
     const ehp = hp * (1 + def / 100);
     const mAvoid = 1 / (1 - Math.min(W.AVOID_CAP, Math.max(0, Number(stats.avd || 0))));
@@ -3367,16 +3459,25 @@ function computeCombatPowerFromStats(stats, slot) {
     const mTakenDamage = 1 / Math.max(1 - W.TAKEN_DAMAGE_CAP, 1 + Number(stats.takenDamage || 0));
     const mRecover = 1 + (Number(slot.killRecoveryChance || 0) + Number(stats.recoveryEfficiency || 0) * W.RECOVERY_EFFICIENCY_RATIO + (Number(stats.attackHpRecovery || 0) / Math.max(hp, 1) + Number(stats.attackMpRecovery || 0) / Math.max(mp, 1)) * 0.1) * W.RECOVERY_RATIO;
     const mCritDef = 1 / (1 - Math.min(W.MITIGATE_CAP, critDef));
-    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * W.DEFENSE_SCALE;
+    const elementResist = Number(stats.allElementRes || 0) + ['fireRes', 'waterRes', 'lightRes', 'darkRes']
+        .reduce((sum, key) => sum + Number(stats[key] || 0) * W.ELEMENT_COVERAGE, 0);
+    const elementResistRate = Math.max(-W.ELEMENT_RESIST_CAP, Math.min(W.ELEMENT_RESIST_CAP, elementResist * ELEMENT_DAMAGE_PER_POINT));
+    const mElementResist = 1 / (1 - elementResistRate);
+    const mShield = stats.disableShield ? 1 : Math.max(0.2, 1 + Number(stats.shieldEfficiency || 0) * W.SHIELD_EHP_RATIO);
+    const mEquipmentDefense = Math.max(0.2, 1 + Number(equipmentModifiers.defense || 0));
+    const defense = Math.sqrt(ehp) * mAvoid * mMitigate * mTakenDamage * mRecover * mCritDef * mElementResist * mShield * mEquipmentDefense * W.DEFENSE_SCALE;
 
-    const mMpSave = 1 + Math.min(0.8, Math.max(0, -Number(stats.mpReduce || 0))) + Math.min(0.8, Number(slot.mpCostReduction || 0));
-    const mCooldown = 1 + Math.max(0, -Number(stats.skillCooldown || 0)) / W.COOLDOWN_DIVISOR + Math.min(0.8, Math.max(-0.8, Number(stats.cooldown || 0)));
+    const mpCostChange = Math.max(-0.8, Math.min(0.8, Number(stats.mpReduce || 0)));
+    const mMpSave = 1 - mpCostChange + Math.min(0.8, Number(slot.mpCostReduction || 0));
+    const mCooldown = 1 + flatCooldownPower + Math.min(0.8, Math.max(-0.8, Number(stats.cooldown || 0)));
     const resourcePower = (mp / W.MP_DIVISOR) * mMpSave * mCooldown;
     const economyPower = (Number(stats.gold || 0) + Number(stats.exp || 0) + Number(slot.goldBonus || 0) + Number(slot.expBonus || 0)) * W.ECON_SCALE
                        + Number(stats.potion || 0) * W.POTION_SCALE
                        + Number(stats.plusGold || 0) / W.PLUS_GOLD_DIVISOR * W.ECON_SCALE
                        + (Number(stats.itemDropChance || 0) + Number(slot.itemDropChance || 0)) * W.DROP_SCALE;
-    const utility = resourcePower + economyPower;
+    const equipmentTiming = (Math.max(0, Number(stats.equipmentEffectDurationFlat || 0)) + Math.max(0, Number(stats.equipmentEffectCooldownFlat || 0))) * W.EQUIPMENT_TIMING_RATIO;
+    const mEquipmentUtility = Math.max(0.2, 1 + equipmentTiming + Number(equipmentModifiers.utility || 0));
+    const utility = (resourcePower + economyPower) * mEquipmentUtility;
 
     return {
         offense: Math.round(offense),
@@ -13410,6 +13511,8 @@ module.exports = {
     getLockboxOpenError,
     calculateUserStats,
     calculateCombatPower,
+    computeCombatPowerFromStats,
+    getAdvancedEquipmentCombatPowerModifiers,
     getEquippedPets,
     getPetData,
     isPetEffectActive,
@@ -13520,6 +13623,7 @@ module.exports = {
     purchaseShopItem,
     formatEquipmentUpgradePreview,
     runEquipmentUpgrade,
+    getEquipmentSynthesisSelection,
     formatEquipmentSynthesisPreview,
     runEquipmentSynthesis,
     formatDisassemblePreview,

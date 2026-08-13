@@ -163,7 +163,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '펀치기계': '이벤트', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -185,7 +185,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '[H]필드', '버닝', '자물쇠', 'combine', 'jobcombine', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: [...(CAPSULE_VISIBLE ? ['캡슐'] : []), ...(PUNCH_VISIBLE ? ['펀치기계'] : []), ...(EVENT_DICE_ENDED ? [] : ['event']), '[H]필드', '버닝', '자물쇠', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -268,6 +268,7 @@ function navigatePage(pageId) {
     if (pageId === '캡슐') loadCapsule();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
+    if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
@@ -278,6 +279,7 @@ function navigatePage(pageId) {
         loadDex();
     }
     if (pageId === 'patchnotes') loadPatchnotes();
+    updateEquipmentSynthesisDockVisibility();
 }
 
 function activatePage(name) {
@@ -1081,9 +1083,9 @@ function openCardSlotModal(card, slotNumber) {
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '슬롯 효과가 없습니다.'));
     openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
-        const row = el('div', { class: 'row' });
-        row.appendChild(el('button', { class: 'close', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
-        row.appendChild(el('button', { onclick: () => openCardSlotPicker(slotNumber, card) }, '변경'));
+        const row = el('div', { class: 'row modal-action-row' });
+        row.appendChild(el('button', { class: 'modal-action-button remove', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
+        row.appendChild(el('button', { class: 'modal-action-button change', onclick: () => openCardSlotPicker(slotNumber, card) }, '변경'));
         $('#modalBody').appendChild(row);
     }
 }
@@ -1379,17 +1381,17 @@ function equipmentModalView(eq, interactive) {
     const potBlock = potentialBlockNode(eq.potentialDisplay);
     if (potBlock) nodes.push(potBlock);
     if (interactive !== false && ownEquipContext() && Number(eq.number || 0) > 0) {
-        const row = el('div', { class: 'row' });
+        const row = el('div', { class: 'row modal-action-row' });
         if (eq.equipped) {
-            row.appendChild(el('button', { class: 'close', onclick: e => handleEquipmentAction(eq, 'unequip', e) }, '장착 해제'));
-            row.appendChild(el('button', { onclick: () => openEquipPicker(eq.type, eq.typeLabel, eq) }, '변경'));
+            row.appendChild(el('button', { class: 'modal-action-button remove', onclick: e => handleEquipmentAction(eq, 'unequip', e) }, '장착 해제'));
+            row.appendChild(el('button', { class: 'modal-action-button change', onclick: () => openEquipPicker(eq.type, eq.typeLabel, eq) }, '변경'));
         } else {
-            row.appendChild(el('button', { class: 'primary', onclick: e => handleEquipmentAction(eq, 'equip', e) }, '장착'));
+            row.appendChild(el('button', { class: 'modal-action-button equip', onclick: e => handleEquipmentAction(eq, 'equip', e) }, '장착'));
         }
-        row.appendChild(el('button', { onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
+        row.appendChild(el('button', { class: 'modal-action-button enhance', onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
         nodes.push(row);
         if (eq.canPotential) {
-            const potRow = el('div', { class: 'row' });
+            const potRow = el('div', { class: 'row modal-action-row potential' });
             if (eq.potential) {
                 potRow.appendChild(el('button', { class: 'pot-reroll-open', onclick: () => { closeModal(); openRerollModal(eq); } }, '잠재능력 재설정'));
             } else {
@@ -1481,11 +1483,11 @@ function potAvailHeight() {
     const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     return vh * 0.92;
 }
-function potFitZoom(elem) {
+function potFitZoom(elem, reservedHeight = 0) {
     if (!elem) return { z: 1, natural: 0 };
     elem.style.zoom = '1';
     const natural = elem.scrollHeight;
-    const avail = potAvailHeight();
+    const avail = Math.max(0, potAvailHeight() - reservedHeight);
     const z = natural > avail ? avail / natural : 1;
     elem.style.zoom = String(z);
     return { z, natural };
@@ -1497,7 +1499,11 @@ function refitPotential() {
     if (!wrap) return;
     if ($('#potentialResultOverlay').classList.contains('active')) {
         const inner = $('#potentialResultOverlay').querySelector('.pot-result-inner');
-        if (inner) { const { z, natural } = potFitZoom(inner); wrap.style.height = (natural * z) + 'px'; }
+        if (inner) {
+            const resultPadding = 40;
+            const { z, natural } = potFitZoom(inner, resultPadding);
+            wrap.style.height = (natural * z + resultPadding) + 'px';
+        }
     } else {
         wrap.style.height = '';
         potFitZoom($('#potentialContent'));
@@ -1507,7 +1513,9 @@ window.addEventListener('resize', refitPotential);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', refitPotential);
 
 function potEntriesNode(data, label, cls) {
-    const block = el('div', { class: 'pot-block ' + (cls || '') });
+    const tierKey = data && data.tierKey || 'rare';
+    const block = el('div', { class: 'pot-block tier-' + tierKey + ' ' + (cls || '') });
+    block.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[tierKey] || '#94a3b8');
     block.appendChild(el('div', { class: 'pot-title' },
         el('span', null, label),
         el('span', { class: 'pot-tier-label' }, (data && data.tierLabel) || '')
@@ -1532,7 +1540,7 @@ function closeRerollModal() {
     $('#potentialOverlay').classList.remove('active');
     document.body.style.overflow = '';
     const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
-    if (wrap) wrap.style.height = '';
+    if (wrap) { wrap.style.height = ''; wrap.classList.remove('result-mode'); }
     const c = $('#potentialContent'); if (c) c.style.zoom = '1';
     potentialState = { eq: null, info: null, jewel: 'none', busy: false };
     if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
@@ -1541,6 +1549,8 @@ function closeRerollModal() {
 async function loadRerollInfo() {
     $('#potentialContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
     $('#potentialResultOverlay').classList.remove('active');
+    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
+    if (wrap) wrap.classList.remove('result-mode');
     try {
         const data = await api('/api/potential/reroll-info/' + potentialState.eq.number);
         potentialState.info = data;
@@ -1620,12 +1630,13 @@ function renderRerollSetup() {
     const thumbParts = [];
     if (eq.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: eq.frameUrl, alt: '' }));
     if (eq.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: eq.iconUrl, alt: eq.name }));
-    const header = el('div', { class: 'pot-mod-head' },
+    const header = el('div', { class: 'pot-mod-head tier-' + info.currentTier },
         el('button', { class: 'enhance-close-btn', onclick: closeRerollModal }, '✕'),
         el('div', { class: 'auc-thumb square' }, ...thumbParts),
         el('div', { class: 'pot-mod-title' }, eq.name + (eq.level > 0 ? ' +' + eq.level : '')),
         el('div', { class: 'pot-mod-tier' }, info.currentTierLabel)
     );
+    header.style.setProperty('--pot-tier', POTENTIAL_TIER_COLORS[info.currentTier] || '#94a3b8');
 
     const confirmBtn = el('button', { class: 'pot-confirm-btn', disabled: lack ? true : false, onclick: e => doReroll(e) }, '재설정');
 
@@ -1665,6 +1676,8 @@ async function doReroll(event) {
 
 function showRerollResult(data) {
     const ov = $('#potentialResultOverlay');
+    const wrap = $('#potentialOverlay').querySelector('.enhance-wrap');
+    if (wrap) wrap.classList.add('result-mode');
     const eq = potentialState.eq;
     const kind = data.upgraded ? 'great' : 'success';
     potentialState.lastResult = data;
@@ -1689,6 +1702,18 @@ function showRerollResult(data) {
     const headline = el('div', { class: 'enh-result-headline ' + kind, style: 'animation-delay:' + FX + 's' },
         data.upgraded ? ('티어 승급! ' + data.currentTierLabel + ' → ' + data.nextTierLabel + (data.guaranteed ? ' (확정)' : '')) : '잠재능력 재설정');
 
+    const power = data.combatPower;
+    const powerDiff = power ? Number(power.diff || 0) : 0;
+    const powerClass = powerDiff > 0 ? 'up' : powerDiff < 0 ? 'down' : 'same';
+    const powerNode = power ? el('div', { class: 'pot-power-compare pot-result-reveal ' + powerClass, style: 'animation-delay:' + (FX + 0.07).toFixed(2) + 's' },
+        el('div', { class: 'pot-power-value old' }, el('span', null, '이전 전투력'), el('strong', null, comma(power.old))),
+        el('div', { class: 'pot-power-delta' },
+            el('span', null, '전투력 변화'),
+            el('strong', null, powerDiff > 0 ? '+' + comma(powerDiff) : comma(powerDiff))
+        ),
+        el('div', { class: 'pot-power-value new' }, el('span', null, '신규 전투력'), el('strong', null, comma(power.new)))
+    ) : null;
+
     const cmp = el('div', { class: 'pot-compare pot-result-reveal', style: 'animation-delay:' + (FX + 0.1).toFixed(2) + 's' },
         potEntriesNode(data.old, '이전', 'old'),
         potEntriesNode(data.new, '신규', 'new'));
@@ -1700,7 +1725,7 @@ function showRerollResult(data) {
         el('button', { class: 'enhance-cancel-btn', onclick: e => data.upgraded ? showRerollKeepWarning() : finishReroll('cancel', e) }, '이전 유지'),
         el('button', { class: 'pot-confirm-btn', onclick: e => finishReroll('confirm', e) }, '새 잠재능력 적용'));
 
-    const inner = el('div', { class: 'pot-result-inner' }, fxStage, headline, cmp, ...(warn ? [warn] : []), btnRow);
+    const inner = el('div', { class: 'pot-result-inner' }, fxStage, headline, ...(powerNode ? [powerNode] : []), cmp, ...(warn ? [warn] : []), btnRow);
     ov.replaceChildren(inner);
     ov.classList.add('active');
     requestAnimationFrame(refitPotential);
@@ -4046,6 +4071,291 @@ async function loadJobCombine() {
         if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
     }
 }
+
+// ===== 장비합성 =====
+
+let equipmentSynthesisState = { equipment: [], slots: [], result: null, busy: false, search: '', compatibleOnly: false };
+
+function equipmentSynthesisMode() {
+    return equipmentSynthesisState.slots[0] ? equipmentSynthesisState.slots[0].synthesisMode : null;
+}
+
+function equipmentSynthesisRequiredCount() {
+    return equipmentSynthesisMode() === 'transcend' ? 2 : 3;
+}
+
+function equipmentSynthesisPreviewResult() {
+    if (equipmentSynthesisState.result) return equipmentSynthesisState.result;
+    const first = equipmentSynthesisState.slots[0];
+    if (!first || !first.result) return null;
+    if (first.synthesisMode !== 'transcend') return first.result;
+    const highestStage = Math.max(...equipmentSynthesisState.slots.map(item => Number(item.transcendStage || 1)));
+    return Object.assign({}, first.result, {
+        rarity: '초월 ' + (highestStage + 1) + '단계',
+        transcendStage: highestStage + 1,
+        level: Number(first.level || 0),
+        potentialDisplay: first.potentialDisplay || null,
+        soul: first.soul || null,
+        rolled: first.rolled || null
+    });
+}
+
+function equipmentSynthesisItemLabel(item) {
+    if (!item) return '';
+    const stage = item.transcendStage ? ' · 초월 ' + item.transcendStage + '단계' : '';
+    const level = Number(item.level || 0) > 0 ? ' · +' + item.level : '';
+    return item.name + stage + level;
+}
+
+function canAddEquipmentSynthesisItem(item) {
+    if (!item || !item.selectable) return false;
+    if (equipmentSynthesisState.slots.some(selected => selected.number === item.number)) return true;
+    const first = equipmentSynthesisState.slots[0];
+    if (!first) return true;
+    if (equipmentSynthesisState.slots.length >= equipmentSynthesisRequiredCount()) return false;
+    if (item.synthesisMode !== first.synthesisMode) return false;
+    if (first.synthesisMode === 'evolution') return item.type === first.type && Number(item.id) === Number(first.id) && Number(item.level) >= 10;
+    if (item.type !== first.type || item.baseName !== first.baseName || Number(item.transcendStage) > 2) return false;
+    const hasStageTwo = equipmentSynthesisState.slots.some(selected => Number(selected.transcendStage) === 2);
+    return hasStageTwo ? Number(item.transcendStage) === 1 : true;
+}
+
+function equipmentSynthesisSlot(item, index) {
+    if (!item) return el('button', { type: 'button', class: 'equipment-synthesis-slot empty', disabled: true, 'aria-label': (index + 1) + '번째 재료 슬롯' },
+        el('span', { class: 'equipment-synthesis-slot-plus' }, '+'),
+        el('small', null, '재료 ' + (index + 1))
+    );
+    return el('button', {
+        type: 'button',
+        class: 'equipment-synthesis-slot filled',
+        title: equipmentSynthesisItemLabel(item) + ' 선택 해제',
+        'aria-label': equipmentSynthesisItemLabel(item) + ' 선택 해제',
+        onclick: () => removeEquipmentSynthesisItem(item.number)
+    }, equipmentThumb(item), el('strong', null, item.name), el('small', null, item.transcendStage ? '초월 ' + item.transcendStage + '단계' : '+' + item.level));
+}
+
+function equipmentSynthesisResultSlot(result) {
+    const potential = result && result.potentialDisplay;
+    const soul = result && result.soul;
+    const gear = result ? el('div', { class: 'equipment-synthesis-result-gear' },
+        equipmentThumb(result),
+        Number(result.level || 0) > 0 ? el('i', { class: 'equipment-synthesis-result-level' }, '+' + Number(result.level)) : null
+    ) : el('span', { class: 'equipment-synthesis-result-icon' }, '◇');
+    const node = el('div', { class: 'equipment-synthesis-result' + (result ? ' ready' : '') + (potential ? ' potential' : '') + (soul ? ' soul' : '') },
+        gear,
+        el('div', null,
+            el('small', null, '합성 결과'),
+            el('strong', null, result ? result.name : '재료를 선택하세요'),
+            result ? el('span', null, result.rarity || '') : null,
+            potential || soul ? el('div', { class: 'equipment-synthesis-result-traits' },
+                potential ? el('em', { class: 'potential' }, potential.tierLabel + ' 잠재능력') : null,
+                soul ? el('em', { class: 'soul' }, '✦ ' + soul.name) : null
+            ) : null
+        )
+    );
+    if (potential) node.style.setProperty('--result-potential', POTENTIAL_TIER_COLORS[potential.tierKey] || '#94a3b8');
+    return node;
+}
+
+function equipmentSynthesisDockItem(item, index, result) {
+    if (!item) return el('span', { class: 'equipment-synthesis-dock-empty', 'aria-label': result ? '합성 결과' : (index + 1) + '번째 재료 슬롯' }, result ? '◇' : '+');
+    const node = el(result ? 'div' : 'button', {
+        class: 'equipment-synthesis-dock-item' + (result ? ' result' : ''),
+        type: result ? null : 'button',
+        title: result ? equipmentSynthesisItemLabel(item) : equipmentSynthesisItemLabel(item) + ' 선택 해제',
+        onclick: result ? null : () => removeEquipmentSynthesisItem(item.number)
+    }, equipmentThumb(item));
+    if (Number(item.level || 0) > 0) node.appendChild(el('i', null, '+' + Number(item.level)));
+    if (result && item.potentialDisplay) {
+        node.classList.add('potential');
+        node.style.setProperty('--result-potential', POTENTIAL_TIER_COLORS[item.potentialDisplay.tierKey] || '#94a3b8');
+    }
+    return node;
+}
+
+function renderEquipmentSynthesisDock() {
+    const dock = $('#equipmentSynthesisDock');
+    if (!dock) return;
+    const required = equipmentSynthesisRequiredCount();
+    const result = equipmentSynthesisPreviewResult();
+    const complete = equipmentSynthesisState.slots.length === required;
+    dock.replaceChildren(
+        el('div', { class: 'equipment-synthesis-dock-flow' },
+            el('div', { class: 'equipment-synthesis-dock-materials' }, ...Array.from({ length: required }, (_, index) => equipmentSynthesisDockItem(equipmentSynthesisState.slots[index], index, false))),
+            el('span', { class: 'equipment-synthesis-dock-arrow', 'aria-hidden': 'true' }, '→'),
+            equipmentSynthesisDockItem(result, 0, true)
+        ),
+        el('div', { class: 'equipment-synthesis-dock-progress' },
+            el('strong', null, equipmentSynthesisMode() === 'transcend' ? '초월 합성' : equipmentSynthesisMode() === 'evolution' ? '진화 합성' : '장비 합성'),
+            el('span', null, equipmentSynthesisState.slots.length + ' / ' + required)
+        ),
+        el('button', { type: 'button', class: 'equipment-synthesis-dock-submit', disabled: !complete || equipmentSynthesisState.busy, onclick: confirmEquipmentSynthesis }, equipmentSynthesisState.busy ? '합성 중' : '합성')
+    );
+    updateEquipmentSynthesisDockVisibility();
+}
+
+const equipmentSynthesisMobileQuery = window.matchMedia('(max-width: 760px)');
+
+function updateEquipmentSynthesisDockVisibility() {
+    const dock = $('#equipmentSynthesisDock');
+    const board = document.querySelector('.equipment-synthesis-board');
+    if (!dock || !board) return;
+    const header = document.querySelector('header');
+    const headerBottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+    const visible = activePage === 'equipment-synthesis' && equipmentSynthesisMobileQuery.matches && board.getBoundingClientRect().bottom <= headerBottom;
+    dock.classList.toggle('visible', visible);
+    dock.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    dock.style.top = headerBottom + 'px';
+}
+
+function renderEquipmentSynthesisStage() {
+    const stage = $('#equipmentSynthesisStage');
+    const info = $('#equipmentSynthesisInfo');
+    if (!stage || !info) return;
+    const required = equipmentSynthesisRequiredCount();
+    const result = equipmentSynthesisPreviewResult();
+    const complete = equipmentSynthesisState.slots.length === required;
+    const materials = el('div', { class: 'equipment-synthesis-materials' },
+        ...Array.from({ length: required }, (_, index) => equipmentSynthesisSlot(equipmentSynthesisState.slots[index], index))
+    );
+    stage.replaceChildren(materials, el('span', { class: 'equipment-synthesis-arrow', 'aria-hidden': 'true' }, '→'), equipmentSynthesisResultSlot(result));
+    const modeText = equipmentSynthesisMode() === 'transcend' ? '초월 단계 합성' : equipmentSynthesisMode() === 'evolution' ? '장비 진화 합성' : '합성 방식을 선택하세요';
+    const rule = $('#equipmentSynthesisRule');
+    if (rule) rule.textContent = equipmentSynthesisMode() === 'transcend' ? '재료 2개' : equipmentSynthesisMode() === 'evolution' ? '재료 3개' : '재료 선택';
+    const button = el('button', { type: 'button', class: 'equipment-synthesis-submit', disabled: !complete || equipmentSynthesisState.busy, onclick: confirmEquipmentSynthesis }, equipmentSynthesisState.busy ? '합성 중...' : '장비 합성');
+    info.replaceChildren(
+        el('div', { class: 'equipment-synthesis-progress' }, el('span', null, modeText), el('b', null, equipmentSynthesisState.slots.length + ' / ' + required)),
+        complete ? el('p', null, '선택한 재료는 합성 후 사라집니다. 결과를 확인한 뒤 진행하세요.') : el('p', null, '목록에서 조건에 맞는 장비를 선택하세요.'),
+        button
+    );
+    renderEquipmentSynthesisDock();
+    renderEquipmentSynthesisPool();
+}
+
+function renderEquipmentSynthesisPool() {
+    const pool = $('#equipmentSynthesisPool');
+    if (!pool) return;
+    const query = equipmentSynthesisState.search.trim().toLowerCase();
+    const selectedNumbers = new Set(equipmentSynthesisState.slots.map(item => item.number));
+    const items = equipmentSynthesisState.equipment.map(item => ({
+        item,
+        selected: selectedNumbers.has(item.number),
+        compatible: canAddEquipmentSynthesisItem(item)
+    })).filter(entry => (!query || String(entry.item.name || '').toLowerCase().includes(query)) && (!equipmentSynthesisState.compatibleOnly || entry.selected || entry.compatible))
+      .sort((a, b) => Number(b.selected) - Number(a.selected) || Number(b.compatible) - Number(a.compatible) || Number(b.item.level) - Number(a.item.level));
+    const count = $('#equipmentSynthesisCount');
+    if (count) count.textContent = items.length + '개 표시';
+    if (!items.length) {
+        pool.replaceChildren(el('div', { class: 'equipment-synthesis-empty' }, equipmentSynthesisState.equipment.length ? '조건에 맞는 장비가 없습니다.' : '보유한 장비가 없습니다.'));
+        return;
+    }
+    pool.replaceChildren(...items.map(({ item, selected, compatible }) => {
+        const disabled = !selected && !compatible;
+        const stateText = selected ? '선택됨' : compatible ? '선택 가능' : (item.unavailableReason || '조건 불일치');
+        const node = el('button', {
+            type: 'button',
+            class: 'equipment-synthesis-card' + (selected ? ' selected' : '') + (disabled ? ' disabled' : ''),
+            disabled: disabled || equipmentSynthesisState.busy,
+            onclick: () => selected ? removeEquipmentSynthesisItem(item.number) : addEquipmentSynthesisItem(item)
+        },
+        equipmentThumb(item),
+        el('div', { class: 'equipment-synthesis-card-copy' },
+            el('strong', null, item.name),
+            el('span', null, item.rarity + (item.level > 0 ? ' · +' + item.level : '')),
+            el('small', { class: compatible || selected ? 'ready' : '' }, stateText)
+        ));
+        node.style.setProperty('--rar', RARITY_COLORS[item.rarity] || RARITY_COLORS[item.baseRarity] || '#64748b');
+        return node;
+    }));
+}
+
+function addEquipmentSynthesisItem(item) {
+    if (!canAddEquipmentSynthesisItem(item)) return;
+    equipmentSynthesisState.result = null;
+    equipmentSynthesisState.slots.push(item);
+    if (equipmentSynthesisMode() === 'transcend') {
+        equipmentSynthesisState.slots.sort((a, b) => Number(b.transcendStage || 1) - Number(a.transcendStage || 1));
+    }
+    renderEquipmentSynthesisStage();
+}
+
+function removeEquipmentSynthesisItem(number) {
+    if (equipmentSynthesisState.busy) return;
+    equipmentSynthesisState.result = null;
+    equipmentSynthesisState.slots = equipmentSynthesisState.slots.filter(item => item.number !== number);
+    renderEquipmentSynthesisStage();
+}
+
+function confirmEquipmentSynthesis() {
+    const required = equipmentSynthesisRequiredCount();
+    if (equipmentSynthesisState.busy || equipmentSynthesisState.slots.length !== required) return;
+    const result = equipmentSynthesisPreviewResult();
+    const materialList = el('div', { class: 'equipment-synthesis-confirm-list' }, ...equipmentSynthesisState.slots.map(item => el('div', null, equipmentThumb(item), el('span', null, equipmentSynthesisItemLabel(item)))));
+    const actions = el('div', { class: 'row modal-action-row' },
+        el('button', { class: 'modal-action-button remove', onclick: closeModal }, '취소'),
+        el('button', { class: 'modal-action-button enhance', onclick: () => { closeModal(); submitEquipmentSynthesis(); } }, '합성 진행')
+    );
+    openRichModal('장비 합성 확인', '재료 장비는 복구할 수 없습니다.', [materialList, el('div', { class: 'equipment-synthesis-confirm-result' }, '결과: ' + (result ? result.name + ' · ' + result.rarity : '-')), actions]);
+}
+
+async function submitEquipmentSynthesis() {
+    if (equipmentSynthesisState.busy) return;
+    equipmentSynthesisState.busy = true;
+    renderEquipmentSynthesisStage();
+    try {
+        const data = await postApi('/api/equipment-synthesis', { numbers: equipmentSynthesisState.slots.map(item => item.number) });
+        equipmentSynthesisState.equipment = data.equipment || [];
+        equipmentSynthesisState.slots = [];
+        equipmentSynthesisState.result = data.resultEquipment || null;
+        equipmentSynthesisState.busy = false;
+        if (data.profile) renderProfile(data.profile);
+        renderEquipmentSynthesisStage();
+    } catch (e) {
+        equipmentSynthesisState.busy = false;
+        renderEquipmentSynthesisStage();
+        showAlert(e.message);
+    }
+}
+
+function bindEquipmentSynthesisControls() {
+    const search = $('#equipmentSynthesisSearch');
+    const compatible = $('#equipmentSynthesisCompatibleOnly');
+    const clear = $('#equipmentSynthesisClear');
+    if (search) {
+        search.value = equipmentSynthesisState.search;
+        search.oninput = () => { equipmentSynthesisState.search = search.value; renderEquipmentSynthesisPool(); };
+    }
+    if (compatible) {
+        compatible.checked = equipmentSynthesisState.compatibleOnly;
+        compatible.onchange = () => { equipmentSynthesisState.compatibleOnly = compatible.checked; renderEquipmentSynthesisPool(); };
+    }
+    if (clear) clear.onclick = () => {
+        if (equipmentSynthesisState.busy) return;
+        equipmentSynthesisState.slots = [];
+        equipmentSynthesisState.result = null;
+        renderEquipmentSynthesisStage();
+    };
+}
+
+async function loadEquipmentSynthesis() {
+    const stage = $('#equipmentSynthesisStage');
+    if (stage) stage.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        const data = await api('/api/equipment-synthesis');
+        equipmentSynthesisState.equipment = data.equipment || [];
+        equipmentSynthesisState.slots = [];
+        equipmentSynthesisState.result = null;
+        equipmentSynthesisState.busy = false;
+        bindEquipmentSynthesisControls();
+        renderEquipmentSynthesisStage();
+    } catch (e) {
+        if (stage) stage.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+window.addEventListener('scroll', updateEquipmentSynthesisDockVisibility, { passive: true });
+window.addEventListener('resize', updateEquipmentSynthesisDockVisibility, { passive: true });
+equipmentSynthesisMobileQuery.addEventListener('change', updateEquipmentSynthesisDockVisibility);
 
 // ===== 레벨 보상 =====
 

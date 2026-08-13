@@ -286,6 +286,111 @@ const uniqueStaticPerStageEffects = {
     '판테온 레거시': { stat: { pnt: 30 }, plusStat: { afterSkill: .05 } }
 };
 
+// 발동형/조건부 효과의 전투력 기대값이다.
+// [1단계 기대 기여율, 단계당 추가 기여율] 형식이며, 장비의 stat/plusStat으로
+// 이미 반영되는 수치는 넣지 않는다. 발동 주기, 적용 행동 비중, HP 조건과
+// 파티 기여도를 보수적으로 할인한 값만 공격/방어/유틸 전투력에 곱한다.
+const conditionalCombatPowerEffects = {
+    '쿠루미의 힘이 깃든 지팡이': { offense: [.15, .05] },
+    '솔로 인페르노': { defense: [.01, .007] },
+    '감옥열쇠': { offense: [.03, .01] },
+    '일레이나 전용 동전': { offense: [.07, .018] },
+    '강릉함씨 32대손': { offense: [.07, .02], defense: [.02, .005], requiresShield: true },
+    '앵콜': { offense: [.06, .015] },
+    '왓 타임 이즈 잇 나우': { offense: [.10, .03] },
+    '범부의 대나무': { offense: [.08, .025], utility: [.03, .01] },
+    '교촌 주머니': { utility: [.05, .02] },
+    '진사이': { offense: [.04, .007], defense: [.005, 0] },
+    'Lv1 초보': { offense: [.20, .06] },
+    '정수 필터망': { offense: [.03, .012] },
+    '썩어버린 물': { offense: [.05, .02] },
+    '비리의 맛': { offense: [.08, .025] },
+    '치명적인 매력': { offense: [.04, .015] },
+    '카카오의 계략': { offense: [.12, .015], utility: [.03, 0] },
+    '장미칼': { offense: [.04, .015] },
+    '피의 서약': { offense: [.10, .03] },
+    '흐음티콘': { offense: [.06, .02] },
+    '과소평가': { offense: [.18, .05] },
+    '불량 배터리': { utility: [.03, 0] },
+    '마나번 햇': { offense: [.12, .025] },
+    '마나번 로브': { offense: [.03, .005] },
+    '마나번 트라우저': { offense: [.04, .008] },
+    '마나번 슈즈': { offense: [.08, .024] },
+    '현자의 마나번 로브': { offense: [.05, 0] },
+    '핏빛 모자': { offense: [.14, .035] },
+    '피의 흐름': { defense: [.04, .008] },
+    '흐르는 피': { offense: [.03, .01] },
+    '블러디 슈즈': { offense: [.03, .0075] },
+    '블라디미르': { offense: [.05, 0] },
+    '최후통첩 모자': { offense: [.05, .013] },
+    '최후통첩 아머': { defense: [.05, .02] },
+    '최후통첩 트라우저': { offense: [.04, .01] },
+    '최후통첩 슈즈': { offense: [.06, .015] },
+    '정복자의 최후통첩': { offense: [.12, 0] },
+    '성역의 인도자 모자': { offense: [.028, .0105] },
+    '성역의 인도자 아머': { defense: [.015, .015], requiresShield: true },
+    '성역의 인도자 트라우저': { utility: [.01, .01], requiresShield: true },
+    '구원자의 하의': { utility: [.03, 0], requiresShield: true },
+    '잿불 모자': { offense: [.15, .025] },
+    '잿불 신발': { offense: [.04, .01] },
+    '종말을 걷는 장송곡': { offense: [.12, 0] },
+    '심해의 모자': { offense: [.10, .025] },
+    '심해의 갑옷': { defense: [.0125, .0025], requiresShield: true },
+    '심해의 신발': { offense: [.02, .005], utility: [.02, .005] },
+    '해류를 거스르는 신발': { offense: [.04, 0], utility: [.03, 0] },
+    '검은 잔향 하의': { offense: [.015, .0045] },
+    '검은 잔향 신발': { offense: [.0175, .0075] },
+    '심연의 신발': { offense: [.06, 0] },
+    '메가카운트 추첨기': { offense: [.075, .025], utility: [.03, .015] },
+    '운명의 주사위': { offense: [.04, .012] },
+    '해방의 열쇠': { offense: [.04, .012], defense: [.018, .004] },
+    '행운의 복주머니': { offense: [.03, .015] },
+    '심판의 주사위': { offense: [.10, 0] },
+    '모노레일 타이머': { offense: [.04, .008] },
+    '결합 타이머': { offense: [.03, .01] },
+    'DMC 마이크': { offense: [.08, .02] },
+    '십결모 타이머': { offense: [.06, 0] },
+    '킹메이커 팔찌': { offense: [.05, .01] },
+    '레인보우 프리즘': { offense: [.50, .13], requiresElementAttack: 1000 },
+    '마나 증폭 장치': { offense: [.06, .03] },
+    '쿨다운 목걸이': { offense: [.14, .035], defense: [.005, .001] },
+    '포상 정산 반지': { offense: [.07, .02], defense: [.02, 0], utility: [.02, 0] },
+    '예고편': { offense: [.02, .02] },
+    '예고의 예고': { offense: [.075, .025] },
+    '예고의 예고의 예고': { offense: [.015, .0075] }
+};
+
+// 2세트의 정적 능력치는 calculateUserStats에서 처리한다. 여기에는 4세트의
+// 발동형/조건부 부분만 같은 기대값 기준으로 기록한다.
+const conditionalSetCombatPowerEffects = {
+    '마나번': { count: 4, utility: .02 },
+    '최후 통첩': { count: 4, offense: .09 },
+    '성역의 인도자': { count: 4, offense: .0875 },
+    '잿불의 장송곡': { count: 4, offense: .10 },
+    '심해의 순환': { count: 4, offense: .025, utility: .015 },
+    '천공의 심판': { count: 4, offense: .08 },
+    '검은 잔향': { count: 4, offense: .07 },
+    'TCG의 유산': { count: 4, offense: .04, utility: .02 },
+    '딜레이': { count: 4, offense: .05 },
+    '킹메이커': { count: 4, offense: .08, defense: .02 },
+    '복선 회수': { count: 4, offense: .08, utility: .01 }
+};
+
+function resolveConditionalCombatPowerEffect(name, stage, stats) {
+    const effect = conditionalCombatPowerEffects[name];
+    if (!effect) return { offense: 0, defense: 0, utility: 0 };
+    const elementAttack = ['fireAtk', 'waterAtk', 'lightAtk', 'darkAtk']
+        .reduce((sum, key) => sum + Number(stats && stats[key] || 0) + Number(stats && stats.allElementAtk || 0), 0);
+    if (Number(effect.requiresElementAttack || 0) > elementAttack) return { offense: 0, defense: 0, utility: 0 };
+    if (effect.requiresShield && stats && stats.disableShield) return { offense: 0, defense: 0, utility: 0 };
+    const step = Math.max(0, Math.min(2, Number(stage || 1) - 1));
+    const value = key => {
+        const pair = effect[key];
+        return pair ? Number(pair[0] || 0) + Number(pair[1] || 0) * step : 0;
+    };
+    return { offense: value('offense'), defense: value('defense'), utility: value('utility') };
+}
+
 // 정적인 수치가 아닌 조건·발동·상태 변화 효과는 EquipmentPassive로 노출한다.
 // 이 객체의 삽입 순서는 DB/RPGenius/EquipmentPassive.json의 6번 이후 항목과 동일해야 한다.
 const uniquePassiveDescriptions = {
@@ -444,6 +549,9 @@ module.exports = {
     setEffects,
     uniqueStaticEffects,
     uniqueStaticPerStageEffects,
+    conditionalCombatPowerEffects,
+    conditionalSetCombatPowerEffects,
+    resolveConditionalCombatPowerEffect,
     uniquePassiveDescriptions,
     uniquePassiveIds,
     applyEquipmentBalancePatch
