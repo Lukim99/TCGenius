@@ -1531,7 +1531,14 @@ server.get('/api/capsule100', requireUser, async (req, res) => {
 });
 
 // 코인 N개(1~3)를 소비해 N회 뽑기. 확률은 잔여 재고 가중, 1번 당첨 시 즉시 전체 초기화.
-server.post('/api/capsule100/draw', requireUser, async (req, res) => {
+// 뽑기 전체(유저 로드→재고 계산→저장)를 직렬화해 재고 이중 차감·동일 유저 중복 뽑기를 막는다.
+// ponytail: 단일 프로세스 전제의 전역 프로미스 체인 락 — 처리량이 문제되면 DynamoDB 조건부 갱신으로 전환.
+let capsule100DrawChain = Promise.resolve();
+server.post('/api/capsule100/draw', requireUser, (req, res) => {
+    capsule100DrawChain = capsule100DrawChain.then(() => handleCapsule100Draw(req, res));
+});
+
+async function handleCapsule100Draw(req, res) {
     try {
         if (CAPSULE100_ADMIN_ONLY && !req.session.admin) return res.status(403).json({ error: '아직 오픈되지 않았습니다.' });
         const count = Number(req.body && req.body.count);
@@ -1576,7 +1583,7 @@ server.post('/api/capsule100/draw', requireUser, async (req, res) => {
         console.error('capsule100 draw error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
-});
+}
 
 server.get('/api/combine/cards', requireUser, async (req, res) => {
     try {
