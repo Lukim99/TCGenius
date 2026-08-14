@@ -2696,6 +2696,7 @@ function bcGiftLabel(g) {
     if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
     if (g.type === 'equipment') return (g.equipName || (EQUIPMENT_SLOT_LABELS[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
     if (g.type === 'pet') return (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
+    if (g.type === 'title') return '칭호: ' + (g.titleName || '미선택');
     return '?';
 }
 
@@ -2747,6 +2748,9 @@ function renderBcGifts() {
                 el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickPet(p => { g.id = p.id; g.petName = p.name; renderBcGifts(); }) }, g.petName ? ('#' + g.id + ' ' + g.petName) : '펫 선택...')));
             row.appendChild(el('div', null, el('label', null, '레벨'),
                 el('input', { type: 'number', min: 0, value: g.level || 0, oninput: e => { g.level = Number(e.target.value); } })));
+        } else if (g.type === 'title') {
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '칭호'),
+                el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickTitle(t => { g.titleId = t.id; g.titleName = t.name; renderBcGifts(); }) }, g.titleName ? (g.titleName + ' (' + g.titleId + ')') : '칭호 선택...')));
         }
         card.appendChild(row);
         list.appendChild(card);
@@ -2769,6 +2773,7 @@ $('#bcAddItem').onclick = () => bcAdd('item');
 $('#bcAddCard').onclick = () => bcAdd('card');
 $('#bcAddEquip').onclick = () => bcAdd('equipment');
 $('#bcAddPet').onclick = () => bcAdd('pet');
+$('#bcAddTitle').onclick = () => bcAdd('title');
 
 $('#bcSendBtn').onclick = async () => {
     const subject = $('#bcSubject').value.trim();
@@ -2789,6 +2794,9 @@ $('#bcSendBtn').onclick = async () => {
         } else if (g.type === 'pet') {
             if (typeof g.id === 'undefined') return toast('펫을 선택하세요.', false);
             gifts.push({ type: 'pet', id: g.id, level: Number(g.level || 0) });
+        } else if (g.type === 'title') {
+            if (!g.titleId) return toast('칭호를 선택하세요.', false);
+            gifts.push({ type: 'title', titleId: g.titleId });
         } else if (g.type === 'equipment') {
             if (typeof g.id === 'undefined') return toast('장비를 선택하세요.', false);
             const spec = { type: 'equipment', equipType: g.equipType, id: g.id, level: Number(g.level || 0) };

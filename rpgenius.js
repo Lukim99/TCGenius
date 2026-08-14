@@ -64,11 +64,11 @@ const HELL_PILLAR_MAX_HP = 2;
 const HELL_INVITATION_COST = 30;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
-// 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 사냥 드랍 아이템이 펀치기계 토큰으로 전환된다.
+// 사냥 이벤트 드랍: 유생의 주사위 → 펀치기계 토큰 → 100일 기념 코인 순으로 전환됨.
+const CAPSULE100_COIN_ITEM_NAME = '100일 기념 코인';
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
-function isEventDiceEnded() { return Date.now() >= EVENT_DICE_END_TS; }
 const EVENT_DICE_DROP_CHANCE = 0.05;
-const EVENT_DICE_DROP_DAILY_LIMIT = 10;
+const EVENT_DICE_DROP_DAILY_LIMIT = 2;
 const FRAGMENT_TIERS = {
     low: {
         name: '하급 편린',
@@ -5537,13 +5537,11 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const eventDiceDaily = getEventDiceDropDailyState(user);
         if (Number(eventDiceDaily.count || 0) < EVENT_DICE_DROP_DAILY_LIMIT && Math.random() < EVENT_DICE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
-            const dropItemName = isEventDiceEnded() ? PUNCH_TOKEN_ITEM_NAME : EVENT_DICE_DROP_ITEM_NAME;
-            const dropItemEmoji = isEventDiceEnded() ? '🪙' : '🎲';
-            const dropItemId = items.findIndex(item => item.name == dropItemName);
+            const dropItemId = items.findIndex(item => item.name == CAPSULE100_COIN_ITEM_NAME);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
                 eventDiceDaily.count = Number(eventDiceDaily.count || 0) + 1;
-                lines.push('- ' + dropItemEmoji + ' [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
+                lines.push('- 🪙 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
             }
         }
     }
@@ -11747,6 +11745,11 @@ function describeMailGift(gift) {
         catch (_) { label = '캐릭터 카드'; }
         return { type: 'card', cardId: Number(c.id), star: Number(c.star || 0), cardType: c.type || '일반', name: label, label };
     }
+    if (gift.type == 'title') {
+        const t = getTitleById(gift.titleId);
+        const name = t ? t.name : '알 수 없는 칭호';
+        return { type: 'title', titleId: gift.titleId, name, label: '🏅 칭호 「' + name + '」' };
+    }
     return null;
 }
 
@@ -11857,6 +11860,7 @@ async function claimMailGifts(user, id) {
         else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
         else if (g.type == 'item') { addInventoryItem(user, Number(g.id), Number(g.count || 0)); const d = describeMailGift(g); lines.push(d ? d.label : '아이템'); }
+        else if (g.type == 'title') { const t = getTitleById(g.titleId); const first = unlockTitle(user, g.titleId); lines.push('🏅 칭호 「' + (t ? t.name : g.titleId) + '」' + (first ? '' : ' (이미 보유)')); }
     });
     e.claimed = true;
     if (!e.read) { e.read = true; e.readAt = Date.now(); }
@@ -12083,6 +12087,10 @@ function buildGmMailGifts(specs) {
             const id = Number(spec.id);
             if (!getPetData(id)) return { error: '존재하지 않는 펫입니다.' };
             gifts.push({ type: 'pet', pet: { id, level: Math.max(0, Math.floor(Number(spec.level || 0))), tradeCount: PET_TRADE_DEFAULT_COUNT } });
+        } else if (spec.type == 'title') {
+            const title = getTitleById(String(spec.titleId || ''));
+            if (!title) return { error: '존재하지 않는 칭호입니다. (id ' + spec.titleId + ')' };
+            gifts.push({ type: 'title', titleId: title.id });
         } else {
             return { error: '지원하지 않는 선물 종류입니다.' };
         }

@@ -58,7 +58,6 @@ const BANNER_TARGET_TABS = [
     { value: 'info', label: '캐릭터 · 정보' },
     { value: 'inventory', label: '캐릭터 · 인벤토리' },
     { value: 'mail', label: '캐릭터 · 메일함' },
-    { value: '펀치기계', label: '콘텐츠 · 펀치기계' },
     { value: '[H]필드', label: '콘텐츠 · [H]필드' },
     { value: '버닝', label: '콘텐츠 · 버닝' },
     { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
@@ -856,6 +855,8 @@ function attachMailGiftIcons(g) {
         if (data) { g.iconUrl = getPetIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
     } else if (g.type === 'card') {
         g.iconUrl = getCardImageUrl({ id: g.cardId, star: g.star, type: g.cardType }, { prestige: false, jobPrestige: false });
+    } else if (g.type === 'title') {
+        g.iconUrl = rpgenius.getTitleImageUrl(g.name);
     }
     return g;
 }
@@ -1466,223 +1467,18 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
     }
 });
 
-// ===== 펀치기계 =====
-const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
-const PUNCH_RANK_LIMIT = 5;
-const PUNCH_MIN_SCORE = 3000, PUNCH_MAX_SCORE = 9999;
-
-// 주간 랭킹 1위 보상(자동 주간 정산으로 지급).
-const PUNCH_WEEKLY_PRIZE = { name: '축복받은 장비 보호권', count: 1 };
-// 9999 달성 시 선택 보상(모달).
-const PUNCH_9999_CHOICES = [
-    { key: 'cardpack', name: '9성 카드팩', count: 1 },
-    { key: 'protect', name: '고급 장비 보호권', count: 1 }
-];
-// 점수 구간별 즉시 지급 보상(9999는 choice로 별도 처리). candidates가 여러 개면 랜덤 1개.
-const PUNCH_SCORE_TIERS = [
-    { min: 9999, max: 9999, label: '9999', choice: true },
-    { min: 9901, max: 9998, label: '9901~9998', candidates: [{ name: '장비 보호권', count: 1 }] },
-    { min: 9801, max: 9900, label: '9801~9900', candidates: [{ name: '캐릭터 변환석', count: 1 }, { name: '전직 캐릭터 변환석', count: 1 }] },
-    { min: 9701, max: 9800, label: '9701~9800', candidates: [{ name: '밍플 지렁이', count: 1 }] },
-    { min: 9501, max: 9700, label: '9501~9700', candidates: [{ name: '5성 카드팩', count: 1 }] },
-    { min: 9301, max: 9500, label: '9301~9500', candidates: [{ name: '패션 상자', count: 1 }] },
-    { min: 9001, max: 9300, label: '9001~9300', candidates: [{ name: '지니어스의 열쇠', count: 1 }] },
-    { min: 8001, max: 9000, label: '8001~9000', candidates: [{ name: '황금 주머니', count: 1 }] },
-    { min: 0, max: 8000, label: '8000점 이하', candidates: [{ name: '익명 지렁이', count: 5 }, { name: '딜러 지렁이', count: 5 }] }
-];
-
-function getPunchTierForScore(score) {
-    return PUNCH_SCORE_TIERS.find(t => score >= t.min && score <= t.max) || null;
-}
-
 // 아이템 이름+수량 → 표시용(아이콘 포함) 객체.
-function buildPunchRewardDisplay(name, count) {
+function buildRewardDisplay(name, count) {
     const items = rpgenius.getDataCache('Item', []);
     const id = findItemIdByName(name);
     const item = id >= 0 ? items[id] : null;
     return { name, count, iconUrl: item ? getItemIconUrl(item) : null, frameUrl: getAuctionFrameUrl('item') };
 }
 
-// 보상 아이템을 유저 인벤토리에 지급하고 표시용 객체를 반환. (save는 호출부에서)
-function grantPunchReward(user, reward) {
-    const itemId = findItemIdByName(reward.name);
-    if (itemId < 0) return null;
-    rpgenius.addInventoryItem(user, itemId, reward.count);
-    return buildPunchRewardDisplay(reward.name, reward.count);
-}
-
-// 웹 표시용 보상 안내(주간 1위 / 구간별 / 9999 선택).
-function buildPunchRewardInfo() {
-    return {
-        weeklyPrize: buildPunchRewardDisplay(PUNCH_WEEKLY_PRIZE.name, PUNCH_WEEKLY_PRIZE.count),
-        tiers: PUNCH_SCORE_TIERS.map(t => ({
-            label: t.label,
-            choice: !!t.choice,
-            rewards: (t.choice ? PUNCH_9999_CHOICES : t.candidates).map(c => buildPunchRewardDisplay(c.name, c.count))
-        })),
-        choice9999: PUNCH_9999_CHOICES.map(c => Object.assign({ key: c.key }, buildPunchRewardDisplay(c.name, c.count)))
-    };
-}
-
-function getPunchRank() {
-    const r = rpgenius.getDataCache('PunchRank', []);
-    return Array.isArray(r) ? r.filter(e => e && e.name && Number.isFinite(Number(e.score))) : [];
-}
-// 닉네임당 최고점 1개만 유지하여 상위 5명을 정렬해 반환.
-function buildPunchRank(rank, name, score) {
-    const best = new Map();
-    for (const e of rank) {
-        const prev = best.get(e.name);
-        if (!prev || Number(e.score) > prev.score) best.set(e.name, { name: e.name, score: Number(e.score), time: Number(e.time) || 0 });
-    }
-    const mine = best.get(name);
-    if (!mine || score > mine.score) best.set(name, { name, score, time: Date.now() });
-    return Array.from(best.values()).sort((a, b) => b.score - a.score || a.time - b.time).slice(0, PUNCH_RANK_LIMIT);
-}
-
-// ===== 펀치기계 주간 정산 =====
-// 매주 금요일 00:00 KST를 주 경계로 삼아, 새 주가 시작되면 지난 주 1위에게 보상 메일 후 랭킹 초기화.
-function getPunchWeekStartKST(now) {
-    const KST = 9 * 3600 * 1000;
-    const shifted = now + KST;                 // UTC 메서드로 KST 벽시계를 읽기 위해 +9h
-    const d = new Date(shifted);
-    const daysSinceFri = (d.getUTCDay() + 2) % 7;  // 0=금 ... 6=목 (getUTCDay: 일0~토6)
-    const midnightShifted = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-    return midnightShifted - daysSinceFri * 86400000 - KST;  // 실제 UTC 타임스탬프로 환원
-}
-
-async function settlePunchWeeklyPrize() {
-    const rank = getPunchRank().slice().sort((a, b) => b.score - a.score || a.time - b.time);
-    if (rank.length > 0) {
-        const winner = rank[0];
-        const prizeId = findItemIdByName(PUNCH_WEEKLY_PRIZE.name);
-        if (prizeId >= 0) {
-            try {
-                await rpgenius.sendSystemMailToUser(winner.name, {
-                    gmName: '펀치기계',
-                    subject: '🥊 펀치기계 주간 1위 보상',
-                    body: '지난 주 펀치기계 랭킹 1위를 축하합니다!\n- 최고 점수: ' + winner.score + '점',
-                    gifts: [{ type: 'item', id: prizeId, count: PUNCH_WEEKLY_PRIZE.count }]
-                });
-                console.log('[punch] 주간 1위 보상 지급: ' + winner.name + ' (' + winner.score + ')');
-            } catch (e) {
-                console.error('[punch] 주간 보상 메일 실패:', e.message);
-            }
-        }
-    }
-    await rpgenius.saveRpgeniusDataEntry('PunchRank', []);
-}
-
-async function checkPunchWeeklySettlement() {
-    try {
-        const curWeek = getPunchWeekStartKST(Date.now());
-        const state = rpgenius.getDataCache('PunchState', null);
-        const last = state && Number(state.lastSettledWeekStart || 0) || 0;
-        if (!last) {
-            // 최초 기동: 소급 정산 없이 현재 주를 기준점으로만 저장.
-            await rpgenius.saveRpgeniusDataEntry('PunchState', { lastSettledWeekStart: curWeek });
-            return;
-        }
-        if (curWeek > last) {
-            await settlePunchWeeklyPrize();
-            await rpgenius.saveRpgeniusDataEntry('PunchState', { lastSettledWeekStart: curWeek });
-        }
-    } catch (e) {
-        console.error('[punch] 주간 정산 체크 실패:', e.message);
-    }
-}
-// 데이터 로드 완료 후 1회 점검하고, 이후 30분마다 주 경계를 감시한다.
-rpgenius.initRpgeniusData().then(checkPunchWeeklySettlement).catch(() => {});
-setInterval(checkPunchWeeklySettlement, 30 * 60 * 1000);
-
-server.get('/api/punch', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const tokenId = findItemIdByName(PUNCH_TOKEN_ITEM_NAME);
-        const tokenCount = tokenId >= 0 ? rpgenius.getInventoryItemCount(user, tokenId) : 0;
-        res.json({ ok: true, tokenItemName: PUNCH_TOKEN_ITEM_NAME, tokenCount, rank: getPunchRank().slice(0, PUNCH_RANK_LIMIT), rewards: buildPunchRewardInfo(), pendingChoice: !!user.punchReward9999 });
-    } catch (e) {
-        console.error('punch status error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
-// 토큰 1개를 소비하고 1회용 토큰(nonce)을 발급. 이 nonce가 있어야 점수를 기록할 수 있다.
-server.post('/api/punch/play', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const tokenId = findItemIdByName(PUNCH_TOKEN_ITEM_NAME);
-        if (tokenId < 0) return res.status(500).json({ error: PUNCH_TOKEN_ITEM_NAME + ' 아이템 데이터가 없습니다.' });
-        if (rpgenius.getInventoryItemCount(user, tokenId) < 1) return res.status(400).json({ error: PUNCH_TOKEN_ITEM_NAME + '이(가) 없습니다.' });
-        rpgenius.removeInventoryItem(user, tokenId, 1);
-        rpgenius.cleanupInventoryItems(user);
-        const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-        user.punchToken = nonce;
-        await user.save();
-        res.json({ ok: true, token: nonce, tokenCount: rpgenius.getInventoryItemCount(user, tokenId) });
-    } catch (e) {
-        console.error('punch play error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
-// 발급받은 nonce로 점수를 기록(닉네임당 최고점, 상위 5명).
-server.post('/api/punch/score', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const token = req.body && req.body.token;
-        if (!token || user.punchToken !== token) return res.status(400).json({ error: '유효하지 않은 플레이입니다.' });
-        const score = Math.round(Number(req.body && req.body.score));
-        if (!Number.isFinite(score) || score < PUNCH_MIN_SCORE || score > PUNCH_MAX_SCORE) return res.status(400).json({ error: '잘못된 점수입니다.' });
-        user.punchToken = null;
-        // 점수 구간별 즉시 보상. 9999는 선택 모달로 처리(여기서는 지급 보류).
-        const tier = getPunchTierForScore(score);
-        let reward = null, pendingChoice = false;
-        if (tier && tier.choice) {
-            user.punchReward9999 = true;
-            pendingChoice = true;
-        } else if (tier && Array.isArray(tier.candidates) && tier.candidates.length) {
-            const pick = tier.candidates[Math.floor(Math.random() * tier.candidates.length)];
-            reward = grantPunchReward(user, pick);
-        }
-        await user.save();
-        const rank = buildPunchRank(getPunchRank(), user.name, score);
-        await rpgenius.saveRpgeniusDataEntry('PunchRank', rank);
-        const position = rank.findIndex(e => e.name === user.name && e.score === score);
-        res.json({ ok: true, rank, ranked: position >= 0, position: position >= 0 ? position + 1 : null, reward, pendingChoice });
-    } catch (e) {
-        console.error('punch score error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
-// 9999 달성 시 선택한 보상을 지급.
-server.post('/api/punch/claim', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        if (!user.punchReward9999) return res.status(400).json({ error: '수령할 보상이 없습니다.' });
-        const key = req.body && req.body.choice;
-        const choice = PUNCH_9999_CHOICES.find(c => c.key === key);
-        if (!choice) return res.status(400).json({ error: '올바른 보상을 선택해주세요.' });
-        const reward = grantPunchReward(user, choice);
-        if (!reward) return res.status(500).json({ error: choice.name + ' 아이템 데이터가 없습니다.' });
-        user.punchReward9999 = false;
-        await user.save();
-        res.json({ ok: true, reward });
-    } catch (e) {
-        console.error('punch claim error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
 // ===== 100일 기념 캡슐 기계 =====
 const CAPSULE100_COIN_ITEM_NAME = '100일 기념 코인';
-// 오픈 전까지 관리자에게만 노출/이용. 오픈 시 false로 변경 (app.js CAPSULE_VISIBLE도 함께).
-const CAPSULE100_ADMIN_ONLY = true;
+// 2026-08-14 전체 오픈.
+const CAPSULE100_ADMIN_ONLY = false;
 // 순서 = 캡슐 목록 번호. 1번(보주 선택 상자)이 뽑히면 전체 재고가 초기화된다.
 const CAPSULE100_PRIZES = [
     { name: '보주 선택 상자', count: 1, stock: 1 },
@@ -1717,7 +1513,7 @@ function buildCapsule100Status(user) {
         coinCount: coinId >= 0 ? rpgenius.getInventoryItemCount(user, coinId) : 0,
         total: CAPSULE100_TOTAL,
         totalRemaining: remaining.reduce((a, b) => a + b, 0),
-        prizes: CAPSULE100_PRIZES.map((p, i) => Object.assign(buildPunchRewardDisplay(p.name, p.count), { stock: p.stock, remaining: remaining[i] }))
+        prizes: CAPSULE100_PRIZES.map((p, i) => Object.assign(buildRewardDisplay(p.name, p.count), { stock: p.stock, remaining: remaining[i] }))
     };
 }
 
@@ -1762,7 +1558,7 @@ server.post('/api/capsule100/draw', requireUser, async (req, res) => {
             }
             const prize = CAPSULE100_PRIZES[picked];
             rpgenius.addInventoryItem(user, findItemIdByName(prize.name), prize.count);
-            results.push(Object.assign(buildPunchRewardDisplay(prize.name, prize.count), { number: picked + 1, jackpot: picked == 0 }));
+            results.push(Object.assign(buildRewardDisplay(prize.name, prize.count), { number: picked + 1, jackpot: picked == 0 }));
             if (picked == 0) {
                 jackpot = true;
                 remaining = CAPSULE100_PRIZES.map(p => p.stock);
@@ -7434,9 +7230,6 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>
-  </div>
-  <div class="page" data-page="펀치기계">
-    <section class="punch-panel"><div id="punchRoot"></div></section>
   </div>
   <div class="page" data-page="캡슐">
     <section class="capsule-panel"><div id="capsuleRoot"></div></section>

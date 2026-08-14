@@ -145,6 +145,12 @@
       "name": "체리 바이트",
       "description": "???",
       "stat": { "fireAtk": 10, "waterAtk": 10, "lightAtk": 10, "darkAtk": 10 }
+    },
+    {
+      "id": "butaHardFirstClear",
+      "name": "잉여왕 The 1st",
+      "description": "부타게임[HARD] 서버 최초 클리어",
+      "stat": { "hp": 1000 }
     }
   ]
 }
