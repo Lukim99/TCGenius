@@ -1954,11 +1954,31 @@ function getHFieldSkills(user, mainCard) {
     }));
 }
 
+const H_FIELD_SPRITE_EXCLUSIONS = new Set([
+    '딜러장__일반__수영장 파티.png',
+    '딜러장__일반__고급 수영장 파티.png',
+    '딜러장__전직__고급 산타.png',
+    '흠시원__일반__수영장 파티.png',
+    '흠시원__일반__고급 수영장 파티.png'
+]);
+
+function getHFieldSpritePart(value) {
+    return String(value || '').trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+}
+
 function getHFieldCharacterSprite(mainCard) {
-    if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent('필드/hfield-hunter.png');
-    const relative = path.join('필드', '캐릭터', mainCard.name + '.png');
-    const fullPath = path.join(RPG_UI_PATH, relative);
-    const selected = fs.existsSync(fullPath) ? relative : '필드/hfield-hunter.png';
+    const fallback = '필드/hfield-hunter.png';
+    if (!mainCard || !mainCard.name) return '/rpg-ui?file=' + encodeURIComponent(fallback);
+    const name = getHFieldSpritePart(mainCard.name);
+    const cardType = mainCard.type == '전직' ? '전직' : '일반';
+    const skin = getHFieldSpritePart(mainCard.skin);
+    const candidates = [];
+    if (skin) candidates.push([name, cardType, skin].join('__') + '.png');
+    if (cardType == '전직') candidates.push(name + '__전직.png');
+    candidates.push(name + '.png');
+    const spriteRoot = path.join(RPG_UI_PATH, '필드', '캐릭터');
+    const sprite = candidates.find(file => !H_FIELD_SPRITE_EXCLUSIONS.has(file) && fs.existsSync(path.join(spriteRoot, file)));
+    const selected = sprite ? path.join('필드', '캐릭터', sprite) : fallback;
     return '/rpg-ui?file=' + encodeURIComponent(selected.replace(/\\/g, '/'));
 }
 
@@ -2006,6 +2026,8 @@ function buildHFieldState(user) {
             def: Number(stats.def || 0),
             combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
             cardName: mainCard && mainCard.name || '',
+            cardFormatted: mainCard && mainCard.formatted || '',
+            cardStar: mainCard ? Number(mainCard.star || 0) : null,
             cardImageUrl: mainCard && mainCard.imageUrl || null,
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',

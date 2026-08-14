@@ -17,6 +17,14 @@ const rpg = require('../rpgenius');
     assert.ok(invitationId >= 0, '헬 초대장 데이터가 필요합니다.');
     assert.ok(recoveryId >= 0, '회복 소모품 데이터가 필요합니다.');
 
+    const characterCards = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'CharacterCards.json'), 'utf8'));
+    const characterName = characterCards[0].name;
+    assert.strictEqual(rpg.formatUserCard({ id: 0, star: 0, type: '일반' }), '[1성] ' + characterName);
+    assert.strictEqual(rpg.formatUserCard({ id: 0, star: 8, type: '일반' }), '[9성] ' + characterName);
+    assert.strictEqual(rpg.formatUserCard({ id: 0, star: 9, type: '일반' }), '[𝛧] ' + characterName);
+    assert.strictEqual(rpg.formatUserCard({ id: 0, star: 10, type: '일반' }), '[𝛴] ' + characterName);
+    assert.strictEqual(rpg.formatUserCard({ id: 0, star: 11, type: '전직' }), '[𝛀] 전직 ' + characterName);
+
     const user = new rpg.RPGUser('H필드흐름테스트', 'hfield-flow-test');
     user.level = 141;
     rpg.addInventoryItem(user, invitationId, rpg.HELL_INVITATION_COST);
