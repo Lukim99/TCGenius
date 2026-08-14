@@ -58,6 +58,7 @@ const BANNER_TARGET_TABS = [
     { value: 'info', label: '캐릭터 · 정보' },
     { value: 'inventory', label: '캐릭터 · 인벤토리' },
     { value: 'mail', label: '캐릭터 · 메일함' },
+    { value: '캡슐', label: '콘텐츠 · 100일 캡슐' },
     { value: '[H]필드', label: '콘텐츠 · [H]필드' },
     { value: '버닝', label: '콘텐츠 · 버닝' },
     { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
