@@ -9444,6 +9444,72 @@ function selectOrbChoice(user, numberArg) {
     return '✅ 보주를 선택했습니다.\n[ 획득 결과 ]\n- ' + items[selectedId].name + ' x1\n* 선택 상자로 획득한 보주는 거래할 수 없습니다.';
 }
 
+// 초월 선택 상자: 모든 초월 장비 중 1개 선택 (초월상자 후보와 동일 집합)
+function getTranscendChoiceCandidates() {
+    const equipments = getDataCache('Equipment', {});
+    const candidates = [];
+    ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].forEach(type => {
+        (equipments[type] || []).forEach((data, id) => { if (data && data.rarity == '초월') candidates.push({ type, id, data }); });
+    });
+    return candidates;
+}
+
+function formatTranscendChoiceList(candidates) {
+    const lines = ['[ 초월 장비 선택 ]', VIEWMORE];
+    candidates.forEach((c, index) => lines.push((index + 1) + '. [' + getEquipmentTypeLabel(c.type) + '] ' + c.data.name));
+    return lines.join('\n');
+}
+
+function selectTranscendChoice(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '초월선택') return '❌ 진행 중인 초월 장비 선택이 없습니다.';
+    const candidates = getTranscendChoiceCandidates();
+    if (candidates.length == 0) {
+        const refund = refundPendingActionItem(user, pending);
+        user.pendingAction = null;
+        return '❌ 선택 가능한 초월 장비가 없습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : '');
+    }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1 || number > candidates.length) return '❌ 존재하지 않는 장비 번호입니다.\n/RPGenius 선택 [번호]';
+    const picked = candidates[number - 1];
+    addEquipmentInventory(user, picked.type, picked.id);
+    if (pending.tradeUsed) user.inventory.equipment[user.inventory.equipment.length - 1].tradeCount = Number(getEquipmentTradeMax(picked.data) || 0);
+    user.pendingAction = null;
+    return '✅ 초월 장비를 선택했습니다.\n[ 획득 결과 ]\n- <초월 1단계> ' + picked.data.name + (pending.tradeUsed ? '\n* 선택 상자로 획득한 장비는 거래할 수 없습니다.' : '');
+}
+
+// 아이템 선택권(소원의 돌 등): item.choices = [{ id, count }] 중 1개 교환
+function getItemChoiceEntries(choices) {
+    const items = getDataCache('Item', []);
+    return (Array.isArray(choices) ? choices : [])
+        .map(c => ({ id: Number(c.id), count: Math.max(1, Number(c.count || 1)) }))
+        .filter(c => items[c.id]);
+}
+
+function formatItemChoiceList(entries, items) {
+    const lines = ['[ 교환 목록 ]'];
+    entries.forEach((c, index) => lines.push((index + 1) + '. ' + items[c.id].name + ' x' + comma(c.count)));
+    return lines.join('\n');
+}
+
+function selectItemChoice(user, numberArg) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '아이템선택') return '❌ 진행 중인 아이템 선택이 없습니다.';
+    const entries = getItemChoiceEntries(pending.choices);
+    if (entries.length == 0) {
+        const refund = refundPendingActionItem(user, pending);
+        user.pendingAction = null;
+        return '❌ 교환 가능한 아이템이 없습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : '');
+    }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1 || number > entries.length) return '❌ 존재하지 않는 번호입니다.\n/RPGenius 선택 [번호]';
+    const items = getDataCache('Item', []);
+    const picked = entries[number - 1];
+    addInventoryItem(user, picked.id, picked.count);
+    user.pendingAction = null;
+    return '✅ 아이템을 교환했습니다.\n[ 획득 결과 ]\n- ' + items[picked.id].name + ' x' + comma(picked.count);
+}
+
 function getSupportRerollTargets(user) {
     return getAllUserEquipments(user)
         .map((entry, index) => {
@@ -10362,6 +10428,9 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '패션제거' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '초월업그레이드' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '초월선택' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '아이템선택' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '아이템선택' && getItemChoiceEntries(item.choices).length == 0) return '❌ 교환 목록 정보가 없습니다.';
         if (item.use == '장신구선택권' && !item.rarity) return '❌ 장신구 선택권 등급 정보가 없습니다.';
         if (item.use == '장비강화권' && (!item.ug || !Number(item.ug.level) || !Number(item.ug.roll))) return '❌ 장비 강화권 정보가 없습니다.';
         if (item.use == '영혼석' && (!item.soul || typeof item.soul != 'object')) return '❌ 영혼석 정보가 없습니다.';
@@ -10372,7 +10441,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -10620,6 +10689,27 @@ async function useItem(user, itemName, countArg) {
                 lines.push('', formatOrbChoiceList(orbIds, items));
             }
         }
+        if (item.use == '초월선택') {
+            const candidates = getTranscendChoiceCandidates();
+            if (candidates.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 초월 장비 데이터가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '초월선택', tradeUsed: !!item.tradeUsed, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push('획득할 초월 장비를 선택해주세요.');
+                lines.push('/RPGenius 선택 [번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatTranscendChoiceList(candidates));
+            }
+        }
+        if (item.use == '아이템선택') {
+            const entries = getItemChoiceEntries(item.choices);
+            user.pendingAction = { type: '아이템선택', choices: entries, consumedItemId: itemId, consumedItemCount: useCount };
+            lines.push('교환할 아이템을 선택해주세요.');
+            lines.push('/RPGenius 선택 [번호]');
+            lines.push('/RPGenius 사용취소');
+            lines.push('', formatItemChoiceList(entries, items));
+        }
         if (item.use == '가위') {
             const targets = getBoundEquipmentScissorTargets(user);
             if (targets.length == 0) {
@@ -10806,6 +10896,15 @@ function getWebItemUsePending(user) {
         const items = getDataCache('Item', []);
         title = '획득할 보주 선택';
         options = getOrbChoiceIds().map((id, index) => ({ value: index + 1, kind: 'item', name: items[id] ? items[id].name : '알 수 없는 보주', meta: '보주', itemId: id }));
+    } else if (pending.type == '초월선택') {
+        title = '획득할 초월 장비 선택';
+        description = '선택한 초월 1단계 장비를 즉시 획득합니다.' + (pending.tradeUsed ? ' 획득 장비는 거래할 수 없습니다.' : '');
+        options = getTranscendChoiceCandidates().map((c, index) => webItemEquipmentOption({ number: index + 1, entry: { equip: { id: c.id, type: c.type }, type: c.type, source: 'reward' }, equipment: c.data }));
+    } else if (pending.type == '아이템선택') {
+        const items = getDataCache('Item', []);
+        title = '교환할 아이템 선택';
+        description = '선택한 아이템을 즉시 획득합니다.';
+        options = getItemChoiceEntries(pending.choices).map((c, index) => ({ value: index + 1, kind: 'item', name: items[c.id].name, meta: 'x' + comma(c.count), itemId: c.id }));
     } else if (pending.type == '보조장비리롤') {
         title = '재설정할 보조 장비 선택';
         options = getSupportRerollTargets(user).map(webItemEquipmentOption);
@@ -10866,6 +10965,8 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     }
     if (pending.type == '장신구선택권') return selectAccessoryChoice(user, choice);
     if (pending.type == '보주선택') return selectOrbChoice(user, choice);
+    if (pending.type == '초월선택') return selectTranscendChoice(user, choice);
+    if (pending.type == '아이템선택') return selectItemChoice(user, choice);
     if (pending.type == '보조장비리롤') return rerollSupportEquipment(user, choice);
     if (pending.type == '잠재능력부여') return awakenEquipmentPotential(user, choice);
     if (pending.type == '장비강화권') return applyUpgradeTicket(user, choice);
@@ -12767,6 +12868,25 @@ async function handleRPGCommand(data, channel, context = {}) {
             return true;
         }
         const result = selectOrbChoice(user, args[1]);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
+    if (user.pendingAction && (user.pendingAction.type == '초월선택' || user.pendingAction.type == '아이템선택')) {
+        const isTranscend = user.pendingAction.type == '초월선택';
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ ' + (isTranscend ? '초월 장비 선택' : '아이템 교환') + '을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ ' + (isTranscend ? '획득할 초월 장비를' : '교환할 아이템을') + ' 먼저 선택해야 합니다.\n/RPGenius 선택 [번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = isTranscend ? selectTranscendChoice(user, args[1]) : selectItemChoice(user, args[1]);
         await user.save();
         reply(result);
         return true;

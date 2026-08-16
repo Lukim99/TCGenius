@@ -4450,7 +4450,7 @@ const WEB_ITEM_USE_KEYS = new Set([
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
     '패션적용', '고급패션적용', '패션제거', '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
-    '가위', '생명수', '초월업그레이드'
+    '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택'
 ]);
 
 function isUsableInventoryItem(item) {
@@ -5445,9 +5445,18 @@ function buildItemUsageFacts(item) {
         '가위': ['적용 대상', '귀속된 장비의 거래 귀속 해제'],
         '생명수': ['적용 대상', '보유 펫의 사용 기간 연장'],
         '초월업그레이드': ['적용 대상', '초월 장비의 초월 단계를 한 단계 상승'],
+        '초월선택': ['사용 효과', '원하는 초월 1단계 장비를 선택해 획득' + (item.tradeUsed ? ' (거래 불가)' : '')],
+        '아이템선택': ['사용 효과', '아래 아이템 중 1개를 선택해 교환'],
         '흑화': ['적용 대상', '흑화가 가능한 장비']
     };
     if (item.use && useDetails[item.use]) facts.push({ label: useDetails[item.use][0], value: useDetails[item.use][1] });
+    if (item.use === '아이템선택') {
+        const items = rpgenius.getDataCache('Item', []);
+        (Array.isArray(item.choices) ? item.choices : []).forEach(c => {
+            const data = items[Number(c.id)];
+            if (data) facts.push({ label: '교환 가능', value: data.name + ' x' + comma(Math.max(1, Number(c.count || 1))) });
+        });
+    }
     if (item.use === '장비강화권' && item.ug) {
         facts.push({ label: '강화 결과', value: '성공 시 장비를 +' + Number(item.ug.level || 0) + '강으로 변경' });
         facts.push({ label: '성공 확률', value: (Math.round(Number(item.ug.roll || 0) * 10000) / 100) + '%' });
