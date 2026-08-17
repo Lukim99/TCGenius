@@ -4598,7 +4598,7 @@ function buildInventoryEquipment(user) {
         const itemNumber = number++;
         if (!data) return;
         const level = Number(equip.level || 0);
-        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul });
+        const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, equip && equip.rolled, { soul: equip && equip.soul, transcendStage: equip && equip.transcendStage });
         const statLines = String(statText || '').split('\n').filter(line => line && line.trim());
         rpgenius.formatOrbLines(equip && equip.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         let passive = null;
@@ -4629,6 +4629,7 @@ function buildInventoryEquipment(user) {
             baseName: data.name,
             rarity: rpgenius.getEquipmentRarityLabel(data, equip),
             baseRarity: data.rarity,
+            transcendStage: data.rarity == '초월' ? Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1))) : null,
             setName: data.set || null,
             level,
             equipped: !!equipped,
@@ -4702,7 +4703,7 @@ function buildInventoryEquipment(user) {
     return result;
 }
 
-const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '유니크', '영웅', '레전더리', '전설', '초월', '신화', '고유'];
+const RARITY_ORDER = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '초월', '신화', '고유'];
 
 function formatPassiveDesc(passive) {
     if (!passive) return '';
@@ -5952,7 +5953,7 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
         iconUrl = getEquipmentIconUrl(data);
         let orbLines = [];
         if (data) {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, level, entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul });
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, level, entry.payload && entry.payload.rolled, { soul: entry.payload && entry.payload.soul, transcendStage: entry.payload && entry.payload.transcendStage });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             orbLines = rpgenius.formatOrbLines(entry.payload && entry.payload.orb).map(line => line.replace(/^-\s*/, ''));
             orbLines.forEach(line => statLines.push(line));
@@ -6081,7 +6082,7 @@ function buildSellableAssets(user) {
             if (!data || data.no_trade === true) return null;
             if (rpgenius.getEquipmentTradeBlockReason(eq, user.name)) return null;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul, transcendStage: eq.transcendStage });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             rpgenius.formatOrbLines(eq.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             const potentialDisplay = eq.potential ? {
@@ -6459,7 +6460,7 @@ function serializeBuyOrderEntry(entry, currentUserName) {
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
         if (data && entry.payload && typeof entry.payload.level == 'number') {
-            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level), entry.payload.rolled);
+            const text = rpgenius.formatCurrentEquipmentStatLines(data, Number(entry.payload.level), entry.payload.rolled, { transcendStage: entry.payload.transcendStage });
             statLines = String(text || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             if (entry.payload.potential) rpgenius.formatPotentialLines(entry.payload.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
         }
@@ -6814,7 +6815,7 @@ function buildFulfillableAssets(user, entry) {
             if (!data || data.no_trade === true) return;
             if (rpgenius.getEquipmentTradeBlockReason(eq, user.name)) return;
             const level = Number(eq.level || 0);
-            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul });
+            const statText = rpgenius.formatCurrentEquipmentStatLines(data, level, eq.rolled, { soul: eq.soul, transcendStage: eq.transcendStage });
             const statLines = String(statText || '').split('\n').filter(line => line && line.trim()).map(line => line.replace(/^-\s*/, ''));
             rpgenius.formatOrbLines(eq.orb).forEach(line => statLines.push(line.replace(/^-\s*/, '')));
             if (eq.potential) rpgenius.formatPotentialLines(eq.potential).forEach(line => statLines.push(line.replace(/^-\s*/, '')));

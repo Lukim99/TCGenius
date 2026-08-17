@@ -251,12 +251,13 @@ function applyTranscendAllyEffect(room, source, target, kind) {
     }
 }
 
+// 장비 효과 지속시간 증가/쿨타임 감소는 스탯(equipmentEffectDurationFlat: 행운의 복주머니 등, equipmentEffectCooldownFlat: TCG의 유산 2세트)으로 공통 적용 (솔로와 동일)
 function getEquipmentEffectDurationBonus(member) {
-    return getTranscendEquipmentEntry(member, '행운의 복주머니') ? 3 : 0;
+    return Number(member && member.baseSnapshot && member.baseSnapshot.stats && member.baseSnapshot.stats.equipmentEffectDurationFlat || 0);
 }
 
 function getEquipmentEffectCooldownReduction(member) {
-    return getTranscendSetCount(member, 'TCG의 유산') >= 2 ? 2 : 0;
+    return Number(member && member.baseSnapshot && member.baseSnapshot.stats && member.baseSnapshot.stats.equipmentEffectCooldownFlat || 0);
 }
 
 function applyPartyCurrentShoesOnSkillHit(room, member, skillName) {
@@ -349,9 +350,11 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         const overflowCrit = Math.max(0, Number(member.baseSnapshot.stats.crit || 0) - 1);
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + overflowCrit * getTranscendStageValue(member, '감옥열쇠', .20, .10);
     }
-    if (isUltimate && getTranscendEquipmentEntry(member, '초심권')) {
-        result.cooldownFlat += 10;
-        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .50;
+    if (isUltimate) {
+        // 궁극기 스킬 피해(ultimateDamage) / 궁극기 쿨타임 감소(ultimateCooldownFlat, ms): 초심권 등 스탯 보유 장비 공통 (솔로와 동일 규칙)
+        const memberStats = member.baseSnapshot && member.baseSnapshot.stats || {};
+        if (Number(memberStats.ultimateCooldownFlat || 0) > 0) result.cooldownFlat += Number(memberStats.ultimateCooldownFlat) / 1000;
+        if (Number(memberStats.ultimateDamage || 0) != 0) extra.damageBonusMul = Number(extra.damageBonusMul || 0) + Number(memberStats.ultimateDamage);
     }
     if (skillName === '끝판왕' && getTranscendEquipmentEntry(member, 'Lv1 초보')) {
         extra.damageBonusMul = Number(extra.damageBonusMul || 0) + getTranscendStageValue(member, 'Lv1 초보', 1.30, .40);
@@ -449,12 +452,14 @@ function toPartyMainCardSkillDef(entry) {
     };
 }
 
-function getImmortalArmorSnapshot(user) {
-    if (!user) return null;
+// 장착 장비 패시브 보유 여부. rpgenius.getEquippedPassiveIds가 7부위(무기/모자/갑옷/하의/신발/장신구/보조)와
+// 효과 적용 조건(isEquipmentEffectActive)까지 솔로와 동일하게 판정한다. 폴백은 export가 없을 때만 사용.
+function hasEquippedPassive(user, passiveId) {
+    if (!user) return false;
+    if (typeof rpgenius.getEquippedPassiveIds === 'function') return rpgenius.getEquippedPassiveIds(user).has(passiveId);
     const eq = user.equipments || {};
     const slots = [
-        ['weapon', eq.weapon],
-        ['armor', eq.armor],
+        ...['weapon', 'hat', 'armor', 'pants', 'shoes'].map(type => [type, eq[type]]),
         ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
         ['support', eq.support]
     ];
@@ -463,60 +468,33 @@ function getImmortalArmorSnapshot(user) {
     for (const [slot, equip] of slots) {
         if (!equip || typeof equip.id === 'undefined') continue;
         const data = equipments && equipments[slot] && equipments[slot][equip.id];
-        if (data && data.passive_id === 3) {
-            return { readyAt: Number(user.equipmentPassiveCd && user.equipmentPassiveCd.immortalDragonArmor || 0) };
-        }
+        if (data && data.passive_id === passiveId) return true;
     }
-    return null;
+    return false;
+}
+
+function getImmortalArmorSnapshot(user) {
+    if (!hasEquippedPassive(user, 3)) return null;
+    return { readyAt: Number(user.equipmentPassiveCd && user.equipmentPassiveCd.immortalDragonArmor || 0) };
 }
 
 function getManaResonanceSnapshot(user) {
-    if (!user) return null;
-    const eq = user.equipments || {};
-    const slots = [
-        ['weapon', eq.weapon],
-        ['armor', eq.armor],
-        ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
-        ['support', eq.support]
-    ];
-    const equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
-    for (const [slot, equip] of slots) {
-        if (!equip || typeof equip.id === 'undefined') continue;
-        const data = equipments && equipments[slot] && equipments[slot][equip.id];
-        if (data && data.passive_id === 4) {
-            const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
-            const passive = passives[4];
-            if (!passive) return null;
-            return {
-                threshold: Number(passive.format && passive.format[0] && passive.format[0].base || 0.75),
-                bonus: Number(passive.format && passive.format[1] && passive.format[1].base || 0.05)
-            };
-        }
-    }
-    return null;
+    if (!hasEquippedPassive(user, 4)) return null;
+    const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
+    const passive = passives[4];
+    if (!passive) return null;
+    return {
+        threshold: Number(passive.format && passive.format[0] && passive.format[0].base || 0.75),
+        bonus: Number(passive.format && passive.format[1] && passive.format[1].base || 0.05)
+    };
 }
 
 function getThornsSnapshot(user) {
-    if (!user) return null;
-    const eq = user.equipments || {};
-    const slots = [
-        ['weapon', eq.weapon],
-        ['armor', eq.armor],
-        ...Object.values(eq.accessory || {}).map(e => ['accessory', e]),
-        ['support', eq.support]
-    ];
-    const equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
-    for (const [slot, equip] of slots) {
-        if (!equip || typeof equip.id === 'undefined') continue;
-        const data = equipments && equipments[slot] && equipments[slot][equip.id];
-        if (data && data.passive_id === 5) {
-            const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
-            const passive = passives[5];
-            if (!passive) return null;
-            return { ratio: Number(passive.format && passive.format[0] && passive.format[0].base || 0) };
-        }
-    }
-    return null;
+    if (!hasEquippedPassive(user, 5)) return null;
+    const passives = typeof rpgenius.getEquipmentPassives === 'function' ? rpgenius.getEquipmentPassives() : [];
+    const passive = passives[5];
+    if (!passive) return null;
+    return { ratio: Number(passive.format && passive.format[0] && passive.format[0].base || 0) };
 }
 
 function getPartyQuestPacks() {
@@ -705,14 +683,24 @@ function grantPartyQuestClearRewards(room) {
                 const prog = rpgenius.getTitleProgress(user);
                 const weekKey = rpgenius.getKoreanWeekKey(new Date());
                 const weeklyLocked = isButaQuest(room.questId) && prog.butaRewardWeek === weekKey;
-                const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
+                // 경험치/골드 획득 보정은 솔로 사냥(buildHuntResult 등)과 동일 구성으로 적용한다:
+                // 경험치 = 기본 × (1 + 카드슬롯 경험치% + 장비 경험치% + 경험치 비약) → 프레스티지(+10%) → 저레벨(×1.5)
+                // 골드 = 기본 × (1 + 카드슬롯 골드% + 장비 골드%(+초월 버프) + 전직 프레스티지 5% + 골드 비약)
+                const rewardStats = typeof rpgenius.calculateUserStats === 'function' ? rpgenius.calculateUserStats(user) : {};
+                const rewardSlot = typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : {};
+                const expPotion = typeof rpgenius.getExpPotionBonus === 'function' ? rpgenius.getExpPotionBonus(user) : 0;
+                const goldPotion = typeof rpgenius.getGoldPotionBonus === 'function' ? rpgenius.getGoldPotionBonus(user) : 0;
+                let exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0) * (1 + Number(rewardSlot.expBonus || 0) + Number(rewardStats.exp || 0) + expPotion)));
+                if (exp > 0 && typeof rpgenius.applyPrestigeExpBonus === 'function') exp = rpgenius.applyPrestigeExpBonus(user, exp);
+                if (exp > 0 && typeof rpgenius.applyLowLevelExpBonus === 'function') exp = rpgenius.applyLowLevelExpBonus(user, exp);
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
                 const goldDef = rewards.gold || {};
                 const baseGold = weeklyLocked ? 0 : (typeof goldDef === 'number'
                     ? Math.max(0, Math.round(goldDef))
                     : randomInt(Math.max(0, Number(goldDef.min || 0)), Math.max(0, Number(goldDef.max || goldDef.min || 0))));
-                const gold = Math.max(0, Math.round(baseGold * (1 + getPartyGoldBonus(member))));
+                const goldBonus = getPartyGoldBonus(member) + Number(rewardSlot.goldBonus || 0) + (user.jobPrestige === true ? 0.05 : 0) + goldPotion;
+                const gold = Math.max(0, Math.round(baseGold * (1 + goldBonus)));
                 if (gold > 0) {
                     user.gold = Number(user.gold || 0) + gold;
                     addPartyQuestRewardSummary(summary, 'gold', '🪙 골드', gold);
@@ -1586,7 +1574,7 @@ async function start(hostName) {
 
     for (const source of room.members) {
         const sanctuaryCooldown = getTranscendStageValue(source, '성역의 인도자 슈즈', .03, .01);
-        const kingmakerElement = getTranscendStageValue(source, '킹메이커 장갑', 40, 10);
+        const kingmakerElement = Number(source.baseSnapshot && source.baseSnapshot.stats && source.baseSnapshot.stats.partyAllElementAtk || 0); // 킹메이커 장갑: 파티원 모든 속성 강화 (스탯 기반, 단계 보정 포함)
         for (const target of room.members) {
             if (sanctuaryCooldown > 0 && target !== source) target.baseSnapshot.stats.cooldown = Number(target.baseSnapshot.stats.cooldown || 0) + sanctuaryCooldown;
             if (kingmakerElement > 0) target.baseSnapshot.stats.allElementAtk = Number(target.baseSnapshot.stats.allElementAtk || 0) + kingmakerElement;
@@ -2212,8 +2200,9 @@ function hasPassive(member, name) {
     return Array.isArray(member.skills) && member.skills.includes(name);
 }
 
-function getFinalDamageMul(attacker) {
+function getFinalDamageMul(attacker, options) {
     let mul = 1;
+    const summonAttack = !!(options && options.summonAttack);
     // 복수의 칼날: 잃은 체력 10%당 +4% 최종 피해
     if (hasPassive(attacker, '복수의 칼날') && attacker.runtime) {
         const r = attacker.runtime;
@@ -2226,12 +2215,12 @@ function getFinalDamageMul(attacker) {
         const r = attacker.runtime;
         if (r.mpMax > 0 && r.mp / r.mpMax >= mr.threshold) mul *= 1 + mr.bonus;
     }
-    // 수나타 소환: 소환 중 본인 공격력(피해) +buff
-    if (attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
+    // 수나타 소환: 소환 중 본인 공격력(피해) +buff — 소환수 자동공격에는 미적용 (솔로와 동일)
+    if (!summonAttack && attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
         mul *= 1 + Number(attacker.runtime.sunata.buff || 0);
     }
-    // 건력: 상태 동안 공격력 증가
-    if (attacker.runtime && attacker.runtime.gunryeok) {
+    // 건력: 상태 동안 공격력 증가 — 소환수 자동공격에는 미적용 (솔로와 동일)
+    if (!summonAttack && attacker.runtime && attacker.runtime.gunryeok) {
         mul *= 1 + Number(attacker.runtime.gunryeok.atkBuff || 0);
     }
     return mul;
@@ -2768,9 +2757,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '암') {
         extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(equipmentState.blackEchoShoesBuff.value || 0);
     }
-    if (resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명' && getTranscendEquipmentEntry(attacker, '천공의 갑옷')) {
-        extraFinalDamage += getTranscendStageValue(attacker, '천공의 갑옷', .20, .05);
-    }
+    // 명속성 공격 최종 피해(lightFinalDamage): 천공의 갑옷 등 스탯 보유 장비 공통 (솔로 calculateAttackHitResult와 동일 규칙)
+    if (resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명') extraFinalDamage += Number(stats.lightFinalDamage || 0);
     if (!resolvePartyAttackElement(attacker, extra && extra.skillElement)) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
     if (extra && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
         extraFinalDamage += Number(runtime.nextFinalDamageBonus || 0);
@@ -2827,7 +2815,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         let hitContextMul = contextMul * (1 + unitDamageBonus);
         const tenthOffset = isFixedMultiHit ? 0 : i;
         if (tenthAtkStart !== null && i < comboHitCount && (tenthAtkStart + tenthOffset + 1) % 10 === 0) hitContextMul *= 1 + tenthAtk;
-        let hitDamage = rawDamage * hitContextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage + unitFinalBonus) * dealtDmgMul * getFinalDamageMul(attacker);
+        let hitDamage = rawDamage * hitContextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage + unitFinalBonus) * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!(extra && extra.summonAttack) });
         let fixedHitDamage = 0;
         let destinyHitDamage = 0;
         const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
@@ -2837,7 +2825,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         if (isCrit) {
             const comboCritBonus = isComboExtraHit ? Number(stats.comboCritMul || 0) : 0;
             const lastCritBonus = forceComboLastCrit ? Number(stats.comboLastCritMul || 0) : 0;
-            hitDamage = Math.round(hitDamage * Math.max(1, Number(stats.critMul || 1.4) + Number(hitExtra.critMulBonus || 0) + comboCritBonus + lastCritBonus - Number(monsterStats.critDef || 0)));
+            // 치명타 배율: 솔로 applyCriticalDamage와 동일 — 치명타 피해 감소율(critDef)은 치명타 추가분에 대한 감소율로 적용
+            const totalCritMul = Number(stats.critMul || 1.4) + Number(hitExtra.critMulBonus || 0) + comboCritBonus + lastCritBonus;
+            hitDamage = Math.round(hitDamage * (1 + Math.max(0, totalCritMul - 1) * (1 - Math.min(1, Math.max(0, Number(monsterStats.critDef || 0))))));
             criticalCount++;
             if (extra && extra.extraOnCrit && totalHits < maxHits) totalHits++;
             if (stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
@@ -2846,9 +2836,9 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             }
         }
         
-        if (!(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2) {
-            fixedHitDamage += Math.round(hitDamage * 0.15);
-        }
+        // 별빛의 축복: 방어 연산 전 피해의 15%를 고정 피해로 추가 (솔로 calculateAttackHitResult와 동일 — 방어 연산 뒤에 가산)
+        const celestiaBonus = !(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2
+            ? Math.round(hitDamage * 0.15) : 0;
 
         hitDamage *= Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
         const unitPenetration = penetration + unitPntBonus;
@@ -2861,6 +2851,10 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
             destinyHitDamage += hitDamage;
         } else {
             hitDamage = getDamageAfterDefense(hitDamage, monsterDef, unitPenetration, unitDefenseReduction);
+        }
+        if (celestiaBonus > 0) {
+            hitDamage += celestiaBonus;
+            fixedHitDamage += celestiaBonus;
         }
         if (!(extra && extra.disableEquipmentBonusDamage) && Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
             const bonus = getFixedDamageAgainstMonster([10, 100, 1000][randomInt(0, 2)], monster, penetration, defenseReductionRate);
@@ -2904,11 +2898,13 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         }
     }
     // 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터 전진
-    if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + comboHitCount;
+    // 고정 다단 일반 공격(포커 못 하시네)은 실제 타격 수만큼 공격 횟수로 집계한다 (솔로 separateBasicAttackHits와 동일)
+    const attackUnitsForCounters = extra && extra.separateBasicAttackHits ? Math.max(1, hitDetails.length) : comboHitCount;
+    if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + attackUnitsForCounters;
     // 나인 멘스 모리스 패시브: 일반 공격/일반 취급 공격(countAsBasic)은 각 타격마다 중첩 (연격 각각), 최대 9
     if (!(extra && extra.summonAttack) && extra && extra.isBasic && attacker && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
         if (!attacker.runtime.stackCounters) attacker.runtime.stackCounters = {};
-        attacker.runtime.stackCounters['나인멘스'] = Math.min(9, Number(attacker.runtime.stackCounters['나인멘스'] || 0) + comboHitCount);
+        attacker.runtime.stackCounters['나인멘스'] = Math.min(9, Number(attacker.runtime.stackCounters['나인멘스'] || 0) + attackUnitsForCounters);
     }
     // 추가 피해: 모든 계산이 끝난 최종 피해에 마지막으로 비율만큼 더한다
     let extraDamageDealt = 0;
@@ -4201,7 +4197,7 @@ function computeMonsterDamage(room, mon, target) {
         let hitDamage = beforeReduction * mitigation * targetTakenMul;
         const isCrit = Math.random() < Math.max(0, Number(monStats.crit || 0));
         if (isCrit) {
-            const critMul = Math.max(1, Number(monStats.critMul || 1.4) - Number(targetStats.critDef || 0));
+            const critMul = 1 + Math.max(0, Number(monStats.critMul || 1.4) - 1) * (1 - Math.min(1, Math.max(0, Number(targetStats.critDef || 0)))); // 솔로와 동일한 치명타 피해 감소율 공식
             beforeReduction = Math.round(beforeReduction * critMul);
             hitDamage = Math.round(hitDamage * critMul);
         }
@@ -4411,7 +4407,8 @@ function applyDamageTakenSlotRecovery(room, damaged, damage) {
         if (chance <= 0 || Math.random() >= chance) continue;
         const amount = Math.round(Number(damage || 0) * 0.2);
         let total = 0;
-        for (const ally of room.members) total += healMember(ally, amount, m);
+        // 회복 효율(recoveryEfficiency)은 받는 아군 기준으로 적용 (솔로 applyDamageTakenSlotRecovery와 동일)
+        for (const ally of room.members) total += healMember(ally, Math.round(amount * getPartyRecoveryMultiplier(ally)), m);
         if (total > 0) pushCombat(room, '글렌첵 효과 → 파티 체력 회복 [+' + comma(amount) + ']', 'heal');
     }
 }
@@ -4468,6 +4465,8 @@ function useSkill(name, skillName, targetName) {
     if (skillName === '시벌론' && Number(me.runtime.sivalonCharge || 0) < 5) {
         return { error: '일반 공격을 5회 사용해야 시벌론이 활성화됩니다. (충전 ' + Number(me.runtime.sivalonCharge || 0) + '/5)' };
     }
+    // 유서새김(표식/지속 피해)은 지속 대상이 있어야 한다 — 잡몹 단계처럼 대상 몬스터가 없으면 MP·쿨타임을 소모하지 않고 거부
+    if (skillName === '유서새김' && !room.monster) return { error: '표식을 새길 대상이 없습니다.' };
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[me.position]) || {};
     const stats = me.baseSnapshot.stats || {};
@@ -4603,7 +4602,8 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
     if (def.damage && (room.monster || (phase && phase.type === 'mob'))) {
         const targetMonster = room.monster || createPhaseMonster(phase);
         ctx.targetMaxHp = targetMonster.hpMax || ctx.targetMaxHp;
-        let dmg = evalFormula(def.damage, ctx) * skillDmgMul * getFinalDamageMul(caster);
+        // getFinalDamageMul(복수의 칼날/마력 감응/수나타/건력)은 calculateOutgoingDamage 안에서 1회 적용된다 — 여기서 곱하면 중복 적용
+        let dmg = evalFormula(def.damage, ctx) * skillDmgMul;
         if (def.countAsBasic) dmg *= (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0));
         // 스택형 (낙뢰)
         if (def.stack && def.stack.key) {
@@ -4762,7 +4762,9 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     extra.skillName = skillName;
     if (skill && skill.element) extra.skillElement = skill.element;
     let nextSkillBonus = 0;
-    if (caster.runtime.nextSkillDamageBonus) {
+    // 일반 공격으로 간주되는 스킬(포커 못 하시네/비리)은 유드 알레프의 '다음 스킬 피해' 버프를 소모하지 않는다 (솔로 basicAttackSkill 가드와 동일)
+    const countsAsBasicSkill = skillName === '포커 못 하시네' || skillName === '비리';
+    if (caster.runtime.nextSkillDamageBonus && !countsAsBasicSkill) {
         nextSkillBonus = Number(caster.runtime.nextSkillDamageBonus || 0);
         caster.runtime.nextSkillDamageBonus = 0;
     }
@@ -4780,6 +4782,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (skillName === '포커 못 하시네') {
         extra.hitCount = 9;
         extra.isBasic = true; // 일반 공격으로 간주 (파티 퀘스트 countAsBasic 스킬과 동일 취급)
+        extra.separateBasicAttackHits = true; // 9타 각각을 공격 1회로 집계 (나인 멘스 중첩·10번째 공격 카운터, 솔로와 동일)
         rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
     }
     if (skillName === '글버지') {
@@ -4842,6 +4845,14 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '불사조 (피해증가)', value: caster.runtime.takenDmgMul, remain: prisonKey ? 8 + getEquipmentEffectDurationBonus(caster) : 4 });
     }
     if (skillName === '피아스트') {
+        // 8초간 최대 MP의 ${2}만큼 본인 보호막 (솔로와 동일; 파티 전용 효과는 아래 공격력/MP)
+        const piastShield = Math.max(1, Math.round(caster.runtime.mpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster)));
+        if (canPartyApplyShield(caster, caster)) {
+            caster.runtime.shield = (caster.runtime.shield || 0) + piastShield;
+            caster.runtime.shieldHits = 99;
+            caster.runtime.shieldExpireAt = Date.now() + 8000;
+            caster.runtime.shieldExpireHeal = 0;
+        }
         const allyAtk = getSkillValue(skill, 2, star);
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
@@ -4897,6 +4908,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (skillName === '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skill, 1, star);
     if (skillName === '비리') {
         extra.forceCritical = true;
+        extra.isBasic = true; // 일반 공격으로 간주 (나인 멘스 모리스 중첩·심연 등 일반 공격 판정, 솔로 basicAttackSkill과 동일)
         rawDamage = Math.round(finalAtk * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)));
     }
     if (skillName === '54버스트') extra.forceCritical = true;
@@ -5197,7 +5209,8 @@ async function usePotion(name, potionName) {
     const funcs = getPotionFuncs(itemDef.data);
     if (!funcs.length) return { error: '사용 불가한 물약입니다.' };
     const stats = (me.baseSnapshot && me.baseSnapshot.stats) || {};
-    const potionMul = 1 + Number(stats.potion || 0);
+    // 솔로 applyUseFunc와 동일: 물약 효율(potion) × 회복 효율(recoveryEfficiency)
+    const potionMul = (1 + Number(stats.potion || 0)) * getPartyRecoveryMultiplier(me);
     const parts = [];
     for (const func of funcs) {
         if (func.type === '체력회복') {

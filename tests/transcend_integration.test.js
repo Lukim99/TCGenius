@@ -183,13 +183,13 @@ const rpg = require('../rpgenius');
     const originalPillarRandom = Math.random;
     Math.random = () => 0;
     hellUser.field.nextActionAt = 0;
-    const firstPillarText = rpg.useBasicAttackInField(hellUser);
+    const firstPillarText = await rpg.useBasicAttackInField(hellUser);
     Math.random = originalPillarRandom;
     assert.ok(firstPillarText.includes('1 피해'));
     assert.strictEqual(hellUser.field.equipmentState.attackCount, 1, '기둥에서는 연격이 발동하지 않아 공격 순서가 1회만 진행되어야 한다.');
     for (let i = 1; i < 2; i++) {
         hellUser.field.nextActionAt = 0;
-        const text = rpg.useBasicAttackInField(hellUser);
+        const text = await rpg.useBasicAttackInField(hellUser);
         assert.ok(text.includes('자동으로 퇴장'));
     }
     assert.strictEqual(hellUser.field, null);

@@ -824,7 +824,7 @@ function textLines(text) {
 
 const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#ef4444', '초월 1단계': '#ef4444', '초월 2단계': '#ef4444', '초월 3단계': '#ef4444', '신화': '#a78bfa', '고유': '#ec4899' };
 const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧', 'orb': '🔮' };
-const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '재료'];
+const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
 const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
 
 function rarityTag(rarity) {
@@ -1289,7 +1289,8 @@ function equipmentPassiveNode(passive) {
         el('div', { class: 'eqm-passive-copy' },
             el('div', { class: 'eqm-passive-head' },
                 el('strong', { class: 'eqm-passive-name' }, passive.name || '패시브')),
-            el('div', { class: 'eqm-passive-desc' }, passiveDesc),
+            // 문장마다 줄을 나눠 긴 패시브 설명의 가독성을 높인다
+            el('div', { class: 'eqm-passive-desc' }, ...passiveDesc.split(/(?<=[.!?])\s+/).filter(Boolean).map(sentence => el('div', null, sentence))),
             cooldownText ? el('div', { class: 'eqm-passive-meta' },
                 el('span', null, '재사용 대기시간'), el('b', null, cooldownText)) : null
         )
@@ -1389,7 +1390,16 @@ function equipmentModalView(eq, interactive) {
     }
     const orbBlock = equipmentOrbNode(orbInfo);
     if (orbBlock) nodes.push(orbBlock);
-    const passiveBlock = equipmentPassiveNode(eq.passive);
+    // 초월/신화 장비는 요약형 패시브 문구 대신 수치가 있는 고유 옵션(desc)을 보여주고,
+    // 초월 장비는 "(단계당 +x)" 표기를 현재 단계 수치로 환산해 표기한다 (도감 패시브 탭과 동일 규칙)
+    let passiveForView = eq.passive;
+    const advancedRarity = /^(초월|신화)/.test(String(eq.baseRarity || eq.rarity || ''));
+    if (advancedRarity && description) {
+        const stage = Number(eq.transcendStage || (String(eq.rarity || '').match(/초월\s*(\d)단계/) || [])[1] || 1);
+        const stageText = /^초월/.test(String(eq.baseRarity || eq.rarity || '')) ? dexTranscendStageText(description, stage) : description;
+        passiveForView = { name: (eq.passive && eq.passive.name) || eq.baseName || eq.name, desc: stageText, cooltime: eq.passive && eq.passive.cooltime };
+    }
+    const passiveBlock = equipmentPassiveNode(passiveForView);
     if (passiveBlock) nodes.push(passiveBlock);
     if (eq.soul) {
         const soulText = formatSoulRemaining(eq.soul.expiredAt);
@@ -6218,15 +6228,27 @@ function dexDescriptionData(text, cooltime) {
     };
     const cooldownMs = Number(cooltime || 0);
     if (cooldownMs > 0) addCooldown(cooldownMs % 60000 === 0 ? cooldownMs / 60000 + '분' : Math.round(cooldownMs / 1000) + '초');
+    // 괄호 안에 다른 설명과 함께 있는 쿨타임("(쿨타임 5분, 초월 단계에 따라 증가)")은 쿨타임만 떼고 괄호를 남긴다
+    value = value.replace(/\(\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)(?!\s*(?:을|를)?\s*(?:감소|증가|연장|단축))\s*,\s*/g, (full, amount, unit) => {
+        addCooldown(amount + unit);
+        return '(';
+    });
+    value = value.replace(/,\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)(?!\s*(?:을|를)?\s*(?:감소|증가|연장|단축))\s*\)/g, (full, amount, unit) => {
+        addCooldown(amount + unit);
+        return ')';
+    });
     value = value.replace(/\(?\s*(?:쿨타임|재사용 대기시간)\s*(\d+(?:\.\d+)?)\s*(초|분)(?!\s*(?:을|를)?\s*(?:감소|증가|연장|단축))\s*\)?/g, (full, amount, unit) => {
         addCooldown(amount + unit);
         return '';
     });
-    value = value.replace(/,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s+([,.!?])/g, '$1').replace(/([,.!?]){2,}/g, '$1');
+    value = value.replace(/\(\s*,\s*/g, '(').replace(/,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s+([,.!?])/g, '$1').replace(/([,.!?]){2,}/g, '$1');
+    // 문장 단위로 먼저 나누고, 조건절("~시", "~동안", "~경우" 등)로 시작하는 문장은 쉼표로 쪼개지 않는다
+    // (예: "불사조 사용 시 8초간 치명타 확률 +10%, 불사조 피해량 +30%"를 조건 없는 조각으로 흩뜨리지 않기 위함)
+    const conditionalLead = /(?:\s시|사용 시|적중 시|발동 시|동안|경우|이하|이상|마다|때|면|후|뒤)\s*[^,]*?[,]/;
     const fragments = value
         .replace(/([.!?])\s+/g, '$1\n')
-        .replace(/,\s+/g, ',\n')
         .split('\n')
+        .flatMap(sentence => (conditionalLead.test(sentence) ? [sentence] : sentence.replace(/,\s+/g, ',\n').split('\n')))
         .map(line => line.trim().replace(/^[,.!?]\s*/, '').replace(/\s*[,.!?]$/, ''))
         .filter(Boolean);
     const lines = fragments.reduce((result, line) => {
@@ -6276,7 +6298,7 @@ function dexStatList(lines) {
 }
 
 function dexTranscendStageText(text, stage) {
-    return String(text || '').replace(/([+-]?\d+(?:\.\d+)?)(%?)\s*\((?:단계당\s*)?([+-]\d+(?:\.\d+)?)(%?)\)/g,
+    return String(text || '').replace(/([+-]?\d+(?:\.\d+)?)(%?)\s*\((?:초월\s*)?(?:단계당\s*)?([+-]\d+(?:\.\d+)?)(%?)\)/g,
         (full, baseText, baseUnit, deltaText, deltaUnit) => {
             const base = Number(baseText);
             const delta = Number(deltaText);
@@ -6288,7 +6310,7 @@ function dexTranscendStageText(text, stage) {
 }
 
 function dexTranscendStagesNode(entry, text) {
-    if (entry.rarity !== '초월' || !/\((?:단계당\s*)?[+-]\d/.test(text || '')) return null;
+    if (entry.rarity !== '초월' || !/\((?:초월\s*)?(?:단계당\s*)?[+-]\d/.test(text || '')) return null;
     const body = el('div', { class: 'dex-stage-body' });
     const buttons = [1, 2, 3].map(stage => {
         const button = el('button', { class: 'dex-stage-button' + (stage === 1 ? ' active' : ''), type: 'button' }, stage + '단계');

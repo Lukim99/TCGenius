@@ -1706,7 +1706,9 @@ function equipCard(eq, index) {
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
                 const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id' }[equipCurrentSlot];
                 const refs = idKey ? await scanRefs(idKey, index) : { direct: 0, above: 0 };
-                if (!(await showConfirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs)))) return;
+                // 모자/하의/신발은 팩·레시피 등에 *_id 참조 키가 없어 참조 검사를 수행할 수 없음을 명시한다 (조용히 건너뛰지 않음)
+                const scanNote = idKey ? '' : '\n* 이 부위(' + EQUIPMENT_SLOT_LABELS[equipCurrentSlot] + ')는 팩/번들/상점/레시피 참조 검사를 지원하지 않습니다. 유저 인벤토리·장착 데이터의 id가 당겨질 수 있으니 주의하세요.';
+                if (!(await showConfirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs) + scanNote))) return;
                 equipData[equipCurrentSlot].splice(index, 1);
                 renderEquipTypes(); renderEquip();
             } }, '삭제')
@@ -3369,7 +3371,7 @@ function itemPackEditor(item, itemType) {
     wrap.appendChild(row);
     return wrap;
 }
-const ITEM_USE_KEYS = ['변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지', '패션적용', '고급패션적용', '스탯초기화', '장신구선택권', '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '가위', '패션제거', '생명수', '초월업그레이드', '초월선택', '아이템선택', '초월상자', '보주상자'];
+const ITEM_USE_KEYS = ['변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지', '패션적용', '고급패션적용', '스탯초기화', '장신구선택권', '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택', '가위', '패션제거', '생명수', '초월업그레이드', '초월선택', '아이템선택', '초월상자', '보주상자'];
 function itemUseEditor(item) {
     const wrap = el('div');
     const row = el('div', { class: 'row' });
@@ -3446,7 +3448,8 @@ function soulEditor(item) {
     row.appendChild(el('div', null, el('label', null, '영혼 이름'), el('input', { value: soul.name || '', oninput: e => soul.name = e.target.value })));
     row.appendChild(el('div', { class: 'nf' }, el('label', null, '지속 일수 (0 = 무제한)'), el('input', { type: 'number', min: 0, value: Number(soul.date || 0), style: { width: '140px' }, oninput: e => soul.date = Math.max(0, Number(e.target.value) || 0) })));
     wrap.appendChild(row);
-    [['weapon', '무기'], ['armor', '갑옷']].forEach(([slot, label]) => {
+    // armor 블록은 방어구 4부위(모자/갑옷/하의/신발)에 공통 적용된다 (rpgenius.js applySoulToEquipment)
+    [['weapon', '무기'], ['armor', '방어구 (모자·갑옷·하의·신발 공통)']].forEach(([slot, label]) => {
         if (!soul[slot] || typeof soul[slot] !== 'object') soul[slot] = { stat: {}, plusStat: {} };
         if (!soul[slot].stat || typeof soul[slot].stat !== 'object') soul[slot].stat = {};
         if (!soul[slot].plusStat || typeof soul[slot].plusStat !== 'object') soul[slot].plusStat = {};
