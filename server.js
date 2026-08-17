@@ -1929,7 +1929,10 @@ server.get('/api/hfield', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        res.json(buildHFieldState(user));
+        const state = buildHFieldState(user);
+        // 소환수(익테봇/수나타)·지속 피해(유서새김/장비 효과) 틱은 채널 없이 백그라운드로 실행되므로, 폴링 시 최근 틱을 함께 내려 데미지 표시/로그에 쓴다
+        state.events = state.inField ? rpgenius.drainFieldTickEvents(user.name).filter(event => event && Number(event.damage || 0) > 0) : [];
+        res.json(state);
     } catch (e) {
         console.error('h-field status error:', e);
         res.status(500).json({ error: '서버 오류' });

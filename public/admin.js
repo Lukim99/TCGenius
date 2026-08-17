@@ -3448,8 +3448,7 @@ function soulEditor(item) {
     row.appendChild(el('div', null, el('label', null, '영혼 이름'), el('input', { value: soul.name || '', oninput: e => soul.name = e.target.value })));
     row.appendChild(el('div', { class: 'nf' }, el('label', null, '지속 일수 (0 = 무제한)'), el('input', { type: 'number', min: 0, value: Number(soul.date || 0), style: { width: '140px' }, oninput: e => soul.date = Math.max(0, Number(e.target.value) || 0) })));
     wrap.appendChild(row);
-    // armor 블록은 방어구 4부위(모자/갑옷/하의/신발)에 공통 적용된다 (rpgenius.js applySoulToEquipment)
-    [['weapon', '무기'], ['armor', '방어구 (모자·갑옷·하의·신발 공통)']].forEach(([slot, label]) => {
+    [['weapon', '무기'], ['armor', '갑옷']].forEach(([slot, label]) => {
         if (!soul[slot] || typeof soul[slot] !== 'object') soul[slot] = { stat: {}, plusStat: {} };
         if (!soul[slot].stat || typeof soul[slot].stat !== 'object') soul[slot].stat = {};
         if (!soul[slot].plusStat || typeof soul[slot].plusStat !== 'object') soul[slot].plusStat = {};

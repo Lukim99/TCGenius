@@ -683,24 +683,14 @@ function grantPartyQuestClearRewards(room) {
                 const prog = rpgenius.getTitleProgress(user);
                 const weekKey = rpgenius.getKoreanWeekKey(new Date());
                 const weeklyLocked = isButaQuest(room.questId) && prog.butaRewardWeek === weekKey;
-                // 경험치/골드 획득 보정은 솔로 사냥(buildHuntResult 등)과 동일 구성으로 적용한다:
-                // 경험치 = 기본 × (1 + 카드슬롯 경험치% + 장비 경험치% + 경험치 비약) → 프레스티지(+10%) → 저레벨(×1.5)
-                // 골드 = 기본 × (1 + 카드슬롯 골드% + 장비 골드%(+초월 버프) + 전직 프레스티지 5% + 골드 비약)
-                const rewardStats = typeof rpgenius.calculateUserStats === 'function' ? rpgenius.calculateUserStats(user) : {};
-                const rewardSlot = typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : {};
-                const expPotion = typeof rpgenius.getExpPotionBonus === 'function' ? rpgenius.getExpPotionBonus(user) : 0;
-                const goldPotion = typeof rpgenius.getGoldPotionBonus === 'function' ? rpgenius.getGoldPotionBonus(user) : 0;
-                let exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0) * (1 + Number(rewardSlot.expBonus || 0) + Number(rewardStats.exp || 0) + expPotion)));
-                if (exp > 0 && typeof rpgenius.applyPrestigeExpBonus === 'function') exp = rpgenius.applyPrestigeExpBonus(user, exp);
-                if (exp > 0 && typeof rpgenius.applyLowLevelExpBonus === 'function') exp = rpgenius.applyLowLevelExpBonus(user, exp);
+                const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
                 const goldDef = rewards.gold || {};
                 const baseGold = weeklyLocked ? 0 : (typeof goldDef === 'number'
                     ? Math.max(0, Math.round(goldDef))
                     : randomInt(Math.max(0, Number(goldDef.min || 0)), Math.max(0, Number(goldDef.max || goldDef.min || 0))));
-                const goldBonus = getPartyGoldBonus(member) + Number(rewardSlot.goldBonus || 0) + (user.jobPrestige === true ? 0.05 : 0) + goldPotion;
-                const gold = Math.max(0, Math.round(baseGold * (1 + goldBonus)));
+                const gold = Math.max(0, Math.round(baseGold * (1 + getPartyGoldBonus(member))));
                 if (gold > 0) {
                     user.gold = Number(user.gold || 0) + gold;
                     addPartyQuestRewardSummary(summary, 'gold', '🪙 골드', gold);
@@ -4465,8 +4455,6 @@ function useSkill(name, skillName, targetName) {
     if (skillName === '시벌론' && Number(me.runtime.sivalonCharge || 0) < 5) {
         return { error: '일반 공격을 5회 사용해야 시벌론이 활성화됩니다. (충전 ' + Number(me.runtime.sivalonCharge || 0) + '/5)' };
     }
-    // 유서새김(표식/지속 피해)은 지속 대상이 있어야 한다 — 잡몹 단계처럼 대상 몬스터가 없으면 MP·쿨타임을 소모하지 않고 거부
-    if (skillName === '유서새김' && !room.monster) return { error: '표식을 새길 대상이 없습니다.' };
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[me.position]) || {};
     const stats = me.baseSnapshot.stats || {};

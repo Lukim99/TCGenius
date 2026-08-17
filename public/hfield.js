@@ -233,6 +233,13 @@
       this.draw(texture,x,y,fit.width,fit.height,{mode:7,color:rgba(color,outerAlpha)});
       this.draw(texture,x,y,fit.width,fit.height,{mode:6,color:rgba(bright,innerAlpha)});
   }
+        // 소환수/지속 피해 틱: 플레이어 공격 모션 없이 대상 피격 연출만
+        tickHit(previous) {
+            const now = performance.now();
+            this.targetHitUntil = now + 360; this.impactStarted = now; this.impactUntil = now + 390; this.impactCritical = false; this.impactSkill = false;
+            this.impactX = previous && previous.phase === 'pillar' ? .81 : .74; this.impactY = previous && previous.phase === 'pillar' ? .54 : .51;
+            this.burst(this.impactX, this.impactY, [1,.2,.12,1], 26);
+        }
         animate(event, previous) {
             const now = performance.now(); this.attackAt = now; this.attackKind = event.action || 'attack';
             if (event.damage > 0) {
@@ -391,7 +398,9 @@
     function useSkill(name){const skill=state&&(state.skills||[]).find(s=>s.name===name),now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||!skill||now<Number(skill.cooldownEnd||0)||now<Number(state.nextActionAt||0))return;action('/api/hfield/skill',{skillName:name});}
     async function leave(){if(!state||!state.inField)return;const accepted=await showDialog('필드 퇴장','보상을 받지 못하며 사용한 초대장은 반환되지 않습니다.','퇴장');if(!accepted)return;setBusy(true);try{const result=await request('/api/hfield/leave',{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok)audio.stopBgm();}catch(error){addLog(error.message,'bad');}finally{setBusy(false);}}
     function backOrLeave(){if(hud.inEntryTransition())return;if(hud.inConsumableMenu()){hud.closeConsumables();return;}if(dialog){dialog.cancel();return;}if(rewards){closeRewards();return;}if(state&&state.inField)leave();else location.href='/';}
-    async function sync(quiet){if(busy)return;try{const previous=state,next=await request('/api/hfield');applyState(next,{deferBgm:hud.inEntryTransition()});if(quiet&&previous&&previous.inField&&!next.inField){addLog('전투가 종료되었습니다.');audio.stopBgm();}}catch(error){if(!quiet)addLog(error.message,'bad');}}
+    // 소환수(익테봇/수나타)·지속 피해(유서새김/장비 효과) 틱은 서버에서 백그라운드로 처리되므로 폴링 응답의 events로 데미지 팝업·로그를 그린다
+    function showTickEvents(events,previous){(events||[]).forEach((event,index)=>{const damage=Number(event.damage||0);if(!(damage>0))return;setTimeout(()=>{hud.addDamage({damage,criticalCount:0,skillName:event.source||''},previous);hud.impact(false);audio.hit();if(renderer&&typeof renderer.tickHit==='function')renderer.tickHit(previous);},index*140);addLog((event.source||'소환수')+' → '+damage.toLocaleString('ko-KR')+' 피해');});}
+    async function sync(quiet){if(busy)return;try{const previous=state,next=await request('/api/hfield');applyState(next,{deferBgm:hud.inEntryTransition()});if(previous&&previous.inField&&next.inField&&!hud.inEntryTransition())showTickEvents(next.events,previous);if(quiet&&previous&&previous.inField&&!next.inField){addLog('전투가 종료되었습니다.');audio.stopBgm();}}catch(error){if(!quiet)addLog(error.message,'bad');}}
 
     document.addEventListener('keydown',event=>{if(event.repeat)return;audio.unlock();const key=event.key.toLowerCase();if(hud.inConsumableMenu()){event.preventDefault();if(key==='escape'||event.code==='KeyP'){hud.closeConsumables();return;}if(key==='arrowleft'){hud.changeConsumablePage(-1,innerWidth,innerHeight);return;}if(key==='arrowright'){hud.changeConsumablePage(1,innerWidth,innerHeight);return;}if(/^[0-9]$/.test(key)){hud.useConsumableAt(key==='0'?9:Number(key)-1,innerWidth,innerHeight);}return;}if(event.code==='KeyP'&&state&&state.inField){event.preventDefault();hud.toggleConsumables();return;}if(key===' '||key==='j'){event.preventDefault();attack();return;}if(key==='e'&&state&&!state.inField){enter(false);return;}if(key==='escape'){event.preventDefault();backOrLeave();return;}if(/^[1-9]$/.test(key)&&state&&state.inField){const skill=state.skills[Number(key)-1];if(skill)useSkill(skill.name);}});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)audio.stopBgm();else{sync(true);if(!hud.inEntryTransition())audio.playBgm();}});

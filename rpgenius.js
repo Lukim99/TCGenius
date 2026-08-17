@@ -160,6 +160,26 @@ function clearFieldIktaeBot(userName) {
     }
 }
 
+// ===== 필드 틱 이벤트 버퍼 — 채널이 없는 웹 프론트(H필드)가 소환수/지속 피해 틱을 데미지 표시·로그로 보여주기 위해 최근 틱을 보관한다 =====
+const fieldTickEvents = {};
+function getFieldTargetHpForTick(user) {
+    const field = user && user.field;
+    if (!field || !field.elite || typeof field.elite.hp == 'undefined') return null;
+    return Number(field.elite.hp || 0);
+}
+function pushFieldTickEvent(userName, source, hpBefore, user, damageOverride) {
+    const hpAfter = getFieldTargetHpForTick(user);
+    const damage = typeof damageOverride == 'number' ? damageOverride : (hpBefore == null ? null : Math.max(0, hpBefore - (hpAfter == null ? 0 : hpAfter)));
+    const list = fieldTickEvents[userName] || (fieldTickEvents[userName] = []);
+    list.push({ at: Date.now(), source, damage });
+    if (list.length > 30) list.splice(0, list.length - 30);
+}
+function drainFieldTickEvents(userName) {
+    const list = fieldTickEvents[userName] || [];
+    delete fieldTickEvents[userName];
+    return list;
+}
+
 async function runFieldIktaeBotTick(userName) {
     const user = await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
@@ -177,10 +197,13 @@ async function runFieldIktaeBotTick(userName) {
     const botDamage = Math.max(1, Math.round(Number(stats.atk || 0) * user.field.iktaeBot.atkMul));
     const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1, attackElement: getAttackElement(user, null) }; // 소환수 자동공격은 단일 타격 (파티와 동일; 플레이어 연격 미적용)
     const lines = [];
+    const tickHpBefore = getFieldTargetHpForTick(user);
+    let tickDamage;
     if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, botDamage, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
+        tickDamage = Number(result.damage || 0);
         lines.push('🤖 익테봇 자동 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
     } else if (context.type == 'elite') {
@@ -190,6 +213,7 @@ async function runFieldIktaeBotTick(userName) {
         const result = buildHuntResult(user, context.dungeon, botDamage, extra);
         lines.push(result);
     }
+    pushFieldTickEvent(userName, '익테봇', tickHpBefore, user, tickDamage);
     await user.save();
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -231,10 +255,13 @@ async function runFieldSunataTick(userName) {
     const dmg = Math.max(1, Math.round(Number(stats.atk || 0) * Number(user.field.sunata.atkMul || 0)));
     const extra = { isSkill: true, isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1, attackElement: getAttackElement(user, null) }; // 소환수 자동공격은 단일 타격 (파티와 동일; 플레이어 연격 미적용)
     const lines = [];
+    const tickHpBefore = getFieldTargetHpForTick(user);
+    let tickDamage;
     if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
+        tickDamage = Number(result.damage || 0);
         lines.push('🎵 수나타 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
     } else if (context.type == 'elite') {
@@ -242,6 +269,7 @@ async function runFieldSunataTick(userName) {
     } else {
         lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
     }
+    pushFieldTickEvent(userName, '수나타', tickHpBefore, user, tickDamage);
     await user.save();
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -280,10 +308,13 @@ async function runFieldMarkTick(userName) {
     const dmg = Math.max(1, Math.round(Number(user.field.mark.dot || 0)));
     const extra = { isBotAutoAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1, attackElement: getAttackElement(user, null) }; // 지속 피해 틱은 단일 타격 (파티와 동일)
     const lines = [];
+    const tickHpBefore = getFieldTargetHpForTick(user);
+    let tickDamage;
     if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
+        tickDamage = Number(result.damage || 0);
         lines.push('✍️ 유서새김 지속 피해! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
     } else if (context.type == 'elite') {
@@ -291,6 +322,7 @@ async function runFieldMarkTick(userName) {
     } else {
         lines.push(buildHuntResult(user, context.dungeon, dmg, extra));
     }
+    pushFieldTickEvent(userName, '유서새김', tickHpBefore, user, tickDamage);
     await user.save();
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -379,13 +411,17 @@ async function runFieldEquipmentDotTick(userName) {
     for (const effect of pending) {
         if (!user.field) break;
         const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated };
+        const tickHpBefore = getFieldTargetHpForTick(user);
+        let tickDamage;
         if (context.type == 'worldBoss') {
             const result = dealDamageToWorldBoss(user, context.boss, effect.rawDamage, extra);
+            tickDamage = Number(result.damage || 0);
             lines.push('🔥 ' + effect.label + '! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해');
             if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
         } else if (context.type == 'hell') lines.push(buildEliteHuntResult(user, context.dungeon, effect.rawDamage, extra));
         else if (context.type == 'elite') lines.push(buildEliteHuntResult(user, context.dungeon, effect.rawDamage, extra));
         else lines.push(buildHuntResult(user, context.dungeon, effect.rawDamage, extra));
+        pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickHpBefore, user, tickDamage);
     }
     if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     await user.save();
@@ -1476,8 +1512,7 @@ function applySoulToEquipment(user, numberArg) {
     const equipment = getEquipmentData(type, selected.equip.id);
     if (!equipment) return '❌ 잘못된 장비 데이터입니다.';
     if (selected.equip.soul && !isSoulExpired(selected.equip.soul)) return '❌ 이미 영혼이 깃든 장비입니다.';
-    // 영혼석 데이터는 weapon/armor 블록으로 작성된다(관리자 에디터). 방어구 4부위(모자/갑옷/하의/신발)는 armor 블록을 공유한다.
-    const slot = soulData[type] || (['hat', 'pants', 'shoes'].includes(type) ? soulData.armor : null);
+    const slot = soulData[type];
     if (!slot || typeof slot != 'object') return '❌ 해당 장비 부위에 부여할 수 있는 영혼 정보가 없습니다.';
     const days = Number(soulData.date || 0);
     const expiresAt = days > 0 ? Date.now() + days * 86400000 : 0;
@@ -14024,10 +14059,7 @@ module.exports = {
     TITLE_IMAGE_PATH,
     getEquipmentPassives,
     getEquippedPassiveIds,
-    applyPrestigeExpBonus,
-    applyLowLevelExpBonus,
-    getExpPotionBonus,
-    getGoldPotionBonus,
+    drainFieldTickEvents,
     getManaResonanceBonus,
     getEquipmentElementChain,
     getTranscendEquipmentSnapshot,
