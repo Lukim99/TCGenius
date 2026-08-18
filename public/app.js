@@ -173,7 +173,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '[H]필드': '[H]필드', '버닝': '버닝', '자물쇠': '자물쇠', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '[H]필드': '[H]필드', pvp: 'PVP', '버닝': '버닝', '자물쇠': '자물쇠', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -191,7 +191,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['캡슐', ...(EVENT_DICE_ENDED ? [] : ['event']),'[H]필드', '버닝', '자물쇠', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['캡슐', ...(EVENT_DICE_ENDED ? [] : ['event']),'[H]필드', 'pvp', '버닝', '자물쇠', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -268,6 +268,7 @@ function navigatePage(pageId) {
     }
     if (pageId === 'mail') loadMail();
     if (pageId === 'preset') loadPresets();
+    if (pageId === 'pvp') loadPvp();
     if (pageId === 'event') loadEventDice();
     if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
@@ -6076,6 +6077,337 @@ async function loadProfile(name) {
     activatePage('info');
     suppressInfoSelfReset = false;
     renderProfile(data);
+}
+
+// ===== PVP =====
+const PVP_KIND_LABELS = { near: '근접', higher: '상위', random: '랜덤' };
+const PVP_COND_OPTIONS = [
+    ['always', '항상'], ['hpBelow', '내 HP ≤ N%'], ['hpAbove', '내 HP ≥ N%'],
+    ['enemyHpBelow', '상대 HP ≤ N%'], ['enemyHpAbove', '상대 HP ≥ N%'], ['mpBelow', '내 MP ≤ N%'],
+    ['skillReady', '스킬 사용 가능'], ['enemyDefending', '상대 방어 중']
+];
+const PVP_ACTION_OPTIONS = [['attack', '공격'], ['skill', '스킬'], ['defend', '방어']];
+const PVP_VALUE_CONDS = ['hpBelow', 'hpAbove', 'enemyHpBelow', 'enemyHpAbove', 'mpBelow'];
+const PVP_DEFAULT_RULES = [
+    { cond: 'hpBelow', value: 30, action: 'defend', skill: null },
+    { cond: 'skillReady', value: null, action: 'skill', skill: null },
+    { cond: 'always', value: null, action: 'attack', skill: null }
+];
+const PVP_MAX_RULES = 8;
+let pvpState = { data: null, draft: null, busy: false };
+
+async function loadPvp() {
+    const root = $('#pvpRoot');
+    if (!root) return;
+    root.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        pvpState.data = await api('/api/pvp');
+    } catch (e) {
+        root.replaceChildren(el('div', { class: 'empty err' }, e.message));
+        return;
+    }
+    pvpState.draft = pvpDefenseDraft(pvpState.data.defense);
+    renderPvp();
+}
+
+// 서버 방어 설정을 로컬 편집 상태로 복사한다. 카드 객체를 그대로 들고 있다가 저장 시 sig만 보낸다.
+function pvpDefenseDraft(defense) {
+    const d = defense || {};
+    const maxSlots = Math.max(0, Number(d.maxSlots || 0));
+    const source = Array.isArray(d.rules) && d.rules.length ? d.rules : PVP_DEFAULT_RULES;
+    return {
+        useEquipped: d.useEquipped !== false,
+        mainCard: d.mainCard || null,
+        slotCards: Array.from({ length: maxSlots }, (_, i) => (d.slotCards || [])[i] || null),
+        rules: source.map(r => ({
+            cond: r.cond || 'always',
+            value: r.value == null ? null : Number(r.value),
+            action: r.action || 'attack',
+            skill: r.skill || null
+        }))
+    };
+}
+
+function pvpSection(title, caption, ...nodes) {
+    return el('section', { class: 'pvp-section' },
+        el('div', { class: 'pvp-section-head' },
+            el('h3', null, title),
+            caption ? el('span', { class: 'pvp-caption' }, caption) : null),
+        ...nodes);
+}
+
+function pvpGoBattle(name) {
+    location.href = '/pvp?opponent=' + encodeURIComponent(name);
+}
+
+function renderPvp() {
+    const root = $('#pvpRoot');
+    const d = pvpState.data;
+    if (!root || !d) return;
+    root.replaceChildren(el('div', { class: 'pvp-shell' },
+        pvpMeNode(d),
+        pvpOpponentsNode(d),
+        pvpDeckNode(d),
+        pvpRulesNode(d),
+        el('div', { class: 'pvp-save-row' },
+            el('button', { class: 'primary', type: 'button', disabled: pvpState.busy, onclick: savePvpDefense }, '저장')),
+        pvpRankingNode(d),
+        pvpHistoryNode(d)
+    ));
+}
+
+function pvpMeNode(d) {
+    const me = d.me || {};
+    const daily = d.daily || {};
+    const refreshLeft = Math.max(0, Number(daily.refreshMax || 0) - Number(daily.refreshUsed || 0));
+    const battle = d.battle;
+    return el('section', { class: 'pvp-section pvp-me' },
+        el('div', { class: 'pvp-section-head' },
+            el('h3', null, 'PVP'),
+            el('button', { class: 'pvp-refresh', type: 'button', disabled: !daily.canRefresh || pvpState.busy, onclick: refreshPvpOpponents },
+                '새로고침 (남은 ' + refreshLeft + '회)')),
+        el('div', { class: 'pvp-me-grid' },
+            el('div', { class: 'pvp-rating' },
+                el('span', { class: 'pvp-metric-label' }, '레이팅'),
+                el('div', { class: 'pvp-rating-line' },
+                    el('b', null, comma(me.rating)),
+                    me.rank ? el('span', { class: 'pvp-rank-badge rk' + me.rank }, comma(me.rank) + '위') : null)),
+            el('div', { class: 'pvp-metric' },
+                el('span', { class: 'pvp-metric-label' }, '전적'),
+                el('div', { class: 'pvp-wl' },
+                    el('b', { class: 'win' }, comma(me.wins) + '승'),
+                    el('b', { class: 'lose' }, comma(me.losses) + '패'))),
+            el('div', { class: 'pvp-metric' },
+                el('span', { class: 'pvp-metric-label' }, '오늘 전투'),
+                el('b', { class: 'pvp-metric-value' }, comma(daily.battlesUsed) + ' / ' + comma(daily.battlesMax)))),
+        battle && battle.active ? el('div', { class: 'pvp-resume' },
+            el('span', null, '진행 중인 전투 — ' + battle.opponent),
+            el('button', { class: 'primary', type: 'button', onclick: () => pvpGoBattle(battle.opponent) }, '이어하기')) : null);
+}
+
+function pvpOpponentTile(o) {
+    const done = o.result === 'win' || o.result === 'lose';
+    const delta = Math.abs(Number(o.ratingDelta || 0));
+    return el('div', { class: 'pvp-opp' + (done ? ' done' : '') },
+        el('div', { class: 'pvp-opp-art' },
+            o.cardImageUrl
+                ? el('img', { src: o.cardImageUrl, alt: o.cardFormatted || o.cardName || '' })
+                : el('div', { class: 'no-img' }, o.cardName || '카드 없음'),
+            el('span', { class: 'pvp-kind' }, PVP_KIND_LABELS[o.kind] || o.kind || '')),
+        el('div', { class: 'pvp-opp-name' }, o.name),
+        el('div', { class: 'pvp-opp-meta' }, 'Lv. ' + comma(o.level), el('span', null, comma(o.rating))),
+        done
+            ? el('div', { class: 'pvp-opp-result ' + o.result }, (o.result === 'win' ? '승 +' : '패 −') + comma(delta))
+            : el('button', { class: 'primary pvp-opp-btn', type: 'button', onclick: () => pvpGoBattle(o.name) }, '도전'));
+}
+
+function pvpOpponentsNode(d) {
+    const list = (d.daily && d.daily.opponents) || [];
+    return pvpSection('오늘의 상대', null,
+        list.length
+            ? el('div', { class: 'pvp-opp-grid' }, ...list.map(pvpOpponentTile))
+            : el('div', { class: 'empty' }, '오늘 매칭 가능한 상대가 없습니다'));
+}
+
+// emptyCardSlotNode()는 장착 슬롯 피커에 리스너가 고정돼 있어, 리스너 없는 복제본에 PVP 피커를 연결한다.
+function pvpEmptyTile(onPick) {
+    const node = emptyCardSlotNode().cloneNode(true);
+    node.addEventListener('click', onPick);
+    return node;
+}
+
+function pvpDeckTile(card, kind, index) {
+    if (!card) return pvpEmptyTile(() => openPvpCardPicker(kind, index));
+    return el('div', { class: 'pvp-tile' },
+        cardNode(card, true, () => openPvpCardPicker(kind, index)),
+        kind === 'slot'
+            ? el('button', { class: 'pvp-tile-x', type: 'button', title: '슬롯 비우기', 'aria-label': '슬롯 비우기', onclick: () => pvpClearSlot(index) }, '×')
+            : null);
+}
+
+function pvpClearSlot(index) {
+    pvpState.draft.slotCards[index] = null;
+    renderPvp();
+}
+
+function pvpSetUseEquipped(useEquipped) {
+    if (pvpState.draft.useEquipped === useEquipped) return;
+    pvpState.draft.useEquipped = useEquipped;
+    renderPvp();
+}
+
+function pvpDeckNode(d) {
+    const draft = pvpState.draft;
+    const seg = el('div', { class: 'seg pvp-seg' },
+        el('button', { class: draft.useEquipped ? 'on' : '', type: 'button', onclick: () => pvpSetUseEquipped(true) }, '장착 덱 사용'),
+        el('button', { class: draft.useEquipped ? '' : 'on', type: 'button', onclick: () => pvpSetUseEquipped(false) }, '직접 설정'));
+    const body = draft.useEquipped ? null : el('div', { class: 'pvp-deck' },
+        el('div', { class: 'pvp-deck-col' },
+            el('span', { class: 'pvp-deck-label' }, '메인 카드'),
+            el('div', { class: 'pvp-deck-main' }, pvpDeckTile(draft.mainCard, 'main', 0))),
+        el('div', { class: 'pvp-deck-col' },
+            el('span', { class: 'pvp-deck-label' }, '슬롯 카드'),
+            el('div', { class: 'pvp-deck-slots' }, ...draft.slotCards.map((c, i) => pvpDeckTile(c, 'slot', i)))));
+    const warn = (d.defense && d.defense.valid === false)
+        ? el('div', { class: 'pvp-warn' }, '방어 덱 카드를 찾을 수 없어 장착 덱으로 대체됩니다') : null;
+    return pvpSection('방어 덱', null, seg, warn, body);
+}
+
+function openPvpCardPicker(kind, index) {
+    const draft = pvpState.draft;
+    const used = new Set();
+    if (kind === 'slot') {
+        if (draft.mainCard) used.add(Number(draft.mainCard.id));
+        draft.slotCards.forEach((c, i) => { if (c && i !== index) used.add(Number(c.id)); });
+    } else {
+        draft.slotCards.forEach(c => { if (c) used.add(Number(c.id)); });
+    }
+    const cards = (pvpState.data.cards || []).filter(c =>
+        c && !used.has(Number(c.id)) && (kind === 'main' || Number(c.star || 0) >= 4));
+    const pick = card => {
+        if (kind === 'main') draft.mainCard = card;
+        else draft.slotCards[index] = card;
+        closeModal();
+        renderPvp();
+    };
+    openRichModal(kind === 'main' ? '방어 메인 카드' : '방어 슬롯 카드', null, [
+        cards.length
+            ? el('div', { class: 'card-grid eqm-card-pick' }, ...cards.map(c => cardNode(c, true, pick)))
+            : el('div', { class: 'empty' }, kind === 'main' ? '선택할 수 있는 카드가 없습니다.' : '슬롯에 넣을 수 있는 카드가 없습니다.\n(5성 이상, 다른 카드와 다른 캐릭터)')
+    ]);
+}
+
+function pvpSelect(options, value, onPick) {
+    const sel = el('select', { class: 'pvp-select', onchange: e => onPick(e.target.value) },
+        ...options.map(([v, label]) => el('option', { value: v }, label)));
+    sel.value = value;
+    return sel;
+}
+
+function pvpRuleRow(rule, index, skills) {
+    const draft = pvpState.draft;
+    const needsValue = PVP_VALUE_CONDS.includes(rule.cond);
+    if (needsValue && rule.value == null) rule.value = 30;
+    const valueInput = el('input', {
+        class: 'pvp-num', type: 'number', min: '1', max: '99', inputmode: 'numeric',
+        value: String(rule.value),
+        oninput: e => { rule.value = Math.max(1, Math.min(99, Math.round(Number(e.target.value) || 1))); },
+        onblur: e => { e.target.value = String(rule.value); }
+    });
+    const skillSel = pvpSelect(
+        [['', '자동']].concat(skills.map(s => [s.name, s.name])),
+        rule.skill && skills.some(s => s.name === rule.skill) ? rule.skill : '',
+        v => { rule.skill = v || null; });
+    const move = (from, to) => {
+        if (to < 0 || to >= draft.rules.length) return;
+        draft.rules.splice(to, 0, draft.rules.splice(from, 1)[0]);
+        renderPvp();
+    };
+    return el('div', { class: 'pvp-rule' },
+        el('span', { class: 'pvp-rule-no' }, String(index + 1)),
+        pvpSelect(PVP_COND_OPTIONS, rule.cond, v => { rule.cond = v; renderPvp(); }),
+        needsValue ? valueInput : null,
+        pvpSelect(PVP_ACTION_OPTIONS, rule.action, v => { rule.action = v; renderPvp(); }),
+        rule.action === 'skill' ? skillSel : null,
+        el('div', { class: 'pvp-rule-btns' },
+            el('button', { class: 'pvp-mini', type: 'button', title: '위로', disabled: index === 0, onclick: () => move(index, index - 1) }, '▲'),
+            el('button', { class: 'pvp-mini', type: 'button', title: '아래로', disabled: index === draft.rules.length - 1, onclick: () => move(index, index + 1) }, '▼'),
+            el('button', { class: 'pvp-mini', type: 'button', onclick: () => { draft.rules.splice(index, 1); renderPvp(); } }, '삭제')));
+}
+
+function pvpRulesNode(d) {
+    const draft = pvpState.draft;
+    const skills = (d.defense && d.defense.skills) || [];
+    return pvpSection('방어 AI 규칙', '위에서부터 먼저 맞는 규칙을 실행',
+        draft.rules.length
+            ? el('div', { class: 'pvp-rules' }, ...draft.rules.map((r, i) => pvpRuleRow(r, i, skills)))
+            : el('div', { class: 'empty' }, '규칙이 없으면 항상 공격합니다.'),
+        el('div', { class: 'pvp-rule-actions' },
+            el('button', {
+                type: 'button', disabled: draft.rules.length >= PVP_MAX_RULES,
+                onclick: () => { draft.rules.push({ cond: 'always', value: null, action: 'attack', skill: null }); renderPvp(); }
+            }, '규칙 추가'),
+            el('button', {
+                type: 'button',
+                onclick: () => { draft.rules = PVP_DEFAULT_RULES.map(r => Object.assign({}, r)); renderPvp(); }
+            }, '기본값')));
+}
+
+function pvpRankingNode(d) {
+    const list = d.ranking || [];
+    const meName = d.me && d.me.name;
+    if (!list.length) return pvpSection('랭킹 TOP 3', null, el('div', { class: 'empty' }, '랭킹 정보가 없습니다.'));
+    return pvpSection('랭킹 TOP 3', null, el('div', { class: 'rank-list pvp-rank' },
+        ...list.map(e => el('div', { class: 'rank-row' + (e.name === meName ? ' me' : '') },
+            el('div', { class: 'rk ' + (e.rank === 1 ? 'gold' : e.rank === 2 ? 'silver' : e.rank === 3 ? 'bronze' : '') }, comma(e.rank) + '위'),
+            el('div', { class: 'ttl' }, e.cardImageUrl ? el('img', { class: 'pvp-rank-card', src: e.cardImageUrl, alt: e.cardName || '' }) : null),
+            el('div', { class: 'nm' }, e.name, el('span', { class: 'lv' }, 'Lv. ' + comma(e.level))),
+            el('div', { class: 'vl' }, comma(e.rating),
+                el('span', { class: 'pvp-rank-wl' }, comma(e.wins) + '승 ' + comma(e.losses) + '패'))))));
+}
+
+function pvpHistoryNode(d) {
+    const list = d.history || [];
+    if (!list.length) return pvpSection('최근 전적', null, el('div', { class: 'empty' }, '전적이 없습니다.'));
+    return pvpSection('최근 전적', null, el('div', { class: 'pvp-hist' },
+        ...list.map(h => el('div', { class: 'pvp-hist-row' },
+            el('span', { class: 'pvp-role ' + (h.role === 'defense' ? 'def' : 'atk') }, h.role === 'defense' ? '방어' : '공격'),
+            el('b', { class: 'pvp-hist-name' }, h.opponent),
+            el('span', { class: 'pvp-hist-result ' + (h.result === 'win' ? 'win' : 'lose') }, h.result === 'win' ? '승' : '패'),
+            el('span', { class: 'pvp-hist-delta ' + (h.result === 'win' ? 'win' : 'lose') },
+                (h.result === 'win' ? '+' : '−') + comma(Math.abs(Number(h.ratingDelta || 0)))),
+            el('span', { class: 'pvp-hist-time' }, mailRelTime(h.at))))));
+}
+
+async function refreshPvpOpponents() {
+    if (pvpState.busy) return;
+    if (!(await showConfirm('오늘의 상대를 새로고침할까요?\n이미 전투한 상대는 그대로 유지됩니다.'))) return;
+    pvpState.busy = true;
+    showLoading();
+    try {
+        const r = await postApi('/api/pvp/refresh');
+        if (r.ok === false) showAlert(r.message || '새로고침하지 못했습니다.');
+        else pvpState.data.daily = r.daily;
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        pvpState.busy = false;
+        hideLoading();
+        renderPvp();
+    }
+}
+
+function pvpRulePayload(rule) {
+    const payload = { cond: rule.cond, action: rule.action };
+    if (PVP_VALUE_CONDS.includes(rule.cond)) payload.value = Number(rule.value == null ? 30 : rule.value);
+    if (rule.action === 'skill' && rule.skill) payload.skill = rule.skill;
+    return payload;
+}
+
+async function savePvpDefense() {
+    if (pvpState.busy) return;
+    const draft = pvpState.draft;
+    if (!draft.useEquipped && !draft.mainCard) { showAlert('방어 메인 카드를 선택하세요.'); return; }
+    pvpState.busy = true;
+    showLoading();
+    try {
+        const r = await postApi('/api/pvp/defense', {
+            useEquipped: draft.useEquipped,
+            mainCard: draft.useEquipped || !draft.mainCard ? null : draft.mainCard.sig,
+            slotCards: draft.useEquipped ? [] : draft.slotCards.filter(Boolean).map(c => c.sig),
+            rules: draft.rules.map(pvpRulePayload)
+        });
+        if (r.ok === false) { showAlert(r.message || '저장하지 못했습니다.'); return; }
+        pvpState.data.defense = r.defense;
+        pvpState.draft = pvpDefenseDraft(r.defense);
+        showAlert(r.message || '방어 설정을 저장했습니다.');
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        pvpState.busy = false;
+        hideLoading();
+        renderPvp();
+    }
 }
 
 // ===== 랭킹 =====

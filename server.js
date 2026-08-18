@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const partyquest = require('./partyquest.js');
+const pvp = require('./pvp.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -60,6 +61,7 @@ const BANNER_TARGET_TABS = [
     { value: 'mail', label: '캐릭터 · 메일함' },
     { value: '캡슐', label: '콘텐츠 · 100일 캡슐' },
     { value: '[H]필드', label: '콘텐츠 · [H]필드' },
+    { value: 'pvp', label: '콘텐츠 · PVP' },
     { value: '버닝', label: '콘텐츠 · 버닝' },
     { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
     { value: 'combine', label: '콘텐츠 · 조합' },
@@ -422,6 +424,13 @@ server.get('/hfield', async (req, res) => {
     if (!sess || !sess.name) return res.redirect('/');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(renderHFieldApp(sess));
+});
+
+server.get('/pvp', async (req, res) => {
+    const sess = getSession(req);
+    if (!sess || !sess.name) return res.redirect('/');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderPvpApp(sess, String(req.query && req.query.opponent || '').slice(0, 40)));
 });
 
 server.get('/admin', (req, res) => {
@@ -2083,6 +2092,93 @@ server.post('/api/hfield/leave', requireUser, (req, res) => runHFieldMutation(re
     const message = rpgenius.leaveField(user);
     await user.save();
     return { ok: !String(message).startsWith('❌'), message, state: buildHFieldState(user) };
+}));
+
+// ===== PVP =====
+pvp.configure({ serializeCard, getCharacterSprite: getHFieldCharacterSprite });
+
+async function runPvpMutation(req, res, mutate) {
+    try {
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) throw new Error('유저를 찾을 수 없습니다.');
+            return mutate(user);
+        });
+        res.json(payload);
+    } catch (e) {
+        console.error('pvp action error:', e);
+        res.status(500).json({ error: e && e.message == '유저를 찾을 수 없습니다.' ? e.message : '서버 오류' });
+    }
+}
+
+server.get('/api/pvp', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const changed = await pvp.ensureDaily(user);
+    // 방치된 전투는 대시보드 조회 시점에 시간 초과로 정리한다
+    const current = pvp.ensurePvpState(user).battle;
+    const before = current ? current.phase + ':' + current.seq : '';
+    const battle = pvp.advanceBattle(user);
+    const payload = await pvp.buildPvpOverview(user);
+    if (changed || (battle && battle.phase + ':' + battle.seq != before)) await user.save();
+    return payload;
+}));
+
+server.post('/api/pvp/refresh', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = await pvp.refreshOpponents(user);
+    if (result.ok) await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/defense', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.saveDefense(user, req.body || {});
+    if (result.ok) await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/battle/start', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = await pvp.startBattle(user, String(req.body && req.body.opponent || '').trim().slice(0, 40));
+    if (result.ok) await user.save();
+    return result;
+}));
+
+// 전투 조회는 항상 AI 행동을 먼저 따라잡는다. 상태가 실제로 진행된 경우에만 저장한다.
+server.get('/api/pvp/battle', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const current = pvp.ensurePvpState(user).battle;
+    const before = current ? current.phase + ':' + current.seq : '';
+    const battle = pvp.advanceBattle(user);
+    if (battle && battle.phase + ':' + battle.seq != before) await user.save();
+    return pvp.buildBattleView(user, req.query && req.query.since);
+}));
+
+server.post('/api/pvp/battle/attack', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.playerAttack(user);
+    await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/battle/skill', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.playerSkill(user, String(req.body && req.body.skillName || '').trim().slice(0, 80));
+    await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/battle/defend', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.playerDefend(user);
+    await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/battle/forfeit', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.forfeit(user);
+    await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/battle/close', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = pvp.closeBattle(user);
+    await user.save();
+    return result;
 }));
 
 // ===== 버닝 =====
@@ -7289,6 +7385,9 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
+  <div class="page" data-page="pvp">
+    <section class="panel"><div id="pvpRoot"></div></section>
+  </div>
   <div class="page" data-page="버닝">
     <section class="panel"><div id="burningRoot"></div></section>
   </div>
@@ -7384,6 +7483,20 @@ function renderHFieldApp(sess) {
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/hfield.js"></script>
+</body></html>`;
+}
+
+function renderPvpApp(sess, opponent) {
+    return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>PVP</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<link rel="stylesheet" href="/static/pvp.css"></head><body>
+<main id="pvpStage" class="pvp-root" aria-label="PVP 대전">
+  <canvas id="pvpCanvas" aria-label="PVP 전투 화면"></canvas>
+  <canvas id="pvpHud"></canvas>
+</main>
+<script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
+<script src="/static/pvp.js"></script>
 </body></html>`;
 }
 

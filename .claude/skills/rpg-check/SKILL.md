@@ -8,11 +8,11 @@ description: Project consistency & sanity check for the tcgenius/RPGenius codeba
 Run after editing RPGenius code/data. Report each section pass/fail with the actual command output; do not claim pass without running. Run from the repo root in bash.
 
 ## 1. JS syntax (chained — `node -c a.js b.js` checks ONLY the first file)
-Running app graph: `new_engine.js` (Kakao bot entry) → `agent, wordchain, lol_chatbot, chatbot1, chatbot2, rpgenius (→ ragbot, transcend_equipment), hunter_colosseum, wollu, dc_write_utils, server (→ rpgenius, partyquest, webchat)`; browser bundles `public/{app,admin,party,hfield}.js`. (`old_engine.js`, `tcgenius.js`, `tcg_system.js`, `word_cli.js`, `tibo_x_bridge.js`, `backup-module.js` are not loaded.)
+Running app graph: `new_engine.js` (Kakao bot entry) → `agent, wordchain, lol_chatbot, chatbot1, chatbot2, rpgenius (→ ragbot, transcend_equipment), hunter_colosseum, wollu, dc_write_utils, server (→ rpgenius, partyquest, pvp, webchat)`; browser bundles `public/{app,admin,party,hfield,pvp}.js`. (`old_engine.js`, `tcgenius.js`, `tcg_system.js`, `word_cli.js`, `tibo_x_bridge.js`, `backup-module.js` are not loaded.)
 ```bash
-for f in new_engine.js server.js rpgenius.js partyquest.js transcend_equipment.js ragbot.js hunter_colosseum.js webchat.js wollu.js agent.js dc_write_utils.js wordchain.js chatbot1.js chatbot2.js lol_chatbot.js public/app.js public/admin.js public/party.js public/hfield.js; do node -c "$f" && echo "OK $f" || echo "FAIL $f"; done
+for f in new_engine.js server.js rpgenius.js partyquest.js pvp.js transcend_equipment.js ragbot.js hunter_colosseum.js webchat.js wollu.js agent.js dc_write_utils.js wordchain.js chatbot1.js chatbot2.js lol_chatbot.js public/app.js public/admin.js public/party.js public/hfield.js public/pvp.js; do node -c "$f" && echo "OK $f" || echo "FAIL $f"; done
 ```
-Minimum for RPGenius-only edits: `rpgenius.js partyquest.js server.js transcend_equipment.js public/app.js public/admin.js public/party.js public/hfield.js`.
+Minimum for RPGenius-only edits: `rpgenius.js partyquest.js pvp.js server.js transcend_equipment.js public/app.js public/admin.js public/party.js public/hfield.js public/pvp.js`.
 
 ## 2. JSON validity
 Every `DB/RPGenius/*.json` — a broken one silently 500s or, for disk-read files (CharacterCards/Skills/BaseStat/ExpTable/Dungeon/WorldBoss/ExtraSkills/EquipmentPassive/Potential/Orb/PetSet/titles/PartyQuest), breaks the game on the next read:
