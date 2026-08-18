@@ -18,10 +18,23 @@ const HISTORY_MAX = 20;
 const RULE_MAX = 8;
 const LADDER_TTL_MS = 60000;
 const SIVALON_BASIC_COOLDOWN_MS = 500;
+const ACTION_COOLDOWN_MAX_MS = 3000;   // 행동 쿨 2~3초의 상한 (전투 시작 시 초기 쿨로 사용)
+const DEFEND_DURATION_MS = 4000;       // 방어 지속 시간
+const DEFEND_COOLDOWN_MS = 10000;      // 방어 재사용 대기
+const START_COOLDOWN_CAP_MS = 60000;   // 전투 시작 시 스킬 초기 쿨 상한
 const SUMMON_TICK_MS = { '익테봇': 4000, '수나타': 5000 }; // 솔로 타이머 간격과 동일
 const MARK_TICK_MS = 2000;
 const ADVANCE_STEP_LIMIT = 400;
 const OPPONENT_KINDS = ['near', 'near', 'near', 'higher', 'random'];
+const EXTRA_PLAY_MAX = 2;      // 하루 유료 추가 플레이 횟수
+const EXTRA_PLAY_COST = 10;    // 1회당 가넷
+// 플레이 보상 (승패 무관, 전투 1회 종료마다 1개): 확률 합 1
+const PLAY_REWARD_TABLE = [
+    { chance: .40, label: '카드팩 상자', pick: items => items.filter(item => item && item.name == '카드팩 상자') },
+    { chance: .40, label: '랜덤 지렁이', pick: items => items.filter(item => item && item.type == '미끼' && String(item.name).includes('지렁이')) },
+    { chance: .10, label: '랜덤 쥬얼', pick: items => items.filter(item => item && item.type == '티켓' && String(item.name).includes('쥬얼')) },
+    { chance: .10, label: '지니어스의 열쇠', pick: items => items.filter(item => item && item.name == '지니어스의 열쇠') }
+];
 
 // ===== 상태 / 초기화 =====
 
@@ -36,12 +49,13 @@ function now() {
     return Number(clock());
 }
 
-let injected = { serializeCard: null, getCharacterSprite: null };
+let injected = { serializeCard: null, getCharacterSprite: null, getItemAssets: null };
 
 function configure(deps) {
     injected = {
         serializeCard: deps && deps.serializeCard || null,
-        getCharacterSprite: deps && deps.getCharacterSprite || null
+        getCharacterSprite: deps && deps.getCharacterSprite || null,
+        getItemAssets: deps && deps.getItemAssets || null
     };
 }
 
@@ -76,8 +90,9 @@ function ensurePvpState(user) {
     if (typeof state.battle == 'undefined') state.battle = null;
     if (!Array.isArray(state.history)) state.history = [];
     const today = rpgenius.getKoreanDateKey(new Date(now()));
-    if (!state.daily || state.daily.date != today) state.daily = { date: today, refreshUsed: 0, opponents: [] };
+    if (!state.daily || state.daily.date != today) state.daily = { date: today, refreshUsed: 0, extraUsed: 0, opponents: [] };
     if (!Array.isArray(state.daily.opponents)) state.daily.opponents = [];
+    if (typeof state.daily.extraUsed != 'number') state.daily.extraUsed = 0;
     return state;
 }
 
@@ -263,7 +278,8 @@ function makeSide(user, snapshot, rules) {
         mp: maxMp,
         maxMp,
         shield: null,
-        defending: false,
+        defendUntil: 0,        // 방어 상태 종료 시각 (4초 지속)
+        defendCooldownEnd: 0,  // 방어 재사용 가능 시각
         nextActionAt: 0,
         skillCooldowns: {},
         attackCount: 0,
@@ -286,6 +302,19 @@ function skillMpCost(side, skill) {
     const stats = side.snapshot.stats;
     const slotEffects = side.snapshot.slotEffects;
     return Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+}
+
+function skillCooldownMs(side, skill) {
+    const stats = side.snapshot.stats;
+    return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)));
+}
+
+function isDefending(side, t) {
+    return Number(side.defendUntil || 0) > t;
+}
+
+function defendUsable(side, t) {
+    return Number(side.defendCooldownEnd || 0) <= t;
 }
 
 function skillUsable(side, skill, t) {
@@ -317,7 +346,7 @@ function ruleConditionHolds(rule, actor, enemy, t) {
     if (rule.cond == 'enemyHpAbove') return enemy.hp / Math.max(1, enemy.maxHp) * 100 >= percent;
     if (rule.cond == 'mpBelow') return actor.mp / Math.max(1, actor.maxMp) * 100 <= percent;
     if (rule.cond == 'skillReady') return sideSkills(actor).some(skill => skillUsable(actor, skill, t));
-    if (rule.cond == 'enemyDefending') return !!enemy.defending;
+    if (rule.cond == 'enemyDefending') return isDefending(enemy, t);
     return false;
 }
 
@@ -330,6 +359,7 @@ function evaluateRules(actor, enemy, t) {
             if (!skillName) continue;
             return { action: 'skill', skillName };
         }
+        if (rule.action == 'defend' && !defendUsable(actor, t)) continue; // 방어 쿨타임 중이면 다음 규칙으로
         return { action: rule.action, skillName: null };
     }
     return { action: 'attack', skillName: null };
@@ -446,7 +476,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         damage = Math.round(damage * (1 - Number(nextReduction.value || 0)));
         delete defender.runtime.buffs.nextDamageReduction;
     }
-    if (defender.defending) damage = Math.round(damage * 0.5);
+    if (isDefending(defender, t)) damage = Math.round(damage * 0.5);
     const summon = defender.runtime.summon;
     if (summon && summon.hp != null && Number(summon.hp) > 0) {
         const absorb = Math.round(damage * 0.3);
@@ -496,8 +526,9 @@ function doBasicAttack(battle, actorKey, t) {
 
 function doDefend(battle, actorKey, t) {
     const actor = battle[actorKey];
-    actor.defending = true;
-    pushEvent(battle, { at: t, actor: actorKey, action: 'defend', text: actor.name + ' 방어 태세' });
+    actor.defendUntil = t + DEFEND_DURATION_MS;
+    actor.defendCooldownEnd = t + DEFEND_COOLDOWN_MS;
+    pushEvent(battle, { at: t, actor: actorKey, action: 'defend', text: actor.name + ' 방어 태세 (' + (DEFEND_DURATION_MS / 1000) + '초)' });
     actor.nextActionAt = t + actionCooldownMs(actor, false, t);
 }
 
@@ -514,8 +545,7 @@ function doSkill(battle, actorKey, skill, t) {
     const name = skill.name;
     const mpCost = skillMpCost(actor, skill);
     actor.mp = Math.max(0, actor.mp - mpCost);
-    const cooldown = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)));
-    actor.skillCooldowns[name] = t + cooldown;
+    actor.skillCooldowns[name] = t + skillCooldownMs(actor, skill);
     actor.nextActionAt = t + actionCooldownMs(actor, false, t);
     // 건력 상태에서 다른 스킬을 쓰면 해제된다
     if (name != '건력' && actor.runtime.gunryeok) clearGunryeok(actor);
@@ -670,7 +700,6 @@ function doMarkTick(battle, markedKey, t) {
 
 function doAiAction(battle, t) {
     const opp = battle.opp;
-    opp.defending = false;
     const decision = evaluateRules(opp, battle.me, t);
     if (decision.action == 'defend') return doDefend(battle, 'opp', t);
     if (decision.action == 'skill') {
@@ -777,7 +806,6 @@ function playerAttack(user) {
     if (guard.error) return { ok: false, message: guard.error, battle: buildBattleView(user, -1) };
     const battle = guard.battle;
     expireStates(battle, t);
-    battle.me.defending = false;
     doBasicAttack(battle, 'me', t);
     checkKo(user, battle, t);
     return { ok: true, message: '', battle: buildBattleView(user, -1) };
@@ -797,7 +825,6 @@ function playerSkill(user, skillName) {
     if (skill.name == '시벌론' && Number(battle.me.runtime.sivalonCharge || 0) < 5) {
         return { ok: false, message: '일반 공격을 5회 사용해야 시벌론을 사용할 수 있습니다.', battle: buildBattleView(user, -1) };
     }
-    battle.me.defending = false;
     doSkill(battle, 'me', skill, t);
     checkKo(user, battle, t);
     return { ok: true, message: '', battle: buildBattleView(user, -1) };
@@ -808,7 +835,7 @@ function playerDefend(user) {
     advanceBattle(user, t);
     const guard = playerActionGuard(user, t);
     if (guard.error) return { ok: false, message: guard.error, battle: buildBattleView(user, -1) };
-    guard.battle.me.defending = false;
+    if (!defendUsable(guard.battle.me, t)) return { ok: false, message: '방어 쿨타임입니다.', battle: buildBattleView(user, -1) };
     doDefend(guard.battle, 'me', t);
     return { ok: true, message: '', battle: buildBattleView(user, -1) };
 }
@@ -842,6 +869,31 @@ function cachedRating(name, fallback) {
     return entry ? Number(entry.rating) : Number(fallback);
 }
 
+// 같은 이름의 슬롯이 여럿일 수 있으므로(추가 플레이 재대결) 아직 대결하지 않은 슬롯을 우선 찾는다
+function findOpenSlot(state, opponentName) {
+    return (state.daily.opponents || []).find(entry => entry && entry.name == opponentName && !entry.result) || null;
+}
+
+// 플레이 보상: 승패 무관하게 전투 1회 종료마다 표에서 1개 지급. 아이템 데이터가 없으면 지급하지 않는다.
+function grantPlayReward(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    const roll = Math.random();
+    let sum = 0;
+    let entry = PLAY_REWARD_TABLE[PLAY_REWARD_TABLE.length - 1];
+    for (const candidate of PLAY_REWARD_TABLE) {
+        sum += candidate.chance;
+        if (roll < sum) { entry = candidate; break; }
+    }
+    const pool = entry.pick(items);
+    if (pool.length == 0) return null;
+    const item = pool[randomInt(0, pool.length - 1)];
+    const itemId = items.indexOf(item);
+    if (itemId < 0) return null;
+    rpgenius.addInventoryItem(user, itemId, 1);
+    const assets = injected.getItemAssets ? injected.getItemAssets(item) : {};
+    return { name: item.name, count: 1, iconUrl: assets && assets.iconUrl || null, frameUrl: assets && assets.frameUrl || null };
+}
+
 function finishBattle(user, battle, outcome, reason, t) {
     const state = ensurePvpState(user);
     battle.phase = 'ended';
@@ -854,42 +906,53 @@ function finishBattle(user, battle, outcome, reason, t) {
     state.rating = ratingAfter;
     if (outcome == 'win') state.wins = Number(state.wins || 0) + 1;
     else state.losses = Number(state.losses || 0) + 1;
+    const oppRatingAfter = Math.max(0, oppRating + oppDelta);
     battle.result = {
         outcome, reason,
         ratingBefore: myRating,
         ratingAfter,
         ratingDelta: ratingAfter - myRating,
-        oppRatingDelta: oppDelta,
-        endedAt: t
+        oppRatingBefore: oppRating,
+        oppRatingAfter,
+        oppRatingDelta: oppRatingAfter - oppRating,
+        endedAt: t,
+        reward: null
     };
-    const slot = (state.daily.opponents || []).find(entry => entry && entry.name == battle.opponent);
+    const slot = findOpenSlot(state, battle.opponent);
     if (slot) {
         slot.result = outcome;
         slot.ratingDelta = battle.result.ratingDelta;
+        slot.rating = oppRatingAfter; // 방어측 레이팅 변화를 상대 목록에도 바로 반영
         slot.foughtAt = t;
     }
-    pushHistory(user, { at: t, opponent: battle.opponent, role: 'attack', result: outcome, ratingDelta: battle.result.ratingDelta, reason });
+    const reward = grantPlayReward(user);
+    battle.result.reward = reward;
+    if (slot) slot.reward = reward ? reward.name : null;
+    pushHistory(user, { at: t, opponent: battle.opponent, role: 'attack', result: outcome, ratingDelta: battle.result.ratingDelta, reason, reward: reward ? reward.name : null });
     patchLadderEntry(user.name, state);
-    // 상대 레코드는 상대 계정 큐에서 별도로 갱신한다 (서로의 큐를 기다리며 교착되지 않도록 대기하지 않는다).
-    propagateOpponentResult(battle, t).catch(e => console.error('pvp 상대 전적 반영 실패:', e && e.message || e));
+    // 방어측(상대) 레이팅/전적은 상대 계정 큐에서 갱신한다 (서로의 큐를 기다리며 교착되지 않도록 대기하지 않는다).
+    propagateOpponentResult(battle, t).catch(e => console.error('pvp 방어측 레이팅 반영 실패 (' + battle.opponent + '):', e && e.message || e));
 }
 
+// 방어측 레이팅 반영: 상대 레코드를 새로 읽어 ∓Δ 적용 + 방어 전적 기록 + 저장
 async function propagateOpponentResult(battle, t) {
     const oppName = battle.opponent;
-    if (battle.opp.userId == null) return;
-    await rpgenius.enqueueFieldAction({ id: battle.opp.userId, name: oppName }, async () => {
+    const delta = Number(battle.result.oppRatingDelta || 0);
+    const result = battle.result.outcome == 'win' ? 'lose' : 'win';
+    const applyToOpponent = async () => {
         const target = await rpgenius.getRPGUserByName(oppName);
-        if (!target) return;
+        if (!target) throw new Error('상대 유저를 찾을 수 없습니다.');
         const state = ensurePvpState(target);
-        const delta = Number(battle.result.oppRatingDelta || 0);
         state.rating = Math.max(0, Number(state.rating || RATING_START) + delta);
-        const result = battle.result.outcome == 'win' ? 'lose' : 'win';
         if (result == 'win') state.wins = Number(state.wins || 0) + 1;
         else state.losses = Number(state.losses || 0) + 1;
         pushHistory(target, { at: t, opponent: battle.me.name, role: 'defense', result, ratingDelta: delta, reason: battle.result.reason });
         await target.save();
         patchLadderEntry(oppName, state);
-    });
+    };
+    const seed = battle.opp.userId != null ? { id: battle.opp.userId, name: oppName } : await rpgenius.getRPGUserByName(oppName);
+    if (!seed) throw new Error('상대 유저를 찾을 수 없습니다.');
+    await rpgenius.enqueueFieldAction(seed, applyToOpponent);
 }
 
 // ===== 매칭 / 랭킹 캐시 =====
@@ -1041,6 +1104,21 @@ async function refreshOpponents(user) {
     return { ok: true, message: '오늘의 상대를 새로 뽑았습니다.', daily: buildDailyView(user) };
 }
 
+// 유료 추가 플레이: 가넷을 내고 상대 슬롯 1개를 추가한다 (레이팅 근접 매칭, 이미 대결한 상대와의 재대결 허용).
+async function buyExtraPlay(user) {
+    const state = ensurePvpState(user);
+    if (Number(state.daily.extraUsed || 0) >= EXTRA_PLAY_MAX) return { ok: false, message: '오늘의 추가 플레이 횟수를 모두 사용했습니다.' };
+    if (Number(user.garnet || 0) < EXTRA_PLAY_COST) return { ok: false, message: '가넷이 부족합니다. (' + EXTRA_PLAY_COST + '가넷 필요)' };
+    const open = (state.daily.opponents || []).filter(slot => slot && !slot.result).map(slot => slot.name);
+    const rolled = pickOpponents(user, await getLadder(false), ['near'], open);
+    if (rolled.length == 0) return { ok: false, message: '추가로 매칭할 상대가 없습니다.' };
+    rolled[0].kind = 'extra';
+    user.garnet = Number(user.garnet || 0) - EXTRA_PLAY_COST;
+    state.daily.opponents.push(rolled[0]);
+    state.daily.extraUsed = Number(state.daily.extraUsed || 0) + 1;
+    return { ok: true, message: '추가 상대가 매칭되었습니다. (가넷 -' + EXTRA_PLAY_COST + ')', daily: buildDailyView(user), garnet: Number(user.garnet || 0) };
+}
+
 // ===== 전투 시작 =====
 
 async function startBattle(user, opponentName) {
@@ -1048,9 +1126,9 @@ async function startBattle(user, opponentName) {
     await ensureDaily(user);
     advanceBattle(user); // 방치된 전투는 시간 초과로 먼저 정리한다
     if (state.battle && state.battle.phase != 'ended') return { ok: false, message: '이미 진행 중인 전투가 있습니다.' };
-    const slot = (state.daily.opponents || []).find(entry => entry && entry.name == opponentName);
-    if (!slot) return { ok: false, message: '오늘의 상대 목록에 없는 상대입니다.' };
-    if (slot.result) return { ok: false, message: '이미 대결한 상대입니다.' };
+    const listed = (state.daily.opponents || []).some(entry => entry && entry.name == opponentName);
+    if (!listed) return { ok: false, message: '오늘의 상대 목록에 없는 상대입니다.' };
+    if (!findOpenSlot(state, opponentName)) return { ok: false, message: '이미 대결한 상대입니다.' };
     if (!user.main_card || typeof user.main_card.id == 'undefined') return { ok: false, message: '메인 카드를 먼저 장착해주세요.' };
     const opponent = await rpgenius.getRPGUserByName(opponentName);
     if (!opponent) return { ok: false, message: '상대를 찾을 수 없습니다.' };
@@ -1060,8 +1138,14 @@ async function startBattle(user, opponentName) {
     const me = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), null);
     const opp = makeSide(opponent, buildSideSnapshot(opponent, oppDeck), oppDeck.rules);
     const startedAt = t + COUNTDOWN_MS;
-    opp.nextActionAt = startedAt + randomInt(2000, 3000);
-    me.nextActionAt = startedAt;
+    // 시작 시 모든 행동을 최대 쿨타임 상태로 둔다: 일반 행동 3초, 방어 10초, 스킬은 각자 쿨타임(최대 60초)
+    [me, opp].forEach(side => {
+        side.nextActionAt = startedAt + ACTION_COOLDOWN_MAX_MS;
+        side.defendCooldownEnd = startedAt + DEFEND_COOLDOWN_MS;
+        sideSkills(side).forEach(skill => {
+            side.skillCooldowns[skill.name] = startedAt + Math.min(START_COOLDOWN_CAP_MS, Math.round(skillCooldownMs(side, skill)));
+        });
+    });
     state.battle = {
         id: 'pvp' + t.toString(36) + Math.random().toString(36).slice(2, 8),
         opponent: opponentName,
@@ -1110,7 +1194,9 @@ function buildSideView(side) {
         mp: side.mp,
         maxMp: side.maxMp,
         shield: Number(side.shield && side.shield.amount || 0),
-        defending: !!side.defending,
+        defending: isDefending(side, now()),
+        defendUntil: Number(side.defendUntil || 0),
+        defendCooldownEnd: Number(side.defendCooldownEnd || 0),
         nextActionAt: Number(side.nextActionAt || 0),
         cardName: display.cardName || '',
         cardFormatted: display.cardFormatted || '',
@@ -1154,7 +1240,10 @@ function buildBattleView(user, since) {
             ratingBefore: battle.result.ratingBefore,
             ratingAfter: battle.result.ratingAfter,
             ratingDelta: battle.result.ratingDelta,
-            oppRatingDelta: battle.result.oppRatingDelta
+            oppRatingBefore: battle.result.oppRatingBefore,
+            oppRatingAfter: battle.result.oppRatingAfter,
+            oppRatingDelta: battle.result.oppRatingDelta,
+            reward: battle.result.reward || null
         } : null
     };
 }
@@ -1163,13 +1252,18 @@ function buildDailyView(user) {
     const daily = user.pvp.daily;
     const battlesUsed = (daily.opponents || []).filter(slot => slot && slot.result).length;
     const refreshUsed = Number(daily.refreshUsed || 0);
+    const extraUsed = Number(daily.extraUsed || 0);
     return {
         date: daily.date,
         battlesUsed,
-        battlesMax: DAILY_BATTLE_MAX,
+        battlesMax: DAILY_BATTLE_MAX + extraUsed,
         refreshUsed,
         refreshMax: DAILY_REFRESH_MAX,
         canRefresh: refreshUsed < DAILY_REFRESH_MAX && (daily.opponents || []).some(slot => slot && !slot.result),
+        extraUsed,
+        extraMax: EXTRA_PLAY_MAX,
+        extraCost: EXTRA_PLAY_COST,
+        canBuyExtra: extraUsed < EXTRA_PLAY_MAX,
         opponents: (daily.opponents || []).map(slot => ({
             name: slot.name,
             level: slot.level,
@@ -1182,7 +1276,8 @@ function buildDailyView(user) {
             spriteUrl: slot.spriteUrl || null,
             kind: slot.kind,
             result: slot.result,
-            ratingDelta: Number(slot.ratingDelta || 0)
+            ratingDelta: Number(slot.ratingDelta || 0),
+            reward: slot.reward || null
         }))
     };
 }
@@ -1245,6 +1340,7 @@ async function buildPvpOverview(user) {
             wins: Number(state.wins || 0),
             losses: Number(state.losses || 0),
             rank: myRank ? myRank.rank : null,
+            garnet: Number(user.garnet || 0),
             mainCard: mainCard ? {
                 name: mainCard.name,
                 formatted: mainCard.formatted,
@@ -1264,7 +1360,8 @@ async function buildPvpOverview(user) {
             role: entry.role,
             result: entry.result,
             ratingDelta: Number(entry.ratingDelta || 0),
-            reason: entry.reason
+            reason: entry.reason,
+            reward: entry.reward || null
         })),
         battle: battle ? {
             active: battle.phase != 'ended',
@@ -1296,6 +1393,7 @@ module.exports = {
     getLadder,
     generateOpponents,
     refreshOpponents,
+    buyExtraPlay,
     buildBattleView,
     buildPvpOverview,
     DEFAULT_RULES,

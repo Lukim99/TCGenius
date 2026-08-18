@@ -147,7 +147,7 @@ function ruleSide(over) {
     return Object.assign({
         name: '규칙',
         hp: 100, maxHp: 100, mp: 100, maxMp: 100,
-        defending: false,
+        defendUntil: 0, defendCooldownEnd: 0,
         skillCooldowns: {},
         rules: null,
         runtime: { buffs: {}, nmmStacks: 0, sivalonCharge: 0, sivalon: null, gunryeok: null, summon: null, mark: null },
@@ -173,13 +173,17 @@ assert.deepStrictEqual(
     { action: 'attack', skillName: null },
     '어떤 규칙도 만족하지 않으면 공격해야 한다.');
 assert.deepStrictEqual(
-    pvp.evaluateRules(ruleSide({ rules: [{ cond: 'enemyDefending', action: 'skill', skill: '글버지' }, { cond: 'always', action: 'attack' }] }), ruleSide({ defending: true }), BASE),
+    pvp.evaluateRules(ruleSide({ rules: [{ cond: 'enemyDefending', action: 'skill', skill: '글버지' }, { cond: 'always', action: 'attack' }] }), ruleSide({ defendUntil: BASE + 4000 }), BASE),
     { action: 'skill', skillName: '글버지' },
     '상대 방어 중 조건과 지정 스킬이 동작해야 한다.');
 assert.deepStrictEqual(
     pvp.evaluateRules(ruleSide({ skillCooldowns: { '글버지': BASE + 5000 }, rules: [{ cond: 'always', action: 'skill', skill: '글버지' }, { cond: 'always', action: 'defend' }] }), enemySide, BASE),
     { action: 'defend', skillName: null },
     '지정 스킬이 쿨타임이면 다음 규칙으로 넘어가야 한다.');
+assert.deepStrictEqual(
+    pvp.evaluateRules(ruleSide({ defendCooldownEnd: BASE + 5000, rules: [{ cond: 'always', action: 'defend' }, { cond: 'always', action: 'attack' }] }), enemySide, BASE),
+    { action: 'attack', skillName: null },
+    '방어가 쿨타임이면 다음 규칙으로 넘어가야 한다.');
 
 // ===== 6. 전투 시뮬레이션 =====
 
@@ -218,6 +222,14 @@ const fakeDb = {};
 rpg.getRPGUserByName = async name => fakeDb[name] || null;
 rpg.getAllRPGUsers = async () => Object.keys(fakeDb).map(name => fakeDb[name]);
 rpg.enqueueFieldAction = (seed, task) => Promise.resolve().then(task);
+// 플레이 보상 표가 참조하는 아이템 정의 (DynamoDB 로드와 무관하게 결정적으로 검증)
+const FAKE_ITEMS = [
+    { name: '지니어스의 열쇠', type: '재료' }, { name: '카드팩 상자', type: '가챠' },
+    { name: '딜러 지렁이', type: '미끼' }, { name: '익명 지렁이', type: '미끼' },
+    { name: '쥬얼', type: '티켓' }, { name: '화이트 쥬얼', type: '티켓' }, { name: '쥬얼 패키지', type: '번들' }
+];
+const REWARD_NAMES = new Set(['지니어스의 열쇠', '카드팩 상자', '딜러 지렁이', '익명 지렁이', '쥬얼', '화이트 쥬얼']);
+rpg.getDataCache = (key, fallback) => key == 'Item' ? FAKE_ITEMS : fallback;
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const advanceTo = ms => { clock = Math.max(clock, ms); };
@@ -274,6 +286,17 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.strictEqual(battle1.phase, 'fight');
     assert.ok(battle1.events.some(event => event.action == 'start'), '전투 시작 이벤트가 있어야 한다.');
 
+    // --- 시작 시 모든 행동은 최대 쿨타임 상태 (일반 행동 3초, 방어 10초, 스킬은 각자 쿨 ≤ 60초) ---
+    [battle1.me, battle1.opp].forEach(side => {
+        assert.strictEqual(side.nextActionAt, battle1.startedAt + 3000, '시작 시 일반 행동 쿨타임은 3초여야 한다.');
+        assert.strictEqual(side.defendCooldownEnd, battle1.startedAt + 10000, '시작 시 방어 쿨타임은 10초여야 한다.');
+    });
+    assert.strictEqual(battle1.me.skillCooldowns['글버지'], battle1.startedAt + 24000, '스킬은 자기 쿨타임(24초)만큼 대기해야 한다.');
+    assert.strictEqual(battle1.me.skillCooldowns['핫식스의정력'], battle1.startedAt + 60000, '스킬 초기 쿨타임은 60초를 넘지 않아야 한다.');
+    assert.strictEqual(pvp.playerAttack(attacker).message, '아직 행동할 수 없습니다.');
+    assert.strictEqual(pvp.playerDefend(attacker).message, '아직 행동할 수 없습니다.');
+
+    advanceTo(battle1.me.nextActionAt);
     const oppHpBefore = battle1.opp.hp;
     const attacked = pvp.playerAttack(attacker);
     assert.ok(attacked.ok, attacked.message);
@@ -288,15 +311,39 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.strictEqual(tooSoon.ok, false);
     assert.strictEqual(tooSoon.message, '아직 행동할 수 없습니다.');
 
-    // --- 방어 ---
-    advanceTo(battle1.me.nextActionAt);
+    // --- 방어: 4초 지속, 10초 재사용 대기, 다른 행동을 해도 지속 시간 동안 유지 ---
+    advanceTo(Math.max(battle1.me.nextActionAt, battle1.me.defendCooldownEnd));
     const defended = pvp.playerDefend(attacker);
     assert.ok(defended.ok, defended.message);
-    assert.strictEqual(battle1.me.defending, true, '방어 태세가 설정돼야 한다.');
+    assert.strictEqual(battle1.me.defendUntil, clock + 4000, '방어는 4초간 유지돼야 한다.');
+    assert.strictEqual(battle1.me.defendCooldownEnd, clock + 10000, '방어 쿨타임은 10초여야 한다.');
     assert.ok(battle1.events.some(event => event.action == 'defend'), '방어 이벤트가 있어야 한다.');
+    const defendedAt = clock;
+    advanceTo(battle1.me.nextActionAt);
+    assert.strictEqual(pvp.playerDefend(attacker).message, '방어 쿨타임입니다.', '방어 쿨타임 중에는 다시 방어할 수 없다.');
+    // 방어 중 받는 피해 -50%: 같은 피해를 방어 중/방어 후에 넣어 비교 (변량 ±2%라 20% 이상 차이면 절반 적용으로 본다)
+    {
+        const savedRules = battle1.opp.rules;
+        battle1.opp.rules = [{ cond: 'always', value: null, action: 'attack', skill: null }]; // 비교 동안 AI는 일반 공격만
+        const hpBefore = battle1.me.hp;
+        battle1.opp.nextActionAt = clock;
+        pvp.advanceBattle(attacker); // 방어 중 AI 공격
+        const guardedLoss = hpBefore - battle1.me.hp;
+        assert.ok(guardedLoss >= 0);
+        battle1.me.hp = hpBefore;
+        clock = defendedAt + 4001;
+        battle1.opp.nextActionAt = clock;
+        pvp.advanceBattle(attacker); // 방어 종료 후 AI 공격
+        const openLoss = hpBefore - battle1.me.hp;
+        battle1.me.hp = hpBefore;
+        assert.ok(pvp.buildBattleView(attacker, -1).me.defending === false, '4초가 지나면 방어가 풀려야 한다.');
+        assert.ok(guardedLoss > 0 && openLoss > 0, 'AI 일반 공격이 두 번 모두 들어가야 한다.');
+        assert.ok(guardedLoss < openLoss * 0.8, '방어 중 피해(' + guardedLoss + ')는 방어 후 피해(' + openLoss + ')보다 확실히 작아야 한다.');
+        battle1.opp.rules = savedRules;
+    }
 
     // --- 스킬 (보호막) ---
-    advanceTo(battle1.me.nextActionAt);
+    advanceTo(Math.max(battle1.me.nextActionAt, battle1.me.skillCooldowns['글버지']));
     const mpBefore = battle1.me.mp;
     const skilled = pvp.playerSkill(attacker, '글버지');
     assert.ok(skilled.ok, skilled.message);
@@ -304,7 +351,6 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.ok(battle1.me.skillCooldowns['글버지'] > clock, '스킬 쿨타임이 설정돼야 한다.');
     assert.ok(battle1.me.shield && battle1.me.shield.amount > 0, '글버지는 보호막을 부여해야 한다.');
     assert.ok(battle1.events.some(event => event.action == 'shield'), '보호막 이벤트가 있어야 한다.');
-    assert.strictEqual(battle1.me.defending, false, '다른 행동을 하면 방어 태세가 풀려야 한다.');
 
     advanceTo(battle1.me.nextActionAt);
     const onCooldown = pvp.playerSkill(attacker, '글버지');
@@ -314,7 +360,8 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
 
     // --- AI 캐치업 ---
     const seqBefore = battle1.seq;
-    advanceTo(BASE + 3000 + 20000);
+    battle1.me.hp = battle1.me.maxHp; // 캐치업 구간 동안 KO되지 않도록 체력을 채운다
+    advanceTo(clock + 20000);
     pvp.advanceBattle(attacker);
     const newEvents = battle1.events.filter(event => event.seq > seqBefore);
     assert.ok(newEvents.length >= 5, 'AI가 밀린 시간만큼 행동해야 한다.');
@@ -355,6 +402,9 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     const foughtSlot = attacker.pvp.daily.opponents.find(slot => slot.name == slotNames[0]);
     assert.strictEqual(foughtSlot.result, 'win');
     assert.strictEqual(foughtSlot.ratingDelta, battle1.result.ratingDelta);
+    assert.strictEqual(battle1.result.oppRatingBefore, oppRatingBefore);
+    assert.strictEqual(battle1.result.oppRatingAfter, oppRatingBefore - battle1.result.ratingDelta, '결과에 방어측 레이팅 변화가 담겨야 한다.');
+    assert.strictEqual(foughtSlot.rating, battle1.result.oppRatingAfter, '상대 슬롯 표시 레이팅도 갱신돼야 한다.');
 
     await flush();
     assert.strictEqual(defender1.pvp.rating, oppRatingBefore - battle1.result.ratingDelta, '상대 레이팅도 반대로 움직여야 한다.');
@@ -429,11 +479,59 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.ok(attacker.pvp.rating >= 0, '레이팅은 0 밑으로 내려가지 않아야 한다.');
     assert.strictEqual((await pvp.startBattle(attacker, slotNames[0])).ok, false, '하루 5회를 모두 사용하면 더 싸울 수 없다.');
 
+    // --- 플레이 보상: 승패/사유와 무관하게 전투마다 1개, 표의 아이템만, 인벤토리에 실제 지급 ---
+    [battle1, battle2, battle3, battle4, battle5].forEach(battle => {
+        assert.ok(battle.result.reward && REWARD_NAMES.has(battle.result.reward.name), '전투마다 보상 표의 아이템이 지급돼야 한다: ' + JSON.stringify(battle.result.reward));
+        assert.strictEqual(battle.result.reward.count, 1);
+    });
+    assert.strictEqual(attacker.inventory.item.reduce((sum, entry) => sum + Number(entry.count || 0), 0), 5, '보상 5개가 인벤토리에 들어가야 한다.');
+    assert.ok(attacker.inventory.item.every(entry => REWARD_NAMES.has(FAKE_ITEMS[entry.id].name)));
+    assert.ok(attacker.pvp.history.every(entry => REWARD_NAMES.has(entry.reward)), '전적에도 보상 이름이 기록돼야 한다.');
+    assert.ok(attacker.pvp.daily.opponents.every(slot => REWARD_NAMES.has(slot.reward)));
+
+    // --- 유료 추가 플레이 (10가넷, 하루 2회, 이미 대결한 상대와 재대결 허용) ---
+    attacker.garnet = 5;
+    const poor = await pvp.buyExtraPlay(attacker);
+    assert.strictEqual(poor.ok, false);
+    assert.strictEqual(poor.message, '가넷이 부족합니다. (10가넷 필요)');
+    attacker.garnet = 25;
+    const extra1 = await pvp.buyExtraPlay(attacker);
+    assert.ok(extra1.ok, extra1.message);
+    assert.strictEqual(attacker.garnet, 15, '추가 플레이 1회에 가넷 10을 내야 한다.');
+    assert.strictEqual(attacker.pvp.daily.opponents.length, 6);
+    assert.strictEqual(attacker.pvp.daily.opponents[5].kind, 'extra');
+    assert.strictEqual(attacker.pvp.daily.opponents[5].result, null);
+    assert.strictEqual(extra1.daily.battlesMax, 6);
+    assert.strictEqual(extra1.daily.extraUsed, 1);
+    const extra2 = await pvp.buyExtraPlay(attacker);
+    assert.ok(extra2.ok, extra2.message);
+    assert.strictEqual(attacker.garnet, 5);
+    assert.strictEqual(attacker.pvp.daily.opponents.length, 7);
+    const extra3 = await pvp.buyExtraPlay(attacker);
+    assert.strictEqual(extra3.ok, false, '추가 플레이는 하루 2회까지다.');
+    assert.strictEqual(attacker.garnet, 5, '거절된 구매는 가넷을 차감하지 않아야 한다.');
+    // 재대결: 같은 이름의 대결 완료 슬롯이 있어도 새 추가 슬롯으로 전투가 열리고 결과도 그 슬롯에 기록된다
+    const extraName = attacker.pvp.daily.opponents[5].name;
+    const battle6 = await openBattle(extraName);
+    advanceTo(BASE + 4000);
+    assert.ok(pvp.forfeit(attacker).ok);
+    await flush();
+    pvp.closeBattle(attacker);
+    const sameName = attacker.pvp.daily.opponents.filter(slot => slot.name == extraName);
+    assert.ok(sameName.length >= 2 && sameName.every(slot => slot.result), '재대결 결과는 추가 슬롯에 기록돼야 한다.');
+    assert.ok(battle6.result.reward, '추가 플레이도 보상을 받아야 한다.');
+    assert.strictEqual(attacker.pvp.losses, 4);
+
     // --- 대시보드 페이로드 ---
     const overview = await pvp.buildPvpOverview(attacker);
     assert.strictEqual(overview.ok, true);
-    assert.strictEqual(overview.daily.battlesUsed, 5);
-    assert.strictEqual(overview.daily.battlesMax, 5);
+    assert.strictEqual(overview.daily.battlesUsed, 6);
+    assert.strictEqual(overview.daily.battlesMax, 7);
+    assert.strictEqual(overview.daily.extraUsed, 2);
+    assert.strictEqual(overview.daily.extraMax, 2);
+    assert.strictEqual(overview.daily.extraCost, 10);
+    assert.strictEqual(overview.daily.canBuyExtra, false);
+    assert.strictEqual(overview.me.garnet, 5);
     assert.strictEqual(overview.daily.canRefresh, false);
     assert.strictEqual(overview.me.name, attacker.name);
     assert.strictEqual(overview.me.rating, attacker.pvp.rating);
@@ -444,7 +542,8 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.strictEqual(overview.defense.slotCards.length, 5);
     assert.ok(Array.isArray(overview.defense.rules) && overview.defense.rules.length > 0);
     assert.ok(Array.isArray(overview.cards) && overview.cards.every(card => card.sig && card.location));
-    assert.strictEqual(overview.history.length, 5);
+    assert.strictEqual(overview.history.length, 6);
+    assert.ok(overview.history.every(entry => REWARD_NAMES.has(entry.reward)));
     assert.strictEqual(overview.battle, null);
 
     console.log('pvp_engine.test.js: OK');

@@ -6080,7 +6080,7 @@ async function loadProfile(name) {
 }
 
 // ===== PVP =====
-const PVP_KIND_LABELS = { near: '근접', higher: '상위', random: '랜덤' };
+const PVP_KIND_LABELS = { near: '근접', higher: '상위', random: '랜덤', extra: '추가' };
 const PVP_COND_OPTIONS = [
     ['always', '항상'], ['hpBelow', '내 HP ≤ N%'], ['hpAbove', '내 HP ≥ N%'],
     ['enemyHpBelow', '상대 HP ≤ N%'], ['enemyHpAbove', '상대 HP ≥ N%'], ['mpBelow', '내 MP ≤ N%'],
@@ -6160,12 +6160,16 @@ function pvpMeNode(d) {
     const me = d.me || {};
     const daily = d.daily || {};
     const refreshLeft = Math.max(0, Number(daily.refreshMax || 0) - Number(daily.refreshUsed || 0));
+    const extraLeft = Math.max(0, Number(daily.extraMax || 0) - Number(daily.extraUsed || 0));
     const battle = d.battle;
     return el('section', { class: 'pvp-section pvp-me' },
         el('div', { class: 'pvp-section-head' },
             el('h3', null, 'PVP'),
-            el('button', { class: 'pvp-refresh', type: 'button', disabled: !daily.canRefresh || pvpState.busy, onclick: refreshPvpOpponents },
-                '새로고침 (남은 ' + refreshLeft + '회)')),
+            el('div', { class: 'pvp-head-btns' },
+                el('button', { class: 'pvp-refresh', type: 'button', disabled: !daily.canRefresh || pvpState.busy, onclick: refreshPvpOpponents },
+                    '새로고침 (남은 ' + refreshLeft + '회)'),
+                el('button', { class: 'pvp-extra', type: 'button', disabled: !daily.canBuyExtra || pvpState.busy, onclick: buyPvpExtraPlay },
+                    '추가 플레이 ' + comma(daily.extraCost || 0) + '가넷 (남은 ' + extraLeft + '회)'))),
         el('div', { class: 'pvp-me-grid' },
             el('div', { class: 'pvp-rating' },
                 el('span', { class: 'pvp-metric-label' }, '레이팅'),
@@ -6197,7 +6201,8 @@ function pvpOpponentTile(o) {
         el('div', { class: 'pvp-opp-name' }, o.name),
         el('div', { class: 'pvp-opp-meta' }, 'Lv. ' + comma(o.level), el('span', null, comma(o.rating))),
         done
-            ? el('div', { class: 'pvp-opp-result ' + o.result }, (o.result === 'win' ? '승 +' : '패 −') + comma(delta))
+            ? el('div', { class: 'pvp-opp-result ' + o.result }, (o.result === 'win' ? '승 +' : '패 −') + comma(delta),
+                o.reward ? el('span', { class: 'pvp-opp-reward' }, o.reward) : null)
             : el('button', { class: 'primary pvp-opp-btn', type: 'button', onclick: () => pvpGoBattle(o.name) }, '도전'));
 }
 
@@ -6356,7 +6361,31 @@ function pvpHistoryNode(d) {
             el('span', { class: 'pvp-hist-result ' + (h.result === 'win' ? 'win' : 'lose') }, h.result === 'win' ? '승' : '패'),
             el('span', { class: 'pvp-hist-delta ' + (h.result === 'win' ? 'win' : 'lose') },
                 (h.result === 'win' ? '+' : '−') + comma(Math.abs(Number(h.ratingDelta || 0)))),
+            h.reward ? el('span', { class: 'pvp-hist-reward' }, h.reward) : null,
             el('span', { class: 'pvp-hist-time' }, mailRelTime(h.at))))));
+}
+
+async function buyPvpExtraPlay() {
+    if (pvpState.busy) return;
+    const daily = pvpState.data.daily || {};
+    if (!(await showConfirm('가넷 ' + comma(daily.extraCost || 0) + '개를 사용해 상대를 1명 추가할까요?\n(보유 가넷 ' + comma(pvpState.data.me && pvpState.data.me.garnet) + ')'))) return;
+    pvpState.busy = true;
+    showLoading();
+    try {
+        const r = await postApi('/api/pvp/extra');
+        if (r.ok === false) showAlert(r.message || '추가 플레이를 구매하지 못했습니다.');
+        else {
+            pvpState.data.daily = r.daily;
+            if (pvpState.data.me) pvpState.data.me.garnet = r.garnet;
+            showAlert(r.message || '상대가 추가되었습니다.');
+        }
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        pvpState.busy = false;
+        hideLoading();
+        renderPvp();
+    }
 }
 
 async function refreshPvpOpponents() {

@@ -247,7 +247,7 @@
             this.draw(null, x, .83, narrow ? .4 : .27, .11, { mode: 1, color: mirror ? [1,.14,.2,.24] : [.08,.45,1,.25] });
             this.draw(texture, x, y, width, fit.height, { flash: time < anim.hitUntil ? .75 : 0 });
             const pulse = time - anim.defendAt < 620 ? 1 - (time - anim.defendAt) / 620 : 0;
-            if (info && info.defending) {
+            if (info && Number(info.defendUntil || 0) > now()) {
                 const wave = reducedMotion ? .5 : (Math.sin(time / 380) + 1) * .5;
                 this.draw(null, x, y + .02, Math.abs(fit.width) * 1.5, fit.height * 1.16, { mode: 4, color: [.45,.78,1, .3 + wave * .24 + pulse * .4] });
             } else if (pulse > 0) {
@@ -340,7 +340,7 @@
             this.text(side.name,infoX,y+15,narrow?12:14,900,'left','#ffeae5',infoW-52);
             this.text('Lv. '+number(side.level),infoRight,y+15,9,800,'right','#c9c8c5');
             this.text('레이팅 '+number(side.rating),infoX,y+32,9,700,'left','#e8b04b',infoW-52);
-            if(side.defending)this.badge(infoRight,y+25,'방어 중','#7ec4ff');
+            if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+25,'방어 중','#7ec4ff');
             const hpY=y+(narrow?46:52),mpY=y+(narrow?66:72);
             this.bar(infoX,hpY,infoW,6,side.hp,side.maxHp,'#b92d2d',side.shield);
             this.text(number(side.hp)+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
@@ -355,7 +355,7 @@
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(232,176,75,.72)';c.stroke();
             this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52);
-            if(side.defending)this.badge(infoRight,y+9,'방어 중','#7ec4ff');
+            if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+9,'방어 중','#7ec4ff');
             this.text(side.cardFormatted||[side.cardSkin,side.cardName].filter(Boolean).join(' '),infoX,y+34,narrow?8:10,700,'left','#aeb4bf',infoW);
             const hpTextY=y+(narrow?48:52),hpBarY=y+(narrow?54:59),mpTextY=y+(narrow?65:71),mpBarY=y+(narrow?71:78);
             this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');
@@ -401,7 +401,8 @@
                 this.actionButton(x+index*(sw+gap),y,sw,ah,{label:String(skill.name||'').slice(0,6),sub:number(skill.mpCost)+' MP',key:String(index+1),disabled:busy||locked||left>0||mpLow,cooldown:Math.max(0,left),action:()=>useSkill(skill.name)});
             });
             const dx=x+skills.length*(sw+gap);
-            this.actionButton(dx,y,defendW,ah,{label:'방어',sub:'D',kind:'defend',disabled:busy||locked||actionLeft>0,cooldown:actionLeft,action:()=>defend()});
+            const defendLeft=Math.max(actionLeft,(Number(view.me.defendCooldownEnd||0)-current)/1000);
+            this.actionButton(dx,y,defendW,ah,{label:'방어',sub:'D',kind:'defend',disabled:busy||locked||defendLeft>0,cooldown:Math.max(0,defendLeft),action:()=>defend()});
             this.actionButton(dx+defendW+gap,y,attackW,ah,{label:'공격',sub:narrow?'J':'SPACE / J',key:'J',kind:'attack',disabled:busy||locked||actionLeft>0,cooldown:actionLeft,action:()=>attack()});
         }
         vsCard(side,x,y,cw,ch,accent,narrow){
@@ -492,6 +493,20 @@
             this.text('레이팅',cx,h*.52,narrow?10:12,800,'center','#9da5b3');
             this.text(number(result.ratingBefore)+'  →  '+number(result.ratingAfter),cx,h*.52+26,narrow?20:26,900,'center','#f7f2e8');
             this.text('('+(delta>0?'+':'')+number(delta)+')',cx,h*.52+52,narrow?12:14,900,'center',delta>=0?'#7fe0a4':'#e0655c');
+            // 방어측(상대) 레이팅 변화
+            const oppDelta=Number(result.oppRatingDelta||0),oppName=view.opp&&view.opp.name||'상대';
+            if(result.oppRatingBefore!=null)this.text(oppName+'  '+number(result.oppRatingBefore)+' → '+number(result.oppRatingAfter)+'  ('+(oppDelta>0?'+':'')+number(oppDelta)+')',cx,h*.52+72,narrow?10:12,700,'center','#9da5b3',w-40);
+            // 플레이 보상 (승패 무관)
+            const reward=result.reward;
+            if(reward&&reward.name){
+                const size=narrow?34:42,ry=h*.52+(narrow?100:112),label='보상  '+reward.name+' x'+number(reward.count||1);
+                c.font='800 '+(narrow?12:14)+'px Pretendard, sans-serif';
+                const tw=c.measureText(label).width,total=size+10+tw,ax=cx-total/2,ay=ry-size/2,frame=this.image(reward.frameUrl),icon=this.image(reward.iconUrl);
+                if(frame)c.drawImage(frame,ax,ay,size,size);
+                if(icon)c.drawImage(icon,ax,ay,size,size);
+                if(!frame&&!icon){this.cutPath(ax,ay,size,size,5);c.fillStyle='rgba(38,32,20,.9)';c.fill();}
+                this.text(label,ax+size+10,ry,narrow?12:14,800,'left','#ffe4a8');
+            }
             const bw=narrow?190:220;
             this.actionButton(cx-bw/2,h*.78,bw,48,{label:'확인',kind:'gold',disabled:busy,action:()=>closeBattle()});
         }
@@ -660,7 +675,7 @@
     }
     function ready() { return view && view.me && now() >= Number(view.me.nextActionAt || 0); }
     function attack() { if (ready()) act('/api/pvp/battle/attack', {}); }
-    function defend() { if (ready()) act('/api/pvp/battle/defend', {}); }
+    function defend() { if (ready() && now() >= Number(view.me.defendCooldownEnd || 0)) act('/api/pvp/battle/defend', {}); }
     function useSkill(name) {
         const skill = view && view.me && (view.me.skills || []).find(entry => entry.name === name);
         if (!skill || !ready() || now() < Number(skill.cooldownEnd || 0)) return;

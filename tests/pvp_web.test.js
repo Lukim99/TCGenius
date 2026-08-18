@@ -30,6 +30,7 @@ assert.ok(css.includes('position:fixed;inset:0') && css.includes('overflow:hidde
 [
     "server.get('/api/pvp'",
     "server.post('/api/pvp/refresh'",
+    "server.post('/api/pvp/extra'",
     "server.post('/api/pvp/defense'",
     "server.post('/api/pvp/battle/start'",
     "server.get('/api/pvp/battle'",
@@ -45,6 +46,9 @@ assert.ok(css.includes('position:fixed;inset:0') && css.includes('overflow:hidde
 // 엔진 규칙: 방어 -50%, 하루 5명, 새로고침 2회, 근접 3/상위 1/랜덤 1, 상위 3명 랭킹
 assert.ok(engine.includes('damage = Math.round(damage * 0.5)'), '방어 중 받는 최종 피해 -50%가 필요합니다.');
 assert.ok(engine.includes('DAILY_BATTLE_MAX = 5') && engine.includes('DAILY_REFRESH_MAX = 2'), '하루 5명 / 새로고침 2회 제한이 필요합니다.');
+assert.ok(engine.includes('EXTRA_PLAY_MAX = 2') && engine.includes('EXTRA_PLAY_COST = 10'), '유료 추가 플레이는 하루 2회, 회당 10가넷이어야 합니다.');
+assert.ok(/chance: \.40[^\n]*카드팩 상자/.test(engine) && /chance: \.40[^\n]*지렁이/.test(engine) && /chance: \.10[^\n]*쥬얼/.test(engine) && /chance: \.10[^\n]*지니어스의 열쇠/.test(engine), '플레이 보상 표(40/40/10/10)가 필요합니다.');
+assert.ok(app.includes("'/api/pvp/extra'") && page.includes('reward'), '추가 플레이 구매 UI와 결과 화면 보상 표시가 필요합니다.');
 assert.ok(engine.includes("['near', 'near', 'near', 'higher', 'random']"), '근접 3 / 상위 1 / 랜덤 1 매칭 구성이 필요합니다.');
 assert.ok(engine.includes('.slice(0, 3)'), '랭킹은 상위 3명만 공개해야 합니다.');
 

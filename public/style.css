@@ -1295,9 +1295,13 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .pvp-section-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .pvp-section-head h3{margin:0;font-size:15px;font-weight:700;color:var(--text)}
 .pvp-caption{font-size:12px;font-weight:600;color:var(--text-3)}
-.pvp-section-head .pvp-refresh{margin-left:auto;background:var(--panel-2);border:1px solid var(--border);font-size:13px;padding:8px 12px}
-.pvp-section-head .pvp-refresh:hover:not(:disabled){background:var(--panel-3);border-color:var(--border-strong)}
-.pvp-section-head .pvp-refresh:disabled{color:var(--text-3);cursor:default}
+.pvp-head-btns{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pvp-section-head .pvp-refresh,.pvp-section-head .pvp-extra{background:var(--panel-2);border:1px solid var(--border);font-size:13px;padding:8px 12px}
+.pvp-section-head .pvp-refresh:hover:not(:disabled),.pvp-section-head .pvp-extra:hover:not(:disabled){background:var(--panel-3);border-color:var(--border-strong)}
+.pvp-section-head .pvp-refresh:disabled,.pvp-section-head .pvp-extra:disabled{color:var(--text-3);cursor:default}
+.pvp-section-head .pvp-extra:not(:disabled){color:var(--accent);border-color:rgba(232,176,75,.45)}
+.pvp-opp-reward{display:block;margin-top:3px;font-size:11px;font-weight:600;color:var(--text-2)}
+.pvp-hist-reward{font-size:12px;color:var(--text-2);white-space:nowrap}
 .pvp-me-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .pvp-rating,.pvp-metric{display:grid;gap:6px;align-content:start;padding:13px 15px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius)}
 .pvp-metric-label{font-size:12px;font-weight:700;color:var(--text-2)}
@@ -1367,7 +1371,8 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .pvp-hist-time{margin-left:auto;font-size:12px;color:var(--text-3);white-space:nowrap}
 @media(max-width:760px){
 .pvp-me-grid{grid-template-columns:1fr}
-.pvp-section-head .pvp-refresh{width:100%;margin-left:0}
+.pvp-head-btns{width:100%;margin-left:0}
+.pvp-section-head .pvp-refresh,.pvp-section-head .pvp-extra{flex:1 1 100%}
 .pvp-opp-grid{grid-template-columns:repeat(auto-fill,minmax(136px,1fr))}
 .pvp-deck{grid-template-columns:1fr}
 .pvp-deck-main{width:132px}

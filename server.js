@@ -2095,7 +2095,7 @@ server.post('/api/hfield/leave', requireUser, (req, res) => runHFieldMutation(re
 }));
 
 // ===== PVP =====
-pvp.configure({ serializeCard, getCharacterSprite: getHFieldCharacterSprite });
+pvp.configure({ serializeCard, getCharacterSprite: getHFieldCharacterSprite, getItemAssets: getItemDisplayAssets });
 
 async function runPvpMutation(req, res, mutate) {
     try {
@@ -2126,6 +2126,12 @@ server.get('/api/pvp', requireUser, (req, res) => runPvpMutation(req, res, async
 
 server.post('/api/pvp/refresh', requireUser, (req, res) => runPvpMutation(req, res, async user => {
     const result = await pvp.refreshOpponents(user);
+    if (result.ok) await user.save();
+    return result;
+}));
+
+server.post('/api/pvp/extra', requireUser, (req, res) => runPvpMutation(req, res, async user => {
+    const result = await pvp.buyExtraPlay(user);
     if (result.ok) await user.save();
     return result;
 }));
