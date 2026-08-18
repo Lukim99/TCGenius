@@ -1,0 +1,46 @@
+# 빌드 컨텍스트/이미지에서 제외 — Koyeb 빌더 디스크 부족(no space left on device) 대응
+# 런타임(node new_engine.js)에 필요 없는 것만 제외한다.
+
+# 저장소 메타데이터 / 로컬 도구
+.git
+.gitignore
+.dockerignore
+.claude
+.agents
+Dockerfile
+
+# 환경 파일 (배포 환경변수는 Koyeb 설정 사용)
+.env
+.env.*
+*.local
+
+# 작업 산출물 / 문서 / 테스트
+tmp
+output
+docs
+test
+tests
+*.md
+old_engine.js
+
+# 디자인 원본 (서비스에서 읽지 않음)
+**/*.psd
+
+# npm install용 로컬 패키지 원본 — 런타임은 node_modules/node-kakao 사본을 사용
+libs
+
+# 개발 전용 패키지 (typescript/eslint/mocha/typedoc/ts-node — 앱 코드에서 require 안 함)
+node_modules/typescript
+node_modules/node-kakao/node_modules/typescript
+node_modules/@typescript-eslint
+node_modules/eslint
+node_modules/mocha
+node_modules/typedoc
+node_modules/ts-node
+node_modules/shiki
+# package.json에 없고 어디서도 require하지 않는 잔존 패키지
+node_modules/puppeteer-core
+node_modules/chromium-bidi
+node_modules/devtools-protocol
+# aws-sdk v2 브라우저 번들 (Node는 lib/만 사용)
+node_modules/aws-sdk/dist
