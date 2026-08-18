@@ -1141,13 +1141,47 @@ server.get('/api/inventory/:kind', requireUser, async (req, res) => {
     }
 });
 
-server.get('/api/inventory/items/:id/detail', requireUser, (req, res) => {
-    const itemId = Number(req.params.id);
-    const items = rpgenius.getDataCache('Item', []);
-    if (!Number.isInteger(itemId) || itemId < 0 || !items[itemId]) {
-        return res.status(404).json({ error: '아이템 정보를 찾을 수 없습니다.' });
+server.get('/api/inventory/items/:id/detail', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const itemId = Number(req.params.id);
+        const items = rpgenius.getDataCache('Item', []);
+        if (!Number.isInteger(itemId) || itemId < 0 || !items[itemId]) {
+            return res.status(404).json({ error: '아이템 정보를 찾을 수 없습니다.' });
+        }
+        res.json({ detail: buildInventoryItemDetail(itemId, items[itemId], user) });
+    } catch (error) {
+        console.error('inventory item detail error:', error);
+        res.status(500).json({ error: '아이템 정보를 불러오는 중 오류가 발생했습니다.' });
     }
-    res.json({ detail: buildInventoryItemDetail(itemId, items[itemId]) });
+});
+
+const inventoryCraftLocks = new Set();
+server.post('/api/inventory/craft', requireUser, async (req, res) => {
+    const lockKey = String(req.session.name || '');
+    if (inventoryCraftLocks.has(lockKey)) return res.status(409).json({ error: '이전 제작 요청을 처리하고 있습니다.' });
+    inventoryCraftLocks.add(lockKey);
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const name = String(req.body && req.body.name || '').trim();
+        const times = Number(req.body && req.body.times);
+        if (!name) return res.status(400).json({ error: '제작 레시피를 확인해주세요.' });
+        if (!Number.isSafeInteger(times) || times < 1) return res.status(400).json({ error: '제작 횟수는 1 이상의 정수로 입력해주세요.' });
+        const status = rpgenius.getCraftRecipeStatus(user, name, 1);
+        if (!status) return res.status(404).json({ error: '존재하지 않는 제작 레시피입니다.' });
+        if (times > status.maxCraftable) return res.status(400).json({ error: '재료가 부족합니다. 현재 최대 ' + comma(status.maxCraftable) + '회 제작할 수 있습니다.' });
+        const message = rpgenius.craftRecipeByName(user, name, times);
+        if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
+        await user.save();
+        res.json({ ok: true, message });
+    } catch (error) {
+        console.error('inventory craft error:', error);
+        res.status(500).json({ error: '제작 중 오류가 발생했습니다.' });
+    } finally {
+        inventoryCraftLocks.delete(lockKey);
+    }
 });
 
 server.post('/api/inventory/items/:id/use', requireUser, async (req, res) => {
@@ -5472,7 +5506,7 @@ function buildItemUsageFacts(item) {
     return facts;
 }
 
-function buildItemApplications(itemId, item) {
+function buildItemApplications(itemId, item, user) {
     const applications = [];
     const items = rpgenius.getDataCache('Item', []);
     const add = application => {
@@ -5496,17 +5530,26 @@ function buildItemApplications(itemId, item) {
     const recipes = rpgenius.getDataCache('Recipe', []);
     (Array.isArray(recipes) ? recipes : []).forEach(recipe => {
         const material = (Array.isArray(recipe && recipe.materials) ? recipe.materials : []).find(entry => entry && entry.type === '아이템' && Number(entry.item_id) === itemId);
-        if (!material) return;
+        const craftedItem = (Array.isArray(recipe && recipe.crafted) ? recipe.crafted : []).find(entry => entry && entry.type === '아이템' && Number(entry.item_id) === itemId);
+        if (!material && !craftedItem) return;
         const outputs = (Array.isArray(recipe.crafted) ? recipe.crafted : []).map(buildDetailRewardDisplay).filter(Boolean);
         const primary = outputs[0] || {};
+        const status = user ? rpgenius.getCraftRecipeStatus(user, recipe.name, 1) : null;
+        const materials = status ? status.materials.map(entry => {
+            const display = buildDetailRewardDisplay(Object.assign({}, entry, { count: entry.need }));
+            return display ? display.name + ' ' + comma(entry.have) + '/' + comma(entry.need) : null;
+        }).filter(Boolean) : [];
         add({
-            category: '제작 재료',
+            category: material ? '제작 재료' : '제작 가능',
             title: recipe.name || outputs.map(entry => entry.name).join(', ') || '아이템 제작',
-            description: '제작 1회당 ' + item.name + ' ×' + formatItemDetailCount(material.count) + ' 소모',
+            description: material
+                ? '제작 1회당 ' + item.name + ' ×' + formatItemDetailCount(material.count) + ' 소모'
+                : '필요한 재료를 소모해 ' + item.name + '을(를) 제작',
             resultText: outputs.length ? '제작 결과 · ' + outputs.map(entry => entry.name + ' ×' + entry.count).join(', ') : '',
             iconUrl: primary.iconUrl || primary.imgUrl || null,
             frameUrl: primary.frameUrl || null,
-            label: primary.label || '제작'
+            label: primary.label || '제작',
+            craft: status ? { name: status.name, maxCraftable: status.maxCraftable, materialsText: materials.join(' · ') } : null
         });
     });
     items.forEach((target, targetId) => {
@@ -5570,7 +5613,7 @@ function decorateWebItemUsePending(pending, user) {
     });
 }
 
-function buildInventoryItemDetail(itemId, item) {
+function buildInventoryItemDetail(itemId, item, user) {
     const assets = getItemDisplayAssets(item);
     const requirements = (Array.isArray(item.require) ? item.require : []).map(entry => buildDetailRewardDisplay({ type: '아이템', item_id: entry.id, count: entry.count })).filter(Boolean);
     let rewards = null;
@@ -5597,7 +5640,7 @@ function buildInventoryItemDetail(itemId, item) {
         requirements,
         usageFacts: buildItemUsageFacts(item),
         rewards,
-        applications: buildItemApplications(itemId, item),
+        applications: buildItemApplications(itemId, item, user),
         showApplicationEmpty: item.type === '재료' || item.type === '티켓'
     };
 }

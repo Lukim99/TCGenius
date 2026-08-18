@@ -1106,6 +1106,13 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .item-application-info strong{color:#e8edf4;font-size:12px;line-height:1.35;word-break:keep-all}
 .item-application-info p{margin:0;color:#9ca8b7;font-size:10px;line-height:1.5;word-break:keep-all}
 .item-application-info small{color:#d0ad68;font-size:9px;line-height:1.4}
+.item-craft-materials{color:#8fa2b5!important}
+.item-craft-controls{display:flex;align-items:center;gap:6px;margin-top:5px}
+.item-craft-stepper{display:flex;align-items:center;height:30px;overflow:hidden;border:1px solid #3c4856;border-radius:5px;background:#0b1016}
+.item-craft-stepper button{width:28px;height:100%;padding:0;border-radius:0;background:#1b2430;color:#c7d1dc;font-size:13px}.item-craft-stepper button:hover{background:#293646;color:#fff}
+.item-craft-stepper .item-craft-max{width:auto;padding:0 7px;border-left:1px solid #3c4856;color:#d9b870;font-size:8px;font-weight:800}
+.item-craft-input{width:48px;height:100%;padding:0 3px;border:0;border-inline:1px solid #303b48;outline:0;background:#101720;color:#eef2f6;font:inherit;font-size:10px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+.item-craft-button{flex:1;min-width:72px;height:30px;padding:0 9px;border:1px solid #4f8b61;border-radius:5px;background:#245d35;color:#eaffef;font-size:10px;font-weight:800}.item-craft-button:hover{background:#2d7543;color:#fff}.item-craft-button:disabled{opacity:.5;cursor:wait}
 .item-detail-loading{display:flex;align-items:center;justify-content:center;gap:11px;min-height:220px;padding:28px;background:#0d1118;color:#aeb8c6;font-size:12px}
 .item-detail-spinner{width:18px;height:18px;border:2px solid #394554;border-top-color:#d5a955;border-radius:50%;animation:itemDetailSpin .75s linear infinite}
 @keyframes itemDetailSpin{to{transform:rotate(360deg)}}
@@ -1116,6 +1123,7 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .item-detail-hero{grid-template-columns:84px minmax(0,1fr);gap:14px;padding:18px 16px}.item-detail-art.hero-art{width:84px;height:84px}
 .item-detail-summary h4{font-size:17px}.item-detail-desc{margin:6px 0 10px;font-size:11px;line-height:1.5}.item-detail-owned{padding:5px 8px}
 .item-detail-content{gap:16px;padding:17px 14px 22px}.item-detail-facts,.item-application-list{grid-template-columns:1fr}
+.item-craft-controls{align-items:stretch;flex-direction:column}.item-craft-stepper{width:100%}.item-craft-input{flex:1}.item-craft-button{flex:none;width:100%}
 .item-reward-row{grid-template-columns:42px minmax(0,1fr) auto;gap:8px;padding-right:7px}.item-detail-art.reward-art{width:40px;height:40px}
 .item-reward-trailing{display:grid;gap:3px;min-width:58px;text-align:right}.item-reward-chance{min-width:58px;padding:4px 5px;font-size:10px}.item-reward-count{font-size:10px}
 }

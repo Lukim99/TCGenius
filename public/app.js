@@ -2081,6 +2081,55 @@ async function resolveInventoryItemUse(item, choice, confirm, button) {
     }
 }
 
+async function craftInventoryRecipe(application, times, button) {
+    button.disabled = true;
+    modalLocked = true;
+    try {
+        const response = await postApi('/api/inventory/craft', { name: application.craft.name, times });
+        modalLocked = false;
+        finishCloseModal();
+        loadInventory('items').catch(() => {});
+        await showAlert(response.message);
+    } catch (error) {
+        modalLocked = false;
+        button.disabled = false;
+        await showAlert(error.message);
+    }
+}
+
+function itemCraftControls(application) {
+    const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
+    const max = Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(Number(application.craft && application.craft.maxCraftable) || 0)));
+    if (!ownInventory || !application.craft || max < 1) return null;
+    const input = el('input', { class: 'item-craft-input', type: 'number', min: 1, max, step: 1, value: 1, inputMode: 'numeric', 'aria-label': '제작 횟수' });
+    const craftButton = el('button', { class: 'item-craft-button', type: 'button' }, '1회 제작');
+    const readAmount = () => Number(input.value);
+    const syncAmount = value => {
+        const amount = Math.max(1, Math.min(max, Math.floor(Number(value) || 1)));
+        input.value = amount;
+        craftButton.disabled = false;
+        craftButton.textContent = comma(amount) + '회 제작';
+        return amount;
+    };
+    input.oninput = () => {
+        const amount = readAmount();
+        const valid = Number.isSafeInteger(amount) && amount >= 1 && amount <= max;
+        craftButton.disabled = !valid;
+        craftButton.textContent = valid ? comma(amount) + '회 제작' : '횟수 확인';
+    };
+    input.onchange = () => syncAmount(readAmount());
+    craftButton.onclick = () => craftInventoryRecipe(application, syncAmount(readAmount()), craftButton);
+    return el('div', { class: 'item-craft-controls' },
+        el('div', { class: 'item-craft-stepper' },
+            el('button', { type: 'button', onclick: () => syncAmount(readAmount() - 1), 'aria-label': '제작 횟수 줄이기' }, '−'),
+            input,
+            el('button', { type: 'button', onclick: () => syncAmount(readAmount() + 1), 'aria-label': '제작 횟수 늘리기' }, '+'),
+            el('button', { class: 'item-craft-max', type: 'button', onclick: () => syncAmount(max) }, 'MAX')
+        ),
+        craftButton
+    );
+}
+
 function renderItemDetail(item, detail) {
     const data = Object.assign({}, item, detail || {}, { count: item.count });
     const sections = [];
@@ -2116,7 +2165,9 @@ function renderItemDetail(item, detail) {
                         el('span', { class: 'item-application-category' }, application.category || '사용처'),
                         el('strong', null, application.title),
                         el('p', null, application.description || ''),
-                        application.resultText ? el('small', null, application.resultText) : null
+                        application.resultText ? el('small', null, application.resultText) : null,
+                        application.craft && application.craft.materialsText ? el('small', { class: 'item-craft-materials' }, '보유/필요 · ' + application.craft.materialsText) : null,
+                        itemCraftControls(application)
                     )
                 )
             ))

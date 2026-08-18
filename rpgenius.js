@@ -8628,25 +8628,74 @@ function canConsumeCraftMaterialsTimes(user, materials, times) {
     return true;
 }
 
-function runCraft(user) {
-    const pending = user.pendingAction;
-    if (!pending || pending.type != '제작') return '❌ 진행 중인 제작이 없습니다.';
-    const recipe = getRecipeByName(pending.name);
-    const times = Math.max(1, Math.floor(Number(pending.times) || 1));
-    user.pendingAction = null;
+function getCraftMaterialKey(material) {
+    if (material.type == '아이템') return 'item:' + Number(material.item_id);
+    if (material.type == '골드' || material.type == '가넷') return material.type;
+    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) {
+        return 'equipment:' + getRecipeEquipmentType(material) + ':' + Number(getRecipeEquipmentId(material));
+    }
+    if (material.type == '펫') return 'pet:' + Number(material.pet_id);
+    return null;
+}
+
+function getMaxCraftableCount(user, materials) {
+    const totals = new Map();
+    for (const material of (materials || [])) {
+        const key = getCraftMaterialKey(material);
+        const status = getCraftMaterialStatus(user, material);
+        if (!key || status.need <= 0) return 0;
+        const current = totals.get(key) || { have: status.have, need: 0 };
+        current.need += status.need;
+        totals.set(key, current);
+    }
+    if (!totals.size) return 0;
+    return Math.max(0, Math.min(...Array.from(totals.values(), entry => Math.floor(entry.have / entry.need))));
+}
+
+function getCraftRecipeStatus(user, name, times) {
+    const recipe = getRecipeByName(name);
+    if (!recipe) return null;
+    const count = Math.max(1, Math.floor(Number(times) || 1));
+    const maxCraftable = getMaxCraftableCount(user, recipe.materials || []);
+    return {
+        name: recipe.name,
+        times: count,
+        craftable: maxCraftable >= count,
+        maxCraftable,
+        materials: (recipe.materials || []).map(material => {
+            const status = getCraftMaterialStatus(user, material);
+            const need = status.need * count;
+            return Object.assign({}, material, { have: status.have, need, ok: status.have >= need });
+        }),
+        crafted: (recipe.crafted || []).map(entry => Object.assign({}, entry))
+    };
+}
+
+function craftRecipeByName(user, name, times) {
+    const recipe = getRecipeByName(name);
     if (!recipe) return '❌ 존재하지 않는 제작 레시피입니다.';
-    if (!canConsumeCraftMaterialsTimes(user, recipe.materials || [], times)) return '❌ 재료가 부족합니다.';
-    for (let i = 0; i < times; i++) {
+    const count = Math.max(1, Math.floor(Number(times) || 1));
+    if (!canConsumeCraftMaterialsTimes(user, recipe.materials || [], count)) return '❌ 재료가 부족합니다.';
+    for (let i = 0; i < count; i++) {
         if (!(recipe.materials || []).every(material => consumeCraftMaterial(user, material))) return '❌ 재료 차감 중 오류가 발생했습니다.';
         (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
     }
-    const header = '✅ \'' + recipe.name + '\' 제작에 성공했습니다.' + (times > 1 ? ' (x' + comma(times) + ')' : '');
+    const header = '✅ \'' + recipe.name + '\' 제작에 성공했습니다.' + (count > 1 ? ' (x' + comma(count) + ')' : '');
     const lines = [header, '', '[ 획득 물품 ]'];
     (recipe.crafted || []).forEach(entry => {
-        const total = getRecipeEntryCount(entry) * times;
+        const total = getRecipeEntryCount(entry) * count;
         lines.push('- ' + formatCraftedEntryWithTotal(entry, total));
     });
     return lines.join('\n');
+}
+
+function runCraft(user) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '제작') return '❌ 진행 중인 제작이 없습니다.';
+    const name = pending.name;
+    const times = Math.max(1, Math.floor(Number(pending.times) || 1));
+    user.pendingAction = null;
+    return craftRecipeByName(user, name, times);
 }
 
 function parseItemSaleArgs(args) {
@@ -14034,6 +14083,8 @@ module.exports = {
     runEquipmentSynthesis,
     formatDisassemblePreview,
     runDisassemble,
+    getCraftRecipeStatus,
+    craftRecipeByName,
     getEquipmentUpgradeRates,
     getEquipmentUpgradeCost,
     getEquipmentMaxLevel,
