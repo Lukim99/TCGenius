@@ -969,7 +969,7 @@
                 el('div', { class: 'info' },
                     el('div', { class: 'owner' }, rv.name || '-'),
                     rv.weeklyLocked
-                        ? el('div', { class: 'item', style: 'color:#fbbf24' }, '이번 주 보상을 이미 수령했습니다')
+                        ? el('div', { class: 'item', style: 'color:#fbbf24' }, '이번 주 보상 횟수를 모두 사용했습니다')
                         : list.length
                             ? el('div', { class: 'item' }, ...list.map(it => el('div', null, (it.bonus ? '✨ ' : '') + it.name + (it.count > 1 ? ' x' + Number(it.count).toLocaleString() : ''))))
                             : el('div', { class: 'item' }, rv.error || '보상 없음'),

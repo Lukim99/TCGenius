@@ -15,6 +15,7 @@ const POSITION_LIST = ['탱커', '브루저', '메인딜러', '서브딜러', '�
 // 이 값 이상의 buff.remain은 '영구'로 간주해 잔여시간을 표시하지 않는다 (튀어오르기 등)
 const PERMANENT_BUFF_SEC = 86400;
 const TICK_MS = 200;
+const HODU_WEEKLY_REWARD_LIMIT = 3;
 const IMMORTAL_DRAGON_ARMOR_NAME = '불멸하는 업화의 용갑';
 const IMMORTAL_DRAGON_ARMOR_COOLDOWN_MS = 65 * 1000;
 const IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO = 0.2;
@@ -682,7 +683,11 @@ function grantPartyQuestClearRewards(room) {
                 // 입장/클리어는 무제한이고 칭호 진행도는 계속 쌓인다.
                 const prog = rpgenius.getTitleProgress(user);
                 const weekKey = rpgenius.getKoreanWeekKey(new Date());
-                const weeklyLocked = isButaQuest(room.questId) && prog.butaRewardWeek === weekKey;
+                // 흑화 호두 주간 보상 제한: 노말/익스트림 통합 주 최대 3회 (입장/클리어/칭호 진행도/최초 클리어 보너스는 무제한)
+                const isHodu = room.questId === 'blackHodu' || room.questId === 'blackHoduExtreme';
+                const hoduRewardCount = isHodu && prog.hoduRewardWeek === weekKey ? Number(prog.hoduRewardCount || 0) : 0;
+                const weeklyLocked = (isButaQuest(room.questId) && prog.butaRewardWeek === weekKey)
+                    || (isHodu && hoduRewardCount >= HODU_WEEKLY_REWARD_LIMIT);
                 const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
@@ -728,8 +733,11 @@ function grantPartyQuestClearRewards(room) {
                 for (const r of extraRewards) if (r.kind === 'item') Object.assign(r, getPartyQuestItemAsset(r.itemId, r.bonus ? 1 : 0));
                 if (!itemReward && extraRewards.length) itemReward = extraRewards[extraRewards.length - 1];
                 // 칭호 진행 추적 (흑화 호두)
+                if (isHodu && !weeklyLocked) {
+                    prog.hoduRewardWeek = weekKey;
+                    prog.hoduRewardCount = hoduRewardCount + 1;
+                }
                 if (room.questId === 'blackHodu') {
-                    const prog = rpgenius.getTitleProgress(user);
                     prog.hoduClears = Number(prog.hoduClears || 0) + 1;
                     rpgenius.checkAndUnlockTitles(user);
                 }
