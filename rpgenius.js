@@ -5289,7 +5289,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
 
 function grantButagameFieldBonusDrops(user, dungeon, killCount, lines, rng = Math.random) {
     const granted = { invitation: 0, challenge: 0, advancedStone: 0 };
-    if (!dungeon || dungeon.name != '부타게임' || Number(killCount || 0) < 1) return granted;
+    if (!dungeon || (dungeon.name != '부타게임' && dungeon.name != '서울오프라인') || Number(killCount || 0) < 1) return granted;
     const drops = [
         { key: 'invitation', name: '헬 초대장', chance: .07, count: () => Math.floor(rng() * 2) + 1, icon: '🎟️' },
         { key: 'challenge', name: '헬 도전장', chance: .04, count: () => Math.floor(rng() * 2) + 1, icon: '🎫' },

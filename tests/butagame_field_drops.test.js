@@ -27,6 +27,13 @@ const rpg = require('../rpgenius');
     assert.strictEqual(rpg.getInventoryItemCount(user, challengeId), 2);
     assert.strictEqual(rpg.getInventoryItemCount(user, advancedStoneId), 1);
 
+    const seoulRolls = [.039999, 0, .024999, .999999, .014999];
+    const seoulGranted = rpg.grantButagameFieldBonusDrops(user, { name: '서울오프라인' }, 50, [], () => seoulRolls.shift());
+    assert.deepStrictEqual(seoulGranted, { invitation: 1, challenge: 2, advancedStone: 1 }, '서울오프라인에서도 필드 보너스 드랍이 판정되어야 한다.');
+    assert.strictEqual(rpg.getInventoryItemCount(user, invitationId), 2);
+    assert.strictEqual(rpg.getInventoryItemCount(user, challengeId), 4);
+    assert.strictEqual(rpg.getInventoryItemCount(user, advancedStoneId), 2);
+
     const boundaryRolls = [.07, .04, .015];
     assert.deepStrictEqual(
         rpg.grantButagameFieldBonusDrops(user, { name: '부타게임' }, 1, [], () => boundaryRolls.shift()),
