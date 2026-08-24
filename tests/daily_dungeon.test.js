@@ -175,6 +175,17 @@ function sequence(values, fallback = 0) {
         { name: '부타게임', exp: 25000000, gold: [7500000, 9000000], itemRanges: [['일반 떡밥', 1500, 2000], ['강화석', 1500, 2000], ['상급 강화석', 1, 3]], choices: [[['5성 카드팩', 20, 1], ['6성 카드팩', 80, 1]], [['헬 초대장', 50, 100], ['헬 도전장', 50, 60]]] }
     ]);
 
+    const seoulConfig = rpg.getAccessibleDailyDungeons(151).filter(dungeon => dungeon.name == '서울오프라인').map(dungeon => ({
+        name: dungeon.name,
+        exp: dungeon.dailyDungeon.exp,
+        gold: [dungeon.dailyDungeon.gold.min, dungeon.dailyDungeon.gold.max],
+        itemRanges: dungeon.dailyDungeon.items.map(item => [item.name, item.count.min, item.count.max]),
+        choices: dungeon.dailyDungeon.itemChoices.map(pool => pool.map(item => [item.name, item.weight, item.count]))
+    }));
+    assert.deepStrictEqual(seoulConfig, [
+        { name: '서울오프라인', exp: 38000000, gold: [9000000, 10500000], itemRanges: [['일반 떡밥', 1500, 2000], ['강화석', 1500, 2000], ['상급 강화석', 5, 10]], choices: [[['6성 카드팩', 100, 1]], [['헬 초대장', 50, 120], ['헬 도전장', 50, 80]]] }
+    ]);
+
     const resort = rpg.findDailyDungeonByName('리조트');
     const resortReward = rpg.rollDailyDungeonClearReward(resort, sequence([0, 0, 0.8, 0, 0.5]));
     assert.strictEqual(resortReward.items['6성 카드팩'], 1, '80% 경계에서는 6성 카드팩을 선택해야 한다.');
@@ -191,7 +202,7 @@ function sequence(values, fallback = 0) {
     assert.strictEqual(butaBoundaryReward.items['헬 도전장'], 60, '50% 경계에서는 헬 도전장을 선택해야 한다.');
 
     const rewardUser = makeUser('일일보상증가테스트', 101);
-    rewardUser.field = { name: '마동', dailyDungeon: true, nextActionAt: 0, skillCooldowns: {}, killCount: 2000, dailyEffects: [] };
+    rewardUser.field = { name: '마동', dailyDungeon: true, nextActionAt: 0, skillCooldowns: {}, killCount: 5000, dailyEffects: [] };
     rewardUser.dailyDungeonDaily = { date: rpg.getDailyDungeonDailyState(rewardUser).date, used: true, dungeonName: '마동', outcome: 'in_progress' };
     const rewardResult = rpg.grantDailyDungeonClearReward(
         rewardUser,
@@ -216,8 +227,8 @@ function sequence(values, fallback = 0) {
     const beforeExp = progressUser.exp;
     const beforeGold = progressUser.gold;
     const beforeInventory = JSON.stringify(progressUser.inventory.item);
-    const progressText = rpg.buildHuntResult(progressUser, dungeon, Number(dungeon.hp) * 1999, { precalculatedDamage: true, summonAttack: true, isBotAutoAttack: true, disableEquipmentBonusDamage: true });
-    assert.ok(progressText.includes('1,999/2,000마리'));
+    const progressText = rpg.buildHuntResult(progressUser, dungeon, Number(dungeon.hp) * 4999, { precalculatedDamage: true, summonAttack: true, isBotAutoAttack: true, disableEquipmentBonusDamage: true });
+    assert.ok(progressText.includes('4,999/5,000마리'));
     assert.strictEqual(progressUser.exp, beforeExp);
     assert.strictEqual(progressUser.gold, beforeGold);
     assert.strictEqual(JSON.stringify(progressUser.inventory.item), beforeInventory);
@@ -226,7 +237,7 @@ function sequence(values, fallback = 0) {
     try {
         Math.random = () => 0.99;
         const clearText = rpg.buildHuntResult(progressUser, dungeon, Number(dungeon.hp) * 10, { precalculatedDamage: true, summonAttack: true, isBotAutoAttack: true, disableEquipmentBonusDamage: true });
-        assert.ok(clearText.includes('2,000/2,000마리'));
+        assert.ok(clearText.includes('5,000/5,000마리'));
         assert.ok(clearText.includes('일일 던전 클리어'));
     } finally {
         Math.random = originalRandom;
