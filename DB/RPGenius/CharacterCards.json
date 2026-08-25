@@ -2,9 +2,9 @@
     {
         "name": "빵귤",
         "slot_effect": {
-            "name": "경험치 획득 증가량",
-            "base": 0.01,
-            "per_level": 0.01
+            "effect": "skillCoolReduction",
+            "name": "스킬 쿨타임 감소",
+            "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
         },
         "skills": [
             0
@@ -13,16 +13,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "expBonus",
-                    "name": "경험치 획득 증가량",
-                    "base": 0.005,
-                    "per_level": 0.005
+                    "effect": "skillCoolReduction",
+                    "name": "스킬 쿨타임 감소",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
                 },
                 {
-                    "effect": "hpDamageReduction",
-                    "name": "받는 피해량",
-                    "base": -0.025,
-                    "per_level": -0.0125
+                    "effect": "basicDamageBonus",
+                    "name": "일반 공격 피해 증가",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
                 }
             ],
             "skills": [
@@ -33,9 +31,9 @@
     {
         "name": "뭔마",
         "slot_effect": {
-            "name": "받는 피해량",
-            "base": -0.05,
-            "per_level": -0.013
+            "effect": "basicDamageBonus",
+            "name": "일반 공격 피해 증가",
+            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.1, 0.15, 0.22]
         },
         "skills": [
             1
@@ -44,16 +42,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "expBonus",
-                    "name": "경험치 획득 증가량",
-                    "base": 0.005,
-                    "per_level": 0.005
+                    "effect": "skillDamageReduction",
+                    "name": "스킬 공격 피해 감소",
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
                 },
                 {
-                    "effect": "hpDamageReduction",
-                    "name": "받는 피해량",
-                    "base": -0.025,
-                    "per_level": -0.0125
+                    "effect": "basicDamageBonus",
+                    "name": "일반 공격 피해 증가",
+                    "values": [0.02, 0.04, 0.06, 0.08, 0.11, 0.15, 0.21, 0.3]
                 }
             ],
             "skills": [
@@ -64,9 +60,9 @@
     {
         "name": "글렌첵",
         "slot_effect": {
-            "name": "받은 피해의 20%만큼 모든 아군 체력 회복 확률",
-            "base": 0.08,
-            "per_level": 0.015
+            "effect": "shieldEfficiency",
+            "name": "보호막 효율 증가",
+            "values": [0.02, 0.03, 0.04, 0.05, 0.07, 0.09, 0.12, 0.15]
         },
         "skills": [
             2
@@ -75,16 +71,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "killRecoveryChance",
-                    "name": "받은 피해의 20%만큼 체력 회복 확률",
-                    "base": 0.04,
-                    "per_level": 0.0075
+                    "effect": "shieldEfficiency",
+                    "name": "보호막 효율 증가",
+                    "values": [0.01, 0.015, 0.02, 0.025, 0.04, 0.05, 0.07, 0.1]
                 },
                 {
-                    "effect": "mpCostReduction",
-                    "name": "MP 소모량 감소",
-                    "base": 0.02,
-                    "per_level": 0.01
+                    "effect": "attackBuffEfficiency",
+                    "name": "공격력 버프 효율 증가",
+                    "values": [0.015, 0.02, 0.025, 0.03, 0.05, 0.06, 0.08, 0.11]
                 }
             ],
             "skills": [
@@ -95,9 +89,9 @@
     {
         "name": "오버라이드",
         "slot_effect": {
-            "name": "치명타 확률 증가",
-            "base": 0.01,
-            "per_level": 0.01
+            "effect": "finalDamage",
+            "name": "최종 피해 증가",
+            "values": [0.007, 0.014, 0.021, 0.028, 0.04, 0.06, 0.09, 0.12]
         },
         "skills": [
             3
@@ -106,16 +100,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "basicDamageBonus",
-                    "name": "일반 공격 피해",
-                    "base": 0.015,
-                    "per_level": 0.006
+                    "effect": "takenDamageIncrease",
+                    "name": "받는 피해 증가",
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
                 },
                 {
-                    "effect": "crit",
-                    "name": "치명타 확률 증가",
-                    "base": 0.005,
-                    "per_level": 0.005
+                    "effect": "finalDamage",
+                    "name": "최종 피해 증가",
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.085, 0.115, 0.15]
                 }
             ],
             "skills": [
@@ -126,9 +118,9 @@
     {
         "name": "일레이나",
         "slot_effect": {
-            "name": "MP 소모량",
-            "base": -0.04,
-            "per_level": -0.02
+            "effect": "attackBuffEfficiency",
+            "name": "공격력 버프 효율 증가",
+            "values": [0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12, 0.15]
         },
         "skills": [
             4
@@ -137,16 +129,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "killRecoveryChance",
-                    "name": "받은 피해의 20%만큼 체력 회복 확률",
-                    "base": 0.04,
-                    "per_level": 0.0075
+                    "effect": "shieldEfficiency",
+                    "name": "보호막 효율 증가",
+                    "values": [0.01, 0.015, 0.02, 0.025, 0.04, 0.05, 0.07, 0.1]
                 },
                 {
-                    "effect": "mpCostReduction",
-                    "name": "MP 소모량 감소",
-                    "base": 0.02,
-                    "per_level": 0.01
+                    "effect": "attackBuffEfficiency",
+                    "name": "공격력 버프 효율 증가",
+                    "values": [0.015, 0.02, 0.025, 0.03, 0.05, 0.06, 0.08, 0.11]
                 }
             ],
             "skills": [
@@ -157,9 +147,9 @@
     {
         "name": "진필규",
         "slot_effect": {
-            "name": "일반 몬스터 대상 피해",
-            "base": 0.04,
-            "per_level": 0.012
+            "effect": "hpDamageReduction",
+            "name": "받는 피해 감소",
+            "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
         },
         "skills": [
             5
@@ -168,16 +158,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "damageBonus",
-                    "name": "일반 몬스터 대상 피해 증가량",
-                    "base": 0.02,
-                    "per_level": 0.012
+                    "effect": "hpDamageReduction",
+                    "name": "받는 피해 감소",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
                 },
                 {
-                    "effect": "critMul",
-                    "name": "치명타 피해량 증가량",
-                    "base": 0.025,
-                    "per_level": 0.015
+                    "effect": "maxHpBonus",
+                    "name": "최대 HP 증가",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.09]
                 }
             ],
             "skills": [
@@ -188,9 +176,9 @@
     {
         "name": "켄시",
         "slot_effect": {
+            "effect": "critMul",
             "name": "치명타 피해량 증가",
-            "base": 0.05,
-            "per_level": 0.03
+            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.12, 0.15]
         },
         "skills": [
             6
@@ -199,16 +187,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "damageBonus",
-                    "name": "일반 몬스터 대상 피해 증가량",
-                    "base": 0.02,
-                    "per_level": 0.012
+                    "effect": "crit",
+                    "name": "치명타 확률 증가",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.06]
                 },
                 {
                     "effect": "critMul",
-                    "name": "치명타 피해량 증가량",
-                    "base": 0.025,
-                    "per_level": 0.015
+                    "name": "치명타 피해량 증가",
+                    "values": [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.06, 0.08]
                 }
             ],
             "skills": [
@@ -219,9 +205,10 @@
     {
         "name": "제우스",
         "slot_effect": {
-            "name": "골드 획득 증가량",
-            "base": 0.01,
-            "per_level": 0.003
+            "effect": "lightAtk",
+            "name": "[명]속성 강화",
+            "type": "flat",
+            "values": [10, 25, 40, 55, 80, 110, 150, 200]
         },
         "skills": [
             7
@@ -231,15 +218,8 @@
             "slot_effects": [
                 {
                     "effect": "goldBonus",
-                    "name": "골드 획득 증가량",
-                    "base": 0.005,
-                    "per_level": 0.0015
-                },
-                {
-                    "effect": "skillDamageBonus",
-                    "name": "스킬 공격 피해",
-                    "base": 0.01,
-                    "per_level": 0.005
+                    "name": "골드 획득량 증가",
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
                 }
             ],
             "skills": [
@@ -250,9 +230,9 @@
     {
         "name": "타이란트",
         "slot_effect": {
-            "name": "아이템 드랍 확률",
-            "base": 0.1,
-            "per_level": 0.03
+            "effect": "maxHpBonus",
+            "name": "최대 HP 증가",
+            "values": [0.03, 0.06, 0.09, 0.12, 0.16, 0.2, 0.25, 0.3]
         },
         "skills": [
             8
@@ -261,16 +241,9 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "defReduction",
-                    "name": "방어력 관통",
-                    "base": 0.04,
-                    "per_level": 0.0075
-                },
-                {
                     "effect": "itemDropChance",
-                    "name": "아이템 드랍 확률",
-                    "base": 0.05,
-                    "per_level": 0.015
+                    "name": "아이템 드랍율 증가",
+                    "values": [0.06, 0.1, 0.14, 0.18, 0.24, 0.32, 0.4, 0.5]
                 }
             ],
             "skills": [
@@ -281,9 +254,10 @@
     {
         "name": "마쉐비",
         "slot_effect": {
-            "name": "방어력 관통",
-            "base": 0.08,
-            "per_level": 0.015
+            "effect": "waterAtk",
+            "name": "[수]속성 강화",
+            "type": "flat",
+            "values": [10, 25, 40, 55, 80, 110, 150, 200]
         },
         "skills": [
             9
@@ -293,15 +267,8 @@
             "slot_effects": [
                 {
                     "effect": "defReduction",
-                    "name": "방어력 관통",
-                    "base": 0.04,
-                    "per_level": 0.0075
-                },
-                {
-                    "effect": "itemDropChance",
-                    "name": "아이템 드랍 확률",
-                    "base": 0.05,
-                    "per_level": 0.015
+                    "name": "방어 관통력",
+                    "values": [0.06, 0.08, 0.1, 0.12, 0.15, 0.18, 0.24, 0.32]
                 }
             ],
             "skills": [
@@ -312,9 +279,10 @@
     {
         "name": "딜러장",
         "slot_effect": {
-            "name": "일반 공격 피해",
-            "base": 0.03,
-            "per_level": 0.012
+            "effect": "darkAtk",
+            "name": "[암]속성 강화",
+            "type": "flat",
+            "values": [10, 25, 40, 55, 80, 110, 150, 200]
         },
         "skills": [
             10
@@ -323,16 +291,9 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "basicDamageBonus",
-                    "name": "일반 공격 피해",
-                    "base": 0.015,
-                    "per_level": 0.006
-                },
-                {
                     "effect": "crit",
                     "name": "치명타 확률 증가",
-                    "base": 0.005,
-                    "per_level": 0.005
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12]
                 }
             ],
             "skills": [
@@ -343,9 +304,9 @@
     {
         "name": "이익태",
         "slot_effect": {
-            "name": "스킬 공격 피해",
-            "base": 0.02,
-            "per_level": 0.01
+            "effect": "skillDamageBonus",
+            "name": "스킬 피해 증가",
+            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.1, 0.15, 0.22]
         },
         "skills": [
             11
@@ -354,16 +315,14 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "skillDamageBonus",
-                    "name": "스킬 공격 피해",
-                    "base": 0.01,
-                    "per_level": 0.005
+                    "effect": "basicDamageReduction",
+                    "name": "일반 공격 피해 감소",
+                    "values": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
                 },
                 {
-                    "effect": "goldBonus",
-                    "name": "골드 획득 증가량",
-                    "base": 0.005,
-                    "per_level": 0.0015
+                    "effect": "skillDamageBonus",
+                    "name": "스킬 피해 증가",
+                    "values": [0.02, 0.04, 0.06, 0.08, 0.11, 0.15, 0.21, 0.3]
                 }
             ],
             "skills": [
@@ -374,9 +333,9 @@
     {
         "name": "안성재",
         "slot_effect": {
-            "name": "[무]속성 공격 시 최종 피해",
-            "base": 0.01,
-            "per_level": 0.01
+            "effect": "tenthHitFinalAtk",
+            "name": "10번째 공격마다 최종 공격력 증가",
+            "values": [0.08, 0.1, 0.12, 0.14, 0.17, 0.2, 0.25, 0.3]
         },
         "skills": [
             24
@@ -385,16 +344,9 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "nonElementFinalDamage",
-                    "name": "[무]속성 공격 시 최종 피해",
-                    "base": 0.005,
-                    "per_level": 0.005
-                },
-                {
-                    "effect": "tenthHitFinalAtk",
-                    "name": "10번째 공격마다 최종 공격력",
-                    "base": 0.04,
-                    "per_level": 0.01
+                    "effect": "ultimateDamage",
+                    "name": "궁극기 사용 시 추가 피해",
+                    "values": [0.08, 0.12, 0.16, 0.2, 0.25, 0.3, 0.45, 0.6]
                 }
             ],
             "skills": [
@@ -405,9 +357,9 @@
     {
         "name": "흠시원",
         "slot_effect": {
-            "name": "10번째 공격마다 최종 공격력",
-            "base": 0.08,
-            "per_level": 0.02
+            "effect": "nonElementFinalDamage",
+            "name": "[무]속성 공격 시 최종 피해 증가",
+            "values": [0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.11, 0.14]
         },
         "skills": [
             26
@@ -416,16 +368,9 @@
             "name": "전직",
             "slot_effects": [
                 {
-                    "effect": "nonElementFinalDamage",
-                    "name": "[무]속성 공격 시 최종 피해",
-                    "base": 0.005,
-                    "per_level": 0.005
-                },
-                {
-                    "effect": "tenthHitFinalAtk",
-                    "name": "10번째 공격마다 최종 공격력",
-                    "base": 0.04,
-                    "per_level": 0.01
+                    "effect": "shieldFinalDamage",
+                    "name": "보호막 공격 시 최종 피해 증가",
+                    "values": [0.05, 0.08, 0.11, 0.15, 0.2, 0.25, 0.35, 0.5]
                 }
             ],
             "skills": [

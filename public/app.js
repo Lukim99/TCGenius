@@ -1057,7 +1057,7 @@ function slotEffectPanelNode(eff) {
         ),
         el('div', { class: 'mc-note' + (eff.active ? '' : ' warn') },
             (eff.active ? '현재 ' + eff.currentStarText + ' 기준' : '⚠️ ' + eff.requireStarText + ' 이상부터 적용 (' + eff.requireStarText + ' 기준값)')
-            + (perLevel ? ' · 등급마다 +' + eff.perLevelText : '')
+            + (eff.valuesText ? ' · ' + eff.valuesText : (perLevel ? ' · 등급마다 +' + eff.perLevelText : ''))
         )
     );
 }
@@ -1125,16 +1125,17 @@ async function openCardSlotPicker(replaceSlot, replacingCard) {
     $('#modalBg').classList.add('active');
     try {
         const data = await api('/api/inventory/cards');
-        // 서버 규칙 선반영: 5성 이상 + 메인/다른 슬롯과 같은 캐릭터 제외 (변경 대상 슬롯의 캐릭터는 허용)
-        const usedIds = new Set();
+        // 서버 규칙 선반영: 5성 이상 + 메인/다른 슬롯과 같은 캐릭터·타입 제외 (타입이 다르면 같은 캐릭터도 허용, 변경 대상 슬롯의 카드는 허용)
+        const cardKey = c => Number(c.id) + ':' + (c.type || '일반');
+        const usedKeys = new Set();
         if (lastProfileData) {
-            if (lastProfileData.mainCard) usedIds.add(Number(lastProfileData.mainCard.id));
-            (lastProfileData.cardSlots || []).forEach(c => { if (c && c.name) usedIds.add(Number(c.id)); });
+            if (lastProfileData.mainCard) usedKeys.add(cardKey(lastProfileData.mainCard));
+            (lastProfileData.cardSlots || []).forEach(c => { if (c && c.name) usedKeys.add(cardKey(c)); });
         }
-        if (replacingCard) usedIds.delete(Number(replacingCard.id));
-        const cards = (data.cards || []).filter(c => c && Number(c.number || 0) > 0 && Number(c.star || 0) >= 4 && !usedIds.has(Number(c.id)));
+        if (replacingCard) usedKeys.delete(cardKey(replacingCard));
+        const cards = (data.cards || []).filter(c => c && Number(c.number || 0) > 0 && Number(c.star || 0) >= 4 && !usedKeys.has(cardKey(c)));
         if (!cards.length) {
-            $('#modalBody').replaceChildren(el('div', { class: 'empty' }, '슬롯에 장착할 수 있는 카드가 없습니다.\n(5성 이상, 메인/슬롯과 다른 캐릭터)'));
+            $('#modalBody').replaceChildren(el('div', { class: 'empty' }, '슬롯에 장착할 수 있는 카드가 없습니다.\n(5성 이상, 메인/슬롯과 같은 캐릭터·타입 제외)'));
             return;
         }
         $('#modalBody').replaceChildren(el('div', { class: 'card-grid eqm-card-pick' },
@@ -6260,15 +6261,17 @@ function pvpDeckNode(d) {
 
 function openPvpCardPicker(kind, index) {
     const draft = pvpState.draft;
+    // 같은 캐릭터라도 카드 타입(일반/전직)이 다르면 함께 등록 가능
+    const cardKey = c => Number(c.id) + ':' + (c.type || '일반');
     const used = new Set();
     if (kind === 'slot') {
-        if (draft.mainCard) used.add(Number(draft.mainCard.id));
-        draft.slotCards.forEach((c, i) => { if (c && i !== index) used.add(Number(c.id)); });
+        if (draft.mainCard) used.add(cardKey(draft.mainCard));
+        draft.slotCards.forEach((c, i) => { if (c && i !== index) used.add(cardKey(c)); });
     } else {
-        draft.slotCards.forEach(c => { if (c) used.add(Number(c.id)); });
+        draft.slotCards.forEach(c => { if (c) used.add(cardKey(c)); });
     }
     const cards = (pvpState.data.cards || []).filter(c =>
-        c && !used.has(Number(c.id)) && (kind === 'main' || Number(c.star || 0) >= 4));
+        c && !used.has(cardKey(c)) && (kind === 'main' || Number(c.star || 0) >= 4));
     const pick = card => {
         if (kind === 'main') draft.mainCard = card;
         else draft.slotCards[index] = card;
@@ -7029,6 +7032,10 @@ function dexCharacterCard(entry) {
                 const block = el('div', { class: 'dex-stat-block' });
                 block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과 (전직)'));
                 effs.forEach(eff => {
+                    if (eff.valuesText) {
+                        block.appendChild(el('div', null, eff.name + ' ' + eff.valuesText));
+                        return;
+                    }
                     block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
                     if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
                         block.appendChild(el('div', null, '이후 등급마다 +' + eff.perLevelText));
@@ -7042,9 +7049,13 @@ function dexCharacterCard(entry) {
                 const eff = entry.slotEffect;
                 const block = el('div', { class: 'dex-stat-block' });
                 block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'));
-                block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
-                if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
-                    block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
+                if (eff.valuesText) {
+                    block.appendChild(el('div', null, eff.name + ' ' + eff.valuesText));
+                } else {
+                    block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
+                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
+                        block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
+                }
                 body.appendChild(block);
             }
             const skillsDet = renderSkills(entry.skills);

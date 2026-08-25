@@ -4489,15 +4489,17 @@ function buildSlotEffectInfo(card, data) {
     const star = Number(card && card.star || 0);
     const eff = data.slot_effect;
     const requireStar = 4;
-    const baseValue = Number(eff.base || 0);
-    const perLevel = Number(eff.per_level || 0);
-    const currentValue = star >= requireStar ? baseValue + perLevel * (star - requireStar) : 0;
+    const hasValues = Array.isArray(eff.values) && eff.values.length > 0;
+    const baseValue = hasValues ? Number(eff.values[0] || 0) : Number(eff.base || 0);
+    const perLevel = hasValues ? 0 : Number(eff.per_level || 0);
+    const currentValue = rpgenius.getSlotEffectValueAtStar(eff, star);
     const fmt = v => eff.type == 'flat' ? String(v) : (Math.round(Number(v || 0) * 1000) / 10) + '%';
     return {
         name: eff.name,
         type: eff.type || 'percent',
         baseText: fmt(baseValue),
-        perLevelText: fmt(perLevel),
+        perLevelText: hasValues ? '' : fmt(perLevel),
+        valuesText: hasValues ? rpgenius.formatSlotEffectProgression(eff) : '',
         currentText: fmt(currentValue),
         active: star >= requireStar,
         requireStarText: (requireStar + 1) + '성',
@@ -4542,14 +4544,16 @@ function serializeCard(card, user) {
         classInfo = {
             name: data.class.name || '',
             slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => {
-                const base = Number(se.base || 0);
-                const perLevel = Number(se.per_level || 0);
-                const current = star >= 4 ? base + perLevel * (star - 4) : 0;
+                const hasValues = Array.isArray(se.values) && se.values.length > 0;
+                const base = hasValues ? Number(se.values[0] || 0) : Number(se.base || 0);
+                const perLevel = hasValues ? 0 : Number(se.per_level || 0);
+                const current = rpgenius.getSlotEffectValueAtStar(se, star);
                 const fmt = v => se.type === 'flat' ? String(v) : fmtPct(v);
                 return {
                     name: se.name,
                     baseText: fmt(base),
-                    perLevelText: fmt(perLevel),
+                    perLevelText: hasValues ? '' : fmt(perLevel),
+                    valuesText: hasValues ? rpgenius.formatSlotEffectProgression(se) : '',
                     currentText: fmt(current),
                     active: star >= 4,
                     requireStarText: '5성',
@@ -5021,12 +5025,17 @@ function buildCharacterDex() {
         let jobClass = null;
         if (data.class) {
             jobClass = {
-                slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => ({
-                    name: se.name,
-                    baseText: fmtPct(se.base),
-                    perLevelText: fmtPct(se.per_level),
-                    requireStarText: '5성'
-                })) : [],
+                slotEffects: Array.isArray(data.class.slot_effects) ? data.class.slot_effects.map(se => {
+                    const hasValues = Array.isArray(se.values) && se.values.length > 0;
+                    const fmt = v => se.type === 'flat' ? String(v) : fmtPct(v);
+                    return {
+                        name: se.name,
+                        baseText: hasValues ? fmt(Number(se.values[0] || 0)) : fmtPct(se.base),
+                        perLevelText: hasValues ? '' : fmtPct(se.per_level),
+                        valuesText: hasValues ? rpgenius.formatSlotEffectProgression(se) : '',
+                        requireStarText: '5성'
+                    };
+                }) : [],
                 skills: Array.isArray(data.class.skills) ? data.class.skills.map(buildSkillEntry).filter(Boolean) : []
             };
         }

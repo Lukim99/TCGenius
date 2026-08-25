@@ -188,14 +188,15 @@ function validateDefensePayload(user, payload) {
     const take = makeCardTaker(user);
     const mainCard = take(payload.mainCard);
     if (!mainCard) return { error: '메인 카드를 보유하고 있지 않습니다.' };
-    const ids = new Set([Number(mainCard.id)]);
+    const cardKey = card => Number(card.id) + ':' + (card.type || '일반');
+    const keys = new Set([cardKey(mainCard)]);
     const slotCards = [];
     for (const sig of rawSlots) {
         const card = take(sig);
         if (!card) return { error: '카드 슬롯에 넣을 카드를 보유하고 있지 않습니다.' };
         if (Number(card.star || 0) < 4) return { error: '카드 슬롯에는 5성 이상 카드만 등록할 수 있습니다.' };
-        if (ids.has(Number(card.id))) return { error: '같은 캐릭터는 한 번만 등록할 수 있습니다.' };
-        ids.add(Number(card.id));
+        if (keys.has(cardKey(card))) return { error: '같은 타입의 동일 캐릭터는 한 번만 등록할 수 있습니다.' };
+        keys.add(cardKey(card));
         slotCards.push(card);
     }
     const rules = validateRules(user, mainCard, Array.isArray(payload.rules) ? payload.rules : DEFAULT_RULES);
@@ -263,8 +264,11 @@ function buildSideSnapshot(user, deck) {
     };
 }
 
+// PVP 전용 체력 보정: 전투가 한두 방에 끝나지 않도록 최대 HP를 배수 적용
+const PVP_HP_SCALE = 5;
+
 function makeSide(user, snapshot, rules) {
-    const maxHp = Math.max(1, Math.round(Number(snapshot.stats.hp || 0)));
+    const maxHp = Math.max(1, Math.round(Number(snapshot.stats.hp || 0) * PVP_HP_SCALE));
     const maxMp = Math.max(0, Math.round(Number(snapshot.stats.mp || 0)));
     return {
         name: user.name,
@@ -455,6 +459,10 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     delete extra.skill;
     if (!extra.attackElement && Number(aSlot.nonElementFinalDamage || 0) > 0) {
         extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(aSlot.nonElementFinalDamage || 0);
+    }
+    // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
+    if (defender.shield && Number(defender.shield.amount || 0) > 0 && Number(aSlot.shieldFinalDamage || 0) > 0) {
+        extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + Number(aSlot.shieldFinalDamage || 0);
     }
     if (Number(aSlot.tenthHitFinalAtk || 0) > 0) {
         extra.tenthAtkBonus = Number(aSlot.tenthHitFinalAtk || 0);

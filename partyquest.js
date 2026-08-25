@@ -2758,6 +2758,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     // 명속성 공격 최종 피해(lightFinalDamage): 천공의 갑옷 등 스탯 보유 장비 공통 (솔로 calculateAttackHitResult와 동일 규칙)
     if (resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명') extraFinalDamage += Number(stats.lightFinalDamage || 0);
     if (!resolvePartyAttackElement(attacker, extra && extra.skillElement)) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
+    // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
+    if (Number(monster && monster.shield || 0) > 0) extraFinalDamage += Number(slotEffects.shieldFinalDamage || 0);
     if (extra && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
         extraFinalDamage += Number(runtime.nextFinalDamageBonus || 0);
         runtime.nextFinalDamageBonus = 0;

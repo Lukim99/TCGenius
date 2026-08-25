@@ -566,6 +566,17 @@ function formatIncreaseText(format) {
     return value > 0 ? '+' + text : text;
 }
 
+// 슬롯 효과 성급별 수치 나열 표기: "1 / 2 / 3 / 4 / 5 / 6 / 8 / 12%" (flat형은 % 없이)
+function formatSlotEffectProgression(se) {
+    if (!se) return '';
+    if (Array.isArray(se.values) && se.values.length > 0) {
+        const flat = se.type == 'flat';
+        const nums = se.values.map(v => flat ? String(Number(v || 0)) : String(Math.round(Number(v || 0) * 1000) / 10));
+        return nums.join(' / ') + (flat ? '' : '%');
+    }
+    return formatValue(se);
+}
+
 function formatSkillDesc(skill) {
     if (!skill) return '알 수 없는 스킬입니다.';
     return skillElementPrefix(skill) + skill.desc.replace(/\$\{(\d+)\}/g, (match, index) => {
@@ -602,7 +613,7 @@ function formatCharacterCardList() {
     const lines = ['[ 캐릭터 카드 ]', VIEWMORE];
     characterCards.forEach(card => {
         lines.push('{ ' + card.name + ' }');
-        if (card.slot_effect) lines.push('- ' + card.slot_effect.name + ' ' + formatValue(card.slot_effect));
+        if (card.slot_effect) lines.push('- ' + card.slot_effect.name + ' ' + formatSlotEffectProgression(card.slot_effect));
         (card.skills || []).forEach(skillIndex => {
             const skill = skills[skillIndex];
             if (skill) {
@@ -781,8 +792,8 @@ function formatCharacterCardDetail(card) {
     const lines = [];
     if (card.slot_effect) {
         lines.push('[ 5성 이상 / 카드 슬롯 효과 ]');
-        lines.push('- ' + card.slot_effect.name + ' ' + formatValue(card.slot_effect));
-        lines.push(' ㄴ 5성 이후 등급마다 ' + formatIncreaseText(card.slot_effect));
+        lines.push('- ' + card.slot_effect.name + ' ' + formatSlotEffectProgression(card.slot_effect));
+        lines.push(' ㄴ 5성부터 등급 순 적용');
         lines.push('');
     }
     lines.push('[ 스킬 ]');
@@ -799,8 +810,8 @@ function formatCharacterCardDetail(card) {
         if (Array.isArray(card.class.slot_effects) && card.class.slot_effects.length > 0) {
             lines.push('〈 슬롯 효과 〉');
             card.class.slot_effects.forEach(se => {
-                lines.push('- ' + se.name + ' ' + formatValue(se));
-                lines.push(' ㄴ 5성 이후 등급마다 ' + formatIncreaseText(se));
+                lines.push('- ' + se.name + ' ' + formatSlotEffectProgression(se));
+                lines.push(' ㄴ 5성부터 등급 순 적용');
             });
         }
         if (Array.isArray(card.class.skills) && card.class.skills.length > 0) {
@@ -2308,11 +2319,13 @@ function hasJobClass(id) {
     return !!(data && data.class);
 }
 
-function getCardSlotEffectValue(card, cardData) {
-    if (!card || !cardData || !cardData.slot_effect) return 0;
-    const star = Number(card.star || 0);
-    if (star < 4) return 0;
-    return Number(cardData.slot_effect.base || 0) + Number(cardData.slot_effect.per_level || 0) * (star - 4);
+// 슬롯 효과 성급별 수치: values 배열(★5=index 0 … ★12=index 7) 우선, 구형 base/per_level 폴백
+function getSlotEffectValueAtStar(se, star) {
+    if (!se) return 0;
+    const s = Number(star || 0);
+    if (s < 4) return 0;
+    if (Array.isArray(se.values) && se.values.length > 0) return Number(se.values[Math.min(s - 4, se.values.length - 1)] || 0);
+    return Number(se.base || 0) + Number(se.per_level || 0) * (s - 4);
 }
 
 function calculateCardSlotEffects(user) {
@@ -2331,66 +2344,77 @@ function calculateCardSlotEffects(user) {
         basicDamageBonus: 0,
         skillDamageBonus: 0,
         nonElementFinalDamage: 0,
-        tenthHitFinalAtk: 0
+        tenthHitFinalAtk: 0,
+        skillCoolReduction: 0,
+        shieldEfficiency: 0,
+        attackBuffEfficiency: 0,
+        finalDamage: 0,
+        takenDamageIncrease: 0,
+        maxHpBonus: 0,
+        lightAtk: 0,
+        waterAtk: 0,
+        darkAtk: 0,
+        ultimateDamage: 0,
+        shieldFinalDamage: 0
+    };
+    // 감소형 페널티 키는 대응 보너스 키에서 차감 (표시 수치는 양수로 저장)
+    const applyEffect = (key, value) => {
+        if (!value) return;
+        if (key === 'skillDamageReduction') { effects.skillDamageBonus -= value; return; }
+        if (key === 'basicDamageReduction') { effects.basicDamageBonus -= value; return; }
+        if (typeof effects[key] === 'undefined') return;
+        effects[key] += value;
     };
     (user.card_slot || []).forEach(card => {
         const cardData = characterCards[card.id];
-        if (card.type === '전직' && cardData && cardData.class && Array.isArray(cardData.class.slot_effects)) {
-            const star = Number(card.star || 0);
-            if (star >= 4) {
-                cardData.class.slot_effects.forEach(se => {
-                    if (typeof effects[se.effect] === 'undefined') return;
-                    const value = Number(se.base || 0) + Number(se.per_level || 0) * (star - 4);
-                    // 감소형(받는 피해/MP 소모량)은 절댓값으로 누적
-                    if (se.effect === 'hpDamageReduction' || se.effect === 'mpCostReduction') effects[se.effect] += Math.abs(value);
-                    else effects[se.effect] += value;
-                });
+        if (!cardData) return;
+        const star = Number(card.star || 0);
+        if (card.type === '전직') {
+            if (cardData.class && Array.isArray(cardData.class.slot_effects)) {
+                cardData.class.slot_effects.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
             }
             return;
         }
-        const value = getCardSlotEffectValue(card, cardData);
-        if (value == 0) return;
-        if (cardData.name == '빵귤') effects.expBonus += value;
-        if (cardData.name == '뭔마') effects.hpDamageReduction += Math.abs(value);
-        if (cardData.name == '글렌첵') effects.killRecoveryChance += value;
-        if (cardData.name == '오버라이드') effects.crit += value;
-        if (cardData.name == '일레이나') effects.mpCostReduction += Math.abs(value);
-        if (cardData.name == '진필규') effects.damageBonus += value;
-        if (cardData.name == '켄시') effects.critMul += value;
-        if (cardData.name == '제우스') effects.goldBonus += value;
-        if (cardData.name == '타이란트') effects.itemDropChance += value;
-        if (cardData.name == '마쉐비') effects.defReduction += value;
-        if (cardData.name == '딜러장') effects.basicDamageBonus += value;
-        if (cardData.name == '이익태') effects.skillDamageBonus += value;
-        if (cardData.name == '안성재') effects.nonElementFinalDamage += value;
-        if (cardData.name == '흠시원') effects.tenthHitFinalAtk += value;
+        if (cardData.slot_effect && cardData.slot_effect.effect) applyEffect(cardData.slot_effect.effect, getSlotEffectValueAtStar(cardData.slot_effect, star));
     });
     return effects;
 }
 
 function formatCardSlotEffectLines(user) {
     const slotEffects = calculateCardSlotEffects(user);
+    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk']);
     const effectMap = [
-        ['expBonus', '경험치 획득 증가량'],
-        ['hpDamageReduction', '받는 피해량 감소'],
-        ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
-        ['crit', '치명타 확률 증가'],
-        ['mpCostReduction', 'MP 소모량 감소'],
-        ['damageBonus', '일반 몬스터 대상 피해'],
-        ['critMul', '치명타 피해량 증가'],
-        ['goldBonus', '골드 획득 증가량'],
-        ['itemDropChance', '아이템 드랍 확률'],
-        ['defReduction', '방어력 관통'],
+        ['skillCoolReduction', '스킬 쿨타임 감소'],
         ['basicDamageBonus', '일반 공격 피해'],
-        ['skillDamageBonus', '스킬 공격 피해'],
-        ['nonElementFinalDamage', '[무]속성 공격 시 최종 피해'],
-        ['tenthHitFinalAtk', '10번째 공격마다 최종 공격력']
+        ['skillDamageBonus', '스킬 피해'],
+        ['shieldEfficiency', '보호막 효율 증가'],
+        ['attackBuffEfficiency', '공격력 버프 효율 증가'],
+        ['finalDamage', '최종 피해 증가'],
+        ['takenDamageIncrease', '받는 피해 증가'],
+        ['hpDamageReduction', '받는 피해 감소'],
+        ['maxHpBonus', '최대 HP 증가'],
+        ['crit', '치명타 확률 증가'],
+        ['critMul', '치명타 피해량 증가'],
+        ['lightAtk', '[명]속성 강화'],
+        ['waterAtk', '[수]속성 강화'],
+        ['darkAtk', '[암]속성 강화'],
+        ['goldBonus', '골드 획득량 증가'],
+        ['itemDropChance', '아이템 드랍율 증가'],
+        ['defReduction', '방어 관통력'],
+        ['ultimateDamage', '궁극기 사용 시 추가 피해'],
+        ['nonElementFinalDamage', '[무]속성 공격 시 최종 피해 증가'],
+        ['tenthHitFinalAtk', '10번째 공격마다 최종 공격력 증가'],
+        ['shieldFinalDamage', '보호막 공격 시 최종 피해 증가'],
+        ['expBonus', '경험치 획득 증가량'],
+        ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
+        ['mpCostReduction', 'MP 소모량 감소'],
+        ['damageBonus', '일반 몬스터 대상 피해']
     ];
     return effectMap
-        .filter(entry => Number(slotEffects[entry[0]] || 0) > 0)
+        .filter(entry => Number(slotEffects[entry[0]] || 0) != 0)
         .map(entry => {
             const value = Number(slotEffects[entry[0]] || 0);
-            const display = Math.round(value * 1000) / 10 + '%';
+            const display = flatKeys.has(entry[0]) ? '+' + comma(value) : Math.round(value * 1000) / 10 + '%';
             return '◆ ' + entry[1] + ' ' + display;
         });
 }
@@ -2858,7 +2882,7 @@ function equipMainCharacterCard(user, numberArg) {
     if (!user.inventory || !Array.isArray(user.inventory.card)) user.inventory = { card: [], item: [], equipment: [] };
     const card = user.inventory.card[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
-    if (Array.isArray(user.card_slot) && user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id))) return '❌ 같은 캐릭터가 카드 슬롯에 장착되어 있어 메인 카드로 장착할 수 없습니다.';
+    if (Array.isArray(user.card_slot) && user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id) && (slotCard.type || '일반') == (card.type || '일반'))) return '❌ 같은 타입의 동일 캐릭터가 카드 슬롯에 장착되어 있어 메인 카드로 장착할 수 없습니다.';
     user.inventory.card.splice(number - 1, 1);
     if (user.main_card && typeof user.main_card.id != 'undefined') user.inventory.card.push(user.main_card);
     user.main_card = card;
@@ -2887,8 +2911,8 @@ function equipCharacterCardSlot(user, numberArg) {
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if (Number(card.star || 0) < 4) return '❌ 카드 슬롯에는 5성 이상 카드만 장착할 수 있습니다.';
     if (!Array.isArray(user.card_slot)) user.card_slot = [];
-    if (user.main_card && typeof user.main_card.id != 'undefined' && Number(user.main_card.id) == Number(card.id)) return '❌ 메인 카드와 같은 캐릭터는 카드 슬롯에 장착할 수 없습니다.';
-    if (user.card_slot.some(slotCard => slotCard && slotCard.id == card.id)) return '❌ 이미 같은 캐릭터가 카드 슬롯에 장착되어 있습니다.';
+    if (user.main_card && typeof user.main_card.id != 'undefined' && Number(user.main_card.id) == Number(card.id) && (user.main_card.type || '일반') == (card.type || '일반')) return '❌ 메인 카드와 같은 타입의 동일 캐릭터는 카드 슬롯에 장착할 수 없습니다.';
+    if (user.card_slot.some(slotCard => slotCard && Number(slotCard.id) == Number(card.id) && (slotCard.type || '일반') == (card.type || '일반'))) return '❌ 이미 같은 타입의 동일 캐릭터가 카드 슬롯에 장착되어 있습니다.';
     user.inventory.card.splice(number - 1, 1);
     user.card_slot.push(card);
     return '✅ 카드 슬롯에 장착했습니다.\n- ' + formatUserCard(card);
@@ -3329,6 +3353,17 @@ function calculateUserStats(user, _out) {
     const slotEffects = calculateCardSlotEffects(user);
     stats.crit = Number(stats.crit || 0) + slotEffects.crit;
     stats.critMul = Number(stats.critMul || 0) + slotEffects.critMul;
+    // 스탯 파이프라인으로 흡수되는 슬롯 효과 (솔로/파티/PVP 공통 반영)
+    stats.cooldown = Number(stats.cooldown || 0) + Number(slotEffects.skillCoolReduction || 0);
+    stats.shieldEfficiency = Number(stats.shieldEfficiency || 0) + Number(slotEffects.shieldEfficiency || 0);
+    stats.attackBuffEfficiency = Number(stats.attackBuffEfficiency || 0) + Number(slotEffects.attackBuffEfficiency || 0);
+    stats.finalDamage = Number(stats.finalDamage || 0) + Number(slotEffects.finalDamage || 0);
+    stats.takenDamage = Number(stats.takenDamage || 0) + Number(slotEffects.takenDamageIncrease || 0);
+    stats.ultimateDamage = Number(stats.ultimateDamage || 0) + Number(slotEffects.ultimateDamage || 0);
+    stats.lightAtk = Number(stats.lightAtk || 0) + Number(slotEffects.lightAtk || 0);
+    stats.waterAtk = Number(stats.waterAtk || 0) + Number(slotEffects.waterAtk || 0);
+    stats.darkAtk = Number(stats.darkAtk || 0) + Number(slotEffects.darkAtk || 0);
+    if (Number(slotEffects.maxHpBonus || 0) != 0) stats.hp = Math.round(Number(stats.hp || 0) * (1 + Number(slotEffects.maxHpBonus || 0)));
     if (stats.forceZeroCrit) stats.crit = 0;
     // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
     if (titleDef && titleDef.specialEffect) {
@@ -14009,7 +14044,8 @@ module.exports = {
     formatOrbLines,
     getOrbData,
     addOrbStats,
-    getCardSlotEffectValue,
+    getSlotEffectValueAtStar,
+    formatSlotEffectProgression,
     addInventoryItem,
     removeInventoryItem,
     getInventoryItemCount,
