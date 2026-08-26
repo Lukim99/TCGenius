@@ -3002,12 +3002,14 @@ function convertCharacterCardUniversal(user, numberArg, confirmedFashion) {
     return '✅ 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
 }
 
-function convertJobCharacterCard(user, numberArg) {
+function convertJobCharacterCard(user, numberArg, can) {
     const number = Number(numberArg);
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     if (!Number.isInteger(number) || number < 1 || number > cards.length) return '❌ 존재하지 않는 카드 번호입니다.';
     const card = cards[number - 1];
     if (card.type !== '전직') return '❌ 전직 카드만 전직 변환석으로 변환할 수 있습니다.';
+    const maxStar = CHARACTER_CONVERT_MAX_STAR[can] || 9;
+    if (Number(card.star || 0) >= maxStar) return '❌ 해당 등급 카드는 이 전직 변환석을 사용할 수 없습니다.';
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const jobCardIds = characterCards.map((c, i) => i).filter(i => characterCards[i] && characterCards[i].class);
     const candidates = jobCardIds.filter(id => id != Number(card.id));
@@ -10930,12 +10932,14 @@ async function useItem(user, itemName, countArg) {
             }
         }
         if (item.use == '전직캐릭터변환') {
-            const jobCards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []).filter(c => c.type === '전직');
+            const jobMaxStar = CHARACTER_CONVERT_MAX_STAR[item.can] || 9;
+            const jobCards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []).filter(c => c.type === '전직' && Number(c.star || 0) < jobMaxStar);
             if (jobCards.length == 0) {
                 addInventoryItem(user, itemId, useCount);
                 lines.push('❌ 변환할 전직 카드가 없어 아이템을 반환했습니다.');
             } else {
                 user.pendingAction = { type: '전직캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+                if (item.can) user.pendingAction.can = item.can;
                 lines.push('변환할 전직 캐릭터 카드를 선택해주세요.');
                 lines.push('/RPGenius 선택 [카드번호]');
                 lines.push('/RPGenius 사용취소');
@@ -11026,8 +11030,9 @@ function getWebItemUsePending(user) {
             options = makeCardOptions(() => true);
         }
     } else if (pending.type == '전직캐릭터변환') {
+        const jobMaxStar = CHARACTER_CONVERT_MAX_STAR[pending.can] || 9;
         title = '변환할 전직 카드 선택';
-        options = makeCardOptions(entry => entry.card.type === '전직');
+        options = makeCardOptions(entry => entry.card.type === '전직' && Number(entry.card.star || 0) < jobMaxStar);
     } else if (pending.type == '패션적용') {
         if (pending.cardNumber) {
             const card = cards[pending.cardNumber - 1];
@@ -11120,7 +11125,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     if (pending.type == '지정캐릭터변환') return convertCharacterCardToTarget(user, choice);
     if (pending.type == '캐릭터변환') return convertCharacterCard(user, pending.cardNumber || choice, confirmed === true, pending.can);
     if (pending.type == '만능캐릭터변환') return convertCharacterCardUniversal(user, pending.cardNumber || choice, confirmed === true);
-    if (pending.type == '전직캐릭터변환') return convertJobCharacterCard(user, choice);
+    if (pending.type == '전직캐릭터변환') return convertJobCharacterCard(user, choice, pending.can);
     if (pending.type == '패션적용') return applyFashionStoneToCard(user, choice);
     if (pending.type == '패션제거') return removeCardFashion(user, choice);
     if (pending.type == '무료장비강화') {
@@ -12932,7 +12937,7 @@ async function handleRPGCommand(data, channel, context = {}) {
             reply('❌ 변환할 전직 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
             return true;
         }
-        const result = convertJobCharacterCard(user, args[1]);
+        const result = convertJobCharacterCard(user, args[1], user.pendingAction.can);
         await user.save();
         reply(result);
         return true;
