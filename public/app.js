@@ -3190,6 +3190,93 @@ function renderQuestDetail() {
     detail.replaceChildren(head, desc, objectives, rewards, actions);
 }
 
+const QUEST_REWARD_CURRENCY_ICONS = {
+    '골드': '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png'),
+    '가넷': '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('가넷.png'),
+    '포인트': '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('포인트.png')
+};
+
+function parseQuestRewardLine(line) {
+    const text = String(line || '').replace(/^\s*-\s*/, '').trim();
+    if (!text) return null;
+    if (/^레벨업!/.test(text)) return { levelUp: text };
+    const exp = text.match(/^XP\s+(.+)$/i);
+    if (exp) return { name: '경험치', count: '+' + exp[1], type: '경험치' };
+    const point = text.match(/^💰\s*([\d,]+)P$/);
+    if (point) return { name: '포인트', count: '+' + point[1] + 'P', type: '포인트' };
+    const counted = text.match(/^(.*?)\s+x([\d,]+)$/);
+    const rawName = (counted ? counted[1] : text).trim();
+    const type = ['골드', '가넷', '마일리지', '포인트', '칭호'].find(value => rawName.includes(value)) || '';
+    const name = rawName.replace(/^(?:🪙|💠|Ⓜ️|🏅)\s*/u, '');
+    return { name: name, count: counted ? 'x' + counted[2] : '', type: type };
+}
+
+function questRewardVisual(result, configured, usedIndexes) {
+    let matchIndex = -1;
+    if (result.type) matchIndex = configured.findIndex((reward, index) => !usedIndexes.has(index) && reward.type === result.type);
+    if (matchIndex < 0) {
+        const resultName = result.name.replace(/[<\[（(].*?[>\]）)]/g, '').replace(/[^0-9A-Za-z가-힣]/g, '');
+        matchIndex = configured.findIndex((reward, index) => {
+            if (usedIndexes.has(index)) return false;
+            const rewardName = String(reward.label || '').replace(/\s+x[\d,~]+.*$/i, '').replace(/[^0-9A-Za-z가-힣]/g, '');
+            return resultName && rewardName && (resultName.includes(rewardName) || rewardName.includes(resultName));
+        });
+    }
+    if (matchIndex >= 0) usedIndexes.add(matchIndex);
+    const reward = matchIndex >= 0 ? configured[matchIndex] : null;
+    return {
+        iconUrl: reward && reward.iconUrl ? reward.iconUrl : QUEST_REWARD_CURRENCY_ICONS[result.type] || null,
+        fallback: result.type === '경험치' ? 'XP' : result.type === '마일리지' ? 'M' : result.type === '칭호' ? '★' : '◆'
+    };
+}
+
+function showQuestRewardModal(quest, result) {
+    const parsed = (result.lines || []).map(parseQuestRewardLine).filter(Boolean);
+    const rewards = parsed.filter(item => !item.levelUp);
+    const levelUp = parsed.find(item => item.levelUp);
+    const usedIndexes = new Set();
+    const rewardList = el('div', { class: 'quest-claim-rewards' });
+    if (rewards.length) {
+        rewards.forEach((reward, index) => {
+            const visual = questRewardVisual(reward, quest.rewards || [], usedIndexes);
+            rewardList.appendChild(el('div', { class: 'quest-claim-reward', style: { '--reward-delay': (index * 55) + 'ms' } },
+                el('div', { class: 'quest-claim-icon' },
+                    visual.iconUrl
+                        ? el('img', { src: visual.iconUrl, alt: reward.name })
+                        : el('span', { class: 'quest-claim-fallback' }, visual.fallback)),
+                el('div', { class: 'quest-claim-reward-copy' },
+                    el('span', { class: 'quest-claim-reward-label' }, '획득 보상'),
+                    el('strong', null, reward.name)),
+                reward.count ? el('b', { class: 'quest-claim-count' }, reward.count) : null));
+        });
+    } else {
+        rewardList.appendChild(el('div', { class: 'quest-claim-empty' }, '보상이 인벤토리에 지급되었습니다.'));
+    }
+
+    const bg = el('div', { class: 'quest-claim-modal-bg' });
+    const close = () => bg.remove();
+    const closeBtn = el('button', { class: 'quest-claim-confirm', type: 'button', onclick: close }, '확인');
+    const modal = el('section', { class: 'quest-claim-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'questClaimTitle' },
+        el('div', { class: 'quest-claim-shine', 'aria-hidden': 'true' }),
+        el('div', { class: 'quest-claim-hero' },
+            el('div', { class: 'quest-claim-seal', 'aria-hidden': 'true' },
+                svgIcon('<svg viewBox="0 0 24 24" fill="none"><path d="m7 12 3.2 3.2L17.5 8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')),
+            el('span', { class: 'quest-claim-eyebrow' }, result.skipped ? 'QUEST SKIPPED' : 'QUEST COMPLETE'),
+            el('h2', { id: 'questClaimTitle' }, '보상을 획득했어요'),
+            el('p', null, result.name || quest.name)),
+        el('div', { class: 'quest-claim-body' },
+            rewardList,
+            levelUp ? el('div', { class: 'quest-claim-levelup' },
+                el('span', { 'aria-hidden': 'true' }, '↑'),
+                el('strong', null, levelUp.levelUp)) : null),
+        el('div', { class: 'quest-claim-footer' }, closeBtn));
+    bg.appendChild(modal);
+    bg.addEventListener('click', event => { if (event.target === bg) close(); });
+    bg.addEventListener('keydown', event => { if (event.key === 'Escape' || event.key === 'Enter') close(); });
+    document.body.appendChild(bg);
+    setTimeout(() => closeBtn.focus(), 30);
+}
+
 async function claimQuest(quest, skip) {
     if (questState.busy) return;
     if (skip && !(await showConfirm('레벨 조건으로 이 퀘스트를 스킵하고 보상을 받습니다. 계속할까요?'))) return;
@@ -3198,8 +3285,7 @@ async function claimQuest(quest, skip) {
     try {
         const r = await postApi('/api/quests/claim', { id: quest.id, skip: !!skip });
         questState.list = r.list || [];
-        showAlert('[' + r.name + '] ' + (r.skipped ? '퀘스트를 스킵했습니다.' : '퀘스트 완료!')
-            + (r.lines && r.lines.length ? '\n\n[ 획득 보상 ]\n' + r.lines.join('\n') : ''));
+        showQuestRewardModal(quest, r);
     } catch (e) {
         showAlert(e.message);
     } finally {
