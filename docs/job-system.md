@@ -60,10 +60,10 @@
 | 인덱스 | 이름 | 배율(5성) | 배율(12성) | MP | 쿨타임 |
 |--------|------|-----------|------------|----|--------|
 | 12 | 유드 알레프 | 600% | 775% | 560 | 120초 |
-| 13 | 안면강타 | 530% | 740% | 440 | 116초 |
+| 13 | 안면강타 | 560% | 735% | 510 | 116초 |
 
 - **유드 알레프** `format.base: 5.0, per_star: 0.25` → 5성: 500%+100%=600%
-- **안면강타** `format.base: 4.1, per_star: 0.30` → 5성: 410%+120%=530%
+- **안면강타** `format.base: 4.6, per_star: 0.25` → 5성: 460%+100%=560%
 
 ### Item.json — 신규 아이템
 
@@ -134,10 +134,9 @@
 | 스킬 | 효과 | 저장소 |
 |------|------|--------|
 | 유드 알레프 | 다음 스킬 공격 피해 +10% (1회) | `getFieldBuffs(user).nextSkillDamageBonus` |
-| 안면강타 | 다음 받는 피해 30% 감소 (1회) | `getFieldBuffs(user).nextDamageReduction` |
+| 안면강타 | 시벌론 활성화 | `user.field.sivalonCharge = 5` |
 
 - `nextSkillDamageBonus`: 다음 스킬 rawDamage 계산 시 소비 (유드 알레프 자신은 제외)
-- `nextDamageReduction`: elite/사냥/월드보스 피격 처리 직전 `consumeNextDamageReduction` 호출로 소비
 
 #### `getCardFashion` / `getApplicableFashionsForCard`
 `card.type === '전직'`이면 `fashion.type === '전직'` 패션만, 일반 카드이면 전직 패션 제외.
@@ -162,10 +161,10 @@ elite·사냥·월드보스 골드 계산에 `+ (user.jobPrestige === true ? 0.0
 | 스킬 | 효과 | 저장소 |
 |------|------|--------|
 | 유드 알레프 | 다음 스킬 피해 +10% (1회) | `caster.runtime.nextSkillDamageBonus` |
-| 안면강타 | 다음 받는 피해 -30% (1회) | `caster.runtime.nextDamageReduction` |
+| 안면강타 | 시벌론 활성화 | `caster.runtime.sivalonCharge = 5` |
 
 - rawDamage 계산 시 `nextSkillDamageBonus` 소비해 합산
-- 각각 `upsertMemberBuff`로 버프 UI에도 표시 (remain: 1 → 다음 행동 후 자동 소멸)
+- 유드 알레프는 `upsertMemberBuff`로 버프 UI에도 표시 (remain: 1 → 다음 행동 후 자동 소멸)
 
 #### `applyIncomingDamage` — `nextDamageReduction` 소비
 보호막 흡수 직전에 `caster.runtime.nextDamageReduction` 있으면 피해에 (1 - 0.30) 곱 후 0으로 초기화.

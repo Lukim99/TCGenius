@@ -657,7 +657,7 @@ function doSkill(battle, actorKey, skill, t) {
     }
     if (name == '자인') actor.runtime.buffs.nextBasicDamageBonus = { value: value(1), until: null };
     if (name == '유드 알레프') actor.runtime.buffs.nextSkillDamageBonus = { value: 0.10, until: null };
-    if (name == '안면강타') actor.runtime.buffs.nextDamageReduction = { value: 0.30, until: null };
+    if (name == '안면강타') actor.runtime.sivalonCharge = 5;
 
     let shieldAmount = 0;
     if (name == '글버지') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 8000, t);
@@ -665,8 +665,7 @@ function doSkill(battle, actorKey, skill, t) {
     if (name == '핫식스의정력') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t);
     if (name == '이어브피') shieldAmount = setShield(actor, actor.maxMp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t);
     if (name == '감사합니다 친구야') {
-        shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t);
-        actor.runtime.buffs.receivedDamageReduction = { value: 0.3, until: t + 12000 };
+        actor.runtime.buffs.receivedDamageReduction = { value: 0.3, until: t + 10000 };
     }
     if (shieldAmount > 0) pushEvent(battle, { at: t, actor: actorKey, action: 'shield', skillName: name, shield: shieldAmount, text: name + ' — 보호막 ' + comma(shieldAmount) });
 

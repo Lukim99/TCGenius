@@ -8,9 +8,12 @@ for (const line of fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'ut
 }
 
 const rpg = require('../rpgenius');
+const partyquest = require('../partyquest');
 
 const characterCards = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'CharacterCards.json'), 'utf8'));
+const skills = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'Skills.json'), 'utf8'));
 const cardIdByName = name => characterCards.findIndex(c => c && c.name === name);
+const skillByName = name => skills.find(skill => skill && skill.name === name);
 
 function makeFieldUser(name, cardName, dungeonName) {
     const user = new rpg.RPGUser(name, name + '-id');
@@ -26,6 +29,22 @@ function makeFieldUser(name, cardName, dungeonName) {
 (async () => {
     await rpg.initRpgeniusData();
     const dungeonName = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'Dungeon.json'), 'utf8'))[0].name;
+
+    const expectedBalance = {
+        '안면강타': { format: [[4.6, .25]], mp: 510, cooldown: 116000 },
+        '감사합니다 친구야': { format: [[3.5, .35], [.18, .03]], mp: 520, cooldown: 106000 },
+        'SUPER EASY': { format: [[1.4, .1], [.1, .02]], mp: 65, cooldown: 11000 },
+        'KICK BACK': { format: [[5.6, .25], [.3, .03]], mp: 540, cooldown: 128000 },
+        '초특급한탕': { format: [[1.8, .2], [7.77, .77]], mp: 777, cooldown: 77000 },
+        '끝판왕': { format: [[6.4, .15]], mp: 820, cooldown: 164000 }
+    };
+    for (const [name, expected] of Object.entries(expectedBalance)) {
+        const skill = skillByName(name);
+        assert.ok(skill, name + ' 스킬이 존재해야 한다');
+        assert.deepStrictEqual(skill.format.map(value => [value.base, value.per_star]), expected.format, name + ' 배율');
+        assert.strictEqual(skill.mp_cost, expected.mp, name + ' MP');
+        assert.strictEqual(skill.cooltime, expected.cooldown, name + ' 쿨타임');
+    }
 
     // ===== 시벌론 (뭔마) =====
     const munma = makeFieldUser('테스트뭔마', '뭔마', dungeonName);
@@ -62,6 +81,59 @@ function makeFieldUser(name, cardName, dungeonName) {
     const cd = Number(munma.field.nextActionAt || 0) - before;
     assert.ok(cd > 0 && cd <= 700, '상태 중 일반 공격 쿨타임 0.5초 (실측 ' + cd + 'ms)');
     assert.strictEqual(Number(munma.field.sivalonCharge || 0), 0, '상태 중 충전 미증가');
+
+    // 안면강타 → 시벌론 즉시 활성화(충전 5/5), 기존 다음 피해 감소는 부여하지 않음
+    const jobMunma = makeFieldUser('테스트전직뭔마', '뭔마', dungeonName);
+    jobMunma.main_card.type = '전직';
+    r = await rpg.useSkillInField(jobMunma, '안면강타');
+    assert.ok(String(r).includes('시벌론 활성화'), '안면강타 발동 메시지: ' + r);
+    assert.strictEqual(Number(jobMunma.field.sivalonCharge || 0), 5, '안면강타 사용 후 시벌론 충전 5/5');
+    assert.ok(!(jobMunma.field.buffs && jobMunma.field.buffs.nextDamageReduction), '안면강타는 다음 피해 감소를 부여하지 않아야 한다');
+
+    // 감사합니다 친구야 → 솔로에서는 자기 보호막 없이 피해 감소만 10초
+    const jin = makeFieldUser('테스트진필규', '진필규', dungeonName);
+    jin.main_card.type = '전직';
+    const thanksUsedAt = Date.now();
+    r = await rpg.useSkillInField(jin, '감사합니다 친구야');
+    const thanksBuff = jin.field.buffs && jin.field.buffs.receivedDamageReduction;
+    assert.ok(String(r).includes('10초 동안 받는 피해 30% 감소'), '감사합니다 친구야 발동 메시지: ' + r);
+    assert.ok(thanksBuff && thanksBuff.value === .3, '받는 피해 30% 감소');
+    assert.ok(Math.abs(Number(thanksBuff.expired_at) - thanksUsedAt - 10000) < 1500, '피해 감소 지속시간 10초');
+    assert.ok(!jin.field.shield, '솔로에서는 자기 보호막을 획득하지 않아야 한다');
+
+    // 파티에서는 시전자 최대 HP 기준 보호막을 생존 파티원 모두에게 10초 부여
+    const partyJin = makeFieldUser('테스트파티진필규', '진필규', dungeonName);
+    partyJin.main_card.type = '전직';
+    partyJin.save = async () => {};
+    const partyAlly = makeFieldUser('테스트파티아군', '뭔마', dungeonName);
+    partyAlly.save = async () => {};
+    const partyUsers = { [partyJin.name]: partyJin, [partyAlly.name]: partyAlly };
+    const originalGetUser = rpg.getRPGUserByName;
+    rpg.getRPGUserByName = async name => partyUsers[name] || null;
+    try {
+        const created = await partyquest.createRoom(partyJin.name, 'blackHodu');
+        assert.ok(created.roomId, '파티방 생성');
+        assert.ok((await partyquest.joinRoom(created.roomId, partyAlly.name)).ok, '파티원 입장');
+        assert.ok(partyquest.setPosition(partyJin.name, partyquest.POSITION_LIST[0]).ok, '시전자 포지션 선택');
+        assert.ok(partyquest.setPosition(partyAlly.name, partyquest.POSITION_LIST[1]).ok, '파티원 포지션 선택');
+        assert.ok(partyquest.setReady(partyJin.name, true).ok && partyquest.setReady(partyAlly.name, true).ok, '파티 준비');
+        assert.ok((await partyquest.start(partyJin.name)).ok, '파티 퀘스트 시작');
+        const room = partyquest.getRoomOf(partyJin.name);
+        room.introUntil = 0;
+        room.members.forEach(member => { member.runtime.mp = 1000000000; member.runtime.actionUntil = 0; });
+        const partyThanksUsedAt = Date.now();
+        assert.ok(partyquest.useSkill(partyJin.name, '감사합니다 친구야').ok, '파티에서 감사합니다 친구야 사용');
+        const caster = room.members.find(member => member.name === partyJin.name);
+        const ally = room.members.find(member => member.name === partyAlly.name);
+        assert.ok(caster.runtime.shield > 0 && ally.runtime.shield > 0, '생존 파티원 전체에게 보호막 부여');
+        assert.ok(Math.abs(caster.runtime.shieldExpireAt - partyThanksUsedAt - 10000) < 1500, '시전자 보호막 지속시간 10초');
+        assert.ok(Math.abs(ally.runtime.shieldExpireAt - partyThanksUsedAt - 10000) < 1500, '파티원 보호막 지속시간 10초');
+        assert.strictEqual(caster.runtime.takenDmgMul, .7, '시전자 받는 피해 30% 감소');
+    } finally {
+        partyquest.leaveRoom(partyAlly.name);
+        partyquest.leaveRoom(partyJin.name);
+        rpg.getRPGUserByName = originalGetUser;
+    }
 
     // ===== 건력 (타이란트) =====
     const tyrant = makeFieldUser('테스트타이란트', '타이란트', dungeonName);

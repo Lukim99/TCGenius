@@ -4887,21 +4887,24 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         upsertMemberBuff(caster, { id: 'nextSkillDmg', label: '유드 알레프 (다음 스킬+)', value: 0.10, remain: 1 });
     }
     if (skillName === '안면강타') {
-        caster.runtime.nextDamageReduction = 0.30;
-        upsertMemberBuff(caster, { id: 'nextDmgRed', label: '안면강타 (다음 피해감소)', value: 0.30, remain: 1 });
+        caster.runtime.sivalonCharge = 5;
+        pushCombat(room, caster.name + ' [안면강타] → 시벌론 활성화', 'buff');
     }
     if (skillName === '감사합니다 친구야') {
         const shieldBonus = getTranscendStageValue(caster, '강릉함씨 32대손', .08, .02);
         const shieldAmt = Math.max(1, Math.round(caster.runtime.hpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster) * (1 + shieldBonus)));
-        if (canPartyApplyShield(caster, caster)) {
-            caster.runtime.shield = (caster.runtime.shield || 0) + shieldAmt;
-            caster.runtime.shieldHits = 99;
-            caster.runtime.shieldExpireAt = Date.now() + 12000;
-            caster.runtime.shieldExpireHeal = 0;
+        for (const m of room.members) {
+            if (!m.runtime || m.runtime.dead) continue;
+            if (!canPartyApplyShield(caster, m)) continue;
+            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            m.runtime.shieldHits = 99;
+            m.runtime.shieldExpireAt = Date.now() + 10000;
+            m.runtime.shieldExpireHeal = 0;
+            applyTranscendAllyEffect(room, caster, m, 'shield');
         }
         caster.runtime.takenDmgMul = 0.7;
-        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '감사합니다 친구야 (피해감소)', value: 0.7, remain: 12 });
-        pushCombat(room, caster.name + ' [감사합니다 친구야] → 보호막 +' + comma(shieldAmt) + ' / 받는 피해 ▼', 'buff');
+        upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '감사합니다 친구야 (피해감소)', value: 0.7, remain: 10 });
+        pushCombat(room, caster.name + ' [감사합니다 친구야] → 파티 보호막 +' + comma(shieldAmt) + ' (10초) / 받는 피해 ▼', 'buff');
     }
     if (skillName === 'KICK BACK') {
         extra.critChanceMul = 0.5;

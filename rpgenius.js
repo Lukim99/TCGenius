@@ -6786,19 +6786,13 @@ function executeMainCardSkillInField(user, skillName) {
         extra.notice = '유드 알레프: 다음 스킬 공격 피해 +10%';
     }
     if (skillData.skill.name == '안면강타') {
-        getFieldBuffs(user).nextDamageReduction = { value: 0.30 };
-        extra.notice = '안면강타: 다음 받는 피해 30% 감소';
+        user.field.sivalonCharge = 5;
+        extra.notice = '안면강타: 시벌론 활성화';
     }
     if (skillData.skill.name == '감사합니다 친구야') {
-        const ratio = getSkillValue(skillData.skill, 1, star);
-        const ham = getEquippedNamed(user, '강릉함씨 32대손');
-        const hamBonus = ham ? .08 + .02 * (getTranscendStage(ham.ref.equip, ham.data) - 1) : 0;
-        const amount = Math.round(Number(stats.hp || 0) * ratio * (1 + Number(stats.shieldEfficiency || 0)) * (1 + hamBonus));
-        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
-        extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
         extra.receivedDamageReduction = 0.3;
-        getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 12000 };
-        extra.notice = '감사합니다 친구야: 12초 동안 받는 피해 30% 감소';
+        getFieldBuffs(user).receivedDamageReduction = { value: 0.3, expired_at: Date.now() + 10000 };
+        extra.notice = '감사합니다 친구야: 10초 동안 받는 피해 30% 감소';
     }
     if (skillData.skill.name == 'KICK BACK') {
         extra.critChanceMul = 0.5;
