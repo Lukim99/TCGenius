@@ -914,6 +914,8 @@ function finishBattle(user, battle, outcome, reason, t) {
     state.rating = ratingAfter;
     if (outcome == 'win') state.wins = Number(state.wins || 0) + 1;
     else state.losses = Number(state.losses || 0) + 1;
+    // 퀘스트: PVP 전투/승리 목표 진행 (finishBattle 이후 호출부의 user.save 흐름으로 저장)
+    if (typeof rpgenius.recordQuestEvent == 'function') rpgenius.recordQuestEvent(user, 'pvp', { win: outcome == 'win' });
     const oppRatingAfter = Math.max(0, oppRating + oppDelta);
     battle.result = {
         outcome, reason,

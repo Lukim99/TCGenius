@@ -173,7 +173,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '[H]필드': '[H]필드', pvp: 'PVP', '버닝': '버닝', '자물쇠': '자물쇠', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '파티퀘스트' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '버닝': '버닝', '자물쇠': '자물쇠', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -181,7 +181,7 @@ const ICONS = {
     me:        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
     content:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
     market:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
-    party:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg>`,
+    event:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>`,
     community: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`,
 };
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 종료 후 탭 자체를 노출하지 않는다.
@@ -191,9 +191,9 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['캡슐', ...(EVENT_DICE_ENDED ? [] : ['event']),'[H]필드', 'pvp', '버닝', '자물쇠', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['캡슐', '버닝', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
-    ...(window.HAS_PARTY ? [{ id: 'party', label: '파티', iconSvg: ICONS.party, pages: ['party'] }] : []),
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
 
@@ -242,7 +242,6 @@ function buildSubNav(group) {
 function activateGroup(groupId) {
     const group = GROUPS.find(g => g.id === groupId);
     if (!group) return;
-    if (group.pages[0] === 'party') { location.href = '/party'; return; }
     syncGroupActive(groupId);
     buildSubNav(group);
     navigatePage(group.pages[0]);
@@ -273,6 +272,8 @@ function navigatePage(pageId) {
     if (pageId === '버닝') loadBurning();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '캡슐') loadCapsule();
+    if (pageId === '퀘스트') loadQuests();
+    if (pageId === '사냥') renderHuntMenu();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
@@ -3053,6 +3054,153 @@ function renderPresets() {
     const visible = Math.min(d.slotCount, d.unlocked + 1);
     root.replaceChildren(el('div', { class: 'preset-grid' },
         Array.from({ length: visible }, (_, i) => presetCard(i))));
+}
+
+// ===== 사냥 메뉴 =====
+// 카드 배경 이미지: DB/RPGenius/ui/사냥/<이름>.png (없으면 어두운 카드로 폴백)
+const HUNT_MENU = [
+    { key: '일반 필드', level: 'Lv.1 ~ 300', action: null },
+    { key: '헬 필드', level: 'Lv.141 ~ 300', action: () => { location.href = '/hfield'; } },
+    { key: '일일던전', level: 'Lv.101 ~ 300', action: null },
+    { key: '월드보스', level: 'Lv.1 ~ 300', action: null },
+    { key: '레이드', level: 'Lv.71 ~ 300', action: () => {
+        if (window.HAS_PARTY) location.href = '/party';
+        else showAlert('레이드에 입장할 수 없습니다.');
+    } }
+];
+
+function renderHuntMenu() {
+    const root = $('#huntMenu');
+    if (!root) return;
+    root.replaceChildren(...HUNT_MENU.map(entry => {
+        const img = el('img', {
+            class: 'hunt-card-bg',
+            src: '/rpg-ui?file=' + encodeURIComponent('사냥/' + entry.key + '.png'),
+            alt: '',
+            onerror: () => img.remove()
+        });
+        return el('button', {
+            type: 'button',
+            class: 'hunt-card',
+            onclick: () => { if (entry.action) entry.action(); else showAlert('준비중입니다.'); }
+        },
+            img,
+            el('span', { class: 'hunt-card-overlay' }),
+            el('span', { class: 'hunt-card-text' },
+                el('span', { class: 'hunt-card-name' }, entry.key),
+                el('span', { class: 'hunt-card-level' }, entry.level)));
+    }));
+}
+
+// ===== 퀘스트 게시판 =====
+const questState = { list: [], selectedId: null, busy: false };
+const QUEST_BADGE_CLASS = { '에픽': 'epic', '일일': 'daily', '주간': 'weekly', '일반': 'normal', '이벤트': 'event' };
+
+async function loadQuests() {
+    const listEl = $('#questList');
+    if (!listEl) return;
+    listEl.replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+    try {
+        const data = await api('/api/quests');
+        questState.list = data.list || [];
+        if (!questState.list.some(q => q.id === questState.selectedId)) questState.selectedId = null;
+        renderQuests();
+    } catch (e) {
+        listEl.replaceChildren(el('div', { class: 'empty err' }, e.message));
+    }
+}
+
+function questBadgeNode(quest) {
+    return el('span', { class: 'quest-badge ' + (QUEST_BADGE_CLASS[quest.badge] || 'normal') }, quest.badge);
+}
+
+function renderQuests() {
+    const listEl = $('#questList');
+    if (!listEl) return;
+    if (!questState.list.length) {
+        listEl.replaceChildren(el('div', { class: 'empty' }, '진행할 수 있는 퀘스트가 없습니다.'));
+        renderQuestDetail();
+        return;
+    }
+    listEl.replaceChildren(...questState.list.map(quest =>
+        el('button', {
+            type: 'button',
+            class: 'quest-row' + (quest.id === questState.selectedId ? ' on' : '') + (quest.claimed ? ' claimed' : ''),
+            onclick: () => { questState.selectedId = quest.id; renderQuests(); }
+        },
+            questBadgeNode(quest),
+            el('span', { class: 'quest-row-name ' + (QUEST_BADGE_CLASS[quest.badge] || 'normal') }, quest.name),
+            quest.complete ? el('span', { class: 'quest-row-state ok' }, '완료') : (quest.claimed ? el('span', { class: 'quest-row-state done' }, '수령됨') : null)
+        )
+    ));
+    renderQuestDetail();
+}
+
+function renderQuestDetail() {
+    const detail = $('#questDetail');
+    if (!detail) return;
+    const quest = questState.list.find(item => item.id === questState.selectedId);
+    if (!quest) {
+        detail.replaceChildren(el('div', { class: 'empty' }, questState.list.length ? '퀘스트를 선택하세요.' : '표시할 퀘스트가 없습니다.'));
+        return;
+    }
+    const head = el('div', { class: 'quest-detail-head' },
+        el('div', { class: 'quest-detail-title' }, questBadgeNode(quest), el('h2', null, quest.name)),
+        el('span', { class: 'quest-level' },
+            '수행 가능 Lv.' + quest.minLevel + ' ~ ' + quest.maxLevel
+            + (quest.resetType ? ' · ' + quest.resetType + ' 초기화' : '')
+            + (quest.epicOrder ? ' · 에픽 ' + quest.epicOrder + '번' : ''))
+    );
+    const desc = el('p', { class: 'quest-desc' }, quest.desc || '설명이 없습니다.');
+    const objectives = el('div', { class: 'quest-section' },
+        el('h3', null, '목표'),
+        ...(quest.objectives.length ? quest.objectives.map(objective => {
+            const pct = Math.min(100, Math.round(objective.current / Math.max(1, objective.target) * 100));
+            return el('div', { class: 'quest-objective' + (objective.done ? ' done' : '') },
+                el('div', { class: 'quest-objective-row' },
+                    el('span', { class: 'quest-objective-label' },
+                        objective.iconUrl ? el('img', { class: 'quest-obj-icon', src: objective.iconUrl, alt: '' }) : null,
+                        objective.label),
+                    el('span', { class: 'quest-objective-count' }, comma(objective.current) + ' / ' + comma(objective.target))),
+                el('div', { class: 'quest-progress' }, el('div', { class: 'quest-progress-fill', style: { width: pct + '%' } })));
+        }) : [el('div', { class: 'quest-empty-note' }, '목표가 설정되지 않은 퀘스트입니다.')])
+    );
+    const rewards = el('div', { class: 'quest-section' },
+        el('h3', null, '보상'),
+        quest.rewards.length
+            ? el('div', { class: 'quest-reward-list' }, ...quest.rewards.map(reward =>
+                el('span', { class: 'quest-reward' },
+                    reward.iconUrl ? el('img', { src: reward.iconUrl, alt: '' }) : null,
+                    reward.label)))
+            : el('div', { class: 'quest-empty-note' }, '보상이 없습니다.')
+    );
+    const actions = el('div', { class: 'quest-actions' });
+    if (quest.claimed) {
+        actions.appendChild(el('span', { class: 'quest-claimed-note' },
+            '보상 수령 완료' + (quest.resetType ? ' — ' + quest.resetType + ' 초기화 후 다시 진행할 수 있습니다.' : '')));
+    } else {
+        actions.appendChild(el('button', { class: 'primary', type: 'button', disabled: !quest.complete || questState.busy, onclick: () => claimQuest(quest, false) }, '보상 받기'));
+        if (quest.canSkip) actions.appendChild(el('button', { class: 'quest-skip-btn', type: 'button', disabled: questState.busy, onclick: () => claimQuest(quest, true) }, '스킵 (보상 수령)'));
+    }
+    detail.replaceChildren(head, desc, objectives, rewards, actions);
+}
+
+async function claimQuest(quest, skip) {
+    if (questState.busy) return;
+    if (skip && !(await showConfirm('레벨 조건으로 이 퀘스트를 스킵하고 보상을 받습니다. 계속할까요?'))) return;
+    questState.busy = true;
+    renderQuestDetail();
+    try {
+        const r = await postApi('/api/quests/claim', { id: quest.id, skip: !!skip });
+        questState.list = r.list || [];
+        showAlert('[' + r.name + '] ' + (r.skipped ? '퀘스트를 스킵했습니다.' : '퀘스트 완료!')
+            + (r.lines && r.lines.length ? '\n\n[ 획득 보상 ]\n' + r.lines.join('\n') : ''));
+    } catch (e) {
+        showAlert(e.message);
+    } finally {
+        questState.busy = false;
+        renderQuests();
+    }
 }
 
 // ===== 100일 기념 캡슐 =====

@@ -678,6 +678,10 @@ function grantPartyQuestClearRewards(room) {
             try {
                 const user = await rpgenius.getRPGUserByName(member.name);
                 if (!user) continue;
+                // 퀘스트: 파티 퀘스트 클리어 집계 (인원 조건 포함, 아래 user.save로 저장)
+                if (typeof rpgenius.recordQuestEvent === 'function') {
+                    rpgenius.recordQuestEvent(user, 'partyClear', { quest: quest && quest.name || '', members: room.members.length });
+                }
                 const summary = {};
                 // 부타게임 주간 보상 제한 (노말/하드 통합 주 1회, 월요일 0시 KST 초기화).
                 // 입장/클리어는 무제한이고 칭호 진행도는 계속 쌓인다.
@@ -1586,6 +1590,16 @@ async function start(hostName) {
     room.result = null;
     room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
+    // 퀘스트: 파티 퀘스트 참여 집계 (진행도가 변한 유저만 저장)
+    if (typeof rpgenius.recordQuestEvent === 'function') {
+        for (const m of room.members) {
+            const user = userMap.get(m.name);
+            if (!user) continue;
+            try {
+                if (rpgenius.recordQuestEvent(user, 'partyJoin', { quest: quest.name })) await user.save();
+            } catch (e) { console.error('[partyquest] quest join record error:', e); }
+        }
+    }
     pushNotice(room, '「' + quest.name + '」 시작', 'big', 3500);
     setupPhase(room);
     broadcastRoom(room);

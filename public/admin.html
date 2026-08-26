@@ -247,6 +247,42 @@ details.collapsible .body{padding:12px}
 .msg-modal-text{font-size:13px;font-weight:600;color:var(--fg);line-height:1.6;white-space:pre-line;word-break:keep-all}
 .msg-modal-input{width:100%;margin-top:12px;padding:9px 11px;border-radius:var(--r-s);border:1px solid var(--bd2);background:var(--panel-2);color:var(--fg);font-size:13px;font-family:inherit}
 .msg-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+/* 퀘스트 에디터 */
+.qe-card{padding:0;overflow:hidden}
+.qe-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;min-width:0}
+.qe-head:hover{background:var(--panel-3)}
+.qe-caret{color:var(--mut2);font-size:11px;transition:transform .12s;flex:none}
+.qe-caret.open{transform:rotate(90deg)}
+.qe-id{color:var(--mut2);font-size:12px;flex:none}
+.qe-name{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.qe-chips{display:flex;gap:4px;flex:none;align-items:center}
+.qe-chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--bd2);color:var(--mut)}
+.qe-chip.epic{color:var(--acc);border-color:var(--acc)}
+.qe-chip.daily{color:#e0865c;border-color:#e0865c}
+.qe-chip.weekly{color:#a48ae0;border-color:#a48ae0}
+.qe-chip.event{color:var(--ok);border-color:var(--ok)}
+.qe-chip.skip{color:var(--fg2)}
+.qe-chip.off{color:var(--err-soft);border-color:rgba(216,76,65,.45)}
+.qe-meta{margin-left:auto;color:var(--mut2);font-size:11.5px;flex:none;white-space:nowrap}
+.qe-head-actions{display:flex;gap:6px;flex:none}
+.qe-disabled .qe-name{color:var(--mut2)}
+.qe-body{padding:14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:12px}
+.qe-body h3{margin:0;font-size:11.5px;font-weight:600;color:var(--mut);letter-spacing:.04em}
+.qe-sec{background:var(--panel-2);border:1px solid var(--bd);border-radius:var(--r-s);padding:11px 12px;display:flex;flex-direction:column;gap:9px}
+.qe-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:760px){.qe-grid{grid-template-columns:1fr}}
+.qe-cats{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.qe-cat{background:var(--panel-3);border:1px solid var(--bd2);color:var(--mut);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.qe-cat:hover{color:var(--fg)}
+.qe-cat.on{color:var(--acc-ink);background:var(--acc);border-color:var(--acc)}
+.qe-cat.on.daily{background:#e0865c;border-color:#e0865c}
+.qe-cat.on.weekly{background:#a48ae0;border-color:#a48ae0}
+.qe-cat.on.event{background:var(--ok);border-color:var(--ok)}
+.qe-cat.on.normal{background:var(--bd2);border-color:var(--bd2);color:var(--fg)}
+.qe-target{flex:1;min-width:190px;display:flex;gap:6px;align-items:center}
+.qe-target select,.qe-target input{min-width:0}
+.qe-inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.qe-num{width:76px}
 </style>
 </head>
 <body>
@@ -274,6 +310,7 @@ details.collapsible .body{padding:12px}
     <button class="tab" data-tab="fashion">패션</button>
     <button class="tab" data-tab="recipe">레시피</button>
     <button class="tab" data-tab="bait">미끼</button>
+    <button class="tab" data-tab="quest">퀘스트</button>
     <div class="side-group">로그</div>
     <button class="tab" data-tab="tradelog">거래 로그</button>
     <button class="tab" data-tab="pointlog">포인트 충전 로그</button>
@@ -425,6 +462,8 @@ details.collapsible .body{padding:12px}
 <div class="panel" data-panel="recipe"><section><h2>레시피</h2><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 레시피 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="recipeSave">저장</button><button class="btn" id="recipeReload">다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
 
 <div class="panel" data-panel="bait"><section><h2>미끼</h2><div id="baitList" class="list"></div><button class="add-btn" id="baitAdd">+ 새 미끼 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="baitSave">저장</button><button class="btn" id="baitReload">다시 불러오기</button><span class="muted" id="baitStatus"></span></div></section></div>
+
+<div class="panel" data-panel="quest"><section><h2>퀘스트</h2><div id="questList" class="list"></div><button class="add-btn" id="questAdd">+ 새 퀘스트 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="questSave">저장</button><button class="btn" id="questReload">다시 불러오기</button><span class="muted" id="questStatus"></span></div></section></div>
 
 <div class="panel" data-panel="item"><section><h2>아이템</h2><div class="bar"><input id="itemFilter" placeholder="이름, 타입, 인덱스 검색" style="flex:1;min-width:200px"></div><div id="itemList" class="list"></div><button class="add-btn" id="itemAdd">+ 새 아이템 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="itemSave">저장</button><button class="btn" id="itemReload">다시 불러오기</button><span class="muted" id="itemStatus"></span></div></section></div>
 

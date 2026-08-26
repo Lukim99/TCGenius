@@ -15,7 +15,7 @@ const MAIL_READ_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 읽은 메일은 3일 뒤 �
 const MAIL_GOLD_FEE_RATE = 0.05;         // 골드/가넷 선물 수수료
 const MAIL_GOLD_FEE_MIN = 5;             // 최소 수수료
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -3162,6 +3162,7 @@ function recordEnhanceSuccess(user, level) {
     const prog = getTitleProgress(user);
     if (Number(level || 0) > Number(prog.maxEnhanceLevel || 0)) prog.maxEnhanceLevel = Number(level || 0);
     checkAndUnlockTitles(user);
+    recordQuestEvent(user, 'enhance', {});
 }
 
 // 카드 등급(star) 표시명 (0-index)
@@ -5233,6 +5234,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     if (executedByTaxationGun) lines.push('- ❌ ' + TAXATION_GUN_NAME + ' 효과: ' + elite.name + ' 처형!');
     const finishEliteKill = () => {
         lines.push('- ' + elite.name + ' 처치!');
+        recordQuestEvent(user, 'eliteKill', { field: dungeon.name });
         applySkillRecovery(user, maxHp, extra, lines);
         if (isHell) {
             // 부타게임[H]: 처치 시 보상 대신 기둥 페이즈로 전환
@@ -5450,6 +5452,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const remaining = Math.max(0, DAILY_DUNGEON_KILL_TARGET - Number(user.field.killCount || 0));
         killCount = Math.min(killCount, remaining);
     }
+    if (killCount > 0) recordQuestEvent(user, 'kill', { count: killCount, field: dungeon.name });
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
     let fieldDamage = avoided ? 0 : monsterHitResult.finalDamage;
@@ -6318,6 +6321,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
     }
     const damage = actionType == 'skill' ? Number(rawDamage || 0) * (1 + Number(slotEffects.damageBonus || 0)) : rawDamage;
     const result = dealDamageToWorldBoss(user, boss, damage, extra || {});
+    if (!(extra && extra.summonAttack) && !(extra && extra.isBotAutoAttack)) recordQuestEvent(user, 'worldboss', { boss: boss.name });
     const prefix = actionType == 'skill' && skill ? '✨ ' + skill.name + '! ' : '⚔️ ';
     const lines = formatWorldBossDamageLines(boss, result, prefix);
     if (extra && extra.notice) lines.push('- ' + extra.notice);
@@ -6998,6 +7002,7 @@ async function useWorldBossChosenSkill(user, skillName) {
         lines.unshift('✨ ' + skill.name + '을(를) 사용했습니다.');
     }
     lines.push('- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+    if (result) recordQuestEvent(user, 'worldboss', { boss: boss.name });
     if (result) grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
     if (result) appendWorldBossStatusLines(lines, user, boss, result);
     if (result && Number(result.after) <= 0) await finalizeWorldBossDefeat(user, boss, lines);
@@ -8715,6 +8720,7 @@ function craftRecipeByName(user, name, times) {
         if (!(recipe.materials || []).every(material => consumeCraftMaterial(user, material))) return '❌ 재료 차감 중 오류가 발생했습니다.';
         (recipe.crafted || []).forEach(entry => grantCraftEntry(user, entry));
     }
+    recordQuestEvent(user, 'craft', { count: count, recipe: recipe.name });
     const header = '✅ \'' + recipe.name + '\' 제작에 성공했습니다.' + (count > 1 ? ' (x' + comma(count) + ')' : '');
     const lines = [header, '', '[ 획득 물품 ]'];
     (recipe.crafted || []).forEach(entry => {
@@ -13956,6 +13962,287 @@ async function onChat(data, channel, context = {}) {
     return true;
 }
 
+// ============================================================================
+// 퀘스트 (웹 게시판) — 정의는 rpgenius_data 'Quest'(관리자 편집), 진행도는 user.quests
+// def: { id, name, desc, categories[], minLevel, maxLevel, skippable, epicOrder,
+//        objectives:[{type,...,count}], rewards:[팩 보상 entry | {type:'경험치',count}],
+//        unlock:{type:'always'|'quest'|'item',...}, enabled }
+// user.quests[id] = { period, counters:{목표index:진행수}, claimed, claimedAt }
+// ============================================================================
+const QUEST_CATEGORIES = ['에픽', '일일', '주간', '일반', '이벤트'];
+const QUEST_CATEGORY_ORDER = { '에픽': 0, '일일': 1, '주간': 2, '일반': 3, '이벤트': 4 };
+
+function getQuestDefs() {
+    const defs = getDataCache('Quest', []);
+    return Array.isArray(defs) ? defs.filter(def => def && typeof def.id != 'undefined') : [];
+}
+
+function getQuestCategoryList(def) {
+    return Array.isArray(def.categories) ? def.categories.filter(category => QUEST_CATEGORIES.includes(category)) : [];
+}
+
+// 리셋 주기: 일일 > 주간 > 1회성 (범주 복수 선택 시 우선순위)
+function getQuestPeriodKey(def, date) {
+    const categories = getQuestCategoryList(def);
+    if (categories.includes('일일')) return getKoreanDateKey(date || new Date());
+    if (categories.includes('주간')) return getKoreanWeekKey(date || new Date());
+    return 'once';
+}
+
+function getUserQuestEntry(user, def) {
+    if (!user.quests || typeof user.quests != 'object') user.quests = {};
+    const period = getQuestPeriodKey(def);
+    let entry = user.quests[def.id];
+    if (!entry || entry.period != period) {
+        entry = { period: period, counters: {}, claimed: false };
+        user.quests[def.id] = entry;
+    }
+    return entry;
+}
+
+function isQuestCleared(user, def) {
+    if (!def) return false;
+    const entry = user.quests && user.quests[def.id];
+    return !!(entry && entry.claimed && entry.period == getQuestPeriodKey(def));
+}
+
+// 노출 조건(즉시/선행 퀘스트 클리어/아이템 보유). 미충족 시 사유 문자열 반환.
+function getQuestUnlockError(user, def, defs) {
+    const unlock = def.unlock || { type: 'always' };
+    if (unlock.type == 'quest') {
+        const target = defs.find(d => Number(d.id) == Number(unlock.quest_id));
+        if (!target || !isQuestCleared(user, target)) return target ? '[' + target.name + '] 클리어 필요' : '선행 퀘스트 필요';
+    }
+    if (unlock.type == 'item') {
+        const need = Math.max(1, Number(unlock.count || 1));
+        if (getInventoryItemCount(user, Number(unlock.item_id)) < need) return '아이템 획득 필요';
+    }
+    return null;
+}
+
+// 에픽 체인: 내 번호보다 낮은 번호 중 가장 높은 에픽 퀘스트가 클리어되어야 노출
+function getEpicChainBlocker(user, def, defs) {
+    if (!getQuestCategoryList(def).includes('에픽')) return null;
+    const myOrder = Number(def.epicOrder || 0);
+    let prev = null;
+    defs.forEach(d => {
+        if (d === def || d.enabled === false || !getQuestCategoryList(d).includes('에픽')) return;
+        const order = Number(d.epicOrder || 0);
+        if (order < myOrder && (!prev || order > Number(prev.epicOrder || 0))) prev = d;
+    });
+    return prev && !isQuestCleared(user, prev) ? prev : null;
+}
+
+function isQuestVisible(user, def, defs) {
+    if (def.enabled === false) return false;
+    if (Number(user.level || 1) < Number(def.minLevel || 1)) return false;
+    if (getEpicChainBlocker(user, def, defs)) return false;
+    const entry = user.quests && user.quests[def.id];
+    const active = !!(entry && entry.period == getQuestPeriodKey(def));
+    // 1회성(에픽/일반/이벤트) 완료 퀘스트는 목록에서 제외
+    if (active && entry.claimed && entry.period == 'once') return false;
+    // 이미 진행/완료한 퀘스트는 노출 조건을 다시 검사하지 않음 (아이템 소모 등으로 사라지지 않게)
+    const started = active && (entry.claimed || Object.keys(entry.counters || {}).length > 0);
+    if (!started && getQuestUnlockError(user, def, defs)) return false;
+    return true;
+}
+
+function getQuestObjectiveTarget(objective) {
+    return Math.max(1, Math.floor(Number(objective && objective.count || 1)));
+}
+
+// 목표 타입 → 발생 이벤트 (기본은 type == event, 파티 클리어 인원 조건 변형만 별도 매핑)
+const QUEST_OBJECTIVE_EVENT_MAP = { partyClearMin: 'partyClear', partyClearMax: 'partyClear' };
+
+// 이벤트 → 목표 매칭. 새 판정 타입은 이 함수 + 라벨 + 발생 지점 훅만 추가하면 된다.
+function questObjectiveMatchesEvent(objective, event, meta) {
+    if (!objective) return false;
+    if ((QUEST_OBJECTIVE_EVENT_MAP[objective.type] || objective.type) != event) return false;
+    if (objective.type == 'kill' || objective.type == 'eliteKill') {
+        return !objective.field || String(meta && meta.field || '').includes(String(objective.field));
+    }
+    if (objective.type == 'worldboss') return !objective.boss || String(meta && meta.boss || '') == String(objective.boss);
+    if (objective.type == 'pvp') return !objective.winOnly || !!(meta && meta.win);
+    if (objective.type == 'craft') return !objective.recipe || String(meta && meta.recipe || '') == String(objective.recipe);
+    if (objective.type == 'partyJoin' || objective.type == 'partyClear' || objective.type == 'partyClearMin' || objective.type == 'partyClearMax') {
+        if (objective.quest && String(meta && meta.quest || '') != String(objective.quest)) return false;
+        if (objective.type == 'partyClearMin') return Number(meta && meta.members || 0) >= Math.max(1, Number(objective.members || 1));
+        if (objective.type == 'partyClearMax') return Number(meta && meta.members || 0) <= Math.max(1, Number(objective.members || 1));
+        return true;
+    }
+    return true;
+}
+
+function formatQuestObjectiveLabel(objective) {
+    const type = objective && objective.type;
+    const questSuffix = objective && objective.quest ? ' — ' + objective.quest : '';
+    if (type == 'kill') return '몬스터 처치' + (objective.field ? ' — ' + objective.field : '');
+    if (type == 'eliteKill') return '엘리트 몬스터 처치' + (objective.field ? ' — ' + objective.field : '');
+    if (type == 'worldboss') return '월드보스 공격' + (objective.boss ? ' — ' + objective.boss : '');
+    if (type == 'pvp') return objective.winOnly ? 'PVP 승리' : 'PVP 전투';
+    if (type == 'craft') return '아이템 제작' + (objective.recipe ? ' — ' + objective.recipe : '');
+    if (type == 'enhance') return '장비 강화 성공';
+    if (type == 'partyJoin') return '파티 퀘스트 참여' + questSuffix;
+    if (type == 'partyClear') return '파티 퀘스트 클리어' + questSuffix;
+    if (type == 'partyClearMin') return '파티 퀘스트 ' + Math.max(1, Number(objective.members || 1)) + '인 이상 클리어' + questSuffix;
+    if (type == 'partyClearMax') return '파티 퀘스트 ' + Math.max(1, Number(objective.members || 1)) + '인 이하 클리어' + questSuffix;
+    if (type == 'deliver') {
+        const items = getDataCache('Item', []);
+        const item = items[Number(objective.item_id)];
+        return (item ? item.name : '아이템') + ' 납품';
+    }
+    return '목표';
+}
+
+// 납품(deliver)은 보유량으로, 나머지는 누적 카운터로 진행도 계산
+function getQuestObjectiveCurrent(user, entry, index, objective) {
+    const target = getQuestObjectiveTarget(objective);
+    if (objective.type == 'deliver') return Math.min(target, getInventoryItemCount(user, Number(objective.item_id)));
+    return Math.min(target, Number(entry.counters && entry.counters[index] || 0));
+}
+
+// 게임 행동 훅 → 진행 중인 퀘스트 목표 카운터 증가 (호출부의 user.save 흐름으로 저장)
+// 반환값: 하나라도 진행도가 변했는지 (저장이 필요한지 판단용)
+function recordQuestEvent(user, event, meta) {
+    if (!user) return false;
+    const defs = getQuestDefs();
+    if (defs.length == 0) return false;
+    const count = Math.max(1, Math.floor(Number(meta && meta.count || 1)));
+    let changed = false;
+    defs.forEach(def => {
+        const objectives = Array.isArray(def.objectives) ? def.objectives : [];
+        if (!objectives.some(objective => objective && (QUEST_OBJECTIVE_EVENT_MAP[objective.type] || objective.type) == event)) return;
+        if (!isQuestVisible(user, def, defs)) return;
+        const entry = getUserQuestEntry(user, def);
+        if (entry.claimed) return;
+        objectives.forEach((objective, index) => {
+            if (!questObjectiveMatchesEvent(objective, event, meta)) return;
+            if (!entry.counters) entry.counters = {};
+            const next = Math.min(getQuestObjectiveTarget(objective), Number(entry.counters[index] || 0) + count);
+            if (next != Number(entry.counters[index] || 0)) {
+                entry.counters[index] = next;
+                changed = true;
+            }
+        });
+    });
+    return changed;
+}
+
+function getQuestBadgeCategory(def) {
+    const categories = getQuestCategoryList(def);
+    return QUEST_CATEGORIES.find(category => categories.includes(category)) || '일반';
+}
+
+function canSkipQuest(user, def) {
+    return def.skippable === true && Number(user.level || 1) >= Number(def.maxLevel || 1) + 30;
+}
+
+function formatQuestRewardLabel(reward) {
+    if (reward.type == '경험치') return 'XP ' + formatCount(reward.count).slice(1);
+    return formatPackEntry(reward);
+}
+
+function buildQuestBoard(user) {
+    const defs = getQuestDefs();
+    const list = defs.filter(def => isQuestVisible(user, def, defs)).map(def => {
+        const entry = getUserQuestEntry(user, def);
+        const objectives = (Array.isArray(def.objectives) ? def.objectives : []).map((objective, index) => {
+            const target = getQuestObjectiveTarget(objective);
+            const current = entry.claimed ? target : getQuestObjectiveCurrent(user, entry, index, objective);
+            return {
+                type: objective.type,
+                label: formatQuestObjectiveLabel(objective),
+                itemId: objective.type == 'deliver' ? Number(objective.item_id) : null,
+                current: current,
+                target: target,
+                done: current >= target
+            };
+        });
+        const complete = objectives.length > 0 && objectives.every(objective => objective.done);
+        const categories = getQuestCategoryList(def);
+        return {
+            id: Number(def.id),
+            name: String(def.name || '이름 없는 퀘스트'),
+            desc: String(def.desc || ''),
+            categories: categories,
+            badge: getQuestBadgeCategory(def),
+            minLevel: Number(def.minLevel || 1),
+            maxLevel: Number(def.maxLevel || 1),
+            epicOrder: categories.includes('에픽') ? Number(def.epicOrder || 0) : null,
+            resetType: categories.includes('일일') ? '일일' : (categories.includes('주간') ? '주간' : null),
+            objectives: objectives,
+            rewards: (Array.isArray(def.rewards) ? def.rewards : []).filter(reward => reward && reward.type).map(reward => ({
+                type: reward.type,
+                label: formatQuestRewardLabel(reward),
+                itemId: reward.type == '아이템' ? Number(reward.item_id) : null
+            })),
+            claimed: !!entry.claimed,
+            complete: complete && !entry.claimed,
+            canSkip: !entry.claimed && !complete && canSkipQuest(user, def)
+        };
+    });
+    list.sort((a, b) => (QUEST_CATEGORY_ORDER[a.badge] - QUEST_CATEGORY_ORDER[b.badge]) || (Number(a.epicOrder || 0) - Number(b.epicOrder || 0)) || (a.id - b.id));
+    return list;
+}
+
+// 보상 수령(완료) / 스킵. 스킵은 납품 차감 없이 보상 지급.
+function claimQuestReward(user, questId, options) {
+    const skip = !!(options && options.skip);
+    const defs = getQuestDefs();
+    const def = defs.find(d => Number(d.id) == Number(questId));
+    if (!def) return { error: '존재하지 않는 퀘스트입니다.' };
+    if (!isQuestVisible(user, def, defs)) return { error: '수행할 수 없는 퀘스트입니다.' };
+    const entry = getUserQuestEntry(user, def);
+    if (entry.claimed) return { error: '이미 보상을 수령한 퀘스트입니다.' };
+    const objectives = Array.isArray(def.objectives) ? def.objectives : [];
+    if (skip) {
+        if (def.skippable !== true) return { error: '스킵할 수 없는 퀘스트입니다.' };
+        if (Number(user.level || 1) < Number(def.maxLevel || 1) + 30) return { error: '스킵은 퀘스트 최대 레벨(Lv.' + Number(def.maxLevel || 1) + ')보다 30레벨 이상 높아야 가능합니다.' };
+    } else {
+        for (let i = 0; i < objectives.length; i++) {
+            if (getQuestObjectiveCurrent(user, entry, i, objectives[i]) < getQuestObjectiveTarget(objectives[i])) return { error: '아직 완료하지 않은 목표가 있습니다.' };
+        }
+        // 납품 목표: 아이템별 필요 수량 합산 검증 후 일괄 차감
+        const deliverNeeds = {};
+        objectives.filter(objective => objective && objective.type == 'deliver').forEach(objective => {
+            const itemId = Number(objective.item_id);
+            deliverNeeds[itemId] = Number(deliverNeeds[itemId] || 0) + getQuestObjectiveTarget(objective);
+        });
+        for (const itemId of Object.keys(deliverNeeds)) {
+            if (getInventoryItemCount(user, Number(itemId)) < deliverNeeds[itemId]) return { error: '납품할 아이템이 부족합니다.' };
+        }
+        for (const itemId of Object.keys(deliverNeeds)) removeInventoryItem(user, Number(itemId), deliverNeeds[itemId]);
+    }
+    const rewards = (Array.isArray(def.rewards) ? def.rewards : []).filter(reward => reward && reward.type);
+    const cardRewardCount = rewards.filter(reward => reward.type == '캐릭터카드')
+        .reduce((sum, reward) => sum + (reward.count && typeof reward.count == 'object' ? Number(reward.count.max || 1) : Number(reward.count || 1)), 0);
+    if (cardRewardCount > 0 && getRemainingCardInventorySpace(user) < cardRewardCount) return { error: '캐릭터 카드 인벤토리 공간이 부족합니다.' };
+    const summary = {};
+    let totalExp = 0;
+    let levelUps = 0;
+    rewards.forEach(reward => {
+        if (reward.type == '경험치') {
+            const amount = rollCount(reward.count);
+            totalExp += amount;
+            levelUps += addExperience(user, amount);
+            return;
+        }
+        grantPackReward(user, reward, summary);
+    });
+    entry.claimed = true;
+    entry.claimedAt = Date.now();
+    const lines = [];
+    if (totalExp > 0) lines.push('- XP ' + comma(totalExp));
+    Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
+    if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
+    return { ok: true, name: def.name, skipped: skip, lines: lines };
+}
+
+// 테스트 전용: Quest 정의 캐시 주입 (DB를 거치지 않음)
+function __setQuestDefs(defs) {
+    rpgeniusDataCache.Quest = defs;
+}
+
 module.exports = {
     TARGET_CHANNEL_IDS,
     WILL_ACCESSIBLE_FIELDS,
@@ -14140,6 +14427,10 @@ module.exports = {
     getTitleById,
     getKoreanDateKey,
     getKoreanWeekKey,
+    recordQuestEvent,
+    buildQuestBoard,
+    claimQuestReward,
+    __setQuestDefs,
     getTitleProgress,
     getUnlockedTitles,
     unlockTitle,

@@ -1047,6 +1047,262 @@ $('#baitSave').onclick = async () => { if (!(await showConfirm('Bait 데이터�
 TAB_LOADERS.bait = () => $('#baitReload').click();
 
 // ============================================================================
+// QUEST 에디터  ( data: Array<{id,name,desc,categories,minLevel,maxLevel,skippable,epicOrder,objectives,rewards,unlock,enabled}> )
+// ============================================================================
+const QUEST_CATEGORIES = ['에픽', '주간', '일일', '일반', '이벤트'];
+const QUEST_CATEGORY_CLASS = { '에픽': 'epic', '주간': 'weekly', '일일': 'daily', '일반': 'normal', '이벤트': 'event' };
+const QUEST_OBJECTIVE_TYPES = [
+    ['kill', '몬스터 처치'],
+    ['eliteKill', '엘리트 처치'],
+    ['worldboss', '월드보스 공격'],
+    ['pvp', 'PVP 전투'],
+    ['craft', '아이템 제작'],
+    ['enhance', '강화 성공'],
+    ['deliver', '아이템 납품'],
+    ['partyJoin', '파티 퀘스트 참여'],
+    ['partyClear', '파티 퀘스트 클리어'],
+    ['partyClearMin', '파티 퀘스트 N인 이상 클리어'],
+    ['partyClearMax', '파티 퀘스트 N인 이하 클리어']
+];
+const QUEST_UNLOCK_TYPES = [['always', '즉시'], ['quest', '퀘스트 클리어 시'], ['item', '아이템 획득 시']];
+let questData = [];
+const questOpenIds = new Set();
+
+async function getQuestTargets() { if (!LOOKUP.questTargets) LOOKUP.questTargets = await api('/api/lookup/quest-targets'); return LOOKUP.questTargets; }
+function questTargetsSync() { return LOOKUP.questTargets || { fields: [], bosses: [], partyQuests: [], recipes: [] }; }
+
+function questItemPickButton(target, key, onPicked) {
+    const btn = el('button', { class: 'pickbtn', type: 'button' });
+    const refresh = async () => {
+        btn.innerHTML = '';
+        if (typeof target[key] === 'number') {
+            const items = await getItems();
+            const it = items.find(x => x.id === target[key]);
+            btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + target[key]));
+        } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
+    };
+    btn.onclick = () => pickItem(it => { target[key] = it.id; refresh(); onPicked && onPicked(); });
+    refresh();
+    return btn;
+}
+
+// 이름 목록 select (빈값 = 전체). 목록이 비어 있으면 직접 입력으로 폴백.
+function questNameSelect(target, key, options, allLabel) {
+    const list = (options || []).slice();
+    if (target[key] && !list.includes(target[key])) list.push(target[key]);
+    if (!list.length) {
+        const input = el('input', { value: target[key] || '', placeholder: (allLabel || '전체') + ' (직접 입력)', oninput: () => {
+            const v = input.value.trim();
+            if (v) target[key] = v; else delete target[key];
+        } });
+        return input;
+    }
+    const sel = el('select');
+    sel.appendChild(el('option', { value: '' }, allLabel || '전체'));
+    list.forEach(name => sel.appendChild(el('option', { value: name }, name)));
+    sel.value = target[key] || '';
+    sel.onchange = () => { if (sel.value === '') delete target[key]; else target[key] = sel.value; };
+    return sel;
+}
+
+function questObjectiveRow(objective, onDelete) {
+    const wrap = el('div', { class: 'entry' });
+    const sel = el('select');
+    QUEST_OBJECTIVE_TYPES.forEach(([value, label]) => sel.appendChild(el('option', { value }, label)));
+    if (!QUEST_OBJECTIVE_TYPES.some(([value]) => value === objective.type)) objective.type = 'kill';
+    sel.value = objective.type;
+    const targetSlot = el('span', { class: 'qe-target' });
+    function paintTarget() {
+        targetSlot.innerHTML = '';
+        const t = objective.type;
+        const targets = questTargetsSync();
+        if (t === 'kill' || t === 'eliteKill') {
+            targetSlot.appendChild(questNameSelect(objective, 'field', targets.fields, '모든 필드'));
+        } else if (t === 'worldboss') {
+            targetSlot.appendChild(questNameSelect(objective, 'boss', targets.bosses, '모든 보스'));
+        } else if (t === 'pvp') {
+            const winChk = el('input', { type: 'checkbox', checked: objective.winOnly === true, onchange: () => objective.winOnly = winChk.checked });
+            targetSlot.appendChild(el('label', { class: 'qe-inline', style: { margin: 0 } }, winChk, '승리만 인정'));
+        } else if (t === 'craft') {
+            targetSlot.appendChild(questNameSelect(objective, 'recipe', targets.recipes, '모든 레시피'));
+        } else if (t === 'deliver') {
+            targetSlot.appendChild(questItemPickButton(objective, 'item_id'));
+        } else if (t === 'partyJoin' || t === 'partyClear' || t === 'partyClearMin' || t === 'partyClearMax') {
+            targetSlot.appendChild(questNameSelect(objective, 'quest', targets.partyQuests, '모든 파티 퀘스트'));
+            if (t === 'partyClearMin' || t === 'partyClearMax') {
+                const membersIn = el('input', { class: 'qe-num', type: 'number', min: 1, max: 10, value: Number(objective.members || 2), oninput: () => objective.members = Math.max(1, Number(membersIn.value) || 1) });
+                targetSlot.appendChild(el('span', { class: 'lab' }, '인원'));
+                targetSlot.appendChild(membersIn);
+                targetSlot.appendChild(el('span', { class: 'lab' }, t === 'partyClearMin' ? '명 이상' : '명 이하'));
+            }
+        }
+    }
+    sel.onchange = () => {
+        ['field', 'boss', 'winOnly', 'recipe', 'item_id', 'quest', 'members'].forEach(k => delete objective[k]);
+        objective.type = sel.value;
+        if (objective.type === 'partyClearMin' || objective.type === 'partyClearMax') objective.members = 2;
+        paintTarget();
+    };
+    paintTarget();
+    const countIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(objective.count || 1), oninput: () => objective.count = Math.max(1, Number(countIn.value) || 1) });
+    wrap.appendChild(sel);
+    wrap.appendChild(targetSlot);
+    wrap.appendChild(el('span', { class: 'nf qe-inline' }, el('span', { class: 'lab' }, '횟수/개수'), countIn));
+    wrap.appendChild(el('button', { class: 'btn icon danger', type: 'button', title: '삭제', onclick: () => onDelete() }, '✕'));
+    return wrap;
+}
+
+function questUnlockControls(q) {
+    if (!q.unlock || typeof q.unlock !== 'object') q.unlock = { type: 'always' };
+    const wrap = el('div', { class: 'qe-inline', style: { width: '100%' } });
+    const sel = el('select', { style: { width: 'auto' } });
+    QUEST_UNLOCK_TYPES.forEach(([value, label]) => sel.appendChild(el('option', { value }, label)));
+    if (!QUEST_UNLOCK_TYPES.some(([value]) => value === q.unlock.type)) q.unlock.type = 'always';
+    sel.value = q.unlock.type;
+    const targetSlot = el('span', { class: 'qe-target' });
+    function paintTarget() {
+        targetSlot.innerHTML = '';
+        if (q.unlock.type === 'quest') {
+            const questSel = el('select');
+            questSel.appendChild(el('option', { value: '' }, '선행 퀘스트 선택...'));
+            questData.filter(other => other !== q).forEach(other => {
+                questSel.appendChild(el('option', { value: String(other.id) }, '#' + other.id + ' ' + (other.name || '(이름 없음)')));
+            });
+            questSel.value = typeof q.unlock.quest_id === 'number' ? String(q.unlock.quest_id) : '';
+            questSel.onchange = () => { q.unlock.quest_id = questSel.value === '' ? undefined : Number(questSel.value); };
+            targetSlot.appendChild(questSel);
+        } else if (q.unlock.type === 'item') {
+            targetSlot.appendChild(questItemPickButton(q.unlock, 'item_id'));
+            const countIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.unlock.count || 1), oninput: () => q.unlock.count = Math.max(1, Number(countIn.value) || 1) });
+            targetSlot.appendChild(el('span', { class: 'lab' }, '개수'));
+            targetSlot.appendChild(countIn);
+        }
+    }
+    sel.onchange = () => { q.unlock = { type: sel.value }; paintTarget(); };
+    paintTarget();
+    wrap.appendChild(sel);
+    wrap.appendChild(targetSlot);
+    return wrap;
+}
+
+function questCategoryToggle(q, category) {
+    const on = q.categories.includes(category);
+    return el('button', {
+        type: 'button',
+        class: 'qe-cat' + (on ? ' on ' + (QUEST_CATEGORY_CLASS[category] || 'normal') : ''),
+        onclick: () => {
+            if (on) q.categories = q.categories.filter(c => c !== category);
+            else q.categories.push(category);
+            renderQuest();
+        }
+    }, category);
+}
+
+function questFormNode(q) {
+    const body = el('div', { class: 'qe-body' });
+    const nameIn = el('input', { value: q.name || '', placeholder: '퀘스트 이름', oninput: () => q.name = nameIn.value });
+    const minIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.minLevel || 1), oninput: () => q.minLevel = Math.max(1, Number(minIn.value) || 1) });
+    const maxIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.maxLevel || 1), oninput: () => q.maxLevel = Math.max(1, Number(maxIn.value) || 1) });
+    const descIn = el('textarea', { value: q.desc || '', placeholder: '설명', rows: 2, oninput: () => q.desc = descIn.value });
+    body.appendChild(el('div', { class: 'qe-grid' },
+        el('div', null, el('label', null, '이름'), nameIn),
+        el('div', null, el('label', null, '수행가능레벨 (최소 ~ 최대)'), el('div', { class: 'qe-inline' }, minIn, el('span', null, '~'), maxIn))));
+    body.appendChild(el('div', null, el('label', null, '설명'), descIn));
+    const catsWrap = el('div', { class: 'qe-cats' }, ...QUEST_CATEGORIES.map(category => questCategoryToggle(q, category)));
+    if (q.categories.includes('에픽')) {
+        const orderIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.epicOrder || 1), oninput: () => q.epicOrder = Math.max(1, Number(orderIn.value) || 1) });
+        catsWrap.appendChild(el('span', { class: 'qe-inline' }, el('span', { class: 'lab' }, '에픽 번호'), orderIn));
+    }
+    const skipChk = el('input', { type: 'checkbox', checked: q.skippable === true, onchange: () => { q.skippable = skipChk.checked; renderQuest(); } });
+    const enabledChk = el('input', { type: 'checkbox', checked: q.enabled !== false, onchange: () => { q.enabled = enabledChk.checked; renderQuest(); } });
+    body.appendChild(el('div', { class: 'qe-grid' },
+        el('div', null, el('label', null, '퀘스트 범주'), catsWrap),
+        el('div', null, el('label', null, '옵션'), el('div', { class: 'qe-inline', style: { gap: '14px' } },
+            el('label', { class: 'qe-inline', style: { margin: 0 } }, skipChk, '30레벨 이상 스킵 허용 (최대 레벨+30↑, 보상 지급)'),
+            el('label', { class: 'qe-inline', style: { margin: 0 } }, enabledChk, '활성')))));
+    body.appendChild(el('div', { class: 'qe-sec' }, el('h3', null, '게시판 노출 조건'), questUnlockControls(q)));
+    const objectiveList = el('div', { class: 'entry-list' });
+    q.objectives.forEach((objective, i) => objectiveList.appendChild(questObjectiveRow(objective, () => { q.objectives.splice(i, 1); renderQuest(); })));
+    body.appendChild(el('div', { class: 'qe-sec' }, el('h3', null, '목표'), objectiveList,
+        el('button', { class: 'add-btn', type: 'button', onclick: () => { q.objectives.push({ type: 'kill', count: 1 }); renderQuest(); } }, '+ 목표 추가')));
+    const rewardList = el('div', { class: 'entry-list' });
+    q.rewards.forEach((reward, i) => {
+        rewardList.appendChild(entryRow(reward,
+            { types: REWARD_TYPES, withRoll: false, countAsObject: true },
+            null,
+            () => { q.rewards.splice(i, 1); renderQuest(); }
+        ));
+    });
+    body.appendChild(el('div', { class: 'qe-sec' }, el('h3', null, '보상'), rewardList,
+        el('button', { class: 'add-btn', type: 'button', onclick: () => { q.rewards.push({ type: '아이템', count: { min: 1, max: 1 } }); renderQuest(); } }, '+ 보상 추가')));
+    return body;
+}
+
+function renderQuest() {
+    const list = $('#questList'); list.innerHTML = '';
+    if (!Array.isArray(questData)) questData = [];
+    questData.forEach((q, idx) => {
+        if (!Array.isArray(q.objectives)) q.objectives = [];
+        if (!Array.isArray(q.rewards)) q.rewards = [];
+        if (!Array.isArray(q.categories)) q.categories = [];
+        const open = questOpenIds.has(q.id);
+        const card = el('div', { class: 'card qe-card' + (q.enabled === false ? ' qe-disabled' : '') });
+        const head = el('div', {
+            class: 'qe-head',
+            onclick: e => {
+                if (e.target.closest('button,input,select,label,textarea')) return;
+                if (questOpenIds.has(q.id)) questOpenIds.delete(q.id); else questOpenIds.add(q.id);
+                renderQuest();
+            }
+        },
+            el('span', { class: 'qe-caret' + (open ? ' open' : '') }, '▸'),
+            el('span', { class: 'qe-id' }, '#' + q.id),
+            el('span', { class: 'qe-name' }, q.name || '(이름 없음)'),
+            el('span', { class: 'qe-chips' },
+                ...q.categories.map(category => el('span', { class: 'qe-chip ' + (QUEST_CATEGORY_CLASS[category] || 'normal') },
+                    category + (category === '에픽' && q.epicOrder ? ' ' + q.epicOrder : ''))),
+                q.skippable === true ? el('span', { class: 'qe-chip skip' }, '스킵') : null,
+                q.enabled === false ? el('span', { class: 'qe-chip off' }, '비활성') : null),
+            el('span', { class: 'qe-meta' }, 'Lv.' + Number(q.minLevel || 1) + '~' + Number(q.maxLevel || 1) + ' · 목표 ' + q.objectives.length + ' · 보상 ' + q.rewards.length),
+            el('span', { class: 'qe-head-actions' },
+                el('button', { class: 'btn sm', type: 'button', onclick: () => {
+                    const copy = clone(q);
+                    copy.id = questData.reduce((max, other) => Math.max(max, Number(other.id || 0)), 0) + 1;
+                    copy.name = (copy.name || '') + ' (복사)';
+                    questData.splice(idx + 1, 0, copy);
+                    questOpenIds.add(copy.id);
+                    renderQuest();
+                } }, '복제'),
+                el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('퀘스트 #' + q.id + ' 삭제?'))) { questData.splice(idx, 1); renderQuest(); } } }, '삭제'))
+        );
+        card.appendChild(head);
+        if (open) card.appendChild(questFormNode(q));
+        list.appendChild(card);
+    });
+    if (!questData.length) list.appendChild(el('div', { class: 'muted', style: { padding: '8px 2px' } }, '등록된 퀘스트가 없습니다.'));
+}
+$('#questAdd').onclick = () => {
+    const nextId = questData.reduce((max, q) => Math.max(max, Number(q.id || 0)), 0) + 1;
+    questData.push({ id: nextId, name: '', desc: '', categories: ['일반'], minLevel: 1, maxLevel: 999, skippable: false, objectives: [], rewards: [], unlock: { type: 'always' }, enabled: true });
+    questOpenIds.add(nextId);
+    renderQuest();
+};
+$('#questReload').onclick = async () => {
+    try {
+        await getQuestTargets().catch(() => {});
+        questData = (await loadKey('Quest')) || [];
+        renderQuest();
+        $('#questStatus').textContent = '로드 완료';
+    } catch (e) { toast(e.message, false); }
+};
+$('#questSave').onclick = async () => {
+    if (questData.some(q => !String(q.name || '').trim())) return toast('이름이 비어있는 퀘스트가 있습니다.', false);
+    if (!(await showConfirm('Quest 데이터를 저장합니다. 계속?'))) return;
+    try { await saveKey('Quest', questData); toast('✅ Quest 저장 완료'); } catch (e) { toast(e.message, false); }
+};
+TAB_LOADERS.quest = () => $('#questReload').click();
+
+// ============================================================================
 // 공통: JSON 서브 에디터 (작은 textarea + 파싱)
 // ============================================================================
 function jsonSubEditor(label, getter, setter, placeholder, rows) {

@@ -59,22 +59,24 @@ const BANNER_TARGET_TABS = [
     { value: 'info', label: '캐릭터 · 정보' },
     { value: 'inventory', label: '캐릭터 · 인벤토리' },
     { value: 'mail', label: '캐릭터 · 메일함' },
-    { value: '캡슐', label: '콘텐츠 · 100일 캡슐' },
-    { value: '[H]필드', label: '콘텐츠 · [H]필드' },
+    { value: '퀘스트', label: '콘텐츠 · 게시판' },
+    { value: '사냥', label: '콘텐츠 · 사냥' },
+    { value: '[H]필드', label: '콘텐츠 · 헬 필드' },
     { value: 'pvp', label: '콘텐츠 · PVP' },
-    { value: '버닝', label: '콘텐츠 · 버닝' },
-    { value: '자물쇠', label: '콘텐츠 · 자물쇠' },
     { value: 'combine', label: '콘텐츠 · 조합' },
     { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
     { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
+    { value: '캡슐', label: '이벤트 · 100일 캡슐' },
+    { value: '버닝', label: '이벤트 · 버닝' },
+    { value: '자물쇠', label: '이벤트 · 자물쇠' },
     { value: 'shop', label: '거래 · 상점' },
     { value: 'auction', label: '거래 · 팝니다' },
     { value: 'buyorder', label: '거래 · 삽니다' },
     { value: 'ranking', label: '커뮤니티 · 랭킹' },
     { value: 'patchnotes', label: '커뮤니티 · 패치노트' },
-    { value: 'party', label: '파티퀘스트' }
+    { value: 'party', label: '콘텐츠 · 레이드' }
 ];
 const BANNER_TARGET_VALUES = new Set(BANNER_TARGET_TABS.map(item => item.value));
 const bannerS3 = new AWS.S3({
@@ -1722,6 +1724,44 @@ server.post('/api/levelreward', requireUser, async (req, res) => {
         res.json({ ok: true, profile: buildUserProfile(user) });
     } catch (e) {
         console.error('levelreward claim error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+// ===== 퀘스트 게시판 =====
+function decorateQuestBoard(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    const iconOf = itemId => {
+        const data = Number.isInteger(itemId) && itemId >= 0 ? items[itemId] : null;
+        return data ? getItemDisplayAssets(data).iconUrl : null;
+    };
+    return rpgenius.buildQuestBoard(user).map(quest => Object.assign({}, quest, {
+        objectives: quest.objectives.map(objective => Object.assign({}, objective, objective.itemId != null ? { iconUrl: iconOf(objective.itemId) } : {})),
+        rewards: quest.rewards.map(reward => Object.assign({}, reward, reward.itemId != null ? { iconUrl: iconOf(reward.itemId) } : {}))
+    }));
+}
+
+server.get('/api/quests', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json({ list: decorateQuestBoard(user), userLevel: Number(user.level || 1) });
+    } catch (e) {
+        console.error('quests error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/quests/claim', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const result = rpgenius.claimQuestReward(user, Number(req.body && req.body.id), { skip: !!(req.body && req.body.skip) });
+        if (result.error) return res.status(400).json({ error: result.error });
+        await user.save();
+        res.json({ ok: true, name: result.name, skipped: result.skipped, lines: result.lines, list: decorateQuestBoard(user) });
+    } catch (e) {
+        console.error('quest claim error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
 });
@@ -3725,6 +3765,23 @@ server.get('/api/lookup/fashion', requireAdmin, (req, res) => {
         primary_card: Array.isArray(skin.primary_card) ? skin.primary_card : [],
         requireStar: Number(skin.requireStar || 0)
     } : null).filter(Boolean));
+});
+
+// 퀘스트 목표/필터 대상 목록 (관리자 퀘스트 에디터 드롭다운용)
+server.get('/api/lookup/quest-targets', requireAdmin, (req, res) => {
+    const readNames = (file, pick) => {
+        try {
+            return pick(JSON.parse(fs.readFileSync(path.join(__dirname, 'DB', 'RPGenius', file), 'utf8')));
+        } catch (e) {
+            return [];
+        }
+    };
+    res.json({
+        fields: readNames('Dungeon.json', data => (Array.isArray(data) ? data : []).map(d => d && d.name).filter(Boolean)),
+        bosses: readNames('WorldBoss.json', data => (Array.isArray(data) ? data : []).map(b => b && b.name).filter(Boolean)),
+        partyQuests: readNames('PartyQuest.json', data => (data && Array.isArray(data.quests) ? data.quests : []).map(q => q && q.name).filter(Boolean)),
+        recipes: (rpgenius.getDataCache('Recipe', []) || []).map(r => r && r.name).filter(Boolean)
+    });
 });
 
 // ===== rpgenius_data 관리 =====
@@ -7455,6 +7512,15 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="레벨보상">
     <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>
+  </div>
+  <div class="page" data-page="퀘스트">
+    <section class="panel quest-board">
+      <div class="quest-detail" id="questDetail"><div class="empty">퀘스트를 선택하세요.</div></div>
+      <aside class="quest-list-wrap"><h2>퀘스트</h2><div id="questList" class="quest-list"></div></aside>
+    </section>
+  </div>
+  <div class="page" data-page="사냥">
+    <div id="huntMenu" class="hunt-menu"></div>
   </div>
   <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="aucSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><div class="seg" id="aucCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div><div id="aucPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>

@@ -13,7 +13,7 @@ const engine = read('pvp.js');
 // 대시보드 진입점: 콘텐츠 그룹 안 'pvp' 페이지 (독립 화면으로 리다이렉트하지 않음)
 assert.ok(app.includes("PAGE_LABELS") && /pvp:\s*'PVP'/.test(app), 'PVP 페이지 라벨이 필요합니다.');
 const contentGroup = (app.match(/id: 'content',[^\n]*/) || [''])[0];
-assert.ok(contentGroup.includes("'[H]필드', 'pvp', '버닝'"), 'PVP 탭은 콘텐츠 그룹에서 [H]필드와 버닝 사이에 있어야 합니다.');
+assert.ok(contentGroup.includes("'사냥', 'pvp', 'combine'"), 'PVP 탭은 콘텐츠 그룹에서 사냥과 조합 사이에 있어야 합니다.');
 assert.ok(app.includes("if (pageId === 'pvp') loadPvp();"), 'PVP 탭은 대시보드 안에서 로드해야 합니다.');
 assert.ok(server.includes('<div class="page" data-page="pvp">') && server.includes('id="pvpRoot"'), '대시보드에 PVP 페이지 컨테이너가 필요합니다.');
 assert.ok(app.includes("'/pvp?opponent='"), '도전 버튼은 독립 전투 화면으로 이동해야 합니다.');
