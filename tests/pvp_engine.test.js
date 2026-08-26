@@ -35,6 +35,26 @@ const BASE = Date.parse('2026-08-18T05:00:00+09:00');
 let clock = BASE;
 pvp.__setNow(() => clock);
 
+// 연격과 추가 피해는 최종 피해를 재분배하지 않고 원래 계산 구성요소로 남아야 한다.
+{
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    const result = rpg.calculateAttackHitResult(1000, 0, 0, {
+        atk: 1000, crit: 0, critMul: 1.5, cmb: 1, maxCmb: 2, extraDamage: .5
+    }, {}, { comboHitCount: 4 }, {});
+    const fixedExtras = rpg.calculateAttackHitResult(1000, 0, 0, {
+        atk: 1000, crit: 0, critMul: 1.5, cmb: 0, maxCmb: 0, '000': 1
+    }, {}, { comboHitCount: 1, skillTrueDmg: 100, oneTimeTrueDmg: 50 }, {});
+    Math.random = originalRandom;
+    assert.strictEqual(result.damageComponents.filter(component => component.type == 'hit').length, 4, '연격 4타는 기본 피해 4개로 유지돼야 한다.');
+    assert.strictEqual(result.damageComponents.filter(component => component.type == 'additional').length, 1, '추가 피해는 연격 합계와 별도 구성요소여야 한다.');
+    assert.strictEqual(result.damageComponents.reduce((sum, component) => sum + component.damage, 0), result.finalDamage, '표시 구성요소 합은 실제 피해와 같아야 한다.');
+    assert.ok(result.damageComponents.filter(component => component.type == 'additional').every(component => !component.isCritical && !component.isDestinyDamage), '별도 추가 피해에 기본 타격 치명/운명 표식을 상속하면 안 된다.');
+    const fixedLabels = fixedExtras.damageComponents.map(component => component.label).filter(Boolean);
+    assert.ok(fixedLabels.includes('000 추가 피해') && fixedLabels.includes('스킬 고정 피해') && fixedLabels.includes('일회 고정 피해'), '각 고정/추가 피해도 기본 타격 합계와 분리돼야 한다.');
+    assert.strictEqual(fixedExtras.damageComponents.reduce((sum, component) => sum + component.damage, 0), fixedExtras.finalDamage);
+}
+
 function makeUser(name, id, mainCard, overrides) {
     return Object.assign({
         name,
@@ -84,6 +104,7 @@ assert.ok(snapshot.skillIndexes.length >= 2, '전직 카드는 기본 + 전직 �
 assert.strictEqual(snapshot.display.cardName, '글렌첵');
 assert.strictEqual(snapshot.display.skillsMeta[0].name, '글버지');
 assert.strictEqual(snapshot.star, 8);
+assert.strictEqual(typeof snapshot.staticAtkPlus, 'number', '동적 공격력 버프를 솔로 공식대로 합산하려면 정적 공격력% 스냅샷이 필요하다.');
 assert.strictEqual(snapshotUser.hp, undefined, '스냅샷은 유저의 hp/mp를 건드리지 않아야 한다.');
 assert.strictEqual(snapshotUser.field, undefined, '스냅샷은 유저의 field를 건드리지 않아야 한다.');
 
@@ -184,6 +205,14 @@ assert.deepStrictEqual(
     pvp.evaluateRules(ruleSide({ defendCooldownEnd: BASE + 5000, rules: [{ cond: 'always', action: 'defend' }, { cond: 'always', action: 'attack' }] }), enemySide, BASE),
     { action: 'attack', skillName: null },
     '방어가 쿨타임이면 다음 규칙으로 넘어가야 한다.');
+assert.deepStrictEqual(
+    pvp.evaluateRules(ruleSide({
+        mp: 0,
+        rules: [{ cond: 'always', action: 'skill', skill: '글버지' }],
+        snapshot: { stats: {}, slotEffects: {}, skillIndexes: [2], star: 0, elementChain: {}, display: {}, equipment: { entries: [{ name: '불량 배터리', stage: 1 }], setCounts: {} } }
+    }), enemySide, BASE),
+    { action: 'skill', skillName: '글버지' },
+    '상대 AI도 MP가 없을 때 불량 배터리 무료 발동을 한 번은 시도해야 한다.');
 
 // ===== 6. 전투 시뮬레이션 =====
 
@@ -297,19 +326,144 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.strictEqual(pvp.playerDefend(attacker).message, '아직 행동할 수 없습니다.');
 
     advanceTo(battle1.me.nextActionAt);
+    battle1.me.snapshot.stats = Object.assign({}, battle1.me.snapshot.stats, {
+        cmb: 1, maxCmb: 2, fireAtk: 250, waterAtk: 250, lightAtk: 250, darkAtk: 250
+    });
+    battle1.me.snapshot.equipment = {
+        entries: [
+            { name: '레인보우 프리즘', stage: 1 }, { name: '마나번 햇', stage: 1 },
+            { name: '마나번 로브', stage: 1 }, { name: '마나번 트라우저', stage: 1 },
+            { name: '마나번 슈즈', stage: 1 }, { name: '잿불 모자', stage: 1 }
+        ],
+        setCounts: { '천공의 심판': 4, '잿불의 장송곡': 4 }
+    };
+    const equipmentMpBefore = battle1.me.mp;
     const oppHpBefore = battle1.opp.hp;
+    const originalAttackRandom = Math.random;
+    Math.random = () => .5;
     const attacked = pvp.playerAttack(attacker);
+    Math.random = originalAttackRandom;
     assert.ok(attacked.ok, attacked.message);
     assert.ok(battle1.opp.hp < oppHpBefore, '일반 공격은 상대 HP를 깎아야 한다.');
     const attackEvent = battle1.events[battle1.events.length - 1];
     assert.strictEqual(attackEvent.actor, 'me');
     assert.strictEqual(attackEvent.action, 'attack');
     assert.ok(attackEvent.damage > 0 && /공격 — /.test(attackEvent.text), '공격 로그가 남아야 한다.');
+    assert.strictEqual(attackEvent.hits.filter(hit => hit.type == 'hit').length, 4, '연격 추가타는 실제 타격 수만큼 기본 피해로 전달돼야 한다.');
+    assert.ok(attackEvent.hits.some(hit => hit.type == 'additional' && hit.label == '프리즘 추가 공격'), '프리즘 추가 공격은 연격 합계와 별도 수치여야 한다.');
+    assert.ok(attackEvent.hits.some(hit => hit.type == 'additional' && hit.label == '추가 피해'), '추가 피해율 피해는 최종 합계와 별도 수치여야 한다.');
+    assert.strictEqual(attackEvent.hits.filter(hit => hit.type != 'absorbed').reduce((sum, hit) => sum + hit.damage, 0), attackEvent.damage, 'PVP 실제 피해와 개별 표시 수치 합이 같아야 한다.');
+    const baseComboHits = attackEvent.hits.filter(hit => hit.type == 'hit');
+    assert.ok(attackEvent.effectIds.includes('equipment:마나번 햇') && attackEvent.effectIds.includes('equipment:잿불 모자'), '실제로 발동한 마나번/화상 장비의 개별 이펙트가 이벤트에 포함돼야 한다.');
+    assert.ok(baseComboHits.slice(1).every(hit => hit.effectIds.includes('combat:연격 추가타')), '연격 추가타마다 연격 이펙트가 따로 포함돼야 한다.');
+    assert.ok(attackEvent.hits.find(hit => hit.label == '프리즘 추가 공격').effectIds.includes('equipment:레인보우 프리즘'), '프리즘 추가 피해 수치에는 프리즘 전용 이펙트가 붙어야 한다.');
+    assert.ok(baseComboHits[1].damage > baseComboHits[0].damage, '첫 타가 만든 화상은 같은 연격의 두 번째 타격부터 잿불 4세트 피해 증가를 적용해야 한다.');
+    assert.ok(battle1.me.mp < equipmentMpBefore, 'PVP에서도 마나번 장비가 MP를 소모해야 한다.');
+    assert.ok(battle1.me.runtime.equipment.manaBurnAttackBuff, 'PVP 마나번 버프가 생성돼야 한다.');
+    assert.ok(battle1.me.runtime.equipment.rainbowReadyAt > clock, 'PVP 프리즘 추가타 쿨타임이 시작돼야 한다.');
+    assert.ok(battle1.me.runtime.equipment.burn, 'PVP 화상이 부여돼야 한다.');
+    assert.ok(battle1.me.runtime.equipment.judgment, 'PVP 천공의 심판 누적 상태가 시작돼야 한다.');
     assert.ok(battle1.me.nextActionAt >= clock + 2000 && battle1.me.nextActionAt <= clock + 3000, '행동 쿨타임은 2~3초여야 한다.');
 
     const tooSoon = pvp.playerAttack(attacker);
     assert.strictEqual(tooSoon.ok, false);
     assert.strictEqual(tooSoon.message, '아직 행동할 수 없습니다.');
+
+    const savedOppNextActionAt = battle1.opp.nextActionAt;
+    battle1.opp.nextActionAt = battle1.endsAt;
+    battle1.opp.maxHp = 1000000000;
+    battle1.opp.hp = battle1.opp.maxHp;
+    const equipmentSeq = battle1.seq;
+    const directAttackCountAfterHit = battle1.me.attackCount;
+    const directAttackMpAfterHit = battle1.me.mp;
+    advanceTo(clock + 8000);
+    pvp.advanceBattle(attacker);
+    const equipmentEvents = battle1.events.filter(event => event.seq > equipmentSeq);
+    assert.ok(equipmentEvents.some(event => event.action == 'dot' && event.skillName == '화상' && event.damage > 0), 'PVP 화상은 2초 틱 피해를 줘야 한다.');
+    assert.ok(equipmentEvents.filter(event => event.skillName == '화상').every(event => event.hits.every(hit => hit.effectIds.includes('combat:화상 틱'))), '모든 화상 틱 수치에 화상 전용 이펙트가 붙어야 한다.');
+    assert.ok(equipmentEvents.some(event => event.action == 'dot' && event.skillName == '천공 폭발' && event.damage > 0), 'PVP 천공 폭발은 누적 피해를 폭발시켜야 한다.');
+    assert.ok(equipmentEvents.some(event => event.action == 'dot' && event.skillName == '장송곡 폭발' && event.damage > 0), '잿불 4세트는 마지막 화상 틱 뒤에 만료 폭발을 별도 피해로 줘야 한다.');
+    const lastBurnIndex = equipmentEvents.reduce((found, event, index) => event.skillName == '화상' ? index : found, -1);
+    const funeralIndex = equipmentEvents.findIndex(event => event.skillName == '장송곡 폭발');
+    assert.ok(funeralIndex > lastBurnIndex, '장송곡 폭발은 마지막 화상 수치가 표시된 뒤에 별도 이벤트로 나와야 한다.');
+    const funeralEvent = equipmentEvents[funeralIndex];
+    assert.strictEqual(funeralEvent.hits.filter(hit => hit.type != 'absorbed').reduce((sum, hit) => sum + hit.damage, 0), funeralEvent.damage, '장송곡 폭발도 표시 수치와 실제 피해가 같아야 한다.');
+    assert.strictEqual(battle1.me.attackCount, directAttackCountAfterHit, '화상/천공 틱은 공격 카운터를 전진시키면 안 된다.');
+    assert.strictEqual(battle1.me.mp, directAttackMpAfterHit, '화상/천공 틱은 마나번 공격 MP 회복을 발동시키면 안 된다.');
+    battle1.me.nextActionAt = clock;
+    const firstPrism = attackEvent.hits.find(hit => hit.label == '프리즘 추가 공격');
+    const originalBuffedAttackRandom = Math.random;
+    Math.random = () => .5;
+    assert.ok(pvp.playerAttack(attacker).ok, '활성 마나번 버프 상태의 다음 공격이 성공해야 한다.');
+    Math.random = originalBuffedAttackRandom;
+    const buffedAttack = battle1.events[battle1.events.length - 1];
+    const buffedPrism = buffedAttack.hits.find(hit => hit.label == '프리즘 추가 공격');
+    assert.ok(firstPrism && buffedPrism && buffedPrism.damage > firstPrism.damage, '이미 활성인 마나번 공격력 버프는 다음 프리즘 추가타 수치에도 반영돼야 한다.');
+    battle1.me.snapshot.equipment = { entries: [], setCounts: {} };
+    battle1.me.snapshot.stats.cmb = 0;
+    battle1.me.snapshot.stats.maxCmb = 0;
+    battle1.me.runtime.equipment = {};
+    battle1.me.nextActionAt = clock;
+    battle1.opp.maxHp = battle1.opp.snapshot.stats.hp;
+    battle1.opp.hp = battle1.opp.maxHp;
+    battle1.opp.nextActionAt = Math.max(clock, savedOppNextActionAt);
+
+    // --- 상대 AI도 동일한 연격/프리즘/마나번/화상/천공 경로를 사용 ---
+    battle1.opp.snapshot.stats = Object.assign({}, battle1.opp.snapshot.stats, {
+        cmb: 1, maxCmb: 2, fireAtk: 250, waterAtk: 250, lightAtk: 250, darkAtk: 250
+    });
+    battle1.opp.snapshot.equipment = {
+        entries: [
+            { name: '레인보우 프리즘', stage: 1 }, { name: '마나번 햇', stage: 1 },
+            { name: '마나번 로브', stage: 1 }, { name: '마나번 트라우저', stage: 1 },
+            { name: '마나번 슈즈', stage: 1 }, { name: '잿불 모자', stage: 1 }
+        ],
+        setCounts: { '천공의 심판': 4, '잿불의 장송곡': 4 }
+    };
+    battle1.opp.runtime.equipment = {};
+    const opponentRulesBeforeParityCheck = battle1.opp.rules;
+    battle1.opp.rules = [{ cond: 'always', value: null, action: 'attack', skill: null }];
+    battle1.me.maxHp = 1000000000;
+    battle1.me.hp = battle1.me.maxHp;
+    const oppMpBefore = battle1.opp.mp;
+    const opponentSeq = battle1.seq;
+    battle1.opp.nextActionAt = clock;
+    const originalOpponentRandom = Math.random;
+    Math.random = () => .5;
+    pvp.advanceBattle(attacker);
+    Math.random = originalOpponentRandom;
+    const opponentAttack = battle1.events.find(event => event.seq > opponentSeq && event.actor == 'opp' && event.action == 'attack');
+    assert.ok(opponentAttack, '상대 일반 공격 이벤트가 발생해야 한다.');
+    assert.strictEqual(opponentAttack.hits.filter(hit => hit.type == 'hit').length, 4, '상대 연격도 4개의 개별 기본 피해로 전달돼야 한다.');
+    assert.ok(opponentAttack.hits.some(hit => hit.label == '프리즘 추가 공격'), '상대 프리즘 추가 공격도 별도 표시돼야 한다.');
+    assert.ok(opponentAttack.effectIds.includes('equipment:마나번 햇') && opponentAttack.hits.find(hit => hit.label == '프리즘 추가 공격').effectIds.includes('equipment:레인보우 프리즘'), '상대 장비 이펙트도 내 장비와 같은 경로로 전달돼야 한다.');
+    const opponentBaseHits = opponentAttack.hits.filter(hit => hit.type == 'hit');
+    assert.ok(opponentBaseHits[1].damage > opponentBaseHits[0].damage, '상대 첫 타의 화상도 같은 연격 후속타에 잿불 4세트 효과를 적용해야 한다.');
+    assert.ok(battle1.opp.mp < oppMpBefore && battle1.opp.runtime.equipment.manaBurnAttackBuff, '상대 마나번도 MP를 소모하고 버프를 생성해야 한다.');
+    assert.ok(battle1.opp.runtime.equipment.burn, '상대 화상도 부여돼야 한다.');
+    assert.ok(battle1.opp.runtime.equipment.judgment, '상대 천공의 심판도 누적돼야 한다.');
+    const opponentAttackCountAfterHit = battle1.opp.attackCount;
+    const opponentMpAfterHit = battle1.opp.mp;
+    const opponentEquipmentSeq = battle1.seq;
+    battle1.opp.nextActionAt = battle1.endsAt;
+    advanceTo(clock + 8000);
+    pvp.advanceBattle(attacker);
+    const opponentEquipmentEvents = battle1.events.filter(event => event.seq > opponentEquipmentSeq && event.actor == 'opp');
+    assert.ok(opponentEquipmentEvents.some(event => event.action == 'dot' && event.skillName == '화상' && event.damage > 0), '상대의 화상 틱도 실제 피해를 줘야 한다.');
+    assert.ok(opponentEquipmentEvents.some(event => event.action == 'dot' && event.skillName == '천공 폭발' && event.damage > 0), '상대의 천공 폭발도 누적 피해를 별도로 줘야 한다.');
+    assert.ok(opponentEquipmentEvents.some(event => event.action == 'dot' && event.skillName == '장송곡 폭발' && event.damage > 0), '상대의 잿불 4세트 만료 폭발도 별도 피해로 줘야 한다.');
+    const opponentLastBurnIndex = opponentEquipmentEvents.reduce((found, event, index) => event.skillName == '화상' ? index : found, -1);
+    const opponentFuneralIndex = opponentEquipmentEvents.findIndex(event => event.skillName == '장송곡 폭발');
+    assert.ok(opponentFuneralIndex > opponentLastBurnIndex, '상대의 장송곡 폭발도 마지막 화상 표시 뒤에 나와야 한다.');
+    assert.strictEqual(battle1.opp.attackCount, opponentAttackCountAfterHit, '상대의 지속/폭발 피해도 공격 카운터를 올리면 안 된다.');
+    assert.strictEqual(battle1.opp.mp, opponentMpAfterHit, '상대의 지속/폭발 피해도 마나번 MP 회복을 발동시키면 안 된다.');
+    battle1.opp.snapshot.equipment = { entries: [], setCounts: {} };
+    battle1.opp.snapshot.stats.cmb = 0;
+    battle1.opp.snapshot.stats.maxCmb = 0;
+    battle1.opp.runtime.equipment = {};
+    battle1.opp.rules = opponentRulesBeforeParityCheck;
+    battle1.me.maxHp = battle1.me.snapshot.stats.hp;
+    battle1.me.hp = battle1.me.maxHp;
 
     // --- 방어: 4초 지속, 10초 재사용 대기, 다른 행동을 해도 지속 시간 동안 유지 ---
     advanceTo(Math.max(battle1.me.nextActionAt, battle1.me.defendCooldownEnd));
@@ -361,7 +515,7 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     // --- AI 캐치업 ---
     const seqBefore = battle1.seq;
     battle1.me.hp = battle1.me.maxHp; // 캐치업 구간 동안 KO되지 않도록 체력을 채운다
-    advanceTo(clock + 20000);
+    advanceTo(clock + 24000);
     pvp.advanceBattle(attacker);
     const newEvents = battle1.events.filter(event => event.seq > seqBefore);
     assert.ok(newEvents.length >= 5, 'AI가 밀린 시간만큼 행동해야 한다.');
@@ -545,6 +699,44 @@ const advanceTo = ms => { clock = Math.max(clock, ms); };
     assert.strictEqual(overview.history.length, 6);
     assert.ok(overview.history.every(entry => REWARD_NAMES.has(entry.reward)));
     assert.strictEqual(overview.battle, null);
+
+    // --- 동시각 양측 예약 피해: me 삽입 순서에 관계없이 상대 효과까지 해석 ---
+    const simultaneousBattle = JSON.parse(JSON.stringify(battle6));
+    const simultaneousAt = clock + 1000;
+    simultaneousBattle.phase = 'fight';
+    simultaneousBattle.startedAt = clock;
+    simultaneousBattle.endsAt = simultaneousAt + 10000;
+    simultaneousBattle.lastAdvancedAt = clock;
+    simultaneousBattle.seq = 0;
+    simultaneousBattle.events = [];
+    simultaneousBattle.result = null;
+    [simultaneousBattle.me, simultaneousBattle.opp].forEach(side => {
+        side.snapshot.stats = Object.assign({}, side.snapshot.stats, { atk: 100, def: 0, pnt: 0, crit: 0, cmb: 0, maxCmb: 0, avd: 0, takenDamage: 0, damageBonus: 0, finalDamage: 0, extraDamage: 0 });
+        side.snapshot.staticAtkPlus = 0;
+        side.snapshot.slotEffects = Object.assign({}, STUB_SLOT_EFFECTS);
+        side.snapshot.equipment = { entries: [], setCounts: {} };
+        side.snapshot.passiveIds = [];
+        side.maxHp = 1000;
+        side.maxMp = 1000;
+        side.mp = 1000;
+        side.shield = null;
+        side.nextActionAt = simultaneousBattle.endsAt;
+        side.runtime = { buffs: {}, nmmStacks: 0, sivalonCharge: 0, sivalon: null, gunryeok: null, summon: null, mark: null, equipment: { burn: { tickDamage: 100, nextTickAt: simultaneousAt, until: simultaneousAt } } };
+    });
+    simultaneousBattle.me.hp = 200;
+    simultaneousBattle.opp.hp = 50;
+    simultaneousBattle.opp.runtime.equipment.dragonRegen = { ticksLeft: 1, nextTickAt: simultaneousAt };
+    attacker.pvp.battle = simultaneousBattle;
+    advanceTo(simultaneousAt);
+    pvp.advanceBattle(attacker);
+    const simultaneousBurns = simultaneousBattle.events.filter(event => event.action == 'dot' && event.skillName == '화상');
+    const simultaneousRegen = simultaneousBattle.events.find(event => event.actor == 'opp' && event.action == 'heal');
+    assert.ok(simultaneousRegen && simultaneousRegen.seq < simultaneousBurns[0].seq, '같은 ms의 불굴 재생은 양측 예약 피해보다 먼저 처리해 삽입 순서에 따른 부활 편향을 막아야 한다.');
+    assert.deepStrictEqual(simultaneousBurns.map(event => event.actor), ['me', 'opp'], '내 화상이 먼저 KO를 내더라도 같은 ms의 상대 화상도 반드시 적용돼야 한다.');
+    assert.ok(simultaneousBurns.every(event => event.hits.filter(hit => hit.type != 'absorbed').reduce((sum, hit) => sum + hit.damage, 0) == event.damage), '동시각 양측 화상도 각 표시 수치 합과 실제 피해가 같아야 한다.');
+    assert.strictEqual(simultaneousBattle.result.outcome, 'win');
+    await flush();
+    pvp.closeBattle(attacker);
 
     console.log('pvp_engine.test.js: OK');
 })().catch(error => {

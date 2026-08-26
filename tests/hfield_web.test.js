@@ -36,7 +36,7 @@ assert.ok(!field.includes("key === 'a'") && !field.includes("pointermove"), '쓸
 assert.ok(/key\s*={3}\s*' '\s*\|\|\s*key\s*={3}\s*'j'/.test(field), '키보드 공격 입력이 필요합니다.');
 assert.ok(field.includes("'mythic'") && field.includes("'transcend'"), '고등급 보상 연출이 필요합니다.');
 assert.ok(field.includes('AudioContext') && field.includes("tier==='mythic'"), '보상 사운드와 신화 연출이 필요합니다.');
-assert.ok(field.includes("bgm: uiAsset('sfx/부타게임H.mp3')"), 'H필드는 부타게임 전용 배경음악을 재생해야 합니다.');
+assert.ok(field.includes("bgm: uiAsset(regularMode ? 'sfx/사냥.mp3' : 'sfx/부타게임H.mp3')"), '일반 필드와 H필드는 각 전용 배경음악을 재생해야 합니다.');
 assert.ok(field.includes('actionButton(') && field.includes('rewardCard(') && field.includes('addDamage('), '파티퀘스트형 전투 HUD와 피해/보상 연출이 필요합니다.');
 assert.ok(field.includes('logs.slice(-4)'), '전투 로그는 항상 최신 항목을 그려야 합니다.');
 assert.ok(field.includes("const skin=['[𝛧]',state.player.cardSkin,state.player.cardName]") && !field.includes("'['+state.player.cardType+']'"), '장착 캐릭터는 [𝛧] 스킨명 캐릭터명 순서로 표시해야 합니다.');

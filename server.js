@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const combatEffects = require('./public/combat-effects.js');
 const partyquest = require('./partyquest.js');
 const pvp = require('./pvp.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
@@ -426,6 +427,13 @@ server.get('/hfield', async (req, res) => {
     if (!sess || !sess.name) return res.redirect('/');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(renderHFieldApp(sess));
+});
+
+server.get('/field', async (req, res) => {
+    const sess = getSession(req);
+    if (!sess || !sess.name) return res.redirect('/');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderGeneralFieldApp(sess));
 });
 
 server.get('/pvp', async (req, res) => {
@@ -1823,11 +1831,12 @@ function getHFieldRecoveryItems(user) {
     });
 }
 
-function getHFieldSkills(user, mainCard) {
+function getHFieldSkills(user, mainCard, fieldName) {
     const classSkills = mainCard && mainCard.type == '전직' && mainCard.classInfo ? mainCard.classInfo.skills : [];
     const specterSkills = mainCard && mainCard.specter && mainCard.specter.skill ? [mainCard.specter.skill] : [];
     const entries = [].concat(mainCard && mainCard.skills || [], classSkills || [], specterSkills);
-    const cooldowns = user.field && user.field.name == H_FIELD_NAME && user.field.skillCooldowns || {};
+    const activeFieldName = fieldName || H_FIELD_NAME;
+    const cooldowns = user.field && user.field.name == activeFieldName && user.field.skillCooldowns || {};
     const seen = new Set();
     return entries.filter(skill => {
         if (!skill || !skill.name || seen.has(skill.name)) return false;
@@ -1835,11 +1844,22 @@ function getHFieldSkills(user, mainCard) {
         return true;
     }).map(skill => ({
         name: skill.name,
+        element: skill.element || null,
         mpCost: Number(skill.mpCost || 0),
         cooltimeText: skill.cooltimeText || '',
         descLines: Array.isArray(skill.descLines) ? skill.descLines : [],
         cooldownEnd: Number(cooldowns[skill.name] || 0)
     }));
+}
+
+function getWebFieldAttackElement(user, action, skillName, skills) {
+    const chain = rpgenius.getEquipmentElementChain(user) || {};
+    if (chain.weapon) return chain.weapon;
+    if (action == 'skill') {
+        const skill = (skills || []).find(entry => entry && entry.name == skillName);
+        if (skill && skill.element) return skill.element;
+    }
+    return chain.rest || null;
 }
 
 const H_FIELD_SPRITE_EXCLUSIONS = new Set([
@@ -1923,6 +1943,7 @@ function buildHFieldState(user) {
         },
         target: {
             name: phase == 'pillar' ? '부타의 기둥' : (dungeon.elite && dungeon.elite.name || '부타'),
+            element: phase == 'pillar' ? null : dungeon.elite && dungeon.elite.element || null,
             hp: Math.max(0, targetHp),
             maxHp: targetMaxHp,
             atk: phase == 'pillar' ? 0 : Number(dungeon.elite && dungeon.elite.atk || 0),
@@ -1967,19 +1988,86 @@ function getHFieldRewards(user, before) {
     return rewards;
 }
 
+function parseFieldOutgoingHits(message) {
+    return String(message || '').split(/\r?\n/).reduce((hits, line) => {
+        if (!line.includes('⚔️') || !line.includes('피해를 입혔습니다')) return hits;
+        const numbers = line.slice(0, line.indexOf('피해를 입혔습니다')).match(/[\d,]+/g);
+        const damage = numbers && numbers.length ? Number(numbers[numbers.length - 1].replace(/,/g, '')) : 0;
+        const labelMatch = line.match(/·\s*(.+?)\s+피해를 입혔습니다/);
+        if (damage > 0) hits.push({ damage, critical: line.includes('치명타'), destiny: line.includes('운명'), label: labelMatch ? labelMatch[1].trim() : null });
+        return hits;
+    }, []);
+}
+
+function parseFieldIncomingHits(message) {
+    return String(message || '').split(/\r?\n/).reduce((hits, line) => {
+        if (!line.includes('❗') || !line.includes('피해를 입었습니다')) return hits;
+        const numbers = line.slice(0, line.indexOf('피해를 입었습니다')).match(/[\d,]+/g);
+        const damage = numbers && numbers.length ? Number(numbers[numbers.length - 1].replace(/,/g, '')) : 0;
+        const labelMatch = line.match(/·\s*(.+?)\s+피해를 입었습니다/);
+        if (damage > 0) hits.push({ damage, critical: line.includes('치명타'), destiny: line.includes('운명'), label: labelMatch ? labelMatch[1].trim() : null });
+        return hits;
+    }, []);
+}
+
+function mapFieldTickReward(reward) {
+    const mapped = Object.assign({}, reward || {});
+    if (mapped.kind != 'item') return mapped;
+    const items = rpgenius.getDataCache('Item', []);
+    const item = Number.isInteger(Number(mapped.itemId)) ? items[Number(mapped.itemId)] : items.find(entry => entry && entry.name == mapped.name);
+    if (!item) return mapped;
+    const assets = getItemDisplayAssets(item);
+    mapped.name = item.name;
+    mapped.iconUrl = assets.iconUrl;
+    mapped.frameUrl = assets.frameUrl;
+    return mapped;
+}
+
+function mapFieldTickEvent(event) {
+    const damage = Math.max(0, Number(event && event.damage || 0));
+    const killedCount = Math.max(0, Number(event && event.killedCount || 0));
+    const source = String(event && event.source || '지속 피해');
+    const fireEffect = /화상|겁화|장송곡/.test(source);
+    return combatEffects.annotateEvent(Object.assign({}, event, {
+        action: 'tick',
+        effectKind: fireEffect ? 'burn' : /익테봇|수나타/.test(source) ? 'summon' : /그림자|심판|천공/.test(source) ? 'equipment' : 'skill',
+        effectElement: fireEffect ? '화' : /그림자/.test(source) ? '암' : /심판|천공/.test(source) ? '명' : null,
+        damage,
+        killedCount,
+        hits: damage > 0 ? [{ damage, critical: false, destiny: false, label: source }] : [],
+        rewards: Array.isArray(event && event.rewards) ? event.rewards.map(mapFieldTickReward) : []
+    }));
+}
+
+function drainWebFieldTickEvents(userName, state, includeKills) {
+    const buffered = rpgenius.drainFieldTickEvents(userName);
+    if (!state || !state.inField) return [];
+    return buffered
+        .filter(event => event && event.fieldName == state.fieldName && (Number(event.damage || 0) > 0 || (includeKills && Number(event.killedCount || 0) > 0) || event.phaseChanged))
+        .map(mapFieldTickEvent);
+}
+
 function buildHFieldActionResult(user, before, message, action, skillName) {
     const state = buildHFieldState(user);
     const rewards = getHFieldRewards(user, before);
     const sameTarget = state.inField && state.phase == before.phase;
     const targetAfter = sameTarget ? Number(state.target.hp || 0) : 0;
-    const criticalCount = (String(message).match(/치명타/g) || []).length;
+    const hits = parseFieldOutgoingHits(message);
+    const receivedHits = parseFieldIncomingHits(message);
+    const criticalCount = hits.filter(hit => hit.critical).length;
+    const triggeredEffectIds = rpgenius.drainFieldActionEffectIds(user.name);
     return {
         ok: !String(message).startsWith('❌'),
         message: String(message),
         state,
-        event: {
+        event: combatEffects.annotateEvent({
             action,
             skillName: skillName || null,
+            triggeredEffectIds,
+            effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
+            receivedEffectElement: state.target && state.target.element || null,
+            hits,
+            receivedHits,
             damage: Math.max(0, Number(before.targetHp || 0) - targetAfter),
             received: Math.max(0, Number(before.playerHp || 0) - Number(state.player.hp || 0)),
             criticalCount,
@@ -1989,7 +2077,7 @@ function buildHFieldActionResult(user, before, message, action, skillName) {
             cleared: before.inField && !state.inField && /자동으로 퇴장했습니다/.test(String(message)) && rewards.length > 0,
             defeated: before.inField && !state.inField && /보상을 획득하지 못하고.*퇴장했습니다/.test(String(message)),
             rewards
-        }
+        })
     };
 }
 
@@ -2015,7 +2103,7 @@ server.get('/api/hfield', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const state = buildHFieldState(user);
         // 소환수(익테봇/수나타)·지속 피해(유서새김/장비 효과) 틱은 채널 없이 백그라운드로 실행되므로, 폴링 시 최근 틱을 함께 내려 데미지 표시/로그에 쓴다
-        state.events = state.inField ? rpgenius.drainFieldTickEvents(user.name).filter(event => event && Number(event.damage || 0) > 0) : [];
+        state.events = drainWebFieldTickEvents(user.name, state, false);
         res.json(state);
     } catch (e) {
         console.error('h-field status error:', e);
@@ -2120,11 +2208,11 @@ server.post('/api/hfield/use-consumable', requireUser, (req, res) => runHFieldMu
     const state = buildHFieldState(user);
     return {
         ok: !String(message).startsWith('❌'), message, state,
-        event: {
+        event: combatEffects.annotateEvent({
             action: 'consumable', itemId, itemName: item.name,
             recoveredHp: Math.max(0, Number(state.player.hp || 0) - beforeHp),
             recoveredMp: Math.max(0, Number(state.player.mp || 0) - beforeMp)
-        }
+        })
     };
 }));
 
@@ -2133,6 +2221,368 @@ server.post('/api/hfield/leave', requireUser, (req, res) => runHFieldMutation(re
     const message = rpgenius.leaveField(user);
     await user.save();
     return { ok: !String(message).startsWith('❌'), message, state: buildHFieldState(user) };
+}));
+
+// ===== 일반 필드 =====
+const GENERAL_FIELD_ATLASES = [
+    { from: 0, to: 3, file: 'field-atlas-1-clean.png', rows: 4 },
+    { from: 4, to: 7, file: 'field-atlas-2-clean.png', rows: 4 },
+    { from: 8, to: 11, file: 'field-atlas-3-clean.png', rows: 4 },
+    { from: 12, to: 13, file: 'field-atlas-4a-clean.png', rows: 2 },
+    { from: 14, to: 15, file: 'field-atlas-4b-clean.png', rows: 2 },
+    { from: 16, to: 19, file: 'field-atlas-5-clean.png', rows: 4 },
+    { from: 20, to: 23, file: 'field-atlas-6-clean.png', rows: 4 },
+    { from: 24, to: 27, file: 'field-atlas-7-clean.png', rows: 4 }
+];
+
+function getGeneralFieldAssetUrl(file) {
+    return '/rpg-ui?file=' + encodeURIComponent(String(file || '').replace(/\\/g, '/'));
+}
+
+function getGeneralFieldAtlas(index) {
+    const atlas = GENERAL_FIELD_ATLASES.find(entry => index >= entry.from && index <= entry.to);
+    if (!atlas) return null;
+    return {
+        atlasUrl: getGeneralFieldAssetUrl(path.join('필드', '몬스터', atlas.file)),
+        row: index - atlas.from,
+        rows: atlas.rows
+    };
+}
+
+function getGeneralFieldDungeons() {
+    return rpgenius.getRegularFieldDungeons();
+}
+
+function getGeneralFieldDescriptor(dungeon, index, user, entryBlocked, combatPower) {
+    const level = Number(user.level || 1);
+    const minLevel = Number(dungeon.requireLevel || 1);
+    const maxLevel = typeof dungeon.maxLevel == 'undefined' ? null : Number(dungeon.maxLevel);
+    const levelAvailable = level >= minLevel && (maxLevel == null || level <= maxLevel);
+    const recommendedCP = Number(rpgenius.getDungeonRecommendedCP(dungeon) || 0);
+    const atlas = getGeneralFieldAtlas(index);
+    const spriteBase = atlas || { atlasUrl: null, row: 0, rows: 1 };
+    const normalName = dungeon.name + ' 몬스터';
+    const eliteName = dungeon.elite && dungeon.elite.name || '엘리트 몬스터';
+    return {
+        index,
+        name: dungeon.name,
+        requireLevel: minLevel,
+        maxLevel,
+        levelText: maxLevel == null ? 'Lv. ' + minLevel : 'Lv. ' + minLevel + ' ~ ' + maxLevel,
+        levelAvailable,
+        recommendedCP,
+        recommendedPower: recommendedCP,
+        cpStatus: rpgenius.getDungeonCPStatus(combatPower, recommendedCP),
+        locked: !levelAvailable,
+        canEnter: levelAvailable && !entryBlocked,
+        backgroundUrl: getGeneralFieldAssetUrl(path.join('필드', dungeon.name + '.png')),
+        monster: {
+            atlasUrl: spriteBase.atlasUrl,
+            row: spriteBase.row,
+            rows: spriteBase.rows,
+            normalName,
+            eliteName,
+            commonColumn: 0,
+            eliteColumn: 1,
+            normalSprite: Object.assign({}, spriteBase, { column: 0 }),
+            eliteSprite: Object.assign({}, spriteBase, { column: 1 })
+        }
+    };
+}
+
+function getGeneralFieldRuntime(user) {
+    const dungeons = getGeneralFieldDungeons();
+    const fieldName = user.field && user.field.name || null;
+    const index = dungeons.findIndex(dungeon => dungeon.name == fieldName);
+    const inField = index >= 0 && !!user.field && !user.field.hell && !user.field.worldBoss && !user.field.dailyDungeon;
+    return { dungeons, fieldName, index, inField, dungeon: inField ? dungeons[index] : null };
+}
+
+function buildGeneralFieldState(user) {
+    const runtime = getGeneralFieldRuntime(user);
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0);
+    const maxMp = Number(stats.mp || 0);
+    const hp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const mainCard = serializeCard(user.main_card, user);
+    const combatPower = Number(rpgenius.calculateCombatPower(user).total || 0);
+    const entryError = runtime.fieldName && !runtime.inField
+        ? '현재 ' + runtime.fieldName + ' 필드에 입장 중입니다. 먼저 해당 필드에서 퇴장해주세요.'
+        : hp <= 1 ? '체력이 1 이하일 때는 입장할 수 없습니다.' : null;
+    const fields = runtime.dungeons.map((dungeon, index) => getGeneralFieldDescriptor(dungeon, index, user, !!runtime.fieldName || hp <= 1, combatPower));
+    const activeField = runtime.inField ? fields[runtime.index] : null;
+    const phase = runtime.inField && user.field.elite ? 'elite' : runtime.inField ? 'normal' : 'lobby';
+    const target = !runtime.inField ? null : phase == 'elite'
+        ? {
+            name: activeField.monster.eliteName,
+            element: runtime.dungeon.elite && runtime.dungeon.elite.element || null,
+            hp: Math.max(0, Number(user.field.elite && user.field.elite.hp || 0)),
+            maxHp: Number(runtime.dungeon.elite && runtime.dungeon.elite.hp || 1),
+            atk: Number(runtime.dungeon.elite && runtime.dungeon.elite.atk || 0),
+            def: Number(runtime.dungeon.elite && runtime.dungeon.elite.def || 0),
+            sprite: activeField.monster.eliteSprite
+        }
+        : {
+            name: activeField.monster.normalName,
+            element: runtime.dungeon.element || null,
+            hp: null,
+            maxHp: null,
+            atk: Number(runtime.dungeon.atk || 0),
+            def: Number(runtime.dungeon.def || 0),
+            sprite: activeField.monster.normalSprite
+        };
+    return {
+        serverNow: Date.now(),
+        fields,
+        inField: runtime.inField,
+        fieldName: runtime.fieldName,
+        blockedField: runtime.fieldName && !runtime.inField ? runtime.fieldName : null,
+        activeField,
+        phase,
+        canEnter: !runtime.fieldName && hp > 1,
+        entryError,
+        target,
+        killCount: runtime.inField ? Number(user.field.killCount || 0) : 0,
+        nextActionAt: runtime.inField ? Number(user.field.nextActionAt || 0) : 0,
+        charge: runtime.inField ? Number(user.field.sivalonCharge || 0) : 0,
+        pendingFragment: rpgenius.getPendingFragmentInfo(user),
+        player: {
+            name: user.name,
+            level: Number(user.level || 1),
+            hp,
+            maxHp,
+            mp: typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0),
+            maxMp,
+            atk: Number(stats.atk || 0),
+            def: Number(stats.def || 0),
+            combatPower,
+            cardName: mainCard && mainCard.name || '',
+            cardFormatted: mainCard && mainCard.formatted || '',
+            cardStar: mainCard ? Number(mainCard.star || 0) : null,
+            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            cardType: mainCard && mainCard.type || '일반',
+            cardSkin: mainCard && mainCard.skin || '',
+            spriteUrl: getHFieldCharacterSprite(mainCard)
+        },
+        skills: getHFieldSkills(user, mainCard, runtime.inField ? runtime.fieldName : null),
+        consumables: runtime.inField ? getHFieldRecoveryItems(user) : []
+    };
+}
+
+function captureGeneralFieldAction(user) {
+    const runtime = getGeneralFieldRuntime(user);
+    const phase = runtime.inField && user.field.elite ? 'elite' : runtime.inField ? 'normal' : 'lobby';
+    const itemCounts = new Map((user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : []).map(item => [Number(item.id), Number(item.count || 0)]));
+    return {
+        inField: runtime.inField,
+        fieldName: runtime.inField ? runtime.fieldName : null,
+        phase,
+        playerHp: Number(user.hp || 0),
+        targetHp: phase == 'elite' ? Number(user.field.elite && user.field.elite.hp || 0) : null,
+        killCount: runtime.inField ? Number(user.field.killCount || 0) : 0,
+        level: Number(user.level || 1),
+        exp: Number(user.exp || 0),
+        gold: Number(user.gold || 0),
+        itemCounts,
+        equipmentCount: user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment.length : 0
+    };
+}
+
+function parseGeneralFieldDamage(message) {
+    return parseFieldOutgoingHits(message).reduce((total, hit) => total + Number(hit.damage || 0), 0);
+}
+
+function parseGeneralFieldKilledCount(message) {
+    const match = String(message || '').match(/총\s+([\d,]+)마리\s+처치/);
+    return match ? Number(match[1].replace(/,/g, '')) : 0;
+}
+
+function parseGeneralFieldExpReward(message) {
+    let total = 0;
+    const pattern = /- XP\s+\+?([\d,]+)/g;
+    let match;
+    while ((match = pattern.exec(String(message || '')))) total += Number(match[1].replace(/,/g, ''));
+    return total;
+}
+
+function getGeneralFieldRewards(user, before, message) {
+    const rewards = getHFieldRewards(user, before);
+    const gold = Math.max(0, Number(user.gold || 0) - Number(before.gold || 0));
+    const exp = parseGeneralFieldExpReward(message);
+    if (gold > 0) rewards.unshift({ kind: 'currency', name: '골드', count: gold });
+    if (exp > 0) rewards.unshift({ kind: 'exp', name: '경험치', count: exp });
+    return rewards;
+}
+
+function buildGeneralFieldActionResult(user, before, message, action, skillName) {
+    const state = buildGeneralFieldState(user);
+    const messageText = String(message || '');
+    const parsedDamage = parseGeneralFieldDamage(messageText);
+    const hits = parseFieldOutgoingHits(messageText);
+    const receivedHits = parseFieldIncomingHits(messageText);
+    const hpDamage = before.phase == 'elite'
+        ? Math.max(0, Number(before.targetHp || 0) - (state.inField && state.phase == 'elite' ? Number(state.target.hp || 0) : 0)) : 0;
+    const killedCount = parseGeneralFieldKilledCount(messageText) || (before.phase == 'normal' && state.inField && state.fieldName == before.fieldName
+        ? Math.max(0, Number(state.killCount || 0) - Number(before.killCount || 0)) : 0);
+    const rewards = getGeneralFieldRewards(user, before, messageText);
+    const triggeredEffectIds = rpgenius.drainFieldActionEffectIds(user.name);
+    return {
+        ok: !messageText.startsWith('❌'),
+        message: messageText,
+        state,
+        event: combatEffects.annotateEvent({
+            action,
+            skillName: skillName || null,
+            triggeredEffectIds,
+            effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
+            receivedEffectElement: state.target && state.target.element || null,
+            hits,
+            receivedHits,
+            killedCount,
+            damage: parsedDamage || hpDamage,
+            received: Math.max(0, Number(before.playerHp || 0) - Number(state.player.hp || 0)),
+            criticalCount: hits.filter(hit => hit.critical).length,
+            eliteEncountered: before.inField && before.phase == 'normal' && state.inField && state.phase == 'elite',
+            eliteDefeated: before.inField && before.phase == 'elite' && state.inField && state.phase == 'normal',
+            eliteName: state.activeField && state.activeField.monster && state.activeField.monster.eliteName || null,
+            defeated: before.inField && !state.inField && /보상을 획득하지 못하고.*퇴장했습니다/.test(messageText),
+            levelUps: Math.max(0, Number(state.player.level || 1) - Number(before.level || 1)),
+            rewards
+        })
+    };
+}
+
+function getGeneralFieldFragmentBlock(user) {
+    const message = rpgenius.getPendingFragmentBlockMessage(user);
+    return message ? { ok: false, message, pendingFragmentRequired: true, state: buildGeneralFieldState(user) } : null;
+}
+
+async function runGeneralFieldMutation(req, res, mutate) {
+    try {
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) throw new Error('유저를 찾을 수 없습니다.');
+            return mutate(user);
+        });
+        res.json(payload);
+    } catch (e) {
+        console.error('general field action error:', e);
+        res.status(500).json({ error: e && e.message == '유저를 찾을 수 없습니다.' ? e.message : '서버 오류' });
+    }
+}
+
+server.get('/api/field', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const state = buildGeneralFieldState(user);
+        state.events = drainWebFieldTickEvents(user.name, state, true);
+        res.json(state);
+    } catch (e) {
+        console.error('general field status error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/field/enter', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    const fieldName = String(req.body && (req.body.fieldName || req.body.name) || '').trim().slice(0, 80);
+    const dungeon = getGeneralFieldDungeons().find(entry => entry.name == fieldName);
+    if (!dungeon) return { ok: false, message: '❌ 존재하지 않는 일반 필드입니다.', state: buildGeneralFieldState(user) };
+    const message = await rpgenius.enterField(user, dungeon.name, { confirmed: req.body && req.body.confirmed === true });
+    await user.save();
+    const state = buildGeneralFieldState(user);
+    return {
+        ok: state.inField && state.fieldName == dungeon.name,
+        needsConfirmation: !state.inField && !!(user.pendingAction && user.pendingAction.type == '필드입장확인' && user.pendingAction.name == dungeon.name),
+        message,
+        state
+    };
+}));
+
+server.post('/api/field/cancel-entry', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    const requestedName = String(req.body && (req.body.fieldName || req.body.name) || '').trim().slice(0, 80);
+    const pending = user.pendingAction;
+    const regularNames = new Set(getGeneralFieldDungeons().map(dungeon => dungeon.name));
+    if (pending && pending.type == '필드입장확인' && regularNames.has(pending.name) && (!requestedName || requestedName == pending.name)) user.pendingAction = null;
+    await user.save();
+    return { ok: true, state: buildGeneralFieldState(user) };
+}));
+
+server.post('/api/field/attack', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    if (!getGeneralFieldRuntime(user).inField) return { ok: false, message: '❌ 일반 필드에 입장한 상태가 아닙니다.', state: buildGeneralFieldState(user) };
+    const before = captureGeneralFieldAction(user);
+    const message = await rpgenius.useBasicAttackInField(user);
+    await user.save();
+    return buildGeneralFieldActionResult(user, before, message, 'attack');
+}));
+
+server.post('/api/field/skill', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    if (!getGeneralFieldRuntime(user).inField) return { ok: false, message: '❌ 일반 필드에 입장한 상태가 아닙니다.', state: buildGeneralFieldState(user) };
+    const skillName = String(req.body && req.body.skillName || '').trim().slice(0, 80);
+    if (!skillName) return { ok: false, message: '❌ 사용할 스킬을 선택해주세요.', state: buildGeneralFieldState(user) };
+    const before = captureGeneralFieldAction(user);
+    const message = await rpgenius.useSkillInField(user, skillName);
+    await user.save();
+    return buildGeneralFieldActionResult(user, before, message, 'skill', skillName);
+}));
+
+server.post('/api/field/use-consumable', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    if (!getGeneralFieldRuntime(user).inField) return { ok: false, message: '❌ 일반 필드에 입장한 상태가 아닙니다.', state: buildGeneralFieldState(user) };
+    const itemId = Number(req.body && req.body.itemId);
+    const items = rpgenius.getDataCache('Item', []);
+    const item = Number.isInteger(itemId) ? items[itemId] : null;
+    const recoveryFuncs = item && item.type == '소모품'
+        ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 회복 소모품이 아닙니다.', state: buildGeneralFieldState(user) };
+    if (rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '아이템이 부족합니다.', state: buildGeneralFieldState(user) };
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
+    const beforeHp = typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0);
+    const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
+    const restoresHp = recoveryFuncs.some(func => String(func.type).startsWith('체력'));
+    const restoresMp = recoveryFuncs.some(func => String(func.type).startsWith('마나'));
+    if ((!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
+        return { ok: false, message: '회복할 HP나 MP가 없습니다.', state: buildGeneralFieldState(user) };
+    }
+    const message = await rpgenius.useItem(user, item.name, 1);
+    await user.save();
+    const state = buildGeneralFieldState(user);
+    return {
+        ok: !String(message).startsWith('❌'), message, state,
+        event: combatEffects.annotateEvent({
+            action: 'consumable', itemId, itemName: item.name,
+            recoveredHp: Math.max(0, Number(state.player.hp || 0) - beforeHp),
+            recoveredMp: Math.max(0, Number(state.player.mp || 0) - beforeMp)
+        })
+    };
+}));
+
+server.post('/api/field/leave', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const blocked = getGeneralFieldFragmentBlock(user);
+    if (blocked) return blocked;
+    if (!getGeneralFieldRuntime(user).inField) return { ok: false, message: '❌ 일반 필드에 입장한 상태가 아닙니다.', state: buildGeneralFieldState(user) };
+    const message = rpgenius.leaveField(user);
+    await user.save();
+    return { ok: !String(message).startsWith('❌'), message, state: buildGeneralFieldState(user) };
+}));
+
+server.post('/api/field/fragment', requireUser, (req, res) => runGeneralFieldMutation(req, res, async user => {
+    const before = captureGeneralFieldAction(user);
+    const message = rpgenius.consumeFragment(user);
+    await user.save();
+    return buildGeneralFieldActionResult(user, before, message, 'fragment');
 }));
 
 // ===== PVP =====
@@ -7613,6 +8063,22 @@ function renderHFieldApp(sess) {
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
+<script src="/static/combat-effects.js"></script>
+<script src="/static/hfield.js"></script>
+</body></html>`;
+}
+
+function renderGeneralFieldApp(sess) {
+    return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>일반 필드</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<link rel="stylesheet" href="/static/hfield.css"></head><body>
+<main id="hFieldRoot" class="hf-root" aria-label="일반 필드">
+  <canvas id="hfCanvas" aria-label="일반 필드 전투 화면"></canvas>
+  <canvas id="hfHud"></canvas>
+</main>
+<script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE='regular';</script>
+<script src="/static/combat-effects.js"></script>
 <script src="/static/hfield.js"></script>
 </body></html>`;
 }
@@ -7627,6 +8093,7 @@ function renderPvpApp(sess, opponent) {
   <canvas id="pvpHud"></canvas>
 </main>
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
+<script src="/static/combat-effects.js"></script>
 <script src="/static/pvp.js"></script>
 </body></html>`;
 }

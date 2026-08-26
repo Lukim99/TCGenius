@@ -6,6 +6,7 @@
     if (!sceneCanvas || !hudCanvas) return;
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
+    const effectCatalog = window.CombatEffects || null;
     const ASSETS = {
         background: uiAsset('필드/뉴비즈.png'),
         impact: uiAsset('필드/hfield-impact-v2.png')
@@ -28,8 +29,35 @@
     const cleanText = value => String(value || '')
         .replace(/\p{Extended_Pictographic}/gu, '').replace(/[\uFE0E\uFE0F\u200D]/g, '')
         .replace(/^[-•]\s*/, '').trim();
+    const ELEMENT_EFFECT_COLORS = {
+        '화': [1,.2,.04,1], '수': [.05,.68,1,1], '명': [1,.86,.25,1], '암': [.58,.16,1,1]
+    };
+    function combatEffectProfile(event, hit) {
+        const action = String(event && event.action || '');
+        const name = String(event && (event.skillName || event.source) || '');
+        const label = String(hit && hit.label || '');
+        const text = name + ' ' + label;
+        const element = event && event.effectElement || null;
+        const explicit = event && event.effectKind;
+        if (['burn','summon','element','equipment','skill'].includes(explicit)) return { kind: explicit, element };
+        if (action === 'summon' || /익테봇|수나타|소환/.test(text)) return { kind: 'summon', element };
+        if (/화상|겁화|장송곡/.test(text)) return { kind: 'burn', element: '화' };
+        if (/그림자 공격|심판 폭발|천공 폭발|가시 반사/.test(text)) return { kind: 'equipment', element: /그림자|가시/.test(text) ? '암' : '명' };
+        if (/프리즘|속성 추가 피해|추가 피해|고정 피해|000|Celestia|징수의 총|중퇴/.test(label)) return { kind: label.includes('속성') ? 'element' : 'equipment', element };
+        if (action === 'skill' && hit && Number(hit.presentationIndex || 0) > 0) return { kind: 'hit', element };
+        if (action === 'skill') return { kind: 'skill', element };
+        if (action === 'dot' || action === 'tick') return { kind: 'skill', element };
+        if (element) return { kind: 'element', element };
+        return { kind: 'hit', element: null };
+    }
     // 내 캐릭터는 왼쪽, 상대는 오른쪽(좌우 반전)
     const sideX = (key, narrow) => key === 'opp' ? (narrow ? .76 : .75) : (narrow ? .24 : .25);
+    const combatAnchor = (key, role) => {
+        const narrow = innerWidth < 700;
+        return { x: sideX(key, narrow), y: role === 'actor' ? (narrow ? .64 : .61) : (narrow ? .58 : .51) };
+    };
+    const combatPopY = () => innerWidth < 700 ? .6 : .44;
+    const recoveryPopY = () => innerWidth < 700 ? .66 : .5;
 
     let stage = 'loading';      // loading | lobby | battle | result
     let view = null;            // BattleView
@@ -99,6 +127,8 @@
             if (!this.gl) throw new Error('WebGL을 지원하지 않는 브라우저입니다.');
             this.textures = {};
             this.particles = [];
+            this.effectSprites = [];
+            this.recentEffects = new Map();
             this.spriteUrls = { me: '', opp: '' };
             this.sides = { me: null, opp: null };
             this.anim = { me: this.newAnim(), opp: this.newAnim() };
@@ -146,19 +176,23 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.useProgram(program); gl.uniform1i(this.loc.texture, 0);
         }
-        loadTexture(name, url) {
+        loadTexture(name, url, transparent) {
             const gl = this.gl;
+            const previous = this.textures[name];
             const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8,12,24,255]));
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(transparent ? [0,0,0,0] : [8,12,24,255]));
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             const entry = this.textures[name] = { texture, aspect: 1, ready: false };
+            if (previous && previous.texture) gl.deleteTexture(previous.texture);
             const image = new Image(); image.decoding = 'async';
             image.onload = () => {
+                if (this.textures[name] !== entry) { gl.deleteTexture(texture); return; }
                 gl.bindTexture(gl.TEXTURE_2D, texture); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
                 entry.aspect = image.naturalWidth / Math.max(1, image.naturalHeight); entry.ready = true;
             };
+            image.onerror = () => { entry.failed = true; };
             image.src = url;
         }
         setSides(me, opp) {
@@ -191,8 +225,8 @@
             return sourceAspect>canvasAspect?{width:sourceAspect/canvasAspect,height:1}:{width:1,height:canvasAspect/sourceAspect};
         }
         particle(p) {
-            if (reducedMotion && this.particles.length > 24) return;
-            this.particles.push(Object.assign({x:.5,y:.5,vx:0,vy:0,life:.7,maxLife:.7,width:.014,height:.014,rotation:0,spin:0,color:[1,.3,.2,1],mode:1}, p));
+            if (this.particles.length > 120 || (reducedMotion && this.particles.length > 24)) return;
+            this.particles.push(Object.assign({x:.5,y:.5,vx:0,vy:0,life:.7,maxLife:.7,width:.014,height:.014,rotation:0,spin:0,gravity:.07,grow:0,delay:0,color:[1,.3,.2,1],mode:1}, p));
         }
         burst(x, y, color, count) {
             for (let i = 0; i < (reducedMotion ? 8 : count); i++) {
@@ -200,6 +234,91 @@
                 const spark = i % 3 === 0;
                 this.particle({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,life:.45+Math.random()*.55,maxLife:1,width:spark?.045+Math.random()*.05:.008+Math.random()*.014,height:spark?.0035:.008+Math.random()*.014,spin:spark?angle:(Math.random()-.5)*5,color,mode:spark?2:1});
             }
+        }
+        effectTexture(effectId) {
+            if (!effectCatalog) return null;
+            const url = effectCatalog.assetUrl(effectId);
+            if (!url) return null;
+            const key = 'effect:' + effectId;
+            if (!this.textures[key]) this.loadTexture(key, url, true);
+            return key;
+        }
+        playEffectAssets(key, effectIds, options) {
+            if (!effectCatalog) return;
+            const opts = options || {}, role = opts.role === 'actor' ? 'actor' : 'target';
+            const point = combatAnchor(key, role), now = performance.now(), x = point.x, y = Number.isFinite(opts.y) ? opts.y : point.y;
+            if (this.recentEffects.size > 128) this.recentEffects.forEach((at, token) => { if (now - at > 5000) this.recentEffects.delete(token); });
+            const candidates = effectCatalog.unique(effectIds || []).filter(effectId => now - Number(this.recentEffects.get(key + ':' + role + ':' + effectId) || 0) >= 760);
+            const visible = effectCatalog.presentationEffectIds ? effectCatalog.presentationEffectIds(candidates, opts.limit || 2) : candidates.slice(0, opts.limit || 2);
+            visible.forEach((effectId, index) => {
+                const textureKey = this.effectTexture(effectId);
+                if (!textureKey) return;
+                const profile = effectCatalog.motionProfile(effectId);
+                this.recentEffects.set(key + ':' + role + ':' + effectId, now);
+                this.effectSprites.push({ effectId, textureKey, x, y, role, start: now + index * 80, duration: reducedMotion ? Math.max(320, profile.duration * .7) : profile.duration, profile });
+            });
+            this.effectSprites = this.effectSprites.slice(-8);
+        }
+        drawEffectAssets(time) {
+            this.effectSprites = this.effectSprites.filter(sprite => {
+                if (time < sprite.start) return true;
+                const progress = (time - sprite.start) / Math.max(1, sprite.duration);
+                if (progress >= 1) return false;
+                const entry = this.textures[sprite.textureKey];
+                if (!entry || entry.failed) return false;
+                if (!entry.ready) return true;
+                const pulse = Math.sin(Math.min(1, progress) * Math.PI), profile = sprite.profile;
+                const scale = (.72 + pulse * .3) * (profile.aura ? .92 + progress * .08 : 1);
+                const alpha = clamp(Math.min(progress * 6, (1 - progress) * 2.8), 0, 1) * Number(profile.alpha || .5);
+                const fit = this.fit(sprite.textureKey, profile.size * scale, sprite.role === 'actor' ? .32 : .36);
+                this.draw(entry, sprite.x, sprite.y - (profile.aura ? progress * .018 : 0), fit.width, fit.height, {
+                    color: [1,1,1,alpha], rotation: profile.rotation * (1 - progress) + (profile.aura ? 0 : progress * .025)
+                });
+                return true;
+            });
+        }
+        combatEffect(key, event, hit, actorKey) {
+            const effectIds = effectCatalog && effectCatalog.effectIdsFor
+                ? effectCatalog.effectIdsFor(event, 'target', hit)
+                : hit && hit.effectIds && hit.effectIds.length ? hit.effectIds : event && event.effectIds;
+            this.playEffectAssets(key, effectIds, { role: 'target' });
+            const point=combatAnchor(key,'target'),x=point.x,y=point.y,effect=combatEffectProfile(event,hit),color=ELEMENT_EFFECT_COLORS[effect.element]||[.35,.72,1,1];
+            const count=reducedMotion?4:10,ring=(ringColor,size,delay)=>this.particle({x,y,life:.48,maxLife:.48,width:size,height:size,color:ringColor,mode:4,grow:.72,gravity:0,delay:delay||0});
+            if(effect.kind==='hit'){this.burst(x,y,[1,.2,.12,.68],14);return;}
+            if(effect.kind==='burn'){
+                ring([1,.14,.02,.62],.1,0);
+                for(let i=0;i<count;i++)this.particle({x:x+(Math.random()-.5)*.08,y:y+.055+Math.random()*.035,vx:(Math.random()-.5)*.025,vy:-.09-Math.random()*.13,life:.45+Math.random()*.35,maxLife:.8,width:.012+Math.random()*.016,height:.028+Math.random()*.035,color:i%3?[1,.16,.02,.66]:[1,.72,.08,.62],mode:i%4===0?5:1,gravity:-.025});
+                return;
+            }
+            if(effect.kind==='summon'){
+                const origin=combatAnchor(actorKey||key,'actor'),fromX=origin.x,fromY=origin.y,dx=x-fromX,dy=y-fromY,distance=Math.sqrt(dx*dx+dy*dy);
+                if(distance>.04)this.particle({x:(fromX+x)/2,y:(fromY+y)/2,life:.34,maxLife:.34,width:distance,height:.011,rotation:Math.atan2(dy,dx),color:[.25,1,.72,.55],mode:2,grow:.08,gravity:0});
+                ring([.18,1,.68,.62],.11,0);ring([.4,.65,1,.48],.075,.08);this.burst(x,y,[.24,1,.72,.62],14);return;
+            }
+            if(effect.kind==='equipment'){
+                ring([1,.72,.12,.62],.095,0);ring([.82,.22,1,.5],.13,.07);
+                for(let i=0;i<count;i++){const a=i/count*Math.PI*2;this.particle({x:x+Math.cos(a)*.08,y:y+Math.sin(a)*.08,vx:-Math.cos(a)*.09,vy:-Math.sin(a)*.09,life:.45,maxLife:.45,width:i%3===0?.05:.009,height:i%3===0?.003:.009,rotation:a,color:i%2?[1,.72,.12,.64]:[.8,.25,1,.58],mode:i%3===0?2:1,gravity:0});}return;
+            }
+            if(effect.kind==='skill'){
+                ring([color[0],color[1],color[2],.62],.115,0);
+                for(let i=0;i<(reducedMotion?2:4);i++){const a=i*Math.PI/(reducedMotion?2:4)+.3;this.particle({x,y,life:.42,maxLife:.42,width:.16+Math.random()*.1,height:.005,rotation:a,color:i%2?[.65,.85,1,.55]:[color[0],color[1],color[2],.58],mode:2,grow:.18,gravity:0});}this.burst(x,y,[color[0],color[1],color[2],.6],12);return;
+            }
+            if(effect.element==='명'){
+                ring([1,.88,.28,.62],.11,0);for(let i=0;i<(reducedMotion?3:7);i++)this.particle({x:x+(Math.random()-.5)*.11,y:y-.1+Math.random()*.05,life:.4,maxLife:.4,width:.13+Math.random()*.1,height:.005,rotation:Math.PI/2,color:[1,.9,.38,.6],mode:2,gravity:0,delay:i*.015});
+            }else if(effect.element==='암'){
+                ring([.55,.12,1,.62],.13,0);for(let i=0;i<count;i++){const a=Math.random()*Math.PI*2,r=.07+Math.random()*.08;this.particle({x:x+Math.cos(a)*r,y:y+Math.sin(a)*r,vx:-Math.cos(a)*.1,vy:-Math.sin(a)*.1,life:.5,maxLife:.5,width:.009,height:.009,color:[.62,.15,1,.6],mode:1,gravity:0});}
+            }else if(effect.element==='수'){
+                ring([.05,.7,1,.6],.1,0);for(let i=0;i<count;i++)this.particle({x:x+(Math.random()-.5)*.1,y:y-.05+Math.random()*.08,vx:(Math.random()-.5)*.08,vy:-.03-Math.random()*.08,life:.5,maxLife:.5,width:.007,height:.024,color:i%3?[.04,.68,1,.58]:[.55,.95,1,.6],mode:i%4===0?2:1,gravity:.18});
+            }else{ring([1,.2,.03,.62],.105,0);this.burst(x,y,[1,.26,.04,.62],14);}
+        }
+        castEffect(key,event,role){
+            const side=role==='target'?'target':'actor',point=combatAnchor(key,side),y=point.y;
+            const effectIds=effectCatalog&&effectCatalog.effectIdsFor?effectCatalog.effectIdsFor(event,side):event&&event.effectIds;
+            if(!effectIds||!effectIds.length)return;
+            this.playEffectAssets(key,effectIds,{role:side,y});
+            const x=point.x,profile=combatEffectProfile(event,null),color=profile.kind==='summon'?[.2,1,.68,1]:ELEMENT_EFFECT_COLORS[profile.element]||[.38,.72,1,1];
+            this.particle({x,y:y+.012,life:.48,maxLife:.48,width:.095,height:.095,color:[color[0],color[1],color[2],.42],mode:4,grow:.5,gravity:0});
+            this.burst(x,y+.012,[color[0],color[1],color[2],.46],reducedMotion?4:7);
         }
         drawAura(info, key, x, y, w, h, time) {
             const star = Number(info && info.cardStar), tier = star >= 11 ? 11 : star >= 10 ? 10 : star >= 9 ? 9 : 0;
@@ -216,23 +335,25 @@
         // 공격 모션(대상 쪽으로 돌진)
         lunge(key, kind) { const anim = this.anim[key]; anim.attackAt = performance.now(); anim.kind = kind || 'attack'; }
         // 피격 연출: 대상 플래시 + 임팩트 스프라이트 + 파티클
-        strike(key, event) {
+        strike(key, event, hit, actorKey) {
             const now = performance.now(), critical = Number(event && event.criticalCount || 0) > 0, skill = event && event.action === 'skill';
             this.anim[key].hitUntil = now + (critical ? 520 : 360);
             this.impactKey = key; this.impactStarted = now; this.impactUntil = now + (skill ? 520 : 390);
             this.impactCritical = critical; this.impactSkill = skill;
-            this.burst(sideX(key, innerWidth < 700), .51, critical ? [1,.68,.12,1] : [1,.2,.12,1], critical ? 52 : 34);
+            this.combatEffect(key,event,hit,actorKey);
+            if(critical){const point=combatAnchor(key,'target');this.burst(point.x,point.y,[1,.68,.12,.68],16);}
         }
         // 소환수/지속 피해 틱: 공격 모션 없이 대상 피격 연출만
-        tickHit(key) {
+        tickHit(key, event, hit, actorKey) {
             const now = performance.now();
             this.anim[key].hitUntil = now + 360;
             this.impactKey = key; this.impactStarted = now; this.impactUntil = now + 390; this.impactCritical = false; this.impactSkill = false;
-            this.burst(sideX(key, innerWidth < 700), .51, [1,.2,.12,1], 26);
+            this.combatEffect(key,event,hit,actorKey);
         }
         defendPulse(key) {
             this.anim[key].defendAt = performance.now();
-            this.burst(sideX(key, innerWidth < 700), .62, [.55,.82,1,1], 18);
+            const point=combatAnchor(key,'actor');
+            this.burst(point.x,point.y,[.55,.82,1,1],18);
         }
         drawSide(key, narrow, idle, time) {
             const texture = this.textures[key];
@@ -240,7 +361,7 @@
             const info = this.sides[key], anim = this.anim[key], mirror = key === 'opp';
             const fit = this.fit(key, narrow ? .62 : .78, narrow ? .46 : .36);
             const progress = clamp((time - anim.attackAt) / (anim.kind === 'skill' ? 620 : 430), 0, 1);
-            const lunge = progress < 1 ? Math.sin(progress * Math.PI) * .12 * (mirror ? -1 : 1) : 0;
+            const lunge = anim.kind === 'buff' ? 0 : progress < 1 ? Math.sin(progress * Math.PI) * .12 * (mirror ? -1 : 1) : 0;
             const x = sideX(key, narrow) + lunge, y = (narrow ? .68 : .66) - idle;
             const width = mirror ? -fit.width : fit.width;
             this.drawAura(info, key, x, y, width, fit.height, time);
@@ -267,20 +388,22 @@
             this.drawSide('opp', narrow, idle, time);
             if (time < this.impactUntil) {
                 const p = clamp((time - this.impactStarted) / Math.max(1, this.impactUntil - this.impactStarted), 0, 1), pulse = Math.sin(p * Math.PI),
-                    fit = this.fit('impact', (this.impactSkill ? .52 : .4) * (.72 + pulse * .42), this.impactSkill ? .42 : .33),
-                    alpha = Math.pow(1 - p, .42), ix = sideX(this.impactKey, narrow);
-                this.draw(this.textures.impact, ix, .51, fit.width, fit.height, { color: [1,1,1,alpha], rotation: (this.impactSkill ? -.08 : .08) + p * .05 });
-                if (this.impactCritical) this.draw(this.textures.impact, ix - .01, .52, fit.width * .72, fit.height * .72, { color: [1,.86,.52,alpha*.72], rotation: -.75 });
+                    fit = this.fit('impact', (this.impactSkill ? .36 : .3) * (.76 + pulse * .28), this.impactSkill ? .32 : .26),
+                    alpha = Math.pow(1 - p, .5) * .68, impact = combatAnchor(this.impactKey,'target');
+                this.draw(this.textures.impact, impact.x, impact.y, fit.width, fit.height, { color: [1,1,1,alpha], rotation: (this.impactSkill ? -.06 : .06) + p * .035 });
+                if (this.impactCritical) this.draw(this.textures.impact, impact.x - .008, impact.y + .008, fit.width * .66, fit.height * .66, { color: [1,.86,.52,alpha*.55], rotation: -.75 });
             }
+            this.drawEffectAssets(time);
             if (time > this.ambientAt) {
                 this.ambientAt = time + (reducedMotion ? 500 : 170);
                 this.particle({x:Math.random()<.5?.04:.96,y:.55+Math.random()*.4,vx:(Math.random()-.5)*.01,vy:-.025,life:3,maxLife:3,width:.005+Math.random()*.008,height:.005+Math.random()*.008,color:Math.random()<.5?[.4,.2,1,.55]:[1,.15,.25,.5]});
             }
             this.particles = this.particles.filter(p => {
+                if(p.delay>0){p.delay-=dt;return true;}
                 p.life -= dt; if (p.life <= 0) return false;
-                p.x += p.vx*dt; p.y += p.vy*dt; p.vy += .07*dt; p.rotation += p.spin*dt;
-                const c = p.color.slice(); c[3] *= clamp(p.life/p.maxLife*2.4, 0, 1);
-                this.draw(null, p.x, p.y, p.width, p.height, { mode: p.mode, color: c, rotation: p.rotation });
+                p.x += p.vx*dt; p.y += p.vy*dt; p.vy += p.gravity*dt; p.rotation += p.spin*dt;
+                const progress=1-p.life/p.maxLife,scale=1+p.grow*progress,c = p.color.slice(); c[3] *= clamp(p.life/p.maxLife*2.4, 0, 1);
+                this.draw(null, p.x, p.y, p.width*scale, p.height*scale, { mode: p.mode, color: c, rotation: p.rotation });
                 return true;
             });
             this.frame = requestAnimationFrame(next => this.render(next));
@@ -373,8 +496,8 @@
                 const list=[];
                 if(side.summon&&side.summon.name)list.push('소환 '+side.summon.name);
                 if(side.mark)list.push('표식');
-                (side.buffs||[]).slice(0,2).forEach(buff=>{if(buff&&buff.name)list.push(buff.name);});
-                list.slice(0,3).forEach((label,index)=>{
+                (side.buffs||[]).forEach(buff=>{if(buff&&buff.name)list.push(buff.name);});
+                list.forEach((label,index)=>{
                     const cx=w*sideX(key,w<700);
                     this.ctx.font='800 9px Pretendard, sans-serif';
                     this.badge(cx+(this.ctx.measureText(label).width+12)/2,h*.3+index*17,label,key==='opp'?'#f0a39b':'#9fd7a8');
@@ -451,7 +574,7 @@
             c.restore();
             this.text('전투 준비',w/2,h*.42+(narrow?62:84),narrow?11:13,800,'center','#e8b04b');
         }
-        addPop(pop){this.damagePops.push(Object.assign({start:performance.now()+(Number(pop&&pop.delay)||0),side:'opp',y:.44,size:30,color:'#ffe06e',label:'',sub:''},pop));}
+        addPop(pop){this.damagePops.push(Object.assign({start:performance.now()+(Number(pop&&pop.delay)||0),side:'opp',y:combatPopY(),size:30,color:'#ffe06e',label:'',sub:''},pop));}
         damageLayer(w,h){
             const time=performance.now(),narrow=w<700;
             this.damagePops=this.damagePops.filter(pop=>{
@@ -565,7 +688,14 @@
         stage = next.result ? 'result' : 'battle';
         if (renderer) renderer.setSides(next.me, next.opp);
         if (silent) events.forEach(event => addLog(event.text));
-        else events.forEach((event, index) => setTimeout(() => playEvent(event), index * 140));
+        else {
+            let delay = 0;
+            events.forEach(event => {
+                setTimeout(() => playEvent(event), delay);
+                const hitCount = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0).length : 0;
+                delay += Math.max(140, hitCount * 95 + 45);
+            });
+        }
         if (stage === 'battle') audio.playBgm(); else audio.stopBgm();
         if (next.result && !hadResult) showResult(next.result, silent);
     }
@@ -582,38 +712,86 @@
     function playEvent(event) {
         if (!event) return;
         const actor = event.actor === 'opp' ? 'opp' : 'me', target = actor === 'me' ? 'opp' : 'me', action = event.action || 'attack';
+        if (!event.effectElement && view && view[actor]) {
+            const skill = (view[actor].skills || []).find(entry => entry.name === event.skillName);
+            if (skill && skill.element) event.effectElement = skill.element;
+        }
+        if (effectCatalog) effectCatalog.annotateEvent(event);
+        const skillAudience = action === 'skill' && effectCatalog && effectCatalog.skillTarget ? effectCatalog.skillTarget(event) : action === 'skill' ? 'target' : null;
+        const hasTargetImpact = Number(event.damage || 0) > 0 || (Array.isArray(event.hits) && event.hits.some(hit => Number(hit && hit.damage || 0) > 0));
         addLog(event.text, actor === 'opp' && Number(event.damage || 0) > 0 ? 'bad' : action === 'start' ? 'good' : '');
         if (action === 'start') { hud.showBanner('전투 시작', view && view.opp ? view.opp.name : ''); audio.play('start', .76); hud.impact(true); return; }
         if (action === 'ko' || action === 'timeout' || action === 'forfeit') return;
-        if (action === 'defend') { if (renderer) renderer.defendPulse(actor); audio.play('count', .3); return; }
+        if (action === 'skill' && renderer) {
+            if (skillAudience === 'actor' || skillAudience === 'both') renderer.castEffect(actor,event,'actor');
+            if ((skillAudience === 'target' || skillAudience === 'both') && !hasTargetImpact) renderer.castEffect(target,event,'target');
+        }
+        if (action === 'defend') { if (renderer) { renderer.defendPulse(actor); renderer.playEffectAssets(actor,event.effectIds,{role:'actor'}); } audio.play('count', .3); return; }
         if (action === 'shield') {
             const amount = Number(event.shield || event.heal || 0);
-            if (amount > 0) hud.addPop({ side: actor, text: '+' + number(amount) + ' 보호막', color: '#eaf2ff', size: 22, y: .5 });
+            if (renderer) renderer.playEffectAssets(actor,event.effectIds,{role:'actor'});
+            if (amount > 0) hud.addPop({ side: actor, text: '+' + number(amount) + ' 보호막', color: '#eaf2ff', size: 22, y: recoveryPopY() });
             return;
         }
-        if (event.dodged) { hud.addPop({ side: target, text: '회피', color: '#cdd6e2', size: 26 }); return; }
+        if (action === 'heal') {
+            if (renderer) renderer.playEffectAssets(actor,event.effectIds,{role:'actor'});
+            if (Number(event.heal || 0) > 0) hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY() });
+            return;
+        }
+        if (event.dodged) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','회피')],{role:'target'});hud.addPop({ side: target, text: '회피', color: '#cdd6e2', size: 26 }); return; }
         const damage = Number(event.damage || 0), critical = Number(event.criticalCount || 0) > 0;
         if (action === 'summon' || action === 'dot') {
-            if (damage > 0) {
-                if (renderer) renderer.tickHit(target);
-                hud.addPop({ side: target, text: (target === 'me' ? '-' : '') + number(damage), color: target === 'me' ? '#ff8f87' : '#ffd88a', size: 24, sub: event.skillName || (action === 'dot' ? '지속 피해' : '소환수') });
-                hud.impact(false); audio.hit();
-            }
+            const tickHits = Array.isArray(event.hits) && event.hits.length ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : (damage > 0 ? [{ damage }] : []);
+            tickHits.forEach((hit, index) => setTimeout(() => {
+                const shieldAbsorb = hit.type === 'absorbed';
+                const summonAbsorb = hit.type === 'summonAbsorbed';
+                if (renderer) {
+                    if (shieldAbsorb || summonAbsorb) renderer.combatEffect(target,event,hit,actor);
+                    else renderer.tickHit(target,event,hit,actor);
+                }
+                hud.addPop({
+                    side: target,
+                    text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : '#ffd88a',
+                    size: shieldAbsorb || summonAbsorb ? 22 : 24,
+                    sub: hit.label || (index === 0 ? event.skillName || (action === 'dot' ? '지속 피해' : '소환수') : '')
+                });
+                if (!shieldAbsorb && !summonAbsorb) { hud.impact(false); audio.hit(); }
+            }, index * 95));
+            if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: tickHits.length * 95 }); }
             return;
         }
-        if (renderer) renderer.lunge(actor, action);
-        if (damage > 0) {
-            if (renderer) renderer.strike(target, event);
-            hud.addPop({
-                side: target, text: (target === 'me' ? '-' : '') + number(damage),
-                color: target === 'me' ? '#ff8f87' : critical ? '#ff5d4d' : '#ffe06e',
-                size: target === 'me' ? 28 : critical ? 46 : 34, label: critical ? '치명타' : '', sub: event.skillName || ''
-            });
-            if (action === 'skill') audio.play('skill', .68); else audio.hit();
-            if (critical) { audio.play('crit', .82); hud.impact(true); } else hud.impact(false);
+        if (renderer && !(action === 'skill' && skillAudience === 'actor')) renderer.lunge(actor, action);
+        const hits = Array.isArray(event.hits) ? event.hits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
+        if (damage > 0 || hits.length > 0) {
+            const displayedHits = hits.length ? hits : [{ damage, critical }];
+            displayedHits.forEach((hit, index) => setTimeout(() => {
+                const hitCritical = !!hit.critical;
+                const shieldAbsorb = hit.type === 'absorbed';
+                const summonAbsorb = hit.type === 'summonAbsorbed';
+                const presentationHit = Object.assign({}, hit, { presentationIndex: index });
+                if (renderer) {
+                    if (shieldAbsorb || summonAbsorb) renderer.combatEffect(target,event,presentationHit,actor);
+                    else renderer.strike(target, Object.assign({}, event, { criticalCount: hitCritical ? 1 : 0 }),presentationHit,actor);
+                }
+                hud.addPop({
+                    side: target, text: shieldAbsorb ? '흡수 ' + number(hit.damage) : summonAbsorb ? '대행 ' + number(hit.damage) : (target === 'me' ? '-' : '') + number(hit.damage),
+                    color: shieldAbsorb ? '#b8d8ff' : summonAbsorb ? '#61e7ff' : target === 'me' ? '#ff8f87' : hitCritical ? '#ff5d4d' : '#ffe06e',
+                    size: shieldAbsorb || summonAbsorb ? 24 : target === 'me' ? 28 : hitCritical ? 46 : 34, label: hitCritical ? '치명타' : '', sub: hit.label || (index === 0 ? event.skillName || '' : '')
+                });
+                if (!shieldAbsorb && !summonAbsorb) {
+                    audio.hit();
+                    if (hitCritical) { audio.play('crit', .82); hud.impact(true); } else hud.impact(false);
+                }
+            }, index * 95));
+            if (action === 'skill') audio.play('skill', .68);
         } else if (action === 'skill') audio.play('skill', .68);
-        if (Number(event.selfDamage || 0) > 0) hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: .5, delay: 120 });
-        if (Number(event.heal || 0) > 0) hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: .5, delay: 120 });
+        const reflectedHits = Array.isArray(event.reflectedHits) ? event.reflectedHits.filter(hit => Number(hit && hit.damage || 0) > 0) : [];
+        reflectedHits.forEach((hit, index) => setTimeout(() => { if(renderer)renderer.combatEffect(actor,{action:'dot',skillName:'가시 반사',effectElement:'암',effectIds:hit.effectIds},hit,target);hud.addPop({ side: actor, text: '-' + number(hit.damage), color: '#d7a2ff', size: 22, y: combatPopY(), sub: hit.label || '가시 반사' }); }, (hits.length + index) * 95));
+        if (reflectedHits.length === 0 && Number(event.selfDamage || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','자해')],{role:'target'});hud.addPop({ side: actor, text: '-' + number(event.selfDamage), color: '#ff8f87', size: 22, y: combatPopY(), delay: 120 }); }
+        if (Number(event.heal || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'HP +' + number(event.heal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 }); }
+        if (Number(event.mpRecovery || 0) > 0) { if(renderer)renderer.playEffectAssets(actor,[effectCatalog&&effectCatalog.id('combat','MP 회복')],{role:'actor'});hud.addPop({ side: actor, text: 'MP +' + number(event.mpRecovery), color: '#72c7ff', size: 21, y: recoveryPopY()+.04, delay: 150 }); }
+        if (Number(event.targetHeal || 0) > 0) { if(renderer)renderer.playEffectAssets(target,[effectCatalog&&effectCatalog.id('combat','HP 회복')],{role:'actor'});hud.addPop({ side: target, text: 'HP +' + number(event.targetHeal), color: '#63f29b', size: 22, y: recoveryPopY(), delay: 120 }); }
     }
 
     async function loadLobby() {

@@ -166,6 +166,59 @@ const rpg = require('../rpgenius');
     mythicDisassembleUser.inventory.equipment = [{ type: mythicHat.type, id: mythicHat.id }];
     assert.ok(rpg.formatDisassemblePreview(mythicDisassembleUser, [1]).includes('분해할 수 없는 등급'));
 
+    const makePillarUser = (name, cardId, cardType) => {
+        const pillarUser = new rpg.RPGUser(name, name);
+        pillarUser.main_card = { id: cardId, star: 6, type: cardType };
+        pillarUser.level = 141;
+        pillarUser.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+        pillarUser.hp = 100000;
+        pillarUser.mp = 100000;
+        pillarUser.field = {
+            name: '부타게임[H]', hell: true, phase: 'pillar', enteredAt: Date.now(),
+            nextActionAt: 0, skillCooldowns: {}, pillarHp: 2, killCount: 0,
+            equipmentState: { attackCount: 7, sentinel: { value: 1 } }, buffs: { sentinel: true }
+        };
+        return pillarUser;
+    };
+
+    const disabledPillarSkillUser = makePillarUser('기둥금지스킬테스트', 13, '전직');
+    const disabledPillarSkillSnapshot = JSON.stringify(disabledPillarSkillUser.field);
+    const disabledPillarSkillHp = disabledPillarSkillUser.hp;
+    const disabledPillarSkillMp = disabledPillarSkillUser.mp;
+    for (const skillName of ['유서새김', '범인은 이 안에']) {
+        const text = rpg.useSkillInField(disabledPillarSkillUser, skillName);
+        assert.ok(text.startsWith('❌ 기둥에는'), skillName + '은 기둥에 사용하지 못해야 합니다.');
+        assert.strictEqual(disabledPillarSkillUser.hp, disabledPillarSkillHp, skillName + '은 HP를 소모하지 않아야 합니다.');
+        assert.strictEqual(disabledPillarSkillUser.mp, disabledPillarSkillMp, skillName + '은 MP를 소모하지 않아야 합니다.');
+        assert.strictEqual(JSON.stringify(disabledPillarSkillUser.field), disabledPillarSkillSnapshot,
+            skillName + '은 쿨타임·표식·장비 상태를 변경하지 않아야 합니다.');
+    }
+
+    const kakaoWeaponId = equipment.weapon.findIndex(data => data && data.name === '카카오의 계략');
+    const abyssShoesId = equipment.shoes.findIndex(data => data && data.name === '심연의 신발');
+    assert.ok(kakaoWeaponId >= 0 && abyssShoesId >= 0, '자폭 소모 회귀 테스트에 필요한 초월 장비가 있어야 합니다.');
+    const selfDestructPillarUser = makePillarUser('기둥자폭테스트', 11, '전직');
+    selfDestructPillarUser.equipments.weapon = { id: kakaoWeaponId, level: 0, transcendStage: 1 };
+    selfDestructPillarUser.equipments.shoes = { id: abyssShoesId, level: 0, transcendStage: 1 };
+    selfDestructPillarUser.field.iktaeBot = { hp: 1000, atkMul: 1, expired_at: Date.now() + 60000 };
+    selfDestructPillarUser.field.skillCooldowns['익테봇 소환'] = Date.now() + 30000;
+    const selfDestructSnapshot = JSON.stringify(selfDestructPillarUser.field);
+    const selfDestructHp = selfDestructPillarUser.hp;
+    const selfDestructMp = selfDestructPillarUser.mp;
+    const selfDestructText = rpg.executeSelfDestructInField(selfDestructPillarUser);
+    assert.ok(selfDestructText.startsWith('❌ 기둥에는 자폭'));
+    assert.strictEqual(selfDestructPillarUser.hp, selfDestructHp, '기둥에서 거절된 자폭은 장비 HP 소모를 발동하면 안 됩니다.');
+    assert.strictEqual(selfDestructPillarUser.mp, selfDestructMp);
+    assert.strictEqual(JSON.stringify(selfDestructPillarUser.field), selfDestructSnapshot,
+        '기둥에서 거절된 자폭은 소환수·쿨타임·장비 상태를 변경하면 안 됩니다.');
+
+    const yudPillarUser = makePillarUser('기둥유드알레프테스트', 0, '전직');
+    const yudText = rpg.useSkillInField(yudPillarUser, '유드 알레프');
+    assert.ok(yudText.includes('기둥에 1 피해'));
+    assert.strictEqual(yudPillarUser.field.pillarHp, 1, '유드 알레프도 기둥에는 기존대로 1 피해만 입혀야 합니다.');
+    assert.strictEqual(yudPillarUser.field.equipmentState.attackCount, 8, '기둥 공격 횟수 계약은 유지되어야 합니다.');
+    assert.deepStrictEqual(yudPillarUser.field.buffs, { sentinel: true }, '기둥에서 유드 알레프는 다음 스킬 피해 버프를 생성하지 않아야 합니다.');
+
     const hellUser = new rpg.RPGUser('헬던전테스트', 'hell-test');
     hellUser.main_card = { id: 1, star: 6, type: '일반' };
     hellUser.level = 141;
