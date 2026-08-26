@@ -430,5 +430,17 @@
         ],
         "mp_cost": 270,
         "cooltime": 60000
+    },
+    {
+        "name": "빅뱅",
+        "desc": "공격력의 ${1}로 공격합니다.",
+        "format": [
+            {
+                "base": 6,
+                "per_star": 0
+            }
+        ],
+        "mp_cost": 500,
+        "cooltime": 120000
     }
 ]

@@ -97,6 +97,9 @@ function getMainCardSkillEntries(user) {
     if (user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
         skillIndices = skillIndices.concat(card.class.skills);
     }
+    // 스펙터 스킬은 항상 마지막 → 궁극기 취급 (솔로 getMainCardSkills와 동일 규칙)
+    const specter = user.main_card.specter ? rpgenius.findSpecterByName(user.main_card.specter) : null;
+    if (specter && typeof specter.skill == 'number') skillIndices = skillIndices.concat([specter.skill]);
     return skillIndices.map(index => {
         const skill = skills[index];
         return skill ? { index: Number(index), skill, star } : null;

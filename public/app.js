@@ -585,6 +585,7 @@ function cardNode(card, compact, onClick) {
     if (typeof onClick === 'function') props.onclick = () => onClick(card);
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
+        card.specter ? el('span', { class: 'card-specter-badge', title: '스펙터 · ' + card.specter.name }, '★') : null,
         el('div', { class: 'card-name' }, card.formatted)
     );
 }
@@ -1073,6 +1074,10 @@ function mainCardDetailNodes(card) {
     if (isJob && card.classInfo && Array.isArray(card.classInfo.skills) && card.classInfo.skills.length > 0) {
         nodes.push(cardSectionNode('전직'));
         card.classInfo.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
+    }
+    if (card && card.specter) {
+        nodes.push(cardSectionNode('스펙터 · ' + card.specter.name));
+        if (card.specter.skill) nodes.push(skillPanelNode(card.specter.skill));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '표시할 스킬이 없습니다.'));
     return nodes;
@@ -7110,6 +7115,47 @@ function renderOrbDex(grid, entries) {
     });
 }
 
+function dexSpecterCard(entry) {
+    const card = el('article', { class: 'dex-orb-card' });
+    const skill = entry.skill;
+    const head = el('div', { class: 'dex-orb-head' },
+        dexThumb(entry.iconUrl, entry.frameUrl, '★', 'dex-orb-thumb'),
+        el('div', { class: 'dex-orb-identity' },
+            el('div', { class: 'dex-orb-name' }, entry.name),
+            el('div', { class: 'dex-orb-parts' },
+                el('span', { class: 'dex-orb-parts-label' }, '부여 대상'),
+                el('span', { class: 'dex-orb-part' }, '일반 카드')
+            )
+        )
+    );
+    const effect = el('div', { class: 'dex-orb-effect' },
+        el('div', { class: 'dex-orb-effect-title' }, '부여 스킬'),
+        el('div', { class: 'dex-orb-effect-lines' },
+            skill ? el('div', null, skill.name + ' (MP ' + comma(skill.mpCost) + ' · 쿨타임 ' + skill.cooltimeText + ')') : el('div', null, '스킬 정보 없음'),
+            ...((skill && skill.descLines) || []).map(line => el('div', null, line))
+        )
+    );
+    card.append(head, effect);
+    return card;
+}
+
+function renderSpecterDex(grid, entries) {
+    hideDexRarityFilter();
+    grid.className = 'dex-orb-sections';
+    grid.innerHTML = '';
+    const section = el('section', { class: 'dex-orb-section' },
+        el('header', { class: 'dex-orb-section-head' },
+            el('div', { class: 'dex-orb-section-title' }, '스펙터'),
+            el('div', { class: 'dex-orb-section-parts' },
+                el('span', null, '부여 대상'),
+                el('strong', null, '일반 캐릭터 카드')
+            )
+        ),
+        el('div', { class: 'dex-orb-grid' }, ...entries.map(dexSpecterCard))
+    );
+    grid.appendChild(section);
+}
+
 function dexCharacterCard(entry) {
     const card = el('div', { class: 'dex-card' });
     card.style.setProperty('--rar', 'var(--border-strong)');
@@ -7339,6 +7385,11 @@ function renderDex() {
     if (dexTab === 'orb') {
         if (!dexData) return;
         renderOrbDex(grid, dexData.orb || []);
+        return;
+    }
+    if (dexTab === 'specter') {
+        if (!dexData) return;
+        renderSpecterDex(grid, dexData.specter || []);
         return;
     }
     const equipmentTab = DEX_EQUIPMENT_TABS.has(dexTab);

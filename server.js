@@ -1825,7 +1825,8 @@ function getHFieldRecoveryItems(user) {
 
 function getHFieldSkills(user, mainCard) {
     const classSkills = mainCard && mainCard.type == '전직' && mainCard.classInfo ? mainCard.classInfo.skills : [];
-    const entries = [].concat(mainCard && mainCard.skills || [], classSkills || []);
+    const specterSkills = mainCard && mainCard.specter && mainCard.specter.skill ? [mainCard.specter.skill] : [];
+    const entries = [].concat(mainCard && mainCard.skills || [], classSkills || [], specterSkills);
     const cooldowns = user.field && user.field.name == H_FIELD_NAME && user.field.skillCooldowns || {};
     const seen = new Set();
     return entries.filter(skill => {
@@ -4445,8 +4446,8 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
-    // 보주는 type이 '사용'(use 디스패치용)이지만 이미지는 itemImage/보주/에 있다
-    const dir = item.use == '보주' ? '보주' : String(item.type);
+    // 보주/스펙터는 type이 '사용'(use 디스패치용)이지만 이미지는 itemImage/보주/·itemImage/스펙터/에 있다
+    const dir = item.use == '보주' ? '보주' : (item.use == '스펙터' ? '스펙터' : String(item.type));
     return getItemImageUrl(dir, String(item.name) + '.png');
 }
 
@@ -4631,6 +4632,29 @@ function serializeCard(card, user) {
             }).filter(Boolean) : []
         };
     }
+    let specterInfo = null;
+    if (card.specter) {
+        const specterData = rpgenius.findSpecterByName(card.specter);
+        const specterSkill = specterData ? rpgenius.getSpecterSkill(specterData) : null;
+        if (specterSkill) {
+            const stats = user ? rpgenius.calculateUserStats(user) : {};
+            const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
+            const star = Number(card.star || 0);
+            const mpCost = Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+            const cooltime = Math.max(0, Number(specterSkill.cooltime || 0) + Number(stats.skillCooldown || 0));
+            specterInfo = {
+                name: specterData.name,
+                skill: {
+                    name: specterSkill.name,
+                    mpCost,
+                    cooltimeText: rpgenius.formatCooltime(cooltime),
+                    descLines: rpgenius.formatCurrentSkillDesc(specterSkill, star).split('\n').filter(Boolean)
+                }
+            };
+        } else {
+            specterInfo = { name: String(card.specter), skill: null };
+        }
+    }
     return {
         id: Number(card.id),
         star: Number(card.star || 0),
@@ -4642,7 +4666,8 @@ function serializeCard(card, user) {
         imageUrl: getCardImageUrl(card, user),
         slotEffect: buildSlotEffectInfo(card, data),
         skills: buildSkillInfo(card, user),
-        classInfo
+        classInfo,
+        specter: specterInfo
     };
 }
 
@@ -4650,7 +4675,7 @@ const WEB_ITEM_USE_KEYS = new Set([
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
     '패션적용', '고급패션적용', '패션제거', '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
-    '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택'
+    '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택', '스펙터'
 ]);
 
 function isUsableInventoryItem(item) {
@@ -5197,6 +5222,30 @@ function buildOrbDex() {
     }).filter(Boolean);
 }
 
+function buildSpecterDex() {
+    const items = rpgenius.getDataCache('Item', []);
+    return rpgenius.getSpecterData().map((specter, id) => {
+        if (!specter) return null;
+        const item = items.find(it => it && it.use == '스펙터' && it.name == specter.name) || null;
+        const skill = rpgenius.getSpecterSkill(specter);
+        return {
+            type: 'specter',
+            typeLabel: '스펙터',
+            id,
+            name: specter.name,
+            rarity: null,
+            iconUrl: item ? getItemIconUrl(item) : null,
+            frameUrl: getAuctionFrameUrl('item'),
+            skill: skill ? {
+                name: skill.name,
+                mpCost: Number(skill.mp_cost || 0),
+                cooltimeText: rpgenius.formatCooltime(Number(skill.cooltime || 0)),
+                descLines: String(rpgenius.formatCurrentSkillDesc(skill, 0) || '').split('\n').filter(Boolean)
+            } : null
+        };
+    }).filter(Boolean);
+}
+
 function buildEquipmentDex() {
     const eq = rpgenius.getDataCache('Equipment', {});
     const recipeIndex = buildRecipeIndex();
@@ -5218,6 +5267,7 @@ function buildEquipmentDex() {
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
         orb: buildOrbDex(),
+        specter: buildSpecterDex(),
         pet: buildPetDex(),
         character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
@@ -7528,7 +7578,7 @@ function renderUserDashboard(sess, opts) {
     <aside class="dex-sidebar" aria-label="도감 종류">
       <h2>도감</h2>
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
       </div>
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>

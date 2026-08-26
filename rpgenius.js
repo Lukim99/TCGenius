@@ -40,6 +40,7 @@ const TITLE_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '칭호');
 const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json');
 const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
 const ORB_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Orb.json');
+const SPECTER_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Specter.json');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -1599,6 +1600,48 @@ function applyOrbToEquipment(user, numberArg, confirmed) {
     return ['✨ ' + orbData.name + '을(를) 부여했습니다.', '- 대상: ' + title, ''].concat(formatOrbLines(orb)).join('\n');
 }
 
+// 스펙터 부여 대상: 인벤토리의 일반 카드 (번호 = 인벤토리 카드 번호)
+function getSpecterTargets(user) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    return cards
+        .map((card, index) => ({ number: index + 1, card }))
+        .filter(target => target.card && (target.card.type || '일반') == '일반');
+}
+
+function formatSpecterTargetList(targets) {
+    const lines = ['[ 스펙터 부여 대상 ]', VIEWMORE];
+    targets.forEach(target => {
+        const specterMark = target.card.specter ? ' [' + target.card.specter + ']' : '';
+        lines.push('[' + target.number + '] ' + formatUserCard(target.card) + specterMark);
+    });
+    return lines.join('\n');
+}
+
+// 카드당 스펙터 1개. 이미 부여된 카드를 고르면 확인 단계를 거쳐 교체한다
+function applySpecterToCard(user, numberArg, confirmed) {
+    const pending = user.pendingAction;
+    if (!pending || pending.type != '스펙터부여') return '❌ 진행 중인 스펙터 사용이 없습니다.';
+    const specterData = findSpecterByName(pending.specterName);
+    if (!specterData) { user.pendingAction = null; return '❌ 스펙터 데이터가 잘못되었습니다.'; }
+    const number = Number(numberArg);
+    if (!Number.isInteger(number) || number < 1) return '❌ /RPGenius 선택 [카드번호]';
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    const card = cards[number - 1];
+    if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    if ((card.type || '일반') != '일반') return '❌ 스펙터는 일반 카드에만 부여할 수 있습니다.';
+    if (card.specter && !confirmed) {
+        pending.cardNumber = number;
+        const existing = findSpecterByName(card.specter);
+        return ['❗ 이미 스펙터가 부여된 카드입니다. 교체하시겠습니까?', '- 대상: ' + formatUserCard(card), '']
+            .concat(existing ? formatSpecterLines(existing, card.star) : ['[ 스펙터 ] ' + card.specter])
+            .concat(['', '기존 스펙터는 사라집니다.', '/RPGenius 확인', '/RPGenius 사용취소']).join('\n');
+    }
+    card.specter = specterData.name;
+    user.pendingAction = null;
+    return ['✨ ' + specterData.name + '을(를) 부여했습니다.', '- 대상: ' + formatUserCard(card), '']
+        .concat(formatSpecterLines(specterData, card.star)).join('\n');
+}
+
 function getPotentialAwakenTargets(user, tier) {
     const tierRank = tier ? getPotentialRarityRank(tier) : null;
     return getAllUserEquipments(user)
@@ -2179,6 +2222,38 @@ function formatOrbLines(orb) {
     if (orb.element) lines.push('- [' + orb.element + ']속성 부여');
     const statText = formatEquipmentStatLines({ stat: orb.stat || {}, plusStat: orb.plusStat || {} });
     if (statText) String(statText).split('\n').filter(Boolean).forEach(line => lines.push(line));
+    return lines;
+}
+
+function getSpecterData() {
+    const data = readJson(SPECTER_PATH, {});
+    return Array.isArray(data.specters) ? data.specters : [];
+}
+
+function findSpecterByName(name) {
+    const target = String(name || '').trim();
+    return getSpecterData().find(specter => specter && specter.name == target) || null;
+}
+
+function getCardSpecter(card) {
+    if (!card || !card.specter) return null;
+    return findSpecterByName(card.specter);
+}
+
+function getSpecterSkill(specter) {
+    if (!specter || typeof specter.skill != 'number') return null;
+    const skills = readJson(SKILLS_PATH, []);
+    return skills[specter.skill] || null;
+}
+
+function formatSpecterLines(specter, star) {
+    if (!specter) return [];
+    const lines = ['[ 스펙터 ] ' + (specter.name || '')];
+    const skill = getSpecterSkill(specter);
+    if (skill) {
+        lines.push('- 부여 스킬: ' + skill.name + ' (MP ' + comma(Number(skill.mp_cost || 0)) + ', 쿨타임 ' + formatCooltime(Number(skill.cooltime || 0)) + ')');
+        String(formatCurrentSkillDesc(skill, Number(star || 0))).split('\n').filter(Boolean).forEach(line => lines.push('- ' + line));
+    }
     return lines;
 }
 
@@ -4051,6 +4126,9 @@ function getMainCardSkills(user) {
     if (user.main_card && user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
         skillIndices = skillIndices.concat(card.class.skills);
     }
+    // 스펙터 스킬은 항상 마지막 → isUltimateSkillForUser가 궁극기로 판정
+    const specter = getCardSpecter(user.main_card);
+    if (specter && typeof specter.skill == 'number') skillIndices = skillIndices.concat([specter.skill]);
     return skillIndices.map(index => ({ index: index, skill: skills[index] })).filter(data => data.skill);
 }
 
@@ -10589,6 +10667,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보주' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보주선택' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '스펙터' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '가위' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '패션제거' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '생명수' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -10606,7 +10685,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -10839,6 +10918,24 @@ async function useItem(user, itemName, countArg) {
                 lines.push('/RPGenius 선택 [장비번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatOrbTargetList(targets));
+            }
+        }
+        if (item.use == '스펙터') {
+            const specterData = findSpecterByName(item.name);
+            const targets = specterData ? getSpecterTargets(user) : [];
+            if (!specterData) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ 스펙터 정보가 없어 아이템을 반환했습니다.');
+            } else if (targets.length == 0) {
+                addInventoryItem(user, itemId, useCount);
+                lines.push('❌ ' + specterData.name + '을(를) 부여할 수 있는 일반 카드가 없어 아이템을 반환했습니다.');
+            } else {
+                user.pendingAction = { type: '스펙터부여', specterName: specterData.name, consumedItemId: itemId, consumedItemCount: useCount };
+                lines.push(specterData.name + '을(를) 부여할 카드를 선택해주세요.');
+                lines.push('- 부여 대상: 인벤토리의 일반 캐릭터 카드');
+                lines.push('/RPGenius 선택 [카드번호]');
+                lines.push('/RPGenius 사용취소');
+                lines.push('', formatSpecterTargetList(targets));
             }
         }
         if (item.use == '보주선택') {
@@ -11098,6 +11195,21 @@ function getWebItemUsePending(user) {
             title = pending.orbName + ' 부여 대상 선택';
             options = getOrbTargets(user, orb).map(webItemEquipmentOption);
         }
+    } else if (pending.type == '스펙터부여') {
+        if (pending.cardNumber) {
+            title = '스펙터 교체 확인';
+            description = '기존 스펙터는 사라지며 되돌릴 수 없습니다.';
+            confirmOnly = true;
+            confirmLabel = '기존 스펙터 교체';
+        } else {
+            title = pending.specterName + ' 부여 대상 선택';
+            description = '인벤토리의 일반 캐릭터 카드에만 부여할 수 있습니다.';
+            options = getSpecterTargets(user).map(target => {
+                const option = webItemCardOption(target.number, target.card);
+                if (target.card.specter) option.meta += ' · [' + target.card.specter + ']';
+                return option;
+            });
+        }
     } else if (pending.type == '귀속해제') {
         title = '귀속을 해제할 장비 선택';
         options = getBoundEquipmentScissorTargets(user).map(webItemEquipmentOption);
@@ -11140,6 +11252,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     if (pending.type == '장비강화권') return applyUpgradeTicket(user, choice);
     if (pending.type == '영혼부여') return applySoulToEquipment(user, choice);
     if (pending.type == '보주부여') return applyOrbToEquipment(user, pending.equipNumber || choice, confirmed === true);
+    if (pending.type == '스펙터부여') return applySpecterToCard(user, pending.cardNumber || choice, confirmed === true);
     if (pending.type == '귀속해제') return releaseBoundEquipment(user, choice);
     if (pending.type == '생명수') return extendPetExpiry(user, choice);
     if (pending.type == '초월업그레이드') return useTranscendUpgradeKit(user, choice);
@@ -13160,6 +13273,34 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type == '스펙터부여') {
+        if (args[0] == '사용취소') {
+            const refund = refundPendingActionItem(user, user.pendingAction);
+            user.pendingAction = null;
+            await user.save();
+            reply('✅ 스펙터 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            return true;
+        }
+        if (args[0] == '확인') {
+            if (!user.pendingAction.cardNumber) {
+                reply('❌ 스펙터를 부여할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+                return true;
+            }
+            const result = applySpecterToCard(user, user.pendingAction.cardNumber, true);
+            await user.save();
+            reply(result);
+            return true;
+        }
+        if (args[0] != '선택') {
+            reply('❌ 스펙터를 부여할 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            return true;
+        }
+        const result = applySpecterToCard(user, args[1], false);
+        await user.save();
+        reply(result);
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '귀속해제') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -14335,6 +14476,9 @@ module.exports = {
     isSoulExpired,
     formatOrbLines,
     getOrbData,
+    getSpecterData,
+    findSpecterByName,
+    getSpecterSkill,
     addOrbStats,
     getSlotEffectValueAtStar,
     formatSlotEffectProgression,
