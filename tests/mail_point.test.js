@@ -15,9 +15,10 @@ const recipientData = {
 
 DynamoDBDocumentClient.prototype.send = async function (command) {
     const input = command.input || {};
-    if (command.constructor.name === 'QueryCommand') {
-        if (input.IndexName === 'nameIdx') return { Items: [recipientData] };
-        if (input.IndexName === 'getIdx') return { Items: [] };
+    if (command.constructor.name === 'ScanCommand') {
+        // 유저 캐시 부팅 스캔 — 수신자만 존재하는 테이블로 응답
+        if (input.TableName === 'rpgenius_user') return { Items: [JSON.parse(JSON.stringify(recipientData))] };
+        return { Items: [] };
     }
     if (command.constructor.name === 'PutCommand') {
         if (input.TableName === 'rpgenius_mail') mailRecords.set(input.Item.id, JSON.parse(JSON.stringify(input.Item)));

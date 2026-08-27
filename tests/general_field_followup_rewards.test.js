@@ -55,7 +55,7 @@ const rpg = require('../rpgenius');
     const source = fs.readFileSync(path.join(__dirname, '..', 'rpgenius.js'), 'utf8');
     const equipmentTick = source.slice(source.indexOf('async function runFieldEquipmentDotTick'), source.indexOf('function clearFieldRuntimeTimers'));
     assert.ok(equipmentTick.includes('buildHuntResult(user, effectContext.dungeon, effect.rawDamage, extra)'), '화상·겁화·천공·그림자 후속타는 일반 사냥 보상 로직을 그대로 사용해야 합니다.');
-    assert.ok(equipmentTick.includes('await user.save()'), '후속타로 변경된 처치 수와 보상은 사용자 데이터에 저장돼야 합니다.');
+    assert.ok(equipmentTick.includes('await user.save()') || equipmentTick.includes('await user.save({ defer: true })'), '후속타로 변경된 처치 수와 보상은 사용자 데이터에 저장돼야 합니다(지연 저장 허용).');
     assert.ok(equipmentTick.includes('pushFieldTickEvent(userName') && source.includes('rewards: getFieldTickRewards(user, before, message)'), '후속타로 지급된 보상은 웹 필드 이벤트에도 보존돼야 합니다.');
 
     console.log('general_field_followup_rewards.test.js: OK');

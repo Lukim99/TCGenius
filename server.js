@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
@@ -24,8 +25,15 @@ const fs = require('fs');
 
 const server = express();
 const webchat = createWebChat({ onChat: rpgenius.onChat, getUserByName: rpgenius.getRPGUserByName });
+server.use(compression()); // SSE(/api/chat/:roomId/stream)는 Cache-Control: no-transform으로 자동 제외됨
 server.use(express.json({ limit: '5mb' }));
-server.use('/static', express.static(path.join(__dirname, 'public')));
+server.use('/static', express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+        // assets(이미지·스프라이트)는 1일 캐시, JS/CSS는 ETag 재검증(배포 즉시 반영)
+        if (/[\\/]assets[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400');
+        else res.setHeader('Cache-Control', 'no-cache');
+    }
+}));
 const bannerUploadBody = express.raw({ type: () => true, limit: 10 * 1024 * 1024 });
 
 const AUCTION_NOTIFY_CHANNEL_ID = '18470462260425659';
@@ -964,30 +972,41 @@ server.post('/api/admin/mail/send-user', requireAdmin, async (req, res) => {
     } catch (e) { console.error('mail send-user error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
 
+// 랭킹 산출(전 유저 전투력 계산)은 무겁고 요청자와 무관하므로 60초 캐시한다. `me` 부분만 요청마다 조회.
+let rankingCache = { at: 0, payload: null };
+const RANKING_CACHE_TTL_MS = 60 * 1000;
+
+async function buildRankingPayload() {
+    if (rankingCache.payload && Date.now() - rankingCache.at < RANKING_CACHE_TTL_MS) return rankingCache.payload;
+    const users = await rpgenius.getAllRPGUsers();
+    const rows = users.map(u => {
+        const level = Number(u.level || 1);
+        const exp = Number(u.exp || 0);
+        let totalExp = exp;
+        for (let lv = 1; lv < level; lv++) totalExp += Number(rpgenius.getMaxExpForLevel(lv) || 0);
+        return {
+            name: u.name,
+            level,
+            cp: rpgenius.calculateCombatPower(u).total,
+            totalExp,
+            title: buildTitleDisplay(u)
+        };
+    });
+    const cp = rows.slice().sort((a, b) => b.cp - a.cp || b.level - a.level || a.name.localeCompare(b.name, 'ko-KR'))
+        .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.cp, title: r.title }));
+    const exp = rows.slice().sort((a, b) => b.totalExp - a.totalExp || a.name.localeCompare(b.name, 'ko-KR'))
+        .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.totalExp, title: r.title }));
+    const worldBossBase = rpgenius.getWorldBossContributionRanking();
+    const infoByName = {};
+    rows.forEach(r => { infoByName[r.name] = { level: r.level, title: r.title }; });
+    const worldBoss = worldBossBase.map(r => ({ rank: r.rank, name: r.name, level: Number(infoByName[r.name] && infoByName[r.name].level || 1), value: r.value, title: infoByName[r.name] && infoByName[r.name].title || null }));
+    rankingCache = { at: Date.now(), payload: { rows, cp, exp, worldBoss } };
+    return rankingCache.payload;
+}
+
 server.get('/api/ranking', requireUser, async (req, res) => {
     try {
-        const users = await rpgenius.getAllRPGUsers();
-        const rows = users.map(u => {
-            const level = Number(u.level || 1);
-            const exp = Number(u.exp || 0);
-            let totalExp = exp;
-            for (let lv = 1; lv < level; lv++) totalExp += Number(rpgenius.getMaxExpForLevel(lv) || 0);
-            return {
-                name: u.name,
-                level,
-                cp: rpgenius.calculateCombatPower(u).total,
-                totalExp,
-                title: buildTitleDisplay(u)
-            };
-        });
-        const cp = rows.slice().sort((a, b) => b.cp - a.cp || b.level - a.level || a.name.localeCompare(b.name, 'ko-KR'))
-            .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.cp, title: r.title }));
-        const exp = rows.slice().sort((a, b) => b.totalExp - a.totalExp || a.name.localeCompare(b.name, 'ko-KR'))
-            .map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, value: r.totalExp, title: r.title }));
-        const worldBossBase = rpgenius.getWorldBossContributionRanking();
-        const infoByName = {};
-        rows.forEach(r => { infoByName[r.name] = { level: r.level, title: r.title }; });
-        const worldBoss = worldBossBase.map(r => ({ rank: r.rank, name: r.name, level: Number(infoByName[r.name] && infoByName[r.name].level || 1), value: r.value, title: infoByName[r.name] && infoByName[r.name].title || null }));
+        const { rows, cp, exp, worldBoss } = await buildRankingPayload();
         const me = req.session.name;
         const myCp = cp.find(r => r.name == me) || null;
         const myExp = exp.find(r => r.name == me) || null;
@@ -1306,7 +1325,7 @@ const EVENT_DICE_REWARDS = {
     18: { name: '제타 카드팩',          count: 1,  mult: 170 }
 };
 const EVENT_DICE_COMBO_COUNTS = { 3: 1, 4: 3, 5: 6, 6: 10, 7: 15, 8: 21, 9: 25, 10: 27, 11: 27, 12: 25, 13: 21, 14: 15, 15: 10, 16: 6, 17: 3, 18: 1 };
-const EVENT_DICE_LOG_LIMIT = 5000;
+const EVENT_DICE_LOG_LIMIT = 800; // 단일 항목 저장 — 5000건이면 400KB 한도를 초과하므로 축소
 const EVENT_DICE_EDGE_SUMS = [3, 18];
 const EVENT_DICE_EDGE_FLOOR = 0.000463;
 
@@ -2172,7 +2191,7 @@ server.post('/api/hfield/attack', requireUser, (req, res) => runHFieldMutation(r
     if (!user.field || user.field.name != H_FIELD_NAME) return { ok: false, message: '❌ 부타게임[H]에 입장한 상태가 아닙니다.', state: buildHFieldState(user) };
     const before = captureHFieldAction(user);
     const message = await rpgenius.useBasicAttackInField(user);
-    await user.save();
+    await user.save({ defer: true });
     return buildHFieldActionResult(user, before, message, 'attack');
 }));
 
@@ -2182,7 +2201,7 @@ server.post('/api/hfield/skill', requireUser, (req, res) => runHFieldMutation(re
     if (!skillName) return { ok: false, message: '❌ 사용할 스킬을 선택해주세요.', state: buildHFieldState(user) };
     const before = captureHFieldAction(user);
     const message = await rpgenius.useSkillInField(user, skillName);
-    await user.save();
+    await user.save({ defer: true });
     return buildHFieldActionResult(user, before, message, 'skill', skillName);
 }));
 
@@ -2520,7 +2539,7 @@ server.post('/api/field/attack', requireUser, (req, res) => runGeneralFieldMutat
     if (!getGeneralFieldRuntime(user).inField) return { ok: false, message: '❌ 일반 필드에 입장한 상태가 아닙니다.', state: buildGeneralFieldState(user) };
     const before = captureGeneralFieldAction(user);
     const message = await rpgenius.useBasicAttackInField(user);
-    await user.save();
+    await user.save({ defer: true });
     return buildGeneralFieldActionResult(user, before, message, 'attack');
 }));
 
@@ -2532,7 +2551,7 @@ server.post('/api/field/skill', requireUser, (req, res) => runGeneralFieldMutati
     if (!skillName) return { ok: false, message: '❌ 사용할 스킬을 선택해주세요.', state: buildGeneralFieldState(user) };
     const before = captureGeneralFieldAction(user);
     const message = await rpgenius.useSkillInField(user, skillName);
-    await user.save();
+    await user.save({ defer: true });
     return buildGeneralFieldActionResult(user, before, message, 'skill', skillName);
 }));
 
@@ -4788,9 +4807,27 @@ server.post('/api/admin/pitr/jobs/:id/migrate', requireAdmin, async (req, res) =
         if (job.sourceTable == 'rpgenius_data') {
             for (const key of rpgenius.RPGENIUS_DATA_KEYS) await rpgenius.loadRpgeniusDataEntry(key).catch(() => null);
         }
+        if (job.sourceTable == 'rpgenius_user') {
+            // 복원된 DB가 정답 — 메모리 캐시의 미반영 변경을 폐기하고 강제 리로드 (안 하면 flush가 복원본을 되돌린다)
+            await rpgenius.reloadAllUsersFromDb(true).catch(e => console.error('user cache reload after migrate error:', e));
+        }
         res.json({ ok: true, job });
     } catch (e) {
         console.error('pitr migrate error:', e);
+        res.status(500).json({ error: e.message || '서버 오류' });
+    }
+});
+
+// 외부에서 rpgenius_user를 직접 수정한 뒤(콘솔 보정, 별도 프로세스의 테스트 등) 메모리 캐시를 DB와 다시 맞춘다.
+// force=true면 미반영 로컬 변경도 폐기하고 DB를 그대로 미러링한다.
+server.post('/api/admin/users/reload-cache', requireAdmin, async (req, res) => {
+    try {
+        const force = !!(req.body && req.body.force);
+        if (!force) await rpgenius.flushAllDirtyUsers();
+        const count = await rpgenius.reloadAllUsersFromDb(force);
+        res.json({ ok: true, count, force });
+    } catch (e) {
+        console.error('user cache reload error:', e);
         res.status(500).json({ error: e.message || '서버 오류' });
     }
 });
@@ -6464,7 +6501,8 @@ const AUCTION_MAX_PER_USER = 20;
 const AUCTION_MAX_PRICE = 1_000_000_000_000;
 
 // ===== 거래 로그 =====
-const TRADE_LOG_LIMIT = 2000;
+// 단일 DynamoDB 항목에 저장되므로 400KB 항목 한도를 넘지 않게 최근 기록만 유지한다 (2000건 시절 ~400KB로 한도 임박했었음)
+const TRADE_LOG_LIMIT = 200;
 
 async function getTradeLogList() {
     let data = rpgenius.getDataCache('TradeLog', null);

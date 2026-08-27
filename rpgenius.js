@@ -1,5 +1,5 @@
 ﻿const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, UpdateCommand, QueryCommand, GetCommand, DeleteCommand, BatchGetCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCommand, BatchGetCommand, TransactWriteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const node_kakao = require('node-kakao');
 const fs = require('fs');
 const path = require('path');
@@ -300,7 +300,7 @@ async function runFieldIktaeBotTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '익테봇', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save();
+    await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
@@ -358,7 +358,7 @@ async function runFieldSunataTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '수나타', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save();
+    await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const fieldMarkTimers = {};
@@ -413,7 +413,7 @@ async function runFieldMarkTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '유서새김', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save();
+    await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
@@ -531,7 +531,7 @@ async function runFieldEquipmentDotTick(userName) {
         pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickBefore, user, tickDamage, effectMessage);
     }
     if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
-    await user.save();
+    await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const commandQueues = {};
@@ -640,6 +640,22 @@ function getRandomString(len) {
 function readJson(filePath, fallback) {
     try {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (e) {
+        return fallback;
+    }
+}
+
+// mtime 기반 캐시 readJson — 전투 계산 등 초당 수십 회 호출되는 경로 전용.
+// 반환 객체는 공유되므로 호출부는 절대 변형하지 말 것 (현재: BaseStat/ExpTable — 값 복사·숫자 조회만 함).
+const readJsonCacheStore = {};
+function readJsonCached(filePath, fallback) {
+    try {
+        const mtime = fs.statSync(filePath).mtimeMs;
+        const hit = readJsonCacheStore[filePath];
+        if (hit && hit.mtime === mtime) return hit.value;
+        const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        readJsonCacheStore[filePath] = { mtime, value };
+        return value;
     } catch (e) {
         return fallback;
     }
@@ -3203,14 +3219,14 @@ function convertJobCharacterCard(user, numberArg, can) {
 }
 
 function getBaseStat(card) {
-    const table = readJson(BASE_STAT_PATH, []);
+    const table = readJsonCached(BASE_STAT_PATH, []);
     const star = Number(card && card.star || 0);
     const base = table[star] || table[0] || {};
     return Object.assign({ atk: 0, pnt: 0, def: 0, hp: 0, mp: 0, crit: 0, critMul: 1.4 }, base);
 }
 
 function getMaxExpForLevel(level) {
-    const table = readJson(EXP_TABLE_PATH, []);
+    const table = readJsonCached(EXP_TABLE_PATH, []);
     const value = table[Math.max(1, Number(level || 1)) - 1];
     return typeof value == 'number' ? value : 0;
 }
@@ -9322,7 +9338,7 @@ function scheduleFishing(user, channel) {
         removeInventoryItem(latest, baitId, 1);
         const rewardId = pickBaitReward(latest);
         if (rewardId != null) addFishingNetItem(latest, rewardId, 1);
-        await latest.save();
+        await latest.save({ defer: true });
         if (getFishingNetCount(latest) >= getEffectiveFishingNetLimit(latest)) {
             await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
             return;
@@ -11692,80 +11708,279 @@ async function putNewItem(table, item) {
     }
 }
 
-async function updateItem(table, id, data) {
-    try {
-        const keys = Object.keys(data).filter(d => d != 'id');
-        const command = new UpdateCommand({
-            TableName: table,
-            Key: { id: id },
-            UpdateExpression: 'SET ' + keys.map(d => '#' + d + '=:new_' + d).join(','),
-            ExpressionAttributeNames: Object.fromEntries(keys.map(d => ['#' + d, d])),
-            ExpressionAttributeValues: Object.fromEntries(keys.map(d => [':new_' + d, data[d]]))
-        });
-        const response = await docClient.send(command);
-        return { success: true, result: [response] };
-    } catch (error) {
-        return { success: false, result: [error] };
-    }
+// ===== 유저 캐시 =====
+// 단일 프로세스 전제. 부팅 시 rpgenius_user 전체를 메모리에 올리고,
+// 조회는 캐시 원본(raw)에서 새 RPGUser 사본을 만들어 반환한다 → "로드-변이-미저장 = 폐기" 의미가 기존과 동일.
+// save()는 인스턴스의 변경분(__loaded 대비)을 캐시 raw에 즉시 반영하고,
+// DB 쓰기는 기본 즉시 flush / 핫패스(save({defer:true}))만 지연-합산(디바운스)한다.
+// flush는 raw와 dbSnap(DB 반영분 스냅샷)의 diff만 SET/REMOVE로 기록한다.
+const USER_FLUSH_DELAY_MS = 10 * 1000;
+const USER_FLUSH_SWEEP_MS = 30 * 1000;
+const USER_CACHE_MISS_RELOAD_INTERVAL_MS = 60 * 1000;
+const userCacheById = new Map(); // id -> { raw, dbSnap, dirty, timer, flushChain }
+const userIdByName = new Map();  // name -> id
+let userCacheLoadPromise = null;
+let userCacheMissReloadAt = 0;
+
+function cloneUserRaw(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
-// RPGUser.save()용: 로드 시점 스냅샷(__loaded)과 비교해 변경된 top-level 속성만 SET/REMOVE.
-// 변경이 없으면 DB 쓰기 자체를 생략한다. 스냅샷이 없는 객체(load 미경유)는 기존 전체 쓰기로 폴백.
-async function updateChangedItem(table, obj) {
-    const loaded = obj.__loaded;
-    if (!loaded) return updateItem(table, obj.id, obj);
+function buildUserDbSnap(raw) {
+    const snap = {};
+    for (const k of Object.keys(raw)) {
+        if (k === 'id') continue;
+        try { snap[k] = JSON.stringify(raw[k]); } catch (_) { }
+    }
+    return snap;
+}
+
+// raw: DB에 저장돼 있는(또는 방금 그대로 저장한) 평문 객체. dbSnap은 raw 기준으로 초기화한다.
+function putUserCacheEntry(rawItem) {
+    const raw = cloneUserRaw(rawItem);
+    const prev = userCacheById.get(raw.id);
+    if (prev) {
+        if (prev.timer) { clearTimeout(prev.timer); prev.timer = null; }
+        if (prev.raw && prev.raw.name && prev.raw.name !== raw.name && userIdByName.get(prev.raw.name) === raw.id) userIdByName.delete(prev.raw.name);
+    }
+    const entry = { raw, dbSnap: buildUserDbSnap(raw), dirty: false, timer: null, flushChain: null };
+    userCacheById.set(raw.id, entry);
+    if (raw.name) userIdByName.set(raw.name, raw.id);
+    return entry;
+}
+
+async function scanAllUserItems() {
+    const items = [];
+    let ExclusiveStartKey = undefined;
+    do {
+        const res = await docClient.send(new ScanCommand({ TableName: TABLE_NAME, ExclusiveStartKey }));
+        (res.Items || []).forEach(item => { if (item && typeof item.id != 'undefined') items.push(item); });
+        ExclusiveStartKey = res.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+    return items;
+}
+
+function initUserCache() {
+    if (userCacheLoadPromise) return userCacheLoadPromise;
+    userCacheLoadPromise = (async () => {
+        const items = await scanAllUserItems();
+        for (const item of items) if (!userCacheById.has(item.id)) putUserCacheEntry(item);
+        console.log('[user-cache] 유저 ' + userCacheById.size + '명 로드 완료');
+    })().catch(e => {
+        console.error('[user-cache] 초기 로드 실패 (다음 조회에서 재시도):', e && e.message);
+        userCacheLoadPromise = null;
+        throw e;
+    });
+    return userCacheLoadPromise;
+}
+
+async function ensureUserCacheReady() {
+    try { await initUserCache(); return true; } catch (_) { return false; }
+}
+
+// DB 전체를 다시 읽어 캐시를 갱신한다.
+// force=false: 미반영(dirty) 로컬 변경이 있는 유저는 보존, 항목 삭제 없음 (외부 프로세스가 만든 유저 편입용)
+// force=true: DB를 그대로 미러링 — 로컬 변경 폐기 (PITR 복원 등 "DB가 정답"일 때만)
+async function reloadAllUsersFromDb(force) {
+    const items = await scanAllUserItems();
+    if (force) {
+        userCacheById.clear();
+        userIdByName.clear();
+    }
+    const seen = new Set();
+    for (const item of items) {
+        seen.add(item.id);
+        const cur = userCacheById.get(item.id);
+        if (cur && cur.dirty && !force) continue;
+        putUserCacheEntry(item);
+    }
+    if (force) for (const id of [...userCacheById.keys()]) { if (!seen.has(id)) userCacheById.delete(id); }
+    return userCacheById.size;
+}
+
+// 캐시 미스 시 외부 프로세스 생성 유저 대비용 스로틀 재적재. 재적재를 수행했으면 true.
+async function reloadUserCacheOnMiss() {
+    const now = Date.now();
+    if (now - userCacheMissReloadAt < USER_CACHE_MISS_RELOAD_INTERVAL_MS) return false;
+    userCacheMissReloadAt = now;
+    try { await reloadAllUsersFromDb(false); return true; } catch (e) { console.error('[user-cache] 미스 재적재 실패:', e && e.message); return false; }
+}
+
+function makeUserFromCacheEntry(entry) {
+    return new RPGUser().load(cloneUserRaw(entry.raw));
+}
+
+// 인스턴스에서 직렬화 가능한 평문 객체를 만든다 (등록 직후 캐시 편입용 — PutCommand가 저장한 것과 동일 형태).
+function serializeUserPlain(user) {
+    return JSON.parse(JSON.stringify(user));
+}
+
+// save() 본체: 인스턴스의 __loaded 대비 변경분을 캐시 raw에 반영하고 flush를 예약/실행한다.
+async function commitUserToCache(user, opts) {
+    if (!user || typeof user.id == 'undefined') return { success: false, result: [new Error('유저 id 없음')] };
+    await ensureUserCacheReady();
+    let entry = userCacheById.get(user.id);
+    if (!entry) {
+        // 캐시에 없는 유저(캐시 초기화 실패·외부 생성 직후 등): 전체를 새로 편입하고 전체 쓰기를 유도
+        entry = putUserCacheEntry(serializeUserPlain(user));
+        entry.dbSnap = {};
+    }
+    const loaded = user.__loaded || {};
+    if (!user.__loaded) Object.defineProperty(user, '__loaded', { value: loaded, enumerable: false, writable: true, configurable: true });
+    let changed = false;
+    for (const k of Object.keys(user)) {
+        if (k === 'id') continue;
+        const v = user[k];
+        if (typeof v === 'undefined') continue;
+        let s; try { s = JSON.stringify(v); } catch (_) { continue; }
+        if (loaded[k] !== s) {
+            entry.raw[k] = JSON.parse(s);
+            loaded[k] = s;
+            changed = true;
+            if (k === 'name') userIdByName.set(v, user.id);
+        }
+    }
+    for (const k of Object.keys(loaded)) {
+        if (k === 'id') continue;
+        if (!Object.prototype.hasOwnProperty.call(user, k) || typeof user[k] === 'undefined') {
+            delete entry.raw[k];
+            delete loaded[k];
+            changed = true;
+        }
+    }
+    if (!changed && !entry.dirty) return { success: true, result: ['noop'] };
+    entry.dirty = true;
+    if (opts && opts.defer) {
+        scheduleUserFlush(entry);
+        return { success: true, result: ['deferred'] };
+    }
+    return flushUserEntry(entry);
+}
+
+function scheduleUserFlush(entry) {
+    if (entry.timer) return;
+    entry.timer = setTimeout(() => {
+        entry.timer = null;
+        flushUserEntry(entry).catch(() => { });
+    }, USER_FLUSH_DELAY_MS);
+    if (typeof entry.timer.unref == 'function') entry.timer.unref();
+}
+
+// 같은 유저의 flush를 직렬화한다 (즉시 저장과 지연 flush가 겹쳐도 순서 보장).
+function flushUserEntry(entry) {
+    const prev = entry.flushChain || Promise.resolve();
+    const next = prev.catch(() => { }).then(() => flushUserEntryNow(entry)).finally(() => {
+        if (entry.flushChain === next) entry.flushChain = null;
+    });
+    entry.flushChain = next;
+    return next;
+}
+
+async function flushUserEntryNow(entry) {
+    if (!entry.dirty) return { success: true, result: ['noop'] };
+    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
     const setKeys = [];
     const removeKeys = [];
     const curStr = {};
-    for (const k of Object.keys(obj)) {
+    for (const k of Object.keys(entry.raw)) {
         if (k === 'id') continue;
-        const v = obj[k];
-        if (typeof v === 'undefined') { if (k in loaded) removeKeys.push(k); continue; }
-        let s; try { s = JSON.stringify(v); } catch (_) { s = undefined; }
+        let s; try { s = JSON.stringify(entry.raw[k]); } catch (_) { continue; }
         curStr[k] = s;
-        if (loaded[k] !== s) setKeys.push(k);
+        if (entry.dbSnap[k] !== s) setKeys.push(k);
     }
-    // 로드 시 있었으나 지금 사라진 키 → REMOVE
-    for (const k of Object.keys(loaded)) {
-        if (k === 'id') continue;
-        if (!Object.prototype.hasOwnProperty.call(obj, k) || typeof obj[k] === 'undefined') {
-            if (!removeKeys.includes(k)) removeKeys.push(k);
-        }
+    for (const k of Object.keys(entry.dbSnap)) {
+        if (!Object.prototype.hasOwnProperty.call(curStr, k)) removeKeys.push(k);
     }
-    if (setKeys.length === 0 && removeKeys.length === 0) return { success: true, result: ['noop'] }; // 변경 없음 → 쓰기 생략
+    entry.dirty = false; // 낙관적 클리어 — 전송 중 새 변경이 오면 commit이 다시 세운다
+    if (setKeys.length === 0 && removeKeys.length === 0) return { success: true, result: ['noop'] };
     try {
         const names = {};
         const values = {};
         const clauses = [];
         if (setKeys.length) {
             clauses.push('SET ' + setKeys.map(k => '#' + k + '=:v_' + k).join(','));
-            setKeys.forEach(k => { names['#' + k] = k; values[':v_' + k] = obj[k]; });
+            setKeys.forEach(k => { names['#' + k] = k; values[':v_' + k] = JSON.parse(curStr[k]); });
         }
         if (removeKeys.length) {
             clauses.push('REMOVE ' + removeKeys.map(k => '#' + k).join(','));
             removeKeys.forEach(k => { names['#' + k] = k; });
         }
-        const params = { TableName: table, Key: { id: obj.id }, UpdateExpression: clauses.join(' '), ExpressionAttributeNames: names };
+        const params = { TableName: TABLE_NAME, Key: { id: entry.raw.id }, UpdateExpression: clauses.join(' '), ExpressionAttributeNames: names };
         if (Object.keys(values).length) params.ExpressionAttributeValues = values;
         await docClient.send(new UpdateCommand(params));
-        setKeys.forEach(k => { loaded[k] = curStr[k]; }); // 스냅샷 갱신
-        removeKeys.forEach(k => { delete loaded[k]; });
+        setKeys.forEach(k => { entry.dbSnap[k] = curStr[k]; });
+        removeKeys.forEach(k => { delete entry.dbSnap[k]; });
         return { success: true, result: ['updated'] };
     } catch (error) {
-        console.error('[updateChangedItem] 실패 (' + obj.id + '):', error && error.message);
+        entry.dirty = true; // 스윕 타이머가 재시도
+        console.error('[user-flush] 실패 (' + entry.raw.id + '):', error && error.message);
         return { success: false, result: [error] };
     }
 }
 
-async function queryItems(params) {
-    try {
-        const command = new QueryCommand(params);
-        const response = await docClient.send(command);
-        return { success: true, result: [response] };
-    } catch (error) {
-        return { success: false, result: [error] };
+// DB에 직접 쓴 변경(TransactWrite 등)을 캐시에도 반영한다. changes: { key: value } (value=undefined면 제거)
+function applyDirectDbWriteToCache(id, changes) {
+    const entry = userCacheById.get(id);
+    if (!entry) return;
+    for (const k of Object.keys(changes)) {
+        const v = changes[k];
+        if (typeof v === 'undefined') {
+            delete entry.raw[k];
+            delete entry.dbSnap[k];
+            continue;
+        }
+        let s; try { s = JSON.stringify(v); } catch (_) { continue; }
+        entry.raw[k] = JSON.parse(s);
+        entry.dbSnap[k] = s;
+        if (k === 'name') userIdByName.set(v, id);
     }
 }
+
+// 특정 유저의 미반영 변경을 지금 DB에 기록한다 (조건부 트랜잭션 전 정렬용).
+async function flushCachedUser(id) {
+    const entry = userCacheById.get(id);
+    if (!entry || !entry.dirty) return { success: true, result: ['noop'] };
+    return flushUserEntry(entry);
+}
+
+async function flushAllDirtyUsers() {
+    const jobs = [];
+    for (const entry of userCacheById.values()) if (entry.dirty) jobs.push(flushUserEntry(entry));
+    if (jobs.length) await Promise.allSettled(jobs);
+    return jobs.length;
+}
+
+// 실패한 flush 재시도용 스윕 (타이머가 이미 잡힌 항목은 그 타이머에 맡긴다)
+const userFlushSweepTimer = setInterval(() => {
+    for (const entry of userCacheById.values()) {
+        if (entry.dirty && !entry.timer && !entry.flushChain) flushUserEntry(entry).catch(() => { });
+    }
+}, USER_FLUSH_SWEEP_MS);
+if (typeof userFlushSweepTimer.unref == 'function') userFlushSweepTimer.unref();
+
+// 종료 시 미반영 변경 flush. SIGTERM/SIGINT 기본 동작(즉시 종료)을 대체하므로 직접 exit한다.
+let userShutdownFlushStarted = false;
+function runUserShutdownFlush(tag, exitCode) {
+    if (userShutdownFlushStarted) return;
+    userShutdownFlushStarted = true;
+    const finish = () => { if (typeof exitCode == 'number') process.exit(exitCode); };
+    Promise.race([
+        flushAllDirtyUsers().then(count => { if (count > 0) console.log('[user-cache] ' + tag + ' flush ' + count + '건 완료'); }),
+        new Promise(resolve => setTimeout(resolve, 8000))
+    ]).then(finish, finish);
+}
+process.on('SIGTERM', () => runUserShutdownFlush('SIGTERM', 0));
+process.on('SIGINT', () => runUserShutdownFlush('SIGINT', 130));
+process.on('uncaughtException', error => {
+    console.error('[uncaughtException]', error);
+    runUserShutdownFlush('crash', 1);
+});
+process.on('beforeExit', () => {
+    // 자연 종료(테스트 등) 시 남은 변경 flush — 비동기 작업이 루프를 되살리므로 여기선 exit하지 않는다
+    for (const entry of userCacheById.values()) {
+        if (entry.dirty && !entry.flushChain) flushUserEntry(entry).catch(() => { });
+    }
+});
 
 class RPGUser {
     constructor(name, id) {
@@ -11847,6 +12062,8 @@ class RPGUser {
         Object.assign(this, data);
         if (!Array.isArray(this.logged_in)) this.logged_in = [];
         if (!Array.isArray(this.logged_in_agent)) this.logged_in_agent = [];
+        // UA 원문이 무한 누적되지 않게 최근 10개만 유지 (오래된 기기는 코드/OTP로 재로그인)
+        if (this.logged_in_agent.length > 10) this.logged_in_agent = this.logged_in_agent.slice(-10);
         if (!this.inventory) this.inventory = { card: [], item: [] };
         if (!Array.isArray(this.inventory.card)) this.inventory.card = [];
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
@@ -11874,6 +12091,26 @@ class RPGUser {
         if (typeof this.mailNotified == 'undefined') this.mailNotified = true;
         if (!Array.isArray(this.usedCoupons)) this.usedCoupons = [];
         if (!this.shopPurchases || typeof this.shopPurchases != 'object') this.shopPurchases = {};
+        // 만료된 기간(일/주/월) 구매 카운터 정리 — 누적(max) 카운터는 보존. 필드가 없으면 normalize가 0으로 재초기화한다.
+        {
+            const _now = new Date();
+            const _dateKey = getKoreanDateKey(_now);
+            const _weekKey = getKoreanWeekKey(_now);
+            const _monthKey = getKoreanMonthKey(_now);
+            Object.keys(this.shopPurchases).forEach(shopType => {
+                const records = this.shopPurchases[shopType];
+                if (!records || typeof records != 'object') { delete this.shopPurchases[shopType]; return; }
+                Object.keys(records).forEach(key => {
+                    const rec = records[key];
+                    if (!rec || typeof rec != 'object') { delete records[key]; return; }
+                    if (rec.dailyKey != _dateKey) { delete rec.daily; delete rec.dailyKey; }
+                    if (rec.weeklyKey != _weekKey) { delete rec.weekly; delete rec.weeklyKey; }
+                    if (rec.monthlyKey != _monthKey) { delete rec.monthly; delete rec.monthlyKey; }
+                    if (!(Number(rec.max) > 0) && typeof rec.dailyKey == 'undefined' && typeof rec.weeklyKey == 'undefined' && typeof rec.monthlyKey == 'undefined') delete records[key];
+                });
+                if (Object.keys(records).length == 0) delete this.shopPurchases[shopType];
+            });
+        }
         if (typeof this.lastAttendanceDate == 'undefined') this.lastAttendanceDate = null;
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
@@ -11903,8 +12140,9 @@ class RPGUser {
         return this.name;
     }
 
-    async save() {
-        await updateChangedItem(TABLE_NAME, this);
+    // opts.defer=true: 캐시에만 반영하고 DB flush는 디바운스 (틱/연타 핫패스 전용)
+    async save(opts) {
+        await commitUserToCache(this, opts);
     }
 
     async changeCode() {
@@ -11912,6 +12150,8 @@ class RPGUser {
         await this.save();
     }
 }
+
+initUserCache();
 
 const tradeRequests = {};
 const activeTrades = {};
@@ -12312,11 +12552,14 @@ async function cancelTradeByUser(user, channel) {
     return null;
 }
 
-// 기본키(id)로 유저 직접 조회 — 가장 저렴한 점 조회 (스캔 없음)
+// 기본키(id)로 유저 조회 — 캐시 우선, 미스 시 점 조회 폴백(외부 프로세스 생성 대비) 후 캐시 편입
 async function getUserByPrimaryId(id) {
+    await ensureUserCacheReady();
+    const entry = userCacheById.get(id);
+    if (entry) return makeUserFromCacheEntry(entry);
     try {
         const res = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: id } }));
-        if (res && res.Item) return new RPGUser().load(res.Item);
+        if (res && res.Item) return makeUserFromCacheEntry(putUserCacheEntry(res.Item));
         return null;
     } catch (e) {
         console.log('getUserByPrimaryId error:', e);
@@ -12698,6 +12941,9 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     } });
 
     try {
+        // 지연 flush로 DB가 캐시보다 뒤처져 있으면 조건 검사가 어긋나므로, 트랜잭션 전에 두 유저를 DB에 정렬한다
+        await flushCachedUser(sender.id);
+        await flushCachedUser(recipient.id);
         await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
     } catch (e) {
         sender.gold = senderBefore.gold;
@@ -12708,6 +12954,11 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
     }
     if (sender.__loaded) changedKeys.forEach(key => { sender.__loaded[key] = JSON.stringify(senderChanges[key]); });
+    // DB에 직접 기록된 변경을 캐시에도 반영 (발신자 차감분 + 수신자 메일 엔트리)
+    applyDirectDbWriteToCache(sender.id, senderChanges);
+    const recipientEntry = userCacheById.get(recipient.id);
+    const recipientMail = recipientEntry && Array.isArray(recipientEntry.raw.mail) ? recipientEntry.raw.mail : [];
+    applyDirectDbWriteToCache(recipient.id, { mail: recipientMail.concat([mailEntry]), mailNotified: false });
     return { ok: true, mailId: record.id, fee: feeTotal };
 }
 
@@ -12838,108 +13089,74 @@ async function maybeNotifyMail(user, reply) {
 }
 
 // senderId로 유저 조회.
-// 진실의 원천은 user.logged_in(배열, GSI 키로 못 씀). 매핑(senderId→accountId)을 우선 사용하고,
-// 매핑이 아직 없는(마이그레이션 전) senderId는 레거시 전체 스캔으로 찾은 뒤 매핑을 자가 백필한다.
+// 진실의 원천은 user.logged_in(배열). 매핑(senderId→accountId)을 우선 사용하고,
+// 매핑이 아직 없는 senderId는 캐시 전체를 뒤져 찾은 뒤 매핑을 자가 백필한다. (GSI 미사용)
 async function getRPGUserById(id) {
     // 1) 매핑 우선 (정상 경로, O(1))
     const accountId = await getAccountIdBySid(id);
     if (accountId != null) {
         const mapped = await getUserByPrimaryId(accountId);
         if (mapped && Array.isArray(mapped.logged_in) && mapped.logged_in.includes(id)) return mapped;
-        // 매핑이 stale(계정 삭제/로그아웃 누락) → 정리 후 레거시로 재확인
+        // 매핑이 stale(계정 삭제/로그아웃 누락) → 정리 후 캐시로 재확인
         await deleteSidMapping(id);
     }
-    // 2) 레거시 폴백: 전체 스캔 후 매핑 백필 (자가 마이그레이션)
-    try {
-        const res = await queryItems({
-            TableName: TABLE_NAME,
-            IndexName: 'getIdx',
-            KeyConditionExpression: '#gsi_partition_key = :gsi_value',
-            FilterExpression: 'contains(logged_in, :userid_val)',
-            ExpressionAttributeNames: {
-                '#gsi_partition_key': '_get'
-            },
-            ExpressionAttributeValues: {
-                ':gsi_value': 1,
-                ':userid_val': id
-            }
-        });
-        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) {
-            const user = new RPGUser().load(res.result[0].Items[0]);
-            if (user && typeof user.id != 'undefined') await putSidMapping(id, user.id); // 백필
-            return user;
+    // 2) 폴백: 캐시에서 logged_in 포함 계정 검색 후 매핑 백필
+    await ensureUserCacheReady();
+    const findEntry = () => {
+        for (const entry of userCacheById.values()) {
+            if (Array.isArray(entry.raw.logged_in) && entry.raw.logged_in.includes(id)) return entry;
         }
         return null;
-    } catch (e) {
-        console.log('getRPGUserById error:', e);
-        return null;
-    }
+    };
+    let entry = findEntry();
+    if (!entry && await reloadUserCacheOnMiss()) entry = findEntry();
+    if (!entry) return null;
+    const user = makeUserFromCacheEntry(entry);
+    if (user && typeof user.id != 'undefined') await putSidMapping(id, user.id); // 백필
+    return user;
 }
 
 async function getRPGUserByName(name) {
-    try {
-        const res = await queryItems({
-            TableName: TABLE_NAME,
-            IndexName: 'nameIdx',
-            KeyConditionExpression: '#name = :name_val',
-            ExpressionAttributeNames: {
-                '#name': 'name'
-            },
-            ExpressionAttributeValues: {
-                ':name_val': name
-            }
-        });
-        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) return new RPGUser().load(res.result[0].Items[0]);
-        return null;
-    } catch (e) {
-        console.log('getRPGUserByName error:', e);
-        return null;
-    }
+    await ensureUserCacheReady();
+    const findUser = () => {
+        const id = userIdByName.get(name);
+        if (typeof id == 'undefined') return null;
+        const entry = userCacheById.get(id);
+        return entry ? makeUserFromCacheEntry(entry) : null;
+    };
+    const hit = findUser();
+    if (hit) return hit;
+    if (await reloadUserCacheOnMiss()) return findUser();
+    return null;
 }
 
 async function getRPGUserByCode(code) {
-    try {
-        const res = await queryItems({
-            TableName: TABLE_NAME,
-            IndexName: 'codeIdx',
-            KeyConditionExpression: '#code = :code_val',
-            ExpressionAttributeNames: {
-                '#code': 'code'
-            },
-            ExpressionAttributeValues: {
-                ':code_val': code
-            }
-        });
-        if (res.success && res.result[0] && res.result[0].Items && res.result[0].Items[0]) return new RPGUser().load(res.result[0].Items[0]);
+    await ensureUserCacheReady();
+    const findUser = () => {
+        for (const entry of userCacheById.values()) {
+            if (entry.raw.code === code) return makeUserFromCacheEntry(entry);
+        }
         return null;
-    } catch (e) {
-        console.log('getRPGUserByCode error:', e);
-        return null;
-    }
+    };
+    const hit = findUser();
+    if (hit) return hit;
+    if (await reloadUserCacheOnMiss()) return findUser();
+    return null;
 }
 
 async function getAllRPGUsers() {
-    const users = [];
-    let ExclusiveStartKey = undefined;
-    try {
-        while (true) {
-            const params = {
-                TableName: TABLE_NAME,
-                IndexName: 'getIdx',
-                KeyConditionExpression: '#gsi_partition_key = :gsi_value',
-                ExpressionAttributeNames: { '#gsi_partition_key': '_get' },
-                ExpressionAttributeValues: { ':gsi_value': 1 }
-            };
-            if (ExclusiveStartKey) params.ExclusiveStartKey = ExclusiveStartKey;
-            const res = await queryItems(params);
-            if (!res.success || !res.result[0] || !res.result[0].Items) break;
-            res.result[0].Items.forEach(item => users.push(new RPGUser().load(item)));
-            ExclusiveStartKey = res.result[0].LastEvaluatedKey;
-            if (!ExclusiveStartKey) break;
+    const ready = await ensureUserCacheReady();
+    if (!ready && userCacheById.size === 0) {
+        // 캐시 초기화 실패 폴백: 직접 스캔해 편입
+        try {
+            const items = await scanAllUserItems();
+            items.forEach(item => { if (!userCacheById.has(item.id)) putUserCacheEntry(item); });
+        } catch (e) {
+            console.log('getAllRPGUsers error:', e);
         }
-    } catch (e) {
-        console.log('getAllRPGUsers error:', e);
     }
+    const users = [];
+    for (const entry of userCacheById.values()) users.push(makeUserFromCacheEntry(entry));
     return users;
 }
 
@@ -12964,6 +13181,7 @@ async function webRegisterRPGUser(nickname, ua) {
         if (errorName == 'ConditionalCheckFailedException') return { error: '이미 등록된 계정이 있습니다.' };
         return { error: '등록 과정에서 오류가 발생했습니다.' };
     }
+    putUserCacheEntry(serializeUserPlain(user));
     return { user };
 }
 
@@ -13161,6 +13379,7 @@ async function handleRPGCommand(data, channel, context = {}) {
             const user = new RPGUser(nickname, senderId);
             const res = await putNewItem(TABLE_NAME, user);
             if (res.success) {
+                putUserCacheEntry(serializeUserPlain(user));
                 await putSidMapping(senderId, user.id); // 가입 기기 매핑 (user.id == senderId)
                 reply('✅ 성공적으로 등록되셨습니다!\n환영합니다, ' + user.name + '님!\n캐릭터 카드를 선택해주세요.');
                 reply(formatCharacterCardList());
@@ -14907,5 +15126,7 @@ module.exports = {
     useItem,
     getWebItemUsePending,
     resolveWebItemUsePending,
-    cancelWebItemUsePending
+    cancelWebItemUsePending,
+    reloadAllUsersFromDb,
+    flushAllDirtyUsers
 };

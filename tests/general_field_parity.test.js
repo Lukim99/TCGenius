@@ -30,7 +30,7 @@ const generalField = server.slice(server.indexOf('// ===== 일반 필드 =====')
 ].forEach(contract => assert.ok(generalField.includes(contract), '채팅 솔로 사냥 정식 로직 위임이 누락되었습니다: ' + contract));
 
 assert.ok(generalField.includes("const user = await rpgenius.getRPGUserByName(req.session.name);\n            if (!user) throw new Error('유저를 찾을 수 없습니다.');"), '필드 큐 안에서 최신 유저를 다시 조회해야 합니다.');
-assert.ok((generalField.match(/await user\.save\(\)/g) || []).length >= 7, '모든 일반 필드 변경 경로는 결과를 저장해야 합니다.');
+assert.ok((generalField.match(/await user\.save\((\{ defer: true \})?\)/g) || []).length >= 7, '모든 일반 필드 변경 경로는 결과를 저장해야 합니다(공격/스킬은 지연 저장 허용).');
 assert.ok(rpgenius.includes('const pendingFragmentBlock = getPendingFragmentBlockMessage(user);'), '채팅과 웹이 같은 편린 행동 차단 규칙을 사용해야 합니다.');
 assert.ok(generalField.includes('const message = rpgenius.getPendingFragmentBlockMessage(user);'), '일반 필드 API도 공용 편린 차단 규칙을 사용해야 합니다.');
 assert.ok(server.includes('function parseFieldIncomingHits(message)'), '일반/H필드의 받는 타격 로그를 개별 피해로 파싱해야 합니다.');
