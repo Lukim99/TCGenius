@@ -1202,7 +1202,7 @@ function questFormNode(q) {
     const body = el('div', { class: 'qe-body' });
     const nameIn = el('input', { value: q.name || '', placeholder: '퀘스트 이름', oninput: () => q.name = nameIn.value });
     const minIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.minLevel || 1), oninput: () => q.minLevel = Math.max(1, Number(minIn.value) || 1) });
-    const maxIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.maxLevel || 1), oninput: () => q.maxLevel = Math.max(1, Number(maxIn.value) || 1) });
+    const maxIn = el('input', { class: 'qe-num', type: 'number', min: 1, max: 300, value: Number(q.maxLevel || 1), oninput: () => q.maxLevel = Math.min(300, Math.max(1, Number(maxIn.value) || 1)) });
     const descIn = el('textarea', { value: q.desc || '', placeholder: '설명', rows: 2, oninput: () => q.desc = descIn.value });
     body.appendChild(el('div', { class: 'qe-grid' },
         el('div', null, el('label', null, '이름'), nameIn),
@@ -1218,7 +1218,7 @@ function questFormNode(q) {
     body.appendChild(el('div', { class: 'qe-grid' },
         el('div', null, el('label', null, '퀘스트 범주'), catsWrap),
         el('div', null, el('label', null, '옵션'), el('div', { class: 'qe-inline', style: { gap: '14px' } },
-            el('label', { class: 'qe-inline', style: { margin: 0 } }, skipChk, '30레벨 이상 스킵 허용 (최대 레벨+30↑, 보상 지급)'),
+            el('label', { class: 'qe-inline', style: { margin: 0 } }, skipChk, '스킵 허용'),
             el('label', { class: 'qe-inline', style: { margin: 0 } }, enabledChk, '활성')))));
     body.appendChild(el('div', { class: 'qe-sec' }, el('h3', null, '게시판 노출 조건'), questUnlockControls(q)));
     const objectiveList = el('div', { class: 'entry-list' });
@@ -1283,7 +1283,7 @@ function renderQuest() {
 }
 $('#questAdd').onclick = () => {
     const nextId = questData.reduce((max, q) => Math.max(max, Number(q.id || 0)), 0) + 1;
-    questData.push({ id: nextId, name: '', desc: '', categories: ['일반'], minLevel: 1, maxLevel: 999, skippable: false, objectives: [], rewards: [], unlock: { type: 'always' }, enabled: true });
+    questData.push({ id: nextId, name: '', desc: '', categories: ['일반'], minLevel: 1, maxLevel: 300, skippable: false, objectives: [], rewards: [], unlock: { type: 'always' }, enabled: true });
     questOpenIds.add(nextId);
     renderQuest();
 };
@@ -1297,6 +1297,7 @@ $('#questReload').onclick = async () => {
 };
 $('#questSave').onclick = async () => {
     if (questData.some(q => !String(q.name || '').trim())) return toast('이름이 비어있는 퀘스트가 있습니다.', false);
+    questData.forEach(q => { q.maxLevel = Math.min(300, Math.max(1, Number(q.maxLevel) || 1)); });
     if (!(await showConfirm('Quest 데이터를 저장합니다. 계속?'))) return;
     try { await saveKey('Quest', questData); toast('✅ Quest 저장 완료'); } catch (e) { toast(e.message, false); }
 };

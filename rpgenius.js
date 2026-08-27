@@ -560,12 +560,20 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const rpgeniusDataCache = {};
 let rpgeniusDataLoadPromise = null;
 
+function normalizeQuestData(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map(def => def && typeof def == 'object'
+        ? Object.assign({}, def, { maxLevel: Math.min(300, Math.max(1, Number(def.maxLevel) || 1)) })
+        : def);
+}
+
 async function loadRpgeniusDataEntry(key) {
     const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
-        rpgeniusDataCache[key] = key == 'Equipment'
-            ? transcendEquipment.applyEquipmentBalancePatch(res.Item.data)
-            : res.Item.data;
+        let data = res.Item.data;
+        if (key == 'Equipment') data = transcendEquipment.applyEquipmentBalancePatch(data);
+        else if (key == 'Quest') data = normalizeQuestData(data);
+        rpgeniusDataCache[key] = data;
         return true;
     }
     return false;
@@ -573,8 +581,9 @@ async function loadRpgeniusDataEntry(key) {
 
 async function saveRpgeniusDataEntry(key, data) {
     if (!RPGENIUS_DATA_KEYS.includes(key)) throw new Error('허용되지 않은 키: ' + key);
-    await docClient.send(new PutCommand({ TableName: DATA_TABLE_NAME, Item: { key: key, data: data } }));
-    rpgeniusDataCache[key] = data;
+    const normalizedData = key == 'Quest' ? normalizeQuestData(data) : data;
+    await docClient.send(new PutCommand({ TableName: DATA_TABLE_NAME, Item: { key: key, data: normalizedData } }));
+    rpgeniusDataCache[key] = normalizedData;
     return true;
 }
 
@@ -14940,7 +14949,7 @@ function getQuestBadgeCategory(def) {
 }
 
 function canSkipQuest(user, def) {
-    return def.skippable === true && Number(user.level || 1) >= Number(def.maxLevel || 1) + 30;
+    return def.skippable === true && Number(user.level || 1) >= Number(def.minLevel || 1) + 30;
 }
 
 function formatQuestRewardLabel(reward) {
@@ -15003,7 +15012,7 @@ function claimQuestReward(user, questId, options) {
     const objectives = Array.isArray(def.objectives) ? def.objectives : [];
     if (skip) {
         if (def.skippable !== true) return { error: '스킵할 수 없는 퀘스트입니다.' };
-        if (Number(user.level || 1) < Number(def.maxLevel || 1) + 30) return { error: '스킵은 퀘스트 최대 레벨(Lv.' + Number(def.maxLevel || 1) + ')보다 30레벨 이상 높아야 가능합니다.' };
+        if (Number(user.level || 1) < Number(def.minLevel || 1) + 30) return { error: '스킵은 퀘스트 최소 레벨(Lv.' + Number(def.minLevel || 1) + ')보다 30레벨 이상 높아야 가능합니다.' };
     } else {
         for (let i = 0; i < objectives.length; i++) {
             if (getQuestObjectiveCurrent(user, entry, i, objectives[i]) < getQuestObjectiveTarget(objectives[i])) return { error: '아직 완료하지 않은 목표가 있습니다.' };
@@ -15046,7 +15055,7 @@ function claimQuestReward(user, questId, options) {
 
 // 테스트 전용: Quest 정의 캐시 주입 (DB를 거치지 않음)
 function __setQuestDefs(defs) {
-    rpgeniusDataCache.Quest = defs;
+    rpgeniusDataCache.Quest = normalizeQuestData(defs);
 }
 
 module.exports = {

@@ -96,6 +96,29 @@ const bannerS3 = new AWS.S3({
     })
 });
 
+// 배너 이미지 메모리 캐시 — S3 키는 업로드마다 고유(내용 불변)라 무효화 없이 캐시해도 안전하다.
+// 요청마다 S3 getObject를 하던 구조가 S3 전송량 과금(월 100GB 무료 초과분)의 원인이었음. 삭제 시에만 정리.
+const bannerImageCache = new Map(); // key -> { body: Buffer, contentType }
+const BANNER_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+let bannerImageCacheBytes = 0;
+
+function cacheBannerImage(key, value) {
+    bannerImageCache.set(key, value);
+    bannerImageCacheBytes += value.body.length;
+    while (bannerImageCacheBytes > BANNER_CACHE_MAX_BYTES && bannerImageCache.size > 1) {
+        const oldestKey = bannerImageCache.keys().next().value;
+        bannerImageCacheBytes -= bannerImageCache.get(oldestKey).body.length;
+        bannerImageCache.delete(oldestKey);
+    }
+}
+
+function evictBannerImage(key) {
+    const cached = bannerImageCache.get(key);
+    if (!cached) return;
+    bannerImageCacheBytes -= cached.body.length;
+    bannerImageCache.delete(key);
+}
+
 function setKakaoClient(client) {
     kakaoClient = client || null;
 }
@@ -673,14 +696,22 @@ server.get('/api/banners/:id/image', requireUser, async (req, res) => {
         const banners = await loadBannerList();
         const entry = banners.find(item => item.id == String(req.params.id));
         if (!entry) return res.status(404).end();
-        const object = await bannerS3.getObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise();
-        const contentType = BANNER_TYPES[entry.contentType] ? entry.contentType : (BANNER_TYPES[object.ContentType] ? object.ContentType : 'application/octet-stream');
-        res.setHeader('Content-Type', contentType);
+        // 배너 id당 이미지 내용이 불변이므로 id 기반 ETag + 긴 브라우저 캐시가 안전하다
+        const etag = '"bn-' + entry.id + '"';
+        res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+        res.setHeader('ETag', etag);
+        if (req.headers['if-none-match'] == etag) return res.status(304).end();
+        let cached = bannerImageCache.get(entry.key);
+        if (!cached) {
+            const object = await bannerS3.getObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise();
+            const contentType = BANNER_TYPES[entry.contentType] ? entry.contentType : (BANNER_TYPES[object.ContentType] ? object.ContentType : 'application/octet-stream');
+            cached = { body: object.Body, contentType };
+            cacheBannerImage(entry.key, cached);
+        }
+        res.setHeader('Content-Type', cached.contentType);
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Cache-Control', 'private, max-age=300');
-        if (object.ETag) res.setHeader('ETag', object.ETag);
-        if (object.ContentLength != null) res.setHeader('Content-Length', String(object.ContentLength));
-        res.end(object.Body);
+        res.setHeader('Content-Length', String(cached.body.length));
+        res.end(cached.body);
     } catch (e) {
         console.error('banner image error:', e);
         if (!res.headersSent) res.status(e && e.name == 'NoSuchKey' ? 404 : 500).end();
@@ -778,6 +809,7 @@ server.delete('/api/admin/banners/:id', requireAdmin, async (req, res) => {
         next.splice(index, 1);
         await rpgenius.saveRpgeniusDataEntry('Banner', next);
         await bannerS3.deleteObject({ Bucket: BANNER_BUCKET, Key: entry.key }).promise().catch(error => console.error('banner object delete error:', error));
+        evictBannerImage(entry.key);
         res.json({ ok: true });
     } catch (e) {
         console.error('banner delete error:', e);
