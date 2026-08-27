@@ -46,9 +46,9 @@ const NOW = Date.parse('2026-08-27T12:00:00+09:00');
     );
     user.blessings.divine = NOW + 1000;
     const divine = rpg.applyBlessingEnhancementDiscount(user, { stone: 101, gold: 1001 }, NOW);
-    assert.strictEqual(divine.stone, 91);
-    assert.strictEqual(divine.gold, 901);
-    assert.strictEqual(divine.discountRate, 0.10, '유생 계열 할인은 중복하지 않고 높은 할인만 적용해야 한다.');
+    assert.strictEqual(divine.stone, 86);
+    assert.strictEqual(divine.gold, 851);
+    assert.strictEqual(divine.discountRate, 0.15, '유생 계열 할인은 동시에 활성화되면 합산돼야 한다.');
     assert.strictEqual(rpg.getMailFeeRate(user, NOW), 0.02);
     assert.strictEqual(rpg.mailGoldFee(1000, user, NOW), 20);
 }

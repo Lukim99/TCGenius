@@ -849,9 +849,10 @@ function purchaseBlessing(user, key, nowArg) {
 }
 
 function getBlessingEnhancementDiscount(user, nowArg) {
-    if (isBlessingActive(user, 'divine', nowArg)) return 0.10;
-    if (isBlessingActive(user, 'yusaeng', nowArg)) return 0.05;
-    return 0;
+    let discount = 0;
+    if (isBlessingActive(user, 'yusaeng', nowArg)) discount += 0.05;
+    if (isBlessingActive(user, 'divine', nowArg)) discount += 0.10;
+    return Math.round(discount * 100) / 100;
 }
 
 function applyBlessingEnhancementDiscount(user, cost, nowArg) {
