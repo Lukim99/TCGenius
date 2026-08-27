@@ -2873,10 +2873,12 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(nickname);
         if (!user) throw new Error('유저를 찾을 수 없습니다.');
         const prevPoint = Number(user.point || 0);
+        const prevTotalPoint = Number(user.total_point || 0);
         user.point = prevPoint + amount;
+        user.total_point = prevTotalPoint + amount;
         await user.save();
         const newPoint = Number(user.point || 0);
-        rollback.push(async () => { user.point = prevPoint; await user.save(); });
+        rollback.push(async () => { user.point = prevPoint; user.total_point = prevTotalPoint; await user.save(); });
 
         // 3) 차감액 분배 이체 (1% 로또기금 / 1% 익테봇 / 49% Lukim9 / 49% 유치원생)
         await addSupabaseUserBalance('로또기금', lotto);
@@ -4629,9 +4631,11 @@ server.post('/api/admin/point-logs/cancel', requireAdmin, async (req, res) => {
         // 충전의 역연산 (각 단계마다 보상 등록)
         // 1) 포인트 회수
         const newPoint = curPoint - amount;
+        const curTotalPoint = Number(user.total_point || 0);
         user.point = newPoint;
+        user.total_point = Math.max(0, curTotalPoint - amount);
         await user.save();
-        rollback.push(async () => { user.point = curPoint; await user.save(); });
+        rollback.push(async () => { user.point = curPoint; user.total_point = curTotalPoint; await user.save(); });
 
         // 2) 충전 계정 잔액 환불 (NameMatch 치환 적용)
         const storeNickname = await resolveStoreNickname(entry.nickname);
