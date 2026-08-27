@@ -2764,6 +2764,7 @@ server.post('/api/burning/unlock-mega', requireUser, async (req, res) => {
         if (user.megaBurningUnlocked) return res.status(400).json({ error: '이미 메가 버닝이 해금되었습니다.' });
         if (Number(user.point || 0) < BURNING_MEGA_COST) return res.status(400).json({ error: '포인트가 부족합니다. (' + BURNING_MEGA_COST + 'P 필요)' });
         user.point = Number(user.point || 0) - BURNING_MEGA_COST;
+        rpgenius.addPointSpendMileage(user, BURNING_MEGA_COST);
         user.megaBurningUnlocked = true;
         await user.save();
         res.json({ ok: true, profile: buildUserProfile(user) });
@@ -3174,6 +3175,7 @@ server.post('/api/presets/unlock', requireUser, async (req, res) => {
         } else {
             if (Number(user.point || 0) < cost.amount) return res.status(400).json({ error: '포인트가 부족합니다. (' + comma(cost.amount) + 'P 필요)' });
             user.point = Number(user.point || 0) - cost.amount;
+            rpgenius.addPointSpendMileage(user, cost.amount);
         }
         user.presetSlotsUnlocked = slot + 1;
         await user.save();

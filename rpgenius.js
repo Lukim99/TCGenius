@@ -837,6 +837,13 @@ function extendBlessing(user, key, durationMs, nowArg) {
     return { ok: true, key: def.key, name: def.name, durationMs: duration, expiresAt };
 }
 
+// 포인트 소모 시 소모량의 10%를 마일리지로 적립. 적립액을 반환.
+function addPointSpendMileage(user, amount) {
+    const earned = Math.round(Number(amount || 0) * 0.1);
+    if (earned > 0) user.mileage = Number(user.mileage || 0) + earned;
+    return earned;
+}
+
 function purchaseBlessing(user, key, nowArg) {
     const def = BLESSING_DEFINITIONS[String(key || '')];
     if (!def) return { error: '존재하지 않는 축복입니다.' };
@@ -845,7 +852,8 @@ function purchaseBlessing(user, key, nowArg) {
     const applied = extendBlessing(user, def.key, def.durationMs, nowArg);
     if (applied.error) return applied;
     user.point = point - def.price;
-    return { ok: true, key: def.key, name: def.name, price: def.price, expiresAt: applied.expiresAt, point: user.point };
+    const mileageEarned = addPointSpendMileage(user, def.price);
+    return { ok: true, key: def.key, name: def.name, price: def.price, expiresAt: applied.expiresAt, point: user.point, mileageEarned };
 }
 
 function getBlessingEnhancementDiscount(user, nowArg) {
@@ -11764,8 +11772,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
         if (owned < totalPrice) return '❌ 재화가 부족합니다. (필요: ' + formatPrice({ goods: shopItem.price.goods, amount: totalPrice }) + ')';
         user[field] = owned - totalPrice;
     }
-    const mileageEarned = shopItem.price.goods == 'point' ? Math.round(totalPrice * 0.1) : 0;
-    if (mileageEarned > 0) user.mileage = Number(user.mileage || 0) + mileageEarned;
+    const mileageEarned = shopItem.price.goods == 'point' ? addPointSpendMileage(user, totalPrice) : 0;
 
     let bundleSummary = null;
     if (shopItem.type == '아이템') {
@@ -15058,6 +15065,7 @@ module.exports = {
     isBlessingActive,
     extendBlessing,
     purchaseBlessing,
+    addPointSpendMileage,
     getBlessingEnhancementDiscount,
     applyBlessingEnhancementDiscount,
     getBlessingFeeDiscount,
