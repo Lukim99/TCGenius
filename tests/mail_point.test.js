@@ -8,6 +8,7 @@ const recipientData = {
     id: 'mail-point-receiver-id',
     name: 'mail-point-receiver',
     point: 0,
+    blessings: { divine: Date.now() + 60_000 },
     mail: [],
     inventory: { card: [], item: [], equipment: [], pet: [] },
     equipments: { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] }
@@ -51,6 +52,13 @@ const rpg = require('../rpgenius');
     assert.ok(lastTransaction[0].Update.ConditionExpression.includes(':old_point'));
     const record = mailRecords.get(sent.mailId);
     assert.deepStrictEqual(record.gifts, [{ type: 'point', amount: 40 }]);
+
+    const goldSender = new rpg.RPGUser('mail-gold-sender', 'mail-gold-sender-id');
+    goldSender.gold = 1000;
+    const goldSent = await rpg.sendMail(goldSender, recipientData.name, '골드', '수신자 축복 기준', [{ type: 'gold', amount: 1000 }]);
+    assert.strictEqual(goldSent.ok, true);
+    assert.strictEqual(goldSent.fee, 20, '메일 수수료 할인은 신성한 유생의 축복이 적용된 수신자 기준이어야 한다.');
+    assert.deepStrictEqual(mailRecords.get(goldSent.mailId).gifts, [{ type: 'gold', amount: 980 }]);
 
     const receiver = new rpg.RPGUser(recipientData.name, recipientData.id);
     receiver.point = 0;

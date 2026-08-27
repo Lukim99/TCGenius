@@ -872,8 +872,8 @@ function getBlessingFeeDiscount(user, nowArg) {
     return isBlessingActive(user, 'divine', nowArg) ? 0.03 : 0;
 }
 
-function getMailFeeRate(user, nowArg) {
-    return Math.max(0, Math.round((MAIL_GOLD_FEE_RATE - getBlessingFeeDiscount(user, nowArg)) * 100) / 100);
+function getMailFeeRate(recipient, nowArg) {
+    return Math.max(0, Math.round((MAIL_GOLD_FEE_RATE - getBlessingFeeDiscount(recipient, nowArg)) * 100) / 100);
 }
 
 function formatRoll(value) {
@@ -12768,8 +12768,8 @@ async function deleteMailRecord(id) {
     }
 }
 
-function mailGoldFee(amount, user, nowArg) {
-    return Math.max(MAIL_GOLD_FEE_MIN, Math.floor(Number(amount || 0) * getMailFeeRate(user, nowArg)));
+function mailGoldFee(amount, recipient, nowArg) {
+    return Math.max(MAIL_GOLD_FEE_MIN, Math.floor(Number(amount || 0) * getMailFeeRate(recipient, nowArg)));
 }
 
 // 선물 1개를 표시용 객체로 변환. 아이콘 URL은 server.js가 후처리로 채운다(이 모듈엔 이미지 헬퍼가 없음).
@@ -12956,7 +12956,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             currencyReq[spec.type] += amount;
             const balance = Number(sender[spec.type] || 0);
             if (balance < currencyReq[spec.type]) return { error: currencyName + '가 부족합니다.' };
-            const fee = spec.type == 'point' ? 0 : mailGoldFee(amount, sender);
+            const fee = spec.type == 'point' ? 0 : mailGoldFee(amount, recipient);
             const recv = amount - fee;
             if (recv < 1) return { error: currencyName + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
             feeTotal += fee;

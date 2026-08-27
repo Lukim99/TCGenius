@@ -8172,6 +8172,38 @@ async function openMailCompose() {
     const slotsEl = el('div', { class: 'mc-gift-slots' });
     const feeNote = el('div', { class: 'mc-fee-note' });
     const composeErr = el('div', { class: 'mc-error' });
+    const baseMailFeeRate = Number(giftable.feeRate);
+    let resolvedFeeRecipient = '';
+    let feeRequestToken = 0;
+
+    async function syncRecipientFee() {
+        const to = toInput.value.trim();
+        if (!to || to === resolvedFeeRecipient) return;
+        const token = ++feeRequestToken;
+        try {
+            const data = await api('/api/mail/recipient-fee?to=' + encodeURIComponent(to));
+            if (token !== feeRequestToken) return;
+            giftable.feeRate = Number(data.feeRate);
+            giftable.feeMin = Number(data.feeMin);
+            resolvedFeeRecipient = to;
+            composeErr.textContent = '';
+            renderSlots();
+        } catch (e) {
+            if (token !== feeRequestToken) return;
+            giftable.feeRate = baseMailFeeRate;
+            resolvedFeeRecipient = '';
+            composeErr.textContent = e.message;
+            renderSlots();
+        }
+    }
+    toInput.addEventListener('input', () => {
+        if (toInput.value.trim() !== resolvedFeeRecipient) {
+            giftable.feeRate = baseMailFeeRate;
+            resolvedFeeRecipient = '';
+            renderSlots();
+        }
+    });
+    toInput.addEventListener('blur', () => { syncRecipientFee().catch(() => {}); });
 
     function giftDisplay(g) {
         if (g.type === 'gold') return { type: 'gold', iconUrl: giftable.goldIconUrl, label: comma(g.amount) + ' 골드' };
@@ -8191,7 +8223,7 @@ async function openMailCompose() {
         }));
         let fee = 0;
         gifts.forEach(g => { if (g.type === 'gold' || g.type === 'garnet') fee += Math.max(giftable.feeMin, Math.floor(g.amount * giftable.feeRate)); });
-        feeNote.textContent = fee > 0 ? '골드/가넷 수수료 합계 ' + comma(fee) + ' · 받는 사람은 수수료를 뺀 금액을 받습니다' : '';
+        feeNote.textContent = fee > 0 ? '받는 사람 기준 수수료 합계 ' + comma(fee) + ' · 수수료를 뺀 금액이 전달됩니다' : '';
     }
 
     function canAdd() {
@@ -8224,8 +8256,9 @@ async function openMailCompose() {
         mailModalOpen(content, { title: '메일 쓰기', icon: 'pencil', wide: true, footer: [cancel, send] });
     }
 
-    function viewCurrency(type) {
+    async function viewCurrency(type) {
         const name = type === 'gold' ? '골드' : type === 'garnet' ? '가넷' : '포인트';
+        if (type !== 'point' && toInput.value.trim()) await syncRecipientFee();
         const balance = type === 'gold' ? giftable.gold : type === 'garnet' ? giftable.garnet : giftable.point;
         const reserved = gifts.filter(g => g.type === type).reduce((sum, g) => sum + Number(g.amount || 0), 0);
         const max = Math.max(0, balance - reserved);
@@ -8236,7 +8269,7 @@ async function openMailCompose() {
         const preview = el('div', { class: 'mc-preview' });
         input.addEventListener('input', () => {
             const a = Math.floor(Number(String(input.value).replace(/[^0-9]/g, '')));
-            if (a > 0 && hasFee) { const fee = Math.max(giftable.feeMin, Math.floor(a * giftable.feeRate)); preview.textContent = '수수료 ' + comma(fee) + ' · 받는 사람 ' + comma(Math.max(0, a - fee)) + ' 수령'; }
+            if (a > 0 && hasFee) { const fee = Math.max(giftable.feeMin, Math.floor(a * giftable.feeRate)); preview.textContent = '받는 사람 기준 수수료 ' + comma(fee) + ' · ' + comma(Math.max(0, a - fee)) + ' 수령'; }
             else if (a > 0) preview.textContent = '받는 사람 ' + comma(a) + 'P 수령';
             else preview.textContent = '';
         });

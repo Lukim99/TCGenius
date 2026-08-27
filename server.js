@@ -941,9 +941,22 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         res.json({
             gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
             goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
-            feeRate: rpgenius.getMailFeeRate(user), feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
+            feeRate: rpgenius.MAIL_GOLD_FEE_RATE, feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
         });
     } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }
+});
+
+server.get('/api/mail/recipient-fee', requireUser, async (req, res) => {
+    try {
+        const name = String(req.query.to || '').trim();
+        if (!name) return res.status(400).json({ error: '받는 사람을 입력해주세요.' });
+        const recipient = await rpgenius.getRPGUserByName(name);
+        if (!recipient) return res.status(404).json({ error: '존재하지 않는 닉네임입니다.' });
+        res.json({ feeRate: rpgenius.getMailFeeRate(recipient), feeMin: rpgenius.MAIL_GOLD_FEE_MIN });
+    } catch (e) {
+        console.error('mail recipient fee error:', e);
+        res.status(500).json({ error: '수수료 정보를 불러오지 못했습니다.' });
+    }
 });
 
 server.post('/api/mail/read', requireUser, async (req, res) => {
