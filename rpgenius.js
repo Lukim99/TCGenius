@@ -15,6 +15,13 @@ const MAIL_GIFT_MAX = 5;                 // 메일당 최대 선물 슬롯
 const MAIL_READ_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 읽은 메일은 3일 뒤 삭제(선물 미수령 시 제외)
 const MAIL_GOLD_FEE_RATE = 0.05;         // 골드/가넷 선물 수수료
 const MAIL_GOLD_FEE_MIN = 5;             // 최소 수수료
+const BLESSING_DAY_MS = 24 * 60 * 60 * 1000;
+const BLESSING_DURATION_MS = 30 * BLESSING_DAY_MS;
+const BLESSING_DEFINITIONS = Object.freeze({
+    yusaeng: Object.freeze({ key: 'yusaeng', name: '유생의 축복', price: 1500, durationMs: BLESSING_DURATION_MS }),
+    divine: Object.freeze({ key: 'divine', name: '신성한 유생의 축복', price: 2500, durationMs: BLESSING_DURATION_MS }),
+    rukim: Object.freeze({ key: 'rukim', name: '루킴의 축복', price: 990, durationMs: BLESSING_DURATION_MS })
+});
 const DATA_TABLE_NAME = 'rpgenius_data';
 const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest'];
 const VIEWMORE = '\u200e'.repeat(500);
@@ -781,6 +788,91 @@ function comma(value) {
         parts.push(String(groups[topIndex - 1]) + KOREAN_BIG_UNITS[topIndex - 1]);
     }
     return sign + parts.join(' ');
+}
+
+function normalizeBlessings(user) {
+    if (!user.blessings || typeof user.blessings != 'object' || Array.isArray(user.blessings)) user.blessings = {};
+    Object.keys(BLESSING_DEFINITIONS).forEach(key => {
+        const expiresAt = Number(user.blessings[key] || 0);
+        if (Number.isFinite(expiresAt) && expiresAt > 0) user.blessings[key] = expiresAt;
+        else delete user.blessings[key];
+    });
+    return user.blessings;
+}
+
+function getBlessingExpiresAt(user, key) {
+    if (!BLESSING_DEFINITIONS[key]) return 0;
+    return Math.max(0, Number(user && user.blessings && user.blessings[key] || 0));
+}
+
+function isBlessingActive(user, key, nowArg) {
+    const now = Number.isFinite(Number(nowArg)) ? Number(nowArg) : Date.now();
+    return getBlessingExpiresAt(user, key) > now;
+}
+
+function getBlessingStates(user, nowArg) {
+    const now = Number.isFinite(Number(nowArg)) ? Number(nowArg) : Date.now();
+    return Object.values(BLESSING_DEFINITIONS).map(def => {
+        const expiresAt = getBlessingExpiresAt(user, def.key);
+        return {
+            key: def.key,
+            name: def.name,
+            price: def.price,
+            expiresAt,
+            active: expiresAt > now,
+            remainingMs: Math.max(0, expiresAt - now)
+        };
+    });
+}
+
+function extendBlessing(user, key, durationMs, nowArg) {
+    const def = BLESSING_DEFINITIONS[String(key || '')];
+    const duration = Number(durationMs);
+    if (!def) return { error: '존재하지 않는 축복입니다.' };
+    if (!Number.isFinite(duration) || duration <= 0) return { error: '축복 적용 기간이 올바르지 않습니다.' };
+    const now = Number.isFinite(Number(nowArg)) ? Number(nowArg) : Date.now();
+    normalizeBlessings(user);
+    const expiresAt = Math.max(now, getBlessingExpiresAt(user, def.key)) + duration;
+    user.blessings[def.key] = expiresAt;
+    return { ok: true, key: def.key, name: def.name, durationMs: duration, expiresAt };
+}
+
+function purchaseBlessing(user, key, nowArg) {
+    const def = BLESSING_DEFINITIONS[String(key || '')];
+    if (!def) return { error: '존재하지 않는 축복입니다.' };
+    const point = Number(user && user.point || 0);
+    if (!Number.isFinite(point) || point < def.price) return { error: '포인트가 부족합니다. (' + comma(def.price) + 'P 필요)' };
+    const applied = extendBlessing(user, def.key, def.durationMs, nowArg);
+    if (applied.error) return applied;
+    user.point = point - def.price;
+    return { ok: true, key: def.key, name: def.name, price: def.price, expiresAt: applied.expiresAt, point: user.point };
+}
+
+function getBlessingEnhancementDiscount(user, nowArg) {
+    if (isBlessingActive(user, 'divine', nowArg)) return 0.10;
+    if (isBlessingActive(user, 'yusaeng', nowArg)) return 0.05;
+    return 0;
+}
+
+function applyBlessingEnhancementDiscount(user, cost, nowArg) {
+    const discountRate = getBlessingEnhancementDiscount(user, nowArg);
+    const originalStone = Math.max(0, Number(cost && cost.stone || 0));
+    const originalGold = Math.max(0, Number(cost && cost.gold || 0));
+    return Object.assign({}, cost, {
+        stone: Math.ceil(originalStone * (1 - discountRate)),
+        gold: Math.ceil(originalGold * (1 - discountRate)),
+        originalStone,
+        originalGold,
+        discountRate
+    });
+}
+
+function getBlessingFeeDiscount(user, nowArg) {
+    return isBlessingActive(user, 'divine', nowArg) ? 0.03 : 0;
+}
+
+function getMailFeeRate(user, nowArg) {
+    return Math.max(0, Math.round((MAIL_GOLD_FEE_RATE - getBlessingFeeDiscount(user, nowArg)) * 100) / 100);
 }
 
 function formatRoll(value) {
@@ -3573,10 +3665,23 @@ function calculateUserStats(user, _out) {
             if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
         }
     }
+    const rukimActive = isBlessingActive(user, 'rukim');
+    if (rukimActive) {
+        stats.itemDropChance = Number(stats.itemDropChance || 0) + 0.10;
+        stats.exp = Number(stats.exp || 0) + 0.10;
+        stats.gold = Number(stats.gold || 0) + 0.10;
+        stats.bossDmg = Number(stats.bossDmg || 0) + 0.05;
+        stats.hp = Number(stats.hp || 0) + 1000;
+        stats.mp = Number(stats.mp || 0) + 200;
+    }
     // 건력 봉인: 상태 동안 최대 HP의 일부 삭제 (회복 상한 포함 모든 최대 HP 소비처에 적용)
     const gunryeokSeal = user.field && user.field.gunryeok;
     if (gunryeokSeal && Date.now() < Number(gunryeokSeal.expired_at || 0)) {
         stats.hp = Math.max(1, Math.round(Number(stats.hp || 0) * (1 - Number(gunryeokSeal.sealRate || 0))));
+    }
+    if (!rukimActive && getBlessingExpiresAt(user, 'rukim') > 0) {
+        if (typeof user.hp != 'undefined') user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
+        if (typeof user.mp != 'undefined') user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
     }
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
     return stats;
@@ -8888,14 +8993,42 @@ function formatShopLimitSuffix(user, shopType, index, shopItem) {
     return '\n│ 구매 제한\n├ ' + parts.join('\n├ ');
 }
 
+function grantAttendanceBlessingItem(user, name, count, lines) {
+    const itemId = getItemIdByName(name);
+    if (itemId < 0) {
+        console.error('[blessing] 출석 보상 아이템을 찾을 수 없습니다: ' + name);
+        return;
+    }
+    addInventoryItem(user, itemId, count);
+    lines.push('- ' + name + ' x' + comma(count));
+}
+
 function checkAttendance(user) {
-    const today = getKoreanDateKey(new Date());
+    const now = Date.now();
+    const today = getKoreanDateKey(new Date(now));
     if (user.lastAttendanceDate == today) return '❌ 오늘은 이미 출석체크를 완료했습니다.';
     user.lastAttendanceDate = today;
     addInventoryItem(user, ATTENDANCE_STAMP_ITEM_ID, 1);
     const items = getDataCache('Item', []);
     const stamp = items[ATTENDANCE_STAMP_ITEM_ID];
-    return '✅ 출석체크 완료!\n\n[ 획득 물품 ]\n- ' + (stamp ? stamp.name : '출석 도장') + ' x1';
+    const lines = ['✅ 출석체크 완료!', '', '[ 획득 물품 ]', '- ' + (stamp ? stamp.name : '출석 도장') + ' x1'];
+    if (isBlessingActive(user, 'yusaeng', now)) {
+        lines.push('', '《 유생의 축복 》');
+        grantAttendanceBlessingItem(user, '헬 초대장', 30, lines);
+        grantAttendanceBlessingItem(user, '쥬얼', 5, lines);
+        user.garnet = Number(user.garnet || 0) + 50;
+        lines.push('- 가넷 x50');
+    }
+    if (isBlessingActive(user, 'divine', now)) {
+        lines.push('', '《 신성한 유생의 축복 》');
+        grantAttendanceBlessingItem(user, '지니어스의 열쇠', 3, lines);
+        grantAttendanceBlessingItem(user, '헬 초대장', 30, lines);
+        grantAttendanceBlessingItem(user, '화이트 쥬얼', 5, lines);
+        user.garnet = Number(user.garnet || 0) + 50;
+        lines.push('- 가넷 x50');
+        grantAttendanceBlessingItem(user, '상급 강화석', 10, lines);
+    }
+    return lines.join('\n');
 }
 
 function getRecipeByName(name) {
@@ -10472,7 +10605,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     const rates = getEquipmentUpgradeRates(type, level);
-    const cost = getEquipmentUpgradeCost(equipment, type, level);
+    const cost = applyBlessingEnhancementDiscount(user, getEquipmentUpgradeCost(equipment, type, level));
     const isFreeUpgrade = options && options.free;
     const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : EQUIPMENT_STONE_ITEM_ID;
     const stoneCount = getInventoryItemCount(user, stoneItemId);
@@ -10515,6 +10648,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         lines.push('', '✨ 유생의 강화기 효과가 적용됩니다.');
     } else {
         lines.push('', '[ 필요 재료 ]');
+        if (cost.discountRate > 0) lines.push('- 축복 할인 ' + Math.round(cost.discountRate * 100) + '% 적용');
         lines.push((hasStone ? '✅ ' : '❌ ') + (cost.stoneName || '강화석') + ' x' + comma(cost.stone));
         lines.push((hasGold ? '✅ ' : '❌ ') + '🪙 ' + comma(cost.gold));
     }
@@ -10555,7 +10689,7 @@ function runEquipmentUpgrade(user) {
         user.pendingAction = null;
         return '❌ 강화할 수 없는 장비입니다.';
     }
-    const cost = getEquipmentUpgradeCost(equipment, type, level);
+    const cost = applyBlessingEnhancementDiscount(user, getEquipmentUpgradeCost(equipment, type, level));
     const isFreeUpgrade = !!pending.free;
     const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : EQUIPMENT_STONE_ITEM_ID;
     if (!isFreeUpgrade && (getInventoryItemCount(user, stoneItemId) < cost.stone || Number(user.gold || 0) < cost.gold)) {
@@ -10957,6 +11091,8 @@ async function useItem(user, itemName, countArg) {
         if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
     }
     if (item.type == '사용') {
+        if (item.use == '축복사용권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '축복사용권' && (!BLESSING_DEFINITIONS[item.blessing] || ![1, 7, 30].includes(Number(item.durationDays)))) return '❌ 축복 사용권 정보가 올바르지 않습니다.';
         if (item.use == '변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '만능캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -10991,7 +11127,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '축복사용권' && item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '패션적용' && item.use != '고급패션적용' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '패션제거' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -11070,6 +11206,12 @@ async function useItem(user, itemName, countArg) {
         Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }
     if (item.type == '사용') {
+        if (item.use == '축복사용권') {
+            const days = Number(item.durationDays);
+            const applied = extendBlessing(user, item.blessing, days * BLESSING_DAY_MS);
+            lines.push('- ' + applied.name + ' 이용 기간 +' + days + '일');
+            lines.push('- 만료: ' + new Date(applied.expiresAt).toLocaleString('ko-KR'));
+        }
         if (item.use == '변환') {
             const charId = Number(item.charId);
             user.pendingAction = { type: '지정캐릭터변환', charId, consumedItemId: itemId, consumedItemCount: useCount };
@@ -12050,6 +12192,7 @@ class RPGUser {
         this.usedCoupons = [];
         this.shopPurchases = {};
         this.lastAttendanceDate = null;
+        this.blessings = {};
     }
 
     load(data) {
@@ -12112,6 +12255,7 @@ class RPGUser {
             });
         }
         if (typeof this.lastAttendanceDate == 'undefined') this.lastAttendanceDate = null;
+        normalizeBlessings(this);
         if (typeof this.isAdmin == 'undefined') this.isAdmin = false;
         if (!this.level) this.level = 1;
         if (!this.exp) this.exp = 0;
@@ -12623,8 +12767,8 @@ async function deleteMailRecord(id) {
     }
 }
 
-function mailGoldFee(amount) {
-    return Math.max(MAIL_GOLD_FEE_MIN, Math.floor(Number(amount || 0) * MAIL_GOLD_FEE_RATE));
+function mailGoldFee(amount, user, nowArg) {
+    return Math.max(MAIL_GOLD_FEE_MIN, Math.floor(Number(amount || 0) * getMailFeeRate(user, nowArg)));
 }
 
 // 선물 1개를 표시용 객체로 변환. 아이콘 URL은 server.js가 후처리로 채운다(이 모듈엔 이미지 헬퍼가 없음).
@@ -12811,7 +12955,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             currencyReq[spec.type] += amount;
             const balance = Number(sender[spec.type] || 0);
             if (balance < currencyReq[spec.type]) return { error: currencyName + '가 부족합니다.' };
-            const fee = spec.type == 'point' ? 0 : mailGoldFee(amount);
+            const fee = spec.type == 'point' ? 0 : mailGoldFee(amount, sender);
             const recv = amount - fee;
             if (recv < 1) return { error: currencyName + ' 선물은 수수료(' + comma(fee) + ') 이상이어야 합니다.' };
             feeTotal += fee;
@@ -14904,6 +15048,19 @@ module.exports = {
     WILL_STAT_COST_CONFIG,
     resolveWillExecutionCost,
     RPGUser,
+    BLESSING_DEFINITIONS,
+    BLESSING_DAY_MS,
+    BLESSING_DURATION_MS,
+    normalizeBlessings,
+    getBlessingStates,
+    getBlessingExpiresAt,
+    isBlessingActive,
+    extendBlessing,
+    purchaseBlessing,
+    getBlessingEnhancementDiscount,
+    applyBlessingEnhancementDiscount,
+    getBlessingFeeDiscount,
+    getMailFeeRate,
     getRPGUserById,
     getRPGUserByName,
     getRPGUserByCode,
@@ -14920,7 +15077,10 @@ module.exports = {
     sendSystemMailToUser,
     sendGmMailToUser,
     MAIL_GIFT_MAX,
+    MAIL_GOLD_FEE_RATE,
+    MAIL_GOLD_FEE_MIN,
     mailGoldFee,
+    checkAttendance,
     getAllRPGUsers,
     getMaxExpForLevel,
     addExperience,

@@ -1933,19 +1933,24 @@ async function refreshOpponents(user) {
     return { ok: true, message: '오늘의 상대를 새로 뽑았습니다.', daily: buildDailyView(user) };
 }
 
-// 유료 추가 플레이: 가넷을 내고 상대 슬롯 1개를 추가한다 (레이팅 근접 매칭, 이미 대결한 상대와의 재대결 허용).
+function getExtraPlayCost(user) {
+    return rpgenius.isBlessingActive(user, 'divine', now()) ? 0 : EXTRA_PLAY_COST;
+}
+
+// 추가 플레이: 신성한 유생의 축복이 없으면 가넷을 내고 상대 슬롯 1개를 추가한다.
 async function buyExtraPlay(user) {
     const state = ensurePvpState(user);
+    const cost = getExtraPlayCost(user);
     if (Number(state.daily.extraUsed || 0) >= EXTRA_PLAY_MAX) return { ok: false, message: '오늘의 추가 플레이 횟수를 모두 사용했습니다.' };
-    if (Number(user.garnet || 0) < EXTRA_PLAY_COST) return { ok: false, message: '가넷이 부족합니다. (' + EXTRA_PLAY_COST + '가넷 필요)' };
+    if (Number(user.garnet || 0) < cost) return { ok: false, message: '가넷이 부족합니다. (' + cost + '가넷 필요)' };
     const open = (state.daily.opponents || []).filter(slot => slot && !slot.result).map(slot => slot.name);
     const rolled = pickOpponents(user, await getLadder(false), ['near'], open);
     if (rolled.length == 0) return { ok: false, message: '추가로 매칭할 상대가 없습니다.' };
     rolled[0].kind = 'extra';
-    user.garnet = Number(user.garnet || 0) - EXTRA_PLAY_COST;
+    user.garnet = Number(user.garnet || 0) - cost;
     state.daily.opponents.push(rolled[0]);
     state.daily.extraUsed = Number(state.daily.extraUsed || 0) + 1;
-    return { ok: true, message: '추가 상대가 매칭되었습니다. (가넷 -' + EXTRA_PLAY_COST + ')', daily: buildDailyView(user), garnet: Number(user.garnet || 0) };
+    return { ok: true, message: cost > 0 ? '추가 상대가 매칭되었습니다. (가넷 -' + cost + ')' : '추가 상대가 매칭되었습니다. (축복 무료)', daily: buildDailyView(user), garnet: Number(user.garnet || 0) };
 }
 
 // ===== 전투 시작 =====
@@ -2110,6 +2115,7 @@ function buildDailyView(user) {
     const battlesUsed = (daily.opponents || []).filter(slot => slot && slot.result).length;
     const refreshUsed = Number(daily.refreshUsed || 0);
     const extraUsed = Number(daily.extraUsed || 0);
+    const extraCost = getExtraPlayCost(user);
     return {
         date: daily.date,
         battlesUsed,
@@ -2119,7 +2125,8 @@ function buildDailyView(user) {
         canRefresh: refreshUsed < DAILY_REFRESH_MAX && (daily.opponents || []).some(slot => slot && !slot.result),
         extraUsed,
         extraMax: EXTRA_PLAY_MAX,
-        extraCost: EXTRA_PLAY_COST,
+        extraCost,
+        extraFree: extraCost === 0,
         canBuyExtra: extraUsed < EXTRA_PLAY_MAX,
         opponents: (daily.opponents || []).map(slot => ({
             name: slot.name,
@@ -2250,6 +2257,7 @@ module.exports = {
     getLadder,
     generateOpponents,
     refreshOpponents,
+    getExtraPlayCost,
     buyExtraPlay,
     buildBattleView,
     buildPvpOverview,

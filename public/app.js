@@ -1828,6 +1828,173 @@ let lastProfileData = null;
 let currentProfileName = null;
 let currentInventoryName = null;
 let suppressInfoSelfReset = false;
+let blessingViewStates = [];
+let blessingCountdownTimer = null;
+const BLESSING_ART = {
+    yusaeng: '/static/assets/blessing-yusaeng.webp?v=3',
+    divine: '/static/assets/blessing-yusaeng-divine.webp?v=3',
+    rukim: '/static/assets/blessing-rukim.webp',
+};
+
+function formatBlessingRemaining(expiresAt) {
+    const totalMinutes = Math.max(0, Math.ceil((Number(expiresAt || 0) - Date.now()) / 60000));
+    if (totalMinutes <= 0) return '미적용';
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    return days + '일 ' + hours + '시간 ' + minutes + '분 남음';
+}
+
+function refreshBlessingCountdown() {
+    const now = Date.now();
+    $$('.blessing-card[data-blessing-key]').forEach(card => {
+        const state = blessingViewStates.find(entry => entry.key === card.dataset.blessingKey);
+        const active = !!state && Number(state.expiresAt || 0) > now;
+        card.classList.toggle('active', active);
+        const remaining = card.querySelector('.blessing-remaining');
+        if (remaining) remaining.textContent = active ? formatBlessingRemaining(state.expiresAt) : '미적용';
+        const button = card.querySelector('.blessing-buy-btn');
+        if (button) button.textContent = active ? '기간 연장' : '구매';
+    });
+}
+
+function playBlessingPurchaseEffect(state, extended) {
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const effect = el('div', {
+        class: 'blessing-purchase-fx blessing-fx-' + state.key,
+        role: 'status',
+        'aria-live': 'polite',
+    });
+    effect.appendChild(el('div', { class: 'blessing-fx-backdrop', 'aria-hidden': 'true' }));
+    effect.appendChild(el('div', { class: 'blessing-fx-rays', 'aria-hidden': 'true' }));
+
+    const burst = el('div', { class: 'blessing-fx-particles', 'aria-hidden': 'true' });
+    for (let i = 0; i < 30; i++) {
+        const angle = (Math.PI * 2 * i / 30) + (i % 2 ? 0.08 : 0);
+        const distance = 145 + (i % 5) * 32;
+        const particle = el('i');
+        particle.style.setProperty('--fx-x', Math.round(Math.cos(angle) * distance) + 'px');
+        particle.style.setProperty('--fx-y', Math.round(Math.sin(angle) * distance) + 'px');
+        particle.style.setProperty('--fx-delay', (i % 6) * 35 + 'ms');
+        particle.style.setProperty('--fx-size', (5 + (i % 4) * 2) + 'px');
+        burst.appendChild(particle);
+    }
+    effect.appendChild(burst);
+
+    const motes = el('div', { class: 'blessing-fx-motes', 'aria-hidden': 'true' });
+    for (let i = 0; i < 18; i++) {
+        const mote = el('i');
+        mote.style.left = ((i * 37) % 100) + '%';
+        mote.style.setProperty('--fx-drift', ((i % 5) - 2) * 22 + 'px');
+        mote.style.setProperty('--fx-delay', (i % 9) * 90 + 'ms');
+        mote.style.setProperty('--fx-duration', (1550 + (i % 5) * 170) + 'ms');
+        motes.appendChild(mote);
+    }
+    effect.appendChild(motes);
+
+    const stage = el('div', { class: 'blessing-fx-stage' },
+        el('div', { class: 'blessing-fx-ring ring-outer', 'aria-hidden': 'true' }),
+        el('div', { class: 'blessing-fx-ring ring-middle', 'aria-hidden': 'true' }),
+        el('div', { class: 'blessing-fx-ring ring-inner', 'aria-hidden': 'true' }),
+        el('div', { class: 'blessing-fx-art' },
+            el('img', { src: BLESSING_ART[state.key] || '', alt: '' })
+        ),
+        el('div', { class: 'blessing-fx-copy' },
+            el('h2', null, state.name),
+            el('p', null, extended ? '축복의 시간이 연장되었습니다' : '새로운 축복이 깃들었습니다')
+        )
+    );
+    effect.appendChild(stage);
+    document.body.appendChild(effect);
+    requestAnimationFrame(() => effect.classList.add('active'));
+
+    return new Promise(resolve => {
+        setTimeout(() => {
+            effect.remove();
+            resolve();
+        }, reducedMotion ? 950 : 2900);
+    });
+}
+
+async function submitBlessingPurchase(state, button) {
+    if (!state || currentProfileName !== myName) return;
+    const active = Number(state.expiresAt || 0) > Date.now();
+    button.disabled = true;
+    button.textContent = '처리 중...';
+    try {
+        const result = await postApi('/api/blessings/buy', { key: state.key });
+        await closeModal();
+        if (result.profile) renderProfile(result.profile);
+        await playBlessingPurchaseEffect(state, active);
+        await showAlert(state.name + (active ? ' 기간을 30일 연장했습니다.' : '을 구매했습니다.'));
+    } catch (e) {
+        button.disabled = false;
+        button.textContent = active ? '기간 연장' : '구매';
+        showAlert(e.message);
+    }
+}
+
+function openBlessingBuyModal(state) {
+    if (!state || currentProfileName !== myName || !lastProfileData || lastProfileData.user.name !== myName) return;
+    const active = Number(state.expiresAt || 0) > Date.now();
+    const balance = Number(lastProfileData.user.point || 0);
+    const price = { goods: 'point' };
+    const after = balance - Number(state.price || 0);
+    const content = el('div', { class: 'shop-buy-modal blessing-buy-modal' });
+
+    const itemRow = el('div', { class: 'shop-buy-item-row blessing-buy-item-row' });
+    const thumb = el('div', { class: 'blessing-buy-thumb' });
+    thumb.appendChild(el('img', { src: BLESSING_ART[state.key] || '', alt: state.name }));
+    itemRow.appendChild(thumb);
+    const info = el('div', { class: 'blessing-buy-info' });
+    info.appendChild(el('div', { class: 'shop-buy-name' }, state.name));
+    info.appendChild(el('div', { class: 'shop-buy-meta' }, active
+        ? '재구매 시 현재 이용 기간 뒤에 30일이 추가됩니다.'
+        : '구매 즉시 30일 동안 축복 효과가 적용됩니다.'));
+    if (active) info.appendChild(el('div', { class: 'blessing-modal-status' }, formatBlessingRemaining(state.expiresAt)));
+    itemRow.appendChild(info);
+    content.appendChild(itemRow);
+
+    content.appendChild(el('div', { class: 'shop-receipt' },
+        buildReceiptRow('현재 보유', price, balance),
+        buildReceiptRow('결제 금액', price, state.price, 'deduct'),
+        el('div', { class: 'shop-receipt-divider' }),
+        buildReceiptRow('구매 후 잔액', price, after, after < 0 ? 'neg' : 'result')
+    ));
+    if (after < 0) content.appendChild(el('div', { class: 'blessing-modal-warning' }, '포인트가 부족합니다.'));
+
+    const footer = el('div', { class: 'shop-buy-footer' });
+    footer.appendChild(el('button', { onclick: closeModal }, '취소'));
+    const buyBtn = el('button', {
+        class: 'primary',
+        disabled: after < 0,
+        onclick: () => submitBlessingPurchase(state, buyBtn),
+    }, active ? '기간 연장' : '구매');
+    footer.appendChild(buyBtn);
+    content.appendChild(footer);
+
+    modalRequestToken++;
+    setModalVariant();
+    $('#modalTitle').textContent = state.name + (active ? ' 기간 연장' : ' 구매');
+    $('#modalSub').style.display = 'none';
+    $('#modalBody').replaceChildren(content);
+    $('#modalBg').classList.add('active');
+}
+
+function renderBlessings(states, canPurchase) {
+    blessingViewStates = Array.isArray(states) ? states : [];
+    $$('.blessing-card[data-blessing-key]').forEach(card => {
+        const state = blessingViewStates.find(entry => entry.key === card.dataset.blessingKey);
+        const button = card.querySelector('.blessing-buy-btn');
+        if (!button) return;
+        button.hidden = !canPurchase;
+        button.disabled = false;
+        button.onclick = state ? () => openBlessingBuyModal(state) : null;
+    });
+    refreshBlessingCountdown();
+    if (blessingCountdownTimer) clearInterval(blessingCountdownTimer);
+    blessingCountdownTimer = setInterval(refreshBlessingCountdown, 30000);
+}
 
 function updateInventoryBanner() {
     const banner = $('#inventoryBanner');
@@ -1869,6 +2036,7 @@ function renderProfile(data) {
     $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
     lastProfileData = data;
     const ownProfile = !!myName && data.user.name === myName;
+    renderBlessings(data.blessings, ownProfile);
     $('#slotCards').replaceChildren(...data.cardSlots.map((card, i) =>
         (card && card.name) ? cardNode(card, true, c => openCardSlotModal(c, i + 1))
         : ownProfile ? emptyCardSlotNode() : cardNode(null)
@@ -3560,7 +3728,7 @@ function renderEnhancePreview(data) {
                 enhRateChip('down', '하락', data.rates.down),
                 enhRateChip('destroy', '파괴', data.rates.reset)
             ),
-            el('div', { class: 'enhance-section-label' }, '필요 재료'),
+            el('div', { class: 'enhance-section-label' }, '필요 재료' + (Number(data.cost.discountRate || 0) > 0 ? ' · 축복 ' + Math.round(Number(data.cost.discountRate) * 100) + '% 할인' : '')),
             el('div', { class: 'enhance-cost-row' },
                 enhCostItem(data.cost.stoneName || '강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개 보유', data.hasStone),
                 enhCostItem('🪙 골드', comma(data.cost.gold), comma(data.gold) + ' 보유', data.hasGold)
@@ -5984,10 +6152,12 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
     const receipt = el('div', { class: 'shop-receipt' });
     const updateReceipt = () => {
         const total = entry.unitPrice * qty;
-        const fee = Math.floor(total * 0.05);
+        const feeRate = Number.isFinite(Number(fulfillable.feeRate)) ? Number(fulfillable.feeRate) : 0.05;
+        const fee = Math.floor(total * feeRate);
+        const feePercent = Math.round(feeRate * 1000) / 10;
         receipt.replaceChildren(
             buildReceiptRow('판매 대금', { goods: entry.currency }, total),
-            buildReceiptRow('수수료 (5%)', { goods: entry.currency }, fee, 'deduct'),
+            buildReceiptRow('수수료 (' + feePercent + '%)', { goods: entry.currency }, fee, 'deduct'),
             el('div', { class: 'shop-receipt-divider' }),
             buildReceiptRow('실 입금', { goods: entry.currency }, total - fee, 'result')
         );
@@ -6409,7 +6579,7 @@ function pvpMeNode(d) {
                 el('button', { class: 'pvp-refresh', type: 'button', disabled: !daily.canRefresh || pvpState.busy, onclick: refreshPvpOpponents },
                     '새로고침 (남은 ' + refreshLeft + '회)'),
                 el('button', { class: 'pvp-extra', type: 'button', disabled: !daily.canBuyExtra || pvpState.busy, onclick: buyPvpExtraPlay },
-                    '추가 플레이 ' + comma(daily.extraCost || 0) + '가넷 (남은 ' + extraLeft + '회)'))),
+                    (daily.extraFree ? '추가 플레이 무료' : '추가 플레이 ' + comma(daily.extraCost || 0) + '가넷') + ' (남은 ' + extraLeft + '회)'))),
         el('div', { class: 'pvp-me-grid' },
             el('div', { class: 'pvp-rating' },
                 el('span', { class: 'pvp-metric-label' }, '레이팅'),
@@ -6610,7 +6780,10 @@ function pvpHistoryNode(d) {
 async function buyPvpExtraPlay() {
     if (pvpState.busy) return;
     const daily = pvpState.data.daily || {};
-    if (!(await showConfirm('가넷 ' + comma(daily.extraCost || 0) + '개를 사용해 상대를 1명 추가할까요?\n(보유 가넷 ' + comma(pvpState.data.me && pvpState.data.me.garnet) + ')'))) return;
+    const confirmText = daily.extraFree
+        ? '신성한 유생의 축복으로 상대를 무료로 1명 추가할까요?'
+        : '가넷 ' + comma(daily.extraCost || 0) + '개를 사용해 상대를 1명 추가할까요?\n(보유 가넷 ' + comma(pvpState.data.me && pvpState.data.me.garnet) + ')';
+    if (!(await showConfirm(confirmText))) return;
     pvpState.busy = true;
     showLoading();
     try {

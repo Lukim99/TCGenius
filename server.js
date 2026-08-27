@@ -812,6 +812,32 @@ server.get('/api/profile/:name', requireUser, async (req, res) => {
     }
 });
 
+const blessingPurchaseLocks = new Set();
+server.post('/api/blessings/buy', requireUser, async (req, res) => {
+    const userName = req.session.name;
+    if (blessingPurchaseLocks.has(userName)) return res.status(409).json({ error: '이전 축복 구매를 처리하고 있습니다.' });
+    blessingPurchaseLocks.add(userName);
+    try {
+        const seed = await rpgenius.getRPGUserByName(userName);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(userName);
+            if (!user) return { error: '유저를 찾을 수 없습니다.', notFound: true };
+            const purchase = rpgenius.purchaseBlessing(user, req.body && req.body.key);
+            if (purchase.error) return purchase;
+            await user.save();
+            return { ok: true, purchase, profile: buildUserProfile(user) };
+        });
+        if (payload.error) return res.status(payload.notFound ? 404 : 400).json({ error: payload.error });
+        res.json(payload);
+    } catch (e) {
+        console.error('blessing buy error:', e);
+        res.status(500).json({ error: '축복 구매에 실패했습니다.' });
+    } finally {
+        blessingPurchaseLocks.delete(userName);
+    }
+});
+
 server.post('/api/stat-points/buy', requireUser, async (req, res) => {
     try {
         const count = Number(req.body && req.body.count);
@@ -915,7 +941,7 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         res.json({
             gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
             goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
-            feeRate: 0.05, feeMin: 5, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
+            feeRate: rpgenius.getMailFeeRate(user), feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
         });
     } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
@@ -3370,7 +3396,7 @@ function buildEquipmentUpgradePreview(user, number) {
     const currentPlus = rpgenius.getEquipmentPlusStatsAtLevel(equipment, level);
     const nextPlus = rpgenius.getEquipmentPlusStatsAtLevel(equipment, nextLevel);
     const rates = rpgenius.getEquipmentUpgradeRates(type, level);
-    const cost = rpgenius.getEquipmentUpgradeCost(equipment, type, level);
+    const cost = rpgenius.applyBlessingEnhancementDiscount(user, rpgenius.getEquipmentUpgradeCost(equipment, type, level));
     const stoneItemId = Number.isInteger(cost.stoneItemId) && cost.stoneItemId >= 0 ? cost.stoneItemId : rpgenius.EQUIPMENT_STONE_ITEM_ID;
     const stoneCount = rpgenius.getInventoryItemCount(user, stoneItemId);
     const gold = Number(user.gold || 0);
@@ -4933,6 +4959,10 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.use == '축복사용권') {
+        const blessing = rpgenius.BLESSING_DEFINITIONS[item.blessing];
+        return blessing ? getItemImageUrl('사용', blessing.name + ' 사용권.png') : null;
+    }
     // 보주/스펙터는 type이 '사용'(use 디스패치용)이지만 이미지는 itemImage/보주/·itemImage/스펙터/에 있다
     const dir = item.use == '보주' ? '보주' : (item.use == '스펙터' ? '스펙터' : String(item.type));
     return getItemImageUrl(dir, String(item.name) + '.png');
@@ -5159,6 +5189,7 @@ function serializeCard(card, user) {
 }
 
 const WEB_ITEM_USE_KEYS = new Set([
+    '축복사용권',
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
     '패션적용', '고급패션적용', '패션제거', '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
@@ -6192,7 +6223,10 @@ function buildItemUsageFacts(item) {
         '아이템선택': ['사용 효과', '아래 아이템 중 1개를 선택해 교환'],
         '흑화': ['적용 대상', '흑화가 가능한 장비']
     };
-    if (item.use && useDetails[item.use]) facts.push({ label: useDetails[item.use][0], value: useDetails[item.use][1] });
+    if (item.use === '축복사용권') {
+        const blessing = rpgenius.BLESSING_DEFINITIONS[item.blessing];
+        facts.push({ label: '사용 효과', value: (blessing ? blessing.name : '축복') + ' 이용 기간 ' + comma(item.durationDays) + '일 적용 또는 연장' });
+    } else if (item.use && useDetails[item.use]) facts.push({ label: useDetails[item.use][0], value: useDetails[item.use][1] });
     if (item.use === '아이템선택') {
         const items = rpgenius.getDataCache('Item', []);
         (Array.isArray(item.choices) ? item.choices : []).forEach(c => {
@@ -6499,6 +6533,10 @@ async function buyShopItem(userName, body) {
 const AUCTION_FEE_RATE = 0.05;
 const AUCTION_MAX_PER_USER = 20;
 const AUCTION_MAX_PRICE = 1_000_000_000_000;
+
+function getAuctionFeeRate(user) {
+    return Math.max(0, Math.round((AUCTION_FEE_RATE - rpgenius.getBlessingFeeDiscount(user)) * 100) / 100);
+}
 
 // ===== 거래 로그 =====
 // 단일 DynamoDB 항목에 저장되므로 400KB 항목 한도를 넘지 않게 최근 기록만 유지한다 (2000건 시절 ~400KB로 한도 임박했었음)
@@ -7047,10 +7085,9 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
 
     buyer[currency] = Number(buyer[currency] || 0) - totalPrice;
 
-    const fee = Math.floor(totalPrice * AUCTION_FEE_RATE);
-    const payout = totalPrice - fee;
-
     const seller = await rpgenius.getRPGUserByName(entry.sellerName);
+    const fee = Math.floor(totalPrice * getAuctionFeeRate(seller));
+    const payout = totalPrice - fee;
     if (seller) {
         seller[currency] = Number(seller[currency] || 0) + payout;
         await seller.save();
@@ -7478,7 +7515,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
     }
 
     const totalPrice = unitPrice * sellCount;
-    const fee = Math.floor(totalPrice * AUCTION_FEE_RATE);
+    const fee = Math.floor(totalPrice * getAuctionFeeRate(seller));
     const payout = totalPrice - fee;
     seller[entry.currency] = Number(seller[entry.currency] || 0) + payout;
 
@@ -7550,7 +7587,7 @@ function buildBuyOrderLookups() {
 }
 
 function buildFulfillableAssets(user, entry) {
-    const result = { cards: [], equipment: [], itemCount: 0, pets: [] };
+    const result = { cards: [], equipment: [], itemCount: 0, pets: [], feeRate: getAuctionFeeRate(user) };
     if (!entry) return result;
     if (entry.kind == 'card') {
         const cards = (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : []);
@@ -7761,6 +7798,7 @@ function buildUserProfile(user) {
         },
         statGroups: buildProfileStatGroups(dispStats, plusStats),
         statPoint: buildWebStatPointInfo(user),
+        blessings: rpgenius.getBlessingStates(user),
         currencyIcons: {
             gold: getItemImageUrl('화폐', '골드.png'),
             garnet: getItemImageUrl('화폐', '가넷.png'),
@@ -7943,12 +7981,111 @@ function renderUserDashboard(sess, opts) {
           <button class="pf-tab" data-pftab="stats" type="button">스탯</button>
           <button class="pf-tab" data-pftab="statpoint" type="button">스탯포인트</button>
           <button class="pf-tab" data-pftab="goods" type="button">재화</button>
+          <button class="pf-tab" data-pftab="blessings" type="button">축복</button>
         </div>
         <div class="pf-panel active" data-pfpanel="gear"><div id="equippedGear" class="gear-slots"></div></div>
         <div class="pf-panel" data-pfpanel="cards"><div id="slotCards" class="cards"></div></div>
         <div class="pf-panel" data-pfpanel="stats"><div class="pf-panel-head"><h2>스탯</h2><label class="stat-filter"><input type="checkbox" id="statHideZero"><span>비보유 숨기기</span></label></div><div id="stats" class="stat-body"></div></div>
         <div class="pf-panel" data-pfpanel="statpoint"><div id="statPointBody"></div></div>
         <div class="pf-panel" data-pfpanel="goods"><div id="goods"></div></div>
+        <div class="pf-panel blessing-panel" data-pfpanel="blessings">
+          <div class="blessing-list" aria-label="축복 상품">
+            <article class="blessing-card blessing-card-yusaeng" data-blessing-key="yusaeng">
+              <div class="blessing-visual">
+                <img src="/static/assets/blessing-yusaeng.webp?v=3" alt="유생의 축복 일러스트" loading="lazy">
+              </div>
+              <div class="blessing-content">
+                <div class="blessing-heading">
+                  <h2>유생의 축복</h2>
+                  <div class="blessing-price"><img src="${SHOP_CURR_IMG.point}" alt="포인트"><strong>1,500</strong></div>
+                </div>
+                <section class="blessing-reward-section" aria-label="출석체크 보상">
+                  <div class="blessing-section-label">출석체크 보상</div>
+                  <div class="blessing-rewards">
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('티켓', '헬 초대장.png')}" alt="헬 초대장"></div>
+                      <span>헬 초대장</span><b>x30</b>
+                    </div>
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('티켓', '쥬얼.png')}" alt="쥬얼"></div>
+                      <span>쥬얼</span><b>x5</b>
+                    </div>
+                    <div class="blessing-reward blessing-reward-currency">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-icon" src="${SHOP_CURR_IMG.garnet}" alt="가넷"></div>
+                      <span>가넷</span><b>x50</b>
+                    </div>
+                  </div>
+                </section>
+                <ul class="blessing-perks">
+                  <li><strong>강화비용 5% 할인</strong><small>재료 및 골드</small></li>
+                </ul>
+                <div class="blessing-purchase"><strong class="blessing-remaining">미적용</strong><button class="blessing-buy-btn" data-blessing-buy="yusaeng" type="button">구매</button></div>
+              </div>
+            </article>
+            <article class="blessing-card blessing-card-divine" data-blessing-key="divine">
+              <div class="blessing-visual">
+                <img src="/static/assets/blessing-yusaeng-divine.webp?v=3" alt="신성한 유생의 축복 일러스트" loading="lazy">
+              </div>
+              <div class="blessing-content">
+                <div class="blessing-heading">
+                  <h2>신성한 유생의 축복</h2>
+                  <div class="blessing-price"><img src="${SHOP_CURR_IMG.point}" alt="포인트"><strong>2,500</strong></div>
+                </div>
+                <section class="blessing-reward-section" aria-label="출석체크 보상">
+                  <div class="blessing-section-label">출석체크 보상</div>
+                  <div class="blessing-rewards">
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('재료', '지니어스의 열쇠.png')}" alt="지니어스의 열쇠"></div>
+                      <span>지니어스의 열쇠</span><b>x3</b>
+                    </div>
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('티켓', '헬 초대장.png')}" alt="헬 초대장"></div>
+                      <span>헬 초대장</span><b>x30</b>
+                    </div>
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('티켓', '화이트 쥬얼.png')}" alt="화이트 쥬얼"></div>
+                      <span>화이트 쥬얼</span><b>x5</b>
+                    </div>
+                    <div class="blessing-reward blessing-reward-currency">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-icon" src="${SHOP_CURR_IMG.garnet}" alt="가넷"></div>
+                      <span>가넷</span><b>x50</b>
+                    </div>
+                    <div class="blessing-reward">
+                      <div class="blessing-reward-thumb"><img class="blessing-reward-frame" src="${getAuctionFrameUrl('item')}" alt=""><img class="blessing-reward-icon" src="${getItemImageUrl('재료', '상급 강화석.png')}" alt="상급 강화석"></div>
+                      <span>상급 강화석</span><b>x10</b>
+                    </div>
+                  </div>
+                </section>
+                <ul class="blessing-perks">
+                  <li><strong>경매장·메일 수수료 3% 면제</strong></li>
+                  <li><strong>강화비용 10% 할인</strong><small>재료 및 골드</small></li>
+                  <li><strong>PVP 추가비용 무료</strong></li>
+                </ul>
+                <div class="blessing-purchase"><strong class="blessing-remaining">미적용</strong><button class="blessing-buy-btn" data-blessing-buy="divine" type="button">구매</button></div>
+              </div>
+            </article>
+            <article class="blessing-card blessing-card-rukim" data-blessing-key="rukim">
+              <div class="blessing-visual">
+                <img src="/static/assets/blessing-rukim.webp" alt="루킴의 축복 일러스트" loading="lazy">
+              </div>
+              <div class="blessing-content">
+                <div class="blessing-heading">
+                  <h2>루킴의 축복</h2>
+                  <div class="blessing-price"><img src="${SHOP_CURR_IMG.point}" alt="포인트"><strong>990</strong></div>
+                </div>
+                <div class="blessing-stat-grid">
+                  <div class="blessing-stat"><span>아이템 획득 확률</span><b>+10%</b></div>
+                  <div class="blessing-stat"><span>경험치 획득량</span><b>+10%</b></div>
+                  <div class="blessing-stat"><span>골드 획득량</span><b>+10%</b></div>
+                  <div class="blessing-stat"><span>보스 추가 피해</span><b>+5%</b></div>
+                  <div class="blessing-stat"><span>최대 체력</span><b>+1,000</b></div>
+                  <div class="blessing-stat"><span>최대 MP</span><b>+200</b></div>
+                </div>
+                <div class="blessing-purchase"><strong class="blessing-remaining">미적용</strong><button class="blessing-buy-btn" data-blessing-buy="rukim" type="button">구매</button></div>
+              </div>
+            </article>
+          </div>
+        </div>
       </div>
     </div>
   </div>
