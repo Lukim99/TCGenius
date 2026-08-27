@@ -1008,7 +1008,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         if (extra.buildNmmStack) attacker.runtime.nmmStacks = Math.min(9, Number(attacker.runtime.nmmStacks || 0) + units);
         if (Number(aStats.manaBurnAttackRecovery || 0) > 0) {
             attacker.mp = Math.min(attacker.maxMp, attacker.mp + Math.max(1, Math.round(attacker.maxMp * Number(aStats.manaBurnAttackRecovery))) * units);
-                if (equipmentSetCount(actor, '마나번') >= 2) markTriggeredEffect(extra, 'set', '마나번');
+                if (equipmentSetCount(attacker, '마나번') >= 2) markTriggeredEffect(extra, 'set', '마나번');
             markTriggeredEffect(extra, 'combat', 'MP 회복');
         }
     }
