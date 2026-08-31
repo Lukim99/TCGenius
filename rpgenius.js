@@ -11873,7 +11873,7 @@ async function putNewItem(table, item) {
 // save()는 인스턴스의 변경분(__loaded 대비)을 캐시 raw에 즉시 반영하고,
 // DB 쓰기는 기본 즉시 flush / 핫패스(save({defer:true}))만 지연-합산(디바운스)한다.
 // flush는 raw와 dbSnap(DB 반영분 스냅샷)의 diff만 SET/REMOVE로 기록한다.
-const USER_FLUSH_DELAY_MS = 10 * 1000;
+const USER_FLUSH_DELAY_MS = 60 * 1000; // 지연 저장 합산 창 — 틱(2~5s)·낚시(30~60s)가 1회 쓰기로 묶인다. 크래시 시 최대 이만큼의 사냥 진행분 유실(정상 종료는 SIGTERM flush가 커버)
 const USER_FLUSH_SWEEP_MS = 30 * 1000;
 const USER_CACHE_MISS_RELOAD_INTERVAL_MS = 60 * 1000;
 const userCacheById = new Map(); // id -> { raw, dbSnap, dirty, timer, flushChain }
