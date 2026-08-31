@@ -78,7 +78,6 @@ const BANNER_TARGET_TABS = [
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
     { value: '캡슐', label: '이벤트 · 100일 캡슐' },
-    { value: '버닝', label: '이벤트 · 버닝' },
     { value: '자물쇠', label: '이벤트 · 자물쇠' },
     { value: 'shop', label: '거래 · 상점' },
     { value: 'auction', label: '거래 · 팝니다' },
@@ -182,22 +181,6 @@ const LEVEL_REWARDS = [
     { level: 280, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
     { level: 290, items: [['황금 주머니', 25], ['고급 장비 보호권', 1]], garnet: 2000 },
     { level: 300, items: [['황금 주머니', 30], ['오메가 카드팩', 1], ['오메가 캐릭터 변환석', 3], ['축복받은 장비 보호권', 1]] },
-];
-// 버닝: 레벨 보상처럼 10레벨 단위(1~100) 보상. 일반(normal)과 메가(mega) 트랙. 메가는 500포인트로 해금.
-const BURNING_MEGA_COST = 500;
-const BURNING_REWARDS = [
-    { level: 1,   normal: [['1000경험치비약', 1], ['5성 카드팩', 1]],        mega: [['1000경험치비약', 1], ['5성 전직 카드팩', 1]] },
-    { level: 10,  normal: [['7500경험치비약', 1], ['6성 카드팩', 1]],        mega: [['7500경험치비약', 1], ['6성 전직 카드팩', 1]] },
-    { level: 20,  normal: [['20000경험치비약', 1], ['황금 주머니', 10]],     mega: [['20000경험치비약', 1], ['황금 주머니', 30]] },
-    { level: 30,  normal: [['100000경험치비약', 1], ['7성 카드팩', 1]],      mega: [['100000경험치비약', 1], ['7성 전직 카드팩', 1]] },
-    { level: 40,  normal: [['300000경험치비약', 1], ['유니크 장비 상자', 1]], mega: [['300000경험치비약', 1], ['유니크 장비 상자', 1]] },
-    { level: 50,  normal: [['600000경험치비약', 1], ['8성 카드팩', 1]],      mega: [['600000경험치비약', 1], ['8성 보호 카드', 1]] },
-    { level: 60,  normal: [['1000000경험치비약', 1], ['유니크 장비 상자', 1]], mega: [['1000000경험치비약', 1], ['유니크 장비 상자', 1]] },
-    { level: 70,  normal: [['2000000경험치비약', 1], ['장비 보호권', 1]],     mega: [['2000000경험치비약', 1], ['고급 장비 보호권', 1]] },
-    { level: 80,  normal: [['4000000경험치비약', 1], ['패션 상자', 1]],       mega: [['4000000경험치비약', 1], ['패션 적용권', 1]] },
-    { level: 90,  normal: [['8000000경험치비약', 1], ['캐릭터 변환석', 5]],    mega: [['8000000경험치비약', 1], ['전직 캐릭터 변환석', 5]] },
-    { level: 100, normal: [['9성 카드팩', 1], ['유니크 잠재능력 주문서', 1]], normalTitle: 'burning',
-                  mega:   [['9성 보호 카드', 1], ['레전더리 잠재능력 주문서', 1]], megaTitle: 'megaBurning' },
 ];
 server.get('/static/admin.js', (req, res) => {
     const sess = getSession(req);
@@ -1864,26 +1847,6 @@ server.post('/api/quests/claim', requireUser, async (req, res) => {
     }
 });
 
-// ===== 버닝 =====
-function resolveBurningItems(itemList) {
-    const items = rpgenius.getDataCache('Item', []);
-    return (itemList || []).map(([name, count]) => {
-        const itemData = items.find(it => it && it.name === name);
-        const assets = itemData ? getItemDisplayAssets(itemData) : { iconUrl: null, frameUrl: null };
-        return { name, count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
-    });
-}
-function buildBurningTrack(reward, track, claimedSet) {
-    const titleId = track === 'mega' ? reward.megaTitle : reward.normalTitle;
-    const titleDef = titleId ? rpgenius.getTitleById(titleId) : null;
-    return {
-        claimed: claimedSet.has(reward.level),
-        items: resolveBurningItems(track === 'mega' ? reward.mega : reward.normal),
-        title: titleDef ? titleDef.name : null,
-        titleImageUrl: titleDef ? rpgenius.getTitleImageUrl(titleDef.name) : null
-    };
-}
-
 // ===== [H]필드 =====
 const H_FIELD_NAME = '부타게임[H]';
 const H_FIELD_RECOVERY_TYPES = new Set(['체력회복', '마나회복', '체력회복%', '마나회복%']);
@@ -2767,73 +2730,6 @@ server.post('/api/pvp/battle/close', requireUser, (req, res) => runPvpMutation(r
     await user.save();
     return result;
 }));
-
-// ===== 버닝 =====
-server.get('/api/burning', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const userLevel = Number(user.level || 1);
-        const claimedNormal = new Set(Array.isArray(user.claimedBurning) ? user.claimedBurning : []);
-        const claimedMega = new Set(Array.isArray(user.claimedMegaBurning) ? user.claimedMegaBurning : []);
-        const list = BURNING_REWARDS.map(r => ({
-            level: r.level,
-            unlocked: userLevel >= r.level,
-            normal: buildBurningTrack(r, 'normal', claimedNormal),
-            mega: buildBurningTrack(r, 'mega', claimedMega)
-        }));
-        res.json({ list, userLevel, megaUnlocked: !!user.megaBurningUnlocked, megaCost: BURNING_MEGA_COST, point: Number(user.point || 0), pointIconUrl: getItemImageUrl('화폐', '포인트.png') });
-    } catch (e) {
-        console.error('burning status error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
-server.post('/api/burning/unlock-mega', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        if (user.megaBurningUnlocked) return res.status(400).json({ error: '이미 메가 버닝이 해금되었습니다.' });
-        if (Number(user.point || 0) < BURNING_MEGA_COST) return res.status(400).json({ error: '포인트가 부족합니다. (' + BURNING_MEGA_COST + 'P 필요)' });
-        user.point = Number(user.point || 0) - BURNING_MEGA_COST;
-        rpgenius.addPointSpendMileage(user, BURNING_MEGA_COST);
-        user.megaBurningUnlocked = true;
-        await user.save();
-        res.json({ ok: true, profile: buildUserProfile(user) });
-    } catch (e) {
-        console.error('burning unlock-mega error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
-
-server.post('/api/burning/claim', requireUser, async (req, res) => {
-    try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const track = req.body && req.body.track === 'mega' ? 'mega' : 'normal';
-        const level = Number(req.body && req.body.level);
-        const reward = BURNING_REWARDS.find(r => r.level === level);
-        if (!reward) return res.status(400).json({ error: '존재하지 않는 보상입니다.' });
-        if (Number(user.level || 1) < level) return res.status(400).json({ error: '레벨이 부족합니다.' });
-        if (track === 'mega' && !user.megaBurningUnlocked) return res.status(400).json({ error: '메가 버닝이 해금되지 않았습니다.' });
-        const claimedKey = track === 'mega' ? 'claimedMegaBurning' : 'claimedBurning';
-        if (!Array.isArray(user[claimedKey])) user[claimedKey] = [];
-        if (user[claimedKey].includes(level)) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
-        const allItems = rpgenius.getDataCache('Item', []);
-        for (const [name, count] of (track === 'mega' ? reward.mega : reward.normal)) {
-            const itemId = allItems.findIndex(it => it && it.name === name);
-            if (itemId !== -1) rpgenius.addInventoryItem(user, itemId, count);
-        }
-        const titleId = track === 'mega' ? reward.megaTitle : reward.normalTitle;
-        if (titleId) rpgenius.unlockTitle(user, titleId);
-        user[claimedKey].push(level);
-        await user.save();
-        res.json({ ok: true, profile: buildUserProfile(user) });
-    } catch (e) {
-        console.error('burning claim error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-});
 
 // ===== 포인트 충전 =====
 const POINT_CHARGE_MIN = 50;
@@ -8185,9 +8081,6 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="pvp">
     <section class="panel"><div id="pvpRoot"></div></section>
-  </div>
-  <div class="page" data-page="버닝">
-    <section class="panel"><div id="burningRoot"></div></section>
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>

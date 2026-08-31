@@ -9,7 +9,7 @@ const app = read(path.join('public', 'app.js'));
 const field = read(path.join('public', 'hfield.js'));
 const css = read(path.join('public', 'hfield.css'));
 
-assert.ok(app.indexOf("'[H]필드'") < app.indexOf("'버닝'"), '[H]필드 콘텐츠 탭은 버닝 앞에 있어야 합니다.');
+assert.ok(app.includes("'[H]필드': '[H]필드'"), '[H]필드 콘텐츠 탭이 필요합니다.');
 assert.ok(server.includes("server.get('/hfield'"), '[H]필드는 독립 화면으로 제공되어야 합니다.');
 assert.ok(server.includes('function renderHFieldApp'), '[H]필드 전용 화면이 필요합니다.');
 assert.ok(app.includes("if (pageId === '[H]필드') { location.href = '/hfield'; return; }"), '대시보드 탭에서 독립 화면으로 이동해야 합니다.');
