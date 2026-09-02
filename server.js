@@ -6,6 +6,7 @@ const rpgenius = require('./rpgenius.js');
 const combatEffects = require('./public/combat-effects.js');
 const partyquest = require('./partyquest.js');
 const pvp = require('./pvp.js');
+const cardComposite = require('./card_composite.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -2979,6 +2980,75 @@ server.post('/api/cards/slot/remove', requireUser, async (req, res) => {
     }
 });
 
+// ===== 아바타 (카드 클릭 → 해금 아바타 장착/해제) =====
+
+// source: 'main' | 'slot'(number=슬롯 1-base) | 'inv'(number=인벤토리 1-base)
+function resolveUserCardRef(user, source, number) {
+    if (source == 'main') {
+        return user.main_card && typeof user.main_card.id != 'undefined' ? user.main_card : null;
+    }
+    const idx = Number(number);
+    if (!Number.isInteger(idx) || idx < 1) return null;
+    let card = null;
+    if (source == 'slot') card = Array.isArray(user.card_slot) ? user.card_slot[idx - 1] : null;
+    else if (source == 'inv') card = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card[idx - 1] : null;
+    return card && typeof card.id != 'undefined' ? card : null;
+}
+
+function buildAvatarStatLines(fashion) {
+    const lines = [];
+    const option = fashion && fashion.option || {};
+    Object.keys(option.stat || {}).forEach(key => {
+        lines.push((PROFILE_STAT_LABELS[key] || key) + ' +' + comma(Number(option.stat[key] || 0)));
+    });
+    Object.keys(option.plusStat || {}).forEach(key => {
+        lines.push((PROFILE_STAT_LABELS[key] || key) + ' +' + (Math.round(Number(option.plusStat[key] || 0) * 1000) / 10) + '%');
+    });
+    return lines;
+}
+
+server.get('/api/cards/avatars', requireUser, async (req, res) => {
+    try {
+        const source = String(req.query.source || '');
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const card = resolveUserCardRef(user, source, req.query.number);
+        if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
+        const avatars = rpgenius.getAvatarOptionsForCard(user, card).map(option => ({
+            name: option.name,
+            grade: option.grade,
+            unlocked: option.unlocked,
+            equipped: option.equipped,
+            requireStar: option.requireStar,
+            requireStarText: (option.requireStar + 1) + '성',
+            starOk: option.starOk,
+            statLines: buildAvatarStatLines(option.fashion),
+            imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user)
+        }));
+        res.json({ avatars, current: typeof card.skin == 'string' ? card.skin : '' });
+    } catch (e) {
+        console.error('card avatars error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/cards/avatar', requireUser, async (req, res) => {
+    try {
+        const source = String((req.body && req.body.source) || '');
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const card = resolveUserCardRef(user, source, req.body && req.body.number);
+        if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
+        const error = rpgenius.equipAvatarOnCard(user, card, (req.body && req.body.name) || '');
+        if (error) return res.status(400).json({ error });
+        await user.save();
+        res.json({ ok: true, profile: buildUserProfile(user) });
+    } catch (e) {
+        console.error('card avatar equip error:', e);
+        res.status(500).json({ error: '서버 오류' });
+    }
+});
+
 // ===== 장착 프리셋 =====
 // 슬롯 1은 기본 제공. 2·3번 100가넷, 4번 300포인트, 5번 500포인트로 순차 해금.
 const PRESET_UNLOCK_COSTS = [
@@ -3817,14 +3887,7 @@ server.get('/api/buyorder', requireUser, async (req, res) => {
 
 server.get('/api/buyorder/lookups', requireUser, (req, res) => {
     try {
-        const lookups = buildBuyOrderLookups();
-        const fashion = rpgenius.getDataCache('Fashion', []);
-        lookups.fashion = (fashion || []).map(skin => skin ? {
-            name: skin.name,
-            primary_card: Array.isArray(skin.primary_card) ? skin.primary_card : [],
-            requireStar: Number(skin.requireStar || 0)
-        } : null).filter(Boolean);
-        res.json(lookups);
+        res.json(buildBuyOrderLookups());
     } catch (e) {
         console.error('buyorder lookups error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -4027,8 +4090,28 @@ server.get('/api/party/stream', requirePartyQuest, (req, res) => {
 
 server.get('/card-image', requireUser, (req, res) => {
     const name = String(req.query.name || '');
+    if (!name || name.includes('..') || path.basename(name) != name) return res.status(400).end();
+    if (typeof req.query.cover != 'undefined') {
+        const coverPath = cardComposite.getCoverPath(name, String(req.query.cover));
+        if (!coverPath) return res.status(404).end();
+        return res.sendFile(coverPath);
+    }
+    if (typeof req.query.star != 'undefined') {
+        const buffer = cardComposite.composeCardImage({
+            name,
+            star: Number(req.query.star),
+            type: String(req.query.type || '일반'),
+            skin: String(req.query.skin || ''),
+            prestige: req.query.prestige == '1'
+        });
+        if (!buffer) return res.status(404).end();
+        res.set('Content-Type', 'image/png');
+        res.set('Cache-Control', 'private, max-age=86400');
+        return res.send(buffer);
+    }
+    // 구형 URL 호환 (PVP 스냅샷 등에 저장된 name+file 링크)
     const file = String(req.query.file || '');
-    if (!name || !file || name.includes('..') || file.includes('..') || path.basename(name) != name || path.basename(file) != file) return res.status(400).end();
+    if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
     const filePath = path.join(CARD_IMAGE_PATH, name, file);
     if (!filePath.startsWith(path.join(CARD_IMAGE_PATH, name)) || !fs.existsSync(filePath)) return res.status(404).end();
     res.sendFile(filePath);
@@ -4113,7 +4196,7 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
     const kind = String((req.body && req.body.kind) || '').trim();
     const amount = Number((req.body && req.body.amount) || 0);
     if (!name) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
-    if (kind != 'equipment' && (!Number.isInteger(amount) || amount == 0)) return res.status(400).json({ error: '수량은 0이 아닌 정수여야 합니다.' });
+    if (kind != 'equipment' && kind != 'avatar' && (!Number.isInteger(amount) || amount == 0)) return res.status(400).json({ error: '수량은 0이 아닌 정수여야 합니다.' });
 
     try {
         const user = await rpgenius.getRPGUserByName(name);
@@ -4131,6 +4214,15 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
             user.inventory.equipment.push({ type: equipType, id: equipId, level });
             await user.save();
             return res.json({ ok: true, name: user.name, kind: 'equipment', equipName: data.name, level });
+        }
+
+        if (kind == 'avatar') {
+            const avatarName = String((req.body && req.body.avatarName) || '').trim();
+            const grade = rpgenius.getAvatarGradeByName(avatarName);
+            if (!grade) return res.status(404).json({ error: '존재하지 않는 아바타입니다.' });
+            if (!rpgenius.unlockAvatar(user, avatarName, 0)) return res.status(400).json({ error: '이미 보유한 아바타입니다.' });
+            await user.save();
+            return res.json({ ok: true, name: user.name, kind: 'avatar', avatarName, grade });
         }
 
         if (GOODS_KEYS.includes(kind)) {
@@ -4850,46 +4942,30 @@ function getCardImageUrl(card, user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
-    const star = String(Number(card.star || 0) + 1).padStart(2, '0');
-    const skin = typeof card.skin == 'string' ? card.skin.trim() : '';
-    const candidates = [];
-    if (card && card.type === '전직') {
-        const prestige = user && user.jobPrestige === true;
-        if (skin) {
-            if (prestige) candidates.push(star + ' 프레스티지 전직 ' + skin + ' ' + data.name + '.png');
-            candidates.push(star + ' 전직 ' + skin + ' ' + data.name + '.png');
-            candidates.push(star + ' 전직 ' + data.name + '.png');
-        } else {
-            if (prestige) candidates.push(star + ' 프레스티지 전직 ' + data.name + '.png');
-            candidates.push(star + ' 전직 ' + data.name + '.png');
-        }
-    } else {
-        if (skin) {
-            if (user && user.prestige === true) candidates.push(star + ' 프레스티지 ' + skin + ' ' + data.name + '.png');
-            candidates.push(star + ' ' + skin + ' ' + data.name + '.png');
-            candidates.push(star + ' ' + data.name + '.png');
-        } else {
-            if (user && user.prestige === true) candidates.push(star + ' 프레스티지 ' + data.name + '.png');
-            candidates.push(star + ' ' + data.name + '.png');
-        }
-    }
-    const file = candidates.find(candidate => fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, candidate)));
-    if (!file) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
+    const type = card.type === '전직' ? '전직' : '일반';
+    const prestige = type === '전직' ? (user && user.jobPrestige === true) : (user && user.prestige === true);
+    const spec = {
+        name: data.name,
+        star: Number(card.star || 0),
+        type,
+        skin: typeof card.skin == 'string' ? card.skin.trim() : '',
+        prestige
+    };
+    if (!cardComposite.canCompose(spec)) return null;
+    const params = ['name=' + encodeURIComponent(spec.name), 'star=' + spec.star, 'type=' + encodeURIComponent(spec.type)];
+    if (spec.skin) params.push('skin=' + encodeURIComponent(spec.skin));
+    if (spec.prestige) params.push('prestige=1');
+    return '/card-image?' + params.join('&');
 }
 
 function getCharacterCoverImageUrl(data) {
-    if (!data || !data.name) return null;
-    const file = '캐릭터표지.png';
-    if (!fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, file))) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
+    if (!data || !data.name || !cardComposite.getCoverPath(data.name, '일반')) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent('일반');
 }
 
 function getJobCoverImageUrl(data) {
-    if (!data || !data.name) return null;
-    const file = '전직 캐릭터표지.png';
-    if (!fs.existsSync(path.join(CARD_IMAGE_PATH, data.name, file))) return null;
-    return '/card-image?name=' + encodeURIComponent(data.name) + '&file=' + encodeURIComponent(file);
+    if (!data || !data.name || !cardComposite.getCoverPath(data.name, '전직')) return null;
+    return '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent('전직');
 }
 
 function getItemImageUrl(dir, file) {
@@ -4995,7 +5071,6 @@ function getItemDisplayAssets(item) {
     }
     let frameUrl;
     if (item.type == '미끼') frameUrl = getItemImageUrl('프레임', '미끼.png');
-    else if (item.use == '패션적용' || item.use == '고급패션적용') frameUrl = getItemImageUrl('프레임', '특수.png');
     else frameUrl = getAuctionFrameUrl('item');
     let iconUrl;
     if (/^\d+프로\s\+9\s장비\s강화권$/.test(String(item.name))) {
@@ -5138,7 +5213,7 @@ function serializeCard(card, user) {
 const WEB_ITEM_USE_KEYS = new Set([
     '축복사용권',
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
-    '패션적용', '고급패션적용', '패션제거', '스탯초기화', '장신구선택권',
+    '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
     '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택', '스펙터'
 ]);
@@ -5907,6 +5982,18 @@ function buildBundleContents(data) {
             const title = rpgenius.getTitleById(entry.title_id);
             return { type: '칭호', name: (title ? title.name : '알 수 없는') + ' 칭호', count: '1', iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, frameUrl: null, label: title ? null : '🏅' };
         }
+        if (entry.type === '아바타') {
+            const avatarName = String(entry.fashion || '').trim();
+            const assets = getAvatarDisplayAssets(avatarName);
+            return {
+                type: '아바타',
+                name: avatarName + ' 아바타' + (assets.grade !== '일반' ? ' [' + assets.grade + ']' : ''),
+                count: '1',
+                iconUrl: assets.iconUrl || assets.imageUrl,
+                frameUrl: assets.iconUrl ? assets.frameUrl : null,
+                label: (assets.iconUrl || assets.imageUrl) ? null : '🧥'
+            };
+        }
         const eqSlotMap = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
         if (eqSlotMap[entry.type]) {
             const [slot, idKey] = eqSlotMap[entry.type];
@@ -5970,6 +6057,18 @@ function buildDetailRewardDisplay(entry) {
     if (entry.type === '칭호') {
         const title = rpgenius.getTitleById(entry.title_id);
         return { type: '칭호', name: (title ? title.name : '알 수 없는') + ' 칭호', count: '1', iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, label: '칭호' };
+    }
+    if (entry.type === '아바타') {
+        const avatarName = String(entry.fashion || '').trim();
+        const assets = getAvatarDisplayAssets(avatarName);
+        return {
+            type: '아바타',
+            name: avatarName + ' 아바타' + (assets.grade !== '일반' ? ' [' + assets.grade + ']' : ''),
+            count: '1',
+            iconUrl: assets.iconUrl || assets.imageUrl,
+            frameUrl: assets.iconUrl ? assets.frameUrl : null,
+            label: '아바타'
+        };
     }
     const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
     if (equipmentTypes[entry.type]) {
@@ -6153,9 +6252,6 @@ function buildItemUsageFacts(item) {
         '만능캐릭터변환': ['적용 대상', '등급과 전직 여부에 관계없이 캐릭터 카드를 무작위 변환'],
         '전직캐릭터변환': ['적용 대상', '전직 캐릭터 카드를 다른 전직 캐릭터로 무작위 변환'],
         '전직프레스티지': ['사용 효과', '제타 이상 전직 카드에 프레스티지 표시 및 영구 효과 적용'],
-        '패션적용': ['적용 대상', '캐릭터 카드에 패션 적용'],
-        '고급패션적용': ['적용 대상', '고급 패션 적용이 가능한 캐릭터 카드'],
-        '패션제거': ['적용 대상', '패션이 적용된 캐릭터 카드에서 패션 제거'],
         '스탯초기화': ['사용 효과', '투자한 스탯포인트를 모두 회수'],
         '장신구선택권': ['사용 효과', (item.rarity || '지정 등급') + ' 장신구 중 하나를 선택해 획득'],
         '보조장비리롤': ['적용 대상', '보유한 보조 장비의 스탯을 재설정'],
@@ -6272,7 +6368,7 @@ function decorateWebItemUsePending(pending, user) {
     return Object.assign({}, pending, {
         options: (pending.options || []).map(option => {
             const decorated = Object.assign({}, option);
-            if ((option.kind === 'card' || option.kind === 'fashion') && option.card) {
+            if (option.kind === 'card' && option.card) {
                 decorated.iconUrl = getCardImageUrl(option.card, user);
             } else if (option.kind === 'equipment') {
                 const data = equipment[option.equipmentType] && equipment[option.equipmentType][option.equipmentId];
@@ -6378,6 +6474,16 @@ function buildShopItemDisplay(shopItem) {
         const bundleContents = data.type === '번들' ? buildBundleContents(data) : null;
         return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents };
     }
+    if (shopItem.type === '아바타') {
+        const avatarName = String(shopItem.fashion || '').trim();
+        const assets = getAvatarDisplayAssets(avatarName);
+        return {
+            name: avatarName + ' 아바타' + (assets.grade !== '일반' ? ' [' + assets.grade + ']' : ''),
+            iconUrl: assets.iconUrl || assets.imageUrl,
+            frameUrl: assets.iconUrl ? assets.frameUrl : null,
+            isAvatar: true
+        };
+    }
     if (shopItem.type === '가넷') {
         return { name: '가넷 ' + shopItem.count + '개', iconUrl: SHOP_CURR_IMG.garnet, frameUrl: null, isCurrency: true };
     }
@@ -6397,7 +6503,7 @@ function buildShopPriceDisplay(price) {
     return { goods: price.goods, amount: price.amount, imgUrl: SHOP_CURR_IMG[price.goods] || null };
 }
 
-const SHOP_TAB_ORDER = ['일반', '가넷', '포인트', '마일리지', '패키지', '출석', '초월'];
+const SHOP_TAB_ORDER = ['일반', '가넷', '포인트', '아바타', '마일리지', '패키지', '출석', '초월'];
 function buildShopData(user) {
     const shopRaw = rpgenius.getDataCache('Shop', {}) || {};
     const allKeys = Object.keys(shopRaw);
@@ -6419,6 +6525,7 @@ function buildShopData(user) {
                 || (typeof limits.monthly == 'number' && remaining.monthly <= 0);
             const priceItemCount = item.price.goods === 'item'
                 ? rpgenius.getInventoryItemCount(user, item.price.item_id) : null;
+            const owned = item.type === '아바타' && rpgenius.hasAvatar(user, item.fashion);
             return {
                 index: idx,
                 type: item.type,
@@ -6426,7 +6533,8 @@ function buildShopData(user) {
                 display: buildShopItemDisplay(item),
                 price: buildShopPriceDisplay(item.price),
                 priceItemCount,
-                soldOut,
+                soldOut: soldOut || owned,
+                owned,
                 limitInfo: hasLimits ? { limits, rec, globalCount, remaining } : null,
             };
         });
@@ -6547,6 +6655,14 @@ function buildTradeLogPayload(entry) {
             payload: Object.assign({}, entry.payload || {})
         };
     }
+    if (entry.kind == 'avatar') {
+        return {
+            kindLabel: '아바타',
+            name: (entry.payload && entry.payload.name) || '알 수 없는 아바타',
+            rarity: (entry.payload && entry.payload.grade) || rpgenius.getAvatarGradeByName(entry.payload && entry.payload.name),
+            payload: Object.assign({}, entry.payload || {})
+        };
+    }
     return { kindLabel: entry.kind || '?', name: '알 수 없음', payload: entry.payload || {} };
 }
 
@@ -6627,7 +6743,48 @@ function getCurrencyLabel(currency) {
     return currency == 'gold' ? '🪙 골드' : '💠 가넷';
 }
 
+// 아바타 미리보기: 대표 캐릭터(primary_card[0])에 스킨을 입힌 카드 이미지
+function getAvatarPreviewImageUrl(name) {
+    const key = String(name || '').trim();
+    if (!key) return null;
+    const fashions = rpgenius.getFashionData().filter(fashion => fashion && fashion.name == key && Array.isArray(fashion.primary_card) && fashion.primary_card.length > 0);
+    if (fashions.length == 0) return null;
+    const fashion = fashions.find(entry => entry.type !== '전직') || fashions[0];
+    const isJob = fashion.type === '전직';
+    return getCardImageUrl({ id: Number(fashion.primary_card[0]), star: Number(fashion.requireStar || 0), type: isJob ? '전직' : '일반', skin: key }, { prestige: false, jobPrestige: false });
+}
+
+// 아바타 표시 에셋: itemImage/아바타/<이름> 아바타.png + 등급별 장비 프레임 (일반=일반, 프레스티지=레전더리, 한정=초월).
+// 프레스티지('고급 X')는 원본 이름의 아이콘을 공유한다. 아이콘이 없으면 카드 합성 미리보기(imageUrl)로 폴백.
+function getAvatarDisplayAssets(name) {
+    const key = String(name || '').trim();
+    const grade = rpgenius.getAvatarGradeByName(key) || '일반';
+    const frameRarity = grade == '한정' ? '초월' : (grade == '프레스티지' ? '레전더리' : '일반');
+    const frameUrl = getAuctionFrameUrl('equipment', frameRarity);
+    let iconUrl = getItemImageUrl('아바타', key + ' 아바타.png');
+    if (!iconUrl && key.startsWith('고급 ')) iconUrl = getItemImageUrl('아바타', key.slice(3) + ' 아바타.png');
+    return { iconUrl, frameUrl, imageUrl: iconUrl ? null : getAvatarPreviewImageUrl(key), grade };
+}
+
+function buildAvatarAuctionStatLines(payload) {
+    const key = String(payload && payload.name || '').trim();
+    const fashion = rpgenius.getFashionData().find(entry => entry && entry.name == key);
+    const lines = fashion ? buildAvatarStatLines(fashion) : [];
+    if (lines.length > 0) lines.push('메인카드 장착 시 스탯 적용');
+    const grade = payload && payload.grade || rpgenius.getAvatarGradeByName(key);
+    if (grade == '한정') lines.push('한정판: 구매 후에는 다시 거래할 수 없습니다.');
+    return lines;
+}
+
 function describeAuctionPayload(entry) {
+    if (entry.kind == 'avatar') {
+        const grade = (entry.payload && entry.payload.grade) || rpgenius.getAvatarGradeByName(entry.payload && entry.payload.name) || '일반';
+        return {
+            name: (entry.payload && entry.payload.name) || '알 수 없는 아바타',
+            sub: '아바타 · ' + grade,
+            rarity: grade
+        };
+    }
     if (entry.kind == 'card') {
         const characterCards = readJson(CHARACTER_CARDS_PATH, []);
         const data = characterCards[entry.payload && entry.payload.id];
@@ -6771,6 +6928,12 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getPetIconUrl(data);
         if (data) statLines = buildPetTradeDisplay(data, entry.payload || {});
+    } else if (entry.kind == 'avatar') {
+        const assets = getAvatarDisplayAssets(entry.payload && entry.payload.name);
+        iconUrl = assets.iconUrl;
+        frameUrl = assets.frameUrl;
+        imageUrl = assets.imageUrl;
+        statLines = buildAvatarAuctionStatLines(entry.payload);
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
@@ -6865,7 +7028,14 @@ function buildSellableAssets(user) {
             };
         })
         .filter(Boolean);
-    return { cards, equipment, items, pets };
+    const avatars = rpgenius.getUserAvatars(user)
+        .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name))
+        .map(entry => Object.assign({
+            name: entry.name,
+            grade: rpgenius.getAvatarGradeByName(entry.name),
+            trades: Number(entry.trades || 0)
+        }, getAvatarDisplayAssets(entry.name)));
+    return { cards, equipment, items, pets, avatars };
 }
 
 function countUserAuctions(items, name) {
@@ -6876,7 +7046,7 @@ async function registerAuction(sellerName, body) {
     const kind = String(body.kind || '');
     const currency = String(body.currency || '');
     const price = Math.floor(Number(body.price || 0));
-    if (!['card', 'equipment', 'item', 'pet'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (!['card', 'equipment', 'item', 'pet', 'avatar'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
     if (!['gold', 'garnet'].includes(currency)) return { error: '가격 화폐는 골드 또는 가넷이어야 합니다.' };
     if (!Number.isInteger(price) || price < 1 || price > AUCTION_MAX_PRICE) return { error: '가격은 1 이상의 정수여야 합니다.' };
 
@@ -6893,7 +7063,8 @@ async function registerAuction(sellerName, body) {
         const cards = (user.inventory && user.inventory.card) || [];
         if (!cards[index]) return { error: '존재하지 않는 카드입니다.' };
         const card = cards[index];
-        payload = { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: card.skin || '' };
+        // 아바타(스킨)는 계정 해금 자산이라 카드에 실려 이동하지 않는다
+        payload = { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: '' };
         cards.splice(index, 1);
     } else if (kind == 'equipment') {
         const index = Number(body.index);
@@ -6931,6 +7102,14 @@ async function registerAuction(sellerName, body) {
         payload = rpgenius.clonePetInstance(pet);
         delete payload.shortcuts;
         pets.splice(index, 1);
+    } else if (kind == 'avatar') {
+        const avatarName = String(body.name || '').trim();
+        if (!avatarName) return { error: '아바타를 선택해주세요.' };
+        const blockReason = rpgenius.getAvatarTradeBlockReason(user, avatarName);
+        if (blockReason) return { error: blockReason };
+        const removed = rpgenius.removeUserAvatar(user, avatarName);
+        if (!removed) return { error: '보유하지 않은 아바타입니다.' };
+        payload = { name: avatarName, trades: Number(removed.trades || 0), grade: rpgenius.getAvatarGradeByName(avatarName) };
     }
 
     const entry = {
@@ -7013,7 +7192,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
             id: Number(entry.payload.id),
             star: Number(entry.payload.star || 0),
             type: entry.payload.type || '일반',
-            skin: entry.payload.skin || ''
+            skin: ''
         });
         if (ticketCost > 0 && ticketId != -1) {
             if (!rpgenius.removeInventoryItem(buyer, ticketId, ticketCost)) return { error: '거래권 차감에 실패했습니다.' };
@@ -7026,6 +7205,10 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
     } else if (entry.kind == 'pet') {
         const petEntry = rpgenius.markPetTraded(rpgenius.clonePetInstance(entry.payload));
         buyer.inventory.pet.push(petEntry);
+    } else if (entry.kind == 'avatar') {
+        const avatarName = String(entry.payload && entry.payload.name || '');
+        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '이미 보유한 아바타입니다.' };
+        rpgenius.unlockAvatar(buyer, avatarName, Number(entry.payload.trades || 0) + 1);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -7103,6 +7286,9 @@ async function cancelAuction(userName, auctionId) {
         rpgenius.addInventoryItem(user, Number(entry.payload.id), Number(entry.count || 1));
     } else if (entry.kind == 'pet') {
         user.inventory.pet.push(rpgenius.clonePetInstance(entry.payload));
+    } else if (entry.kind == 'avatar') {
+        // 등록 중 같은 아바타를 다시 얻었을 수도 있으므로 이미 보유 중이면 그대로 둔다
+        rpgenius.unlockAvatar(user, entry.payload && entry.payload.name, Number(entry.payload && entry.payload.trades || 0));
     }
 
     list.splice(index, 1);
@@ -7134,16 +7320,18 @@ function generateBuyOrderId() {
 }
 
 function describeBuyOrderPayload(entry) {
+    if (entry.kind == 'avatar') {
+        const grade = (entry.payload && entry.payload.grade) || rpgenius.getAvatarGradeByName(entry.payload && entry.payload.name) || '일반';
+        return { name: (entry.payload && entry.payload.name) || '알 수 없는 아바타', sub: '아바타 · ' + grade, rarity: grade };
+    }
     if (entry.kind == 'card') {
         const characterCards = readJson(CHARACTER_CARDS_PATH, []);
         const data = characterCards[entry.payload && entry.payload.id];
         const name = data ? data.name : '알 수 없는 카드';
         const star = Number(entry.payload && entry.payload.star || 0);
-        const skin = entry.payload && entry.payload.skin ? String(entry.payload.skin) : '';
         const type = entry.payload && entry.payload.type ? String(entry.payload.type) : '';
         const subParts = [(star + 1) + '성'];
         if (type) subParts.push('타입: ' + type);
-        if (skin) subParts.push('스킨: ' + skin);
         return { name, sub: subParts.join(' · '), star };
     }
     if (entry.kind == 'equipment') {
@@ -7209,6 +7397,12 @@ function serializeBuyOrderEntry(entry, currentUserName) {
         const data = rpgenius.getPetData(entry.payload && entry.payload.id);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getPetIconUrl(data);
+    } else if (entry.kind == 'avatar') {
+        const assets = getAvatarDisplayAssets(entry.payload && entry.payload.name);
+        iconUrl = assets.iconUrl;
+        frameUrl = assets.frameUrl;
+        imageUrl = assets.imageUrl;
+        statLines = buildAvatarAuctionStatLines(entry.payload);
     }
     const count = Number(entry.count || 1);
     const unitPrice = Number(entry.price || 0);
@@ -7251,7 +7445,8 @@ async function registerBuyOrder(buyerName, body) {
     const currency = String(body.currency || '');
     const price = Math.floor(Number(body.price || 0));
     const count = Math.floor(Number(body.count || 1));
-    if (!['card', 'equipment', 'item', 'pet'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (!['card', 'equipment', 'item', 'pet', 'avatar'].includes(kind)) return { error: '알 수 없는 종류입니다.' };
+    if (kind == 'avatar' && count != 1) return { error: '아바타는 1개만 구매 등록할 수 있습니다.' };
     if (!['gold', 'garnet'].includes(currency)) return { error: '가격 화폐는 골드 또는 가넷이어야 합니다.' };
     if (!Number.isInteger(price) || price < 1 || price > AUCTION_MAX_PRICE) return { error: '가격은 1 이상의 정수여야 합니다.' };
     if (!Number.isInteger(count) || count < 1) return { error: '갯수는 1 이상의 정수여야 합니다.' };
@@ -7269,11 +7464,9 @@ async function registerBuyOrder(buyerName, body) {
         const star = Math.floor(Number(body.star));
         if (!Number.isInteger(cardId) || cardId < 0 || !characterCards[cardId]) return { error: '존재하지 않는 캐릭터 카드입니다.' };
         if (!Number.isInteger(star) || star < 0 || star > 11) return { error: '성급이 올바르지 않습니다.' };
-        const skin = body.skin ? String(body.skin).trim() : '';
         const type = body.type ? String(body.type).trim() : '';
         payload = { id: cardId, star };
         if (type) payload.type = type;
-        if (skin) payload.skin = skin;
         ticketCostPer = rpgenius.getCardTicketCost({ star });
     } else if (kind == 'equipment') {
         const equipType = String(body.equipType || '');
@@ -7299,6 +7492,13 @@ async function registerBuyOrder(buyerName, body) {
         const petId = Number(body.petId);
         if (!Number.isInteger(petId) || petId < 0 || !rpgenius.getPetData(petId)) return { error: '존재하지 않는 펫입니다.' };
         payload = { id: petId };
+    } else if (kind == 'avatar') {
+        const avatarName = String(body.name || '').trim();
+        const grade = rpgenius.getAvatarGradeByName(avatarName);
+        if (!grade) return { error: '존재하지 않는 아바타입니다.' };
+        if (grade == '프레스티지') return { error: '프레스티지 아바타는 거래할 수 없습니다.' };
+        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '이미 보유한 아바타입니다.' };
+        payload = { name: avatarName, grade };
     }
 
     const totalPrice = price * count;
@@ -7367,7 +7567,6 @@ function matchBuyOrderCard(entry, card) {
     if (Number(card.id) != Number(entry.payload.id)) return false;
     if (Number(card.star || 0) != Number(entry.payload.star || 0)) return false;
     if (entry.payload.type && String(card.type || '일반') != String(entry.payload.type)) return false;
-    if (entry.payload.skin && String(card.skin || '') != String(entry.payload.skin)) return false;
     return true;
 }
 
@@ -7421,7 +7620,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
             id: Number(transferred.id),
             star: Number(transferred.star || 0),
             type: transferred.type || '일반',
-            skin: transferred.skin || ''
+            skin: ''
         });
     } else if (entry.kind == 'equipment') {
         const index = Number(body.index);
@@ -7457,6 +7656,14 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const transferred = rpgenius.markPetTraded(rpgenius.clonePetInstance(pet));
         pets.splice(index, 1);
         buyer.inventory.pet.push(transferred);
+    } else if (entry.kind == 'avatar') {
+        const avatarName = String(entry.payload && entry.payload.name || '');
+        const blockReason = rpgenius.getAvatarTradeBlockReason(seller, avatarName);
+        if (blockReason) return { error: blockReason };
+        if (rpgenius.hasAvatar(buyer, avatarName)) return { error: '구매자가 이미 보유한 아바타입니다.' };
+        const removed = rpgenius.removeUserAvatar(seller, avatarName);
+        if (!removed) return { error: '보유하지 않은 아바타입니다.' };
+        rpgenius.unlockAvatar(buyer, avatarName, Number(removed.trades || 0) + 1);
     } else {
         return { error: '알 수 없는 종류입니다.' };
     }
@@ -7530,7 +7737,17 @@ function buildBuyOrderLookups() {
         if (!p) return null;
         return { id, name: p.name, rarity: p.rarity, iconUrl: getPetIconUrl(p), frameUrl: getAuctionFrameUrl('equipment', p.rarity) };
     }).filter(Boolean);
-    return { cards: cardList, equipment: equipmentList, items: itemList, pets: petList };
+    // 아바타: 거래 가능 등급(일반·한정)만 구매 등록 대상
+    const seenAvatar = new Set();
+    const avatarList = [];
+    (rpgenius.getFashionData() || []).forEach(fashion => {
+        if (!fashion || !fashion.name || seenAvatar.has(fashion.name)) return;
+        seenAvatar.add(fashion.name);
+        const grade = rpgenius.getAvatarGradeByName(fashion.name);
+        if (grade == '프레스티지') return;
+        avatarList.push(Object.assign({ name: fashion.name, grade }, getAvatarDisplayAssets(fashion.name)));
+    });
+    return { cards: cardList, equipment: equipmentList, items: itemList, pets: petList, avatars: avatarList };
 }
 
 function buildFulfillableAssets(user, entry) {
@@ -7571,6 +7788,13 @@ function buildFulfillableAssets(user, entry) {
     } else if (entry.kind == 'item') {
         const itemId = Number(entry.payload && entry.payload.id);
         result.itemCount = rpgenius.getInventoryItemCount(user, itemId);
+    } else if (entry.kind == 'avatar') {
+        const avatarName = String(entry.payload && entry.payload.name || '');
+        result.avatar = Object.assign({
+            name: avatarName,
+            owned: rpgenius.hasAvatar(user, avatarName),
+            tradeBlockReason: rpgenius.getAvatarTradeBlockReason(user, avatarName)
+        }, getAvatarDisplayAssets(avatarName));
     } else if (entry.kind == 'pet') {
         const pets = (user.inventory && Array.isArray(user.inventory.pet) ? user.inventory.pet : []);
         pets.forEach((pet, index) => {
@@ -8141,7 +8365,7 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="사냥">
     <div id="huntMenu" class="hunt-menu"></div>
   </div>
-  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="aucSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 판매</button></div><div class="seg" id="aucCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div><div id="aucPager" class="auc-pager" style="display:none"></div></section></div>
+  <div class="page" data-page="auction"><section class="panel"><div class="auction-bar"><h2 style="margin:0">팝니다</h2><div class="actions"><input id="aucSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="aucSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="aucFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 판매</button></div><div class="seg" id="aucCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="aucNew">+ 등록</button></div></div><div id="auctionList" class="auction-grid"></div><div id="aucPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="ranking"><section class="panel rank-section"><div class="auction-bar"><h2 style="margin:0">랭킹</h2><div class="rank-tabs"><button class="rank-tab active" data-tab="cp">전투력 랭킹</button><button class="rank-tab" data-tab="exp">경험치 랭킹</button><button class="rank-tab" data-tab="worldBoss">월드보스 랭킹</button></div></div><div id="rankMe"></div><div id="rankList" class="rank-list"></div></section></div>
   <div class="page" data-page="dex"><section class="panel dex-shell">
     <aside class="dex-sidebar" aria-label="도감 종류">
@@ -8153,7 +8377,7 @@ function renderUserDashboard(sess, opts) {
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
   </section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
-  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
+  <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>

@@ -1503,3 +1503,30 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
   .hunt-card-name{font-size:23px}
   .hunt-card-level{font-size:13px}
 }
+
+/* ===== 아바타 (카드 모달 해금/장착) ===== */
+.avatar-section{margin-top:14px}
+.avatar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.avatar-tile{position:relative;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);padding:8px 8px 10px;cursor:pointer;text-align:center;transition:border-color .15s,transform .1s}
+.avatar-tile:hover{border-color:var(--border-strong)}
+.avatar-tile.equipped{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.avatar-tile.locked .avatar-tile-thumb img{filter:grayscale(1) brightness(.5)}
+.avatar-tile-thumb{position:relative;width:100%;aspect-ratio:3/4;border-radius:4px;overflow:hidden;background:var(--panel-3);margin-bottom:6px}
+.avatar-tile-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar-tile-fallback{position:absolute;inset:0;display:grid;place-items:center;color:var(--text-3);font-size:22px;font-weight:700}
+.avatar-tile-lock{position:absolute;inset:0;display:grid;place-items:center;font-size:22px;background:rgba(0,0,0,.35)}
+.avatar-tile-on{position:absolute;left:0;right:0;bottom:0;background:var(--accent);color:var(--accent-ink);font-size:10px;font-weight:800;padding:2px 0}
+.avatar-tile-name{font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.avatar-tile-meta{font-size:10px;font-weight:700;color:var(--text-3);margin-top:2px}
+.avatar-tile-meta.limited{color:var(--bad)}
+.avatar-tile-meta.prestige{color:var(--accent)}
+.avatar-hint{margin-top:8px;font-size:11px;color:var(--text-3);text-align:center}
+/* 아바타 상세 이중 모달 */
+.preset-nested-modal.avatar{max-width:340px}
+.avatar-detail-preview{display:flex;justify-content:center;margin-bottom:12px}
+.avatar-detail-preview img{width:150px;aspect-ratio:3/4;object-fit:cover;border-radius:6px;border:1px solid var(--border-strong);background:var(--panel-2)}
+.avatar-detail-stats{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.avatar-detail-stat{padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);font-size:13px;font-weight:700;color:var(--text)}
+.avatar-detail-stat.none{color:var(--text-3);font-weight:600}
+.avatar-detail-stat.cond{color:var(--text-2);font-weight:600}
+.avatar-detail-note{margin-top:10px;padding:10px 12px;background:var(--panel-2);border:1px dashed var(--border-strong);border-radius:var(--radius-s);font-size:12px;color:var(--text-2);text-align:center;line-height:1.5}

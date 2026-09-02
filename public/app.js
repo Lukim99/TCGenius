@@ -1082,9 +1082,87 @@ function mainCardDetailNodes(card) {
     return nodes;
 }
 
-function openMainCardModal(card) {
+// ===== 아바타 (카드 모달 내 해금 아바타 장착/해제) =====
+// avatarRef: { source: 'main' | 'slot' | 'inv', number? } — 본인 카드에만 전달된다.
+
+async function appendAvatarSection(avatarRef) {
+    const wrap = el('div', { class: 'avatar-section' });
+    $('#modalBody').appendChild(wrap);
+    wrap.appendChild(el('div', { class: 'loading' }, '아바타 불러오는 중...'));
+    let data;
+    try {
+        data = await api('/api/cards/avatars?source=' + encodeURIComponent(avatarRef.source) + (avatarRef.number ? '&number=' + avatarRef.number : ''));
+    } catch (e) {
+        wrap.replaceChildren();
+        return;
+    }
+    const avatars = data.avatars || [];
+    if (!avatars.length) { wrap.replaceChildren(); return; }
+    const grid = el('div', { class: 'avatar-grid' });
+    avatars.forEach(av => {
+        const tile = el('div', {
+            class: 'avatar-tile' + (av.equipped ? ' equipped' : '') + (!av.unlocked ? ' locked' : ''),
+            title: (av.statLines || []).join('\n'),
+            onclick: () => openAvatarDetailModal(av, avatarRef)
+        },
+            el('div', { class: 'avatar-tile-thumb' },
+                av.imageUrl ? el('img', { src: av.imageUrl, alt: av.name }) : el('span', { class: 'avatar-tile-fallback' }, '?'),
+                !av.unlocked ? el('span', { class: 'avatar-tile-lock' }, '🔒') : null,
+                av.equipped ? el('span', { class: 'avatar-tile-on' }, '장착 중') : null
+            ),
+            el('div', { class: 'avatar-tile-name' }, av.name),
+            el('div', { class: 'avatar-tile-meta' + (av.grade === '한정' ? ' limited' : av.grade === '프레스티지' ? ' prestige' : '') },
+                av.grade + (av.unlocked && !av.starOk ? ' · ' + av.requireStarText + ' 필요' : ''))
+        );
+        grid.appendChild(tile);
+    });
+    wrap.replaceChildren(cardSectionNode('아바타'), grid,
+        el('div', { class: 'avatar-hint' }, '아바타를 누르면 상세 정보와 장착/해제 버튼이 표시됩니다.'));
+}
+
+// 아바타 타일 클릭 → 이중 모달: 미리보기 + 스탯 + 장착/해제 버튼
+function openAvatarDetailModal(av, avatarRef) {
+    const nodes = [];
+    if (av.imageUrl) nodes.push(el('div', { class: 'avatar-detail-preview' }, el('img', { src: av.imageUrl, alt: av.name })));
+    const statBox = el('div', { class: 'avatar-detail-stats' });
+    const statLines = av.statLines || [];
+    if (statLines.length) statLines.forEach(line => statBox.appendChild(el('div', { class: 'avatar-detail-stat' }, line)));
+    else statBox.appendChild(el('div', { class: 'avatar-detail-stat none' }, '추가 스탯 없음'));
+    if (Number(av.requireStar || 0) > 0) statBox.appendChild(el('div', { class: 'avatar-detail-stat cond' }, '장착 조건: ' + av.requireStarText + ' 이상'));
+    nodes.push(statBox);
+    nodes.push(el('div', { class: 'avatar-hint' }, '아바타 스탯은 메인카드에 장착했을 때만 적용됩니다.'));
+    if (!av.unlocked) {
+        nodes.push(el('div', { class: 'avatar-detail-note' }, '🔒 미보유 아바타입니다. 상점 · 거래 등에서 획득할 수 있습니다.'));
+    } else if (!av.equipped && !av.starOk) {
+        nodes.push(el('div', { class: 'avatar-detail-note' }, '⚠️ ' + av.requireStarText + ' 이상 카드에만 장착할 수 있습니다.'));
+    } else {
+        const btn = el('button', {
+            class: av.equipped ? '' : 'primary',
+            style: 'width:100%',
+            onclick: async e => {
+                const button = e.currentTarget;
+                button.disabled = true;
+                try {
+                    const res = await postApi('/api/cards/avatar', { source: avatarRef.source, number: avatarRef.number, name: av.equipped ? '' : av.name });
+                    closePresetNestedModal();
+                    closeModal();
+                    if (res.profile) renderProfile(res.profile);
+                    if (pageIsActive('inventory')) await loadInventory('cards');
+                } catch (err) {
+                    showAlert(err.message);
+                    button.disabled = false;
+                }
+            }
+        }, av.equipped ? '해제' : '장착');
+        nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, btn));
+    }
+    openPresetNestedModal(av.name, '아바타 · ' + av.grade + (av.equipped ? ' · 장착 중' : (av.unlocked ? '' : ' · 미보유')), nodes, 'avatar');
+}
+
+function openMainCardModal(card, avatarRef) {
     const nodes = mainCardDetailNodes(card);
     openRichModal(card && card.formatted ? card.formatted : '메인 캐릭터 카드', card && card.starText ? card.starText + ' · 스킬' : '스킬', nodes);
+    if (avatarRef) appendAvatarSection(avatarRef);
 }
 
 function cardSlotDetailNodes(card) {
@@ -1106,6 +1184,7 @@ function openCardSlotModal(card, slotNumber) {
     const nodes = cardSlotDetailNodes(card);
     openRichModal(card.formatted, (card.starText || '') + ' · 카드 슬롯 효과', nodes);
     if (Number(slotNumber || 0) > 0 && myName && currentProfileName === myName) {
+        appendAvatarSection({ source: 'slot', number: slotNumber });
         const row = el('div', { class: 'row modal-action-row' });
         row.appendChild(el('button', { class: 'modal-action-button remove', onclick: e => handleCardAction('slot/remove', { slot: slotNumber }, e) }, '슬롯에서 제거'));
         row.appendChild(el('button', { class: 'modal-action-button change', onclick: () => openCardSlotPicker(slotNumber, card) }, '변경'));
@@ -1163,8 +1242,8 @@ async function openCardSlotPicker(replaceSlot, replacingCard) {
 }
 
 function openInventoryCardModal(card) {
-    openMainCardModal(card);
     const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
+    openMainCardModal(card, ownInventory && Number(card.number || 0) ? { source: 'inv', number: Number(card.number) } : null);
     if (!ownInventory || !Number(card.number || 0)) return;
     const row = el('div', { class: 'row' });
     row.appendChild(el('button', { class: 'primary', onclick: e => handleCardAction('equip-main', { number: card.number }, e) }, '메인카드 장착'));
@@ -2032,7 +2111,7 @@ function renderProfile(data) {
     currentStatGroups = data.statGroups || [];
     renderStatCard();
     renderStatPoint(data.statPoint);
-    $('#mainCard').replaceChildren(cardNode(data.mainCard, false, openMainCardModal));
+    $('#mainCard').replaceChildren(cardNode(data.mainCard, false, c => openMainCardModal(c, (!!myName && data.user.name === myName) ? { source: 'main' } : null)));
     lastProfileData = data;
     const ownProfile = !!myName && data.user.name === myName;
     renderBlessings(data.blessings, ownProfile);
@@ -4865,8 +4944,8 @@ function renderLevelRewardList(rewards, userLevel) {
 
 // ===== 경매장 =====
 
-const AUCTION_KIND_ICON = { 'card': '🃏', 'equipment': '⚔️', 'item': '📦', 'pet': '🐾' };
-const AUCTION_KIND_LABEL = { 'card': '카드', 'equipment': '장비', 'item': '아이템', 'pet': '펫' };
+const AUCTION_KIND_ICON = { 'card': '🃏', 'equipment': '⚔️', 'item': '📦', 'pet': '🐾', 'avatar': '🧥' };
+const AUCTION_KIND_LABEL = { 'card': '카드', 'equipment': '장비', 'item': '아이템', 'pet': '펫', 'avatar': '아바타' };
 let auctionState = { all: [], filter: 'all', me: null, query: '', sort: 'new', currency: 'all', page: 1 };
 const AUC_SORTS = {
     new: (a, b) => b.createdAt - a.createdAt,
@@ -5310,8 +5389,8 @@ function renderShop(data, tab) {
         if (item.limitInfo) {
             card.appendChild(buildLimitBadge(item.limitInfo));
         }
-        card.appendChild(el('button', { class: 'shop-card-btn', onclick: e => { e.stopPropagation(); openShopBuyModal(item); } }, item.soldOut ? '품절' : '구매'));
-        if (item.soldOut) card.appendChild(el('span', { class: 'shop-sold-badge' }, '품절'));
+        card.appendChild(el('button', { class: 'shop-card-btn', onclick: e => { e.stopPropagation(); openShopBuyModal(item); } }, item.owned ? '보유중' : item.soldOut ? '품절' : '구매'));
+        if (item.soldOut) card.appendChild(el('span', { class: 'shop-sold-badge' }, item.owned ? '보유중' : '품절'));
         card.onclick = () => { if (!item.soldOut) openShopBuyModal(item); };
         grid.appendChild(card);
     });
@@ -5343,6 +5422,7 @@ function openShopBuyModal(item) {
         const have = item.priceItemCount || 0;
         if (p.amount > 0) maxQty = Math.min(maxQty, Math.floor(have / p.amount));
     }
+    if (item.type === '아바타') maxQty = Math.min(maxQty, 1);
     maxQty = Math.max(0, maxQty);
 
     let qty = Math.min(1, maxQty || 1);
@@ -5672,6 +5752,7 @@ const REG_ICONS = {
     equipment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
     item:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/></svg>`,
     pet:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/></svg>`,
+    avatar:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>`,
 };
 const REG_CHK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const REG_SLOT_SVGS = {
@@ -5688,23 +5769,24 @@ function regCurrImg(c) {
     return el('img', { src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(file), alt: c, style: 'width:22px;height:22px;object-fit:contain;display:block;flex-shrink:0' });
 }
 function buildRegItemThumb(item, kind) {
-    if (kind === 'card') {
-        return el('div', { class: 'reg-thumb' }, item.imageUrl ? el('img', { class: 'reg-card-img', src: item.imageUrl, alt: '' }) : svgIcon(REG_ICONS.card));
+    // 아바타는 전용 아이콘(iconUrl)+장비 프레임이 기본, 아이콘이 없으면 카드 합성 미리보기(imageUrl)로 폴백
+    if (kind === 'card' || (kind === 'avatar' && !item.iconUrl && item.imageUrl)) {
+        return el('div', { class: 'reg-thumb' }, item.imageUrl ? el('img', { class: 'reg-card-img', src: item.imageUrl, alt: '' }) : svgIcon(REG_ICONS[kind]));
     }
     const wrap = el('div', { class: 'reg-thumb sq' });
     if (item.frameUrl) wrap.appendChild(el('img', { class: 'reg-thumb-frame', src: item.frameUrl, alt: '' }));
     if (item.iconUrl) wrap.appendChild(el('img', { class: 'reg-thumb-icon', src: item.iconUrl, alt: '' }));
     else {
-        const fallback = kind === 'pet' ? REG_ICONS.pet : kind === 'equipment' ? (REG_SLOT_SVGS[item.type] || REG_SLOT_SVGS.weapon) : REG_ICONS.item;
+        const fallback = kind === 'pet' ? REG_ICONS.pet : kind === 'avatar' ? REG_ICONS.avatar : kind === 'equipment' ? (REG_SLOT_SVGS[item.type] || REG_SLOT_SVGS.weapon) : REG_ICONS.item;
         wrap.appendChild(svgIcon(fallback));
     }
     return wrap;
 }
 
-let regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, sellable: null };
+let regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, selectedAvatarName: '', sellable: null };
 
 async function openRegisterModal() {
-    regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, sellable: null };
+    regState = { kind: 'card', currency: 'gold', selectedIndex: -1, selectedItemId: -1, selectedAvatarName: '', sellable: null };
     $('#aucReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#aucRegBg').classList.add('active');
     try {
@@ -5723,9 +5805,9 @@ function renderRegisterModal() {
     const kind = regState.kind;
 
     const kindRow = el('div', { class: 'reg-kind-row' },
-        ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
+        ...['card', 'equipment', 'item', 'pet', 'avatar'].map(k => el('button', {
             class: 'reg-kind-btn' + (kind === k ? ' active' : ''),
-            onclick: () => { regState.kind = k; regState.selectedIndex = -1; regState.selectedItemId = -1; renderRegisterModal(); }
+            onclick: () => { regState.kind = k; regState.selectedIndex = -1; regState.selectedItemId = -1; regState.selectedAvatarName = ''; renderRegisterModal(); }
         }, svgIcon(REG_ICONS[k]), AUCTION_KIND_LABEL[k]))
     );
 
@@ -5733,16 +5815,22 @@ function renderRegisterModal() {
     if (kind === 'card') { pool = data.cards; emptyMsg = '판매 가능한 카드가 없습니다.'; }
     else if (kind === 'equipment') { pool = data.equipment; emptyMsg = '판매 가능한 장비가 없습니다.\n(미장착 장비만 등록 가능)'; }
     else if (kind === 'pet') { pool = data.pets || []; emptyMsg = '판매 가능한 펫이 없습니다.\n(거래 가능 횟수 1 이상만 등록 가능)'; }
+    else if (kind === 'avatar') { pool = data.avatars || []; emptyMsg = '판매 가능한 아바타가 없습니다.\n(프레스티지 · 거래 횟수를 소진한 한정판 제외)'; }
     else { pool = data.items; emptyMsg = '판매 가능한 아이템이 없습니다.'; }
 
     const pickList = !pool.length
         ? el('div', { class: 'empty', style: 'padding:16px 0' }, emptyMsg)
         : el('div', { class: 'reg-pick-scroll' }, ...pool.map(item => {
-            const isSel = kind === 'item' ? regState.selectedItemId === item.id : regState.selectedIndex === item.index;
+            const isSel = kind === 'item' ? regState.selectedItemId === item.id
+                : kind === 'avatar' ? regState.selectedAvatarName === item.name
+                : regState.selectedIndex === item.index;
             let thumbEl, nameText, metaText;
             thumbEl = buildRegItemThumb(item, kind);
             if (kind === 'card') {
                 nameText = item.formatted; metaText = item.starText || '';
+            } else if (kind === 'avatar') {
+                nameText = item.name;
+                metaText = '아바타 · ' + (item.grade || '일반') + (item.grade === '한정' ? ' (판매 후 재거래 불가)' : '');
             } else if (kind === 'equipment') {
                 nameText = item.name + (item.level > 0 ? ' +' + item.level : '');
                 metaText = item.rarity + ' · ' + item.typeLabel;
@@ -5762,7 +5850,7 @@ function renderRegisterModal() {
             const checkEl = el('div', { class: 'reg-check' + (isSel ? ' sel' : '') }, isSel ? svgIcon(REG_CHK_SVG) : null);
             return el('div', {
                 class: 'reg-pick-row' + (isSel ? ' selected' : ''),
-                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else regState.selectedIndex = item.index; renderRegisterModal(); }
+                onclick: () => { if (kind === 'item') regState.selectedItemId = item.id; else if (kind === 'avatar') regState.selectedAvatarName = item.name; else regState.selectedIndex = item.index; renderRegisterModal(); }
             }, thumbEl, infoEl, checkEl);
         }));
 
@@ -5822,6 +5910,9 @@ async function submitRegister() {
     if (kind === 'card' || kind === 'equipment' || kind === 'pet') {
         if (regState.selectedIndex < 0) { showRegErr(AUCTION_KIND_LABEL[kind] + '를 선택해주세요.'); return; }
         body.index = regState.selectedIndex;
+    } else if (kind === 'avatar') {
+        if (!regState.selectedAvatarName) { showRegErr('아바타를 선택해주세요.'); return; }
+        body.name = regState.selectedAvatarName;
     } else {
         if (regState.selectedItemId < 0) { showRegErr('아이템을 선택해주세요.'); return; }
         const count = Number($('#regCount') ? $('#regCount').value : 1);
@@ -6040,6 +6131,25 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
         }
         const maxSell = Math.min(fulfillable.itemCount, entry.count);
         body.appendChild(aucQtyRow('판매 수량', maxSell, '보유 ' + comma(fulfillable.itemCount) + ' · 요청 ' + comma(entry.count), v => { qty = v; updateReceipt(); }));
+    } else if (entry.kind === 'avatar') {
+        const av = fulfillable.avatar || {};
+        if (!av.owned) {
+            body.appendChild(el('div', { class: 'empty' }, '해당 아바타를 보유하고 있지 않습니다.'));
+            return null;
+        }
+        if (av.tradeBlockReason) {
+            body.appendChild(el('div', { class: 'empty' }, av.tradeBlockReason));
+            return null;
+        }
+        const avThumb = av.iconUrl
+            ? el('img', { src: av.iconUrl, style: { width: '36px', height: '36px', objectFit: 'contain' } })
+            : (av.imageUrl ? el('img', { src: av.imageUrl, style: { width: '32px', height: '42px', objectFit: 'cover', borderRadius: '4px' } }) : null);
+        body.appendChild(el('div', { class: 'pick-list', style: 'margin-top:0' },
+            el('div', { class: 'pick-row on' },
+                el('div', null, el('b', null, av.name), el('div', { class: 'meta' }, '판매 시 아바타 해금이 구매자 계정으로 이전됩니다.')),
+                avThumb
+            )
+        ));
     } else {
         const pool = entry.kind === 'card' ? (fulfillable.cards || [])
             : entry.kind === 'equipment' ? (fulfillable.equipment || [])
@@ -6082,7 +6192,7 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
         errBox.classList.remove('visible');
         const reqBody = { id: entry.id };
         if (entry.kind === 'item') reqBody.count = qty;
-        else {
+        else if (entry.kind !== 'avatar') {
             if (selectedIndex < 0) return showErr('판매할 ' + AUCTION_KIND_LABEL[entry.kind] + '을(를) 선택해주세요.');
             reqBody.index = selectedIndex;
         }
@@ -6104,10 +6214,10 @@ function renderFulfillSection(entry, fulfillable, body, errBox) {
 
 // ===== 구매 등록 모달 =====
 
-let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1, search: '' };
+let boRegState = { kind: 'card', lookups: null, cardId: -1, star: 0, type: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, avatarName: '', count: 1, search: '' };
 
 async function openBoRegisterModal() {
-    boRegState = { kind: 'card', currency: 'gold', lookups: null, cardId: -1, star: 0, type: '', skin: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, count: 1, search: '' };
+    boRegState = { kind: 'card', currency: 'gold', lookups: null, cardId: -1, star: 0, type: '', equipType: 'weapon', equipId: -1, levelSpecified: false, level: 0, itemId: -1, petId: -1, avatarName: '', count: 1, search: '' };
     $('#boReg').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
     $('#boRegBg').classList.add('active');
     try {
@@ -6126,7 +6236,7 @@ function renderBoRegisterModal() {
     const kind = boRegState.kind;
 
     const kindRow = el('div', { class: 'reg-kind-row' },
-        ...['card', 'equipment', 'item', 'pet'].map(k => el('button', {
+        ...['card', 'equipment', 'item', 'pet', 'avatar'].map(k => el('button', {
             class: 'reg-kind-btn' + (kind === k ? ' active' : ''),
             onclick: () => { boRegState.kind = k; boRegState.search = ''; renderBoRegisterModal(); }
         }, svgIcon(REG_ICONS[k]), AUCTION_KIND_LABEL[k]))
@@ -6195,7 +6305,7 @@ function renderBoRegisterModal() {
 
     if (kind === 'card') {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '캐릭터 카드'));
-        content.push(makeItemGrid(data.cards, boRegState.cardId, id => { boRegState.cardId = id; boRegState.skin = ''; }, (thumb, c) => {
+        content.push(makeItemGrid(data.cards, boRegState.cardId, id => { boRegState.cardId = id; }, (thumb, c) => {
             if (c.imageUrl) thumb.appendChild(el('img', { src: c.imageUrl, alt: c.name }));
             else thumb.appendChild(el('span', { class: 'bo-img-fallback' }, c.name[0]));
         }));
@@ -6203,7 +6313,7 @@ function renderBoRegisterModal() {
         if (boRegState.cardId >= 0) {
             content.push(el('div', { class: 'reg-section-label' }, '상세 조건'));
             const detailGrid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px' });
-            const starSel = el('select', { onchange: e => { boRegState.star = Number(e.target.value); boRegState.skin = ''; renderBoRegisterModal(); } });
+            const starSel = el('select', { onchange: e => { boRegState.star = Number(e.target.value); renderBoRegisterModal(); } });
             for (let i = 0; i <= 11; i++) {
                 const opt = el('option', { value: i }, (i + 1) + '성' + (i >= 4 ? ' (거래권 ' + Math.max(0, i - 3) + '장)' : ''));
                 if (boRegState.star === i) opt.selected = true;
@@ -6217,20 +6327,20 @@ function renderBoRegisterModal() {
             const typeWrap = el('div', null, el('div', { style: 'font-size:11px;color:#64748b;font-weight:700;margin-bottom:4px' }, '타입'), typeSel);
             detailGrid.appendChild(starWrap); detailGrid.appendChild(typeWrap);
             content.push(detailGrid);
-
-            const rawStar = Number(boRegState.star || 0);
-            const skins = (data.fashion || []).filter(s => Array.isArray(s.primary_card) && s.primary_card.map(Number).includes(Number(boRegState.cardId)) && rawStar >= Number(s.requireStar || 0));
-            if (boRegState.skin && !skins.some(s => s.name === boRegState.skin)) boRegState.skin = '';
-            if (skins.length > 0) {
-                content.push(el('div', { class: 'reg-section-label' }, '패션 (선택)'));
-                content.push(el('select', { onchange: e => { boRegState.skin = e.target.value; } },
-                    el('option', { value: '' }, '패션 무관'),
-                    ...skins.map(s => el('option', { value: s.name, selected: boRegState.skin === s.name ? 'selected' : null }, s.name))
-                ));
-            }
         }
         content.push(el('div', { class: 'reg-section-label' }, '갯수'));
         content.push(makeCountInput());
+
+    } else if (kind === 'avatar') {
+        content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '아바타'));
+        const avatarItems = (data.avatars || []).map(a => ({ id: a.name, name: a.name + (a.grade === '한정' ? ' [한정]' : ''), iconUrl: a.iconUrl, frameUrl: a.frameUrl, imageUrl: a.imageUrl }));
+        content.push(makeItemGrid(avatarItems, boRegState.avatarName, id => { boRegState.avatarName = id; }, (thumb, a) => {
+            if (a.iconUrl) {
+                if (a.frameUrl) thumb.appendChild(el('img', { class: 'bo-img-frame', src: a.frameUrl, alt: '' }));
+                thumb.appendChild(el('img', { class: 'bo-img-icon', src: a.iconUrl, alt: a.name }));
+            } else if (a.imageUrl) thumb.appendChild(el('img', { src: a.imageUrl, alt: a.name }));
+            else thumb.appendChild(el('span', { class: 'bo-img-fallback' }, a.name[0]));
+        }));
 
     } else if (kind === 'equipment') {
         content.push(el('div', { class: 'reg-section-label', style: 'margin-top:0' }, '장비 종류'));
@@ -6317,12 +6427,14 @@ async function submitBoRegister() {
     const currency = boRegState.currency || 'gold';
     const price = Number($('#boRegPrice').value || 0);
     if (!Number.isInteger(price) || price < 1) { showBoRegErr('가격은 1 이상의 정수여야 합니다.'); return; }
-    const body = { kind, currency, price, count: boRegState.count };
+    const body = { kind, currency, price, count: kind === 'avatar' ? 1 : boRegState.count };
     if (kind === 'card') {
         if (boRegState.cardId < 0) { showBoRegErr('카드를 선택해주세요.'); return; }
         body.cardId = boRegState.cardId; body.star = boRegState.star;
         if (boRegState.type) body.type = boRegState.type;
-        if (boRegState.skin && boRegState.skin.trim()) body.skin = boRegState.skin.trim();
+    } else if (kind === 'avatar') {
+        if (!boRegState.avatarName) { showBoRegErr('아바타를 선택해주세요.'); return; }
+        body.name = boRegState.avatarName;
     } else if (kind === 'equipment') {
         if (boRegState.equipId < 0) { showBoRegErr('장비를 선택해주세요.'); return; }
         body.equipType = boRegState.equipType; body.equipId = boRegState.equipId;

@@ -226,7 +226,7 @@ function cardTargetControls(entry, onChange) {
     };
     btn.onclick = () => pickCard(card => {
         entry.card_id = card.id;
-        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'pet_id', 'title_id'].forEach(k => delete entry[k]);
+        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
         refresh();
         refreshSkins();
         onChange && onChange();
@@ -267,7 +267,7 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '캐릭터카드', '무기', '갑옷', '장신구', '보조', '펫', '칭호', '골드', '가넷', '마일리지', '포인트', '경험치'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '펫', '칭호', '골드', '가넷', '마일리지', '포인트', '경험치'];
 const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지'];
 const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫'];
 
@@ -299,7 +299,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                     btn.innerHTML = '<span class="ph">아이템 선택...</span>';
                 }
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '캐릭터카드') {
@@ -315,7 +315,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, t + ' 선택...'));
             };
-            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '펫') {
@@ -327,9 +327,31 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, '펫 선택...'));
             };
-            btn.onclick = () => pickPet(p => { entry.pet_id = p.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'title_id'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickPet(p => { entry.pet_id = p.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
+        } else if (t === '아바타') {
+            const avatarSel = el('select', { style: { flex: '1', minWidth: '150px' } });
+            const refresh = async () => {
+                const fashion = await getFashion();
+                const seen = new Set();
+                avatarSel.innerHTML = '';
+                avatarSel.appendChild(el('option', { value: '' }, '아바타 선택...'));
+                fashion.forEach(f => {
+                    if (!f || !f.name || seen.has(f.name)) return;
+                    seen.add(f.name);
+                    avatarSel.appendChild(el('option', { value: f.name }, f.name));
+                });
+                avatarSel.value = entry.fashion || '';
+            };
+            avatarSel.onchange = () => {
+                ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
+                if (avatarSel.value) entry.fashion = avatarSel.value;
+                else delete entry.fashion;
+                onChange && onChange();
+            };
+            refresh();
+            targetSlot.appendChild(avatarSel);
         } else if (t === '칭호') {
             const btn = el('button', { class: 'pickbtn', type: 'button' });
             const refresh = async () => {
@@ -339,12 +361,12 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('🏅 ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, '칭호 선택...'));
             };
-            btn.onclick = () => pickTitle(tt => { entry.title_id = tt.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickTitle(tt => { entry.title_id = tt.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
-            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id'].forEach(k => delete entry[k]);
+            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
             targetSlot.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + t + ' 수량 지정)'));
         }
     }
@@ -352,7 +374,7 @@ function entryRow(entry, opts, onChange, onDelete) {
     function paintCount() {
         countSlot.innerHTML = '';
         // 보상 장비는 보통 count=1 고정 (제작 재료 장비는 수량 입력 허용)
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫' || entry.type === '칭호') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫' || entry.type === '칭호' || entry.type === '아바타') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
             if (opts.countAsObject) entry.count = { min: 1, max: 1 }; else entry.count = 1;
             return;
@@ -415,11 +437,24 @@ $('#searchBtn').onclick = async () => {
     } catch (e) { $('#userInfo').style.display = 'none'; toast(e.message, false); }
 };
 let grantEquipId;
-$('#grantKind').onchange = () => {
+$('#grantKind').onchange = async () => {
     const kind = $('#grantKind').value;
     $('#itemNameWrap').style.display = kind === 'item' ? '' : 'none';
     ['#equipWrap', '#equipPickWrap', '#equipLevelWrap'].forEach(id => $(id).style.display = kind === 'equipment' ? '' : 'none');
-    $('#amountWrap').style.display = kind === 'equipment' ? 'none' : '';
+    $('#avatarNameWrap').style.display = kind === 'avatar' ? '' : 'none';
+    $('#amountWrap').style.display = (kind === 'equipment' || kind === 'avatar') ? 'none' : '';
+    if (kind === 'avatar') {
+        const sel = $('#grantAvatarName');
+        if (sel.options.length <= 1) {
+            const fashion = await getFashion();
+            const seen = new Set();
+            fashion.forEach(f => {
+                if (!f || !f.name || seen.has(f.name)) return;
+                seen.add(f.name);
+                sel.appendChild(el('option', { value: f.name }, f.name));
+            });
+        }
+    }
 };
 $('#grantItemPick').onclick = () => pickItem(it => {
     $('#grantItemName').value = it.name;
@@ -437,6 +472,10 @@ $('#grantEquipPick').onclick = () => pickEquipment($('#grantEquipType').value, e
 });
 $('#grantBtn').onclick = async () => {
     const body = { name: $('#grantName').value.trim(), kind: $('#grantKind').value, amount: Number($('#grantAmount').value), itemName: $('#grantItemName').value.trim() };
+    if (body.kind === 'avatar') {
+        body.avatarName = $('#grantAvatarName').value;
+        if (!body.avatarName) return toast('아바타를 선택하세요.', false);
+    }
     if (body.kind === 'equipment') {
         if (typeof grantEquipId === 'undefined') return toast('장비를 선택하세요.', false);
         body.equipType = $('#grantEquipType').value;
@@ -447,6 +486,7 @@ $('#grantBtn').onclick = async () => {
         const r = await api('/api/users/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (r.kind === 'item') toast('✅ ' + r.name + ' ' + r.itemName + ' ' + (r.delta > 0 ? '+' : '') + r.delta);
         else if (r.kind === 'equipment') toast('✅ ' + r.name + ' ' + r.equipName + ' +' + r.level + ' 지급');
+        else if (r.kind === 'avatar') toast('✅ ' + r.name + ' [' + r.grade + '] ' + r.avatarName + ' 아바타 해금');
         else toast('✅ ' + r.name + ' ' + r.kind + ': ' + r.before + ' → ' + r.after);
     } catch (e) { toast(e.message, false); }
 };
@@ -812,13 +852,13 @@ function shopEntryRow(entry, onChange, onDelete) {
                     btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + entry.item_id));
                 } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]); refresh(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); });
             refresh(); target.appendChild(btn);
         } else if (entry.type === '캐릭터카드') {
             delete entry.item_id;
             target.appendChild(cardTargetControls(entry));
         } else {
-            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]);
+            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]);
             target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)'));
         }
     }
@@ -3628,7 +3668,7 @@ function itemPackEditor(item, itemType) {
     wrap.appendChild(row);
     return wrap;
 }
-const ITEM_USE_KEYS = ['변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지', '패션적용', '고급패션적용', '스탯초기화', '장신구선택권', '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택', '가위', '패션제거', '생명수', '초월업그레이드', '초월선택', '아이템선택', '초월상자', '보주상자'];
+const ITEM_USE_KEYS = ['변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지', '스탯초기화', '장신구선택권', '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택', '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택', '초월상자', '보주상자'];
 function itemUseEditor(item) {
     const wrap = el('div');
     const row = el('div', { class: 'row' });
