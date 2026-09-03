@@ -3890,3 +3890,132 @@ function protectEditor(item) {
     } }));
     return wrap;
 }
+
+// ---------- 이미지 자산 (S3 실시간 반영) ----------
+const assetState = { category: 'itemImage', dir: '' };
+
+function assetFmtSize(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + 'MB';
+    if (bytes >= 1024) return Math.round(bytes / 1024) + 'KB';
+    return bytes + 'B';
+}
+
+async function loadAssetStatus() {
+    try {
+        const res = await fetch('/api/admin/assets/status');
+        const data = await res.json();
+        const s = data.state || {};
+        $('#assetStatus').textContent = s.status === 'done' ? 'S3 동기화 완료 (' + s.checked + '개 확인)' : 'S3 동기화: ' + (s.status || '?') + (s.failed ? ' (실패 ' + s.failed + ')' : '');
+    } catch (_) { $('#assetStatus').textContent = ''; }
+}
+
+async function loadAssets() {
+    const listBox = $('#assetList');
+    listBox.innerHTML = '';
+    let data;
+    try {
+        const res = await fetch('/api/admin/assets/tree?' + new URLSearchParams({ category: assetState.category, dir: assetState.dir }));
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    } catch (e) {
+        listBox.appendChild(el('div', { class: 'empty' }, '목록을 불러오지 못했습니다: ' + e.message));
+        return;
+    }
+    const crumbs = $('#assetCrumbs');
+    crumbs.innerHTML = '';
+    const parts = assetState.dir ? assetState.dir.split('/') : [];
+    const mkCrumb = (label, dir) => el('a', { href: '#', onclick: e => { e.preventDefault(); assetState.dir = dir; loadAssets(); } }, label);
+    crumbs.appendChild(mkCrumb(assetState.category, ''));
+    parts.forEach((seg, i) => {
+        crumbs.appendChild(document.createTextNode(' / '));
+        crumbs.appendChild(mkCrumb(seg, parts.slice(0, i + 1).join('/')));
+    });
+    if (!data.entries.length) listBox.appendChild(el('div', { class: 'empty' }, '빈 폴더'));
+    data.entries.forEach(entry => {
+        const relPath = assetState.dir ? assetState.dir + '/' + entry.name : entry.name;
+        const row = el('div', { class: 'entry' });
+        if (entry.dir) {
+            row.appendChild(el('a', { href: '#', style: { fontWeight: '600', flex: '1' }, onclick: e => { e.preventDefault(); assetState.dir = relPath; loadAssets(); } }, '📁 ' + entry.name));
+        } else {
+            row.appendChild(el('span', { style: { flex: '1' } }, entry.name + ' (' + assetFmtSize(entry.size) + ')'));
+            const fileUrl = '/api/admin/assets/file?' + new URLSearchParams({ category: assetState.category, path: relPath });
+            row.appendChild(el('button', { class: 'btn', type: 'button', onclick: () => window.open(fileUrl, '_blank') }, '보기'));
+            row.appendChild(el('button', { class: 'btn', type: 'button', onclick: async () => {
+                if (!confirm(entry.name + ' 파일을 삭제할까요? S3에서도 삭제됩니다.')) return;
+                const res = await fetch('/api/admin/assets?' + new URLSearchParams({ category: assetState.category, path: relPath }), { method: 'DELETE' });
+                const out = await res.json().catch(() => ({}));
+                if (!res.ok) return toast(out.error || '삭제 실패', false);
+                toast('✅ 삭제했습니다.');
+                loadAssets();
+            } }, '삭제'));
+        }
+        listBox.appendChild(row);
+    });
+}
+
+$('#assetCategory').onchange = () => {
+    assetState.category = $('#assetCategory').value;
+    assetState.dir = '';
+    $('#assetCardHelper').style.display = assetState.category === 'cardImage' ? '' : 'none';
+    loadAssets();
+};
+$('#assetReload').onclick = () => { loadAssets(); loadAssetStatus(); };
+$('#assetMkdir').onclick = async () => {
+    const name = prompt('만들 폴더 이름 (현재 폴더 아래에 생성됩니다)');
+    if (!name) return;
+    if (name.includes('/') || name.includes('\\') || name.includes('..')) return toast('폴더 이름이 올바르지 않습니다.', false);
+    const dir = assetState.dir ? assetState.dir + '/' + name.trim() : name.trim();
+    const res = await fetch('/api/admin/assets/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: assetState.category, dir }) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(out.error || '폴더 생성 실패', false);
+    assetState.dir = dir;
+    loadAssets();
+};
+$('#assetUpload').onclick = async () => {
+    const input = $('#assetFiles');
+    const files = Array.from(input.files || []);
+    if (!files.length) return toast('업로드할 파일을 선택하세요.', false);
+    const saveName = $('#assetSaveName').value.trim();
+    if (saveName && files.length > 1) return toast('저장 파일명은 파일 1개 선택 시에만 사용할 수 있습니다.', false);
+    if (saveName && (saveName.includes('/') || saveName.includes('\\') || saveName.includes('..'))) return toast('저장 파일명이 올바르지 않습니다.', false);
+    const button = $('#assetUpload');
+    button.disabled = true;
+    let done = 0;
+    try {
+        for (const file of files) {
+            const name = (files.length === 1 && saveName) ? saveName : file.name;
+            const relPath = assetState.dir ? assetState.dir + '/' + name : name;
+            const res = await fetch('/api/admin/assets/upload?' + new URLSearchParams({ category: assetState.category }), {
+                method: 'POST',
+                headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Asset-Path': encodeURIComponent(relPath) },
+                body: file
+            });
+            const out = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(name + ': ' + (out.error || 'HTTP ' + res.status));
+            done++;
+        }
+        toast('✅ ' + done + '개 파일을 업로드했습니다. 즉시 반영됩니다.');
+        input.value = '';
+        $('#assetSaveName').value = '';
+        loadAssets();
+    } catch (e) {
+        toast((done ? done + '개 성공 후 실패 — ' : '') + e.message, false);
+        loadAssets();
+    } finally {
+        button.disabled = false;
+    }
+};
+$('#assetCardApply').onclick = () => {
+    const name = $('#assetCardName').value.trim();
+    const tier = $('#assetCardTier').value;
+    const skin = $('#assetCardSkin').value.trim();
+    if (tier.startsWith('표지-')) {
+        $('#assetSaveName').value = '캐릭터표지(' + tier.slice(3) + ').png';
+    } else {
+        if (!name) return toast('카드명을 입력하세요.', false);
+        $('#assetSaveName').value = tier + (skin ? ' ' + skin : '') + ' ' + name + '.png';
+    }
+    toast('저장 파일명을 채웠습니다. 카드분리/캐릭터/' + (name || '<카드명>') + '/ 폴더에서 업로드하세요.');
+};
+
+TAB_LOADERS.assets = () => { loadAssets(); loadAssetStatus(); };

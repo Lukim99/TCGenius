@@ -7,6 +7,7 @@ const combatEffects = require('./public/combat-effects.js');
 const partyquest = require('./partyquest.js');
 const pvp = require('./pvp.js');
 const cardComposite = require('./card_composite.js');
+const assetStore = require('./asset_store.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -4124,7 +4125,8 @@ server.get('/api/party/stream', requirePartyQuest, (req, res) => {
     partyquest.attachStream(req.session.name, res);
 });
 
-server.get('/card-image', requireUser, (req, res) => {
+server.get('/card-image', requireUser, async (req, res) => {
+    await assetStore.ready; // 부팅 동기화 완료 전 404 방지
     const name = String(req.query.name || '');
     if (!name || name.includes('..') || path.basename(name) != name) return res.status(400).end();
     if (typeof req.query.cover != 'undefined') {
@@ -4153,7 +4155,8 @@ server.get('/card-image', requireUser, (req, res) => {
     res.sendFile(filePath);
 });
 
-server.get('/item-image', requireUser, (req, res) => {
+server.get('/item-image', requireUser, async (req, res) => {
+    await assetStore.ready;
     const dir = String(req.query.dir || '');
     const file = String(req.query.file || '');
     if (!dir || !file || dir.includes('..') || file.includes('..') || path.basename(dir) != dir || path.basename(file) != file) return res.status(400).end();
@@ -4166,7 +4169,8 @@ server.get('/item-image', requireUser, (req, res) => {
 const RPG_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui');
 
 // 하위 폴더(예: '부타게임/타부자고.png')도 허용. 경로 이탈은 '..' 차단 + 해석 경로 검사로 막는다.
-server.get('/rpg-ui', requireUser, (req, res) => {
+server.get('/rpg-ui', requireUser, async (req, res) => {
+    await assetStore.ready;
     const file = String(req.query.file || '');
     if (!file || file.includes('..')) return res.status(400).end();
     const filePath = path.resolve(RPG_UI_PATH, file);
@@ -4176,7 +4180,8 @@ server.get('/rpg-ui', requireUser, (req, res) => {
 
 const COMBINE_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '조합');
 
-server.get('/combine-ui', requireUser, (req, res) => {
+server.get('/combine-ui', requireUser, async (req, res) => {
+    await assetStore.ready;
     const file = String(req.query.file || '');
     if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
     const filePath = path.join(COMBINE_UI_PATH, file);
@@ -4186,7 +4191,8 @@ server.get('/combine-ui', requireUser, (req, res) => {
 
 const LOCKBOX_UI_PATH = path.join(__dirname, 'DB', 'RPGenius', 'ui', '봉인된 자물쇠');
 
-server.get('/lockbox-ui', requireUser, (req, res) => {
+server.get('/lockbox-ui', requireUser, async (req, res) => {
+    await assetStore.ready;
     const file = String(req.query.file || '');
     if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
     const filePath = path.join(LOCKBOX_UI_PATH, file);
@@ -4194,12 +4200,81 @@ server.get('/lockbox-ui', requireUser, (req, res) => {
     res.sendFile(filePath);
 });
 
-server.get('/rpg-ui-title', requireUser, (req, res) => {
+server.get('/rpg-ui-title', requireUser, async (req, res) => {
+    await assetStore.ready;
     const file = String(req.query.file || '');
     if (!file || file.includes('..') || path.basename(file) != file) return res.status(400).end();
     const filePath = path.join(rpgenius.TITLE_IMAGE_PATH, file);
     if (!filePath.startsWith(rpgenius.TITLE_IMAGE_PATH) || !fs.existsSync(filePath)) return res.status(404).end();
     res.sendFile(filePath);
+});
+
+// ===== 이미지 자산 관리 (관리자) — S3가 원본, 로컬은 작업 사본. 업로드·삭제 즉시 반영 =====
+
+function parseAssetUpload(req, res, next) {
+    bannerUploadBody(req, res, error => {
+        if (!error) return next();
+        if (error.type == 'entity.too.large') return res.status(413).json({ error: '파일은 10MB 이하여야 합니다.' });
+        return res.status(400).json({ error: '업로드 요청을 읽을 수 없습니다.' });
+    });
+}
+
+server.get('/api/admin/assets/status', requireAdmin, (req, res) => {
+    res.json({ state: assetStore.syncState, categories: assetStore.CATEGORY_NAMES });
+});
+
+server.get('/api/admin/assets/tree', requireAdmin, async (req, res) => {
+    await assetStore.ready;
+    const result = assetStore.listDir(String(req.query.category || ''), String(req.query.dir || ''));
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+});
+
+server.get('/api/admin/assets/file', requireAdmin, async (req, res) => {
+    await assetStore.ready;
+    const filePath = assetStore.getLocalFilePath(String(req.query.category || ''), String(req.query.path || ''));
+    if (!filePath) return res.status(404).end();
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(filePath);
+});
+
+server.post('/api/admin/assets/mkdir', requireAdmin, (req, res) => {
+    try {
+        const result = assetStore.makeDir(String((req.body && req.body.category) || ''), String((req.body && req.body.dir) || ''));
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('asset mkdir error:', e);
+        res.status(500).json({ error: '폴더 생성에 실패했습니다.' });
+    }
+});
+
+server.post('/api/admin/assets/upload', requireAdmin, parseAssetUpload, async (req, res) => {
+    try {
+        await assetStore.ready;
+        const category = String(req.query.category || '');
+        let relPath = '';
+        try { relPath = decodeURIComponent(String(req.headers['x-asset-path'] || '')); } catch (_) { }
+        if (!Buffer.isBuffer(req.body) || req.body.length < 1) return res.status(400).json({ error: '파일이 비어있습니다.' });
+        const result = await assetStore.saveAsset(category, relPath, req.body);
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true, path: relPath });
+    } catch (e) {
+        console.error('asset upload error:', e);
+        res.status(500).json({ error: '업로드에 실패했습니다.' });
+    }
+});
+
+server.delete('/api/admin/assets', requireAdmin, async (req, res) => {
+    try {
+        await assetStore.ready;
+        const result = await assetStore.deleteAsset(String(req.query.category || ''), String(req.query.path || ''));
+        if (result.error) return res.status(400).json({ error: result.error });
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('asset delete error:', e);
+        res.status(500).json({ error: '삭제에 실패했습니다.' });
+    }
 });
 
 // ===== 유저 검색 / 재화 지급 =====

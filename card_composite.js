@@ -259,4 +259,4 @@ function getCoverPath(name, kind) {
     return fs.existsSync(filePath) ? filePath : null;
 }
 
-module.exports = { resolveCardLayers, canCompose, composeCardImage, getCoverPath };
+module.exports = { resolveCardLayers, canCompose, composeCardImage, getCoverPath, decodePng };

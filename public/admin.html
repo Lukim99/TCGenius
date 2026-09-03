@@ -308,6 +308,7 @@ details.collapsible .body{padding:12px}
     <button class="tab" data-tab="equipment">장비</button>
     <button class="tab" data-tab="pet">펫</button>
     <button class="tab" data-tab="fashion">패션</button>
+    <button class="tab" data-tab="assets">이미지 자산</button>
     <button class="tab" data-tab="recipe">레시피</button>
     <button class="tab" data-tab="bait">미끼</button>
     <button class="tab" data-tab="quest">퀘스트</button>
@@ -410,6 +411,52 @@ details.collapsible .body{padding:12px}
     <span class="muted" id="bannerStatus"></span>
   </div>
   <div id="bannerList" class="banner-admin-grid"></div>
+</section></div>
+
+<div class="panel" data-panel="assets">
+<section>
+  <h2>이미지 자산 (S3 실시간 반영)</h2>
+  <p class="muted">업로드·삭제는 서버와 S3에 즉시 반영됩니다. 아이템/보주 아이콘은 itemImage, 카드 아트는 cardImage/카드분리, 그 외 화면 이미지는 ui 카테고리입니다. 카드 레이어는 8비트 RGBA·399x515 PNG만 허용됩니다.</p>
+  <div class="bar">
+    <select id="assetCategory" style="min-width:180px">
+      <option value="itemImage">itemImage (아이템 아이콘)</option>
+      <option value="cardImage">cardImage (카드 아트)</option>
+      <option value="ui">ui (화면 이미지)</option>
+    </select>
+    <span id="assetCrumbs" style="flex:1;min-width:200px"></span>
+    <button class="btn" id="assetMkdir">폴더 만들기</button>
+    <button class="btn" id="assetReload">새로고침</button>
+    <span class="muted" id="assetStatus"></span>
+  </div>
+</section>
+<section>
+  <h2>업로드</h2>
+  <div class="bar">
+    <input id="assetFiles" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,audio/mpeg" style="flex:1;min-width:220px">
+    <input id="assetSaveName" placeholder="저장 파일명 (1개 선택 시만 적용, 비우면 원본 이름)" style="flex:1;min-width:220px">
+    <button class="btn primary" id="assetUpload">현재 폴더에 업로드</button>
+  </div>
+  <div id="assetCardHelper" style="display:none">
+    <p class="muted">카드 파일명 도우미 — 규칙에 맞는 파일명을 만들어 '저장 파일명'에 채웁니다. 업로드 위치: 카드분리/캐릭터/&lt;카드명&gt;/ (폴더가 없으면 '폴더 만들기'로 생성)</p>
+    <div class="bar">
+      <input id="assetCardName" placeholder="카드명" style="min-width:140px">
+      <select id="assetCardTier">
+        <option value="일반">일반</option>
+        <option value="전직">전직</option>
+        <option value="프레스티지 일반">프레스티지 일반</option>
+        <option value="프레스티지 전직">프레스티지 전직</option>
+        <option value="표지-일반">캐릭터표지(일반)</option>
+        <option value="표지-전직">캐릭터표지(전직)</option>
+        <option value="표지-각성">캐릭터표지(각성)</option>
+      </select>
+      <input id="assetCardSkin" placeholder="스킨 (선택)" style="min-width:120px">
+      <button class="btn" id="assetCardApply">파일명 만들기</button>
+    </div>
+  </div>
+</section>
+<section>
+  <h2>파일 목록</h2>
+  <div id="assetList" class="entry-list"></div>
 </section></div>
 
 <div class="panel" data-panel="package">
