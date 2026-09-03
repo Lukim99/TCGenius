@@ -65,16 +65,22 @@ const rpg = require('../rpgenius');
         assert.ok(String(rpg.equipAvatarOnCard(user, lowCard, normalFashion.name)).includes('성 이상'), '성급 미달 거부');
     }
 
-    // 5) getAvatarOptionsForCard: 타입/캐릭터 필터 + 상태 플래그
+    // 5) getAvatarOptionsForCard: 캐릭터 필터(타입 무관) + 상태 플래그
     rpg.equipAvatarOnCard(user, card, normalFashion.name);
     const options = rpg.getAvatarOptionsForCard(user, card);
     assert.ok(options.length > 0, '옵션 목록 존재');
     options.forEach(option => {
         assert.ok(option.fashion.primary_card.map(Number).includes(cardId), '캐릭터 일치');
-        assert.strictEqual(option.fashion.type === '전직', isJobFashion, '타입 일치');
     });
     const equippedOption = options.find(option => option.name === normalFashion.name);
     assert.ok(equippedOption && equippedOption.equipped && equippedOption.unlocked, '장착/해금 플래그');
+    // 타입 구분 없음: 반대 타입 카드에도 같은 아바타 장착 가능
+    const crossCard = { id: cardId, star: Math.max(6, Number(normalFashion.requireStar || 0)), type: isJobFashion ? '일반' : '전직' };
+    user.inventory.card.push(crossCard);
+    assert.strictEqual(rpg.equipAvatarOnCard(user, crossCard, normalFashion.name), null, '반대 타입 카드 장착 성공');
+    assert.strictEqual(crossCard.skin, normalFashion.name, '반대 타입 카드 skin 기록');
+    assert.ok(rpg.getCardFashion(crossCard), '반대 타입 카드에서 getCardFashion 인식');
+    rpg.equipAvatarOnCard(user, crossCard, '');
 
     // 6) removeUserAvatar: 해금 제거 + 장착 카드에서 스킨 해제 (거래 등록 시나리오)
     const removed = rpg.removeUserAvatar(user, normalFashion.name);

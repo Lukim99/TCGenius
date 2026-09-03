@@ -1132,7 +1132,35 @@ function openAvatarDetailModal(av, avatarRef) {
     nodes.push(statBox);
     nodes.push(el('div', { class: 'avatar-hint' }, '아바타 스탯은 메인카드에 장착했을 때만 적용됩니다.'));
     if (!av.unlocked) {
-        nodes.push(el('div', { class: 'avatar-detail-note' }, '🔒 미보유 아바타입니다. 상점 · 거래 등에서 획득할 수 있습니다.'));
+        if (av.shop && av.shop.price) {
+            const p = av.shop.price;
+            const priceLabel = comma(Number(p.amount || 0)) + (p.goods === 'point' ? 'P' : p.goods === 'gold' ? ' 골드' : p.goods === 'garnet' ? ' 가넷' : p.goods === 'mileage' ? ' 마일리지' : '');
+            const buyBtn = el('button', {
+                class: 'primary',
+                style: 'width:100%',
+                onclick: async e => {
+                    const button = e.currentTarget;
+                    button.disabled = true;
+                    try {
+                        const data = await api('/api/shop');
+                        shopData = data;
+                        shopTab = '아바타';
+                        const shopItem = (data.shop['아바타'] || []).find(it => it.index === av.shop.index);
+                        if (!shopItem) throw new Error('상점에서 상품을 찾을 수 없습니다.');
+                        if (shopItem.owned) throw new Error('이미 보유한 아바타입니다.');
+                        if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
+                        closePresetNestedModal();
+                        openShopBuyModal(shopItem);
+                    } catch (err) {
+                        showAlert(err.message);
+                        button.disabled = false;
+                    }
+                }
+            }, '구매 (' + priceLabel + ')');
+            nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, buyBtn));
+        } else {
+            nodes.push(el('div', { class: 'avatar-detail-note' }, '미보유'));
+        }
     } else if (!av.equipped && !av.starOk) {
         nodes.push(el('div', { class: 'avatar-detail-note' }, '⚠️ ' + av.requireStarText + ' 이상 카드에만 장착할 수 있습니다.'));
     } else {
@@ -8230,7 +8258,8 @@ async function openMailCompose() {
                 addBtn('point', '포인트', giftable.pointIconUrl ? el('img', { class: 'mc-add-img', src: giftable.pointIconUrl, alt: '' }) : mailSvg('item')),
                 addBtn('equipment', '장비', mailSvg('equipment')),
                 addBtn('pet', '펫', mailSvg('pet')),
-                addBtn('item', '아이템', mailSvg('item'))),
+                addBtn('item', '아이템', mailSvg('item')),
+                addBtn('avatar', '아바타', mailSvg('gift'))),
             slotsEl, feeNote, composeErr
         );
         const cancel = el('button', { class: 'mm-btn ghost', type: 'button', onclick: mailModalClose }, '닫기');
@@ -8276,16 +8305,20 @@ async function openMailCompose() {
     function viewPicker(kind) {
         const usedNums = new Set(gifts.filter(g => g.type === 'equipment').map(g => g.number));
         const usedIdx = new Set(gifts.filter(g => g.type === 'pet').map(g => g.index));
-        let opts = kind === 'equipment' ? giftable.equipment : kind === 'pet' ? giftable.pets : giftable.items;
+        const usedAvatars = new Set(gifts.filter(g => g.type === 'avatar').map(g => g.name));
+        let opts = kind === 'equipment' ? giftable.equipment : kind === 'pet' ? giftable.pets : kind === 'avatar' ? (giftable.avatars || []) : giftable.items;
         if (kind === 'equipment') opts = opts.filter(o => !usedNums.has(o.number));
         else if (kind === 'pet') opts = opts.filter(o => !usedIdx.has(o.index));
-        const title = kind === 'equipment' ? '장비 선택' : kind === 'pet' ? '펫 선택' : '아이템 선택';
+        else if (kind === 'avatar') opts = opts.filter(o => !usedAvatars.has(o.name));
+        const title = kind === 'equipment' ? '장비 선택' : kind === 'pet' ? '펫 선택' : kind === 'avatar' ? '아바타 선택' : '아이템 선택';
         const list = el('div', { class: 'mc-pick-list' });
-        if (!opts.length) list.appendChild(el('div', { class: 'mc-gift-empty' }, '보낼 수 있는 항목이 없습니다.'));
+        if (!opts.length) list.appendChild(el('div', { class: 'mc-gift-empty' }, kind === 'avatar' ? '보낼 수 있는 아바타가 없습니다.\n(프레스티지 · 거래 횟수를 소진한 한정판 제외)' : '보낼 수 있는 항목이 없습니다.'));
         else opts.forEach(o => {
-            const sub = kind === 'item' ? ('보유 ' + comma(o.count)) : (o.rarity + (o.level > 0 ? ' · +' + o.level : ''));
+            const sub = kind === 'item' ? ('보유 ' + comma(o.count))
+                : kind === 'avatar' ? ('아바타 · ' + (o.grade || '일반') + (o.grade === '한정' ? ' (전송 후 재거래 불가)' : ''))
+                : (o.rarity + (o.level > 0 ? ' · +' + o.level : ''));
             list.appendChild(el('div', { class: 'mc-pick-row', onclick: () => pickGift(kind, o) },
-                mailGiftThumb({ type: kind, iconUrl: o.iconUrl, frameUrl: o.frameUrl }),
+                mailGiftThumb({ type: kind, iconUrl: o.iconUrl || o.imageUrl, frameUrl: o.iconUrl ? o.frameUrl : null }),
                 el('div', { class: 'mc-pick-main' }, el('div', { class: 'mc-pick-name' }, o.name), el('div', { class: 'mc-pick-sub' }, sub))));
         });
         const back = el('button', { class: 'mm-btn ghost', type: 'button', onclick: viewCompose }, '뒤로');
@@ -8295,6 +8328,7 @@ async function openMailCompose() {
     function pickGift(kind, o) {
         if (kind === 'equipment') { gifts.push({ type: 'equipment', number: o.number, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
         else if (kind === 'pet') { gifts.push({ type: 'pet', index: o.index, _label: o.name + (o.level > 0 ? ' +' + o.level : ''), _icon: o.iconUrl, _frame: o.frameUrl }); viewCompose(); }
+        else if (kind === 'avatar') { gifts.push({ type: 'avatar', name: o.name, _label: o.name + ' 아바타' + (o.grade === '한정' ? ' [한정]' : ''), _icon: o.iconUrl || o.imageUrl, _frame: o.iconUrl ? o.frameUrl : null }); viewCompose(); }
         else viewItemCount(o);
     }
 

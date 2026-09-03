@@ -1506,8 +1506,8 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 
 /* ===== 아바타 (카드 모달 해금/장착) ===== */
 .avatar-section{margin-top:14px}
-.avatar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
-.avatar-tile{position:relative;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);padding:8px 8px 10px;cursor:pointer;text-align:center;transition:border-color .15s,transform .1s}
+.avatar-grid{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+.avatar-tile{position:relative;flex:0 0 104px;width:104px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);padding:8px 8px 10px;cursor:pointer;text-align:center;transition:border-color .15s,transform .1s}
 .avatar-tile:hover{border-color:var(--border-strong)}
 .avatar-tile.equipped{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .avatar-tile.locked .avatar-tile-thumb img{filter:grayscale(1) brightness(.5)}

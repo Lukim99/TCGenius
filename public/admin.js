@@ -834,8 +834,8 @@ function shopEntryRow(entry, onChange, onDelete) {
     // 상품
     const head = el('div', { class: 'entry' });
     const sel = el('select');
-    ['아이템', '캐릭터카드', '가넷', '골드', '마일리지'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
-    if (!['아이템', '캐릭터카드', '가넷', '골드', '마일리지'].includes(entry.type)) entry.type = '아이템';
+    ['아이템', '캐릭터카드', '아바타', '가넷', '골드', '마일리지'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
+    if (!['아이템', '캐릭터카드', '아바타', '가넷', '골드', '마일리지'].includes(entry.type)) entry.type = '아이템';
     sel.value = entry.type;
     const target = el('span', { style: { flex: '1', minWidth: '180px', display: 'flex' } });
     const cnt = el('input', { class: 'nf', type: 'number', value: entry.count, style: { width: '100px' }, oninput: () => entry.count = Number(cnt.value) });
@@ -856,7 +856,31 @@ function shopEntryRow(entry, onChange, onDelete) {
             refresh(); target.appendChild(btn);
         } else if (entry.type === '캐릭터카드') {
             delete entry.item_id;
+            delete entry.fashion;
             target.appendChild(cardTargetControls(entry));
+        } else if (entry.type === '아바타') {
+            ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id'].forEach(k => delete entry[k]);
+            entry.count = 1;
+            cnt.value = 1;
+            const avatarSel = el('select', { style: { flex: '1', minWidth: '150px' } });
+            const refresh = async () => {
+                const fashion = await getFashion();
+                const seen = new Set();
+                avatarSel.innerHTML = '';
+                avatarSel.appendChild(el('option', { value: '' }, '아바타 선택...'));
+                fashion.forEach(f => {
+                    if (!f || !f.name || seen.has(f.name)) return;
+                    seen.add(f.name);
+                    avatarSel.appendChild(el('option', { value: f.name }, f.name));
+                });
+                avatarSel.value = entry.fashion || '';
+            };
+            avatarSel.onchange = () => {
+                if (avatarSel.value) entry.fashion = avatarSel.value;
+                else delete entry.fashion;
+            };
+            refresh();
+            target.appendChild(avatarSel);
         } else {
             ['item_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]);
             target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)'));
@@ -2996,6 +3020,7 @@ function bcGiftLabel(g) {
     if (g.type === 'equipment') return (g.equipName || (EQUIPMENT_SLOT_LABELS[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
     if (g.type === 'pet') return (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
     if (g.type === 'title') return '칭호: ' + (g.titleName || '미선택');
+    if (g.type === 'avatar') return '아바타: ' + (g.name || '미선택');
     return '?';
 }
 
@@ -3050,6 +3075,19 @@ function renderBcGifts() {
         } else if (g.type === 'title') {
             row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '칭호'),
                 el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickTitle(t => { g.titleId = t.id; g.titleName = t.name; renderBcGifts(); }) }, g.titleName ? (g.titleName + ' (' + g.titleId + ')') : '칭호 선택...')));
+        } else if (g.type === 'avatar') {
+            const avatarSel = el('select', { onchange: e => { g.name = e.target.value; } }, el('option', { value: '' }, '아바타 선택...'));
+            (async () => {
+                const fashion = await getFashion();
+                const seen = new Set();
+                fashion.forEach(f => {
+                    if (!f || !f.name || seen.has(f.name)) return;
+                    seen.add(f.name);
+                    avatarSel.appendChild(el('option', { value: f.name }, f.name));
+                });
+                avatarSel.value = g.name || '';
+            })();
+            row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '아바타'), avatarSel));
         }
         card.appendChild(row);
         list.appendChild(card);
@@ -3073,6 +3111,7 @@ $('#bcAddCard').onclick = () => bcAdd('card');
 $('#bcAddEquip').onclick = () => bcAdd('equipment');
 $('#bcAddPet').onclick = () => bcAdd('pet');
 $('#bcAddTitle').onclick = () => bcAdd('title');
+$('#bcAddAvatar').onclick = () => bcAdd('avatar');
 
 $('#bcSendBtn').onclick = async () => {
     const subject = $('#bcSubject').value.trim();
@@ -3096,6 +3135,9 @@ $('#bcSendBtn').onclick = async () => {
         } else if (g.type === 'title') {
             if (!g.titleId) return toast('칭호를 선택하세요.', false);
             gifts.push({ type: 'title', titleId: g.titleId });
+        } else if (g.type === 'avatar') {
+            if (!g.name) return toast('아바타를 선택하세요.', false);
+            gifts.push({ type: 'avatar', name: g.name });
         } else if (g.type === 'equipment') {
             if (typeof g.id === 'undefined') return toast('장비를 선택하세요.', false);
             const spec = { type: 'equipment', equipType: g.equipType, id: g.id, level: Number(g.level || 0) };

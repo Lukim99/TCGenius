@@ -954,10 +954,13 @@ server.get('/api/mail/giftable', requireUser, async (req, res) => {
         const items = buildInventoryItems(user)
             .filter(i => !i.noTrade)
             .map(i => ({ id: i.id, name: i.name, count: i.count, iconUrl: i.iconUrl, frameUrl: i.frameUrl }));
+        const avatars = rpgenius.getUserAvatars(user)
+            .filter(entry => entry && !rpgenius.getAvatarTradeBlockReason(user, entry.name))
+            .map(entry => Object.assign({ name: entry.name, grade: rpgenius.getAvatarGradeByName(entry.name) }, getAvatarDisplayAssets(entry.name)));
         res.json({
             gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), point: Number(user.point || 0),
             goldIconUrl: getItemImageUrl('화폐', '골드.png'), garnetIconUrl: getItemImageUrl('화폐', '가넷.png'), pointIconUrl: getItemImageUrl('화폐', '포인트.png'),
-            feeRate: rpgenius.MAIL_GOLD_FEE_RATE, feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items
+            feeRate: rpgenius.MAIL_GOLD_FEE_RATE, feeMin: rpgenius.MAIL_GOLD_FEE_MIN, maxGifts: rpgenius.MAIL_GIFT_MAX, equipment, pets, items, avatars
         });
     } catch (e) { console.error('mail giftable error:', e); res.status(500).json({ error: '서버 오류' }); }
 });
@@ -3014,17 +3017,22 @@ server.get('/api/cards/avatars', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const card = resolveUserCardRef(user, source, req.query.number);
         if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
-        const avatars = rpgenius.getAvatarOptionsForCard(user, card).map(option => ({
-            name: option.name,
-            grade: option.grade,
-            unlocked: option.unlocked,
-            equipped: option.equipped,
-            requireStar: option.requireStar,
-            requireStarText: (option.requireStar + 1) + '성',
-            starOk: option.starOk,
-            statLines: buildAvatarStatLines(option.fashion),
-            imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user)
-        }));
+        const avatarShop = (rpgenius.getDataCache('Shop', {}) || {})['아바타'] || [];
+        const avatars = rpgenius.getAvatarOptionsForCard(user, card).map(option => {
+            const shopIndex = avatarShop.findIndex(entry => entry && entry.type == '아바타' && String(entry.fashion || '').trim() == option.name);
+            return {
+                name: option.name,
+                grade: option.grade,
+                unlocked: option.unlocked,
+                equipped: option.equipped,
+                requireStar: option.requireStar,
+                requireStarText: (option.requireStar + 1) + '성',
+                starOk: option.starOk,
+                statLines: buildAvatarStatLines(option.fashion),
+                imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user),
+                shop: shopIndex >= 0 ? { index: shopIndex, price: buildShopPriceDisplay(avatarShop[shopIndex].price || { goods: 'point', amount: 0 }) } : null
+            };
+        });
         res.json({ avatars, current: typeof card.skin == 'string' ? card.skin : '' });
     } catch (e) {
         console.error('card avatars error:', e);

@@ -2222,11 +2222,10 @@ function getFashionData() {
 function getCardFashion(card) {
     if (!card || typeof card.skin != 'string' || !card.skin.trim()) return null;
     const skin = card.skin.trim();
-    const isJob = card.type === '전직';
+    // 아바타는 일반/전직 타입 구분 없이 캐릭터만 맞으면 적용된다
     return getFashionData().find(fashion => {
         if (!fashion || fashion.name != skin) return false;
-        if (!(fashion.primary_card || []).map(id => Number(id)).includes(Number(card.id))) return false;
-        return isJob ? fashion.type === '전직' : fashion.type !== '전직';
+        return (fashion.primary_card || []).map(id => Number(id)).includes(Number(card.id));
     }) || null;
 }
 
@@ -2306,16 +2305,14 @@ function removeUserAvatar(user, name) {
     return entry;
 }
 
-// 카드 클릭 시 보여줄 아바타 목록: 캐릭터·타입이 일치하는 전체 아바타 + 해금/성급/장착 상태.
+// 카드 클릭 시 보여줄 아바타 목록: 캐릭터가 일치하는 전체 아바타(일반/전직 구분 없음) + 해금/성급/장착 상태.
 function getAvatarOptionsForCard(user, card) {
     if (!card || typeof card.id == 'undefined') return [];
-    const isJob = card.type === '전직';
     const star = Number(card.star || 0);
     const seen = new Set();
     return getFashionData().filter(fashion => {
         if (!fashion || !Array.isArray(fashion.primary_card)) return false;
         if (!fashion.primary_card.map(id => Number(id)).includes(Number(card.id))) return false;
-        if (isJob ? fashion.type !== '전직' : fashion.type === '전직') return false;
         if (seen.has(fashion.name)) return false;
         seen.add(fashion.name);
         return true;
@@ -12766,6 +12763,11 @@ function describeMailGift(gift) {
         const name = t ? t.name : '알 수 없는 칭호';
         return { type: 'title', titleId: gift.titleId, name, label: '🏅 칭호 「' + name + '」' };
     }
+    if (gift.type == 'avatar') {
+        const name = String(gift.name || '알 수 없는 아바타');
+        const grade = getAvatarGradeByName(name);
+        return { type: 'avatar', avatarName: name, grade: grade || '일반', name: name + ' 아바타', label: '🧥 ' + name + ' 아바타' + (grade && grade != '일반' ? ' [' + grade + ']' : '') };
+    }
     return null;
 }
 
@@ -12877,6 +12879,7 @@ async function claimMailGifts(user, id) {
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
         else if (g.type == 'item') { addInventoryItem(user, Number(g.id), Number(g.count || 0)); const d = describeMailGift(g); lines.push(d ? d.label : '아이템'); }
         else if (g.type == 'title') { const t = getTitleById(g.titleId); const first = unlockTitle(user, g.titleId); lines.push('🏅 칭호 「' + (t ? t.name : g.titleId) + '」' + (first ? '' : ' (이미 보유)')); }
+        else if (g.type == 'avatar') { const first = unlockAvatar(user, g.name, Number(g.trades || 0)); lines.push('🧥 ' + String(g.name) + ' 아바타' + (first ? '' : ' (이미 보유)')); }
     });
     e.claimed = true;
     if (!e.read) { e.read = true; e.readAt = Date.now(); }
@@ -12902,6 +12905,7 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     let feeTotal = 0;
     const usedEquip = new Set();
     const usedPet = new Set();
+    const usedAvatar = new Set();
     const itemReq = {};
     const currencyReq = { gold: 0, garnet: 0, point: 0 };
     for (const spec of specs) {
@@ -12947,6 +12951,14 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
             if (getInventoryItemCount(sender, id) < itemReq[id]) return { error: '보유한 아이템이 부족합니다: ' + data.name };
             if (getTradableItemCount(sender, id) < itemReq[id]) return { error: '귀속 아이템은 선물할 수 없습니다: ' + data.name + ' (거래 가능 ' + comma(getTradableItemCount(sender, id)) + '개)' };
             resolved.push({ kind: 'item', id, count });
+        } else if (spec.type == 'avatar') {
+            const avatarName = String(spec.name || '').trim();
+            if (usedAvatar.has(avatarName)) return { error: '같은 아바타를 중복으로 담을 수 없습니다.' };
+            usedAvatar.add(avatarName);
+            const blockReason = getAvatarTradeBlockReason(sender, avatarName);
+            if (blockReason) return { error: blockReason };
+            if (hasAvatar(recipient, avatarName)) return { error: '받는 사람이 이미 보유한 아바타입니다: ' + avatarName };
+            resolved.push({ kind: 'avatar', name: avatarName });
         } else {
             return { error: '지원하지 않는 선물 종류입니다.' };
         }
@@ -12957,7 +12969,10 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         gold: Number(sender.gold || 0),
         garnet: Number(sender.garnet || 0),
         point: Number(sender.point || 0),
-        inventory: JSON.parse(JSON.stringify(sender.inventory || { card: [], item: [], equipment: [], pet: [] }))
+        inventory: JSON.parse(JSON.stringify(sender.inventory || { card: [], item: [], equipment: [], pet: [] })),
+        avatars: JSON.parse(JSON.stringify(getUserAvatars(sender))),
+        main_card: JSON.parse(JSON.stringify(sender.main_card || {})),
+        card_slot: JSON.parse(JSON.stringify(sender.card_slot || []))
     };
     const gifts = [];
     const equipIndices = [];
@@ -12980,6 +12995,9 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         } else if (r.kind == 'item') {
             removeInventoryItem(sender, r.id, r.count);
             gifts.push({ type: 'item', id: r.id, count: r.count });
+        } else if (r.kind == 'avatar') {
+            const removed = removeUserAvatar(sender, r.name); // 장착 중이던 카드에서도 해제된다
+            gifts.push({ type: 'avatar', name: r.name, trades: Number(removed && removed.trades || 0) + 1 });
         }
     });
     equipIndices.sort((a, b) => b - a).forEach(i => sender.inventory.equipment.splice(i, 1));
@@ -13006,6 +13024,19 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
     if (resolved.some(r => r.kind == 'equipment' || r.kind == 'pet' || r.kind == 'item')) {
         senderChanges.inventory = sender.inventory;
         senderExpected.inventory = senderBefore.inventory;
+    }
+    if (resolved.some(r => r.kind == 'avatar')) {
+        senderChanges.avatars = getUserAvatars(sender);
+        senderExpected.avatars = senderBefore.avatars;
+        // 아바타 해제로 카드 스킨이 바뀌었을 수 있으므로 카드 상태도 함께 커밋 (expected는 변형 전 스냅샷)
+        if (!senderChanges.inventory) {
+            senderChanges.inventory = sender.inventory;
+            senderExpected.inventory = senderBefore.inventory;
+        }
+        senderChanges.main_card = sender.main_card;
+        senderExpected.main_card = senderBefore.main_card;
+        senderChanges.card_slot = sender.card_slot;
+        senderExpected.card_slot = senderBefore.card_slot;
     }
 
     const transactItems = [];
@@ -13051,6 +13082,9 @@ async function sendMail(sender, recipientName, subject, body, giftSpecs) {
         sender.garnet = senderBefore.garnet;
         sender.point = senderBefore.point;
         sender.inventory = senderBefore.inventory;
+        sender.avatars = senderBefore.avatars;
+        sender.main_card = senderBefore.main_card;
+        sender.card_slot = senderBefore.card_slot;
         console.error('[mail] send transaction 실패 (' + sender.name + ' → ' + recipient.name + '):', e.message);
         return { error: '보유 정보가 변경되었거나 메일 저장에 실패했습니다. 다시 시도해주세요.' };
     }
@@ -13072,6 +13106,7 @@ const BROADCAST_GIFT_MAX = 10;
 //   {type:'card', cardId, star, jobType}     // jobType==='전직'이면 전직 카드
 //   {type:'equipment', equipType, id, level, advanced:{potential,rolled,soul,locked}}
 //   {type:'pet', id, level}
+//   {type:'avatar', name}                     // 아바타 해금 지급 (이미 보유자는 수령 시 '(이미 보유)')
 // 관리자 발송 선물 스펙(specs)을 검증해 최종 gifts 배열로 변환. 실패 시 {error}.
 function buildGmMailGifts(specs) {
     if (specs.length > BROADCAST_GIFT_MAX) return { error: '선물은 최대 ' + BROADCAST_GIFT_MAX + '개까지 담을 수 있습니다.' };
@@ -13115,6 +13150,10 @@ function buildGmMailGifts(specs) {
             const title = getTitleById(String(spec.titleId || ''));
             if (!title) return { error: '존재하지 않는 칭호입니다. (id ' + spec.titleId + ')' };
             gifts.push({ type: 'title', titleId: title.id });
+        } else if (spec.type == 'avatar') {
+            const avatarName = String(spec.name || '').trim();
+            if (!getAvatarGradeByName(avatarName)) return { error: '존재하지 않는 아바타입니다: ' + avatarName };
+            gifts.push({ type: 'avatar', name: avatarName, trades: 0 });
         } else {
             return { error: '지원하지 않는 선물 종류입니다.' };
         }
