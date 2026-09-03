@@ -2,3 +2,7 @@
 *.local
 DB/tibo_x_bridge_state.json
 DB/tibo_x_bridge_state.json.*.tmp
+# 이미지 자산 — S3(tcgenius/assets/)가 원본, 부팅 시 asset_store.js가 동기화 (psd 원본은 psd_sources/에 유지)
+DB/RPGenius/cardImage/
+DB/RPGenius/itemImage/
+DB/RPGenius/ui/

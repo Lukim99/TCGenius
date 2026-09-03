@@ -44,3 +44,9 @@ node_modules/chromium-bidi
 node_modules/devtools-protocol
 # aws-sdk v2 브라우저 번들 (Node는 lib/만 사용)
 node_modules/aws-sdk/dist
+
+# 이미지 자산 — S3가 원본, 부팅 시 asset_store.js가 동기화하므로 이미지에 불포함
+DB/RPGenius/cardImage
+DB/RPGenius/itemImage
+DB/RPGenius/ui
+DB/RPGenius/psd_sources
