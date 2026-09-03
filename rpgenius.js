@@ -2229,6 +2229,19 @@ function getCardFashion(card) {
     }) || null;
 }
 
+// 능력치 적용 아바타: 외형(card.skin)과 별개로 스탯만 가져오는 아바타(card.statSkin). 없으면 외형 아바타의 스탯을 쓴다.
+function getCardStatFashion(card) {
+    if (card && typeof card.statSkin == 'string' && card.statSkin.trim()) {
+        const skin = card.statSkin.trim();
+        const fashion = getFashionData().find(entry => {
+            if (!entry || entry.name != skin) return false;
+            return (entry.primary_card || []).map(id => Number(id)).includes(Number(card.id));
+        });
+        if (fashion) return fashion;
+    }
+    return getCardFashion(card);
+}
+
 function applyPackSkinToCard(card, skinName) {
     const skin = typeof skinName == 'string' ? skinName.trim() : '';
     if (!card || !skin) return;
@@ -2288,6 +2301,7 @@ function stripAvatarFromUserCards(user, name) {
     const key = String(name || '').trim();
     const strip = card => {
         if (card && typeof card.skin == 'string' && card.skin.trim() == key) delete card.skin;
+        if (card && typeof card.statSkin == 'string' && card.statSkin.trim() == key) delete card.statSkin;
     };
     strip(user.main_card);
     (Array.isArray(user.card_slot) ? user.card_slot : []).forEach(strip);
@@ -2323,7 +2337,8 @@ function getAvatarOptionsForCard(user, card) {
         unlocked: hasAvatar(user, fashion.name),
         requireStar: Number(fashion.requireStar || 0),
         starOk: star >= Number(fashion.requireStar || 0),
-        equipped: typeof card.skin == 'string' && card.skin.trim() == fashion.name
+        equipped: typeof card.skin == 'string' && card.skin.trim() == fashion.name,
+        statApplied: typeof card.statSkin == 'string' && card.statSkin.trim() == fashion.name
     }));
 }
 
@@ -2340,6 +2355,28 @@ function equipAvatarOnCard(user, card, name) {
     if (!option) return '이 카드에 적용할 수 없는 아바타입니다.';
     if (!option.starOk) return (option.requireStar + 1) + '성 이상 카드에만 장착할 수 있습니다.';
     card.skin = key;
+    if (typeof card.statSkin == 'string' && card.statSkin.trim() == key) delete card.statSkin; // 장착하면 스탯도 따라오므로 중복 제거
+    return null;
+}
+
+// 능력치만 적용: 외형은 현재 장착 아바타(card.skin) 그대로, 스탯만 해당 아바타로 바꾼다. name이 비면 해제.
+// 보유한 아바타만 가능. 성공 시 null, 실패 시 사유 문자열.
+function applyAvatarStatsOnCard(user, card, name) {
+    if (!card || typeof card.id == 'undefined') return '카드를 찾을 수 없습니다.';
+    const key = String(name || '').trim();
+    if (!key) {
+        delete card.statSkin;
+        return null;
+    }
+    if (!hasAvatar(user, key)) return '보유하지 않은 아바타입니다.';
+    const option = getAvatarOptionsForCard(user, card).find(entry => entry.name == key);
+    if (!option) return '이 카드에 적용할 수 없는 아바타입니다.';
+    if (!option.starOk) return (option.requireStar + 1) + '성 이상 카드에만 적용할 수 있습니다.';
+    if (typeof card.skin == 'string' && card.skin.trim() == key) {
+        delete card.statSkin; // 장착 중인 아바타는 이미 스탯이 적용된다
+        return null;
+    }
+    card.statSkin = key;
     return null;
 }
 
@@ -3628,7 +3665,7 @@ function calculateUserStats(user, _out) {
     if (equippedPassiveIds.has(0)) stats.trueDamageChance = Math.max(Number(stats.trueDamageChance || 0), DESTINY_AION_TRUE_DAMAGE_CHANCE);
     if (equippedPassiveIds.has(1)) stats.hasAbyssDoom = true;
     if (equippedPassiveIds.has(2)) stats.hasCelestia = true;
-    const fashion = getCardFashion(user.main_card);
+    const fashion = getCardStatFashion(user.main_card);
     if (fashion && Number(user.main_card && user.main_card.star || 0) >= Number(fashion.requireStar || 0)) {
         addStats(stats, fashion.option && fashion.option.stat || {});
         addStats(plusStats, fashion.option && fashion.option.plusStat || {});
@@ -7949,7 +7986,7 @@ function formatEquipmentInfo(user) {
         '- ' + formatUserCard(mainCard)
     ];
 
-    const fashion = getCardFashion(mainCard);
+    const fashion = getCardStatFashion(mainCard);
     if (fashion && star >= Number(fashion.requireStar || 0)) {
         const fashionStatLines = formatEquipmentStatLines(fashion.option || {});
         if (fashionStatLines) lines.push('', '〈 패션 카드 효과 〉', fashionStatLines);
@@ -12473,6 +12510,7 @@ function registerTradeOffer(user, args) {
         if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
         user.inventory.card.splice(parsed.number - 1, 1);
         delete card.skin; // 아바타는 계정 해금 자산이라 카드 이동 시 해제된다
+        delete card.statSkin;
         side.offer.cards.push(card);
         resetTradeConfirmations(session);
         return '✅ ' + formatUserCard(card) + ' 캐릭터 카드를 등록했습니다.\n\n' + formatTradeStatus(session);
@@ -15086,6 +15124,8 @@ module.exports = {
     getAvatarTradeBlockReason,
     getAvatarOptionsForCard,
     equipAvatarOnCard,
+    applyAvatarStatsOnCard,
+    getCardStatFashion,
     stripAvatarFromUserCards,
     formatEquipmentInfo,
     formatInventory,

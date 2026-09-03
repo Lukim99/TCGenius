@@ -133,6 +133,43 @@ const rpg = require('../rpgenius');
     assert.strictEqual(rpg.hasAvatar(rewardUser, normalFashion.name), true, '아바타 보상 해금');
     assert.ok(Object.keys(summary).some(key => key === 'avatar:' + normalFashion.name), '보상 요약 기록');
 
+    // 10) 능력치만 적용 (card.statSkin)
+    const statUser = new rpg.RPGUser('아바타스탯', '아바타스탯-id');
+    statUser.save = async () => {};
+    statUser.need_character_card_select = false;
+    rpg.unlockAvatar(statUser, normalFashion.name, 0);
+    const statCard = { id: cardId, star: Math.max(6, Number(normalFashion.requireStar || 0)), type: '일반' };
+    statUser.main_card = statCard;
+    assert.ok(String(rpg.applyAvatarStatsOnCard(statUser, statCard, '없는아바타')).includes('보유하지'), '미보유 능력치 적용 거부');
+    if (Number(normalFashion.requireStar || 0) > 0) {
+        const lowStatCard = { id: cardId, star: 0, type: '일반' };
+        assert.ok(String(rpg.applyAvatarStatsOnCard(statUser, lowStatCard, normalFashion.name)).includes('성 이상'), '성급 미달 능력치 적용 거부');
+    }
+    assert.strictEqual(rpg.applyAvatarStatsOnCard(statUser, statCard, normalFashion.name), null, '능력치 적용 성공');
+    assert.strictEqual(statCard.statSkin, normalFashion.name, 'statSkin 기록');
+    assert.strictEqual(typeof statCard.skin, 'undefined', '외형(skin)은 변하지 않음');
+    assert.strictEqual(rpg.getCardStatFashion(statCard).name, normalFashion.name, '스탯 소스는 statSkin');
+    const hpWith = Number(rpg.calculateUserStats(statUser).hp || 0);
+    delete statCard.statSkin;
+    const hpWithout = Number(rpg.calculateUserStats(statUser).hp || 0);
+    if (Number(normalFashion.option && normalFashion.option.stat && normalFashion.option.stat.hp || 0) > 0) {
+        assert.ok(hpWith > hpWithout, '능력치만 적용 시 스탯 반영 (hp ' + hpWithout + ' → ' + hpWith + ')');
+    }
+    // 같은 아바타를 외형 장착하면 statSkin 중복 제거
+    rpg.applyAvatarStatsOnCard(statUser, statCard, normalFashion.name);
+    assert.strictEqual(rpg.equipAvatarOnCard(statUser, statCard, normalFashion.name), null, '외형 장착');
+    assert.strictEqual(typeof statCard.statSkin, 'undefined', '외형 장착 시 statSkin 정리');
+    // 해금 회수 시 statSkin도 해제
+    rpg.equipAvatarOnCard(statUser, statCard, '');
+    rpg.applyAvatarStatsOnCard(statUser, statCard, normalFashion.name);
+    rpg.removeUserAvatar(statUser, normalFashion.name);
+    assert.strictEqual(typeof statCard.statSkin, 'undefined', '해금 회수 시 statSkin 해제');
+    // 능력치 적용 해제 (빈 이름)
+    rpg.unlockAvatar(statUser, normalFashion.name, 0);
+    rpg.applyAvatarStatsOnCard(statUser, statCard, normalFashion.name);
+    assert.strictEqual(rpg.applyAvatarStatsOnCard(statUser, statCard, ''), null, '능력치 적용 해제');
+    assert.strictEqual(typeof statCard.statSkin, 'undefined', '해제 후 statSkin 없음');
+
     console.log('avatar_system.test.js: 모든 검증 통과');
     process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

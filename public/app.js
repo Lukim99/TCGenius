@@ -1108,7 +1108,8 @@ async function appendAvatarSection(avatarRef) {
             el('div', { class: 'avatar-tile-thumb' },
                 av.imageUrl ? el('img', { src: av.imageUrl, alt: av.name }) : el('span', { class: 'avatar-tile-fallback' }, '?'),
                 !av.unlocked ? el('span', { class: 'avatar-tile-lock' }, '🔒') : null,
-                av.equipped ? el('span', { class: 'avatar-tile-on' }, '장착 중') : null
+                av.equipped ? el('span', { class: 'avatar-tile-on' }, '장착 중') : null,
+                av.statApplied ? el('span', { class: 'avatar-tile-stat' }, '능력치') : null
             ),
             el('div', { class: 'avatar-tile-name' }, av.name),
             el('div', { class: 'avatar-tile-meta' + (av.grade === '한정' ? ' limited' : av.grade === '프레스티지' ? ' prestige' : '') },
@@ -1134,21 +1135,25 @@ function openAvatarDetailModal(av, avatarRef) {
     if (!av.unlocked) {
         if (av.shop && av.shop.price) {
             const p = av.shop.price;
-            const priceLabel = comma(Number(p.amount || 0)) + (p.goods === 'point' ? 'P' : p.goods === 'gold' ? ' 골드' : p.goods === 'garnet' ? ' 가넷' : p.goods === 'mileage' ? ' 마일리지' : '');
+            const priceLabel = p.goods === 'item'
+                ? (p.name || '아이템') + ' ×' + comma(Number(p.amount || 0))
+                : comma(Number(p.amount || 0)) + (p.goods === 'point' ? 'P' : p.goods === 'gold' ? ' 골드' : p.goods === 'garnet' ? ' 가넷' : p.goods === 'mileage' ? ' 마일리지' : '');
             const buyBtn = el('button', {
                 class: 'primary',
                 style: 'width:100%',
+                disabled: !!av.shop.soldOut,
                 onclick: async e => {
                     const button = e.currentTarget;
                     button.disabled = true;
                     try {
+                        // 클릭 시점의 최신 상점 데이터로 재검증 (가격·품절·판매 여부 실시간 반영)
                         const data = await api('/api/shop');
                         shopData = data;
-                        shopTab = '아바타';
-                        const shopItem = (data.shop['아바타'] || []).find(it => it.index === av.shop.index);
-                        if (!shopItem) throw new Error('상점에서 상품을 찾을 수 없습니다.');
+                        const shopItem = (data.shop[av.shop.shopType] || []).find(it => it.type === '아바타' && it.fashion === av.name);
+                        if (!shopItem) throw new Error('현재 판매하지 않는 상품입니다.');
                         if (shopItem.owned) throw new Error('이미 보유한 아바타입니다.');
                         if (shopItem.soldOut) throw new Error('품절된 상품입니다.');
+                        shopTab = av.shop.shopType;
                         closePresetNestedModal();
                         openShopBuyModal(shopItem);
                     } catch (err) {
@@ -1156,35 +1161,45 @@ function openAvatarDetailModal(av, avatarRef) {
                         button.disabled = false;
                     }
                 }
-            }, '구매 (' + priceLabel + ')');
+            }, av.shop.soldOut ? '품절 (' + priceLabel + ')' : '구매 (' + priceLabel + ')');
             nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, buyBtn));
+            if (av.shop.shopType && av.shop.shopType !== '아바타') {
+                nodes.push(el('div', { class: 'avatar-hint' }, av.shop.shopType + ' 상점에서 판매 중입니다.'));
+            }
         } else {
             nodes.push(el('div', { class: 'avatar-detail-note' }, '미보유'));
         }
     } else if (!av.equipped && !av.starOk) {
         nodes.push(el('div', { class: 'avatar-detail-note' }, '⚠️ ' + av.requireStarText + ' 이상 카드에만 장착할 수 있습니다.'));
     } else {
-        const btn = el('button', {
-            class: av.equipped ? '' : 'primary',
-            style: 'width:100%',
-            onclick: async e => {
-                const button = e.currentTarget;
-                button.disabled = true;
-                try {
-                    const res = await postApi('/api/cards/avatar', { source: avatarRef.source, number: avatarRef.number, name: av.equipped ? '' : av.name });
-                    closePresetNestedModal();
-                    closeModal();
-                    if (res.profile) renderProfile(res.profile);
-                    if (pageIsActive('inventory')) await loadInventory('cards');
-                } catch (err) {
-                    showAlert(err.message);
-                    button.disabled = false;
-                }
+        const sendAvatarAction = async (button, body) => {
+            button.disabled = true;
+            try {
+                const res = await postApi('/api/cards/avatar', Object.assign({ source: avatarRef.source, number: avatarRef.number }, body));
+                closePresetNestedModal();
+                closeModal();
+                if (res.profile) renderProfile(res.profile);
+                if (pageIsActive('inventory')) await loadInventory('cards');
+            } catch (err) {
+                showAlert(err.message);
+                button.disabled = false;
             }
-        }, av.equipped ? '해제' : '장착');
-        nodes.push(el('div', { class: 'row', style: 'margin-top:10px' }, btn));
+        };
+        const buttons = [];
+        if (av.equipped) {
+            buttons.push(el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '' }) }, '해제'));
+        } else {
+            buttons.push(el('button', { class: 'primary', style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name }) }, '장착'));
+            buttons.push(av.statApplied
+                ? el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: '', statsOnly: true }) }, '능력치 적용 해제')
+                : el('button', { style: 'flex:1', onclick: e => sendAvatarAction(e.currentTarget, { name: av.name, statsOnly: true }) }, '능력치만 적용'));
+        }
+        nodes.push(el('div', { class: 'row', style: 'margin-top:10px;display:flex;gap:8px' }, ...buttons));
+        if (!av.equipped) {
+            nodes.push(el('div', { class: 'avatar-hint' }, '능력치만 적용: 외형은 현재 장착 중인 아바타를 유지하고, 능력치만 이 아바타로 적용됩니다.'));
+        }
     }
-    openPresetNestedModal(av.name, '아바타 · ' + av.grade + (av.equipped ? ' · 장착 중' : (av.unlocked ? '' : ' · 미보유')), nodes, 'avatar');
+    openPresetNestedModal(av.name, '아바타 · ' + av.grade + (av.equipped ? ' · 장착 중' : (av.unlocked ? (av.statApplied ? ' · 능력치 적용 중' : '') : ' · 미보유')), nodes, 'avatar');
 }
 
 function openMainCardModal(card, avatarRef) {

@@ -1938,7 +1938,11 @@ function getHFieldCharacterSprite(mainCard) {
     const cardType = mainCard.type == '전직' ? '전직' : '일반';
     const skin = getHFieldSpritePart(mainCard.skin);
     const candidates = [];
-    if (skin) candidates.push([name, cardType, skin].join('__') + '.png');
+    if (skin) {
+        candidates.push([name, cardType, skin].join('__') + '.png');
+        // 아바타는 타입 구분 없이 장착 가능하므로, 같은 스킨의 반대 타입 스프라이트로 폴백
+        candidates.push([name, cardType == '전직' ? '일반' : '전직', skin].join('__') + '.png');
+    }
     if (cardType == '전직') candidates.push(name + '__전직.png');
     candidates.push(name + '.png');
     const spriteRoot = path.join(RPG_UI_PATH, '필드', '캐릭터');
@@ -3010,29 +3014,50 @@ function buildAvatarStatLines(fashion) {
     return lines;
 }
 
+// 아바타의 상점 판매 정보: 전 카테고리에서 type '아바타' 항목을 찾아 실시간 가격·품절 여부를 반환.
+// '아바타' 카테고리를 우선 탐색하고, 여러 곳에서 팔리면 구매 가능한 항목을 우선한다.
+function findAvatarShopListing(user, avatarName, now) {
+    const shops = rpgenius.getDataCache('Shop', {}) || {};
+    const types = Object.keys(shops).sort((a, b) => (a === '아바타' ? -1 : 0) - (b === '아바타' ? -1 : 0));
+    const matches = [];
+    for (const shopType of types) {
+        const list = Array.isArray(shops[shopType]) ? shops[shopType] : [];
+        list.forEach((entry, index) => {
+            if (!entry || entry.type != '아바타' || String(entry.fashion || '').trim() != avatarName) return;
+            const { limits, remaining } = rpgenius.getShopRemainingLimits(user, shopType, index, entry, now);
+            const soldOut = (typeof limits.global == 'number' && remaining.global <= 0)
+                || (typeof limits.max == 'number' && remaining.max <= 0)
+                || (typeof limits.daily == 'number' && remaining.daily <= 0)
+                || (typeof limits.weekly == 'number' && remaining.weekly <= 0)
+                || (typeof limits.monthly == 'number' && remaining.monthly <= 0);
+            matches.push({ shopType, index, soldOut, price: buildShopPriceDisplay(entry.price || { goods: 'point', amount: 0 }) });
+        });
+    }
+    return matches.find(m => !m.soldOut) || matches[0] || null;
+}
+
 server.get('/api/cards/avatars', requireUser, async (req, res) => {
     try {
         const source = String(req.query.source || '');
+        await rpgenius.loadRpgeniusDataEntry('ShopState'); // 선착순(global) 잔여 수량 실시간 반영
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const card = resolveUserCardRef(user, source, req.query.number);
         if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
-        const avatarShop = (rpgenius.getDataCache('Shop', {}) || {})['아바타'] || [];
-        const avatars = rpgenius.getAvatarOptionsForCard(user, card).map(option => {
-            const shopIndex = avatarShop.findIndex(entry => entry && entry.type == '아바타' && String(entry.fashion || '').trim() == option.name);
-            return {
-                name: option.name,
-                grade: option.grade,
-                unlocked: option.unlocked,
-                equipped: option.equipped,
-                requireStar: option.requireStar,
-                requireStarText: (option.requireStar + 1) + '성',
-                starOk: option.starOk,
-                statLines: buildAvatarStatLines(option.fashion),
-                imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user),
-                shop: shopIndex >= 0 ? { index: shopIndex, price: buildShopPriceDisplay(avatarShop[shopIndex].price || { goods: 'point', amount: 0 }) } : null
-            };
-        });
+        const now = new Date();
+        const avatars = rpgenius.getAvatarOptionsForCard(user, card).map(option => ({
+            name: option.name,
+            grade: option.grade,
+            unlocked: option.unlocked,
+            equipped: option.equipped,
+            requireStar: option.requireStar,
+            requireStarText: (option.requireStar + 1) + '성',
+            starOk: option.starOk,
+            statApplied: option.statApplied,
+            statLines: buildAvatarStatLines(option.fashion),
+            imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user),
+            shop: option.unlocked ? null : findAvatarShopListing(user, option.name, now)
+        }));
         res.json({ avatars, current: typeof card.skin == 'string' ? card.skin : '' });
     } catch (e) {
         console.error('card avatars error:', e);
@@ -3047,7 +3072,10 @@ server.post('/api/cards/avatar', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const card = resolveUserCardRef(user, source, req.body && req.body.number);
         if (!card) return res.status(400).json({ error: '카드를 찾을 수 없습니다.' });
-        const error = rpgenius.equipAvatarOnCard(user, card, (req.body && req.body.name) || '');
+        const statsOnly = !!(req.body && req.body.statsOnly);
+        const error = statsOnly
+            ? rpgenius.applyAvatarStatsOnCard(user, card, (req.body && req.body.name) || '')
+            : rpgenius.equipAvatarOnCard(user, card, (req.body && req.body.name) || '');
         if (error) return res.status(400).json({ error });
         await user.save();
         res.json({ ok: true, profile: buildUserProfile(user) });
@@ -6537,6 +6565,7 @@ function buildShopData(user) {
             return {
                 index: idx,
                 type: item.type,
+                fashion: item.type === '아바타' ? String(item.fashion || '').trim() : undefined,
                 count: item.count,
                 display: buildShopItemDisplay(item),
                 price: buildShopPriceDisplay(item.price),
