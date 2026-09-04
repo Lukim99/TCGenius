@@ -2204,5 +2204,63 @@
     "protect": {
       "star": 7
     }
+  },
+  {
+    "name": "흑막의 영혼석",
+    "soul": {
+      "name": "흑막",
+      "weapon": {
+        "stat": { "atk": 170, "darkAtk": 35 },
+        "plusStat": { "atk": 0.075, "bossDmg": 0.03 }
+      },
+      "hat": {
+        "stat": { "def": 160, "mp": 100, "darkRes": 25 },
+        "plusStat": { "crit": 0.03, "cooldown": 0.02 }
+      },
+      "armor": {
+        "stat": { "def": 170, "darkRes": 40 },
+        "plusStat": { "def": 0.05, "takenDamage": -0.03 }
+      },
+      "pants": {
+        "stat": { "def": 165, "pnt": 45, "darkAtk": 20 },
+        "plusStat": { "afterSkill": 0.04, "mpReduce": -0.03 }
+      },
+      "shoes": {
+        "stat": { "def": 155, "mp": 80, "darkRes": 30 },
+        "plusStat": { "avd": 0.03, "exp": 0.03 }
+      },
+      "date": 7
+    },
+    "no_trade": true,
+    "type": "사용",
+    "desc": "월드보스 '흑막'의 영혼이 담긴 영혼석이다. 무기·모자·갑옷·하의·신발에 서로 다른 힘을 부여한다.",
+    "use": "영혼석"
+  },
+  {
+    "name": "흑막의 영혼석 조각",
+    "no_trade": true,
+    "type": "재료",
+    "desc": "흑막의 영혼이 스며든 조각이다. 15개를 모아 완전한 영혼석으로 만들 수 있다."
+  },
+  {
+    "name": "흑막의 상급 꾸러미",
+    "pack": 7,
+    "no_trade": true,
+    "desc": "월드보스 '흑막' 딜 기여도 1위에게 지급되는 최고 등급 꾸러미.",
+    "type": "번들"
+  },
+  {
+    "name": "흑막의 중급 꾸러미",
+    "pack": 8,
+    "no_trade": true,
+    "desc": "월드보스 '흑막' 딜 기여도 2~3위에게 지급되는 중급 꾸러미.",
+    "type": "번들"
+  },
+  {
+    "name": "흑막의 하급 꾸러미",
+    "pack": 9,
+    "no_trade": true,
+    "desc": "월드보스 '흑막' 딜 기여도 4~10위에게 지급되는 기본 꾸러미.",
+    "type": "번들"
   }
 ]

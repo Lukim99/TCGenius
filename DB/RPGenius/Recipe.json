@@ -238,5 +238,14 @@
         "crafted": [
             { "type": "장신구", "accessory_id": 26 }
         ]
+    },
+    {
+        "name": "흑막의 영혼석",
+        "materials": [
+            { "type": "아이템", "item_id": 271, "count": 15 }
+        ],
+        "crafted": [
+            { "type": "아이템", "item_id": 270, "count": 1 }
+        ]
     }
 ]

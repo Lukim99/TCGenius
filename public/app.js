@@ -3356,7 +3356,7 @@ const HUNT_MENU = [
     { key: '일반 필드', level: 'Lv.1 ~ 300', action: () => { location.href = '/field'; } },
     { key: '헬 필드', level: 'Lv.141 ~ 300', action: () => { location.href = '/hfield'; } },
     { key: '일일던전', level: 'Lv.101 ~ 300', action: null },
-    { key: '월드보스', level: 'Lv.1 ~ 300', action: null },
+    { key: '월드보스', level: 'Lv.1 ~ 300', action: () => { location.href = '/worldboss'; } },
     { key: '레이드', level: 'Lv.71 ~ 300', action: () => {
         if (window.HAS_PARTY) location.href = '/party';
         else showAlert('레이드에 입장할 수 없습니다.');

@@ -452,6 +452,13 @@ server.get('/field', async (req, res) => {
     return res.send(renderGeneralFieldApp(sess));
 });
 
+server.get('/worldboss', async (req, res) => {
+    const sess = getSession(req);
+    if (!sess || !sess.name) return res.redirect('/');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderWorldBossApp(sess));
+});
+
 server.get('/pvp', async (req, res) => {
     const sess = getSession(req);
     if (!sess || !sess.name) return res.redirect('/');
@@ -2645,6 +2652,312 @@ server.post('/api/field/fragment', requireUser, (req, res) => runGeneralFieldMut
     const message = rpgenius.consumeFragment(user);
     await user.save();
     return buildGeneralFieldActionResult(user, before, message, 'fragment');
+}));
+
+// ===== 월드보스 =====
+const WORLD_BOSS_EXTRA_SKILLS = JSON.parse(fs.readFileSync(path.join(__dirname, 'DB', 'RPGenius', 'ExtraSkills.json'), 'utf8'));
+
+function worldBossAsset(file) {
+    return getGeneralFieldAssetUrl(path.join('월드보스', file));
+}
+
+function getWorldBossAssets(bossName) {
+    const base = path.join(bossName);
+    const sheet = (file, frames, fps, loop, hitFrame) => ({ url: worldBossAsset(path.join(base, file)), frameWidth: 270, frameHeight: 480, columns: 5, frames, fps, loop: !!loop, hitFrame });
+    return {
+        artUrl: worldBossAsset(bossName + '.png'),
+        backgroundUrl: worldBossAsset(path.join(base, 'background.png')),
+        animations: {
+            idle: sheet('idle.png', 24, 8, true),
+            darkPulse: sheet('dark-pulse.png', 25, 30, false, 9),
+            icham: sheet('icham.png', 25, 30, false, 10),
+            curse: sheet('curse.png', 25, 30, false, 15),
+            defeat: sheet('defeat.png', 25, 8, false)
+        },
+        effects: {
+            darkPulse: worldBossAsset(path.join(base, 'effects', 'dark-pulse.png')),
+            icham: worldBossAsset(path.join(base, 'effects', 'icham.png')),
+            curse: worldBossAsset(path.join(base, 'effects', 'curse.png'))
+        }
+    };
+}
+
+function describeWorldBossReward(entry) {
+    if (!entry) return null;
+    const count = Number(entry.count && entry.count.min || 0);
+    if (entry.type == '골드' || entry.type == '가넷') return { kind: 'currency', name: entry.type, count };
+    if (entry.type != '아이템') return { kind: entry.type, name: entry.type, count };
+    const items = rpgenius.getDataCache('Item', []);
+    const item = typeof entry.item_name == 'string'
+        ? items.find(data => data && data.name == entry.item_name)
+        : items[Number(entry.item_id)];
+    const assets = item ? getItemDisplayAssets(item) : { iconUrl: null, frameUrl: null };
+    return { kind: 'item', name: item && item.name || entry.item_name || '알 수 없는 아이템', count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
+}
+
+function serializeWorldBossExtraSkill(id, cooldowns) {
+    const skill = WORLD_BOSS_EXTRA_SKILLS[Number(id)];
+    if (!skill) return null;
+    return {
+        id: Number(id),
+        name: skill.name,
+        element: skill.element || null,
+        mpCost: Number(skill.mp_cost || 0),
+        cooldownMs: Number(skill.cooltime || 0),
+        cooldownEnd: Number(cooldowns && cooldowns[skill.name] || 0),
+        desc: rpgenius.formatCurrentSkillDesc(skill, 0),
+        chosen: true
+    };
+}
+
+function getWorldBossRankings(boss, state) {
+    return Object.entries(state.contributions || {})
+        .map(([name, damage]) => ({ name, damage: Math.round(Number(damage || 0)) }))
+        .filter(entry => entry.damage > 0)
+        .sort((a, b) => b.damage - a.damage || a.name.localeCompare(b.name, 'ko-KR'))
+        .slice(0, 10)
+        .map((entry, index) => Object.assign(entry, { rank: index + 1 }));
+}
+
+function buildWorldBossState(user) {
+    const bosses = rpgenius.getWorldBossList();
+    const daily = rpgenius.getWorldBossDailyState(user);
+    const items = rpgenius.getDataCache('Item', []);
+    const valorId = items.findIndex(item => item && item.name == '용맹의 증표');
+    const fieldName = user.field && user.field.name || null;
+    const activeBoss = user.field && user.field.worldBoss ? bosses.find(boss => boss && boss.name == fieldName) : null;
+    const selecting = !!(activeBoss && user.field.skillSelecting && user.pendingAction && user.pendingAction.type == '월드보스스킬선택');
+    const inField = !!(activeBoss && !selecting);
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
+    const mainCard = serializeCard(user.main_card, user);
+    const selectedSkill = inField ? serializeWorldBossExtraSkill(user.field.chosenSkillId, user.field.skillCooldowns) : null;
+    const fieldSkills = inField ? getHFieldSkills(user, mainCard, fieldName) : [];
+    const skills = selectedSkill ? [selectedSkill].concat(fieldSkills.filter(skill => skill.name != selectedSkill.name)) : fieldSkills;
+    const bossCards = bosses.map(boss => {
+        const state = rpgenius.getWorldBossState(boss.name);
+        const respawnAt = Number(state.hp || 0) <= 0 ? rpgenius.getWorldBossRespawnTimestamp(state) : 0;
+        const alive = Number(state.hp || 0) > 0 || (respawnAt > 0 && Date.now() >= respawnAt);
+        const rankings = getWorldBossRankings(boss, state);
+        return {
+            name: boss.name,
+            hp: alive && Number(state.hp || 0) <= 0 ? Number(boss.hp || 0) : Math.max(0, Number(state.hp || 0)),
+            maxHp: Number(boss.hp || 0),
+            element: boss.element || null,
+            alive,
+            respawnAt: alive ? 0 : respawnAt,
+            contribution: Number(state.contributions && state.contributions[user.name] || 0),
+            claimedThreshold: Number(state.claimedRewards && state.claimedRewards[user.name] || 0),
+            rankings,
+            myRank: (rankings.find(entry => entry.name == user.name) || {}).rank || null,
+            rewards: (boss.rewards || []).map(reward => ({ threshold: Number(reward.threshold || 0), items: (reward.items || []).map(describeWorldBossReward).filter(Boolean) })),
+            rankRewards: (boss.rankRewards || []).map(reward => ({ rank: reward.rank, minRank: reward.minRank, maxRank: reward.maxRank, items: (reward.items || []).map(describeWorldBossReward).filter(Boolean) })),
+            assets: getWorldBossAssets(boss.name),
+            pattern: boss.pattern || null
+        };
+    });
+    const current = activeBoss ? bossCards.find(boss => boss.name == activeBoss.name) : null;
+    const pending = selecting ? user.pendingAction : null;
+    let entryError = null;
+    if (fieldName && !activeBoss) entryError = '현재 ' + fieldName + ' 필드에 입장 중입니다. 먼저 해당 필드에서 퇴장해주세요.';
+    return {
+        serverNow: Date.now(),
+        bosses: bossCards,
+        inField,
+        selecting,
+        fieldName,
+        current,
+        canEnter: !fieldName && !entryError,
+        entryError,
+        daily: {
+            count: Number(daily.count || 0), limit: 2,
+            tokenCount: Number(daily.tokenCount || 0), tokenLimit: 3,
+            valorCount: valorId >= 0 ? rpgenius.getInventoryItemCount(user, valorId) : 0,
+            valorIconUrl: valorId >= 0 ? getItemDisplayAssets(items[valorId]).iconUrl : null
+        },
+        candidates: pending ? (pending.candidates || []).map(id => serializeWorldBossExtraSkill(id, {})).filter(Boolean) : [],
+        player: {
+            name: user.name, level: Number(user.level || 1),
+            hp: typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0), maxHp,
+            mp: typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0), maxMp,
+            atk: Number(stats.atk || 0), def: Number(stats.def || 0),
+            combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
+            cardName: mainCard && mainCard.name || '', cardFormatted: mainCard && mainCard.formatted || '',
+            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            spriteUrl: getHFieldCharacterSprite(mainCard)
+        },
+        target: current ? { name: current.name, element: current.element, hp: current.hp, maxHp: current.maxHp } : null,
+        nextActionAt: inField ? Number(user.field.nextActionAt || 0) : 0,
+        curseApplied: !!(inField && rpgenius.isBlackCurtainHealingBlocked(user)),
+        elapsedMs: inField ? Math.max(0, Date.now() - Number(user.field.enteredAt || Date.now())) : 0,
+        skills,
+        consumables: inField && !rpgenius.isBlackCurtainHealingBlocked(user) ? getHFieldRecoveryItems(user) : []
+    };
+}
+
+function captureWorldBossAction(user) {
+    const boss = user.field && user.field.worldBoss ? rpgenius.findWorldBossByName(user.field.name) : null;
+    const state = boss ? rpgenius.getWorldBossState(boss.name) : null;
+    return {
+        inField: !!boss,
+        fieldName: boss && boss.name || null,
+        bossHp: state ? Number(state.hp || 0) : 0,
+        playerHp: Number(user.hp || 0),
+        playerMp: Number(user.mp || 0),
+        gold: Number(user.gold || 0), garnet: Number(user.garnet || 0),
+        itemCounts: new Map((user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : []).map(item => [Number(item.id), Number(item.count || 0)]))
+    };
+}
+
+function getWorldBossActionRewards(user, before) {
+    const rewards = [];
+    const items = rpgenius.getDataCache('Item', []);
+    const gold = Math.max(0, Number(user.gold || 0) - Number(before.gold || 0));
+    const garnet = Math.max(0, Number(user.garnet || 0) - Number(before.garnet || 0));
+    if (gold) rewards.push({ kind: 'currency', name: '골드', count: gold });
+    if (garnet) rewards.push({ kind: 'currency', name: '가넷', count: garnet });
+    (user.inventory && user.inventory.item || []).forEach(entry => {
+        const id = Number(entry.id), gained = Number(entry.count || 0) - Number(before.itemCounts.get(id) || 0);
+        if (gained <= 0 || !items[id]) return;
+        const assets = getItemDisplayAssets(items[id]);
+        rewards.push({ kind: 'item', name: items[id].name, count: gained, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl });
+    });
+    return rewards;
+}
+
+function drainWorldBossEvents(userName, bossName) {
+    return rpgenius.drainFieldTickEvents(userName)
+        .filter(event => event && (bossName ? event.fieldName == bossName : rpgenius.findWorldBossByName(event.fieldName)))
+        .map(event => {
+            if (event.action == 'boss') return combatEffects.annotateEvent(Object.assign({ receivedEffectElement: '암' }, event));
+            const tick = mapFieldTickEvent(event);
+            tick.receivedHits = parseFieldIncomingHits(event.message);
+            tick.received = tick.receivedHits.reduce((sum, hit) => sum + hit.damage, 0);
+            tick.bossRetaliation = tick.received > 0;
+            tick.receivedEffectElement = '암';
+            return combatEffects.annotateEvent(tick);
+        });
+}
+
+function buildWorldBossActionResult(user, before, message, action, skillName) {
+    const state = buildWorldBossState(user);
+    const endedBoss = (state.bosses || []).find(boss => boss.name == before.fieldName);
+    const hits = parseFieldOutgoingHits(message);
+    const receivedHits = parseFieldIncomingHits(message);
+    const damage = hits.reduce((sum, hit) => sum + Number(hit.damage || 0), 0)
+        || Math.max(0, Number(before.bossHp || 0) - Number(endedBoss ? endedBoss.hp : before.bossHp));
+    const received = receivedHits.reduce((sum, hit) => sum + Number(hit.damage || 0), 0);
+    return {
+        ok: !String(message).startsWith('❌'), message: String(message), state,
+        event: combatEffects.annotateEvent({
+            action, skillName: skillName || null,
+            effectElement: getWebFieldAttackElement(user, action, skillName, state.skills),
+            receivedEffectElement: '암', hits, receivedHits, damage, received,
+            triggeredEffectIds: rpgenius.drainFieldActionEffectIds(user.name),
+            criticalCount: hits.filter(hit => hit.critical).length,
+            bossRetaliation: received > 0,
+            defeated: before.inField && !state.inField && Number(state.player.hp || 0) <= 1,
+            bossDefeated: before.inField && !state.inField && !!endedBoss && Number(endedBoss.hp || 0) <= 0,
+            rewards: getWorldBossActionRewards(user, before)
+        })
+    };
+}
+
+async function runWorldBossMutation(req, res, mutate) {
+    try {
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) throw new Error('유저를 찾을 수 없습니다.');
+            const bossName = user.field && user.field.worldBoss ? user.field.name : null;
+            const active = bossName && !user.field.skillSelecting ? rpgenius.findWorldBossByName(bossName) : null;
+            const dueEvents = active ? await rpgenius.processBlackCurtainDueAttacks(user, active, Date.now()) : [];
+            if (dueEvents.length > 0) await user.save({ defer: true });
+            const result = await mutate(user);
+            (result.state || result).events = user.field && !user.field.worldBoss ? [] : drainWorldBossEvents(user.name, bossName);
+            return result;
+        });
+        res.json(payload);
+    } catch (e) {
+        console.error('world boss action error:', e);
+        res.status(500).json({ error: e && e.message == '유저를 찾을 수 없습니다.' ? e.message : '서버 오류' });
+    }
+}
+
+server.get('/api/worldboss', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    rpgenius.getWorldBossList().forEach(boss => rpgenius.ensureWorldBossRevived(boss));
+    const active = user.field && user.field.worldBoss && !user.field.skillSelecting ? rpgenius.findWorldBossByName(user.field.name) : null;
+    if (active) {
+        if (user.field) rpgenius.ensureWorldBossSkillTimer(user);
+    }
+    const state = buildWorldBossState(user);
+    return state;
+}));
+
+server.post('/api/worldboss/enter', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    const bossName = String(req.body && req.body.bossName || '').trim().slice(0, 80);
+    const boss = rpgenius.findWorldBossByName(bossName);
+    if (!boss) return { ok: false, message: '❌ 존재하지 않는 월드보스입니다.', state: buildWorldBossState(user) };
+    const message = await rpgenius.enterField(user, boss.name, {});
+    await user.save();
+    const state = buildWorldBossState(user);
+    return { ok: state.selecting, message, state };
+}));
+
+server.post('/api/worldboss/select', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    const message = rpgenius.confirmWorldBossSkill(user, Number(req.body && req.body.index));
+    if (!String(message).startsWith('❌') && user.field) rpgenius.ensureWorldBossSkillTimer(user);
+    await user.save();
+    return { ok: !String(message).startsWith('❌'), message, state: buildWorldBossState(user) };
+}));
+
+server.post('/api/worldboss/cancel', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    if (!user.field || !user.field.worldBoss || !user.field.skillSelecting) return { ok: false, message: '❌ 취소할 스킬 선택이 없습니다.', state: buildWorldBossState(user) };
+    rpgenius.forceLeaveWorldBoss(user);
+    user.pendingAction = null;
+    await user.save();
+    return { ok: true, message: '월드보스 스킬 선택을 취소했습니다. 사용한 도전 기회는 반환되지 않습니다.', state: buildWorldBossState(user) };
+}));
+
+server.post('/api/worldboss/attack', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    if (!user.field || !user.field.worldBoss || user.field.skillSelecting) return { ok: false, message: '❌ 월드보스 전투 중이 아닙니다.', state: buildWorldBossState(user) };
+    const before = captureWorldBossAction(user);
+    const message = await rpgenius.useBasicAttackInField(user);
+    await user.save({ defer: true });
+    return buildWorldBossActionResult(user, before, message, 'attack');
+}));
+
+server.post('/api/worldboss/skill', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    if (!user.field || !user.field.worldBoss || user.field.skillSelecting) return { ok: false, message: '❌ 월드보스 전투 중이 아닙니다.', state: buildWorldBossState(user) };
+    const skillName = String(req.body && req.body.skillName || '').trim().slice(0, 80);
+    if (!skillName) return { ok: false, message: '❌ 사용할 스킬을 선택해주세요.', state: buildWorldBossState(user) };
+    const before = captureWorldBossAction(user);
+    const message = await rpgenius.useSkillInField(user, skillName);
+    await user.save({ defer: true });
+    return buildWorldBossActionResult(user, before, message, 'skill', skillName);
+}));
+
+server.post('/api/worldboss/use-consumable', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    if (!user.field || !user.field.worldBoss || user.field.skillSelecting) return { ok: false, message: '월드보스 전투 중이 아닙니다.', state: buildWorldBossState(user) };
+    if (rpgenius.isBlackCurtainHealingBlocked(user)) return { ok: false, message: '흑막의 저주로 회복할 수 없습니다.', state: buildWorldBossState(user) };
+    const itemId = Number(req.body && req.body.itemId);
+    const items = rpgenius.getDataCache('Item', []), item = Number.isInteger(itemId) ? items[itemId] : null;
+    const recoveryFuncs = item && item.type == '소모품' ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0 || rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '사용할 수 있는 회복 소모품이 없거나 부족합니다.', state: buildWorldBossState(user) };
+    const before = captureWorldBossAction(user);
+    const message = await rpgenius.useItem(user, item.name, 1);
+    const state = buildWorldBossState(user);
+    return {
+        ok: !String(message).startsWith('❌'), message, state,
+        event: combatEffects.annotateEvent({ action: 'consumable', itemId, itemName: item.name, recoveredHp: Math.max(0, Number(state.player.hp || 0) - before.playerHp), recoveredMp: Math.max(0, Number(state.player.mp || 0) - before.playerMp) })
+    };
+}));
+
+server.post('/api/worldboss/claim', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    const message = await rpgenius.claimWorldBossRewards(user);
+    await user.save();
+    return { ok: !String(message).startsWith('❌'), message, state: buildWorldBossState(user) };
 }));
 
 // ===== PVP =====
@@ -8535,6 +8848,28 @@ function renderGeneralFieldApp(sess) {
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE='regular';</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/hfield.js"></script>
+</body></html>`;
+}
+
+function renderWorldBossApp(sess) {
+    return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>월드보스 [흑막]</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<link rel="stylesheet" href="/static/worldboss.css"></head><body>
+<main id="worldBossRoot" class="wb-root" aria-label="월드보스 흑막 전투">
+  <canvas id="wbCanvas" aria-label="월드보스 WebGL 전투 화면"></canvas>
+  <canvas id="wbHud"></canvas>
+  <section id="wbSelection" class="wb-selection" aria-labelledby="wbSelectionTitle" hidden>
+    <div class="wb-selection-content">
+      <header><p class="wb-eyebrow">WORLD BOSS</p><h1 id="wbSelectionTitle">전용 스킬 선택</h1><p>이번 도전에서 사용할 힘을 선택하세요.</p></header>
+      <div id="wbSkillCards" class="wb-skill-cards"></div>
+      <button id="wbCancelSelection" class="wb-cancel" type="button">선택 취소</button>
+    </div>
+  </section>
+</main>
+<script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
+<script src="/static/combat-effects.js"></script>
+<script src="/static/worldboss.js"></script>
 </body></html>`;
 }
 

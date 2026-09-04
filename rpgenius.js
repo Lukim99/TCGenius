@@ -253,6 +253,9 @@ function pushFieldTickEvent(userName, source, before, user, damageOverride, mess
     const list = fieldTickEvents[userName] || (fieldTickEvents[userName] = []);
     list.push({
         at: Date.now(), fieldName: before.fieldName, source, damage, killedCount,
+        message: before.phase == 'worldBoss' ? message : undefined,
+        defeated: before.phase == 'worldBoss' && !sameField && Number(user.hp || 0) <= 1,
+        bossDefeated: before.phase == 'worldBoss' && !sameField && Number(getWorldBossState(before.fieldName).hp || 0) <= 0,
         phaseBefore: before.phase, phaseAfter,
         phaseChanged: sameField && before.phase != phaseAfter,
         eliteEncountered: sameField && before.phase == 'normal' && phaseAfter == 'elite',
@@ -295,7 +298,9 @@ async function runFieldIktaeBotTick(userName) {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
         tickDamage = Number(result.damage || 0);
         lines.push('🤖 익테봇 자동 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
+        resolveBlackCurtainDamageRetaliation(user, context.boss, result, lines);
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+        else defeatWorldBossPlayer(user, context.boss, lines);
     } else if (context.type == 'elite') {
         const result = buildEliteHuntResult(user, context.dungeon, botDamage, extra);
         lines.push(result);
@@ -354,7 +359,9 @@ async function runFieldSunataTick(userName) {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         tickDamage = Number(result.damage || 0);
         lines.push('🎵 수나타 공격! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
+        resolveBlackCurtainDamageRetaliation(user, context.boss, result, lines);
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+        else defeatWorldBossPlayer(user, context.boss, lines);
     } else if (context.type == 'elite') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else {
@@ -409,7 +416,9 @@ async function runFieldMarkTick(userName) {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
         tickDamage = Number(result.damage || 0);
         lines.push('✍️ 유서새김 지속 피해! ' + context.boss.name + '에게 ' + comma(result.damage) + ' 피해를 입혔습니다!');
+        resolveBlackCurtainDamageRetaliation(user, context.boss, result, lines);
         if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, context.boss, lines);
+        else defeatWorldBossPlayer(user, context.boss, lines);
     } else if (context.type == 'elite') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else {
@@ -519,7 +528,9 @@ async function runFieldEquipmentDotTick(userName) {
             tickDamage = Number(result.damage || 0);
             effectMessage = '🔥 ' + effect.label + '! ' + effectContext.boss.name + '에게 ' + comma(result.damage) + ' 피해';
             lines.push(effectMessage);
+            resolveBlackCurtainDamageRetaliation(user, effectContext.boss, result, lines);
             if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, effectContext.boss, lines);
+            else defeatWorldBossPlayer(user, effectContext.boss, lines);
         } else if (effectContext.type == 'hell') {
             effectMessage = buildEliteHuntResult(user, effectContext.dungeon, effect.rawDamage, extra);
             lines.push(effectMessage);
@@ -614,7 +625,92 @@ function getDataCache(key, fallback) {
     return fallback;
 }
 
-initRpgeniusData();
+const BLACK_CURTAIN_SOUL_NAME = '흑막의 영혼석';
+const BLACK_CURTAIN_FRAGMENT_NAME = '흑막의 영혼석 조각';
+const BLACK_CURTAIN_BUNDLE_NAMES = ['흑막의 상급 꾸러미', '흑막의 중급 꾸러미', '흑막의 하급 꾸러미'];
+
+async function migrateBlackCurtainContent() {
+    const items = getDataCache('Item', readJson(ITEMS_PATH, []));
+    const bundles = getDataCache('Bundle', readJson(BUNDLE_PATH, []));
+    const recipes = getDataCache('Recipe', readJson(RECIPE_PATH, []));
+    if (!Array.isArray(items) || !Array.isArray(bundles) || !Array.isArray(recipes)) return;
+    const localItems = readJson(ITEMS_PATH, []);
+    const definition = name => localItems.find(item => item && item.name == name);
+    let itemsChanged = false;
+    const upsertItem = name => {
+        const desired = definition(name);
+        if (!desired) throw new Error('로컬 아이템 정의 누락: ' + name);
+        const index = items.findIndex(item => item && item.name == name);
+        if (index < 0) {
+            items.push(JSON.parse(JSON.stringify(desired)));
+            itemsChanged = true;
+            return items.length - 1;
+        }
+        const pack = items[index] && items[index].pack;
+        const next = JSON.parse(JSON.stringify(desired));
+        if (typeof pack == 'number' && desired.type == '번들') next.pack = pack;
+        if (JSON.stringify(items[index]) != JSON.stringify(next)) {
+            items[index] = next;
+            itemsChanged = true;
+        }
+        return index;
+    };
+    const soulId = upsertItem(BLACK_CURTAIN_SOUL_NAME);
+    const fragmentId = upsertItem(BLACK_CURTAIN_FRAGMENT_NAME);
+    const itemId = name => items.findIndex(item => item && item.name == name);
+    const reward = (name, count) => ({ type: '아이템', item_id: itemId(name), count: { min: count, max: count } });
+    const bundleDefs = [
+        [reward(BLACK_CURTAIN_SOUL_NAME, 1), reward(BLACK_CURTAIN_FRAGMENT_NAME, 15), reward('레전더리 잠재능력 주문서', 1), reward('축복받은 장비 보호권', 2), { type: '가넷', count: { min: 1500, max: 1500 } }, { type: '골드', count: { min: 5000000, max: 5000000 } }],
+        [reward(BLACK_CURTAIN_FRAGMENT_NAME, 10), reward('유니크 잠재능력 주문서', 1), reward('고급 장비 보호권', 2), { type: '가넷', count: { min: 900, max: 900 } }, { type: '골드', count: { min: 3000000, max: 3000000 } }],
+        [reward(BLACK_CURTAIN_FRAGMENT_NAME, 5), reward('에픽 잠재능력 주문서', 1), reward('장비 보호권', 3), { type: '가넷', count: { min: 500, max: 500 } }, { type: '골드', count: { min: 1500000, max: 1500000 } }]
+    ];
+    const stableValue = value => {
+        if (Array.isArray(value)) return value.map(stableValue);
+        if (!value || typeof value != 'object') return value;
+        return Object.keys(value).sort().reduce((result, key) => {
+            result[key] = stableValue(value[key]);
+            return result;
+        }, {});
+    };
+    const sameValue = (left, right) => JSON.stringify(stableValue(left)) == JSON.stringify(stableValue(right));
+    let bundlesChanged = false;
+    const blackPackIndexes = bundles
+        .map((entry, index) => bundleDefs.some(def => sameValue(entry, def)) ? index : -1)
+        .filter(index => index >= 0);
+    const blackPackStart = blackPackIndexes.length > 0 ? Math.min.apply(null, blackPackIndexes) : -1;
+    const duplicateOnlyTail = blackPackStart >= 0
+        && bundles.length - blackPackStart > bundleDefs.length
+        && bundles.slice(blackPackStart).every(entry => bundleDefs.some(def => sameValue(entry, def)));
+    if (duplicateOnlyTail) {
+        bundles.splice(blackPackStart, bundles.length - blackPackStart, ...bundleDefs);
+        bundlesChanged = true;
+    }
+    BLACK_CURTAIN_BUNDLE_NAMES.forEach((name, index) => {
+        const bundleItemId = upsertItem(name);
+        const bundleItem = items[bundleItemId];
+        let pack = Number(bundleItem.pack);
+        if (!Number.isInteger(pack) || pack < 0 || !sameValue(bundles[pack], bundleDefs[index])) {
+            const existingPack = bundles.findIndex(entry => sameValue(entry, bundleDefs[index]));
+            pack = existingPack >= 0 ? existingPack : bundles.length;
+            bundleItem.pack = pack;
+            itemsChanged = true;
+        }
+        if (!sameValue(bundles[pack], bundleDefs[index])) {
+            bundles[pack] = bundleDefs[index];
+            bundlesChanged = true;
+        }
+    });
+    const recipe = { name: BLACK_CURTAIN_SOUL_NAME, materials: [{ type: '아이템', item_id: fragmentId, count: 15 }], crafted: [{ type: '아이템', item_id: soulId, count: 1 }] };
+    const recipeIndex = recipes.findIndex(entry => entry && entry.name == BLACK_CURTAIN_SOUL_NAME);
+    let recipesChanged = false;
+    if (recipeIndex < 0) { recipes.push(recipe); recipesChanged = true; }
+    else if (JSON.stringify(recipes[recipeIndex]) != JSON.stringify(recipe)) { recipes[recipeIndex] = recipe; recipesChanged = true; }
+    if (itemsChanged) await saveRpgeniusDataEntry('Item', items);
+    if (bundlesChanged) await saveRpgeniusDataEntry('Bundle', bundles);
+    if (recipesChanged) await saveRpgeniusDataEntry('Recipe', recipes);
+}
+
+initRpgeniusData().then(migrateBlackCurtainContent).catch(e => console.error('[흑막 데이터 마이그레이션] ' + e.message));
 
 // 유생의 주사위 이벤트 종료 시, 일반 상점에서 판매 중인 '유생의 주사위'를 '펀치기계 토큰'으로 자동 전환한다.
 function migrateEventDiceShopItemToPunchToken() {
@@ -4528,7 +4624,7 @@ function getEquippedPassiveIds(user) {
 }
 
 function tryImmortalArmorRegen(user, maxHp, lines) {
-    if (!user.field) return false;
+    if (!user.field || isBlackCurtainHealingBlocked(user)) return false;
     const curHp = Number(user.hp || 0);
     if (curHp <= 0 || curHp > Number(maxHp || 0) * IMMORTAL_DRAGON_ARMOR_TRIGGER_HP_RATIO) return false;
     const data = findEquipWithPassiveId(user, 3);
@@ -4583,6 +4679,7 @@ function applyAttackPotentialRecovery(user, stats, lines) {
 }
 
 function applyRecoveryEfficiency(amount, user, stats) {
+    if (isBlackCurtainHealingBlocked(user)) return 0;
     const equipmentState = user && user.field && user.field.equipmentState;
     if (equipmentState && Date.now() < Number(equipmentState.ignoreHealingUntil || 0)) return 0;
     const currentStats = stats || calculateUserStats(user);
@@ -5119,10 +5216,11 @@ function confirmWorldBossSkill(user, indexArg, channel) {
     user.hp = Number(stats.hp || 0);
     user.mp = Number(stats.mp || 0);
     const passiveDamageReduction = skill.name == '000' ? Number(getSkillValue(skill, 3, 0) || 0) : 0;
+    const enteredAt = Date.now();
     user.field = {
         name: boss.name,
         worldBoss: true,
-        enteredAt: Date.now(),
+        enteredAt,
         nextActionAt: 0,
         skillCooldowns: {},
         bossSkillCooldowns: {},
@@ -5133,6 +5231,16 @@ function confirmWorldBossSkill(user, indexArg, channel) {
         karmaStack: 0,
         passiveDamageReduction: passiveDamageReduction
     };
+    if (boss.pattern == 'blackCurtain') {
+        user.field.blackCurtain = {
+            nextDarkPulseAt: enteredAt + 2500,
+            nextPercentSlashAt: enteredAt + 40000,
+            curseAt: enteredAt + 80000,
+            darkPulseUseCount: 0,
+            damageSinceIcham: 0,
+            curseApplied: false
+        };
+    }
     if (channel) startWorldBossSkillTimer(user, boss, channel);
     const lines = ['⚔️ 월드보스 ' + boss.name + ' 전투 시작!'];
     lines.push('- 선택 스킬: ' + skill.name);
@@ -5461,7 +5569,9 @@ function grantWorldBossRewardItems(user, rewardItems, lines) {
             return;
         }
         if (it.type == '아이템') {
-            const itemId = Number(it.item_id);
+            const itemId = typeof it.item_name == 'string'
+                ? items.findIndex(item => item && item.name == it.item_name)
+                : Number(it.item_id);
             const item = items[itemId];
             if (!item) {
                 if (lines) lines.push('- (아이템 누락) item_id=' + itemId);
@@ -6502,7 +6612,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (!state.settlementRecoveryAt) state.settlementRecoveryAt = Number(user.field.enteredAt || Date.now()) + intervalMs;
         if (Date.now() >= Number(state.settlementRecoveryAt || 0)) {
             const ticks = Math.floor((Date.now() - Number(state.settlementRecoveryAt)) / intervalMs) + 1;
-            if (hpRatio < mpRatio) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
+            if (hpRatio < mpRatio && !isBlackCurtainHealingBlocked(user)) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
             else if (mpRatio < hpRatio) user.mp = Math.min(Number(stats.mp || 0), Number(user.mp || 0) + Math.max(1, Math.round(Number(stats.mp || 0) * .01 * ticks)));
             state.settlementRecoveryAt += ticks * intervalMs;
             markEquipment('포상 정산 반지');
@@ -6693,7 +6803,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
                 if (stacks > 0) markEquipment('왓 타임 이즈 잇 나우');
             } else state.dropoutStacks = Math.min(4, stacks + 1);
         }
-        if (stageOf('진사이') && Math.random() < .05) { user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredCombatEffect(extra, 'combat', 'HP 회복'); }
+        if (stageOf('진사이') && Math.random() < .05 && !isBlackCurtainHealingBlocked(user)) { user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredCombatEffect(extra, 'combat', 'HP 회복'); }
         if (stageOf('잿불 모자') && Date.now() >= Number(state.burnReadyAt || 0)) {
             const duration = 8 + Number(stats.burnDurationFlat || 0) + (getEquippedNamed(user, '행운의 복주머니') ? 3 : 0);
             const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * stepValue('잿불 모자', .30, .05) * (1 + Number(stats.burnDamage || 0) + (getEquippedSetCount(user, '잿불의 장송곡') >= 4 ? .35 : 0))));
@@ -6711,7 +6821,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (allCooling) {
             extra.damageBonusMul = Number(extra.damageBonusMul || 0) + stepValue('쿨다운 목걸이', .12, .03);
             rawDamage = Math.round(rawDamage * (1 + stepValue('쿨다운 목걸이', .35, .10)));
-            user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)))));
+            if (!isBlackCurtainHealingBlocked(user)) user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.max(1, Math.round(Number(stats.hp || 0) * .001 * attackUnitCount * (1 + Number(stats.recoveryEfficiency || 0)))));
             markEquipment('쿨다운 목걸이');
             markTriggeredCombatEffect(extra, 'combat', 'HP 회복');
         }
@@ -6830,9 +6940,11 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
         const passiveMp = actionType == 'skill' ? getPassiveMpRecovery(user) : 0;
         if (passiveMp > 0) applySkillMpRecovery(user, Number(stats.mp || 0), passiveMp, stats, lines);
     }
+    resolveBlackCurtainDamageRetaliation(user, boss, result, lines);
     appendWorldBossStatusLines(lines, user, boss, result);
     if (Number(result.after) <= 0) await finalizeWorldBossDefeat(user, boss, lines);
-    setWorldBossNextActionAt(user);
+    else defeatWorldBossPlayer(user, boss, lines);
+    if (user.field) setWorldBossNextActionAt(user);
     return lines.join('\n');
 }
 
@@ -7532,10 +7644,12 @@ async function useWorldBossChosenSkill(user, skillName) {
     }
     lines.push('- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')');
     if (result) recordQuestEvent(user, 'worldboss', { boss: boss.name });
+    if (result) resolveBlackCurtainDamageRetaliation(user, boss, result, lines);
     if (result) grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
     if (result) appendWorldBossStatusLines(lines, user, boss, result);
     if (result && Number(result.after) <= 0) await finalizeWorldBossDefeat(user, boss, lines);
-    else if (!isAcceleration) setWorldBossNextActionAt(user);
+    else if (result) defeatWorldBossPlayer(user, boss, lines);
+    if (user.field && !isAcceleration) setWorldBossNextActionAt(user);
     return lines.join('\n');
 }
 
@@ -7581,7 +7695,172 @@ function getWorldBossSkillIds(boss) {
     return (boss.skills || []).map(id => Number(id)).filter(id => getExtraSkillById(id));
 }
 
+function isBlackCurtainBoss(boss) {
+    return !!(boss && boss.pattern == 'blackCurtain');
+}
+
+function isBlackCurtainHealingBlocked(user) {
+    return !!(user && user.field && user.field.worldBoss && user.field.blackCurtain && user.field.blackCurtain.curseApplied);
+}
+
+function ensureBlackCurtainPatternState(user) {
+    if (!user || !user.field) return null;
+    const enteredAt = Number(user.field.enteredAt || Date.now());
+    const state = user.field.blackCurtain || (user.field.blackCurtain = {});
+    if (!Number(state.nextDarkPulseAt)) state.nextDarkPulseAt = enteredAt + 2500;
+    if (!Number(state.nextPercentSlashAt)) state.nextPercentSlashAt = enteredAt + 40000;
+    if (!Number(state.curseAt)) state.curseAt = enteredAt + 80000;
+    state.darkPulseUseCount = Math.max(0, Number(state.darkPulseUseCount || 0));
+    state.damageSinceIcham = Math.max(0, Number(state.damageSinceIcham || 0));
+    state.curseApplied = !!state.curseApplied;
+    return state;
+}
+
+function applyBlackCurtainFixedDamage(user, damage) {
+    const before = Math.max(0, Number(user.hp || 0));
+    const dealt = Math.min(before, Math.max(0, Math.round(Number(damage || 0))));
+    user.hp = Math.max(0, before - dealt);
+    return dealt;
+}
+
+function applyBlackCurtainIncomingHit(user, boss, rawDamage, options, lines) {
+    const opts = options || {};
+    if (opts.fixed) return { damage: applyBlackCurtainFixedDamage(user, rawDamage), avoided: false };
+    const stats = calculateUserStats(user);
+    const slotEffects = calculateCardSlotEffects(user);
+    let receivedReduction = Number(user.field && user.field.passiveDamageReduction || 0) + Number(slotEffects.hpDamageReduction || 0);
+    receivedReduction = Math.max(0, Math.min(.95, receivedReduction));
+    const hpRatio = Number(user.hp || 0) / Math.max(1, Number(stats.hp || 1));
+    const bossState = getWorldBossState(boss.name);
+    const bossHpRatio = Number(bossState.hp || 0) / Math.max(1, Number(boss.hp || 1));
+    let equipmentReduction = 0;
+    if (hpRatio <= .50) equipmentReduction += Number(stats.bloodFlowReduction || 0) * (hpRatio <= .30 ? 2 : 1);
+    const ultimatumArmor = bossHpRatio <= .50 ? getEquippedNamed(user, '최후통첩 아머') : null;
+    if (ultimatumArmor) equipmentReduction += .10 + .04 * Math.max(0, getTranscendStage(ultimatumArmor.ref.equip, ultimatumArmor.data) - 1);
+    const activeReduction = Math.max(0, Math.min(.95, getActiveFieldDamageReduction(user) + equipmentReduction));
+    const activeMultiplier = getActiveFieldDamageMultiplier(user) * Math.max(0, 1 + Number(stats.takenDamage || 0));
+    const reduced = Number(rawDamage || 0) * activeMultiplier * (1 - receivedReduction) * (1 - activeReduction) * (1 - Number(opts.counterReduction || 0));
+    const elementMultiplier = getElementDamageMultiplier('암', boss, stats);
+    const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
+    let damage = avoided ? 0 : Math.max(0, Math.round(getDamageAfterDefense(reduced, stats.def, boss.pnt) * elementMultiplier));
+    if (user.field && user.field.iktaeBot && user.field.iktaeBot.hp > 0 && Date.now() < user.field.iktaeBot.expired_at) {
+        const absorbed = Math.round(damage * .3);
+        damage -= absorbed;
+        user.field.iktaeBot.hp -= absorbed;
+        if (user.field.iktaeBot.hp <= 0) {
+            user.field.iktaeBot = null;
+            clearFieldIktaeBot(user.name);
+        }
+    }
+    damage = consumeNextDamageReduction(user, damage);
+    damage = applyFieldShieldAbsorption(user, damage, lines || []);
+    user.hp = Math.max(0, Number(user.hp || 0) - damage);
+    return { damage, avoided };
+}
+
+function resolveBlackCurtainDamageRetaliation(user, boss, result, lines) {
+    if (!isBlackCurtainBoss(boss) || !user || !user.field || user.field.name != boss.name || Number(result && result.dealt || 0) <= 0 || Number(result.after || 0) <= 0) return 0;
+    const pattern = ensureBlackCurtainPatternState(user);
+    pattern.damageSinceIcham += Number(result.dealt || 0);
+    if (pattern.damageSinceIcham < 5000) return 0;
+    pattern.damageSinceIcham -= 5000;
+    const damage = applyBlackCurtainFixedDamage(user, 3000);
+    if (lines) lines.push('❗ 피해 누적 반격 · 흑막의 일참! ' + comma(damage) + ' 고정 피해를 입었습니다!');
+    return damage;
+}
+
+function defeatWorldBossPlayer(user, boss, lines) {
+    if (!user || Number(user.hp || 0) > 0) return false;
+    clearWorldBossSkillTimer(user.name);
+    user.field = null;
+    user.hp = 1;
+    if (lines) lines.push('', '💀 ' + boss.name + '에게 패배하고 필드에서 퇴장했습니다.');
+    return true;
+}
+
+function pushBlackCurtainTickEvent(userName, bossName, event) {
+    const list = fieldTickEvents[userName] || (fieldTickEvents[userName] = []);
+    list.push(Object.assign({ at: Date.now(), fieldName: bossName, source: '흑막', action: 'boss' }, event || {}));
+    if (list.length > 30) list.splice(0, list.length - 30);
+}
+
+async function processBlackCurtainDueAttacks(user, boss, now) {
+    if (!isBlackCurtainBoss(boss) || !user || !user.field || user.field.name != boss.name || user.field.skillSelecting) return [];
+    const pattern = ensureBlackCurtainPatternState(user);
+    const due = [];
+    let guard = 0;
+    while (pattern.nextDarkPulseAt <= now && guard++ < 80) { due.push({ at: pattern.nextDarkPulseAt, type: 'darkPulse', priority: 1 }); pattern.nextDarkPulseAt += 2500; }
+    while (pattern.nextPercentSlashAt <= now && guard++ < 80) { due.push({ at: pattern.nextPercentSlashAt, type: 'percentSlash', priority: 3 }); pattern.nextPercentSlashAt += 40000; }
+    if (!pattern.curseApplied && pattern.curseAt <= now) due.push({ at: pattern.curseAt, type: 'curse', priority: 4 });
+    due.sort((a, b) => a.at - b.at || a.priority - b.priority);
+    const events = [];
+    for (const attack of due) {
+        if (!user.field || user.field.name != boss.name || Number(getWorldBossState(boss.name).hp || 0) <= 0) break;
+        if (attack.type == 'curse') {
+            pattern.curseApplied = true;
+            const event = { bossAction: 'curse', curseApplied: true, message: '흑막의 저주가 내려 회복할 수 없게 되었습니다.' };
+            events.push(event); pushBlackCurtainTickEvent(user.name, boss.name, event);
+            continue;
+        }
+        if (user.field.bossSkipNext) {
+            user.field.bossSkipNext = false;
+            const event = { bossAction: attack.type, skipped: true, message: '흑막이 얼어붙어 공격하지 못했습니다.' };
+            events.push(event); pushBlackCurtainTickEvent(user.name, boss.name, event);
+            continue;
+        }
+        const buffs = getFieldBuffs(user);
+        const counter = buffs.counterReady && Number(buffs.counterReady.expired_at || 0) > now ? buffs.counterReady : null;
+        const counterReduction = counter && attack.type != 'percentSlash' ? Number(counter.reduceRate || 0) : 0;
+        const lines = [];
+        const hits = [];
+        let actionName = '';
+        if (attack.type == 'darkPulse') {
+            pattern.darkPulseUseCount++;
+            const hit = applyBlackCurtainIncomingHit(user, boss, 1500 * pattern.darkPulseUseCount, { counterReduction }, lines);
+            hits.push(hit.damage); actionName = '암흑 파동';
+        } else {
+            const maxHp = Number(calculateUserStats(user).hp || 0);
+            hits.push(applyBlackCurtainIncomingHit(user, boss, maxHp * .40, { fixed: true }, lines).damage);
+            actionName = '일참 · 생명 절단';
+        }
+        let counterDamage = 0;
+        if (counter && attack.type != 'percentSlash' && user.field) {
+            const stats = calculateUserStats(user);
+            const counterResult = dealDamageToWorldBoss(user, boss, Math.round(Number(counter.flat || 0) + Number(stats.atk || 0) * Number(counter.mul || 0)), { disableBlackCurtainRetaliation: true });
+            counterDamage = Number(counterResult.damage || 0);
+            delete buffs.counterReady;
+            grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
+            if (Number(counterResult.after || 0) <= 0) await finalizeWorldBossDefeat(user, boss, lines);
+        }
+        const total = hits.reduce((sum, damage) => sum + Number(damage || 0), 0);
+        if (user.field) {
+            const userStats = calculateUserStats(user);
+            applyDamageTakenSlotRecovery(user, Number(userStats.hp || 0), total, calculateCardSlotEffects(user), userStats, lines);
+            user.field.karmaStack = Number(user.field.karmaStack || 0) + total * .30;
+        }
+        const event = {
+            bossAction: attack.type,
+            message: actionName + '! ' + hits.map(damage => comma(damage)).join(' + ') + ' 피해를 입었습니다.',
+            received: total,
+            receivedHits: hits.map(damage => ({ damage, critical: false, destiny: attack.type == 'percentSlash', label: actionName })),
+            counterDamage,
+            bossDefeated: Number(getWorldBossState(boss.name).hp || 0) <= 0,
+            defeated: Number(user.hp || 0) <= 0
+        };
+        events.push(event); pushBlackCurtainTickEvent(user.name, boss.name, event);
+        if (defeatWorldBossPlayer(user, boss, lines)) break;
+        tryImmortalArmorRegen(user, Number(calculateUserStats(user).hp || 0), lines);
+    }
+    return events;
+}
+
 function getNextWorldBossSkillDelay(user, boss, now) {
+    if (isBlackCurtainBoss(boss) && user && user.field) {
+        const state = ensureBlackCurtainPatternState(user);
+        const due = [state.nextDarkPulseAt, state.nextPercentSlashAt];
+        if (!state.curseApplied) due.push(state.curseAt);
+        return Math.max(0, Math.min.apply(null, due) - now);
+    }
     const skillIds = getWorldBossSkillIds(boss);
     if (skillIds.length == 0 || !user.field) return null;
     if (!user.field.bossSkillCooldowns) user.field.bossSkillCooldowns = {};
@@ -7628,6 +7907,15 @@ async function runWorldBossSkillTick(userName, bossName) {
         clearWorldBossSkillTimer(userName);
         latest.field = null;
         await latest.save();
+        return;
+    }
+    if (isBlackCurtainBoss(boss)) {
+        const lines = [];
+        const events = await processBlackCurtainDueAttacks(latest, boss, Date.now());
+        events.forEach(event => { if (event && event.message) lines.push(event.message); });
+        if (latest.field && latest.field.worldBoss) scheduleNextWorldBossSkillTimer(latest, boss);
+        await latest.save();
+        if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
         return;
     }
     const skillIds = getWorldBossSkillIds(boss);
@@ -8603,7 +8891,7 @@ function applyPetRegen(user, stats, lines) {
     const mpHeal = (specials.mpRegenRate > 0 && beforeMp < maxMp) ? Math.floor(maxMp * specials.mpRegenRate * elapsedSec) : 0;
     if (hpHeal <= 0 && mpHeal <= 0) return;
     user.field.petRegenAt = now;
-    if (hpHeal > 0) {
+    if (hpHeal > 0 && !isBlackCurtainHealingBlocked(user)) {
         user.hp = Math.min(maxHp, beforeHp + hpHeal);
         if (lines) lines.push('🐾 펫 회복: HP +' + comma(user.hp - beforeHp));
     }
@@ -11081,6 +11369,9 @@ async function useItem(user, itemName, countArg) {
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
     if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
+    if (item.type == '소모품' && isBlackCurtainHealingBlocked(user) && (item.use_func || []).some(func => /회복/.test(String(func && func.type || '')))) {
+        return '❌ 흑막의 저주로 회복할 수 없습니다.';
+    }
     if (item.type == '미끼') {
         if (!getBaitDefinition(item.name)) return '❌ 등록되지 않은 미끼입니다.';
         if (user.bait == item.name) return '❌ 이미 사용 중인 미끼입니다.';
@@ -15085,6 +15376,7 @@ module.exports = {
     resumeAllFishing,
     loadRpgeniusDataEntry,
     saveRpgeniusDataEntry,
+    migrateBlackCurtainContent,
     getDataCache,
     RPGENIUS_DATA_KEYS,
     openSealedLockbox,
@@ -15231,6 +15523,18 @@ module.exports = {
     formatSkillDescWithIncrease,
     formatCurrentSkillDesc,
     formatCooltime,
+    getWorldBossList,
+    findWorldBossByName,
+    getWorldBossState,
+    getWorldBossRespawnTimestamp,
+    getWorldBossDailyState,
+    ensureWorldBossRevived,
+    confirmWorldBossSkill,
+    claimWorldBossRewards,
+    ensureWorldBossSkillTimer,
+    forceLeaveWorldBoss,
+    processBlackCurtainDueAttacks,
+    isBlackCurtainHealingBlocked,
     getWorldBossContributionRanking,
     calculateCardSlotEffects,
     getShopRemainingLimits,

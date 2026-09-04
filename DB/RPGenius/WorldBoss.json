@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "name": "흑막",
+    "hp": 1200000000,
+    "atk": 700,
+    "def": 780,
+    "pnt": 1500,
+    "critDef": 0.32,
+    "element": "암",
+    "darkAtk": 160,
+    "darkRes": 100,
+    "pattern": "blackCurtain",
+    "skills": [],
+    "skillPool": [1, 2, 3, 4, 5, 6, 7, 8],
+    "rewards": [
+      { "threshold": 1000, "items": [{ "type": "아이템", "item_id": 21, "count": { "min": 1, "max": 1 } }] },
+      { "threshold": 5000, "items": [{ "type": "아이템", "item_id": 22, "count": { "min": 1, "max": 1 } }] },
+      { "threshold": 10000, "items": [{ "type": "골드", "count": { "min": 1000000, "max": 1000000 } }] },
+      { "threshold": 30000, "items": [{ "type": "아이템", "item_name": "흑막의 영혼석 조각", "count": { "min": 1, "max": 1 } }] },
+      { "threshold": 50000, "items": [{ "type": "아이템", "item_id": 29, "count": { "min": 10, "max": 10 } }] },
+      { "threshold": 100000, "items": [{ "type": "아이템", "item_name": "흑막의 영혼석 조각", "count": { "min": 2, "max": 2 } }] },
+      { "threshold": 500000, "items": [{ "type": "골드", "count": { "min": 30000000, "max": 30000000 } }] },
+      { "threshold": 1000000, "items": [{ "type": "아이템", "item_id": 16, "count": { "min": 1, "max": 1 } }] },
+      { "threshold": 10000000, "items": [{ "type": "아이템", "item_name": "흑막의 영혼석", "count": { "min": 1, "max": 1 } }] }
+    ],
+    "rankRewards": [
+      { "rank": 1, "items": [{ "type": "아이템", "item_name": "흑막의 상급 꾸러미", "count": { "min": 1, "max": 1 } }] },
+      { "minRank": 2, "maxRank": 3, "items": [{ "type": "아이템", "item_name": "흑막의 중급 꾸러미", "count": { "min": 1, "max": 1 } }] },
+      { "minRank": 4, "maxRank": 10, "items": [{ "type": "아이템", "item_name": "흑막의 하급 꾸러미", "count": { "min": 1, "max": 1 } }] }
+    ]
+  }
+]
