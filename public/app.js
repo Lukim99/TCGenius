@@ -4123,8 +4123,9 @@ function buildCombineStage() {
     m.forEach((slot, i) => slot.onclick = () => removeFromSlotByIndex(i));
     const btn = el('button', { type: 'button', class: 'combine-btn', id: 'combineBtn', 'aria-label': '카드 조합 실행', onclick: submitCombine });
     btn.style.backgroundImage = 'url(' + combineUi('조합버튼.png') + ')';
-    const effect = el('img', { class: 'combine-effect', id: 'combineEffect', alt: '', style: 'display:none' });
-    stage.replaceChildren(lucky, result, m[0], m[1], m[2], btn, effect);
+    stage.replaceChildren(lucky, result, m[0], m[1], m[2], btn);
+    const head = stage.closest('.combine-board').querySelector('.fusion-head');
+    if (!head.querySelector('.fusion-sound')) head.appendChild(window.FusionEffects.soundControl());
     combineState.slotEls = { lucky, result, m };
     combineState.built = true;
 }
@@ -4297,14 +4298,6 @@ function openProtectModal(grade) {
     body.appendChild(el('button', { class: 'close', onclick: () => { combineState.protectIndex = null; combineState.luckyRate = null; closeModal(); renderCombineStage(); } }, '사용 안 함'));
 }
 
-function playCombineEffect() {
-    const eff = $('#combineEffect');
-    if (!eff) return;
-    eff.src = combineUi('조합-이펙트.gif') + '&t=' + Date.now();
-    eff.style.display = '';
-    setTimeout(() => { eff.style.display = 'none'; }, 1500);
-}
-
 async function submitCombine() {
     if (combineState.busy || !combineState.slots.every(Boolean)) return;
     combineState.busy = true;
@@ -4313,36 +4306,42 @@ async function submitCombine() {
     const payload = { numbers: combineState.slots.map(c => c.number) };
     if (combineState.protectIndex != null) payload.protectIndex = combineState.protectIndex;
     else if (combineState.luckyRate != null) payload.luckyRate = combineState.luckyRate;
+    let effect;
     try {
+        effect = window.FusionEffects.begin($('#combineStage'), {
+            cards: combineState.slots.slice(), protectIndex: combineState.protectIndex, luckyRate: combineState.luckyRate
+        });
         const data = await postApi('/api/combine', payload);
-        playCombineEffect();
-        setTimeout(() => {
-            combineState.cards = data.cards || [];
-            combineState.meta = data.meta || combineState.meta;
-            combineState.slots = [null, null, null];
-            combineState.protectIndex = null;
-            combineState.luckyRate = null;
-            combineState.result = data.resultCard || null;
-            combineState.busy = false;
-            renderCombineStage();
-            if (data.profile) renderProfile(data.profile);
-            renderCombineResult(data);
-        }, 1500);
+        combineState.cards = data.cards || [];
+        combineState.meta = data.meta || combineState.meta;
+        combineState.slots = [null, null, null];
+        combineState.protectIndex = null;
+        combineState.luckyRate = null;
+        combineState.result = data.resultCard || null;
+        await effect.reveal(data);
+        renderCombineStage();
+        if (data.profile) renderProfile(data.profile);
+        renderCombineResult(data);
     } catch (e) {
-        combineState.busy = false;
+        if (effect) effect.close();
         renderCombineStage();
         showAlert(e.message);
+    } finally {
+        if (effect) effect.close();
+        combineState.busy = false;
+        if (btn) btn.disabled = !combineState.slots.every(Boolean);
     }
 }
 
 function renderCombineResult(data) {
     const info = $('#combineInfo');
     if (!info) return;
-    const success = !!data.success;
     const msg = typeof data.message === 'string' ? data.message : '';
+    const omega = msg.startsWith('🌟 오메가');
+    const success = !!data.success || omega;
     const guaranteed = msg.indexOf('확정') !== -1;
     const rc = data.resultCard;
-    const headline = guaranteed ? '⚜️ 확정 조합 성공!' : (success ? '🌟 조합 성공!' : '조합 완료');
+    const headline = omega ? '🌟 오메가 조합 완료!' : guaranteed ? '⚜️ 확정 조합 성공!' : (success ? '🌟 조합 성공!' : '등급 상승 실패 · 같은 등급 카드 획득');
     const notes = msg.split('\n').filter(l => l.indexOf('🛡️') !== -1).map(l => l.replace(/^[-\s]*/, ''));
     info.replaceChildren(el('div', { class: 'combine-result ' + (success ? 'ok' : 'fail') },
         el('div', { class: 'combine-result-head' }, headline),
@@ -4412,6 +4411,8 @@ function buildJobCombineStage() {
     const btn = el('button', { type: 'button', class: 'jobcombine-btn', id: 'jobCombineBtn', 'aria-label': '전직 카드 조합 실행', onclick: submitJobCombine });
     btn.style.backgroundImage = 'url(' + combineUi('전직조합버튼.png') + ')';
     stage.replaceChildren(result, m[0], m[1], m[2], btn);
+    const head = stage.closest('.jobcombine-board').querySelector('.fusion-head');
+    if (!head.querySelector('.fusion-sound')) head.appendChild(window.FusionEffects.soundControl());
     jobCombineState.slotEls = { result, m };
     jobCombineState.built = true;
 }
@@ -4532,13 +4533,15 @@ async function submitJobCombine() {
     jobCombineState.busy = true;
     const btn = $('#jobCombineBtn');
     if (btn) btn.disabled = true;
+    let effect;
     try {
+        effect = window.FusionEffects.begin($('#jobCombineStage'), { job: true });
         const data = await postApi('/api/jobcombine', { numbers: jobCombineState.slots.map(c => c.number) });
         jobCombineState.cards = data.cards || [];
         jobCombineState.gold = data.gold != null ? data.gold : jobCombineState.gold;
         jobCombineState.slots = [null, null, null];
         jobCombineState.result = data.resultCard || null;
-        jobCombineState.busy = false;
+        await effect.reveal(data);
         renderJobCombineStage();
         if (data.profile) renderProfile(data.profile);
         const info = $('#jobCombineInfo');
@@ -4553,9 +4556,13 @@ async function submitJobCombine() {
             ));
         }
     } catch (e) {
-        jobCombineState.busy = false;
+        if (effect) effect.close();
         renderJobCombineStage();
         showAlert(e.message);
+    } finally {
+        if (effect) effect.close();
+        jobCombineState.busy = false;
+        if (btn) btn.disabled = !jobCombineState.slots.every(Boolean);
     }
 }
 

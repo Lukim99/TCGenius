@@ -8817,6 +8817,7 @@ function renderUserDashboard(sess, opts) {
 <div id="loadingOverlay" class="loading-overlay"><div class="loading-spinner"></div></div>
 <nav class="bottom-tabs" id="bottomTabs"></nav>
 <script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
+<script src="/static/fusion-effects.js"></script>
 <script src="/static/app.js"></script>
 </body></html>`;
 }
