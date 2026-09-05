@@ -683,7 +683,7 @@ function renderStatPoint(sp) {
         ),
         el('button', { class: 'sp-reset-btn', disabled: investedTotal < 1 || Number(sp.resetItem.count || 0) < 1, onclick: () => resetStatPoints(sp, investedTotal) }, '초기화')
     ) : null;
-    root.replaceChildren(summary, list, reset);
+    root.replaceChildren(summary, list, ...(reset ? [reset] : []));
 }
 
 function statPointQtyControl(label, max, onChange) {

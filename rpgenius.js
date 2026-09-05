@@ -7525,7 +7525,8 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
         prog.dictatorDamage = Number(prog.dictatorDamage || 0) + dealt;
         checkAndUnlockTitles(user);
     }
-    return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, destinyDamageCount: destinyDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp };
+    const canTriggerBlackCurtainRetaliation = !extra.summonAttack && !extra.dotAttack && !extra.isBotAutoAttack && !extra.disableBlackCurtainRetaliation;
+    return { damage: finalDamage, dealt: dealt, isCritical: isCritical, trueDamageCount: trueDamageCount, destinyDamageCount: destinyDamageCount, bonusTripleZero: bonusTripleZero, hitResult: hitResult, before: before, after: state.hp, canTriggerBlackCurtainRetaliation };
 }
 
 function formatWorldBossDamageLines(boss, result, prefix) {
@@ -7760,7 +7761,10 @@ function applyBlackCurtainIncomingHit(user, boss, rawDamage, options, lines) {
 
 function resolveBlackCurtainDamageRetaliation(user, boss, result, lines) {
     if (!isBlackCurtainBoss(boss) || !user || !user.field || user.field.name != boss.name || Number(result && result.dealt || 0) <= 0 || Number(result.after || 0) <= 0) return 0;
+    // 간접 피해는 기여도에만 집계하고, 반격 누적량과 발동에는 관여하지 않는다.
+    if (!result.canTriggerBlackCurtainRetaliation) return 0;
     const pattern = ensureBlackCurtainPatternState(user);
+    // 연격/추가 피해를 합산한 행동 결과당 한 번만 판정한다 (초과분은 다음 직접 행동으로 이월).
     pattern.damageSinceIcham += Number(result.dealt || 0);
     if (pattern.damageSinceIcham < 5000) return 0;
     pattern.damageSinceIcham -= 5000;
