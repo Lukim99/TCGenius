@@ -1927,14 +1927,6 @@ function getWebFieldAttackElement(user, action, skillName, skills) {
     return chain.rest || null;
 }
 
-const H_FIELD_SPRITE_EXCLUSIONS = new Set([
-    '딜러장__일반__수영장 파티.png',
-    '딜러장__일반__고급 수영장 파티.png',
-    '딜러장__전직__고급 산타.png',
-    '흠시원__일반__수영장 파티.png',
-    '흠시원__일반__고급 수영장 파티.png'
-]);
-
 function getHFieldSpritePart(value) {
     return String(value || '').trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
 }
@@ -1947,14 +1939,14 @@ function getHFieldCharacterSprite(mainCard) {
     const skin = getHFieldSpritePart(mainCard.skin);
     const candidates = [];
     if (skin) {
-        candidates.push([name, cardType, skin].join('__') + '.png');
-        // 아바타는 타입 구분 없이 장착 가능하므로, 같은 스킨의 반대 타입 스프라이트로 폴백
-        candidates.push([name, cardType == '전직' ? '일반' : '전직', skin].join('__') + '.png');
+        // 기존 파일명의 타입은 카드 타입과 무관하게 일반 → 전직 순서로 조회한다.
+        candidates.push([name, '일반', skin].join('__') + '.png');
+        candidates.push([name, '전직', skin].join('__') + '.png');
     }
     if (cardType == '전직') candidates.push(name + '__전직.png');
     candidates.push(name + '.png');
     const spriteRoot = path.join(RPG_UI_PATH, '필드', '캐릭터');
-    const sprite = candidates.find(file => !H_FIELD_SPRITE_EXCLUSIONS.has(file) && fs.existsSync(path.join(spriteRoot, file)));
+    const sprite = candidates.find(file => fs.existsSync(path.join(spriteRoot, file)));
     const selected = sprite ? path.join('필드', '캐릭터', sprite) : fallback;
     return '/rpg-ui?file=' + encodeURIComponent(selected.replace(/\\/g, '/'));
 }
