@@ -637,23 +637,16 @@ async function migrateBlackCurtainContent() {
     const localItems = readJson(ITEMS_PATH, []);
     const definition = name => localItems.find(item => item && item.name == name);
     let itemsChanged = false;
+    const createdItems = new Set();
     const upsertItem = name => {
+        const index = items.findIndex(item => item && item.name == name);
+        if (index >= 0) return index;
         const desired = definition(name);
         if (!desired) throw new Error('로컬 아이템 정의 누락: ' + name);
-        const index = items.findIndex(item => item && item.name == name);
-        if (index < 0) {
-            items.push(JSON.parse(JSON.stringify(desired)));
-            itemsChanged = true;
-            return items.length - 1;
-        }
-        const pack = items[index] && items[index].pack;
-        const next = JSON.parse(JSON.stringify(desired));
-        if (typeof pack == 'number' && desired.type == '번들') next.pack = pack;
-        if (JSON.stringify(items[index]) != JSON.stringify(next)) {
-            items[index] = next;
-            itemsChanged = true;
-        }
-        return index;
+        items.push(JSON.parse(JSON.stringify(desired)));
+        itemsChanged = true;
+        createdItems.add(items.length - 1);
+        return items.length - 1;
     };
     const soulId = upsertItem(BLACK_CURTAIN_SOUL_NAME);
     const fragmentId = upsertItem(BLACK_CURTAIN_FRAGMENT_NAME);
@@ -664,53 +657,25 @@ async function migrateBlackCurtainContent() {
         [reward(BLACK_CURTAIN_FRAGMENT_NAME, 10), reward('유니크 잠재능력 주문서', 1), reward('고급 장비 보호권', 2), { type: '가넷', count: { min: 900, max: 900 } }, { type: '골드', count: { min: 3000000, max: 3000000 } }],
         [reward(BLACK_CURTAIN_FRAGMENT_NAME, 5), reward('에픽 잠재능력 주문서', 1), reward('장비 보호권', 3), { type: '가넷', count: { min: 500, max: 500 } }, { type: '골드', count: { min: 1500000, max: 1500000 } }]
     ];
-    const stableValue = value => {
-        if (Array.isArray(value)) return value.map(stableValue);
-        if (!value || typeof value != 'object') return value;
-        return Object.keys(value).sort().reduce((result, key) => {
-            result[key] = stableValue(value[key]);
-            return result;
-        }, {});
-    };
-    const sameValue = (left, right) => JSON.stringify(stableValue(left)) == JSON.stringify(stableValue(right));
     let bundlesChanged = false;
-    const blackPackIndexes = bundles
-        .map((entry, index) => bundleDefs.some(def => sameValue(entry, def)) ? index : -1)
-        .filter(index => index >= 0);
-    const blackPackStart = blackPackIndexes.length > 0 ? Math.min.apply(null, blackPackIndexes) : -1;
-    const duplicateOnlyTail = blackPackStart >= 0
-        && bundles.length - blackPackStart > bundleDefs.length
-        && bundles.slice(blackPackStart).every(entry => bundleDefs.some(def => sameValue(entry, def)));
-    if (duplicateOnlyTail) {
-        bundles.splice(blackPackStart, bundles.length - blackPackStart, ...bundleDefs);
-        bundlesChanged = true;
-    }
     BLACK_CURTAIN_BUNDLE_NAMES.forEach((name, index) => {
         const bundleItemId = upsertItem(name);
-        const bundleItem = items[bundleItemId];
-        let pack = Number(bundleItem.pack);
-        if (!Number.isInteger(pack) || pack < 0 || !sameValue(bundles[pack], bundleDefs[index])) {
-            const existingPack = bundles.findIndex(entry => sameValue(entry, bundleDefs[index]));
-            pack = existingPack >= 0 ? existingPack : bundles.length;
-            bundleItem.pack = pack;
-            itemsChanged = true;
-        }
-        if (!sameValue(bundles[pack], bundleDefs[index])) {
-            bundles[pack] = bundleDefs[index];
-            bundlesChanged = true;
-        }
+        // 명시적 초기 생성에만 기본값을 사용한다. 기존 운영 구성/연결은 그대로 둔다.
+        if (!createdItems.has(bundleItemId)) return;
+        items[bundleItemId].pack = bundles.length;
+        bundles.push(bundleDefs[index]);
+        bundlesChanged = true;
     });
     const recipe = { name: BLACK_CURTAIN_SOUL_NAME, materials: [{ type: '아이템', item_id: fragmentId, count: 15 }], crafted: [{ type: '아이템', item_id: soulId, count: 1 }] };
     const recipeIndex = recipes.findIndex(entry => entry && entry.name == BLACK_CURTAIN_SOUL_NAME);
     let recipesChanged = false;
     if (recipeIndex < 0) { recipes.push(recipe); recipesChanged = true; }
-    else if (JSON.stringify(recipes[recipeIndex]) != JSON.stringify(recipe)) { recipes[recipeIndex] = recipe; recipesChanged = true; }
     if (itemsChanged) await saveRpgeniusDataEntry('Item', items);
     if (bundlesChanged) await saveRpgeniusDataEntry('Bundle', bundles);
     if (recipesChanged) await saveRpgeniusDataEntry('Recipe', recipes);
 }
 
-initRpgeniusData().then(migrateBlackCurtainContent).catch(e => console.error('[흑막 데이터 마이그레이션] ' + e.message));
+initRpgeniusData().catch(e => console.error('[RPGenius 데이터 초기화] ' + e.message));
 
 // 유생의 주사위 이벤트 종료 시, 일반 상점에서 판매 중인 '유생의 주사위'를 '펀치기계 토큰'으로 자동 전환한다.
 function migrateEventDiceShopItemToPunchToken() {
@@ -8063,7 +8028,6 @@ async function claimWorldBossRewards(user) {
             const r = state.rankRewards[user.name];
             lines.push('[ ' + boss.name + ' 딜기여 랭킹 보상 ]');
             lines.push('- ' + r.rank + '위 / 피해 ' + comma(r.damage) + ' (이미 수령함)');
-            totalRewards++;
         } else {
             const rankings = Object.entries(state.contributions || {})
                 .map(([name, value]) => ({ name, value: Number(value || 0) }))
@@ -8089,7 +8053,7 @@ async function claimWorldBossRewards(user) {
             }
         }
     }
-    if (totalRewards == 0) return '❌ 수령할 수 있는 월드보스 보상이 없습니다.';
+    if (totalRewards == 0) return lines.length > 0 ? '❌ 새로 수령할 보상이 없습니다.\n' + lines.join('\n') : '❌ 수령할 수 있는 월드보스 보상이 없습니다.';
     return '✅ 월드보스 보상을 수령했습니다.\n' + lines.join('\n');
 }
 

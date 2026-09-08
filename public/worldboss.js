@@ -30,6 +30,29 @@
     }
     function addLog(text,tone){String(text||'').split(/\r?\n/).filter(line=>line&&!/^[-\s]*$/.test(line)).slice(0,4).forEach(line=>logs.push({text:line.replace(/^[-*]\s*/,''),tone:tone||''}));if(logs.length>20)logs=logs.slice(-20);}
     function showNotice(text){notice=String(text||'');noticeUntil=performance.now()+1800;}
+    const rewardDialog=document.getElementById('wbRewardDialog');
+    function showRewardReceipt(result){
+        const rewards=result.ok&&Array.isArray(result.rewards)?result.rewards:[],gained=rewards.length>0;
+        const list=document.getElementById('wbRewardList');list.replaceChildren();
+        rewardDialog.classList.toggle('is-success',gained);
+        document.getElementById('wbRewardTitle').textContent=gained?'보상 수령 완료':'보상 안내';
+        document.getElementById('wbRewardSummary').textContent=gained?'아래 보상이 지급되었습니다.':String(result.message||'새로 수령한 보상이 없습니다.').replace(/^[❌✅]\s*/, '');
+        rewards.forEach(reward=>{
+            const row=document.createElement('li'),art=document.createElement('div');art.className='wb-reward-art';
+            if(reward.iconUrl){
+                [reward.frameUrl,reward.iconUrl].filter(Boolean).forEach(url=>{const image=document.createElement('img');image.src=url;image.alt='';art.append(image);});
+            }else art.textContent=reward.name==='골드'?'🪙':reward.name==='가넷'?'💎':'✦';
+            const name=document.createElement('span');name.className='wb-reward-name';name.textContent=reward.name;
+            const count=document.createElement('strong');count.textContent='×'+number(reward.count);
+            row.append(art,name,count);list.append(row);
+        });
+        list.hidden=!gained;
+        const details=document.getElementById('wbRewardDetails');details.hidden=!gained;details.open=false;
+        document.getElementById('wbRewardMessage').textContent=result.message||'';
+        rewardDialog.showModal();rewardDialog.scrollTop=0;
+        audio.play(gained?'clear':'count',gained?.82:.32);
+    }
+    document.getElementById('wbRewardClose').onclick=()=>{rewardDialog.close();hudCanvas.focus();};
     function applyState(next){if(!next)return;const entering=next.inField&&!(state&&state.inField);state=next;clockOffset=Number(next.serverNow||Date.now())-Date.now();if(!selectedBoss&&next.bosses&&next.bosses.length)selectedBoss=next.bosses[0].name;renderer.applyState(next);if(entering){logs=[];presentationEpoch++;hud.damagePops=[];audio.play('start',.76);hud.showBanner('전투 시작',next.current.name);hud.impact(true);}if(next.inField)audio.playBgm();else{audio.stopBgm();hud.consumableMenu=false;}renderSelection();}
 
     const selectionLayer=document.getElementById('wbSelection'),skillCards=document.getElementById('wbSkillCards');
@@ -444,12 +467,12 @@
         if(event.defeated){audio.play('fail',.72);hud.showBanner('전투 패배','도전을 마쳤습니다.');}
         else if(event.bossDefeated){audio.play('clear',.82);hud.showBanner('월드보스 처치','흑막');}
     }
-    async function mutate(path,body){if(busy)return;audio.unlock();busy=true;renderSelection();try{if(syncing)await syncing;const result=await request(path,body||{});const next=result.state||result;applyState(next);(next.events||[]).forEach(presentEvent);if(result.message)addLog(result.message,result.ok?'good':'bad');if(result.ok&&result.event)presentEvent(result.event);if(!result.ok)showNotice(result.message);return result;}catch(error){addLog(error.message,'bad');showNotice(error.message);}finally{busy=false;renderSelection();}}
+    async function mutate(path,body){if(busy||rewardDialog.open)return;audio.unlock();busy=true;renderSelection();try{if(syncing)await syncing;const result=await request(path,body||{});const next=result.state||result;applyState(next);(next.events||[]).forEach(presentEvent);if(result.message)addLog(result.message,result.ok?'good':'bad');if(result.ok&&result.event)presentEvent(result.event);if(!result.ok)showNotice(result.message);return result;}catch(error){addLog(error.message,'bad');showNotice(error.message);return{ok:false,message:error.message};}finally{busy=false;renderSelection();}}
     const enterBoss=name=>mutate('/api/worldboss/enter',{bossName:name});
     const selectSkill=index=>mutate('/api/worldboss/select',{index});
     const cancelSelection=()=>mutate('/api/worldboss/cancel',{});
     document.getElementById('wbCancelSelection').onclick=cancelSelection;
-    const claimRewards=()=>mutate('/api/worldboss/claim',{});
+    const claimRewards=async()=>{const result=await mutate('/api/worldboss/claim',{});if(result)showRewardReceipt(result);};
     const attack=()=>{if(!state||!state.inField||Date.now()+clockOffset<Number(state.nextActionAt||0))return;mutate('/api/worldboss/attack',{});};
     const useSkill=name=>mutate('/api/worldboss/skill',{skillName:name});
     const useConsumable=itemId=>mutate('/api/worldboss/use-consumable',{itemId});
@@ -459,6 +482,7 @@
     document.addEventListener('visibilitychange',()=>{if(document.hidden)audio.stopBgm();else{audio.playBgm();sync();}});
     addEventListener('pagehide',()=>audio.stopBgm());
     addEventListener('keydown',event=>{
+        if(rewardDialog.open)return;
         if(event.repeat||!state)return;audio.unlock();const key=event.key.toLowerCase();
         if(event.target instanceof HTMLElement&&event.target.closest('button,input,select,textarea')&&!/^[1-3]$/.test(key))return;
         if(state.selecting&&/^[1-3]$/.test(key)){selectSkill(Number(key));event.preventDefault();return;}

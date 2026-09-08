@@ -42,6 +42,13 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
+### 운영 데이터 보존 (필수)
+
+- 꾸러미 구성, 보상 수량, 아이템 스탯·설명, 제작식 등 운영 중 변경 가능한 데이터는 운영 DB/관리자 설정을 기준으로 한다. 코드나 로컬 JSON의 기본값과 다르다는 이유로 덮어쓰거나 다른 기본 구성으로 재연결하지 않는다.
+- 서버 시작, 모듈 import, 배포, 테스트에서 이러한 운영 데이터를 자동으로 보정·초기화·마이그레이션하지 않는다. 테스트는 운영 DB 쓰기 없이 격리해서 실행한다.
+- 초기 데이터 생성은 명시적으로 요청된 작업에서 누락된 항목에 한해 수행한다. 기존 항목, 번들 인덱스, 수량, 스탯, 제작식 및 운영자가 비워 둔 구성은 보존한다.
+- 기존 운영 데이터의 수정·삭제·중복 정리·연결 변경은 사용자가 해당 변경을 명시적으로 요청한 경우에만 한다. 코드 수정 요청을 운영 데이터 변경 허가로 간주하지 않는다.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**

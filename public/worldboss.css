@@ -29,4 +29,25 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:no
 .wb-skill-select:disabled,.wb-cancel:disabled{opacity:.45;cursor:wait}
 .wb-cancel{margin-top:28px;padding:10px 22px;border:1px solid #5a626d;border-radius:3px;background:#111a22}
 @media(max-width:700px){.wb-selection{padding:26px 18px}.wb-skill-cards{grid-template-columns:1fr;gap:12px}.wb-selection-content{max-width:460px}.wb-selection header>p:last-child{margin-bottom:22px}.wb-skill-card{padding:20px}.wb-skill-card h2{margin:8px 0 12px;font-size:22px}.wb-skill-meta{margin-bottom:14px}.wb-skill-select{margin-top:8px}.wb-skill-desc{font-size:14px;line-height:1.75}.wb-cancel{margin:22px 0 8px}}
-@media(prefers-reduced-motion:reduce){.wb-root canvas{scroll-behavior:auto}}
+.wb-reward-dialog{width:min(540px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:32px;border:1px solid #66563c;border-top:2px solid #e8b04b;border-radius:8px;background:radial-gradient(ellipse at 50% 0,rgba(103,72,128,.25),transparent 60%),#101219;color:#f4f1e8;text-align:center;box-shadow:0 0 90px #0009;overflow-y:auto;touch-action:pan-y}
+.wb-reward-dialog::backdrop{background:rgba(2,3,6,.86);backdrop-filter:blur(6px)}
+.wb-reward-dialog[open]{animation:wb-reward-reveal .28s ease-out}
+.wb-reward-sigil{font-size:40px;color:#929bac;line-height:1.2;margin:14px 0}
+.wb-reward-dialog.is-success .wb-reward-sigil{color:#ffe4a8;text-shadow:0 0 28px #e8b04b;animation:wb-reward-glow .8s ease-out}
+.wb-reward-dialog h2{font:400 clamp(24px,5vw,32px) "Black Han Sans",Pretendard,sans-serif;margin:0 0 12px;color:#ffe4a8}
+#wbRewardSummary{font-size:14px;line-height:1.7;white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere;color:#b7c1cf}
+.wb-reward-list{display:grid;gap:10px;padding:0;margin:24px 0;list-style:none;text-align:left}
+.wb-reward-list[hidden]{display:none}
+.wb-reward-list li{display:flex;align-items:center;gap:14px;min-width:0;padding:12px;background:linear-gradient(120deg,#24232b,#141820);border:1px solid #776139;border-radius:4px}
+.wb-reward-art{position:relative;flex:0 0 54px;width:54px;height:54px;display:grid;place-items:center;font-size:28px}
+.wb-reward-art img{position:absolute;width:100%;height:100%;object-fit:contain}
+.wb-reward-name{flex:1;min-width:0;font-size:15px;font-weight:700;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
+.wb-reward-list strong{flex-shrink:0;color:#ffe4a8;font-size:15px;font-variant-numeric:tabular-nums}
+#wbRewardDetails{text-align:left;font-size:12px;color:#a9b4c4;line-height:1.7}
+#wbRewardDetails summary{cursor:pointer;padding:8px 0}
+#wbRewardMessage{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.wb-reward-dialog .wb-skill-select{margin-top:22px;min-height:48px}
+@keyframes wb-reward-reveal{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes wb-reward-glow{from{text-shadow:0 0 60px #fff2c7;transform:scale(1.3)}to{text-shadow:0 0 28px #e8b04b;transform:none}}
+@media(max-width:480px){.wb-reward-dialog{padding:24px 18px}.wb-reward-list li{gap:10px;padding:10px}.wb-reward-art{flex-basis:44px;width:44px;height:44px}.wb-reward-name,.wb-reward-list strong{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.wb-reward-dialog[open],.wb-reward-dialog.is-success .wb-reward-sigil{animation:none}}

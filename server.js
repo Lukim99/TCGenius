@@ -2947,9 +2947,10 @@ server.post('/api/worldboss/use-consumable', requireUser, (req, res) => runWorld
 }));
 
 server.post('/api/worldboss/claim', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
+    const before = captureWorldBossAction(user);
     const message = await rpgenius.claimWorldBossRewards(user);
     await user.save();
-    return { ok: !String(message).startsWith('❌'), message, state: buildWorldBossState(user) };
+    return { ok: !String(message).startsWith('❌'), message, rewards: getWorldBossActionRewards(user, before), state: buildWorldBossState(user) };
 }));
 
 // ===== PVP =====
@@ -8851,7 +8852,7 @@ function renderWorldBossApp(sess) {
 <link rel="stylesheet" href="/static/worldboss.css"></head><body>
 <main id="worldBossRoot" class="wb-root" aria-label="월드보스 흑막 전투">
   <canvas id="wbCanvas" aria-label="월드보스 WebGL 전투 화면"></canvas>
-  <canvas id="wbHud"></canvas>
+  <canvas id="wbHud" tabindex="-1"></canvas>
   <section id="wbSelection" class="wb-selection" aria-labelledby="wbSelectionTitle" hidden>
     <div class="wb-selection-content">
       <header><p class="wb-eyebrow">WORLD BOSS</p><h1 id="wbSelectionTitle">전용 스킬 선택</h1><p>이번 도전에서 사용할 힘을 선택하세요.</p></header>
@@ -8860,6 +8861,15 @@ function renderWorldBossApp(sess) {
     </div>
   </section>
 </main>
+<dialog id="wbRewardDialog" class="wb-reward-dialog" aria-labelledby="wbRewardTitle" aria-describedby="wbRewardSummary">
+  <p class="wb-eyebrow">WORLD BOSS · REWARDS</p>
+  <div class="wb-reward-sigil" aria-hidden="true">✦</div>
+  <h2 id="wbRewardTitle"></h2>
+  <p id="wbRewardSummary"></p>
+  <ul id="wbRewardList" class="wb-reward-list"></ul>
+  <details id="wbRewardDetails"><summary>상세 수령 내역</summary><p id="wbRewardMessage"></p></details>
+  <button id="wbRewardClose" class="wb-skill-select" type="button" autofocus>확인</button>
+</dialog>
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/worldboss.js"></script>
