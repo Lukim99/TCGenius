@@ -173,7 +173,7 @@ function openPointChargeModal() {
 }
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
-const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', '캡슐': '100일 캡슐', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
+const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -192,7 +192,7 @@ const GROUPS = [
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
-    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: [...(window.IS_ADMIN ? ['윷놀이'] : []), '캡슐', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['윷놀이', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
@@ -248,7 +248,7 @@ function activateGroup(groupId) {
 }
 
 function navigatePage(pageId) {
-    if (pageId === '윷놀이' && !window.IS_ADMIN) return;
+    if (pageId === '캡슐') pageId = '윷놀이';
     if (activePage === '윷놀이' && pageId !== '윷놀이' && window.yutGame) window.yutGame.pause();
     if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
@@ -274,7 +274,6 @@ function navigatePage(pageId) {
     if (pageId === 'event') loadEventDice();
     if (pageId === '윷놀이') loadYut();
     if (pageId === '자물쇠') loadLockbox();
-    if (pageId === '캡슐') loadCapsule();
     if (pageId === '퀘스트') loadQuests();
     if (pageId === '사냥') renderHuntMenu();
     if (pageId === 'combine') loadCombine();
@@ -2698,7 +2697,7 @@ if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
 
 async function loadYut() {
     const root = $('#yutRoot');
-    if (!window.IS_ADMIN || !root) return;
+    if (!root) return;
     if (!document.querySelector('link[data-yut]')) {
         const css = el('link', { rel: 'stylesheet', href: '/static/yut.css' });
         css.dataset.yut = 'true';
@@ -3605,135 +3604,6 @@ async function claimQuest(quest, skip) {
         questState.busy = false;
         renderQuests();
     }
-}
-
-// ===== 100일 기념 캡슐 =====
-const capsuleUi = f => '/rpg-ui?file=' + encodeURIComponent('100일 캡슐/' + f);
-let capsuleState = { data: null, drawing: false };
-
-async function loadCapsule() {
-    const root = $('#capsuleRoot');
-    if (!root) return;
-    try {
-        capsuleState.data = await api('/api/capsule100');
-    } catch (e) {
-        root.replaceChildren(el('div', { class: 'empty err' }, e.message));
-        return;
-    }
-    renderCapsule();
-}
-
-// 캡슐 번호(1-base) → 프레임 등급. 상위 상품일수록 고급 유리 프레임.
-function capsuleGrade(number) {
-    return number === 1 ? 'g1' : number <= 4 ? 'g2' : number <= 7 ? 'g3' : 'g4';
-}
-
-function capsuleTile(prize, index) {
-    const soldout = Number(prize.remaining) <= 0;
-    return el('div', { class: 'cap-tile ' + capsuleGrade(index + 1) + (soldout ? ' soldout' : ''), title: prize.name + (Number(prize.count) > 1 ? ' x' + prize.count : '') },
-        el('div', { class: 'cap-tile-icon' },
-            prize.iconUrl ? el('img', { src: prize.iconUrl, alt: prize.name }) : el('span', { class: 'cap-tile-fallback' }, '🎁')),
-        el('div', { class: 'cap-tile-count' }, comma(prize.remaining) + '/' + comma(prize.stock)));
-}
-
-function renderCapsule() {
-    const root = $('#capsuleRoot');
-    const d = capsuleState.data;
-    if (!root || !d) return;
-
-    // 캡슐 기계: 레버 + 스크린(코인/보유량/이용 토글)
-    const machine = el('div', { class: 'cap-machine', id: 'capMachine' },
-        el('div', { class: 'cap-lever' }, el('div', { class: 'cap-lever-slot' }, el('div', { class: 'cap-lever-ball' }))),
-        el('div', { class: 'cap-machine-body' },
-            el('div', { class: 'cap-screen' },
-                el('div', { class: 'cap-screen-row coin' }, el('span', null, d.coinItemName), el('span', { class: 'cap-coin-caret' }, '▾')),
-                el('div', { class: 'cap-screen-row hold' }, el('span', null, '보유량'), el('b', { class: 'cap-hold-val' }, comma(d.coinCount))),
-                el('div', { class: 'cap-toggles' },
-                    [1, 2, 3].map(n => el('button', {
-                        class: 'cap-toggle-btn', type: 'button', 'aria-label': n + '회 이용',
-                        style: "background-image:url('" + capsuleUi(n + '회 이용 토글.png') + "')",
-                        disabled: capsuleState.drawing,
-                        onclick: () => drawCapsule(n)
-                    }))))));
-
-    const counters = el('div', { class: 'cap-counters' },
-        el('div', { class: 'cap-counter' }, el('span', { class: 'cap-counter-label' }, '남은 캡슐'), el('b', { class: 'cap-counter-val' }, comma(d.totalRemaining))),
-        el('div', { class: 'cap-counter' }, el('span', { class: 'cap-counter-label' }, '전체 캡슐'), el('b', { class: 'cap-counter-val' }, comma(d.total))));
-
-    const side = el('aside', { class: 'cap-side' },
-        el('div', { class: 'cap-side-block' },
-            el('b', null, d.coinItemName + ' 수급처'),
-            el('div', null, '* 일반 상점 (일일 1개)'),
-            el('div', null, '* 사냥 (일일 2개)'),
-            el('div', null, '* 포인트 상점')),
-        el('div', { class: 'cap-side-block' }, '누군가 1번 당첨 시 모든 캡슐이 초기화됩니다.'),
-        el('div', { class: 'cap-side-block' },
-            el('b', null, '캡슐 목록'),
-            ...d.prizes.map((p, i) => el('div', null, (i + 1) + '. ' + p.name + (Number(p.count) > 1 ? ' ' + comma(p.count) + '개' : '')))));
-
-    const panel = el('div', { class: 'cap-window' },
-        el('div', { class: 'cap-titlebar' },
-            el('span', { class: 'cap-titlebar-deco red' }),
-            el('span', { class: 'cap-title-text' }, '100일 기념 캡슐 기계'),
-            el('span', { class: 'cap-titlebar-deco teal' })),
-        el('div', { class: 'cap-window-body' },
-            el('div', { class: 'cap-window-main' },
-                el('div', { class: 'cap-notice' }, 'RPGENIUS가 드디어 100일을 맞이했습니다!', el('br'), '100일 캡슐에서 여러분이 원하는 아이템을 획득해보세요!'),
-                counters,
-                el('div', { class: 'cap-tiles' }, d.prizes.map(capsuleTile))),
-            side),
-        el('div', { class: 'cap-footer' }, '캡슐 뽑기는 게임 내 잔여 수량이 표기되며, 확률은 잔여 아이템 개수에 따라 변동됩니다.', el('br'), '(아이템 개별 잔여 수량/캡슐 기계 전체 잔여 수량)'));
-
-    // 배경 장식 (시안의 도트/엑스/도형)
-    const deco = [
-        el('span', { class: 'cap-deco sq d1' }),
-        el('span', { class: 'cap-deco dots d2' }),
-        el('span', { class: 'cap-deco x d3' }, '✕'),
-        el('span', { class: 'cap-deco circle d4' }),
-        el('span', { class: 'cap-deco dots orange d5' }),
-        el('span', { class: 'cap-deco x d6' }, '✕'),
-        el('span', { class: 'cap-deco sq red d7' })
-    ];
-    root.replaceChildren(el('div', { class: 'cap-board' },
-        ...deco,
-        el('img', { class: 'cap-hero', src: capsuleUi('쵸단.png'), alt: 'RPGENIUS 100일' }),
-        machine, panel));
-}
-
-async function drawCapsule(n) {
-    const d = capsuleState.data;
-    if (!d || capsuleState.drawing) return;
-    if (Number(d.coinCount) < n) { showAlert(d.coinItemName + '이 부족합니다. (보유 ' + comma(d.coinCount) + '개)'); return; }
-    capsuleState.drawing = true;
-    const machine = $('#capMachine');
-    if (machine) machine.classList.add('pulling');
-    const started = Date.now();
-    try {
-        const r = await postApi('/api/capsule100/draw', { count: n });
-        capsuleState.data = r;
-        // 레버 연출이 끝난 뒤 결과 표시
-        setTimeout(() => {
-            capsuleState.drawing = false;
-            renderCapsule();
-            openCapsuleResultModal(r);
-        }, Math.max(0, 700 - (Date.now() - started)));
-    } catch (e) {
-        capsuleState.drawing = false;
-        if (machine) machine.classList.remove('pulling');
-        showAlert(e.message);
-    }
-}
-
-function openCapsuleResultModal(r) {
-    const cards = (r.results || []).map((res, i) => el('div', { class: 'cap-result-card' + (res.jackpot ? ' jackpot' : ''), style: { animationDelay: (i * 0.18) + 's' } },
-        res.jackpot ? el('div', { class: 'cap-result-badge' }, '1등!') : null,
-        el('div', { class: 'cap-tile ' + capsuleGrade(Number(res.number) || 10) }, el('div', { class: 'cap-tile-icon' }, res.iconUrl ? el('img', { src: res.iconUrl, alt: res.name }) : el('span', { class: 'cap-tile-fallback' }, '🎁'))),
-        el('div', { class: 'cap-result-name' }, res.name + (Number(res.count) > 1 ? ' x' + comma(res.count) : ''))));
-    openRichModal('캡슐 뽑기 결과', '', [
-        el('div', { class: 'cap-result-row' }, ...cards),
-        r.jackpot ? el('div', { class: 'cap-result-jackpot-note' }, '🎉 1등 당첨! 모든 캡슐이 초기화되었습니다.') : null,
-        el('div', { class: 'cap-result-sub' }, '획득한 아이템은 인벤토리에서 확인하세요.')
-    ].filter(Boolean));
 }
 
 // ===== 조합 =====

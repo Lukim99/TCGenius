@@ -55,16 +55,15 @@ function registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets
             ready: itemId >= 0 && rewards.every(reward => reward.available), rewards
         };
     }
-    async function adminUser(req, res) {
+    async function currentUser(req, res) {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) { res.status(404).json({ error: '유저를 찾을 수 없습니다.' }); return null; }
-        if (!user.isAdmin) { res.status(403).json({ error: '관리자만 이용할 수 있습니다.' }); return null; }
         return user;
     }
     server.get('/api/yut', requireUser, async (req, res) => {
         res.setHeader('Cache-Control', 'no-store');
         try {
-            const user = await adminUser(req, res);
+            const user = await currentUser(req, res);
             if (user) res.json(status(user));
         } catch (error) {
             console.error('[yut] status:', error.message);
@@ -76,7 +75,7 @@ function registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets
         if (locks.has(key)) return res.status(409).json({ error: '윷 또는 송편을 처리하고 있습니다. 잠시 후 다시 확인해 주세요.' });
         locks.add(key);
         try {
-            const user = await adminUser(req, res);
+            const user = await currentUser(req, res);
             if (!user) return;
             const { requestId, revision } = req.body || {};
             if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId) || !Number.isSafeInteger(revision) || revision < 0) {

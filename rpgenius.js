@@ -72,11 +72,11 @@ const HELL_PILLAR_MAX_HP = 2;
 const HELL_INVITATION_COST = 30;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
-// 사냥 이벤트 드랍: 유생의 주사위 → 펀치기계 토큰 → 100일 기념 코인 순으로 전환됨.
-const CAPSULE100_COIN_ITEM_NAME = '100일 기념 코인';
+// 사냥 이벤트 드랍은 송편으로 지급한다.
+const SONGPYEON_DROP_ITEM_NAME = '송편';
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
-const EVENT_DICE_DROP_CHANCE = 0.05;
-const EVENT_DICE_DROP_DAILY_LIMIT = 2;
+const SONGPYEON_DROP_CHANCE = 0.05;
+const SONGPYEON_DROP_DAILY_LIMIT = 10;
 const FRAGMENT_TIERS = {
     low: {
         name: '하급 편린',
@@ -3599,6 +3599,8 @@ function formatTitleStatLines(title) {
     const se = title.specialEffect;
     if (se) {
         if (se.type == 'atkPerEnhanceLevel') lines.push('- 장착 무기 강화 1강 당 공격력 +' + comma(Number(se.value || 0)));
+        else if (se.type == 'worldBossAtkPct') lines.push('- 월드보스 토벌 중 최종 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
+        else if (se.type == 'worldBossAvoid') lines.push('- 월드보스 토벌 중 회피 확률 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
         else if (se.type == 'atkPctIfCardStar') lines.push('- ' + cardStarLabel(se.minStar) + ' 이상 캐릭터 카드 장착 시 공격력 +' + (Math.round(Number(se.value || 0) * 1000) / 10) + '%');
     }
     return lines.join('\n');
@@ -3772,6 +3774,10 @@ function calculateUserStats(user, _out) {
     // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
     if (titleDef && titleDef.specialEffect) {
         const se = titleDef.specialEffect;
+        if (user.field && user.field.worldBoss && !user.field.skillSelecting) {
+            if (se.type == 'worldBossAtkPct') stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
+            else if (se.type == 'worldBossAvoid') stats.avd = Number(stats.avd || 0) + Number(se.value || 0);
+        }
         if (se.type == 'atkPctIfCardStar') {
             const star = Number(user.main_card && user.main_card.star || 0);
             if (star >= Number(se.minStar || 0)) stats.atk = Math.round(Number(stats.atk || 0) * (1 + Number(se.value || 0)));
@@ -5172,10 +5178,11 @@ function confirmWorldBossSkill(user, indexArg, channel) {
     }
     // 도전 기회/티켓은 입장(스킬 선택 단계 진입) 시점에 이미 소모됨 — 여기서는 재소모하지 않는다.
     user.pendingAction = null;
-    // 독재자 참여 횟수 칭호 추적
-    if (boss.name === '독재자') {
+    // 스킬 선택을 마친 실제 월드보스 입장을 한 번만 집계한다.
+    if (boss.name === '독재자' || boss.name === '흑막') {
         const prog = getTitleProgress(user);
-        prog.dictatorParticipations = Number(prog.dictatorParticipations || 0) + 1;
+        const key = boss.name === '흑막' ? 'blackCurtainParticipations' : 'dictatorParticipations';
+        prog[key] = Number(prog[key] || 0) + 1;
         checkAndUnlockTitles(user);
     }
     const stats = calculateUserStats(user);
@@ -5504,11 +5511,11 @@ function getWorldBossDailyState(user) {
     return user.worldBossDaily;
 }
 
-function getEventDiceDropDailyState(user) {
+function getSongpyeonDropDailyState(user) {
     const today = getKoreanDateKey(new Date());
-    if (!user.eventDiceDropDaily || user.eventDiceDropDaily.date != today) user.eventDiceDropDaily = { date: today, count: 0 };
-    user.eventDiceDropDaily.count = Number(user.eventDiceDropDaily.count || 0);
-    return user.eventDiceDropDaily;
+    if (!user.songpyeonDropDaily || user.songpyeonDropDaily.date != today) user.songpyeonDropDaily = { date: today, count: 0 };
+    user.songpyeonDropDaily.count = Number(user.songpyeonDropDaily.count || 0);
+    return user.songpyeonDropDaily;
 }
 
 function getValorTokenItemId() {
@@ -6112,14 +6119,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        const eventDiceDaily = getEventDiceDropDailyState(user);
-        if (Number(eventDiceDaily.count || 0) < EVENT_DICE_DROP_DAILY_LIMIT && Math.random() < EVENT_DICE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
+        const songpyeonDaily = getSongpyeonDropDailyState(user);
+        if (Number(songpyeonDaily.count || 0) < SONGPYEON_DROP_DAILY_LIMIT && Math.random() < SONGPYEON_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
-            const dropItemId = items.findIndex(item => item.name == CAPSULE100_COIN_ITEM_NAME);
+            const dropItemId = items.findIndex(item => item.name == SONGPYEON_DROP_ITEM_NAME);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
-                eventDiceDaily.count = Number(eventDiceDaily.count || 0) + 1;
-                lines.push('- 🪙 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(eventDiceDaily.count) + '/' + comma(EVENT_DICE_DROP_DAILY_LIMIT) + ')');
+                songpyeonDaily.count = Number(songpyeonDaily.count || 0) + 1;
+                lines.push('- 🍡 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(songpyeonDaily.count) + '/' + comma(SONGPYEON_DROP_DAILY_LIMIT) + ')');
             }
         }
     }
@@ -7486,9 +7493,10 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     state.hp = Math.max(0, before - finalDamage);
     state.contributions[user.name] = Number(state.contributions[user.name] || 0) + dealt;
     persistWorldBossState();
-    if (boss.name === '독재자' && dealt > 0) {
+    if ((boss.name === '독재자' || boss.name === '흑막') && dealt > 0) {
         const prog = getTitleProgress(user);
-        prog.dictatorDamage = Number(prog.dictatorDamage || 0) + dealt;
+        const key = boss.name === '흑막' ? 'blackCurtainDamage' : 'dictatorDamage';
+        prog[key] = Number(prog[key] || 0) + dealt;
         checkAndUnlockTitles(user);
     }
     const canTriggerBlackCurtainRetaliation = !extra.summonAttack && !extra.dotAttack && !extra.isBotAutoAttack && !extra.disableBlackCurtainRetaliation;
@@ -12472,6 +12480,7 @@ class RPGUser {
         this.fragmentCounts = {};
         this.dailyDungeonDaily = null;
         this.eventDiceDropDaily = null;
+        this.songpyeonDropDaily = null;
         this.expPotion = null;
         this.goldPotion = null;
         this.cardCombineCounts = {};
@@ -12564,6 +12573,7 @@ class RPGUser {
         cleanupExpiredSouls(this);
         if (typeof this.dailyDungeonDaily == 'undefined') this.dailyDungeonDaily = null;
         if (typeof this.eventDiceDropDaily == 'undefined') this.eventDiceDropDaily = null;
+        if (typeof this.songpyeonDropDaily == 'undefined') this.songpyeonDropDaily = null;
         normalizeCardCombineCounts(this);
         if (typeof this.need_character_card_select == 'undefined') this.need_character_card_select = !this.main_card || typeof this.main_card.id == 'undefined';
         if (typeof this.prestige == 'undefined') this.prestige = false;

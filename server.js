@@ -80,7 +80,7 @@ const BANNER_TARGET_TABS = [
     { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
-    { value: '캡슐', label: '이벤트 · 100일 캡슐' },
+    { value: '윷놀이', label: '이벤트 · 윷놀이' },
     { value: '자물쇠', label: '이벤트 · 자물쇠' },
     { value: 'shop', label: '거래 · 상점' },
     { value: 'auction', label: '거래 · 팝니다' },
@@ -321,7 +321,7 @@ function normalizeBannerList(data) {
         .filter(entry => entry && typeof entry.id == 'string' && typeof entry.key == 'string' && entry.key.startsWith(BANNER_PREFIX))
         .map(entry => {
             const targetUrl = normalizeBannerTargetUrl(entry.targetUrl);
-            let targetTab = BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : '';
+            let targetTab = entry.targetTab === '캡슐' ? '윷놀이' : (BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : '');
             if (targetTab == 'custom-url' && !targetUrl) targetTab = '';
             return Object.assign({}, entry, { targetTab, targetUrl });
         });
@@ -1617,114 +1617,13 @@ function buildRewardDisplay(name, count) {
     return { name, count, iconUrl: item ? getItemIconUrl(item) : null, frameUrl: getAuctionFrameUrl('item') };
 }
 
-// ===== 100일 기념 캡슐 기계 =====
-const CAPSULE100_COIN_ITEM_NAME = '100일 기념 코인';
-// 2026-08-14 전체 오픈.
-const CAPSULE100_ADMIN_ONLY = false;
-// 순서 = 캡슐 목록 번호. 1번(보주 선택 상자)이 뽑히면 전체 재고가 초기화된다.
-const CAPSULE100_PRIZES = [
-    { name: '보주 선택 상자', count: 1, stock: 1 },
-    { name: '[7월]만능 캐릭터 변환석', count: 1, stock: 2 },
-    { name: '9성 전직 카드팩', count: 1, stock: 3 },
-    { name: '9성 카드팩', count: 1, stock: 3 },
-    { name: '고급 장비 보호권', count: 1, stock: 5 },
-    { name: '장비 보호권', count: 1, stock: 5 },
-    { name: '지니어스의 열쇠', count: 30, stock: 5 },
-    { name: '유생의 강화기', count: 1, stock: 35 },
-    { name: '밍플 지렁이', count: 3, stock: 125 },
-    { name: '밍플 지렁이', count: 1, stock: 316 },
-];
-const CAPSULE100_TOTAL = CAPSULE100_PRIZES.reduce((sum, p) => sum + p.stock, 0);
-
-function getCapsule100Remaining() {
-    const state = rpgenius.getDataCache('Capsule100', null);
-    const remaining = state && Array.isArray(state.remaining) ? state.remaining.map(n => Number(n) || 0) : null;
-    if (!remaining || remaining.length != CAPSULE100_PRIZES.length || remaining.reduce((a, b) => a + b, 0) <= 0) {
-        return CAPSULE100_PRIZES.map(p => p.stock);
-    }
-    return remaining;
-}
-
-function buildCapsule100Status(user) {
-    const coinId = findItemIdByName(CAPSULE100_COIN_ITEM_NAME);
-    const remaining = getCapsule100Remaining();
-    return {
-        ok: true,
-        coinItemName: CAPSULE100_COIN_ITEM_NAME,
-        coinIconUrl: getItemImageUrl('이벤트', CAPSULE100_COIN_ITEM_NAME + '.png'),
-        coinCount: coinId >= 0 ? rpgenius.getInventoryItemCount(user, coinId) : 0,
-        total: CAPSULE100_TOTAL,
-        totalRemaining: remaining.reduce((a, b) => a + b, 0),
-        prizes: CAPSULE100_PRIZES.map((p, i) => Object.assign(buildRewardDisplay(p.name, p.count), { stock: p.stock, remaining: remaining[i] }))
-    };
-}
-
-server.get('/api/capsule100', requireUser, async (req, res) => {
-    try {
-        if (CAPSULE100_ADMIN_ONLY && !req.session.admin) return res.status(403).json({ error: '아직 오픈되지 않았습니다.' });
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        res.json(buildCapsule100Status(user));
-    } catch (e) {
-        console.error('capsule100 status error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
+// 종료된 캡슐 화면을 열어 둔 사용자도 더 이상 코인을 소비할 수 없다.
+server.get('/api/capsule100', requireUser, (req, res) => {
+    res.status(410).json({ error: '100일 캡슐 이벤트가 종료되었습니다.' });
 });
-
-// 코인 N개(1~3)를 소비해 N회 뽑기. 확률은 잔여 재고 가중, 1번 당첨 시 즉시 전체 초기화.
-// 뽑기 전체(유저 로드→재고 계산→저장)를 직렬화해 재고 이중 차감·동일 유저 중복 뽑기를 막는다.
-// ponytail: 단일 프로세스 전제의 전역 프로미스 체인 락 — 처리량이 문제되면 DynamoDB 조건부 갱신으로 전환.
-let capsule100DrawChain = Promise.resolve();
 server.post('/api/capsule100/draw', requireUser, (req, res) => {
-    capsule100DrawChain = capsule100DrawChain.then(() => handleCapsule100Draw(req, res));
+    res.status(410).json({ error: '100일 캡슐 이벤트가 종료되었습니다.' });
 });
-
-async function handleCapsule100Draw(req, res) {
-    try {
-        if (CAPSULE100_ADMIN_ONLY && !req.session.admin) return res.status(403).json({ error: '아직 오픈되지 않았습니다.' });
-        const count = Number(req.body && req.body.count);
-        if (![1, 2, 3].includes(count)) return res.status(400).json({ error: '1~3회만 이용할 수 있습니다.' });
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const coinId = findItemIdByName(CAPSULE100_COIN_ITEM_NAME);
-        if (coinId < 0) return res.status(500).json({ error: CAPSULE100_COIN_ITEM_NAME + ' 아이템 데이터가 없습니다.' });
-        if (rpgenius.getInventoryItemCount(user, coinId) < count) return res.status(400).json({ error: CAPSULE100_COIN_ITEM_NAME + '이 부족합니다.' });
-        for (const p of CAPSULE100_PRIZES) {
-            if (findItemIdByName(p.name) < 0) return res.status(500).json({ error: p.name + ' 아이템 데이터가 없습니다.' });
-        }
-
-        rpgenius.removeInventoryItem(user, coinId, count);
-        let remaining = getCapsule100Remaining();
-        const results = [];
-        let jackpot = false;
-        for (let d = 0; d < count; d++) {
-            const totalLeft = remaining.reduce((a, b) => a + b, 0);
-            let roll = Math.floor(Math.random() * totalLeft);
-            let picked = 0;
-            for (let i = 0; i < remaining.length; i++) {
-                roll -= remaining[i];
-                if (roll < 0) { picked = i; break; }
-            }
-            const prize = CAPSULE100_PRIZES[picked];
-            rpgenius.addInventoryItem(user, findItemIdByName(prize.name), prize.count);
-            results.push(Object.assign(buildRewardDisplay(prize.name, prize.count), { number: picked + 1, jackpot: picked == 0 }));
-            if (picked == 0) {
-                jackpot = true;
-                remaining = CAPSULE100_PRIZES.map(p => p.stock);
-            } else {
-                remaining[picked] -= 1;
-            }
-        }
-        rpgenius.cleanupInventoryItems(user);
-        await user.save();
-        await rpgenius.saveRpgeniusDataEntry('Capsule100', { remaining });
-        if (jackpot) console.log('[capsule100] 1등 당첨, 재고 초기화: ' + user.name);
-        res.json(Object.assign(buildCapsule100Status(user), { results, jackpot }));
-    } catch (e) {
-        console.error('capsule100 draw error:', e);
-        res.status(500).json({ error: '서버 오류' });
-    }
-}
 
 server.get('/api/combine/cards', requireUser, async (req, res) => {
     try {
@@ -8735,15 +8634,12 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
-  ${sess.admin ? '<div class="page" data-page="윷놀이"><div id="yutRoot"></div></div>' : ''}
+  <div class="page" data-page="윷놀이"><div id="yutRoot"></div></div>
   <div class="page" data-page="pvp">
     <section class="panel"><div id="pvpRoot"></div></section>
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>
-  </div>
-  <div class="page" data-page="캡슐">
-    <section class="capsule-panel"><div id="capsuleRoot"></div></section>
   </div>
   <div class="page" data-page="combine">
     <section class="panel combine-board">

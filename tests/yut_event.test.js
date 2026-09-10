@@ -16,7 +16,7 @@ const rpg = {
 };
 function reset(position = 0, laps = 0, count = 100) {
     failSave = false; saves = 0; slowLoad = false;
-    user = { isAdmin: true, inventory: { item: [{ id: 0, count }] }, yutEvent: { position, laps, revision: 0, lastRoll: null }, async save() { saves++; return { success: !failSave }; } };
+    user = { isAdmin: false, inventory: { item: [{ id: 0, count }] }, yutEvent: { position, laps, revision: 0, lastRoll: null }, async save() { saves++; return { success: !failSave }; } };
 }
 const post = async (body, auth = 'admin') => {
     const response = await fetch(base + '/api/yut/roll', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify(body) });
@@ -25,7 +25,7 @@ const post = async (body, auth = 'admin') => {
 const request = revision => ({ requestId: crypto.randomUUID(), revision });
 before(async () => {
     const app = express(); app.use(express.json());
-    registerYutRoutes(app, { rpgenius: rpg, requireUser(req, res, next) { if (!req.headers.authorization) return res.status(401).json({ error: '로그인 필요' }); req.session = { name: '테스트', admin: true }; next(); }, getItemDisplayAssets: () => ({ iconUrl: null, frameUrl: null }) });
+    registerYutRoutes(app, { rpgenius: rpg, requireUser(req, res, next) { if (!req.headers.authorization) return res.status(401).json({ error: '로그인 필요' }); req.session = { name: '테스트', admin: false }; next(); }, getItemDisplayAssets: () => ({ iconUrl: null, frameUrl: null }) });
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     base = 'http://127.0.0.1:' + server.address().port;
 });
@@ -49,14 +49,17 @@ test('네 윷 앞뒷면과 도/개/걸/윷/모 결과가 일치한다', () => {
         assert.equal(roll.steps, sum || 5); assert.equal(roll.name, ['모', '도', '개', '걸', '윷'][sum]);
     }
 });
-test('로그인 및 현재 관리자 권한을 GET/POST에서 확인한다', async () => {
+test('로그인은 필수이며 일반 유저도 조회와 던지기를 이용한다', async () => {
     reset();
     assert.equal((await fetch(base + '/api/yut')).status, 401);
     assert.equal((await post(request(0), '')).status, 401);
-    user.isAdmin = false;
-    assert.equal((await fetch(base + '/api/yut', { headers: { Authorization: 'stale-admin-session' } })).status, 403);
-    assert.equal((await post(request(0))).status, 403);
     assert.equal(rpg.getInventoryItemCount(user, 0), 100); assert.equal(saves, 0);
+    assert.equal((await fetch(base + '/api/yut', { headers: { Authorization: 'user' } })).status, 200);
+    assert.equal((await post(request(0), 'user')).status, 200);
+    assert.equal(rpg.getInventoryItemCount(user, 0), 96); assert.equal(saves, 1);
+    user = null;
+    assert.equal((await fetch(base + '/api/yut', { headers: { Authorization: 'user' } })).status, 404);
+    assert.equal((await post(request(0), 'user')).status, 404);
 });
 test('4개 차감, 같은 요청 재전송, 오래된 화면과 동시 클릭', async () => {
     reset(); const body = request(0);

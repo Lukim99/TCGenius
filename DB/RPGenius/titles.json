@@ -30,6 +30,20 @@
       "plusStat": { "bossDmg": 0.05 }
     },
     {
+      "id": "greatDetective",
+      "name": "대탐정",
+      "description": "월드보스 '흑막' 누적 피해량 20,000,000 달성",
+      "condition": { "progressKey": "blackCurtainDamage", "count": 20000000 },
+      "specialEffect": { "type": "worldBossAtkPct", "value": 0.30 }
+    },
+    {
+      "id": "blackCurtain",
+      "name": "흑막",
+      "description": "월드보스 '흑막' 10회 참여",
+      "condition": { "progressKey": "blackCurtainParticipations", "count": 10 },
+      "specialEffect": { "type": "worldBossAvoid", "value": 0.10 }
+    },
+    {
       "id": "hoduFriend",
       "name": "호두의 친구",
       "description": "흑화 호두 파티 퀘스트 1회 클리어",

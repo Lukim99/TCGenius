@@ -7,6 +7,7 @@ const path = require('node:path');
 // functions in isolation, as in worldboss_black_curtain.test.js, without AWS.
 const source = fs.readFileSync(path.join(__dirname, '..', 'rpgenius.js'), 'utf8');
 const names = [
+    'getTitleProgress', 'unlockTitle', 'checkAndUnlockTitles',
     'calculateAttackHitResult', 'dealDamageToWorldBoss',
     'isBlackCurtainBoss', 'ensureBlackCurtainPatternState',
     'applyBlackCurtainFixedDamage', 'resolveBlackCurtainDamageRetaliation',
@@ -30,6 +31,7 @@ function fixture() {
     const rewardTotals = [];
     const noop = () => {};
     const deps = {
+        getTitleDefs: () => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'titles.json'), 'utf8')).titles,
         calculateUserStats: () => stats,
         calculateCardSlotEffects: () => ({ mpCostReduction: 0 }),
         getManaResonanceBonus: () => 0,
@@ -152,4 +154,28 @@ test('other world bosses do not gain the black-curtain retaliation', async () =>
     await f.act(20000);
     assert.equal(f.user.hp, 100000);
     assert.equal(f.user.field.blackCurtain, undefined);
+});
+
+test('대탐정은 흑막의 실제 누적 피해 2천만에서 해금되며 초과 피해는 제외한다', () => {
+    const f = fixture();
+    f.user.titleProgress = { blackCurtainDamage: 19999998 };
+    f.combat.dealDamageToWorldBoss(f.user, f.boss, 1, { trueDamage: true });
+    assert.equal(f.user.titleProgress.blackCurtainDamage, 19999999);
+    assert.ok(!(f.user.titles || []).includes('greatDetective'));
+    f.state.hp = 1;
+    f.combat.dealDamageToWorldBoss(f.user, f.boss, 100000, { trueDamage: true });
+    assert.equal(f.user.titleProgress.blackCurtainDamage, 20000000);
+    assert.equal(f.user.titles.filter(id => id === 'greatDetective').length, 1);
+    f.combat.dealDamageToWorldBoss(f.user, f.boss, 100000, { trueDamage: true });
+    assert.equal(f.user.titleProgress.blackCurtainDamage, 20000000);
+});
+
+test('흑막 참여 칭호는 10회에서 한 번만 해금된다', () => {
+    const f = fixture();
+    f.user.titleProgress = { blackCurtainParticipations: 9 };
+    f.combat.checkAndUnlockTitles(f.user);
+    assert.ok(!(f.user.titles || []).includes('blackCurtain'));
+    f.user.titleProgress.blackCurtainParticipations = 10;
+    assert.deepEqual(f.combat.checkAndUnlockTitles(f.user), ['blackCurtain']);
+    assert.deepEqual(f.combat.checkAndUnlockTitles(f.user), []);
 });
