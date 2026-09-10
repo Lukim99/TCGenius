@@ -8,6 +8,7 @@ const partyquest = require('./partyquest.js');
 const pvp = require('./pvp.js');
 const cardComposite = require('./card_composite.js');
 const assetStore = require('./asset_store.js');
+const { registerYutRoutes } = require('./yut_event.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -1368,6 +1369,8 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 });
 
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
+registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
+
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 서버 차원에서 굴리기 차단.
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
 const EVENT_DICE_ENDED_MSG = '유생의 주사위 이벤트가 종료되었습니다.';
@@ -5399,6 +5402,8 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
+    if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');
     if (item.use == '축복사용권') {
         const blessing = rpgenius.BLESSING_DEFINITIONS[item.blessing];
         return blessing ? getItemImageUrl('사용', blessing.name + ' 사용권.png') : null;
@@ -6612,7 +6617,16 @@ function buildBaitDetail(item) {
 function buildGachaDetail(item) {
     let entries = [];
     let note = '';
-    if (item.use === '초월상자') {
+    if (item.use === '송편') {
+        const items = rpgenius.getDataCache('Item', []);
+        const guaranteed = buildDetailRewardDisplay({ type: '아이템', item_id: items.findIndex(it => it && it.name === item.guaranteed?.name), count: item.guaranteed?.count });
+        const choices = Array.isArray(item.choices) ? item.choices : [];
+        entries = choices.map(choice => {
+            const display = buildDetailRewardDisplay({ type: '아이템', item_id: items.findIndex(it => it && it.name === choice.name), count: choice.count });
+            return display ? Object.assign(display, { chance: 1 / choices.length }) : null;
+        }).filter(Boolean);
+        note = (guaranteed ? guaranteed.name + ' ' + guaranteed.count + '개를 반드시 획득하고, ' : '') + '아래 보상 중 하나를 동일한 확률로 추가 획득합니다.';
+    } else if (item.use === '초월상자') {
         entries = buildUniformEquipmentOutcomes(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'], '초월', false);
         note = '모든 초월 장비 중 하나를 동일한 확률로 획득합니다.' + (item.tradeUsed ? ' 획득 장비는 거래 가능 횟수가 소진된 상태입니다.' : '');
     } else if (item.use === '보주상자') {
@@ -8721,6 +8735,7 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
+  ${sess.admin ? '<div class="page" data-page="윷놀이"><div id="yutRoot"></div></div>' : ''}
   <div class="page" data-page="pvp">
     <section class="panel"><div id="pvpRoot"></div></section>
   </div>

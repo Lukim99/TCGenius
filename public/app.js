@@ -192,7 +192,7 @@ const GROUPS = [
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
-    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['캡슐', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: [...(window.IS_ADMIN ? ['윷놀이'] : []), '캡슐', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
@@ -248,9 +248,12 @@ function activateGroup(groupId) {
 }
 
 function navigatePage(pageId) {
+    if (pageId === '윷놀이' && !window.IS_ADMIN) return;
+    if (activePage === '윷놀이' && pageId !== '윷놀이' && window.yutGame) window.yutGame.pause();
     if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
     activePage = pageId;
+    document.body.classList.toggle('yut-active', pageId === '윷놀이');
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') loadHomeBanners();
@@ -269,6 +272,7 @@ function navigatePage(pageId) {
     if (pageId === 'preset') loadPresets();
     if (pageId === 'pvp') loadPvp();
     if (pageId === 'event') loadEventDice();
+    if (pageId === '윷놀이') loadYut();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '캡슐') loadCapsule();
     if (pageId === '퀘스트') loadQuests();
@@ -2691,6 +2695,26 @@ if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
     $('#inventorySearch').focus();
     if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
 };
+
+async function loadYut() {
+    const root = $('#yutRoot');
+    if (!window.IS_ADMIN || !root) return;
+    if (!document.querySelector('link[data-yut]')) {
+        const css = el('link', { rel: 'stylesheet', href: '/static/yut.css' });
+        css.dataset.yut = 'true';
+        document.head.appendChild(css);
+    }
+    try {
+        if (!window.yutGame) {
+            const { mountYut } = await import('/static/yut.js');
+            if (!window.yutGame) window.yutGame = mountYut(root);
+        }
+        await window.yutGame.refresh();
+    } catch (error) {
+        root.replaceChildren(el('div', { class: 'empty err' }, '윷놀이를 불러오지 못했습니다. ', error.message,
+            el('button', { onclick: loadYut }, '다시 불러오기')));
+    }
+}
 
 // ===== 이벤트: 유생의 주사위 =====
 

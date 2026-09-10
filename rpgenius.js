@@ -5,6 +5,7 @@ const path = require('path');
 const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
 const combatEffects = require('./public/combat-effects.js');
+const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
@@ -11330,11 +11331,58 @@ function applyUseFunc(user, func, useCount, resultLines) {
     }
 }
 
+const pendingSongpyeonSaves = new Map();
+async function useSongpyeon(user, countArg) {
+    const key = user.name;
+    if (yutInventoryLocks.has(key)) return '❌ 윷 또는 송편을 처리하고 있습니다. 잠시 후 다시 시도해주세요.';
+    yutInventoryLocks.add(key);
+    try {
+        const current = await getRPGUserByName(key);
+        if (!current) return '❌ 유저 정보를 찾을 수 없습니다.';
+        let message = pendingSongpyeonSaves.get(key);
+        if (!message) {
+            const count = countArg == null || countArg === '' ? 1 : Number(countArg);
+            if (!Number.isSafeInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
+            const items = getDataCache('Item', []);
+            const id = items.findIndex(item => item && item.name === '송편' && item.use === '송편');
+            const item = items[id], guaranteed = item && item.guaranteed, choices = item && item.choices;
+            const range = guaranteed && guaranteed.count;
+            const yutId = guaranteed ? items.findIndex(it => it && it.name === guaranteed.name) : -1;
+            const choiceIds = Array.isArray(choices) ? choices.map(choice => items.findIndex(it => it && it.name === choice?.name)) : [];
+            if (yutId < 0 ||
+                !range || !Number.isSafeInteger(range.min) || !Number.isSafeInteger(range.max) || range.min < 1 || range.max < range.min ||
+                !Array.isArray(choices) || choices.length === 0 || choices.some((choice, i) => choiceIds[i] < 0 || !Number.isSafeInteger(choice.count) || choice.count < 1)) {
+                return '❌ 송편 보상 정보가 올바르지 않습니다. 아이템은 소모되지 않았습니다.';
+            }
+            if (getInventoryItemCount(current, id) < count) return '❌ 아이템이 부족합니다.';
+            const summary = {};
+            removeInventoryItem(current, id, count);
+            for (let i = 0; i < count; i++) {
+                grantPackReward(current, { type: '아이템', item_id: yutId, count: range }, summary);
+                const pick = randomInt(0, choices.length - 1);
+                grantPackReward(current, { type: '아이템', item_id: choiceIds[pick], count: choices[pick].count }, summary);
+            }
+            message = ['✅ 송편 x' + comma(count) + ' 사용', '[ 획득 결과 ]', ...Object.keys(summary).map(k => formatRewardSummaryEntry(k, summary[k]))].join('\n');
+            // 저장 재시도는 이미 뽑힌 결과를 저장하며 송편을 다시 소모하지 않는다.
+            pendingSongpyeonSaves.set(key, message);
+        }
+        const saved = await current.save();
+        user.inventory = current.inventory;
+        if (user.__loaded) user.__loaded.inventory = JSON.stringify(current.inventory);
+        if (!saved || !saved.success) return '❌ 송편 결과 저장을 확인하지 못했습니다. 다시 사용하면 추가 소모 없이 이전 결과의 저장을 확인합니다.';
+        pendingSongpyeonSaves.delete(key);
+        return message;
+    } finally {
+        yutInventoryLocks.delete(key);
+    }
+}
+
 async function useItem(user, itemName, countArg) {
     const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
+    if (item.name === '송편' && item.use === '송편') return useSongpyeon(user, countArg);
     if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '소모품' && isBlackCurtainHealingBlocked(user) && (item.use_func || []).some(func => /회복/.test(String(func && func.type || '')))) {
@@ -12535,7 +12583,7 @@ class RPGUser {
 
     // opts.defer=true: 캐시에만 반영하고 DB flush는 디바운스 (틱/연타 핫패스 전용)
     async save(opts) {
-        await commitUserToCache(this, opts);
+        return await commitUserToCache(this, opts);
     }
 
     async changeCode() {
