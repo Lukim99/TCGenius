@@ -175,10 +175,11 @@ function resolveCardLayers(card) {
     const greek = GREEK_BY_STAR[s] || null;
     // 전직 프레임은 5성부터 존재 — 그 아래는 일반 카드로 취급 (구 평면 이미지의 폴백과 동일)
     const isJob = card.type === '전직' && s >= 5;
-    const prestige = card.prestige === true && !!greek; // 프레스티지 프레임/아트는 제타+ 전용
+    const isAwakening = card.type === '각성' && s >= 5;
+    const prestige = !isAwakening && card.prestige === true && !!greek; // 프레스티지 프레임/아트는 제타+ 전용
 
-    // 캐릭터 아트: 티어 폴백 체인 × (스킨 → 스킨 없음) — '각성' 아트는 아직 미사용 데이터
-    const tiers = isJob
+    // 캐릭터 아트: 티어 폴백 체인 × (아바타 → 기본 외형)
+    const tiers = isAwakening ? ['각성'] : isJob
         ? (prestige ? ['프레스티지 전직', '전직'] : ['전직'])
         : (prestige ? ['프레스티지 일반', '일반'] : ['일반']);
     const artNames = [];
@@ -190,7 +191,7 @@ function resolveCardLayers(card) {
     if (!character) return null;
 
     // 프레임 (배경 필수, 테두리는 있으면 사용 — 전직 프레스티지는 테두리 없이 배경에 통합돼 있음)
-    const frameKind = isJob ? '전직카드' : '일반카드';
+    const frameKind = isAwakening ? '각성카드' : isJob ? '전직카드' : '일반카드';
     const frameDir = path.join(FRAME_DIR, frameKind);
     let bgLabel, borderLabel;
     if (prestige) {

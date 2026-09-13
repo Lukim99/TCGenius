@@ -28,7 +28,7 @@ assert.ok(app.includes("if (pageId === '[H]필드') { location.href = '/hfield';
     'rpgenius.useSkillInField',
     'rpgenius.leaveField'
 ].forEach(contract => assert.ok(server.includes(contract), '누락된 H필드 계약: ' + contract));
-assert.ok(server.includes("mainCard && mainCard.type == '전직'"), '전직 스킬은 전직 카드에만 표시해야 합니다.');
+assert.ok(server.includes("mainCard && ['전직', '각성'].includes(mainCard.type)"), '전직 궁극기는 전직·각성 카드에 표시해야 합니다.');
 
 assert.ok(field.includes("getContext('webgl'"), '전투 화면은 WebGL 컨텍스트를 사용해야 합니다.');
 assert.ok(field.includes("canvas.addEventListener('pointerdown'"), '터치 입력이 필요합니다.');

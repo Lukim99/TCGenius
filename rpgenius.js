@@ -49,6 +49,7 @@ const WORLD_BOSS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'WorldBoss.json')
 const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
 const ORB_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Orb.json');
 const SPECTER_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Specter.json');
+const cardAwakening = require('./card_awakening');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -75,8 +76,9 @@ const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
 // 사냥 이벤트 드랍은 송편으로 지급한다.
 const SONGPYEON_DROP_ITEM_NAME = '송편';
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
-const SONGPYEON_DROP_CHANCE = 0.05;
+const SONGPYEON_DROP_CHANCE = 0.10;
 const SONGPYEON_DROP_DAILY_LIMIT = 10;
+const AWAKENING_GEM_NAMES = ['용기의 보석', '희생의 보석', '투지의 보석', '권능의 보석', '지혜의 보석', '인내의 보석'];
 const FRAGMENT_TIERS = {
     low: {
         name: '하급 편린',
@@ -1903,13 +1905,13 @@ function getSpecterTargets(user) {
 function formatSpecterTargetList(targets) {
     const lines = ['[ 스펙터 부여 대상 ]', VIEWMORE];
     targets.forEach(target => {
-        const specterMark = target.card.specter ? ' [' + target.card.specter + ']' : '';
+        const specterMark = [target.card.specter, target.card.awakeningSpecter].filter(Boolean).map(name => ' [' + name + ']').join('');
         lines.push('[' + target.number + '] ' + formatUserCard(target.card) + specterMark);
     });
     return lines.join('\n');
 }
 
-// 카드당 스펙터 1개. 이미 부여된 카드를 고르면 확인 단계를 거쳐 교체한다
+// 전직/각성 스펙터를 각각 1개씩 부여한다. 같은 타입만 확인 후 교체한다.
 function applySpecterToCard(user, numberArg, confirmed) {
     const pending = user.pendingAction;
     if (!pending || pending.type != '스펙터부여') return '❌ 진행 중인 스펙터 사용이 없습니다.';
@@ -1921,14 +1923,15 @@ function applySpecterToCard(user, numberArg, confirmed) {
     const card = cards[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
     if ((card.type || '일반') != '일반') return '❌ 스펙터는 일반 카드에만 부여할 수 있습니다.';
-    if (card.specter && !confirmed) {
+    const specterKey = specterData.type === '각성' ? 'awakeningSpecter' : 'specter';
+    if (card[specterKey] && !confirmed) {
         pending.cardNumber = number;
-        const existing = findSpecterByName(card.specter);
+        const existing = findSpecterByName(card[specterKey]);
         return ['❗ 이미 스펙터가 부여된 카드입니다. 교체하시겠습니까?', '- 대상: ' + formatUserCard(card), '']
-            .concat(existing ? formatSpecterLines(existing, card.star) : ['[ 스펙터 ] ' + card.specter])
-            .concat(['', '기존 스펙터는 사라집니다.', '/RPGenius 확인', '/RPGenius 사용취소']).join('\n');
+            .concat(existing ? formatSpecterLines(existing, card.star) : ['[ 스펙터 ] ' + card[specterKey]])
+            .concat(['', '같은 타입의 기존 스펙터가 사라집니다.', '/RPGenius 확인', '/RPGenius 사용취소']).join('\n');
     }
-    card.specter = specterData.name;
+    card[specterKey] = specterData.name;
     user.pendingAction = null;
     return ['✨ ' + specterData.name + '을(를) 부여했습니다.', '- 대상: ' + formatUserCard(card), '']
         .concat(formatSpecterLines(specterData, card.star)).join('\n');
@@ -2568,6 +2571,12 @@ function getCardSpecter(card) {
     return findSpecterByName(card.specter);
 }
 
+function getCardAwakeningSpecter(card) {
+    if (!card || (card.type || '일반') !== '일반' || !card.awakeningSpecter) return null;
+    const specter = findSpecterByName(card.awakeningSpecter);
+    return specter && specter.type === '각성' ? specter : null;
+}
+
 function getSpecterSkill(specter) {
     if (!specter || typeof specter.skill != 'number') return null;
     const skills = readJson(SKILLS_PATH, []);
@@ -2576,7 +2585,9 @@ function getSpecterSkill(specter) {
 
 function formatSpecterLines(specter, star) {
     if (!specter) return [];
-    const lines = ['[ 스펙터 ] ' + (specter.name || '')];
+    const lines = ['[ ' + (specter.type || '전직') + ' 스펙터 ] ' + (specter.name || '')];
+    const statLines = formatEquipmentStatLines({ stat: specter.stat || {}, plusStat: specter.plusStat || {} });
+    if (statLines) lines.push(...statLines.split('\n'));
     const skill = getSpecterSkill(specter);
     if (skill) {
         lines.push('- 부여 스킬: ' + skill.name + ' (MP ' + comma(Number(skill.mp_cost || 0)) + ', 쿨타임 ' + formatCooltime(Number(skill.cooltime || 0)) + ')');
@@ -2758,7 +2769,9 @@ function calculateCardSlotEffects(user) {
         waterAtk: 0,
         darkAtk: 0,
         ultimateDamage: 0,
-        shieldFinalDamage: 0
+        shieldFinalDamage: 0,
+        finalAttackBonus: 0, cmb: 0, recoveryEfficiency: 0, bossDmg: 0, defBonus: 0,
+        criticalFinalDamage: 0, pnt: 0, summonDuration: 0, dotDamage: 0
     };
     // 감소형 페널티 키는 대응 보너스 키에서 차감 (표시 수치는 양수로 저장)
     const applyEffect = (key, value) => {
@@ -2772,6 +2785,11 @@ function calculateCardSlotEffects(user) {
         const cardData = characterCards[card.id];
         if (!cardData) return;
         const star = Number(card.star || 0);
+        if (card.type === '각성') {
+            const awakening = cardAwakening.getDefinition(card);
+            if (awakening) awakening.slots.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
+            return;
+        }
         if (card.type === '전직') {
             if (cardData.class && Array.isArray(cardData.class.slot_effects)) {
                 cardData.class.slot_effects.forEach(se => applyEffect(se.effect, getSlotEffectValueAtStar(se, star)));
@@ -2785,7 +2803,7 @@ function calculateCardSlotEffects(user) {
 
 function formatCardSlotEffectLines(user) {
     const slotEffects = calculateCardSlotEffects(user);
-    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk']);
+    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk', 'pnt']);
     const effectMap = [
         ['skillCoolReduction', '스킬 쿨타임 감소'],
         ['basicDamageBonus', '일반 공격 피해'],
@@ -2811,7 +2829,10 @@ function formatCardSlotEffectLines(user) {
         ['expBonus', '경험치 획득 증가량'],
         ['killRecoveryChance', '받은 피해의 20%만큼 체력 회복 확률'],
         ['mpCostReduction', 'MP 소모량 감소'],
-        ['damageBonus', '일반 몬스터 대상 피해']
+        ['damageBonus', '일반 몬스터 대상 피해'],
+        ['finalAttackBonus', '최종 공격력 증가'], ['cmb', '연격 확률 증가'], ['recoveryEfficiency', '회복 효율 증가'],
+        ['bossDmg', '보스 추가 피해 증가'], ['defBonus', '방어력 증가'], ['criticalFinalDamage', '치명타 공격 시 최종 피해 증가'],
+        ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) != 0)
@@ -2947,7 +2968,7 @@ function getCardCombineSelection(user, numberArgs) {
     const star = Number(selected[0].star || 0);
     if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 입력된 카드 3개는 모두 같은 등급이어야 합니다.' };
     const cardType = selected[0].type || '일반';
-    if (selected.some(card => (card.type || '일반') !== cardType)) return { error: '❌ 카드 3개는 모두 같은 종류(일반/전직)여야 합니다.' };
+    if (selected.some(card => (card.type || '일반') !== cardType)) return { error: '❌ 카드 3개는 모두 같은 종류(일반/전직/각성)여야 합니다.' };
     const info = getCardCombineInfo(star);
     if (!info) return { error: '❌ 해당 등급은 카드조합을 할 수 없습니다.' };
     const isOmega = star === 11;
@@ -3002,7 +3023,7 @@ function getRandomCardCombineNumbers(user, starArg) {
     const byType = {};
     sameStar.forEach(entry => { const t = entry.card.type || '일반'; (byType[t] = byType[t] || []).push(entry.number); });
     const numbers = Object.values(byType).find(arr => arr.length >= 3) || [];
-    if (numbers.length < 3) return { error: '❌ 해당 등급의 같은 종류(일반/전직) 카드가 3장 이상 필요합니다.' };
+    if (numbers.length < 3) return { error: '❌ 해당 등급의 같은 종류(일반/전직/각성) 카드가 3장 이상 필요합니다.' };
     for (let i = numbers.length - 1; i > 0; i--) {
         const j = randomInt(0, i);
         const temp = numbers[i];
@@ -3090,7 +3111,7 @@ function runCardCombine(user) {
     let resultId;
     if (selection.sameCardId != null) {
         resultId = selection.sameCardId;
-    } else if (selection.cardType === '전직') {
+    } else if (['전직', '각성'].includes(selection.cardType)) {
         const jobCandidates = characterCards.map((_, i) => i).filter(i => hasJobClass(i));
         resultId = jobCandidates.length > 0 ? jobCandidates[randomInt(0, jobCandidates.length - 1)] : randomInt(0, characterCards.length - 1);
     } else {
@@ -3124,7 +3145,7 @@ function getJobCombineSelection(user, numberArgs) {
     if (numbers.some(n => !Number.isInteger(n) || n < 1 || n > cards.length)) return { error: '❌ 존재하지 않는 카드 번호가 있습니다.' };
     if (new Set(numbers).size != 3) return { error: '❌ 서로 다른 카드 3장을 선택해야 합니다.' };
     const selected = numbers.map(n => cards[n - 1]);
-    if (selected.some(card => card.type === '전직')) return { error: '❌ 전직 카드는 전직조합 재료로 사용할 수 없습니다.' };
+    if (selected.some(card => (card.type || '일반') !== '일반')) return { error: '❌ 일반 카드만 전직조합 재료로 사용할 수 있습니다.' };
     const star = Number(selected[0].star || 0);
     if (star < 4) return { error: '❌ 5성 이상 카드만 전직조합할 수 있습니다.' };
     if (selected.some(card => Number(card.star || 0) != star)) return { error: '❌ 카드 3개는 모두 같은 등급이어야 합니다.' };
@@ -3150,6 +3171,49 @@ function runJobCombine(user) {
     const resultCard = { id: selection.sameCardId, star: selection.star, type: '전직' };
     user.inventory.card.push(resultCard);
     return '✅ 전직조합이 완료되었습니다!\n[ 결과 ]\n- ' + formatUserCard(resultCard) + '\n- 🪙 ' + comma(selection.info.gold) + ' 소모';
+}
+
+function getAwakeningMaterials(user) {
+    const items = getDataCache('Item', []);
+    return AWAKENING_GEM_NAMES.map(name => {
+        const itemId = items.findIndex(item => item && item.name === name);
+        return { name, itemId, count: itemId >= 0 ? getInventoryItemCount(user, itemId) : 0, required: 1 };
+    });
+}
+
+function getAwakeningCombineSelection(user, numberArgs) {
+    const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
+    if (!Array.isArray(numberArgs) || numberArgs.length !== 3) return { error: '❌ 전직 카드 3장을 선택해주세요.' };
+    const numbers = numberArgs.map(Number);
+    if (numbers.some(n => !Number.isInteger(n) || n < 1 || n > cards.length) || new Set(numbers).size !== 3) return { error: '❌ 서로 다른 카드 3장을 선택해주세요.' };
+    const selected = numbers.map(n => cards[n - 1]);
+    const star = Number(selected[0].star || 0);
+    const id = Number(selected[0].id);
+    if (selected.some(card => card.type !== '전직')) return { error: '❌ 전직 카드만 각성조합 재료로 사용할 수 있습니다.' };
+    if (!Number.isInteger(star) || star < 4 || star > 11 || !hasJobClass(id)) return { error: '❌ 각성할 수 없는 카드입니다.' };
+    if (selected.some(card => Number(card.id) !== id || Number(card.star || 0) !== star)) return { error: '❌ 같은 캐릭터·같은 등급의 전직 카드 3장이 필요합니다.' };
+    const materials = getAwakeningMaterials(user);
+    const missing = materials.filter(item => item.count < item.required);
+    if (missing.length) return { error: '❌ 재료가 부족합니다.\n- ' + missing.map(item => item.name + ' ' + item.count + '/' + item.required).join('\n- ') };
+    return { numbers, selected, id, star, materials };
+}
+
+function runAwakeningCombine(user, numberArgs) {
+    const selection = getAwakeningCombineSelection(user, numberArgs);
+    if (selection.error) return selection;
+    const resultCard = { id: selection.id, star: selection.star, type: '각성' };
+    selection.materials.forEach(item => removeInventoryItem(user, item.itemId, item.required));
+    selection.numbers.slice().sort((a, b) => b - a).forEach(n => user.inventory.card.splice(n - 1, 1));
+    user.inventory.card.push(resultCard);
+    return { resultCard, message: '✨ 각성조합이 완료되었습니다!\n- ' + formatUserCard(resultCard) };
+}
+
+function rollAwakeningGemDrop(user, name, chance) {
+    const items = getDataCache('Item', []);
+    const itemId = items.findIndex(item => item && item.name === name);
+    if (itemId < 0 || Math.random() >= chance) return null;
+    addInventoryItem(user, itemId, 1);
+    return { itemId, name, count: 1 };
 }
 
 function getCardPackNameByStar(starIndex) {
@@ -3341,6 +3405,7 @@ function convertCharacterCard(user, numberArg, confirmedFashion, can) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
+    if (card.type === '각성') return '❌ 각성 카드는 만능 캐릭터 변환석으로만 변환할 수 있습니다.';
     if (card.type === '전직') return '❌ 전직 카드는 캐릭터 변환석을 사용할 수 없습니다. (전직 변환석 사용)';
     const maxStar = CHARACTER_CONVERT_MAX_STAR[can] || 9;
     if (Number(card.star || 0) >= maxStar) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
@@ -3367,6 +3432,7 @@ function convertCharacterCardToTarget(user, numberArg) {
     const targetId = Number(pending.charId);
     if (!Number.isInteger(targetId) || !characterCards[targetId]) return '❌ 변환 대상 캐릭터 정보가 없습니다.';
     const card = cards[number - 1];
+    if (card.type === '각성') return '❌ 각성 카드는 만능 캐릭터 변환석으로만 변환할 수 있습니다.';
     if (Number(card.id) == targetId) return '❌ 이미 변환 대상 캐릭터 카드입니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
     const before = Object.assign({}, card);
     card.id = targetId;
@@ -3389,7 +3455,7 @@ function convertCharacterCardUniversal(user, numberArg, confirmedFashion) {
         return '❗ 패션 카드를 변환하시겠습니까?\n\n적용된 패션이 사라지고 일반 카드로 변환됩니다.\n/RPGenius 확인\n/RPGenius 사용취소';
     }
     const before = Object.assign({}, card);
-    if (card.type === '전직') {
+    if (['전직', '각성'].includes(card.type)) {
         const jobIds = characterCards.map((c, i) => i).filter(i => characterCards[i] && characterCards[i].class && i != Number(card.id));
         if (jobIds.length == 0) return '❌ 변환할 수 있는 다른 전직 캐릭터가 없습니다.';
         card.id = jobIds[randomInt(0, jobIds.length - 1)];
@@ -3642,10 +3708,15 @@ function equipTitleByName(user, name) {
 
 function calculateUserStats(user, _out) {
     const stats = getBaseStat(user.main_card);
-    if (user.main_card && user.main_card.type === '전직') {
+    if (user.main_card && ['전직', '각성'].includes(user.main_card.type)) {
         ['atk', 'def', 'hp', 'mp', 'pnt'].forEach(k => { if (stats[k]) stats[k] = Math.round(stats[k] * 1.02); });
     }
     const plusStats = {};
+    const awakeningSpecter = getCardAwakeningSpecter(user.main_card);
+    if (awakeningSpecter) {
+        addStats(stats, awakeningSpecter.stat || {});
+        addStats(plusStats, awakeningSpecter.plusStat || {});
+    }
     normalizeStatPointData(user);
     Object.keys(user.statPointStats).forEach(key => {
         const count = Number(user.statPointStats[key] || 0);
@@ -3769,6 +3840,10 @@ function calculateUserStats(user, _out) {
     stats.lightAtk = Number(stats.lightAtk || 0) + Number(slotEffects.lightAtk || 0);
     stats.waterAtk = Number(stats.waterAtk || 0) + Number(slotEffects.waterAtk || 0);
     stats.darkAtk = Number(stats.darkAtk || 0) + Number(slotEffects.darkAtk || 0);
+    ['cmb', 'recoveryEfficiency', 'bossDmg', 'criticalFinalDamage', 'pnt', 'summonDuration', 'dotDamage'].forEach(key => {
+        stats[key] = Number(stats[key] || 0) + Number(slotEffects[key] || 0);
+    });
+    stats.def = Math.round(Number(stats.def || 0) * (1 + Number(slotEffects.defBonus || 0)));
     if (Number(slotEffects.maxHpBonus || 0) != 0) stats.hp = Math.round(Number(stats.hp || 0) * (1 + Number(slotEffects.maxHpBonus || 0)));
     if (stats.forceZeroCrit) stats.crit = 0;
     // 칭호 특수 효과 (조건부 % — 최종 공격력에 적용)
@@ -3801,6 +3876,29 @@ function calculateUserStats(user, _out) {
         if (typeof user.hp != 'undefined') user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
         if (typeof user.mp != 'undefined') user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
     }
+    stats.awakening = cardAwakening.getPassive(user.main_card);
+    if (stats.awakening) {
+        const passive = stats.awakening;
+        if (passive.effect === 'hpAttack') stats.atk += Number(stats.hp || 0) / 10000 * passive.value;
+        if (passive.effect === 'mpAttack') stats.atk += Number(stats.mp || 0) / 1000 * passive.value;
+        if (passive.effect === 'riskAttack') stats.takenDamage = Number(stats.takenDamage || 0) + passive.value;
+    }
+    let awakeningReduction = Number(slotEffects.hpDamageReduction || 0) - Number(stats.takenDamage || 0);
+    if (stats.awakening && stats.awakening.effect === 'reductionAttack') {
+        awakeningReduction += getActiveFieldDamageReduction(user) + 1 - getActiveFieldDamageMultiplier(user) + Number(user.field && user.field.passiveDamageReduction || 0);
+        const hpRatio = Number(user.hp ?? stats.hp) / Math.max(1, Number(stats.hp || 1));
+        if (hpRatio <= .50) awakeningReduction += Number(stats.bloodFlowReduction || 0) * (hpRatio <= .30 ? 2 : 1);
+        const target = user.field && (user.field.worldBoss ? getWorldBossState(user.field.name) : user.field.elite);
+        const targetDef = user.field && user.field.worldBoss ? findWorldBossByName(user.field.name) : user.field && findDungeonByName(user.field.name);
+        const maxTargetHp = user.field && user.field.worldBoss ? Number(targetDef && targetDef.hp || 0) : Number(targetDef && targetDef.elite && getCombatStats(targetDef.elite).hp || 0);
+        const armor = target && maxTargetHp > 0 && Number(target.hp || 0) / maxTargetHp <= .50 ? getEquippedNamed(user, '최후통첩 아머') : null;
+        if (armor) awakeningReduction += .10 + .04 * Math.max(0, getTranscendStage(armor.ref.equip, armor.data) - 1);
+        const counter = getFieldBuffs(user).counterReady;
+        if (counter && Date.now() < Number(counter.expired_at || 0)) awakeningReduction += Number(counter.reduceRate || 0);
+        awakeningReduction += Number(getFieldBuffs(user).nextDamageReduction && getFieldBuffs(user).nextDamageReduction.value || 0);
+    }
+    stats.awakeningAttackMultiplier = cardAwakening.getAttackMultiplier(stats.awakening, awakeningReduction, Number(user.field && user.field.nmmStacks || 0));
+    stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)));
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
     return stats;
 }
@@ -4308,7 +4406,7 @@ function getComboHitCount(stats) {
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
     if (extra && extra.disableCritical) return { damage: Number(damage || 0), isCritical: false };
-    const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1);
+    const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
@@ -4371,7 +4469,8 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
         // 명속성 공격 최종 피해(lightFinalDamage): 공격 속성이 명일 때 최종 피해%에 가산 (천공의 갑옷 등 스탯 보유 장비 공통)
         const lightFinalBonus = hitExtra.attackElement == '명' ? Number(hitStats.lightFinalDamage || 0) : 0;
-        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * (1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0) + lightFinalBonus);
+        const finalDamageMultiplier = 1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0) + lightFinalBonus;
+        const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * finalDamageMultiplier * cardAwakening.basicHitMultiplier(stats, hitExtra);
         const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
         const isAbyssExtraHit = !isFixedMultiHit && i >= comboHitCount;
         const forceComboLastCrit = !!(isComboExtraHit && stats && stats.comboLastCrit && comboHitCount >= maxComboHits && i == comboHitCount - 1);
@@ -4381,6 +4480,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Number(stats.comboLastCritMul || 0);
         }
         const criticalResult = applyCriticalDamage(baseDamage, stats, hitExtra, defenderStats);
+        if (finalDamageMultiplier > 0) criticalResult.damage *= Math.max(0, finalDamageMultiplier + cardAwakening.conditionalFinalDamage(stats, criticalResult.isCritical)) / finalDamageMultiplier;
         if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
             abyssDoomUsed = true;
@@ -4482,6 +4582,11 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         finalDamage += extraDamageDealt;
         if (extraDamageDealt > 0) damageComponents.push({ damage: extraDamageDealt, type: 'additional', label: '추가 피해', hitIndex: null, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
     }
+    if (Number(extra && extra.awakeningExtraDamage || 0) > 0 && finalDamage > 0) {
+        const awakeningDamage = Math.round(finalDamage * extra.awakeningExtraDamage);
+        finalDamage += awakeningDamage;
+        damageComponents.push({ damage: awakeningDamage, type: 'additional', label: '각성 추가 피해', hitIndex: null, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
+    }
     return { hitCount, comboHitCount, attackUnitCount: separateBasicAttackHits ? hitCount : comboHitCount, hitDamages, hitDetails, damageComponents, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
 
@@ -4517,7 +4622,7 @@ function getMainCardSkills(user) {
     const card = user.main_card && characterCards[user.main_card.id];
     if (!card) return [];
     let skillIndices = card.skills || [];
-    if (user.main_card && user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
+    if (user.main_card && ['전직', '각성'].includes(user.main_card.type) && card.class && Array.isArray(card.class.skills)) {
         skillIndices = skillIndices.concat(card.class.skills);
     }
     // 스펙터 스킬은 항상 마지막 → isUltimateSkillForUser가 궁극기로 판정
@@ -5685,6 +5790,7 @@ function applyTenthAtkCounter(user, extra, hitResult) {
 
 function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const stats = calculateUserStats(user);
+    cardAwakening.prepareAttack(stats, user.field, user.field && user.field.elite || user.field, extra, extra && extra.awakeningAttackKind || (extra && extra.isBasic ? 'basic' : 'skill'), Date.now());
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const elite = getCombatStats(dungeon.elite);
@@ -5775,8 +5881,10 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
+    if (isAwakeningInvincible(user.name, stats)) fieldDamage = 0;
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
-    user.hp = Math.max(0, beforeHp - fieldDamage);
+    user.hp = resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - fieldDamage));
+    if (user.hp !== Math.max(0, beforeHp - fieldDamage)) fieldDamage = Math.max(0, beforeHp - user.hp);
     let eliteDefeatedByThorns = false;
     if (avoided) lines.push('💨 ' + elite.name + '의 공격을 회피했습니다!');
     else {
@@ -5914,6 +6022,7 @@ function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, 
 function buildHuntResult(user, dungeon, rawDamage, extra) {
     const isDailyDungeon = !!(user.field && user.field.dailyDungeon);
     const stats = calculateUserStats(user);
+    cardAwakening.prepareAttack(stats, user.field, user.field, extra, extra && extra.awakeningAttackKind || (extra && extra.isBasic ? 'basic' : 'skill'), Date.now());
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
     const monster = getCombatStats(dungeon);
@@ -5978,8 +6087,10 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     }
 
     fieldDamage = consumeNextDamageReduction(user, fieldDamage);
+    if (isAwakeningInvincible(user.name, stats)) fieldDamage = 0;
     fieldDamage = applyFieldShieldAbsorption(user, fieldDamage, lines);
-    user.hp = Math.max(0, beforeHp - fieldDamage);
+    user.hp = resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - fieldDamage));
+    if (user.hp !== Math.max(0, beforeHp - fieldDamage)) fieldDamage = Math.max(0, beforeHp - user.hp);
     // 가시 반사: 받은 반격 히트 각각에 대해 개별적으로 반사 (몰아서 한 번에 계산하지 않음). 표시는 아래 피해 로그와 히트별로 이어붙인다.
     const thornsHitLines = [];
     if (fieldDamage > 0 && !avoided) {
@@ -6129,6 +6240,8 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 🍡 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(songpyeonDaily.count) + '/' + comma(SONGPYEON_DROP_DAILY_LIMIT) + ')');
             }
         }
+        const patienceGem = rollAwakeningGemDrop(user, '인내의 보석', 0.001 * dropMultiplier * levelMultiplier);
+        if (patienceGem) lines.push('- 💎 ' + patienceGem.name + ' 획득!');
     }
 
     if (!(extra && extra.isBotAutoAttack)) setNextFieldActionAt(user);
@@ -6511,7 +6624,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
             delete state.burn;
             state[readyKey] = Date.now() + equipmentCooldownMs(cooldown);
             if (mythicBurnShoes) {
-                state.hellfire = { tickDamage: Math.max(1, Math.round(Number(stats.atk || 0) * .50)), intervalMs: 2000, nextTickAt: Date.now() + 2000, expiredAt: Date.now() + 6000 };
+                state.hellfire = { tickDamage: Math.max(1, Math.round(Number(stats.atk || 0) * .50 * (1 + Number(stats.dotDamage || 0)))), intervalMs: 2000, nextTickAt: Date.now() + 2000, expiredAt: Date.now() + 6000 };
                 ensureFieldEquipmentDotTimer(user);
                 markTriggeredCombatEffect(extra, 'combat', '겁화 부여');
             }
@@ -6779,7 +6892,7 @@ function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, sk
         if (stageOf('진사이') && Math.random() < .05 && !isBlackCurtainHealingBlocked(user)) { user.hp = Math.min(Number(stats.hp || 0), Number(user.hp || 0) + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredCombatEffect(extra, 'combat', 'HP 회복'); }
         if (stageOf('잿불 모자') && Date.now() >= Number(state.burnReadyAt || 0)) {
             const duration = 8 + Number(stats.burnDurationFlat || 0) + (getEquippedNamed(user, '행운의 복주머니') ? 3 : 0);
-            const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * stepValue('잿불 모자', .30, .05) * (1 + Number(stats.burnDamage || 0) + (getEquippedSetCount(user, '잿불의 장송곡') >= 4 ? .35 : 0))));
+            const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * stepValue('잿불 모자', .30, .05) * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (getEquippedSetCount(user, '잿불의 장송곡') >= 4 ? .35 : 0))));
             state.burn = { tickDamage, intervalMs: 2000, nextTickAt: Date.now() + 2000, expiredAt: Date.now() + duration * 1000 };
             state.burnReadyAt = Date.now() + equipmentCooldownMs(6);
             ensureFieldEquipmentDotTimer(user);
@@ -6835,7 +6948,9 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     extra = extra || {};
     if (actionType === 'skill') extra.isSkill = true;
     if (actionType === 'basic') extra.isBasic = true;
+    extra.awakeningAttackKind = actionType === 'skill' && isUltimateSkillForUser(user, skill) ? 'ultimate' : actionType;
     extra.attackElement = getAttackElement(user, actionType === 'skill' ? skill : null);
+    if (actionType === 'basic' && cardAwakening.getPassive(user.main_card)?.effect === 'waterBasic') extra.attackElement = '수';
     extra.combatTargetKey = getFieldCombatTargetKey(user, context);
     const isHellPillar = context && context.type === 'hell' && context.phase === 'pillar';
     if (isHellPillar) {
@@ -6885,6 +7000,10 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 }
 
 async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionType, skill) {
+    extra = extra || {};
+    extra.awakeningAttackKind = actionType === 'skill' && isUltimateSkillForUser(user, skill) ? 'ultimate' : actionType;
+    if (actionType === 'basic') extra.isBasic = true;
+    if (actionType === 'skill') extra.isSkill = true;
     const stats = calculateUserStats(user);
     applyPetRegen(user, stats, null);
     const slotEffects = calculateCardSlotEffects(user);
@@ -7300,10 +7419,10 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '익테봇 소환') {
         const hpRatio = getSkillValue(skillData.skill, 0, star);
         const atkMul = getSkillValue(skillData.skill, 1, star);
-        const botHp = Math.round(Number(stats.hp || 0) * hpRatio);
+        const botHp = Math.round(Number(stats.hp || 0) * hpRatio * cardAwakening.summonMultiplier(stats));
         const summonDurationBonus = 1 + Number(stats.summonDuration || 0);
         const durationMs = Math.round(20000 * summonDurationBonus);
-        user.field.iktaeBot = { hp: botHp, atkMul: atkMul, expired_at: Date.now() + durationMs };
+        user.field.iktaeBot = { hp: botHp, atkMul: atkMul * cardAwakening.summonMultiplier(stats), expired_at: Date.now() + durationMs };
         const lines = ['✨ 익테봇을 소환했습니다!\n- 익테봇 체력: ' + comma(botHp) + '\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
@@ -7312,7 +7431,7 @@ function executeMainCardSkillInField(user, skillName) {
         return lines.join('\n');
     }
     if (skillData.skill.name == 'SUPER EASY') {
-        extra.critChanceMul = 0.5;
+        extra.critChanceMul = cardAwakening.skillCritMultiplier(user.main_card);
         extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
     }
     if (skillData.skill.name == '백억이요') extra.goldBonus = getSkillValue(skillData.skill, 1, star);
@@ -7335,7 +7454,7 @@ function executeMainCardSkillInField(user, skillName) {
         extra.notice = '감사합니다 친구야: 10초 동안 받는 피해 30% 감소';
     }
     if (skillData.skill.name == 'KICK BACK') {
-        extra.critChanceMul = 0.5;
+        extra.critChanceMul = cardAwakening.skillCritMultiplier(user.main_card);
         extra.critMulBonus = getSkillValue(skillData.skill, 1, star);
     }
     if (skillData.skill.name == '54버스트') {
@@ -7371,7 +7490,7 @@ function executeMainCardSkillInField(user, skillName) {
         const atkMul = getSkillValue(skillData.skill, 0, star);
         const buffMul = getSkillValue(skillData.skill, 1, star);
         const durationMs = Math.round(45000 * (1 + Number(stats.summonDuration || 0)));
-        user.field.sunata = { atkMul: atkMul, buff: buffMul, expired_at: Date.now() + durationMs };
+        user.field.sunata = { atkMul: atkMul * cardAwakening.summonMultiplier(stats), buff: buffMul, expired_at: Date.now() + durationMs };
         const lines = ['🎵 수나타를 소환했습니다!\n- 5초마다 공격력의 ' + (Math.round(atkMul * 1000) / 10) + '% 자동 공격\n- 소환 동안 본인 공격력 +' + (Math.round(buffMul * 1000) / 10) + '%\n- ' + (durationMs / 1000).toFixed(1) + '초간 유지', '- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')'];
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
@@ -7462,6 +7581,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const extra = Object.assign({}, opts || {});
+    cardAwakening.prepareAttack(stats, user.field, getWorldBossState(boss.name), extra, extra.awakeningAttackKind || (extra.isBasic ? 'basic' : 'skill'), Date.now());
     extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats);
     const defenderStats = getWorldBossDefenderStats(boss);
     let finalDamage = 0;
@@ -7475,6 +7595,11 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     } else if (extra.trueDamage) {
         finalDamage = Math.max(0, Math.round(Number(rawDamage || 0)));
         trueDamageCount = 1;
+        if (extra.isSkill) {
+            isCritical = !!extra.forceCritical;
+            finalDamage = Math.max(0, Math.round(finalDamage * (1 + cardAwakening.conditionalFinalDamage(stats, isCritical))));
+            finalDamage += Math.round(finalDamage * Number(extra.awakeningExtraDamage || 0));
+        }
     } else {
         hitResult = calculateAttackHitResult(Number(rawDamage || 0) * (1 + Number(stats.bossDmg || 0)), Math.max(0, Number(boss.def || 0) - Number(stats.atkDefReduce || 0)), (typeof extra.pnt !== 'undefined' ? Number(extra.pnt || 0) : Number(stats.pnt || 0)) + Number(extra.pntBonus || 0), stats, slotEffects, extra, defenderStats);
         finalDamage = Math.max(0, Math.round(Number(hitResult.finalDamage || 0)));
@@ -7581,8 +7706,9 @@ async function useWorldBossChosenSkill(user, skillName) {
         const flat = getSkillValue(skill, 0, 0);
         const critChance = getSkillValue(skill, 1, 0);
         const critFlat = getSkillValue(skill, 2, 0);
-        const damage = Math.random() < critChance ? critFlat : flat;
-        result = dealDamageToWorldBoss(user, boss, damage, { trueDamage: true, isSkill: true });
+        const critical = Math.random() < critChance;
+        const damage = critical ? critFlat : flat;
+        result = dealDamageToWorldBoss(user, boss, damage, { trueDamage: true, isSkill: true, forceCritical: critical });
         lines.push('0️⃣ 000! ' + boss.name + '에게 ' + comma(result.damage) + ' 고정 피해를 입혔습니다!');
         dealtSomething = true;
     } else if (skill.name == '럭키펀치') {
@@ -7691,11 +7817,44 @@ function ensureBlackCurtainPatternState(user) {
     return state;
 }
 
+const awakeningSurvivalStates = new Map();
+
+function getAwakeningSurvivalState(name) {
+    const entry = userCacheById.get(userIdByName.get(name));
+    let state = awakeningSurvivalStates.get(name);
+    if (!state) {
+        state = { ...(entry && entry.raw.awakeningSurvival || {}) };
+        awakeningSurvivalStates.set(name, state);
+    }
+    return state;
+}
+
+function isAwakeningInvincible(name, stats, now) {
+    return !!(stats && stats.awakening && stats.awakening.effect === 'lastStand'
+        && Number(now ?? Date.now()) < Number(getAwakeningSurvivalState(name).invincibleUntil || 0));
+}
+
+function resolveAwakeningHp(name, stats, hpBefore, nextHp, now) {
+    if (!stats || !stats.awakening || stats.awakening.effect !== 'lastStand') return nextHp;
+    const state = getAwakeningSurvivalState(name);
+    const previousReadyAt = state.readyAt;
+    const hp = cardAwakening.resolveSurvival(stats.awakening, state, hpBefore, nextHp, Number(now ?? Date.now()), false);
+    if (state.readyAt !== previousReadyAt) {
+        const entry = userCacheById.get(userIdByName.get(name));
+        if (entry) {
+            entry.raw.awakeningSurvival = { ...state };
+            entry.dirty = true;
+            flushUserEntry(entry).catch(error => console.error('[awakening survival]', error.message));
+        }
+    }
+    return hp;
+}
+
 function applyBlackCurtainFixedDamage(user, damage) {
     const before = Math.max(0, Number(user.hp || 0));
     const dealt = Math.min(before, Math.max(0, Math.round(Number(damage || 0))));
-    user.hp = Math.max(0, before - dealt);
-    return dealt;
+    user.hp = resolveAwakeningHp(user.name, calculateUserStats(user), before, Math.max(0, before - dealt));
+    return Math.max(0, before - user.hp);
 }
 
 function applyBlackCurtainIncomingHit(user, boss, rawDamage, options, lines) {
@@ -7728,8 +7887,11 @@ function applyBlackCurtainIncomingHit(user, boss, rawDamage, options, lines) {
         }
     }
     damage = consumeNextDamageReduction(user, damage);
+    if (isAwakeningInvincible(user.name, stats)) damage = 0;
     damage = applyFieldShieldAbsorption(user, damage, lines || []);
-    user.hp = Math.max(0, Number(user.hp || 0) - damage);
+    const awakeningHpBefore = Number(user.hp || 0);
+    user.hp = resolveAwakeningHp(user.name, calculateUserStats(user), awakeningHpBefore, Math.max(0, awakeningHpBefore - damage));
+    if (user.hp !== Math.max(0, awakeningHpBefore - damage)) damage = Math.max(0, awakeningHpBefore - user.hp);
     return { damage, avoided };
 }
 
@@ -7970,8 +8132,10 @@ async function runWorldBossSkillTick(userName, bossName) {
         }
     }
     finalDamage = consumeNextDamageReduction(latest, finalDamage);
+    if (isAwakeningInvincible(latest.name, userStats)) finalDamage = 0;
     finalDamage = applyFieldShieldAbsorption(latest, finalDamage, tickLines);
-    latest.hp = Math.max(0, beforeHp - finalDamage);
+    latest.hp = resolveAwakeningHp(latest.name, userStats, beforeHp, Math.max(0, beforeHp - finalDamage));
+    if (latest.hp !== Math.max(0, beforeHp - finalDamage)) finalDamage = Math.max(0, beforeHp - latest.hp);
     tickLines.unshift('💥 ' + boss.name + '의 ' + skill.name + '! ' + comma(finalDamage) + ' 피해를 입었습니다!');
     applyDamageTakenSlotRecovery(latest, Number(userStats.hp || 0), finalDamage, slotEffects, userStats, tickLines);
     latest.field.karmaStack = Number(latest.field.karmaStack || 0) + finalDamage * 0.30;
@@ -10118,7 +10282,9 @@ function cardPresetSignature(card) {
         star: Number(card.star || 0),
         type: card.type || '일반',
         prestige: !!card.prestige,
-        fashion: (typeof card.skin == 'string' && card.skin.trim()) || null
+        fashion: (typeof card.skin == 'string' && card.skin.trim()) || null,
+        specter: card.specter || null,
+        awakeningSpecter: card.awakeningSpecter || null
     };
 }
 
@@ -10126,6 +10292,8 @@ function cardMatchesPresetSignature(card, sig, exact) {
     const cs = cardPresetSignature(card);
     if (!cs || !sig) return false;
     if (cs.id != Number(sig.id) || cs.star != Number(sig.star || 0) || cs.type != (sig.type || '일반') || cs.prestige != !!sig.prestige) return false;
+    if ('specter' in sig && cs.specter !== (sig.specter || null)) return false;
+    if ('awakeningSpecter' in sig && cs.awakeningSpecter !== (sig.awakeningSpecter || null)) return false;
     return exact ? cs.fashion == (sig.fashion || null) : true;
 }
 
@@ -11859,7 +12027,7 @@ function getWebItemUsePending(user) {
 
     if (pending.type == '지정캐릭터변환') {
         title = '변환할 카드 선택';
-        options = makeCardOptions(entry => Number(entry.card.id) != Number(pending.charId));
+        options = makeCardOptions(entry => entry.card.type !== '각성' && Number(entry.card.id) != Number(pending.charId));
     } else if (pending.type == '캐릭터변환') {
         if (pending.cardNumber) {
             title = '패션 카드 변환 확인';
@@ -11869,7 +12037,7 @@ function getWebItemUsePending(user) {
         } else {
             const maxStar = CHARACTER_CONVERT_MAX_STAR[pending.can] || 9;
             title = '변환할 카드 선택';
-            options = makeCardOptions(entry => entry.card.type !== '전직' && Number(entry.card.star || 0) < maxStar);
+            options = makeCardOptions(entry => (entry.card.type || '일반') === '일반' && Number(entry.card.star || 0) < maxStar);
         }
     } else if (pending.type == '만능캐릭터변환') {
         if (pending.cardNumber) {
@@ -11948,6 +12116,7 @@ function getWebItemUsePending(user) {
             options = getSpecterTargets(user).map(target => {
                 const option = webItemCardOption(target.number, target.card);
                 if (target.card.specter) option.meta += ' · [' + target.card.specter + ']';
+                if (target.card.awakeningSpecter) option.meta += ' · [' + target.card.awakeningSpecter + ']';
                 return option;
             });
         }
@@ -13458,7 +13627,7 @@ const BROADCAST_GIFT_MAX = 10;
 // giftSpecs:
 //   {type:'gold'|'garnet', amount}
 //   {type:'item', id, count}                 // 거래불가 아이템도 가능
-//   {type:'card', cardId, star, jobType}     // jobType==='전직'이면 전직 카드
+//   {type:'card', cardId, star, jobType}     // 일반/전직/각성
 //   {type:'equipment', equipType, id, level, advanced:{potential,rolled,soul,locked}}
 //   {type:'pet', id, level}
 //   {type:'avatar', name}                     // 아바타 해금 지급 (이미 보유자는 수령 시 '(이미 보유)')
@@ -13484,10 +13653,11 @@ function buildGmMailGifts(specs) {
             const id = Number(spec.cardId);
             const data = characterCards[id];
             if (!data) return { error: '존재하지 않는 캐릭터 카드입니다. (id ' + spec.cardId + ')' };
-            const isJob = spec.jobType == '전직';
-            if (isJob && !data.class) return { error: data.name + ' 카드는 전직이 없습니다.' };
-            const star = Math.max(0, Math.min(10, Math.floor(Number(spec.star || 0))));
-            gifts.push({ type: 'card', card: { id, star, type: isJob ? '전직' : '일반' } });
+            const cardType = ['전직', '각성'].includes(spec.jobType) ? spec.jobType : '일반';
+            if (cardType !== '일반' && !data.class) return { error: data.name + ' 카드는 전직이 없습니다.' };
+            const star = Math.max(0, Math.min(11, Math.floor(Number(spec.star || 0))));
+            if (cardType === '각성' && star < 4) return { error: '각성 카드는 5성 이상이어야 합니다.' };
+            gifts.push({ type: 'card', card: { id, star, type: cardType } });
         } else if (spec.type == 'equipment') {
             const equipType = String(spec.equipType || '');
             const id = Number(spec.id);
@@ -15473,6 +15643,7 @@ module.exports = {
     formatOrbLines,
     getOrbData,
     getSpecterData,
+    formatSpecterLines,
     findSpecterByName,
     getSpecterSkill,
     addOrbStats,
@@ -15617,6 +15788,14 @@ module.exports = {
     calculateAttackHitResult,
     getSkillValue,
     getMainCardSkills,
+    cardAwakening,
+    getCardAwakeningSpecter,
+    resolveAwakeningHp,
+    isAwakeningInvincible,
+    getAwakeningMaterials,
+    getAwakeningCombineSelection,
+    runAwakeningCombine,
+    rollAwakeningGemDrop,
     getSkillCooldownRate,
     prepareTranscendSkillEffects,
     applyTranscendPreAttack,

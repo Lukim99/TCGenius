@@ -2,7 +2,14 @@
     "specters": [
         {
             "name": "빅뱅 스펙터",
+            "type": "전직",
             "skill": 28
+        },
+        {
+            "name": "견고함 스펙터",
+            "type": "각성",
+            "stat": { "hp": 100 },
+            "plusStat": { "pnt": 0.05, "crit": 0.05, "cooldown": 0.05 }
         }
     ]
 }

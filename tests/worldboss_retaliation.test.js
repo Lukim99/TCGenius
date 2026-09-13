@@ -31,6 +31,9 @@ function fixture() {
     const rewardTotals = [];
     const noop = () => {};
     const deps = {
+        cardAwakening: require('../card_awakening'),
+        resolveAwakeningHp: (name, stats, before, next) => next,
+        isUltimateSkillForUser: () => false,
         getTitleDefs: () => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'titles.json'), 'utf8')).titles,
         calculateUserStats: () => stats,
         calculateCardSlotEffects: () => ({ mpCostReduction: 0 }),
@@ -178,4 +181,14 @@ test('흑막 참여 칭호는 10회에서 한 번만 해금된다', () => {
     f.user.titleProgress.blackCurtainParticipations = 10;
     assert.deepEqual(f.combat.checkAndUnlockTitles(f.user), ['blackCurtain']);
     assert.deepEqual(f.combat.checkAndUnlockTitles(f.user), []);
+});
+
+test('각성 패시브는 월드보스의 고정 피해 스킬에도 적용된다', () => {
+    const f = fixture();
+    f.stats.awakening = { effect: 'criticalTradeoff', value: .25 };
+    assert.equal(f.combat.dealDamageToWorldBoss(f.user, f.boss, 1000, { trueDamage: true, isSkill: true, forceCritical: true }).damage, 1250);
+    assert.equal(f.combat.dealDamageToWorldBoss(f.user, f.boss, 1000, { trueDamage: true, isSkill: true }).damage, 750);
+    f.stats.awakening = { effect: 'alternateAttack', value: .1 };
+    f.user.field.awakeningLastAttack = 'basic';
+    assert.equal(f.combat.dealDamageToWorldBoss(f.user, f.boss, 1000, { trueDamage: true, isSkill: true }).damage, 1100);
 });

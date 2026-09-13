@@ -53,7 +53,7 @@
         } catch (_) {}
     }
 
-    function soundControl() {
+    function soundControl(awakening = false) {
         const button = make('button', 'fusion-sound');
         button.type = 'button';
         const update = () => {
@@ -70,7 +70,7 @@
                 node.textContent = muted ? '♪ 효과음 꺼짐' : '♫ 효과음 켜짐';
                 node.setAttribute('aria-pressed', String(!muted));
             });
-            if (!muted) sound('protect');
+            if (!muted && !awakening) sound('protect');
         };
         return button;
     }
@@ -78,10 +78,10 @@
     function begin(source, options = {}) {
         const audioReady = unlockAudio(); // Called directly from the user's click, before the request.
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const dialog = make('dialog', 'fusion-cinema' + (options.job ? ' job' : '') + (reduced ? ' reduced' : ''));
-        dialog.setAttribute('aria-label', options.job ? '전직조합' : '카드 조합');
-        const heading = make('h2', 'fusion-cinema-title', options.job ? '전직의 힘을 깨웁니다' : '카드의 힘을 하나로');
-        const status = make('p', 'fusion-cinema-status', '재료 카드가 반응하고 있어요');
+        const dialog = make('dialog', 'fusion-cinema' + (options.awakening ? ' awakening' : options.job ? ' job' : '') + (reduced ? ' reduced' : ''));
+        dialog.setAttribute('aria-label', options.awakening ? '각성조합' : options.job ? '전직조합' : '카드 조합');
+        const heading = make('h2', 'fusion-cinema-title', options.awakening ? '각성조합' : options.job ? '전직의 힘을 깨웁니다' : '카드의 힘을 하나로');
+        const status = make('p', 'fusion-cinema-status', options.awakening ? '조합 중…' : '재료 카드가 반응하고 있어요');
         status.setAttribute('role', 'status');
         const stage = source.cloneNode(true);
         stage.removeAttribute('id');
@@ -107,6 +107,21 @@
         const gif = make('img', 'fusion-original-effect');
         gif.alt = '';
         stage.append(ring, core, burst, sparks, gif);
+        if (options.awakening) {
+            stage.querySelectorAll('.awakening-gem-slot').forEach(node => node.remove());
+            const colors = ['#65c9ff', '#efe3c8', '#ff6689', '#ffc658', '#ffa35a', '#c490ff'];
+            (options.materials || []).forEach((item, i) => {
+                const gem = make('div', 'awakening-gem gem-' + i);
+                gem.style.setProperty('--gem-color', colors[i]);
+                gem.style.setProperty('--gem-order', i);
+                const img = make('img', '');
+                img.src = item.iconUrl;
+                img.alt = '';
+                gem.append(img);
+                stage.append(gem);
+            });
+            stage.style.backgroundImage = 'none';
+        }
         const support = options.protectIndex != null ? 'protect' : options.luckyRate != null ? 'lucky' : '';
         const badge = make('div', 'fusion-cinema-support ' + support);
         if (support) {
@@ -119,7 +134,7 @@
         const done = make('button', 'fusion-cinema-done', '결과 확인');
         done.type = 'button';
         done.disabled = true;
-        dialog.append(soundControl(), heading, status, stage, badge, details, done);
+        dialog.append(soundControl(options.awakening), heading, status, stage, badge, details, done);
         document.body.append(dialog);
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
@@ -128,13 +143,14 @@
         const bounds = stage.getBoundingClientRect();
         stage.style.setProperty('--core-x', ((target.left + target.width / 2 - bounds.left) / bounds.width * 100) + '%');
         stage.style.setProperty('--core-y', ((target.top + target.height / 2 - bounds.top) / bounds.height * 100) + '%');
-        materials.forEach((card, i) => {
+        [...materials, ...stage.querySelectorAll('.awakening-gem')].forEach((card, i) => {
             const rect = card.getBoundingClientRect();
-            card.style.setProperty('--merge-x', ((target.left + target.width / 2 - rect.left - rect.width / 2) / rect.width * 100) + '%');
-            card.style.setProperty('--merge-y', ((target.top + target.height / 2 - rect.top - rect.height / 2) / rect.height * 100) + '%');
+            card.style.setProperty('--merge-x', ((target.left + target.width / 2 - rect.left - rect.width / 2) / card.offsetWidth * 100) + '%');
+            card.style.setProperty('--merge-y', ((target.top + target.height / 2 - rect.top - rect.height / 2) / card.offsetHeight * 100) + '%');
             card.style.setProperty('--tilt', (i - 1) * 14 + 'deg');
         });
         let closed = false, finish;
+        const awakening = options.awakening ? window.AwakeningEffects.create(stage, { reduced, context, output }) : null;
         const finished = new Promise(resolve => { finish = resolve; });
         const timers = new Map();
         const wait = ms => new Promise(resolve => {
@@ -145,6 +161,7 @@
         function close() {
             if (closed) return;
             closed = true;
+            if (awakening) awakening.close();
             timers.forEach((resolve, timer) => { clearTimeout(timer); resolve(); });
             timers.clear();
             gif.removeAttribute('src');
@@ -161,20 +178,26 @@
         const ready = (async () => {
             await Promise.race([audioReady, wait(150)]);
             if (closed) return;
+            if (options.awakening) {
+                dialog.classList.add('resonating');
+                awakening.setPhase('resonate');
+                await wait(reduced ? 120 : 900);
+                if (closed) return;
+            }
             if (support) {
                 sound(support);
                 await wait(reduced ? 160 : 650);
             }
             if (closed) return;
             dialog.classList.add('gathering');
-            sound('gather');
-            await wait(reduced ? 160 : 950);
+            if (options.awakening) awakening.setPhase('gather'); else sound('gather');
+            await wait(reduced ? 160 : options.awakening ? 1200 : 950);
             if (closed) return;
             dialog.classList.add('sealing');
-            if (!reduced) gif.src = '/combine-ui?file=' + encodeURIComponent('조합-이펙트.gif') + '&t=' + Date.now();
-            sound('seal');
-            await wait(reduced ? 120 : 1500);
-            if (!closed) status.textContent = '조합 결과를 확인하고 있어요…';
+            if (!options.awakening && !reduced) gif.src = '/combine-ui?file=' + encodeURIComponent('조합-이펙트.gif') + '&t=' + Date.now();
+            if (options.awakening) awakening.setPhase('seal'); else sound('seal');
+            await wait(reduced ? 120 : options.awakening ? 1250 : 1500);
+            if (!closed) status.textContent = options.awakening ? '조합 중…' : '조합 결과를 확인하고 있어요…';
         })();
 
         async function reveal(data) {
@@ -193,15 +216,24 @@
                 result.classList.remove('empty');
             }
             if (closed) return;
+            if (options.awakening) {
+                dialog.classList.add('primed');
+                await wait(reduced ? 60 : 240);
+                if (closed) return;
+                dialog.classList.add('unchained');
+                awakening.setPhase('break');
+                await wait(reduced ? 80 : 720);
+                if (closed) return;
+            }
             const message = String(data.message || '');
             const omega = message.startsWith('🌟 오메가');
-            const success = options.job || !!data.success || omega;
+            const success = options.awakening || options.job || !!data.success || omega;
             dialog.classList.add('revealed', success ? 'success' : 'failure');
             gif.removeAttribute('src');
-            heading.textContent = options.job ? '전직조합 성공!' : omega ? '오메가 조합 완료!' : success ? (message.includes('확정') ? '확정 조합 성공!' : '조합 성공!') : '등급 상승 실패';
-            status.textContent = options.job ? '새로운 힘이 깨어났습니다' : success ? '새로운 카드가 탄생했습니다' : '같은 등급의 카드를 획득했습니다';
+            heading.textContent = options.awakening ? '각성조합 완료' : options.job ? '전직조합 성공!' : omega ? '오메가 조합 완료!' : success ? (message.includes('확정') ? '확정 조합 성공!' : '조합 성공!') : '등급 상승 실패';
+            status.textContent = options.awakening ? '각성 카드를 획득했습니다.' : options.job ? '새로운 힘이 깨어났습니다' : success ? '새로운 카드가 탄생했습니다' : '같은 등급의 카드를 획득했습니다';
             details.append(make('strong', 'fusion-cinema-card-name', card ? card.formatted || card.name : '조합 완료'));
-            sound(success ? options.job ? 'job' : 'success' : 'fail');
+            if (options.awakening) awakening.setPhase('reveal'); else sound(success ? options.job ? 'job' : 'success' : 'fail');
             if (support === 'protect') {
                 // Only announce preservation when the server confirms it.
                 const preserved = !success && message.includes('재료 카드 1장을 보존');

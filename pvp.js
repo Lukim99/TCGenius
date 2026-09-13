@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const cardAwakening = require('./card_awakening');
 const combatEffects = require('./public/combat-effects.js');
 
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
@@ -627,7 +628,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             state.burn = null;
             state[readyKey] = t + equipmentCooldownMs(actor, cooldown);
             if (mythicBurnShoes) {
-                state.hellfire = { tickDamage: Math.max(1, Math.round(Number(stats.atk || 0) * .50)), nextTickAt: t + EQUIPMENT_DOT_TICK_MS, until: t + 6000 };
+                state.hellfire = { tickDamage: Math.max(1, Math.round(Number(stats.atk || 0) * .50 * (1 + Number(stats.dotDamage || 0)))), nextTickAt: t + EQUIPMENT_DOT_TICK_MS, until: t + 6000 };
                 markTriggeredEffect(extra, 'combat', '겁화 부여');
             }
         }
@@ -864,7 +865,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         if (equipmentStage(actor, '잿불 모자') && t >= Number(state.burnReadyAt || 0)) {
             const duration = 8 + Number(stats.burnDurationFlat || 0) + (equipmentStage(actor, '행운의 복주머니') ? 3 : 0);
             const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * equipmentStep(actor, '잿불 모자', .30, .05)
-                * (1 + Number(stats.burnDamage || 0) + (equipmentSetCount(actor, '잿불의 장송곡') >= 4 ? .35 : 0))));
+                * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (equipmentSetCount(actor, '잿불의 장송곡') >= 4 ? .35 : 0))));
             state.burn = { tickDamage, nextTickAt: t + EQUIPMENT_DOT_TICK_MS, until: t + duration * 1000 };
             state.burnReadyAt = t + equipmentCooldownMs(actor, 6);
             markTriggeredEffect(extra, 'equipment', '잿불 모자');
@@ -910,13 +911,17 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     if (attackerHpRatio <= .50 && equipmentStage(defender, '최후통첩 아머')) defenderEffectIds.push(combatEffects.id('equipment', '최후통첩 아머'));
     if (isDefending(defender, t)) defenderEffectIds.push(combatEffects.id('combat', '방어'));
     let base = Number(rawDamage || 0) * Number(extra.rawDamageMultiplier || 1);
-    const incomingDamageMul = Math.max(0, 1 + Number(dStats.takenDamage || 0))
+    const awakeningReduction = Number(aSlot.hpDamageReduction || 0) + receivedDamageReduction(attacker, defender) - Number(aStats.takenDamage || 0) + 1 - receivedDamageMul(attacker)
+        + Number(attacker.runtime.buffs.nextDamageReduction && attacker.runtime.buffs.nextDamageReduction.value || 0) + (isDefending(attacker, t) ? .5 : 0);
+    base *= cardAwakening.runtimeAttackRatio(aStats, aSlot, attacker.maxHp, attacker.maxMp, awakeningReduction, Number(extra.awakeningStacks ?? attacker.runtime.nmmStacks ?? 0));
+    const incomingDamageMul = (rpgenius.isAwakeningInvincible(defender.name, dStats, t) ? 0 : 1) * Math.max(0, 1 + Number(dStats.takenDamage || 0))
         * (1 - Math.min(1, Number(dSlot.hpDamageReduction || 0)))
         * (1 - Math.min(1, receivedDamageReduction(defender, attacker)))
         * receivedDamageMul(defender);
     // 솔로 buildHuntResult의 damageWithSlotBonus (피해 증가 스탯/슬롯효과)
     if (!extra.precalculatedDamage) base = base * (1 + Number(aSlot.damageBonus || 0)) * (1 + Number(aStats.damageBonus || 0));
     if (!extra.attackElement) extra.attackElement = attackElementOf(attacker, extra.skill);
+    cardAwakening.prepareAttack(aStats, attacker.runtime, defender.runtime, extra, extra.awakeningAttackKind || (extra.isBasic ? 'basic' : 'skill'), t);
     delete extra.combatStats;
     delete extra.skill;
     if (!extra.attackElement && Number(aSlot.nonElementFinalDamage || 0) > 0) {
@@ -995,10 +1000,21 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     const judgmentDamage = damage;
     // 실제 처리 순서(소환수 피해 대행 → 남은 피해를 보호막 흡수)와 같은 순서로 표시한다.
     components.push(...summonComponents, ...shieldComponents);
-    defender.hp = Math.max(0, defender.hp - damage);
+    const awakeningHpBefore = defender.hp;
+    defender.hp = rpgenius.resolveAwakeningHp(defender.name, dStats, defender.hp, Math.max(0, defender.hp - damage), t);
+    if (defender.hp !== Math.max(0, awakeningHpBefore - damage)) {
+        damage = Math.max(0, awakeningHpBefore - defender.hp);
+        let remaining = damage;
+        components.forEach(component => {
+            if (component.type === 'absorbed' || component.type === 'summonAbsorbed') return;
+            component.damage = Math.min(component.damage, remaining);
+            remaining -= component.damage;
+        });
+    }
     if (isDirectAttack && defender.hp > 0 && defender.hp / Math.max(1, defender.maxHp) < .05 && equipmentStage(attacker, '징수의 총')) {
-        const executeDamage = defender.hp;
-        defender.hp = 0;
+        const beforeExecute = defender.hp;
+        defender.hp = rpgenius.resolveAwakeningHp(defender.name, dStats, beforeExecute, 0, t);
+        const executeDamage = beforeExecute - defender.hp;
         damage += executeDamage;
         components.push({ damage: executeDamage, critical: false, destiny: false, type: 'additional', label: '징수의 총 처형' });
     }
@@ -1035,11 +1051,13 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     if (isDirectAttack && damage > 0 && hasEquipmentPassive(defender, 5) && attacker.hp > 0) {
         const reflectCount = Math.max(1, Number(result.hitCount || 1));
         for (let i = 0; i < reflectCount && attacker.hp > 0; i++) {
-            const reflected = Math.max(0, Math.round(Number(dStats.def || 0) * .25 * (randomInt(98, 102) / 100)));
+            let reflected = Math.max(0, Math.round(Number(dStats.def || 0) * .25 * (randomInt(98, 102) / 100)));
             if (reflected <= 0) continue;
+            const beforeReflect = attacker.hp;
+            attacker.hp = rpgenius.resolveAwakeningHp(attacker.name, aStats, beforeReflect, Math.max(0, beforeReflect - reflected), t);
+            if (attacker.hp !== Math.max(0, beforeReflect - reflected)) reflected = beforeReflect - attacker.hp;
             reflectedHits.push({ damage: reflected, label: '가시 반사' });
             reflectedDamage += reflected;
-            attacker.hp = Math.max(0, attacker.hp - reflected);
         }
     }
     const defenderState = equipmentRuntime(defender);
@@ -1204,6 +1222,7 @@ function doSkill(battle, actorKey, skill, t) {
 
     let multiplier = value(0);
     const extra = Object.assign({ isSkill: true, skill, combatStats: stats }, equipmentSkill.extra || {});
+    extra.awakeningAttackKind = isUltimateSkill(actor, skill) ? 'ultimate' : 'skill';
     const skillEffectMeta = () => ({
         effectElement: attackElementOf(actor, skill),
         triggeredEffectIds: combatEffects.unique(extra.triggeredEffectIds || [])
@@ -1238,8 +1257,8 @@ function doSkill(battle, actorKey, skill, t) {
     if (name == '익테봇 소환') {
         actor.runtime.summon = {
             name: '익테봇',
-            atkMul: value(1),
-            hp: Math.round(actor.maxHp * value(0)),
+            atkMul: value(1) * cardAwakening.summonMultiplier(stats),
+            hp: Math.round(actor.maxHp * value(0) * cardAwakening.summonMultiplier(stats)),
             buff: 0,
             until: t + Math.round(20000 * (1 + Number(stats.summonDuration || 0))),
             nextAttackAt: t + SUMMON_TICK_MS['익테봇']
@@ -1250,7 +1269,7 @@ function doSkill(battle, actorKey, skill, t) {
     if (name == '수나타 소환') {
         actor.runtime.summon = {
             name: '수나타',
-            atkMul: value(0),
+            atkMul: value(0) * cardAwakening.summonMultiplier(stats),
             hp: null,
             buff: value(1),
             until: t + Math.round(45000 * (1 + Number(stats.summonDuration || 0))),
@@ -1287,6 +1306,7 @@ function doSkill(battle, actorKey, skill, t) {
 
     if (name == '나인 멘스 모리스') {
         const stacks = Math.min(9, Number(actor.runtime.nmmStacks || 0));
+        extra.awakeningStacks = stacks;
         const roseKnifeStage = equipmentStage(actor, '장미칼');
         const perStack = value(1) + (roseKnifeStage ? equipmentStep(actor, '장미칼', .06, .02) : 0);
         multiplier = value(0) * (1 + perStack * stacks);
@@ -1305,7 +1325,7 @@ function doSkill(battle, actorKey, skill, t) {
     }
     if (name == '54버스트') extra.forceCritical = true;
     if (name == 'SUPER EASY' || name == 'KICK BACK') {
-        extra.critChanceMul = 0.5;
+        extra.critChanceMul = stats.awakening && stats.awakening.effect === 'skillCritPenalty' ? 1 - stats.awakening.value : 0.5;
         extra.critMulBonus = value(1);
     }
     if (name == '청정수 투척' || name == '댄져') extra.pnt = Number(stats.pnt || 0) + value(1);
@@ -1722,6 +1742,7 @@ function grantPlayReward(user) {
 }
 
 function finishBattle(user, battle, outcome, reason, t) {
+    if (battle.phase === 'ended') return;
     const state = ensurePvpState(user);
     battle.phase = 'ended';
     const myRating = Number(state.rating || RATING_START);
@@ -1756,6 +1777,12 @@ function finishBattle(user, battle, outcome, reason, t) {
     }
     const reward = grantPlayReward(user);
     battle.result.reward = reward;
+    const fightingGem = rpgenius.rollAwakeningGemDrop(user, '투지의 보석', 0.05);
+    if (fightingGem) {
+        const item = rpgenius.getDataCache('Item', [])[fightingGem.itemId];
+        const assets = injected.getItemAssets ? injected.getItemAssets(item) : {};
+        battle.result.bonusReward = { ...fightingGem, ...assets };
+    }
     if (slot) slot.reward = reward ? reward.name : null;
     pushHistory(user, { at: t, opponent: battle.opponent, role: 'attack', result: outcome, ratingDelta: battle.result.ratingDelta, reason, reward: reward ? reward.name : null });
     patchLadderEntry(user.name, state);
@@ -2105,7 +2132,8 @@ function buildBattleView(user, since) {
             oppRatingBefore: battle.result.oppRatingBefore,
             oppRatingAfter: battle.result.oppRatingAfter,
             oppRatingDelta: battle.result.oppRatingDelta,
-            reward: battle.result.reward || null
+            reward: battle.result.reward || null,
+            bonusReward: battle.result.bonusReward || null
         } : null
     };
 }

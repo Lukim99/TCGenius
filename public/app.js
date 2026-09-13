@@ -174,6 +174,7 @@ function openPointChargeModal() {
 if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
 const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
+PAGE_LABELS.awakeningcombine = '각성조합';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -191,7 +192,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['윷놀이', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -278,6 +279,7 @@ function navigatePage(pageId) {
     if (pageId === '사냥') renderHuntMenu();
     if (pageId === 'combine') loadCombine();
     if (pageId === 'jobcombine') loadJobCombine();
+    if (pageId === 'awakeningcombine') loadAwakeningCombine();
     if (pageId === 'equipment-synthesis') loadEquipmentSynthesis();
     if (pageId === '레벨보상') loadLevelRewards();
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
@@ -587,7 +589,7 @@ function cardNode(card, compact, onClick) {
     if (typeof onClick === 'function') props.onclick = () => onClick(card);
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
-        card.specter ? el('span', { class: 'card-specter-badge', title: '스펙터 · ' + card.specter.name }, '★') : null,
+        card.specter || card.awakeningSpecter ? el('span', { class: 'card-specter-badge', title: [card.specter, card.awakeningSpecter].filter(Boolean).map(s => s.name).join(' · ') }, '★') : null,
         el('div', { class: 'card-name' }, card.formatted)
     );
 }
@@ -1067,8 +1069,12 @@ function slotEffectPanelNode(eff) {
 }
 
 function mainCardDetailNodes(card) {
-    const isJob = card && card.type === '전직';
+    const isJob = card && ['전직', '각성'].includes(card.type);
     const nodes = [];
+    if (card && card.awakening) {
+        nodes.push(cardSectionNode('각성 패시브'));
+        card.awakening.descLines.forEach(line => nodes.push(el('div', { class: 'mc-desc' }, line)));
+    }
     if (card && Array.isArray(card.skills) && card.skills.length > 0) {
         card.skills.forEach(skill => nodes.push(skillPanelNode(skill)));
     }
@@ -1080,6 +1086,10 @@ function mainCardDetailNodes(card) {
     if (card && card.specter) {
         nodes.push(cardSectionNode('스펙터 · ' + card.specter.name));
         if (card.specter.skill) nodes.push(skillPanelNode(card.specter.skill));
+    }
+    if (card && card.awakeningSpecter) {
+        nodes.push(cardSectionNode('각성 스펙터 · ' + card.awakeningSpecter.name));
+        card.awakeningSpecter.descLines.forEach(line => nodes.push(el('div', { class: 'mc-desc' }, line)));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '표시할 스킬이 없습니다.'));
     return nodes;
@@ -1215,7 +1225,9 @@ function cardSlotDetailNodes(card) {
     const isJob = card && card.type === '전직';
     const nodes = [];
     // 전직 카드는 전직 슬롯 효과만, 일반 카드는 일반 슬롯 효과만 적용
-    if (isJob) {
+    if (card && card.awakening) {
+        card.awakening.slotEffects.forEach(effect => nodes.push(slotEffectPanelNode(effect)));
+    } else if (isJob) {
         if (card.classInfo && Array.isArray(card.classInfo.slotEffects)) {
             card.classInfo.slotEffects.forEach(se => nodes.push(slotEffectPanelNode(se)));
         }
@@ -4288,7 +4300,117 @@ async function loadCombine() {
     }
 }
 
-// ===== 전직조합 =====
+// ===== 각성조합 =====
+
+const awakeningState = { cards: [], materials: [], slots: [null, null, null], result: null, revision: 0, requestId: null, busy: false, search: '', compatibleOnly: false };
+
+function awakeningUi(file) { return '/rpg-ui?file=' + encodeURIComponent('각성조합/' + file); }
+
+function renderAwakeningCombine() {
+    const state = awakeningState;
+    const stage = $('#awakeningStage');
+    if (!stage) return;
+    stage.style.backgroundImage = 'url(' + awakeningUi('원본.png') + ')';
+    const head = stage.closest('.awakening-board').querySelector('.fusion-head');
+    if (!head.querySelector('.fusion-sound')) head.appendChild(window.FusionEffects.soundControl(true));
+    const slots = state.slots.map((card, i) => el('button', {
+        type: 'button', class: 'awakening-slot material-' + i + ' m' + i + (card ? ' filled' : ' empty'), disabled: state.busy,
+        'aria-label': card ? card.formatted + ' 선택 해제' : (i + 1) + '번째 전직 카드 선택',
+        onclick: () => {
+            if (state.busy) return;
+            state.slots[i] = null; state.result = null; state.requestId = null;
+            renderAwakeningCombine();
+            if (!card) $('#awakeningPool').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, el('img', { class: 'slot-card', ...(card ? { src: card.imageUrl } : {}), alt: card ? card.formatted : '' })));
+    const result = el('div', { class: 'awakening-slot result' + (state.result ? ' obtained' : ' empty') },
+        el('img', { class: 'slot-card', ...(state.result ? { src: state.result.imageUrl } : {}), alt: state.result ? state.result.formatted : '' }));
+    const cardsPlaced = state.slots.every(Boolean);
+    const placeGems = cardsPlaced && stage.dataset.gemsPlaced !== 'true';
+    stage.dataset.gemsPlaced = String(cardsPlaced);
+    const gems = state.materials.map((item, i) => {
+        const placed = cardsPlaced && item.count >= item.required;
+        return el('div', {
+            class: 'awakening-gem-slot gem-slot-' + i + (placed ? ' placed' + (placeGems ? ' placing' : '') : ''),
+            role: 'img', 'aria-label': item.name + (placed ? ' 배치됨' : ' 미배치'),
+            title: item.name + ' · 보유 ' + comma(item.count) + '개 / 필요 ' + item.required + '개'
+        }, placed ? el('img', { src: item.iconUrl, alt: '' }) : null);
+    });
+    const ready = cardsPlaced && state.materials.length === 6 && state.materials.every(item => item.count >= item.required);
+    const submit = el('button', { id: 'awakeningSubmit', type: 'button', class: 'awakening-submit', disabled: state.busy || !ready, 'aria-label': state.busy ? '조합 중…' : '각성조합 실행', onclick: submitAwakeningCombine }, el('img', { src: awakeningUi('각성조합.png'), alt: '' }));
+    stage.replaceChildren(...gems, ...slots, result, submit);
+    const selectedCount = state.slots.filter(Boolean).length;
+    const gemCount = state.materials.filter(item => item.count >= item.required).length;
+    const progress = el('div', { class: 'fusion-progress' },
+        ...[0, 1, 2].map(index => el('span', { class: index < selectedCount ? 'filled' : '' }, index + 1)),
+        el('b', null, selectedCount + ' / 3 선택'));
+    const stats = el('div', { class: 'fusion-stat-row job' },
+        el('div', { class: 'fusion-stat' }, el('span', null, '성공 확률'), el('b', { class: 'rate' }, '100%')),
+        el('div', { class: 'fusion-stat' }, el('span', null, '보유 보석'), el('b', { class: gemCount === 6 ? 'rate' : '' }, gemCount + ' / 6종')),
+        el('div', { class: 'fusion-stat' }, el('span', null, '결과'), el('b', null, '각성 카드')));
+    const guide = !selectedCount ? el('div', { class: 'fusion-guide' }, '목록에서 첫 번째 전직 카드를 선택하세요.') :
+        cardsPlaced && !ready ? el('div', { class: 'fusion-guide warn' }, '보석이 부족합니다. 보석은 종류별로 1개씩 필요합니다.') : null;
+    $('#awakeningInfo').replaceChildren(...(state.result ? [el('div', { class: 'combine-result ok' },
+        el('div', { class: 'combine-result-head' }, '각성조합 완료'),
+        el('div', { class: 'combine-result-name' }, state.result.formatted + ' 획득!'))] : [progress, selectedCount ? stats : null, guide]).filter(Boolean));
+    const anchor = state.slots.find(Boolean);
+    const selected = new Set(state.slots.filter(Boolean).map(card => card.number));
+    const query = state.search.trim().toLowerCase();
+    const entries = state.cards.map(card => {
+        const chosen = selected.has(card.number);
+        const compatible = !anchor || (anchor.id === card.id && anchor.star === card.star);
+        return { card, chosen, incompatible: !chosen && !compatible };
+    }).filter(entry => (!query || entry.card.formatted.toLowerCase().includes(query)) && (!state.compatibleOnly || !entry.incompatible))
+      .sort((a, b) => Number(b.chosen) - Number(a.chosen) || Number(a.incompatible) - Number(b.incompatible));
+    $('#awakeningPool').replaceChildren(...entries.map(({ card, chosen, incompatible }) => {
+        const disabled = state.busy || (!chosen && (incompatible || cardsPlaced));
+        return el('button', { type: 'button', class: 'awakening-card card-tile compact combine-pool-card' + (chosen ? ' selected' : disabled ? ' disabled' : ''), disabled, 'aria-pressed': String(chosen), onclick: () => {
+            if (state.busy) return;
+            const index = chosen ? state.slots.findIndex(entry => entry && entry.number === card.number) : state.slots.findIndex(entry => !entry);
+            if (index < 0) return;
+            state.slots[index] = chosen ? null : card; state.result = null; state.requestId = null;
+            renderAwakeningCombine();
+        } }, el('img', { src: card.imageUrl, alt: '', loading: 'lazy' }), el('span', { class: 'card-name' }, card.formatted));
+    }));
+    $('#awakeningPoolCount').textContent = entries.length + '장 표시';
+    if (!entries.length) $('#awakeningPool').appendChild(el('div', { class: 'fusion-pool-empty' }, state.cards.length ? '조건에 맞는 카드가 없습니다.' : '각성조합에 사용할 5성 이상 전직 카드가 없습니다.'));
+    $('#awakeningClear').disabled = state.busy;
+    $('#awakeningSearch').disabled = state.busy;
+    $('#awakeningCompatibleOnly').disabled = state.busy;
+}
+
+async function loadAwakeningCombine() {
+    if (awakeningState.busy) return;
+    try {
+        const data = await api('/api/awakeningcombine/cards');
+        Object.assign(awakeningState, data, { slots: [null, null, null], requestId: null });
+        $('#awakeningSearch').oninput = event => { awakeningState.search = event.target.value; renderAwakeningCombine(); };
+        $('#awakeningCompatibleOnly').onchange = event => { awakeningState.compatibleOnly = event.target.checked; renderAwakeningCombine(); };
+        $('#awakeningClear').onclick = () => {
+            if (awakeningState.busy) return;
+            awakeningState.slots = [null, null, null]; awakeningState.result = null; awakeningState.requestId = null;
+            renderAwakeningCombine();
+        };
+        renderAwakeningCombine();
+    } catch (e) { $('#awakeningInfo').textContent = e.message; }
+}
+
+async function submitAwakeningCombine() {
+    const state = awakeningState;
+    if (state.busy || !state.slots.every(Boolean)) return;
+    state.busy = true;
+    if (!state.requestId) state.requestId = crypto.randomUUID();
+    renderAwakeningCombine();
+    let effect;
+    try {
+        effect = window.FusionEffects.begin($('#awakeningStage'), { awakening: true, materials: state.materials });
+        const data = await postApi('/api/awakeningcombine', { numbers: state.slots.map(card => card.number), revision: state.revision, requestId: state.requestId });
+        Object.assign(state, { cards: data.cards, materials: data.materials, revision: data.revision, result: data.resultCard, slots: [null, null, null], requestId: null });
+        await effect.reveal(data);
+        if (data.profile) renderProfile(data.profile);
+    } catch (e) { if (effect) effect.close(); showAlert(e.message); }
+    finally { if (effect) effect.close(); state.busy = false; renderAwakeningCombine(); }
+}
 
 let jobCombineState = { cards: [], gold: 0, slots: [null, null, null], result: null, busy: false, built: false, slotEls: null, search: '', compatibleOnly: false };
 
@@ -7314,10 +7436,10 @@ function dexSpecterCard(entry) {
         )
     );
     const effect = el('div', { class: 'dex-orb-effect' },
-        el('div', { class: 'dex-orb-effect-title' }, '부여 스킬'),
+        el('div', { class: 'dex-orb-effect-title' }, (entry.specterType || '전직') + ' 스펙터 효과'),
         el('div', { class: 'dex-orb-effect-lines' },
-            skill ? el('div', null, skill.name + ' (MP ' + comma(skill.mpCost) + ' · 쿨타임 ' + skill.cooltimeText + ')') : el('div', null, '스킬 정보 없음'),
-            ...((skill && skill.descLines) || []).map(line => el('div', null, line))
+            skill ? el('div', null, skill.name + ' (MP ' + comma(skill.mpCost) + ' · 쿨타임 ' + skill.cooltimeText + ')') : null,
+            ...((skill && skill.descLines) || entry.descLines || []).map(line => el('div', null, line))
         )
     );
     card.append(head, effect);
@@ -7351,7 +7473,7 @@ function dexCharacterCard(entry) {
     let toggleBar = null;
     if (entry.hasJobClass) {
         toggleBar = el('div', { class: 'dex-char-toggle' });
-        ['일반', '전직'].forEach(v => {
+        ['일반', '전직', ...(entry.awakening ? ['각성'] : [])].forEach(v => {
             const btn = el('button', { class: 'dex-char-toggle-btn' + (v === '일반' ? ' active' : ''), type: 'button' }, v);
             btn.onclick = () => {
                 if (view === v) return;
@@ -7387,8 +7509,9 @@ function dexCharacterCard(entry) {
 
     function renderBody() {
         body.innerHTML = '';
-        const isJob = view === '전직';
-        const coverUrl = isJob ? entry.jobCoverUrl : entry.coverUrl;
+        const isAwakening = view === '각성';
+        const isJob = view === '전직' || isAwakening;
+        const coverUrl = isAwakening ? entry.awakeningCoverUrl : isJob ? entry.jobCoverUrl : entry.coverUrl;
 
         if (coverUrl) {
             body.appendChild(el('div', { style: { margin: '-14px -14px 0', aspectRatio: '16 / 9', borderRadius: '14px 14px 8px 8px', overflow: 'hidden', background: '#020617' } },
@@ -7400,16 +7523,17 @@ function dexCharacterCard(entry) {
         head.appendChild(el('div', null,
             el('div', { class: 'dex-name' }, entry.name),
             el('div', { class: 'dex-meta' },
-                el('span', { class: 'tag rarity' }, isJob ? '전직 카드' : (entry.typeLabel || '캐릭터 카드'))
+                el('span', { class: 'tag rarity' }, isJob ? view + ' 카드' : (entry.typeLabel || '캐릭터 카드'))
             )
         ));
         body.appendChild(head);
 
         if (isJob && entry.jobClass) {
-            const effs = entry.jobClass.slotEffects || [];
+            if (isAwakening) body.appendChild(el('div', { class: 'dex-stat-block' }, el('div', { class: 'dex-stat-title' }, '각성 패시브 · 5성 / 6성 / 7성 / 8성 / 9성 / 제타 / 시그마 / 오메가'), ...entry.awakening.descLines.map(line => el('div', null, line))));
+            const effs = isAwakening ? entry.awakening.slotEffects : entry.jobClass.slotEffects || [];
             if (effs.length) {
                 const block = el('div', { class: 'dex-stat-block' });
-                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과 (전직)'));
+                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과 (' + view + ')'));
                 effs.forEach(eff => {
                     if (eff.valuesText) {
                         block.appendChild(el('div', null, eff.name + ' ' + eff.valuesText));
@@ -7421,7 +7545,7 @@ function dexCharacterCard(entry) {
                 });
                 body.appendChild(block);
             }
-            const skillsDet = renderSkills(entry.jobClass.skills);
+            const skillsDet = renderSkills(isAwakening ? entry.awakening.skills : entry.jobClass.skills);
             if (skillsDet) body.appendChild(skillsDet);
         } else {
             if (entry.slotEffect) {

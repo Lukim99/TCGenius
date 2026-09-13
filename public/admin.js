@@ -3016,7 +3016,7 @@ function bcGiftLabel(g) {
     if (g.type === 'garnet') return '가넷 ' + (Number(g.amount) || 0);
     if (g.type === 'point') return (Number(g.amount) || 0) + 'P';
     if (g.type === 'item') return (g.itemName || '아이템 미선택') + ' x' + (Number(g.count) || 0);
-    if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (g.jobType === '전직' ? ' [전직]' : '');
+    if (g.type === 'card') return (g.cardName || '카드 미선택') + ' ' + ((Number(g.star) || 0) + 1) + '성' + (['전직', '각성'].includes(g.jobType) ? ' [' + g.jobType + ']' : '');
     if (g.type === 'equipment') return (g.equipName || (EQUIPMENT_SLOT_LABELS[g.equipType] + ' 미선택')) + ' +' + (Number(g.level) || 0);
     if (g.type === 'pet') return (g.petName || '펫 미선택') + ' +' + (Number(g.level) || 0);
     if (g.type === 'title') return '칭호: ' + (g.titleName || '미선택');
@@ -3047,9 +3047,9 @@ function renderBcGifts() {
             row.appendChild(el('div', { style: 'flex:1' }, el('label', null, '캐릭터'),
                 el('button', { class: 'btn pickbtn', type: 'button', style: 'width:100%;text-align:left', onclick: () => pickCard(c => { g.cardId = c.id; g.cardName = c.name; renderBcGifts(); }) }, g.cardName ? ('#' + g.cardId + ' ' + g.cardName) : '캐릭터 선택...')));
             row.appendChild(el('div', null, el('label', null, '성급 (0=1성)'),
-                el('input', { type: 'number', min: 0, max: 10, value: g.star || 0, oninput: e => { g.star = Number(e.target.value); } })));
+                el('input', { type: 'number', min: g.jobType === '각성' ? 4 : 0, max: 11, value: g.star || 0, oninput: e => { g.star = Number(e.target.value); } })));
             const sel = el('select', { onchange: e => { g.jobType = e.target.value; renderBcGifts(); } },
-                el('option', { value: '일반' }, '일반'), el('option', { value: '전직' }, '전직'));
+                el('option', { value: '일반' }, '일반'), el('option', { value: '전직' }, '전직'), el('option', { value: '각성' }, '각성'));
             sel.value = g.jobType || '일반';
             row.appendChild(el('div', null, el('label', null, '종류'), sel));
         } else if (g.type === 'equipment') {

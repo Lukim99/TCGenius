@@ -98,14 +98,19 @@ pngs.forEach(parts => {
     assert.strictEqual(data[25], 6, file + '는 투명 RGBA PNG여야 합니다.');
 });
 
-for (const name of ['.env', '.env.local']) {
-    const file = path.join(root, name);
-    if (!fs.existsSync(file)) continue;
-    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-        const match = line.match(/^\s*([^#=]+)=(.*)$/);
-        if (match && !process.env[match[1].trim()]) process.env[match[1].trim()] = match[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+// 전투 검증은 운영 DB/환경 파일을 사용하지 않는다. 마이그레이션 검증은 worldboss_rewards.test.js에서 수행한다.
+const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+DynamoDBDocumentClient.prototype.send = async command => {
+    const input = command.input;
+    if (command.constructor.name === 'GetCommand') {
+        const key = input.Key.key;
+        const file = path.join(root, 'DB', 'RPGenius', key + '.json');
+        return { Item: { data: ['Shop', 'WorldBossState', 'EliteState'].includes(key) || !fs.existsSync(file) ? {} : JSON.parse(fs.readFileSync(file, 'utf8')) } };
     }
-}
+    if (command.constructor.name === 'ScanCommand') return { Items: [] };
+    if (['PutCommand', 'UpdateCommand'].includes(command.constructor.name)) return {};
+    throw new Error('Unexpected isolated DB command: ' + command.constructor.name);
+};
 
 (async () => {
     // A due fatal hit must be applied before the player's action, and its visual
@@ -136,18 +141,6 @@ for (const name of ['.env', '.env.local']) {
     assert.strictEqual(response.state.events[0].defeated, true);
     const rpg = require('../rpgenius.js');
     await rpg.initRpgeniusData();
-    await rpg.migrateBlackCurtainContent();
-    const liveItems = rpg.getDataCache('Item', []);
-    const liveBundles = rpg.getDataCache('Bundle', []);
-    const liveSoul = liveItems.find(entry => entry && entry.name === '흑막의 영혼석');
-    assert.ok(liveSoul, '운영 데이터에도 흑막의 영혼석이 있어야 합니다.');
-    BLACK_BUNDLE_NAMES.forEach(name => {
-        const item = liveItems.find(entry => entry && entry.name === name);
-        assert.ok(item && Array.isArray(liveBundles[item.pack]), '운영 번들 인덱스가 유효해야 합니다: ' + name);
-    });
-    const liveBundleCount = liveBundles.length;
-    await rpg.migrateBlackCurtainContent();
-    assert.strictEqual(rpg.getDataCache('Bundle', []).length, liveBundleCount, '마이그레이션을 반복해도 꾸러미가 중복 생성되면 안 됩니다.');
     const user = new rpg.RPGUser('흑막패턴테스트', 'black-curtain-pattern-test');
     const now = Date.now();
     user.hp = 10000;

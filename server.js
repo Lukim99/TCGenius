@@ -77,6 +77,7 @@ const BANNER_TARGET_TABS = [
     { value: 'pvp', label: '콘텐츠 · PVP' },
     { value: 'combine', label: '콘텐츠 · 조합' },
     { value: 'jobcombine', label: '콘텐츠 · 전직조합' },
+    { value: 'awakeningcombine', label: '콘텐츠 · 각성조합' },
     { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
@@ -1636,6 +1637,58 @@ server.get('/api/combine/cards', requireUser, async (req, res) => {
     }
 });
 
+function buildAwakeningCombineView(user) {
+    const cards = (user.inventory && user.inventory.card || []).flatMap((card, index) => {
+        if (card.type !== '전직' || Number(card.star) < 4 || Number(card.star) > 11 || !rpgenius.hasJobClass(card.id)) return [];
+        const serialized = serializeCard(card, user);
+        return serialized ? [{ ...serialized, number: index + 1 }] : [];
+    });
+    const items = rpgenius.getDataCache('Item', []);
+    return {
+        cards,
+        materials: rpgenius.getAwakeningMaterials(user).map(material => ({ ...material, iconUrl: material.itemId >= 0 ? getItemIconUrl(items[material.itemId]) : null })),
+        revision: Number(user.awakeningCombineReceipt && user.awakeningCombineReceipt.revision || 0)
+    };
+}
+
+server.get('/api/awakeningcombine/cards', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildAwakeningCombineView(user));
+    } catch (e) {
+        console.error('awakeningcombine cards error:', e);
+        res.status(500).json({ error: '카드와 재료를 불러오지 못했습니다.' });
+    }
+});
+
+server.post('/api/awakeningcombine', requireUser, async (req, res) => {
+    try {
+        const requestId = String(req.body && req.body.requestId || '');
+        const revision = Number(req.body && req.body.revision);
+        if (!/^[a-zA-Z0-9-]{16,80}$/.test(requestId) || !Number.isSafeInteger(revision) || revision < 0) return res.status(400).json({ error: '각성조합 화면을 다시 열어주세요.' });
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            let receipt = user.awakeningCombineReceipt;
+            if (!receipt || receipt.requestId !== requestId) {
+                if (revision !== Number(receipt && receipt.revision || 0)) return { error: '이미 조합이 처리되었습니다. 화면을 새로고침해주세요.' };
+                const result = rpgenius.runAwakeningCombine(user, req.body.numbers);
+                if (result.error) return { error: result.error.replace(/^❌\s*/, '') };
+                receipt = user.awakeningCombineReceipt = { ...result, requestId, revision: revision + 1 };
+            }
+            const saved = await user.save();
+            if (!saved || !saved.success) return { error: '결과 저장을 확인하지 못했습니다. 다시 누르면 추가 소모 없이 저장을 재시도합니다.' };
+            return { ok: true, message: receipt.message, resultCard: serializeCard(receipt.resultCard, user), ...buildAwakeningCombineView(user), profile: buildUserProfile(user) };
+        });
+        res.status(payload.error ? 400 : 200).json(payload);
+    } catch (e) {
+        console.error('awakeningcombine error:', e);
+        res.status(500).json({ error: '조합 결과를 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
+    }
+});
+
 server.get('/api/jobcombine/cards', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -1799,7 +1852,7 @@ function getHFieldRecoveryItems(user) {
 }
 
 function getHFieldSkills(user, mainCard, fieldName) {
-    const classSkills = mainCard && mainCard.type == '전직' && mainCard.classInfo ? mainCard.classInfo.skills : [];
+    const classSkills = mainCard && ['전직', '각성'].includes(mainCard.type) && mainCard.classInfo ? mainCard.classInfo.skills : [];
     const specterSkills = mainCard && mainCard.specter && mainCard.specter.skill ? [mainCard.specter.skill] : [];
     const entries = [].concat(mainCard && mainCard.skills || [], classSkills || [], specterSkills);
     const activeFieldName = fieldName || H_FIELD_NAME;
@@ -1820,6 +1873,7 @@ function getHFieldSkills(user, mainCard, fieldName) {
 }
 
 function getWebFieldAttackElement(user, action, skillName, skills) {
+    if (action === 'basic' && rpgenius.cardAwakening.getPassive(user.main_card)?.effect === 'waterBasic') return '수';
     const chain = rpgenius.getEquipmentElementChain(user) || {};
     if (chain.weapon) return chain.weapon;
     if (action == 'skill') {
@@ -5261,7 +5315,7 @@ function getCardImageUrl(card, user) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
-    const type = card.type === '전직' ? '전직' : '일반';
+    const type = ['전직', '각성'].includes(card.type) ? card.type : '일반';
     const prestige = type === '전직' ? (user && user.jobPrestige === true) : (user && user.prestige === true);
     const spec = {
         name: data.name,
@@ -5443,7 +5497,7 @@ function buildSkillInfo(card, user) {
             mpCost,
             baseMpCost: Number(skill.mp_cost || 0),
             cooltimeText: rpgenius.formatCooltime(cooltime),
-            descLines: rpgenius.formatCurrentSkillDesc(skill, star).split('\n').filter(Boolean)
+            descLines: rpgenius.cardAwakening.formatSkillDescription(card, skill, rpgenius.formatCurrentSkillDesc(skill, star)).split('\n').filter(Boolean)
         };
     }).filter(Boolean);
 }
@@ -5487,7 +5541,7 @@ function serializeCard(card, user) {
                     name: skill.name,
                     mpCost,
                     cooltimeText: rpgenius.formatCooltime(cooltime),
-                    descLines: rpgenius.formatCurrentSkillDesc(skill, star).split('\n').filter(Boolean)
+                    descLines: rpgenius.cardAwakening.formatSkillDescription(card, skill, rpgenius.formatCurrentSkillDesc(skill, star)).split('\n').filter(Boolean)
                 };
             }).filter(Boolean) : []
         };
@@ -5527,7 +5581,15 @@ function serializeCard(card, user) {
         slotEffect: buildSlotEffectInfo(card, data),
         skills: buildSkillInfo(card, user),
         classInfo,
-        specter: specterInfo
+        awakening: rpgenius.cardAwakening.getDefinition(card) ? {
+            descLines: rpgenius.cardAwakening.formatPassive(card).split('\n'),
+            slotEffects: rpgenius.cardAwakening.getDefinition(card).slots.map(effect => buildSlotEffectInfo(card, { slot_effect: effect }))
+        } : null,
+        specter: specterInfo,
+        awakeningSpecter: rpgenius.getCardAwakeningSpecter(card) ? {
+            name: card.awakeningSpecter,
+            descLines: rpgenius.formatSpecterLines(rpgenius.getCardAwakeningSpecter(card), card.star).slice(1)
+        } : null
     };
 }
 
@@ -5600,7 +5662,7 @@ function buildCombineCards(user) {
 function buildJobCombineCards(user) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     return cards.map((card, i) => {
-        if (card.type === '전직') return null;
+        if ((card.type || '일반') !== '일반') return null;
         const star = Number(card.star || 0);
         if (star < 4) return null;
         if (!rpgenius.hasJobClass(card.id)) return null;
@@ -5992,6 +6054,16 @@ function buildCharacterDex() {
             imageUrl: getCardImageUrl(baseCard, { prestige: false }),
             coverUrl: getCharacterCoverImageUrl(data),
             jobCoverUrl: getJobCoverImageUrl(data),
+            awakeningCoverUrl: cardComposite.getCoverPath(data.name, '각성') ? '/card-image?name=' + encodeURIComponent(data.name) + '&cover=' + encodeURIComponent('각성') : null,
+            awakening: rpgenius.cardAwakening.getDefinition({ id, type: '각성' }) ? {
+                descLines: rpgenius.cardAwakening.formatPassiveProgression({ id, type: '각성' }).split('\n'),
+                slotEffects: rpgenius.cardAwakening.getDefinition({ id, type: '각성' }).slots.map(effect => buildSlotEffectInfo({ star: 4 }, { slot_effect: effect })),
+                skills: [...(data.skills || []), ...(data.class && data.class.skills || [])].map(buildSkillEntry).filter(Boolean).map(skill => ({
+                    ...skill,
+                    descLines: skill.descLines.map(line => data.name === '켄시' && ['SUPER EASY', 'KICK BACK'].includes(skill.name)
+                        ? line.replace('치명타 확률이 절반으로 적용되는 대신', '치명타 확률이 각성 등급에 따라 48% / 45% / 43% / 41% / 39% / 37% / 35% / 33% 감소하는 대신') : line)
+                }))
+            } : null,
             hasJobClass: !!data.class,
             slotEffect,
             skills: Array.isArray(data.skills) ? data.skills.map(buildSkillEntry).filter(Boolean) : [],
@@ -6094,6 +6166,8 @@ function buildSpecterDex() {
             typeLabel: '스펙터',
             id,
             name: specter.name,
+            specterType: specter.type || '전직',
+            descLines: rpgenius.formatSpecterLines(specter, 0).slice(1),
             rarity: null,
             iconUrl: item ? getItemIconUrl(item) : null,
             frameUrl: getAuctionFrameUrl('item'),
@@ -6350,7 +6424,7 @@ function buildBundleContents(data) {
             const cardType = entry.card_type || entry.cardType || '일반';
             if (!cardData) return { type: '캐릭터카드', name: '랜덤 캐릭터 카드 ' + starText, count: countStr, label: '🃏' };
             const iconUrl = getCardImageUrl({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false });
-            return { type: '캐릭터카드', name: (cardType === '전직' ? '[전직] ' : '') + cardData.name + ' ' + starText, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
+            return { type: '캐릭터카드', name: (['전직', '각성'].includes(cardType) ? '[' + cardType + '] ' : '') + cardData.name + ' ' + starText, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
         }
         return null;
     }).filter(Boolean);
@@ -6416,7 +6490,7 @@ function buildDetailRewardDisplay(entry) {
         if (!data) return { type: '캐릭터카드', name: '알 수 없는 캐릭터 카드', count, label: '카드' };
         return {
             type: '캐릭터카드',
-            name: (cardType === '전직' ? '[전직] ' : '') + data.name + ' ' + formatStar(star),
+            name: (['전직', '각성'].includes(cardType) ? '[' + cardType + '] ' : '') + data.name + ' ' + formatStar(star),
             count,
             iconUrl: getCardImageUrl({ id: cardId, star, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false, jobPrestige: false }),
             label: '카드'
@@ -8669,6 +8743,17 @@ function renderUserDashboard(sess, opts) {
       <div id="jobCombinePool" class="card-grid fusion-card-grid"></div>
     </section>
   </div>
+  <div class="page" data-page="awakeningcombine">
+    <section class="panel awakening-board">
+      <div class="fusion-head"><div><h2>각성 카드 조합</h2><p>같은 캐릭터·같은 등급의 전직 카드 3장과 보석 6종이 필요합니다.</p></div><span class="fusion-rule-badge">성공률 100%</span></div>
+      <div class="awakening-layout"><div class="fusion-stage-shell"><div id="awakeningStage" class="awakening-stage"></div></div><div id="awakeningInfo" class="combine-info" role="status" aria-live="polite"></div></div>
+    </section>
+    <section class="panel fusion-inventory">
+      <div class="fusion-pool-head"><div><h2>각성 재료 선택</h2><p>첫 카드와 동일한 캐릭터·등급만 이어서 선택할 수 있습니다.</p></div><span id="awakeningPoolCount" class="fusion-pool-count"></span></div>
+      <div class="fusion-tools"><label class="fusion-search"><span>검색</span><input id="awakeningSearch" type="search" placeholder="캐릭터 이름 검색" autocomplete="off"></label><label class="fusion-toggle"><input id="awakeningCompatibleOnly" type="checkbox"><span>선택 가능한 카드만</span></label><button id="awakeningClear" class="fusion-clear" type="button">선택 초기화</button></div>
+      <div id="awakeningPool" class="card-grid fusion-card-grid"></div>
+    </section>
+  </div>
   <div class="page" data-page="equipment-synthesis">
     <section class="panel equipment-synthesis-board">
       <div class="equipment-synthesis-head"><div><span>EQUIPMENT SYNTHESIS</span><h2>장비 합성</h2><p>합성 가능한 장비를 선택해 상위 장비로 진화시키세요.</p></div><b id="equipmentSynthesisRule">재료 선택</b></div>
@@ -8721,6 +8806,7 @@ function renderUserDashboard(sess, opts) {
 <div id="loadingOverlay" class="loading-overlay"><div class="loading-spinner"></div></div>
 <nav class="bottom-tabs" id="bottomTabs"></nav>
 <script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
+<script src="/static/awakening-effects.js"></script>
 <script src="/static/fusion-effects.js"></script>
 <script src="/static/app.js"></script>
 </body></html>`;

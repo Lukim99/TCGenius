@@ -165,6 +165,20 @@
       "name": "잉여왕 The 1st",
       "description": "부타게임[HARD] 서버 최초 클리어",
       "stat": { "hp": 1000 }
+    },
+    {
+      "id": "dvaOnline",
+      "name": "DVA온라인",
+      "description": "획득 방법 없음",
+      "stat": { "pnt": 10 },
+      "plusStat": { "pnt": 0.01 }
+    },
+    {
+      "id": "eternals",
+      "name": "이터널스",
+      "description": "획득 방법 없음",
+      "stat": { "atk": 10 },
+      "plusStat": { "afterBasic": 0.03 }
     }
   ]
 }

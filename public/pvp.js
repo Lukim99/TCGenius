@@ -620,18 +620,18 @@
             const oppDelta=Number(result.oppRatingDelta||0),oppName=view.opp&&view.opp.name||'상대';
             if(result.oppRatingBefore!=null)this.text(oppName+'  '+number(result.oppRatingBefore)+' → '+number(result.oppRatingAfter)+'  ('+(oppDelta>0?'+':'')+number(oppDelta)+')',cx,h*.52+72,narrow?10:12,700,'center','#9da5b3',w-40);
             // 플레이 보상 (승패 무관)
-            const reward=result.reward;
-            if(reward&&reward.name){
-                const size=narrow?34:42,ry=h*.52+(narrow?100:112),label='보상  '+reward.name+' x'+number(reward.count||1);
+            [result.reward,result.bonusReward].filter(reward=>reward&&reward.name).forEach((reward,index)=>{
+                const size=narrow?28:34,ry=h*.52+(narrow?100:112)+index*(narrow?34:40),label='보상  '+reward.name+' x'+number(reward.count||1);
                 c.font='800 '+(narrow?12:14)+'px Pretendard, sans-serif';
                 const tw=c.measureText(label).width,total=size+10+tw,ax=cx-total/2,ay=ry-size/2,frame=this.image(reward.frameUrl),icon=this.image(reward.iconUrl);
                 if(frame)c.drawImage(frame,ax,ay,size,size);
                 if(icon)c.drawImage(icon,ax,ay,size,size);
                 if(!frame&&!icon){this.cutPath(ax,ay,size,size,5);c.fillStyle='rgba(38,32,20,.9)';c.fill();}
                 this.text(label,ax+size+10,ry,narrow?12:14,800,'left','#ffe4a8');
-            }
+            });
             const bw=narrow?190:220;
-            this.actionButton(cx-bw/2,h*.78,bw,48,{label:'확인',kind:'gold',disabled:busy,action:()=>closeBattle()});
+            const rewardBottom=h*.52+(narrow?100:112)+(result.reward&&result.bonusReward?(narrow?34:40):0)+(narrow?14:17);
+            this.actionButton(cx-bw/2,Math.max(h*.78,rewardBottom+18),bw,48,{label:'확인',kind:'gold',disabled:busy,action:()=>closeBattle()});
         }
         dialogLayer(w,h){
             if(!dialog)return;

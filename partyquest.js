@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
+const cardAwakening = require('./card_awakening');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -94,7 +95,7 @@ function getMainCardSkillEntries(user) {
     if (!card) return [];
     const star = Number(user.main_card.star || 0);
     let skillIndices = card.skills || [];
-    if (user.main_card.type === '전직' && card.class && Array.isArray(card.class.skills)) {
+    if (['전직', '각성'].includes(user.main_card.type) && card.class && Array.isArray(card.class.skills)) {
         skillIndices = skillIndices.concat(card.class.skills);
     }
     // 스펙터 스킬은 항상 마지막 → 궁극기 취급 (솔로 getMainCardSkills와 동일 규칙)
@@ -102,7 +103,7 @@ function getMainCardSkillEntries(user) {
     if (specter && typeof specter.skill == 'number') skillIndices = skillIndices.concat([specter.skill]);
     return skillIndices.map(index => {
         const skill = skills[index];
-        return skill ? { index: Number(index), skill, star } : null;
+        return skill ? { index: Number(index), skill, star, card: user.main_card } : null;
     }).filter(Boolean);
 }
 
@@ -198,6 +199,7 @@ function getPartyRecoveryMultiplier(member) {
 
 function getPartyGoldBonus(member) {
     let value = Number(member && member.baseSnapshot && member.baseSnapshot.stats && member.baseSnapshot.stats.gold || 0);
+    value += Number(member && member.baseSnapshot && member.baseSnapshot.slotEffects && member.baseSnapshot.slotEffects.goldBonus || 0);
     const state = member && member.runtime && member.runtime.equipmentState || {};
     if (Date.now() < Number(state.beomStacksUntil || 0)) value += Math.min(7, Number(state.beomStacks || 0)) * .01;
     if (state.kyochonGoldBuff && Date.now() < Number(state.kyochonGoldBuff.expiredAt || 0)) value += Number(state.kyochonGoldBuff.value || 0);
@@ -429,7 +431,7 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
             extra.oneTimeFinalDamage = Number(extra.oneTimeFinalDamage || 0) + Math.round(Number(burn.dmg || 0) * remainingTicks * rate);
             result.removeBurnId = burn.id;
             state[readyKey] = now + Math.max(0, cooldownSeconds - cooldownReduction) * 1000;
-            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50)), interval: 2, tick: 2, remain: 6, sourceName: member.name, sourceSkill: '겁화' };
+            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50 * (1 + Number(member.baseSnapshot.stats.dotDamage || 0)))), interval: 2, tick: 2, remain: 6, sourceName: member.name, sourceSkill: '겁화' };
         }
     }
     state.lastSkillAt = now;
@@ -450,7 +452,7 @@ function toPartyMainCardSkillDef(entry) {
         mp: Number(skill.mp_cost || 0),
         cd: Number(skill.cooltime || 0) / 1000,
         target: skill.name === '글버지' ? 'allAllies' : 'enemy',
-        desc: skill.desc || '',
+        desc: cardAwakening.formatSkillDescription(entry.card, skill, skill.desc || ''),
         raw: skill,
         star: entry.star
     };
@@ -672,7 +674,7 @@ function isButaQuest(questId) {
 }
 
 function grantPartyQuestClearRewards(room) {
-    (async () => {
+    return (async () => {
         const quest = getQuestById(room.questId);
         const rewards = quest && quest.rewards || {};
         const packs = getPartyQuestPacks();
@@ -728,6 +730,11 @@ function grantPartyQuestClearRewards(room) {
                 // 기본 보상(전부 지급) + 추가 보상(가중 1개 추첨)
                 const extraRewards = [];
                 if (!weeklyLocked) {
+                    const courageGem = rpgenius.rollAwakeningGemDrop(user, '용기의 보석', 0.05);
+                    if (courageGem) {
+                        addPartyQuestRewardSummary(summary, 'item:' + courageGem.itemId, courageGem.name, courageGem.count);
+                        extraRewards.push({ kind: 'item', ...courageGem, bonus: true });
+                    }
                     for (const entry of (Array.isArray(rewards.base) ? rewards.base : [])) {
                         const granted = grantPartyQuestPackReward(user, entry, summary);
                         if (granted) extraRewards.push(granted);
@@ -2484,7 +2491,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         }
         if (stage('진사이') && Math.random() < .05) healMember(attacker, Math.round(200 * getPartyRecoveryMultiplier(attacker)));
         if (stage('잿불 모자') && monster && Date.now() >= Number(state.burnReadyAt || 0)) {
-            const burnDamage = Math.max(1, Math.round(Number(stats.atk || 0) * value('잿불 모자', .30, .05) * (1 + Number(stats.burnDamage || 0) + (getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? .35 : 0))));
+            const burnDamage = Math.max(1, Math.round(Number(stats.atk || 0) * value('잿불 모자', .30, .05) * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? .35 : 0))));
             addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발', sourceName: attacker.name, sourceSkill: '화상' });
             state.burnReadyAt = Date.now() + cooldown(6) * 1000;
         }
@@ -2683,6 +2690,17 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         return { damage: 0, isCrit: false, hitCount: 0, criticalCount: 0, dodged: true };
     }
     if (extra && extra.isSkill && !extra.summonAttack) applyPartyCurrentShoesOnSkillHit(room, attacker, extra.skillName);
+    const mainSkills = (snapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
+    const attackKind = extra.skillName && mainSkills.length > 1 && extra.skillName === mainSkills[mainSkills.length - 1] ? 'ultimate' : extra.isSkill ? 'skill' : 'basic';
+    cardAwakening.prepareAttack(stats, runtime, monster, extra, attackKind, Date.now());
+    const actionElement = extra.attackElement || resolvePartyAttackElement(attacker, extra.skillElement);
+    const kingReduction = Object.values(runtime.kingmakerBuffs || {}).reduce((sum, buff) => sum + (buff && Date.now() < Number(buff.expiredAt || 0) ? Number(buff.takenDamageReduction || 0) : 0), 0);
+    let awakeningReduction = Number(slotEffects.hpDamageReduction || 0) - Number(stats.takenDamage || 0) + 1 - Number(runtime.takenDmgMul || 1) + Number(runtime.gunryeok && runtime.gunryeok.dmgReduce || 0) + kingReduction;
+    awakeningReduction += Number(runtime.nextDamageReduction || 0) + 1 - getTakenDamageUpMul(attacker);
+    const awakeningHpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
+    if (awakeningHpRatio <= .50) awakeningReduction += Number(stats.bloodFlowReduction || 0) * (awakeningHpRatio <= .30 ? 2 : 1);
+    if (monster && Number(monster.hp || 0) / Math.max(1, Number(monster.hpMax || 1)) <= .50) awakeningReduction += getTranscendStageValue(attacker, '최후통첩 아머', .10, .04);
+    rawDamage *= cardAwakening.runtimeAttackRatio(stats, slotEffects, runtime.hpMax, runtime.mpMax, awakeningReduction, Number(extra.awakeningStacks ?? (runtime.stackCounters && runtime.stackCounters['나인멘스']) ?? 0));
     const dealtDmgMul = (posDef && posDef.stats && posDef.stats.dealtDmg) || 1;
     let contextMul = 1;
     if (!monster || monster.type === 'mob') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.damageBonus || 0));
@@ -2700,7 +2718,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const attackerHpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
     const equipmentStateForTrigger = runtime.equipmentState || (runtime.equipmentState = {});
     if (Date.now() < Number(equipmentStateForTrigger.beomStacksUntil || 0) && Number(equipmentStateForTrigger.beomStacks || 0) > 0
-        && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명') {
+        && actionElement === '명') {
         extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + Math.min(7, Number(equipmentStateForTrigger.beomStacks || 0)) * .02;
     }
     if (Date.now() < Number(equipmentStateForTrigger.trueBeomUntil || 0) && extra && extra.isSkill) {
@@ -2760,21 +2778,21 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     // [무]속성 공격 시 최종 피해 증가 + 범인은 이 안에(다음 공격 최종 피해)
     let extraFinalDamage = Number(extra && extra.finalDamageBonus || 0);
     const equipmentState = runtime.equipmentState || {};
-    if (equipmentState.cleanWaterBuff && Date.now() < Number(equipmentState.cleanWaterBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '수') {
+    if (equipmentState.cleanWaterBuff && Date.now() < Number(equipmentState.cleanWaterBuff.expiredAt || 0) && actionElement === '수') {
         extraFinalDamage += Number(equipmentState.cleanWaterBuff.value || 0);
     }
-    if (equipmentState.deepWaterAttackBuff && Date.now() < Number(equipmentState.deepWaterAttackBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '수') {
+    if (equipmentState.deepWaterAttackBuff && Date.now() < Number(equipmentState.deepWaterAttackBuff.expiredAt || 0) && actionElement === '수') {
         extraFinalDamage += Number(equipmentState.deepWaterAttackBuff.value || 0);
     }
-    if (equipmentState.darkAttackBuff && Date.now() < Number(equipmentState.darkAttackBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '암') {
+    if (equipmentState.darkAttackBuff && Date.now() < Number(equipmentState.darkAttackBuff.expiredAt || 0) && actionElement === '암') {
         extraFinalDamage += Number(equipmentState.darkAttackBuff.value || 0);
     }
-    if (equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && resolvePartyAttackElement(attacker, extra && extra.skillElement) === '암') {
+    if (equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && actionElement === '암') {
         extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(equipmentState.blackEchoShoesBuff.value || 0);
     }
     // 명속성 공격 최종 피해(lightFinalDamage): 천공의 갑옷 등 스탯 보유 장비 공통 (솔로 calculateAttackHitResult와 동일 규칙)
-    if (resolvePartyAttackElement(attacker, extra && extra.skillElement) === '명') extraFinalDamage += Number(stats.lightFinalDamage || 0);
-    if (!resolvePartyAttackElement(attacker, extra && extra.skillElement)) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
+    if (actionElement === '명') extraFinalDamage += Number(stats.lightFinalDamage || 0);
+    if (!actionElement) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
     // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
     if (Number(monster && monster.shield || 0) > 0) extraFinalDamage += Number(slotEffects.shieldFinalDamage || 0);
     if (extra && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
@@ -2791,6 +2809,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const monsterDef = Math.max(0, Number(monster && monster.def || 0) - getMonsterDefFlat(monster));
     let crit = Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0);
     if (extra && typeof extra.critChanceMul !== 'undefined') crit *= Number(extra.critChanceMul || 0);
+    crit += Number(extra && extra.awakeningCritChanceBonus || 0);
     const trueDamageOnCrit = !!(extra && extra.trueDamageOnCrit) || !!runtime.trueDamageOnCritNext;
     if (runtime.critBoostNext > 0) { crit += runtime.critBoostNext; runtime.critBoostNext = 0; }
     if (runtime.trueDamageOnCritNext) runtime.trueDamageOnCritNext = false;
@@ -2816,7 +2835,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         const hitStats = Object.assign({}, stats || {});
         hitStats.allElementAtk = Number(hitStats.allElementAtk || 0) + getActiveKingElementBonus(attacker);
         ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
-        const attackElement = resolvePartyAttackElement(attacker, hitExtra.skillElement);
+        const attackElement = hitExtra.attackElement || resolvePartyAttackElement(attacker, hitExtra.skillElement);
         // 무속성 공격일 때만 [무]속성 공격 피해가 적용된다 (속성 배수 자리에 곱연산)
         const elementMul = attackElement
             ? (typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier(attackElement, hitStats, monsterStats) : 1)
@@ -2832,13 +2851,15 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         let hitContextMul = contextMul * (1 + unitDamageBonus);
         const tenthOffset = isFixedMultiHit ? 0 : i;
         if (tenthAtkStart !== null && i < comboHitCount && (tenthAtkStart + tenthOffset + 1) % 10 === 0) hitContextMul *= 1 + tenthAtk;
-        let hitDamage = rawDamage * hitContextMul * (1 + Number(stats.finalDamage || 0) + extraFinalDamage + unitFinalBonus) * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!(extra && extra.summonAttack) });
+        const awakeningBaseFinal = 1 + Number(stats.finalDamage || 0) + extraFinalDamage + unitFinalBonus;
+        let hitDamage = rawDamage * hitContextMul * awakeningBaseFinal * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!(extra && extra.summonAttack) }) * cardAwakening.basicHitMultiplier(stats, hitExtra);
         let fixedHitDamage = 0;
         let destinyHitDamage = 0;
         const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
         const forceComboLastCrit = !!(isComboExtraHit && stats.comboLastCrit && comboHitCount >= maxComboHits && i === comboHitCount - 1);
         const unitCrit = crit + unitCritBonus;
         const isCrit = hitExtra.disableCritical ? false : (hitExtra.forceCritical || forceComboLastCrit ? true : Math.random() < Math.max(0, unitCrit));
+        if (awakeningBaseFinal > 0) hitDamage *= Math.max(0, awakeningBaseFinal + cardAwakening.conditionalFinalDamage(stats, isCrit)) / awakeningBaseFinal;
         if (isCrit) {
             const comboCritBonus = isComboExtraHit ? Number(stats.comboCritMul || 0) : 0;
             const lastCritBonus = forceComboLastCrit ? Number(stats.comboLastCritMul || 0) : 0;
@@ -2893,7 +2914,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         if (!(extra && extra.disableEquipmentBonusDamage) && !isCrit && Number(stats.nonCritLightBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(stats.nonCritLightBonus) * lightMul;
         if (!(extra && extra.disableEquipmentBonusDamage) && isCrit && i === 0 && Number(extra && extra.bribeDarkBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(extra.bribeDarkBonus) * darkMul;
         if (!(extra && extra.disableEquipmentBonusDamage) && i === 0 && Number(extra && extra.deepWaterBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(extra.deepWaterBonus) * waterMul;
-        if (!(extra && extra.disableEquipmentBonusDamage) && resolvePartyAttackElement(attacker, extra && extra.skillElement) && Number(stats.elementalExtraDamage || 0) > 0) hitDamage += hitDamage * Number(stats.elementalExtraDamage);
+        if (!(extra && extra.disableEquipmentBonusDamage) && actionElement && Number(stats.elementalExtraDamage || 0) > 0) hitDamage += hitDamage * Number(stats.elementalExtraDamage);
         if (isComboExtraHit && Number(stats.comboDamage || 0) !== 0) hitDamage *= 1 + Number(stats.comboDamage);
         if (!(extra && extra.disableEquipmentBonusDamage) && Number(hitExtra.rainbowAttackRatio || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(hitExtra.rainbowAttackRatio) * elementMul;
         if (unitExtraDamageBonus > 0) hitDamage += hitDamage * unitExtraDamageBonus;
@@ -2929,6 +2950,11 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (extraDamageRate > 0 && damage > 0) {
         extraDamageDealt = Math.floor(damage * extraDamageRate);
         damage += extraDamageDealt;
+    }
+    if (Number(extra.awakeningExtraDamage || 0) > 0 && damage > 0) {
+        const awakeningDamage = Math.round(damage * extra.awakeningExtraDamage);
+        damage += awakeningDamage;
+        extraDamageDealt += awakeningDamage;
     }
     const result = { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), destinyDamage: Math.max(0, Math.round(destinyDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, attackUnitCount: comboHitCount, criticalCount, hitDamages, hitDetails, extraDamageDealt: Math.round(extraDamageDealt), equipmentTriggerAllowed: !(extra && (extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack)) };
     queuePartyBlackShadow(room, attacker, monster, result.damage, extra);
@@ -3128,7 +3154,11 @@ function applyBossHpDamage(room, mon, damage) {
 
 function executeMember(room, member, source) {
     if (!member || !member.runtime || member.runtime.dead) return;
-    member.runtime.hp = 0;
+    member.runtime.hp = rpgenius.resolveAwakeningHp(member.name, member.baseSnapshot.stats, member.runtime.hp, 0);
+    if (member.runtime.hp > 0) {
+        pushCombat(room, source + ' → ' + member.name + ' [각성 생존]', 'buff');
+        return;
+    }
     member.runtime.dead = true;
     pushCombat(room, source + ' → ' + member.name + ' [즉사]', 'damage');
     pushNotice(room, member.name + ' 전투불능', 'danger', 3500);
@@ -4253,6 +4283,10 @@ function computeMonsterDamage(room, mon, target) {
 
 function applyDamageToMember(room, member, dmg, source) {
     const r = member.runtime;
+    if (rpgenius.isAwakeningInvincible(member.name, member.baseSnapshot.stats)) {
+        pushCombat(room, source + ' → ' + member.name + ' [무적]', 'buff');
+        return;
+    }
     const incoming = dmg && typeof dmg === 'object' ? dmg : { damage: dmg };
     const mitigation = incoming.mitigation || {};
     recordPartyDamageReduced(member, 'buff', mitigation.buff);
@@ -4272,7 +4306,7 @@ function applyDamageToMember(room, member, dmg, source) {
             const absorbed = Math.max(1, Math.round(dmg * Number(protector.runtime.absorbAlly || 0)));
             dmg = Math.max(0, dmg - absorbed);
             const protectorHpBefore = protector.runtime.hp;
-            protector.runtime.hp = Math.max(0, protector.runtime.hp - absorbed);
+            protector.runtime.hp = rpgenius.resolveAwakeningHp(protector.name, protector.baseSnapshot.stats, protectorHpBefore, Math.max(0, protectorHpBefore - absorbed));
             recordPartyDamageReduced(member, 'other', beforeRedirect - dmg);
             const protectorStats = getPartyBattleStats(protector);
             if (protectorStats) protectorStats.damageTaken += Math.max(0, protectorHpBefore - protector.runtime.hp);
@@ -4326,7 +4360,8 @@ function applyDamageToMember(room, member, dmg, source) {
         }
     }
     const hpBefore = r.hp;
-    r.hp = Math.max(0, r.hp - dmg);
+    r.hp = rpgenius.resolveAwakeningHp(member.name, member.baseSnapshot.stats, hpBefore, Math.max(0, hpBefore - dmg));
+    if (r.hp !== Math.max(0, hpBefore - dmg)) dmg = Math.max(0, hpBefore - r.hp);
     const battleStats = getPartyBattleStats(member);
     if (battleStats) battleStats.damageTaken += Math.max(0, hpBefore - r.hp);
     pushCombat(room, source + ' → ' + member.name + ' [-' + dmg + ']', 'damage');
@@ -4787,6 +4822,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (skillName === '나인 멘스 모리스') {
         if (!caster.runtime.stackCounters) caster.runtime.stackCounters = {};
         const stacks = Math.min(9, Number(caster.runtime.stackCounters['나인멘스'] || 0));
+        extra.awakeningStacks = stacks;
         const roseKnifeBonus = getTranscendStageValue(caster, '장미칼', .06, .02);
         const nmmMul = getSkillValue(skill, 0, star) * (1 + (getSkillValue(skill, 1, star) + roseKnifeBonus) * stacks);
         rawDamage = Math.round(finalAtk * nmmMul * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus) * skillDmgMul);
@@ -4907,7 +4943,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         pushCombat(room, caster.name + ' [감사합니다 친구야] → 파티 보호막 +' + comma(shieldAmt) + ' (10초) / 받는 피해 ▼', 'buff');
     }
     if (skillName === 'KICK BACK') {
-        extra.critChanceMul = 0.5;
+        extra.critChanceMul = stats.awakening && stats.awakening.effect === 'skillCritPenalty' ? 1 - stats.awakening.value : 0.5;
         extra.critMulBonus = getSkillValue(skill, 1, star);
     }
     if (skillName === '익테봇 소환') {
@@ -4915,12 +4951,12 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const atkMul = getSkillValue(skill, 1, star);
         const summonDurationBonus = 1 + Number(caster.baseSnapshot.stats.summonDuration || 0);
         const durationMs = Math.round(20000 * summonDurationBonus);
-        caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio), atkMul: atkMul, expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 4000 };
+        caster.runtime.iktaeBot = { hp: Math.round(caster.runtime.hpMax * hpRatio * cardAwakening.summonMultiplier(stats)), atkMul: atkMul * cardAwakening.summonMultiplier(stats), expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 4000 };
         pushCombat(room, caster.name + ' 익테봇 소환 (' + (durationMs / 1000).toFixed(1) + '초)', 'buff');
         return;
     }
     if (skillName === 'SUPER EASY') {
-        extra.critChanceMul = 0.5;
+        extra.critChanceMul = stats.awakening && stats.awakening.effect === 'skillCritPenalty' ? 1 - stats.awakening.value : 0.5;
         extra.critMulBonus = getSkillValue(skill, 1, star);
     }
     if (skillName === '청정수 투척') extra.pnt = Number(stats.pnt || 0) + getSkillValue(skill, 1, star);
@@ -4978,7 +5014,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const atkMul = getSkillValue(skill, 0, star);
         const buffMul = getSkillValue(skill, 1, star);
         const durationMs = Math.round(45000 * (1 + Number(caster.baseSnapshot.stats.summonDuration || 0)));
-        caster.runtime.sunata = { atkMul: atkMul, buff: scalePartyAttackBuff(caster, buffMul), expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 5000 };
+        caster.runtime.sunata = { atkMul: atkMul * cardAwakening.summonMultiplier(stats), buff: scalePartyAttackBuff(caster, buffMul), expired_at: Date.now() + durationMs, nextAttackAt: Date.now() + 5000 };
         upsertMemberBuff(caster, { id: 'sunata', label: '수나타 (공+)', value: caster.runtime.sunata.buff, remain: Math.round(durationMs / 1000) });
         pushCombat(room, caster.name + ' 수나타 소환 (' + (durationMs / 1000).toFixed(1) + '초)', 'buff');
         return;
@@ -5310,6 +5346,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
+        applyDamageToMember,
         preparePartyAttackUnits,
         computeBasicDamage,
         calculateOutgoingDamage,
