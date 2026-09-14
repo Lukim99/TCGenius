@@ -3422,7 +3422,7 @@ function renderHuntMenu() {
 }
 
 // ===== 퀘스트 게시판 =====
-const questState = { list: [], selectedId: null, busy: false };
+const questState = { list: [], selectedId: null, busy: false, puzzleDrafts: {} };
 const QUEST_BADGE_CLASS = { '에픽': 'epic', '일일': 'daily', '주간': 'weekly', '일반': 'normal', '이벤트': 'event' };
 
 async function loadQuests() {
@@ -3511,7 +3511,77 @@ function renderQuestDetail() {
         actions.appendChild(el('button', { class: 'primary', type: 'button', disabled: !quest.complete || questState.busy, onclick: () => claimQuest(quest, false) }, '보상 받기'));
         if (quest.canSkip) actions.appendChild(el('button', { class: 'quest-skip-btn', type: 'button', disabled: questState.busy, onclick: () => claimQuest(quest, true) }, '스킵 (보상 수령)'));
     }
-    detail.replaceChildren(head, desc, objectives, rewards, actions);
+    const contents = [head, desc];
+    if (quest.puzzle) contents.push(renderWisdomPuzzle(quest));
+    detail.replaceChildren(...contents, objectives, rewards, actions);
+}
+
+function renderWisdomPuzzle(quest) {
+    const puzzle = quest.puzzle;
+    let draft = questState.puzzleDrafts[quest.id];
+    if (!draft || draft.id !== puzzle.id) {
+        draft = questState.puzzleDrafts[quest.id] = { id: puzzle.id, answer: '', cells: puzzle.grid ? puzzle.grid.cells.map(n => n || '') : [], message: '' };
+    }
+    const form = el('form', { class: 'quest-puzzle', onsubmit: event => { event.preventDefault(); submitQuestPuzzle(quest); } },
+        el('div', { class: 'quest-puzzle-heading' }, el('h3', null, puzzle.title), el('span', null, '논리 도전')),
+        el('p', { class: 'quest-puzzle-date' }, puzzle.date + ' · 매일 00:00 (한국시간) 새 문제'),
+        ...puzzle.rules.map(rule => el('p', { class: 'quest-puzzle-rule' }, rule)),
+        puzzle.clues.length ? el('ol', { class: 'quest-puzzle-clues' }, ...puzzle.clues.map(clue => el('li', null, clue))) : null);
+    if (puzzle.solved || quest.claimed) {
+        form.appendChild(el('p', { class: 'quest-puzzle-success', role: 'status' }, quest.claimed ? '오늘의 지혜를 증명했습니다. 내일 새로운 퍼즐에 도전하세요.' : '정답입니다! 아래의 보상 받기를 눌러주세요.'));
+        return form;
+    }
+    if (puzzle.grid) {
+        const { size, boxRows, boxCols, cells } = puzzle.grid;
+        const grid = el('div', { class: 'quest-puzzle-grid', style: { gridTemplateColumns: '22px repeat(' + size + ',minmax(0,1fr))' } });
+        grid.appendChild(el('span'));
+        for (let col = 1; col <= size; col++) grid.appendChild(el('span', { class: 'quest-puzzle-axis' }, col));
+        for (let row = 0; row < size; row++) {
+            grid.appendChild(el('span', { class: 'quest-puzzle-axis' }, row + 1));
+            for (let col = 0; col < size; col++) {
+                const i = row * size + col;
+                const classes = 'quest-puzzle-cell' + (cells[i] ? ' given' : '')
+                    + (boxCols && (col + 1) % boxCols === 0 && col < size - 1 ? ' box-right' : '')
+                    + (boxRows && (row + 1) % boxRows === 0 && row < size - 1 ? ' box-bottom' : '');
+                grid.appendChild(el('input', { class: classes, type: 'text', inputMode: 'numeric', maxLength: 1,
+                    'aria-label': (row + 1) + '행 ' + (col + 1) + '열' + (cells[i] ? ' (고정)' : ''),
+                    readOnly: !!cells[i], disabled: questState.busy, required: true, autocomplete: 'off',
+                    value: draft.cells[i], oninput: event => { draft.cells[i] = event.target.value; },
+                    onfocus: event => event.target.select() }));
+            }
+        }
+        form.appendChild(grid);
+    } else {
+        form.appendChild(el('label', { class: 'quest-puzzle-answer' }, '왼쪽부터 ' + puzzle.length + '자리 답안',
+            el('input', { type: 'text', inputMode: puzzle.kind === 'cipher' ? 'numeric' : 'text',
+                value: draft.answer, placeholder: '답안을 입력하세요', maxLength: 40,
+                disabled: questState.busy, required: true, autocomplete: 'off', spellcheck: false,
+                oninput: event => { draft.answer = event.target.value; } })));
+    }
+    form.appendChild(el('p', { class: 'quest-puzzle-feedback', role: 'status', 'aria-live': 'polite' }, draft.message));
+    form.appendChild(el('div', { class: 'quest-puzzle-actions' },
+        el('button', { class: 'primary', type: 'submit', disabled: questState.busy }, questState.busy ? '확인 중...' : '답안 제출'),
+        el('button', { type: 'button', disabled: questState.busy, onclick: loadQuests }, '오늘의 문제 새로고침')));
+    form.appendChild(el('p', { class: 'quest-puzzle-date' }, '오답이어도 다시 도전할 수 있습니다. 제출 간격 5초 · 제출 ' + puzzle.attempts + '회'));
+    return form;
+}
+
+async function submitQuestPuzzle(quest) {
+    if (questState.busy) return;
+    const draft = questState.puzzleDrafts[quest.id];
+    const answer = quest.puzzle.grid ? draft.cells.join('') : draft.answer;
+    questState.busy = true;
+    renderQuestDetail();
+    try {
+        const result = await postApi('/api/quests/puzzle/answer', { id: quest.id, period: quest.period, puzzleId: quest.puzzle.id, answer });
+        questState.list = result.list || [];
+        draft.message = result.message;
+    } catch (e) {
+        draft.message = e.message;
+    } finally {
+        questState.busy = false;
+        renderQuests();
+    }
 }
 
 const QUEST_REWARD_CURRENCY_ICONS = {
@@ -3607,7 +3677,7 @@ async function claimQuest(quest, skip) {
     questState.busy = true;
     renderQuestDetail();
     try {
-        const r = await postApi('/api/quests/claim', { id: quest.id, skip: !!skip });
+        const r = await postApi('/api/quests/claim', { id: quest.id, skip: !!skip, period: quest.period });
         questState.list = r.list || [];
         showQuestRewardModal(quest, r);
     } catch (e) {

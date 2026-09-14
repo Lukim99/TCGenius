@@ -1802,15 +1802,41 @@ server.get('/api/quests', requireUser, async (req, res) => {
 
 server.post('/api/quests/claim', requireUser, async (req, res) => {
     try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const result = rpgenius.claimQuestReward(user, Number(req.body && req.body.id), { skip: !!(req.body && req.body.skip) });
-        if (result.error) return res.status(400).json({ error: result.error });
-        await user.save();
-        res.json({ ok: true, name: result.name, skipped: result.skipped, lines: result.lines, list: decorateQuestBoard(user) });
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const body = req.body || {};
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            const result = rpgenius.claimQuestReward(user, Number(body.id), { skip: !!body.skip, period: body.period, replay: true });
+            if (result.error) return { status: 400, error: result.error };
+            const saved = await user.save();
+            if (!saved || !saved.success) return { status: 503, error: '보상 저장을 확인하지 못했습니다. 보상 받기를 다시 누르면 중복 지급 없이 저장을 재시도합니다.' };
+            return Object.assign({}, result, { list: decorateQuestBoard(user) });
+        });
+        res.status(payload.status || 200).json(payload);
     } catch (e) {
         console.error('quest claim error:', e);
         res.status(500).json({ error: '서버 오류' });
+    }
+});
+
+server.post('/api/quests/puzzle/answer', requireUser, async (req, res) => {
+    try {
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const body = req.body || {};
+        const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            const result = rpgenius.submitWisdomAnswer(user, Number(body.id), body);
+            if (result.error) return { status: 400, error: result.error };
+            const saved = await user.save();
+            if (!saved || !saved.success) return { status: 503, error: '답안 저장을 확인하지 못했습니다. 같은 답안으로 다시 제출해주세요.' };
+            return Object.assign({}, result, { list: decorateQuestBoard(user) });
+        });
+        res.status(payload.status || 200).json(payload);
+    } catch (e) {
+        console.error('quest puzzle answer error:', e);
+        res.status(500).json({ error: '답안을 처리하지 못했습니다. 다시 시도해주세요.' });
     }
 });
 

@@ -1116,6 +1116,7 @@ TAB_LOADERS.bait = () => $('#baitReload').click();
 const QUEST_CATEGORIES = ['에픽', '주간', '일일', '일반', '이벤트'];
 const QUEST_CATEGORY_CLASS = { '에픽': 'epic', '주간': 'weekly', '일일': 'daily', '일반': 'normal', '이벤트': 'event' };
 const QUEST_OBJECTIVE_TYPES = [
+    ['wisdomPuzzle', '일일 지혜 퍼즐 (자동 출제)'],
     ['kill', '몬스터 처치'],
     ['eliteKill', '엘리트 처치'],
     ['worldboss', '월드보스 공격'],
@@ -1180,7 +1181,9 @@ function questObjectiveRow(objective, onDelete) {
         targetSlot.innerHTML = '';
         const t = objective.type;
         const targets = questTargetsSync();
-        if (t === 'kill' || t === 'eliteKill') {
+        if (t === 'wisdomPuzzle') {
+            targetSlot.appendChild(el('span', { class: 'lab' }, '매일 00:00 KST 자동 출제 · 정답 1회 · 스킵 불가'));
+        } else if (t === 'kill' || t === 'eliteKill') {
             targetSlot.appendChild(questNameSelect(objective, 'field', targets.fields, '모든 필드'));
         } else if (t === 'worldboss') {
             targetSlot.appendChild(questNameSelect(objective, 'boss', targets.bosses, '모든 보스'));
@@ -1205,10 +1208,12 @@ function questObjectiveRow(objective, onDelete) {
         ['field', 'boss', 'winOnly', 'recipe', 'item_id', 'quest', 'members'].forEach(k => delete objective[k]);
         objective.type = sel.value;
         if (objective.type === 'partyClearMin' || objective.type === 'partyClearMax') objective.members = 2;
+        countIn.disabled = objective.type === 'wisdomPuzzle';
+        if (countIn.disabled) { objective.count = 1; countIn.value = 1; }
         paintTarget();
     };
     paintTarget();
-    const countIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(objective.count || 1), oninput: () => objective.count = Math.max(1, Number(countIn.value) || 1) });
+    const countIn = el('input', { class: 'qe-num', type: 'number', min: 1, disabled: objective.type === 'wisdomPuzzle', value: objective.type === 'wisdomPuzzle' ? 1 : Number(objective.count || 1), oninput: () => objective.count = Math.max(1, Number(countIn.value) || 1) });
     wrap.appendChild(sel);
     wrap.appendChild(targetSlot);
     wrap.appendChild(el('span', { class: 'nf qe-inline' }, el('span', { class: 'lab' }, '횟수/개수'), countIn));
@@ -1277,7 +1282,8 @@ function questFormNode(q) {
         const orderIn = el('input', { class: 'qe-num', type: 'number', min: 1, value: Number(q.epicOrder || 1), oninput: () => q.epicOrder = Math.max(1, Number(orderIn.value) || 1) });
         catsWrap.appendChild(el('span', { class: 'qe-inline' }, el('span', { class: 'lab' }, '에픽 번호'), orderIn));
     }
-    const skipChk = el('input', { type: 'checkbox', checked: q.skippable === true, onchange: () => { q.skippable = skipChk.checked; renderQuest(); } });
+    const hasPuzzle = q.objectives.some(objective => objective.type === 'wisdomPuzzle');
+    const skipChk = el('input', { type: 'checkbox', disabled: hasPuzzle, checked: !hasPuzzle && q.skippable === true, onchange: () => { q.skippable = skipChk.checked; renderQuest(); } });
     const enabledChk = el('input', { type: 'checkbox', checked: q.enabled !== false, onchange: () => { q.enabled = enabledChk.checked; renderQuest(); } });
     body.appendChild(el('div', { class: 'qe-grid' },
         el('div', null, el('label', null, '퀘스트 범주'), catsWrap),

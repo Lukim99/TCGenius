@@ -5,6 +5,7 @@ const path = require('path');
 const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
 const combatEffects = require('./public/combat-effects.js');
+const wisdomPuzzle = require('./wisdom_puzzle');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
@@ -15263,6 +15264,7 @@ function getQuestCategoryList(def) {
 
 // 리셋 주기: 일일 > 주간 > 1회성 (범주 복수 선택 시 우선순위)
 function getQuestPeriodKey(def, date) {
+    if (isWisdomQuest(def)) return getKoreanDateKey(date || new Date());
     const categories = getQuestCategoryList(def);
     if (categories.includes('일일')) return getKoreanDateKey(date || new Date());
     if (categories.includes('주간')) return getKoreanWeekKey(date || new Date());
@@ -15322,12 +15324,13 @@ function isQuestVisible(user, def, defs) {
     // 1회성(에픽/일반/이벤트) 완료 퀘스트는 목록에서 제외
     if (active && entry.claimed && entry.period == 'once') return false;
     // 이미 진행/완료한 퀘스트는 노출 조건을 다시 검사하지 않음 (아이템 소모 등으로 사라지지 않게)
-    const started = active && (entry.claimed || Object.keys(entry.counters || {}).length > 0);
+    const started = active && (entry.claimed || entry.wisdom || Object.keys(entry.counters || {}).length > 0);
     if (!started && getQuestUnlockError(user, def, defs)) return false;
     return true;
 }
 
 function getQuestObjectiveTarget(objective) {
+    if (objective && objective.type == wisdomPuzzle.OBJECTIVE_TYPE) return 1;
     return Math.max(1, Math.floor(Number(objective && objective.count || 1)));
 }
 
@@ -15337,6 +15340,7 @@ const QUEST_OBJECTIVE_EVENT_MAP = { partyClearMin: 'partyClear', partyClearMax: 
 // 이벤트 → 목표 매칭. 새 판정 타입은 이 함수 + 라벨 + 발생 지점 훅만 추가하면 된다.
 function questObjectiveMatchesEvent(objective, event, meta) {
     if (!objective) return false;
+    if (objective.type == wisdomPuzzle.OBJECTIVE_TYPE) return false; // 답안 검증으로만 달성
     if ((QUEST_OBJECTIVE_EVENT_MAP[objective.type] || objective.type) != event) return false;
     if (objective.type == 'kill' || objective.type == 'eliteKill') {
         return !objective.field || String(meta && meta.field || '').includes(String(objective.field));
@@ -15355,6 +15359,7 @@ function questObjectiveMatchesEvent(objective, event, meta) {
 
 function formatQuestObjectiveLabel(objective) {
     const type = objective && objective.type;
+    if (type == wisdomPuzzle.OBJECTIVE_TYPE) return '오늘의 지혜 퍼즐 풀기';
     const questSuffix = objective && objective.quest ? ' — ' + objective.quest : '';
     if (type == 'kill') return '몬스터 처치' + (objective.field ? ' — ' + objective.field : '');
     if (type == 'eliteKill') return '엘리트 몬스터 처치' + (objective.field ? ' — ' + objective.field : '');
@@ -15377,6 +15382,7 @@ function formatQuestObjectiveLabel(objective) {
 // 납품(deliver)은 보유량으로, 나머지는 누적 카운터로 진행도 계산
 function getQuestObjectiveCurrent(user, entry, index, objective) {
     const target = getQuestObjectiveTarget(objective);
+    if (objective.type == wisdomPuzzle.OBJECTIVE_TYPE) return entry.wisdom && entry.wisdom.solved ? 1 : 0;
     if (objective.type == 'deliver') return Math.min(target, getInventoryItemCount(user, Number(objective.item_id)));
     return Math.min(target, Number(entry.counters && entry.counters[index] || 0));
 }
@@ -15414,7 +15420,38 @@ function getQuestBadgeCategory(def) {
 }
 
 function canSkipQuest(user, def) {
-    return def.skippable === true && Number(user.level || 1) >= Number(def.minLevel || 1) + 30;
+    return !isWisdomQuest(def) && def.skippable === true && Number(user.level || 1) >= Number(def.minLevel || 1) + 30;
+}
+
+function isWisdomQuest(def) {
+    return Array.isArray(def.objectives) && def.objectives.some(objective => objective.type == wisdomPuzzle.OBJECTIVE_TYPE);
+}
+
+function getWisdomPuzzleView(user, def, entry) {
+    const { publicPuzzle } = wisdomPuzzle.getPuzzle(entry.period, user.id, def.id);
+    const state = entry.wisdom || {};
+    return Object.assign({}, publicPuzzle, { solved: !!state.solved, attempts: Number(state.attempts || 0) });
+}
+
+function submitWisdomAnswer(user, questId, input) {
+    const defs = getQuestDefs();
+    const def = defs.find(d => Number(d.id) == Number(questId));
+    if (!def || !isWisdomQuest(def) || !isQuestVisible(user, def, defs)) return { error: '수행할 수 없는 퍼즐 퀘스트입니다.' };
+    const entry = getUserQuestEntry(user, def);
+    if (!input || input.period !== entry.period) return { error: '날짜가 바뀌었습니다. 게시판을 새로고침해 오늘의 문제를 받아주세요.' };
+    if (entry.claimed) return { error: '오늘의 보상을 이미 수령했습니다.' };
+    const puzzle = wisdomPuzzle.getPuzzle(entry.period, user.id, def.id);
+    if (input.puzzleId !== puzzle.publicPuzzle.id) return { error: '문제가 변경되었습니다. 게시판을 새로고침해주세요.' };
+    const state = entry.wisdom || { attempts: 0, solved: false, lastAttemptAt: 0 };
+    if (state.solved) return { ok: true, correct: true, message: '이미 정답을 맞혔습니다. 보상을 받아주세요.' };
+    if (Date.now() < state.lastAttemptAt + wisdomPuzzle.RETRY_MS) return { error: '답안을 확인 중입니다. 5초 간격으로 다시 제출할 수 있습니다.' };
+    const result = wisdomPuzzle.checkAnswer(puzzle, input.answer);
+    if (result.error) return result;
+    state.attempts++;
+    state.lastAttemptAt = Date.now();
+    state.solved = result.correct;
+    entry.wisdom = state;
+    return { ok: true, correct: result.correct, message: result.correct ? '정답입니다! 보상 받기를 눌러주세요.' : '아직 정답이 아닙니다. 모든 단서를 다시 확인해주세요. 다시 도전할 수 있습니다.' };
 }
 
 function formatQuestRewardLabel(reward) {
@@ -15450,6 +15487,8 @@ function buildQuestBoard(user) {
             maxLevel: Number(def.maxLevel || 1),
             epicOrder: categories.includes('에픽') ? Number(def.epicOrder || 0) : null,
             resetType: categories.includes('일일') ? '일일' : (categories.includes('주간') ? '주간' : null),
+            period: entry.period,
+            puzzle: isWisdomQuest(def) ? getWisdomPuzzleView(user, def, entry) : null,
             objectives: objectives,
             rewards: (Array.isArray(def.rewards) ? def.rewards : []).filter(reward => reward && reward.type).map(reward => ({
                 type: reward.type,
@@ -15471,12 +15510,15 @@ function claimQuestReward(user, questId, options) {
     const defs = getQuestDefs();
     const def = defs.find(d => Number(d.id) == Number(questId));
     if (!def) return { error: '존재하지 않는 퀘스트입니다.' };
-    if (!isQuestVisible(user, def, defs)) return { error: '수행할 수 없는 퀘스트입니다.' };
     const entry = getUserQuestEntry(user, def);
+    if (isWisdomQuest(def) && (!options || options.period !== entry.period)) return { error: '게시판을 새로고침해 오늘의 퀘스트를 확인해주세요.' };
+    if (options && options.replay && options.period === entry.period && entry.claimed && entry.claimResult) return entry.claimResult;
+    if (!isQuestVisible(user, def, defs)) return { error: '수행할 수 없는 퀘스트입니다.' };
     if (entry.claimed) return { error: '이미 보상을 수령한 퀘스트입니다.' };
     const objectives = Array.isArray(def.objectives) ? def.objectives : [];
+    if (isWisdomQuest(def) && (def.rewards || []).some(reward => reward.type == '아이템' && !getDataCache('Item', [])[reward.item_id])) return { error: '보상 아이템 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' };
     if (skip) {
-        if (def.skippable !== true) return { error: '스킵할 수 없는 퀘스트입니다.' };
+        if (isWisdomQuest(def) || def.skippable !== true) return { error: '스킵할 수 없는 퀘스트입니다.' };
         if (Number(user.level || 1) < Number(def.minLevel || 1) + 30) return { error: '스킵은 퀘스트 최소 레벨(Lv.' + Number(def.minLevel || 1) + ')보다 30레벨 이상 높아야 가능합니다.' };
     } else {
         for (let i = 0; i < objectives.length; i++) {
@@ -15515,7 +15557,9 @@ function claimQuestReward(user, questId, options) {
     if (totalExp > 0) lines.push('- XP ' + comma(totalExp));
     Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
-    return { ok: true, name: def.name, skipped: skip, lines: lines };
+    const result = { ok: true, name: def.name, skipped: skip, lines: lines };
+    entry.claimResult = result; // 저장 실패/응답 유실 재시도 시 보상은 다시 지급하지 않는다.
+    return result;
 }
 
 // 테스트 전용: Quest 정의 캐시 주입 (DB를 거치지 않음)
@@ -15764,6 +15808,7 @@ module.exports = {
     getKoreanWeekKey,
     recordQuestEvent,
     buildQuestBoard,
+    submitWisdomAnswer,
     claimQuestReward,
     __setQuestDefs,
     getTitleProgress,
