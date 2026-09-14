@@ -151,13 +151,13 @@
     {
       "id": "mzStaffBbangGyul",
       "name": "MZ사원",
-      "description": "???",
+      "description": "패키지 구매",
       "plusStat": { "afterSkill": 0.03 }
     },
     {
       "id": "cherryByteDealer",
       "name": "체리 바이트",
-      "description": "???",
+      "description": "패키지 구매",
       "stat": { "fireAtk": 10, "waterAtk": 10, "lightAtk": 10, "darkAtk": 10 }
     },
     {
@@ -169,14 +169,14 @@
     {
       "id": "dvaOnline",
       "name": "DVA온라인",
-      "description": "획득 방법 없음",
+      "description": "패키지 구매",
       "stat": { "pnt": 10 },
       "plusStat": { "pnt": 0.01 }
     },
     {
       "id": "eternals",
       "name": "이터널스",
-      "description": "획득 방법 없음",
+      "description": "패키지 구매",
       "stat": { "atk": 10 },
       "plusStat": { "afterBasic": 0.03 }
     }
