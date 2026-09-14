@@ -2,7 +2,21 @@ const crypto = require('crypto');
 
 const QUEST_NAME = '[일일]지혜의 보석';
 const OBJECTIVE_TYPE = 'wisdomPuzzle';
-const KINDS = ['cipher', 'order', 'sudoku', 'towers'];
+const LEGACY_KINDS = ['cipher', 'order', 'sudoku', 'towers'];
+const EXPANDED_FROM = '2026-09-15';
+// 같은 규칙이 60일 안에 다시 나오지 않도록 서로 다른 분야를 섞어 순환한다.
+const KINDS = [
+    'cipher', 'nonogram', 'shortest_path', 'operations', 'knights', 'slitherlink',
+    'order', 'mines', 'salesman', 'cryptarithm', 'dialogue', 'masyu',
+    'sudoku', 'battleships', 'deadlines', 'clocks', 'circuit', 'hashi',
+    'towers', 'tents', 'river', 'barter', 'hamming', 'hidato',
+    'futoshiki', 'hitori', 'jugs', 'knapsack', 'one_false', 'fillomino',
+    'kenken', 'takuzu', 'bridge', 'polynomial', 'wason', 'tetromino',
+    'kakuro', 'nurikabe', 'hanoi', 'recurrence', 'counterfeit', 'dominosa',
+    'heyawake', 'sliding', 'hamilton', 'mixing', 'cube', 'mirrors',
+    'akari', 'lights_out', 'euler', 'balance', 'coloring', 'gears',
+    'maze', 'independent_set', 'spanning_tree', 'flow', 'critical_path', 'grammar'
+];
 const RETRY_MS = 5000;
 
 // v1의 날짜/계정별 문제는 재시작해도 동일하다. 규칙 변경 시 기존 버전을 보존한다.
@@ -168,18 +182,26 @@ function makeTowers(random) {
 }
 
 const generators = { cipher: makeCipher, order: makeOrder, sudoku: makeSudoku, towers: makeTowers };
+for (const group of ['arithmetic', 'logic', 'paths', 'grids', 'spatial']) {
+    for (const [kind, title, create] of require('./wisdom_puzzles/' + group)) generators[kind] = random => ({ title, ...create(random) });
+}
+if (KINDS.length !== 60 || new Set(KINDS).size !== 60 || KINDS.some(kind => !generators[kind]) || Object.keys(generators).length !== 60) throw new Error('지혜 퍼즐 60종 등록 불일치');
 const cache = new Map();
 let cacheDate;
 function getPuzzle(date, accountId, questId) {
     if (cacheDate !== date) { cache.clear(); cacheDate = date; }
-    const key = JSON.stringify(['wisdom-v1', date, String(accountId), String(questId)]);
+    const expanded = date >= EXPANDED_FROM;
+    const key = JSON.stringify([expanded ? 'wisdom-v2' : 'wisdom-v1', date, String(accountId), String(questId)]);
     if (cache.has(key)) return cache.get(key);
     const day = Math.floor(Date.parse(date + 'T00:00:00Z') / 86400000);
-    const kind = KINDS[((day % KINDS.length) + KINDS.length) % KINDS.length];
+    const kinds = expanded ? KINDS : LEGACY_KINDS;
+    const offset = expanded ? day - Math.floor(Date.parse(EXPANDED_FROM + 'T00:00:00Z') / 86400000) : day;
+    const kind = kinds[((offset % kinds.length) + kinds.length) % kinds.length];
     const { solution, ...view } = generators[kind](randomFor(key));
     const publicPuzzle = { ...view, date, kind };
+    if (expanded) publicPuzzle.typeCount = KINDS.length;
     publicPuzzle.id = crypto.createHash('sha256').update(JSON.stringify(publicPuzzle)).digest('hex').slice(0, 24);
-    const puzzle = { publicPuzzle, solution: solution.join('') };
+    const puzzle = { publicPuzzle, solution: Array.isArray(solution) ? solution.join('') : solution };
     if (cache.size >= 256) cache.delete(cache.keys().next().value);
     cache.set(key, puzzle);
     return puzzle;
@@ -190,8 +212,8 @@ function checkAnswer(puzzle, raw) {
     const answer = raw.normalize('NFKC').toUpperCase().replace(/[\s,]/g, '');
     const view = puzzle.publicPuzzle;
     if (answer.length !== view.length || [...answer].some(n => !view.symbols.includes(n))) return { error: view.length + '칸을 모두 채워주세요. 사용 가능: ' + view.symbols.split('').join(', ') };
-    if (!view.grid && new Set(answer).size !== answer.length) return { error: '각 숫자 또는 문양은 한 번씩만 사용해주세요.' };
+    if ((view.allowRepeats === false || (!view.grid && view.allowRepeats !== true)) && new Set(answer).size !== answer.length) return { error: '각 숫자 또는 문양은 한 번씩만 사용해주세요.' };
     return { correct: answer === puzzle.solution };
 }
 
-module.exports = { QUEST_NAME, OBJECTIVE_TYPE, KINDS, RETRY_MS, getPuzzle, checkAnswer, solveSudoku };
+module.exports = { QUEST_NAME, OBJECTIVE_TYPE, KINDS, EXPANDED_FROM, RETRY_MS, getPuzzle, checkAnswer, solveSudoku };

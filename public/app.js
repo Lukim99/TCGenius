@@ -3523,10 +3523,29 @@ function renderWisdomPuzzle(quest) {
         draft = questState.puzzleDrafts[quest.id] = { id: puzzle.id, answer: '', cells: puzzle.grid ? puzzle.grid.cells.map(n => n || '') : [], message: '' };
     }
     const form = el('form', { class: 'quest-puzzle', onsubmit: event => { event.preventDefault(); submitQuestPuzzle(quest); } },
-        el('div', { class: 'quest-puzzle-heading' }, el('h3', null, puzzle.title), el('span', null, '논리 도전')),
+        el('div', { class: 'quest-puzzle-heading' }, el('h3', null, puzzle.title), el('span', null, puzzle.typeCount ? puzzle.typeCount + '종 순환' : '논리 도전')),
         el('p', { class: 'quest-puzzle-date' }, puzzle.date + ' · 매일 00:00 (한국시간) 새 문제'),
         ...puzzle.rules.map(rule => el('p', { class: 'quest-puzzle-rule' }, rule)),
         puzzle.clues.length ? el('ol', { class: 'quest-puzzle-clues' }, ...puzzle.clues.map(clue => el('li', null, clue))) : null);
+    if (puzzle.displayGrid) {
+        const diagram = puzzle.displayGrid, rows = diagram.rows || diagram.size, cols = diagram.cols || diagram.size;
+        const grid = el('div', { class: 'quest-puzzle-grid quest-puzzle-diagram', role: 'table', 'aria-label': '문제 도표',
+            style: { gridTemplateColumns: '22px repeat(' + cols + ',minmax(0,1fr))' } });
+        const header = el('div', { class: 'quest-puzzle-diagram-row', role: 'row' }, el('span', { role: 'columnheader', 'aria-label': '행과 열' }));
+        for (let col = 1; col <= cols; col++) header.appendChild(el('span', { class: 'quest-puzzle-axis', role: 'columnheader' }, col));
+        grid.appendChild(header);
+        for (let row = 0; row < rows; row++) {
+            const line = el('div', { class: 'quest-puzzle-diagram-row', role: 'row' }, el('span', { class: 'quest-puzzle-axis', role: 'rowheader' }, row + 1));
+            for (let col = 0; col < cols; col++) {
+                const value = diagram.cells[row * cols + col];
+                line.appendChild(el('span', { class: 'quest-puzzle-diagram-cell' + (value === '■' ? ' wall' : ''), role: 'cell',
+                    'aria-label': (row + 1) + '행 ' + (col + 1) + '열: ' + (value === '' ? '빈칸' : value) }, String(value)));
+            }
+            grid.appendChild(line);
+        }
+        form.appendChild(el('p', { class: 'quest-puzzle-date' }, '문제 도표'));
+        form.appendChild(grid);
+    }
     if (puzzle.solved || quest.claimed) {
         form.appendChild(el('p', { class: 'quest-puzzle-success', role: 'status' }, quest.claimed ? '오늘의 지혜를 증명했습니다. 내일 새로운 퍼즐에 도전하세요.' : '정답입니다! 아래의 보상 받기를 눌러주세요.'));
         return form;
@@ -3543,18 +3562,19 @@ function renderWisdomPuzzle(quest) {
                 const classes = 'quest-puzzle-cell' + (cells[i] ? ' given' : '')
                     + (boxCols && (col + 1) % boxCols === 0 && col < size - 1 ? ' box-right' : '')
                     + (boxRows && (row + 1) % boxRows === 0 && row < size - 1 ? ' box-bottom' : '');
-                grid.appendChild(el('input', { class: classes, type: 'text', inputMode: 'numeric', maxLength: 1,
+                grid.appendChild(el('input', { class: classes, type: 'text', inputMode: /^\d+$/.test(puzzle.symbols) ? 'numeric' : 'text', maxLength: 1,
                     'aria-label': (row + 1) + '행 ' + (col + 1) + '열' + (cells[i] ? ' (고정)' : ''),
-                    readOnly: !!cells[i], disabled: questState.busy, required: true, autocomplete: 'off',
+                    readOnly: !!cells[i], disabled: questState.busy, required: true, autocomplete: 'off', spellcheck: false,
                     value: draft.cells[i], oninput: event => { draft.cells[i] = event.target.value; },
                     onfocus: event => event.target.select() }));
             }
         }
+        form.appendChild(el('p', { class: 'quest-puzzle-date' }, '답안 격자 · 사용 가능: ' + puzzle.symbols.split('').join(', ')));
         form.appendChild(grid);
     } else {
-        form.appendChild(el('label', { class: 'quest-puzzle-answer' }, '왼쪽부터 ' + puzzle.length + '자리 답안',
-            el('input', { type: 'text', inputMode: puzzle.kind === 'cipher' ? 'numeric' : 'text',
-                value: draft.answer, placeholder: '답안을 입력하세요', maxLength: 40,
+        form.appendChild(el('label', { class: 'quest-puzzle-answer' }, puzzle.inputLabel || '왼쪽부터 ' + puzzle.length + '자리 답안',
+            el('input', { type: 'text', inputMode: /^\d+$/.test(puzzle.symbols) ? 'numeric' : 'text',
+                value: draft.answer, placeholder: '답안을 입력하세요', maxLength: 256,
                 disabled: questState.busy, required: true, autocomplete: 'off', spellcheck: false,
                 oninput: event => { draft.answer = event.target.value; } })));
     }

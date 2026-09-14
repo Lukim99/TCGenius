@@ -108,7 +108,7 @@ test('잘못된 형식·다른 계정의 문제·스킵·이벤트 위조로 퍼
 });
 
 test('오답 후 5초 간격 재도전, 정답 진행 저장, 보상은 기존 수령 버튼으로 1개만 지급', async t => {
-    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-09-16T03:00:00Z') });
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-09-12T03:00:00Z') });
     await reset();
     const quest = (await request('')).data.list[0], body = answerBody(quest);
     const wrong = body.answer.slice(1) + body.answer[0];
@@ -176,6 +176,37 @@ test('한국시간 자정에 자동 초기화, 이전 날짜 답안/수령 거�
     assert.equal((await request('/puzzle/answer', answerBody(today))).status, 200);
     assert.equal((await request('/claim', { id: today.id, period: today.period })).status, 200);
     assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(account.name), 0), 2);
+});
+
+test('60종 전체: 실제 게시판 → 정답 제출 → 보상 수령 API가 새 답안 형식을 처리한다', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse(puzzles.EXPANDED_FROM + 'T03:00:00Z') });
+    for (const kind of puzzles.KINDS) {
+        await reset();
+        const quest = (await request('')).data.list[0];
+        assert.equal(quest.puzzle.kind, kind);
+        assert.equal(quest.puzzle.typeCount, 60);
+        assert.equal(quest.puzzle.solution, undefined);
+        const result = await request('/puzzle/answer', answerBody(quest));
+        assert.equal(result.status, 200, kind);
+        assert.equal(result.data.correct, true, kind);
+        assert.equal(result.data.list[0].complete, true, kind);
+        assert.equal((await request('/claim', { id: quest.id, period: quest.period })).status, 200, kind);
+        assert.equal((await request('/claim', { id: quest.id, period: quest.period })).status, 200, kind);
+        assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(account.name), 0), 1, kind);
+        t.mock.timers.tick(86400000);
+    }
+});
+
+test('확장일 자정에도 이전 퍼즐의 답안은 거부하고 60종 순환을 시작한다', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse(puzzles.EXPANDED_FROM + 'T00:00:00+09:00') - 1000 });
+    await reset();
+    const before = (await request('')).data.list[0];
+    assert.equal(before.puzzle.typeCount, undefined);
+    t.mock.timers.tick(1000);
+    const after = (await request('')).data.list[0];
+    assert.equal(after.puzzle.typeCount, 60);
+    assert.equal((await request('/puzzle/answer', answerBody(before))).status, 400);
+    assert.equal((await request('/puzzle/answer', answerBody(after))).status, 200);
 });
 
 test('관리자 비활성·레벨 제한·운영 보상 수량 변경을 존중하고 보상 누락 시 완료 처리하지 않는다', async () => {
