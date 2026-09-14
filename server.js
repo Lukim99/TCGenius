@@ -3344,7 +3344,7 @@ server.get('/api/cards/avatars', requireUser, async (req, res) => {
             starOk: option.starOk,
             statApplied: option.statApplied,
             statLines: buildAvatarStatLines(option.fashion),
-            imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name }, user),
+            imageUrl: getCardImageUrl({ id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: option.name, specter: card.specter, awakeningSpecter: card.awakeningSpecter }, user),
             shop: option.unlocked ? null : findAvatarShopListing(user, option.name, now)
         }));
         res.json({ avatars, current: typeof card.skin == 'string' ? card.skin : '' });
@@ -4428,7 +4428,9 @@ server.get('/card-image', requireUser, async (req, res) => {
             star: Number(req.query.star),
             type: String(req.query.type || '일반'),
             skin: String(req.query.skin || ''),
-            prestige: req.query.prestige == '1'
+            prestige: req.query.prestige == '1',
+            specter: req.query.specter === '1',
+            awakeningSpecter: req.query.awakeningSpecter === '1'
         });
         if (!buffer) return res.status(404).end();
         res.set('Content-Type', 'image/png');
@@ -5354,6 +5356,8 @@ function getCardImageUrl(card, user) {
     const params = ['name=' + encodeURIComponent(spec.name), 'star=' + spec.star, 'type=' + encodeURIComponent(spec.type)];
     if (spec.skin) params.push('skin=' + encodeURIComponent(spec.skin));
     if (spec.prestige) params.push('prestige=1');
+    if (card.specter) params.push('specter=1');
+    if (rpgenius.getCardAwakeningSpecter(card)) params.push('awakeningSpecter=1');
     return '/card-image?' + params.join('&');
 }
 
@@ -6193,6 +6197,7 @@ function buildSpecterDex() {
             id,
             name: specter.name,
             specterType: specter.type || '전직',
+            targetTypes: rpgenius.getSpecterTargetTypes(specter),
             descLines: rpgenius.formatSpecterLines(specter, 0).slice(1),
             rarity: null,
             iconUrl: item ? getItemIconUrl(item) : null,

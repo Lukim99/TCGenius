@@ -8,6 +8,7 @@ const zlib = require('zlib');
 const SPLIT_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage', '카드분리');
 const CHARACTER_DIR = path.join(SPLIT_IMAGE_PATH, '캐릭터');
 const FRAME_DIR = path.join(SPLIT_IMAGE_PATH, '프레임');
+const SPECTER_GEM_DIR = path.join(__dirname, 'public', 'assets', 'specter-gems');
 
 const GREEK_BY_STAR = { 10: '제타', 11: '시그마', 12: '오메가' };
 // 7~9성은 제타/시그마/오메가와 배경을 공유한다 (파일명이 '7성 제타 배경' 형태)
@@ -218,14 +219,44 @@ function canCompose(card) {
 
 const CACHE_MAX = 60;
 const composeCache = new Map(); // key: 레이어 경로+mtime → PNG Buffer
+const gemCache = new Map();
+
+// imagegen 원본을 면적 평균으로 축소해 작은 카드에서도 보석 윤곽을 유지한다.
+function getSpecterGem(file) {
+    const mtime = fs.statSync(file).mtimeMs;
+    const cached = gemCache.get(file);
+    if (cached && cached.mtime === mtime) return cached.rgba;
+    const source = decodePng(fs.readFileSync(file));
+    const size = 64, sums = new Float64Array(size * size * 4), counts = new Uint32Array(size * size);
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
+        const from = (y * source.width + x) * 4;
+        const pixel = Math.floor(y * size / source.height) * size + Math.floor(x * size / source.width);
+        const to = pixel * 4, alpha = source.rgba[from + 3];
+        for (let c = 0; c < 3; c++) sums[to + c] += source.rgba[from + c] * alpha;
+        sums[to + 3] += alpha;
+        counts[pixel]++;
+    }
+    const rgba = Buffer.alloc(size * size * 4);
+    for (let i = 0; i < counts.length; i++) {
+        const offset = i * 4, alpha = sums[offset + 3];
+        if (!alpha) continue;
+        for (let c = 0; c < 3; c++) rgba[offset + c] = Math.round(sums[offset + c] / alpha);
+        rgba[offset + 3] = Math.round(alpha / counts[i]);
+    }
+    gemCache.set(file, { mtime, rgba });
+    return rgba;
+}
 
 function composeCardImage(card) {
     const layers = resolveCardLayers(card);
     if (!layers) return null;
     const files = [layers.background, layers.character, layers.border].filter(Boolean);
+    const gems = [];
+    if (card.specter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'job.png'), y: 20 });
+    if (card.awakeningSpecter) gems.push({ file: path.join(SPECTER_GEM_DIR, 'awakening.png'), y: 94 });
     let key;
     try {
-        key = files.map(file => file + '@' + fs.statSync(file).mtimeMs).join('|');
+        key = files.concat(gems.map(gem => gem.file)).map(file => file + '@' + fs.statSync(file).mtimeMs).join('|');
     } catch (e) {
         return null;
     }
@@ -242,6 +273,12 @@ function composeCardImage(card) {
         for (let i = 1; i < images.length; i++) {
             if (images[i].width !== base.width || images[i].height !== base.height) throw new Error('레이어 크기가 다릅니다: ' + files[i]);
             blendOver(base.rgba, images[i].rgba);
+        }
+        for (const gem of gems) {
+            const badge = getSpecterGem(gem.file);
+            const overlay = Buffer.alloc(base.rgba.length);
+            for (let y = 0; y < 64; y++) badge.copy(overlay, ((gem.y + y) * base.width + base.width - 80) * 4, y * 64 * 4, (y + 1) * 64 * 4);
+            blendOver(base.rgba, overlay);
         }
         result = encodePng(base.width, base.height, base.rgba);
     } catch (e) {

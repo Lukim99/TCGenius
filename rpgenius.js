@@ -1895,12 +1895,17 @@ function applyOrbToEquipment(user, numberArg, confirmed) {
     return ['✨ ' + orbData.name + '을(를) 부여했습니다.', '- 대상: ' + title, ''].concat(formatOrbLines(orb)).join('\n');
 }
 
-// 스펙터 부여 대상: 인벤토리의 일반 카드 (번호 = 인벤토리 카드 번호)
-function getSpecterTargets(user) {
+function getSpecterTargetTypes(specter) {
+    return specter && specter.type === '각성' ? ['일반', '전직'] : ['일반'];
+}
+
+// 번호는 인벤토리 카드 번호를 유지한다.
+function getSpecterTargets(user, specter) {
+    const types = getSpecterTargetTypes(specter);
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     return cards
         .map((card, index) => ({ number: index + 1, card }))
-        .filter(target => target.card && (target.card.type || '일반') == '일반');
+        .filter(target => target.card && types.includes(target.card.type || '일반'));
 }
 
 function formatSpecterTargetList(targets) {
@@ -1923,7 +1928,8 @@ function applySpecterToCard(user, numberArg, confirmed) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     const card = cards[number - 1];
     if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
-    if ((card.type || '일반') != '일반') return '❌ 스펙터는 일반 카드에만 부여할 수 있습니다.';
+    const types = getSpecterTargetTypes(specterData);
+    if (!types.includes(card.type || '일반')) return '❌ 이 스펙터는 ' + types.join('·') + ' 카드에만 부여할 수 있습니다.';
     const specterKey = specterData.type === '각성' ? 'awakeningSpecter' : 'specter';
     if (card[specterKey] && !confirmed) {
         pending.cardNumber = number;
@@ -2573,9 +2579,9 @@ function getCardSpecter(card) {
 }
 
 function getCardAwakeningSpecter(card) {
-    if (!card || (card.type || '일반') !== '일반' || !card.awakeningSpecter) return null;
+    if (!card || !card.awakeningSpecter) return null;
     const specter = findSpecterByName(card.awakeningSpecter);
-    return specter && specter.type === '각성' ? specter : null;
+    return specter && specter.type === '각성' && getSpecterTargetTypes(specter).includes(card.type || '일반') ? specter : null;
 }
 
 function getSpecterSkill(specter) {
@@ -11846,17 +11852,17 @@ async function useItem(user, itemName, countArg) {
         }
         if (item.use == '스펙터') {
             const specterData = findSpecterByName(item.name);
-            const targets = specterData ? getSpecterTargets(user) : [];
+            const targets = specterData ? getSpecterTargets(user, specterData) : [];
             if (!specterData) {
                 addInventoryItem(user, itemId, useCount);
                 lines.push('❌ 스펙터 정보가 없어 아이템을 반환했습니다.');
             } else if (targets.length == 0) {
                 addInventoryItem(user, itemId, useCount);
-                lines.push('❌ ' + specterData.name + '을(를) 부여할 수 있는 일반 카드가 없어 아이템을 반환했습니다.');
+                lines.push('❌ ' + specterData.name + '을(를) 부여할 수 있는 ' + getSpecterTargetTypes(specterData).join('·') + ' 카드가 없어 아이템을 반환했습니다.');
             } else {
                 user.pendingAction = { type: '스펙터부여', specterName: specterData.name, consumedItemId: itemId, consumedItemCount: useCount };
                 lines.push(specterData.name + '을(를) 부여할 카드를 선택해주세요.');
-                lines.push('- 부여 대상: 인벤토리의 일반 캐릭터 카드');
+                lines.push('- 부여 대상: 인벤토리의 ' + getSpecterTargetTypes(specterData).join('·') + ' 캐릭터 카드');
                 lines.push('/RPGenius 선택 [카드번호]');
                 lines.push('/RPGenius 사용취소');
                 lines.push('', formatSpecterTargetList(targets));
@@ -11981,7 +11987,7 @@ function webItemCardOption(number, card) {
         kind: 'card',
         name: data ? data.name : '알 수 없는 캐릭터',
         meta: formatUserCard(card),
-        card: { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: card.skin || '' }
+        card: { id: Number(card.id), star: Number(card.star || 0), type: card.type || '일반', skin: card.skin || '', specter: card.specter || '', awakeningSpecter: card.awakeningSpecter || '' }
     };
 }
 
@@ -12113,8 +12119,9 @@ function getWebItemUsePending(user) {
             confirmLabel = '기존 스펙터 교체';
         } else {
             title = pending.specterName + ' 부여 대상 선택';
-            description = '인벤토리의 일반 캐릭터 카드에만 부여할 수 있습니다.';
-            options = getSpecterTargets(user).map(target => {
+            const specter = findSpecterByName(pending.specterName);
+            description = '인벤토리의 ' + getSpecterTargetTypes(specter).join('·') + ' 캐릭터 카드에 부여할 수 있습니다.';
+            options = getSpecterTargets(user, specter).map(target => {
                 const option = webItemCardOption(target.number, target.card);
                 if (target.card.specter) option.meta += ' · [' + target.card.specter + ']';
                 if (target.card.awakeningSpecter) option.meta += ' · [' + target.card.awakeningSpecter + ']';
@@ -15687,6 +15694,7 @@ module.exports = {
     formatOrbLines,
     getOrbData,
     getSpecterData,
+    getSpecterTargetTypes,
     formatSpecterLines,
     findSpecterByName,
     getSpecterSkill,

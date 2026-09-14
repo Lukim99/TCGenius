@@ -176,6 +176,78 @@ test('견고함과 빅뱅 동시 장착·일반 타입 유지·메인 전용 스
     assert.match(rpg.formatSpecterLines(rpg.getCardAwakeningSpecter(u.main_card), 4).join('\n'), /100/);
 });
 
+test('각성 스펙터의 전직 카드 대상 선택·부여·교체 및 전직 스킬 유지', async () => {
+    const u = user('빵귤', 4, '전직');
+    const before = rpg.calculateUserStats(u);
+    const skills = rpg.getMainCardSkills(u);
+    u.inventory.card = [card('빵귤'), { ...u.main_card }, card('빵귤', 4, '일반')];
+    rpg.addInventoryItem(u, 6, 2);
+    assert.match(await rpg.useItem(u, '견고함 스펙터', 1), /일반·전직/);
+    const pending = rpg.getWebItemUsePending(u);
+    assert.deepEqual(pending.options.map(option => option.value), [2, 3]);
+    assert.match(pending.description, /일반·전직/);
+    const cards = structuredClone(u.inventory.card);
+    assert.match(rpg.resolveWebItemUsePending(u, 1), /일반·전직 카드에만/);
+    assert.deepEqual(u.inventory.card, cards);
+    assert.match(rpg.resolveWebItemUsePending(u, 2), /부여했습니다/);
+    assert.equal(rpg.getInventoryItemCount(u, 6), 1);
+    u.main_card = u.inventory.card[1];
+    assert.equal(u.main_card.type, '전직');
+    assert.equal(u.main_card.awakeningSpecter, '견고함 스펙터');
+    const after = rpg.calculateUserStats(u);
+    assert.equal(after.hp - before.hp, 100);
+    near(after.pntPercent - before.pntPercent, .05);
+    near(after.crit - before.crit, .05);
+    near(after.cooldown - before.cooldown, .05);
+    assert.deepEqual(rpg.getMainCardSkills(u), skills);
+    assert.equal(after.awakening, null);
+    assert.equal(rpg.getCardAwakeningSpecter({ ...u.main_card, type: '각성' }), null);
+    await rpg.useItem(u, '견고함 스펙터', 1);
+    assert.match(rpg.resolveWebItemUsePending(u, 2), /교체하시겠습니까/);
+    assert.equal(rpg.getWebItemUsePending(u).confirmOnly, true);
+    assert.match(rpg.resolveWebItemUsePending(u, 2, true), /부여했습니다/);
+    assert.equal(rpg.getInventoryItemCount(u, 6), 0);
+    assert.equal(rpg.calculateUserStats(u).hp, after.hp);
+});
+
+test('전직 타입 스펙터는 전직·각성 카드 대상에서 제외하고 직접 선택도 차단', () => {
+    const u = user('빵귤');
+    u.inventory.card = [card('빵귤', 4, '전직'), card('빵귤'), card('빵귤', 4, '일반')];
+    u.pendingAction = { type: '스펙터부여', specterName: '빅뱅 스펙터' };
+    assert.deepEqual(rpg.getWebItemUsePending(u).options.map(option => option.value), [3]);
+    assert.match(rpg.resolveWebItemUsePending(u, 1), /일반 카드에만/);
+    assert.match(rpg.resolveWebItemUsePending(u, 2), /일반 카드에만/);
+    assert.equal(u.inventory.card[0].specter, undefined);
+    assert.equal(u.inventory.card[1].specter, undefined);
+    assert.match(rpg.resolveWebItemUsePending(u, 3), /부여했습니다/);
+    assert.equal(u.inventory.card[2].specter, '빅뱅 스펙터');
+});
+
+test('스펙터 보석 합성은 두 독립 영역에만 표시되고 캐시가 부여 상태를 구분한다', () => {
+    const compositor = require('../card_composite');
+    const spec = { name: '빵귤', star: 11, type: '일반' };
+    const base = compositor.decodePng(compositor.composeCardImage(spec));
+    const job = compositor.decodePng(compositor.composeCardImage({ ...spec, specter: true }));
+    const awake = compositor.decodePng(compositor.composeCardImage({ ...spec, awakeningSpecter: true }));
+    const bothBuffer = compositor.composeCardImage({ ...spec, specter: true, awakeningSpecter: true });
+    const both = compositor.decodePng(bothBuffer);
+    let jobChanges = 0, awakeningChanges = 0;
+    for (let y = 0; y < base.height; y++) for (let x = 0; x < base.width; x++) {
+        const offset = (y * base.width + x) * 4;
+        const inColumn = x >= base.width - 80 && x < base.width - 16;
+        const inJob = inColumn && y >= 20 && y < 84;
+        const inAwakening = inColumn && y >= 94 && y < 158;
+        const original = base.rgba.readUInt32BE(offset);
+        const actual = both.rgba.readUInt32BE(offset);
+        assert.equal(actual, (inJob ? job : inAwakening ? awake : base).rgba.readUInt32BE(offset));
+        if (inJob && actual !== original) jobChanges++;
+        if (inAwakening && actual !== original) awakeningChanges++;
+    }
+    assert.ok(jobChanges > 0 && awakeningChanges > 0);
+    assert.equal(compositor.composeCardImage({ ...spec, specter: true, awakeningSpecter: true }), bothBuffer);
+    assert.deepEqual(compositor.decodePng(compositor.composeCardImage(spec)).rgba, base.rgba);
+});
+
 test('각성 카드 등급 상승 및 일반 변환석 차단·만능 변환석 각성 유지', async () => {
     const u = user('빵귤'); u.gold = 1e10;
     u.inventory.card = [card('빵귤'), card('빵귤'), card('빵귤')];

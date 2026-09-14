@@ -589,7 +589,6 @@ function cardNode(card, compact, onClick) {
     if (typeof onClick === 'function') props.onclick = () => onClick(card);
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
-        card.specter || card.awakeningSpecter ? el('span', { class: 'card-specter-badge', title: [card.specter, card.awakeningSpecter].filter(Boolean).map(s => s.name).join(' · ') }, '★') : null,
         el('div', { class: 'card-name' }, card.formatted)
     );
 }
@@ -1068,6 +1067,22 @@ function slotEffectPanelNode(eff) {
     );
 }
 
+function awakeningSpecterPanelNode(specter) {
+    const effects = (specter.descLines || []).map(line => {
+        const text = line.replace(/^[-•]\s*/, '').trim();
+        const parts = text.match(/^(.*?)\s+([+-]?[\d,.]+%?)$/);
+        return el('div', { class: 'mc-specter-stat' },
+            el('span', null, parts ? parts[1] : text),
+            parts ? el('strong', null, parts[2]) : null);
+    });
+    return el('section', { class: 'mc-panel mc-specter' },
+        el('div', { class: 'mc-specter-head' },
+            el('img', { class: 'mc-specter-gem', src: '/static/assets/specter-gems/awakening.png', alt: '' }),
+            el('div', null, el('span', { class: 'mc-specter-type' }, '각성 스펙터'), el('div', { class: 'mc-name' }, specter.name))),
+        el('div', { class: 'mc-specter-stats' }, ...effects),
+        el('div', { class: 'mc-note' }, '메인 카드 장착 시 적용'));
+}
+
 function mainCardDetailNodes(card) {
     const isJob = card && ['전직', '각성'].includes(card.type);
     const nodes = [];
@@ -1088,8 +1103,7 @@ function mainCardDetailNodes(card) {
         if (card.specter.skill) nodes.push(skillPanelNode(card.specter.skill));
     }
     if (card && card.awakeningSpecter) {
-        nodes.push(cardSectionNode('각성 스펙터 · ' + card.awakeningSpecter.name));
-        card.awakeningSpecter.descLines.forEach(line => nodes.push(el('div', { class: 'mc-desc' }, line)));
+        nodes.push(awakeningSpecterPanelNode(card.awakeningSpecter));
     }
     if (!nodes.length) nodes.push(el('div', { class: 'mc-empty' }, '표시할 스킬이 없습니다.'));
     return nodes;
@@ -7521,7 +7535,7 @@ function dexSpecterCard(entry) {
             el('div', { class: 'dex-orb-name' }, entry.name),
             el('div', { class: 'dex-orb-parts' },
                 el('span', { class: 'dex-orb-parts-label' }, '부여 대상'),
-                el('span', { class: 'dex-orb-part' }, '일반 카드')
+                ...entry.targetTypes.map(type => el('span', { class: 'dex-orb-part' }, type + ' 카드'))
             )
         )
     );
@@ -7545,7 +7559,7 @@ function renderSpecterDex(grid, entries) {
             el('div', { class: 'dex-orb-section-title' }, '스펙터'),
             el('div', { class: 'dex-orb-section-parts' },
                 el('span', null, '부여 대상'),
-                el('strong', null, '일반 캐릭터 카드')
+                el('strong', null, '스펙터별 확인')
             )
         ),
         el('div', { class: 'dex-orb-grid' }, ...entries.map(dexSpecterCard))
