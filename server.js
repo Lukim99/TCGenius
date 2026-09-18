@@ -3,6 +3,7 @@ const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const shopCatalog = require('./shop_catalog');
 const combatEffects = require('./public/combat-effects.js');
 const partyquest = require('./partyquest.js');
 const pvp = require('./pvp.js');
@@ -3319,7 +3320,7 @@ function findAvatarShopListing(user, avatarName, now) {
                 || (typeof limits.daily == 'number' && remaining.daily <= 0)
                 || (typeof limits.weekly == 'number' && remaining.weekly <= 0)
                 || (typeof limits.monthly == 'number' && remaining.monthly <= 0);
-            matches.push({ shopType, index, soldOut, price: buildShopPriceDisplay(entry.price || { goods: 'point', amount: 0 }) });
+            matches.push({ shopType, index, shopId: entry.shopId, soldOut, price: buildShopPriceDisplay(entry.price || { goods: 'point', amount: 0 }) });
         });
     }
     return matches.find(m => !m.soldOut) || matches[0] || null;
@@ -4730,7 +4731,7 @@ server.get('/api/data/:key', requireAdmin, async (req, res) => {
     try {
         await rpgenius.loadRpgeniusDataEntry(key);
         const data = rpgenius.getDataCache(key, null);
-        res.json({ key, data });
+        res.json({ key, data, ...(key == 'Shop' && data ? { revision: shopCatalog.shopCatalogRevision(data) } : {}) });
     } catch (e) {
         console.error('data get error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -4747,11 +4748,11 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
         if (missingSlots.length > 0) return res.status(400).json({ error: 'Equipment 필수 부위가 누락되었습니다: ' + missingSlots.join(', ') });
     }
     try {
-        await rpgenius.saveRpgeniusDataEntry(key, req.body.data);
-        res.json({ ok: true, key });
+        await rpgenius.saveRpgeniusDataEntry(key, req.body.data, { revision: req.body.revision });
+        res.json({ ok: true, key, ...(key == 'Shop' ? { revision: shopCatalog.shopCatalogRevision(req.body.data) } : {}) });
     } catch (e) {
         console.error('data put error:', e);
-        res.status(500).json({ error: e.message || '서버 오류' });
+        res.status(e.status || 500).json({ error: e.message || '서버 오류' });
     }
 });
 
@@ -4868,7 +4869,7 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
         await rpgenius.loadRpgeniusDataEntry('Bundle');
         await rpgenius.loadRpgeniusDataEntry('Item');
         await rpgenius.loadRpgeniusDataEntry('Shop');
-        const items = rpgenius.getDataCache('Item', []) || [];
+        const items = structuredClone(rpgenius.getDataCache('Item', []) || []);
         const shop = rpgenius.getDataCache('Shop', {}) || {};
         if (!Array.isArray(shop[shopType])) return res.status(400).json({ error: '존재하지 않는 상점 종류: ' + shopType });
 
@@ -4888,18 +4889,16 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
             bundleEntries.push(entry);
         }
 
-        const bundles = rpgenius.getDataCache('Bundle', []) || [];
+        const bundles = structuredClone(rpgenius.getDataCache('Bundle', []) || []);
         bundles.push(bundleEntries);
         const bundleIndex = bundles.length - 1;
-        await rpgenius.saveRpgeniusDataEntry('Bundle', bundles);
 
         const newItem = { name, type: '번들', desc, pack: bundleIndex };
         if (b.noTrade) newItem.no_trade = true;
         items.push(newItem);
         const itemIndex = items.length - 1;
-        await rpgenius.saveRpgeniusDataEntry('Item', items);
 
-        const shopEntry = { type: '아이템', item_id: itemIndex, count: 1, price: { goods, amount } };
+        const shopEntry = { shopId: shopCatalog.newShopItemId(), type: '아이템', item_id: itemIndex, count: 1, price: { goods, amount } };
         const limits = {};
         ['max', 'daily', 'weekly', 'monthly', 'global'].forEach(k => {
             const v = Math.floor(Number(b.limits && b.limits[k]));
@@ -4907,23 +4906,28 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
         });
         if (Object.keys(limits).length) shopEntry.limits = limits;
         shop[shopType].push(shopEntry);
-        await rpgenius.saveRpgeniusDataEntry('Shop', shop);
+        await rpgenius.saveShopPackage(shop, items, bundles);
 
-        res.json({ ok: true, bundleIndex, itemIndex, shopType, shopIndex: shop[shopType].length - 1 });
+        res.json({ ok: true, bundleIndex, itemIndex, shopType, shopId: shopEntry.shopId, shopIndex: shop[shopType].length - 1 });
     } catch (e) {
         console.error('package create error:', e);
-        res.status(500).json({ error: e.message || '서버 오류' });
+        res.status(e.status || 500).json({ error: e.message || '서버 오류' });
     }
 });
 
 server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
     const scope = String((req.body && req.body.scope) || '').trim();
     const shopType = String((req.body && req.body.shopType) || '').trim();
-    const index = Number(req.body && req.body.index);
+    const shopId = String((req.body && req.body.shopId) || '');
     if (!['all', 'shop', 'item'].includes(scope)) return res.status(400).json({ error: '초기화 범위가 올바르지 않습니다.' });
     if ((scope == 'shop' || scope == 'item') && !shopType) return res.status(400).json({ error: '상점 종류를 선택해주세요.' });
-    if (scope == 'item' && (!Number.isInteger(index) || index < 0)) return res.status(400).json({ error: '상품 번호가 올바르지 않습니다.' });
+    if (scope == 'item' && !shopId) return res.status(400).json({ error: '상품 ID가 없습니다. 상점을 다시 불러와주세요.' });
     try {
+        await rpgenius.loadRpgeniusDataEntry('Shop');
+        const shops = rpgenius.getDataCache('Shop', {});
+        if (scope != 'all' && !Array.isArray(shops[shopType])) return res.status(400).json({ error: '존재하지 않는 상점입니다.' });
+        const shopIds = scope == 'all' ? [] : shops[shopType].map(item => item.shopId).filter(id => scope == 'shop' || id == shopId);
+        if (scope == 'item' && shopIds.length != 1) return res.status(409).json({ error: '상품이 변경되었습니다. 상점을 다시 불러와주세요.' });
         const users = await rpgenius.getAllRPGUsers();
         let userUpdated = 0;
         for (const user of users) {
@@ -4934,19 +4938,7 @@ server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
                     delete user.shopPurchases;
                     changed = true;
                 }
-            } else if (scope == 'shop') {
-                if (user.shopPurchases[shopType]) {
-                    delete user.shopPurchases[shopType];
-                    changed = true;
-                }
-            } else if (scope == 'item') {
-                const key = String(index);
-                if (user.shopPurchases[shopType] && user.shopPurchases[shopType][key]) {
-                    delete user.shopPurchases[shopType][key];
-                    if (Object.keys(user.shopPurchases[shopType]).length == 0) delete user.shopPurchases[shopType];
-                    changed = true;
-                }
-            }
+            } else changed = shopCatalog.resetShopRecords(user.shopPurchases, shopIds) > 0;
             if (changed) {
                 await user.save();
                 userUpdated++;
@@ -4958,22 +4950,11 @@ server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
         if (scope == 'all') {
             globalUpdated = Object.keys(state).length;
             await rpgenius.saveRpgeniusDataEntry('ShopState', {});
-        } else if (scope == 'shop') {
-            if (state[shopType]) {
-                globalUpdated = Object.keys(state[shopType]).length;
-                delete state[shopType];
-                await rpgenius.saveRpgeniusDataEntry('ShopState', state);
-            }
-        } else if (scope == 'item') {
-            const key = String(index);
-            if (state[shopType] && state[shopType][key]) {
-                delete state[shopType][key];
-                if (Object.keys(state[shopType]).length == 0) delete state[shopType];
-                globalUpdated = 1;
-                await rpgenius.saveRpgeniusDataEntry('ShopState', state);
-            }
+        } else {
+            globalUpdated = shopCatalog.resetShopRecords(state, shopIds);
+            if (globalUpdated) await rpgenius.saveRpgeniusDataEntry('ShopState', state);
         }
-        res.json({ ok: true, scope, shopType, index, userUpdated, globalUpdated });
+        res.json({ ok: true, scope, shopType, shopId, userUpdated, globalUpdated });
     } catch (e) {
         console.error('shop limit reset error:', e);
         res.status(500).json({ error: e.message || '서버 오류' });
@@ -6963,6 +6944,7 @@ function buildShopData(user) {
             const owned = item.type === '아바타' && rpgenius.hasAvatar(user, item.fashion);
             return {
                 index: idx,
+                shopId: item.shopId,
                 type: item.type,
                 fashion: item.type === '아바타' ? String(item.fashion || '').trim() : undefined,
                 count: item.count,
@@ -6989,20 +6971,21 @@ function buildShopData(user) {
 
 async function buyShopItem(userName, body) {
     const shopType = String(body.shopType || '');
-    const index = Number(body.index); // 0-based from client
+    const shopId = String(body.shopId || '');
     const count = Math.max(1, Math.floor(Number(body.count || 1)));
     if (!shopType) return { error: '상점 종류가 필요합니다.' };
-    if (!Number.isInteger(index) || index < 0) return { error: '상품 번호가 올바르지 않습니다.' };
+    if (!shopId) return { error: '상점 정보를 새로고침한 뒤 구매해주세요.' };
+    try { shopCatalog.shopRecordAddress(shopId); } catch (e) { return { error: e.message }; }
     if (!Number.isInteger(count) || count < 1 || count > 999) return { error: '구매 수량이 올바르지 않습니다.' };
 
+    await rpgenius.loadRpgeniusDataEntry('Shop');
     await rpgenius.loadRpgeniusDataEntry('ShopState');
     const user = await rpgenius.getRPGUserByName(userName);
     if (!user) return { error: '유저를 찾을 수 없습니다.' };
     ensureInventoryShape(user);
 
-    // purchaseShopItem은 1-based index를 사용하므로 +1
     const outMeta = {};
-    const result = await rpgenius.purchaseShopItem(user, shopType, index + 1, count, outMeta);
+    const result = await rpgenius.purchaseShopItem(user, shopType, shopId, count, outMeta);
     if (typeof result === 'string' && result.startsWith('❌')) {
         return { error: result.replace(/^❌\s*/, '') };
     }

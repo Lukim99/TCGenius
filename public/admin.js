@@ -494,8 +494,20 @@ $('#grantBtn').onclick = async () => {
 // ============================================================================
 // 공통 데이터 탭 헬퍼
 // ============================================================================
-async function loadKey(key) { const r = await api('/api/data/' + encodeURIComponent(key)); return r.data; }
-async function saveKey(key, data) { await api('/api/data/' + encodeURIComponent(key), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) }); }
+const shopRevisions = new WeakMap();
+async function loadKey(key) {
+    const r = await api('/api/data/' + encodeURIComponent(key));
+    if (key === 'Shop' && r.data) shopRevisions.set(r.data, r.revision);
+    return r.data;
+}
+async function saveKey(key, data, revision) {
+    const r = await api('/api/data/' + encodeURIComponent(key), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, ...(key === 'Shop' ? { revision: revision || shopRevisions.get(data) } : {}) })
+    });
+    if (key === 'Shop') shopRevisions.set(data, r.revision);
+    return r;
+}
 
 // ============================================================================
 // 메인 배너
@@ -812,7 +824,7 @@ $('#couponSave').onclick = async () => { if (!(await showConfirm('Coupon 데이�
 TAB_LOADERS.coupon = () => $('#couponReload').click();
 
 // ============================================================================
-// SHOP 에디터  ( data: { [shopType]: Array<{type, item_id?, count, price:{goods,amount,item_id?}}> } )
+// SHOP 에디터 — shopId는 품목 이동/수정 시 보존하고 새 품목에만 발급한다.
 // ============================================================================
 let shopData = {};
 let shopCurrentType = null;
@@ -957,7 +969,8 @@ function renderShop() {
 }
 $('#shopAdd').onclick = () => {
     if (!shopCurrentType) return toast('상점 종류를 먼저 선택하세요', false);
-    shopData[shopCurrentType].push({ type: '아이템', count: 1, price: { goods: 'gold', amount: 0 } });
+    const shopId = 'shop_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
+    shopData[shopCurrentType].push({ shopId, type: '아이템', count: 1, price: { goods: 'gold', amount: 0 } });
     renderShop(); renderShopTypes();
 };
 $('#shopAddType').onclick = async () => {
@@ -987,7 +1000,7 @@ if ($('#shopLimitResetBtn')) $('#shopLimitResetBtn').onclick = async () => {
         if (!Number.isInteger(displayIndex) || displayIndex < 1) return toast('상품 번호를 입력하세요.', false);
         const arr = shopData[shopCurrentType] || [];
         if (displayIndex > arr.length) return toast('존재하지 않는 상품 번호입니다.', false);
-        body.index = displayIndex - 1;
+        body.shopId = arr[displayIndex - 1].shopId;
         targetText = "'" + shopCurrentType + "' 상점 " + displayIndex + '번 상품';
     }
     if (!(await showConfirm(targetText + '의 구매 제한 기록을 초기화합니다.\n유저별 기록과 전체 제한 기록이 함께 삭제됩니다. 계속?'))) return;
@@ -2871,11 +2884,13 @@ TAB_LOADERS.pitr = loadPitrStatus;
 // RAW JSON 에디터
 // ============================================================================
 const rawSel = $('#rawKey');
+let rawShopRevision = null;
 window.DATA_KEYS.forEach(k => rawSel.appendChild(el('option', { value: k }, k)));
 async function rawLoad() {
     const k = rawSel.value;
     $('#rawStatus').textContent = '불러오는 중...';
-    try { const data = await loadKey(k); $('#rawText').value = JSON.stringify(data, null, 2); $('#rawStatus').textContent = k + ' 로드 완료'; }
+    rawShopRevision = null;
+    try { const data = await loadKey(k); if (k === 'Shop' && data) rawShopRevision = shopRevisions.get(data); $('#rawText').value = JSON.stringify(data, null, 2); $('#rawStatus').textContent = k + ' 로드 완료'; }
     catch (e) { $('#rawStatus').textContent = ''; toast(e.message, false); }
 }
 $('#rawReload').onclick = rawLoad;
@@ -2885,7 +2900,7 @@ $('#rawSave').onclick = async () => {
     const k = rawSel.value;
     let data; try { data = JSON.parse($('#rawText').value); } catch (e) { return toast('JSON 파싱 실패: ' + e.message, false); }
     if (!(await showConfirm(k + ' 데이터를 DynamoDB에 저장합니다. 계속할까요?'))) return;
-    try { await saveKey(k, data); toast('✅ ' + k + ' 저장 완료'); } catch (e) { toast(e.message, false); }
+    try { const r = await saveKey(k, data, rawShopRevision); if (k === 'Shop') rawShopRevision = r.revision; toast('✅ ' + k + ' 저장 완료'); } catch (e) { toast(e.message, false); }
 };
 TAB_LOADERS.raw = () => rawLoad();
 

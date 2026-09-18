@@ -9,7 +9,7 @@
 //             패션 조각: sellPrice 부여
 //  [Recipe]   패션 적용권/고급 패션 적용권 제작 레시피 삭제 (레시피는 이름으로만 참조됨)
 //  [Shop]     '아바타' 카테고리 신설 - 일반 등급 아바타 전체를 개당 1,000 포인트 상시 판매
-//             '일반' 상점의 패션 제거 가위 판매 종료 (뒤 항목에 구매 제한이 있으면 건너뛰고 경고)
+//             '일반' 상점의 패션 제거 가위 판매 종료 (상품 ID로 기존 구매 기록 보존)
 //  [Auction]  카드 매물 payload의 skin 제거 (아바타는 계정 해금 자산으로 이동)
 //  [BuyOrder] 카드 구매 등록 payload의 skin 제거
 //
@@ -17,9 +17,10 @@
 // migrateUserToAvatarSystem이 유저 로드 시 자동 수행)
 const fs = require('fs');
 const path = require('path');
+const shopCatalog = require('../shop_catalog');
 const ROOT = path.join(__dirname, '..');
 const { DynamoDBClient } = require(path.join(ROOT, 'node_modules', '@aws-sdk', 'client-dynamodb'));
-const { DynamoDBDocumentClient, GetCommand, PutCommand } = require(path.join(ROOT, 'node_modules', '@aws-sdk', 'lib-dynamodb'));
+const { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } = require(path.join(ROOT, 'node_modules', '@aws-sdk', 'lib-dynamodb'));
 
 const APPLY = process.argv.includes('--apply');
 
@@ -35,10 +36,6 @@ const BACKUP_DIR = path.join(ROOT, 'tmp', 'avatar_migration_backup');
 async function getKey(key) {
     const got = await doc.send(new GetCommand({ TableName: 'rpgenius_data', Key: { key } }));
     return got.Item ? got.Item.data : null;
-}
-
-async function putKey(key, data) {
-    await doc.send(new PutCommand({ TableName: 'rpgenius_data', Item: { key, data } }));
 }
 
 function backup(key, data) {
@@ -101,32 +98,24 @@ const SELL_PRICES = {
     if (removedRecipes.length === 0) console.log('[Recipe] 삭제 대상 없음');
 
     // ---------- Shop ----------
-    const shop = snapshot('Shop', await getKey('Shop'));
-    if (!shop || typeof shop !== 'object') throw new Error('Shop 데이터를 읽지 못했습니다.');
+    const shop = shopCatalog.readShopCatalog(snapshot('Shop', await getKey('Shop')));
     // 아바타 카테고리 신설/갱신 (이미 있으면 빠진 일반 아바타만 추가)
     if (!Array.isArray(shop['아바타'])) shop['아바타'] = [];
     const existingAvatarNames = new Set(shop['아바타'].map(e => e && e.fashion).filter(Boolean));
     let addedAvatars = 0;
     normalNames.forEach(name => {
         if (existingAvatarNames.has(name)) return;
-        shop['아바타'].push({ type: '아바타', fashion: name, count: 1, price: { goods: 'point', amount: 1000 } });
+        shop['아바타'].push({ shopId: shopCatalog.newShopItemId(), type: '아바타', fashion: name, count: 1, price: { goods: 'point', amount: 1000 } });
         addedAvatars++;
     });
     console.log(`[Shop] '아바타' 카테고리: 일반 아바타 ${addedAvatars}종 추가 (총 ${shop['아바타'].length}종, 개당 1,000P)`);
-    // 일반 상점 가위 판매 종료 (뒤 항목 인덱스가 밀리므로, 뒤에 limits 항목이 있으면 수동 처리 요망)
+    // 일반 상점 가위 판매 종료. 다른 상품의 shopId와 구매 기록은 보존한다.
     const generalShop = Array.isArray(shop['일반']) ? shop['일반'] : [];
     const scissorsItemId = items.findIndex(it => it && it.name === '패션 제거 가위');
     const scissorsIndex = generalShop.findIndex(e => e && e.type === '아이템' && Number(e.item_id) === scissorsItemId);
     if (scissorsIndex >= 0) {
-        const shiftedWithLimits = generalShop.slice(scissorsIndex + 1).filter(e => e && e.limits && Object.keys(e.limits).length > 0);
-        if (shiftedWithLimits.length > 0) {
-            // 삭제하면 뒤 항목의 유저 구매 기록/전역 카운터 인덱스가 밀리므로, 대신 구매 제한 0으로 품절 처리
-            generalShop[scissorsIndex].limits = { max: 0 };
-            console.log(`[Shop] '일반' 상점 ${scissorsIndex + 1}번(가위): 뒤에 구매 제한 항목이 있어 삭제 대신 limits={max:0}(품절)로 판매 종료`);
-        } else {
-            generalShop.splice(scissorsIndex, 1);
-            console.log(`[Shop] '일반' 상점에서 패션 제거 가위(${scissorsIndex + 1}번) 판매 종료`);
-        }
+        generalShop.splice(scissorsIndex, 1);
+        console.log(`[Shop] '일반' 상점에서 패션 제거 가위(${scissorsIndex + 1}번) 판매 종료`);
     } else {
         console.log('[Shop] 일반 상점에 가위 항목 없음 (이미 제거됨?)');
     }
@@ -164,11 +153,14 @@ const SELL_PRICES = {
     // ---------- 백업 후 쓰기 ----------
     Object.keys(originals).forEach(key => backup(key, originals[key]));
 
-    await putKey('Item', items);
-    await putKey('Recipe', keptRecipes);
-    await putKey('Shop', shop);
-    if (auction && auctionSkins > 0) await putKey('Auction', auction);
-    if (buyOrder && buyOrderSkins > 0) await putKey('BuyOrder', buyOrder);
+    shopCatalog.validateShopCatalog(shop, shopCatalog.readShopCatalog(originals.Shop));
+    const changes = [['Item', items], ['Recipe', keptRecipes], ['Shop', shop]];
+    if (auction && auctionSkins > 0) changes.push(['Auction', auction]);
+    if (buyOrder && buyOrderSkins > 0) changes.push(['BuyOrder', buyOrder]);
+    await doc.send(new TransactWriteCommand({ TransactItems: changes.map(([key, data]) => ({ Put: {
+        TableName: 'rpgenius_data', Item: { key, data }, ConditionExpression: '#data = :previous',
+        ExpressionAttributeNames: { '#data': 'data' }, ExpressionAttributeValues: { ':previous': originals[key] }
+    } })) }));
 
     // ---------- 검증 ----------
     const itemsAfter = await getKey('Item');

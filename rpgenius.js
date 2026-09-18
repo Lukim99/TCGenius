@@ -6,6 +6,7 @@ const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
 const combatEffects = require('./public/combat-effects.js');
 const wisdomPuzzle = require('./wisdom_puzzle');
+const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
@@ -571,6 +572,7 @@ const dynamoClient = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 const rpgeniusDataCache = {};
+const shopCatalogSnapshots = new WeakMap();
 let rpgeniusDataLoadPromise = null;
 
 function normalizeQuestData(data) {
@@ -581,7 +583,7 @@ function normalizeQuestData(data) {
 }
 
 async function loadRpgeniusDataEntry(key) {
-    const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key } }));
+    const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key }, ...(key == 'Shop' ? { ConsistentRead: true } : {}) }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
         let data = res.Item.data;
         if (key == 'Equipment') data = transcendEquipment.applyEquipmentBalancePatch(data);
@@ -592,12 +594,60 @@ async function loadRpgeniusDataEntry(key) {
     return false;
 }
 
-async function saveRpgeniusDataEntry(key, data) {
+async function saveRpgeniusDataEntry(key, data, options) {
     if (!RPGENIUS_DATA_KEYS.includes(key)) throw new Error('허용되지 않은 키: ' + key);
+    if (key == 'Shop') {
+        const conflict = () => Object.assign(new Error('상점 정보가 변경되었습니다. 다시 불러온 뒤 저장해주세요.'), { status: 409 });
+        let previous = shopCatalogSnapshots.get(data);
+        if (!previous) {
+            if (!options || !options.revision) throw conflict();
+            await loadRpgeniusDataEntry('Shop');
+            previous = rpgeniusDataCache.Shop || {};
+            if (shopCatalog.shopCatalogRevision(shopCatalog.readShopCatalog(previous)) != options.revision) throw conflict();
+        }
+        shopCatalog.validateShopCatalog(data, shopCatalog.readShopCatalog(previous));
+        try {
+            await docClient.send(new PutCommand({
+                TableName: DATA_TABLE_NAME, Item: { key, data },
+                ConditionExpression: '#data = :previous',
+                ExpressionAttributeNames: { '#data': 'data' }, ExpressionAttributeValues: { ':previous': previous }
+            }));
+        } catch (error) {
+            if (error.name == 'ConditionalCheckFailedException') throw conflict();
+            throw error;
+        }
+        rpgeniusDataCache.Shop = structuredClone(data);
+        shopCatalogSnapshots.set(data, structuredClone(data));
+        return true;
+    }
     const normalizedData = key == 'Quest' ? normalizeQuestData(data) : data;
     await docClient.send(new PutCommand({ TableName: DATA_TABLE_NAME, Item: { key: key, data: normalizedData } }));
     rpgeniusDataCache[key] = normalizedData;
     return true;
+}
+
+async function saveShopPackage(shop, items, bundles) {
+    const entries = [
+        { key: 'Shop', data: shop, previous: shopCatalogSnapshots.get(shop) },
+        { key: 'Item', data: items, previous: rpgeniusDataCache.Item },
+        { key: 'Bundle', data: bundles, previous: rpgeniusDataCache.Bundle }
+    ];
+    if (entries.some(entry => entry.previous == null)) throw new Error('패키지 등록 데이터를 다시 불러와주세요.');
+    shopCatalog.validateShopCatalog(shop, shopCatalog.readShopCatalog(entries[0].previous));
+    try {
+        await docClient.send(new TransactWriteCommand({ TransactItems: entries.map(entry => ({ Put: {
+            TableName: DATA_TABLE_NAME, Item: { key: entry.key, data: entry.data },
+            ConditionExpression: '#data = :previous', ExpressionAttributeNames: { '#data': 'data' },
+            ExpressionAttributeValues: { ':previous': structuredClone(entry.previous) }
+        } })) }));
+    } catch (error) {
+        if (error.name == 'TransactionCanceledException' && (error.CancellationReasons || []).some(reason => reason.Code == 'ConditionalCheckFailed')) {
+            throw Object.assign(new Error('상점 또는 패키지 데이터가 변경되었습니다. 다시 불러온 뒤 등록해주세요.'), { status: 409 });
+        }
+        throw error;
+    }
+    entries.forEach(entry => { rpgeniusDataCache[entry.key] = structuredClone(entry.data); });
+    shopCatalogSnapshots.set(shop, structuredClone(shop));
 }
 
 async function initRpgeniusData() {
@@ -625,6 +675,13 @@ async function initRpgeniusData() {
 }
 
 function getDataCache(key, fallback) {
+    if (key == 'Shop') {
+        const source = rpgeniusDataCache.Shop || fallback;
+        if (source == null) return source;
+        const data = shopCatalog.readShopCatalog(source);
+        shopCatalogSnapshots.set(data, structuredClone(source));
+        return data;
+    }
     if (typeof rpgeniusDataCache[key] != 'undefined') return rpgeniusDataCache[key];
     return fallback;
 }
@@ -9389,37 +9446,39 @@ function normalizeShopPurchaseRecord(rec, now) {
     return rec;
 }
 
-function getUserShopRecord(user, shopType, index, now) {
+function getUserShopRecord(user, shopId, now) {
     if (!user.shopPurchases || typeof user.shopPurchases != 'object') user.shopPurchases = {};
-    if (!user.shopPurchases[shopType] || typeof user.shopPurchases[shopType] != 'object') user.shopPurchases[shopType] = {};
-    const key = String(index);
-    user.shopPurchases[shopType][key] = normalizeShopPurchaseRecord(user.shopPurchases[shopType][key], now || new Date());
-    return user.shopPurchases[shopType][key];
+    const { group, key } = shopCatalog.shopRecordAddress(shopId);
+    if (!Object.hasOwn(user.shopPurchases, group)) user.shopPurchases[group] = {};
+    user.shopPurchases[group][key] = normalizeShopPurchaseRecord(user.shopPurchases[group][key], now || new Date());
+    return user.shopPurchases[group][key];
 }
 
-function getShopGlobalCount(shopType, index) {
+function getShopGlobalCount(shopId) {
     const state = getDataCache('ShopState', {}) || {};
-    const t = state[shopType];
+    const { group, key } = shopCatalog.shopRecordAddress(shopId);
+    const t = Object.hasOwn(state, group) ? state[group] : null;
     if (!t) return 0;
-    const r = t[String(index)];
+    const r = t[key];
     if (!r) return 0;
     return Number(r.global || 0);
 }
 
-async function addShopGlobalCount(shopType, index, delta) {
+async function addShopGlobalCount(shopId, delta) {
     let state = getDataCache('ShopState', {});
     if (!state || typeof state != 'object') state = {};
-    if (!state[shopType] || typeof state[shopType] != 'object') state[shopType] = {};
-    const key = String(index);
-    if (!state[shopType][key] || typeof state[shopType][key] != 'object') state[shopType][key] = { global: 0 };
-    state[shopType][key].global = Number(state[shopType][key].global || 0) + Number(delta || 0);
+    const { group, key } = shopCatalog.shopRecordAddress(shopId);
+    if (!Object.hasOwn(state, group)) state[group] = {};
+    if (!state[group][key] || typeof state[group][key] != 'object') state[group][key] = { global: 0 };
+    state[group][key].global = Number(state[group][key].global || 0) + Number(delta || 0);
     await saveRpgeniusDataEntry('ShopState', state);
 }
 
 function getShopRemainingLimits(user, shopType, index, shopItem, now) {
     const limits = getShopLimits(shopItem);
-    const rec = getUserShopRecord(user, shopType, index, now);
-    const globalCount = getShopGlobalCount(shopType, index);
+    const shopId = shopItem.shopId || shopCatalog.legacyShopItemId(shopType, index);
+    const rec = getUserShopRecord(user, shopId, now);
+    const globalCount = getShopGlobalCount(shopId);
     const out = {};
     if (typeof limits.max == 'number') out.max = Math.max(0, limits.max - rec.max);
     if (typeof limits.daily == 'number') out.daily = Math.max(0, limits.daily - rec.daily);
@@ -12189,15 +12248,15 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return '❌ 존재하지 않는 상점입니다.';
 
-    const index = Number(indexArg);
-    if (!Number.isInteger(index) || index < 1 || index > shop.length) return '❌ 존재하지 않는 상품 번호입니다.';
+    const byId = typeof indexArg == 'string' && /^(shop_|legacy\.)/.test(indexArg);
+    const itemIndex = byId ? shop.findIndex(item => item.shopId == indexArg) : Number(indexArg) - 1;
+    if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= shop.length) return '❌ 존재하지 않는 상품입니다. 상점을 다시 확인해주세요.';
 
     const count = countArg == null || countArg === '' ? 1 : Number(countArg);
     if (!Number.isInteger(count) || count < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
 
-    const shopItem = shop[index - 1];
-    const itemIndex = index - 1;
-    const { limits, remaining } = getShopRemainingLimits(user, shopType, itemIndex, shopItem, new Date());
+    const shopItem = shop[itemIndex];
+    const { limits, remaining, rec } = getShopRemainingLimits(user, shopType, itemIndex, shopItem, new Date());
     if (typeof limits.max == 'number' && remaining.max < count) return '❌ 누적 구매 제한을 초과합니다. (잔여 ' + comma(remaining.max) + '/' + comma(limits.max) + ')';
     if (typeof limits.daily == 'number' && remaining.daily < count) return '❌ 오늘의 구매 제한을 초과합니다. (잔여 ' + comma(remaining.daily) + '/' + comma(limits.daily) + ')';
     if (typeof limits.weekly == 'number' && remaining.weekly < count) return '❌ 이번 주 구매 제한을 초과합니다. (잔여 ' + comma(remaining.weekly) + '/' + comma(limits.weekly) + ')';
@@ -12271,7 +12330,6 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
         return '❌ 처리할 수 없는 상품입니다.';
     }
 
-    const rec = getUserShopRecord(user, shopType, itemIndex, new Date());
     if (typeof limits.max == 'number') rec.max = Number(rec.max || 0) + count;
     if (typeof limits.daily == 'number') rec.daily = Number(rec.daily || 0) + count;
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
@@ -12279,7 +12337,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
 
     await user.save();
     if (typeof limits.global == 'number') {
-        try { await addShopGlobalCount(shopType, itemIndex, count); } catch (e) { console.error('[shop] global counter 저장 실패: ' + e.message); }
+        try { await addShopGlobalCount(shopItem.shopId, count); } catch (e) { console.error('[shop] global counter 저장 실패: ' + e.message); }
     }
 
     const rewardItem = Object.assign({}, shopItem, { count: Number(shopItem.count || 1) * count });
@@ -15787,6 +15845,7 @@ module.exports = {
     getWorldBossContributionRanking,
     calculateCardSlotEffects,
     getShopRemainingLimits,
+    saveShopPackage,
     purchaseShopItem,
     grantPackReward,
     formatEquipmentUpgradePreview,
