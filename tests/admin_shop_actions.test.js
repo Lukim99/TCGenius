@@ -180,6 +180,13 @@ rpg.getRPGUserByName = async () => buyer;
         assert.equal(rpg.getInventoryItemCount(buyer, stoneIds[0]), 0, '구매 전 선택값을 보내도 변환석은 지급하지 않는다');
         assert.equal(buyer.shopPurchases['@items'][pouch.product.shopId].max, 3);
         assert.equal((await post('/api/shop/buy', { ...purchaseBody, count: 1 })).status, 400);
+        const portraitUrl = (await detail()).choiceOptions[0].imageUrl;
+        assert.ok(portraitUrl.endsWith('&portrait=1'), '선택창은 글자가 없는 캐릭터 원화를 사용한다');
+        assert.equal((await fetch(origin + portraitUrl)).status, 401);
+        const portraitResponse = await fetch(origin + portraitUrl, { headers: { Cookie: cookie } });
+        assert.equal(portraitResponse.status, 200);
+        assert.ok(portraitResponse.headers.get('content-type').startsWith('image/png'));
+        assert.equal((await fetch(origin + '/card-image?name=..&portrait=1', { headers: { Cookie: cookie } })).status, 400);
         const snapshot = JSON.stringify(buyer.inventory);
         for (const body of [{ itemId: 9999, version: 0 }, { itemId: pouch.itemId, version: 0 }, { itemId: stoneIds[0], version: -1 }, { itemId: stoneIds[0], version: 1 }, { itemId: String(stoneIds[0]), version: 0 }]) {
             assert.ok([400, 409].includes((await post(choosePath, body)).status));

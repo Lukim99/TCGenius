@@ -4465,6 +4465,11 @@ server.get('/card-image', requireUser, async (req, res) => {
     await assetStore.ready; // 부팅 동기화 완료 전 404 방지
     const name = String(req.query.name || '');
     if (!name || name.includes('..') || path.basename(name) != name) return res.status(400).end();
+    if (req.query.portrait === '1') {
+        const layers = cardComposite.resolveCardLayers({ name, star: 0, type: '일반' });
+        if (!layers) return res.status(404).end();
+        return res.sendFile(layers.character);
+    }
     if (typeof req.query.cover != 'undefined') {
         const coverPath = cardComposite.getCoverPath(name, String(req.query.cover));
         if (!coverPath) return res.status(404).end();
@@ -6987,9 +6992,12 @@ function buildItemChoiceOptions(item) {
     return rpgenius.getItemChoiceEntries(item.choices).map(choice => {
         const reward = items[choice.id];
         const character = reward.use === '변환' ? cards[reward.charId] : null;
+        const portrait = character && cardComposite.resolveCardLayers({ name: character.name, star: 0, type: '일반' });
         return { itemId: choice.id, name: reward.name, count: choice.count,
             displayName: character ? character.name : reward.name,
-            imageUrl: character ? getCharacterCoverImageUrl(character) : getItemDisplayAssets(reward).iconUrl };
+            imageUrl: portrait ? '/card-image?name=' + encodeURIComponent(character.name) + '&portrait=1'
+                : character ? getCharacterCoverImageUrl(character) : getItemDisplayAssets(reward).iconUrl,
+            iconUrl: getItemDisplayAssets(reward).iconUrl };
     });
 }
 

@@ -5595,12 +5595,6 @@ function shopChoicePortrait(option) {
         option?.imageUrl ? el('img', { src: option.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }) : null);
 }
 
-function choicePouchSeal() {
-    const seal = el('div', { class: 'pouch-seal', 'aria-hidden': 'true' });
-    seal.appendChild(svgIcon('<svg viewBox="0 0 160 180" fill="none"><path d="M51 19Q80 9 109 19L97 53H63Z" fill="#37312a" stroke="currentColor" stroke-width="2"/><path d="M62 57C57 76 27 92 28 127C29 156 50 166 80 166C110 166 131 156 132 127C133 92 103 76 98 57Z" fill="#23252d" stroke="currentColor" stroke-width="2"/><path d="M60 51H100M60 57H100M65 25L72 47M95 25L88 47" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M80 88L101 112L80 137L59 112Z" fill="#e8b04b"/><path d="M80 88V137M59 112H101" stroke="#fff0c4" stroke-width="1.5"/><path d="M100 54Q127 52 119 79M100 56L109 91" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'));
-    return seal;
-}
-
 async function openChoicePouch(itemId, purchasedCount) {
     if ($('.pouch-dialog')) return;
     const response = await api('/api/inventory/items/' + itemId + '/detail');
@@ -5624,39 +5618,33 @@ async function openChoicePouch(itemId, purchasedCount) {
         busy = value; closeButton.disabled = value;
         dialog.querySelectorAll('.pouch-stage button, .pouch-footer button').forEach(button => button.disabled = value);
     }
-    function showIntro() {
-        updateProgress(); selected = null;
-        stage.className = 'pouch-stage pouch-intro';
-        stage.replaceChildren(choicePouchSeal(), el('h4', null, '주머니 ' + (completed + 1)), el('p', null, '남은 주머니 ' + detail.count + '개'));
-        footer.replaceChildren(el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'),
-            el('button', { type: 'button', class: 'primary pouch-open', onclick: revealChoices }, '주머니 열기'));
-    }
-    async function revealChoices() {
-        showIntro();
-        stage.classList.add('opening');
-        footer.querySelectorAll('button').forEach(button => button.disabled = true);
-        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-        await new Promise(resolve => setTimeout(resolve, reduced ? 0 : 420));
-        if (!dialog.open) return;
-        showChoices();
+    function renderPreview(option) {
+        return el('div', { class: 'pouch-preview' }, shopChoicePortrait(option),
+            el('div', { class: 'pouch-preview-caption' },
+                el('span', null, '캐릭터 변환석'),
+                el('strong', null, option.displayName || option.name),
+                el('span', { class: 'pouch-preview-count' }, '×' + option.count)));
     }
     function showChoices() {
-        selected = null; errorText.textContent = '';
+        updateProgress(); selected = null; errorText.textContent = '';
         stage.className = 'pouch-stage pouch-select';
-        const preview = el('div', { class: 'pouch-preview' }, choicePouchSeal(), el('strong', null, '캐릭터 선택'));
-        const grid = el('div', { class: 'shop-choice-grid' });
-        const confirm = el('button', { type: 'button', class: 'primary pouch-claim', disabled: true, onclick: claim }, '선택한 변환석 받기');
+        let preview = renderPreview(detail.choiceOptions[0]);
+        const grid = el('div', { class: 'shop-choice-grid', 'aria-label': '캐릭터 선택' });
+        const confirm = el('button', { type: 'button', class: 'primary pouch-claim', disabled: true, onclick: claim }, '캐릭터를 선택해주세요');
         detail.choiceOptions.forEach(option => grid.appendChild(el('button', {
             type: 'button', class: 'shop-choice-card', 'data-item-id': option.itemId,
             'aria-label': option.name + ' ' + option.count + '개', 'aria-pressed': false,
             onclick: event => {
                 selected = option;
                 grid.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', button === event.currentTarget));
-                preview.replaceChildren(shopChoicePortrait(option), el('strong', null, option.displayName || option.name), el('span', null, option.name + ' ×' + option.count));
+                const nextPreview = renderPreview(option);
+                preview.replaceWith(nextPreview); preview = nextPreview;
+                confirm.textContent = (option.displayName || option.name) + ' 변환석 받기';
                 confirm.disabled = false;
             }
         }, shopChoicePortrait(option), el('span', { class: 'shop-choice-card-name' }, option.displayName || option.name))));
-        stage.replaceChildren(preview, grid);
+        stage.replaceChildren(preview, el('div', { class: 'pouch-roster' },
+            el('div', { class: 'pouch-roster-heading' }, el('h4', null, '캐릭터 선택'), el('span', null, '1개 선택')), grid));
         footer.replaceChildren(el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'), confirm);
         grid.querySelector('button')?.focus({ preventScroll: true });
     }
@@ -5668,10 +5656,19 @@ async function openChoicePouch(itemId, purchasedCount) {
             detail.choiceVersion = result.version; detail.count = result.remainingCount;
             completed++; setBusy(false); updateProgress();
             stage.className = 'pouch-stage pouch-result';
-            stage.replaceChildren(el('div', { class: 'pouch-result-art' }, shopChoicePortrait(result.reward), el('span', { class: 'pouch-result-ring', 'aria-hidden': 'true' })),
-                el('span', { class: 'pouch-result-label' }, '획득 완료'), el('h4', null, result.reward.name), el('b', null, '×' + result.reward.count));
+            const reward = result.reward;
+            const rewardIcon = reward.iconUrl ? el('img', { src: reward.iconUrl, alt: '', onerror: event => event.target.remove() }) : null;
+            stage.replaceChildren(renderPreview(reward),
+                el('div', { class: 'pouch-receipt', role: 'status' },
+                    el('span', { class: 'pouch-result-mark', 'aria-hidden': 'true' }, '✓'),
+                    el('span', { class: 'pouch-result-label' }, '획득 완료'),
+                    el('h4', null, reward.displayName || reward.name),
+                    el('div', { class: 'pouch-reward' },
+                        rewardIcon ? el('span', { class: 'pouch-reward-icon' }, rewardIcon) : null,
+                        el('span', null, reward.name), el('b', null, '×' + reward.count)),
+                    el('p', null, '남은 주머니 ' + detail.count + '개')));
             const more = completed < total && detail.count > 0;
-            const next = el('button', { type: 'button', class: 'primary pouch-next', onclick: more ? revealChoices : close }, more ? '다음 주머니 열기' : '확인');
+            const next = el('button', { type: 'button', class: 'primary pouch-next', onclick: more ? showChoices : close }, more ? '다음 주머니 열기' : '확인');
             footer.replaceChildren(...(more ? [el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'), next] : [next]));
             next.focus({ preventScroll: true });
             loadInventory('items').catch(() => {});
@@ -5680,7 +5677,7 @@ async function openChoicePouch(itemId, purchasedCount) {
             if (error.status === 409) {
                 try {
                     detail = (await api('/api/inventory/items/' + itemId + '/detail')).detail;
-                    if (detail.count > 0) showIntro();
+                    if (detail.count > 0) showChoices();
                     else { stage.replaceChildren(el('p', null, '남은 주머니가 없습니다.')); footer.replaceChildren(el('button', { type: 'button', onclick: close }, '닫기')); }
                 } catch (_) { /* 같은 개봉 번호로 재시도할 수 있도록 현재 선택을 유지한다. */ }
             }
@@ -5689,8 +5686,8 @@ async function openChoicePouch(itemId, purchasedCount) {
     dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
     dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
-    document.body.appendChild(dialog); showIntro(); dialog.showModal();
-    footer.querySelector('.pouch-open').focus({ preventScroll: true });
+    document.body.appendChild(dialog); showChoices(); dialog.showModal();
+    stage.querySelector('.shop-choice-card')?.focus({ preventScroll: true });
 }
 
 function openShopBuyModal(item) {
