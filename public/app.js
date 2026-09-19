@@ -985,6 +985,7 @@ function setModalVariant(variant) {
     if (!modal) return;
     modal.classList.toggle('item-detail-modal', variant === 'item-detail');
     modal.classList.toggle('dex-equipment-modal', variant === 'dex-equipment');
+    modal.classList.toggle('dex-character-modal', variant === 'dex-character');
     modal.classList.toggle('preset-detail-modal', variant === 'preset-detail');
 }
 
@@ -7700,22 +7701,22 @@ function renderSpecterDex(grid, entries) {
     grid.appendChild(section);
 }
 
-function dexCharacterCard(entry) {
-    const card = el('div', { class: 'dex-card' });
+function dexCharacterDetail(entry) {
+    const card = el('div', { class: 'dex-character-detail' });
     card.style.setProperty('--rar', 'var(--border-strong)');
 
     let view = '일반';
 
     // 일반/전직 토글 (전직이 있는 캐릭터만)
     let toggleBar = null;
-    if (entry.hasJobClass) {
+    if (entry.hasJobClass || entry.awakening) {
         toggleBar = el('div', { class: 'dex-char-toggle' });
-        ['일반', '전직', ...(entry.awakening ? ['각성'] : [])].forEach(v => {
-            const btn = el('button', { class: 'dex-char-toggle-btn' + (v === '일반' ? ' active' : ''), type: 'button' }, v);
+        ['일반', ...(entry.hasJobClass ? ['전직'] : []), ...(entry.awakening ? ['각성'] : [])].forEach(v => {
+            const btn = el('button', { class: 'dex-char-toggle-btn' + (v === '일반' ? ' active' : ''), type: 'button', 'aria-pressed': v === view }, v);
             btn.onclick = () => {
                 if (view === v) return;
                 view = v;
-                toggleBar.querySelectorAll('.dex-char-toggle-btn').forEach(b => b.classList.toggle('active', b.textContent === v));
+                toggleBar.querySelectorAll('.dex-char-toggle-btn').forEach(b => { b.classList.toggle('active', b.textContent === v); b.setAttribute('aria-pressed', b.textContent === v); });
                 renderBody();
             };
             toggleBar.appendChild(btn);
@@ -7723,25 +7724,62 @@ function dexCharacterCard(entry) {
         card.appendChild(toggleBar);
     }
 
-    const body = el('div', { style: { display: 'contents' } });
+    const body = el('div', { class: 'dex-character-body' });
     card.appendChild(body);
 
-    function renderSkills(skills) {
+    function renderSkills(skills, upgraded = false) {
         if (!skills || !skills.length) return null;
         const det = el('details', { class: 'dex-collapse', open: true });
         det.appendChild(el('summary', null, '스킬'));
         const list = el('div', { class: 'dex-upgrade-list' });
         skills.forEach(skill => {
-            list.appendChild(el('div', { class: 'dex-upgrade-row' },
-                el('div', { class: 'lvl' }, skill.name),
-                el('div', { class: 'lines' },
-                    el('div', { style: { fontWeight: 800, color: '#f8fafc' } }, 'MP ' + comma(skill.mpCost) + ' · ' + skill.cooltimeText),
-                    ...(skill.descLines || []).map(line => el('div', null, line))
-                )
+            const ultimate = upgraded && (entry.jobClass?.skills || []).some(jobSkill => jobSkill.id === skill.id);
+            list.appendChild(el('div', { class: 'dex-upgrade-row' + (ultimate ? ' dex-skill-ultimate' : '') },
+                el('div', { class: 'dex-skill-heading' }, el('strong', null, skill.name),
+                    ultimate ? el('span', { class: 'dex-skill-badge' }, '궁극기') : null),
+                el('dl', { class: 'dex-skill-costs' },
+                    el('div', { class: 'dex-skill-mp' }, el('dt', null, 'MP'), el('dd', null, comma(skill.mpCost))),
+                    el('div', null, el('dt', null, '쿨타임'), el('dd', null, skill.cooltimeText))),
+                el('div', { class: 'lines' }, ...(skill.descLines || []).map(line => el('div', null, line)))
             ));
         });
         det.appendChild(list);
         return det;
+    }
+
+    function highlightProgression(text) {
+        const fragment = document.createDocumentFragment();
+        const progression = /-?\d[\d,]*(?:\.\d+)?%?(?:\s*\/\s*-?\d[\d,]*(?:\.\d+)?%?){2,}/g;
+        let offset = 0;
+        for (const match of text.matchAll(progression)) {
+            fragment.appendChild(document.createTextNode(text.slice(offset, match.index)));
+            const steps = match[0].split(/\s*\/\s*/);
+            steps.forEach((value, index) => {
+                if (index) fragment.appendChild(document.createTextNode(' / '));
+                const remaining = steps.length - index;
+                fragment.appendChild(el('span', { class: 'dex-progression-value' + (remaining <= 3 ? ' dex-slot-tier-' + remaining : '') }, value));
+            });
+            offset = match.index + match[0].length;
+        }
+        fragment.appendChild(document.createTextNode(text.slice(offset)));
+        return fragment;
+    }
+
+    function renderSlotEffects(effects) {
+        if (!effects.length) return null;
+        return el('div', { class: 'dex-stat-block dex-slot-effects' },
+            el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'),
+            ...effects.map(eff => {
+                const values = el('div', { class: 'dex-slot-values' });
+                if (eff.valuesText) {
+                    values.appendChild(highlightProgression(eff.valuesText));
+                } else {
+                    values.appendChild(el('span', null, eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
+                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
+                        values.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
+                }
+                return el('div', { class: 'dex-slot-effect' }, el('div', { class: 'dex-slot-name' }, eff.name), values);
+            }));
     }
 
     function renderBody() {
@@ -7751,7 +7789,7 @@ function dexCharacterCard(entry) {
         const coverUrl = isAwakening ? entry.awakeningCoverUrl : isJob ? entry.jobCoverUrl : entry.coverUrl;
 
         if (coverUrl) {
-            body.appendChild(el('div', { style: { margin: '-14px -14px 0', aspectRatio: '16 / 9', borderRadius: '14px 14px 8px 8px', overflow: 'hidden', background: '#020617' } },
+            body.appendChild(el('div', { class: 'dex-character-cover' },
                 el('img', { src: coverUrl, alt: entry.name, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
             ));
         }
@@ -7765,39 +7803,15 @@ function dexCharacterCard(entry) {
         ));
         body.appendChild(head);
 
-        if (isJob && entry.jobClass) {
-            if (isAwakening) body.appendChild(el('div', { class: 'dex-stat-block' }, el('div', { class: 'dex-stat-title' }, '각성 패시브 · 5성 / 6성 / 7성 / 8성 / 9성 / 제타 / 시그마 / 오메가'), ...entry.awakening.descLines.map(line => el('div', null, line))));
+        if (isAwakening || (isJob && entry.jobClass)) {
+            if (isAwakening) body.appendChild(el('div', { class: 'dex-stat-block dex-awakening-passive' }, el('div', { class: 'dex-stat-title' }, '각성 패시브'), ...entry.awakening.descLines.map(line => el('div', null, highlightProgression(line)))));
             const effs = isAwakening ? entry.awakening.slotEffects : entry.jobClass.slotEffects || [];
-            if (effs.length) {
-                const block = el('div', { class: 'dex-stat-block' });
-                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과 (' + view + ')'));
-                effs.forEach(eff => {
-                    if (eff.valuesText) {
-                        block.appendChild(el('div', null, eff.name + ' ' + eff.valuesText));
-                        return;
-                    }
-                    block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
-                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
-                        block.appendChild(el('div', null, '이후 등급마다 +' + eff.perLevelText));
-                });
-                body.appendChild(block);
-            }
-            const skillsDet = renderSkills(isAwakening ? entry.awakening.skills : entry.jobClass.skills);
+            const slotBlock = renderSlotEffects(effs);
+            if (slotBlock) body.appendChild(slotBlock);
+            const skillsDet = renderSkills(isAwakening ? entry.awakening.skills : [...(entry.skills || []), ...(entry.jobClass.skills || [])], true);
             if (skillsDet) body.appendChild(skillsDet);
         } else {
-            if (entry.slotEffect) {
-                const eff = entry.slotEffect;
-                const block = el('div', { class: 'dex-stat-block' });
-                block.appendChild(el('div', { class: 'dex-stat-title' }, '카드 슬롯 효과'));
-                if (eff.valuesText) {
-                    block.appendChild(el('div', null, eff.name + ' ' + eff.valuesText));
-                } else {
-                    block.appendChild(el('div', null, eff.name + ' ' + eff.baseText + ' (' + eff.requireStarText + ' 기준)'));
-                    if (eff.perLevelText && Number(String(eff.perLevelText).replace(/[^0-9.-]/g, '')) !== 0)
-                        block.appendChild(el('div', null, '이후 등급마다 ' + (String(eff.perLevelText).trim().startsWith('-') ? '' : '+') + eff.perLevelText));
-                }
-                body.appendChild(block);
-            }
+            if (entry.slotEffect) body.appendChild(renderSlotEffects([entry.slotEffect]));
             const skillsDet = renderSkills(entry.skills);
             if (skillsDet) body.appendChild(skillsDet);
         }
@@ -7808,41 +7822,109 @@ function dexCharacterCard(entry) {
 }
 
 let titlesData = null;
+const titleDexState = { search: '', filter: 'all' };
+const characterDexState = { search: '', filter: 'all' };
+let titleSaving = false;
+
+function dexCollection(grid, state, filters, placeholder, renderItems) {
+    grid.className = 'dex-collection';
+    const list = el('div');
+    const count = el('span', { class: 'dex-collection-count', 'aria-live': 'polite' });
+    const search = el('input', { type: 'search', placeholder, 'aria-label': placeholder, value: state.search,
+        oninput: event => { state.search = event.target.value; update(); } });
+    const buttons = filters.map(([value, label]) => el('button', {
+        type: 'button', 'aria-pressed': state.filter === value,
+        onclick: () => { state.filter = value; buttons.forEach((button, index) => button.setAttribute('aria-pressed', filters[index][0] === value)); update(); }
+    }, label));
+    const toolbar = el('div', { class: 'dex-collection-toolbar' }, search,
+        el('div', { class: 'dex-collection-filters', 'aria-label': '목록 필터' }, ...buttons), count);
+    function update() { const result = renderItems(list); count.textContent = result + '개'; }
+    grid.replaceChildren(toolbar, list); update();
+    return toolbar;
+}
+
+function dexCharacterCard(entry) {
+    return el('button', { type: 'button', class: 'dex-character-tile', 'aria-label': entry.name + ' 카드 상세 보기', onclick: () => {
+        openModal(entry.name, '', []); setModalVariant('dex-character');
+        $('#modalBody').replaceChildren(dexCharacterDetail(entry));
+        $('#modalBody .dex-char-toggle-btn')?.focus({ preventScroll: true });
+    } }, el('div', { class: 'dex-character-portrait' },
+        el('span', { 'aria-hidden': 'true' }, entry.name.slice(0, 1)),
+        el('img', { src: entry.portraitUrl || entry.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() })),
+        el('div', { class: 'dex-character-copy' }, el('strong', null, entry.name)));
+}
+
+function renderCharacterDex(grid) {
+    dexCollection(grid, characterDexState, [['all', '전체'], ['job', '전직'], ['awakening', '각성']], '캐릭터 검색', list => {
+        list.className = 'dex-character-grid';
+        const entries = (dexData.character || []).filter(entry => entry.name.includes(characterDexState.search.trim())
+            && (characterDexState.filter === 'all' || (characterDexState.filter === 'job' ? entry.hasJobClass : entry.awakening)));
+        list.replaceChildren(...(entries.length ? entries.map(dexCharacterCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+}
+
+async function changeDexTitle(id, statsOnly) {
+    if (titleSaving) return;
+    titleSaving = true;
+    document.querySelectorAll('.dex-title-actions button, .dex-title-current button').forEach(button => button.disabled = true);
+    try {
+        await postApi('/api/titles/equip', { id, statsOnly });
+        titlesData = await api('/api/titles');
+    } catch (error) { showAlert(error.message); }
+    finally { titleSaving = false; if (dexTab === 'title') renderDex(); }
+}
 
 function dexTitleCard(entry) {
-    const card = el('div', { class: 'dex-title-card' + (entry.unlocked ? '' : ' locked') + (entry.equipped ? ' equipped' : '') });
-    const thumb = el('div', { class: 'dex-title-thumb' });
-    thumb.appendChild(el('img', { src: entry.imageUrl, alt: entry.name, onerror: function () { this.style.display = 'none'; } }));
-    card.appendChild(thumb);
-    card.appendChild(el('div', { class: 'dex-title-name' }, entry.name));
-    if (entry.statLines && entry.statLines.length) {
-        const block = el('div', { class: 'dex-title-stats' });
-        entry.statLines.forEach(line => block.appendChild(el('div', null, line)));
-        card.appendChild(block);
-    }
-    card.appendChild(el('div', { class: 'dex-title-cond' }, '획득: ' + entry.description));
+    const card = el('article', { class: 'dex-title-card' + (entry.unlocked ? '' : ' locked') + (entry.equipped || entry.statsApplied ? ' applied' : '') });
+    const badges = el('div', { class: 'dex-title-badges' });
+    if (entry.equipped) badges.appendChild(el('span', null, '표시 중'));
+    if (entry.statsApplied) badges.appendChild(el('span', null, '능력치 적용 중'));
+    if (!entry.equipped && !entry.statsApplied) badges.appendChild(el('span', { class: 'neutral' }, entry.unlocked ? '보유' : '미보유'));
+    card.appendChild(el('div', { class: 'dex-title-art' }, el('img', { src: entry.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() })));
+    card.appendChild(el('div', { class: 'dex-title-card-body' },
+        el('div', { class: 'dex-title-name' }, entry.name), badges,
+        el('div', { class: 'dex-title-stats' }, ...(entry.statLines || []).map(line => el('div', null, line))),
+        el('div', { class: 'dex-title-cond' }, el('span', null, '획득 조건'), el('span', null, entry.description || '???'))));
     if (!entry.unlocked) {
-        const p = entry.progress || { current: 0, target: 0 };
-        const pct = p.target > 0 ? Math.min(100, Math.round(p.current / p.target * 100)) : 0;
-        const prog = el('div', { class: 'dex-title-prog' });
-        const bar = el('div', { class: 'dex-title-prog-bar' }, el('div', { class: 'fill' }));
-        bar.firstChild.style.width = pct + '%';
-        prog.appendChild(bar);
-        prog.appendChild(el('div', { class: 'dex-title-prog-text' }, '🔒 ' + comma(p.current) + ' / ' + comma(p.target) + ' (' + pct + '%)'));
-        card.appendChild(prog);
+        const p = entry.progress;
+        if (p?.target > 0) {
+            const pct = Math.min(100, Math.round(p.current / p.target * 100));
+            const fill = el('span', { style: { width: pct + '%' } });
+            card.appendChild(el('div', { class: 'dex-title-progress' },
+                el('div', { role: 'progressbar', 'aria-label': entry.name + ' 획득 진행도', 'aria-valuemin': 0, 'aria-valuemax': p.target, 'aria-valuenow': p.current }, fill),
+                el('span', null, comma(p.current) + ' / ' + comma(p.target))));
+        }
     } else {
-        const btn = el('button', { class: 'dex-title-btn' + (entry.equipped ? ' on' : ''), type: 'button' }, entry.equipped ? '✓ 장착 중 (해제)' : '장착');
-        btn.onclick = async () => {
-            btn.disabled = true;
-            try {
-                await postApi('/api/titles/equip', { id: entry.equipped ? null : entry.id });
-                titlesData = await api('/api/titles');
-                renderDex();
-            } catch (e) { showAlert(e.message); btn.disabled = false; }
-        };
-        card.appendChild(btn);
+        const override = titlesData.statTitle === entry.id;
+        card.appendChild(el('div', { class: 'dex-title-actions' },
+            el('button', { type: 'button', disabled: titleSaving, onclick: () => changeDexTitle(entry.equipped ? null : entry.id, false) }, entry.equipped ? '장착 해제' : '장착'),
+            el('button', { type: 'button', disabled: titleSaving || (entry.statsApplied && !override), onclick: () => changeDexTitle(override ? null : entry.id, true) }, override ? '능력치 적용 해제' : '능력치만 적용')));
     }
     return card;
+}
+
+function renderTitleDex(grid) {
+    const entries = titlesData.titles || [];
+    const toolbar = dexCollection(grid, titleDexState, [['all', '전체'], ['owned', '보유'], ['locked', '미보유']], '칭호 이름 · 능력치 검색', list => {
+        list.className = 'dex-title-grid';
+        const query = titleDexState.search.trim().toLocaleLowerCase();
+        const filtered = entries.filter(entry => [entry.name, ...(entry.statLines || [])].join(' ').toLocaleLowerCase().includes(query)
+            && (titleDexState.filter === 'all' || (titleDexState.filter === 'owned' ? entry.unlocked : !entry.unlocked)));
+        list.replaceChildren(...(filtered.length ? filtered.map(dexTitleCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return filtered.length;
+    });
+    const current = el('div', { class: 'dex-title-current' });
+    [['표시 칭호', titlesData.equipped, false], ['적용 능력치', titlesData.statsTitle, true]].forEach(([label, id, statsOnly]) => {
+        const title = entries.find(entry => entry.id === id);
+        const canClear = statsOnly ? !!titlesData.statTitle : !!id;
+        current.appendChild(el('section', null, el('div', { class: 'dex-title-current-label' }, label),
+            el('div', { class: 'dex-title-current-value' },
+                title ? el('div', { class: 'dex-title-current-copy' }, el('img', { src: title.imageUrl, alt: '', onerror: event => event.target.remove() }), el('strong', null, title.name)) : el('span', null, '없음'),
+                canClear ? el('button', { type: 'button', disabled: titleSaving, 'aria-label': label + ' 해제', onclick: () => changeDexTitle(null, statsOnly) }, '해제') : null),
+            statsOnly ? el('div', { class: 'dex-title-current-note' }, titlesData.statTitle ? '별도 칭호의 능력치 적용 중' : '표시 칭호의 능력치 적용') : null));
+    });
+    grid.insertBefore(current, toolbar);
 }
 
 function dexPotentialCard(typeData) {
@@ -7921,11 +8003,7 @@ function renderDex() {
     if (dexTab === 'title') {
         hideDexRarityFilter();
         if (!titlesData) return;
-        grid.className = 'dex-grid dex-title-grid';
-        grid.innerHTML = '';
-        const list = titlesData.titles || [];
-        if (!list.length) { grid.appendChild(el('div', { class: 'empty' }, '칭호가 없습니다.')); return; }
-        list.forEach(entry => grid.appendChild(dexTitleCard(entry)));
+        renderTitleDex(grid);
         return;
     }
     if (dexTab === 'orb') {
@@ -7938,6 +8016,11 @@ function renderDex() {
         renderSpecterDex(grid, dexData.specter || []);
         return;
     }
+    if (dexTab === 'character') {
+        hideDexRarityFilter();
+        if (dexData) renderCharacterDex(grid);
+        return;
+    }
     const equipmentTab = DEX_EQUIPMENT_TABS.has(dexTab);
     grid.className = equipmentTab ? 'dex-grid dex-gear-grid' : 'dex-grid';
     if (!dexData) return;
@@ -7948,7 +8031,7 @@ function renderDex() {
         return;
     }
     list.forEach(entry => grid.appendChild(
-        equipmentTab ? dexEquipmentCard(entry) : (dexTab === 'character' ? dexCharacterCard(entry) : dexCard(entry))
+        equipmentTab ? dexEquipmentCard(entry) : dexCard(entry)
     ));
 }
 

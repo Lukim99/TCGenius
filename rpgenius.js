@@ -3712,6 +3712,30 @@ function getEquippedTitleDef(user) {
     return getTitleById(user.equippedTitle);
 }
 
+function getTitleStatsDef(user) {
+    if (user.statTitle && Array.isArray(user.titles) && user.titles.includes(user.statTitle)) {
+        const title = getTitleById(user.statTitle);
+        if (title) return title;
+    }
+    return getEquippedTitleDef(user);
+}
+
+// 아바타와 동일하게 표시 칭호를 유지하면서 능력치 하나만 별도로 적용한다.
+function equipTitle(user, id, statsOnly = false) {
+    if (id) {
+        if (!getTitleById(id)) return '존재하지 않는 칭호입니다.';
+        if (!getUnlockedTitles(user).includes(id)) return '아직 획득하지 않은 칭호입니다.';
+    }
+    if (statsOnly) {
+        if (!id || id === user.equippedTitle) delete user.statTitle;
+        else user.statTitle = id;
+    } else {
+        user.equippedTitle = id || null;
+        if (id && user.statTitle === id) delete user.statTitle;
+    }
+    return null;
+}
+
 function getTitleImageUrl(titleName) {
     return '/rpg-ui-title?file=' + encodeURIComponent(titleName + '.png');
 }
@@ -3744,6 +3768,7 @@ function formatTitleList(user) {
     const lines = ['[ ' + user.name + '님의 칭호 ]'];
     lines.push('보유 ' + owned.length + ' / 전체 ' + defs.length);
     lines.push('✅ 장착 중: ' + (equippedDef ? equippedDef.name : '없음'), VIEWMORE);
+    if (user.statTitle) lines.push('능력치 적용: ' + (getTitleStatsDef(user)?.name || '없음'));
     const ownedDefs = defs.filter(t => owned.includes(t.id));
     const lockedDefs = defs.filter(t => !owned.includes(t.id));
     if (ownedDefs.length) {
@@ -3760,13 +3785,13 @@ function formatTitleList(user) {
 function equipTitleByName(user, name) {
     const trimmed = String(name || '').trim();
     if (!trimmed || trimmed === '해제' || trimmed === '없음') {
-        user.equippedTitle = null;
+        equipTitle(user, null);
         return '✅ 칭호를 해제했습니다.';
     }
     const title = getTitleDefs().find(t => t.name === trimmed);
     if (!title) return '❌ 존재하지 않는 칭호입니다.';
     if (!getUnlockedTitles(user).includes(title.id)) return '❌ 아직 획득하지 않은 칭호입니다.';
-    user.equippedTitle = title.id;
+    equipTitle(user, title.id);
     return '✅ 칭호 「' + title.name + '」을(를) 장착했습니다.';
 }
 
@@ -3870,7 +3895,7 @@ function calculateUserStats(user, _out) {
         addStats(plusStats, fashion.option && fashion.option.plusStat || {});
     }
     // 칭호 스탯 (장비와 동일하게 stat/plusStat 누적 → 아래 마무리 연산에서 처리)
-    const titleDef = getEquippedTitleDef(user);
+    const titleDef = getTitleStatsDef(user);
     if (titleDef) {
         addStats(stats, titleDef.stat || {});
         addStats(plusStats, titleDef.plusStat || {});
@@ -15892,6 +15917,8 @@ module.exports = {
     unlockTitle,
     checkAndUnlockTitles,
     getEquippedTitleDef,
+    getTitleStatsDef,
+    equipTitle,
     getTitleImageUrl,
     formatTitleStatLines,
     TITLE_IMAGE_PATH,

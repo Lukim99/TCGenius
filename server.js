@@ -1113,6 +1113,7 @@ server.get('/api/titles', requireUser, async (req, res) => {
         if (newly.length) await user.save();
         const unlocked = rpgenius.getUnlockedTitles(user);
         const equipped = user.equippedTitle || null;
+        const statsTitle = rpgenius.getTitleStatsDef(user)?.id || null;
         const prog = rpgenius.getTitleProgress(user);
         const titles = rpgenius.getTitleDefs().map(t => {
             const c = t.condition || {};
@@ -1127,10 +1128,11 @@ server.get('/api/titles', requireUser, async (req, res) => {
                 imageUrl: rpgenius.getTitleImageUrl(t.name),
                 unlocked: isUnlocked,
                 equipped: equipped === t.id,
+                statsApplied: statsTitle === t.id,
                 progress: { current, target }
             };
         });
-        res.json({ titles, equipped });
+        res.json({ titles, equipped, statsTitle, statTitle: user.statTitle || null });
     } catch (e) {
         console.error('titles error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -1142,15 +1144,12 @@ server.post('/api/titles/equip', requireUser, async (req, res) => {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const id = req.body && req.body.id ? String(req.body.id) : null;
-        if (id === null) {
-            user.equippedTitle = null;
-        } else {
-            if (!rpgenius.getTitleById(id)) return res.status(400).json({ error: '존재하지 않는 칭호입니다.' });
-            if (!rpgenius.getUnlockedTitles(user).includes(id)) return res.status(400).json({ error: '아직 획득하지 않은 칭호입니다.' });
-            user.equippedTitle = id;
-        }
-        await user.save();
-        res.json({ ok: true, equipped: user.equippedTitle || null, title: buildTitleDisplay(user) });
+        if (req.body.statsOnly !== undefined && typeof req.body.statsOnly !== 'boolean') return res.status(400).json({ error: '적용 방식이 올바르지 않습니다.' });
+        const error = rpgenius.equipTitle(user, id, req.body.statsOnly === true);
+        if (error) return res.status(400).json({ error });
+        const saved = await user.save();
+        if (saved?.success === false) return res.status(503).json({ error: '칭호 저장에 실패했습니다. 다시 시도해주세요.' });
+        res.json({ ok: true, equipped: user.equippedTitle || null, statTitle: user.statTitle || null, statsTitle: rpgenius.getTitleStatsDef(user)?.id || null, title: buildTitleDisplay(user) });
     } catch (e) {
         console.error('title equip error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -6158,6 +6157,7 @@ function buildCharacterDex() {
             id,
             name: data.name,
             formatted: rpgenius.formatUserCard(baseCard),
+            portraitUrl: cardComposite.resolveCardLayers({ name: data.name, star: 0, type: '일반' }) ? '/card-image?name=' + encodeURIComponent(data.name) + '&portrait=1' : null,
             imageUrl: getCardImageUrl(baseCard, { prestige: false }),
             coverUrl: getCharacterCoverImageUrl(data),
             jobCoverUrl: getJobCoverImageUrl(data),

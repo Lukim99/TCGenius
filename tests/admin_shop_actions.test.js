@@ -102,6 +102,59 @@ rpg.getRPGUserByName = async () => buyer;
         assert.equal(upload.status, 200);
         assert.ok(images.has('itemImage/번들/테스트 패키지.png'));
         const title = rpg.getTitleDefs()[0];
+        // 칭호 표시와 능력치를 분리해도 일반/특수 효과는 하나의 칭호만 따른다.
+        const titleUser = new rpg.RPGUser('칭호테스트', 'isolated-title');
+        titleUser.main_card = { id: 0, star: 9, type: '일반' };
+        titleUser.titles = rpg.getTitleDefs().map(t => t.id);
+        for (const field of [null, { worldBoss: true }]) {
+            titleUser.field = field;
+            for (const definition of rpg.getTitleDefs()) {
+                titleUser.equippedTitle = definition.id; delete titleUser.statTitle;
+                const expected = rpg.calculateUserStats(titleUser);
+                titleUser.equippedTitle = definition.id === 'newbieSlayer' ? 'level200' : 'newbieSlayer';
+                assert.equal(rpg.equipTitle(titleUser, definition.id, true), null);
+                assert.equal(rpg.getEquippedTitleDef(titleUser).id, titleUser.equippedTitle);
+                assert.equal(rpg.getTitleStatsDef(titleUser).id, definition.id);
+                assert.deepEqual(rpg.calculateUserStats(titleUser), expected, definition.name + '의 능력치/특수 효과만 적용');
+            }
+        }
+        titleUser.equippedTitle = 'newbieSlayer'; titleUser.statTitle = 'level200';
+        rpg.equipTitle(titleUser, 'hoduFriend');
+        assert.equal(titleUser.statTitle, 'level200', '표시 칭호를 바꿔도 별도 능력치 유지');
+        rpg.equipTitle(titleUser, null);
+        assert.equal(rpg.getEquippedTitleDef(titleUser), null);
+        assert.equal(rpg.getTitleStatsDef(titleUser).id, 'level200', '표시 없이 능력치만 적용');
+        rpg.equipTitle(titleUser, null, true);
+        assert.equal(rpg.getTitleStatsDef(titleUser), null);
+        rpg.equipTitle(titleUser, 'newbieSlayer');
+        rpg.equipTitle(titleUser, 'newbieSlayer', true);
+        assert.equal(titleUser.statTitle, undefined, '표시와 같은 칭호는 중복 적용하지 않음');
+        titleUser.statTitle = 'level200'; titleUser.titles = ['newbieSlayer'];
+        assert.equal(rpg.getTitleStatsDef(titleUser).id, 'newbieSlayer', '미보유 칭호 스탯 차단');
+
+        buyer.titles = ['newbieSlayer', 'level200']; buyer.equippedTitle = 'newbieSlayer';
+        let savedTitleUser;
+        const originalSave = buyer.save;
+        buyer.save = async () => { savedTitleUser = JSON.parse(JSON.stringify(buyer)); return { success: true }; };
+        assert.equal((await post('/api/titles/equip', { id: 'level200', statsOnly: true }, false)).status, 401);
+        for (const body of [{ id: 'missing', statsOnly: true }, { id: 'rainDefender', statsOnly: true }, { id: 'level200', statsOnly: 'true' }]) {
+            assert.equal((await post('/api/titles/equip', body)).status, 400);
+            assert.equal(buyer.statTitle, undefined);
+        }
+        const appliedTitle = await (await post('/api/titles/equip', { id: 'level200', statsOnly: true })).json();
+        assert.equal(appliedTitle.equipped, 'newbieSlayer');
+        assert.equal(appliedTitle.title.id, 'newbieSlayer', '프로필/랭킹 표시 칭호 유지');
+        assert.equal(appliedTitle.statsTitle, 'level200');
+        assert.equal(savedTitleUser.statTitle, 'level200', '능력치 칭호도 유저 저장에 포함');
+        const titleList = await (await fetch(origin + '/api/titles', { headers: { Cookie: cookie } })).json();
+        assert.equal(titleList.titles.find(t => t.id === 'level200').statsApplied, true);
+        assert.equal(titleList.titles.find(t => t.id === 'newbieSlayer').equipped, true);
+        const clearedTitle = await (await post('/api/titles/equip', { id: null, statsOnly: true })).json();
+        assert.equal(clearedTitle.statsTitle, 'newbieSlayer', '해제 시 표시 칭호의 능력치로 복귀');
+        assert.equal(savedTitleUser.statTitle, undefined);
+        buyer.save = async () => ({ success: false });
+        assert.equal((await post('/api/titles/equip', { id: 'level200', statsOnly: true })).status, 503);
+        buyer.save = originalSave; buyer.titles = []; buyer.equippedTitle = null; delete buyer.statTitle;
         const rewardGroups = [
             [
                 { type: '아이템', item_id: result.itemIndex, count: { min: 2, max: 3 } },
