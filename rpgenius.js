@@ -3405,6 +3405,37 @@ function runCardSale(user) {
     return '✅ 카드 ' + comma(selection.selected.length) + '장을 판매했습니다.\n[ 획득 결과 ]\n- 🪙 ' + comma(selection.gold);
 }
 
+function selectStarterCard(user, cardName) {
+    if (!user.need_character_card_select) return '❌ 이미 캐릭터 카드를 선택했습니다.';
+    const characterCard = findCharacterCardByName(cardName);
+    if (!characterCard) return '❌ 존재하지 않는 캐릭터 카드입니다.';
+    user.main_card = { id: characterCard.index, star: 0, type: '일반' };
+    user.need_character_card_select = false;
+    const stats = calculateUserStats(user);
+    user.hp = Number(stats.hp || 0);
+    user.mp = Number(stats.mp || 0);
+    addInventoryItem(user, 41, 1);
+    return '✅ 캐릭터 카드를 선택했습니다.\n- ' + characterCard.card.name + '\n\n🎁 초보자 키트를 받았습니다!';
+}
+
+function canUsePartyQuest(user) {
+    return !!user && Number(user.level || 1) >= 71;
+}
+
+function getWebGameActionBlock(user, allowStarter = false) {
+    if (!allowStarter && user.need_character_card_select) return '먼저 시작 캐릭터를 선택해주세요.';
+    if (activeTrades[user.name]) return '거래를 완료하거나 취소한 뒤 이용해주세요.';
+    if (user.pendingFragment) return '먼저 편린 보상을 받아주세요.';
+    if (user.pendingAction) return '먼저 진행 중인 작업을 완료하거나 취소해주세요.';
+    if (user.field && user.field.name) return '사냥을 마친 뒤 이용해주세요.';
+    return null;
+}
+
+function refreshPetShortcuts(user) {
+    const map = getActivePetShortcutMap(user);
+    ['web:' + user.id, ...(user.logged_in || [])].forEach(id => { petShortcutCache[String(id)] = map; });
+}
+
 function equipMainCharacterCard(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1) return '❌ 존재하지 않는 카드 번호입니다.';
@@ -9978,7 +10009,7 @@ async function stopFishingByName(name, message) {
 function scheduleFishing(user, channel) {
     clearFishingTimer(user.name);
     if (channel) fishingChannels[user.name] = channel;
-    fishingTimers[user.name] = setTimeout(async () => {
+    fishingTimers[user.name] = setTimeout(() => enqueueFieldAction(user, async () => {
         const latest = await getRPGUserByName(user.name);
         if (!latest) {
             clearFishingTimer(user.name);
@@ -10014,7 +10045,7 @@ function scheduleFishing(user, channel) {
             return;
         }
         scheduleFishing(latest, channel);
-    }, getFishingInterval(user));
+    }).catch(e => console.error('[fishing tick]', e.message)), getFishingInterval(user));
 }
 
 function getFishingInterval(user) {
@@ -10960,6 +10991,26 @@ function parseDisassembleSelection(user, numberArgs) {
         entries.push({ number, entry, type, equipment, rewardRange, fragmentRange: transcendReward && transcendReward.fragment });
     }
     return { numbers, entries };
+}
+
+function getDisassemblePreviewData(user, numberArgs) {
+    const parsed = parseDisassembleSelection(user, numberArgs);
+    if (parsed.error) return { error: parsed.error };
+    const rewards = new Map();
+    const add = (name, min, max = min) => {
+        if (!max) return;
+        const current = rewards.get(name) || { name, min: 0, max: 0 };
+        current.min += min; current.max += max;
+        rewards.set(name, current);
+    };
+    parsed.entries.forEach(e => {
+        const range = e.equipment.rarity === '초월' ? e.rewardRange : getDisassembleRewardRange(e.rewardRange, e.type);
+        add('강화석', range.min, range.max);
+        if (e.fragmentRange) add('초월 조각', e.fragmentRange.min, e.fragmentRange.max);
+        add('검은 불', getSupportDisassembleBlackFireCount(e.equipment, e.type));
+        add('어둠 조각', getDarkPieceDisassembleCount(e.equipment));
+    });
+    return { numbers: parsed.numbers, rewards: [...rewards.values()] };
 }
 
 function formatDisassemblePreview(user, numberArgs) {
@@ -14163,28 +14214,10 @@ async function handleRPGCommand(data, channel, context = {}) {
         if (!user) {
             reply('❌ 등록되지 않은 사용자입니다.\n/RPGenius 등록 [닉네임]');
         } else {
-            if (!user.need_character_card_select) {
-                reply('❌ 이미 캐릭터 카드를 선택했습니다.');
-                return true;
-            }
-            const characterCard = findCharacterCardByName(cardName);
-            if (!characterCard) {
-                reply('❌ 존재하지 않는 캐릭터 카드입니다.\n' + formatCharacterCardList());
-                return true;
-            }
-            const userCard = {
-                id: characterCard.index,
-                star: 0,
-                type: '일반'
-            };
-            user.main_card = userCard;
-            user.need_character_card_select = false;
-            const stats = calculateUserStats(user);
-            user.hp = Number(stats.hp || 0);
-            user.mp = Number(stats.mp || 0);
-            addInventoryItem(user, 41, 1);
-            await user.save();
-            reply('✅ 캐릭터 카드를 선택했습니다.\n- ' + characterCard.card.name + '\n\n🎁 초보자 키트를 받았습니다!\n/RPGenius 사용 초보자 키트');
+            const result = selectStarterCard(user, cardName);
+            if (!result.startsWith('❌')) await user.save();
+            reply(result + (result === '❌ 존재하지 않는 캐릭터 카드입니다.' ? '\n' + formatCharacterCardList()
+                : result.startsWith('❌') ? '' : '\n/RPGenius 사용 초보자 키트'));
         }
         return true;
     }
@@ -14209,11 +14242,9 @@ async function handleRPGCommand(data, channel, context = {}) {
     }
 
     if (args[0] == '파티퀘스트') {
-        if (Number(user.level || 1) >= 71 && !user.canPartyQuest) {
-            user.canPartyQuest = true;
-            await user.save();
-            reply('✅ 파티 퀘스트가 활성화되었습니다.\n웹버전에서 이용할 수 있습니다.\nhttps://rpgenius.kro.kr');
-        } else if (Number(user.level || 1) < 71) {
+        if (canUsePartyQuest(user)) {
+            reply('✅ 71레벨부터 레이드를 자동으로 이용할 수 있습니다.\nhttps://rpgenius.kro.kr/party');
+        } else {
             reply('❌ 해당 기능은 71레벨 이상부터 활성화됩니다.');
         }
         return true;
@@ -15666,6 +15697,30 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    getCardSaleSelection,
+    getDisassemblePreviewData,
+    selectStarterCard,
+    canUsePartyQuest,
+    getWebGameActionBlock,
+    refreshPetShortcuts,
+    getRandomCardCombineNumbers,
+    getCardSalePrice,
+    formatCardSalePreview,
+    runCardSale,
+    sellItemByName,
+    toggleEquipmentLock,
+    equipPetByNumber,
+    unequipPetByNumber,
+    extractPetsByNumbers,
+    PET_EXTRACT_YIELD,
+    useCoupon,
+    toggleFishing,
+    stopFishingForCommand,
+    clearFishingNet,
+    getFishingNetCount,
+    getEffectiveFishingNetLimit,
+    getCurrentBaitName,
+    getCurrentBaitItemId,
     getItemChoiceEntries,
     TARGET_CHANNEL_IDS,
     WILL_ACCESSIBLE_FIELDS,

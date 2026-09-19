@@ -12,6 +12,7 @@ const assetStore = require('./asset_store.js');
 const { registerYutRoutes } = require('./yut_event.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
+const { inventoryVersion, registerGameActionRoutes, createGamePresentation } = require('./web_game_actions');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const AWS = require('aws-sdk');
@@ -370,7 +371,7 @@ async function requirePartyQuest(req, res, next) {
     }
     try {
         const user = await rpgenius.getRPGUserByName(sess.name);
-        if (!user || !user.canPartyQuest) {
+        if (!rpgenius.canUsePartyQuest(user)) {
             if (req.path === '/party') return res.redirect('/');
             return res.status(403).json({ error: '파티 퀘스트가 활성화되지 않았습니다.' });
         }
@@ -417,7 +418,7 @@ server.get('/', async (req, res) => {
             const user = await rpgenius.getRPGUserByName(sess.name);
             return res.send(renderUserDashboard(Object.assign({}, sess, {
                 admin: user ? !!user.isAdmin : !!sess.admin,
-                canPartyQuest: user ? !!user.canPartyQuest : !!sess.canPartyQuest
+                canPartyQuest: rpgenius.canUsePartyQuest(user)
             })));
         } catch (_) {
             return res.send(renderUserDashboard(sess));
@@ -434,7 +435,7 @@ server.get('/mail', async (req, res) => {
         const user = await rpgenius.getRPGUserByName(sess.name);
         return res.send(renderUserDashboard(Object.assign({}, sess, {
             admin: user ? !!user.isAdmin : !!sess.admin,
-            canPartyQuest: user ? !!user.canPartyQuest : !!sess.canPartyQuest
+            canPartyQuest: rpgenius.canUsePartyQuest(user)
         }), { initialPage: 'mail' }));
     } catch (_) {
         return res.send(renderUserDashboard(sess, { initialPage: 'mail' }));
@@ -494,7 +495,7 @@ server.post('/api/login', async (req, res) => {
         const knownAgent = ua && Array.isArray(user.logged_in_agent) && user.logged_in_agent.includes(ua);
         if (!code && !otp) {
             if (knownAgent) {
-                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
+                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: rpgenius.canUsePartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
                 return res.json({ ok: true, name: user.name });
             }
             return res.json({ needCode: true, canOtp: !!user.otpSecret });
@@ -511,7 +512,7 @@ server.post('/api/login', async (req, res) => {
             latest.logged_in_agent.push(ua);
             await latest.save();
         }
-        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: !!user.canPartyQuest, exp: Date.now() + SESSION_TTL_MS });
+        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: rpgenius.canUsePartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
         res.json({ ok: true, name: user.name });
     } catch (e) {
         console.error('login error:', e);
@@ -1263,6 +1264,19 @@ server.get('/api/inventory/items/:id/detail', requireUser, async (req, res) => {
     }
 });
 
+const gameInventories = { items: buildInventoryItems, cards: buildInventoryCards, equipment: buildInventoryEquipment, pet: buildInventoryPets };
+const gamePresentation = createGamePresentation({ inventories: gameInventories, card: serializeCard, itemAssets: getItemDisplayAssets, rpg: rpgenius });
+registerGameActionRoutes(server, {
+    inventories: gameInventories, presentation: gamePresentation,
+    rpg: rpgenius, requireUser, serializeItemUse,
+    getPartyBlock: user => {
+        const room = partyquest.getMyRoomSnapshot(user.name);
+        return room && room.state === 'inProgress' ? '레이드를 마친 뒤 이용해주세요.' : null;
+    },
+    buildProfile: buildUserProfile, buildCards: buildCombineCards, itemAssets: getItemDisplayAssets,
+    getStarterCards: user => readJson(CHARACTER_CARDS_PATH, []).map((card, id) => card ? serializeCard({ id, star: 0, type: '일반' }, user) : null).filter(Boolean)
+});
+
 const inventoryCraftLocks = new Set();
 server.post('/api/inventory/craft', requireUser, async (req, res) => {
     const lockKey = String(req.session.name || '');
@@ -1278,10 +1292,11 @@ server.post('/api/inventory/craft', requireUser, async (req, res) => {
         const status = rpgenius.getCraftRecipeStatus(user, name, 1);
         if (!status) return res.status(404).json({ error: '존재하지 않는 제작 레시피입니다.' });
         if (times > status.maxCraftable) return res.status(400).json({ error: '재료가 부족합니다. 현재 최대 ' + comma(status.maxCraftable) + '회 제작할 수 있습니다.' });
+        const before = gamePresentation.snapshot(user);
         const message = rpgenius.craftRecipeByName(user, name, times);
         if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
         await user.save();
-        res.json({ ok: true, message });
+        res.json({ ok: true, action: 'craft', changes: gamePresentation.changes(before, user) });
     } catch (error) {
         console.error('inventory craft error:', error);
         res.status(500).json({ error: '제작 중 오류가 발생했습니다.' });
@@ -1347,6 +1362,7 @@ server.post('/api/inventory/items/:id/use', requireUser, serializeItemUse(async 
         }
         const count = Number(req.body && req.body.count || 1);
         if (!Number.isInteger(count) || count < 1) return res.status(400).json({ error: '사용 수량을 확인해주세요.' });
+        const before = gamePresentation.snapshot(user);
         const message = await rpgenius.useItem(user, item.name, count);
         if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
         if (user.pendingAction) {
@@ -1354,7 +1370,7 @@ server.post('/api/inventory/items/:id/use', requireUser, serializeItemUse(async 
             await user.save();
         }
         const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
-        res.json({ ok: true, message, pending, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
+        res.json({ ok: true, changes: gamePresentation.changes(before, user), pending, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
     } catch (error) {
         console.error('inventory item use error:', error);
         res.status(500).json({ error: '아이템 사용 중 오류가 발생했습니다.' });
@@ -1366,12 +1382,13 @@ server.post('/api/inventory/item-use/resolve', requireUser, serializeItemUse(asy
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.status(400).json({ error: '진행 중인 아이템 사용이 없습니다.' });
+        const before = gamePresentation.snapshot(user);
         const message = rpgenius.resolveWebItemUsePending(user, req.body && req.body.choice, req.body && req.body.confirm === true);
         if (user.pendingAction) user.pendingAction.webItemUse = true;
         await user.save();
         const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
         if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, ''), pending });
-        res.json({ ok: true, message, pending });
+        res.json({ ok: true, changes: gamePresentation.changes(before, user), pending });
     } catch (error) {
         console.error('inventory item resolve error:', error);
         res.status(500).json({ error: '아이템 적용 중 오류가 발생했습니다.' });
@@ -3182,39 +3199,47 @@ server.post('/api/point/charge', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/combine', requireUser, async (req, res) => {
+server.post('/api/combine', requireUser, serializeItemUse(async (req, res) => {
     try {
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(n => Number(n)) : [];
-        const protectIndex = req.body && req.body.protectIndex != null ? Number(req.body.protectIndex) : null;
-        const luckyRate = req.body && req.body.luckyRate != null ? Number(req.body.luckyRate) : null;
-        const selection = rpgenius.getCardCombineSelection(user, numbers);
-        if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
-        const pending = { type: '카드조합', numbers: selection.numbers };
-        if (Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3) {
-            if (rpgenius.getProtectItemIdForCardStar(user, selection.star) == -1) return res.status(400).json({ error: '사용할 수 있는 보호 카드가 없습니다.' });
-            pending.protectIndex = protectIndex;
-        } else if (luckyRate != null && luckyRate > 0) {
-            if (rpgenius.getLuckyItemIdForRate(user, luckyRate) == -1) return res.status(400).json({ error: '사용할 수 있는 럭키 카드가 없습니다.' });
-            pending.luckyRate = luckyRate;
-        }
-        user.pendingAction = pending;
-        const message = rpgenius.runCardCombine(user);
-        if (typeof message == 'string' && message.startsWith('❌')) {
-            user.pendingAction = null;
-            return res.status(400).json({ error: message.replace(/^❌\s*/, '') });
-        }
-        const cardsArr = user.inventory.card;
-        const resultCard = serializeCard(cardsArr[cardsArr.length - 1], user);
-        const success = !!(resultCard && Number(resultCard.star) > Number(selection.star));
-        await user.save();
-        res.json({ ok: true, message, success, resultCard, cards: buildCombineCards(user), meta: buildCombineMeta(user), profile: buildUserProfile(user) });
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+            const block = rpgenius.getWebGameActionBlock(user) || getEquipmentActionBlockedReason(user);
+            if (block) return res.status(409).json({ error: block });
+            const numbers = Array.isArray(req.body && req.body.numbers) ? req.body.numbers.map(n => Number(n)) : [];
+            if (req.body.version !== inventoryVersion(user, 'cards')) return res.status(409).json({ error: '카드 목록이 변경되었습니다. 조합 화면을 다시 열어주세요.' });
+            const protectIndex = req.body && req.body.protectIndex != null ? Number(req.body.protectIndex) : null;
+            const luckyRate = req.body && req.body.luckyRate != null ? Number(req.body.luckyRate) : null;
+            const selection = rpgenius.getCardCombineSelection(user, numbers);
+            if (selection.error) return res.status(400).json({ error: selection.error.replace(/^❌\s*/, '') });
+            const pending = { type: '카드조합', numbers: selection.numbers };
+            if (Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3) {
+                if (rpgenius.getProtectItemIdForCardStar(user, selection.star) == -1) return res.status(400).json({ error: '사용할 수 있는 보호 카드가 없습니다.' });
+                pending.protectIndex = protectIndex;
+            } else if (luckyRate != null && luckyRate > 0) {
+                if (rpgenius.getLuckyItemIdForRate(user, luckyRate) == -1) return res.status(400).json({ error: '사용할 수 있는 럭키 카드가 없습니다.' });
+                pending.luckyRate = luckyRate;
+            }
+            await rpgenius.stopFishingForCommand(user);
+            user.pendingAction = pending;
+            const message = rpgenius.runCardCombine(user);
+            if (typeof message == 'string' && message.startsWith('❌')) {
+                user.pendingAction = null;
+                return res.status(400).json({ error: message.replace(/^❌\s*/, '') });
+            }
+            const cardsArr = user.inventory.card;
+            const resultCard = serializeCard(cardsArr[cardsArr.length - 1], user);
+            const success = !!(resultCard && Number(resultCard.star) > Number(selection.star));
+            await user.save();
+            res.json({ ok: true, message, success, resultCard, cards: buildCombineCards(user), meta: buildCombineMeta(user), profile: buildUserProfile(user) });
+        });
     } catch (e) {
         console.error('combine error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
-});
+}));
 
 function getEquipmentActionBlockedReason(user, action, noun) {
     const verb = action || '변경';
@@ -5518,6 +5543,8 @@ function buildInventoryPets(user) {
         result.push({
             type: 'pet',
             typeLabel: '펫',
+            version: inventoryVersion(user, 'pet'),
+            extractable: !equipped && !!rpgenius.PET_EXTRACT_YIELD[data.rarity],
             id: Number(pet.id),
             number: itemNumber,
             source: meta && meta.source || (equipped ? 'equipped' : 'inventory'),
@@ -5729,6 +5756,7 @@ function buildInventoryItems(user) {
             const assets = getItemDisplayAssets(data);
             return {
                 id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0),
+                version: inventoryVersion(user, 'items'), sellPrice: Number(data.sellPrice || 0),
                 noTrade: data.no_trade === true, usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
                 iconUrl: assets.iconUrl, frameUrl: assets.frameUrl
             };
@@ -5740,7 +5768,7 @@ function buildInventoryCards(user) {
     return (user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [])
         .map((card, i) => {
             const serialized = serializeCard(card, user);
-            return serialized ? Object.assign(serialized, { number: i + 1 }) : null;
+            return serialized ? Object.assign(serialized, { number: i + 1, version: inventoryVersion(user, 'cards'), salePrice: rpgenius.getCardSalePrice(card) }) : null;
         })
         .filter(Boolean);
 }
@@ -5760,6 +5788,7 @@ function buildCombineCards(user) {
             name: s.name,
             formatted: s.formatted,
             imageUrl: s.imageUrl,
+            version: inventoryVersion(user, 'cards'),
             combinable: !!rpgenius.getCardCombineInfo(star)
         };
     }).filter(Boolean).sort((a, b) => b.star - a.star || a.id - b.id);
@@ -5881,6 +5910,8 @@ function buildInventoryEquipment(user) {
             slotKey: meta && typeof meta.slotKey != 'undefined' ? String(meta.slotKey) : null,
             name: rpgenius.getEquipmentDisplayName(data, equip),
             baseName: data.name,
+            version: inventoryVersion(user, 'equipment'),
+            locked: !!equip.locked,
             rarity: rpgenius.getEquipmentRarityLabel(data, equip),
             baseRarity: data.rarity,
             transcendStage: data.rarity == '초월' ? Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1))) : null,
@@ -6878,7 +6909,12 @@ function decorateWebItemUsePending(pending, user) {
     if (!pending) return null;
     const items = rpgenius.getDataCache('Item', []);
     const equipment = rpgenius.getDataCache('Equipment', {});
-    return Object.assign({}, pending, {
+    const action = user.pendingAction || {};
+    const target = action.equipNumber || (pending.type === '장비강화' && action.number)
+        ? buildInventoryEquipment(user).find(entry => entry.number === Number(action.equipNumber || action.number))
+        : action.cardNumber ? buildInventoryCards(user).find(entry => entry.number === Number(action.cardNumber)) : null;
+    const upgrade = pending.type === '장비강화' ? buildEquipmentUpgradePreview(user, action.number) : null;
+    return Object.assign({}, pending, { target, upgrade,
         options: (pending.options || []).map(option => {
             const decorated = Object.assign({}, option);
             if (option.kind === 'card' && option.card) {
@@ -8496,7 +8532,7 @@ function buildUserProfile(user) {
             point: Number(user.point || 0),
             mileage: Number(user.mileage || 0),
             isAdmin: !!user.isAdmin,
-            canPartyQuest: !!user.canPartyQuest,
+            canPartyQuest: rpgenius.canUsePartyQuest(user),
             maxAccessory: Number(user.maxAccessory || 3),
             title: buildTitleDisplay(user)
         },
@@ -8651,7 +8687,7 @@ function renderUserDashboard(sess, opts) {
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
-  <div class="page active" data-page="home"><div id="homeBannerList" class="home-banner-list"></div></div>
+  <div class="page active" data-page="home"><section id="gameHome" class="panel game-home" aria-label="플레이 메뉴"></section><div id="homeBannerList" class="home-banner-list"></div></div>
   <div class="page" data-page="chat">
     <div class="webchat-shell" id="webChatShell">
       <aside class="webchat-rooms">
@@ -8817,9 +8853,11 @@ function renderUserDashboard(sess, opts) {
         </div>
         <label class="inventory-search"><span aria-hidden="true">⌕</span><input id="inventorySearch" type="search" placeholder="이름으로 검색" autocomplete="off"><button id="inventorySearchClear" type="button" aria-label="검색어 지우기">×</button></label>
       </div>
+      <div id="inventoryActions" class="inventory-actions"></div>
       <div id="viewer" class="viewer inventory-viewer"></div>
     </section>
   </div>
+  <div class="page" data-page="낚시"><section id="fishingPanel" class="panel"></section></div>
   <div class="page" data-page="mail">
     <div class="mailbox" id="mailbox">
       <div class="mailbox-list-pane">
@@ -8944,6 +8982,7 @@ function renderUserDashboard(sess, opts) {
 <script>window.HAS_PARTY=${sess.canPartyQuest ? 'true' : 'false'};window.IS_ADMIN=${sess.admin ? 'true' : 'false'};</script>
 <script src="/static/awakening-effects.js"></script>
 <script src="/static/fusion-effects.js"></script>
+<script src="/static/game-actions.js"></script>
 <script src="/static/app.js"></script>
 </body></html>`;
 }
@@ -9287,7 +9326,7 @@ function escapeHtml(s) {
 
 function keepAlive() {
     const port = Number(process.env.PORT || 3000);
-    server.listen(port, () => console.log('서버 준비 완료! http://localhost:' + port));
+    return server.listen(port, () => console.log('서버 준비 완료! http://localhost:' + port));
 }
 
 if (require.main === module) keepAlive();

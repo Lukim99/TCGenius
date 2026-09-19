@@ -175,6 +175,7 @@ if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 
 const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 PAGE_LABELS.awakeningcombine = '각성조합';
+PAGE_LABELS['낚시'] = '낚시';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -192,7 +193,7 @@ const GROUPS = [
     { id: 'home',      label: '메인',     iconSvg: ICONS.home,      pages: ['home'] },
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
-    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
+    { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['윷놀이', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
@@ -253,11 +254,13 @@ function navigatePage(pageId) {
     if (activePage === '윷놀이' && pageId !== '윷놀이' && window.yutGame) window.yutGame.pause();
     if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
+    if (activePage === '낚시' && pageId !== '낚시') stopFishingRefresh();
     activePage = pageId;
     document.body.classList.toggle('yut-active', pageId === '윷놀이');
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
-    if (pageId === 'home') loadHomeBanners();
+    if (pageId === 'home') { loadHomeBanners(); refreshGameHome().catch(e => { $('#gameHome').textContent = e.message; }); }
+    if (pageId === '낚시') loadFishing();
     if (pageId === 'chat') loadWebChat();
     if (pageId === 'info' && !suppressInfoSelfReset && currentProfileName && myName && currentProfileName !== myName) loadProfile(myName).catch(e => showAlert(e.message));
     if (pageId === 'inventory') {
@@ -893,6 +896,12 @@ function openPetModal(pet) {
     const thumb = petCardThumb(pet);
     thumb.classList.add('modal-equip-thumb');
     $('#modalBody').prepend(thumb);
+    if (pet.version && ownEquipContext()) {
+        const actions = el('div', { class: 'row game-actions-row' },
+            el('button', { type: 'button', class: pet.equipped ? '' : 'primary', onclick: e => changePetEquipment(pet, e.currentTarget) }, pet.equipped ? '장착 해제' : '장착'));
+        if (pet.extractable) actions.appendChild(el('button', { type: 'button', onclick: e => previewInventoryAction({ action: 'pets-extract', numbers: [pet.number], version: pet.version }, e.currentTarget) }, '추출'));
+        $('#modalBody').appendChild(actions);
+    }
     if (pet.specialLines && pet.specialLines.length) {
         $('#modalBody').appendChild(el('div', { class: 'pet-special-title' }, '특수 효과'));
         pet.specialLines.forEach(line => $('#modalBody').appendChild(el('div', { class: 'stat-line' }, line)));
@@ -917,7 +926,8 @@ function equipmentCard(eq) {
             el('div', { class: 'equip-name' }, eq.name),
             el('div', { class: 'equip-meta' },
                 rarityTag(eq.rarity),
-                eq.equipped ? el('span', { class: 'tag on' }, '장착') : null
+                eq.equipped ? el('span', { class: 'tag on' }, '장착') : null,
+                eq.locked ? el('span', { class: 'tag' }, '잠금') : null
             )
         ),
         eq.level > 0 ? el('span', { class: 'level' }, '+' + eq.level) : el('span')
@@ -1318,10 +1328,14 @@ function openInventoryCardModal(card) {
     const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
     openMainCardModal(card, ownInventory && Number(card.number || 0) ? { source: 'inv', number: Number(card.number) } : null);
     if (!ownInventory || !Number(card.number || 0)) return;
-    const row = el('div', { class: 'row' });
+    const row = el('div', { class: 'row game-actions-row' });
     row.appendChild(el('button', { class: 'primary', onclick: e => handleCardAction('equip-main', { number: card.number }, e) }, '메인카드 장착'));
     row.appendChild(el('button', { onclick: e => handleCardAction('slot/equip', { number: card.number }, e) }, '슬롯 장착'));
     $('#modalBody').appendChild(row);
+    if (card.salePrice > 0) $('#modalBody').appendChild(el('section', { class: 'game-management' },
+        el('div', { class: 'game-management-row' },
+            el('div', { class: 'game-management-copy' }, el('strong', null, '카드 판매'), el('span', null, '판매 시 ', gameGoldAmount(card.salePrice), ' 획득')),
+            el('button', { type: 'button', class: 'game-button accent', onclick: e => previewInventoryAction({ action: 'cards-sell', numbers: [card.number], version: card.version }, e.currentTarget) }, '판매'))));
 }
 
 async function handleCardAction(action, body, event) {
@@ -1529,7 +1543,8 @@ function equipmentModalView(eq, interactive) {
                 rarityTag(eq.rarity),
                 el('span', { class: 'tag' }, eq.typeLabel),
                 eq.level > 0 ? el('span', { class: 'tag eqm-lv' }, '+' + eq.level) : null,
-                eq.equipped ? el('span', { class: 'tag on' }, '장착 중') : null
+                eq.equipped ? el('span', { class: 'tag on' }, '장착 중') : null,
+                eq.locked ? el('span', { class: 'tag' }, '잠금') : null
             )
         )
     );
@@ -1574,7 +1589,8 @@ function equipmentModalView(eq, interactive) {
         } else {
             row.appendChild(el('button', { class: 'modal-action-button equip', onclick: e => handleEquipmentAction(eq, 'equip', e) }, '장착'));
         }
-        row.appendChild(el('button', { class: 'modal-action-button enhance', onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
+        row.appendChild(el('button', { class: 'modal-action-button enhance', disabled: eq.locked, onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
+
         nodes.push(row);
         if (eq.canPotential) {
             const potRow = el('div', { class: 'row modal-action-row potential' });
@@ -1585,6 +1601,7 @@ function equipmentModalView(eq, interactive) {
             }
             nodes.push(potRow);
         }
+        nodes.push(equipmentManagementControls(eq));
     }
     return [hero, ...(eq.setInfo ? equipmentModalTabbedNodes(nodes, eq.setInfo) : nodes)];
 }
@@ -2161,6 +2178,7 @@ function renderProfile(data) {
     if (myName == null) myName = data.user.name;
     $('#who').textContent = myName;
     if (data.user.name === myName) {
+        window.HAS_PARTY = !!data.user.canPartyQuest;
         setHeaderPoint(data.user.point);
         myGoods = { gold: Number(data.user.gold || 0), garnet: Number(data.user.garnet || 0) };
     }
@@ -2273,22 +2291,6 @@ function itemRewardRow(entry, kind) {
     );
 }
 
-function cleanItemUseMessage(message) {
-    return String(message || '')
-        .replace(/\u200e/g, '')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('/RPGenius'));
-}
-
-function itemUseMessagePanel(message, className) {
-    const lines = cleanItemUseMessage(message);
-    return el('div', { class: 'item-use-message ' + (className || '') }, ...lines.map(line => {
-        if (/^\[.+\]$/.test(line)) return el('strong', { class: 'item-use-message-title' }, line.replace(/[\[\]]/g, ''));
-        return el('p', null, line.replace(/^[-✅✨❗]\s*/, ''));
-    }));
-}
-
 function itemUseControls(item) {
     const ownInventory = !currentInventoryName || !myName || currentInventoryName === myName;
     if (!ownInventory || !item.usable) return null;
@@ -2326,7 +2328,7 @@ async function postItemUse(url, body) {
     return data;
 }
 
-function renderItemUseResult(item, message) {
+function renderItemUseResult(item, changes) {
     activeItemUsePending = false;
     modalLocked = false;
     $('#modalBody').replaceChildren(el('div', { class: 'item-detail item-use-result' },
@@ -2335,7 +2337,7 @@ function renderItemUseResult(item, message) {
             el('section', { class: 'item-use-result-card' },
                 el('span', { class: 'item-use-result-mark' }, '✓'),
                 el('h5', null, '사용 완료'),
-                itemUseMessagePanel(message, 'result')
+                gameChangesView(changes)
             )
         )
     ));
@@ -2349,8 +2351,8 @@ function itemUseOptionNode(item, option) {
     );
 }
 
-function renderItemUsePending(item, pending, message) {
-    if (!pending) return renderItemUseResult(item, message);
+function renderItemUsePending(item, pending, changes) {
+    if (!pending) return renderItemUseResult(item, changes);
     activeItemUsePending = true;
     modalLocked = false;
     const actionNode = pending.confirmOnly
@@ -2361,7 +2363,10 @@ function renderItemUsePending(item, pending, message) {
         el('div', { class: 'item-detail-content' },
             itemDetailSection(pending.title || '대상 선택', (pending.options || []).length ? (pending.options || []).length + '개 대상' : '',
                 el('p', { class: 'item-detail-note' }, pending.description || '아이템을 적용할 대상을 선택해주세요.'),
-                pending.confirmOnly && message ? itemUseMessagePanel(message, 'preview') : null,
+                pending.target ? gameAssetSection('적용 대상', [{ name: pending.target.name, detail: pending.target.starText || pending.target.rarity, iconUrl: pending.target.imageUrl || pending.target.iconUrl, count: 1 }], 'target') : null,
+                pending.upgrade && !pending.upgrade.error ? el('div', { class: 'game-result-stats' },
+                    ...Object.entries({ great: '대성공', success: '성공', down: '실패 · 하락', reset: '파괴' }).map(([key, label]) => el('div', null,
+                        el('span', null, label), el('b', null, (Number(pending.upgrade.rates[key] || 0) * 100).toFixed(1) + '%')))) : null,
                 actionNode,
                 !pending.confirmOnly && !(pending.options || []).length ? el('div', { class: 'item-detail-empty' }, '선택할 수 있는 대상이 없습니다.') : null,
                 el('button', { class: 'item-use-cancel', type: 'button', onclick: () => closeModal() }, '사용 취소')
@@ -2388,8 +2393,8 @@ async function useInventoryItem(item, count, button) {
         const response = await postItemUse('/api/inventory/items/' + encodeURIComponent(item.id) + '/use', { count });
         item.count = Number.isFinite(Number(response.remainingCount)) ? Number(response.remainingCount) : Math.max(0, Number(item.count || 0) - Number(count || 1));
         loadInventory('items').catch(() => {});
-        if (response.pending) renderItemUsePending(item, response.pending, response.message);
-        else renderItemUseResult(item, response.message);
+        if (response.pending) renderItemUsePending(item, response.pending, response.changes);
+        else renderItemUseResult(item, response.changes);
     } catch (error) {
         modalLocked = false;
         button.disabled = false;
@@ -2404,8 +2409,8 @@ async function resolveInventoryItemUse(item, choice, confirm, button) {
     try {
         const response = await postItemUse('/api/inventory/item-use/resolve', { choice, confirm });
         loadInventory('items').catch(() => {});
-        if (response.pending) renderItemUsePending(item, response.pending, response.message);
-        else renderItemUseResult(item, response.message);
+        if (response.pending) renderItemUsePending(item, response.pending, response.changes);
+        else renderItemUseResult(item, response.changes);
     } catch (error) {
         modalLocked = false;
         button.disabled = false;
@@ -2422,7 +2427,7 @@ async function craftInventoryRecipe(application, times, button) {
         modalLocked = false;
         finishCloseModal();
         loadInventory('items').catch(() => {});
-        await showAlert(response.message);
+        showGameActionResult(response);
     } catch (error) {
         modalLocked = false;
         button.disabled = false;
@@ -2511,7 +2516,7 @@ function renderItemDetail(item, detail) {
         ));
     }
     const useControls = itemUseControls(data);
-    $('#modalBody').replaceChildren(el('div', { class: 'item-detail' }, itemDetailHero(data), el('div', { class: 'item-detail-content' }, ...sections), useControls));
+    $('#modalBody').replaceChildren(el('div', { class: 'item-detail' }, itemDetailHero(data), itemSaleEntry(data), el('div', { class: 'item-detail-content' }, ...sections), useControls));
 }
 
 async function openInvItemModal(item) {
@@ -2674,6 +2679,7 @@ function renderInventoryData(kind, data) {
     const query = String($('#inventorySearch') && $('#inventorySearch').value || '').trim().toLocaleLowerCase('ko-KR');
     const emptySearch = el('div', { class: 'empty inventory-empty' }, query ? '검색 결과가 없습니다.' : '보유 항목이 없습니다.');
     updateInventoryChrome(kind, data);
+    renderInventoryActions(kind, data);
     if (kind === 'items') {
         const sections = [];
         const matchedItems = data.items.filter(item => inventoryMatches(item.name, query));
@@ -3413,9 +3419,12 @@ const HUNT_MENU = [
     { key: '헬 필드', level: 'Lv.141 ~ 300', action: () => { location.href = '/hfield'; } },
     { key: '일일던전', level: 'Lv.101 ~ 300', action: null },
     { key: '월드보스', level: 'Lv.1 ~ 300', action: () => { location.href = '/worldboss'; } },
-    { key: '레이드', level: 'Lv.71 ~ 300', action: () => {
-        if (window.HAS_PARTY) location.href = '/party';
-        else showAlert('레이드에 입장할 수 없습니다.');
+    { key: '레이드', level: 'Lv.71 ~ 300', action: async () => {
+        try {
+            const state = await api('/api/game/state');
+            if (state.canPartyQuest) location.href = '/party';
+            else showAlert('레이드는 71레벨부터 이용할 수 있습니다.');
+        } catch (e) { showAlert(e.message); }
     } }
 ];
 
@@ -3955,7 +3964,7 @@ async function runEnhancement(number) {
         const data = await postApi('/api/equipment/upgrade/run', { number, protectLevel });
         enhanceState.busy = false;
         if (data.profile) renderProfile(data.profile);
-        showEnhanceResult(data.resultKind, data.message, number, data.preview, data.appliedDiffs || [], itemInfo);
+        showEnhanceResult(data.resultKind, number, data.preview, data.appliedDiffs || [], itemInfo);
     } catch (e) {
         enhanceState.busy = false;
         if (btn) { btn.disabled = false; }
@@ -4037,15 +4046,9 @@ function showEnhanceWarning(onConfirm) {
     ov.classList.add('active');
 }
 
-function showEnhanceResult(kind, message, number, nextPreview, appliedDiffs, itemInfo) {
-    const lines = (message || '').split('\n');
-    let headline = lines[0] || '';
-    const sub = lines.slice(1).join('  ').trim();
-    if (kind === 'protected') {
-        if (message.includes('초기화')) headline = '파괴 방어 초기화';
-        else if (message.includes('파괴')) headline = '파괴 방어';
-        else if (message.includes('하락')) headline = '하락 방어';
-    }
+function showEnhanceResult(kind, number, nextPreview, appliedDiffs, itemInfo) {
+    const headline = { great: '강화 대성공', success: '강화 성공', protected: '보호 효과 적용', destroy: '장비 파괴', down: '강화 단계 하락', fail: '강화 실패' }[kind] || '강화 결과';
+    const sub = { protected: '보호 아이템으로 장비를 지켰습니다.', destroy: '강화에 실패해 장비가 소모되었습니다.' }[kind] || '';
     const resultOverlay = $('#enhanceResultOverlay');
     const info = itemInfo || {};
 
@@ -4320,7 +4323,7 @@ async function submitCombine() {
     combineState.busy = true;
     const btn = $('#combineBtn');
     if (btn) btn.disabled = true;
-    const payload = { numbers: combineState.slots.map(c => c.number) };
+    const payload = { numbers: combineState.slots.map(c => c.number), version: combineState.slots[0].version };
     if (combineState.protectIndex != null) payload.protectIndex = combineState.protectIndex;
     else if (combineState.luckyRate != null) payload.luckyRate = combineState.luckyRate;
     let effect;
@@ -4336,6 +4339,7 @@ async function submitCombine() {
         combineState.luckyRate = null;
         combineState.result = data.resultCard || null;
         await effect.reveal(data);
+        addCombineAutoSelect();
         renderCombineStage();
         if (data.profile) renderProfile(data.profile);
         renderCombineResult(data);
@@ -4359,7 +4363,7 @@ function renderCombineResult(data) {
     const guaranteed = msg.indexOf('확정') !== -1;
     const rc = data.resultCard;
     const headline = omega ? '🌟 오메가 조합 완료!' : guaranteed ? '⚜️ 확정 조합 성공!' : (success ? '🌟 조합 성공!' : '등급 상승 실패 · 같은 등급 카드 획득');
-    const notes = msg.split('\n').filter(l => l.indexOf('🛡️') !== -1).map(l => l.replace(/^[-\s]*/, ''));
+    const notes = msg.includes('재료 카드 1장을 보존') ? ['보호 효과로 재료 카드 1장을 보존했습니다.'] : [];
     info.replaceChildren(el('div', { class: 'combine-result ' + (success ? 'ok' : 'fail') },
         el('div', { class: 'combine-result-head' }, headline),
         rc ? el('div', { class: 'combine-result-card' },
@@ -4403,6 +4407,7 @@ async function loadCombine() {
         combineState.result = null;
         combineState.busy = false;
         bindCombineControls();
+        addCombineAutoSelect();
         renderCombineStage();
     } catch (e) {
         combineState.built = false;
