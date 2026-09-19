@@ -284,11 +284,13 @@ details.collapsible .body{padding:12px}
 .qe-inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .qe-num{width:76px}
 </style>
+<link rel="stylesheet" href="/static/admin-workspace.css">
 </head>
 <body>
 <div class="app">
 <aside class="side">
   <div class="side-head">RPGenius<span>관리자</span></div>
+  <div class="nav-search"><input id="navSearch" type="search" placeholder="메뉴 검색" aria-label="메뉴 검색"></div>
   <nav>
     <div class="side-group">운영</div>
     <button class="tab active" data-tab="grant">유저 재화</button>
@@ -307,9 +309,9 @@ details.collapsible .body{padding:12px}
     <button class="tab" data-tab="item">아이템</button>
     <button class="tab" data-tab="equipment">장비</button>
     <button class="tab" data-tab="pet">펫</button>
-    <button class="tab" data-tab="fashion">패션</button>
+    <button class="tab" data-tab="fashion">아바타</button>
     <button class="tab" data-tab="assets">이미지 자산</button>
-    <button class="tab" data-tab="recipe">레시피</button>
+    <button class="tab" data-tab="recipe">조합법</button>
     <button class="tab" data-tab="bait">미끼</button>
     <button class="tab" data-tab="quest">퀘스트</button>
     <div class="side-group">로그</div>
@@ -323,6 +325,7 @@ details.collapsible .body{padding:12px}
   <div class="side-foot"><span class="who">{{ADMIN_NAME}}</span><button class="btn sm" id="logout">로그아웃</button></div>
 </aside>
 <main>
+<header class="workspace-head"><h1 id="workspaceTitle">유저 재화</h1><span class="muted">Ctrl / ⌘ + S 저장</span><select id="mobileNav" aria-label="관리 메뉴"></select></header>
 
 <div class="panel active" data-panel="grant">
   <section>
@@ -415,15 +418,15 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="assets">
 <section>
-  <h2>이미지 자산 (S3 실시간 반영)</h2>
-  <p class="muted">업로드·삭제는 서버와 S3에 즉시 반영됩니다. 아이템/보주 아이콘은 itemImage, 카드 아트는 cardImage/카드분리, 그 외 화면 이미지는 ui 카테고리입니다. 카드 레이어는 8비트 RGBA·399x515 PNG만 허용됩니다.</p>
+  <h2>이미지 자산</h2>
+  <p class="muted">파일을 업로드하거나 교체하면 게임에 바로 반영됩니다.</p>
   <div class="bar">
     <select id="assetCategory" style="min-width:180px">
-      <option value="itemImage">itemImage (아이템 아이콘)</option>
-      <option value="cardImage">cardImage (카드 아트)</option>
-      <option value="ui">ui (화면 이미지)</option>
+      <option value="itemImage">아이템 · 아바타 이미지</option>
+      <option value="cardImage">카드 이미지</option>
+      <option value="ui">화면 이미지</option>
     </select>
-    <span id="assetCrumbs" style="flex:1;min-width:200px"></span>
+    <span id="assetCrumbs" class="asset-crumbs" style="flex:1;min-width:180px"></span>
     <button class="btn" id="assetMkdir">폴더 만들기</button>
     <button class="btn" id="assetReload">새로고침</button>
     <span class="muted" id="assetStatus"></span>
@@ -431,11 +434,11 @@ details.collapsible .body{padding:12px}
 </section>
 <section>
   <h2>업로드</h2>
-  <div class="bar">
+  <div id="assetDropZone" class="upload-zone"><div class="bar">
     <input id="assetFiles" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,audio/mpeg" style="flex:1;min-width:220px">
     <input id="assetSaveName" placeholder="저장 파일명 (1개 선택 시만 적용, 비우면 원본 이름)" style="flex:1;min-width:220px">
     <button class="btn primary" id="assetUpload">현재 폴더에 업로드</button>
-  </div>
+  </div><span class="muted">파일을 끌어 놓거나 선택하세요. 업로드하면 즉시 반영됩니다.</span><div id="assetQueue" class="upload-queue"></div></div>
   <div id="assetCardHelper" style="display:none">
     <p class="muted">카드 파일명 도우미 — 규칙에 맞는 파일명을 만들어 '저장 파일명'에 채웁니다. 업로드 위치: 카드분리/캐릭터/&lt;카드명&gt;/ (폴더가 없으면 '폴더 만들기'로 생성)</p>
     <div class="bar">
@@ -456,7 +459,8 @@ details.collapsible .body{padding:12px}
 </section>
 <section>
   <h2>파일 목록</h2>
-  <div id="assetList" class="entry-list"></div>
+  <div class="list-tools"><input id="assetFilter" type="search" placeholder="현재 폴더에서 파일 검색" aria-label="파일 검색"><label class="check-label"><input id="assetSelectAll" type="checkbox">전체 선택</label><button id="assetDeleteSelected" class="btn danger" disabled>선택 삭제</button><span class="muted" id="assetCount"></span></div>
+  <div id="assetList" class="asset-grid"></div>
 </section></div>
 
 <div class="panel" data-panel="package">
@@ -466,6 +470,7 @@ details.collapsible .body{padding:12px}
       <div style="flex:2"><label>패키지 이름</label><input id="pkgName" placeholder="여름 한정 성장 패키지"></div>
       <div class="nf" style="min-width:140px"><label>거래 불가</label><div style="padding:7px 0"><label class="switch"><input type="checkbox" id="pkgNoTrade" checked><span class="track"></span><span class="switch-label">거래 제한</span></label></div></div>
     </div>
+    <div class="image-field"><img id="pkgImagePreview" class="image-preview" alt="패키지 이미지 미리보기" hidden><div class="image-controls"><label for="pkgImage">패키지 이미지</label><input id="pkgImage" type="file" accept="image/png,image/jpeg,image/webp"><span class="muted">PNG · JPG · WebP, 최대 10MB. 등록 시 아이템 이미지로 함께 업로드됩니다.</span><button id="pkgImageClear" class="btn sm" type="button" hidden>선택 취소</button></div></div>
     <div><label>설명</label><textarea id="pkgDesc" placeholder="아이템 설명" style="min-height:50px;font-family:inherit;font-size:13px"></textarea></div>
   </section>
   <section>
@@ -489,9 +494,9 @@ details.collapsible .body{padding:12px}
       <span class="lab">글로벌</span><input class="nf" id="pkgLimitGlobal" type="number" min="0" value="0" style="width:80px;flex:0 0 auto">
     </div>
     <div class="bar" style="margin-top:14px;margin-bottom:0">
-      <button class="btn primary" id="pkgCreate">패키지 생성</button>
-      <span class="muted" id="pkgStatus"></span>
-    </div>
+      <button class="btn primary" id="pkgCreate">패키지 등록</button>
+      <span class="muted" id="pkgStatus" role="status"></span>
+    </div><div id="pkgResult" class="package-result"></div>
   </section>
 </div>
 
@@ -507,9 +512,17 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="coupon"><section><h2>쿠폰</h2><div id="couponList" class="list"></div><button class="add-btn" id="couponAdd">+ 새 쿠폰 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="couponSave">저장</button><button class="btn" id="couponReload">다시 불러오기</button><span class="muted" id="couponStatus"></span></div></section></div>
 
-<div class="panel" data-panel="shop"><section><h2>상점</h2><div class="subtabs" id="shopTypes"></div><div id="shopList" class="list"></div><button class="add-btn" id="shopAdd">+ 새 상품 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="shopSave">저장</button><button class="btn" id="shopReload">다시 불러오기</button><button class="btn" id="shopAddType">+ 새 상점 종류</button><button class="btn danger" id="shopDelType">현재 종류 삭제</button><span class="muted" id="shopStatus"></span></div></section><section><h2>구매 제한 초기화</h2><div class="row"><div><label>초기화 범위</label><select id="shopLimitResetScope"><option value="item">현재 상점의 특정 상품</option><option value="shop">현재 상점 전체</option><option value="all">모든 상점</option></select></div><div id="shopLimitResetIndexWrap"><label>상품 번호</label><input id="shopLimitResetIndex" type="number" min="1" placeholder="상품 번호"></div><div class="nf"><button class="btn danger" id="shopLimitResetBtn">구매 제한 초기화</button></div></div><div class="muted" id="shopLimitResetStatus"></div></section></div>
+<div class="panel" data-panel="shop"><section>
+  <h2>상점</h2>
+  <div class="bar savebar"><button class="btn primary" id="shopSave">저장</button><button class="btn" id="shopReload">다시 불러오기</button><button class="btn" id="shopAddType">+ 상점 종류</button><button class="btn danger" id="shopDelType">현재 종류 삭제</button><span class="muted" id="shopStatus"></span></div>
+  <div class="subtabs" id="shopTypes"></div>
+  <div class="list-tools"><input id="shopFilter" type="search" placeholder="상품 이름 · 번호 검색" aria-label="상품 검색"><label class="check-label"><input id="shopSelectAll" type="checkbox">전체 선택</label><button class="btn danger" id="shopResetSelected" disabled>선택 구매 제한 초기화</button><span class="muted" id="shopSelectionCount">0개 선택</span></div>
+  <div id="shopLimitResetStatus" class="muted" role="status"></div>
+  <div id="shopList" class="list"></div>
+  <button class="add-btn" id="shopAdd">+ 새 상품 추가</button>
+</section></div>
 
-<div class="panel" data-panel="recipe"><section><h2>레시피</h2><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 레시피 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="recipeSave">저장</button><button class="btn" id="recipeReload">다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
+<div class="panel" data-panel="recipe"><section><h2>조합법</h2><div class="list-tools"><input id="recipeFilter" type="search" placeholder="조합법 이름 검색" aria-label="조합법 검색"></div><div id="recipeList" class="list"></div><button class="add-btn" id="recipeAdd">+ 새 조합법 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="recipeSave">저장</button><button class="btn" id="recipeReload">다시 불러오기</button><span class="muted" id="recipeStatus"></span></div></section></div>
 
 <div class="panel" data-panel="bait"><section><h2>미끼</h2><div id="baitList" class="list"></div><button class="add-btn" id="baitAdd">+ 새 미끼 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="baitSave">저장</button><button class="btn" id="baitReload">다시 불러오기</button><span class="muted" id="baitStatus"></span></div></section></div>
 
@@ -521,7 +534,7 @@ details.collapsible .body{padding:12px}
 
 <div class="panel" data-panel="pet"><section><h2>펫</h2><div class="bar"><input id="petFilter" placeholder="이름, 등급, 인덱스 검색" style="flex:1;min-width:200px"></div><div id="petList" class="list"></div><button class="add-btn" id="petAdd">+ 새 펫 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="petSave">저장</button><button class="btn" id="petReload">다시 불러오기</button><span class="muted" id="petStatus"></span></div></section></div>
 
-<div class="panel" data-panel="fashion"><section><h2>패션</h2><div class="bar"><input id="fashionFilter" placeholder="이름 검색" style="flex:1;min-width:200px"></div><div id="fashionList" class="list"></div><button class="add-btn" id="fashionAdd">+ 새 스킨 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="fashionSave">저장</button><button class="btn" id="fashionReload">다시 불러오기</button><span class="muted" id="fashionStatus"></span></div></section></div>
+<div class="panel" data-panel="fashion"><section><h2>아바타</h2><div class="bar"><input id="fashionFilter" type="search" placeholder="아바타 이름 · 번호 검색" style="flex:1;min-width:200px"></div><div class="bar"><select id="fashionGradeFilter" aria-label="아바타 등급" style="width:auto"><option value="">전체 등급</option></select></div><div id="fashionList" class="list"></div><button class="add-btn" id="fashionAdd">+ 새 아바타 추가</button><div class="bar savebar" style="margin-top:14px"><button class="btn primary" id="fashionSave">저장</button><button class="btn" id="fashionReload">다시 불러오기</button><span class="muted" id="fashionStatus"></span></div></section></div>
 
 <div class="panel" data-panel="tradelog"><section><h2>거래 로그</h2><div class="bar"><input id="tradeLogFilter" placeholder="구매자, 판매자, 물품명 검색" style="flex:1;min-width:200px"><select id="tradeLogType" style="width:130px;flex:0 0 auto"><option value="">전체 거래타입</option><option value="경매장">경매장</option><option value="삽니다">삽니다</option></select><select id="tradeLogKind" style="width:130px;flex:0 0 auto"><option value="">전체 물품타입</option><option value="card">캐릭터 카드</option><option value="equipment">장비</option><option value="item">아이템</option></select><button class="btn" id="tradeLogReload">다시 불러오기</button><button class="btn danger" id="tradeLogClear">전체 삭제</button><span class="muted" id="tradeLogStatus"></span></div><div id="tradeLogList" class="list" style="margin-top:14px"></div></section></div>
 

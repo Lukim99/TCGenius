@@ -1,0 +1,130 @@
+/* 관리자 작업 화면 */
+[hidden]{display:none!important}
+body{font-size:14px}
+.app{grid-template-columns:210px minmax(0,1fr)}
+.side-head{padding:22px 18px 16px}
+.nav-search{padding:0 12px 8px}
+.nav-search input{font-size:12px}
+.side nav{gap:3px}
+.tab{padding:9px 12px;font-size:13px}
+.tab.active{background:var(--acc-dim);color:var(--acc)}
+.side-group{font-size:11px;padding-top:18px}
+main{width:100%;max-width:1600px;padding:0 28px 36px}
+.workspace-head{display:flex;align-items:center;gap:16px;min-height:78px;margin-bottom:8px}
+.workspace-head h1{font-size:21px;margin:0;font-weight:700;flex:1}
+.workspace-head .muted{font-size:12px}
+#mobileNav{display:none}
+.btn{min-height:34px}
+.btn:disabled,.add-btn:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+section{padding:20px;border-radius:8px}
+section>h2{font-size:15px}
+.savebar{position:sticky;top:0;z-index:20;margin:0 -20px 18px!important;padding:12px 20px;background:var(--panel);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
+.savebar .save-state{margin-left:auto;font-size:12px;color:var(--mut)}
+.savebar .save-state.dirty{color:var(--acc)}
+.subtab{border-radius:6px}
+.subtab.active{background:var(--panel-3);border-color:var(--acc);color:var(--acc)}
+.card-head{flex-wrap:wrap}
+.actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.entry{padding:10px;gap:8px}
+.check-label{display:inline-flex;gap:8px;align-items:center;margin:0;color:var(--fg2);font-size:13px;cursor:pointer}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);flex:0 0 auto}
+.list-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+.list-tools input[type=search]{flex:1;min-width:170px;max-width:420px}
+.list-tools .muted{margin-left:auto}
+.shop-admin-card.selected{border-color:var(--acc)}
+.shop-admin-card .card-head{margin-bottom:12px}
+.shop-admin-card .card-title{display:flex;gap:10px;align-items:center;flex:1;min-width:180px}
+.shop-admin-card .card-title span{overflow-wrap:anywhere}
+.shop-admin-card .entry:first-of-type{margin-top:0}
+.shop-product-fields{display:grid;grid-template-columns:130px minmax(0,1fr) 130px;align-items:end}
+.shop-product-fields .shop-amount{grid-column:3}
+.shop-field{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.shop-field input,.shop-field select{width:100%!important;max-width:100%}
+.shop-limit-fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.shop-limit-title{grid-column:1/-1}
+.thumb{width:44px;height:44px;object-fit:contain;background:var(--bg);border:1px solid var(--bd);border-radius:6px;flex:0 0 auto}
+.thumb-empty{display:inline-flex;align-items:center;justify-content:center;color:var(--mut2);font-size:11px}
+.modal .item{align-items:center;min-height:58px}
+.modal .item .pick-label{flex:1;min-width:0}
+.modal .item .meta{white-space:nowrap}
+.image-field{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.image-field .image-preview{width:112px;height:112px;object-fit:contain;border:1px solid var(--bd);border-radius:6px;background:var(--bg)}
+.image-field .image-controls{flex:1;min-width:180px}
+.image-field .image-controls input{margin:8px 0}
+.image-field .muted{display:block;margin:6px 0;line-height:1.5}
+.image-preview[hidden]{display:none}
+.avatar-card{padding:0;overflow:hidden}
+.avatar-card>summary{display:flex;align-items:center;gap:16px;padding:14px 16px;cursor:pointer;list-style:none}
+.avatar-card>summary::-webkit-details-marker{display:none}
+.avatar-card>summary::after{content:'편집';font-size:12px;color:var(--mut);margin-left:auto}
+.avatar-card[open]>summary::after{content:'접기'}
+.avatar-card[open]>summary{border-bottom:1px solid var(--bd)}
+.avatar-card .avatar-thumb{width:68px;height:84px;object-fit:contain}
+.avatar-summary{display:flex;flex-direction:column;gap:8px;min-width:0}
+.avatar-summary strong{font-size:15px;overflow-wrap:anywhere}
+.avatar-editor{padding:18px}
+.avatar-editor .section-title{margin-top:20px}
+.image-field .avatar-art{width:130px;max-height:180px;object-fit:contain;background:var(--bg);border-radius:6px}
+.recipe-card>summary{padding:14px 16px;cursor:pointer;font-weight:600}
+.recipe-card .recipe-editor{padding:0 16px 16px}
+.recipe-card{padding:0}
+.compact-editor{padding:0}
+.compact-editor>summary{display:flex;align-items:center;gap:14px;padding:12px 14px;cursor:pointer;list-style:none}
+.compact-editor>summary::-webkit-details-marker{display:none}
+.compact-editor>summary::after{content:'편집';margin-left:auto;color:var(--mut);font-size:12px;flex-shrink:0}
+.compact-editor[open]>summary::after{content:'접기'}
+.compact-editor>.card{border:0;border-top:1px solid var(--bd);border-radius:0;background:transparent}
+.compact-title{min-width:0;overflow-wrap:anywhere}
+.asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(174px,1fr));gap:12px}
+.asset-tile{display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--panel-2);border:1px solid var(--bd);border-radius:6px;min-width:0}
+.asset-tile.selected{border-color:var(--acc)}
+.asset-tile .asset-preview{height:132px;width:100%;object-fit:contain;background:var(--bg);border-radius:4px;cursor:pointer}
+.asset-tile .asset-folder{height:80px;width:100%;background:var(--panel-3);color:var(--acc);font-size:14px}
+.asset-name{font-weight:500;overflow-wrap:anywhere;font-size:13px;line-height:1.4}
+.asset-tile .actions{margin-top:auto}
+.asset-tile .btn{font-size:11px;min-height:28px;padding:4px 8px}
+.asset-crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:12px 0}
+.asset-crumbs button{border:0;background:none;color:var(--fg2);cursor:pointer;font:inherit;padding:4px}
+.asset-crumbs button:hover{color:var(--acc)}
+.upload-zone{padding:18px;border:1px dashed var(--bd2);border-radius:6px;background:var(--panel-2)}
+.upload-zone.dragover{border-color:var(--acc);background:var(--acc-dim)}
+.upload-queue{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.upload-queue .queue-item{display:flex;align-items:center;gap:8px;font-size:12px;max-width:100%}
+.upload-queue .queue-item span{overflow-wrap:anywhere}
+.upload-queue .thumb{width:40px;height:40px}
+.asset-preview-modal{width:min(860px,100%)}
+.asset-preview-modal .preview-content{min-height:160px;max-height:65vh;padding:16px;display:flex;align-items:center;justify-content:center;overflow:auto}
+.asset-preview-modal .preview-content img{max-width:100%;max-height:60vh;object-fit:contain}
+.asset-preview-modal h3{overflow-wrap:anywhere}
+.package-result{padding:12px;border:1px solid var(--ok);border-radius:6px;margin-top:12px}
+.package-result:empty{display:none}
+@media(max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{display:none}
+  main{padding:0 14px 24px}
+  .workspace-head{min-height:70px;gap:12px;flex-wrap:wrap;padding:14px 0}
+  .workspace-head h1{font-size:18px}
+  .workspace-head>.muted{display:none}
+  #mobileNav{display:block;width:auto;max-width:60%;font-size:13px}
+  section{padding:14px}
+  .savebar{margin:0 -14px 14px!important;padding:10px 14px;gap:6px}
+  .savebar .save-state{flex:1 0 100%;margin-left:0}
+  .entry select{max-width:100%}
+  .entry .pickbtn{min-width:120px}
+  .row>*{min-width:120px}
+  .split{grid-template-columns:1fr}
+  .shop-admin-card .card-head .actions{width:100%;justify-content:flex-end}
+  .shop-product-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shop-product-fields .shop-amount{grid-column:2}
+  .shop-product-fields .shop-target{grid-column:1/-1;grid-row:2;min-width:0!important}
+  .shop-limit-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .list-tools{gap:10px}
+  .list-tools input[type=search]{flex-basis:100%;max-width:none}
+  .asset-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .asset-tile{padding:9px}
+  .asset-tile .asset-preview{height:110px}
+  .avatar-card>summary{gap:10px;padding:12px}
+  .avatar-editor{padding:12px}
+  .toast{max-width:calc(100vw - 28px);right:14px;bottom:14px}
+}

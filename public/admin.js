@@ -95,11 +95,17 @@ const showConfirm = message => openMsgModal(message, { mode: 'confirm' });
 const showPrompt = (message, value) => openMsgModal(message, { mode: 'prompt', value });
 
 // ---------- 탭 전환 ----------
-$$('.tab').forEach(t => t.onclick = () => {
+function activateTab(tab) {
+    const t = Array.from($$('.tab')).find(button => button.dataset.tab === tab);
+    if (!t) return;
     $$('.tab').forEach(b => b.classList.toggle('active', b === t));
     $$('.panel').forEach(p => p.classList.toggle('active', p.dataset.panel === t.dataset.tab));
+    $('#workspaceTitle').textContent = t.textContent;
+    $('#mobileNav').value = tab;
+    history.replaceState(null, '', '#' + tab);
     if (TAB_LOADERS[t.dataset.tab] && !LOADED[t.dataset.tab]) { LOADED[t.dataset.tab] = true; TAB_LOADERS[t.dataset.tab](); }
-});
+}
+$$('.tab').forEach(t => t.onclick = () => activateTab(t.dataset.tab));
 const LOADED = { grant: true };
 const TAB_LOADERS = {};
 
@@ -118,6 +124,72 @@ async function getFashion() { if (!LOOKUP.fashion) LOOKUP.fashion = await api('/
 async function getPets() { if (!LOOKUP.pet) LOOKUP.pet = await api('/api/lookup/pet'); return LOOKUP.pet; }
 async function getTitles() { if (!LOOKUP.titles) LOOKUP.titles = await api('/api/lookup/titles'); return LOOKUP.titles || []; }
 
+function imageThumb(url, name, className = 'thumb') {
+    const fallback = () => el('span', { class: className + ' thumb-empty', role: 'img', 'aria-label': name + ' 이미지 없음' }, '이미지 없음');
+    if (!url) return fallback();
+    return el('img', { class: className, src: url, alt: name, loading: 'lazy', onerror: e => e.target.replaceWith(fallback()) });
+}
+async function uploadAssetFile(category, path, file) {
+    return api('/api/admin/assets/upload?' + new URLSearchParams({ category }), {
+        method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Asset-Path': encodeURIComponent(path) }, body: file
+    });
+}
+async function iconPng(file) {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('PNG, JPG, WebP 이미지를 선택하세요.');
+    if (file.size > 10 * 1024 * 1024) throw new Error('이미지는 10MB 이하여야 합니다.');
+    const bitmap = await createImageBitmap(file);
+    try {
+        if (bitmap.width * bitmap.height > 16777216) throw new Error('이미지는 1,600만 화소 이하여야 합니다.');
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width; canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!png || png.size > 10 * 1024 * 1024) throw new Error('PNG 변환 결과가 10MB를 넘습니다. 작은 이미지를 선택하세요.');
+        return png;
+    } finally { bitmap.close(); }
+}
+function iconUploadButton(name, dir, onUploaded) {
+    const input = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true });
+    const button = el('button', { class: 'btn sm', type: 'button', onclick: () => input.click() }, '이미지 업로드');
+    input.onchange = async () => {
+        if (!input.files[0]) return;
+        const itemName = name();
+        if (!itemName || /[\\/\0]/.test(itemName)) return toast('이미지를 연결할 이름을 먼저 입력하세요.', false);
+        const path = (typeof dir === 'function' ? dir() : dir) + '/' + itemName + '.png';
+        button.disabled = true;
+        try {
+            const png = await iconPng(input.files[0]);
+            if (!(await showConfirm(itemName + ' 이미지를 업로드할까요? 기존 이미지가 있으면 교체되며 즉시 반영됩니다.'))) return;
+            await uploadAssetFile('itemImage', path, png);
+            onUploaded('/api/admin/assets/file?' + new URLSearchParams({ category: 'itemImage', path, v: Date.now() }));
+            toast('이미지가 반영되었습니다.');
+        } catch (e) { toast(e.message, false); }
+        finally { input.value = ''; button.disabled = false; }
+    };
+    return el('span', { class: 'actions' }, button, input);
+}
+const expandedDataCards = new WeakSet();
+function compactDataCard(card, record, imageDir, imageName) {
+    const imageUrl = () => '/item-image?' + new URLSearchParams({ dir: imageDir(), file: imageName() + '.png' });
+    let url = imageUrl();
+    const thumbnail = el('span', null, imageThumb(url, record.name || '새 항목'));
+    const headTitle = card.querySelector('.card-title');
+    const number = headTitle?.querySelector('.tag')?.textContent || '';
+    const title = el('span', { class: 'compact-title' });
+    function updateTitle() {
+        title.replaceChildren(el('span', { class: 'tag' }, number), document.createTextNode(record.name || '새 항목'), el('span', { class: 'tag', style: { marginLeft: '8px' } }, record.rarity || record.type || ''));
+    }
+    updateTitle();
+    card.addEventListener('input', updateTitle);
+    card.addEventListener('change', () => { updateTitle(); const next = imageUrl(); if (url !== next) { url = next; thumbnail.replaceChildren(imageThumb(url, record.name)); } });
+    const details = el('details', { class: 'card compact-editor', open: !record.name || expandedDataCards.has(record), ontoggle: () => { if (details.open) expandedDataCards.add(record); else expandedDataCards.delete(record); } });
+    details.appendChild(el('summary', null, thumbnail, title));
+    const upload = iconUploadButton(() => record.name?.trim() ? imageName() : '', imageDir, next => thumbnail.replaceChildren(imageThumb(next, record.name)));
+    card.querySelector('.card-head')?.after(el('div', { class: 'bar' }, upload));
+    details.appendChild(card);
+    return details;
+}
+
 // ---------- 모달 픽커 ----------
 const modal = $('#modal'), modalBody = $('#modalBody'), modalSearch = $('#modalSearch'), modalTitle = $('#modalTitle');
 $('#modalClose').onclick = () => closeModal();
@@ -134,7 +206,10 @@ function openModal(title, items, render, onPick) {
         list.slice(0, 300).forEach(it => {
             const row = render(it);
             row.classList.add('item');
+            row.tabIndex = 0;
+            row.setAttribute('role', 'button');
             row.onclick = () => { onPick(it); closeModal(); };
+            row.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } };
             modalBody.appendChild(row);
         });
     }
@@ -153,7 +228,8 @@ async function pickItem(onPick, filterType) {
     const items = await getItems();
     const list = items.map(it => Object.assign({}, it, { _search: it.name + ' ' + it.type + ' ' + it.id })).filter(it => !filterType || it.type === filterType);
     openModal('아이템 선택', list, it => el('div', null,
-        el('div', null, el('span', { class: 'tag b' }, '#' + it.id), it.name),
+        imageThumb(it.iconUrl, it.name),
+        el('div', { class: 'pick-label' }, el('span', { class: 'tag b' }, '#' + it.id), it.name),
         el('div', { class: 'meta' }, it.type)
     ), onPick);
 }
@@ -498,14 +574,18 @@ const shopRevisions = new WeakMap();
 async function loadKey(key) {
     const r = await api('/api/data/' + encodeURIComponent(key));
     if (key === 'Shop' && r.data) shopRevisions.set(r.data, r.revision);
+    editorLoads.set(key, (editorLoads.get(key) || 0) + 1);
     return r.data;
 }
 async function saveKey(key, data, revision) {
+    const snapshot = JSON.stringify(data);
     const r = await api('/api/data/' + encodeURIComponent(key), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data, ...(key === 'Shop' ? { revision: revision || shopRevisions.get(data) } : {}) })
     });
     if (key === 'Shop') shopRevisions.set(data, r.revision);
+    editorSaved.set(key, snapshot);
+    refreshEditorStatus();
     return r;
 }
 
@@ -828,28 +908,75 @@ TAB_LOADERS.coupon = () => $('#couponReload').click();
 // ============================================================================
 let shopData = {};
 let shopCurrentType = null;
+const shopSelected = new Set();
+let shopResetBusy = false;
+function shopProductName(entry) {
+    if (entry.type === '아이템') return (LOOKUP.items || []).find(item => item.id === entry.item_id)?.name || '아이템 선택';
+    if (entry.type === '아바타') return entry.fashion || '아바타 선택';
+    return entry.type;
+}
+function visibleShopEntries() {
+    const q = $('#shopFilter').value.trim().toLowerCase();
+    return (shopData[shopCurrentType] || []).map((entry, index) => ({ entry, index })).filter(({ entry, index }) => !q || ((index + 1) + ' ' + shopProductName(entry) + ' ' + entry.type).toLowerCase().includes(q));
+}
+function syncShopSelection() {
+    const visible = visibleShopEntries();
+    const count = (shopData[shopCurrentType] || []).filter(entry => shopSelected.has(entry.shopId)).length;
+    const selectedVisible = visible.filter(({ entry }) => shopSelected.has(entry.shopId)).length;
+    $('#shopSelectAll').checked = visible.length > 0 && selectedVisible === visible.length;
+    $('#shopSelectAll').indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+    $('#shopSelectAll').disabled = !visible.length || shopResetBusy;
+    $('#shopSelectionCount').textContent = count + '개 선택 · ' + visible.length + '개 표시';
+    $('#shopResetSelected').disabled = !count || shopResetBusy;
+}
+async function resetShopLimits(entries) {
+    if (shopResetBusy || !entries.length) return;
+    const shopType = shopCurrentType;
+    const names = entries.slice(0, 5).map(shopProductName).join(', ') + (entries.length > 5 ? ' 외 ' + (entries.length - 5) + '개' : '');
+    shopResetBusy = true;
+    renderShop();
+    try {
+        if (!(await showConfirm(shopType + ' · ' + entries.length + '개 상품\n' + names + '\n\n구매 제한 기록을 초기화할까요? 유저별 기록과 전체 구매 횟수가 초기화됩니다.'))) return;
+        const result = await api('/api/admin/shop-limits/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'items', shopType, shopIds: entries.map(entry => entry.shopId) }) });
+        entries.forEach(entry => shopSelected.delete(entry.shopId));
+        $('#shopLimitResetStatus').textContent = entries.length + '개 상품 초기화 완료 · 유저 ' + result.userUpdated + '명 · 전체 제한 ' + result.globalUpdated + '건';
+        toast('선택한 상품의 구매 제한을 초기화했습니다.');
+    } catch (e) { toast(e.message, false); }
+    finally { shopResetBusy = false; renderShop(); }
+}
 function renderShopTypes() {
     const wrap = $('#shopTypes'); wrap.innerHTML = '';
     const types = Object.keys(shopData);
     if (types.length === 0) { wrap.appendChild(el('span', { class: 'muted' }, '상점 종류가 없습니다.')); shopCurrentType = null; return; }
     if (!shopCurrentType || !types.includes(shopCurrentType)) shopCurrentType = types[0];
     types.forEach(t => {
-        const b = el('button', { class: 'subtab' + (t === shopCurrentType ? ' active' : ''), type: 'button', onclick: () => { shopCurrentType = t; renderShopTypes(); renderShop(); } }, t + ' (' + shopData[t].length + ')');
+        const b = el('button', { class: 'subtab' + (t === shopCurrentType ? ' active' : ''), type: 'button', onclick: () => { shopCurrentType = t; shopSelected.clear(); $('#shopLimitResetStatus').textContent = ''; renderShopTypes(); renderShop(); } }, t + ' (' + shopData[t].length + ')');
         wrap.appendChild(b);
     });
 }
-function shopEntryRow(entry, onChange, onDelete) {
+function shopEntryRow(entry, displayIndex, onDelete) {
     if (typeof entry.count !== 'number') entry.count = 1;
     if (!entry.price || typeof entry.price !== 'object') entry.price = { goods: 'gold', amount: 0 };
-    const wrap = el('div', { class: 'card', style: { padding: '10px 12px' } });
+    const wrap = el('div', { class: 'card shop-admin-card' + (shopSelected.has(entry.shopId) ? ' selected' : '') });
+    const selected = el('input', { type: 'checkbox', checked: shopSelected.has(entry.shopId), disabled: shopResetBusy, 'aria-label': '상품 ' + displayIndex + '번 선택', onchange: () => {
+        if (selected.checked) shopSelected.add(entry.shopId); else shopSelected.delete(entry.shopId);
+        wrap.classList.toggle('selected', selected.checked); syncShopSelection();
+    } });
+    const productName = el('span', null, shopProductName(entry));
+    const item = entry.type === '아이템' ? (LOOKUP.items || []).find(it => it.id === entry.item_id) : (LOOKUP.fashion || []).find(it => it.name === entry.fashion);
+    wrap.appendChild(el('div', { class: 'card-head' },
+        el('div', { class: 'card-title' }, selected, el('span', { class: 'tag' }, displayIndex + '번'), imageThumb(item?.iconUrl || item?.imageUrl, shopProductName(entry)), productName),
+        el('div', { class: 'actions' },
+            el('button', { class: 'btn sm', type: 'button', disabled: shopResetBusy, onclick: () => resetShopLimits([entry]) }, '구매 제한 초기화'),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if (await showConfirm(shopProductName(entry) + ' 상품을 목록에서 삭제할까요? 저장 시 반영됩니다.')) { shopSelected.delete(entry.shopId); onDelete(); } } }, '삭제'))));
 
     // 상품
-    const head = el('div', { class: 'entry' });
+    const head = el('div', { class: 'entry shop-product-fields' });
     const sel = el('select');
     ['아이템', '캐릭터카드', '아바타', '가넷', '골드', '마일리지'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
     if (!['아이템', '캐릭터카드', '아바타', '가넷', '골드', '마일리지'].includes(entry.type)) entry.type = '아이템';
     sel.value = entry.type;
-    const target = el('span', { style: { flex: '1', minWidth: '180px', display: 'flex' } });
+    const target = el('span', { class: 'shop-target', style: { flex: '1', minWidth: '180px', display: 'flex' } });
     const cnt = el('input', { class: 'nf', type: 'number', value: entry.count, style: { width: '100px' }, oninput: () => entry.count = Number(cnt.value) });
 
     function paintTarget() {
@@ -864,7 +991,7 @@ function shopEntryRow(entry, onChange, onDelete) {
                     btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + entry.item_id));
                 } else btn.innerHTML = '<span class="ph">아이템 선택...</span>';
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); renderShop(); });
             refresh(); target.appendChild(btn);
         } else if (entry.type === '캐릭터카드') {
             delete entry.item_id;
@@ -898,22 +1025,22 @@ function shopEntryRow(entry, onChange, onDelete) {
             target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.type + ' 지급)'));
         }
     }
-    sel.onchange = () => { entry.type = sel.value; paintTarget(); };
-    head.appendChild(el('span', { class: 'lab' }, '상품'));
-    head.appendChild(sel); head.appendChild(target);
-    head.appendChild(el('span', { class: 'lab' }, '수량')); head.appendChild(cnt);
-    head.appendChild(el('button', { class: 'btn icon danger', type: 'button', onclick: onDelete }, '✕'));
+    sel.onchange = () => { entry.type = sel.value; paintTarget(); productName.textContent = shopProductName(entry); };
+    head.appendChild(el('label', { class: 'shop-field' }, '상품 종류', sel));
+    head.appendChild(target);
+    head.appendChild(el('label', { class: 'shop-field' }, '수량', cnt));
     paintTarget();
 
     // 가격
-    const priceRow = el('div', { class: 'entry', style: { marginTop: '6px' } });
+    const priceRow = el('div', { class: 'entry shop-product-fields', style: { marginTop: '6px' } });
     const goodsSel = el('select');
-    ['gold', 'garnet', 'point', 'mileage', 'item'].forEach(g => goodsSel.appendChild(el('option', { value: g }, g)));
+    Object.entries({ gold: '골드', garnet: '가넷', point: '포인트', mileage: '마일리지', item: '아이템' }).forEach(([g, label]) => goodsSel.appendChild(el('option', { value: g }, label)));
     goodsSel.value = entry.price.goods || 'gold';
     const amountIn = el('input', { class: 'nf', type: 'number', value: Number(entry.price.amount || 0), style: { width: '120px' }, oninput: () => entry.price.amount = Number(amountIn.value) });
-    const priceTarget = el('span', { style: { flex: '1', minWidth: '180px', display: 'flex' } });
+    const priceTarget = el('span', { class: 'shop-target', style: { flex: '1', minWidth: '180px', display: 'flex' } });
     function paintPriceTarget() {
         priceTarget.innerHTML = '';
+        priceTarget.hidden = entry.price.goods !== 'item';
         if (entry.price.goods === 'item') {
             const btn = el('button', { class: 'pickbtn', type: 'button' });
             const refresh = async () => {
@@ -926,24 +1053,24 @@ function shopEntryRow(entry, onChange, onDelete) {
             };
             btn.onclick = () => pickItem(it => { entry.price.item_id = it.id; refresh(); });
             refresh(); priceTarget.appendChild(btn);
-        } else { delete entry.price.item_id; priceTarget.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + entry.price.goods + ' 결제)')); }
+        } else { delete entry.price.item_id; }
     }
     goodsSel.onchange = () => { entry.price.goods = goodsSel.value; paintPriceTarget(); };
-    priceRow.appendChild(el('span', { class: 'lab' }, '가격'));
-    priceRow.appendChild(goodsSel); priceRow.appendChild(priceTarget);
-    priceRow.appendChild(el('span', { class: 'lab' }, '금액')); priceRow.appendChild(amountIn);
+    priceRow.appendChild(el('label', { class: 'shop-field' }, '결제 수단', goodsSel));
+    priceRow.appendChild(priceTarget);
+    priceRow.appendChild(el('label', { class: 'shop-field shop-amount' }, '가격', amountIn));
     paintPriceTarget();
 
     // 구매 제한
     if (!entry.limits || typeof entry.limits !== 'object') entry.limits = {};
-    const limitRow = el('div', { class: 'entry', style: { marginTop: '6px', flexWrap: 'wrap' } });
-    limitRow.appendChild(el('span', { class: 'lab' }, '제한 (0=무제한)'));
+    const limitRow = el('div', { class: 'entry shop-limit-fields', style: { marginTop: '6px' } });
+    limitRow.appendChild(el('span', { class: 'lab shop-limit-title' }, '구매 제한 · 0은 무제한'));
     const fields = [
         { key: 'max', label: '누적' },
         { key: 'daily', label: '일일' },
         { key: 'weekly', label: '주간' },
         { key: 'monthly', label: '월간' },
-        { key: 'global', label: '글로벌' }
+        { key: 'global', label: '전체 유저 합산' }
     ];
     fields.forEach(f => {
         const cur = Number(entry.limits[f.key] || 0);
@@ -952,8 +1079,7 @@ function shopEntryRow(entry, onChange, onDelete) {
             if (!Number.isFinite(v) || v <= 0) delete entry.limits[f.key];
             else entry.limits[f.key] = Math.floor(v);
         } });
-        limitRow.appendChild(el('span', { class: 'lab' }, f.label));
-        limitRow.appendChild(inp);
+        limitRow.appendChild(el('label', { class: 'shop-field' }, f.label, inp));
     });
 
     wrap.appendChild(head); wrap.appendChild(priceRow); wrap.appendChild(limitRow);
@@ -961,16 +1087,23 @@ function shopEntryRow(entry, onChange, onDelete) {
 }
 function renderShop() {
     const list = $('#shopList'); list.innerHTML = '';
+    syncShopSelection();
     if (!shopCurrentType || !shopData[shopCurrentType]) return;
     const arr = shopData[shopCurrentType];
-    arr.forEach((entry, i) => {
-        list.appendChild(shopEntryRow(entry, null, () => { arr.splice(i, 1); renderShop(); renderShopTypes(); }));
+    const visible = visibleShopEntries();
+    if (!visible.length) list.appendChild(el('div', { class: 'empty' }, '표시할 상품이 없습니다.'));
+    visible.forEach(({ entry, index: i }) => {
+        list.appendChild(shopEntryRow(entry, i + 1, () => { arr.splice(i, 1); renderShop(); renderShopTypes(); }));
     });
 }
+$('#shopFilter').oninput = renderShop;
+$('#shopSelectAll').onchange = e => { visibleShopEntries().forEach(({ entry }) => { if (e.target.checked) shopSelected.add(entry.shopId); else shopSelected.delete(entry.shopId); }); renderShop(); };
+$('#shopResetSelected').onclick = () => resetShopLimits((shopData[shopCurrentType] || []).filter(entry => shopSelected.has(entry.shopId)));
 $('#shopAdd').onclick = () => {
     if (!shopCurrentType) return toast('상점 종류를 먼저 선택하세요', false);
     const shopId = 'shop_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
     shopData[shopCurrentType].push({ shopId, type: '아이템', count: 1, price: { goods: 'gold', amount: 0 } });
+    $('#shopFilter').value = '';
     renderShop(); renderShopTypes();
 };
 $('#shopAddType').onclick = async () => {
@@ -984,58 +1117,34 @@ $('#shopDelType').onclick = async () => {
     if (!(await showConfirm("'" + shopCurrentType + "' 상점을 삭제합니까? (포함된 모든 상품이 삭제됩니다)"))) return;
     delete shopData[shopCurrentType]; shopCurrentType = null; renderShopTypes(); renderShop();
 };
-$('#shopReload').onclick = async () => { try { shopData = (await loadKey('Shop')) || {}; shopCurrentType = null; renderShopTypes(); renderShop(); $('#shopStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
+$('#shopReload').onclick = async () => { try { await Promise.all([getItems(), getFashion()]); shopData = (await loadKey('Shop')) || {}; shopSelected.clear(); renderShopTypes(); renderShop(); $('#shopStatus').textContent = '불러오기 완료'; } catch (e) { toast(e.message, false); } };
 $('#shopSave').onclick = async () => { if (!(await showConfirm('Shop 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Shop', shopData); toast('✅ Shop 저장 완료'); } catch (e) { toast(e.message, false); } };
-if ($('#shopLimitResetScope')) $('#shopLimitResetScope').onchange = () => {
-    const scope = $('#shopLimitResetScope').value;
-    $('#shopLimitResetIndexWrap').style.display = scope === 'item' ? '' : 'none';
-};
-if ($('#shopLimitResetBtn')) $('#shopLimitResetBtn').onclick = async () => {
-    const scope = $('#shopLimitResetScope').value;
-    if ((scope === 'shop' || scope === 'item') && !shopCurrentType) return toast('상점을 먼저 선택하세요.', false);
-    const body = { scope, shopType: shopCurrentType || '' };
-    let targetText = scope === 'all' ? '모든 상점' : "'" + shopCurrentType + "' 상점 전체";
-    if (scope === 'item') {
-        const displayIndex = Number($('#shopLimitResetIndex').value);
-        if (!Number.isInteger(displayIndex) || displayIndex < 1) return toast('상품 번호를 입력하세요.', false);
-        const arr = shopData[shopCurrentType] || [];
-        if (displayIndex > arr.length) return toast('존재하지 않는 상품 번호입니다.', false);
-        body.shopId = arr[displayIndex - 1].shopId;
-        targetText = "'" + shopCurrentType + "' 상점 " + displayIndex + '번 상품';
-    }
-    if (!(await showConfirm(targetText + '의 구매 제한 기록을 초기화합니다.\n유저별 기록과 전체 제한 기록이 함께 삭제됩니다. 계속?'))) return;
-    try {
-        const result = await api('/api/admin/shop-limits/reset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        const msg = '초기화 완료: 유저 ' + result.userUpdated + '명, 전체 제한 ' + result.globalUpdated + '건';
-        $('#shopLimitResetStatus').textContent = msg;
-        toast('✅ ' + msg);
-    } catch (e) {
-        toast(e.message, false);
-    }
-};
 TAB_LOADERS.shop = () => $('#shopReload').click();
 
 // ============================================================================
 // RECIPE 에디터  ( data: Array<{name, materials[], crafted[]}> )
 // ============================================================================
 let recipeData = [];
+const recipeOpen = new Set();
 function renderRecipe() {
     const list = $('#recipeList'); list.innerHTML = '';
     if (!Array.isArray(recipeData)) recipeData = [];
-    recipeData.forEach((r, idx) => {
+    const query = $('#recipeFilter').value.trim().toLowerCase();
+    const rows = recipeData.map((r, idx) => ({ r, idx })).filter(({ r, idx }) => r && (!query || (r.name + ' ' + idx).toLowerCase().includes(query)));
+    if (!rows.length) list.appendChild(el('div', { class: 'empty' }, '표시할 조합법이 없습니다.'));
+    pagedAppend(list, 'recipe', rows, ({ r, idx }) => {
         if (!Array.isArray(r.materials)) r.materials = [];
         if (!Array.isArray(r.crafted)) r.crafted = [];
-        const card = el('div', { class: 'card' });
-        const nameIn = el('input', { value: r.name || '', placeholder: '레시피 이름', oninput: () => r.name = nameIn.value });
-        card.appendChild(el('div', { class: 'card-head' },
-            el('div', { class: 'card-title' }, '레시피 #' + idx + (r.name ? ' — ' + r.name : '')),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('레시피 삭제?'))) { recipeData.splice(idx, 1); renderRecipe(); } } }, '삭제')
+        const card = el('details', { class: 'card recipe-card', open: recipeOpen.has(idx), ontoggle: () => { if (card.open) recipeOpen.add(idx); else recipeOpen.delete(idx); } });
+        const summary = el('summary', null, r.name || '새 조합법');
+        card.appendChild(summary);
+        const editor = el('div', { class: 'recipe-editor' });
+        const nameIn = el('input', { value: r.name || '', placeholder: '조합법 이름', oninput: () => { r.name = nameIn.value; summary.textContent = r.name || '새 조합법'; } });
+        editor.appendChild(el('div', { class: 'card-head' },
+            el('div', { class: 'card-title' }, '조합법 #' + idx + (r.name ? ' — ' + r.name : '')),
+            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => { if ((await showConfirm('조합법 삭제?'))) { recipeData.splice(idx, 1); renderRecipe(); } } }, '삭제')
         ));
-        card.appendChild(el('div', null, el('label', null, '이름'), nameIn));
+        editor.appendChild(el('div', null, el('label', null, '이름'), nameIn));
 
         const grid = el('div', { class: 'split', style: { marginTop: '12px' } });
         // 재료
@@ -1059,13 +1168,15 @@ function renderRecipe() {
         craftCol.appendChild(el('button', { class: 'add-btn', type: 'button', onclick: () => { r.crafted.push({ type: '아이템', count: 1 }); renderRecipe(); } }, '+ 결과물 추가'));
 
         grid.appendChild(matCol); grid.appendChild(craftCol);
-        card.appendChild(grid);
-        list.appendChild(card);
-    });
+        editor.appendChild(grid);
+        card.appendChild(editor);
+        return card;
+    }, renderRecipe);
 }
-$('#recipeAdd').onclick = () => { recipeData.push({ name: '', materials: [], crafted: [] }); renderRecipe(); };
+$('#recipeAdd').onclick = () => { recipeOpen.add(recipeData.length); recipeData.push({ name: '', materials: [], crafted: [] }); $('#recipeFilter').value = ''; PAGE_STATE.recipe = 1e9; renderRecipe(); };
+$('#recipeFilter').oninput = () => { PAGE_STATE.recipe = 0; renderRecipe(); };
 $('#recipeReload').onclick = async () => { try { recipeData = (await loadKey('Recipe')) || []; renderRecipe(); $('#recipeStatus').textContent = '로드 완료'; } catch (e) { toast(e.message, false); } };
-$('#recipeSave').onclick = async () => { if (!(await showConfirm('Recipe 데이터를 저장합니다. 계속?'))) return; try { await saveKey('Recipe', recipeData); toast('✅ Recipe 저장 완료'); } catch (e) { toast(e.message, false); } };
+$('#recipeSave').onclick = async () => { if (!(await showConfirm('조합법 변경사항을 저장할까요?'))) return; try { await saveKey('Recipe', recipeData); toast('조합법 저장 완료'); } catch (e) { toast(e.message, false); } };
 TAB_LOADERS.recipe = () => $('#recipeReload').click();
 
 // ============================================================================
@@ -1204,7 +1315,7 @@ function questObjectiveRow(objective, onDelete) {
             const winChk = el('input', { type: 'checkbox', checked: objective.winOnly === true, onchange: () => objective.winOnly = winChk.checked });
             targetSlot.appendChild(el('label', { class: 'qe-inline', style: { margin: 0 } }, winChk, '승리만 인정'));
         } else if (t === 'craft') {
-            targetSlot.appendChild(questNameSelect(objective, 'recipe', targets.recipes, '모든 레시피'));
+            targetSlot.appendChild(questNameSelect(objective, 'recipe', targets.recipes, '모든 조합법'));
         } else if (t === 'deliver') {
             targetSlot.appendChild(questItemPickButton(objective, 'item_id'));
         } else if (t === 'partyJoin' || t === 'partyClear' || t === 'partyClearMin' || t === 'partyClearMax') {
@@ -1555,11 +1666,20 @@ function renderItem() {
         rows.push(idx);
     });
     if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '아이템이 없습니다.')); return; }
-    pagedAppend(list, 'item', rows, idx => itemCard(itemData[idx], idx), renderItem);
+    pagedAppend(list, 'item', rows, idx => {
+        const item = itemData[idx];
+        const location = () => {
+            const saved = (LOOKUP.items || []).find(entry => entry.id === idx && entry.name === item.name && entry.type === item.type);
+            const url = saved?.iconUrl ? new URL(saved.iconUrl, window.location.origin) : null;
+            if (url?.pathname === '/item-image') return { dir: url.searchParams.get('dir'), name: url.searchParams.get('file').replace(/\.png$/i, '') };
+            return { dir: item.use === '보주' ? '보주' : item.use === '스펙터' ? '스펙터' : item.type, name: item.name };
+        };
+        return compactDataCard(itemCard(item, idx), item, () => location().dir, () => location().name);
+    }, renderItem);
 }
 $('#itemAdd').onclick = () => { itemData.push({ name: '', type: '재료', desc: '' }); itemFilterText = ''; if ($('#itemFilter')) $('#itemFilter').value = ''; PAGE_STATE.item = 1e9; renderItem(); };
 $('#itemReload').onclick = async () => {
-    try { itemData = (await loadKey('Item')) || []; renderItem(); $('#itemStatus').textContent = '로드 완료 (' + itemData.length + '개)'; invalidateLookupCache(['items']); }
+    try { itemData = (await loadKey('Item')) || []; invalidateLookupCache(['items']); await getItems(); renderItem(); $('#itemStatus').textContent = '로드 완료 (' + itemData.length + '개)'; }
     catch (e) { toast(e.message, false); }
 };
 $('#itemSave').onclick = async () => {
@@ -1571,7 +1691,7 @@ if ($('#itemFilter')) $('#itemFilter').addEventListener('input', e => { itemFilt
 TAB_LOADERS.item = () => $('#itemReload').click();
 
 // ============================================================================
-// 공통: 능력치 / 강화 / 요구조건 에디터 (장비 · 패션용)
+// 공통: 능력치 / 강화 / 요구조건 에디터 (장비 · 아바타용)
 // ============================================================================
 
 // 능력치 정의 — formatEquipmentStatLines / formatStatValue 기준
@@ -2046,8 +2166,8 @@ function equipCard(eq, index) {
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
                 const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id' }[equipCurrentSlot];
                 const refs = idKey ? await scanRefs(idKey, index) : { direct: 0, above: 0 };
-                // 모자/하의/신발은 팩·레시피 등에 *_id 참조 키가 없어 참조 검사를 수행할 수 없음을 명시한다 (조용히 건너뛰지 않음)
-                const scanNote = idKey ? '' : '\n* 이 부위(' + EQUIPMENT_SLOT_LABELS[equipCurrentSlot] + ')는 팩/번들/상점/레시피 참조 검사를 지원하지 않습니다. 유저 인벤토리·장착 데이터의 id가 당겨질 수 있으니 주의하세요.';
+                // 모자/하의/신발은 팩·조합법 등에 *_id 참조 키가 없어 참조 검사를 수행할 수 없음을 명시한다 (조용히 건너뛰지 않음)
+                const scanNote = idKey ? '' : '\n* 이 부위(' + EQUIPMENT_SLOT_LABELS[equipCurrentSlot] + ')는 팩/번들/상점/조합법 참조 검사를 지원하지 않습니다. 유저 인벤토리·장착 데이터의 id가 당겨질 수 있으니 주의하세요.';
                 if (!(await showConfirm('장비 #' + index + ' (' + (eq.name || '') + ')을(를) 삭제합니까?\n* 후속 인덱스가 모두 -1씩 당겨집니다.' + refWarnText(refs) + scanNote))) return;
                 equipData[equipCurrentSlot].splice(index, 1);
                 renderEquipTypes(); renderEquip();
@@ -2193,7 +2313,7 @@ function renderEquip() {
         rows.push(idx);
     });
     if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '장비가 없습니다.')); return; }
-    pagedAppend(list, 'equip:' + equipCurrentSlot, rows, idx => equipCard(arr[idx], idx), renderEquip);
+    pagedAppend(list, 'equip:' + equipCurrentSlot, rows, idx => compactDataCard(equipCard(arr[idx], idx), arr[idx], () => '장비', () => arr[idx].rarity + ' ' + arr[idx].name), renderEquip);
 }
 $('#equipAdd').onclick = () => {
     if (!equipData[equipCurrentSlot]) equipData[equipCurrentSlot] = [];
@@ -2353,7 +2473,7 @@ function renderPet() {
         rows.push(idx);
     });
     if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '펫이 없습니다.')); return; }
-    pagedAppend(list, 'pet', rows, idx => petCard(petData[idx], idx), renderPet);
+    pagedAppend(list, 'pet', rows, idx => compactDataCard(petCard(petData[idx], idx), petData[idx], () => '펫', () => petData[idx].rarity + ' ' + petData[idx].name), renderPet);
 }
 $('#petAdd').onclick = () => {
     if (!Array.isArray(petData)) petData = [];
@@ -2384,121 +2504,130 @@ TAB_LOADERS.pet = () => $('#petReload').click();
 // ============================================================================
 let fashionData = [];
 let fashionFilterText = '';
-const FASHION_KNOWN_FIELDS = new Set(['name', 'primary_card', 'requireStar', 'isHigh', 'option']);
-
-function fashionPrimaryCardRow(skin) {
-    const wrap = el('div', { class: 'tag-list' });
-    if (!Array.isArray(skin.primary_card)) skin.primary_card = [];
-    function repaint() {
-        wrap.innerHTML = '';
-        if (skin.primary_card.length === 0) wrap.appendChild(el('span', { class: 'muted', style: { fontSize: '12px' } }, '아직 설정되지 않았습니다.'));
-        skin.primary_card.forEach((cardId, i) => {
-            const pill = el('span', { class: 'tag-pill' });
-            const labelNode = el('span', null, '#' + cardId);
-            pill.appendChild(labelNode);
-            getCards().then(cards => {
-                const c = cards.find(x => x.id === Number(cardId));
-                if (c) labelNode.textContent = c.name + ' #' + cardId;
-            }).catch(() => {});
-            pill.appendChild(el('button', { type: 'button', title: '제거', onclick: () => { skin.primary_card.splice(i, 1); repaint(); } }, '✕'));
-            wrap.appendChild(pill);
-        });
-        wrap.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => pickCard(card => { if (!skin.primary_card.includes(card.id)) skin.primary_card.push(card.id); repaint(); }) }, '+ 카드 추가'));
-    }
-    repaint();
-    return wrap;
+const fashionOpen = new WeakSet();
+const AVATAR_GRADES = ['일반', '프레스티지', '한정'];
+AVATAR_GRADES.forEach(grade => $('#fashionGradeFilter').appendChild(el('option', { value: grade }, grade)));
+function avatarGroups() {
+    const groups = new Map();
+    fashionData.forEach((entry, index) => {
+        if (!entry) return;
+        const key = entry.name || entry;
+        if (!groups.has(key)) groups.set(key, { entries: [], index });
+        groups.get(key).entries.push(entry);
+    });
+    return [...groups.values()];
 }
-
-function fashionCard(skin, index) {
-    const card = el('div', { class: 'card' });
-    card.appendChild(el('div', { class: 'card-head' },
-        el('div', { class: 'card-title' },
-            el('span', { class: 'tag b' }, '#' + index),
-            ' ',
-            skin.name || '(이름 없음)'
-        ),
-        el('div', { class: 'actions', style: { gap: '4px' } },
-            el('button', { class: 'btn sm', type: 'button', onclick: () => {
-                fashionData.push(JSON.parse(JSON.stringify(skin)));
-                fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = '';
-                PAGE_STATE.fashion = 1e9; renderFashion();
-                toast('#' + (fashionData.length - 1) + '번으로 복제했습니다.');
-            } }, '복제'),
-            el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
-                if (!(await showConfirm('스킨 #' + index + ' (' + (skin.name || '') + ')을(를) 삭제합니까?'))) return;
-                fashionData.splice(index, 1);
-                renderFashion();
-            } }, '삭제')
-        )
-    ));
-
-    card.appendChild(sectionTitle('기본 정보', '📝'));
-    const row1 = el('div', { class: 'row' });
-    row1.appendChild(el('div', null, el('label', null, '이름'),
-        el('input', { value: skin.name || '', placeholder: '스킨 이름', oninput: e => skin.name = e.target.value })
-    ));
-    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '필요 성급'),
-        el('input', { type: 'number', min: 0, max: 11, value: typeof skin.requireStar === 'number' ? skin.requireStar : '', placeholder: '예: 5 (표시 6성)',
-            oninput: e => { const v = e.target.value; if (v === '') delete skin.requireStar; else skin.requireStar = Number(v); } })
-    ));
-    row1.appendChild(el('div', { class: 'nf' }, el('label', null, '고급 여부'),
-        el('label', { class: 'switch', style: { marginTop: '8px' } },
-            el('input', { type: 'checkbox', checked: skin.isHigh === true, onchange: e => { if (e.target.checked) skin.isHigh = true; else delete skin.isHigh; } }),
-            el('span', { class: 'track' }),
-            el('span', null, '고급')
-        )
-    ));
-    card.appendChild(row1);
-
-    card.appendChild(sectionTitle('적용 가능한 캐릭터 카드', '🎭'));
-    card.appendChild(fashionPrimaryCardRow(skin));
-
-    card.appendChild(sectionTitle('능력치 옵션', '✨'));
-    if (!skin.option || typeof skin.option !== 'object') skin.option = {};
-    if (!skin.option.stat || typeof skin.option.stat !== 'object') skin.option.stat = {};
-    if (!skin.option.plusStat || typeof skin.option.plusStat !== 'object') skin.option.plusStat = {};
-    const row3 = el('div', { class: 'split' });
-    row3.appendChild(statEditor('기본 능력치', '⚔️', skin.option.stat, FLAT_STAT_DEFS));
-    row3.appendChild(statEditor('비율 증가', '📈', skin.option.plusStat, PLUS_STAT_DEFS));
-    card.appendChild(row3);
-
-    const extraKeys = Object.keys(skin).filter(k => !FASHION_KNOWN_FIELDS.has(k));
-    if (extraKeys.length > 0) {
-        const extraObj = {};
-        extraKeys.forEach(k => { extraObj[k] = skin[k]; });
-        card.appendChild(sectionTitle('기타 필드 (raw JSON)', '⚙️'));
-        card.appendChild(jsonSubEditor('', () => extraObj, v => {
-            extraKeys.forEach(k => delete skin[k]);
-            if (v && typeof v === 'object') Object.keys(v).forEach(k => { if (!FASHION_KNOWN_FIELDS.has(k)) skin[k] = v[k]; });
-        }, '', 3));
+function avatarGrade(entries) {
+    return entries.some(e => e.exclusive === true) ? '한정' : entries.some(e => e.isHigh === true) ? '프레스티지' : '일반';
+}
+function fashionCard(group) {
+    const { entries, index } = group;
+    const skin = entries[0];
+    // 같은 이름의 기존 엔트리는 보존하고, 관리자가 편집한 필드만 함께 반영한다.
+    const view = clone(skin);
+    view.primary_card = [...new Set(entries.flatMap(e => e.primary_card || []))];
+    view.option = view.option || {};
+    view.option.stat = view.option.stat || {};
+    view.option.plusStat = view.option.plusStat || {};
+    let previous = clone(view);
+    function syncEdits() {
+        for (const key of ['name', 'primary_card', 'requireStar']) {
+            if (JSON.stringify(view[key]) === JSON.stringify(previous[key])) continue;
+            entries.forEach(entry => { if (view[key] === undefined) delete entry[key]; else entry[key] = clone(view[key]); });
+        }
+        for (const kind of ['stat', 'plusStat']) {
+            const before = previous.option[kind], after = view.option[kind];
+            for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+                if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
+                entries.forEach(entry => {
+                    entry.option = entry.option || {}; entry.option[kind] = entry.option[kind] || {};
+                    if (after[key] === undefined) delete entry.option[kind][key]; else entry.option[kind][key] = clone(after[key]);
+                });
+            }
+        }
+        previous = clone(view);
     }
+    const card = el('details', { class: 'card avatar-card', open: fashionOpen.has(skin), ontoggle: () => { if (card.open) fashionOpen.add(skin); else fashionOpen.delete(skin); } });
+    const assets = (LOOKUP.fashion || []).find(entry => entry.name === skin.name) || {};
+    const thumb = el('span', null, imageThumb(assets.iconUrl || assets.imageUrl || assets.previewUrl, skin.name, 'thumb avatar-thumb'));
+    const title = el('strong', null, skin.name || '새 아바타');
+    const gradeTag = el('span', { class: 'tag' }, avatarGrade(entries));
+    card.appendChild(el('summary', null, thumb, el('div', { class: 'avatar-summary' }, title, el('div', null, gradeTag, el('span', { class: 'muted' }, view.primary_card.length + '개 캐릭터')))));
+    const editor = el('div', { class: 'avatar-editor' });
+    const actions = el('div', { class: 'bar' },
+        iconUploadButton(() => view.name?.trim() ? view.name.trim() + ' 아바타' : '', '아바타', url => {
+            thumb.replaceChildren(imageThumb(url, view.name, 'thumb avatar-thumb'));
+            if (LOOKUP.fashion) LOOKUP.fashion.filter(item => item.name === skin.name).forEach(item => item.iconUrl = url);
+        }),
+        el('button', { class: 'btn sm', type: 'button', onclick: () => {
+            const copied = clone(skin); copied.name = (skin.name || '아바타') + ' 복사본';
+            let n = 2; while (fashionData.some(entry => entry?.name === copied.name)) copied.name = (skin.name || '아바타') + ' 복사본 ' + n++;
+            delete copied.type;
+            copied.primary_card = clone(view.primary_card);
+            fashionData.push(copied); fashionOpen.add(copied);
+            $('#fashionFilter').value = fashionFilterText = ''; $('#fashionGradeFilter').value = ''; PAGE_STATE.fashion = 1e9; renderFashion();
+        } }, '복제'),
+        el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
+            if (!(await showConfirm((skin.name || '새 아바타') + '를 삭제할까요? 저장 시 반영되며, 보유 유저와 상점의 이름 연결도 확인해야 합니다.'))) return;
+            fashionData = fashionData.filter(entry => !entries.includes(entry)); renderFashion();
+        } }, '삭제'));
+    editor.appendChild(actions);
+    const row = el('div', { class: 'row' });
+    row.appendChild(el('div', null, el('label', null, '아바타 이름'), el('input', { value: view.name || '', placeholder: '아바타 이름', oninput: e => { view.name = e.target.value; title.textContent = view.name || '새 아바타'; syncEdits(); } })));
+    const gradeSelect = el('select', { 'aria-label': '아바타 등급' });
+    AVATAR_GRADES.forEach(grade => gradeSelect.appendChild(el('option', { value: grade }, grade)));
+    gradeSelect.value = avatarGrade(entries);
+    const tradeText = el('div', { class: 'muted', style: { marginTop: '8px' } });
+    function refreshGrade() { gradeTag.textContent = gradeSelect.value; tradeText.textContent = ({ 일반: '거래 가능', 프레스티지: '거래 불가', 한정: '최초 1회 거래 가능' })[gradeSelect.value] || ''; }
+    gradeSelect.onchange = () => {
+        entries.forEach(entry => { delete entry.isHigh; delete entry.exclusive; if (gradeSelect.value === '프레스티지') entry.isHigh = true; if (gradeSelect.value === '한정') entry.exclusive = true; });
+        refreshGrade();
+    };
+    refreshGrade();
+    row.appendChild(el('div', null, el('label', null, '등급'), gradeSelect));
+    row.appendChild(el('div', null, el('label', null, '최소 장착 성급'), el('input', { type: 'number', min: 1, max: 12, value: Number(view.requireStar || 0) + 1, oninput: e => { view.requireStar = Math.max(0, Number(e.target.value) - 1); syncEdits(); } })));
+    editor.appendChild(row); editor.appendChild(tradeText);
+    if (assets.previewUrl) editor.appendChild(el('div', { class: 'image-field' }, imageThumb(assets.previewUrl, skin.name + ' 장착 모습', 'avatar-art')));
+    editor.appendChild(sectionTitle('적용 캐릭터'));
+    const characters = el('div', { class: 'tag-list' });
+    function renderCharacters() {
+        characters.replaceChildren();
+        view.primary_card.forEach((id, i) => {
+            const label = el('span', null, '#' + id);
+            getCards().then(cards => { label.textContent = cards.find(c => c.id === Number(id))?.name || '#' + id; }).catch(() => {});
+            characters.appendChild(el('span', { class: 'tag-pill' }, label, el('button', { type: 'button', title: '캐릭터 제외', onclick: () => { view.primary_card.splice(i, 1); syncEdits(); renderCharacters(); } }, '×')));
+        });
+        characters.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => pickCard(character => { if (!view.primary_card.includes(character.id)) view.primary_card.push(character.id); syncEdits(); renderCharacters(); }) }, '+ 캐릭터 추가'));
+    }
+    renderCharacters(); editor.appendChild(characters);
+    const stats = el('div', { class: 'split', style: { marginTop: '18px' } }, statEditor('기본 능력치', '', view.option.stat, FLAT_STAT_DEFS), statEditor('비율 증가', '', view.option.plusStat, PLUS_STAT_DEFS));
+    ['input', 'change', 'click'].forEach(event => stats.addEventListener(event, () => queueMicrotask(syncEdits)));
+    editor.appendChild(stats); card.appendChild(editor);
     return card;
 }
-
 function renderFashion() {
     const list = $('#fashionList'); list.innerHTML = '';
-    if (!Array.isArray(fashionData)) fashionData = [];
-    const q = (fashionFilterText || '').trim().toLowerCase();
-    const rows = [];
-    fashionData.forEach((skin, idx) => {
-        if (!skin) return;
-        if (q && !((skin.name || '') + ' ' + idx).toLowerCase().includes(q)) return;
-        rows.push(idx);
-    });
-    if (rows.length === 0) { list.appendChild(el('div', { class: 'empty' }, q ? '검색 결과가 없습니다.' : '스킨이 없습니다.')); return; }
-    pagedAppend(list, 'fashion', rows, idx => fashionCard(fashionData[idx], idx), renderFashion);
+    const q = fashionFilterText.trim().toLowerCase();
+    const grade = $('#fashionGradeFilter').value;
+    const groups = avatarGroups();
+    const rows = groups.filter(group => (!q || (group.entries[0].name + ' ' + group.index).toLowerCase().includes(q)) && (!grade || avatarGrade(group.entries) === grade));
+    $('#fashionStatus').textContent = rows.length + ' / ' + groups.length + '개 아바타';
+    if (!rows.length) list.appendChild(el('div', { class: 'empty' }, '표시할 아바타가 없습니다.'));
+    pagedAppend(list, 'fashion', rows, fashionCard, renderFashion);
 }
-$('#fashionAdd').onclick = () => { fashionData.push({ name: '', primary_card: [], option: {} }); fashionFilterText = ''; if ($('#fashionFilter')) $('#fashionFilter').value = ''; PAGE_STATE.fashion = 1e9; renderFashion(); };
+$('#fashionAdd').onclick = () => { const skin = { name: '', primary_card: [], option: {} }; fashionData.push(skin); fashionOpen.add(skin); fashionFilterText = $('#fashionFilter').value = ''; $('#fashionGradeFilter').value = ''; PAGE_STATE.fashion = 1e9; renderFashion(); };
 $('#fashionReload').onclick = async () => {
-    try { fashionData = (await loadKey('Fashion')) || []; renderFashion(); $('#fashionStatus').textContent = '로드 완료 (' + fashionData.length + '개)'; invalidateLookupCache(['fashion']); }
+    try { fashionData = (await loadKey('Fashion')) || []; invalidateLookupCache(['fashion']); await Promise.all([getFashion(), getCards()]); renderFashion(); }
     catch (e) { toast(e.message, false); }
 };
 $('#fashionSave').onclick = async () => {
-    if (!(await showConfirm('Fashion 데이터를 저장합니다. 계속?'))) return;
-    try { await saveKey('Fashion', fashionData); invalidateLookupCache(['fashion']); toast('✅ Fashion 저장 완료'); }
+    if (fashionData.some(entry => entry && !String(entry.name || '').trim())) return toast('아바타 이름을 입력하세요.', false);
+    if (!(await showConfirm('아바타 변경사항을 저장할까요?'))) return;
+    try { await saveKey('Fashion', fashionData); invalidateLookupCache(['fashion']); toast('아바타 저장 완료'); }
     catch (e) { toast(e.message, false); }
 };
-if ($('#fashionFilter')) $('#fashionFilter').addEventListener('input', e => { fashionFilterText = e.target.value; PAGE_STATE.fashion = 0; renderFashion(); });
+$('#fashionFilter').oninput = e => { fashionFilterText = e.target.value; PAGE_STATE.fashion = 0; renderFashion(); };
+$('#fashionGradeFilter').onchange = () => { PAGE_STATE.fashion = 0; renderFashion(); };
 TAB_LOADERS.fashion = () => $('#fashionReload').click();
 
 // ============================================================================
@@ -3481,6 +3610,42 @@ if ($('#sdKey')) {
 // 패키지 등록 마법사 (번들 생성 -> 개봉 아이템 생성 -> 상점 등록)
 // ============================================================================
 let pkgRewards = [];
+let pkgCreated = null;
+let pkgImageUrl = null;
+function clearPkgImage() {
+    if (pkgImageUrl) URL.revokeObjectURL(pkgImageUrl);
+    pkgImageUrl = null; $('#pkgImage').value = ''; $('#pkgImagePreview').hidden = true; $('#pkgImagePreview').removeAttribute('src'); $('#pkgImageClear').hidden = true;
+}
+$('#pkgImage').onchange = () => {
+    if (pkgImageUrl) URL.revokeObjectURL(pkgImageUrl);
+    const file = $('#pkgImage').files[0];
+    pkgImageUrl = file ? URL.createObjectURL(file) : null;
+    $('#pkgImagePreview').hidden = !file; $('#pkgImageClear').hidden = !file;
+    if (file) $('#pkgImagePreview').src = pkgImageUrl;
+};
+$('#pkgImageClear').onclick = clearPkgImage;
+async function finishPkgImage() {
+    const pending = pkgCreated;
+    if (!pending) return;
+    if (pending.image) {
+        $('#pkgStatus').textContent = '패키지 등록 완료 · 이미지 업로드 중…';
+        await uploadAssetFile('itemImage', '번들/' + pending.name + '.png', pending.image);
+    }
+    invalidateLookupCache(['items']);
+    PACK_REF_CACHE.Bundle = null;
+    $('#pkgStatus').textContent = pending.name + ' 등록 완료' + (pending.image ? ' · 이미지 업로드 완료' : '');
+    $('#pkgResult').replaceChildren(el('div', { class: 'bar', style: { margin: 0 } }, el('strong', null, pending.result.shopType + ' · 상품 ' + (pending.result.shopIndex + 1) + '번'),
+        el('button', { class: 'btn sm', type: 'button', onclick: async () => {
+            if (await $('#shopReload').onclick() === false) return;
+            LOADED.shop = true; activateTab('shop');
+            shopCurrentType = pending.result.shopType; $('#shopFilter').value = pending.name; renderShopTypes(); renderShop();
+        } }, '상점에서 확인')));
+    pkgCreated = null; pkgRewards = []; renderPkgRewards();
+    $('#pkgName').value = ''; $('#pkgDesc').value = ''; $('#pkgAmount').value = ''; clearPkgImage();
+    $$('.panel[data-panel="package"] input, .panel[data-panel="package"] select, .panel[data-panel="package"] textarea, .panel[data-panel="package"] button').forEach(input => input.disabled = false);
+    $('#pkgCreate').textContent = '패키지 등록';
+    toast('패키지가 등록되었습니다.');
+}
 function pkgRewardRow(r, index) {
     const wrap = el('div', { class: 'entry' });
     const sel = el('select');
@@ -3538,6 +3703,15 @@ if ($('#pkgCreate')) {
         renderPkgRewards();
     };
     $('#pkgCreate').onclick = async () => {
+        const btn = $('#pkgCreate');
+        if (btn.disabled) return;
+        if (pkgCreated) {
+            btn.disabled = true;
+            try { await finishPkgImage(); }
+            catch (e) { $('#pkgStatus').textContent = '패키지는 등록되었습니다. 이미지 업로드 재시도가 필요합니다: ' + e.message; toast(e.message, false); }
+            finally { btn.disabled = false; }
+            return;
+        }
         const name = $('#pkgName').value.trim();
         if (!name) { toast('패키지 이름을 입력하세요.', false); return; }
         if (pkgRewards.length === 0) { toast('구성 보상을 추가하세요.', false); return; }
@@ -3563,24 +3737,31 @@ if ($('#pkgCreate')) {
             rewards: pkgRewards,
             shopType,
             price: { goods: $('#pkgGoods').value, amount },
+            withImage: !!$('#pkgImage').files[0],
             limits
         };
-        if (!(await showConfirm('패키지 "' + name + '"를 생성합니다.\n번들 생성, 개봉 아이템 생성, ' + shopType + ' 상점 등록이 함께 처리됩니다. 계속?'))) return;
-        const btn = $('#pkgCreate');
         btn.disabled = true;
-        showLoading();
         try {
+            const image = body.withImage ? await iconPng($('#pkgImage').files[0]) : null;
+            if (!(await showConfirm('패키지 "' + name + '"를 ' + shopType + '에 등록할까요?' + (image ? '\n이미지도 함께 업로드됩니다.' : '')))) return;
+            showLoading();
             const r = await api('/api/admin/package/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            invalidateLookupCache(['items']);
-            PACK_REF_CACHE.Bundle = null;
-            $('#pkgStatus').textContent = '생성 완료: 번들 #' + r.bundleIndex + ', 아이템 #' + r.itemIndex + ', ' + r.shopType + ' ' + (r.shopIndex + 1) + '번 상품';
-            toast('패키지가 생성되었습니다.');
-            pkgRewards = [];
-            renderPkgRewards();
-            $('#pkgName').value = ''; $('#pkgDesc').value = ''; $('#pkgAmount').value = '';
-        } catch (e) { toast(e.message, false); }
+            pkgCreated = { name, result: r, image };
+            $$('.panel[data-panel="package"] input, .panel[data-panel="package"] select, .panel[data-panel="package"] textarea, .panel[data-panel="package"] button').forEach(input => input.disabled = true);
+            await finishPkgImage();
+        } catch (e) {
+            if (pkgCreated) { $('#pkgStatus').textContent = '패키지 등록 완료 · 이미지 업로드 실패: ' + e.message; btn.textContent = '이미지만 다시 업로드'; }
+            toast(e.message, false);
+        }
         finally { btn.disabled = false; hideLoading(); }
     };
+    const quickRewards = el('div', { class: 'bar' });
+    ['아이템', '골드', '가넷', '포인트', '마일리지'].forEach(type => quickRewards.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
+        if (pkgRewards.length >= 10) return toast('보상은 최대 10개입니다.', false);
+        if (type === '아이템') pickItem(item => { if (pkgRewards.length >= 10) return; pkgRewards.push({ type, item_id: item.id, count: 1 }); renderPkgRewards(); });
+        else { pkgRewards.push({ type, count: 1 }); renderPkgRewards(); }
+    } }, '+ ' + type)));
+    $('#pkgRewardList').before(quickRewards);
     TAB_LOADERS.package = () => { renderPkgRewards(); loadPkgShopTypes(); };
 }
 
@@ -3610,7 +3791,7 @@ async function scanRefs(idKey, index) {
 }
 function refWarnText(refs) {
     let t = '';
-    if (refs.direct > 0) t += '\n경고: 팩 / 번들 / 상점 / 레시피 / 미끼에서 이 항목을 ' + refs.direct + '곳에서 참조하고 있습니다.';
+    if (refs.direct > 0) t += '\n경고: 팩 / 번들 / 상점 / 조합법 / 미끼에서 이 항목을 ' + refs.direct + '곳에서 참조하고 있습니다.';
     if (refs.above > 0) t += '\n경고: 삭제 시 뒤 인덱스가 당겨져 더 큰 인덱스를 가리키는 참조 ' + refs.above + '곳이 어긋납니다.';
     return t;
 }
@@ -3913,130 +4094,264 @@ function protectEditor(item) {
 }
 
 // ---------- 이미지 자산 (S3 실시간 반영) ----------
-const assetState = { category: 'itemImage', dir: '' };
-
+const assetState = { category: 'itemImage', dir: '', entries: [], selected: new Set(), request: 0 };
+const ASSET_LABELS = { itemImage: '아이템 · 아바타', cardImage: '카드 이미지', ui: '화면 이미지' };
+let assetQueueFiles = [];
+let assetQueueUrls = [];
+let assetBusy = false;
 function assetFmtSize(bytes) {
     if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + 'MB';
     if (bytes >= 1024) return Math.round(bytes / 1024) + 'KB';
     return bytes + 'B';
 }
-
+function assetFileUrl(category, path, version) { return '/api/admin/assets/file?' + new URLSearchParams({ category, path, v: version || Date.now() }); }
 async function loadAssetStatus() {
     try {
-        const res = await fetch('/api/admin/assets/status');
-        const data = await res.json();
-        const s = data.state || {};
-        $('#assetStatus').textContent = s.status === 'done' ? 'S3 동기화 완료 (' + s.checked + '개 확인)' : 'S3 동기화: ' + (s.status || '?') + (s.failed ? ' (실패 ' + s.failed + ')' : '');
-    } catch (_) { $('#assetStatus').textContent = ''; }
+        const data = await api('/api/admin/assets/status');
+        const state = data.state || {};
+        $('#assetStatus').textContent = state.status === 'done' ? state.checked + '개 자산 동기화 완료' : '자산 동기화: ' + state.status + (state.failed ? ' · 실패 ' + state.failed + '개' : '');
+    } catch (e) { $('#assetStatus').textContent = e.message; }
 }
-
-async function loadAssets() {
-    const listBox = $('#assetList');
-    listBox.innerHTML = '';
-    let data;
-    try {
-        const res = await fetch('/api/admin/assets/tree?' + new URLSearchParams({ category: assetState.category, dir: assetState.dir }));
-        data = await res.json();
-        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-    } catch (e) {
-        listBox.appendChild(el('div', { class: 'empty' }, '목록을 불러오지 못했습니다: ' + e.message));
-        return;
-    }
-    const crumbs = $('#assetCrumbs');
-    crumbs.innerHTML = '';
-    const parts = assetState.dir ? assetState.dir.split('/') : [];
-    const mkCrumb = (label, dir) => el('a', { href: '#', onclick: e => { e.preventDefault(); assetState.dir = dir; loadAssets(); } }, label);
-    crumbs.appendChild(mkCrumb(assetState.category, ''));
-    parts.forEach((seg, i) => {
-        crumbs.appendChild(document.createTextNode(' / '));
-        crumbs.appendChild(mkCrumb(seg, parts.slice(0, i + 1).join('/')));
-    });
-    if (!data.entries.length) listBox.appendChild(el('div', { class: 'empty' }, '빈 폴더'));
-    data.entries.forEach(entry => {
-        const relPath = assetState.dir ? assetState.dir + '/' + entry.name : entry.name;
-        const row = el('div', { class: 'entry' });
+async function openAssetFolder(category, dir) {
+    assetState.category = category; assetState.dir = dir; assetState.selected.clear();
+    $('#assetCategory').value = category; $('#assetFilter').value = '';
+    $('#assetCardHelper').style.display = category === 'cardImage' ? '' : 'none';
+    await loadAssets();
+}
+function visibleAssets() {
+    const q = $('#assetFilter').value.trim().toLowerCase();
+    return assetState.entries.filter(entry => !q || entry.name.toLowerCase().includes(q));
+}
+function syncAssetSelection() {
+    const files = visibleAssets().filter(entry => !entry.dir);
+    const count = files.filter(entry => assetState.selected.has(entry.name)).length;
+    $('#assetSelectAll').checked = files.length > 0 && files.length === count;
+    $('#assetSelectAll').indeterminate = count > 0 && count < files.length;
+    $('#assetSelectAll').disabled = assetBusy || !files.length;
+    $('#assetDeleteSelected').disabled = assetBusy || !assetState.selected.size;
+    $('#assetCount').textContent = visibleAssets().length + '개 표시 · ' + assetState.selected.size + '개 선택';
+}
+function previewAsset(category, path, version) {
+    const previousFocus = document.activeElement;
+    const bg = el('div', { class: 'modal-bg show', role: 'dialog', 'aria-modal': 'true', 'aria-label': path });
+    const url = assetFileUrl(category, path, version);
+    const close = () => { bg.remove(); previousFocus?.focus(); };
+    const button = el('button', { class: 'btn', onclick: close }, '닫기');
+    bg.appendChild(el('div', { class: 'modal asset-preview-modal' }, el('h3', null, path),
+        el('div', { class: 'preview-content' }, /\.mp3$/i.test(path) ? el('audio', { src: url, controls: true }) : el('img', { src: url, alt: path })),
+        el('div', { class: 'foot' }, button)));
+    bg.onclick = e => { if (e.target === bg) close(); };
+    bg.onkeydown = e => { if (e.key === 'Escape') close(); };
+    document.body.appendChild(bg); button.focus();
+}
+function renderAssets() {
+    const list = $('#assetList'); list.replaceChildren();
+    const category = assetState.category, dir = assetState.dir;
+    const visible = visibleAssets();
+    if (!visible.length) list.appendChild(el('div', { class: 'empty' }, '표시할 파일이 없습니다.'));
+    visible.forEach(entry => {
+        const path = dir ? dir + '/' + entry.name : entry.name;
+        const tile = el('div', { class: 'asset-tile' + (assetState.selected.has(entry.name) ? ' selected' : '') });
         if (entry.dir) {
-            row.appendChild(el('a', { href: '#', style: { fontWeight: '600', flex: '1' }, onclick: e => { e.preventDefault(); assetState.dir = relPath; loadAssets(); } }, '📁 ' + entry.name));
+            tile.appendChild(el('button', { class: 'btn asset-folder', onclick: () => openAssetFolder(category, path) }, '폴더 열기'));
+            tile.appendChild(el('strong', { class: 'asset-name' }, entry.name));
         } else {
-            row.appendChild(el('span', { style: { flex: '1' } }, entry.name + ' (' + assetFmtSize(entry.size) + ')'));
-            const fileUrl = '/api/admin/assets/file?' + new URLSearchParams({ category: assetState.category, path: relPath });
-            row.appendChild(el('button', { class: 'btn', type: 'button', onclick: () => window.open(fileUrl, '_blank') }, '보기'));
-            row.appendChild(el('button', { class: 'btn', type: 'button', onclick: async () => {
-                if (!confirm(entry.name + ' 파일을 삭제할까요? S3에서도 삭제됩니다.')) return;
-                const res = await fetch('/api/admin/assets?' + new URLSearchParams({ category: assetState.category, path: relPath }), { method: 'DELETE' });
-                const out = await res.json().catch(() => ({}));
-                if (!res.ok) return toast(out.error || '삭제 실패', false);
-                toast('✅ 삭제했습니다.');
-                loadAssets();
-            } }, '삭제'));
+            const checkbox = el('input', { type: 'checkbox', checked: assetState.selected.has(entry.name), disabled: assetBusy, 'aria-label': entry.name + ' 선택', onchange: () => {
+                if (checkbox.checked) assetState.selected.add(entry.name); else assetState.selected.delete(entry.name);
+                tile.classList.toggle('selected', checkbox.checked); syncAssetSelection();
+            } });
+            const preview = el('button', { type: 'button', class: 'btn', style: { padding: 0, border: 0 }, onclick: () => previewAsset(category, path, entry.mtime), 'aria-label': entry.name + ' 미리보기' },
+                /\.mp3$/i.test(entry.name) ? el('span', { class: 'asset-preview thumb-empty' }, '오디오 미리보기') : imageThumb(assetFileUrl(category, path, entry.mtime), entry.name, 'asset-preview'));
+            tile.appendChild(preview);
+            tile.appendChild(el('label', { class: 'check-label' }, checkbox, el('span', { class: 'asset-name' }, entry.name)));
+            tile.appendChild(el('span', { class: 'muted' }, assetFmtSize(entry.size)));
+            const replacement = el('input', { type: 'file', hidden: true, accept: 'image/png,image/jpeg,image/webp,image/gif,audio/mpeg', onchange: async () => {
+                const file = replacement.files[0]; if (!file) return;
+                if (file.name.split('.').pop().toLowerCase() !== entry.name.split('.').pop().toLowerCase()) return toast('같은 파일 형식으로 교체해주세요.', false);
+                if (!(await showConfirm(entry.name + ' 이미지를 교체할까요? 즉시 반영됩니다.'))) return;
+                try { await uploadAssetFile(category, path, file); toast('파일을 교체했습니다.'); await loadAssets(); }
+                catch (e) { toast(e.message, false); }
+            } });
+            tile.appendChild(el('div', { class: 'actions' }, replacement,
+                el('button', { class: 'btn sm', onclick: () => replacement.click() }, '교체'),
+                el('button', { class: 'btn sm', onclick: async () => { try { await navigator.clipboard.writeText(path); toast('파일 경로를 복사했습니다.'); } catch (_) { toast('경로 복사에 실패했습니다.', false); } } }, '경로 복사'),
+                el('button', { class: 'btn sm danger', disabled: assetBusy, onclick: () => deleteAssets([entry.name]) }, '삭제')));
         }
-        listBox.appendChild(row);
+        list.appendChild(tile);
+    });
+    syncAssetSelection();
+}
+async function loadAssets() {
+    const request = ++assetState.request;
+    $('#assetList').replaceChildren(el('div', { class: 'empty' }, '불러오는 중…'));
+    const crumbs = $('#assetCrumbs'); crumbs.replaceChildren();
+    crumbs.appendChild(el('button', { onclick: () => openAssetFolder(assetState.category, '') }, ASSET_LABELS[assetState.category]));
+    const parts = assetState.dir ? assetState.dir.split('/') : [];
+    parts.forEach((part, index) => crumbs.appendChild(el('span', null, ' / ', el('button', { onclick: () => openAssetFolder(assetState.category, parts.slice(0, index + 1).join('/')) }, part))));
+    try {
+        const result = await api('/api/admin/assets/tree?' + new URLSearchParams({ category: assetState.category, dir: assetState.dir }));
+        if (request !== assetState.request) return;
+        assetState.entries = result.entries || [];
+        assetState.selected = new Set([...assetState.selected].filter(name => assetState.entries.some(entry => !entry.dir && entry.name === name)));
+        renderAssets();
+    } catch (e) { if (request === assetState.request) { assetState.entries = []; syncAssetSelection(); $('#assetList').replaceChildren(el('div', { class: 'empty' }, e.message)); } }
+}
+async function deleteAssets(names) {
+    if (assetBusy || !names.length) return;
+    const category = assetState.category, dir = assetState.dir;
+    assetBusy = true; syncAssetSelection();
+    try {
+        if (!(await showConfirm(names.length + '개 파일을 삭제할까요? 게임에서 사용 중인 이미지도 사라집니다.\n' + names.slice(0, 5).join(', ')))) return;
+        let done = 0;
+        for (const name of names) {
+            try { await api('/api/admin/assets?' + new URLSearchParams({ category, path: dir ? dir + '/' + name : name }), { method: 'DELETE' }); done++; assetState.selected.delete(name); }
+            catch (e) { throw new Error(done + '개 삭제 완료 · ' + name + ': ' + e.message); }
+        }
+        toast(done + '개 파일을 삭제했습니다.');
+    } catch (e) { toast(e.message, false); }
+    finally { assetBusy = false; await loadAssets(); }
+}
+function renderAssetQueue() {
+    assetQueueUrls.forEach(url => URL.revokeObjectURL(url)); assetQueueUrls = [];
+    $('#assetQueue').replaceChildren();
+    assetQueueFiles.forEach((file, index) => {
+        const url = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+        if (url) assetQueueUrls.push(url);
+        $('#assetQueue').appendChild(el('div', { class: 'queue-item' }, imageThumb(url, file.name), el('span', null, file.name + ' · ' + assetFmtSize(file.size)),
+            el('button', { class: 'btn sm', disabled: assetBusy, title: file.name + ' 제외', onclick: () => { assetQueueFiles.splice(index, 1); renderAssetQueue(); } }, '×')));
     });
 }
-
-$('#assetCategory').onchange = () => {
-    assetState.category = $('#assetCategory').value;
-    assetState.dir = '';
-    $('#assetCardHelper').style.display = assetState.category === 'cardImage' ? '' : 'none';
-    loadAssets();
-};
+$('#assetFiles').onchange = () => { assetQueueFiles = Array.from($('#assetFiles').files || []); renderAssetQueue(); };
+$('#assetDropZone').ondragover = e => { e.preventDefault(); $('#assetDropZone').classList.add('dragover'); };
+$('#assetDropZone').ondragleave = () => $('#assetDropZone').classList.remove('dragover');
+$('#assetDropZone').ondrop = e => { e.preventDefault(); $('#assetDropZone').classList.remove('dragover'); if (!assetBusy) { assetQueueFiles = Array.from(e.dataTransfer.files); renderAssetQueue(); } };
+$('#assetFilter').oninput = renderAssets;
+$('#assetSelectAll').onchange = e => { visibleAssets().filter(entry => !entry.dir).forEach(entry => { if (e.target.checked) assetState.selected.add(entry.name); else assetState.selected.delete(entry.name); }); renderAssets(); };
+$('#assetDeleteSelected').onclick = () => deleteAssets([...assetState.selected]);
+$('#assetCategory').onchange = () => openAssetFolder($('#assetCategory').value, '');
 $('#assetReload').onclick = () => { loadAssets(); loadAssetStatus(); };
 $('#assetMkdir').onclick = async () => {
-    const name = prompt('만들 폴더 이름 (현재 폴더 아래에 생성됩니다)');
+    const name = (await showPrompt('새 폴더 이름'))?.trim();
     if (!name) return;
-    if (name.includes('/') || name.includes('\\') || name.includes('..')) return toast('폴더 이름이 올바르지 않습니다.', false);
-    const dir = assetState.dir ? assetState.dir + '/' + name.trim() : name.trim();
-    const res = await fetch('/api/admin/assets/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: assetState.category, dir }) });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok) return toast(out.error || '폴더 생성 실패', false);
-    assetState.dir = dir;
-    loadAssets();
+    if (/[\\/]/.test(name) || name === '.' || name === '..') return toast('폴더 이름이 올바르지 않습니다.', false);
+    const category = assetState.category, dir = assetState.dir ? assetState.dir + '/' + name : name;
+    try { await api('/api/admin/assets/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, dir }) }); await openAssetFolder(category, dir); }
+    catch (e) { toast(e.message, false); }
 };
 $('#assetUpload').onclick = async () => {
-    const input = $('#assetFiles');
-    const files = Array.from(input.files || []);
+    if (assetBusy) return;
+    const files = assetQueueFiles.slice();
     if (!files.length) return toast('업로드할 파일을 선택하세요.', false);
     const saveName = $('#assetSaveName').value.trim();
     if (saveName && files.length > 1) return toast('저장 파일명은 파일 1개 선택 시에만 사용할 수 있습니다.', false);
-    if (saveName && (saveName.includes('/') || saveName.includes('\\') || saveName.includes('..'))) return toast('저장 파일명이 올바르지 않습니다.', false);
-    const button = $('#assetUpload');
-    button.disabled = true;
+    if (saveName && (/[\\/]/.test(saveName) || saveName === '.' || saveName === '..')) return toast('저장 파일명이 올바르지 않습니다.', false);
+    if (files.some(file => file.size > 10 * 1024 * 1024)) return toast('파일은 각각 10MB 이하여야 합니다.', false);
+    const category = assetState.category, dir = assetState.dir;
+    assetBusy = true; $('#assetUpload').disabled = true; $('#assetFiles').disabled = true; renderAssetQueue(); syncAssetSelection();
     let done = 0;
     try {
+        const duplicates = files.filter(file => assetState.entries.some(entry => entry.name === (saveName || file.name)));
+        if (duplicates.length && !(await showConfirm('같은 이름의 파일 ' + duplicates.length + '개를 교체할까요?'))) return;
         for (const file of files) {
-            const name = (files.length === 1 && saveName) ? saveName : file.name;
-            const relPath = assetState.dir ? assetState.dir + '/' + name : name;
-            const res = await fetch('/api/admin/assets/upload?' + new URLSearchParams({ category: assetState.category }), {
-                method: 'POST',
-                headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Asset-Path': encodeURIComponent(relPath) },
-                body: file
-            });
-            const out = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(name + ': ' + (out.error || 'HTTP ' + res.status));
-            done++;
+            const name = saveName || file.name;
+            $('#assetUpload').textContent = '업로드 중 ' + (done + 1) + ' / ' + files.length;
+            await uploadAssetFile(category, dir ? dir + '/' + name : name, file);
+            done++; assetQueueFiles = assetQueueFiles.filter(queued => queued !== file);
         }
-        toast('✅ ' + done + '개 파일을 업로드했습니다. 즉시 반영됩니다.');
-        input.value = '';
-        $('#assetSaveName').value = '';
-        loadAssets();
-    } catch (e) {
-        toast((done ? done + '개 성공 후 실패 — ' : '') + e.message, false);
-        loadAssets();
-    } finally {
-        button.disabled = false;
-    }
+        $('#assetFiles').value = ''; $('#assetSaveName').value = '';
+        toast(done + '개 파일 업로드 완료');
+    } catch (e) { toast(done + '개 완료 · 남은 파일은 다시 업로드할 수 있습니다. ' + e.message, false); }
+    finally { assetBusy = false; $('#assetUpload').disabled = false; $('#assetFiles').disabled = false; $('#assetUpload').textContent = '현재 폴더에 업로드'; renderAssetQueue(); await loadAssets(); }
 };
-$('#assetCardApply').onclick = () => {
-    const name = $('#assetCardName').value.trim();
-    const tier = $('#assetCardTier').value;
-    const skin = $('#assetCardSkin').value.trim();
-    if (tier.startsWith('표지-')) {
-        $('#assetSaveName').value = '캐릭터표지(' + tier.slice(3) + ').png';
-    } else {
-        if (!name) return toast('카드명을 입력하세요.', false);
-        $('#assetSaveName').value = tier + (skin ? ' ' + skin : '') + ' ' + name + '.png';
-    }
-    toast('저장 파일명을 채웠습니다. 카드분리/캐릭터/' + (name || '<카드명>') + '/ 폴더에서 업로드하세요.');
+$('#assetCardApply').onclick = async () => {
+    const name = $('#assetCardName').value.trim(), tier = $('#assetCardTier').value, skin = $('#assetCardSkin').value.trim();
+    if (!name || /[\\/]/.test(name)) return toast('카드명을 입력하세요.', false);
+    $('#assetSaveName').value = tier.startsWith('표지-') ? '캐릭터표지(' + tier.slice(3) + ').png' : tier + (skin ? ' ' + skin : '') + ' ' + name + '.png';
+    const dir = '카드분리/캐릭터/' + name;
+    try { await api('/api/admin/assets/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: 'cardImage', dir }) }); await openAssetFolder('cardImage', dir); toast('업로드 폴더와 파일명을 설정했습니다.'); }
+    catch (e) { toast(e.message, false); }
 };
-
 TAB_LOADERS.assets = () => { loadAssets(); loadAssetStatus(); };
+
+
+// ---------- 공통 작업 도구 ----------
+const editorLoads = new Map();
+const editorSaved = new Map();
+const editorSources = {
+    pack: { key: 'Pack', data: () => packData }, bundle: { key: 'Bundle', data: () => bundleData },
+    coupon: { key: 'Coupon', data: () => couponData }, shop: { key: 'Shop', data: () => shopData },
+    recipe: { key: 'Recipe', data: () => recipeData }, bait: { key: 'Bait', data: () => baitData },
+    quest: { key: 'Quest', data: () => questData }, item: { key: 'Item', data: () => itemData },
+    equipment: { key: 'Equipment', prefix: 'equip', data: () => equipData }, pet: { key: 'Pet', data: () => petData },
+    fashion: { key: 'Fashion', data: () => fashionData }, patchnote: { key: 'Patchnote', data: () => patchnoteData }
+};
+function editorIsDirty(tab) {
+    const source = editorSources[tab];
+    return !!source && editorSaved.has(source.key) && editorSaved.get(source.key) !== JSON.stringify(source.data());
+}
+function refreshEditorStatus() {
+    Object.keys(editorSources).forEach(tab => {
+        const label = document.querySelector('[data-panel="' + tab + '"] .save-state');
+        if (!label) return;
+        const dirty = editorIsDirty(tab);
+        label.textContent = dirty ? '저장하지 않은 변경사항' : '';
+        label.classList.toggle('dirty', dirty);
+    });
+}
+$$('.savebar').forEach(bar => {
+    const section = bar.closest('section');
+    const heading = section?.querySelector('h2');
+    if (heading) heading.after(bar);
+    const add = section?.querySelector(':scope > .add-btn');
+    if (add) bar.appendChild(el('button', { class: 'btn', type: 'button', onclick: () => add.click() }, add.textContent));
+    bar.appendChild(el('span', { class: 'save-state', role: 'status' }));
+});
+for (const [tab, source] of Object.entries(editorSources)) {
+    const prefix = source.prefix || tab;
+    const reload = document.getElementById(prefix + 'Reload');
+    const save = document.getElementById(prefix + 'Save');
+    if (reload) {
+        const original = reload.onclick;
+        reload.onclick = async () => {
+            if (reload.disabled) return false;
+            reload.disabled = true;
+            try {
+                if (editorIsDirty(tab) && !(await showConfirm('저장하지 않은 변경사항을 버리고 다시 불러올까요?'))) return false;
+                const before = editorLoads.get(source.key) || 0;
+                await original();
+                if ((editorLoads.get(source.key) || 0) === before) { LOADED[tab] = false; return false; }
+                editorSaved.set(source.key, JSON.stringify(source.data())); refreshEditorStatus();
+                return true;
+            } finally { reload.disabled = false; }
+        };
+    }
+    if (save) {
+        const original = save.onclick;
+        save.onclick = async () => {
+            if (save.disabled) return;
+            save.disabled = true;
+            try { await original(); }
+            finally { save.disabled = false; refreshEditorStatus(); }
+        };
+    }
+}
+['input', 'change', 'click'].forEach(event => document.addEventListener(event, () => queueMicrotask(refreshEditorStatus)));
+window.addEventListener('beforeunload', event => {
+    if (Object.keys(editorSources).some(editorIsDirty) || pkgCreated || pkgRewards.length || $('#pkgName').value.trim() || assetQueueFiles.length) { event.preventDefault(); event.returnValue = ''; }
+});
+$$('.tab').forEach(tab => $('#mobileNav').appendChild(el('option', { value: tab.dataset.tab }, tab.textContent)));
+$('#mobileNav').onchange = e => activateTab(e.target.value);
+$('#navSearch').oninput = e => {
+    const query = e.target.value.trim();
+    $$('.side .tab').forEach(tab => tab.hidden = !tab.textContent.includes(query));
+    $$('.side-group').forEach(group => group.hidden = !!query);
+};
+$('#searchName').onkeydown = e => { if (e.key === 'Enter') $('#searchBtn').click(); };
+document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        const save = document.querySelector('.panel.active .savebar .btn.primary');
+        if (save) { e.preventDefault(); save.click(); }
+    }
+    if (e.key === 'Escape') closeModal();
+});
+activateTab(location.hash.slice(1) || 'grant');

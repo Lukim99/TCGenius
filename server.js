@@ -4665,7 +4665,7 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
 
 server.get('/api/lookup/items', requireAdmin, (req, res) => {
     const items = rpgenius.getDataCache('Item', []);
-    res.json(items.map((it, id) => it ? { id, name: it.name, type: it.type, desc: it.desc } : null).filter(Boolean));
+    res.json(items.map((it, id) => it ? { id, name: it.name, type: it.type, desc: it.desc, ...getItemDisplayAssets(it) } : null).filter(Boolean));
 });
 
 server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
@@ -4698,7 +4698,9 @@ server.get('/api/lookup/fashion', requireAdmin, (req, res) => {
     res.json((fashion || []).map(skin => skin ? {
         name: skin.name,
         primary_card: Array.isArray(skin.primary_card) ? skin.primary_card : [],
-        requireStar: Number(skin.requireStar || 0)
+        requireStar: Number(skin.requireStar || 0),
+        ...getAvatarDisplayAssets(skin.name),
+        previewUrl: getCardImageUrl({ id: (skin.primary_card || [])[0], star: Number(skin.requireStar || 0), type: skin.type || '일반', skin: skin.name }, { prestige: false, jobPrestige: false })
     } : null).filter(Boolean));
 });
 
@@ -4872,6 +4874,12 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
         const items = structuredClone(rpgenius.getDataCache('Item', []) || []);
         const shop = rpgenius.getDataCache('Shop', {}) || {};
         if (!Array.isArray(shop[shopType])) return res.status(400).json({ error: '존재하지 않는 상점 종류: ' + shopType });
+        if (items.some(item => item && item.name === name)) return res.status(409).json({ error: '같은 이름의 아이템이 있습니다. 다른 패키지 이름을 입력하세요.' });
+        if (b.withImage) {
+            if (/[\\/\0]/.test(name) || name === '.' || name === '..' || name.length > 150) return res.status(400).json({ error: '이미지를 등록할 패키지 이름에 경로 문자를 사용할 수 없습니다.' });
+            await assetStore.ready;
+            if (assetStore.getLocalFilePath('itemImage', '번들/' + name + '.png')) return res.status(409).json({ error: '같은 이름의 패키지 이미지가 있습니다. 다른 패키지 이름을 입력하세요.' });
+        }
 
         const REWARD_KINDS = ['골드', '가넷', '포인트', '마일리지', '아이템'];
         const bundleEntries = [];
@@ -4919,15 +4927,18 @@ server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
     const scope = String((req.body && req.body.scope) || '').trim();
     const shopType = String((req.body && req.body.shopType) || '').trim();
     const shopId = String((req.body && req.body.shopId) || '');
-    if (!['all', 'shop', 'item'].includes(scope)) return res.status(400).json({ error: '초기화 범위가 올바르지 않습니다.' });
-    if ((scope == 'shop' || scope == 'item') && !shopType) return res.status(400).json({ error: '상점 종류를 선택해주세요.' });
+    const selectedIds = req.body && req.body.shopIds;
+    if (!['all', 'shop', 'item', 'items'].includes(scope)) return res.status(400).json({ error: '초기화 범위가 올바르지 않습니다.' });
+    if (scope != 'all' && !shopType) return res.status(400).json({ error: '상점 종류를 선택해주세요.' });
     if (scope == 'item' && !shopId) return res.status(400).json({ error: '상품 ID가 없습니다. 상점을 다시 불러와주세요.' });
+    if (scope == 'items' && (!Array.isArray(selectedIds) || !selectedIds.length || selectedIds.some(id => typeof id !== 'string' || !id))) return res.status(400).json({ error: '초기화할 상품을 선택해주세요.' });
     try {
         await rpgenius.loadRpgeniusDataEntry('Shop');
         const shops = rpgenius.getDataCache('Shop', {});
         if (scope != 'all' && !Array.isArray(shops[shopType])) return res.status(400).json({ error: '존재하지 않는 상점입니다.' });
-        const shopIds = scope == 'all' ? [] : shops[shopType].map(item => item.shopId).filter(id => scope == 'shop' || id == shopId);
-        if (scope == 'item' && shopIds.length != 1) return res.status(409).json({ error: '상품이 변경되었습니다. 상점을 다시 불러와주세요.' });
+        const requestedIds = scope == 'items' ? [...new Set(selectedIds)] : [shopId];
+        const shopIds = scope == 'all' ? [] : shops[shopType].map(item => item.shopId).filter(id => scope == 'shop' || requestedIds.includes(id));
+        if ((scope == 'item' || scope == 'items') && shopIds.length != requestedIds.length) return res.status(409).json({ error: '선택한 상품이 변경되었거나 저장되지 않았습니다. 상점을 저장하거나 다시 불러와주세요.' });
         const users = await rpgenius.getAllRPGUsers();
         let userUpdated = 0;
         for (const user of users) {
@@ -4954,7 +4965,7 @@ server.post('/api/admin/shop-limits/reset', requireAdmin, async (req, res) => {
             globalUpdated = shopCatalog.resetShopRecords(state, shopIds);
             if (globalUpdated) await rpgenius.saveRpgeniusDataEntry('ShopState', state);
         }
-        res.json({ ok: true, scope, shopType, shopId, userUpdated, globalUpdated });
+        res.json({ ok: true, scope, shopType, shopId, shopIds, userUpdated, globalUpdated });
     } catch (e) {
         console.error('shop limit reset error:', e);
         res.status(500).json({ error: e.message || '서버 오류' });
