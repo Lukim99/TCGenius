@@ -12,7 +12,12 @@ delete process.env.SUPABASE_URL_P;
 delete process.env.SUPABASE_KEY_P;
 const product = name => ({ shopId: catalog.newShopItemId(), type: '가넷', name, count: 1, price: { goods: 'gold', amount: 10 } });
 const [first, second, other] = ['첫 상품', '둘째 상품', '다른 상점 상품'].map(product);
-const data = { Shop: { 일반: [first, second], 다른상점: [other] }, ShopState: {}, Item: [], Bundle: [], Fashion: [] };
+const data = {
+    Shop: { 일반: [first, second], 다른상점: [other], 패키지: [] }, ShopState: {}, Item: [], Bundle: [],
+    Fashion: [{ name: '테스트 아바타', primary_card: [0], requireStar: 6 }],
+    Equipment: Object.fromEntries(['weapon', 'armor', 'accessory', 'support'].map(slot => [slot, [{ name: slot, rarity: '일반', stat: {}, plusStat: {} }]])),
+    Pet: [{ name: '테스트 펫', rarity: '일반', stat: {}, plusStat: {} }]
+};
 const writes = [];
 DynamoDBDocumentClient.prototype.send = async function(command) {
     const input = command.input;
@@ -41,6 +46,10 @@ const records = () => ({ '@items': Object.fromEntries([first, second, other].map
 let userSaves = 0;
 const user = { name: 'admin-workflow-test', shopPurchases: records(), save: async () => { userSaves++; } };
 rpg.getAllRPGUsers = async () => [user];
+const buyer = new rpg.RPGUser(user.name, 'isolated-buyer');
+buyer.gold = 1000;
+buyer.save = async () => {};
+rpg.getRPGUserByName = async () => buyer;
 
 (async () => {
     await rpg.initRpgeniusData();
@@ -91,6 +100,55 @@ rpg.getAllRPGUsers = async () => [user];
         const upload = await fetch(origin + '/api/admin/assets/upload?category=itemImage', { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'image/png', 'X-Asset-Path': encodeURIComponent('번들/테스트 패키지.png') }, body: Buffer.from('isolated-image') });
         assert.equal(upload.status, 200);
         assert.ok(images.has('itemImage/번들/테스트 패키지.png'));
-        console.log('admin_shop_actions.test.js: OK (관리자 인증, 선택 초기화, 전체 검증, 순서 변경, 패키지·이미지 연결, 중복 방지; DB/S3 격리)');
+        const title = rpg.getTitleDefs()[0];
+        const rewardGroups = [
+            [
+                { type: '아이템', item_id: result.itemIndex, count: { min: 2, max: 3 } },
+                { type: '캐릭터카드', card_id: 0, display_star: 7, card_type: '일반', skin: '테스트 아바타', count: 2 },
+                { type: '아바타', fashion: '테스트 아바타', count: 1 },
+                ...Object.entries({ 무기: 'weapon_id', 갑옷: 'armor_id', 장신구: 'accessory_id', 보조: 'support_id' }).map(([type, key]) => ({ type, [key]: 0, count: 1 })),
+                { type: '펫', pet_id: 0, count: 1 },
+                { type: '칭호', title_id: title.id, count: 1 }
+            ],
+            ['골드', '가넷', '포인트', '마일리지', '경험치'].map(type => ({ type, count: 5 }))
+        ];
+        for (const [index, rewards] of rewardGroups.entries()) {
+            const response = await post('/api/admin/package/create', { name: '확장 패키지 ' + index, rewards, shopType: '패키지', price: { goods: 'gold', amount: 10 } });
+            const created = await response.json();
+            assert.equal(response.status, 200, JSON.stringify(created));
+            assert.deepEqual(data.Bundle[created.bundleIndex], rewards.map(reward => ({ ...reward, count: typeof reward.count === 'object' ? reward.count : { min: reward.count, max: reward.count } })));
+            const purchase = await post('/api/shop/buy', { shopType: '패키지', shopId: created.shopId, count: 1 });
+            const granted = await purchase.json();
+            assert.equal(purchase.status, 200, JSON.stringify(granted));
+            assert.equal(granted.bundleGranted.length, rewards.length);
+            if (index === 0) {
+                const titleReward = granted.bundleGranted.find(reward => reward.type === 'title');
+                assert.equal(titleReward.name, title.name + ' 칭호');
+                assert.equal(titleReward.iconUrl, rpg.getTitleImageUrl(title.name));
+                assert.ok(!titleReward.name.includes('🏅'));
+            }
+        }
+        assert.ok([2, 3].includes(rpg.getInventoryItemCount(buyer, result.itemIndex)));
+        assert.equal(buyer.inventory.card.length, 2);
+        assert.ok(buyer.inventory.card.every(card => card.id === 0 && card.star === 6 && card.skin === '테스트 아바타'));
+        assert.equal(buyer.inventory.equipment.length, 4);
+        assert.equal(buyer.inventory.pet[0].id, 0);
+        assert.ok(buyer.titles.includes(title.id));
+        assert.ok(rpg.hasAvatar(buyer, '테스트 아바타'));
+        assert.equal(buyer.gold, 985);
+        for (const key of ['garnet', 'point', 'mileage', 'exp']) assert.equal(buyer[key], 5, key);
+        const writesBeforeInvalid = writes.length;
+        for (const reward of [
+            { type: '골드', count: { min: 3, max: 2 } }, { type: '골드', count: 1.5 },
+            { type: '칭호', title_id: 'missing', count: 1 }, { type: '칭호', title_id: title.id, count: 2 },
+            { type: '무기', weapon_id: 999, count: 1 }, { type: '펫', pet_id: 999, count: 1 },
+            { type: '아바타', fashion: 'missing', count: 1 },
+            { type: '캐릭터카드', card_id: 0, display_star: 1, skin: '테스트 아바타', count: 1 },
+            { type: '캐릭터카드', card_id: 0, display_star: 13, count: 1 }
+        ]) {
+            assert.equal((await post('/api/admin/package/create', { ...body, name: '잘못된 보상', withImage: false, rewards: [reward] })).status, 400, JSON.stringify(reward));
+        }
+        assert.equal(writes.length, writesBeforeInvalid, '잘못된 보상은 운영 데이터에 저장하지 않는다');
+        console.log('admin_shop_actions.test.js: OK (관리자 인증, 선택 초기화, 패키지 14종 등록·구매·지급, 칭호 이미지, 잘못된 보상 차단; DB/S3 격리)');
     } finally { await new Promise(resolve => http.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

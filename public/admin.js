@@ -288,7 +288,7 @@ function cardTargetControls(entry, onChange) {
     };
     const refreshSkins = async () => {
         const id = getSelectedCardId();
-        const rawStar = Number(entry.star || 0);
+        const rawStar = entry.display_star != null ? Number(entry.display_star) - 1 : (entry.star_display != null ? Number(entry.star_display) - 1 : Number(entry.star || 0));
         const fashion = await getFashion();
         const skins = fashion.filter(skin => Array.isArray(skin.primary_card) && skin.primary_card.map(Number).includes(id) && rawStar >= Number(skin.requireStar || 0));
         skinSelect.innerHTML = '';
@@ -3646,40 +3646,8 @@ async function finishPkgImage() {
     $('#pkgCreate').textContent = '패키지 등록';
     toast('패키지가 등록되었습니다.');
 }
-function pkgRewardRow(r, index) {
-    const wrap = el('div', { class: 'entry' });
-    const sel = el('select');
-    ['골드', '가넷', '포인트', '마일리지', '아이템'].forEach(t => sel.appendChild(el('option', { value: t }, t)));
-    sel.value = r.type;
-    const target = el('span', { style: { flex: '1', minWidth: '160px', display: 'flex' } });
-    function paintTarget() {
-        target.innerHTML = '';
-        if (r.type === '아이템') {
-            const btn = el('button', { class: 'pickbtn', type: 'button' });
-            const refresh = async () => {
-                btn.innerHTML = '';
-                if (typeof r.item_id === 'number') {
-                    const items = await getItems();
-                    const it = items.find(x => x.id === r.item_id);
-                    btn.appendChild(it ? document.createTextNode('#' + it.id + ' ' + it.name) : el('span', { class: 'ph' }, '없는 아이템 #' + r.item_id));
-                } else btn.appendChild(el('span', { class: 'ph' }, '아이템 선택'));
-            };
-            btn.onclick = () => pickItem(it => { r.item_id = it.id; refresh(); });
-            refresh();
-            target.appendChild(btn);
-        } else {
-            delete r.item_id;
-            target.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + r.type + ' 직접 지급)'));
-        }
-    }
-    sel.onchange = () => { r.type = sel.value; paintTarget(); };
-    paintTarget();
-    wrap.appendChild(sel);
-    wrap.appendChild(target);
-    wrap.appendChild(el('span', { class: 'lab' }, '수량'));
-    wrap.appendChild(el('input', { type: 'number', min: 1, value: r.count, style: { width: '110px', flex: '0 0 auto' }, oninput: e => r.count = Math.floor(Number(e.target.value) || 0) }));
-    wrap.appendChild(el('button', { class: 'btn icon danger', type: 'button', onclick: () => { pkgRewards.splice(index, 1); renderPkgRewards(); } }, '✕'));
-    return wrap;
+function pkgRewardRow(reward, index) {
+    return entryRow(reward, { types: REWARD_TYPES, withRoll: false, countAsObject: true }, null, () => { pkgRewards.splice(index, 1); renderPkgRewards(); });
 }
 function renderPkgRewards() {
     const list = $('#pkgRewardList'); list.innerHTML = '';
@@ -3716,8 +3684,13 @@ if ($('#pkgCreate')) {
         if (!name) { toast('패키지 이름을 입력하세요.', false); return; }
         if (pkgRewards.length === 0) { toast('구성 보상을 추가하세요.', false); return; }
         for (const r of pkgRewards) {
-            if (!r.count || r.count < 1) { toast('보상 수량을 확인하세요.', false); return; }
-            if (r.type === '아이템' && typeof r.item_id !== 'number') { toast('보상 아이템을 선택하세요.', false); return; }
+            const min = typeof r.count === 'object' ? r.count?.min : r.count;
+            const max = typeof r.count === 'object' ? r.count?.max : r.count;
+            if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min) { toast('보상 수량 범위를 확인하세요.', false); return; }
+            const idKey = { '아이템': 'item_id', '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id', '펫': 'pet_id', '캐릭터카드': 'card_id' }[r.type];
+            if (idKey && (!Number.isInteger(r[idKey]) || r[idKey] < 0)) { toast(r.type + ' 보상을 선택하세요.', false); return; }
+            if (r.type === '칭호' && !r.title_id) { toast('칭호를 선택하세요.', false); return; }
+            if (r.type === '아바타' && !r.fashion) { toast('아바타를 선택하세요.', false); return; }
         }
         const shopType = $('#pkgShopType').value;
         if (!shopType) { toast('상점 종류를 선택하세요.', false); return; }
@@ -3756,7 +3729,7 @@ if ($('#pkgCreate')) {
         finally { btn.disabled = false; hideLoading(); }
     };
     const quickRewards = el('div', { class: 'bar' });
-    ['아이템', '골드', '가넷', '포인트', '마일리지'].forEach(type => quickRewards.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
+    REWARD_TYPES.forEach(type => quickRewards.appendChild(el('button', { class: 'btn sm', type: 'button', onclick: () => {
         if (pkgRewards.length >= 10) return toast('보상은 최대 10개입니다.', false);
         if (type === '아이템') pickItem(item => { if (pkgRewards.length >= 10) return; pkgRewards.push({ type, item_id: item.id, count: 1 }); renderPkgRewards(); });
         else { pkgRewards.push({ type, count: 1 }); renderPkgRewards(); }

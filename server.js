@@ -4881,18 +4881,51 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
             if (assetStore.getLocalFilePath('itemImage', '번들/' + name + '.png')) return res.status(409).json({ error: '같은 이름의 패키지 이미지가 있습니다. 다른 패키지 이름을 입력하세요.' });
         }
 
-        const REWARD_KINDS = ['골드', '가넷', '포인트', '마일리지', '아이템'];
+        const REWARD_KINDS = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '펫', '칭호', '골드', '가넷', '포인트', '마일리지', '경험치'];
+        const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'] };
+        const referenceKeys = new Set(rewards.flatMap(r => equipmentTypes[r?.type] ? ['Equipment'] : r?.type === '펫' ? ['Pet'] : ['아바타', '캐릭터카드'].includes(r?.type) ? ['Fashion'] : []));
+        await Promise.all([...referenceKeys].map(key => rpgenius.loadRpgeniusDataEntry(key)));
+        const equipment = rpgenius.getDataCache('Equipment', {});
+        const fashion = rpgenius.getDataCache('Fashion', []);
+        const characterCards = readJson(CHARACTER_CARDS_PATH, []);
         const bundleEntries = [];
         for (const r of rewards) {
+            if (!r || typeof r !== 'object') return res.status(400).json({ error: '보상 정보를 확인하세요.' });
             const type = String(r.type || '');
-            const count = Math.floor(Number(r.count));
+            const min = r.count && typeof r.count === 'object' ? r.count.min : r.count;
+            const max = r.count && typeof r.count === 'object' ? r.count.max : r.count;
             if (!REWARD_KINDS.includes(type)) return res.status(400).json({ error: '지원하지 않는 보상 타입: ' + type });
-            if (!Number.isFinite(count) || count <= 0) return res.status(400).json({ error: '보상 수량이 잘못되었습니다.' });
-            const entry = { type, count: { min: count, max: count } };
+            if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min <= 0 || max < min) return res.status(400).json({ error: '보상 수량 범위가 잘못되었습니다.' });
+            if ([...Object.keys(equipmentTypes), '펫', '칭호', '아바타'].includes(type) && (min !== 1 || max !== 1)) return res.status(400).json({ error: type + ' 보상은 한 항목당 1개씩 지급합니다.' });
+            const entry = { type, count: { min, max } };
             if (type === '아이템') {
-                const itemId = Number(r.item_id);
-                if (!items[itemId]) return res.status(400).json({ error: '존재하지 않는 아이템: #' + r.item_id });
+                const itemId = r.item_id;
+                if (!Number.isInteger(itemId) || itemId < 0 || !items[itemId]) return res.status(400).json({ error: '존재하지 않는 아이템: #' + r.item_id });
                 entry.item_id = itemId;
+            } else if (equipmentTypes[type]) {
+                const [slot, key] = equipmentTypes[type];
+                if (!Number.isInteger(r[key]) || r[key] < 0 || !equipment[slot]?.[r[key]]) return res.status(400).json({ error: type + ' 보상을 선택하세요.' });
+                entry[key] = r[key];
+            } else if (type === '펫') {
+                if (!Number.isInteger(r.pet_id) || r.pet_id < 0 || !rpgenius.getPetData(r.pet_id)) return res.status(400).json({ error: '펫 보상을 선택하세요.' });
+                entry.pet_id = r.pet_id;
+            } else if (type === '칭호') {
+                if (!rpgenius.getTitleById(r.title_id)) return res.status(400).json({ error: '칭호 보상을 선택하세요.' });
+                entry.title_id = r.title_id;
+            } else if (type === '아바타') {
+                if (!fashion.some(skin => skin && skin.name === r.fashion)) return res.status(400).json({ error: '아바타 보상을 선택하세요.' });
+                entry.fashion = r.fashion;
+            } else if (type === '캐릭터카드') {
+                const star = r.display_star != null ? r.display_star : Number(r.star || 0) + 1;
+                if (!Number.isInteger(r.card_id) || r.card_id < 0 || !characterCards[r.card_id]) return res.status(400).json({ error: '캐릭터 카드를 선택하세요.' });
+                if (!Number.isInteger(star) || star < 1 || star > 12) return res.status(400).json({ error: '캐릭터 카드 성급은 1~12여야 합니다.' });
+                const cardType = r.card_type || '일반';
+                if (!['일반', '전직', '각성'].includes(cardType)) return res.status(400).json({ error: '캐릭터 카드 타입을 확인하세요.' });
+                Object.assign(entry, { card_id: r.card_id, display_star: star, card_type: cardType });
+                if (r.skin) {
+                    if (!fashion.some(skin => skin && skin.name === r.skin && (skin.primary_card || []).map(Number).includes(r.card_id) && star - 1 >= Number(skin.requireStar || 0))) return res.status(400).json({ error: '해당 캐릭터 카드에 적용할 수 없는 아바타입니다.' });
+                    entry.skin = r.skin;
+                }
             }
             bundleEntries.push(entry);
         }
@@ -6395,6 +6428,7 @@ function buildBundleContents(data) {
         if (entry.type === '골드') return { type: '골드', name: '골드', count: countStr, imgUrl: SHOP_CURR_IMG.gold };
         if (entry.type === '가넷') return { type: '가넷', name: '가넷', count: countStr, imgUrl: SHOP_CURR_IMG.garnet };
         if (entry.type === '마일리지') return { type: '마일리지', name: '마일리지', count: countStr, label: 'Ⓜ️' };
+        if (entry.type === '경험치') return { type: '경험치', name: '경험치', count: countStr, label: 'XP' };
         if (entry.type === '포인트') return { type: '포인트', name: '포인트', count: countStr, imgUrl: SHOP_CURR_IMG.point };
         if (entry.type === '칭호') {
             const title = rpgenius.getTitleById(entry.title_id);
@@ -6886,7 +6920,11 @@ function buildRewardSummaryDisplay(summary) {
             iconUrl = getCardImageUrl({ id: Number(parts[1]), star: Number(parts[2]), type: parts[3], skin: parts.slice(4).join(':') }, { prestige: false });
         } else if (type === 'title') {
             const title = rpgenius.getTitleById(parts.slice(1).join(':'));
-            iconUrl = title ? rpgenius.getTitleImageUrl(title.name) : null;
+            return { type, name: (title ? title.name : '알 수 없는') + ' 칭호', count: entry.count, iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, frameUrl: null };
+        } else if (type === 'avatar') {
+            const assets = getAvatarDisplayAssets(parts.slice(1).join(':'));
+            iconUrl = assets.iconUrl || assets.imageUrl;
+            frameUrl = assets.iconUrl ? assets.frameUrl : null;
         }
         return { name: entry.label, count: entry.count, iconUrl, frameUrl };
     });

@@ -5727,6 +5727,14 @@ function openBundleGrantedModal(name, rewards) {
     const body = el('div', { class: 'lvreward-modal-body' });
     rewards.forEach(r => {
         const row = el('div', { class: 'lvreward-modal-row' });
+        if (r.type === 'title') {
+            row.appendChild(el('div', { class: 'lvreward-modal-name bundle-title-reward' },
+                r.iconUrl ? titleImg({ name: r.name, imageUrl: r.iconUrl }) : null,
+                el('span', null, r.name)));
+            row.appendChild(el('span', { class: 'lvreward-modal-count' }, 'x' + comma(r.count)));
+            body.appendChild(row);
+            return;
+        }
         if (r.iconUrl || r.frameUrl) {
             const thumb = el('div', { class: 'lvreward-thumb' });
             if (r.frameUrl) thumb.appendChild(el('img', { class: 'auc-frame', src: r.frameUrl, alt: '' }));

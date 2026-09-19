@@ -11302,6 +11302,11 @@ function grantPackReward(user, reward, summary) {
     const items = getDataCache('Item', []);
     const equipments = getDataCache('Equipment', {});
     const count = rollCount(reward.count);
+    if (reward.type == '경험치') {
+        addExperience(user, count);
+        addRewardSummary(summary, 'exp', '경험치', count);
+        return;
+    }
     if (reward.type == '아이템') {
         addInventoryItem(user, reward.item_id, count);
         const item = items[reward.item_id];
