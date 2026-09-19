@@ -2305,7 +2305,7 @@ function itemUseControls(item) {
         el('button', { type: 'button', onclick: () => syncAmount(amount + 1), 'aria-label': '수량 늘리기' }, '+'),
         el('button', { class: 'item-use-max', type: 'button', onclick: () => syncAmount(max) }, 'MAX')
     ) : null;
-    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
+    const useButton = el('button', { class: 'item-use-button', type: 'button', onclick: () => useInventoryItem(item, amount, useButton) }, item.choiceOptions?.length ? '주머니 열기' : item.name === '봉인된 자물쇠' ? '1회 개봉' : '1개 사용');
     return el('section', { class: 'item-use-bar' },
         el('div', { class: 'item-use-bar-copy' }, el('span', null, '아이템 사용'), el('small', null, item.bulkUsable ? '사용할 수량을 선택해주세요.' : '이 아이템은 한 번에 1개씩 사용할 수 있습니다.')),
         quantity,
@@ -2319,6 +2319,7 @@ async function postItemUse(url, body) {
     if (!response.ok) {
         const error = new Error(data.error || ('HTTP ' + response.status));
         error.data = data;
+        error.status = response.status;
         throw error;
     }
     return data;
@@ -2369,6 +2370,11 @@ function renderItemUsePending(item, pending, message) {
 }
 
 async function useInventoryItem(item, count, button) {
+    if (item.choiceOptions?.length) {
+        finishCloseModal();
+        openChoicePouch(item.id).catch(error => showAlert(error.message));
+        return;
+    }
     button.disabled = true;
     modalLocked = true;
     if (item.name === '봉인된 자물쇠') {
@@ -5583,6 +5589,110 @@ function renderShop(data, tab) {
     body.appendChild(content);
 }
 
+function shopChoicePortrait(option) {
+    return el('span', { class: 'shop-choice-portrait', 'aria-hidden': 'true' },
+        el('span', null, option ? (option.displayName || option.name).slice(0, 1) : '+'),
+        option?.imageUrl ? el('img', { src: option.imageUrl, alt: '', loading: 'lazy', onerror: event => event.target.remove() }) : null);
+}
+
+function choicePouchSeal() {
+    const seal = el('div', { class: 'pouch-seal', 'aria-hidden': 'true' });
+    seal.appendChild(svgIcon('<svg viewBox="0 0 160 180" fill="none"><path d="M51 19Q80 9 109 19L97 53H63Z" fill="#37312a" stroke="currentColor" stroke-width="2"/><path d="M62 57C57 76 27 92 28 127C29 156 50 166 80 166C110 166 131 156 132 127C133 92 103 76 98 57Z" fill="#23252d" stroke="currentColor" stroke-width="2"/><path d="M60 51H100M60 57H100M65 25L72 47M95 25L88 47" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M80 88L101 112L80 137L59 112Z" fill="#e8b04b"/><path d="M80 88V137M59 112H101" stroke="#fff0c4" stroke-width="1.5"/><path d="M100 54Q127 52 119 79M100 56L109 91" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'));
+    return seal;
+}
+
+async function openChoicePouch(itemId, purchasedCount) {
+    if ($('.pouch-dialog')) return;
+    const response = await api('/api/inventory/items/' + itemId + '/detail');
+    let detail = response.detail;
+    if (!detail.choiceOptions?.length || detail.count < 1) throw new Error('개봉할 주머니가 없습니다.');
+    if ($('.pouch-dialog')) return;
+    const total = Math.min(purchasedCount || detail.count, detail.count);
+    let completed = 0, busy = false, selected = null;
+    const dialog = el('dialog', { class: 'pouch-dialog', 'aria-labelledby': 'pouchTitle' });
+    const close = () => { if (!busy) dialog.close(); };
+    const progress = el('span', { class: 'pouch-progress', 'aria-live': 'polite' });
+    const closeButton = el('button', { type: 'button', class: 'shop-choice-close', 'aria-label': '나중에 열기', onclick: close }, '×');
+    const stage = el('div', { class: 'pouch-stage' });
+    const footer = el('div', { class: 'pouch-footer' });
+    const errorText = el('div', { class: 'pouch-error', role: 'alert' });
+    dialog.appendChild(el('div', { class: 'pouch-heading' }, el('div', null,
+        el('h3', { id: 'pouchTitle' }, detail.name), progress), closeButton));
+    dialog.appendChild(stage); dialog.appendChild(errorText); dialog.appendChild(footer);
+    function updateProgress() { progress.textContent = completed + ' / ' + total + ' 수령'; }
+    function setBusy(value) {
+        busy = value; closeButton.disabled = value;
+        dialog.querySelectorAll('.pouch-stage button, .pouch-footer button').forEach(button => button.disabled = value);
+    }
+    function showIntro() {
+        updateProgress(); selected = null;
+        stage.className = 'pouch-stage pouch-intro';
+        stage.replaceChildren(choicePouchSeal(), el('h4', null, '주머니 ' + (completed + 1)), el('p', null, '남은 주머니 ' + detail.count + '개'));
+        footer.replaceChildren(el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'),
+            el('button', { type: 'button', class: 'primary pouch-open', onclick: revealChoices }, '주머니 열기'));
+    }
+    async function revealChoices() {
+        showIntro();
+        stage.classList.add('opening');
+        footer.querySelectorAll('button').forEach(button => button.disabled = true);
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        await new Promise(resolve => setTimeout(resolve, reduced ? 0 : 420));
+        if (!dialog.open) return;
+        showChoices();
+    }
+    function showChoices() {
+        selected = null; errorText.textContent = '';
+        stage.className = 'pouch-stage pouch-select';
+        const preview = el('div', { class: 'pouch-preview' }, choicePouchSeal(), el('strong', null, '캐릭터 선택'));
+        const grid = el('div', { class: 'shop-choice-grid' });
+        const confirm = el('button', { type: 'button', class: 'primary pouch-claim', disabled: true, onclick: claim }, '선택한 변환석 받기');
+        detail.choiceOptions.forEach(option => grid.appendChild(el('button', {
+            type: 'button', class: 'shop-choice-card', 'data-item-id': option.itemId,
+            'aria-label': option.name + ' ' + option.count + '개', 'aria-pressed': false,
+            onclick: event => {
+                selected = option;
+                grid.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', button === event.currentTarget));
+                preview.replaceChildren(shopChoicePortrait(option), el('strong', null, option.displayName || option.name), el('span', null, option.name + ' ×' + option.count));
+                confirm.disabled = false;
+            }
+        }, shopChoicePortrait(option), el('span', { class: 'shop-choice-card-name' }, option.displayName || option.name))));
+        stage.replaceChildren(preview, grid);
+        footer.replaceChildren(el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'), confirm);
+        grid.querySelector('button')?.focus({ preventScroll: true });
+    }
+    async function claim() {
+        if (busy || !selected) return;
+        setBusy(true); errorText.textContent = '';
+        try {
+            const result = await postItemUse('/api/inventory/items/' + itemId + '/choose', { itemId: selected.itemId, version: detail.choiceVersion });
+            detail.choiceVersion = result.version; detail.count = result.remainingCount;
+            completed++; setBusy(false); updateProgress();
+            stage.className = 'pouch-stage pouch-result';
+            stage.replaceChildren(el('div', { class: 'pouch-result-art' }, shopChoicePortrait(result.reward), el('span', { class: 'pouch-result-ring', 'aria-hidden': 'true' })),
+                el('span', { class: 'pouch-result-label' }, '획득 완료'), el('h4', null, result.reward.name), el('b', null, '×' + result.reward.count));
+            const more = completed < total && detail.count > 0;
+            const next = el('button', { type: 'button', class: 'primary pouch-next', onclick: more ? revealChoices : close }, more ? '다음 주머니 열기' : '확인');
+            footer.replaceChildren(...(more ? [el('button', { type: 'button', class: 'pouch-later', onclick: close }, '나중에 열기'), next] : [next]));
+            next.focus({ preventScroll: true });
+            loadInventory('items').catch(() => {});
+        } catch (error) {
+            setBusy(false); errorText.textContent = error.message;
+            if (error.status === 409) {
+                try {
+                    detail = (await api('/api/inventory/items/' + itemId + '/detail')).detail;
+                    if (detail.count > 0) showIntro();
+                    else { stage.replaceChildren(el('p', null, '남은 주머니가 없습니다.')); footer.replaceChildren(el('button', { type: 'button', onclick: close }, '닫기')); }
+                } catch (_) { /* 같은 개봉 번호로 재시도할 수 있도록 현재 선택을 유지한다. */ }
+            }
+        }
+    }
+    dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
+    dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    document.body.appendChild(dialog); showIntro(); dialog.showModal();
+    footer.querySelector('.pouch-open').focus({ preventScroll: true });
+}
+
 function openShopBuyModal(item) {
     const d = item.display;
     const p = item.price;
@@ -5616,6 +5726,7 @@ function openShopBuyModal(item) {
     itemRow.appendChild(buildShopThumb(d, 'shop-buy-thumb'));
     const info = el('div', { style: 'flex:1;min-width:0' });
     info.appendChild(el('div', { class: 'shop-buy-name' }, d.name));
+    if (isPackage && d.choiceOptions) info.appendChild(el('div', { class: 'shop-buy-meta' }, '구매 후 주머니마다 1개씩 선택'));
     if (p.goods === 'item') {
         const have = item.priceItemCount ?? 0;
         info.appendChild(el('div', { class: 'shop-buy-meta' }, '보유: ' + comma(have) + '개'));
@@ -5668,34 +5779,13 @@ function openShopBuyModal(item) {
     qtyRow.appendChild(el('span', { class: 'shop-qty-max' }, '최대 ' + (maxQty > 0 ? maxQty : '-')));
     content.appendChild(qtyRow);
 
-    const choiceOptions = isPackage ? d.choiceOptions : null;
-    const selections = [];
     let purchasing = false;
-    const choiceSection = choiceOptions ? el('div', { class: 'shop-choice-list' }) : null;
-    if (choiceSection) content.appendChild(choiceSection);
-    function updateChoices() {
-        if (!choiceSection) return;
-        const count = qty * Number(item.count || 1);
-        selections.length = count;
-        choiceSection.replaceChildren();
-        for (let index = 0; index < count; index++) {
-            const select = el('select', { 'aria-label': '주머니 ' + (index + 1) + ' 선택', onchange: () => {
-                selections[index] = select.value === '' ? null : Number(select.value);
-                buyBtn.disabled = purchasing || selections.filter(Number.isInteger).length !== count;
-            } }, el('option', { value: '' }, '획득할 아이템 선택'));
-            choiceOptions.forEach(option => select.appendChild(el('option', { value: String(option.itemId) }, option.name + ' ×' + option.count)));
-            select.value = Number.isInteger(selections[index]) ? String(selections[index]) : '';
-            choiceSection.appendChild(el('label', { class: 'shop-choice-row' }, el('span', null, '주머니 ' + (index + 1)), select));
-        }
-        buyBtn.disabled = purchasing || selections.filter(Number.isInteger).length !== count;
-    }
 
     // 계산서
     const receipt = el('div', { class: 'shop-receipt' });
     content.appendChild(receipt);
 
     function updateReceipt() {
-        updateChoices();
         receipt.replaceChildren();
         const totalCost = p.amount * qty;
         let bal;
@@ -5716,22 +5806,27 @@ function openShopBuyModal(item) {
     footer.appendChild(el('button', { onclick: closeModal }, '취소'));
     const buyBtn = el('button', { class: 'primary', onclick: async () => {
         if (qty < 1 || purchasing) return;
-        if (choiceSection && selections.filter(Number.isInteger).length !== qty * Number(item.count || 1)) return;
         purchasing = true;
         buyBtn.disabled = true;
         buyBtn.textContent = '처리 중...';
         try {
-            const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: purchaseShopType, shopId: item.shopId, count: qty, ...(choiceSection ? { choices: selections } : {}) }) });
+            const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: purchaseShopType, shopId: item.shopId, count: qty }) });
             const res = await r.json();
             if (!r.ok) throw new Error(res.error || '구매 실패');
             if (shopData) shopData.currencies = res.currencies;
+            if (res.choicePouch) {
+                setHeaderPoint(res.currencies.point);
+                finishCloseModal();
+                loadShop().catch(() => {});
+                openChoicePouch(res.choicePouch.itemId, res.choicePouch.purchasedCount).catch(error => showAlert('구매가 완료되었습니다. 인벤토리에서 주머니를 열어주세요.\n' + error.message));
+                return;
+            }
             await loadShop();
             if (res.bundleGranted && res.bundleGranted.length > 0) openBundleGrantedModal(d.name, res.bundleGranted);
             else closeModal();
         } catch (e) {
             purchasing = false;
             buyBtn.disabled = false;
-            updateChoices();
             buyBtn.textContent = '구매';
             showAlert(e.message);
         }

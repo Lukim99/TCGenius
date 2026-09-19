@@ -12248,7 +12248,7 @@ function cancelWebItemUsePending(user) {
     return '아이템 사용을 취소했습니다.' + (refund ? '\n- 반환: ' + refund : '');
 }
 
-async function purchaseShopItem(user, shopType, indexArg, countArg, _out, choices) {
+async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     const shops = getDataCache('Shop', {});
     const shop = shops[shopType];
     if (!shop || !Array.isArray(shop)) return '❌ 존재하지 않는 상점입니다.';
@@ -12280,17 +12280,11 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out, choice
     }
     // '패키지' 상점의 '아이템'이 실제로는 번들인 경우, 번들 아이템을 지급하지 않고 구성품을 즉시 수령시킨다.
     let bundleData = null;
-    let selectedRewards = null;
     if (shopType == '패키지' && shopItem.type == '아이템') {
         const shopItems = getDataCache('Item', []);
         const itemData = shopItems[shopItem.item_id];
-        // 웹은 구매 수량만큼 미리 선택하여 즉시 수령한다. 채팅 구매는 주머니를 지급해 하나씩 사용한다.
-        if (itemData && itemData.use == '아이템선택' && choices !== undefined) {
-            const entries = getItemChoiceEntries(itemData.choices);
-            const grantCount = Number(shopItem.count) * count;
-            if (!Number.isSafeInteger(grantCount) || grantCount < 1 || !Array.isArray(choices) || choices.length !== grantCount) return '❌ 주머니마다 획득할 아이템을 선택해주세요.';
-            selectedRewards = choices.map(id => Number.isInteger(id) ? entries.find(entry => entry.id === id) : null);
-            if (selectedRewards.some(entry => !entry || !Number.isSafeInteger(entry.count) || entry.count < 1)) return '❌ 선택할 수 없는 아이템입니다. 상점을 새로고침해주세요.';
+        if (itemData && itemData.use == '아이템선택' && _out) {
+            _out.choicePouch = { itemId: shopItem.item_id, purchasedCount: Number(shopItem.count) * count };
         }
         if (itemData && itemData.type == '번들') {
             const bundles = getDataCache('Bundle', []);
@@ -12314,11 +12308,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out, choice
 
     let bundleSummary = null;
     if (shopItem.type == '아이템') {
-        if (selectedRewards) {
-            bundleSummary = {};
-            selectedRewards.forEach(reward => grantPackReward(user, { type: '아이템', item_id: reward.id, count: reward.count }, bundleSummary));
-            if (_out && typeof _out == 'object') _out.bundleGranted = bundleSummary;
-        } else if (bundleData) {
+        if (bundleData) {
             bundleSummary = {};
             const grantCount = Number(shopItem.count) * count;
             for (let i = 0; i < grantCount; i++) bundleData.forEach(reward => grantPackReward(user, reward, bundleSummary));

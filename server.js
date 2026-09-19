@@ -1291,7 +1291,48 @@ server.post('/api/inventory/craft', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/inventory/items/:id/use', requireUser, async (req, res) => {
+function serializeItemUse(handler) {
+    return async (req, res) => {
+        const key = req.session.name;
+        if (shopPurchaseLocks.has(key)) return res.status(409).json({ error: '아이템 또는 구매를 처리 중입니다. 잠시 후 다시 시도해주세요.' });
+        shopPurchaseLocks.add(key);
+        try { await handler(req, res); }
+        finally { shopPurchaseLocks.delete(key); }
+    };
+}
+
+server.post('/api/inventory/items/:id/choose', requireUser, serializeItemUse(async (req, res) => {
+    try {
+        const itemId = Number(req.params.id), choiceId = req.body?.itemId, version = req.body?.version;
+        const item = rpgenius.getDataCache('Item', [])[itemId];
+        if (!Number.isInteger(itemId) || !buildItemChoiceOptions(item)) return res.status(400).json({ error: '선택해서 개봉할 수 없는 아이템입니다.' });
+        if (!Number.isSafeInteger(version) || version < 0 || !Number.isInteger(choiceId)) return res.status(400).json({ error: '선택 정보를 확인해주세요.' });
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const previous = user.itemChoiceState?.[itemId] || { version: 0 };
+        const replay = version === previous.version - 1 && choiceId === previous.reward?.itemId;
+        if (version !== previous.version && !replay) return res.status(409).json({ error: '이미 다른 선택이 처리되었습니다. 남은 주머니를 다시 확인해주세요.' });
+        let reward = previous.reward;
+        if (!replay) {
+            reward = buildItemChoiceOptions(item).find(option => option.itemId === choiceId);
+            if (!reward || choiceId === itemId || !Number.isSafeInteger(reward.count) || reward.count < 1) return res.status(400).json({ error: '선택할 수 없는 아이템입니다.' });
+            if (rpgenius.getInventoryItemCount(user, itemId) < 1) return res.status(400).json({ error: '남은 주머니가 없습니다.' });
+            rpgenius.removeInventoryItem(user, itemId, 1);
+            rpgenius.addInventoryItem(user, choiceId, reward.count);
+            if (!user.itemChoiceState) user.itemChoiceState = {};
+            user.itemChoiceState[itemId] = { version: previous.version + 1, reward };
+        }
+        // 소모·보상·개봉 번호를 함께 저장한다. 응답 유실 후 같은 번호로 재시도해도 중복 소모하지 않는다.
+        const saved = await user.save();
+        if (!saved?.success) return res.status(503).json({ error: '수령 결과 저장을 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
+        res.json({ ok: true, reward, version: user.itemChoiceState[itemId].version, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
+    } catch (error) {
+        console.error('item choice error:', error);
+        res.status(500).json({ error: '수령 결과를 확인하지 못했습니다. 같은 선택으로 다시 시도해주세요.' });
+    }
+}));
+
+server.post('/api/inventory/items/:id/use', requireUser, serializeItemUse(async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
@@ -1319,9 +1360,9 @@ server.post('/api/inventory/items/:id/use', requireUser, async (req, res) => {
         console.error('inventory item use error:', error);
         res.status(500).json({ error: '아이템 사용 중 오류가 발생했습니다.' });
     }
-});
+}));
 
-server.post('/api/inventory/item-use/resolve', requireUser, async (req, res) => {
+server.post('/api/inventory/item-use/resolve', requireUser, serializeItemUse(async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
@@ -1336,9 +1377,9 @@ server.post('/api/inventory/item-use/resolve', requireUser, async (req, res) => 
         console.error('inventory item resolve error:', error);
         res.status(500).json({ error: '아이템 적용 중 오류가 발생했습니다.' });
     }
-});
+}));
 
-server.post('/api/inventory/item-use/cancel', requireUser, async (req, res) => {
+server.post('/api/inventory/item-use/cancel', requireUser, serializeItemUse(async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
@@ -1350,7 +1391,7 @@ server.post('/api/inventory/item-use/cancel', requireUser, async (req, res) => {
         console.error('inventory item cancel error:', error);
         res.status(500).json({ error: '아이템 사용 취소 중 오류가 발생했습니다.' });
     }
-});
+}));
 
 server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
     try {
@@ -6884,6 +6925,9 @@ function buildInventoryItemDetail(itemId, item, user) {
         noTrade: item.no_trade === true,
         usable: isUsableInventoryItem(item),
         bulkUsable: isBulkUsableInventoryItem(item),
+        choiceOptions: buildItemChoiceOptions(item),
+        choiceVersion: user?.itemChoiceState?.[itemId]?.version || 0,
+        count: user ? rpgenius.getInventoryItemCount(user, itemId) : 0,
         iconUrl: assets.iconUrl,
         frameUrl: assets.frameUrl,
         requirements,
@@ -6936,6 +6980,19 @@ function buildRewardSummaryDisplay(summary) {
     });
 }
 
+function buildItemChoiceOptions(item) {
+    if (item?.use !== '아이템선택' || item.no_consume || (item.require || []).length) return null;
+    const items = rpgenius.getDataCache('Item', []);
+    const cards = readJson(CHARACTER_CARDS_PATH, []);
+    return rpgenius.getItemChoiceEntries(item.choices).map(choice => {
+        const reward = items[choice.id];
+        const character = reward.use === '변환' ? cards[reward.charId] : null;
+        return { itemId: choice.id, name: reward.name, count: choice.count,
+            displayName: character ? character.name : reward.name,
+            imageUrl: character ? getCharacterCoverImageUrl(character) : getItemDisplayAssets(reward).iconUrl };
+    });
+}
+
 function buildShopItemDisplay(shopItem) {
     const items = rpgenius.getDataCache('Item', []);
     if (shopItem.type === '아이템') {
@@ -6943,9 +7000,7 @@ function buildShopItemDisplay(shopItem) {
         if (!data) return { name: '알 수 없음', iconUrl: null, frameUrl: null };
         const assets = getItemDisplayAssets(data);
         const bundleContents = data.type === '번들' ? buildBundleContents(data) : null;
-        const choiceOptions = data.use === '아이템선택' ? rpgenius.getItemChoiceEntries(data.choices).map(choice => ({
-            itemId: choice.id, name: items[choice.id].name, count: choice.count
-        })) : null;
+        const choiceOptions = buildItemChoiceOptions(data);
         return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents, choiceOptions };
     }
     if (shopItem.type === '아바타') {
@@ -7043,7 +7098,7 @@ async function buyShopItem(userName, body) {
     ensureInventoryShape(user);
 
     const outMeta = {};
-    const result = await rpgenius.purchaseShopItem(user, shopType, shopId, count, outMeta, body.choices ?? []);
+    const result = await rpgenius.purchaseShopItem(user, shopType, shopId, count, outMeta);
     if (typeof result === 'string' && result.startsWith('❌')) {
         return { error: result.replace(/^❌\s*/, '') };
     }
@@ -7057,6 +7112,7 @@ async function buyShopItem(userName, body) {
             mileage: Number(user.mileage || 0),
         },
         bundleGranted: outMeta.bundleGranted ? buildRewardSummaryDisplay(outMeta.bundleGranted) : null,
+        choicePouch: outMeta.choicePouch || null,
     };
 }
 
