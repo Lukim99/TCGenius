@@ -5668,11 +5668,34 @@ function openShopBuyModal(item) {
     qtyRow.appendChild(el('span', { class: 'shop-qty-max' }, '최대 ' + (maxQty > 0 ? maxQty : '-')));
     content.appendChild(qtyRow);
 
+    const choiceOptions = isPackage ? d.choiceOptions : null;
+    const selections = [];
+    let purchasing = false;
+    const choiceSection = choiceOptions ? el('div', { class: 'shop-choice-list' }) : null;
+    if (choiceSection) content.appendChild(choiceSection);
+    function updateChoices() {
+        if (!choiceSection) return;
+        const count = qty * Number(item.count || 1);
+        selections.length = count;
+        choiceSection.replaceChildren();
+        for (let index = 0; index < count; index++) {
+            const select = el('select', { 'aria-label': '주머니 ' + (index + 1) + ' 선택', onchange: () => {
+                selections[index] = select.value === '' ? null : Number(select.value);
+                buyBtn.disabled = purchasing || selections.filter(Number.isInteger).length !== count;
+            } }, el('option', { value: '' }, '획득할 아이템 선택'));
+            choiceOptions.forEach(option => select.appendChild(el('option', { value: String(option.itemId) }, option.name + ' ×' + option.count)));
+            select.value = Number.isInteger(selections[index]) ? String(selections[index]) : '';
+            choiceSection.appendChild(el('label', { class: 'shop-choice-row' }, el('span', null, '주머니 ' + (index + 1)), select));
+        }
+        buyBtn.disabled = purchasing || selections.filter(Number.isInteger).length !== count;
+    }
+
     // 계산서
     const receipt = el('div', { class: 'shop-receipt' });
     content.appendChild(receipt);
 
     function updateReceipt() {
+        updateChoices();
         receipt.replaceChildren();
         const totalCost = p.amount * qty;
         let bal;
@@ -5687,17 +5710,18 @@ function openShopBuyModal(item) {
         receipt.appendChild(el('div', { class: 'shop-receipt-divider' }));
         receipt.appendChild(buildReceiptRow('구매 후 잔액', p, after, after < 0 ? 'neg' : 'result'));
     }
-    updateReceipt();
 
     // 버튼
     const footer = el('div', { class: 'shop-buy-footer' });
     footer.appendChild(el('button', { onclick: closeModal }, '취소'));
     const buyBtn = el('button', { class: 'primary', onclick: async () => {
-        if (qty < 1) return;
+        if (qty < 1 || purchasing) return;
+        if (choiceSection && selections.filter(Number.isInteger).length !== qty * Number(item.count || 1)) return;
+        purchasing = true;
         buyBtn.disabled = true;
         buyBtn.textContent = '처리 중...';
         try {
-            const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: purchaseShopType, shopId: item.shopId, count: qty }) });
+            const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: purchaseShopType, shopId: item.shopId, count: qty, ...(choiceSection ? { choices: selections } : {}) }) });
             const res = await r.json();
             if (!r.ok) throw new Error(res.error || '구매 실패');
             if (shopData) shopData.currencies = res.currencies;
@@ -5705,11 +5729,14 @@ function openShopBuyModal(item) {
             if (res.bundleGranted && res.bundleGranted.length > 0) openBundleGrantedModal(d.name, res.bundleGranted);
             else closeModal();
         } catch (e) {
+            purchasing = false;
             buyBtn.disabled = false;
+            updateChoices();
             buyBtn.textContent = '구매';
             showAlert(e.message);
         }
     }}, '구매');
+    updateReceipt();
     footer.appendChild(buyBtn);
     content.appendChild(footer);
 

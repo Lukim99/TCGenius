@@ -4187,7 +4187,11 @@ server.get('/api/shop', requireUser, async (req, res) => {
     }
 });
 
+const shopPurchaseLocks = new Set();
 server.post('/api/shop/buy', requireUser, async (req, res) => {
+    const userName = req.session.name;
+    if (shopPurchaseLocks.has(userName)) return res.status(409).json({ error: '구매를 처리 중입니다. 잠시 후 다시 시도해주세요.' });
+    shopPurchaseLocks.add(userName);
     try {
         const out = await buyShopItem(req.session.name, req.body || {});
         if (out.error) return res.status(400).json(out);
@@ -4195,6 +4199,8 @@ server.post('/api/shop/buy', requireUser, async (req, res) => {
     } catch (e) {
         console.error('shop buy error:', e);
         res.status(500).json({ error: '서버 오류' });
+    } finally {
+        shopPurchaseLocks.delete(userName);
     }
 });
 
@@ -6937,7 +6943,10 @@ function buildShopItemDisplay(shopItem) {
         if (!data) return { name: '알 수 없음', iconUrl: null, frameUrl: null };
         const assets = getItemDisplayAssets(data);
         const bundleContents = data.type === '번들' ? buildBundleContents(data) : null;
-        return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents };
+        const choiceOptions = data.use === '아이템선택' ? rpgenius.getItemChoiceEntries(data.choices).map(choice => ({
+            itemId: choice.id, name: items[choice.id].name, count: choice.count
+        })) : null;
+        return { name: data.name + (shopItem.count > 1 ? ' x' + shopItem.count : ''), iconUrl: assets.iconUrl, frameUrl: assets.frameUrl, bundleContents, choiceOptions };
     }
     if (shopItem.type === '아바타') {
         const avatarName = String(shopItem.fashion || '').trim();
@@ -7034,7 +7043,7 @@ async function buyShopItem(userName, body) {
     ensureInventoryShape(user);
 
     const outMeta = {};
-    const result = await rpgenius.purchaseShopItem(user, shopType, shopId, count, outMeta);
+    const result = await rpgenius.purchaseShopItem(user, shopType, shopId, count, outMeta, body.choices ?? []);
     if (typeof result === 'string' && result.startsWith('❌')) {
         return { error: result.replace(/^❌\s*/, '') };
     }

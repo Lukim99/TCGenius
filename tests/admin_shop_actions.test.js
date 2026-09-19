@@ -5,6 +5,7 @@ const { once } = require('node:events');
 const { isDeepStrictEqual } = require('node:util');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const catalog = require('../shop_catalog');
+const { buildAddition: addStonePouch } = require('../scripts/init_character_stone_pouch');
 
 process.env.ADMIN_SESSION_SECRET = 'admin-workflow-test';
 process.env.PORT = '0';
@@ -149,6 +150,65 @@ rpg.getRPGUserByName = async () => buyer;
             assert.equal((await post('/api/admin/package/create', { ...body, name: '잘못된 보상', withImage: false, rewards: [reward] })).status, 400, JSON.stringify(reward));
         }
         assert.equal(writes.length, writesBeforeInvalid, '잘못된 보상은 운영 데이터에 저장하지 않는다');
-        console.log('admin_shop_actions.test.js: OK (관리자 인증, 선택 초기화, 패키지 14종 등록·구매·지급, 칭호 이미지, 잘못된 보상 차단; DB/S3 격리)');
+        const stoneIds = [data.Item.length, data.Item.length + 1];
+        data.Item.push({ name: '빵귤 캐릭터 변환석', type: '사용', use: '변환', charId: 0 }, { name: '뭔마 캐릭터 변환석', type: '사용', use: '변환', charId: 1 });
+        const originalItems = structuredClone(data.Item), originalShop = structuredClone(data.Shop);
+        const pouch = addStonePouch(data.Item, data.Shop);
+        assert.deepEqual(pouch.items.slice(0, -1), originalItems);
+        assert.deepEqual(pouch.shop.패키지.slice(0, -1), originalShop.패키지);
+        assert.deepEqual(pouch.shop.일반, originalShop.일반);
+        assert.equal(addStonePouch(pouch.items, pouch.shop).changed, false, '재실행으로 중복 상품이나 새 구매 한도를 만들지 않는다');
+        data.Item = pouch.items;
+        data.Shop = pouch.shop;
+        await rpg.loadRpgeniusDataEntry('Item');
+        await rpg.loadRpgeniusDataEntry('Shop');
+        buyer.point = 4400;
+        const purchaseBody = { shopType: '패키지', shopId: pouch.product.shopId, count: 3, choices: [stoneIds[0], stoneIds[1], stoneIds[0]] };
+        const shopResponse = await fetch(origin + '/api/shop', { headers: { Cookie: cookie } });
+        const display = (await shopResponse.json()).shop.패키지.find(item => item.shopId === pouch.product.shopId);
+        assert.deepEqual(display.display.choiceOptions.map(item => item.itemId), stoneIds);
+        assert.equal(display.limitInfo.remaining.max, 3);
+        const beforeChoice = JSON.stringify({ point: buyer.point, inventory: buyer.inventory, shopPurchases: buyer.shopPurchases });
+        for (const choices of [undefined, [], [stoneIds[0]], [stoneIds[0], stoneIds[1], 9999], [stoneIds[0], stoneIds[1], String(stoneIds[0])], [stoneIds[0], stoneIds[1], null]]) {
+            assert.equal((await post('/api/shop/buy', { ...purchaseBody, choices })).status, 400);
+            assert.equal(JSON.stringify({ point: buyer.point, inventory: buyer.inventory, shopPurchases: buyer.shopPurchases }), beforeChoice, '누락/위조 선택은 결제·지급·횟수 차감 없음');
+        }
+        const chosenResponse = await post('/api/shop/buy', purchaseBody);
+        assert.equal(chosenResponse.status, 200);
+        assert.deepEqual((await chosenResponse.json()).bundleGranted.map(reward => [reward.name, reward.count]), [['빵귤 캐릭터 변환석', 2], ['뭔마 캐릭터 변환석', 1]]);
+        assert.equal(buyer.point, 1100);
+        assert.equal(rpg.getInventoryItemCount(buyer, stoneIds[0]), 2);
+        assert.equal(rpg.getInventoryItemCount(buyer, stoneIds[1]), 1);
+        assert.equal(rpg.getInventoryItemCount(buyer, pouch.itemId), 0);
+        assert.equal(buyer.shopPurchases['@items'][pouch.product.shopId].max, 3);
+        assert.equal((await post('/api/shop/buy', { ...purchaseBody, count: 1, choices: [stoneIds[1]] })).status, 400);
+        assert.equal(buyer.point, 1100, '최대 3회 이후 추가 결제 없음');
+        // 처리 중인 요청은 중복 결제를 막고, 완료 후에는 남은 한도로 다시 구매할 수 있다.
+        buyer.shopPurchases = {};
+        buyer.point = 3300;
+        let saved, finish;
+        const saveStarted = new Promise(resolve => { saved = resolve; });
+        buyer.save = async () => { saved(); await new Promise(resolve => { finish = resolve; }); };
+        const ongoing = post('/api/shop/buy', { ...purchaseBody, count: 1, choices: [stoneIds[1]] });
+        await saveStarted;
+        assert.equal((await post('/api/shop/buy', { ...purchaseBody, count: 1, choices: [stoneIds[1]] })).status, 409);
+        finish();
+        assert.equal((await ongoing).status, 200);
+        assert.equal(buyer.point, 2200);
+        buyer.save = async () => {};
+        // 채팅 구매와 기존 아이템 사용도 연결된다. 다른 진행 중 선택을 덮어쓰지 않는다.
+        buyer.pendingAction = { type: '아이템선택', choices: [{ id: stoneIds[1], count: 1 }] };
+        assert.match(await rpg.purchaseShopItem(buyer, '패키지', pouch.product.shopId, 2), /^✅/);
+        assert.equal(buyer.pendingAction.choices[0].id, stoneIds[1]);
+        assert.equal(rpg.getInventoryItemCount(buyer, pouch.itemId), 2);
+        buyer.pendingAction = null;
+        const beforeStoneCounts = stoneIds.map(id => rpg.getInventoryItemCount(buyer, id));
+        for (const choice of [1, 2]) {
+            assert.ok(!(await rpg.useItem(buyer, pouch.items[pouch.itemId].name, 1)).startsWith('❌'));
+            assert.match(rpg.resolveWebItemUsePending(buyer, choice), /^✅/);
+        }
+        assert.equal(rpg.getInventoryItemCount(buyer, pouch.itemId), 0);
+        assert.deepEqual(stoneIds.map(id => rpg.getInventoryItemCount(buyer, id)), beforeStoneCounts.map(count => count + 1));
+        console.log('admin_shop_actions.test.js: OK (관리자 인증, 선택 초기화, 패키지 14종, 칭호 이미지, 변환석 개별 선택·3회 제한·중복 요청·채팅 사용; DB/S3 격리)');
     } finally { await new Promise(resolve => http.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
