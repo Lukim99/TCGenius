@@ -1363,14 +1363,20 @@ server.post('/api/inventory/items/:id/use', requireUser, serializeItemUse(async 
         const count = Number(req.body && req.body.count || 1);
         if (!Number.isInteger(count) || count < 1) return res.status(400).json({ error: '사용 수량을 확인해주세요.' });
         const before = gamePresentation.snapshot(user);
+        const resultKind = getItemUseResultKind(item);
+        const effectsBefore = resultKind === 'effect' || resultKind === 'bait' ? captureItemUseEffects(user) : null;
         const message = await rpgenius.useItem(user, item.name, count);
         if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
+        // 대상이 없어 아이템이 반환된 경우: 성공 화면 대신 사유를 알린다.
+        const refunded = String(message).split('\n').find(line => line.startsWith('❌') && line.includes('반환'));
+        if (refunded) return res.status(400).json({ error: refunded.replace(/^❌\s*/, '') });
         if (user.pendingAction) {
             user.pendingAction.webItemUse = true;
             await user.save();
         }
         const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
-        res.json({ ok: true, changes: gamePresentation.changes(before, user), pending, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
+        const result = !pending && effectsBefore ? { effects: buildItemUseEffectResult(effectsBefore, user) } : null;
+        res.json({ ok: true, changes: gamePresentation.changes(before, user), result, pending, remainingCount: rpgenius.getInventoryItemCount(user, itemId) });
     } catch (error) {
         console.error('inventory item use error:', error);
         res.status(500).json({ error: '아이템 사용 중 오류가 발생했습니다.' });
@@ -1383,12 +1389,16 @@ server.post('/api/inventory/item-use/resolve', requireUser, serializeItemUse(asy
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.status(400).json({ error: '진행 중인 아이템 사용이 없습니다.' });
         const before = gamePresentation.snapshot(user);
+        const captured = captureItemUseTarget(user, req.body && req.body.choice);
         const message = rpgenius.resolveWebItemUsePending(user, req.body && req.body.choice, req.body && req.body.confirm === true);
         if (user.pendingAction) user.pendingAction.webItemUse = true;
         await user.save();
         const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
-        if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, ''), pending });
-        res.json({ ok: true, changes: gamePresentation.changes(before, user), pending });
+        // 강화 실패(하락)는 오류가 아니라 사용 결과다.
+        const upgradeFailed = captured && captured.action === '장비강화' && String(message).startsWith('❌ 강화 실패');
+        if (String(message).startsWith('❌') && !upgradeFailed) return res.status(400).json({ error: String(message).replace(/^❌\s*/, ''), pending });
+        const target = pending ? null : buildItemUseTargetResult(captured, user, upgradeFailed);
+        res.json({ ok: true, changes: gamePresentation.changes(before, user), result: target ? { target } : null, pending });
     } catch (error) {
         console.error('inventory item resolve error:', error);
         res.status(500).json({ error: '아이템 적용 중 오류가 발생했습니다.' });
@@ -5741,6 +5751,26 @@ function isUsableInventoryItem(item) {
     return item.name === '유생의 강화기' || item.name === '프레스티지 증표' || WEB_ITEM_USE_KEYS.has(item.use);
 }
 
+// 웹 사용 결과 연출 분류: open(개봉·획득), transform(카드 변환), modify(장비·펫 변경), effect(효과 적용), bait(미끼)
+const WEB_ITEM_USE_RESULT_KINDS = {
+    '변환': 'transform', '캐릭터변환': 'transform', '만능캐릭터변환': 'transform', '전직캐릭터변환': 'transform',
+    '장신구선택권': 'open', '아이템선택': 'open',
+    '축복사용권': 'effect', '스탯초기화': 'effect', '전직프레스티지': 'effect',
+    '보조장비리롤': 'modify', '잠재능력부여': 'modify', '장비강화권': 'modify', '영혼석': 'modify',
+    '보주': 'modify', '보주선택': 'modify', '가위': 'modify', '생명수': 'modify',
+    '초월업그레이드': 'modify', '초월선택': 'modify', '스펙터': 'modify'
+};
+
+function getItemUseResultKind(item) {
+    if (!item) return 'generic';
+    if (item.type === '소모품') return 'effect';
+    if (item.type === '가챠' || item.type === '번들') return 'open';
+    if (item.type === '미끼') return 'bait';
+    if (item.name === '유생의 강화기') return 'modify';
+    if (item.name === '프레스티지 증표') return 'effect';
+    return WEB_ITEM_USE_RESULT_KINDS[item.use] || 'generic';
+}
+
 function isBulkUsableInventoryItem(item) {
     if (!item || !['소모품', '가챠', '번들'].includes(item.type)) return false;
     if (item.type === '소모품' && (item.use_func || []).some(func => func && (func.type === '경험치비약' || func.type === '골드비약'))) return false;
@@ -5758,6 +5788,7 @@ function buildInventoryItems(user) {
                 id: Number(inv.id), name: data.name, type: data.type, desc: data.desc || '', count: Number(inv.count || 0),
                 version: inventoryVersion(user, 'items'), sellPrice: Number(data.sellPrice || 0),
                 noTrade: data.no_trade === true, usable: isUsableInventoryItem(data), bulkUsable: isBulkUsableInventoryItem(data),
+                useKind: getItemUseResultKind(data),
                 iconUrl: assets.iconUrl, frameUrl: assets.frameUrl
             };
         })
@@ -5929,6 +5960,7 @@ function buildInventoryEquipment(user) {
             soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0), stat: soulActive.stat || {}, plusStat: soulActive.plusStat || {} } : null,
             requireMainCard: Array.isArray(data.requireMainCard) ? data.requireMainCard.slice() : null,
             noTrade: data.no_trade === true,
+            bound: rpgenius.isEquipmentBindingEnabled() && !!(equip && equip.boundOwner),
             uid: (equip && equip.uid) || null,
             iconUrl: getEquipmentIconUrl(data),
             frameUrl: getAuctionFrameUrl('equipment', data.rarity)
@@ -6903,6 +6935,84 @@ function buildItemApplications(itemId, item, user) {
         });
     });
     return applications.map(({ _key, ...entry }) => entry);
+}
+
+// 웹 아이템 사용 결과 연출 데이터. 명령어 응답 문자열이 아니라 대상의 사용 전/후 실제 데이터로 구성한다.
+const WEB_ITEM_USE_TARGET_KINDS = {
+    '지정캐릭터변환': 'card', '캐릭터변환': 'card', '만능캐릭터변환': 'card', '전직캐릭터변환': 'card', '스펙터부여': 'card',
+    '보조장비리롤': 'equipment', '잠재능력부여': 'equipment', '장비강화권': 'equipment', '영혼부여': 'equipment', '보주부여': 'equipment',
+    '귀속해제': 'equipment', '초월업그레이드': 'equipment', '장비강화': 'equipment',
+    '생명수': 'pet'
+};
+
+function readItemUseTarget(user, kind, number) {
+    if (kind === 'card') {
+        const card = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card[number - 1] : null;
+        const s = card ? serializeCard(card, user) : null;
+        return { total: 0, entry: s ? { name: s.name, starText: s.starText, type: s.type, imageUrl: s.imageUrl, specter: s.specter, awakeningSpecter: s.awakeningSpecter } : null };
+    }
+    const list = kind === 'equipment' ? buildInventoryEquipment(user) : buildInventoryPets(user);
+    return { total: list.length, entry: list.find(entry => entry.number === number) || null };
+}
+
+function captureItemUseTarget(user, choice) {
+    const action = user.pendingAction;
+    const kind = action && WEB_ITEM_USE_TARGET_KINDS[action.type];
+    const number = Number(action && (action.cardNumber || action.equipNumber || action.number) || choice);
+    if (!kind || !Number.isInteger(number) || number < 1) return null;
+    return Object.assign({ kind, number, action: action.type }, readItemUseTarget(user, kind, number));
+}
+
+function buildItemUseTargetResult(captured, user, upgradeFailed) {
+    if (!captured || !captured.entry) return null;
+    const current = readItemUseTarget(user, captured.kind, captured.number);
+    const destroyed = captured.kind === 'equipment' && current.total < captured.total;
+    const after = destroyed ? null : current.entry;
+    const result = { kind: captured.kind, action: captured.action, before: captured.entry, after, destroyed };
+    if (captured.action === '장비강화' || captured.action === '장비강화권') {
+        const diff = after ? Number(after.level || 0) - Number(captured.entry.level || 0) : 0;
+        result.outcome = destroyed ? 'destroy' : upgradeFailed ? 'down' : diff >= 2 && captured.action === '장비강화' ? 'great' : diff > 0 ? 'success'
+            : captured.action === '장비강화권' ? 'fail' : diff === 0 ? 'protected' : 'reset';
+    }
+    return result;
+}
+
+function captureItemUseEffects(user) {
+    const stats = rpgenius.calculateUserStats(user);
+    const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
+    return JSON.parse(JSON.stringify({
+        hp: typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0), mp: typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0), maxHp, maxMp,
+        level: Number(user.level || 1), exp: Number(user.exp || 0), statPoint: Number(user.statPoint || 0),
+        expPotion: user.expPotion || null, goldPotion: user.goldPotion || null,
+        blessings: rpgenius.getBlessingStates(user), prestige: user.prestige === true, jobPrestige: user.jobPrestige === true, bait: user.bait || ''
+    }));
+}
+
+function buildItemUseEffectResult(before, user) {
+    const after = captureItemUseEffects(user);
+    const now = Date.now();
+    const result = { vitals: [], buffs: [], notes: [] };
+    [['hp', 'maxHp', 'HP'], ['mp', 'maxMp', 'MP']].forEach(([key, maxKey, label]) => {
+        if (after[key] !== before[key]) result.vitals.push({ key, label, before: before[key], after: after[key], max: after[maxKey] });
+    });
+    if (after.level !== before.level) result.level = { before: before.level, after: after.level };
+    else if (after.exp !== before.exp) result.exp = { gained: after.exp - before.exp, after: after.exp, max: Number(rpgenius.getMaxExpForLevel(after.level) || 0) };
+    [['expPotion', '경험치 획득량'], ['goldPotion', '골드 획득량']].forEach(([key, label]) => {
+        if (after[key] && JSON.stringify(after[key]) !== JSON.stringify(before[key])) {
+            const extended = before[key] && Number(before[key].expired_at || 0) > now && Number(before[key].amount) === Number(after[key].amount);
+            result.buffs.push({ key, label, valueText: '+' + Math.round(Number(after[key].amount || 0) * 100) + '%', expiresAt: Number(after[key].expired_at || 0), extended: !!extended });
+        }
+    });
+    after.blessings.forEach(blessing => {
+        const previous = before.blessings.find(entry => entry.key === blessing.key);
+        if (previous && previous.expiresAt === blessing.expiresAt) return;
+        result.buffs.push({ key: 'blessing', label: blessing.name, valueText: '축복', expiresAt: blessing.expiresAt, extended: !!(previous && previous.active) });
+    });
+    if (after.statPoint !== before.statPoint) result.statPoint = { before: before.statPoint, after: after.statPoint };
+    if (after.prestige && !before.prestige) result.notes.push({ title: '프레스티지 적용', text: '계정에 프레스티지 효과가 적용되었습니다.' });
+    if (after.jobPrestige && !before.jobPrestige) result.notes.push({ title: '전직 프레스티지 적용', text: '골드 획득량 +5%' });
+    if (after.bait !== before.bait) result.bait = { before: before.bait, after: after.bait };
+    return result;
 }
 
 function decorateWebItemUsePending(pending, user) {

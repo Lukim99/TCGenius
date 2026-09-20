@@ -2328,18 +2328,210 @@ async function postItemUse(url, body) {
     return data;
 }
 
-function renderItemUseResult(item, changes) {
+// ===== 아이템 사용 결과 연출 =====
+// 서버 result(target: 대상의 사용 전/후, effects: 계정 효과 변화)와 item.useKind로 액션별 화면을 구성한다.
+const ITEM_USE_TARGET_HEADS = {
+    '보조장비리롤': { title: '스탯 재설정 완료', sub: '보조 장비의 능력치가 새로 부여되었습니다.', tone: 'blue', mark: '↻' },
+    '잠재능력부여': { title: '잠재능력 부여 완료', sub: '장비에 잠재능력이 깃들었습니다.', tone: 'violet', mark: '✦' },
+    '영혼부여': { title: '영혼 부여 완료', sub: '장비에 영혼이 깃들었습니다.', tone: 'violet', mark: '❖' },
+    '보주부여': { title: '보주 부여 완료', sub: '장비에 보주의 힘이 더해졌습니다.', tone: 'blue', mark: '◉' },
+    '귀속해제': { title: '귀속 해제 완료', sub: '이제 이 장비를 거래할 수 있습니다.', tone: 'good', mark: '✂' },
+    '초월업그레이드': { title: '초월 업그레이드 완료', sub: '초월 단계가 상승했습니다.', tone: 'bad', mark: '▲' },
+    '스펙터부여': { title: '스펙터 부여 완료', sub: '카드에 새로운 궁극기가 부여되었습니다.', tone: 'violet', mark: '★' },
+    '생명수': { title: '사용 기한 연장', sub: '펫의 사용 기한이 늘어났습니다.', tone: 'good', mark: '✚' }
+};
+const ITEM_USE_UPGRADE_HEADS = {
+    great: { title: '강화 대성공', sub: '강화 단계가 크게 올랐습니다.', tone: 'gold', mark: '★' },
+    success: { title: '강화 성공', sub: '강화 단계가 올랐습니다.', tone: 'good', mark: '▲' },
+    fail: { title: '강화 실패', sub: '강화 단계는 그대로 유지됩니다.', tone: 'bad', mark: '✕' },
+    down: { title: '강화 실패', sub: '강화에 실패했습니다.', tone: 'bad', mark: '▼' },
+    reset: { title: '파괴 방어', sub: '보호권으로 파괴를 막고 0강으로 초기화되었습니다.', tone: 'bad', mark: '▼' },
+    protected: { title: '보호권 발동', sub: '보호권이 실패를 막아 강화 단계가 유지됩니다.', tone: 'blue', mark: '◆' },
+    destroy: { title: '장비 파괴', sub: '강화에 실패해 장비가 파괴되었습니다.', tone: 'bad', mark: '✕' }
+};
+const ITEM_USE_KIND_HEADS = {
+    open: { title: '개봉 완료', tone: 'gold', mark: '✦', empty: '획득한 보상이 없습니다.' },
+    transform: { title: '변환 완료', tone: 'violet', mark: '⇄', empty: '변환 결과는 카드 인벤토리에서 확인할 수 있습니다.' },
+    modify: { title: '적용 완료', tone: 'blue', mark: '↻', empty: '변경 내용은 해당 장비·펫 정보에서 확인할 수 있습니다.' },
+    effect: { title: '효과 적용 완료', tone: 'good', mark: '✚', empty: '아이템 효과가 적용되었습니다.' },
+    bait: { title: '미끼 교체 완료', tone: 'good', mark: '✓', empty: '다음 낚시부터 새 미끼를 사용합니다.' },
+    generic: { title: '사용 완료', tone: 'good', mark: '✓', empty: '아이템을 사용했습니다.' }
+};
+
+function itemUseResultSection(head, ...body) {
+    return el('section', { class: 'iur tone-' + head.tone },
+        el('div', { class: 'iur-head' },
+            el('span', { class: 'iur-mark', 'aria-hidden': 'true' }, head.mark),
+            el('div', null, el('h5', null, head.title), head.sub ? el('p', null, head.sub) : null)),
+        ...body);
+}
+
+function itemUseRemainText(expiresAt) {
+    const diff = Number(expiresAt || 0) - Date.now();
+    if (diff >= 86400000) return Math.floor(diff / 86400000) + '일 ' + Math.floor(diff % 86400000 / 3600000) + '시간';
+    if (diff >= 3600000) return Math.floor(diff / 3600000) + '시간 ' + Math.floor(diff % 3600000 / 60000) + '분';
+    return Math.max(1, Math.ceil(diff / 60000)) + '분';
+}
+
+function itemUseTransitionNode(label, before, after) {
+    return el('div', { class: 'iur-transition' }, el('span', null, label),
+        el('div', null, el('s', null, before), el('i', { 'aria-hidden': 'true' }, '→'), el('b', null, after)));
+}
+
+function itemUseParseStatLine(line) {
+    const raw = String(line).replace(/^-\s*/, '').trim();
+    const match = raw.match(/^(.+?)\s+([+-]?[\d,]+(?:\.\d+)?%?)$/);
+    return match ? { raw, label: match[1], value: match[2], num: Number(match[2].replace(/[,%+]/g, '')) } : { raw, label: raw, value: '', num: null };
+}
+
+// 능력치 줄을 라벨 기준으로 짝지어 전→후 변화를 보여준다. 변화가 없으면 null.
+function itemUseStatDiffNode(beforeLines, afterLines) {
+    const queues = new Map();
+    (beforeLines || []).map(itemUseParseStatLine).forEach(line => {
+        if (!queues.has(line.label)) queues.set(line.label, []);
+        queues.get(line.label).push(line);
+    });
+    let changed = 0;
+    const row = (state, label, values, delta) => el('div', { class: 'iur-stat-row ' + state },
+        el('span', { class: 'iur-stat-label' }, label), el('span', { class: 'iur-stat-values' }, ...values), el('span', { class: 'iur-stat-delta' }, delta || ''));
+    const rows = (afterLines || []).map(itemUseParseStatLine).map(line => {
+        const prev = (queues.get(line.label) || []).shift();
+        if (prev && prev.raw === line.raw) return row('same', line.label, [el('b', null, line.value)]);
+        changed++;
+        if (!prev) return row('new', line.label, [el('b', null, line.value)], 'NEW');
+        const diff = Math.round((line.num - prev.num) * 100) / 100;
+        const unit = /%$/.test(line.value) ? '%' : '';
+        return row(diff >= 0 ? 'up' : 'down', line.label, [el('s', null, prev.value), el('i', { 'aria-hidden': 'true' }, '→'), el('b', null, line.value)],
+            (diff >= 0 ? '▲ ' : '▼ ') + comma(Math.abs(diff)) + unit);
+    });
+    queues.forEach(list => list.forEach(prev => { changed++; rows.push(row('removed', prev.label, [el('s', null, prev.value)], '제거')); }));
+    if (!changed) return null;
+    rows.forEach((node, index) => node.style.setProperty('--i', Math.min(index, 14)));
+    return el('div', { class: 'iur-block' }, el('div', { class: 'iur-label' }, '능력치 변화'), el('div', { class: 'iur-stats' }, ...rows));
+}
+
+function itemUseEquipmentResult(target) {
+    const before = target.before, after = target.after || target.before;
+    const upgrade = ITEM_USE_UPGRADE_HEADS[target.outcome];
+    const head = upgrade || ITEM_USE_TARGET_HEADS[target.action] || ITEM_USE_KIND_HEADS.modify;
+    const rarityChanged = before.rarity !== after.rarity;
+    const strip = el('div', { class: 'iur-target' + (target.destroyed ? ' destroyed' : '') }, equipmentThumb(after),
+        el('div', { class: 'iur-target-info' }, el('strong', null, after.name),
+            el('div', { class: 'eqm-chips' },
+                rarityChanged ? el('span', { class: 'iur-chip-old' }, rarityTag(before.rarity)) : null,
+                rarityChanged ? el('i', { class: 'iur-chip-arrow', 'aria-hidden': 'true' }, '→') : null,
+                rarityTag(after.rarity), el('span', { class: 'tag' }, after.typeLabel),
+                !upgrade && after.level > 0 ? el('span', { class: 'tag eqm-lv' }, '+' + after.level) : null,
+                after.equipped && !target.destroyed ? el('span', { class: 'tag on' }, '장착 중') : null)));
+    strip.style.setProperty('--rar', RARITY_COLORS[after.rarity] || '#334155');
+    const body = [strip];
+    if (upgrade) body.push(el('div', { class: 'iur-level' }, el('s', null, '+' + before.level), el('i', { 'aria-hidden': 'true' }, '→'),
+        el('b', null, target.destroyed ? '파괴' : '+' + after.level)));
+    if (!target.destroyed) {
+        body.push(itemUseStatDiffNode(before.statLines, after.statLines));
+        if (JSON.stringify(before.potentialDisplay) !== JSON.stringify(after.potentialDisplay)) {
+            const oldBlock = potentialBlockNode(before.potentialDisplay), newBlock = potentialBlockNode(after.potentialDisplay);
+            if (oldBlock) oldBlock.classList.add('old', 'iur-pot-old');
+            if (newBlock) newBlock.classList.add('new', 'iur-pot-new');
+            body.push(el('div', { class: 'iur-block' }, oldBlock, newBlock));
+        }
+        if (after.soul && !before.soul) body.push(el('div', { class: 'iur-note' }, el('strong', null, (after.soul.name || '영혼') + '의 영혼'), el('span', null, formatSoulRemaining(after.soul.expiredAt) || '')));
+        if (before.bound && !after.bound) body.push(itemUseTransitionNode('거래 상태', '귀속됨', '거래 가능'));
+    }
+    return itemUseResultSection(head, ...body);
+}
+
+function itemUseCardFigure(card, state) {
+    return el('figure', { class: 'iur-card ' + state }, el('div', { class: 'iur-card-art' }, el('img', { src: card.imageUrl, alt: '' })),
+        el('figcaption', null, el('strong', null, card.name), el('span', null, card.starText + (card.type !== '일반' ? ' · ' + card.type : ''))));
+}
+
+function itemUseCardResult(target) {
+    const before = target.before, after = target.after || target.before;
+    if (target.action !== '스펙터부여') {
+        return itemUseResultSection({ title: '변환 완료', sub: before.name + ' 카드가 ' + after.name + ' 카드로 변환되었습니다.', tone: 'violet', mark: '⇄' },
+            el('div', { class: 'iur-transform' }, itemUseCardFigure(before, 'before'), el('span', { class: 'iur-arrow', 'aria-hidden': 'true' }, '➜'), itemUseCardFigure(after, 'after')));
+    }
+    const awakened = (after.awakeningSpecter && after.awakeningSpecter.name) !== (before.awakeningSpecter && before.awakeningSpecter.name);
+    const granted = awakened ? after.awakeningSpecter : after.specter;
+    const replaced = awakened ? before.awakeningSpecter : before.specter;
+    const skill = granted && granted.skill;
+    const lines = granted ? (skill ? skill.descLines : granted.descLines) || [] : [];
+    return itemUseResultSection(ITEM_USE_TARGET_HEADS['스펙터부여'],
+        el('div', { class: 'iur-specter' }, itemUseCardFigure(after, 'after'),
+            el('div', { class: 'iur-specter-info' },
+                replaced ? el('s', { class: 'iur-specter-old' }, replaced.name) : null,
+                el('strong', null, granted ? granted.name : ''),
+                skill ? el('div', { class: 'iur-specter-skill' }, el('b', null, skill.name), el('span', null, 'MP ' + comma(skill.mpCost) + ' · ' + skill.cooltimeText)) : null,
+                ...lines.map(line => el('p', null, line)))));
+}
+
+function itemUsePetResult(target) {
+    const before = target.before, after = target.after || target.before;
+    const strip = el('div', { class: 'iur-target' }, petCardThumb(after),
+        el('div', { class: 'iur-target-info' }, el('strong', null, after.name), el('div', { class: 'eqm-chips' }, rarityTag(after.rarity), el('span', { class: 'tag' }, '펫'))));
+    strip.style.setProperty('--rar', RARITY_COLORS[after.rarity] || '#334155');
+    return itemUseResultSection(ITEM_USE_TARGET_HEADS[target.action] || ITEM_USE_KIND_HEADS.modify, strip,
+        before.expiryText !== after.expiryText ? itemUseTransitionNode('사용 기한', before.expiryText, after.expiryText) : null);
+}
+
+function itemUseVitalNode(vital) {
+    const max = Math.max(1, Number(vital.max || 0), Number(vital.after || 0));
+    const percent = value => Math.max(0, Math.min(100, Number(value || 0) / max * 100)) + '%';
+    const gain = el('i', { class: 'iur-vital-gain' });
+    gain.style.setProperty('--from', percent(vital.before));
+    gain.style.setProperty('--to', percent(vital.after));
+    const diff = vital.after - vital.before;
+    return el('div', { class: 'iur-vital ' + vital.key + (diff < 0 ? ' loss' : '') },
+        el('div', { class: 'iur-vital-top' }, el('strong', null, vital.label, el('em', null, (diff >= 0 ? '+' : '−') + comma(Math.abs(diff)))),
+            el('span', null, comma(vital.after) + ' / ' + comma(max))),
+        el('div', { class: 'iur-vital-track' }, gain, el('i', { class: 'iur-vital-base', style: { width: percent(Math.min(vital.before, vital.after)) } })));
+}
+
+function itemUseEffectsResult(item, effects, changes) {
+    const kindHead = ITEM_USE_KIND_HEADS[item.useKind === 'bait' ? 'bait' : 'effect'];
+    const body = (effects.vitals || []).map(itemUseVitalNode);
+    if (effects.level) body.push(el('div', { class: 'iur-level levelup' }, el('span', null, 'LEVEL UP'), el('s', null, 'Lv. ' + effects.level.before), el('i', { 'aria-hidden': 'true' }, '→'), el('b', null, 'Lv. ' + effects.level.after)));
+    if (effects.exp) body.push(itemUseVitalNode({ key: 'exp', label: '경험치', before: effects.exp.after - effects.exp.gained, after: effects.exp.after, max: effects.exp.max }));
+    (effects.buffs || []).forEach(buff => body.push(el('div', { class: 'iur-buff ' + buff.key },
+        el('div', null, el('strong', null, buff.label), el('span', null, (buff.extended ? '기간 연장' : '효과 적용') + ' · 남은 시간 ' + itemUseRemainText(buff.expiresAt))),
+        el('b', null, buff.valueText))));
+    if (effects.statPoint) body.push(itemUseTransitionNode('잔여 스탯포인트', comma(effects.statPoint.before), comma(effects.statPoint.after)));
+    if (effects.bait) body.push(itemUseTransitionNode('사용 중인 미끼', effects.bait.before || '없음', effects.bait.after));
+    (effects.notes || []).forEach(note => body.push(el('div', { class: 'iur-note' }, el('strong', null, note.title), el('span', null, note.text))));
+    if ((changes.rewards || []).length) body.push(gameAssetSection('함께 획득', changes.rewards));
+    if (!body.length) body.push(el('p', { class: 'iur-empty' }, kindHead.empty));
+    const head = effects.level ? Object.assign({}, kindHead, { title: '레벨 업', tone: 'gold', mark: '▲' }) : kindHead;
+    return itemUseResultSection(head, ...body);
+}
+
+function itemUseChangesResult(item, changes) {
+    const kind = ITEM_USE_KIND_HEADS[item.useKind] ? item.useKind : 'generic';
+    const head = ITEM_USE_KIND_HEADS[kind];
+    const rewards = changes.rewards || [];
+    const hasChanges = rewards.length || (changes.stats || []).length || changes.mainCard || changes.effectsChanged;
+    if (!hasChanges) return itemUseResultSection(head, el('p', { class: 'iur-empty' }, head.empty));
+    const view = gameChangesView(changes, { rewardsLabel: kind === 'open' || kind === 'generic' ? '획득 보상' : '변경 결과' });
+    view.classList.add('iur-rewards');
+    view.querySelectorAll('.game-asset-tile').forEach((tile, index) => tile.style.setProperty('--i', Math.min(index, 24)));
+    const total = rewards.reduce((sum, entry) => sum + (entry.kind === 'currency' ? 0 : Number(entry.count || 0)), 0);
+    return itemUseResultSection(kind === 'open' && rewards.length ? Object.assign({}, head, { sub: rewards.length + '종의 보상을 획득했습니다.' + (total > rewards.length ? ' (총 ' + comma(total) + '개)' : '') }) : head, view);
+}
+
+function renderItemUseResult(item, changes, result) {
     activeItemUsePending = false;
     modalLocked = false;
+    const data = changes && typeof changes === 'object' ? changes : {};
+    const target = result && result.target;
+    const section = target && target.kind === 'equipment' ? itemUseEquipmentResult(target)
+        : target && target.kind === 'card' ? itemUseCardResult(target)
+        : target && target.kind === 'pet' ? itemUsePetResult(target)
+        : result && result.effects ? itemUseEffectsResult(item, result.effects, data)
+        : itemUseChangesResult(item, data);
     $('#modalBody').replaceChildren(el('div', { class: 'item-detail item-use-result' },
         itemDetailHero(Object.assign({}, item, { count: Math.max(0, Number(item.count || 0)) })),
-        el('div', { class: 'item-detail-content' },
-            el('section', { class: 'item-use-result-card' },
-                el('span', { class: 'item-use-result-mark' }, '✓'),
-                el('h5', null, '사용 완료'),
-                gameChangesView(changes)
-            )
-        )
+        el('div', { class: 'item-detail-content' }, section,
+            el('button', { class: 'iur-close', type: 'button', onclick: () => closeModal() }, '확인'))
     ));
 }
 
@@ -2394,7 +2586,7 @@ async function useInventoryItem(item, count, button) {
         item.count = Number.isFinite(Number(response.remainingCount)) ? Number(response.remainingCount) : Math.max(0, Number(item.count || 0) - Number(count || 1));
         loadInventory('items').catch(() => {});
         if (response.pending) renderItemUsePending(item, response.pending, response.changes);
-        else renderItemUseResult(item, response.changes);
+        else renderItemUseResult(item, response.changes, response.result);
     } catch (error) {
         modalLocked = false;
         button.disabled = false;
@@ -2410,7 +2602,7 @@ async function resolveInventoryItemUse(item, choice, confirm, button) {
         const response = await postItemUse('/api/inventory/item-use/resolve', { choice, confirm });
         loadInventory('items').catch(() => {});
         if (response.pending) renderItemUsePending(item, response.pending, response.changes);
-        else renderItemUseResult(item, response.changes);
+        else renderItemUseResult(item, response.changes, response.result);
     } catch (error) {
         modalLocked = false;
         button.disabled = false;

@@ -253,10 +253,10 @@ function gameAssetSection(label, entries, kind = 'reward') {
         })));
 }
 
-function gameChangesView(changes) {
+function gameChangesView(changes, options = {}) {
     const data = changes || {};
     return el('div', { class: 'game-result-details' },
-        gameAssetSection('획득 보상', data.rewards),
+        gameAssetSection(options.rewardsLabel || '획득 보상', data.rewards),
         data.mainCard ? gameAssetSection('현재 메인 카드', [{ name: data.mainCard.name, detail: data.mainCard.starText, iconUrl: data.mainCard.imageUrl, count: 1 }], 'target') : null,
         data.stats?.length ? el('div', { class: 'game-result-stats' }, ...data.stats.map(stat => el('div', null,
             el('span', null, stat.label), el('span', null, el('s', null, comma(stat.before)), el('b', null, comma(stat.after)))))) : null,
