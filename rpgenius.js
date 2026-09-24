@@ -8,6 +8,7 @@ const combatEffects = require('./public/combat-effects.js');
 const wisdomPuzzle = require('./wisdom_puzzle');
 const shopCatalog = require('./shop_catalog');
 const { inventoryLocks: yutInventoryLocks } = require('./yut_event');
+const { regularCardPackBaseChance } = require('./chuseok_event');
 
 const TARGET_CHANNEL_IDS = ['442097040687921', '18470462260425659', "18483114949710565", "18483115447101144", "18483115484530406", "18483115510764240"];
 const TABLE_NAME = 'rpgenius_user';
@@ -6342,7 +6343,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        if (Math.random() < dropChance) {
+        if (Math.random() < regularCardPackBaseChance() * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
             const dropItemId = items.findIndex(item => item.name == '카드팩 상자');
             if (dropItemId != -1) {

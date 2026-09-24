@@ -1995,6 +1995,9 @@ let myGoods = null;
 let lastProfileData = null;
 let currentProfileName = null;
 let currentInventoryName = null;
+window.addEventListener('chuseok:claimed', () => {
+    if (pageIsActive('inventory') && (!currentInventoryName || currentInventoryName === myName)) loadInventory('items').catch(() => {});
+});
 let suppressInfoSelfReset = false;
 let blessingViewStates = [];
 let blessingCountdownTimer = null;

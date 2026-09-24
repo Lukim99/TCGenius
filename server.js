@@ -10,6 +10,7 @@ const pvp = require('./pvp.js');
 const cardComposite = require('./card_composite.js');
 const assetStore = require('./asset_store.js');
 const { registerYutRoutes } = require('./yut_event.js');
+const { registerChuseokRoutes } = require('./chuseok_event.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
 const { inventoryVersion, registerGameActionRoutes, createGamePresentation } = require('./web_game_actions');
@@ -1439,6 +1440,7 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
+registerChuseokRoutes(server, { rpgenius, requireUser });
 
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 서버 차원에서 굴리기 차단.
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
@@ -9094,6 +9096,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/fusion-effects.js"></script>
 <script src="/static/game-actions.js"></script>
 <script src="/static/app.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
@@ -9109,6 +9112,7 @@ function renderHFieldApp(sess) {
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/hfield.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
@@ -9124,6 +9128,7 @@ function renderGeneralFieldApp(sess) {
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE='regular';</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/hfield.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
@@ -9155,6 +9160,7 @@ function renderWorldBossApp(sess) {
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/worldboss.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
@@ -9170,6 +9176,7 @@ function renderPvpApp(sess, opponent) {
 <script>window.PVP_ME=${JSON.stringify(sess.name)};window.PVP_OPPONENT=${JSON.stringify(opponent || '')};</script>
 <script src="/static/combat-effects.js"></script>
 <script src="/static/pvp.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
@@ -9420,6 +9427,7 @@ function renderPartyApp(sess) {
 </div>
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
 <script src="/static/party.js"></script>
+<script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }
 
