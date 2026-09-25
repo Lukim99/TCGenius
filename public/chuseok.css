@@ -43,4 +43,8 @@
     .chuseok.received .chuseok-close { left:50%; bottom:18px; }
 }
 @media (max-aspect-ratio:.8) { .chuseok-scene { mask-image:linear-gradient(#000 65%,transparent 86%); } }
-@media (prefers-reduced-motion:reduce) { .chuseok * { animation:none !important; transition:none !important; } }
+@media (prefers-reduced-motion:reduce) {
+    /* 움직임은 줄여도 이미지의 순차 등장과 효과음에 맞춘 간격은 유지한다. */
+    .chuseok .chuseok-scene,.chuseok .chuseok-lettering,.chuseok .chuseok-pack { animation-name:chuseok-fade; }
+    .chuseok * { transition-property:opacity !important; }
+}

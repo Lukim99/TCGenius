@@ -193,7 +193,7 @@ function showEvent(state, onClose) {
         frame = requestAnimationFrame(draw);
     }
     frame = requestAnimationFrame(draw);
-    readyTimer = setTimeout(() => { if (performance.now() < deadline) moon.disabled = false; }, reduced ? 100 : 3400);
+    readyTimer = setTimeout(() => { if (performance.now() < deadline) moon.disabled = false; }, 3400);
     moon.onclick = async () => {
         if (busy || claimed) return;
         busy = true; moon.disabled = true; close.disabled = true;
@@ -214,7 +214,7 @@ function showEvent(state, onClose) {
                 message.textContent = result.reward.name + ' 1개를 받았습니다.'; play('reward');
                 window.dispatchEvent(new CustomEvent('chuseok:claimed'));
             };
-            revealTimer = setTimeout(reveal, reduced ? 0 : Math.max(0, 2200-(performance.now()-clickedAt)));
+            revealTimer = setTimeout(reveal, Math.max(0, 2200-(performance.now()-clickedAt)));
         } catch (error) {
             busy = false; dialog.classList.remove('gathering'); close.disabled = false;
             message.textContent = error.message;
