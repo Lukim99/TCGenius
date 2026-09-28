@@ -152,6 +152,14 @@ def cards(level=0.5):
     return out * level
 
 
+def claps(level=0.7):
+    """처형박수: three sharp hand claps (짝짝짝)."""
+    out = np.zeros((2, secs(0.8)))
+    for dt, g, p in ((0.0, 1.0, -0.25), (0.11, 0.9, 0.25), (0.22, 1.15, 0.0)):
+        add(out, pan(S.clap(g), p), dt)
+    return out * level
+
+
 def zap(level=0.5):
     n = secs(0.45)
     t = np.arange(n) / SR
@@ -282,7 +290,7 @@ SFX = {
     'riser_short': lambda g, i: S.riser(0.5, 0.5 * g), 'thud': lambda g, i: thud(0.8 * g), 'boom': lambda g, i: S.boom(0.9 * g, 2.2),
     'crash': lambda g, i: S.crash(0.35 * g, 2.6), 'sparkle': lambda g, i: S.sparkle(0.5 * g), 'card': lambda g, i: card(0.5 * g),
     'slash': lambda g, i: S.slash(0.6 * g), 'crit': lambda g, i: crit(0.8 * g), 'fire': lambda g, i: fire(0.55 * g), 'ice': lambda g, i: ice(0.6 * g),
-    'cards': lambda g, i: cards(0.6 * g), 'zap': lambda g, i: zap(0.45 * g), 'levelup': lambda g, i: levelup(0.6 * g), 'coin': lambda g, i: S.coin(0.35 * g),
+    'cards': lambda g, i: cards(0.6 * g), 'claps': lambda g, i: claps(0.75 * g), 'zap': lambda g, i: zap(0.45 * g), 'levelup': lambda g, i: levelup(0.6 * g), 'coin': lambda g, i: S.coin(0.35 * g),
     'success': lambda g, i: success(0.7 * g), 'stamp': lambda g, i: stamp(0.7 * g), 'alarm_short': lambda g, i: alarm_short(0.3 * g),
     'alarm': lambda g, i: alarm(0.55 * g, 1.3), 'roar': lambda g, i: roar(0.75 * g), 'shield': lambda g, i: shield(0.6 * g), 'break': lambda g, i: crunch(0.8 * g),
     'stop': lambda g, i: tape_stop(0.45 * g), 'scratch': lambda g, i: scratch(0.6 * g), 'chat': lambda g, i: chat(0.38 * g),

@@ -373,7 +373,7 @@
         { t: 22.5, bg: ORANGE, fx: 'phoenix', name: '불사조', ono: '화르륵!', pose: 'job', oc: YELLOW, s: 'fire' },
         { t: 23.4375, bg: '#27c8ff', fx: 'ice', name: '빙결', ono: '쩌저적!', pose: 'base', oc: PAPER, s: 'ice' },
         { t: 24.375, bg: MINT, fx: 'clover', name: '럭키펀치', ono: '럭키!', pose: 'star', oc: YELLOW, s: 'sparkle' },
-        { t: 25.3125, bg: VIOLET, fx: 'cards', name: '포커 못 하시네', ono: '촤라락!', pose: 'job', oc: YELLOW, s: 'cards' }
+        { t: 25.3125, bg: VIOLET, fx: 'clap', name: '처형박수', ono: '짝짝짝!', pose: 'job', oc: YELLOW, s: 'claps' }
     ];
     scene('skills', 22.48, 26.27, root => {
         const bg = fill(root, ORANGE);
