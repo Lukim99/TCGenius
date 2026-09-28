@@ -1,0 +1,80 @@
+@font-face { font-family: 'BHS'; src: url('fonts/BlackHanSans-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Pretendard'; font-weight: 700; src: url('fonts/Pretendard-Bold.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 800; src: url('fonts/Pretendard-ExtraBold.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 900; src: url('fonts/Pretendard-Black.woff2') format('woff2'); }
+
+/* Neo-pop comic palette */
+:root {
+  --ink: #16112b;
+  --paper: #fff4e0;
+  --pink: #ff3d7f;
+  --yellow: #ffd83d;
+  --blue: #2f6bff;
+  --mint: #19e3b1;
+  --violet: #7a3cff;
+  --orange: #ff7a2f;
+  --night: #1b1446;
+  --sky: #7fd3ff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); }
+body { font-family: 'Pretendard', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: var(--paper); }
+#world { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.layer, .scene { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+.scene { overflow: hidden; }
+#fx, #wipes, #hud { pointer-events: none; }
+.abs { position: absolute; left: 0; top: 0; }
+img { display: block; user-select: none; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#fade { position: absolute; inset: 0; background: var(--ink); opacity: 0; pointer-events: none; }
+
+/* ---------- type ---------- */
+.bhs { font-family: 'BHS', 'Pretendard', sans-serif; font-weight: 400; line-height: 1.02; letter-spacing: -.01em; white-space: nowrap;
+  -webkit-text-stroke: var(--stroke, 10px) var(--ink); paint-order: stroke fill; }
+.bhs .ch { display: inline-block; transform-origin: 50% 80%; }
+.shadow-ink { text-shadow: var(--sx, 8px) var(--sy, 9px) 0 var(--ink); }
+.pill { display: inline-flex; align-items: center; gap: 14px; height: 76px; padding: 0 34px; border-radius: 38px; background: var(--ink); color: var(--paper);
+  font-weight: 900; font-size: 36px; letter-spacing: -.01em; white-space: nowrap; border: 5px solid var(--ink); }
+.tag { display: inline-block; padding: 10px 22px 12px; background: var(--yellow); color: var(--ink); border: 5px solid var(--ink); border-radius: 14px;
+  font-family: 'BHS'; font-size: 40px; line-height: 1; white-space: nowrap; box-shadow: 7px 8px 0 var(--ink); }
+.sub { font-weight: 900; font-size: 40px; letter-spacing: -.02em; white-space: nowrap; }
+
+/* ---------- stickers & shapes ---------- */
+.actor { position: absolute; left: 0; top: 0; }
+.actor img { width: 100%; height: 100%; }
+.mask { position: absolute; left: 0; top: 0; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.circle { position: absolute; left: 0; top: 0; border-radius: 50%; }
+.ring { position: absolute; left: 0; top: 0; border-radius: 50%; border: 12px solid var(--ink); }
+.fxi { position: absolute; left: 0; top: 0; mix-blend-mode: screen; }
+.panel { position: absolute; overflow: hidden; border: 10px solid var(--ink); background: var(--paper); }
+.card { position: absolute; left: 0; top: 0; border-radius: 22px; overflow: hidden; border: 8px solid #fff; box-shadow: 10px 12px 0 var(--ink); background: #fff; }
+.card img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ---------- patterns ---------- */
+.halftone { position: absolute; inset: -60px; background-image: radial-gradient(circle, var(--dot, rgba(22,17,43,.16)) 28%, transparent 31%); background-size: 26px 26px; }
+.stripes { position: absolute; inset: -400px; background: repeating-linear-gradient(-45deg, var(--c1, rgba(255,255,255,.14)) 0 34px, transparent 34px 68px); }
+.rays { position: absolute; border-radius: 50%; background: repeating-conic-gradient(from 0deg, var(--c1, rgba(255,255,255,.35)) 0deg 7.5deg, transparent 7.5deg 15deg); }
+.speed { position: absolute; left: -540px; top: -960px; width: 3000px; height: 3000px; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, var(--c1, rgba(22,17,43,.85)) 0deg .7deg, transparent .7deg 4.1deg, var(--c1, rgba(22,17,43,.85)) 4.1deg 4.5deg, transparent 4.5deg 9deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 17%, #000 34%); mask-image: radial-gradient(circle, transparent 17%, #000 34%); }
+.marquee { position: absolute; left: 0; white-space: nowrap; font-family: 'BHS'; color: transparent; -webkit-text-stroke: 4px var(--c1, rgba(22,17,43,.18)); }
+
+/* ---------- vector props ---------- */
+.clock { position: absolute; left: 0; top: 0; border-radius: 50%; background: var(--paper); border: 16px solid var(--ink); box-shadow: 14px 16px 0 var(--ink); }
+.clock .tick { position: absolute; left: 50%; top: 50%; width: 10px; height: 30px; margin: -15px 0 0 -5px; background: var(--ink); border-radius: 5px; }
+.clock .hand { position: absolute; left: 50%; bottom: 50%; transform-origin: 50% 100%; border-radius: 12px; background: var(--ink); }
+.clock .pin { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: var(--pink); border: 7px solid var(--ink); }
+.win { position: absolute; left: 0; top: 0; border: 10px solid var(--ink); border-radius: 30px; background: var(--paper); box-shadow: 18px 20px 0 var(--ink); overflow: hidden; }
+.win .bar { height: 84px; background: var(--pink); border-bottom: 10px solid var(--ink); display: flex; align-items: center; gap: 16px; padding: 0 30px; }
+.win .dot { width: 26px; height: 26px; border-radius: 50%; border: 6px solid var(--ink); background: var(--paper); }
+.win .url { flex: 1; height: 50px; margin-left: 20px; border-radius: 25px; background: var(--paper); border: 6px solid var(--ink); font-weight: 900; font-size: 28px;
+  display: flex; align-items: center; padding: 0 22px; color: var(--ink); }
+.btn { position: absolute; display: flex; align-items: center; justify-content: center; gap: 16px; border-radius: 60px; border: 10px solid var(--ink);
+  background: var(--yellow); box-shadow: 10px 12px 0 var(--ink); font-family: 'BHS'; color: var(--ink); white-space: nowrap; }
+.bubble { position: absolute; left: 0; top: 0; padding: 18px 30px 20px; border-radius: 34px; border: 7px solid var(--ink); background: #fff; box-shadow: 8px 9px 0 var(--ink);
+  font-weight: 900; font-size: 38px; white-space: nowrap; }
+.hpbar { position: absolute; left: 0; top: 0; height: 46px; border: 7px solid var(--ink); border-radius: 23px; background: #fff; overflow: hidden; box-shadow: 7px 8px 0 var(--ink); }
+.hpbar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #ff6f8f, #ff2d55); }
+.hpbar b { position: absolute; left: 0; top: 0; bottom: 0; background: #fff1a8; }
