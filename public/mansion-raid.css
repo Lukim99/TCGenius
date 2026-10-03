@@ -33,6 +33,7 @@
    넘치면 패널만 내부 스크롤 — 하단 파티 행·공격/지원군 바는 항상 화면 안에 남는다. */
 .pq-screen[data-screen="play"].mr-on .pq-game-stagewrap{min-height:clamp(100px,16dvh,220px)}
 .pq-screen[data-screen="play"].mr-on>.mr-root{flex:0 1 auto;min-height:0}
+.pq-screen[data-screen="play"].mr-on .pq-boss-pattern{display:none}
 /* 파티원 카드는 초상을 짧게 — 이름·HP·버프는 그대로 */
 .pq-screen[data-screen="play"].mr-on .pq-char-card .img{aspect-ratio:auto;height:clamp(44px,7dvh,72px)}
 
@@ -79,9 +80,6 @@
 .mr-ev-bar i{display:block;height:100%;background:var(--mr-gold);transform-origin:left center}
 .mr-ev[data-kind="inversion"] .mr-ev-bar i,.mr-ev[data-kind="trial"] .mr-ev-bar i{background:var(--mr-violet)}
 .mr-ev.urgent .mr-ev-bar i{background:var(--mr-bad)}
-.mr-ev-do{font-size:11.5px;font-weight:700;color:var(--mr-text-2);line-height:1.35}
-.mr-ev-do::before{content:'▸ ';color:var(--mr-gold)}
-.mr-ev[data-mine="1"] .mr-ev-do{color:var(--mr-text)}
 .mr-ev-body{display:flex;flex-direction:column;gap:7px}
 .mr-ev-body:empty{display:none}
 .mr-ev-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
@@ -105,7 +103,7 @@
 
 /* ===== 기둥 하중 이동 ===== */
 .mr-pillars{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-/* 기둥 하나 = 왼쪽 석재 기둥 + 오른쪽 번호·하중·차이 (세로 길이 절약) */
+/* 기둥 하나 = 왼쪽 석재 기둥 + 오른쪽 번호와 하중 (세로 길이 절약) */
 .mr-pillar{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;justify-items:start;column-gap:7px;row-gap:1px;min-width:0;min-height:44px;padding:15px 5px 6px 7px;border:0;border-radius:0;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);background:#1b1620;box-shadow:inset 0 0 0 1px var(--mr-edge-hi);color:var(--mr-text);cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;transition:background .1s}
 .mr-pillar:hover{background:#231c29}
 .mr-pillar:focus-visible{outline:2px solid var(--mr-gold-hi);outline-offset:-4px}
@@ -116,37 +114,22 @@
 .mr-pillars:has([aria-pressed="true"]) .mr-pillar:not([aria-pressed="true"]) .mr-pillar-pick{color:var(--mr-text-2);border-color:var(--mr-edge-hi)}
 .mr-pillar[aria-pressed="true"] .mr-pillar-pick{background:var(--mr-gold);color:var(--mr-ink)}
 .mr-pillar-idx{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-size:11px;color:var(--mr-text-3);line-height:1}
-/* 하중 1 = 석재 블록 1칸 (기둥 높이의 1/12), 점선 = 목표 6 */
+/* 하중 1 = 석재 블록 1칸 (기둥 높이의 1/12) */
 .mr-pillar-col{--col-h:52px;grid-column:1;grid-row:1/4;position:relative;width:24px;height:var(--col-h);background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge);overflow:hidden}
 .mr-pillar-fill{--blk:#8d7a5c;position:absolute;left:2px;right:2px;bottom:0;height:0;background-image:linear-gradient(0deg,#0b090e 0 1px,var(--blk) 1px);background-size:100% calc(var(--col-h) / 12);background-position:left bottom;transition:height .18s ease}
-.mr-pillar-goal{position:absolute;left:0;right:0;top:50%;height:0;border-top:2px dashed var(--mr-gold-hi)}
-.mr-pillar[data-state="ok"] .mr-pillar-fill{--blk:#6fae79}
-.mr-pillar[data-state="over"] .mr-pillar-fill{--blk:#b0544a}
-.mr-pillar-idx,.mr-pillar-val,.mr-pillar-diff{grid-column:2}
+.mr-pillar-idx,.mr-pillar-val{grid-column:2}
 .mr-pillar-val{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:22px;line-height:1;font-variant-numeric:tabular-nums}
-.mr-pillar-diff{max-width:100%;overflow:hidden;font-size:10px;font-weight:700;color:var(--mr-text-2);white-space:nowrap}
-.mr-pillar[data-state="ok"] .mr-pillar-diff{color:#bfe8c5}
-.mr-pillar[data-state="over"] .mr-pillar-diff{color:#f2aaa3}
 .mr-cd{height:2px;background:transparent;overflow:hidden}
 .mr-cd i{display:block;height:100%;background:var(--mr-text-2);transform-origin:left center;transform:scaleX(0)}
 
-/* ===== 완성하면 안 되는 작품 — 성공 구간 게이지 ===== */
-.mr-gauge{position:relative;height:22px;margin-bottom:14px;background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge-hi)}
+/* ===== 완성하면 안 되는 작품 — 진행률 ===== */
+.mr-gauge{position:relative;height:22px;background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge-hi)}
 .mr-gauge-fill{position:absolute;left:0;top:0;bottom:0;width:100%;transform-origin:left center;background:#8d7a5c;transition:transform .15s linear}
-.mr-gauge-zone{position:absolute;top:-3px;bottom:-3px;border-left:2px solid var(--mr-gold-hi);border-right:2px solid var(--mr-gold-hi);background:repeating-linear-gradient(-45deg,rgba(240,205,135,.28) 0 5px,transparent 5px 10px)}
 .mr-gauge-mark{position:absolute;top:-5px;bottom:-5px;width:2px;margin-left:-1px;background:#fff}
-.mr-gauge-lbl{position:absolute;top:calc(100% + 3px);transform:translateX(-50%);font-size:9.5px;font-weight:700;color:var(--mr-gold-hi);font-variant-numeric:tabular-nums;white-space:nowrap}
-.mr-ev[data-zone="in"] .mr-gauge-fill{background:#6fae79}
-.mr-ev[data-zone="over"] .mr-gauge-fill{background:#b0544a}
 .mr-nums{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-.mr-zone-state{padding:1px 6px;border:1px solid var(--mr-edge-hi);font-size:11px;font-weight:700;color:var(--mr-text-2)}
-.mr-ev[data-zone="in"] .mr-zone-state{border-color:rgba(127,201,138,.6);color:#bfe8c5}
-.mr-ev[data-zone="over"] .mr-zone-state{border-color:rgba(224,101,92,.6);color:#f2aaa3}
 .mr-num{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
 .mr-pct{margin-left:auto;font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-size:18px;font-variant-numeric:tabular-nums}
-.mr-hidden{padding:5px 8px;border-left:2px solid var(--mr-gold);background:rgba(201,162,90,.08);font-size:11.5px;font-weight:700;color:var(--mr-gold-hi)}
 .mr-finish{min-height:50px;font-size:19px;letter-spacing:.14em}
-.mr-ev[data-zone="in"] .mr-finish:not([aria-disabled="true"]){background:#3a2a10;box-shadow:inset 0 0 0 2px var(--mr-gold)}
 
 /* ===== 조의 의지 / 시련 수치 ===== */
 .mr-split{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -156,8 +139,6 @@
 .mr-shield i{display:block;height:100%;background:#e6e1ee;transform-origin:left center;transition:transform .15s linear}
 
 /* ===== 미완성의 축복 ===== */
-.mr-lines{display:flex;flex-direction:column;gap:2px}
-.mr-line{font-size:11px;font-weight:700;color:var(--mr-text-2);line-height:1.35}
 
 /* ===== 받아쓰기 ===== */
 .mr-seq-wrap{display:flex;align-items:center;gap:8px}
@@ -165,30 +146,18 @@
 .mr-seq{flex:1;display:flex;gap:4px;min-width:0}
 .mr-slot{position:relative;flex:1 1 0;max-width:40px;height:34px;display:grid;place-items:center;background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge-hi)}
 .mr-slot b{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:20px;line-height:1;color:var(--mr-gold-hi)}
-.mr-slot i{position:absolute;right:2px;bottom:1px;font-style:normal;font-size:9px;font-weight:700;line-height:1}
 .mr-typed .mr-slot b{color:var(--mr-text)}
 .mr-typed .mr-slot[data-state="next"]{box-shadow:inset 0 0 0 1px var(--mr-gold),inset 0 -3px 0 var(--mr-gold)}
-.mr-typed .mr-slot[data-state="ok"]{box-shadow:inset 0 0 0 1px rgba(127,201,138,.6)}
-.mr-typed .mr-slot[data-state="ok"] i{color:#bfe8c5}
-.mr-typed .mr-slot[data-state="ng"]{box-shadow:inset 0 0 0 1px rgba(224,101,92,.7);background:#1d0f10}
-.mr-typed .mr-slot[data-state="ng"] i{color:#f2aaa3}
-.mr-typed .mr-slot[data-state="ng"] b{text-decoration:line-through;text-decoration-thickness:2px}
 .mr-keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
 .mr-key{min-height:50px;padding:0;font-size:24px;letter-spacing:0;text-transform:lowercase}
 
 /* ===== 맥동 제어 / 봉인 역전 ===== */
 .mr-cue{display:flex;align-items:center;justify-content:center;gap:12px;padding:6px 8px;background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge-hi)}
-.mr-cue-glyph{font-size:18px;font-weight:700;letter-spacing:.12em;color:var(--mr-text-2);white-space:nowrap}
 .mr-cue-word{font-weight:700;font-size:14px;line-height:1.4;word-break:keep-all;overflow-wrap:anywhere}
-.mr-cue-glyph{flex-shrink:0}
-.mr-ev[data-cue="gather"] .mr-cue-glyph{color:#e8c98a}
-.mr-ev[data-cue="scatter"] .mr-cue-glyph{color:#b9a8ea}
-.mr-rule{font-size:11px;font-weight:700;color:var(--mr-text-2);text-align:center}
 .mr-ev[data-kind="inversion"]{border-color:rgba(155,135,214,.55)}
 .mr-ev[data-kind="inversion"]::after{content:'역전';position:absolute;top:0;right:0;width:46px;padding:1px 0 1px 8px;font-size:9px;font-weight:700;letter-spacing:.2em;color:#e4dcff;background:repeating-linear-gradient(-45deg,rgba(155,135,214,.4) 0 4px,rgba(155,135,214,.15) 4px 8px);clip-path:polygon(8px 0,100% 0,100% 100%,0 100%);pointer-events:none}
 .mr-ev[data-kind="inversion"] .mr-ev-head{padding-right:40px}
 .mr-ev[data-kind="inversion"] .mr-cue{box-shadow:inset 0 0 0 1px rgba(155,135,214,.55);background:#120f1a}
-.mr-ev[data-kind="inversion"] .mr-rule{color:#d8ccff}
 
 /* ===== 예고 (조작 없음) ===== */
 .mr-fc{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:center;gap:7px;min-height:28px;padding:3px 9px 3px 6px;background:rgba(14,12,18,.92);border:1px solid var(--mr-edge);border-left:3px solid var(--mr-violet)}
@@ -213,7 +182,6 @@
   .mr-pillar-val{font-size:20px}
   .mr-key{min-height:46px;font-size:22px}
   .mr-cue-word{font-size:13px}
-  .mr-cue-glyph{font-size:15px}
   .mr-fc-hint{font-size:10px}
 }
 /* ===== 낮은 화면 (614x672 등) — 담당·신호·행동·타이머만 남기고 세로를 줄인다 ===== */
@@ -221,7 +189,6 @@
   .mr-root:not([data-mode="transition"]) .mr-head{display:none}
   .mr-ev{padding:6px 9px 7px 12px;gap:5px}
   .mr-ev-time{font-size:17px}
-  .mr-ev-do{font-size:11px}
   .mr-ev-body{gap:6px}
   .mr-pillar-col{--col-h:44px}
   .mr-pillar-val{font-size:20px}

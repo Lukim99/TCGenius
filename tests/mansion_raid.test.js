@@ -398,6 +398,32 @@ test('세 난이도는 기본 잠금이며 생성·참가·시작 때 모든 참
     assert.match((await party.start(user.name)).error, /해금/); party.leaveRoom(user.name);
 });
 
+test('파티 준비 API는 레이드 표지, 메인 카드와 물약 이미지를 제공하며 선택한 물약 수량을 유지한다', async () => {
+    const user = await reset();
+    user.unlockedRaids = ['mansionNightmare'];
+    const potionId = data.Item.findIndex(item => item?.name === '상급 체력 포션');
+    rpg.addInventoryItem(user, potionId, 5); await user.save();
+    assert.equal((await request('/api/party/rooms', { questId: 'mansionNightmare' })).status, 200);
+    try {
+        const available = await request('/api/party/potions/available');
+        const potion = available.data.potions.find(item => item.name === '상급 체력 포션');
+        assert.equal(potion.count, 5);
+        const image = new URL(potion.iconUrl, base);
+        assert.equal(image.searchParams.get('dir'), '소모품');
+        assert.equal(image.searchParams.get('file'), '상급 체력 포션.png');
+        assert.equal((await request('/api/party/potions', { items: [{ name: potion.name, count: 2 }] })).status, 200);
+        const response = await request('/api/party/me');
+        assert.equal(response.status, 200);
+        const room = response.data.room;
+        const definition = quests.find(quest => quest.id === 'mansionNightmare');
+        for (const field of ['coverImage', 'minLevel', 'minPlayers', 'maxPlayers', 'recommendedPower']) assert.equal(room.questDef[field], definition[field] ?? null);
+        assert.equal(room.members[0].card.star, user.main_card.star);
+        assert.ok(room.members[0].card.imageUrl);
+        assert.deepEqual(room.members[0].potions, [{ name: potion.name, count: 2, iconUrl: potion.iconUrl }]);
+        assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(user.name), potionId), 5, '준비 단계에서는 인벤토리 물약을 소모하지 않는다');
+    } finally { party.leaveRoom(user.name); }
+});
+
 test('기둥은 0.5초 조작 간격을 검사하며 공용 하중 6 성공과 노말 피해·하드 전멸을 판정한다', async () => {
     let room = await battle('normal', 2); let event = fixedGimmick(room, 0);
     event.loads = [7, 5, 7, 5];
@@ -421,6 +447,40 @@ test('석재는 본체 HP 대신 피해를 받으며 공대장 판정·75% 히�
     assert.equal(raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' }).ok, true);
     await Promise.all(room.pendingTitleGrants); const user = await rpg.getRPGUserByName(seeds[0].name);
     assert.ok(rpg.getUnlockedTitles(user).includes('mansionEyes')); assert.equal(room.monster.bossState.gimmickActive, null);
+});
+
+test('석재는 성공 구간 밖에서도 완성 요청을 받아 실패를 판정한다', async () => {
+    for (const pct of [.1, .99]) {
+        const room = await battle(); const mon = room.monster; const event = fixedGimmick(room, 1);
+        event.damage = Math.round(event.hpMax * pct);
+        assert.equal(raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' }).ok, true);
+        assert.equal(mon.bossState.outcome.ok, false);
+        assert.equal(mon.bossState.gimmickActive, null);
+        assert.equal(mon.bossState.events.length, 0);
+        assert.equal(room.members[0].runtime.hp, 500000);
+    }
+});
+
+test('진행 중인 받아쓰기, 수락한 축복, 단단해지기와 조의 의지가 끝난 뒤 체력 기믹을 먼저 시작한다', async () => {
+    for (const kind of ['dictation', 'blessing', 'harden', 'burden']) {
+        const room = await battle('normal', 2); const mon = room.monster; const event = pattern(room, kind);
+        if (kind === 'blessing') raid.action(room, event.target, { eventId: event.id, action: 'accept' });
+        if (kind === 'harden') raid.tickEvents(room, mon, 1);
+        mon.hp = mon.hpMax * .7; mon.bossState.timers.shards = 0;
+        tick(room);
+        assert.deepEqual(mon.bossState.events.map(e => e.id), [event.id], kind);
+        assert.equal(mon.bossState.gimmickActive, null, kind);
+        let ticks = 0;
+        while (mon.bossState.events.includes(event) && ticks++ < 45) {
+            tick(room);
+            assert.ok(mon.bossState.events.length <= 1, kind);
+        }
+        assert.equal(mon.bossState.events.length, 0, kind);
+        tick(room);
+        assert.deepEqual(mon.bossState.events.map(e => e.kind), ['pillars'], kind);
+        for (let i = 0; i < 5; i++) tick(room);
+        assert.deepEqual(mon.bossState.events.map(e => e.kind), ['pillars'], kind);
+    }
 });
 
 test('조의 의지는 지정 대상 혼자 또는 받쳐준 사람과 피해를 나누며 축복은 5초 미응답 거절·수락 후 8초다', async () => {
@@ -496,6 +556,35 @@ test('본체 1HP 전환은 실제 tick에서 4초 동결 후 잔향으로 진행
     raid.action(room, event.target, { eventId: event.id, action: event.pulse === 'gather' ? 'absorb' : 'release' });
     assert.equal(mon.hp, 3600000); room.members[1].runtime.dead = true;
     raid.step(room, mon, 12); event = mon.bossState.events.find(event => event.kind === 'inversion'); assert.equal(event.target, seeds[2].name);
+});
+
+test('봉인 역전 중에는 잔향 파열을 대기시키고 울리는 벽 표시 중에도 다른 패턴을 시작하지 않는다', async () => {
+    let room = await battle('hard', 2, 1); let mon = room.monster;
+    party.__test.applyBossHpDamage(room, mon, mon.hpMax); raid.transition(room, 4);
+    mon.bossState.echoElapsed = 9.8; mon.bossState.echoTimer = .2;
+    const hp = room.members.map(member => member.runtime.hp);
+    raid.step(room, mon, .2);
+    assert.deepEqual(mon.bossState.events.map(e => e.kind), ['inversion']);
+    assert.deepEqual(room.members.map(member => member.runtime.hp), hp);
+    raid.step(room, mon, .2);
+    assert.deepEqual(mon.bossState.events.map(e => e.kind), ['inversion']);
+    assert.deepEqual(room.members.map(member => member.runtime.hp), hp);
+    const event = mon.bossState.events[0];
+    raid.action(room, event.target, { eventId: event.id, action: event.pulse === 'gather' ? 'absorb' : 'release' });
+    raid.step(room, mon, .2);
+    assert.deepEqual(mon.bossState.events.map(e => e.kind), ['rupture']);
+    assert.equal(raid.view(mon).events[0].message, '...');
+    assert.ok(room.members.every((member, i) => member.runtime.hp < hp[i]));
+
+    room = await battle('normal', 2, 1); mon = room.monster;
+    const wall = pattern(room, 'wall'); mon.bossState.timers.echo = 0;
+    assert.equal(raid.view(mon).events[0].message, '우우웅.... 위잉....');
+    raid.step(room, mon, .2);
+    assert.deepEqual(mon.bossState.events.map(e => e.id), [wall.id]);
+    raid.step(room, mon, 1.3);
+    assert.equal(mon.bossState.events.length, 0);
+    raid.step(room, mon, .2);
+    assert.deepEqual(mon.bossState.events.map(e => e.kind), ['echo']);
 });
 
 test('클리어로 다음 난이도를 해금하지 않으며 통합 주간 보상과 칭호 진행을 중복 없이 저장한다', async () => {

@@ -9337,44 +9337,51 @@ function renderPartyApp(sess) {
     </section>
 
     <section class="pq-screen" data-screen="room">
-      <div class="pq-room-toolbar">
-        <button class="pq-back" id="pqLeave">← 파티 나가기</button>
-        <button class="pq-btn pq-lobby-tool" id="pqRoomSettings" type="button">⚙ 설정</button>
+      <div class="pq-room-top">
+        <button class="pq-back" id="pqLeave" type="button">← 나가기</button>
+        <span class="pq-room-host" id="pqRoomHost"></span>
+        <button class="pq-btn pq-lobby-tool" id="pqRoomSettings" type="button">설정</button>
       </div>
-      <div class="pq-panel">
-        <div class="pq-bar">
-          <div class="pq-section-title" style="margin:0">퀘스트</div>
-          <span id="pqRoomQuestName" style="font-weight:800;color:#a5b4fc"></span>
+      <div class="pq-room-main">
+        <div class="pq-room-stage">
+          <header class="pq-raid-hero" id="pqRaidHero" data-difficulty="normal">
+            <div class="pq-raid-cover" id="pqRaidCover"></div>
+            <div class="pq-raid-head">
+              <span class="pq-diff-tag" id="pqRaidDiff" data-difficulty="normal">NORMAL</span>
+              <h2 id="pqRoomQuestName"></h2>
+              <div class="pq-raid-facts" id="pqRaidFacts"></div>
+            </div>
+          </header>
+          <div id="pqQuestInfo" class="pq-quest-info"></div>
+          <div class="pq-room-party">
+            <div class="pq-room-label">파티 <b id="pqPartyCount"></b></div>
+            <div id="pqMemberList" class="pq-formation"></div>
+          </div>
         </div>
-        <div id="pqQuestInfo" class="pq-quest-info"></div>
-      </div>
-      <div class="pq-panel">
-        <div class="pq-section-title" style="margin:0">파티원</div>
-        <div id="pqMemberList" style="display:flex;flex-direction:column;gap:6px"></div>
-      </div>
-      <div class="pq-panel" id="pqPositionPanel">
-        <div class="pq-section-title" style="margin:0">포지션 선택</div>
-        <div id="pqPositionGrid" class="pq-position-grid"></div>
-        <div id="pqPositionDetail" class="pq-stat-list" style="display:none"></div>
-      </div>
-      <div class="pq-panel">
-        <div class="pq-section-title" style="margin:0">채팅</div>
-        <div id="pqChat" class="pq-chat"></div>
-        <form id="pqChatForm" class="pq-chat-form">
-          <input id="pqChatInput" class="pq-input" placeholder="메시지..." autocomplete="off" maxlength="500">
-          <button type="submit" class="pq-btn primary" style="height:38px">전송</button>
-        </form>
-      </div>
-      <div class="pq-panel">
-        <div class="pq-bar">
-          <div class="pq-section-title" style="margin:0">휴대 물약</div>
-          <button class="pq-btn" id="pqOpenPotion" type="button" style="height:32px;padding:0 12px;font-size:12px">선택</button>
+        <div class="pq-room-prep">
+          <div class="pq-prep-block" id="pqPositionPanel">
+            <div class="pq-room-label">포지션</div>
+            <div id="pqPositionGrid" class="pq-position-grid"></div>
+            <div id="pqPositionDetail" class="pq-stat-list" style="display:none"></div>
+          </div>
+          <div class="pq-prep-block">
+            <div class="pq-room-label">휴대 물약 <b id="pqPotionCount"></b><button class="pq-btn" id="pqOpenPotion" type="button">변경</button></div>
+            <div id="pqPotionSummary" class="pq-belt"></div>
+          </div>
+          <div class="pq-prep-block pq-room-chat">
+            <div class="pq-room-label">채팅</div>
+            <div id="pqChat" class="pq-chat"></div>
+            <form id="pqChatForm" class="pq-chat-form">
+              <input id="pqChatInput" class="pq-input" placeholder="메시지 입력" autocomplete="off" maxlength="500">
+              <button type="submit" class="pq-btn primary">전송</button>
+            </form>
+          </div>
         </div>
-        <div id="pqPotionSummary" style="font-size:12px;color:#cbd5e1;line-height:1.5"></div>
       </div>
-      <div class="pq-actions">
-        <button class="pq-btn" id="pqReadyBtn">준비</button>
-        <button class="pq-btn primary" id="pqStartBtn" style="display:none">퀘스트 시작</button>
+      <div class="pq-room-dock">
+        <div class="pq-room-status" id="pqRoomStatus" aria-live="polite"></div>
+        <button class="pq-btn" id="pqReadyBtn" type="button">준비</button>
+        <button class="pq-btn primary" id="pqStartBtn" type="button" style="display:none">퀘스트 시작</button>
       </div>
     </section>
 
@@ -9499,8 +9506,8 @@ function renderPartyApp(sess) {
   <div class="pq-modal-bg" id="pqPotionBg">
     <div class="pq-modal" style="max-width:420px">
       <h3>물약 휴대 설정</h3>
-      <div style="font-size:12px;color:#94a3b8" id="pqPotionLimitInfo">최대 0개</div>
-      <div id="pqPotionListEditor" style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto"></div>
+      <div id="pqPotionLimitInfo" style="font-size:12px;font-weight:700;color:#cbb68c">최대 0개</div>
+      <div id="pqPotionListEditor" style="display:flex;flex-direction:column;gap:6px;max-height:min(340px,55dvh);overflow-y:auto"></div>
       <div class="pq-actions">
         <button class="pq-btn" id="pqPotionCancel" type="button">취소</button>
         <button class="pq-btn primary" id="pqPotionSave" type="button">저장</button>

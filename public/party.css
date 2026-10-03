@@ -34,13 +34,31 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-screen{display:none;flex-direction:column;gap:12px;animation:pqfade .18s ease}
 .pq-screen.active{display:flex}
 @keyframes pqfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.pq-room-card{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:14px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:transform .12s,border-color .12s}
-.pq-room-card:hover{transform:translateY(-1px);border-color:var(--accent)}
-.pq-room-card .pq-room-title{font-weight:700;color:var(--text);font-size:15px}
-.pq-room-card .pq-room-quest{font-size:12px;color:var(--text-2);font-weight:700}
-.pq-room-card .pq-room-meta{font-size:12px;color:var(--text-2);grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap}
-.pq-room-card .pq-pill{padding:2px 8px;background:rgba(232,176,75,.15);border:1px solid rgba(232,176,75,.4);color:var(--text);border-radius:999px;font-size:11px;font-weight:700}
-.pq-room-card .pq-pill.lock{background:rgba(232,176,75,.12);border-color:rgba(232,176,75,.45);color:#f0cd87}
+/* 난이도 표식 (로비 목록, 대기실 공용) */
+.pq-diff-tag{align-self:flex-start;padding:2px 7px;border:1px solid rgba(232,176,75,.55);border-radius:3px;background:rgba(20,13,4,.72);color:#f0cd87;font-size:9px;font-weight:900;line-height:1.4;letter-spacing:.16em}
+.pq-diff-tag[data-difficulty="hard"],.pq-diff-tag[data-difficulty="extreme"]{border-color:rgba(224,101,92,.65);background:rgba(42,9,7,.76);color:#ffaaa3}
+.pq-diff-tag[data-difficulty="nightmare"]{border-color:rgba(167,139,250,.7);background:rgba(24,12,48,.8);color:#d6c8ff}
+/* 공개 파티 목록 */
+.pq-room-list{display:flex;flex-direction:column;gap:8px}
+.pq-room-card{width:100%;display:grid;grid-template-columns:96px minmax(0,1fr) auto;padding:0;overflow:hidden;font:inherit;color:var(--text);text-align:left;background:linear-gradient(180deg,#17171a,#111215);border:1px solid #2e2b25;border-radius:9px;cursor:pointer;transition:border-color .15s,transform .15s}
+.pq-room-card:hover{transform:translateY(-1px);border-color:rgba(232,176,75,.6)}
+.pq-room-card:focus-visible{outline:2px solid #f0cd87;outline-offset:2px}
+.pq-room-card[data-difficulty="nightmare"]{border-color:rgba(167,139,250,.38)}
+.pq-room-card[data-difficulty="nightmare"]:hover{border-color:rgba(167,139,250,.75)}
+.pq-room-card.full{opacity:.6}
+.pq-room-cover{position:relative;min-height:78px;background:radial-gradient(ellipse at 40% 30%,#26221a,#0b0c0f)}
+.pq-room-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pq-room-cover::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 50%,#151518)}
+.pq-room-body{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:10px 8px 10px 12px}
+.pq-room-body .pq-diff-tag{font-size:8px}
+.pq-room-quest{overflow:hidden;font-family:var(--font-game);font-size:16px;line-height:1.2;color:#fff7e8;white-space:nowrap;text-overflow:ellipsis}
+.pq-room-title{overflow:hidden;font-size:12px;font-weight:700;color:var(--text-2);white-space:nowrap;text-overflow:ellipsis}
+.pq-room-side{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:5px;padding:10px 12px 10px 4px;color:var(--text-3);font-size:11px;font-weight:700;white-space:nowrap}
+.pq-room-side b{color:var(--text);font-size:16px;font-variant-numeric:tabular-nums}
+.pq-room-side .lock{color:#f0cd87}
+.pq-room-pips{display:flex;gap:3px}
+.pq-room-pips i{width:7px;height:7px;border-radius:2px;background:#2d2e33}
+.pq-room-pips i.on{background:#e8b04b}
 .pq-empty{padding:30px 16px;text-align:center;color:var(--text-2);font-size:13px;background:var(--panel-2);border:1px dashed var(--border);border-radius:var(--radius)}
 .pq-fab{position:absolute;right:16px;bottom:18px;height:54px;padding:0 22px;border:0;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px;cursor:pointer;box-shadow:none}
 .pq-fab:hover{filter:brightness(1.08)}
@@ -58,25 +76,130 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-btn.gold{background:#b45309;color:#fef3c7}
 .pq-btn.gold:hover{background:var(--accent-hover)}
 .pq-btn:disabled{opacity:.5;cursor:not-allowed}
-.pq-member{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s)}
-.pq-member.host{border-color:rgba(232,176,75,.55)}
-.pq-member.me{box-shadow:none}
-.pq-avatar{width:34px;height:34px;border-radius:var(--radius-s);background:var(--panel-3);display:grid;place-items:center;font-weight:700;color:var(--text-2)}
 .title-badge{height:16px;width:auto;vertical-align:-3px;margin-right:4px;flex-shrink:0}
-.pq-lv{font-size:12px;color:var(--text-2);font-weight:700}
-.pq-name{font-weight:700;color:var(--text);font-size:14px;display:flex;align-items:center;gap:6px}
 .pq-tag{font-size:10px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--border-strong);color:var(--text-2)}
 .pq-tag.host{background:rgba(232,176,75,.18);color:#f0cd87}
 .pq-tag.ready{background:rgba(127,201,138,.18);color:#bbf7d0}
 .pq-tag.off{background:rgba(216,76,65,.16);color:#f0b3ae}
-.pq-pos{font-size:12px;color:var(--text-2)}
-.pq-pos.set{color:var(--text-2);font-weight:700}
-.pq-position-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
-.pq-position-btn{padding:10px 8px;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--panel-2);color:var(--text-2);font-weight:700;cursor:pointer;text-align:center;font-size:13px;transition:all .12s}
-.pq-position-btn:hover{border-color:var(--accent)}
-.pq-position-btn.active{background:var(--accent);color:var(--accent-ink);border-color:transparent}
-.pq-position-btn.taken{opacity:.4;cursor:not-allowed}
-.pq-stat-list{display:grid;gap:4px;font-size:12px;color:var(--text-2);padding:8px 10px;background:var(--panel-2);border-radius:var(--radius-s);margin-top:6px}
+/* ===== 파티 대기실: 상단 바 + 스크롤 본문 + 하단 고정 액션 바 ===== */
+.pq-screen[data-screen="room"]{flex:1 1 auto;min-height:0;gap:10px}
+.pq-room-top{flex:none;display:flex;align-items:center;gap:8px;min-width:0}
+.pq-room-top .pq-back{flex:none}
+.pq-room-host{flex:1;min-width:0;overflow:hidden;color:var(--text-3);font-size:12px;font-weight:700;text-align:right;white-space:nowrap;text-overflow:ellipsis}
+.pq-room-main{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;margin:0 -14px;padding:0 14px 6px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.pq-room-stage,.pq-room-prep{min-width:0;display:flex;flex-direction:column;gap:12px}
+.pq-room-label{display:flex;align-items:center;gap:8px;min-height:28px;margin-bottom:8px;color:#cbb68c;font-size:12px;font-weight:800;letter-spacing:.04em}
+.pq-room-label b{color:var(--text-2);font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums}
+.pq-room-label::after{content:'';order:1;flex:1;height:1px;background:linear-gradient(90deg,rgba(185,138,70,.38),transparent)}
+.pq-room-label .pq-btn{order:2;height:28px;padding:0 11px;border:1px solid rgba(185,138,70,.45);background:rgba(232,176,75,.08);color:#f0cd87;font-size:12px}
+.pq-room-label .pq-btn:hover{background:rgba(232,176,75,.16)}
+/* 레이드 커버 */
+.pq-raid-hero{position:relative;flex:none;min-height:150px;display:flex;align-items:flex-end;overflow:hidden;border:1px solid rgba(185,138,70,.42);border-radius:10px;background:radial-gradient(ellipse at 70% 0,rgba(232,176,75,.14),transparent 60%),#0b0c0f;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+.pq-raid-hero[data-difficulty="hard"],.pq-raid-hero[data-difficulty="extreme"]{border-color:rgba(224,101,92,.5)}
+.pq-raid-hero[data-difficulty="nightmare"]{border-color:rgba(167,139,250,.55);background:radial-gradient(ellipse at 70% 0,rgba(124,92,255,.2),transparent 60%),#0b0a10;box-shadow:0 10px 26px rgba(0,0,0,.4),0 0 26px rgba(124,92,255,.14)}
+.pq-raid-cover{position:absolute;inset:0}
+.pq-raid-cover img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 30%}
+.pq-raid-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,7,9,0) 22%,rgba(6,7,9,.55) 58%,rgba(6,7,9,.96));pointer-events:none}
+.pq-raid-head{position:relative;z-index:1;width:100%;min-width:0;display:flex;flex-direction:column;gap:5px;padding:30px 14px 12px}
+.pq-raid-head h2{margin:0;font-family:var(--font-game);font-size:24px;font-weight:400;line-height:1.15;color:#fff7e8;text-shadow:0 2px 10px rgba(0,0,0,.85);overflow-wrap:anywhere}
+.pq-raid-facts{display:flex;flex-wrap:wrap;gap:3px 14px;color:#ece6d8;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px rgba(0,0,0,.9)}
+.pq-raid-facts i{margin-right:5px;color:#b8a888;font-style:normal;font-weight:600}
+.pq-quest-info{display:flex;flex-direction:column;gap:8px;color:var(--text-2);font-size:12px;line-height:1.55}
+.pq-quest-info p{margin:0;word-break:keep-all;overflow-wrap:anywhere}
+.pq-phase-route{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.pq-phase-route li{display:flex;align-items:center;gap:6px;min-width:0;padding:3px 9px 3px 3px;border:1px solid var(--border);border-radius:5px;background:#121318;color:var(--text);font-size:11.5px;font-weight:700}
+.pq-phase-route b{flex:none;display:grid;place-items:center;width:18px;height:18px;border-radius:3px;background:rgba(232,176,75,.14);color:#f0cd87;font-size:10px}
+.pq-phase-route li[data-type="boss"]{border-color:rgba(224,101,92,.42)}
+.pq-phase-route li[data-type="boss"] b{background:rgba(224,101,92,.18);color:#ffb3ab}
+/* 파티 편성 카드 */
+.pq-formation{display:grid;grid-template-columns:repeat(var(--slots,5),minmax(0,1fr));gap:6px}
+.pq-slot{position:relative;min-width:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #3b3427;border-radius:7px;background:linear-gradient(180deg,#1a1915,#101114);box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s,box-shadow .2s}
+.pq-slot.host{border-color:rgba(232,176,75,.55)}
+.pq-slot.me{border-color:#f0cd87;box-shadow:0 0 0 1px rgba(240,205,135,.3),0 6px 18px rgba(232,176,75,.12)}
+.pq-slot-art{position:relative;aspect-ratio:3/4;overflow:hidden;background:radial-gradient(ellipse at 50% 30%,#25221c,#0c0d10)}
+.pq-slot-art img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 15%;user-select:none}
+.pq-slot-art::after{content:'';position:absolute;left:0;right:0;bottom:0;height:40%;background:linear-gradient(180deg,transparent,rgba(5,6,8,.9));pointer-events:none}
+.pq-slot.off .pq-slot-art{filter:grayscale(.9) brightness(.6)}
+.pq-slot-ph{position:absolute;inset:0;display:grid;place-items:center;color:#5f5747;font-family:var(--font-game);font-size:30px}
+.pq-slot-star,.pq-slot-lead{position:absolute;top:4px;z-index:1;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:800;line-height:1.4}
+.pq-slot-star{left:4px;background:rgba(0,0,0,.68);color:#f0cd87}
+.pq-slot-lead{right:4px;background:#e8b04b;color:#211504}
+.pq-slot-card{position:absolute;left:5px;right:5px;bottom:4px;z-index:1;display:flex;align-items:baseline;gap:4px;min-width:0;color:#efe7d6;font-size:9.5px;font-weight:700;text-shadow:0 1px 3px #000}
+.pq-slot-card span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pq-slot-card i{flex:none;color:#bba989;font-style:normal;font-weight:600}
+.pq-slot-plate{flex:1;display:flex;flex-direction:column;gap:2px;padding:5px 6px}
+.pq-slot-name{display:flex;align-items:center;gap:3px;min-width:0;color:var(--text);font-size:11.5px;font-weight:800}
+.pq-slot-name .t{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pq-slot.me .pq-slot-name .t{color:#ffe4a8}
+.pq-slot .title-badge{height:12px;max-width:45%;margin:0;object-fit:contain}
+.pq-slot-sub{display:flex;justify-content:space-between;gap:4px;min-width:0;color:var(--text-3);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+.pq-slot-sub .pos{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pq-slot-sub .pos.set{color:#f0cd87}
+.pq-slot-state{margin-top:auto;padding:3px 4px;border-top:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.28);color:var(--text-3);font-size:10px;font-weight:800;text-align:center;white-space:nowrap}
+.pq-slot.ready .pq-slot-state{border-top-color:rgba(127,201,138,.4);background:rgba(127,201,138,.16);color:#bbf7d0}
+.pq-slot.off .pq-slot-state{color:#f0b3ae}
+.pq-slot.empty{border-style:dashed;border-color:#2e2b25;background:#0e0f12;box-shadow:none}
+.pq-slot.empty .pq-slot-art{background:repeating-linear-gradient(135deg,rgba(255,255,255,.018) 0 8px,transparent 8px 16px)}
+.pq-slot.empty .pq-slot-art::after{display:none}
+.pq-slot.empty .pq-slot-ph{color:#4f493c;font-family:inherit;font-size:11px;font-weight:700}
+/* 준비 패널: 포지션, 물약, 채팅 */
+.pq-prep-block{min-width:0;padding:12px;border:1px solid #27282e;border-radius:9px;background:linear-gradient(180deg,#15161a,#111216)}
+.pq-position-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(58px,1fr));gap:6px}
+.pq-position-btn{min-width:0;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 4px;border:1px solid var(--border-strong);border-radius:6px;background:#181a20;color:var(--text);font:inherit;font-size:12px;font-weight:800;cursor:pointer;transition:border-color .15s,background .15s}
+.pq-position-btn span,.pq-position-btn small{max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pq-position-btn small{color:var(--text-3);font-size:9.5px;font-weight:700}
+.pq-position-btn:hover:not(:disabled){border-color:rgba(232,176,75,.6)}
+.pq-position-btn.active{border-color:transparent;background:linear-gradient(180deg,#f0c56e,#d59b31);color:#211504}
+.pq-position-btn.taken{opacity:.5;cursor:not-allowed}
+.pq-stat-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 12px;margin-top:8px;padding:8px 10px;border-left:2px solid rgba(232,176,75,.5);background:rgba(232,176,75,.05);color:var(--text-2);font-size:11.5px;font-weight:600}
+.pq-belt{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 4px;scrollbar-width:none}
+.pq-belt-slot{flex:0 0 68px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px}
+.pq-belt-slot>span{max-width:100%;overflow:hidden;color:var(--text-2);font-size:10.5px;font-weight:700;white-space:nowrap;text-overflow:ellipsis}
+.pq-belt-icon{position:relative;width:60px;height:60px;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(185,138,70,.45);border-radius:9px;background:radial-gradient(circle at 50% 42%,#3a3020,#121115 70%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+/* 물약 PNG는 중앙 1/3 정도만 그림이 있어 프레임 안에서 2.2배로 키우고 프레임 밖은 잘라낸다 */
+.pq-belt-icon img,.pq-potion-art img{position:absolute;left:-60%;top:-60%;width:220%;height:220%;max-width:none;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));pointer-events:none}
+.pq-belt-icon img.pq-potion-full,.pq-potion-art img.pq-potion-full{left:0;top:0;width:100%;height:100%}
+.pq-belt-icon b{position:absolute;right:2px;bottom:2px;z-index:1;min-width:22px;padding:0 4px;border:1px solid rgba(185,138,70,.6);border-radius:4px;background:rgba(20,17,11,.92);color:#ffe4a8;font-size:10.5px;font-weight:800;line-height:15px;text-align:center;font-variant-numeric:tabular-nums}
+.pq-potion-ph{display:grid;place-items:center;width:30px;height:38px;border-radius:12px 12px 9px 9px;background:linear-gradient(180deg,#3a2f1d,#1c1710);color:#e8c98a;font-size:13px;font-weight:800}
+.pq-belt-empty{width:100%;height:54px;border:1px dashed #3a3427;border-radius:9px;background:transparent;color:var(--text-3);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.pq-belt-empty:hover{border-color:rgba(232,176,75,.5);color:#f0cd87}
+.pq-room-chat .pq-chat{height:132px;background:#0d0e11}
+.pq-room-chat .pq-chat-form{margin-top:6px}
+.pq-room-chat .pq-btn.primary{height:38px;color:var(--accent-ink)}
+/* 하단 액션 바 */
+.pq-room-dock{flex:none;display:flex;align-items:center;gap:8px;margin:0 -14px -14px;padding:10px 14px max(12px,env(safe-area-inset-bottom));border-top:1px solid rgba(185,138,70,.3);background:linear-gradient(180deg,#16140f,#0c0d10)}
+.pq-room-status{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pq-room-status b{color:var(--text);font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.pq-room-status span{overflow:hidden;color:var(--text-3);font-size:11px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.pq-room-dock .pq-btn{flex:none;min-width:96px;height:46px;padding:0 18px;border:1px solid var(--border-strong);background:#1b1d23;font-size:15px}
+.pq-room-dock .pq-btn:hover:not(:disabled){border-color:rgba(232,176,75,.5)}
+.pq-room-dock .pq-btn.primary{border-color:transparent;background:linear-gradient(180deg,#f0c56e,#d59b31);color:#211504;box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+.pq-room-dock .pq-btn.primary:hover:not(:disabled){background:linear-gradient(180deg,#f7d486,#e8b04b)}
+@media(max-width:340px){
+  .pq-formation{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .pq-room-dock .pq-btn{min-width:0;padding:0 12px}
+}
+/* 좁은 폰의 5인 파티: 카드를 줄이지 않고 가로 스트립으로 (화면 폭에 들어가면 스크롤 없음) */
+@media(max-width:480px){
+  .pq-formation[style*="--slots: 5"],.pq-formation[style*="--slots:5"]{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(86px,1fr);margin:0 -14px;padding:0 14px 6px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;scroll-padding-inline:14px;scrollbar-width:thin}
+  .pq-formation[style*="--slots: 5"] .pq-slot,.pq-formation[style*="--slots:5"] .pq-slot{scroll-snap-align:start}
+}
+@media(max-height:480px){
+  #pqPotionBg{padding:8px}
+  #pqPotionBg .pq-modal{padding:12px 14px;gap:8px}
+}
+@media(max-height:720px){
+  .pq-raid-hero{min-height:118px}
+  .pq-raid-head{padding-top:20px}
+  .pq-raid-head h2{font-size:20px}
+  .pq-room-chat .pq-chat{height:104px}
+  .pq-room-dock .pq-btn{height:42px}
+}
+@media(prefers-reduced-motion:reduce){
+  .pq-screen[data-screen="lobby"],.pq-screen[data-screen="room"]{animation:none}
+  .pq-room-card,.pq-slot,.pq-position-btn,.pq-potion-row{transition:none}
+  .pq-room-card:hover{transform:none}
+}
 .pq-chat{display:flex;flex-direction:column;gap:6px;height:120px;overflow-y:auto;padding:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);font-size:13px;scrollbar-width:thin}
 .pq-chat::-webkit-scrollbar{width:6px}.pq-chat::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:3px}
 .pq-chat-line{line-height:1.45}
@@ -84,8 +207,6 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-chat-line.system{color:var(--text-2);font-size:12px;font-style:italic}
 .pq-chat-form{display:flex;gap:6px}
 .pq-chat-form .pq-input{height:38px}
-.pq-quest-info{font-size:12px;color:var(--text-2);line-height:1.5}
-.pq-quest-info b{color:var(--text)}
 .pq-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.76);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:30;padding:14px}
 .pq-modal-bg.active{display:flex}
 .pq-modal{width:100%;max-width:380px;background:#0f172a;border:1px solid var(--border-strong);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:12px}
@@ -113,6 +234,8 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-quest-card-body{position:absolute;z-index:2;left:0;right:0;bottom:0;padding:36px 48px 14px;display:flex;flex-direction:column;gap:5px}
 .pq-quest-difficulty{align-self:flex-start;padding:2px 7px;border:1px solid rgba(232,176,75,.55);border-radius:3px;background:rgba(20,13,4,.72);color:#f0cd87;font-size:8px;font-weight:900;letter-spacing:.16em}
 .pq-quest-card[data-difficulty="hard"] .pq-quest-difficulty,.pq-quest-card[data-difficulty="extreme"] .pq-quest-difficulty{border-color:rgba(224,101,92,.65);background:rgba(42,9,7,.76);color:#ffaaa3}
+.pq-quest-card[data-difficulty="nightmare"]{border-color:rgba(167,139,250,.55);box-shadow:0 12px 28px rgba(0,0,0,.45),0 0 24px rgba(124,92,255,.16)}
+.pq-quest-card[data-difficulty="nightmare"] .pq-quest-difficulty{border-color:rgba(167,139,250,.7);background:rgba(24,12,48,.8);color:#d6c8ff}
 .pq-quest-card-name{font-family:var(--font-game);font-size:22px;font-weight:400;color:#fff;letter-spacing:.01em;text-shadow:0 2px 8px #000}
 .pq-quest-card-meta{display:flex;gap:5px;flex-wrap:wrap}
 .pq-quest-card-meta span{font-size:9px;font-weight:800;color:#d9dde5;background:rgba(8,10,14,.68);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:3px 6px;backdrop-filter:blur(3px)}
@@ -279,15 +402,25 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
   .pq-modal-bg.active .pq-reward-modal,.pq-modal-bg.active .pq-fc-modal,.pq-loot-row{animation:none}
   .pq-loot-member>summary::after{transition:none}
 }
-.pq-potion-row{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s)}
-.pq-potion-row .nm{font-weight:700;color:var(--text);font-size:13px}
-.pq-potion-row .ef{font-size:11px;color:var(--text-2);grid-column:1/-1}
-.pq-potion-row .own{font-size:11px;color:var(--text-2)}
-.pq-potion-stepper{display:flex;gap:4px;align-items:center}
-.pq-potion-stepper button{width:28px;height:28px;border:0;border-radius:var(--radius-s);background:var(--panel-2);color:var(--text);font-weight:700;cursor:pointer;font-size:14px}
-.pq-potion-stepper button:hover{background:var(--panel-3)}
-.pq-potion-stepper input{width:48px;padding:4px 6px;background:#0b0d12;border:1px solid var(--border-strong);border-radius:6px;color:var(--text);text-align:center;font-weight:700;font-size:13px}
-.pq-potion-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(127,201,138,.15);border:1px solid rgba(127,201,138,.35);border-radius:999px;color:#bbf7d0;font-size:11px;font-weight:700;margin:2px 4px 2px 0}
+/* 물약 휴대 설정 모달 */
+#pqPotionBg .pq-modal{border-color:rgba(185,138,70,.45);background:linear-gradient(180deg,#17150f,#0d0e12 30%);box-shadow:0 24px 70px rgba(0,0,0,.7)}
+#pqPotionBg .pq-modal h3{font-family:var(--font-game);font-size:20px;font-weight:400;color:#fff3dc}
+#pqPotionBg .pq-btn.primary{color:var(--accent-ink)}
+.pq-potion-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 10px;border:1px solid #2a2b31;border-radius:8px;background:#131419;transition:border-color .15s,background .15s}
+.pq-potion-row.on{border-color:rgba(232,176,75,.55);background:linear-gradient(90deg,rgba(232,176,75,.1),#131419 70%)}
+.pq-potion-art{position:relative;width:52px;height:52px;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(185,138,70,.35);border-radius:9px;background:radial-gradient(circle at 50% 42%,#3a3020,#101013 70%)}
+#pqPotionBg .pq-modal{max-height:100%;overflow:hidden}
+#pqPotionBg .pq-modal>*{flex:none}
+#pqPotionBg #pqPotionListEditor{flex:0 1 auto;min-height:72px;overscroll-behavior:contain}
+.pq-potion-info{min-width:0;display:flex;flex-direction:column;gap:2px}
+.pq-potion-row .nm{color:var(--text);font-size:13px;font-weight:800;overflow-wrap:anywhere}
+.pq-potion-row .ef{color:var(--text-2);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.pq-potion-row .own{color:var(--text-3);font-size:10.5px;font-weight:700}
+.pq-potion-stepper{display:flex;align-items:center;gap:3px}
+.pq-potion-stepper button{width:28px;height:30px;border:1px solid var(--border-strong);border-radius:6px;background:#1b1d23;color:var(--text);font-size:15px;font-weight:800;cursor:pointer}
+.pq-potion-stepper button:hover{border-color:rgba(232,176,75,.6)}
+.pq-potion-stepper input{width:40px;height:30px;padding:0 2px;border:1px solid var(--border-strong);border-radius:6px;background:#0b0d12;color:#ffe4a8;font-size:13px;font-weight:800;text-align:center;-moz-appearance:textfield;appearance:textfield}
+.pq-potion-stepper input::-webkit-inner-spin-button,.pq-potion-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .pq-back{background:transparent;color:var(--text-2);border:0;font-weight:700;padding:6px 4px;cursor:pointer;font-size:13px}
 .pq-back:hover{color:var(--text)}
 .pq-room-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -486,7 +619,25 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 /* ===== 데스크톱 와이드 ===== */
 @media (min-width:900px) and (min-height:700px){
   .frame{width:min(1040px,100vw);height:min(960px,100dvh);border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px var(--border) inset}
-  .pq-screen[data-screen="lobby"],.pq-screen[data-screen="room"]{max-width:460px;width:100%;margin-inline:auto}
+  .pq-screen[data-screen="lobby"]{max-width:560px;width:100%;margin-inline:auto}
+  /* 커버 옆 오른쪽 칸에 설명을 두어 파티 카드가 첫 화면에 올라오게 한다 */
+  .pq-room-main{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);grid-template-areas:"hero info" "party prep";align-items:start;gap:16px}
+  .pq-room-stage{display:contents}
+  .pq-raid-hero{grid-area:hero;align-self:stretch;min-height:230px}
+  .pq-quest-info{grid-area:info;align-self:stretch;justify-content:center;padding:14px 16px;border:1px solid #27282e;border-radius:9px;background:linear-gradient(180deg,#15161a,#111216);font-size:12.5px}
+  .pq-room-party{grid-area:party;min-width:0}
+  .pq-room-prep{grid-area:prep}
+  .pq-raid-head{padding:40px 20px 16px}
+  .pq-raid-head h2{font-size:32px}
+  .pq-raid-facts{font-size:13px}
+  .pq-formation{gap:10px}
+  .pq-slot-name{font-size:13px}
+  .pq-slot-sub,.pq-slot-card{font-size:11px}
+  .pq-slot-star,.pq-slot-lead{font-size:10px}
+  .pq-slot-state{padding:4px;font-size:11px}
+  .pq-room-chat .pq-chat{height:220px}
+  .pq-room-dock{padding:12px 24px 14px}
+  .pq-room-dock .pq-btn{min-width:150px;height:50px;font-size:16px}
   .pq-screen[data-screen="play"]{padding:14px;gap:10px}
   .pq-enrage{font-size:17px}
   .pq-prog.pq-boss-hpbar{height:30px}
@@ -508,6 +659,17 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
   .pq-skill-strip .pq-skill-btn{flex-basis:92px;min-height:54px}
   .pq-game-attack{flex-basis:120px}
   .pq-attack-btn{font-size:22px}
+}
+/* 일반 노트북 높이(700~820px): 커버를 낮춰 카드 이름과 준비 상태까지 첫 화면에 */
+@media (min-width:900px) and (min-height:700px) and (max-height:820px){
+  .pq-room-main{gap:12px 16px}
+  .pq-raid-hero{min-height:168px}
+  .pq-raid-head{padding:24px 18px 12px}
+  .pq-raid-head h2{font-size:26px}
+  .pq-room-label{margin-bottom:6px}
+  .pq-room-chat .pq-chat{height:88px}
+  .pq-room-dock{padding:9px 24px 10px}
+  .pq-room-dock .pq-btn{height:44px}
 }
 /* ===== 공통 메시지 모달 (alert/confirm 대체) ===== */
 .msg-modal-bg{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.62);padding:16px}

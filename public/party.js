@@ -322,30 +322,45 @@
         }
     }
 
+    // 퀘스트 ID 난이도 분류: Nightmare > Extreme > Hard > Normal
+    function questDifficulty(id) {
+        const s = String(id || '');
+        return /Nightmare/i.test(s) ? 'nightmare' : (/Extreme/i.test(s) ? 'extreme' : (/Hard/i.test(s) ? 'hard' : 'normal'));
+    }
+    function coverUrl(file) { return file ? '/rpg-ui?file=' + encodeURIComponent(file) : ''; }
+    function questMeta(id) { return questDefs.find(q => q.id === id) || null; }
+
     function renderRoomList(list) {
         const root = $('#pqRoomList');
         root.replaceChildren();
-        root.style.display = 'flex';
-        root.style.flexDirection = 'column';
-        root.style.gap = '10px';
+        root.classList.add('pq-room-list');
         if (!list.length) {
             root.append(el('div', { class: 'pq-empty' }, '생성된 파티가 없습니다.'));
             return;
         }
         for (const r of list) {
-            const meta = el('div', { class: 'pq-room-meta' });
-            meta.append(el('span', { class: 'pq-pill' }, r.memberCount + '/' + r.maxPlayers + '명'));
-            if (r.hasPassword) meta.append(el('span', { class: 'pq-pill lock' }, '비공개'));
-            meta.append(el('span', { class: 'pq-pill' }, r.state === 'lobby' ? '대기 중' : '준비 중'));
-            const card = el('div', { class: 'pq-room-card', onClick: () => attemptJoin(r) },
-                el('div', null,
+            const q = questMeta(r.questId);
+            const difficulty = questDifficulty(r.questId);
+            const count = Number(r.memberCount || 0);
+            const max = Number(r.maxPlayers || 0);
+            const full = max > 0 && count >= max;
+            const cover = el('div', { class: 'pq-room-cover' });
+            if (q && q.coverImage) cover.append(el('img', { src: coverUrl(q.coverImage), alt: '', loading: 'lazy', decoding: 'async', draggable: 'false', onError: e => e.currentTarget.remove() }));
+            const pips = el('div', { class: 'pq-room-pips', 'aria-hidden': 'true' });
+            for (let i = 0; i < max; i++) pips.append(el('i', { class: i < count ? 'on' : null }));
+            root.append(el('button', { type: 'button', class: 'pq-room-card' + (full ? ' full' : ''), 'data-difficulty': difficulty, onClick: () => attemptJoin(r) },
+                cover,
+                el('div', { class: 'pq-room-body' },
+                    el('span', { class: 'pq-diff-tag', 'data-difficulty': difficulty }, difficulty.toUpperCase()),
                     el('div', { class: 'pq-room-quest' }, r.questName),
                     el('div', { class: 'pq-room-title' }, r.hostName + '님의 파티')
                 ),
-                el('div', { style: 'align-self:center;color:var(--text-2);font-weight:700' }, '→'),
-                meta
-            );
-            root.append(card);
+                el('div', { class: 'pq-room-side' },
+                    el('b', null, count + '/' + max),
+                    pips,
+                    r.hasPassword ? el('span', { class: 'lock' }, '비공개') : el('span', null, full ? '인원 마감' : r.state === 'lobby' ? '대기 중' : '준비 중')
+                )
+            ));
         }
     }
 
@@ -354,13 +369,13 @@
     function renderQuestCard() {
         const q = questDefs[questPickerIdx];
         if (!q) return;
-        const difficulty = /Extreme/i.test(q.id) ? 'extreme' : (/Hard/i.test(q.id) ? 'hard' : 'normal');
+        const difficulty = questDifficulty(q.id);
         const card = $('#pqQuestCard');
         card.dataset.difficulty = difficulty;
         const imgWrap = $('#pqQuestCardImg');
         imgWrap.replaceChildren();
         if (q.coverImage) {
-            imgWrap.append(el('img', { src: '/rpg-ui?file=' + encodeURIComponent(q.coverImage), alt: q.name, draggable: false, decoding: 'async' }));
+            imgWrap.append(el('img', { src: coverUrl(q.coverImage), alt: q.name, draggable: false, decoding: 'async' }));
         } else {
             imgWrap.append(el('div', { class: 'pq-quest-no-img' }, 'NO IMAGE'));
         }
@@ -370,7 +385,7 @@
         meta.replaceChildren();
         if (q.minLevel) meta.append(el('span', null, '입장 Lv.' + q.minLevel));
         if (q.recommendedPower) meta.append(el('span', null, '전투력 ' + Number(q.recommendedPower).toLocaleString()));
-        meta.append(el('span', null, q.minPlayers + '–' + q.maxPlayers + ' PLAYER'));
+        meta.append(el('span', null, q.minPlayers + '~' + q.maxPlayers + '인'));
         if (q.locked) meta.append(el('span', null, q.unlockError || '퀘스트 보상으로 해금 필요'));
         $('#pqCreateConfirm').disabled = !!q.locked;
         const pager = $('#pqQuestPager');
@@ -692,40 +707,107 @@
         }
     }
 
+    // 스냅샷 정의 + 퀘스트 목록 정의(커버, 입장 조건) 병합
+    function roomQuest(snap) {
+        const def = snap.questDef || {};
+        return Object.assign({}, questMeta(def.id || snap.questId) || {}, def);
+    }
+
+    let heroCoverSrc = null;
     function renderQuestInfo(snap) {
+        const q = roomQuest(snap);
+        const difficulty = questDifficulty(q.id || snap.questId);
+        const hero = $('#pqRaidHero');
+        if (hero) {
+            hero.dataset.difficulty = difficulty;
+            const tag = $('#pqRaidDiff');
+            tag.dataset.difficulty = difficulty;
+            tag.textContent = difficulty.toUpperCase();
+            const src = coverUrl(q.coverImage);
+            if (src !== heroCoverSrc) {
+                heroCoverSrc = src;
+                $('#pqRaidCover').replaceChildren(...(src ? [el('img', { src, alt: '', draggable: 'false', decoding: 'async', onError: e => e.currentTarget.remove() })] : []));
+            }
+            const lv = q.minLevel || q.level;
+            const power = q.recommendedPower || q.power;
+            const facts = [];
+            if (lv) facts.push(['입장', 'Lv.' + lv]);
+            if (power) facts.push(['권장 전투력', Number(power).toLocaleString()]);
+            if (q.maxPlayers) facts.push(['인원', (q.minPlayers || 1) + '~' + q.maxPlayers + '인']);
+            $('#pqRaidFacts').replaceChildren(...facts.map(([k, v]) => el('span', null, el('i', null, k), v)));
+        }
+        const host = $('#pqRoomHost');
+        if (host) host.textContent = snap.hostName ? snap.hostName + '님의 파티' : '';
         const box = $('#pqQuestInfo');
         box.replaceChildren();
-        const def = snap.questDef;
-        if (!def) {
-            box.append(el('div', null, '진행 중인 퀘스트입니다.'));
+        if (!snap.questDef) {
+            box.append(el('p', null, '진행 중인 퀘스트입니다.'));
             return;
         }
-        if (def.description) box.append(el('div', null, def.description));
-        const phases = (def.phases || []).map(p => p.name).join(', ');
-        if (phases) box.append(el('div', { style: 'margin-top:6px' }, el('b', null, '페이즈: '), phases));
-        if (def.potionLimit) box.append(el('div', { style: 'margin-top:4px;color:#94a3b8' }, '물약 최대 ' + def.potionLimit + '개 휴대 가능'));
+        if (q.description) box.append(el('p', null, q.description));
+        const phases = q.phases || [];
+        if (phases.length) box.append(el('ol', { class: 'pq-phase-route' },
+            ...phases.map((p, i) => el('li', { 'data-type': p.type || '' }, el('b', null, String(i + 1)), p.name))));
+    }
+
+    // 파티원+카드 URL → img. 스냅샷마다 초상화를 다시 요청하지 않도록 노드를 재사용 (실패 시 null)
+    const portraitCache = new Map();
+    function slotPlaceholder(m) {
+        return el('span', { class: 'pq-slot-ph' }, (m.name || '?').slice(0, 1));
+    }
+    function slotPortrait(m, key) {
+        let img = key ? portraitCache.get(key) : null;
+        if (key && img === undefined) {
+            const node = el('img', { src: m.card.imageUrl, alt: m.card.name || '', draggable: 'false', decoding: 'async' });
+            node.addEventListener('error', () => {
+                portraitCache.set(key, null);
+                node.replaceWith(slotPlaceholder(m));
+            });
+            portraitCache.set(key, node);
+            img = node;
+        }
+        return img || slotPlaceholder(m);
     }
 
     function renderMembers(snap) {
         const root = $('#pqMemberList');
-        root.replaceChildren();
-        for (const m of snap.members) {
-            const tags = el('div', { class: 'pq-row', style: 'gap:4px' });
-            if (m.name === snap.hostName) tags.append(el('span', { class: 'pq-tag host' }, '공대장'));
-            if (m.ready) tags.append(el('span', { class: 'pq-tag ready' }, '준비'));
-            if (!m.online) tags.append(el('span', { class: 'pq-tag off' }, '오프라인'));
-            const row = el('div', {
-                class: 'pq-member' + (m.name === snap.hostName ? ' host' : '') + (m.name === me ? ' me' : '')
-            },
-                el('div', { class: 'pq-avatar' }, (m.name || '?').slice(0, 1)),
-                el('div', null,
-                    el('div', { class: 'pq-name' }, titleImg(m.title), el('span', { class: 'pq-lv' }, 'Lv.' + (m.level || 1) + ' '), m.name, tags),
-                    snap.noPositions ? null : el('div', { class: 'pq-pos' + (m.position ? ' set' : '') }, m.position || '포지션 미선택')
+        const members = snap.members || [];
+        const slots = Math.max(members.length, Number(roomQuest(snap).maxPlayers || 0), 1);
+        root.style.setProperty('--slots', String(slots));
+        const used = new Set();
+        const cards = members.map(m => {
+            const isHost = m.name === snap.hostName;
+            const key = m.card && m.card.imageUrl ? m.name + '|' + m.card.imageUrl : '';
+            if (key) used.add(key);
+            const art = el('div', { class: 'pq-slot-art' }, slotPortrait(m, key));
+            if (m.card) {
+                const star = Number(m.card.star || 0);
+                art.append(el('span', { class: 'pq-slot-star' }, ['제타', '시그마', '오메가'][star - 9] || '★' + (star + 1)));
+            }
+            if (isHost) art.append(el('span', { class: 'pq-slot-lead' }, '공대장'));
+            if (m.card) art.append(el('span', { class: 'pq-slot-card' }, el('span', null, m.card.name || ''), m.card.type ? el('i', null, m.card.type) : null));
+            const state = !m.online ? ['off', '오프라인'] : m.ready ? ['ready', '준비 완료'] : ['wait', '준비 전'];
+            return el('div', { class: 'pq-slot ' + state[0] + (isHost ? ' host' : '') + (m.name === me ? ' me' : '') },
+                art,
+                el('div', { class: 'pq-slot-plate' },
+                    el('div', { class: 'pq-slot-name' }, titleImg(m.title), el('span', { class: 't', title: m.name }, m.name)),
+                    el('div', { class: 'pq-slot-sub' },
+                        el('span', null, 'Lv.' + (m.level || 1)),
+                        snap.noPositions ? null : el('span', { class: 'pos' + (m.position ? ' set' : '') }, m.position || '미선택')
+                    )
                 ),
-                el('div', null)
+                el('div', { class: 'pq-slot-state' }, state[1])
             );
-            root.append(row);
+        });
+        for (let i = members.length; i < slots; i++) {
+            cards.push(el('div', { class: 'pq-slot empty' },
+                el('div', { class: 'pq-slot-art' }, el('span', { class: 'pq-slot-ph' }, '빈 자리')),
+                el('div', { class: 'pq-slot-state' }, '모집 중')));
         }
+        for (const key of portraitCache.keys()) if (!used.has(key)) portraitCache.delete(key);
+        root.replaceChildren(...cards);
+        const count = $('#pqPartyCount');
+        if (count) count.textContent = members.length + ' / ' + slots;
     }
 
     function renderPositions(snap) {
@@ -736,11 +818,13 @@
         grid.replaceChildren();
         const myMember = snap.members.find(m => m.name === me);
         const myPos = myMember && myMember.position;
-        const taken = new Set(snap.members.filter(m => m.name !== me && m.position).map(m => m.position));
+        const owners = {};
+        snap.members.forEach(m => { if (m.name !== me && m.position) owners[m.position] = m.name; });
         for (const pos of (snap.positions || [])) {
             const isMine = pos === myPos;
-            const isTaken = taken.has(pos);
+            const isTaken = pos in owners;
             const btn = el('button', {
+                type: 'button',
                 class: 'pq-position-btn' + (isMine ? ' active' : '') + (isTaken && !isMine ? ' taken' : ''),
                 disabled: isTaken && !isMine ? true : false,
                 onClick: async () => {
@@ -749,13 +833,13 @@
                         await api('/api/party/position', { method: 'POST', body: JSON.stringify({ position: next }) });
                     } catch (e) { toast(e.message); }
                 }
-            }, pos);
+            }, el('span', null, pos), isTaken && !isMine ? el('small', null, owners[pos]) : null);
             grid.append(btn);
         }
         const detail = $('#pqPositionDetail');
         if (myPos && POS_DETAILS[myPos]) {
             detail.style.display = 'grid';
-            detail.replaceChildren(...POS_DETAILS[myPos].map(line => el('div', null, '• ' + line)));
+            detail.replaceChildren(...POS_DETAILS[myPos].map(line => el('div', null, line)));
         } else {
             detail.style.display = 'none';
         }
@@ -815,6 +899,15 @@
         const allReady = snap.members.length > 0 && snap.members.every(m => (snap.noPositions || m.position) && m.ready);
         startBtn.style.display = isHost ? 'inline-flex' : 'none';
         startBtn.disabled = !allReady;
+        const status = $('#pqRoomStatus');
+        if (status) {
+            const readyCount = snap.members.filter(m => m.ready).length;
+            let hint = '';
+            if (myMember && !snap.noPositions && !myMember.position) hint = '포지션을 선택하세요';
+            else if (isHost) hint = allReady ? '시작 가능' : '전원 준비 시 시작';
+            else if (myMember && myMember.ready) hint = '공대장 시작 대기';
+            status.replaceChildren(el('b', null, '준비 ' + readyCount + ' / ' + snap.members.length), hint ? el('span', null, hint) : null);
+        }
     }
 
     function showRoomScreenForState() {
@@ -1465,24 +1558,33 @@
         ].filter(Boolean));
     }
 
+    // 물약 아이콘. iconUrl이 없거나 로드 실패 시 이름 첫 글자 플레이스홀더
+    function potionIcon(p) {
+        const ph = () => el('span', { class: 'pq-potion-ph' }, String(p.name || '?').slice(0, 1));
+        return p.iconUrl ? el('img', { src: p.iconUrl, class: p.name === '투신의 함성 포션' ? 'pq-potion-full' : '', alt: '', draggable: 'false', decoding: 'async', onError: e => e.currentTarget.replaceWith(ph()) }) : ph();
+    }
+
+    let potionSummarySig = '';
     function renderPotionSummary(snap) {
         const sum = $('#pqPotionSummary');
         if (!sum) return;
         const myMember = snap.members.find(m => m.name === me);
         const list = (myMember && myMember.potions) || [];
         const limit = snap.potionLimit || 0;
-        sum.replaceChildren();
         const total = list.reduce((s, p) => s + Number(p.count || 0), 0);
-        sum.append(el('div', { style: 'color:#94a3b8;margin-bottom:4px' }, '휴대: ' + total + ' / ' + limit));
+        const count = $('#pqPotionCount');
+        if (count) count.textContent = total + ' / ' + limit;
+        const sig = list.map(p => p.name + ':' + p.count + ':' + (p.iconUrl || '')).join('|');
+        if (sig === potionSummarySig && sum.childElementCount) return;
+        potionSummarySig = sig;
         if (!list.length) {
-            sum.append(el('div', { style: 'color:#64748b;font-style:italic' }, '선택된 물약이 없습니다.'));
+            sum.replaceChildren(el('button', { type: 'button', class: 'pq-belt-empty', onClick: () => openPotionModal() }, '선택한 물약 없음'));
             return;
         }
-        const wrap = el('div');
-        for (const p of list) {
-            wrap.append(el('span', { class: 'pq-potion-chip' }, p.name + ' × ' + p.count));
-        }
-        sum.append(wrap);
+        sum.replaceChildren(...list.map(p => el('div', { class: 'pq-belt-slot', title: p.name + ' ×' + p.count },
+            el('div', { class: 'pq-belt-icon' }, potionIcon(p), el('b', null, '×' + p.count)),
+            el('span', null, p.name)
+        )));
     }
 
     async function openPotionModal() {
@@ -1520,25 +1622,33 @@
         refreshTotalDisplay();
 
         for (const p of available) {
-            const row = el('div', { class: 'pq-potion-row' });
-            row.append(el('div', { class: 'nm' }, p.name));
+            const row = el('div', { class: 'pq-potion-row' + (state[p.name] ? ' on' : '') });
+            const mark = () => row.classList.toggle('on', (state[p.name] || 0) > 0);
+            row.append(el('div', { class: 'pq-potion-art' }, potionIcon(p)));
+            row.append(el('div', { class: 'pq-potion-info' },
+                el('div', { class: 'nm' }, p.name),
+                p.desc ? el('div', { class: 'ef' }, p.desc) : null,
+                el('div', { class: 'own' }, '보유 ' + p.count)
+            ));
             const stepper = el('div', { class: 'pq-potion-stepper' });
-            const input = el('input', { type: 'number', min: '0', max: String(p.count), value: String(state[p.name] || 0) });
-            const minus = el('button', { type: 'button', onClick: () => {
+            const input = el('input', { type: 'number', min: '0', max: String(p.count), value: String(state[p.name] || 0), 'aria-label': p.name + ' 휴대 수량' });
+            const minus = el('button', { type: 'button', 'aria-label': '줄이기', onClick: () => {
                 const cur = Number(input.value) || 0;
                 input.value = String(Math.max(0, cur - 1));
                 state[p.name] = Number(input.value);
                 refreshTotalDisplay();
+                mark();
             } }, '−');
-            const plus = el('button', { type: 'button', onClick: () => {
+            const plus = el('button', { type: 'button', 'aria-label': '늘리기', onClick: () => {
                 const cur = Number(input.value) || 0;
                 const max = Math.min(p.count, cur + 1);
                 if (totalSelected() - (state[p.name] || 0) + max > limit) { toast('휴대 한도 초과'); return; }
                 input.value = String(max);
                 state[p.name] = max;
                 refreshTotalDisplay();
+                mark();
             } }, '+');
-            input.addEventListener('change', () => {
+            input.addEventListener('input', () => {
                 let n = Math.max(0, Math.floor(Number(input.value) || 0));
                 n = Math.min(p.count, n);
                 if (totalSelected() - (state[p.name] || 0) + n > limit) {
@@ -1548,14 +1658,10 @@
                 input.value = String(n);
                 state[p.name] = n;
                 refreshTotalDisplay();
+                mark();
             });
             stepper.append(minus, input, plus);
-            const right = el('div', { style: 'display:flex;flex-direction:column;align-items:flex-end;gap:4px' },
-                el('div', { class: 'own' }, '보유 ' + p.count),
-                stepper
-            );
-            row.append(right);
-            row.append(el('div', { class: 'ef' }, p.desc));
+            row.append(stepper);
             editor.append(row);
         }
 

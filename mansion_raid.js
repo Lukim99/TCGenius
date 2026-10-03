@@ -1,7 +1,7 @@
 // 기존 파티 전투의 피해·회복·그로기·HP 기믹 처리에 연결되는 대저택 패턴.
 function createMansionRaid(engine) {
     const E = engine;
-    const labels = { pillars: '기둥 하중 이동', sculpture: '완성하면 안 되는 작품', burden: '조의 의지', blessing: '미완성의 축복', dictation: 'edaa 받아쓰기', pulse: '맥동 제어', inversion: '봉인 역전', shards: '쏟아지는 조각', resonance: '공명 폭발', echo: '되울림', harden: '단단해지기', trial: '잔향 보호막 시련' };
+    const labels = { pillars: '기둥 하중 이동', sculpture: '완성하면 안 되는 작품', burden: '조의 의지', blessing: '미완성의 축복', dictation: 'edaa 받아쓰기', pulse: '맥동 제어', inversion: '봉인 역전', shards: '쏟아지는 조각', resonance: '공명 폭발', echo: '되울림', wall: '울리는 벽', rupture: '잔향 파열', harden: '단단해지기', trial: '잔향 보호막 시련' };
     const messages = {
         pillars: '네 개의 기둥이 비명을 지릅니다. 무게를 옮겨 붕괴를 막으십시오.',
         sculpture: '그의 큰 그림을 완성시켜 주세요',
@@ -14,6 +14,7 @@ function createMansionRaid(engine) {
         resonance: '삐비빅',
         echo: '삐빅. 삐빅.',
         wall: '우우웅.... 위잉....',
+        rupture: '...',
         harden: '조각의 피부가 윤택해집니다.',
         trial: '플레이어들에게 [시련]이 주어집니다.',
         transition: '틀이 깨졌다'
@@ -114,7 +115,7 @@ function createMansionRaid(engine) {
         return mon.bossState.events.some(event => ['shards', 'resonance', 'echo'].includes(event.kind) || event.kind === 'harden' && event.stage === 'wait');
     }
     function hasPendingAction(mon) {
-        return busy(mon) || mon.bossState.events.some(event => ['burden', 'pulse'].includes(event.kind) || event.kind === 'blessing' && event.stage === 'choice');
+        return mon.bossState.events.length > 0;
     }
     function dictationResult(room, mon, event, member) {
         if (event.responded.includes(member.name)) return;
@@ -196,7 +197,7 @@ function createMansionRaid(engine) {
             Object.assign(mon.stats, { hp: mon.hpMax, atk: mon.atk, def: mon.def, pnt: mon.pnt, crit: .6, critMul: byDifficulty(mon, 2, 2, 2.25) });
             mon.actionInterval = 2; mon.gauge = 0; mon.stunRemain = 0; mon.debuffs = []; mon.hpLines = mon.hpMax / 10000;
             mon.enrageSec = mon.enrageRemain = 60; mon.enraged = false;
-            E.addSupportGauge(room, 20); E.pushNotice(room, '잔향 봉인의 흡수와 방출 규칙이 반전됩니다', 'danger', 5000);
+            E.addSupportGauge(room, 20);
         }
         return true;
     }
@@ -207,8 +208,11 @@ function createMansionRaid(engine) {
         const kinds = mon.bossKey === '조각' ? ['shards', 'burden', 'blessing', 'harden', 'dictation'] : ['resonance', 'echo', 'wall', 'pulse'];
         if (st.form === 'echo') { st.echoElapsed += dt; st.echoTimer -= dt; }
         else for (const kind of kinds) st.timers[kind] -= dt;
+        const active = hasPendingAction(mon);
         tickEvents(room, mon, dt);
         if (room.state !== 'inProgress' || busy(mon)) return true;
+        // 종료한 패턴의 다음 tick에서 체력 기믹을 먼저 확인하고 다음 패턴을 시작한다.
+        if (active) return false;
         if (st.form === 'echo') {
             const times = [10, 22, 34, 46];
             if (st.inversionIndex < times.length && st.echoElapsed >= times[st.inversionIndex]) {
@@ -221,12 +225,11 @@ function createMansionRaid(engine) {
                     break;
                 }
                 st.inversionIndex++;
+                return true;
             }
             if (mon.stunRemain > 0) return true;
             if (st.echoTimer <= 1e-6) {
-                st.echoTimer += 10; mon.nextPattern = '잔향 파열'; attack(room, mon, .8);
-                E.pushNotice(room, '잔향 파열: ...', 'danger', 1500);
-                mon.nextPattern = st.events.at(-1)?.label || null;
+                st.echoTimer += 10; start(room, mon, 'rupture', 1.5); attack(room, mon, .8);
                 return true;
             }
             return false;
@@ -244,7 +247,7 @@ function createMansionRaid(engine) {
         else if (kind === 'resonance') start(room, mon, kind, 3);
         else if (kind === 'echo') { const members = alive(room).slice(); const targets = []; while (members.length && targets.length < 2) targets.push(members.splice(Math.floor(Math.random() * members.length), 1)[0].name); start(room, mon, kind, 4, { targets, hits: 0 }); }
         else if (kind === 'wall') {
-            E.pushNotice(room, messages.wall, 'danger', 1500);
+            start(room, mon, kind, 1.5);
             fixedAoe(room, byDifficulty(mon, .04, .06), '울리는 벽');
         }
         else if (kind === 'pulse') { const target = pick(alive(room)); if (target) start(room, mon, kind, byDifficulty(mon, 4, 3), { target: target.name, pulse: pick(['gather', 'scatter']) }); }

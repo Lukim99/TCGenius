@@ -966,7 +966,7 @@ function serializeMember(m) {
         card: m.card || null,
         position: m.position || null,
         ready: !!m.ready,
-        potions: m.potions.slice(),
+        potions: m.potions.map(potion => ({ ...potion, iconUrl: getPartyQuestItemAsset(getItemDef(potion.name)?.id).iconUrl })),
         online: !!m.sseRes,
         skills: (m.skills || []).slice(),
         skillDefs: publicSkillDefs(m.skillDefs),
@@ -1233,6 +1233,11 @@ function safePublicQuestInfo(questId) {
         id: q.id,
         name: q.name,
         description: q.description || '',
+        coverImage: q.coverImage || null,
+        minLevel: q.minLevel || null,
+        minPlayers: q.minPlayers || 1,
+        maxPlayers: q.maxPlayers || 5,
+        recommendedPower: q.recommendedPower || null,
         phases: (q.phases || []).map(p => ({ name: p.name, type: p.type })),
         noPositions: !!q.noPositions,
         positions: Object.fromEntries(POSITION_LIST.map(pos => {
@@ -5287,6 +5292,7 @@ async function getAvailablePotions(name) {
             out.push({
                 name: data.name,
                 count: Number(inv.count || 0),
+                iconUrl: getPartyQuestItemAsset(inv.id).iconUrl,
                 desc: funcs.map(potionFuncDesc).filter(Boolean).join(', ')
             });
         }

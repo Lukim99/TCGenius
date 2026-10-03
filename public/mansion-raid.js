@@ -6,7 +6,6 @@
 
     const LETTERS = ['a', 'b', 'c', 'd', 'e'];
     const PILLAR_NAMES = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ'];
-    const PILLAR_GOAL = 6;
     const PILLAR_SCALE = 12;
     const PILLAR_CD_MS = 500;
     const OUTCOME_MS = 2600;
@@ -15,12 +14,6 @@
     const MY_TURN = '◆ 내 차례';
     const DIFFICULTY_LABEL = { normal: 'NORMAL', hard: 'HARD', nightmare: 'NIGHTMARE' };
     const FORM_LABEL = { body: '본체', echo: '잔향', transition: '잔향 전환' };
-    const FORECAST_HINT = {
-        shards: '전원에게 1초 간격으로 3회 타격',
-        resonance: '전원에게 암속성 피해',
-        echo: '대상에게 1초 후 타격, 3초 후 후속 타격',
-        harden: '보스가 피해를 줄이고 감소한 만큼 회복'
-    };
 
     const roots = new WeakMap();
     const local = new Map(); // eventId -> 이 클라이언트만 아는 입력 상태
@@ -54,7 +47,6 @@
     }
     function setPressed(b, on) { b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
     const fmt = v => Math.max(0, Math.round(Number(v) || 0)).toLocaleString('ko-KR');
-    const pctOf = v => { v = Number(v) || 0; return v > 0 && v <= 1 ? v * 100 : v; };
     const pctText = v => (Math.round(v * 10) / 10) + '%';
     const names = list => Array.isArray(list) ? list.filter(Boolean).map(String) : [];
 
@@ -107,12 +99,11 @@
                     const pick = node('span', 'mr-pillar-pick');
                     const col = node('span', 'mr-pillar-col');
                     const fill = node('i', 'mr-pillar-fill');
-                    col.append(fill, node('i', 'mr-pillar-goal'));
+                    col.append(fill);
                     const val = node('b', 'mr-pillar-val');
-                    const diff = node('span', 'mr-pillar-diff');
-                    b.append(pick, node('span', 'mr-pillar-idx', name), col, val, diff);
+                    b.append(pick, node('span', 'mr-pillar-idx', name), col, val);
                     grid.append(b);
-                    return { b, pick, fill, val, diff };
+                    return { b, pick, fill, val };
                 });
                 card.cd = node('div', 'mr-cd');
                 card.cdFill = node('i');
@@ -122,17 +113,13 @@
             patch(st, card, ls) {
                 const loads = normLoads(card.ev.loads);
                 if (ls.from != null && !(loads[ls.from] > 0)) ls.from = null;
-                const done = loads.every(v => v === PILLAR_GOAL);
-                const lock = card.expired || done;
+                const lock = card.expired;
                 if (lock) ls.from = null;
                 card.pillars.forEach((p, i) => {
                     const v = loads[i];
-                    const d = v - PILLAR_GOAL;
                     const picked = ls.from === i;
                     setText(p.val, v);
                     p.fill.style.height = (Math.min(1, Math.max(0, v) / PILLAR_SCALE) * 100) + '%';
-                    p.b.dataset.state = d === 0 ? 'ok' : (d > 0 ? 'over' : 'under');
-                    setText(p.diff, d === 0 ? '✓ 정량' : (d > 0 ? '▲ +' + d : '▼ −' + Math.abs(d)));
                     setText(p.pick, picked ? '출발' : (ls.from != null ? '도착' : ''));
                     setPressed(p.b, picked);
                     setDisabled(p.b, lock || (ls.from == null && v <= 0));
@@ -140,11 +127,7 @@
                 });
                 return {
                     mine: !lock,
-                    tag: '전원',
-                    doText: done ? '모든 기둥 하중 6 달성. 판정 대기 중'
-                        : card.expired ? '시간 종료'
-                        : ls.from == null ? '하중을 모두 6으로 맞추세요. 출발 기둥 선택'
-                        : PILLAR_NAMES[ls.from] + '에서 옮길 기둥 선택 (다시 누르면 취소)'
+                    tag: '전원'
                 };
             }
         },
@@ -153,55 +136,33 @@
             who: '',
             build(st, card) {
                 const g = node('div', 'mr-gauge');
-                card.zone = node('i', 'mr-gauge-zone');
                 card.gFill = node('i', 'mr-gauge-fill');
                 card.gMark = node('i', 'mr-gauge-mark');
-                card.zoneLo = node('span', 'mr-gauge-lbl');
-                card.zoneHi = node('span', 'mr-gauge-lbl');
-                g.append(card.gFill, card.zone, card.gMark, card.zoneLo, card.zoneHi);
+                g.append(card.gFill, card.gMark);
                 const nums = node('div', 'mr-nums');
-                card.zoneState = node('span', 'mr-zone-state');
                 card.dmg = node('b', 'mr-num');
                 card.pct = node('span', 'mr-pct');
-                nums.append(card.zoneState, card.dmg, card.pct);
-                card.hidden75 = node('div', 'mr-hidden', '눈뜬 장님 효과: 석재 진행률 75%');
-                card.hidden75.hidden = true;
+                nums.append(card.dmg, card.pct);
                 card.finish = button('mr-act mr-finish', '완성', () => act(st, card, { action: 'finish' }, 'finish'));
-                card.body.append(g, nums, card.hidden75, card.finish);
+                card.body.append(g, nums, card.finish);
             },
             patch(st, card, ls) {
                 const ev = card.ev;
                 const max = Math.max(1, Number(ev.hpMax) || 1);
                 const dmg = Math.max(0, Number(ev.damage) || 0);
                 const pct = Math.min(100, dmg / max * 100);
-                const lo = Math.max(0, Math.min(100, pctOf(ev.minPct)));
-                const hi = Math.max(lo, Math.min(100, pctOf(ev.maxPct)));
-                card.zone.style.left = lo + '%';
-                card.zone.style.width = (hi - lo) + '%';
-                card.zoneLo.style.left = lo + '%';
-                card.zoneHi.style.left = hi + '%';
-                setText(card.zoneLo, pctText(lo));
-                setText(card.zoneHi, pctText(hi));
                 card.gFill.style.transform = 'scaleX(' + (pct / 100) + ')';
                 card.gMark.style.left = pct + '%';
-                const zone = pct < lo ? 'under' : (pct > hi ? 'over' : 'in');
-                card.node.dataset.zone = zone;
-                setText(card.zoneState, zone === 'in' ? '◆ 성공 구간' : (zone === 'under' ? '▼ 부족' : '▲ 초과'));
                 setText(card.dmg, fmt(dmg) + ' / ' + fmt(max));
                 setText(card.pct, pctText(pct));
-                card.hidden75.hidden = Math.abs(pct - 75) > 0.05;
                 const host = isHost(st);
                 const hname = hostName(st);
                 const pressed = names(ev.responded).includes(st.ctx.me) || ls.pending.has('finish');
                 card.finish.hidden = !host;
-                setText(card.finish, pressed ? '판정 중' : (zone === 'in' ? '완성' : '완성 (구간 밖)'));
-                setDisabled(card.finish, card.expired || pressed);
                 const mine = host && !pressed && !card.expired;
                 return {
                     mine,
-                    tag: host ? (mine ? MY_TURN : '공대장 (나)') : '공대장 ' + hname,
-                    doText: host ? '성공 구간에 도달하면 완성을 누르세요'
-                        : '석재 공격. 성공 구간에서 공대장이 완성 선택'
+                    tag: host ? '공대장 (나)' : '공대장 ' + hname
                 };
             }
         },
@@ -211,8 +172,7 @@
             build(st, card) {
                 const info = node('div', 'mr-split');
                 card.split = node('b', 'mr-big');
-                card.splitSub = node('span', 'mr-sub');
-                info.append(card.split, card.splitSub);
+                info.append(card.split);
                 card.support = button('mr-act', '받쳐주기', () => act(st, card, { action: 'support' }, 'support'));
                 card.body.append(info, card.support);
             },
@@ -222,9 +182,7 @@
                 const target = ev.target ? String(ev.target) : '';
                 const group = Array.from(new Set([target].concat(names(ev.responded)).filter(Boolean)));
                 const count = Math.max(1, group.length);
-                const total = Math.max(0, Number(ev.damage) || 0);
-                setText(card.split, '1인 ' + fmt(total / count));
-                setText(card.splitSub, '분담 ' + count + '명 (총 ' + fmt(total) + ')');
+                setText(card.split, count + '명');
                 const meTarget = !!me && target === me;
                 const joined = group.includes(me) || ls.pending.has('support');
                 card.support.hidden = meTarget;
@@ -235,9 +193,6 @@
                 return {
                     mine,
                     tag: meTarget ? '지정 대상 (나)' : (mine ? MY_TURN : '지정 ' + target),
-                    doText: meTarget ? '동료와 피해를 나누어 받습니다'
-                        : joined ? '참여 중. ' + target + '와 피해 분담'
-                        : target + '의 피해를 함께 받으려면 참여하세요',
                     who: group
                 };
             }
@@ -246,23 +201,17 @@
         blessing: {
             who: '',
             build(st, card) {
-                const lines = node('div', 'mr-lines');
-                card.acceptLine = node('div', 'mr-line');
-                card.rejectLine = node('div', 'mr-line', '거절: 효과 없음 (미응답 시 거절)');
-                lines.append(card.acceptLine, card.rejectLine);
                 const row = node('div', 'mr-btn-row');
                 card.accept = button('mr-act', '받아들이기', () => choose(st, card, 'accept'));
                 card.reject = button('mr-act', '거절하기', () => choose(st, card, 'reject'));
                 row.append(card.accept, card.reject);
-                card.body.append(lines, row);
+                card.body.append(row);
                 card.btnRow = row;
             },
             patch(st, card, ls) {
                 const ev = card.ev;
                 const target = ev.target ? String(ev.target) : '';
                 const meTarget = !!st.ctx.me && target === st.ctx.me;
-                const hpPct = st.view && st.view.difficulty === 'normal' ? 12 : 18;
-                setText(card.acceptLine, '수락: 8초간 최종 피해 +20%, 종료 시 최대 HP ' + hpPct + '% 피해');
                 const done = names(ev.responded).includes(target) || !!ls.choice;
                 card.btnRow.hidden = !meTarget;
                 setPressed(card.accept, ls.choice === 'accept');
@@ -273,10 +222,7 @@
                 const mine = meTarget && !done && !card.expired;
                 return {
                     mine,
-                    tag: meTarget ? (mine ? MY_TURN : '대상 (나)') : '대상 ' + target,
-                    doText: meTarget
-                        ? (done ? (ls.choice === 'accept' ? '수락' : ls.choice === 'reject' ? '거절' : '선택') + ' 완료. 결과 대기 중' : '받아들일지 선택')
-                        : (done ? target + ' 선택 완료' : target + ' 선택 대기')
+                    tag: meTarget ? (mine ? MY_TURN : '대상 (나)') : '대상 ' + target
                 };
             }
         },
@@ -320,33 +266,27 @@
                         ls.failed = false;
                     }
                 }
-                let allOk = true;
                 for (let i = 0; i < len; i++) {
                     const s = card.seqSlots[i];
                     setText(s.v, seq[i] || '?');
                     const t = card.typedSlots[i];
                     const c = ls.typed[i];
-                    const state = c == null ? (i === ls.typed.length ? 'next' : 'empty') : (!seq[i] ? 'in' : (c === seq[i] ? 'ok' : 'ng'));
-                    if (state === 'ng') allOk = false;
+                    const state = c == null ? (i === ls.typed.length ? 'next' : 'empty') : 'in';
                     t.slot.dataset.state = state;
                     setText(t.v, c || '');
-                    setText(t.m, state === 'ok' ? '✓' : (state === 'ng' ? '✕' : ''));
                 }
                 const full = ls.typed.length >= len;
                 const lock = full || card.expired;
                 card.keys.forEach(b => setDisabled(b, lock));
                 return {
                     mine: !lock,
-                    tag: lock ? '전원' : MY_TURN,
-                    doText: full ? (seq.length ? (allOk ? '입력 일치. 결과 대기 중' : '입력 불일치. 결과 대기 중') : '입력 완료. 결과 대기 중')
-                        : card.expired ? '시간 종료'
-                        : '표시된 글자를 순서대로 입력하세요'
+                    tag: lock ? '전원' : MY_TURN
                 };
             }
         },
 
-        pulse: pulseKind(false),
-        inversion: pulseKind(true),
+        pulse: pulseKind(),
+        inversion: pulseKind(),
 
         trial: {
             who: '',
@@ -373,12 +313,11 @@
                     card.shieldFill.style.transform = 'scaleX(' + Math.min(1, cur / max) + ')';
                 } else {
                     setText(card.big, fmt(ev.recorded));
-                    setText(card.sub, '기록 피해로 보호막 결정');
+                    setText(card.sub, '기록');
                 }
                 return {
                     mine: false,
-                    tag: shield ? '전원 파괴' : '전원 기록',
-                    doText: shield ? '제한 시간 안에 보호막을 파괴하세요' : '최대한 공격하세요. 보스 공격 정지, 지원군 피해 제외'
+                    tag: '전원'
                 };
             }
         },
@@ -386,31 +325,27 @@
         transition: {
             who: '',
             build() {},
-            patch() { return { mine: false, tag: '전원', doText: '잔향 전환 중 (전투 정지)' }; }
+            patch() { return { mine: false, tag: '전원' }; }
         }
     };
 
-    function pulseKind(inverse) {
+    function pulseKind() {
         return {
             who: '',
             build(st, card) {
                 const cue = node('div', 'mr-cue');
-                card.cueGlyph = node('span', 'mr-cue-glyph');
                 card.cueWord = node('b', 'mr-cue-word');
-                cue.append(card.cueGlyph, card.cueWord);
-                card.rule = node('div', 'mr-rule', inverse ? '모여듦: 흡수 / 흩어짐: 방출 (반전)' : '모여듦: 방출 / 흩어짐: 흡수');
+                cue.append(card.cueWord);
                 const row = node('div', 'mr-btn-row');
                 card.absorb = button('mr-act', '흡수', () => choose(st, card, 'absorb'));
                 card.release = button('mr-act', '방출', () => choose(st, card, 'release'));
                 row.append(card.absorb, card.release);
                 card.btnRow = row;
-                card.body.append(cue, card.rule, row);
+                card.body.append(cue, row);
             },
             patch(st, card, ls) {
                 const ev = card.ev;
                 const cue = ev.pulse === 'scatter' ? 'scatter' : 'gather';
-                card.node.dataset.cue = cue;
-                setText(card.cueGlyph, cue === 'gather' ? '→ ● ←' : '← ● →');
                 setText(card.cueWord, ev.cueText || (cue === 'gather' ? '기운이 한점으로 모여듭니다' : '기운이 사방으로 흩어집니다'));
                 const target = ev.target ? String(ev.target) : '';
                 const meTarget = !!st.ctx.me && target === st.ctx.me;
@@ -424,10 +359,7 @@
                 const mine = meTarget && !done && !card.expired;
                 return {
                     mine,
-                    tag: meTarget ? (mine ? MY_TURN : '담당 (나)') : '담당 ' + target,
-                    doText: meTarget
-                        ? (done ? '응답 완료. 결과 대기 중' : (inverse ? '반전된 규칙에 맞춰 선택하세요' : '신호를 보고 선택'))
-                        : (done ? target + ' 응답 완료' : target + ' 대응 중. 계속 공격하세요')
+                    tag: meTarget ? (mine ? MY_TURN : '담당 (나)') : '담당 ' + target
                 };
             }
         };
@@ -444,10 +376,9 @@
         for (let i = 0; i < len; i++) {
             const slot = node('span', 'mr-slot');
             const v = node('b');
-            const m = node('i');
-            slot.append(v, m);
+            slot.append(v);
             row.append(slot);
-            slots.push({ slot, v, m });
+            slots.push({ slot, v });
         }
         return slots;
     }
@@ -512,13 +443,12 @@
         const bar = node('div', 'mr-ev-bar');
         card.barFill = node('i');
         bar.append(card.barFill);
-        card.doEl = node('div', 'mr-ev-do');
         card.body = node('div', 'mr-ev-body');
         card.who = node('div', 'mr-ev-who');
         card.err = node('div', 'mr-ev-err');
         card.err.setAttribute('role', 'alert');
         card.err.hidden = true;
-        n.append(head, card.message, bar, card.doEl, card.body, card.who, card.err);
+        n.append(head, card.message, bar, card.body, card.who, card.err);
         card.node = n;
         spec.build(st, card);
         st.list.append(n);
@@ -551,16 +481,15 @@
             const uniq = Array.from(new Set(targets));
             const hit = !!me && uniq.includes(me);
             card.node.dataset.mine = hit ? '1' : '';
-            const base = FORECAST_HINT[card.kind] || '';
             const who = uniq.length ? uniq.map(x => x === me ? '나' : x).join(', ') : '';
-            setText(card.hint, (hit ? '◆ ' : '') + [who, base].filter(Boolean).join(': '));
+            card.hint.hidden = !who;
+            setText(card.hint, (hit ? '◆ ' : '') + who);
             return;
         }
         const ls = loc(card.id);
         const r = card.spec.patch(st, card, ls) || {};
         card.node.dataset.mine = r.mine ? '1' : '';
         setText(card.tag, r.tag || '전원');
-        setText(card.doEl, r.doText || '');
         patchWho(st, card, card.spec.who, r.who || names(ev.responded));
         const showErr = !!ls.err && performance.now() < ls.errUntil;
         card.err.hidden = !showErr;
