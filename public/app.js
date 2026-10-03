@@ -3612,7 +3612,7 @@ function renderPresets() {
 const HUNT_MENU = [
     { key: '일반 필드', level: 'Lv.1 ~ 300', action: () => { location.href = '/field'; } },
     { key: '헬 필드', level: 'Lv.141 ~ 300', action: () => { location.href = '/hfield'; } },
-    { key: '일일던전', level: 'Lv.101 ~ 300', action: null },
+    { key: '일일던전', level: 'Lv.101 ~ 300', action: () => { location.href = '/daily-dungeon'; } },
     { key: '월드보스', level: 'Lv.1 ~ 300', action: () => { location.href = '/worldboss'; } },
     { key: '레이드', level: 'Lv.71 ~ 300', action: async () => {
         try {
@@ -3620,7 +3620,8 @@ const HUNT_MENU = [
             if (state.canPartyQuest) location.href = '/party';
             else showAlert('레이드는 71레벨부터 이용할 수 있습니다.');
         } catch (e) { showAlert(e.message); }
-    } }
+    } },
+    { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } }
 ];
 
 function renderHuntMenu() {
@@ -3629,7 +3630,7 @@ function renderHuntMenu() {
     root.replaceChildren(...HUNT_MENU.map(entry => {
         const img = el('img', {
             class: 'hunt-card-bg',
-            src: '/rpg-ui?file=' + encodeURIComponent('사냥/' + entry.key + '.png'),
+            src: entry.imageUrl || '/rpg-ui?file=' + encodeURIComponent('사냥/' + entry.key + '.png'),
             alt: '',
             onerror: () => img.remove()
         });
@@ -6007,11 +6008,22 @@ function openShopBuyModal(item) {
         purchasing = true;
         buyBtn.disabled = true;
         buyBtn.textContent = '처리 중...';
+        let awakeningEffect;
         try {
+            const beginAwakening = () => window.FusionEffects.begin(buildPackageAwakeningStage(), { awakening: true, title: '각성 카드 획득', loadingText: '각성 카드를 깨우는 중…' });
+            if (isPackage && (d.bundleContents || []).some(reward => reward.cardType === '각성')) awakeningEffect = beginAwakening();
             const r = await fetch('/api/shop/buy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shopType: purchaseShopType, shopId: item.shopId, count: qty }) });
             const res = await r.json();
             if (!r.ok) throw new Error(res.error || '구매 실패');
             if (shopData) shopData.currencies = res.currencies;
+            setHeaderPoint(res.currencies.point);
+            for (const card of (res.grantedCards || []).filter(card => card.type === '각성')) {
+                if (!awakeningEffect) awakeningEffect = beginAwakening();
+                await awakeningEffect.reveal({ success: true, resultCard: card, message: '✨ ' + card.formatted + ' 획득! 캐릭터 카드 인벤토리에 지급되었습니다.' });
+                awakeningEffect.close();
+                awakeningEffect = null;
+            }
+            if (awakeningEffect) { awakeningEffect.close(); awakeningEffect = null; }
             if (res.choicePouch) {
                 setHeaderPoint(res.currencies.point);
                 finishCloseModal();
@@ -6019,10 +6031,11 @@ function openShopBuyModal(item) {
                 openChoicePouch(res.choicePouch.itemId, res.choicePouch.purchasedCount).catch(error => showAlert('구매가 완료되었습니다. 인벤토리에서 주머니를 열어주세요.\n' + error.message));
                 return;
             }
-            await loadShop();
+            await loadShop().catch(() => {});
             if (res.bundleGranted && res.bundleGranted.length > 0) openBundleGrantedModal(d.name, res.bundleGranted);
             else closeModal();
         } catch (e) {
+            if (awakeningEffect) awakeningEffect.close();
             purchasing = false;
             buyBtn.disabled = false;
             buyBtn.textContent = '구매';
@@ -6037,6 +6050,17 @@ function openShopBuyModal(item) {
     $('#modalSub').style.display = 'none';
     $('#modalBody').replaceChildren(content);
     $('#modalBg').classList.add('active');
+}
+
+function buildPackageAwakeningStage() {
+    const stage = el('div', { class: 'awakening-stage' });
+    for (let i = 0; i < 3; i++) {
+        const slot = el('div', { class: 'awakening-slot material-' + i + ' m' + i + ' empty' });
+        slot.style.visibility = 'hidden';
+        stage.appendChild(slot);
+    }
+    stage.appendChild(el('div', { class: 'awakening-slot result empty' }, el('img', { class: 'slot-card', alt: '획득한 각성 캐릭터 카드' })));
+    return stage;
 }
 
 // 번들 상품 구매 시 즉시 수령한 구성품을 보여주는 전용 모달

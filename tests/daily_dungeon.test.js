@@ -70,6 +70,7 @@ function sequence(values, fallback = 0) {
 
     const regularDungeons = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'DB', 'RPGenius', 'Dungeon.json'), 'utf8'));
     for (const [index, dungeon] of regularDungeons.entries()) {
+        if (dungeon.enabled === false) continue;
         const normalUser = makeUser('일반필드체력' + index, dungeon.requireLevel);
         assert.ok((await rpg.enterField(normalUser, dungeon.name, { confirmed: true })).startsWith('✅'));
         assert.ok(!normalUser.field.dailyDungeon);

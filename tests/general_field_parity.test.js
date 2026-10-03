@@ -3,20 +3,22 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
-const rpgenius = fs.readFileSync(path.join(root, 'rpgenius.js'), 'utf8');
+const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8').replace(/\r\n/g, '\n');
+const rpgenius = fs.readFileSync(path.join(root, 'rpgenius.js'), 'utf8').replace(/\r\n/g, '\n');
 const hfieldClient = fs.readFileSync(path.join(root, 'public', 'hfield.js'), 'utf8');
 const generalField = server.slice(server.indexOf('// ===== 일반 필드 ====='), server.indexOf('// ===== PVP ====='));
 
 [
-    "server.get('/api/field'",
-    "server.post('/api/field/enter'",
-    "server.post('/api/field/cancel-entry'",
-    "server.post('/api/field/attack'",
-    "server.post('/api/field/skill'",
-    "server.post('/api/field/use-consumable'",
-    "server.post('/api/field/leave'",
-    "server.post('/api/field/fragment'"
+    "registerGeneralFieldRoutes('/api/field')",
+    "registerGeneralFieldRoutes('/api/daily-dungeon', true)",
+    'server.get(apiBase,',
+    "server.post(apiBase + '/enter'",
+    "server.post(apiBase + '/cancel-entry'",
+    "server.post(apiBase + '/attack'",
+    "server.post(apiBase + '/skill'",
+    "server.post(apiBase + '/use-consumable'",
+    "server.post(apiBase + '/leave'",
+    "server.post(apiBase + '/fragment'"
 ].forEach(contract => assert.ok(generalField.includes(contract), '누락된 일반 필드 API 계약: ' + contract));
 
 [
@@ -46,7 +48,7 @@ assert.ok(hfieldClient.includes('outgoingHits.slice(1).forEach') && hfieldClient
 assert.ok(rpgenius.includes('const effectContext = getFieldCombatContext(user);') && rpgenius.includes('getFieldCombatTargetKey(user, effectContext) !== tickTargetKey'), 'overdue 장비 DoT는 매 효과 직전에 현재 대상과 페이즈를 다시 검증해야 합니다.');
 assert.ok(rpgenius.includes("phaseChanged: sameField && before.phase != phaseAfter") && rpgenius.includes('rewards: getFieldTickRewards(user, before, message)'), '백그라운드 틱은 피해/처치뿐 아니라 페이즈 전환과 보상도 이벤트에 보존해야 합니다.');
 assert.ok(rpgenius.includes('clearFieldTickEvents(userName);\n    delete activeFieldChannels[userName];'), '필드 퇴장 시 웹 틱 이벤트 버퍼를 함께 비워야 합니다.');
-assert.ok(generalField.includes('state.events = drainWebFieldTickEvents(user.name, state, true);'), '일반 필드 폴링은 일반몹 틱의 피해와 처치 이벤트를 공용 매퍼로 전달해야 합니다.');
+assert.ok(generalField.includes('state.events = drainWebFieldTickEvents(user.name, state, true, dailyMode);'), '일반·일일 필드 폴링은 일반몹 틱의 피해와 처치 이벤트를 공용 매퍼로 전달해야 합니다.');
 assert.ok(server.includes("action: 'tick'") && server.includes('rewards: Array.isArray(event && event.rewards)'), '웹 틱 이벤트는 렌더러가 소비할 action/hits/rewards 계약으로 매핑되어야 합니다.');
 assert.ok(server.includes('drainFieldActionEffectIds(user.name)') && server.includes('triggeredEffectIds,'), '일반/H필드는 실제로 발동한 장비·세트 이펙트 ID를 전투 이벤트에 전달해야 합니다.');
 assert.ok(hfieldClient.includes('effectCatalog.assetUrl(effectId)') && hfieldClient.includes('drawEffectAssets(time)'), '일반/H필드는 개별 생성 이펙트 PNG를 WebGL 텍스처로 재생해야 합니다.');

@@ -247,5 +247,21 @@
         "crafted": [
             { "type": "아이템", "item_id": 270, "count": 1 }
         ]
+    },
+    {
+        "name": "게임체인저",
+        "materials": [
+            {
+                "type": "아이템",
+                "item_id": 285,
+                "count": 10
+            }
+        ],
+        "crafted": [
+            {
+                "type": "장신구",
+                "accessory_id": 27
+            }
+        ]
     }
 ]

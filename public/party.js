@@ -368,6 +368,8 @@
         if (q.minLevel) meta.append(el('span', null, '입장 Lv.' + q.minLevel));
         if (q.recommendedPower) meta.append(el('span', null, '전투력 ' + Number(q.recommendedPower).toLocaleString()));
         meta.append(el('span', null, q.minPlayers + '–' + q.maxPlayers + ' PLAYER'));
+        if (q.locked) meta.append(el('span', null, q.unlockError || '퀘스트 보상으로 해금 필요'));
+        $('#pqCreateConfirm').disabled = !!q.locked;
         const pager = $('#pqQuestPager');
         if (pager) pager.textContent = (questPickerIdx + 1) + ' / ' + questDefs.length;
         const prev = $('#pqQuestPrev');
@@ -1897,6 +1899,7 @@
     $('#pqCreateClose').onclick = closeCreateModal;
     $('#pqCreateBg').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreateModal(); });
     $('#pqCreateConfirm').onclick = async () => {
+        if (questDefs[questPickerIdx] && questDefs[questPickerIdx].locked) return toast(questDefs[questPickerIdx].unlockError);
         const questId = questDefs[questPickerIdx] && questDefs[questPickerIdx].id;
         const password = $('#pqCreatePw').value;
         const button = $('#pqCreateConfirm');

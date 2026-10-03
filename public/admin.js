@@ -440,6 +440,15 @@ function entryRow(entry, opts, onChange, onDelete) {
             btn.onclick = () => pickTitle(tt => { entry.title_id = tt.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
+        } else if (t === '레이드해금') {
+            const raidSelect = el('select', { style: { flex: '1' } });
+            raidSelect.appendChild(el('option', { value: '' }, '해금할 레이드 선택...'));
+            getQuestTargets().then(targets => {
+                (targets.raids || []).forEach(raid => raidSelect.appendChild(el('option', { value: raid.id }, raid.name)));
+                raidSelect.value = entry.raid_id || '';
+            });
+            raidSelect.onchange = () => { entry.raid_id = raidSelect.value; onChange && onChange(); };
+            targetSlot.appendChild(raidSelect);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
             ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
@@ -449,6 +458,7 @@ function entryRow(entry, opts, onChange, onDelete) {
 
     function paintCount() {
         countSlot.innerHTML = '';
+        if (entry.type === '레이드해금') { delete entry.count; countSlot.appendChild(el('span', { class: 'lab' }, '영구 해금')); return; }
         // 보상 장비는 보통 count=1 고정 (제작 재료 장비는 수량 입력 허용)
         if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫' || entry.type === '칭호' || entry.type === '아바타') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
@@ -1422,7 +1432,7 @@ function questFormNode(q) {
     const rewardList = el('div', { class: 'entry-list' });
     q.rewards.forEach((reward, i) => {
         rewardList.appendChild(entryRow(reward,
-            { types: REWARD_TYPES, withRoll: false, countAsObject: true },
+            { types: [...REWARD_TYPES, '레이드해금'], withRoll: false, countAsObject: true },
             null,
             () => { q.rewards.splice(i, 1); renderQuest(); }
         ));

@@ -7,8 +7,10 @@
 
     const uiAsset = file => '/rpg-ui?file=' + encodeURIComponent(file);
     const effectCatalog = window.CombatEffects || null;
-    const regularMode = window.FIELD_MODE === 'regular';
-    const apiBase = regularMode ? '/api/field' : '/api/hfield';
+    const dailyMode = window.FIELD_MODE === 'daily';
+    const trainingMode = window.FIELD_MODE === 'training';
+    const regularMode = window.FIELD_MODE === 'regular' || dailyMode || trainingMode;
+    const apiBase = trainingMode ? '/api/training' : dailyMode ? '/api/daily-dungeon' : regularMode ? '/api/field' : '/api/hfield';
     const ASSETS = {
         background: uiAsset(regularMode ? '필드/뉴비즈.png' : '필드/부타게임H.png'),
         buta: uiAsset('필드/hfield-buta.png'),
@@ -65,6 +67,13 @@
     let dialog = null;
     let rewards = null;
     let selectedFieldName = '';
+    let rewardMeta = null;
+    let requestVersion = 0;
+    let syncing = false;
+    let trainingEditor = null;
+    let trainingAuto = false;
+    let autoAttackAt = 0;
+    let lastDailyClearKey = '';
 
     async function request(url, body) {
         const options = body === undefined ? {} : {
@@ -232,6 +241,7 @@
             if (!regularMode || !field) return;
             const backgroundUrl = field.backgroundUrl || field.background || '';
             const monster = field.monster || {};
+            if (monster.spriteUrl && monster.spriteUrl !== this.dummyUrl) { this.dummyUrl = monster.spriteUrl; this.loadTexture('dummy', monster.spriteUrl, true); }
             const atlasUrl = monster.atlasUrl || field.atlasUrl || '';
             if (backgroundUrl && backgroundUrl !== this.backgroundUrl) {
                 this.backgroundUrl = backgroundUrl; this.loadTexture('background', backgroundUrl);
@@ -597,7 +607,13 @@
                 this.burst(pillar.x, pillar.y, [1,.16,.05,1], 78);
                 for(let i=0;i<18;i++) this.particle({x:pillar.x,y:pillar.y,vx:(Math.random()-.5)*.28,vy:-.1-Math.random()*.2,life:.7+Math.random()*.6,maxLife:1.3,width:.008+Math.random()*.018,height:.012+Math.random()*.025,spin:(Math.random()-.5)*8,color:[.32,.15,.09,1],mode:3});
             }
-            if (!regularMode && event.cleared && previous) { this.holdState = JSON.parse(JSON.stringify(previous)); this.holdState.target.pillars = [false, false]; }
+            if (event.cleared && previous) { this.holdState = JSON.parse(JSON.stringify(previous)); if (!regularMode && this.holdState.target) this.holdState.target.pillars = [false, false]; }
+        }
+        timeBurst(type) {
+            const colors = { fever: [1,.25,.04,1], punch: [.1,.8,1,1], hit: [1,.75,.15,1], lucky: [.25,1,.45,1] };
+            const color = colors[type] || colors.hit;
+            this.burst(.74,.54,color,reducedMotion ? 12 : 48);
+            for (let i=0;i<3;i++) this.particle({ x:.74,y:.54,life:.75,maxLife:.75,width:.18+i*.1,height:.18+i*.1,grow:2,gravity:0,color:color.slice(),mode:4,delay:i*.08 });
         }
         rewardBurst(tier) {
             const colors = tier === 'mythic' ? [[.2,.78,1,1],[.75,.32,1,1],[1,.8,.2,1]] : [[1,.1,.2,1],[1,.55,.1,1],[1,.8,.2,1]];
@@ -619,7 +635,11 @@
                 this.drawPlayerAura(display.player,playerX,playerY,playerFit,time);
                 this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25]});
                 this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time<this.playerHitUntil?.75:0});
-                if (regularMode) {
+                if (trainingMode) {
+                    const fit=this.fit('dummy',narrow?.55:.66,narrow?.42:.34),hit=time<this.targetHitUntil;
+                    this.draw(null,.76,.82,fit.width,.1,{mode:1,color:[.1,.05,.01,.36]});
+                    this.draw(this.textures.dummy,.76+(hit?Math.sin(time*.12)*.008:0),narrow?.64:.62,fit.width,fit.height,{uv:[1,0,-1,1],rotation:hit?Math.sin(time*.05)*.035:0,flash:hit?.65:0});
+                } else if (regularMode) {
                     if (phase === 'elite') this.drawRegularElite(display,time,narrow);
                     else this.drawRegularMobs(display,time,narrow);
                     this.drawMobFlights(display,dt);
@@ -663,7 +683,7 @@
             c.fillStyle=g;c.fill();c.strokeStyle=disabled?'rgba(100,105,115,.48)':kind==='attack'?'rgba(255,170,155,.85)':kind==='gold'?'rgba(255,225,154,.9)':'rgba(232,176,75,.58)';c.lineWidth=1;c.stroke();
             if(!disabled)this.line(x+8,y+1,x+w*.55,y+1,kind==='attack'?'rgba(255,210,190,.72)':'rgba(232,176,75,.75)',2);
             if(o.key)this.text(o.key,x+7,y+9,8,800,'left',disabled?'#656a74':'#b9ad92');
-            const labelX=x+w*(Number(o.labelRatio)||.5),labelY=y+h*(Number(o.labelYRatio)||(o.sub?.42:.51)),labelSize=kind==='gold'?19:kind==='attack'?18:Math.min(13,w*.16),labelColor=disabled?'#747982':kind==='gold'?'#261704':'#f4f1e8';
+            const labelX=x+w*(Number(o.labelRatio)||.5),labelY=y+h*(Number(o.labelYRatio)||(o.sub?.42:.51)),labelSize=kind==='gold'?19:kind==='attack'?18:Math.min(13,Math.max(10,w*.16)),labelColor=disabled?'#747982':kind==='gold'?'#261704':'#f4f1e8';
             if(kind==='gold'||kind==='attack')this.gameText(o.label,labelX,labelY,labelSize,'center',labelColor,w-12);else this.text(o.label,labelX,labelY,labelSize,900,'center',labelColor,w-12);
             if(o.sub)this.text(o.sub,labelX,y+h*.72,9,700,'center',disabled?'#626771':kind==='gold'?'#3e290c':'#9da5b3',w-10);
             if(o.cooldown>0){this.cutPath(x,y,w,h,kind==='attack'?12:7);c.fillStyle='rgba(0,0,0,.64)';c.fill();this.gameText(o.cooldown<10?o.cooldown.toFixed(1):Math.ceil(o.cooldown),x+w/2,y+h/2,16,'center','#ffe28a');}
@@ -676,14 +696,14 @@
             if(regularMode&&state.phase==='normal'){
                 const field=state.activeField||state.currentField||{},kills=Number(state.killCount||0),progress=Math.min(100,kills);
                 this.text(field.name||state.fieldName||'일반 필드',w/2,y+9,narrow?16:20,900,'center','#f7f2e8');
-                this.text('누적 처치 '+number(kills)+'마리'+(kills>=100?' · 엘리트 조우 가능':''),w/2,y+27,9,800,'center',kills>=100?'#ffb36b':'#e8b04b');
-                this.bar(x,y+38,bw,narrow?12:15,progress,100,'#b87924');
+                this.text(dailyMode?number(kills)+' / '+number(state.daily.target)+'마리 · 일일 던전':'누적 처치 '+number(kills)+'마리'+(kills>=100?' · 엘리트 조우 가능':''),w/2,y+27,9,800,'center',kills>=100?'#ffb36b':'#e8b04b');
+                this.bar(x,y+38,bw,narrow?12:15,dailyMode?kills:progress,dailyMode?state.daily.target:100,'#b87924');
                 return;
             }
             const target=state.target||{},key=state.phase+':'+target.maxHp;
             if(this.bossKey!==key){this.bossKey=key;this.bossLagHp=Number(target.hp||0);}
             this.bossLagHp+=(Number(target.hp||0)-this.bossLagHp)*.055;
-            const meta=state.phase==='pillar'?'결계 기둥 '+(target.pillars||[]).filter(Boolean).length+' / 2':regularMode?'엘리트 몬스터':'';
+            const meta=trainingMode?({normal:'일반',elite:'엘리트',boss:'보스'}[target.kind]+' · 방어력 '+number(target.def)):state.phase==='pillar'?'결계 기둥 '+(target.pillars||[]).filter(Boolean).length+' / 2':regularMode?'엘리트 몬스터':'';
             this.text(target.name||'엘리트',w/2,y+9,narrow?16:20,900,'center','#f7f2e8');
             if(meta)this.text(meta,w/2,y+27,9,800,'center',regularMode?'#ff8b78':'#e8b04b');
             const by=y+(meta?38:28),bh=narrow?15:19;
@@ -717,7 +737,7 @@
             const level=field.levelText||('Lv. '+number(field.requireLevel||1));
             this.text(level,x+14,y+h-16,10,800,'left',enabled?'#e8b04b':'#717680',w-80);
             if(field.recommendedPower)this.text('권장 '+number(field.recommendedPower),x+w-12,y+h-16,9,700,'right','#bdc3cd',w*.45);
-            if(!enabled)this.text('잠김',x+w-13,y+18,10,900,'right','#d98d87');
+            if(!enabled)this.text(field.lockReason||'잠김',x+w-13,y+18,10,900,'right','#d98d87',w-24);
             this.region(x,y,w,h,()=>this.selectField(field));
         }
         regularLobby(w,h){
@@ -726,7 +746,7 @@
             const selected=fields.find(field=>field.name===selectedFieldName)||fields[0],narrow=w<650,compact=h<610,cols=narrow?1:w<980?2:3,rows=narrow?(compact?2:3):(compact?2:3),perPage=cols*rows,pages=Math.max(1,Math.ceil(fields.length/perPage));
             this.fieldPage=clamp(this.fieldPage,0,pages-1);const selectedIndex=fields.indexOf(selected);if(Math.floor(selectedIndex/perPage)!==this.fieldPage&&selectedIndex>=0)this.fieldPage=Math.floor(selectedIndex/perPage);
             const c=this.ctx,top=c.createLinearGradient(0,0,0,h);top.addColorStop(0,'rgba(0,0,0,.7)');top.addColorStop(.35,'rgba(0,0,0,.14)');top.addColorStop(1,'rgba(0,0,0,.86)');c.fillStyle=top;c.fillRect(0,0,w,h);
-            this.gameText('일반 필드',w/2,narrow?36:42,narrow?26:34,'center','#fff7e8');this.text('필드를 선택해 입장하세요',w/2,narrow?61:70,10,750,'center','#c7c9cd');
+            this.gameText(dailyMode?'일일 던전':'일반 필드',w/2,narrow?36:42,narrow?26:34,'center','#fff7e8');this.text(dailyMode?'하루 1회 · 5,000마리 처치 · 중도 퇴장 시 재입장 불가':'필드를 선택해 입장하세요',w/2,narrow?61:70,10,750,'center','#c7c9cd');
             const gridTop=narrow?82:91,gridBottom=h-(narrow?112:106),gap=narrow?8:11,gridW=Math.min(w-(narrow?24:44),1120),gridX=(w-gridW)/2,cellW=(gridW-gap*(cols-1))/cols,cellH=Math.max(82,(gridBottom-gridTop-gap*(rows-1))/rows);
             const pageFields=fields.slice(this.fieldPage*perPage,(this.fieldPage+1)*perPage),visibleBackgrounds=new Set(pageFields.map(field=>field.backgroundUrl||field.background).filter(Boolean));
             fields.forEach(field=>{const url=field.backgroundUrl||field.background;if(url&&!visibleBackgrounds.has(url))this.images.delete(url);});
@@ -735,6 +755,88 @@
             if(pages>1){const navW=narrow?70:84;this.actionButton(gridX,buttonY,navW,42,{label:'이전',disabled:this.fieldPage<=0,action:()=>{this.fieldPage--;const field=fields[this.fieldPage*perPage];if(field)this.selectField(field);}});this.actionButton(gridX+gridW-navW,buttonY,navW,42,{label:'다음',disabled:this.fieldPage>=pages-1,action:()=>{this.fieldPage++;const field=fields[this.fieldPage*perPage];if(field)this.selectField(field);}});this.text((this.fieldPage+1)+' / '+pages,w/2,buttonY-14,9,800,'center','#9da5b3');}
             this.actionButton(w/2-buttonW/2,buttonY,buttonW,48,{label:canEnter?'입장':'입장 불가',sub:selected?selected.name:'',kind:'gold',disabled:busy||!canEnter,action:()=>enter(false)});
             if(state.entryError)this.text(state.entryError,w/2,h-10,9,750,'center','#f0a39b',w-30);
+        }
+        dailyEffects(w,h) {
+            if (!dailyMode || !state || !state.inField) return;
+            const effects=state.daily.effects||[],now=Date.now()+clockOffset,narrow=w<650,bw=narrow?140:190,x=w-bw-12;
+            const names={fever:'피버타임',punch:'펀치타임',hit:'히트타임'},colors={fever:'#ff8645',punch:'#73dfff',hit:'#ffd272'};
+            ['fever','punch','hit'].forEach((type,index)=>{
+                const active=effects.filter(effect=>effect.type===type&&effect.expiresAt>now);if(!active.length)return;
+                const left=Math.max(0,(Math.min(...active.map(effect=>effect.expiresAt))-now)/1000),y=(narrow?172:88)+index*37;
+                this.panel(x,y,bw,31,colors[type]);this.text(names[type]+' ×'+active.length,x+9,y+15,narrow?10:12,900,'left',colors[type]);this.text(left.toFixed(1)+'s',x+bw-8,y+15,10,800,'right','#f8f0df');
+                this.bar(x+5,y+27,bw-10,3,left,10,colors[type]);
+            });
+        }
+        trainingControls(w,h) {
+            if (!trainingMode || !state || !state.training) return;
+            const narrow=w<650,m=state.training.metrics,pw=narrow?Math.min(218,w*.58):260,x=narrow?12:24,y=narrow?172:95;
+            this.panel(x,y,pw,128,'rgba(232,176,75,.7)');
+            this.text('DPS · 초당 피해',x+12,y+18,10,800,'left','#cdbf9e');
+            this.gameText(number(m.dps),x+12,y+44,narrow?25:32,'left','#ffe5a7',pw-24);
+            this.text('누적 '+number(m.damage),x+12,y+74,11,800,'left','#f1eee5',pw-24);
+            this.text('최근 '+number(m.lastDamage)+' · 최고 '+number(m.maxDamage),x+12,y+94,9,700,'left','#c6c6c6',pw-24);
+            this.text(number(m.hits)+'회 타격 · 치명타 '+number(m.criticals)+' · '+Number(m.elapsed).toFixed(1)+'초',x+12,y+113,9,700,'left','#b7b5ad',pw-24);
+            const by=h-(narrow?137:130),gap=6,bw=narrow?90:112,start=(w-(bw*3+gap*2))/2;
+            this.actionButton(start,by,bw,35,{label:'스탯 설정',kind:'gold',disabled:busy,action:openTrainingEditor});
+            this.actionButton(start+bw+gap,by,bw,35,{label:trainingAuto?'자동 공격 중':'자동 공격',disabled:busy,action:()=>{trainingAuto=!trainingAuto;autoAttackAt=0;}});
+            this.actionButton(start+(bw+gap)*2,by,bw,35,{label:'측정 초기화',disabled:busy,action:()=>configureTraining({})});
+        }
+        trainingSettingsLayer(w,h) {
+            if (!trainingEditor || !state || !state.training) return;
+            this.regions=[];
+            const e=trainingEditor,c=this.ctx,narrow=w<650,bw=Math.min(w-20,720),bh=Math.min(h-20,590),x=(w-bw)/2,y=(h-bh)/2;
+            c.fillStyle='rgba(0,0,0,.74)';c.fillRect(0,0,w,h);this.panel(x,y,bw,bh,'#dcae59',true);
+            this.gameText('훈련장 설정',w/2,y+28,25,'center','#fff1ca');
+            this.text('설정 적용 시 측정과 스킬 쿨타임이 초기화됩니다.',w/2,y+54,10,700,'center','#bfb9ae',bw-24);
+            this.actionButton(x+14,y+72,(bw-34)/2,34,{label:'내 스탯',kind:e.tab==='player'?'gold':'',action:()=>{e.tab='player';e.page=0;}});
+            this.actionButton(x+20+(bw-34)/2,y+72,(bw-34)/2,34,{label:'허수아비',kind:e.tab==='target'?'gold':'',action:()=>{e.tab='target';e.page=0;}});
+            let top=y+120;
+            if(e.tab==='target') {
+                const kw=(bw-44)/3;
+                ['normal','elite','boss'].forEach((kind,index)=>this.actionButton(x+14+index*(kw+8),top,kw,30,{label:{normal:'일반',elite:'엘리트',boss:'보스'}[kind],kind:e.target.kind===kind?'gold':'',action:()=>e.target.kind=kind}));
+                top+=39;this.actionButton(x+14,top,bw-28,27,{label:e.target.counterAttack?'반격 ON · 받는 피해 측정':'반격 OFF',action:()=>e.target.counterAttack=!e.target.counterAttack});top+=39;
+            }
+            const schema=e.tab==='player'?state.training.playerStats:state.training.targetStats,rowH=narrow?34:36,perPage=Math.max(1,Math.floor((y+bh-103-top)/rowH)),pages=Math.ceil(schema.length/perPage);
+            e.page=clamp(e.page,0,pages-1);
+            schema.slice(e.page*perPage,(e.page+1)*perPage).forEach((entry,index)=>{
+                const ry=top+index*rowH,value=trainingValue(e.tab,entry),shown=entry.percent?Math.round(value*10000)/100+'%':number(value),vx=x+bw-133;
+                this.line(x+14,ry+rowH-3,x+bw-14,ry+rowH-3,'rgba(199,181,141,.15)');
+                this.text(entry.label,x+17,ry+15,narrow?11:13,700,'left','#e5dfd1',bw-200);
+                this.panel(vx-40,ry,100,rowH-6,'rgba(211,173,93,.55)');this.text(shown,vx+10,ry+14,11,800,'center','#ffe7aa',94);
+                this.region(vx-40,ry,100,rowH-6,()=>{e.edit={entry,tab:e.tab,text:String(entry.percent?Math.round(value*10000)/100:value),fresh:true};});
+                this.actionButton(x+bw-66,ry,23,rowH-6,{label:'−',action:()=>adjustTrainingStat(entry,-1)});
+                this.actionButton(x+bw-39,ry,23,rowH-6,{label:'+',action:()=>adjustTrainingStat(entry,1)});
+            });
+            const nav=y+bh-86;
+            this.actionButton(x+14,nav,56,28,{label:'이전',disabled:e.page===0,action:()=>e.page--});
+            this.text((e.page+1)+' / '+pages,w/2,nav+14,10,800,'center','#c8c3b7');
+            this.actionButton(x+bw-70,nav,56,28,{label:'다음',disabled:e.page>=pages-1,action:()=>e.page++});
+            const footer=y+bh-45,fw=(bw-44)/3;
+            this.actionButton(x+14,footer,fw,32,{label:'실제 스탯 불러오기',disabled:busy,action:()=>configureTraining({restorePlayer:true,target:e.target})});
+            this.actionButton(x+22+fw,footer,fw,32,{label:'취소',action:()=>trainingEditor=null});
+            this.actionButton(x+30+fw*2,footer,fw,32,{label:'설정 적용',kind:'gold',disabled:busy,action:()=>configureTraining({player:e.player,target:e.target})});
+            if(e.edit)this.trainingNumberPad(w,h);
+        }
+        trainingNumberPad(w,h) {
+            this.regions=[];const e=trainingEditor.edit,c=this.ctx,bw=Math.min(w-32,340),bh=Math.min(h-24,382),x=(w-bw)/2,y=(h-bh)/2,gap=7,kw=(bw-36)/3,kh=(bh-154)/4;
+            c.fillStyle='rgba(0,0,0,.85)';c.fillRect(0,0,w,h);this.panel(x,y,bw,bh,'#dcae59',true);
+            this.text(e.entry.label,w/2,y+24,14,900,'center','#f4e7ca');this.gameText(e.text+(e.entry.percent?' %':''),w/2,y+57,25,'center','#ffdc8e',bw-22);
+            ['1','2','3','4','5','6','7','8','9','−','0','.'].forEach((key,i)=>this.actionButton(x+11+(i%3)*(kw+gap),y+84+Math.floor(i/3)*(kh+gap),kw,kh,{label:key,action:()=>trainingNumberKey(key==='−'?'-':key)}));
+            const fy=y+bh-38;
+            this.actionButton(x+11,fy,kw,28,{label:'지우기',action:()=>trainingNumberKey('Backspace')});
+            this.actionButton(x+11+kw+gap,fy,kw,28,{label:'취소',action:()=>trainingEditor.edit=null});
+            this.actionButton(x+11+(kw+gap)*2,fy,kw,28,{label:'확인',kind:'gold',action:()=>trainingNumberKey('Enter')});
+            if(e.error)this.text(e.error,w/2,y+76,9,700,'center','#ff9a80',bw-14);
+        }
+        dailyRewardLayer(w,h) {
+            this.regions=[];const c=this.ctx,narrow=w<650,elapsed=performance.now()-this.rewardStarted,lucky=rewardMeta&&rewardMeta.lucky,cx=w/2;
+            c.fillStyle='rgba(2,5,8,.92)';c.fillRect(0,0,w,h);
+            const glow=c.createRadialGradient(cx,h*.37,0,cx,h*.4,Math.min(w,h)*.7);glow.addColorStop(0,lucky?'rgba(24,104,55,.68)':'rgba(105,65,15,.6)');glow.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=glow;c.fillRect(0,0,w,h);
+            this.gameText(lucky?'LUCKY TIME ×2':'DUNGEON CLEAR',cx,h*.13,narrow?29:46,'center',lucky?'#a9ffc4':'#ffe8b0',w-24);
+            this.text(lucky?'럭키 타임! 아래 보상은 2배가 적용된 수량입니다.':'일일 던전 클리어 · 모든 보상을 획득했습니다.',cx,h*.2,narrow?10:13,800,'center','#e4e4d5',w-24);
+            const cols=narrow?3:Math.min(6,Math.max(1,rewards.length)),rows=Math.ceil(rewards.length/cols),size=Math.min(narrow?92:112,(w-32-(cols-1)*8)/cols,h*.53/Math.max(1,rows)/1.25),rowH=size*1.35;
+            rewards.forEach((reward,index)=>{const row=Math.floor(index/cols),rowCount=Math.min(cols,rewards.length-row*cols),start=cx-(rowCount*size+(rowCount-1)*8)/2+size/2;this.rewardCard(reward,start+(index%cols)*(size+8),h*.32+row*rowH+size*.55,size,clamp((elapsed-260-index*95)/350,0,1),false);});
+            this.actionButton(cx-100,h*.86,200,42,{label:elapsed>1200?'보상 확인':'보상 획득 중',kind:'gold',disabled:elapsed<=1200,action:closeRewards});
         }
         lobby(w,h){
             if(!state||state.inField)return;
@@ -767,8 +869,8 @@
             this.text('편린을 확인하기 전에는 다른 행동을 할 수 없습니다.',w/2,y+126,narrow?10:12,700,'center','#cbc6d1',bw-34);
             this.actionButton(w/2-(narrow?86:102),y+bh-72,narrow?172:204,50,{label:'편린 확인',kind:'gold',disabled:busy,action:()=>claimFragment()});
         }
-        rewardCard(reward,cx,cy,size,reveal,featured){const c=this.ctx,s=clamp(reveal,0,1),cardH=featured?size:size*1.22,x=cx-size/2,y=cy-cardH/2;c.save();c.translate(cx,cy);c.scale(s,s);c.translate(-cx,-cy);const accent=String(reward.rarity||'').startsWith('신화')?'rgba(117,207,255,.95)':String(reward.rarity||'').startsWith('초월')?'rgba(255,103,87,.95)':'rgba(232,176,75,.68)';this.panel(x,y,size,cardH,accent,true);const art=featured?size*.78:size*.68,ax=cx-art/2,ay=y+(featured?size*.09:size*.08),frame=this.image(reward.frameUrl),icon=this.image(reward.iconUrl);if(frame)c.drawImage(frame,ax,ay,art,art);if(icon)c.drawImage(icon,ax,ay,art,art);if(!featured){this.text(String(reward.name||'').slice(0,10),cx,y+cardH-21,Math.max(8,size*.1),800,'center','#f2eee5',size-8);this.text('x'+number(reward.count||1),cx,y+cardH-9,Math.max(8,size*.09),800,'center','#e8b04b');}const sweep=(performance.now()-this.rewardStarted)%1300/1300;if(sweep<.48){c.save();this.cutPath(x,y,size,cardH,8);c.clip();const sx=x-size*.2+sweep/0.48*size*1.4,g=c.createLinearGradient(sx-24,0,sx+24,0);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(.5,'rgba(255,255,255,.23)');g.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=g;c.fillRect(sx-24,y,48,cardH);c.restore();}c.restore();}
-        rewardLayer(w,h){if(!rewards)return;this.regions=[];const c=this.ctx,tier=rewardTier(rewards),now=performance.now(),elapsed=now-(this.rewardStarted||now),narrow=w<650,cx=w/2,high=tier!=='normal',tint=tier==='mythic'?'25,38,90':tier==='transcend'?'105,15,8':'50,35,12';c.fillStyle='rgba(2,3,6,.95)';c.fillRect(0,0,w,h);const glow=c.createRadialGradient(cx,h*.43,0,cx,h*.43,Math.min(w,h)*.65);glow.addColorStop(0,'rgba('+tint+',.72)');glow.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=glow;c.fillRect(0,0,w,h);for(let i=0;i<(narrow?24:42);i++){const a=i*2.399+now/2600,r=(i%7+1)/7*Math.min(w,h)*.5,px=cx+Math.cos(a)*r,py=h*.45+Math.sin(a)*r;c.fillStyle=tier==='mythic'?'rgba(144,190,255,.38)':'rgba(255,184,82,.35)';c.fillRect(px,py,i%3===0?3:1,i%3===0?3:1);}if(high){const sigil=this.image(tier==='mythic'?ASSETS.mythicSigil:ASSETS.transcendSigil),reveal=clamp(elapsed/700,0,1),sigilSize=Math.min(narrow?w*.9:520,h*.62);if(sigil){c.save();c.translate(cx,h*.43);c.rotate((tier==='mythic'?1:-1)*now/18000);c.globalAlpha=.22+.25*Math.sin(now/500);c.drawImage(sigil,-sigilSize/2,-sigilSize/2,sigilSize,sigilSize);c.restore();}const title=tier==='mythic'?'신화':'초월',color=tier==='mythic'?'#baddff':'#ffb080';this.text(title,cx,h*(narrow?.12:.13),narrow?34:50,900,'center',color);this.text('장비 획득',cx,h*(narrow?.17:.19),narrow?11:14,800,'center','#f3eadc');const featured=rewards.find(r=>String(r.rarity||'').startsWith(tier==='mythic'?'신화':'초월'))||rewards[0],fy=h*(narrow?.41:.43),fs=narrow?118:154;this.rewardCard(featured,cx,fy,fs,Math.min(1,reveal*1.14),true);this.text(featured.name,cx,fy+fs*.62,narrow?17:23,900,'center','#fff8ec',w-30);this.text(featured.rarity||'',cx,fy+fs*.82,narrow?10:12,800,'center',color);const rest=rewards.filter(r=>r!==featured).slice(0,narrow?4:6),rs=narrow?55:68,rg=8,start=cx-(rest.length*rs+Math.max(0,rest.length-1)*rg)/2+rs/2;rest.forEach((reward,index)=>this.rewardCard(reward,start+index*(rs+rg),h*.7,rs,clamp((elapsed-650-index*120)/340,0,1),false));}else{this.text('전리품 획득',cx,h*(narrow?.16:.18),narrow?27:38,900,'center','#ffe4a8');this.line(cx-Math.min(180,w*.34),h*(narrow?.2:.225),cx-45,h*(narrow?.2:.225),'rgba(232,176,75,.7)',1);this.line(cx+45,h*(narrow?.2:.225),cx+Math.min(180,w*.34),h*(narrow?.2:.225),'rgba(232,176,75,.7)',1);const list=rewards.slice(0,narrow?4:7),size=narrow?74:96,gap=narrow?7:10,start=cx-(list.length*size+Math.max(0,list.length-1)*gap)/2+size/2;list.forEach((reward,index)=>this.rewardCard(reward,start+index*(size+gap),h*.43,size,clamp((elapsed-250-index*110)/320,0,1),false));}const bw=narrow?190:220,by=h*(narrow?.84:.83);this.actionButton(cx-bw/2,by,bw,48,{label:elapsed>950?'확인':'보상 확인 중',kind:'gold',disabled:elapsed<=950,action:closeRewards});}
+        rewardCard(reward,cx,cy,size,reveal,featured){const c=this.ctx,s=clamp(reveal,0,1),cardH=featured?size:size*1.22,x=cx-size/2,y=cy-cardH/2;c.save();c.translate(cx,cy);c.scale(s,s);c.translate(-cx,-cy);const accent=String(reward.rarity||'').startsWith('신화')?'rgba(117,207,255,.95)':String(reward.rarity||'').startsWith('초월')?'rgba(255,103,87,.95)':'rgba(232,176,75,.68)';this.panel(x,y,size,cardH,accent,true);const art=featured?size*.78:size*.68,ax=cx-art/2,ay=y+(featured?size*.09:size*.08),frame=this.image(reward.frameUrl),icon=this.image(reward.iconUrl);if(frame)c.drawImage(frame,ax,ay,art,art);if(icon)c.drawImage(icon,ax,ay,art,art);if(!icon&&!frame)this.gameText(reward.kind==='exp'?'XP':reward.kind==='currency'?'G':reward.name.slice(0,2),cx,ay+art/2,Math.max(16,size*.3),'center','#ffe6a0');if(!featured){this.text(String(reward.name||'').slice(0,10),cx,y+cardH-21,Math.max(8,size*.1),800,'center','#f2eee5',size-8);this.text('x'+number(reward.count||1),cx,y+cardH-9,Math.max(8,size*.09),800,'center','#e8b04b');}const sweep=(performance.now()-this.rewardStarted)%1300/1300;if(sweep<.48){c.save();this.cutPath(x,y,size,cardH,8);c.clip();const sx=x-size*.2+sweep/0.48*size*1.4,g=c.createLinearGradient(sx-24,0,sx+24,0);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(.5,'rgba(255,255,255,.23)');g.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=g;c.fillRect(sx-24,y,48,cardH);c.restore();}c.restore();}
+        rewardLayer(w,h){if(!rewards)return;if(dailyMode){this.dailyRewardLayer(w,h);return;}this.regions=[];const c=this.ctx,tier=rewardTier(rewards),now=performance.now(),elapsed=now-(this.rewardStarted||now),narrow=w<650,cx=w/2,high=tier!=='normal',tint=tier==='mythic'?'25,38,90':tier==='transcend'?'105,15,8':'50,35,12';c.fillStyle='rgba(2,3,6,.95)';c.fillRect(0,0,w,h);const glow=c.createRadialGradient(cx,h*.43,0,cx,h*.43,Math.min(w,h)*.65);glow.addColorStop(0,'rgba('+tint+',.72)');glow.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=glow;c.fillRect(0,0,w,h);for(let i=0;i<(narrow?24:42);i++){const a=i*2.399+now/2600,r=(i%7+1)/7*Math.min(w,h)*.5,px=cx+Math.cos(a)*r,py=h*.45+Math.sin(a)*r;c.fillStyle=tier==='mythic'?'rgba(144,190,255,.38)':'rgba(255,184,82,.35)';c.fillRect(px,py,i%3===0?3:1,i%3===0?3:1);}if(high){const sigil=this.image(tier==='mythic'?ASSETS.mythicSigil:ASSETS.transcendSigil),reveal=clamp(elapsed/700,0,1),sigilSize=Math.min(narrow?w*.9:520,h*.62);if(sigil){c.save();c.translate(cx,h*.43);c.rotate((tier==='mythic'?1:-1)*now/18000);c.globalAlpha=.22+.25*Math.sin(now/500);c.drawImage(sigil,-sigilSize/2,-sigilSize/2,sigilSize,sigilSize);c.restore();}const title=tier==='mythic'?'신화':'초월',color=tier==='mythic'?'#baddff':'#ffb080';this.text(title,cx,h*(narrow?.12:.13),narrow?34:50,900,'center',color);this.text('장비 획득',cx,h*(narrow?.17:.19),narrow?11:14,800,'center','#f3eadc');const featured=rewards.find(r=>String(r.rarity||'').startsWith(tier==='mythic'?'신화':'초월'))||rewards[0],fy=h*(narrow?.41:.43),fs=narrow?118:154;this.rewardCard(featured,cx,fy,fs,Math.min(1,reveal*1.14),true);this.text(featured.name,cx,fy+fs*.62,narrow?17:23,900,'center','#fff8ec',w-30);this.text(featured.rarity||'',cx,fy+fs*.82,narrow?10:12,800,'center',color);const rest=rewards.filter(r=>r!==featured).slice(0,narrow?4:6),rs=narrow?55:68,rg=8,start=cx-(rest.length*rs+Math.max(0,rest.length-1)*rg)/2+rs/2;rest.forEach((reward,index)=>this.rewardCard(reward,start+index*(rs+rg),h*.7,rs,clamp((elapsed-650-index*120)/340,0,1),false));}else{this.text('전리품 획득',cx,h*(narrow?.16:.18),narrow?27:38,900,'center','#ffe4a8');this.line(cx-Math.min(180,w*.34),h*(narrow?.2:.225),cx-45,h*(narrow?.2:.225),'rgba(232,176,75,.7)',1);this.line(cx+45,h*(narrow?.2:.225),cx+Math.min(180,w*.34),h*(narrow?.2:.225),'rgba(232,176,75,.7)',1);const list=rewards.slice(0,narrow?4:7),size=narrow?74:96,gap=narrow?7:10,start=cx-(list.length*size+Math.max(0,list.length-1)*gap)/2+size/2;list.forEach((reward,index)=>this.rewardCard(reward,start+index*(size+gap),h*.43,size,clamp((elapsed-250-index*110)/320,0,1),false));}const bw=narrow?190:220,by=h*(narrow?.84:.83);this.actionButton(cx-bw/2,by,bw,48,{label:elapsed>950?'확인':'보상 확인 중',kind:'gold',disabled:elapsed<=950,action:closeRewards});}
         startEntryTransition(ticket){
             if(regularMode){this.entryTransition={start:performance.now(),duration:1650,field:ticket||{}};audio.stopBgm();audio.play('count',.52);return;}
             const cards=Array.from({length:30},(_,index)=>{const edge=index%4;return{targetX:(index%6+.5)/6+(Math.random()-.5)*.045,targetY:(Math.floor(index/6)+.5)/5+(Math.random()-.5)*.055,fromX:edge===0?-.16:edge===1?1.16:Math.random(),fromY:edge===2?-.2:edge===3?1.15:Math.random()*.72,delay:Math.random()*220,rotation:(Math.random()-.5)*1.2,spin:(Math.random()-.5)*5.4,sway:(Math.random()-.5)*.12};});
@@ -807,7 +909,7 @@
             });
         }
         loading(w,h){if(state)return;this.ctx.fillStyle='rgba(0,0,0,.68)';this.ctx.fillRect(0,0,w,h);const a=performance.now()/450;this.ctx.beginPath();this.ctx.arc(w/2,h/2,26,a,a+Math.PI*1.35);this.ctx.strokeStyle='#e8b04b';this.ctx.lineWidth=3;this.ctx.stroke();}
-        draw(){const{w,h}=this.resize(),c=this.ctx;c.clearRect(0,0,w,h);this.regions=[];const shake=this.shakeUntil>performance.now()&&!reducedMotion?(Math.random()-.5)*8:0;c.save();c.translate(shake,0);if(state){this.bossHud(w);this.playerHud(w,h);this.combatLog(w,h);this.actions(w,h);this.consumableLauncher(w,h);this.lobby(w,h);}this.topControls(w);this.damageLayer(w,h);this.bannerLayer(w,h);this.consumableLayer(w,h);this.dialogLayer(w,h);this.rewardLayer(w,h);this.fragmentLayer(w,h);this.loading(w,h);this.entryTransitionLayer(w,h);if(this.flashUntil>performance.now()){const left=this.flashUntil-performance.now();c.fillStyle='rgba(255,255,255,'+clamp(left/this.flashDuration,0,.34)+')';c.fillRect(0,0,w,h);}c.restore();this.frame=requestAnimationFrame(()=>this.draw());}
+        draw(){const{w,h}=this.resize(),c=this.ctx;c.clearRect(0,0,w,h);this.regions=[];const shake=this.shakeUntil>performance.now()&&!reducedMotion?(Math.random()-.5)*8:0;c.save();c.translate(shake,0);if(state){this.bossHud(w);this.playerHud(w,h);this.combatLog(w,h);this.actions(w,h);if(!trainingMode)this.consumableLauncher(w,h);this.trainingControls(w,h);this.dailyEffects(w,h);this.lobby(w,h);}this.topControls(w);this.damageLayer(w,h);this.bannerLayer(w,h);this.consumableLayer(w,h);this.dialogLayer(w,h);this.rewardLayer(w,h);this.fragmentLayer(w,h);this.trainingSettingsLayer(w,h);this.loading(w,h);this.entryTransitionLayer(w,h);if(this.flashUntil>performance.now()){const left=this.flashUntil-performance.now();c.fillStyle='rgba(255,255,255,'+clamp(left/this.flashDuration,0,.34)+')';c.fillRect(0,0,w,h);}c.restore();this.frame=requestAnimationFrame(()=>this.draw());}
         impact(strong){this.flashDuration=strong?260:130;this.flashUntil=performance.now()+this.flashDuration;if(strong)this.shakeUntil=performance.now()+380;}
         showBanner(text,sub){this.banner=text;this.bannerSub=sub||'';this.bannerUntil=performance.now()+1250;}
         startRewards(){this.rewardStarted=performance.now();}
@@ -823,29 +925,70 @@
         logs=logs.slice(-12);
     }
     function selectedField(){return state&&(state.fields||[]).find(field=>field&&field.name===selectedFieldName)||null;}
+    function openTrainingEditor() {
+        if (!trainingMode || !state || !state.training || busy) return;
+        trainingAuto=false;
+        trainingEditor={tab:'player',page:0,player:Object.assign({},state.training.overrides),target:Object.assign({},state.training.target),edit:null};
+    }
+    function trainingValue(tab,entry) {
+        const values=trainingEditor[tab],fallback=tab==='player'?state.training.stats:state.training.target;
+        return Number(Object.hasOwn(values,entry.key)?values[entry.key]:fallback[entry.key]||0);
+    }
+    function adjustTrainingStat(entry,direction) {
+        const e=trainingEditor,value=trainingValue(e.tab,entry),step=entry.percent?entry.step/100:entry.step;
+        e[e.tab][entry.key]=Math.round(clamp(value+direction*step,entry.min,entry.max)*1e6)/1e6;
+    }
+    function trainingNumberKey(key) {
+        const edit=trainingEditor&&trainingEditor.edit;if(!edit)return;
+        if(key==='Escape'){trainingEditor.edit=null;return;}
+        if(key==='Enter') {
+            const value=Number(edit.text)/(edit.entry.percent?100:1);
+            if(!edit.text.trim()||!Number.isFinite(value)||value<edit.entry.min||value>edit.entry.max||edit.entry.key==='maxCmb'&&!Number.isInteger(value)){edit.error='허용 범위 '+edit.entry.min+' ~ '+edit.entry.max;return;}
+            trainingEditor[edit.tab][edit.entry.key]=value;trainingEditor.edit=null;return;
+        }
+        if(key==='Backspace')edit.text=edit.fresh?'':edit.text.slice(0,-1);
+        else if(/^[0-9.\-]$/.test(key)&&edit.text.length<16)edit.text=(edit.fresh?'':edit.text)+key;
+        edit.fresh=false;edit.error=null;
+    }
+    async function configureTraining(body) {
+        if(busy)return;trainingAuto=false;setBusy(true);
+        try {const result=await request(apiBase+'/configure',body);applyState(result.state);addLog(result.message,result.ok?'good':'bad');if(result.ok){trainingEditor=null;hud.showBanner('훈련 준비 완료','새로운 설정으로 측정을 시작합니다');audio.play('start',.65);}else hud.showBanner('설정 확인',result.message);}
+        catch(error){addLog(error.message,'bad');}
+        finally{setBusy(false);}
+    }
+    function showDailyTimes(event) {
+        const labels={fever:['피버타임!','최종 피해 +300%'],punch:['펀치타임!','행동 쿨타임 1초'],hit:['히트타임!','추가 피해 +200%']};
+        (event.activatedEffects||[]).forEach(effect=>{const text=labels[effect.type];if(!text)return;if(renderer)renderer.timeBurst(effect.type);hud.showBanner(text[0],text[1]+' · 10초');hud.impact(true);audio.play(effect.type==='punch'?'crit':'start',.75);});
+    }
     function applyState(next,options) { if(!next)return;state=next;clockOffset=Number(next.serverNow||Date.now())-Date.now();if(regularMode&&!selectedFieldName){const fields=next.fields||[],preferred=[...fields].reverse().find(field=>field.canEnter!==false&&!field.locked)||fields[0];if(preferred)selectedFieldName=preferred.name;}if(renderer){renderer.setState(next);if(regularMode&&!next.inField){const preview=(next.fields||[]).find(field=>field.name===selectedFieldName);if(preview)renderer.previewField(preview);}}if(!next.inField)hud.closeConsumables();if(next.inField&&!(options&&options.deferBgm))audio.playBgm();else audio.stopBgm(); }
-    function setBusy(value){busy=value;}
+    function setBusy(value){busy=value;if(value)requestVersion++;}
     function showDialog(title,message,okLabel) { return new Promise(resolve=>{dialog={title,message,okLabel,cancel:()=>{dialog=null;resolve(false);},ok:()=>{dialog=null;resolve(true);}};}); }
     function rewardTier(list){if((list||[]).some(r=>String(r.rarity||'').startsWith('신화')))return'mythic';if((list||[]).some(r=>String(r.rarity||'').startsWith('초월')))return'transcend';return'normal';}
-    function showRewards(list){rewards=list||[];const tier=rewardTier(rewards);hud.startRewards();hud.impact(true);if(renderer)renderer.rewardBurst(tier);audio.play('clear',.82);audio.fanfare(tier);}
-    function closeRewards(){rewards=null;if(renderer)renderer.releaseHold();}
+    function showRewards(list,event){rewards=list||[];rewardMeta=event||{};const tier=rewardTier(rewards);hud.startRewards();hud.impact(true);if(renderer){renderer.rewardBurst(tier);if(rewardMeta.lucky)renderer.timeBurst('lucky');}audio.play('clear',.82);audio.fanfare(rewardMeta.lucky?'mythic':tier);}
+    function closeRewards(){rewards=null;rewardMeta=null;if(renderer)renderer.releaseHold();}
+    function recoverDailyClear(next) {
+        const daily=next&&next.daily;if(!dailyMode||!daily||daily.outcome!=='cleared'||!daily.clearReward)return;
+        const key=daily.date+':'+daily.finishedAt;if(lastDailyClearKey===key)return;
+        lastDailyClearKey=key;showRewards(next.clearRewards||[],{lucky:daily.clearReward.lucky});
+    }
     async function enter(confirmed){const field=regularMode?selectedField():null,canEnter=regularMode?field&&field.canEnter!==false&&!field.locked:state&&state.canEnter;if(busy||!state||(!confirmed&&!canEnter))return;audio.unlock();const transitionAsset=regularMode?field:state.ticket;setBusy(true);try{const body={confirmed:confirmed===true};if(regularMode)body.fieldName=field&&field.name||selectedFieldName;const result=await request(apiBase+'/enter',body);applyState(result.state,{deferBgm:result.ok});addLog(result.message,result.ok?'good':'bad');if(result.ok)hud.startEntryTransition((result.state&&result.state.activeField)||transitionAsset);else if(result.needsConfirmation){setBusy(false);const accepted=await showDialog('입장 경고',result.message,'입장');if(accepted)return enter(true);await request(apiBase+'/cancel-entry',regularMode?{fieldName:body.fieldName}:{});addLog('필드 입장을 취소했습니다.');}else audio.play('fail',.42);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
-    async function action(path,body){if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.animate(event,previous);hud.addDamage(event,previous);if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),90);if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(event.cleared)showRewards(event.rewards||[]);if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
+    async function action(path,body){if(busy||hud.inEntryTransition()||hud.inConsumableMenu()||!state||!state.inField||state.pendingFragment)return;audio.unlock();const previous=state;setBusy(true);try{const result=await request(apiBase+path,body||{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.animate(event,previous);hud.addDamage(event,previous);if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0||event.killedCount>0)audio.hit();if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0||event.killedCount>0)hud.impact(false);if(event.received>0)setTimeout(()=>audio.hit(),90);if(regularMode&&event.eliteEncountered){setTimeout(()=>hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다'),350);audio.play('start',.82);hud.impact(true);}if(regularMode&&event.eliteDefeated){hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(!regularMode&&event.pillarDestroyed!=null){const last=event.pillarDestroyed===1;hud.showBanner(last?'결계 붕괴':'기둥 파괴',last?'보상 봉인이 해제됩니다':'남은 기둥 1 / 2');audio.play(last?'clear':'crit',last?.72:.62);hud.impact(true);}if(dailyMode&&!event.cleared)showDailyTimes(event);if(event.cleared){if(dailyMode){lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;}showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);hud.impact(true);}}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
     async function useConsumable(itemId){if(busy||hud.inEntryTransition()||!state||!state.inField||state.pendingFragment)return;audio.unlock();setBusy(true);try{const result=await request(apiBase+'/use-consumable',{itemId:Number(itemId)});applyState(result.state);addLog(result.message,result.ok?'good':'bad');if(result.ok){const event=result.event||{};if(renderer)renderer.recoveryBurst(event);hud.addRecovery(event);audio.play('potion',.68);}else audio.play('fail',.32);}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
     function attack(){const now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||!state||state.pendingFragment||now<Number(state.nextActionAt||0))return;action('/attack',{});}
     function useSkill(name){const skill=state&&(state.skills||[]).find(s=>s.name===name),now=Date.now()+clockOffset;if(hud.inEntryTransition()||hud.inConsumableMenu()||state&&state.pendingFragment||!skill||now<Number(skill.cooldownEnd||0)||now<Number(state.nextActionAt||0))return;action('/skill',{skillName:name});}
     async function claimFragment(){if(!regularMode||busy||!state||!state.pendingFragment)return;setBusy(true);try{const result=await request(apiBase+'/fragment',{});applyState(result.state);addLog(result.message,result.ok?'good':'bad');if(result.ok){const fragmentEvent=result.event||{},fragmentRewards=Array.isArray(fragmentEvent.rewards)?fragmentEvent.rewards:[];audio.play('clear',.78);hud.showBanner('편린 보상 획득');if(fragmentRewards.length)showRewards(fragmentRewards);}}catch(error){addLog(error.message,'bad');audio.play('fail',.42);}finally{setBusy(false);}}
-    async function leave(){if(!state||!state.inField||state.pendingFragment)return;const accepted=await showDialog('필드 퇴장',regularMode?'현재 사냥을 끝내고 필드 선택으로 돌아갑니다.':'보상을 받지 못하며 사용한 초대장은 반환되지 않습니다.','퇴장');if(!accepted)return;setBusy(true);try{const result=await request(apiBase+'/leave',{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok)audio.stopBgm();}catch(error){addLog(error.message,'bad');}finally{setBusy(false);}}
-    function backOrLeave(){if(hud.inEntryTransition()||regularMode&&state&&state.pendingFragment)return;if(hud.inConsumableMenu()){hud.closeConsumables();return;}if(dialog){dialog.cancel();return;}if(rewards){closeRewards();return;}if(state&&state.inField)leave();else location.href='/';}
+    async function leave(){if(!state||!state.inField||state.pendingFragment)return;const accepted=await showDialog('필드 퇴장',dailyMode?'중도 퇴장하면 보상을 받을 수 없으며 오늘은 다시 입장할 수 없습니다.':regularMode?'현재 사냥을 끝내고 필드 선택으로 돌아갑니다.':'보상을 받지 못하며 사용한 초대장은 반환되지 않습니다.','퇴장');if(!accepted)return;setBusy(true);try{const result=await request(apiBase+'/leave',{});applyState(result.state);addLog(result.message,result.ok?'':'bad');if(result.ok)audio.stopBgm();}catch(error){addLog(error.message,'bad');}finally{setBusy(false);}}
+    function backOrLeave(){if(trainingMode){if(trainingEditor){trainingEditor=null;return;}trainingAuto=false;location.href='/';return;}if(hud.inEntryTransition()||regularMode&&state&&state.pendingFragment)return;if(hud.inConsumableMenu()){hud.closeConsumables();return;}if(dialog){dialog.cancel();return;}if(rewards){closeRewards();return;}if(state&&state.inField)leave();else location.href='/';}
     // 소환수(익테봇/수나타)·지속 피해(유서새김/장비 효과) 틱은 서버에서 백그라운드로 처리되므로 폴링 응답의 events로 데미지 팝업·로그를 그린다
-    function showTickEvents(events,previous){(events||[]).forEach((event,index)=>{const damage=Number(event.damage||0),kills=Number(event.killedCount||0);if(!(damage>0||kills>0||event.phaseChanged))return;setTimeout(()=>{hud.addDamage(Object.assign({criticalCount:0,skillName:event.source||''},event,{damage,killedCount:kills}),previous);if(damage>0||kills>0){hud.impact(false);audio.hit();if(renderer&&typeof renderer.tickHit==='function')renderer.tickHit(previous,event);}if(regularMode&&event.eliteEncountered){if(renderer)renderer.startEliteIntro(kills);hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다');audio.play('start',.82);hud.impact(true);}else if(regularMode&&event.eliteDefeated){if(renderer)renderer.startMobReturn();hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}else if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}},index*140);addLog((event.source||'소환수')+' → '+(damage>0?number(damage)+' 피해':'')+(kills>0?' · '+number(kills)+'마리 처치':''));});}
-    async function sync(quiet){if(busy)return;try{const previous=state,next=await request(apiBase);applyState(next,{deferBgm:hud.inEntryTransition()});if(previous&&previous.inField&&next.inField&&!hud.inEntryTransition()){showTickEvents(next.events,previous);if(regularMode&&previous.phase!==next.phase&&!(next.events||[]).some(event=>event&&(event.eliteEncountered||event.eliteDefeated))){const event={action:'tick',eliteEncountered:previous.phase==='normal'&&next.phase==='elite',eliteDefeated:previous.phase==='elite'&&next.phase==='normal'};if(renderer)renderer.animate(event,previous);hud.showBanner(event.eliteEncountered?'엘리트 조우':'엘리트 처치',event.eliteEncountered?'잡몹들을 밀어내며 등장합니다':'잡몹들이 다시 몰려듭니다');}}if(quiet&&previous&&previous.inField&&!next.inField){addLog('전투가 종료되었습니다.');audio.stopBgm();}}catch(error){if(!quiet)addLog(error.message,'bad');}}
+    function showTickEvents(events,previous){(events||[]).forEach((event,index)=>{const damage=Number(event.damage||0),kills=Number(event.killedCount||0);if(!(damage>0||kills>0||event.phaseChanged||event.cleared||event.defeated))return;setTimeout(()=>{hud.addDamage(Object.assign({criticalCount:0,skillName:event.source||''},event,{damage,killedCount:kills}),previous);if(damage>0||kills>0){hud.impact(false);audio.hit();if(renderer&&typeof renderer.tickHit==='function')renderer.tickHit(previous,event);}if(regularMode&&event.eliteEncountered){if(renderer)renderer.startEliteIntro(kills);hud.showBanner('엘리트 조우',event.eliteName||'잡몹들을 밀어내며 등장합니다');audio.play('start',.82);hud.impact(true);}else if(regularMode&&event.eliteDefeated){if(renderer)renderer.startMobReturn();hud.showBanner('엘리트 처치','잡몹들이 다시 몰려듭니다');audio.play('clear',.82);hud.impact(true);if((event.rewards||[]).length)setTimeout(()=>showRewards(event.rewards),1450);}else if(!regularMode&&event.phaseChanged){hud.showBanner('결계 발동','기둥 두 개를 파괴하세요');audio.play('start',.68);hud.impact(true);}if(event.cleared&&(!dailyMode||lastDailyClearKey!==state.daily.date+':'+state.daily.finishedAt)){if(dailyMode)lastDailyClearKey=state.daily.date+':'+state.daily.finishedAt;showRewards(event.rewards||[],event);}if(event.defeated){hud.showBanner('전투 패배');audio.play('fail',.72);}},index*140);addLog((event.source||'소환수')+' → '+(damage>0?number(damage)+' 피해':'')+(kills>0?' · '+number(kills)+'마리 처치':''));});}
+    async function sync(quiet){if(busy||syncing)return;syncing=true;const version=requestVersion;try{const previous=state,next=await request(apiBase);if(busy||version!==requestVersion)return;applyState(next,{deferBgm:hud.inEntryTransition()});if(previous&&previous.inField&&!hud.inEntryTransition()){showTickEvents(next.events,previous);if(regularMode&&next.inField&&previous.phase!==next.phase&&!(next.events||[]).some(event=>event&&(event.eliteEncountered||event.eliteDefeated))){const event={action:'tick',eliteEncountered:previous.phase==='normal'&&next.phase==='elite',eliteDefeated:previous.phase==='elite'&&next.phase==='normal'};if(renderer)renderer.animate(event,previous);hud.showBanner(event.eliteEncountered?'엘리트 조우':'엘리트 처치',event.eliteEncountered?'잡몹들을 밀어내며 등장합니다':'잡몹들이 다시 몰려듭니다');}}recoverDailyClear(next);if(quiet&&previous&&previous.inField&&!next.inField){addLog('전투가 종료되었습니다.');audio.stopBgm();}}catch(error){if(!quiet)addLog(error.message,'bad');}finally{syncing=false;}}
 
-    document.addEventListener('keydown',event=>{if(event.repeat)return;audio.unlock();const key=event.key.toLowerCase();if(hud.inConsumableMenu()){event.preventDefault();if(key==='escape'||event.code==='KeyP'){hud.closeConsumables();return;}if(key==='arrowleft'){hud.changeConsumablePage(-1,innerWidth,innerHeight);return;}if(key==='arrowright'){hud.changeConsumablePage(1,innerWidth,innerHeight);return;}if(/^[0-9]$/.test(key)){hud.useConsumableAt(key==='0'?9:Number(key)-1,innerWidth,innerHeight);}return;}if(event.code==='KeyP'&&state&&state.inField){event.preventDefault();hud.toggleConsumables();return;}if(key===' '||key==='j'){event.preventDefault();attack();return;}if(key==='e'&&state&&!state.inField){enter(false);return;}if(key==='escape'){event.preventDefault();backOrLeave();return;}if(/^[1-9]$/.test(key)&&state&&state.inField){const skill=state.skills[Number(key)-1];if(skill)useSkill(skill.name);}});
+    document.addEventListener('keydown',event=>{if(trainingEditor){event.preventDefault();if(trainingEditor.edit)trainingNumberKey(event.key);else if(event.key==='Escape')trainingEditor=null;return;}if(event.repeat)return;audio.unlock();const key=event.key.toLowerCase();if(hud.inConsumableMenu()){event.preventDefault();if(key==='escape'||event.code==='KeyP'){hud.closeConsumables();return;}if(key==='arrowleft'){hud.changeConsumablePage(-1,innerWidth,innerHeight);return;}if(key==='arrowright'){hud.changeConsumablePage(1,innerWidth,innerHeight);return;}if(/^[0-9]$/.test(key)){hud.useConsumableAt(key==='0'?9:Number(key)-1,innerWidth,innerHeight);}return;}if(event.code==='KeyP'&&state&&state.inField&&!trainingMode){event.preventDefault();hud.toggleConsumables();return;}if(trainingMode&&key==='s'){event.preventDefault();openTrainingEditor();return;}if(key===' '||key==='j'){event.preventDefault();attack();return;}if(key==='e'&&state&&!state.inField){enter(false);return;}if(key==='escape'){event.preventDefault();backOrLeave();return;}if(/^[1-9]$/.test(key)&&state&&state.inField){const skill=state.skills[Number(key)-1];if(skill)useSkill(skill.name);}});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)audio.stopBgm();else{sync(true);if(!hud.inEntryTransition())audio.playBgm();}});
     window.addEventListener('beforeunload',()=>audio.stopBgm());
 
     addLog('전투 준비 완료');
     sync(false);
-    pollTimer=setInterval(()=>{if(state&&state.inField)sync(true);},2000);
+    pollTimer=setInterval(()=>{if(state&&state.inField&&!trainingEditor&&!document.hidden)sync(true);},1000);
+    setInterval(()=>{if(trainingMode&&trainingAuto&&!trainingEditor&&!document.hidden&&!busy&&state&&Date.now()+clockOffset>=Number(state.nextActionAt||0)&&performance.now()>autoAttackAt){autoAttackAt=performance.now()+300;attack();}},100);
 })();

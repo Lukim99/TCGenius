@@ -575,6 +575,15 @@
             "rarity": "고유",
             "stat": { "skillTrueDmg": 888 },
             "plusStat": { "atk": 0.08 }
+        },
+        {
+            "name": "게임체인저",
+            "rarity": "고유",
+            "desc": "보스 몬스터 대상 추가 피해 +10%\n받는 피해 증가 +10%",
+            "plusStat": {
+                "bossDmg": 0.1,
+                "takenDamage": 0.1
+            }
         }
     ],
     "support": [

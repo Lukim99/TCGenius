@@ -79,9 +79,9 @@
         const audioReady = unlockAudio(); // Called directly from the user's click, before the request.
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         const dialog = make('dialog', 'fusion-cinema' + (options.awakening ? ' awakening' : options.job ? ' job' : '') + (reduced ? ' reduced' : ''));
-        dialog.setAttribute('aria-label', options.awakening ? '각성조합' : options.job ? '전직조합' : '카드 조합');
-        const heading = make('h2', 'fusion-cinema-title', options.awakening ? '각성조합' : options.job ? '전직의 힘을 깨웁니다' : '카드의 힘을 하나로');
-        const status = make('p', 'fusion-cinema-status', options.awakening ? '조합 중…' : '재료 카드가 반응하고 있어요');
+        dialog.setAttribute('aria-label', options.title || (options.awakening ? '각성조합' : options.job ? '전직조합' : '카드 조합'));
+        const heading = make('h2', 'fusion-cinema-title', options.title || (options.awakening ? '각성조합' : options.job ? '전직의 힘을 깨웁니다' : '카드의 힘을 하나로'));
+        const status = make('p', 'fusion-cinema-status', options.loadingText || (options.awakening ? '조합 중…' : '재료 카드가 반응하고 있어요'));
         status.setAttribute('role', 'status');
         const stage = source.cloneNode(true);
         stage.removeAttribute('id');
@@ -197,7 +197,7 @@
             if (!options.awakening && !reduced) gif.src = '/combine-ui?file=' + encodeURIComponent('조합-이펙트.gif') + '&t=' + Date.now();
             if (options.awakening) awakening.setPhase('seal'); else sound('seal');
             await wait(reduced ? 120 : options.awakening ? 1250 : 1500);
-            if (!closed) status.textContent = options.awakening ? '조합 중…' : '조합 결과를 확인하고 있어요…';
+            if (!closed) status.textContent = options.loadingText || (options.awakening ? '조합 중…' : '조합 결과를 확인하고 있어요…');
         })();
 
         async function reveal(data) {
@@ -230,7 +230,7 @@
             const success = options.awakening || options.job || !!data.success || omega;
             dialog.classList.add('revealed', success ? 'success' : 'failure');
             gif.removeAttribute('src');
-            heading.textContent = options.awakening ? '각성조합 완료' : options.job ? '전직조합 성공!' : omega ? '오메가 조합 완료!' : success ? (message.includes('확정') ? '확정 조합 성공!' : '조합 성공!') : '등급 상승 실패';
+            heading.textContent = options.title || (options.awakening ? '각성조합 완료' : options.job ? '전직조합 성공!' : omega ? '오메가 조합 완료!' : success ? (message.includes('확정') ? '확정 조합 성공!' : '조합 성공!') : '등급 상승 실패');
             status.textContent = options.awakening ? '각성 카드를 획득했습니다.' : options.job ? '새로운 힘이 깨어났습니다' : success ? '새로운 카드가 탄생했습니다' : '같은 등급의 카드를 획득했습니다';
             details.append(make('strong', 'fusion-cinema-card-name', card ? card.formatted || card.name : '조합 완료'));
             if (options.awakening) awakening.setPhase('reveal'); else sound(success ? options.job ? 'job' : 'success' : 'fail');

@@ -808,7 +808,7 @@ function grantPartyQuestClearRewards(room) {
     })();
 }
 
-function listQuestSummaries() {
+function listQuestSummaries(user) {
     return loadQuests().map(q => ({
         id: q.id,
         name: q.name,
@@ -819,7 +819,9 @@ function listQuestSummaries() {
         positions: POSITION_LIST.slice(),
         minLevel: q.minLevel || null,
         recommendedPower: q.recommendedPower || null,
-        coverImage: q.coverImage || null
+        coverImage: q.coverImage || null,
+        locked: !!rpgenius.getRaidUnlockError(user, q.id),
+        unlockError: rpgenius.getRaidUnlockError(user, q.id)
     }));
 }
 
@@ -1276,10 +1278,13 @@ async function createRoom(hostName, questId, password) {
     let hostInfo = null;
     try {
         const user = await rpgenius.getRPGUserByName(hostName);
+        if (!user) return { error: '캐릭터 정보를 불러올 수 없습니다.' };
+        const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
+        if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;
         if (quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
         if (user) hostInfo = { level, title: buildMemberTitle(user), card: buildMemberCard(user) };
-    } catch (_) {}
+    } catch (_) { return { error: '레이드 입장 정보를 확인하지 못했습니다. 다시 시도해주세요.' }; }
     const id = newRoomId();
     const room = {
         id,
@@ -1344,10 +1349,13 @@ async function joinRoom(roomId, name, password) {
     let joinInfo = null;
     try {
         const user = await rpgenius.getRPGUserByName(name);
+        if (!user || !quest) return { error: '레이드 입장 정보를 불러올 수 없습니다.' };
+        const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
+        if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;
         if (quest && quest.minLevel && level < quest.minLevel) return { error: 'Lv.' + quest.minLevel + ' 이상부터 입장할 수 있습니다. (현재 Lv.' + level + ')' };
         if (user) joinInfo = { level, title: buildMemberTitle(user), card: buildMemberCard(user) };
-    } catch (_) {}
+    } catch (_) { return { error: '레이드 입장 정보를 확인하지 못했습니다. 다시 시도해주세요.' }; }
     addMember(room, name, joinInfo);
     pushNotice(room, name + ' 입장', 'info', 3500);
     broadcastRoom(room);
@@ -1489,10 +1497,14 @@ async function start(hostName) {
 
     const quest = getQuestById(room.questId);
     // 사전 검증: 물약 보유량
+    if (!quest) return { error: '존재하지 않는 레이드입니다.' };
     const userMap = new Map();
     for (const m of room.members) {
         try {
             const user = await rpgenius.getRPGUserByName(m.name);
+            if (!user) return { error: m.name + '님의 캐릭터 정보를 확인하지 못했습니다.' };
+            const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
+            if (unlockError) return { error: m.name + ': ' + unlockError };
             if (user) userMap.set(m.name, user);
             if (user && m.potions && m.potions.length) {
                 const itemList = rpgenius.getDataCache('Item', []) || [];
@@ -1503,7 +1515,7 @@ async function start(hostName) {
                     }
                 }
             }
-        } catch (_) {}
+        } catch (_) { return { error: m.name + '님의 레이드 입장 정보를 확인하지 못했습니다.' }; }
     }
     // 실제 차감 + 저장
     for (const m of room.members) {

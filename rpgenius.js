@@ -147,6 +147,9 @@ const worldBossSkillTimers = {};
 const worldBossChannels = {};
 const activeFieldChannels = {};
 const fieldIktaeBotTimers = {};
+const FIELD_IKTAE_TICK_MS = 4000;
+const FIELD_SUNATA_TICK_MS = 5000;
+const FIELD_MARK_TICK_MS = 2000;
 // 유저 닉네임 → 해당 유저가 명령을 보낼 때 쓰는 큐 키(senderId). 타이머 틱을 같은 큐에 묶어 경합을 막는 데 사용.
 const fieldQueueKeys = {};
 // 봇/보스 타이머 틱을 유저의 명령 큐에 합류시켜, 유저의 수동 공격과 동시에 실행되어 한쪽 갱신이 유실(씹힘)되는 것을 방지한다.
@@ -154,13 +157,14 @@ function enqueueFieldTick(userName, task) {
     return enqueueUserCommand(fieldQueueKeys[userName] || userName, task);
 }
 
-function startFieldIktaeBot(userName) {
+function startFieldIktaeBot(userName, trainingUser) {
+    if (trainingUser) { const ticks = trainingUser.field.training.ticks || (trainingUser.field.training.ticks = {}); ticks.iktaeBot = Date.now() + FIELD_IKTAE_TICK_MS; return; }
     clearFieldIktaeBot(userName);
-    fieldIktaeBotTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldIktaeBotTick(userName)).catch(e => console.error('[iktaebot tick]', e.message)), 4000);
+    fieldIktaeBotTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldIktaeBotTick(userName)).catch(e => console.error('[iktaebot tick]', e.message)), FIELD_IKTAE_TICK_MS);
 }
 
 function ensureFieldIktaeBotTimer(user, channel) {
-    if (!user || !user.field || !user.field.iktaeBot) return;
+    if (!user || !user.field || user.field.training || !user.field.iktaeBot) return;
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldIktaeBotTimers[user.name]) return;
     startFieldIktaeBot(user.name);
@@ -205,7 +209,7 @@ function getFieldTargetHpForTick(user) {
 }
 function getRegularFieldKillCountForTick(user) {
     const field = user && user.field;
-    if (!field || field.hell || field.worldBoss || field.dailyDungeon) return null;
+    if (!field || field.hell || field.worldBoss) return null;
     return Number(field.killCount || 0);
 }
 function parseFieldTickDamage(message) {
@@ -260,12 +264,14 @@ function pushFieldTickEvent(userName, source, before, user, damageOverride, mess
     list.push({
         at: Date.now(), fieldName: before.fieldName, source, damage, killedCount,
         message: before.phase == 'worldBoss' ? message : undefined,
-        defeated: before.phase == 'worldBoss' && !sameField && Number(user.hp || 0) <= 1,
+        defeated: (before.phase == 'dailyDungeon' || before.phase == 'worldBoss') && !sameField && Number(user.hp || 0) <= 1,
         bossDefeated: before.phase == 'worldBoss' && !sameField && Number(getWorldBossState(before.fieldName).hp || 0) <= 0,
         phaseBefore: before.phase, phaseAfter,
         phaseChanged: sameField && before.phase != phaseAfter,
         eliteEncountered: sameField && before.phase == 'normal' && phaseAfter == 'elite',
         eliteDefeated: sameField && before.phase == 'elite' && phaseAfter == 'normal',
+        cleared: before.phase == 'dailyDungeon' && !sameField && /일일 던전 클리어/.test(String(message)),
+        lucky: before.phase == 'dailyDungeon' && /럭키 타임!/.test(String(message)),
         rewards: getFieldTickRewards(user, before, message)
     });
     if (list.length > 30) list.splice(0, list.length - 30);
@@ -279,14 +285,14 @@ function drainFieldTickEvents(userName) {
     return list;
 }
 
-async function runFieldIktaeBotTick(userName) {
-    const user = await getRPGUserByName(userName);
+async function runFieldIktaeBotTick(userName, trainingUser) {
+    const user = trainingUser || await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.iktaeBot) { clearFieldIktaeBot(userName); return; }
     if (Date.now() > user.field.iktaeBot.expired_at || user.field.iktaeBot.hp <= 0) {
         user.field.iktaeBot = null;
         clearFieldIktaeBot(userName);
-        await user.save();
+        if (!trainingUser) await user.save();
         return;
     }
     const context = getFieldCombatContext(user);
@@ -298,7 +304,11 @@ async function runFieldIktaeBotTick(userName) {
     const lines = [];
     const tickBefore = captureFieldTickState(user);
     let tickDamage;
-    if (context.type == 'hell') {
+    if (context.type == 'training') {
+        const result = buildTrainingHuntResult(user, context.dungeon, botDamage, extra);
+        lines.push(result);
+        tickDamage = parseFieldTickDamage(result);
+    } else if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, botDamage, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, botDamage, extra);
@@ -316,18 +326,19 @@ async function runFieldIktaeBotTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '익테봇', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save({ defer: true });
+    if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
 // ===== 수나타 소환 (이익태 전직 궁극기) — 체력 없는 공격 전용 소환 =====
 const fieldSunataTimers = {};
-function startFieldSunata(userName) {
+function startFieldSunata(userName, trainingUser) {
+    if (trainingUser) { const ticks = trainingUser.field.training.ticks || (trainingUser.field.training.ticks = {}); ticks.sunata = Date.now() + FIELD_SUNATA_TICK_MS; return; }
     clearFieldSunata(userName);
-    fieldSunataTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldSunataTick(userName)).catch(e => console.error('[sunata tick]', e.message)), 5000);
+    fieldSunataTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldSunataTick(userName)).catch(e => console.error('[sunata tick]', e.message)), FIELD_SUNATA_TICK_MS);
 }
 function ensureFieldSunataTimer(user, channel) {
-    if (!user || !user.field || !user.field.sunata) return;
+    if (!user || !user.field || user.field.training || !user.field.sunata) return;
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldSunataTimers[user.name]) return;
     startFieldSunata(user.name);
@@ -338,14 +349,14 @@ function clearFieldSunata(userName) {
         delete fieldSunataTimers[userName];
     }
 }
-async function runFieldSunataTick(userName) {
-    const user = await getRPGUserByName(userName);
+async function runFieldSunataTick(userName, trainingUser) {
+    const user = trainingUser || await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.sunata) { clearFieldSunata(userName); return; }
     if (Date.now() > user.field.sunata.expired_at) {
         user.field.sunata = null;
         clearFieldSunata(userName);
-        await user.save();
+        if (!trainingUser) await user.save();
         const ch = activeFieldChannels[userName] || worldBossChannels[userName];
         if (ch) ch.sendChat('🎵 수나타의 소환이 종료되었습니다.');
         return;
@@ -359,7 +370,11 @@ async function runFieldSunataTick(userName) {
     const lines = [];
     const tickBefore = captureFieldTickState(user);
     let tickDamage;
-    if (context.type == 'hell') {
+    if (context.type == 'training') {
+        const result = buildTrainingHuntResult(user, context.dungeon, dmg, extra);
+        lines.push(result);
+        tickDamage = parseFieldTickDamage(result);
+    } else if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
@@ -376,16 +391,17 @@ async function runFieldSunataTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '수나타', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save({ defer: true });
+    if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 const fieldMarkTimers = {};
-function startFieldMark(userName) {
+function startFieldMark(userName, trainingUser) {
+    if (trainingUser) { const ticks = trainingUser.field.training.ticks || (trainingUser.field.training.ticks = {}); ticks.mark = Date.now() + FIELD_MARK_TICK_MS; return; }
     clearFieldMark(userName);
-    fieldMarkTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldMarkTick(userName)).catch(e => console.error('[mark tick]', e.message)), 2000);
+    fieldMarkTimers[userName] = setInterval(() => enqueueFieldTick(userName, () => runFieldMarkTick(userName)).catch(e => console.error('[mark tick]', e.message)), FIELD_MARK_TICK_MS);
 }
 function ensureFieldMarkTimer(user, channel) {
-    if (!user || !user.field || !user.field.mark) return;
+    if (!user || !user.field || user.field.training || !user.field.mark) return;
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldMarkTimers[user.name]) return;
     startFieldMark(user.name);
@@ -396,14 +412,14 @@ function clearFieldMark(userName) {
         delete fieldMarkTimers[userName];
     }
 }
-async function runFieldMarkTick(userName) {
-    const user = await getRPGUserByName(userName);
+async function runFieldMarkTick(userName, trainingUser) {
+    const user = trainingUser || await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     if (!user || !user.field || !user.field.mark) { clearFieldMark(userName); return; }
     if (Date.now() > user.field.mark.expired_at) {
         user.field.mark = null;
         clearFieldMark(userName);
-        await user.save();
+        if (!trainingUser) await user.save();
         const ch = activeFieldChannels[userName] || worldBossChannels[userName];
         if (ch) ch.sendChat('✍️ 유서새김의 표식이 사라졌습니다.');
         return;
@@ -416,7 +432,11 @@ async function runFieldMarkTick(userName) {
     const lines = [];
     const tickBefore = captureFieldTickState(user);
     let tickDamage;
-    if (context.type == 'hell') {
+    if (context.type == 'training') {
+        const result = buildTrainingHuntResult(user, context.dungeon, dmg, extra);
+        lines.push(result);
+        tickDamage = parseFieldTickDamage(result);
+    } else if (context.type == 'hell') {
         lines.push(buildEliteHuntResult(user, context.dungeon, dmg, extra));
     } else if (context.type == 'worldBoss') {
         const result = dealDamageToWorldBoss(user, context.boss, dmg, extra);
@@ -433,13 +453,13 @@ async function runFieldMarkTick(userName) {
         tickDamage = parseFieldTickDamage(result);
     }
     pushFieldTickEvent(userName, '유서새김', tickBefore, user, tickDamage, lines.join('\n'));
-    await user.save({ defer: true });
+    if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
 
 const fieldEquipmentDotTimers = {};
 function ensureFieldEquipmentDotTimer(user, channel) {
-    if (!user || !user.field) return;
+    if (!user || !user.field || user.field.training) return;
     const state = user.field.equipmentState || {};
     if (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
     if (channel) activeFieldChannels[user.name] = channel;
@@ -451,8 +471,8 @@ function clearFieldEquipmentDotTimer(userName) {
     clearInterval(fieldEquipmentDotTimers[userName]);
     delete fieldEquipmentDotTimers[userName];
 }
-async function runFieldEquipmentDotTick(userName) {
-    const user = await getRPGUserByName(userName);
+async function runFieldEquipmentDotTick(userName, trainingUser) {
+    const user = trainingUser || await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const state = user && user.field && user.field.equipmentState;
     if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
@@ -476,7 +496,7 @@ async function runFieldEquipmentDotTick(userName) {
             const stats = calculateUserStats(user);
             const defenderStats = context.type == 'worldBoss'
                 ? getWorldBossDefenderStats(context.boss)
-                : getCombatStats(context.dungeon && ((context.type == 'normal' || context.type == 'dailyDungeon') ? context.dungeon : context.dungeon.elite));
+                : getCombatStats(context.dungeon && ((context.type == 'normal' || context.type == 'dailyDungeon' || context.type == 'training') ? context.dungeon : context.dungeon.elite));
             const lightMul = getElementDamageMultiplier('명', stats, defenderStats);
             const damage = Math.max(1, Math.round(Number(state.judgment.damage || 0) * .15 * lightMul));
             if (Number(state.judgment.damage || 0) > 0) pending.push({ label: '심판 폭발', rawDamage: damage, precalculated: true, element: '명' });
@@ -529,7 +549,11 @@ async function runFieldEquipmentDotTick(userName) {
         const tickBefore = captureFieldTickState(user);
         let tickDamage;
         let effectMessage = '';
-        if (effectContext.type == 'worldBoss') {
+        if (effectContext.type == 'training') {
+            effectMessage = buildTrainingHuntResult(user, effectContext.dungeon, effect.rawDamage, extra);
+            lines.push(effectMessage);
+            tickDamage = parseFieldTickDamage(effectMessage);
+        } else if (effectContext.type == 'worldBoss') {
             const result = dealDamageToWorldBoss(user, effectContext.boss, effect.rawDamage, extra);
             tickDamage = Number(result.damage || 0);
             effectMessage = '🔥 ' + effect.label + '! ' + effectContext.boss.name + '에게 ' + comma(result.damage) + ' 피해';
@@ -553,8 +577,19 @@ async function runFieldEquipmentDotTick(userName) {
         pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickBefore, user, tickDamage, effectMessage);
     }
     if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
-    await user.save({ defer: true });
+    if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
+}
+
+async function tickTrainingCombat(user) {
+    if (!user.field || !user.field.training) return;
+    const now = Date.now(), ticks = user.field.training.ticks || (user.field.training.ticks = {});
+    for (const [key, interval, run] of [['iktaeBot', FIELD_IKTAE_TICK_MS, runFieldIktaeBotTick], ['sunata', FIELD_SUNATA_TICK_MS, runFieldSunataTick], ['mark', FIELD_MARK_TICK_MS, runFieldMarkTick]]) {
+        if (!user.field[key]) { delete ticks[key]; continue; }
+        if (!ticks[key]) ticks[key] = now + interval;
+        if (now >= ticks[key]) { ticks[key] = now + interval; await run(user.name, user); }
+    }
+    await runFieldEquipmentDotTick(user.name, user);
 }
 const commandQueues = {};
 const petShortcutCache = {};
@@ -583,8 +618,8 @@ function normalizeQuestData(data) {
         : def);
 }
 
-async function loadRpgeniusDataEntry(key) {
-    const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key }, ...(key == 'Shop' ? { ConsistentRead: true } : {}) }));
+async function loadRpgeniusDataEntry(key, options) {
+    const res = await docClient.send(new GetCommand({ TableName: DATA_TABLE_NAME, Key: { key: key }, ...(key == 'Shop' || options && options.consistentRead ? { ConsistentRead: true } : {}) }));
     if (res && res.Item && typeof res.Item.data != 'undefined') {
         let data = res.Item.data;
         if (key == 'Equipment') data = transcendEquipment.applyEquipmentBalancePatch(data);
@@ -597,6 +632,7 @@ async function loadRpgeniusDataEntry(key) {
 
 async function saveRpgeniusDataEntry(key, data, options) {
     if (!RPGENIUS_DATA_KEYS.includes(key)) throw new Error('허용되지 않은 키: ' + key);
+    if (key == 'Quest' && Array.isArray(data) && data.some(def => def && (def.rewards || []).some(reward => reward && reward.type == '레이드해금' && getRaidRewardName(reward.raid_id) == '알 수 없는 레이드'))) throw new Error('해금할 레이드 설정을 확인해주세요.');
     if (key == 'Shop') {
         const conflict = () => Object.assign(new Error('상점 정보가 변경되었습니다. 다시 불러온 뒤 저장해주세요.'), { status: 409 });
         let previous = shopCatalogSnapshots.get(data);
@@ -1045,13 +1081,19 @@ function getCharacterCardRewardStar(entry) {
 
 function buildCharacterCardReward(entry) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    const cardType = entry.card_type || entry.cardType || '일반';
     let id = getCharacterCardRewardId(entry);
-    if (!Number.isInteger(id) || id < 0) id = randomInt(0, characterCards.length - 1);
+    if (!Number.isInteger(id) || id < 0) {
+        const candidates = characterCards.map((_, i) => i).filter(i => cardType === '각성'
+            ? !!cardAwakening.getDefinition({ id: i, type: cardType }) : cardType !== '전직' || hasJobClass(i));
+        if (!candidates.length) return null;
+        id = candidates[randomInt(0, candidates.length - 1)];
+    }
     if (!characterCards[id]) return null;
     const card = {
         id,
         star: getCharacterCardRewardStar(entry),
-        type: entry.card_type || entry.cardType || '일반'
+        type: cardType
     };
     if (entry.skin) card.skin = String(entry.skin);
     return card;
@@ -3988,6 +4030,7 @@ function calculateUserStats(user, _out) {
         stats.hp = Number(stats.hp || 0) + 1000;
         stats.mp = Number(stats.mp || 0) + 200;
     }
+    if (user.field && user.field.training) Object.assign(stats, user.field.training.overrides || {});
     // 건력 봉인: 상태 동안 최대 HP의 일부 삭제 (회복 상한 포함 모든 최대 HP 소비처에 적용)
     const gunryeokSeal = user.field && user.field.gunryeok;
     if (gunryeokSeal && Date.now() < Number(gunryeokSeal.expired_at || 0)) {
@@ -4333,6 +4376,7 @@ function getAccessibleDungeons(level) {
     const dungeons = readJson(DUNGEON_PATH, []);
     const lvl = Number(level || 1);
     const accessible = dungeons.filter(dungeon => {
+        if (getDungeonConfigurationError(dungeon)) return false;
         if (lvl < Number(dungeon.requireLevel || 1)) return false;
         if (typeof dungeon.maxLevel != 'undefined' && lvl > Number(dungeon.maxLevel)) return false;
         return true;
@@ -4347,7 +4391,19 @@ function getDailyDungeons() {
 
 function getAccessibleDailyDungeons(level) {
     const lvl = Number(level || 1);
-    return getDailyDungeons().filter(dungeon => lvl >= Number(dungeon.requireLevel || 1));
+    return getDailyDungeons().filter(dungeon => !getDungeonConfigurationError(dungeon, true) && lvl >= Number(dungeon.requireLevel || 1));
+}
+
+function getDungeonConfigurationError(dungeon, daily) {
+    if (dungeon && dungeon.enabled === false) return '운영 설정 준비 중입니다.';
+    if (dungeon && dungeon.name == '인트리그미션') {
+        const required = ['requireLevel', 'atk', 'def', 'hp', 'pnt', 'pntPercent', 'crit', 'critMul', 'critDef', 'cmb', 'maxCmb'];
+        if (required.some(key => !Number.isFinite(dungeon[key])) || Number(dungeon.hp) <= 0) return '필드 능력치 설정이 필요합니다.';
+        if (daily && (!dungeon.dailyDungeon || dungeon.dailyDungeon.enabled === false || !Number.isFinite(dungeon.dailyDungeon.exp) || !dungeon.dailyDungeon.gold || ['min', 'max'].some(key => !Number.isFinite(dungeon.dailyDungeon.gold[key])))) return '일일 던전 보상 설정이 필요합니다.';
+        if (!daily && (!dungeon.elite || !dungeon.elite.name || required.filter(key => key != 'requireLevel').some(key => !Number.isFinite(dungeon.elite[key])) || dungeon.elite.hp <= 0)) return '엘리트 설정이 필요합니다.';
+        if (!daily && (!dungeon.reward || !Number.isFinite(dungeon.reward.exp) || !dungeon.reward.gold || ['min', 'max'].some(key => !Number.isFinite(dungeon.reward.gold[key])) || (dungeon.elite.reward || []).some(reward => reward.item_name === '금괴0.1돈' && (!Number.isFinite(reward.roll) || reward.roll < 0 || reward.roll > 1)))) return '필드 보상과 고유 재료 드랍 확률 설정이 필요합니다.';
+    }
+    return null;
 }
 
 function findDailyDungeonByName(name) {
@@ -5174,6 +5230,8 @@ async function enterDailyDungeon(user, dungeonName, channel) {
     if (user.field && user.field.name) return '❌ 이미 다른 필드에 입장 중입니다. 먼저 퇴장해주세요.';
     const dungeon = findDailyDungeonByName(dungeonName);
     if (!dungeon) return '❌ 존재하지 않는 일일 던전입니다.';
+    const configurationError = getDungeonConfigurationError(dungeon, true);
+    if (configurationError) return '❌ ' + configurationError;
     if (Number(user.level || 1) < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
     const daily = getDailyDungeonDailyState(user);
     if (daily.used) return '❌ 오늘의 일일 던전 입장 횟수를 이미 사용했습니다.';
@@ -5218,6 +5276,8 @@ async function enterField(user, fieldName, options, channel) {
     if (worldBoss) return await enterWorldBossField(user, worldBoss, options, channel);
     const dungeon = findDungeonByName(fieldName);
     if (!dungeon) return '❌ 존재하지 않는 필드입니다.';
+    const configurationError = getDungeonConfigurationError(dungeon);
+    if (configurationError) return '❌ ' + configurationError;
     const level = Number(user.level || 1);
     if (level < Number(dungeon.requireLevel || 1)) return '❌ 입장 레벨이 부족합니다.';
     if (typeof dungeon.maxLevel != 'undefined' && level > Number(dungeon.maxLevel)) return '❌ 입장 가능한 최대 레벨을 초과했습니다. (Lv. ' + Number(dungeon.maxLevel) + ' 이하만 입장 가능)';
@@ -5884,8 +5944,10 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
             return;
         }
         if (reward.type == '아이템') {
-            addInventoryItem(user, reward.item_id, count);
-            const item = items[reward.item_id];
+            const itemId = Number.isInteger(reward.item_id) ? reward.item_id : items.findIndex(item => item && item.name == reward.item_name);
+            if (!items[itemId]) { rewardLines.push('- 보상 아이템 설정 필요: ' + String(reward.item_name || reward.item_id)); return; }
+            addInventoryItem(user, itemId, count);
+            const item = items[itemId];
             rewardLines.push('- ' + (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count));
         }
     });
@@ -6134,6 +6196,7 @@ function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, 
     if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     saveFieldCooldowns(user);
     finishDailyDungeonState(user, 'cleared');
+    getDailyDungeonDailyState(user).clearReward = { exp: expReward, gold: goldReward, items: itemRewards.map(item => ({ name: item.name, count: item.count })), lucky: rolled.lucky };
     clearFieldRuntimeTimers(user.name);
     user.field = null;
     lines.push('', '✅ 보상을 획득하고 일일 던전에서 자동 퇴장했습니다.');
@@ -6439,6 +6502,7 @@ async function useBasicAttackInField(user, channel) {
 
 function getFieldCombatContext(user) {
     if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
+    if (user.field.training) return { type: 'training', dungeon: user.field.training.target };
     if (user.field.skillSelecting) return { error: '❌ 스킬을 먼저 선택해주세요. (/RPGenius 월드보스선택 [1/2/3])' };
     if (user.field.dailyDungeon) {
         const dungeon = findDailyDungeonByName(user.field.name);
@@ -6554,6 +6618,7 @@ function getTranscendEquipmentSnapshot(user, options) {
 }
 
 function getCombatTargetHpRatio(user, context) {
+    if (context.type == 'training') return Number(user.field.training.targetHp) / Math.max(1, Number(context.dungeon.hp));
     if (context.type == 'worldBoss') {
         const state = getWorldBossState(context.boss.name);
         return Number(state.hp || 0) / Math.max(1, Number(context.boss.hp || 1));
@@ -7112,12 +7177,66 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     }
     if (actionType == 'skill' && !(extra && extra.summonAttack)) applyCurrentSkillHitEquipment(user, skill, extra);
     let result;
-    if (context.type == 'hell') result = buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
+    if (context.type == 'training') result = buildTrainingHuntResult(user, context.dungeon, rawDamage, extra);
+    else if (context.type == 'hell') result = buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
     else if (context.type == 'worldBoss') result = applyWorldBossDamageAction(user, context.boss, rawDamage, extra, actionType, skill);
     else if (context.type == 'elite') result = buildEliteHuntResult(user, context.dungeon, rawDamage, extra);
     else result = buildHuntResult(user, context.dungeon, rawDamage, extra);
     storeFieldActionEffectIds(user.name, extra.triggeredEffectIds);
     return result;
+}
+
+// 훈련장 복사본에만 적용한다. 필드/보스 상태, 퀘스트 진행도, 보상은 건드리지 않는다.
+function buildTrainingHuntResult(user, target, rawDamage, extra) {
+    const training = user.field.training;
+    const stats = calculateUserStats(user);
+    applyPetRegen(user, stats, null);
+    const slotEffects = calculateCardSlotEffects(user);
+    cardAwakening.prepareAttack(stats, user.field, training, extra, extra.awakeningAttackKind || 'basic', Date.now());
+    const contextBonus = target.kind == 'boss' ? Number(stats.bossDmg || 0) : target.kind == 'elite' ? Number(stats.eliteDmg || 0) : Number(stats.damageBonus || 0);
+    const raw = extra.precalculatedDamage ? Number(rawDamage) : Number(rawDamage) * (1 + Number(slotEffects.damageBonus || 0)) * (1 + contextBonus) * Math.max(0, 1 + Number(target.takenDamage || 0));
+    const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
+    const hit = calculateAttackHitResult(raw, Math.max(0, target.def - Number(stats.atkDefReduce || 0)), (extra.pnt != null ? extra.pnt : stats.pnt) + Number(extra.pntBonus || 0), stats, slotEffects, attackExtra, getCombatStats(target));
+    applyNmmStackGain(user, extra, hit);
+    applyTenthAtkCounter(user, extra, hit);
+    queueBlackShadow(user, extra, hit.finalDamage);
+    recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
+    training.targetHp = Math.max(0, training.targetHp - hit.finalDamage);
+    const metrics = training.metrics;
+    if (!metrics.startedAt) metrics.startedAt = Date.now();
+    metrics.damage += hit.finalDamage;
+    metrics.hits += hit.hitCount;
+    metrics.criticals += hit.criticalCount;
+    metrics.lastDamage = hit.finalDamage;
+    metrics.maxDamage = Math.max(metrics.maxDamage, hit.finalDamage);
+    if (!training.targetHp) { metrics.kills++; training.targetHp = target.hp; }
+    const lines = formatHitDetailLines(hit, '⚔️ 훈련장 허수아비에게 ', '피해를 입혔습니다!');
+    if (extra.notice) lines.push('- ' + extra.notice);
+    if (extra.mpCost != null) lines.push('- MP ' + comma(extra.mpCost) + ' 소모');
+    if (Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, stats.hp, raw * Number(extra.lifeStealFromPreMitigation), stats, lines);
+    if (Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, stats.hp, extra.skillHpRecovery, stats, lines);
+    if (Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, stats.mp, extra.skillMpRecovery, stats, lines);
+    if (!extra.summonAttack && !extra.dotAttack) {
+        applyAttackPotentialRecovery(user, stats, lines);
+        if (target.counterAttack) {
+            const incoming = Number(stats.avd || 0) > 0 && Math.random() < stats.avd ? null : calculateMonsterAttackHitResult(target, stats, slotEffects, extra);
+            let received = consumeNextDamageReduction(user, incoming ? incoming.finalDamage : 0);
+            if (isAwakeningInvincible(user.name, stats)) received = 0;
+            received = applyFieldShieldAbsorption(user, received, lines);
+            const beforeHp = Number(user.hp);
+            user.hp = Math.max(1, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received)));
+            received = Math.max(0, beforeHp - user.hp);
+            metrics.received += received;
+            if (incoming) lines.push('❗ 훈련장 허수아비에게 ' + comma(received) + ' 피해를 입었습니다!');
+            else lines.push('💨 훈련장 허수아비의 공격을 회피했습니다!');
+            applyDamageTakenSlotRecovery(user, stats.hp, received, slotEffects, stats, lines);
+        }
+        applySkillRecovery(user, stats.hp, extra, lines);
+        if (!extra.skipPassiveMpRecovery) applySkillMpRecovery(user, stats.mp, getPassiveMpRecovery(user), stats, lines);
+        tryImmortalArmorRegen(user, stats.hp, lines);
+        setNextFieldActionAt(user);
+    }
+    return lines.join('\n');
 }
 
 async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionType, skill) {
@@ -7548,7 +7667,7 @@ function executeMainCardSkillInField(user, skillName) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
-        startFieldIktaeBot(user.name);
+        startFieldIktaeBot(user.name, user.field.training ? user : null);
         return lines.join('\n');
     }
     if (skillData.skill.name == 'SUPER EASY') {
@@ -7616,7 +7735,7 @@ function executeMainCardSkillInField(user, skillName) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
-        startFieldSunata(user.name);
+        startFieldSunata(user.name, user.field.training ? user : null);
         return lines.join('\n');
     }
     if (skillData.skill.name == '유서새김') {
@@ -7630,7 +7749,7 @@ function executeMainCardSkillInField(user, skillName) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user);
         else setNextFieldActionAt(user);
-        startFieldMark(user.name);
+        startFieldMark(user.name, user.field.training ? user : null);
         return lines.join('\n');
     }
     if (skillData.skill.name == '범인은 이 안에') {
@@ -12360,6 +12479,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (shopType == '패키지' && shopItem.type == '아이템') {
         const shopItems = getDataCache('Item', []);
         const itemData = shopItems[shopItem.item_id];
+        if (!itemData) return '❌ 패키지 구성 정보를 불러올 수 없습니다. 상점을 다시 확인해주세요.';
         if (itemData && itemData.use == '아이템선택' && _out) {
             _out.choicePouch = { itemId: shopItem.item_id, purchasedCount: Number(shopItem.count) * count };
         }
@@ -12367,6 +12487,10 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             const bundles = getDataCache('Bundle', []);
             bundleData = bundles[itemData.pack];
             if (!Array.isArray(bundleData)) return '❌ 처리할 수 없는 번들 상품입니다.';
+            const cardRewards = bundleData.filter(reward => reward.type === '캐릭터카드');
+            if (cardRewards.some(reward => !buildCharacterCardReward(reward))) return '❌ 처리할 수 없는 캐릭터 카드 보상입니다.';
+            const requiredSpace = cardRewards.reduce((total, reward) => total + Number(typeof reward.count === 'object' ? reward.count.max : reward.count || 1), 0) * Number(shopItem.count) * count;
+            if (getRemainingCardInventorySpace(user) < requiredSpace) return '❌ 캐릭터 카드 인벤토리 공간이 부족합니다. (필요 ' + comma(requiredSpace) + '칸)';
         }
     }
     const totalPrice = Number(shopItem.price.amount) * count;
@@ -12387,9 +12511,11 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (shopItem.type == '아이템') {
         if (bundleData) {
             bundleSummary = {};
+            const cardStart = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card.length : 0;
             const grantCount = Number(shopItem.count) * count;
             for (let i = 0; i < grantCount; i++) bundleData.forEach(reward => grantPackReward(user, reward, bundleSummary));
             if (_out && typeof _out == 'object') _out.bundleGranted = bundleSummary;
+            if (_out && typeof _out == 'object') _out.grantedCards = (user.inventory && user.inventory.card || []).slice(cardStart).map(card => ({ ...card }));
         } else {
             addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
         }
@@ -15586,7 +15712,22 @@ function submitWisdomAnswer(user, questId, input) {
 
 function formatQuestRewardLabel(reward) {
     if (reward.type == '경험치') return 'XP ' + formatCount(reward.count).slice(1);
+    if (reward.type == '레이드해금') return getRaidRewardName(reward.raid_id) + ' 해금';
     return formatPackEntry(reward);
+}
+
+function getRaidRewardName(raidId) {
+    const data = readJson(path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json'), {});
+    const raid = (data.quests || []).find(raid => raid.id === raidId);
+    return raid ? raid.name : '알 수 없는 레이드';
+}
+
+function getRaidUnlockError(user, raidId) {
+    const definitions = getDataCache('Quest', null);
+    if (!Array.isArray(definitions)) return '퀘스트 해금 정보를 불러오지 못했습니다. 다시 시도해주세요.';
+    const required = definitions.filter(def => def && (def.rewards || []).some(reward => reward && reward.type == '레이드해금' && reward.raid_id === raidId));
+    if (!required.length || user && Array.isArray(user.unlockedRaids) && user.unlockedRaids.includes(raidId)) return null;
+    return required.map(def => '[' + def.name + ']').join(' 또는 ') + ' 퀘스트 보상으로 해금해야 합니다.';
 }
 
 function buildQuestBoard(user) {
@@ -15646,6 +15787,8 @@ function claimQuestReward(user, questId, options) {
     if (!isQuestVisible(user, def, defs)) return { error: '수행할 수 없는 퀘스트입니다.' };
     if (entry.claimed) return { error: '이미 보상을 수령한 퀘스트입니다.' };
     const objectives = Array.isArray(def.objectives) ? def.objectives : [];
+    const raidRewards = (def.rewards || []).filter(reward => reward && reward.type == '레이드해금');
+    if (raidRewards.some(reward => getRaidRewardName(reward.raid_id) == '알 수 없는 레이드')) return { error: '해금할 레이드 설정을 확인해주세요.' };
     if (isWisdomQuest(def) && (def.rewards || []).some(reward => reward.type == '아이템' && !getDataCache('Item', [])[reward.item_id])) return { error: '보상 아이템 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' };
     if (skip) {
         if (isWisdomQuest(def) || def.skippable !== true) return { error: '스킵할 수 없는 퀘스트입니다.' };
@@ -15679,6 +15822,12 @@ function claimQuestReward(user, questId, options) {
             levelUps += addExperience(user, amount);
             return;
         }
+        if (reward.type == '레이드해금') {
+            if (!Array.isArray(user.unlockedRaids)) user.unlockedRaids = [];
+            if (!user.unlockedRaids.includes(reward.raid_id)) user.unlockedRaids.push(reward.raid_id);
+            addRewardSummary(summary, 'raid:' + reward.raid_id, getRaidRewardName(reward.raid_id) + ' 해금', 1);
+            return;
+        }
         grantPackReward(user, reward, summary);
     });
     entry.claimed = true;
@@ -15698,6 +15847,11 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    getDailyDungeons,
+    clearFieldRuntimeTimers,
+    getDungeonConfigurationError,
+    getRaidUnlockError,
+    tickTrainingCombat,
     getCardSaleSelection,
     getDisassemblePreviewData,
     selectStarterCard,

@@ -1,0 +1,39 @@
+{
+  "generator": "Built-in image_gen",
+  "assets": [
+    {
+      "key": "training-background",
+      "transparent_background": false,
+      "prompt": "Use case: stylized-concept. Asset type: wide 16:9 fantasy RPG WebGL training arena background. Primary request: medieval outdoor training courtyard with timber palisades, red and gold banners, distant fortress, stacked practice shields and barrels at the edges, warm clear daylight and worn stone paving. Style: polished detailed painterly 3D fantasy environment, matching Korean RPG battle artwork. Composition: camera at eye level, broad empty level combat floor in lower half, clear left-quarter and right-three-quarter character spaces. No people, no training dummies (the dummy is a separate sprite), no text, logo, watermark, UI. One background only.",
+      "assetPath": "ui/필드/훈련장.png"
+    },
+    {
+      "key": "training-dummy-v2",
+      "transparent_background": true,
+      "prompt": "Use case: stylized-concept. Asset type: standalone fantasy RPG battle sprite on genuinely transparent background. Primary request: one wooden and straw medieval practice dummy, with burlap head and torso, a red circular target painted on chest, sturdy wooden cross arms, wooden standing post with broad stable foot. Polished painterly 3D fantasy game art, slightly stylized chunky readable silhouette, metal bands and straw details. Full body, front three quarter view facing slightly left, centered, ground contact at bottom, balanced padding on every edge, no cast floor shadow, no environment, no lettering, no border, no watermark. Exactly one dummy.",
+      "background_edit": "Built-in image_gen edit: remove the surrounding background and glow, preserving the dummy on a transparent background.",
+      "assetPath": "ui/필드/몬스터/훈련장-허수아비.png",
+      "displayEdit": "WebGL UV [1,0,-1,1] mirrors the dummy horizontally toward the player."
+    },
+    {
+      "key": "intrigue-monsters",
+      "transparent_background": true,
+      "prompt": "Use case: stylized-concept. Asset type: fantasy RPG sprite atlas, two equally sized square cells side by side, transparent background, 2 columns and 1 row. Primary request: left cell a small masked shadow rogue enemy in navy cloak with brass dagger; right cell a larger elite masked armored rogue with a dark hood, ornate gold armor and two curved daggers. These are visual enemy roles, no named character or text. Style: polished painterly 3D Korean fantasy RPG character sprites, chunky slightly stylized silhouettes. Both full body, centered in their own equal square cells, facing slightly to the left toward player, feet on the same baseline, each stays strictly inside its cell with clear padding, no overlap, no glow outside cell. Genuinely transparent background, no ground shadows, no border, no text, no UI, no watermark. Two sprites only.",
+      "assetPath": "ui/필드/몬스터/인트리그미션.png"
+    },
+    {
+      "key": "gold-bar",
+      "transparent_background": true,
+      "prompt": "Use case: stylized-concept. Asset type: fantasy RPG material inventory icon on transparent background. One small minted pure gold ingot with clean beveled edges, warm bright metallic highlights and subtle embossed geometric emblem (no letters or numbers). Polished painterly 3D Korean RPG item art. Centered square composition, clear silhouette, ample padding, no environment, no floor shadow, no icon frame, no text, no watermark.",
+      "assetPath": "itemImage/재료/금괴0.1돈.png",
+      "paddingEdit": "Use case: precise-object-edit. Asset type: transparent square RPG material inventory icon. Input image 1 is the edit target: keep exactly this gold ingot illustration, its angle, metal details, emblem and colors. Input images 2 and 3 are supporting references ONLY for transparent padding and object size (existing 강화석 and 독재자의 영혼석 파편 inventory icons). Primary request: significantly reduce the gold ingot within the square canvas, centering it with the same generous balanced transparent margin as these existing material icons. The entire ingot bounding box should occupy approximately 42% of canvas width and 40% of canvas height, centered at 50%,50%; about 29% transparent padding at left/right and 30% top/bottom. Do not enlarge, redraw details, add other objects, floor, shadow, frame, lettering, or background. Preserve a genuinely transparent alpha background."
+    },
+    {
+      "key": "game-changer",
+      "transparent_background": true,
+      "prompt": "Use case: stylized-concept. Asset type: unique fantasy RPG accessory inventory icon on transparent background. One refined gold necklace pendant shaped like a stylized chess king combined with a small radiant amber gem, short elegant curved necklace chain, bold readable silhouette. Polished painterly 3D Korean RPG item illustration, gold metal and deep dark sapphire accents. Centered square composition, ample padding, no environment, no floor shadow, no frame, no lettering, no watermark.",
+      "assetPath": "itemImage/장비/고유 게임체인저.png"
+    }
+  ],
+  "background": "Existing ui/필드/인트리그미션.png is reused."
+}
