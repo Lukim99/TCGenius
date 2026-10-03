@@ -59,8 +59,9 @@ const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
 const WORLD_BOSS_FORCE_DEFEAT_MS = 3 * 24 * 60 * 60 * 1000;
 const WORLD_BOSS_SKILL_INTERVAL = 7000;
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
-const EQUIPMENT_SINGLE_SLOTS = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'support'];
-const EQUIPMENT_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+const artifacts = require('./artifacts');
+const EQUIPMENT_SINGLE_SLOTS = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'support', 'artifact'];
+const EQUIPMENT_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
 const ELITE_KILL_REQUIREMENT = 100;
 const BIG_LEVEL_DIFF_THRESHOLD = 30;
 const BIG_LEVEL_DIFF_KILL_CAP = 50;
@@ -1110,7 +1111,7 @@ function formatStatValue(key, value) {
         'crit', 'critMul', 'critDef', 'cmb',
         'atk%', 'def%', 'hp%', 'mp%', 'pnt%', 'crit%', 'critMul%', 'critDef%', 'cmb%',
         'gold%', 'potion%', 'afterBasic%', 'avd%', 'afterSkill%', '000%',
-        'exp%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
+        'exp%', 'finalAtk%', 'eliteDmg%', 'mpReduce%', 'itemDropChance%', 'recoveryEfficiency%',
         'takenDamage%', 'damageBonus%', 'finalDamage%', 'extraDamage%', 'bossDmg%', 'summonDuration%', 'cooldown%', 'nonElementDamage%',
         'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%',
         'ultimateDamage%', 'elementalExtraDamage%', 'burnDamage%', 'lightFinalDamage%',
@@ -1162,6 +1163,7 @@ function formatPackEntry(entry) {
         }
         return '<' + (entry.rarity || '?') + '> 랜덤 펫';
     }
+    if (entry.type === '아티팩트') { const data = getEquipmentData('artifact', entry.artifact_id); return '<' + (data?.rarity || entry.rarity || '') + '> 아티팩트 x' + comma(entry.count || 1); }
     if (entry.type == '칭호') {
         const title = getTitleById(entry.title_id);
         return '🏅 ' + (title ? title.name : '알 수 없는') + ' 칭호';
@@ -1282,7 +1284,7 @@ const EQUIP_PLUSSTAT_LABELS = {
     afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률',
     exp: '경험치 획득량',
-    eliteDmg: '엘리트 몬스터 대상 추가 피해',
+    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해',
     mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률',
     recoveryEfficiency: '회복 효율',
@@ -1346,6 +1348,7 @@ const WILL_ACCESSIBLE_FIELDS = {
             gold: { label: '골드 획득량', valueType: 'ratio' },
             potion: { label: '물약 효율', valueType: 'ratio' },
             afterBasic: { label: '일반 공격 피해', valueType: 'ratio' },
+            finalAtk: { label: '최종 공격력', valueType: 'ratio' },
             afterSkill: { label: '스킬 공격 피해', valueType: 'ratio' },
             avd: { label: '회피 확률', valueType: 'ratio' },
             '000': { label: '공격 시 10/100/1000 추가 피해 확률', valueType: 'ratio' },
@@ -4036,6 +4039,13 @@ function calculateUserStats(user, _out) {
     if (gunryeokSeal && Date.now() < Number(gunryeokSeal.expired_at || 0)) {
         stats.hp = Math.max(1, Math.round(Number(stats.hp || 0) * (1 - Number(gunryeokSeal.sealRate || 0))));
     }
+    const artifactEquip = user.equipments && user.equipments.artifact;
+    const artifactData = artifactEquip && getEquipmentData('artifact', artifactEquip.id);
+    const artifactValues = artifactData ? artifacts.evaluate(artifactEquip, artifactData.rarity, user, stats, getEquipmentData).values : {};
+    for (const [key, value] of Object.entries(artifactValues)) {
+        if (['hp', 'mp', 'pnt'].includes(key)) stats[key] = Math.round(Number(stats[key] || 0) * (1 + value));
+        else if (key !== 'finalAtk') stats[key] = Number(stats[key] || 0) + value;
+    }
     if (!rukimActive && getBlessingExpiresAt(user, 'rukim') > 0) {
         if (typeof user.hp != 'undefined') user.hp = Math.min(Number(user.hp || 0), Number(stats.hp || 0));
         if (typeof user.mp != 'undefined') user.mp = Math.min(Number(user.mp || 0), Number(stats.mp || 0));
@@ -4062,7 +4072,8 @@ function calculateUserStats(user, _out) {
         awakeningReduction += Number(getFieldBuffs(user).nextDamageReduction && getFieldBuffs(user).nextDamageReduction.value || 0);
     }
     stats.awakeningAttackMultiplier = cardAwakening.getAttackMultiplier(stats.awakening, awakeningReduction, Number(user.field && user.field.nmmStacks || 0));
-    stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)));
+    stats.finalAtk = (1 + Number(plusStats.finalAtk || 0) + Number(artifactValues.finalAtk || 0)) * (user.battleCryPotion && Date.now() < user.battleCryPotion.expired_at ? 1 + Number(user.battleCryPotion.amount || 0) : 1) - 1;
+    stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)) * (1 + stats.finalAtk));
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
     return stats;
 }
@@ -4295,6 +4306,7 @@ function formatMyInfo(user) {
     if (accessoryKeys.length == 0) lines.push('[장신구] 없음');
     accessoryKeys.forEach(key => lines.push(formatEquippedEquipment('장신구', 'accessory', accessories[key])));
     lines.push(formatEquippedEquipment('보조', 'support', user.equipments && user.equipments.support));
+    lines.push(formatEquippedEquipment('아티팩트', 'artifact', user.equipments && user.equipments.artifact));
     lines.push('', '〈 스탯 〉');
     lines.push('공격력: ' + comma(stats.atk));
     lines.push('방어력: ' + comma(stats.def));
@@ -8588,7 +8600,7 @@ const SUPPORT_PLUS_STAT_LABELS = {
     gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
     avd: '회피 확률', afterSkill: '스킬 공격 피해',
     '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-    eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+    finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
     itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
     critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
     maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
@@ -8777,13 +8789,13 @@ function isEquipmentTradeCountLimited(rarity) {
 
 function getEquipmentTradeMax(data) {
     if (!data) return 0;
-    if (data.rarity == '초월' || data.rarity == '신화') return 1;
+    if (data.artifact || data.rarity == '초월' || data.rarity == '신화') return 1;
     if (data.no_trade) return 0;
     return isEquipmentTradeCountLimited(data.rarity) ? EQUIPMENT_TRADE_MAX_COUNT : null;
 }
 
 function consumesEquipmentTradeOnEquip(data) {
-    return !!data && (data.rarity == '초월' || data.rarity == '신화');
+    return !!data && (data.artifact || data.rarity == '초월' || data.rarity == '신화');
 }
 
 function markEquipmentEquipped(equip, fallbackType) {
@@ -8925,6 +8937,7 @@ function formatEquipmentInventory(user) {
 function formatShopItem(shopItem) {
     const items = getDataCache('Item', []);
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
+    if (shopItem.type === '아티팩트') { const data = getEquipmentData('artifact', shopItem.artifact_id); return '<' + data.rarity + '> ' + data.name + ' x' + comma(shopItem.count); }
     if (shopItem.type == '아이템') {
         const item = items[shopItem.item_id];
         const itemName = item ? item.name : '알 수 없는 아이템';
@@ -9338,7 +9351,7 @@ function equipPetByNumber(user, numberArg) {
     if (!Number.isInteger(number) || number < 1) return '❌ 펫 번호는 1 이상의 정수여야 합니다.';
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [], pet: [] };
     if (!Array.isArray(user.inventory.pet)) user.inventory.pet = [];
-    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, artifact: null, pet: [] };
     if (!Array.isArray(user.equipments.pet)) user.equipments.pet = [];
     const all = getAllUserPets(user);
     const selected = all[number - 1];
@@ -9538,6 +9551,7 @@ function getRecipeEquipmentType(material) {
     if (material.type == '무기') return 'weapon';
     if (material.type == '갑옷') return 'armor';
     if (material.type == '장신구') return 'accessory';
+    if (material.type == '아티팩트') return 'artifact';
     if (material.type == '보조' || material.type == '보조무기') return 'support';
     return null;
 }
@@ -9546,6 +9560,7 @@ function getRecipeEquipmentId(material) {
     if (material.type == '무기') return material.weapon_id;
     if (material.type == '갑옷') return material.armor_id;
     if (material.type == '장신구') return material.accessory_id;
+    if (material.type == '아티팩트') return material.artifact_id;
     if (material.type == '보조' || material.type == '보조무기') return material.support_id;
     return null;
 }
@@ -9738,7 +9753,7 @@ function getCraftMaterialStatus(user, material) {
         const have = Number(user.garnet || 0);
         return { have, need, ok: have >= need };
     }
-    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) {
+    if (['무기', '갑옷', '장신구', '보조', '보조무기', '아티팩트'].includes(material.type)) {
         const have = getInventoryEquipmentCount(user, material);
         return { have, need, ok: have >= need };
     }
@@ -9762,7 +9777,7 @@ function consumeCraftMaterial(user, material) {
         user.garnet = Number(user.garnet || 0) - count;
         return true;
     }
-    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) return removeInventoryEquipment(user, material, count);
+    if (['무기', '갑옷', '장신구', '보조', '보조무기', '아티팩트'].includes(material.type)) return removeInventoryEquipment(user, material, count);
     if (material.type == '펫') return removeInventoryPet(user, material.pet_id, count);
     return false;
 }
@@ -9778,7 +9793,7 @@ function canConsumeCraftMaterials(user, materials) {
 
 function formatCraftMaterial(material, need) {
     const text = formatPackEntry(material);
-    if (['무기', '갑옷', '장신구', '보조', '보조무기', '펫'].includes(material.type)) return text + ' x' + comma(need);
+    if (['무기', '갑옷', '장신구', '보조', '보조무기', '아티팩트', '펫'].includes(material.type)) return text + ' x' + comma(need);
     return text.replace(/x[\d,]+(?:~[\d,]+)?$/, 'x' + comma(need));
 }
 
@@ -9786,6 +9801,10 @@ function grantCraftEntry(user, entry) {
     const count = getRecipeEntryCount(entry);
     if (entry.type == '아이템') {
         addInventoryItem(user, entry.item_id, count);
+        return;
+    }
+    if (entry.type == '아티팩트') {
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'artifact', entry.artifact_id);
         return;
     }
     if (entry.type == '무기') {
@@ -9861,7 +9880,7 @@ function canConsumeCraftMaterialsTimes(user, materials, times) {
 function getCraftMaterialKey(material) {
     if (material.type == '아이템') return 'item:' + Number(material.item_id);
     if (material.type == '골드' || material.type == '가넷') return material.type;
-    if (['무기', '갑옷', '장신구', '보조', '보조무기'].includes(material.type)) {
+    if (['무기', '갑옷', '장신구', '보조', '보조무기', '아티팩트'].includes(material.type)) {
         return 'equipment:' + getRecipeEquipmentType(material) + ':' + Number(getRecipeEquipmentId(material));
     }
     if (material.type == '펫') return 'pet:' + Number(material.pet_id);
@@ -10304,14 +10323,79 @@ function rollSupportEquipmentStats(data) {
 function addEquipmentInventory(user, type, id) {
     if (!user.inventory) user.inventory = { card: [], item: [] };
     if (!user.inventory.equipment) user.inventory.equipment = [];
-    const entry = { type: type, id: id, level: 0 };
     const equipmentData = getEquipmentData(type, id);
+    const entry = type === 'artifact' ? artifacts.create(equipmentData.rarity, id, readJson(CHARACTER_CARDS_PATH, [])) : { type: type, id: id, level: 0 };
     if (equipmentData && equipmentData.rarity == '초월') entry.transcendStage = 1;
     if (type == 'support') {
         const data = equipmentData;
         if (data) entry.rolled = rollSupportEquipmentStats(data);
     }
     user.inventory.equipment.push(entry);
+}
+
+function grantArtifact(user, rarity) {
+    const list = getDataCache('Equipment', {}).artifact || [];
+    const id = list.findIndex(data => data && data.rarity === rarity && data.artifact);
+    if (id < 0) throw new Error(rarity + ' 아티팩트 운영 정의가 없습니다.');
+    addEquipmentInventory(user, 'artifact', id);
+    return user.inventory.equipment[user.inventory.equipment.length - 1];
+}
+
+function getArtifactView(user, equip) {
+    const data = equip && getEquipmentData('artifact', equip.id);
+    return data && equip.artifact ? artifacts.view(equip, data.rarity, user, calculateUserStats(user), getEquipmentData, readJson(CHARACTER_CARDS_PATH, [])) : null;
+}
+
+// 신규 재화·최초 지급 처리는 변경한 필드와 원래 값이 함께 맞을 때만 저장한다.
+async function commitProtectedUserChange(user, keys) {
+    await flushCachedUser(user.id);
+    const names = {}, values = {}, conditions = [], sets = [], changes = {};
+    keys.forEach((key, i) => {
+        const previous = user.__loaded && user.__loaded[key];
+        const next = JSON.stringify(user[key]);
+        if (previous === next) return;
+        names['#k' + i] = key;
+        values[':v' + i] = cloneUserRaw(user[key]); changes[key] = cloneUserRaw(user[key]);
+        sets.push('#k' + i + ' = :v' + i);
+        if (previous === undefined) conditions.push('attribute_not_exists(#k' + i + ')');
+        else { conditions.push('#k' + i + ' = :p' + i); values[':p' + i] = JSON.parse(previous); }
+    });
+    if (!sets.length) return true;
+    try {
+        await docClient.send(new UpdateCommand({ TableName: TABLE_NAME, Key: { id: user.id }, UpdateExpression: 'SET ' + sets.join(', '),
+            ConditionExpression: 'attribute_exists(id) AND ' + conditions.join(' AND '), ExpressionAttributeNames: names, ExpressionAttributeValues: values }));
+        applyDirectDbWriteToCache(user.id, changes);
+        for (const key of Object.keys(changes)) user.__loaded[key] = JSON.stringify(changes[key]);
+        return true;
+    } catch (error) {
+        for (const key of Object.keys(changes)) {
+            if (user.__loaded[key] === undefined) delete user[key]; else user[key] = JSON.parse(user.__loaded[key]);
+        }
+        if (error.name === 'ConditionalCheckFailedException') {
+            const latest = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: user.id }, ConsistentRead: true }));
+            if (latest.Item) putUserCacheEntry(latest.Item);
+        }
+        throw error;
+    }
+}
+
+const artifactRerollQueue = new Map();
+async function rerollArtifactForUser(name, uid, locks) {
+    const previous = artifactRerollQueue.get(name) || Promise.resolve();
+    const work = previous.catch(() => {}).then(async () => {
+        const user = await getRPGUserByName(name);
+        if (!user) return { error: '유저를 찾을 수 없습니다.' };
+        if (user.field || require('./partyquest').getRoomOf(name)?.state === 'inProgress') return { error: '전투 중에는 재설정할 수 없습니다.' };
+        const target = getAllUserEquipments(user).find(entry => entry.equip.type === 'artifact' && entry.equip.uid === uid);
+        if (!target) return { error: '소유한 아티팩트를 찾을 수 없습니다.' };
+        const result = artifacts.reroll(user, target.equip, locks, readJson(CHARACTER_CARDS_PATH, []));
+        if (result.error) return result;
+        try { await commitProtectedUserChange(user, ['gold', 'inventory', 'equipments']); }
+        catch (error) { console.error('[artifact] reroll save:', error.name); return { error: '보유 정보가 변경되었거나 저장하지 못했습니다. 다시 불러와주세요.' }; }
+        return { ...result, artifact: getArtifactView(user, target.equip), user };
+    });
+    artifactRerollQueue.set(name, work);
+    try { return await work; } finally { if (artifactRerollQueue.get(name) === work) artifactRerollQueue.delete(name); }
 }
 
 function autoUnequipInvalidSupport(user) {
@@ -10379,7 +10463,7 @@ function equipItemByNumber(user, numberArg) {
         if (equippedMythic) return '❌ 신화 장비는 모든 부위를 통틀어 1개만 장착할 수 있습니다.';
     }
 
-    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+    if (!user.equipments) user.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, artifact: null, pet: [] };
 
     if (target.type == 'support') {
         if (Array.isArray(data.requireMainCard) && data.requireMainCard.length > 0) {
@@ -11106,7 +11190,8 @@ function parseDisassembleSelection(user, numberArgs) {
         const equipment = getEquipmentData(type, entry.equip.id);
         if (!equipment) return { error: '❌ 잘못된 장비 데이터입니다: [' + number + ']' };
         const transcendReward = equipment.rarity == '초월' ? getTranscendDisassembleInfo(entry.equip) : null;
-        const rewardRange = transcendReward ? transcendReward.stone : EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
+        const artifactRange = type === 'artifact' && artifacts.MATERIALS[equipment.rarity];
+        const rewardRange = artifactRange ? { min: artifactRange[0], max: artifactRange[1] } : transcendReward ? transcendReward.stone : EQUIPMENT_DISASSEMBLE_REWARD[equipment.rarity];
         if (!rewardRange) return { error: '❌ 분해할 수 없는 등급(' + equipment.rarity + ')이 포함되어 있습니다: [' + number + ']' };
         entries.push({ number, entry, type, equipment, rewardRange, fragmentRange: transcendReward && transcendReward.fragment });
     }
@@ -11125,7 +11210,7 @@ function getDisassemblePreviewData(user, numberArgs) {
     };
     parsed.entries.forEach(e => {
         const range = e.equipment.rarity === '초월' ? e.rewardRange : getDisassembleRewardRange(e.rewardRange, e.type);
-        add('강화석', range.min, range.max);
+        add(e.type === 'artifact' ? '아티팩트 재료' : '강화석', range.min, range.max);
         if (e.fragmentRange) add('초월 조각', e.fragmentRange.min, e.fragmentRange.max);
         add('검은 불', getSupportDisassembleBlackFireCount(e.equipment, e.type));
         add('어둠 조각', getDarkPieceDisassembleCount(e.equipment));
@@ -11144,22 +11229,24 @@ function formatDisassemblePreview(user, numberArgs) {
     let darkPieceTotal = 0;
     let fragmentMinTotal = 0;
     let fragmentMaxTotal = 0;
+    let artifactMin = 0, artifactMax = 0;
     const equipmentLines = [];
     parsed.entries.forEach(e => {
         const lvl = Number(e.entry.equip.level || 0);
         const range = e.equipment.rarity == '초월' ? e.rewardRange : getDisassembleRewardRange(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
         const darkPiece = getDarkPieceDisassembleCount(e.equipment);
-        equipmentLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (강화석 ' + comma(range.min) + '~' + comma(range.max) + (e.fragmentRange ? ', 초월 조각 ' + comma(e.fragmentRange.min) + '~' + comma(e.fragmentRange.max) : '') + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 ' + comma(darkPiece) : '') + ')');
-        minTotal += range.min;
-        maxTotal += range.max;
+        equipmentLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' (' + (e.type === 'artifact' ? '아티팩트 재료 ' : '강화석 ') + comma(range.min) + '~' + comma(range.max) + (e.fragmentRange ? ', 초월 조각 ' + comma(e.fragmentRange.min) + '~' + comma(e.fragmentRange.max) : '') + (blackFire > 0 ? ', 검은 불 ' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 ' + comma(darkPiece) : '') + ')');
+        if (e.type === 'artifact') { artifactMin += range.min; artifactMax += range.max; }
+        else { minTotal += range.min; maxTotal += range.max; }
         blackFireTotal += blackFire;
         darkPieceTotal += darkPiece;
         if (e.fragmentRange) { fragmentMinTotal += e.fragmentRange.min; fragmentMaxTotal += e.fragmentRange.max; }
     });
     pushLimitedEquipmentLines(lines, equipmentLines);
     lines.push('', '[ 예상 획득 ]');
-    lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
+    if (maxTotal > 0) lines.push('- 강화석 ' + comma(minTotal) + ' ~ ' + comma(maxTotal));
+    if (artifactMax > 0) lines.push('- 아티팩트 재료 ' + comma(artifactMin) + ' ~ ' + comma(artifactMax));
     if (fragmentMaxTotal > 0) lines.push('- 초월 조각 ' + comma(fragmentMinTotal) + ' ~ ' + comma(fragmentMaxTotal));
     if (blackFireTotal > 0) lines.push('- 검은 불 x' + comma(blackFireTotal));
     if (darkPieceTotal > 0) lines.push('- 어둠 조각 x' + comma(darkPieceTotal));
@@ -11182,27 +11269,33 @@ function runDisassemble(user) {
     let totalBlackFire = 0;
     let totalDarkPiece = 0;
     let totalTranscendFragment = 0;
+    let totalArtifactMaterial = 0;
+    const artifactMaterialId = entries.some(e => e.type === 'artifact') ? getItemIdByName('아티팩트 재료') : -1;
+    if (entries.some(e => e.type === 'artifact') && artifactMaterialId < 0) return '❌ 아티팩트 재료 운영 정의가 없습니다.';
     const dismantledLines = [];
     entries.forEach(e => {
         const stone = e.equipment.rarity == '초월' ? randomInt(e.rewardRange.min, e.rewardRange.max) : getDisassembleStoneAmount(e.rewardRange, e.type);
         const blackFire = getSupportDisassembleBlackFireCount(e.equipment, e.type);
         const darkPiece = getDarkPieceDisassembleCount(e.equipment);
-        totalStone += stone;
+        if (e.type === 'artifact') totalArtifactMaterial += stone; else totalStone += stone;
         totalBlackFire += blackFire;
         totalDarkPiece += darkPiece;
         const transcendFragment = e.fragmentRange ? randomInt(e.fragmentRange.min, e.fragmentRange.max) : 0;
         totalTranscendFragment += transcendFragment;
         user.inventory.equipment.splice(e.entry.index, 1);
         const lvl = Number(e.entry.equip.level || 0);
-        dismantledLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → 강화석 x' + comma(stone) + (transcendFragment > 0 ? ', 초월 조각 x' + comma(transcendFragment) : '') + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 x' + comma(darkPiece) : ''));
+        dismantledLines.push('- <' + getEquipmentRarityLabel(e.equipment, e.entry.equip) + '> ' + getEquipmentDisplayName(e.equipment, e.entry.equip) + (lvl > 0 ? ' +' + lvl : '') + ' → ' + (e.type === 'artifact' ? '아티팩트 재료 x' : '강화석 x') + comma(stone) + (transcendFragment > 0 ? ', 초월 조각 x' + comma(transcendFragment) : '') + (blackFire > 0 ? ', 검은 불 x' + comma(blackFire) : '') + (darkPiece > 0 ? ', 어둠 조각 x' + comma(darkPiece) : ''));
     });
+    if (totalArtifactMaterial > 0) addInventoryItem(user, artifactMaterialId, totalArtifactMaterial);
     if (totalStone > 0) addInventoryItem(user, EQUIPMENT_STONE_ITEM_ID, totalStone);
     if (totalBlackFire > 0) addInventoryItem(user, blackFireItemId, totalBlackFire);
     if (totalDarkPiece > 0) addInventoryItem(user, darkPieceItemId, totalDarkPiece);
     if (totalTranscendFragment > 0) addInventoryItem(user, getItemIdByName('초월 조각'), totalTranscendFragment);
     const lines = ['✅ 장비 ' + comma(entries.length) + '개를 분해했습니다.', '', '[ 분해 장비 ]'];
     pushLimitedEquipmentLines(lines, dismantledLines);
-    lines.push('', '[ 획득 결과 ]', '- 강화석 x' + comma(totalStone));
+    lines.push('', '[ 획득 결과 ]');
+    if (totalStone > 0) lines.push('- 강화석 x' + comma(totalStone));
+    if (totalArtifactMaterial > 0) lines.push('- 아티팩트 재료 x' + comma(totalArtifactMaterial));
     if (totalTranscendFragment > 0) lines.push('- 초월 조각 x' + comma(totalTranscendFragment));
     if (totalBlackFire > 0) lines.push('- 검은 불 x' + comma(totalBlackFire));
     if (totalDarkPiece > 0) lines.push('- 어둠 조각 x' + comma(totalDarkPiece));
@@ -11298,7 +11391,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
         avd: '회피 확률', afterSkill: '스킬 공격 피해',
         '000': '공격 시 10/100/1000 추가 피해 확률', exp: '경험치 획득량',
-        eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
+        finalAtk: '최종 공격력', eliteDmg: '엘리트 몬스터 대상 추가 피해', mpReduce: 'MP 소모량',
         itemDropChance: '아이템 획득 확률', crit: '치명타 확률',
         critMul: '치명타 피해량', critDef: '치명타 피해 감소율', cmb: '연격 확률',
         maxCmb: '추가 공격 횟수', skillCooldown: '스킬 쿨타임',
@@ -11554,6 +11647,13 @@ function grantPackReward(user, reward, summary) {
         addRewardSummary(summary, 'point', '💰 포인트', count);
         return;
     }
+    if (reward.type === '아티팩트') {
+        const equipment = getEquipmentData('artifact', reward.artifact_id);
+        if (!equipment?.artifact) throw new Error('아티팩트 운영 정의를 확인해주세요.');
+        for (let i = 0; i < count; i++) addEquipmentInventory(user, 'artifact', reward.artifact_id);
+        addRewardSummary(summary, 'artifact:' + reward.artifact_id, '<' + equipment.rarity + '> ' + equipment.name, count);
+        return;
+    }
     if (reward.type == '무기') {
         addEquipmentInventory(user, 'weapon', reward.weapon_id);
         const equipment = equipments.weapon && equipments.weapon[reward.weapon_id];
@@ -11762,6 +11862,10 @@ function applyUseFunc(user, func, useCount, resultLines) {
         const levelUps = addExperience(user, amount);
         resultLines.push('- XP +' + comma(amount));
         if (levelUps > 0) resultLines.push('- 레벨업! Lv. ' + user.level);
+        return;
+    }
+    if (func.type == '최종공격력비약') {
+        applyPotionBuff(user, 'battleCryPotion', Number(func.amount || 0), Number(func.duration || 0), '최종 공격력', resultLines);
         return;
     }
     if (func.type == '경험치비약') {
@@ -12463,6 +12567,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number' && remaining.weekly < count) return '❌ 이번 주 구매 제한을 초과합니다. (잔여 ' + comma(remaining.weekly) + '/' + comma(limits.weekly) + ')';
     if (typeof limits.monthly == 'number' && remaining.monthly < count) return '❌ 이번 달 구매 제한을 초과합니다. (잔여 ' + comma(remaining.monthly) + '/' + comma(limits.monthly) + ')';
     if (typeof limits.global == 'number' && remaining.global < count) return '❌ 전체 구매 제한을 초과합니다. (잔여 ' + comma(remaining.global) + '/' + comma(limits.global) + ')';
+    if (shopItem.type === '아티팩트' && !getEquipmentData('artifact', shopItem.artifact_id)?.artifact) return '❌ 아티팩트 운영 정의를 확인해주세요.';
     if (shopItem.type == '캐릭터카드') {
         const grantCount = Number(shopItem.count || 1) * count;
         if (!buildCharacterCardReward(shopItem)) return '❌ 처리할 수 없는 상품입니다.';
@@ -12519,6 +12624,8 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
         } else {
             addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
         }
+    } else if (shopItem.type === '아티팩트') {
+        for (let i = 0; i < Number(shopItem.count || 1) * count; i++) addEquipmentInventory(user, 'artifact', shopItem.artifact_id);
     } else if (shopItem.type == '캐릭터카드') {
         if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
         if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
@@ -12546,7 +12653,10 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
-    await user.save();
+    if (shopType === '레이드') {
+        try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
+        catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
+    } else await user.save();
     if (typeof limits.global == 'number') {
         try { await addShopGlobalCount(shopItem.shopId, count); } catch (e) { console.error('[shop] global counter 저장 실패: ' + e.message); }
     }
@@ -12902,6 +13012,7 @@ class RPGUser {
             shoes: null,
             accessory: {},
             support: null,
+            artifact: null,
             pet: []
         };
         this.inventory = {
@@ -12962,7 +13073,7 @@ class RPGUser {
         if (!Array.isArray(this.inventory.item)) this.inventory.item = [];
         if (!Array.isArray(this.inventory.equipment)) this.inventory.equipment = [];
         if (!Array.isArray(this.inventory.pet)) this.inventory.pet = [];
-        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, pet: [] };
+        if (!this.equipments || typeof this.equipments != 'object') this.equipments = { weapon: null, hat: null, armor: null, pants: null, shoes: null, accessory: {}, support: null, artifact: null, pet: [] };
         EQUIPMENT_SINGLE_SLOTS.filter(type => type != 'support').forEach(type => {
             if (typeof this.equipments[type] == 'undefined') this.equipments[type] = null;
         });
@@ -13939,7 +14050,7 @@ function buildGmMailGifts(specs) {
             const equipType = String(spec.equipType || '');
             const id = Number(spec.id);
             if (!getEquipmentData(equipType, id)) return { error: '존재하지 않는 장비입니다.' };
-            const equip = { type: equipType, id, level: Math.max(0, Math.floor(Number(spec.level || 0))) };
+            const equip = equipType === 'artifact' ? artifacts.create(getEquipmentData(equipType, id).rarity, id, readJson(CHARACTER_CARDS_PATH, [])) : { type: equipType, id, level: Math.max(0, Math.floor(Number(spec.level || 0))) };
             if (spec.advanced && typeof spec.advanced == 'object') {
                 ['potential', 'rolled', 'soul', 'locked'].forEach(k => { if (typeof spec.advanced[k] != 'undefined') equip[k] = spec.advanced[k]; });
             }
@@ -15393,6 +15504,13 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
+    if (args[0] == '아티팩트재설정') {
+        const target = getAllUserEquipments(user)[Number(args[1]) - 1];
+        if (!target || target.equip.type !== 'artifact') { reply('❌ 아티팩트 장비 번호를 입력하세요.'); return; }
+        const result = await rerollArtifactForUser(user.name, target.equip.uid, args.slice(2));
+        reply(result.error || ('✅ 아티팩트 재설정 완료 · ' + comma(result.cost) + '골드 · 남은 횟수 ' + (3 - result.artifact.rerollsUsed)));
+        return;
+    }
     if (args[0] == '분해') {
         const result = formatDisassemblePreview(user, args.slice(1));
         await user.save();
@@ -15726,7 +15844,9 @@ function getRaidUnlockError(user, raidId) {
     const definitions = getDataCache('Quest', null);
     if (!Array.isArray(definitions)) return '퀘스트 해금 정보를 불러오지 못했습니다. 다시 시도해주세요.';
     const required = definitions.filter(def => def && (def.rewards || []).some(reward => reward && reward.type == '레이드해금' && reward.raid_id === raidId));
-    if (!required.length || user && Array.isArray(user.unlockedRaids) && user.unlockedRaids.includes(raidId)) return null;
+    if (user && Array.isArray(user.unlockedRaids) && user.unlockedRaids.includes(raidId)) return null;
+    const raid = (readJson(path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json'), {}).quests || []).find(raid => raid.id === raidId);
+    if (!required.length) return raid && raid.requiresUnlock ? '해금 퀘스트 또는 이전 난이도 클리어가 필요합니다.' : null;
     return required.map(def => '[' + def.name + ']').join(' 또는 ') + ' 퀘스트 보상으로 해금해야 합니다.';
 }
 
@@ -15850,7 +15970,9 @@ module.exports = {
     getDailyDungeons,
     clearFieldRuntimeTimers,
     getDungeonConfigurationError,
+    buildCharacterCardReward,
     getRaidUnlockError,
+    getArtifactView, grantArtifact, rerollArtifactForUser, commitProtectedUserChange,
     tickTrainingCombat,
     getCardSaleSelection,
     getDisassemblePreviewData,
@@ -16107,6 +16229,7 @@ module.exports = {
     getEquipmentStatsAtLevel,
     getEquipmentPlusStatsAtLevel,
     getEquipmentByNumber,
+    getAllUserEquipments,
     getEquipmentData,
     getEquipmentRarityLabel,
     EQUIPMENT_STONE_ITEM_ID,

@@ -211,6 +211,7 @@
         const acd = Number(r.actionCdRemain || 0);
         const pcd = Number(r.potionCdRemain || 0);
         const dead = !!r.dead;
+        const transitioning = currentRoom.monster?.mansion?.form === 'transition';
         const seal = Number(r.sealRemain || 0);
         const bar = $('#pqSkillBar');
         if (bar) bar.style.opacity = seal > 0 ? '.45' : '';
@@ -225,7 +226,7 @@
             const remain = Number((r.cooldowns && r.cooldowns[skillName]) || 0);
             // 시벌론: 일반 공격 5회 충전 후 활성화 — 충전 부족 시 게이지 표시
             const needCharge = skillName === '시벌론' && Number(r.sivalonCharge || 0) < 5;
-            const blocked = isPassive || dead || seal > 0 || remain > 0 || acd > 0 || needCharge;
+            const blocked = isPassive || dead || transitioning || seal > 0 || remain > 0 || acd > 0 || needCharge;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
             const text = seal > 0 && !isPassive ? ('봉인 ' + seal.toFixed(1))
@@ -238,7 +239,7 @@
             }
         });
         $$('.pq-skill-btn[data-kind="potion"]').forEach(btn => {
-            btn.disabled = dead || seal > 0 || pcd > 0;
+            btn.disabled = dead || transitioning || seal > 0 || pcd > 0;
             const cd = btn.querySelector('.cd');
             if (cd) {
                 const text = seal > 0 ? '봉인' : (pcd > 0 ? pcd.toFixed(1) : '');
@@ -261,9 +262,11 @@
         const acd = Number(r.actionCdRemain || 0);
         const dead = !!r.dead;
         const seal = Number(r.sealRemain || 0);
-        const blocked = dead || currentRoom.awaitingChoices || seal > 0 || acd > 0;
+        const transition = currentRoom.monster?.mansion?.form === 'transition';
+        const stone = currentRoom.monster?.mansion?.events?.some(event => event.kind === 'sculpture');
+        const blocked = dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition;
         btn.disabled = blocked;
-        btn.textContent = seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (acd > 0 ? (acd.toFixed(1) + 's') : '공격');
+        btn.textContent = seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : '공격');
     }
 
     function getMyActionCooldownMs() {
@@ -855,6 +858,7 @@
             stage.replaceChildren();
         }
 
+        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
         syncVoteModal(snap);
         renderSupportBar(snap);
         renderPlayMembers(snap);
@@ -1253,6 +1257,7 @@
 
     function updateBossMonster(monster) {
         if (!monster) return;
+        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
         updateEnrageLabel(monster);
         // 폭주 모드 등으로 일러스트/이름이 바뀌면 스테이지를 다시 그린다
         const sig = bossStageSigOf(monster);

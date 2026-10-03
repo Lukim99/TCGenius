@@ -834,7 +834,7 @@ function textLines(text) {
 const RARITY_COLORS = { '일반': '#64748b', '고급': '#64748b', '레어': '#86efac', '희귀': '#86efac', '유니크': '#a855f7', '영웅': '#a855f7', '레전더리': '#facc15', '전설': '#facc15', '초월': '#ef4444', '초월 1단계': '#ef4444', '초월 2단계': '#ef4444', '초월 3단계': '#ef4444', '신화': '#a78bfa', '고유': '#ec4899' };
 const SLOT_ICONS = { 'weapon': '⚔️', 'hat': '🎩', 'armor': '🛡️', 'pants': '👖', 'shoes': '👢', 'accessory': '💍', 'support': '🔧', 'orb': '🔮' };
 const ITEM_TYPE_ORDER = ['이벤트', '가챠', '번들', '사용', '소모품', '티켓', '미끼', '재료'];
-const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
+const EQUIP_TYPE_ORDER = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조'], ['artifact', '아티팩트']];
 
 function rarityTag(rarity) {
     return el('span', { class: 'tag rarity' + (rarity === '신화' ? ' rarity-mythic' : '') }, rarity);
@@ -969,7 +969,7 @@ function gearSlotNode(typeKey, label, eq) {
 function renderGearSlots(data) {
     const root = $('#equippedGear');
     if (!root) return;
-    const byType = { weapon: null, hat: null, armor: null, pants: null, shoes: null, support: null };
+    const byType = { weapon: null, hat: null, armor: null, pants: null, shoes: null, support: null, artifact: null };
     const accessories = [];
     (data.equippedEquipment || []).forEach(e => {
         if (e.type === 'accessory') accessories.push(e);
@@ -983,6 +983,7 @@ function renderGearSlots(data) {
     ];
     for (let i = 0; i < maxAcc; i++) nodes.push(gearSlotNode('accessory', maxAcc > 1 ? '장신구 ' + (i + 1) : '장신구', accessories[i] || null));
     nodes.push(gearSlotNode('support', '보조', byType.support));
+    nodes.push(gearSlotNode('artifact', '아티팩트', byType.artifact));
     root.replaceChildren(...nodes);
 }
 
@@ -1579,6 +1580,21 @@ function equipmentModalView(eq, interactive) {
         const soulText = formatSoulRemaining(eq.soul.expiredAt);
         if (soulText) nodes.push(el('div', { class: 'eqm-soul' }, soulText));
     }
+    if (eq.artifact && window.ArtifactUI) {
+        const root = el('div');
+        const submit = interactive !== false && ownEquipContext() ? async payload => {
+            const result = await postApi('/api/artifact/reroll', payload);
+            const updated = result.equipment && result.equipment.find(entry => entry.uid === eq.uid);
+            if (updated) Object.assign(eq, updated);
+            eq.artifact = result.artifact;
+            ArtifactUI.render(root, result.artifact, { submit });
+            if (result.profile) renderProfile(result.profile);
+            if (pageIsActive('inventory')) await loadInventory('equipment');
+            return result;
+        } : null;
+        ArtifactUI.render(root, eq.artifact, { submit });
+        nodes.push(root);
+    }
     const potBlock = potentialBlockNode(eq.potentialDisplay);
     if (potBlock) nodes.push(potBlock);
     if (interactive !== false && ownEquipContext() && Number(eq.number || 0) > 0) {
@@ -1589,7 +1605,7 @@ function equipmentModalView(eq, interactive) {
         } else {
             row.appendChild(el('button', { class: 'modal-action-button equip', onclick: e => handleEquipmentAction(eq, 'equip', e) }, '장착'));
         }
-        row.appendChild(el('button', { class: 'modal-action-button enhance', disabled: eq.locked, onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
+        if (eq.type !== 'artifact') row.appendChild(el('button', { class: 'modal-action-button enhance', disabled: eq.locked, onclick: () => { closeModal(); openEnhanceModal(eq); } }, '강화'));
 
         nodes.push(row);
         if (eq.canPotential) {
@@ -3378,7 +3394,7 @@ const PRESET_GEAR_LAYOUT = [
     { type: 'weapon', label: '무기' }, { type: 'hat', label: '모자' }, { type: 'armor', label: '갑옷' },
     { type: 'pants', label: '하의' }, { type: 'shoes', label: '신발' },
     { type: 'accessory', label: '장신구' }, { type: 'accessory', label: '장신구' }, { type: 'accessory', label: '장신구' },
-    { type: 'support', label: '보조' }
+    { type: 'support', label: '보조' }, { type: 'artifact', label: '아티팩트' }
 ];
 const PRESET_EMPTY_GEAR_FRAME_URL = '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]일반.png');
 const PRESET_EMPTY_CARD_URL = '/static/assets/preset-empty-card.png';
@@ -3578,6 +3594,7 @@ function openPresetDetailModal(slot) {
         .forEach(([t, l]) => gear.appendChild(presetDetailGearNode(t, l, (byType[t] || [])[0])));
     for (let i = 0; i < 3; i++) gear.appendChild(presetDetailGearNode('accessory', '장신구 ' + (i + 1), (byType.accessory || [])[i]));
     gear.appendChild(presetDetailGearNode('support', '보조', (byType.support || [])[0]));
+    gear.appendChild(presetDetailGearNode('artifact', '아티팩트', (byType.artifact || [])[0]));
     const slotCards = Array.from({ length: 5 }, (_, i) => presetDetailCardNode(preset.slotCards[i] || null, String(i + 1), 'slot'));
     const cards = el('div', { class: 'preset-detail-card-layout' },
         el('div', { class: 'preset-detail-main-wrap' },
@@ -5763,7 +5780,15 @@ function renderShop(data, tab) {
         currBar.appendChild(chip);
     });
     const grid = el('div', { class: 'shop-grid' });
-    (data.shop[shopTab] || []).forEach(item => {
+    let products = data.shop[shopTab] || [];
+    if (shopTab === '레이드') {
+        const tabs = [...new Set(products.map(item => item.materialTab || item.price.name || '레이드 재료'))];
+        const selected = tabs.includes(renderShop.materialTab) ? renderShop.materialTab : tabs[0];
+        renderShop.materialTab = selected;
+        content.appendChild(el('div', { class: 'shop-tabs', role: 'tablist' }, ...tabs.map(tab => el('button', { class: 'shop-tab' + (tab === selected ? ' active' : ''), role: 'tab', 'aria-selected': tab === selected, onclick: () => { renderShop.materialTab = tab; renderShop(data, '레이드'); } }, tab))));
+        products = products.filter(item => (item.materialTab || item.price.name || '레이드 재료') === selected);
+    }
+    products.forEach(item => {
         const unavailable = !!(item.soldOut || item.owned);
         const status = item.owned ? '보유중' : item.soldOut ? '품절' : '구매';
         const card = el('article', { class: 'shop-card' + (unavailable ? ' sold-out' : '') });
@@ -6292,6 +6317,7 @@ const REG_SLOT_SVGS = {
 REG_SLOT_SVGS.hat = REG_SLOT_SVGS.armor;
 REG_SLOT_SVGS.pants = REG_SLOT_SVGS.armor;
 REG_SLOT_SVGS.shoes = REG_SLOT_SVGS.armor;
+REG_SLOT_SVGS.artifact = REG_SLOT_SVGS.accessory;
 function regCurrImg(c) {
     const file = c === 'gold' ? '골드.png' : '가넷.png';
     return el('img', { src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(file), alt: c, style: 'width:22px;height:22px;object-fit:contain;display:block;flex-shrink:0' });
@@ -7546,7 +7572,7 @@ function dexCard(entry) {
     return card;
 }
 
-const DEX_EQUIPMENT_TABS = new Set(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support']);
+const DEX_EQUIPMENT_TABS = new Set(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact']);
 
 function dexRichText(text) {
     const valuePattern = /((?:Lv\.\s*)?[+-]?\d+(?:\.\d+)?(?:%|초|분|회|개|성|단계)?|HP|MP)/g;

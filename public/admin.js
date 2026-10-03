@@ -113,7 +113,7 @@ $('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST'
 
 // ---------- 룩업 캐시 ----------
 const LOOKUP = { items: null, equipment: null, cards: null, fashion: null, pet: null, equipmentPassives: null };
-const EQUIPMENT_SLOT_DEFS = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조']];
+const EQUIPMENT_SLOT_DEFS = [['weapon', '무기'], ['hat', '모자'], ['armor', '갑옷'], ['pants', '하의'], ['shoes', '신발'], ['accessory', '장신구'], ['support', '보조'], ['artifact', '아티팩트']];
 const EQUIPMENT_SLOT_KEYS = EQUIPMENT_SLOT_DEFS.map(([key]) => key);
 const EQUIPMENT_SLOT_LABELS = Object.fromEntries(EQUIPMENT_SLOT_DEFS);
 async function getItems() { if (!LOOKUP.items) LOOKUP.items = await api('/api/lookup/items'); return LOOKUP.items; }
@@ -302,7 +302,7 @@ function cardTargetControls(entry, onChange) {
     };
     btn.onclick = () => pickCard(card => {
         entry.card_id = card.id;
-        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
+        ['character_card_id', 'id', 'item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
         refresh();
         refreshSkins();
         onChange && onChange();
@@ -343,9 +343,9 @@ function ensureCount(entry, asObject) {
     }
 }
 
-const REWARD_TYPES = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '펫', '칭호', '골드', '가넷', '마일리지', '포인트', '경험치'];
-const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫', '골드', '가넷', '마일리지'];
-const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '펫'];
+const REWARD_TYPES = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '아티팩트', '펫', '칭호', '골드', '가넷', '마일리지', '포인트', '경험치'];
+const MATERIAL_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '아티팩트', '펫', '골드', '가넷', '마일리지'];
+const CRAFTED_TYPES = ['아이템', '무기', '갑옷', '장신구', '보조', '아티팩트', '펫'];
 
 function entryRow(entry, opts, onChange, onDelete) {
     // opts: { types, withRoll, countAsObject }
@@ -375,14 +375,14 @@ function entryRow(entry, opts, onChange, onDelete) {
                     btn.innerHTML = '<span class="ph">아이템 선택...</span>';
                 }
             };
-            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickItem(it => { entry.item_id = it.id; ['weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '캐릭터카드') {
             targetSlot.appendChild(cardTargetControls(entry, onChange));
-        } else if (t === '무기' || t === '갑옷' || t === '장신구' || t === '보조') {
-            const slot = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory', '보조': 'support' }[t];
-            const idKey = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id' }[t];
+        } else if (t === '무기' || t === '갑옷' || t === '장신구' || t === '보조' || t === '아티팩트') {
+            const slot = { '무기': 'weapon', '갑옷': 'armor', '장신구': 'accessory', '보조': 'support', '아티팩트': 'artifact' }[t];
+            const idKey = { '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id', '아티팩트': 'artifact_id' }[t];
             const btn = el('button', { class: 'pickbtn', type: 'button' });
             const refresh = async () => {
                 const eq = await getEquipment();
@@ -391,7 +391,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, t + ' 선택...'));
             };
-            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickEquipment(slot, e => { entry[idKey] = e.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => k !== idKey && delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '펫') {
@@ -403,7 +403,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('<' + cur.rarity + '> #' + cur.id + ' ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, '펫 선택...'));
             };
-            btn.onclick = () => pickPet(p => { entry.pet_id = p.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickPet(p => { entry.pet_id = p.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'title_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '아바타') {
@@ -421,7 +421,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                 avatarSel.value = entry.fashion || '';
             };
             avatarSel.onchange = () => {
-                ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
+                ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
                 if (avatarSel.value) entry.fashion = avatarSel.value;
                 else delete entry.fashion;
                 onChange && onChange();
@@ -437,7 +437,7 @@ function entryRow(entry, opts, onChange, onDelete) {
                 if (cur) btn.appendChild(document.createTextNode('🏅 ' + cur.name));
                 else btn.appendChild(el('span', { class: 'ph' }, '칭호 선택...'));
             };
-            btn.onclick = () => pickTitle(tt => { entry.title_id = tt.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
+            btn.onclick = () => pickTitle(tt => { entry.title_id = tt.id; ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'fashion'].forEach(k => delete entry[k]); refresh(); onChange && onChange(); });
             refresh();
             targetSlot.appendChild(btn);
         } else if (t === '레이드해금') {
@@ -451,7 +451,7 @@ function entryRow(entry, opts, onChange, onDelete) {
             targetSlot.appendChild(raidSelect);
         } else {
             // 골드/가넷/마일리지/경험치 — target 없음
-            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
+            ['item_id', 'weapon_id', 'armor_id', 'accessory_id', 'support_id', 'artifact_id', 'card_id', 'character_card_id', 'id', 'display_star', 'star_display', 'star', 'range', 'card_type', 'cardType', 'skin', 'pet_id', 'title_id', 'fashion'].forEach(k => delete entry[k]);
             targetSlot.appendChild(el('span', { class: 'muted', style: { padding: '6px 4px' } }, '(' + t + ' 수량 지정)'));
         }
     }
@@ -460,12 +460,12 @@ function entryRow(entry, opts, onChange, onDelete) {
         countSlot.innerHTML = '';
         if (entry.type === '레이드해금') { delete entry.count; countSlot.appendChild(el('span', { class: 'lab' }, '영구 해금')); return; }
         // 보상 장비는 보통 count=1 고정 (제작 재료 장비는 수량 입력 허용)
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫' || entry.type === '칭호' || entry.type === '아바타') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '아티팩트' || entry.type === '펫' || entry.type === '칭호' || entry.type === '아바타') && opts.types !== CRAFTED_TYPES && opts.types !== MATERIAL_TYPES) {
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
             if (opts.countAsObject) entry.count = { min: 1, max: 1 }; else entry.count = 1;
             return;
         }
-        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '펫') && opts.types === CRAFTED_TYPES) {
+        if ((entry.type === '무기' || entry.type === '갑옷' || entry.type === '장신구' || entry.type === '보조' || entry.type === '아티팩트' || entry.type === '펫') && opts.types === CRAFTED_TYPES) {
             // crafted (단일 지급)
             delete entry.count;
             countSlot.appendChild(el('span', { class: 'lab' }, '×1'));
@@ -1763,6 +1763,7 @@ const PLUS_STAT_DEFS = [
     { key: 'skillTrueDmg', label: '스킬 사용 시 추가 고정 피해', kind: 'int' },
     { key: 'takenDamage', label: '받는 피해 증가', kind: 'percent' },
     { key: 'damageBonus', label: '일반 몬스터에게 주는 피해 증가', kind: 'percent' },
+    { key: 'finalAtk', label: '최종 공격력', kind: 'percent' },
     { key: 'finalDamage', label: '최종 피해', kind: 'percent' },
     { key: 'extraDamage', label: '추가 피해', kind: 'percent' },
     { key: 'nonElementDamage', label: '[무]속성 공격 피해', kind: 'percent' },
@@ -2174,7 +2175,7 @@ function equipCard(eq, index) {
                 toast('#' + (equipData[equipCurrentSlot].length - 1) + '번으로 복제했습니다.');
             } }, '복제'),
             el('button', { class: 'btn sm danger', type: 'button', onclick: async () => {
-                const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id' }[equipCurrentSlot];
+                const idKey = { weapon: 'weapon_id', armor: 'armor_id', accessory: 'accessory_id', support: 'support_id', artifact: 'artifact_id' }[equipCurrentSlot];
                 const refs = idKey ? await scanRefs(idKey, index) : { direct: 0, above: 0 };
                 // 모자/하의/신발은 팩·조합법 등에 *_id 참조 키가 없어 참조 검사를 수행할 수 없음을 명시한다 (조용히 건너뛰지 않음)
                 const scanNote = idKey ? '' : '\n* 이 부위(' + EQUIPMENT_SLOT_LABELS[equipCurrentSlot] + ')는 팩/번들/상점/조합법 참조 검사를 지원하지 않습니다. 유저 인벤토리·장착 데이터의 id가 당겨질 수 있으니 주의하세요.';
@@ -2327,7 +2328,7 @@ function renderEquip() {
 }
 $('#equipAdd').onclick = () => {
     if (!equipData[equipCurrentSlot]) equipData[equipCurrentSlot] = [];
-    equipData[equipCurrentSlot].push({ name: '', desc: '', rarity: '일반', stat: {}, plusStat: {} });
+    equipData[equipCurrentSlot].push({ name: '', desc: '', rarity: equipCurrentSlot === 'artifact' ? '레어' : '일반', ...(equipCurrentSlot === 'artifact' ? { artifact: true } : {}), stat: {}, plusStat: {} });
     equipFilterText = ''; if ($('#equipFilter')) $('#equipFilter').value = '';
     PAGE_STATE['equip:' + equipCurrentSlot] = 1e9;
     renderEquipTypes(); renderEquip();
@@ -3697,7 +3698,7 @@ if ($('#pkgCreate')) {
             const min = typeof r.count === 'object' ? r.count?.min : r.count;
             const max = typeof r.count === 'object' ? r.count?.max : r.count;
             if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min) { toast('보상 수량 범위를 확인하세요.', false); return; }
-            const idKey = { '아이템': 'item_id', '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id', '펫': 'pet_id', '캐릭터카드': 'card_id' }[r.type];
+            const idKey = { '아이템': 'item_id', '무기': 'weapon_id', '갑옷': 'armor_id', '장신구': 'accessory_id', '보조': 'support_id', '아티팩트': 'artifact_id', '펫': 'pet_id', '캐릭터카드': 'card_id' }[r.type];
             if (idKey && (!Number.isInteger(r[idKey]) || r[idKey] < 0)) { toast(r.type + ' 보상을 선택하세요.', false); return; }
             if (r.type === '칭호' && !r.title_id) { toast('칭호를 선택하세요.', false); return; }
             if (r.type === '아바타' && !r.fashion) { toast('아바타를 선택하세요.', false); return; }

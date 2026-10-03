@@ -179,6 +179,60 @@
       "description": "패키지 구매",
       "stat": { "atk": 10 },
       "plusStat": { "afterBasic": 0.03 }
+    },
+    {
+      "id": "mansionBlessing",
+      "name": "이세계에게축복을",
+      "description": "E세계 대저택 레이드 1회 클리어",
+      "condition": {
+        "progressKey": "mansionClears",
+        "count": 1
+      },
+      "stat": {
+        "atk": 20
+      },
+      "plusStat": {
+        "bossDmg": 0.1
+      }
+    },
+    {
+      "id": "mansionMaster",
+      "name": "대저택마스터",
+      "description": "E세계 대저택 레이드 5회 클리어",
+      "condition": {
+        "progressKey": "mansionClears",
+        "count": 5
+      },
+      "plusStat": {
+        "bossDmg": 0.15
+      }
+    },
+    {
+      "id": "mansionEyes",
+      "name": "저 눈 뜨고 있습니다.",
+      "description": "???",
+      "plusStat": {
+        "eliteDmg": 0.1
+      }
+    },
+    {
+      "id": "mansionNightmare",
+      "name": "악몽의 대저택",
+      "description": "E세계 대저택 나이트메어 최초 클리어",
+      "stat": {
+        "hp": 2000
+      }
+    },
+    {
+      "id": "mansionFirstClear",
+      "name": "E세계 대저택 퍼스트 클리어",
+      "description": "???",
+      "stat": {
+        "fireAtk": 5,
+        "waterAtk": 5,
+        "lightAtk": 5,
+        "darkAtk": 5
+      }
     }
   ]
 }

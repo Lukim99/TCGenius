@@ -571,6 +571,22 @@ function grantPartyQuestPackReward(user, reward, summary) {
     const items = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Item', []) : [];
     const equipments = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Equipment', {}) : {};
     const count = rollPartyQuestCount(reward.count);
+    if (reward.item_name) { const id = items.findIndex(item => item && item.name === reward.item_name); if (id < 0) throw new Error('운영 아이템이 없습니다: ' + reward.item_name); reward = { ...reward, item_id: id }; }
+    if (reward.type === '아티팩트') {
+        const pieces = [];
+        for (let i = 0; i < count; i++) {
+            const rarity = reward.rarity || pickPartyQuestPackEntry(reward.rarityWeights).rarity;
+            const equip = rpgenius.grantArtifact(user, rarity); const name = '<' + rarity + '> 아티팩트';
+            addPartyQuestRewardSummary(summary, 'artifact:' + rarity, name, 1);
+            pieces.push({ kind: 'equipment', equipType: 'artifact', equipmentId: equip.id, rarity, uid: equip.uid, name, count: 1,
+                iconUrl: '/item-image?dir=' + encodeURIComponent('장비') + '&file=' + encodeURIComponent(rarity + ' 아티팩트.png'),
+                frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + rarity + '.png') });
+        }
+        const rarity = pieces[0].rarity;
+        return { kind: 'equipment', equipType: 'artifact', name: pieces.map(piece => piece.name).join(', '), count, pieces,
+            iconUrl: '/item-image?dir=' + encodeURIComponent('장비') + '&file=' + encodeURIComponent(rarity + ' 아티팩트.png'),
+            frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + rarity + '.png') };
+    }
     if (reward.type === '아이템') {
         rpgenius.addInventoryItem(user, reward.item_id, count);
         const item = items[reward.item_id];
@@ -582,7 +598,9 @@ function grantPartyQuestPackReward(user, reward, summary) {
         if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
         let last = null;
         for (let i = 0; i < count; i++) {
-            const card = buildPartyQuestCharacterCardReward(reward);
+            const card = reward.card_type === '랜덤'
+                ? rpgenius.buildCharacterCardReward({ ...reward, card_type: pickPartyQuestPackEntry([{ type: '일반', roll: .5 }, { type: '전직', roll: .35 }, { type: '각성', roll: .15 }]).type })
+                : buildPartyQuestCharacterCardReward(reward);
             if (!card) continue;
             user.inventory.card.push(card);
             last = card;
@@ -606,6 +624,7 @@ function grantPartyQuestPackReward(user, reward, summary) {
         return { kind: 'currency', currency: 'mileage', name: '마일리지', count };
     }
     if (reward.type === '펫') {
+        if (reward.pet_name) { const id = rpgenius.getDataCache('Pet', []).findIndex(pet => pet && pet.name === reward.pet_name); if (id < 0) throw new Error('운영 펫이 없습니다: ' + reward.pet_name); reward = { ...reward, pet_id: id }; }
         for (let i = 0; i < count; i++) rpgenius.addPetInventory(user, Number(reward.pet_id));
         const pet = typeof rpgenius.getPetData === 'function' ? rpgenius.getPetData(Number(reward.pet_id)) : null;
         const name = pet ? '<' + pet.rarity + '> ' + pet.name + ' (펫)' : '알 수 없는 펫';
@@ -627,7 +646,7 @@ function grantPartyQuestPackReward(user, reward, summary) {
     }
     // 보주 랜덤 (use:'보주' 아이템 중 균등 1개)
     if (reward.type === '보주랜덤') {
-        const ids = items.map((it, i) => (it && it.use === '보주' ? i : -1)).filter(i => i >= 0);
+        const ids = items.map((it, i) => (it && it.use === '보주' && (!reward.related || ['조각 보주', '눈뜬 장님 보주', '오로라 보주'].includes(it.name)) ? i : -1)).filter(i => i >= 0);
         if (!ids.length) return null;
         const id = ids[randomInt(0, ids.length - 1)];
         rpgenius.addInventoryItem(user, id, count);
@@ -674,7 +693,11 @@ function isButaQuest(questId) {
 }
 
 function grantPartyQuestClearRewards(room) {
-    return (async () => {
+    const isMansion = room.questId.startsWith('mansion');
+    if (isMansion && room.state !== 'cleared') return Promise.resolve();
+    if (isMansion && room.rewardPromise) return room.rewardPromise;
+    const work = (async () => {
+        if (isMansion) await Promise.all([...(room.refundTasks || []), ...(room.pendingTitleGrants || [])]);
         const quest = getQuestById(room.questId);
         const rewards = quest && quest.rewards || {};
         const packs = getPartyQuestPacks();
@@ -696,7 +719,8 @@ function grantPartyQuestClearRewards(room) {
                 const isHodu = room.questId === 'blackHodu' || room.questId === 'blackHoduExtreme';
                 const hoduRewardCount = isHodu && prog.hoduRewardWeek === weekKey ? Number(prog.hoduRewardCount || 0) : 0;
                 const weeklyLocked = (isButaQuest(room.questId) && prog.butaRewardWeek === weekKey)
-                    || (isHodu && hoduRewardCount >= HODU_WEEKLY_REWARD_LIMIT);
+                    || (isHodu && hoduRewardCount >= HODU_WEEKLY_REWARD_LIMIT)
+                    || (isMansion && prog.mansionRewardWeek === weekKey);
                 const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
@@ -730,18 +754,18 @@ function grantPartyQuestClearRewards(room) {
                 // 기본 보상(전부 지급) + 추가 보상(가중 1개 추첨)
                 const extraRewards = [];
                 if (!weeklyLocked) {
-                    const courageGem = rpgenius.rollAwakeningGemDrop(user, '용기의 보석', 0.05);
+                    const courageGem = rpgenius.rollAwakeningGemDrop(user, '용기의 보석', rewards.courageGemChance ?? 0.05);
                     if (courageGem) {
                         addPartyQuestRewardSummary(summary, 'item:' + courageGem.itemId, courageGem.name, courageGem.count);
                         extraRewards.push({ kind: 'item', ...courageGem, bonus: true });
                     }
                     for (const entry of (Array.isArray(rewards.base) ? rewards.base : [])) {
                         const granted = grantPartyQuestPackReward(user, entry, summary);
-                        if (granted) extraRewards.push(granted);
+                        if (granted) extraRewards.push(...(granted.pieces || [granted]));
                     }
                     if (Array.isArray(rewards.bonus) && rewards.bonus.length) {
                         const granted = grantPartyQuestPackReward(user, pickPartyQuestPackEntry(rewards.bonus), summary);
-                        if (granted) { granted.bonus = true; extraRewards.push(granted); }
+                        if (granted) extraRewards.push(...(granted.pieces || [granted]).map(reward => ({ ...reward, bonus: true })));
                     }
                 }
                 for (const r of extraRewards) if (r.kind === 'item') Object.assign(r, getPartyQuestItemAsset(r.itemId, r.bonus ? 1 : 0));
@@ -763,6 +787,21 @@ function grantPartyQuestClearRewards(room) {
                 }
                 // 흑화 호두 (익스트림) 개인 최초 클리어 보너스 (기존 보상과 별도)
                 let firstClear = null;
+                if (isMansion) {
+                    prog.mansionClears = Number(prog.mansionClears || 0) + 1;
+                    if (!weeklyLocked) prog.mansionRewardWeek = weekKey;
+                    if (!Array.isArray(user.unlockedRaids)) user.unlockedRaids = [];
+                    const next = room.questId === 'mansionNormal' ? 'mansionHard' : room.questId === 'mansionHard' ? 'mansionNightmare' : null;
+                    if (next && !user.unlockedRaids.includes(next)) user.unlockedRaids.push(next);
+                    rpgenius.checkAndUnlockTitles(user);
+                    if (room.questId === 'mansionNightmare' && !prog.mansionNightmareFirst) {
+                        const granted = (quest.firstClearRewards || []).flatMap(entry => { const reward = grantPartyQuestPackReward(user, entry, summary); return reward ? reward.pieces || [reward] : []; });
+                        for (const reward of granted) if (reward.kind === 'item') Object.assign(reward, getPartyQuestItemAsset(reward.itemId, 0));
+                        rpgenius.unlockTitle(user, 'mansionNightmare');
+                        prog.mansionNightmareFirst = true;
+                        firstClear = { questName: quest.name, rewards: [...granted, { kind: 'title', name: '악몽의 대저택', count: 1, iconUrl: rpgenius.getTitleImageUrl('악몽의 대저택') }] };
+                    }
+                }
                 if (room.questId === 'blackHoduExtreme' && !rpgenius.getUnlockedTitles(user).includes('hoduExtreme')) {
                     const bonusGold = 1000000;
                     const bonusGarnet = 200;
@@ -784,7 +823,7 @@ function grantPartyQuestClearRewards(room) {
                         ]
                     };
                 }
-                await user.save();
+                if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'unlockedRaids', 'quests']); else await user.save();
                 results.push({
                     name: member.name,
                     exp,
@@ -806,6 +845,8 @@ function grantPartyQuestClearRewards(room) {
         pushNotice(room, '보상 지급 완료', 'success', 4500);
         broadcastRoom(room);
     })();
+    if (isMansion) room.rewardPromise = work;
+    return work;
 }
 
 function listQuestSummaries(user) {
@@ -978,7 +1019,7 @@ function nowMs() { return Date.now(); }
 // 클라 연출(페이드 450 + 카운트 2400 + 개시 950 = 3800ms)과 맞춘 값.
 const INTRO_GRACE_MS = 3800;
 function isIntroActive(room) {
-    return !!(room && room.introUntil && nowMs() < room.introUntil);
+    return !!(room && (room.introUntil && nowMs() < room.introUntil || room.monster?.bossState?.form === 'transition'));
 }
 
 function remainSeconds(untilMs) {
@@ -1011,6 +1052,7 @@ function serializeMonster(mon) {
     if (!mon) return null;
     const gimmick = mon.bossState && mon.bossState.chatGimmick;
     return {
+        mansion: mansionRaid.view(mon),
         name: mon.name,
         hp: Math.max(0, Math.round(mon.hp)),
         hpMax: Math.round(mon.hpMax),
@@ -1044,7 +1086,14 @@ function mergeMonsterStats(monsterDef) {
 
 // 보스별 패턴 핸들러. step(room, mon, dt) -> true면 이번 tick의 일반 행동을 소비.
 // init(monDef)는 해당 보스 전용 bossState 필드를 반환한다.
+const mansionRaid = require('./mansion_raid').createMansionRaid({
+    getAliveMembers, findMember, pushNotice, pushCombat, applyFixedDamageToMember, applyDamageToMember, computeMonsterDamage,
+    bossAtk, endBossGimmick, applyBossGroggy, addSupportGauge, wipeParty, upsertMemberBuff, healMember, setBossShield, clearBossShield,
+    registerHpGimmicks, applyBossHpDamage, broadcastRoom, recordPartyDamage, canPartyApplyShield, grantTitleAsync
+});
 const BOSS_HANDLERS = {
+    '조각': { step: mansionRaid.step, init: mansionRaid.init, onSpawn: mansionRaid.onSpawn },
+    '위플래쉬': { step: mansionRaid.step, init: mansionRaid.init, onSpawn: mansionRaid.onSpawn },
     '흑화 호두': { step: stepBlackHoduBoss, init: createBlackHoduBossState },
     '타부자고': { step: stepTabuzago, init: createTabuzagoBossState, onSpawn: onSpawnTabuzago },
     '잉여왕': { step: stepIngyeoWang, init: createIngyeoWangBossState, onSpawn: onSpawnIngyeoWang }
@@ -1581,6 +1630,8 @@ async function start(hostName) {
             equipmentState: { combatStartedAt: Date.now() },
             battleStats: createPartyBattleStats()
         };
+        const potion = userMap.get(m.name)?.battleCryPotion;
+        if (potion && Date.now() < potion.expired_at) upsertMemberBuff(m, { id: 'battleCry', label: '투신의 함성 · 최종 공격력 +25%', value: Number(potion.amount || 0), remain: (potion.expired_at - Date.now()) / 1000 });
         m.skills = posDef && posDef.baseSkill ? [posDef.baseSkill] : [];
         m.skillDefs = {};
         for (const entry of (m.baseSnapshot.mainCardSkills || [])) {
@@ -1629,6 +1680,11 @@ async function start(hostName) {
 }
 
 function setupPhase(room) {
+    for (const member of room.members) if (member.runtime) {
+        member.runtime.mansionDictationDamage = 0; member.runtime.mansionDictationTaken = 0;
+        member.runtime.buffs = (member.runtime.buffs || []).filter(buff => !buff.id.startsWith('mansionDictation'));
+    }
+    room.mansionAurora = null;
     const quest = getQuestById(room.questId);
     const phase = quest.phases[room.phaseIndex];
     if (!phase) { endQuest(room, true); return; }
@@ -1729,7 +1785,8 @@ function endQuest(room, cleared, reason) {
     // 남은 물약은 인벤토리로 반환
     for (const m of room.members) {
         if (m.potions && m.potions.length) {
-            refundLeftoverPotionsAsync(m.name, m.potions);
+            const refund = refundLeftoverPotionsAsync(m.name, m.potions);
+            if (room.questId.startsWith('mansion')) { if (!room.refundTasks) room.refundTasks = []; room.refundTasks.push(refund); }
             m.potions = [];
         }
         if (!cleared && Number(m.runtime && m.runtime.pendingEquipmentGold || 0) > 0) grantPendingEquipmentGoldAsync(m);
@@ -1747,15 +1804,17 @@ function endQuest(room, cleared, reason) {
 
 // 조건 없이 코드로 지급하는 칭호 (히든 등)
 function grantTitleAsync(room, name, titleId) {
-    (async () => {
+    const work = (async () => {
         try {
             const user = await rpgenius.getRPGUserByName(name);
             if (!user || !rpgenius.unlockTitle(user, titleId)) return;
-            await user.save();
+            if (titleId === 'mansionEyes') await rpgenius.commitProtectedUserChange(user, ['titles']); else await user.save();
             const def = typeof rpgenius.getTitleDefs === 'function' ? rpgenius.getTitleDefs().find(t => t.id === titleId) : null;
             if (room) pushNotice(room, name + ' — 칭호 「' + ((def && def.name) || titleId) + '」 획득', 'success', 6000);
         } catch (e) { console.error('[partyquest] title grant error:', e); }
     })();
+    if (room && titleId === 'mansionEyes') { if (!room.pendingTitleGrants) room.pendingTitleGrants = []; room.pendingTitleGrants.push(work); }
+    return work;
 }
 
 function grantPendingEquipmentGoldAsync(member) {
@@ -1787,6 +1846,7 @@ function restartQuest(hostName) {
     room.tauntTarget = null;
     room.tauntRemain = 0;
     room.result = null;
+    room.rewardPromise = null; room.refundTasks = []; room.pendingTitleGrants = [];
     room.startedAt = null;
     for (const m of room.members) {
         m.ready = false;
@@ -1802,7 +1862,7 @@ function restartQuest(hostName) {
 }
 
 function refundLeftoverPotionsAsync(name, potions) {
-    (async () => {
+    return (async () => {
         try {
             const user = await rpgenius.getRPGUserByName(name);
             if (!user) return;
@@ -1907,8 +1967,10 @@ function stopTick(room) {
 function stepRoom(room) {
     if (room.state !== 'inProgress') { stopTick(room); return; }
     if (room.awaitingChoices) return;
-    if (isIntroActive(room)) return; // 시작 카운트다운 동안 전투 동결 (몬스터 게이지·버프·광폭화 타이머 전부)
     const dt = TICK_MS / 1000;
+    if (mansionRaid.transition(room, dt)) { broadcastRoom(room); return; }
+    if (isIntroActive(room)) return; // 시작 카운트다운 동안 전투 동결 (몬스터 게이지·버프·광폭화 타이머 전부)
+    mansionRaid.tickAurora(room, dt);
     if (Array.isArray(room.delayedEquipmentDamage) && room.delayedEquipmentDamage.length > 0) {
         const now = Date.now();
         const waiting = [];
@@ -2086,8 +2148,8 @@ function stepRoom(room) {
     // 지원군 게이지 자연 증가 (전투 중에만, 5초당 +1%)
     if (getQuestSupportSkills(room).length) {
         room.supportGaugeAccum = Number(room.supportGaugeAccum || 0) + dt;
-        while (room.supportGaugeAccum >= SUPPORT_GAUGE_SEC_PER_PERCENT) {
-            room.supportGaugeAccum -= SUPPORT_GAUGE_SEC_PER_PERCENT;
+        while (room.supportGaugeAccum >= (getQuestById(room.questId).supportGaugeSeconds || SUPPORT_GAUGE_SEC_PER_PERCENT)) {
+            room.supportGaugeAccum -= (getQuestById(room.questId).supportGaugeSeconds || SUPPORT_GAUGE_SEC_PER_PERCENT);
             addSupportGauge(room, 1, true);
         }
     }
@@ -2201,6 +2263,7 @@ function triggerShieldExpire(room, m) {
 
 function expireBuff(member, buff) {
     const r = member.runtime;
+    if (buff.id === 'battleCry') member.baseSnapshot.stats.atk /= 1 + Number(buff.value || 0);
     if (buff.id === 'actCdMul') r.actCdMul = getActiveBuffValue(r, 'actCdMul', 1);
     if (buff.id === 'atkBuff') r.atkBuff = getActiveBuffValue(r, 'atkBuff', 0);
     if (buff.id === 'takenDmgSelf') r.takenDmgMul = getActiveBuffValue(r, 'takenDmgSelf', 1);
@@ -2237,6 +2300,10 @@ function hasPassive(member, name) {
 function getFinalDamageMul(attacker, options) {
     let mul = 1;
     const summonAttack = !!(options && options.summonAttack);
+    if (attacker.runtime) {
+        mul *= 1 + Number(attacker.runtime.mansionDictationDamage || 0);
+        for (const buff of attacker.runtime.buffs || []) if (['mansionBlessing', 'mansionTrial'].includes(buff.id) && buff.remain > 0) mul *= 1 + Number(buff.value || 0);
+    }
     // 복수의 칼날: 잃은 체력 10%당 +4% 최종 피해
     if (hasPassive(attacker, '복수의 칼날') && attacker.runtime) {
         const r = attacker.runtime;
@@ -3150,9 +3217,11 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage) {
 
 // 몬스터 HP를 깎는 유일한 경로. 보호막이 남아있으면 먼저 소모하고 HP는 무손상(초과분 소멸).
 // mon.hpFloor가 있으면 그 아래로 내려가지 않는다(폭주 잉여왕: 보호막 소진 전 즉사 방지).
-function applyBossHpDamage(room, mon, damage) {
+function applyBossHpDamage(room, mon, damage, source) {
     damage = Math.max(0, Math.round(Number(damage) || 0));
     if (!mon || damage <= 0) return 0;
+    const mansionDamage = mansionRaid.interceptDamage(room, mon, damage, source);
+    if (mansionDamage !== null) return mansionDamage;
     if (Number(mon.shield || 0) > 0) {
         const absorbed = Math.min(Number(mon.shield), damage);
         mon.shield = Math.max(0, Number(mon.shield) - damage);
@@ -3344,11 +3413,13 @@ function stepBoss(room, mon, dt) {
         if (room.state !== 'inProgress' || room.monster !== mon) return true;
     }
     if (st.gimmickActive) {
+        if (st.mansion) mansionRaid.tickEvents(room, mon, dt);
+        if (room.state !== 'inProgress') return true;
         // 체력 기믹 진행 중 — 일반 공격/짤패턴 정지. 기믹 자체의 진행은 tick 콜백이 담당.
         if (typeof st.gimmickActive.tick === 'function') st.gimmickActive.tick(room, mon, dt);
         return true;
     }
-    if (!st.casting && stepBossHpGimmick(room, mon)) return true;
+    if (!st.casting && !(st.mansion && mansionRaid.hasPendingAction(mon)) && st.form !== 'transition' && stepBossHpGimmick(room, mon)) return true;
     const handler = BOSS_HANDLERS[mon.bossKey || mon.name];
     return handler && handler.step ? handler.step(room, mon, dt) : false;
 }
@@ -3393,7 +3464,8 @@ function addSupportGauge(room, amount, silent) {
 const SUPPORT_SKILL_ICONS = {
     '지오': '부타게임/지오.png',
     'SitoSoym': '부타게임/사이토소음.jpg',
-    'X': '부타게임/X.jpg'
+    'X': '부타게임/X.jpg',
+    '피카츄': '대저택/피카츄.png', '오로라': '대저택/오로라.png', '눈뜬 장님': '대저택/눈뜬 장님.png'
 };
 const SUPPORT_GAUGE_SEC_PER_PERCENT = 4.5;   // 4.5초당 +1%
 const SUPPORT_GEO_DAMAGE = 200000;
@@ -3438,6 +3510,7 @@ function useSupportSkill(name, skillName) {
     if (skillName === '지오') useSupportGeo(room, me);
     else if (skillName === 'SitoSoym') useSupportSito(room, me);
     else if (skillName === 'X') useSupportX(room, me);
+    else mansionRaid.support(room, me, skillName);
     broadcastRoom(room);
     return { ok: true };
 }
@@ -3656,7 +3729,7 @@ function addTakenDamageUpStack(member, perStack, remain, label) {
 
 function getTakenDamageUpMul(member) {
     const b = member && member.runtime && (member.runtime.buffs || []).find(x => x.id === 'takenDamageUp');
-    return b ? Math.max(0, Number(b.value || 1)) : 1;
+    return (b ? Math.max(0, Number(b.value || 1)) : 1) * (1 + Number(member?.runtime?.mansionDictationTaken || 0));
 }
 
 // 플레이어 측 속성 도트. ratio는 보스 공격력 대비 비율, remain 미지정 시 무한.
@@ -5174,7 +5247,7 @@ function attachStream(name, res) {
 
 // ===== 물약 =====
 
-const POTION_FUNC_TYPES = new Set(['체력회복', '마나회복', '체력회복%', '마나회복%']);
+const POTION_FUNC_TYPES = new Set(['최종공격력비약', '체력회복', '마나회복', '체력회복%', '마나회복%']);
 const POTION_GLOBAL_CD = 3; // 모든 물약 공용 쿨다운 (초)
 const ACTION_GLOBAL_CD = 2.5; // 일반공격/스킬 공용 행동 쿨다운 (초)
 
@@ -5225,6 +5298,7 @@ async function getAvailablePotions(name) {
 
 function potionFuncDesc(func) {
     if (!func) return '';
+    if (func.type === '최종공격력비약') return Number(func.duration || 0) + '초간 최종 공격력 +' + Math.round(Number(func.amount || 0) * 100) + '%';
     if (func.type === '체력회복') return 'HP +' + func.amount;
     if (func.type === '마나회복') return 'MP +' + func.amount;
     if (func.type === '체력회복%') return 'HP +' + Math.round(Number(func.amount || 0) * 100) + '%';
@@ -5279,7 +5353,13 @@ async function usePotion(name, potionName) {
     const potionMul = (1 + Number(stats.potion || 0)) * getPartyRecoveryMultiplier(me);
     const parts = [];
     for (const func of funcs) {
-        if (func.type === '체력회복') {
+        if (func.type === '최종공격력비약') {
+            const current = me.runtime.buffs.find(buff => buff.id === 'battleCry' && buff.remain > 0);
+            const value = Number(func.amount || 0);
+            if (current) current.remain += Number(func.duration || 0);
+            else { me.baseSnapshot.stats.atk *= 1 + value; upsertMemberBuff(me, { id: 'battleCry', label: '투신의 함성 · 최종 공격력 +' + Math.round(value * 100) + '%', value, remain: Number(func.duration || 0) }); }
+            parts.push('최종 공격력 +' + Math.round(value * 100) + '%');
+        } else if (func.type === '체력회복') {
             const amt = Math.max(1, Math.round(Number(func.amount || 0) * potionMul));
             parts.push('+' + healMember(me, amt) + ' HP');
         } else if (func.type === '마나회복') {
@@ -5352,6 +5432,7 @@ module.exports = {
     pickRandomSkill,
     castVote,
     useSupportSkill,
+    mansionAction: (name, payload) => { const room = getRoomOf(name); return room ? mansionRaid.action(room, name, payload || {}) : { error: '참여 중인 파티가 없습니다.' }; },
     getAvailablePotions,
     usePotion,
     getMyRoomSnapshot,
@@ -5396,6 +5477,7 @@ module.exports = {
         getPartyQuestItemAsset,
         applyBossGroggy,
         __moveMark: moveIngyeoMark,
+        mansionRaid, serializeMonster,
         BOSS_HANDLERS
     }
 };

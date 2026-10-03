@@ -3543,7 +3543,7 @@ const PRESET_UNLOCK_COSTS = [
     { currency: 'point', amount: 300 },
     { currency: 'point', amount: 500 }
 ];
-const PRESET_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+const PRESET_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
 
 function getUnlockedPresetSlots(user) {
     return Math.max(1, Math.min(rpgenius.PRESET_SLOT_COUNT, Number(user.presetSlotsUnlocked || 1)));
@@ -3732,6 +3732,22 @@ server.post('/api/potential/awaken', requireUser, async (req, res) => {
     }
 });
 
+server.get('/api/artifact/:uid', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        const entry = rpgenius.getAllUserEquipments(user).find(entry => entry.equip.type === 'artifact' && entry.equip.uid === req.params.uid);
+        if (!entry) return res.status(404).json({ error: '소유한 아티팩트를 찾을 수 없습니다.' });
+        res.json({ artifact: rpgenius.getArtifactView(user, entry.equip) });
+    } catch (error) { res.status(500).json({ error: '아티팩트 정보를 불러오지 못했습니다.' }); }
+});
+server.post('/api/artifact/reroll', requireUser, async (req, res) => {
+    try {
+        const out = await rpgenius.rerollArtifactForUser(req.session.name, req.body.uid, req.body.locks);
+        if (out.error) return res.status(400).json({ error: out.error });
+        res.json({ ok: true, cost: out.cost, artifact: out.artifact, equipment: buildInventoryEquipment(out.user), profile: buildUserProfile(out.user) });
+    } catch (error) { console.error('[artifact]', error); res.status(500).json({ error: '아티팩트 재설정에 실패했습니다.' }); }
+});
 server.get('/api/potential/reroll-info/:number', requireUser, async (req, res) => {
     try {
         const number = Number(req.params.number);
@@ -3945,7 +3961,7 @@ function buildStatDiffs(currentStats, nextStats, currentPlus, nextPlus) {
         critDef: '치명타 피해 감소율', cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 추가 고정 피해',
         takenDamage: '받는 피해 증가', damageBonus: '주는 피해 증가',
-        finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
+        finalAtk: '최종 공격력', finalDamage: '최종 피해', extraDamage: '추가 피해', bossDmg: '보스 추가 피해',
         butagamePartyQuestDmg: "'부타게임' 파티 퀘스트 내 추가 피해"
     };
     // 값이 낮을수록(감소할수록) 이득인 스탯
@@ -4570,6 +4586,11 @@ server.post('/api/party/support-skill', requirePartyQuest, (req, res) => {
     res.json(out);
 });
 
+server.post('/api/party/mansion-action', requirePartyQuest, (req, res) => {
+    const out = partyquest.mansionAction(req.session.name, req.body || {});
+    if (out.error) return res.status(400).json(out);
+    res.json(out);
+});
 server.post('/api/party/chat', requirePartyQuest, (req, res) => {
     const text = String((req.body && req.body.text) || '');
     const out = partyquest.chat(req.session.name, text);
@@ -4843,7 +4864,7 @@ server.get('/api/lookup/items', requireAdmin, (req, res) => {
 server.get('/api/lookup/equipment', requireAdmin, (req, res) => {
     const eq = rpgenius.getDataCache('Equipment', {});
     const pack = list => (list || []).map((e, id) => e ? { id, name: e.name, rarity: e.rarity } : null).filter(Boolean);
-    res.json({ weapon: pack(eq.weapon), hat: pack(eq.hat), armor: pack(eq.armor), pants: pack(eq.pants), shoes: pack(eq.shoes), accessory: pack(eq.accessory), support: pack(eq.support) });
+    res.json({ weapon: pack(eq.weapon), hat: pack(eq.hat), armor: pack(eq.armor), pants: pack(eq.pants), shoes: pack(eq.shoes), accessory: pack(eq.accessory), support: pack(eq.support), artifact: pack(eq.artifact) });
 });
 
 server.get('/api/lookup/equipment-passives', requireAdmin, (req, res) => {
@@ -4918,7 +4939,7 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     if (!rpgenius.RPGENIUS_DATA_KEYS.includes(key)) return res.status(400).json({ error: '허용되지 않은 키입니다.' });
     if (!req.body || typeof req.body.data == 'undefined') return res.status(400).json({ error: 'data 필드가 비어있습니다.' });
     if (key == 'Equipment') {
-        const requiredSlots = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+        const requiredSlots = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'];
         const missingSlots = requiredSlots.filter(slot => !Array.isArray(req.body.data && req.body.data[slot]));
         if (missingSlots.length > 0) return res.status(400).json({ error: 'Equipment 필수 부위가 누락되었습니다: ' + missingSlots.join(', ') });
     }
@@ -5054,8 +5075,8 @@ server.post('/api/admin/package/create', requireAdmin, async (req, res) => {
             if (assetStore.getLocalFilePath('itemImage', '번들/' + name + '.png')) return res.status(409).json({ error: '같은 이름의 패키지 이미지가 있습니다. 다른 패키지 이름을 입력하세요.' });
         }
 
-        const REWARD_KINDS = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '펫', '칭호', '골드', '가넷', '포인트', '마일리지', '경험치'];
-        const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'] };
+        const REWARD_KINDS = ['아이템', '캐릭터카드', '아바타', '무기', '갑옷', '장신구', '보조', '아티팩트', '펫', '칭호', '골드', '가넷', '포인트', '마일리지', '경험치'];
+        const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '아티팩트': ['artifact', 'artifact_id'] };
         const referenceKeys = new Set(rewards.flatMap(r => equipmentTypes[r?.type] ? ['Equipment'] : r?.type === '펫' ? ['Pet'] : ['아바타', '캐릭터카드'].includes(r?.type) ? ['Fashion'] : []));
         await Promise.all([...referenceKeys].map(key => rpgenius.loadRpgeniusDataEntry(key)));
         const equipment = rpgenius.getDataCache('Equipment', {});
@@ -5951,8 +5972,8 @@ function getEquipmentData(type, id) {
 
 function buildEquipmentSetOverview(setName, inventoryEntries) {
     const equipments = rpgenius.getDataCache('Equipment', {});
-    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
-    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
+    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'];
     const entries = inventoryEntries || [];
     const tierMap = {};
     const components = [];
@@ -5992,7 +6013,7 @@ function buildEquipmentSetOverview(setName, inventoryEntries) {
 
 function buildInventoryEquipment(user) {
     const result = [];
-    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+    const labels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
     let number = 1;
     const add = (equip, type, equipped, meta) => {
         const data = equip && getEquipmentData(equip.type || type, equip.id);
@@ -6032,6 +6053,7 @@ function buildInventoryEquipment(user) {
             locked: !!equip.locked,
             rarity: rpgenius.getEquipmentRarityLabel(data, equip),
             baseRarity: data.rarity,
+            artifact: equip.type === 'artifact' || type === 'artifact' ? rpgenius.getArtifactView(user, equip) : null,
             transcendStage: data.rarity == '초월' ? Math.max(1, Math.min(3, Number(equip && equip.transcendStage || 1))) : null,
             setName: data.set || null,
             level,
@@ -6054,7 +6076,7 @@ function buildInventoryEquipment(user) {
         });
     };
     (user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment : []).forEach((equip, index) => add(equip, equip.type, false, { source: 'inventory', index }));
-    ['weapon', 'hat', 'armor', 'pants', 'shoes'].forEach(type => {
+    ['weapon', 'hat', 'armor', 'pants', 'shoes', 'artifact'].forEach(type => {
         if (user.equipments && user.equipments[type] && typeof user.equipments[type].id != 'undefined') add(user.equipments[type], type, true, { source: 'equipped' });
     });
     const accessories = user.equipments && user.equipments.accessory || {};
@@ -6064,7 +6086,7 @@ function buildInventoryEquipment(user) {
     if (user.equipments && user.equipments.support && typeof user.equipments.support.id != 'undefined') add(user.equipments.support, 'support', true, { source: 'equipped' });
     const equipments = rpgenius.getDataCache('Equipment', {});
     const setCache = {};
-    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'];
+    const typeOrder = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'];
     const buildSetOverview = setName => {
         if (setCache[setName]) return setCache[setName];
         const tierMap = {};
@@ -6217,7 +6239,8 @@ function buildRecipeIndex() {
         '무기': { slotKey: 'weapon', idKey: 'weapon_id', label: '무기' },
         '갑옷': { slotKey: 'armor', idKey: 'armor_id', label: '갑옷' },
         '장신구': { slotKey: 'accessory', idKey: 'accessory_id', label: '장신구' },
-        '보조': { slotKey: 'support', idKey: 'support_id', label: '보조' }
+        '보조': { slotKey: 'support', idKey: 'support_id', label: '보조' },
+        '아티팩트': { slotKey: 'artifact', idKey: 'artifact_id', label: '아티팩트' }
     };
     (recipes || []).forEach(recipe => {
         if (!recipe || !Array.isArray(recipe.crafted)) return;
@@ -6391,7 +6414,7 @@ const ORB_DEX_CATEGORIES = [
 
 function buildOrbDex() {
     const items = rpgenius.getDataCache('Item', []);
-    const partLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+    const partLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
     return rpgenius.getOrbData().map((orb, id) => {
         if (!orb) return null;
         const item = items.find(it => it && it.use == '보주' && it.name == orb.name) || null;
@@ -6459,13 +6482,14 @@ function buildEquipmentDex() {
         shoes: pack(eq.shoes, 'shoes', '신발'),
         accessory: pack(eq.accessory, 'accessory', '장신구'),
         support: pack(eq.support, 'support', '보조'),
+        artifact: pack(eq.artifact, 'artifact', '아티팩트'),
         orb: buildOrbDex(),
         specter: buildSpecterDex(),
         pet: buildPetDex(),
         character: buildCharacterDex(),
         rarityOrder: RARITY_ORDER
     };
-    const equipmentEntries = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].flatMap(type => result[type]);
+    const equipmentEntries = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'].flatMap(type => result[type]);
     const setGroups = {};
     equipmentEntries.forEach(entry => {
         if (!entry.set) return;
@@ -6648,7 +6672,7 @@ function buildBundleContents(data) {
                 label: (assets.iconUrl || assets.imageUrl) ? null : '🧥'
             };
         }
-        const eqSlotMap = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
+        const eqSlotMap = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '아티팩트': ['artifact', 'artifact_id'], '보조무기': ['support', 'support_id'] };
         if (eqSlotMap[entry.type]) {
             const [slot, idKey] = eqSlotMap[entry.type];
             const eq = rpgenius.getDataCache('Equipment', {});
@@ -6724,7 +6748,7 @@ function buildDetailRewardDisplay(entry) {
             label: '아바타'
         };
     }
-    const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '보조무기': ['support', 'support_id'] };
+    const equipmentTypes = { '무기': ['weapon', 'weapon_id'], '갑옷': ['armor', 'armor_id'], '장신구': ['accessory', 'accessory_id'], '보조': ['support', 'support_id'], '아티팩트': ['artifact', 'artifact_id'], '보조무기': ['support', 'support_id'] };
     if (equipmentTypes[entry.type]) {
         const [slot, idKey] = equipmentTypes[entry.type];
         const equipment = rpgenius.getDataCache('Equipment', {});
@@ -6773,7 +6797,7 @@ function buildPackChanceEntries(pack) {
 
 function buildUniformEquipmentOutcomes(types, rarity, excludeRaidUnique) {
     const equipment = rpgenius.getDataCache('Equipment', {});
-    const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+    const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
     const candidates = [];
     types.forEach(type => {
         (equipment[type] || []).forEach((data, id) => {
@@ -6859,7 +6883,7 @@ function buildGachaDetail(item) {
         }).filter(Boolean);
         note = (guaranteed ? guaranteed.name + ' ' + guaranteed.count + '개를 반드시 획득하고, ' : '') + '아래 보상 중 하나를 동일한 확률로 추가 획득합니다.';
     } else if (item.use === '초월상자') {
-        entries = buildUniformEquipmentOutcomes(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'], '초월', false);
+        entries = buildUniformEquipmentOutcomes(['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'], '초월', false);
         note = '모든 초월 장비 중 하나를 동일한 확률로 획득합니다.' + (item.tradeUsed ? ' 획득 장비는 거래 가능 횟수가 소진된 상태입니다.' : '');
     } else if (item.use === '보주상자') {
         const items = rpgenius.getDataCache('Item', []);
@@ -7196,7 +7220,7 @@ function buildRewardSummaryDisplay(summary) {
             iconUrl = SHOP_CURR_IMG.garnet;
         } else if (type === 'point') {
             iconUrl = SHOP_CURR_IMG.point;
-        } else if (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(type)) {
+        } else if (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'].includes(type)) {
             const data = equipments[type] && equipments[type][Number(parts[1])];
             iconUrl = data ? getEquipmentIconUrl(data) : null;
             frameUrl = data ? getAuctionFrameUrl('equipment', data.rarity) : null;
@@ -7235,6 +7259,7 @@ function buildItemChoiceOptions(item) {
 }
 
 function buildShopItemDisplay(shopItem) {
+    if (shopItem.type === '아티팩트') { const data = getEquipmentData('artifact', shopItem.artifact_id); return { name: '[' + data.rarity + ']아티팩트', iconUrl: getEquipmentIconUrl(data), frameUrl: getAuctionFrameUrl('equipment', data.rarity) }; }
     const items = rpgenius.getDataCache('Item', []);
     if (shopItem.type === '아이템') {
         const data = items[shopItem.item_id];
@@ -7299,6 +7324,7 @@ function buildShopData(user) {
             return {
                 index: idx,
                 shopId: item.shopId,
+                materialTab: item.materialTab || null,
                 type: item.type,
                 fashion: item.type === '아바타' ? String(item.fashion || '').trim() : undefined,
                 count: item.count,
@@ -7402,10 +7428,10 @@ function buildTradeLogPayload(entry) {
         const slot = entry.payload && entry.payload.type;
         const id = entry.payload && entry.payload.id;
         const slotMap = { '무기': 'weapon', '모자': 'hat', '갑옷': 'armor', '상의': 'armor', '하의': 'pants', '신발': 'shoes', '장신구': 'accessory', '보조': 'support' };
-        const slotKey = slotMap[slot] || (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(slot) ? slot : null);
+        const slotKey = slotMap[slot] || (['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'].includes(slot) ? slot : null);
         const data = slotKey ? (equipments[slotKey] || [])[id] : null;
         return {
-            kindLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[slotKey] || slot || '장비',
+            kindLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' }[slotKey] || slot || '장비',
             name: data ? data.name : '알 수 없는 장비',
             rarity: data ? data.rarity : null,
             payload: Object.assign({}, entry.payload || {})
@@ -7574,7 +7600,7 @@ function describeAuctionPayload(entry) {
         const level = Number(entry.payload && entry.payload.level || 0);
         return {
             name: data ? rpgenius.getEquipmentDisplayName(data, entry.payload) : '알 수 없는 장비',
-            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[entry.payload.type] || entry.payload.type)) : '',
+            sub: data ? (data.rarity + ' · ' + ({ weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' }[entry.payload.type] || entry.payload.type)) : '',
             rarity: data ? data.rarity : '',
             equipType: entry.payload && entry.payload.type,
             level
@@ -7615,7 +7641,7 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         const type = entry.payload && entry.payload.type;
-        const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' };
+        const typeLabels = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
         const level = Number(entry.payload && entry.payload.level || 0);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
         iconUrl = getEquipmentIconUrl(data);
@@ -7768,7 +7794,7 @@ function buildSellableAssets(user) {
             return {
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
@@ -8110,7 +8136,7 @@ function describeBuyOrderPayload(entry) {
     }
     if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
-        const typeLabel = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
+        const typeLabel = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' }[entry.payload && entry.payload.type] || (entry.payload && entry.payload.type) || '';
         const subParts = [];
         if (data) subParts.push(data.rarity);
         if (typeLabel) subParts.push(typeLabel);
@@ -8244,7 +8270,7 @@ async function registerBuyOrder(buyerName, body) {
         ticketCostPer = rpgenius.getCardTicketCost({ star });
     } else if (kind == 'equipment') {
         const equipType = String(body.equipType || '');
-        if (!['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
+        if (!['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'].includes(equipType)) return { error: '장비 종류가 올바르지 않습니다.' };
         const eqId = Number(body.equipId);
         const data = getEquipmentData(equipType, eqId);
         if (!data) return { error: '존재하지 않는 장비입니다.' };
@@ -8499,7 +8525,8 @@ function buildBuyOrderLookups() {
         pants: pack(equipments.pants, 'pants'),
         shoes: pack(equipments.shoes, 'shoes'),
         accessory: pack(equipments.accessory, 'accessory'),
-        support: pack(equipments.support, 'support')
+        support: pack(equipments.support, 'support'),
+        artifact: pack(equipments.artifact, 'artifact')
     };
     const itemList = items.map((it, id) => {
         if (!it || it.no_trade === true) return null;
@@ -8549,7 +8576,7 @@ function buildFulfillableAssets(user, entry) {
             result.equipment.push({
                 index,
                 type: eq.type,
-                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조' }[eq.type] || eq.type,
+                typeLabel: { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' }[eq.type] || eq.type,
                 id: Number(eq.id),
                 name: rpgenius.getEquipmentDisplayName(data, eq),
                 rarity: data.rarity,
@@ -8597,7 +8624,7 @@ function buildTitleDisplay(user) {
 
 // 게임에 존재하는 모든 스탯 (그룹 유지)
 const PROFILE_STAT_GROUPS = [
-    { title: '기본', keys: ['atk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
+    { title: '기본', keys: ['atk', 'finalAtk', 'def', 'hp', 'mp', 'pnt', 'pntPercent'] },
     { title: '치명타', keys: ['crit', 'critMul', 'critDef'] },
     { title: '연격', keys: ['cmb', 'maxCmb'] },
     { title: '피해', keys: ['afterBasic', 'afterSkill', 'damageBonus', 'eliteDmg', 'bossDmg', 'finalDamage', 'extraDamage', 'dotDamage', 'skillTrueDmg', 'nonElementDamage'] },
@@ -8606,7 +8633,7 @@ const PROFILE_STAT_GROUPS = [
     { title: '획득', keys: ['gold', 'plusGold', 'exp', 'itemDropChance'] },
 ];
 const PROFILE_STAT_LABELS = {
-    atk: '공격력', def: '방어력', hp: '최대 체력', mp: '최대 MP', pnt: '방어 관통력', pntPercent: '방어력 관통',
+    atk: '공격력', finalAtk: '최종 공격력 증가', def: '방어력', hp: '최대 체력', mp: '최대 MP', pnt: '방어 관통력', pntPercent: '방어력 관통',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     afterBasic: '일반 공격 피해', afterSkill: '스킬 공격 피해', damageBonus: '일반 몬스터 추가 피해',
@@ -8880,7 +8907,7 @@ function renderUserDashboard(sess, opts) {
 <html lang="ko"><head><meta charset="utf-8"><title>RPGenius</title>
 <script>window.__INITIAL_PAGE=${JSON.stringify(initialPage)};</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/static/style.css"></head><body>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/artifact-ui.css"></head><body>
 <header><div class="top-left"><h1>RPGenius</h1><nav class="group-tabs" id="groupTabs"></nav></div><div class="bar"><div class="point-pill" id="pointPill" title="보유 포인트"><img src="${getItemImageUrl('화폐', '포인트.png')}" alt="포인트"><b id="pointAmount">0</b><button id="pointAddBtn" type="button" aria-label="포인트 충전">+</button></div><span class="who" id="who">${escapeHtml(sess.name)}</span><button id="adminLink" class="primary" style="display:none;padding:8px 12px;font-size:13px">관리자</button><button id="otpBtn" style="padding:8px 12px;font-size:13px" title="2단계 인증 설정">OTP</button><button id="logout" style="padding:8px 12px;font-size:13px">로그아웃</button></div></header>
 <div class="subnav-bar" id="subNavBar"></div>
 <main id="app">
@@ -9156,7 +9183,7 @@ function renderUserDashboard(sess, opts) {
     <aside class="dex-sidebar" aria-label="도감 종류">
       <h2>도감</h2>
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
       </div>
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
@@ -9180,6 +9207,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/awakening-effects.js"></script>
 <script src="/static/fusion-effects.js"></script>
 <script src="/static/game-actions.js"></script>
+<script src="/static/artifact-ui.js"></script>
 <script src="/static/app.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9270,7 +9298,7 @@ function renderPartyApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>파티 퀘스트 · RPGenius</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="stylesheet" href="/static/party.css"></head><body>
+<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"></head><body>
 <div class="frame" id="frame">
   <div class="pq-header">
     <button class="pq-icon-btn" id="pqHome" title="홈으로">←</button>
@@ -9357,6 +9385,7 @@ function renderPartyApp(sess) {
         <div class="pq-my-vitals" id="pqMyVitals" style="display:none"></div>
         <div class="pq-member-detail" id="pqMemberDetail" style="display:none"></div>
       </div>
+      <div id="pqMansionRoot" hidden></div>
       <div id="pqPlayMembers" class="pq-game-party"></div>
       <div class="pq-game-actions" id="pqActionRow">
         <div class="pq-game-bars">
@@ -9512,6 +9541,7 @@ function renderPartyApp(sess) {
   </div>
 </div>
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
+<script src="/static/mansion-raid.js"></script>
 <script src="/static/party.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

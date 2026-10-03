@@ -1,0 +1,121 @@
+/* 아티팩트 재설정 패널 (artifact-ui.js) */
+.af{
+  --af-panel:#15131a;
+  --af-panel-2:#0e0c12;
+  --af-edge:#322c3a;
+  --af-edge-hi:#48405a;
+  --af-gold:#c9a25a;
+  --af-gold-hi:#f0cd87;
+  --af-ink:#1f1503;
+  --af-text:var(--text,#eceef2);
+  --af-text-2:#a39cad;
+  --af-text-3:#6c6578;
+  --af-rarity:#6fa8dc;
+  display:flex;flex-direction:column;gap:10px;color:var(--af-text);
+  font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  -webkit-tap-highlight-color:transparent
+}
+.af[data-rarity="unique"]{--af-rarity:#b48cf0}
+.af[data-rarity="legendary"]{--af-rarity:#e8b04b}
+.af [hidden]{display:none!important}
+
+/* 헤더 */
+.af-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;border-bottom:1px solid var(--af-edge)}
+.af-rarity{padding:2px 8px;border:1px solid var(--af-rarity);color:var(--af-rarity);font-size:10px;font-weight:700;letter-spacing:.14em;clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)}
+.af-title{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:18px;letter-spacing:.04em}
+.af-uses{margin-left:auto;display:flex;align-items:center;gap:7px}
+.af-uses-t{font-size:12px;font-weight:700;color:var(--af-text-2);font-variant-numeric:tabular-nums}
+.af-pips{display:flex;gap:3px}
+.af-pips i{width:9px;height:9px;transform:rotate(45deg);border:1px solid var(--af-edge-hi);background:transparent}
+.af-pips i.on{border-color:var(--af-gold);background:var(--af-gold)}
+
+/* 옵션 행 */
+.af-opts{display:flex;flex-direction:column;gap:8px}
+.af-opt{position:relative;display:flex;flex-direction:column;gap:7px;padding:9px 10px 10px 13px;background:var(--af-panel);border:1px solid var(--af-edge);clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.af-opt::before{content:'';position:absolute;left:0;top:8px;bottom:0;width:3px;background:var(--af-rarity)}
+.af-opt[data-active="0"]::before{background:var(--af-edge-hi)}
+.af-opt-head{display:flex;align-items:center;gap:7px;min-width:0}
+.af-opt-no{flex:0 0 auto;font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-size:13px;color:var(--af-text-3)}
+.af-tpl{flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--af-text-2);line-height:1.35;word-break:keep-all}
+.af-fixed{flex:0 0 auto;padding:1px 5px;border:1px dashed var(--af-edge-hi);color:var(--af-text-3);font-size:9px;font-weight:700;letter-spacing:.08em}
+.af-state{flex:0 0 auto;padding:1px 6px;border:1px solid var(--af-edge-hi);font-size:10.5px;font-weight:700;color:var(--af-text-2);white-space:nowrap}
+.af-opt[data-active="1"] .af-state{border-color:rgba(127,201,138,.6);color:#bfe8c5}
+.af-opt[data-active="0"] .af-cells{opacity:.72}
+
+/* 변수칸 = 잠금 토글 */
+.af-cells{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.3fr) minmax(0,.7fr);gap:6px}
+.af-cell{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;min-height:56px;padding:6px 8px 7px;border:0;border-radius:0;clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);background:var(--af-panel-2);box-shadow:inset 0 0 0 1px var(--af-edge-hi);color:var(--af-text);text-align:left;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;transition:background .1s}
+.af-cell:hover{background:#1b1721}
+.af-cell:focus-visible{outline:2px solid var(--af-gold-hi);outline-offset:-4px}
+.af-cell-k{font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--af-text-3)}
+.af-cell-v{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:700;line-height:1.25}
+.af-cell[data-field="n"] .af-cell-v{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:20px;line-height:1}
+.af-cell-lock{position:absolute;top:5px;right:6px;display:flex;align-items:center;gap:3px;color:var(--af-text-3)}
+.af-lock-ico{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6}
+.af-lock-ico .af-shackle{transform:translate(2.5px,0);transition:transform .12s}
+.af-cell-lock-t{font-size:9px;font-weight:700;letter-spacing:.06em}
+.af-cell[aria-pressed="true"]{background:repeating-linear-gradient(-45deg,rgba(201,162,90,.13) 0 6px,rgba(201,162,90,.04) 6px 12px),var(--af-panel-2);box-shadow:inset 0 0 0 2px var(--af-gold)}
+.af-cell[aria-pressed="true"] .af-cell-lock{color:var(--af-gold-hi)}
+.af-cell[aria-pressed="true"] .af-lock-ico{fill:rgba(201,162,90,.35)}
+.af-cell[aria-pressed="true"] .af-shackle{transform:none}
+.af-cell[aria-disabled="true"]{cursor:not-allowed;opacity:.5}
+.af-cell.changed{animation:afChanged .9s ease-out}
+@keyframes afChanged{0%{box-shadow:inset 0 0 0 2px var(--af-gold-hi)}100%{box-shadow:inset 0 0 0 1px var(--af-edge-hi)}}
+.af-cell[aria-pressed="true"].changed{animation:none}
+
+/* 발현도 */
+.af-mani{display:flex;flex-direction:column;gap:6px;padding:10px 11px;background:var(--af-panel);border:1px solid var(--af-edge);clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.af-mani-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.af-mani-k{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--af-text-2)}
+.af-mani-v{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:24px;line-height:1;color:var(--af-gold-hi);font-variant-numeric:tabular-nums}
+.af-mani-note{margin-left:auto;font-size:10px;font-weight:700;color:var(--af-text-3)}
+.af-track{position:relative;height:8px;background:var(--af-panel-2);box-shadow:inset 0 0 0 1px var(--af-edge-hi);overflow:hidden}
+.af-track-fill{display:block;height:100%;background:var(--af-gold);transform-origin:left center;transform:scaleX(0);transition:transform .25s ease}
+.af-ticks{position:relative;height:14px}
+.af-tick{position:absolute;top:0;transform:translateX(-50%);font-size:9.5px;font-weight:700;color:var(--af-text-3);font-variant-numeric:tabular-nums}
+.af-tick::before{content:'';position:absolute;left:50%;top:-12px;width:1px;height:10px;background:var(--af-edge-hi)}
+.af-tick.on{color:var(--af-gold-hi)}
+.af-tick.on::before{background:var(--af-gold-hi)}
+.af-bonus{display:flex;flex-direction:column;gap:3px}
+.af-bonus-row{display:grid;grid-template-columns:14px 26px minmax(0,1fr) auto;align-items:center;gap:6px;padding:4px 6px;border:1px solid transparent;font-size:12px;font-weight:700;color:var(--af-text-3)}
+.af-bonus-row[data-active="1"]{border-color:rgba(201,162,90,.35);background:rgba(201,162,90,.06);color:var(--af-text)}
+.af-bonus-mark{text-align:center}
+.af-bonus-row[data-active="1"] .af-bonus-mark{color:var(--af-gold-hi)}
+.af-bonus-th{font-variant-numeric:tabular-nums;color:inherit}
+.af-bonus-state{font-size:10.5px;color:var(--af-text-3);font-variant-numeric:tabular-nums}
+.af-bonus-row[data-active="1"] .af-bonus-state{color:var(--af-gold-hi)}
+
+/* 비용·실행 */
+.af-foot{display:flex;flex-direction:column;gap:6px;padding-top:9px;border-top:1px solid var(--af-edge)}
+.af-cost{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.af-cost-k{font-size:12px;font-weight:700;color:var(--af-text-2)}
+.af-cost-v{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:20px;color:var(--af-gold-hi);font-variant-numeric:tabular-nums}
+.af-gold{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-weight:700;color:var(--af-text-3);font-variant-numeric:tabular-nums}
+.af-block{padding:6px 9px;border-left:2px solid #e0655c;background:rgba(224,101,92,.08);font-size:12px;font-weight:700;color:#f2aaa3}
+.af-confirm{padding:6px 9px;border-left:2px solid var(--af-gold);background:rgba(201,162,90,.1);font-size:12px;font-weight:700;color:var(--af-gold-hi)}
+.af-submit{height:48px;border:0;border-radius:0;clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);background:#2a2231;box-shadow:inset 0 0 0 1px var(--af-gold);color:var(--af-gold-hi);font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:17px;letter-spacing:.06em;cursor:pointer;touch-action:manipulation;transition:background .1s}
+.af-submit:hover{background:#342a3c}
+.af-submit:focus-visible{outline:2px solid var(--af-gold-hi);outline-offset:-5px}
+.af-submit[data-armed="1"]{background:var(--af-gold);color:var(--af-ink)}
+.af-submit[aria-disabled="true"]{cursor:not-allowed;background:var(--af-panel-2);box-shadow:inset 0 0 0 1px var(--af-edge-hi);color:var(--af-text-3)}
+.af-submit[aria-busy="true"]{cursor:progress}
+.af-err{font-size:12px;font-weight:700;color:#f2aaa3}
+
+/* 읽기 전용 (다른 플레이어 장비) — 칸은 흐리지 않고 값 열람용으로, 비용·실행 영역 대신 안내 한 줄 */
+.af-ro{display:none;align-items:center;gap:8px;padding:7px 9px;border:1px dashed var(--af-edge-hi);font-size:12px;font-weight:700;color:var(--af-text-2)}
+.af-ro-k{padding:1px 6px;border:1px solid var(--af-edge-hi);color:var(--af-text-3);font-size:9.5px;letter-spacing:.14em}
+.af[data-readonly="1"] .af-ro{display:flex}
+.af[data-readonly="1"] .af-cost,.af[data-readonly="1"] .af-gold,.af[data-readonly="1"] .af-block,.af[data-readonly="1"] .af-confirm,.af[data-readonly="1"] .af-submit{display:none}
+.af[data-readonly="1"] .af-cell,.af[data-readonly="1"] .af-cell:hover{cursor:default;opacity:1;background:var(--af-panel-2)}
+.af[data-readonly="1"] .af-cell-lock{display:none}
+
+@media (max-width:380px){
+  .af-cells{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 56px;gap:5px}
+  .af-cell{padding:6px 6px 7px}
+  .af-cell-v{font-size:12.5px}
+  .af-cell-lock-t{display:none}
+  .af-mani-note{margin-left:0;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .af *,.af *::before,.af *::after{animation:none!important;transition:none!important}
+}

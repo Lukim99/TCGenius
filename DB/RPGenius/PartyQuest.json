@@ -851,6 +851,559 @@
           }
         ]
       }
+    },
+    {
+      "id": "mansionNormal",
+      "name": "E세계 대저택 · 노말",
+      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "minLevel": 141,
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 15,
+      "requiresUnlock": true,
+      "coverImage": "대저택/E세계 대저택 표지.png",
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "reviveOnPhaseClear": true,
+      "supportGaugeSeconds": 3,
+      "supportSkills": [
+        "피카츄",
+        "오로라",
+        "눈뜬 장님"
+      ],
+      "phases": [
+        {
+          "type": "boss",
+          "name": "1관문 · 조각",
+          "monster": {
+            "name": "조각",
+            "image": "대저택/조각.png",
+            "hp": 10000000,
+            "atk": 6000,
+            "def": 250,
+            "actionInterval": 3,
+            "enrageSec": 680,
+            "hpLines": 1000,
+            "mansionDifficulty": "normal",
+            "stat": {
+              "pnt": 800,
+              "crit": 0.5,
+              "critMul": 2
+            }
+          }
+        },
+        {
+          "type": "boss",
+          "name": "2관문 · 위플래쉬",
+          "monster": {
+            "name": "위플래쉬",
+            "image": "대저택/위플래쉬.png",
+            "hp": 15000000,
+            "atk": 10000,
+            "def": 250,
+            "actionInterval": 3,
+            "enrageSec": 840,
+            "hpLines": 1500,
+            "mansionDifficulty": "normal",
+            "stat": {
+              "pnt": 850,
+              "crit": 0.5,
+              "critMul": 2,
+              "darkAtk": 300
+            }
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 0,
+        "gold": 60000000,
+        "courageGemChance": 0.05,
+        "base": [
+          {
+            "type": "아티팩트",
+            "count": 3,
+            "rarityWeights": [
+              {
+                "rarity": "레어",
+                "roll": 0.75
+              },
+              {
+                "rarity": "유니크",
+                "roll": 0.25
+              }
+            ]
+          },
+          {
+            "type": "아이템",
+            "item_name": "헬 도전장",
+            "count": {
+              "min": 150,
+              "max": 200
+            }
+          },
+          {
+            "type": "아이템",
+            "item_name": "상급 강화석",
+            "count": 100
+          },
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 10
+          }
+        ],
+        "bonus": [
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 5,
+            "roll": 0.55
+          },
+          {
+            "type": "아이템",
+            "item_name": "초월 상자",
+            "count": 1,
+            "roll": 0.2
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 7,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.1
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 8,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.05
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 9,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.02
+          },
+          {
+            "type": "아티팩트",
+            "rarity": "유니크",
+            "count": 1,
+            "roll": 0.05
+          },
+          {
+            "type": "보주랜덤",
+            "related": true,
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "보주랜덤",
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "펫",
+            "pet_name": "조각",
+            "count": 1,
+            "roll": 0.01
+          }
+        ]
+      }
+    },
+    {
+      "id": "mansionHard",
+      "name": "E세계 대저택 · 하드",
+      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "minLevel": 141,
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 15,
+      "requiresUnlock": true,
+      "coverImage": "대저택/E세계 대저택 표지.png",
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "reviveOnPhaseClear": true,
+      "supportGaugeSeconds": 3,
+      "supportSkills": [
+        "피카츄",
+        "오로라",
+        "눈뜬 장님"
+      ],
+      "phases": [
+        {
+          "type": "boss",
+          "name": "1관문 · 조각",
+          "monster": {
+            "name": "조각",
+            "image": "대저택/조각.png",
+            "hp": 16000000,
+            "atk": 7800,
+            "def": 400,
+            "actionInterval": 3,
+            "enrageSec": 680,
+            "hpLines": 1600,
+            "mansionDifficulty": "hard",
+            "stat": {
+              "pnt": 900,
+              "crit": 0.6,
+              "critMul": 2
+            }
+          }
+        },
+        {
+          "type": "boss",
+          "name": "2관문 · 위플래쉬",
+          "monster": {
+            "name": "위플래쉬",
+            "image": "대저택/위플래쉬.png",
+            "hp": 24000000,
+            "atk": 12000,
+            "def": 400,
+            "actionInterval": 2.8,
+            "enrageSec": 840,
+            "hpLines": 2400,
+            "mansionDifficulty": "hard",
+            "stat": {
+              "pnt": 950,
+              "crit": 0.6,
+              "critMul": 2,
+              "darkAtk": 400
+            }
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 0,
+        "gold": 100000000,
+        "courageGemChance": 0.1,
+        "base": [
+          {
+            "type": "아티팩트",
+            "count": 3,
+            "rarityWeights": [
+              {
+                "rarity": "레어",
+                "roll": 0.4
+              },
+              {
+                "rarity": "유니크",
+                "roll": 0.5
+              },
+              {
+                "rarity": "레전더리",
+                "roll": 0.1
+              }
+            ]
+          },
+          {
+            "type": "아이템",
+            "item_name": "헬 도전장",
+            "count": {
+              "min": 250,
+              "max": 300
+            }
+          },
+          {
+            "type": "아이템",
+            "item_name": "상급 강화석",
+            "count": 300
+          },
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 25
+          }
+        ],
+        "bonus": [
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 10,
+            "roll": 0.5
+          },
+          {
+            "type": "아이템",
+            "item_name": "초월 상자",
+            "count": 1,
+            "roll": 0.2
+          },
+          {
+            "type": "아티팩트",
+            "rarity": "유니크",
+            "count": 1,
+            "roll": 0.1
+          },
+          {
+            "type": "아티팩트",
+            "rarity": "레전더리",
+            "count": 1,
+            "roll": 0.04
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 8,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.08
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 9,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.03
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 10,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.005
+          },
+          {
+            "type": "보주랜덤",
+            "related": true,
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "보주랜덤",
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "펫",
+            "pet_name": "조각",
+            "count": 1,
+            "roll": 0.015
+          },
+          {
+            "type": "펫",
+            "pet_name": "위플래쉬",
+            "count": 1,
+            "roll": 0.01
+          }
+        ]
+      }
+    },
+    {
+      "id": "mansionNightmare",
+      "name": "E세계 대저택 · 나이트메어",
+      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "minLevel": 141,
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 15,
+      "requiresUnlock": true,
+      "coverImage": "대저택/E세계 대저택 표지.png",
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "reviveOnPhaseClear": true,
+      "supportGaugeSeconds": 3,
+      "supportSkills": [
+        "피카츄",
+        "오로라",
+        "눈뜬 장님"
+      ],
+      "phases": [
+        {
+          "type": "boss",
+          "name": "1관문 · 조각",
+          "monster": {
+            "name": "조각",
+            "image": "대저택/조각.png",
+            "hp": 27000000,
+            "atk": 8200,
+            "def": 400,
+            "actionInterval": 3,
+            "enrageSec": 680,
+            "hpLines": 2700,
+            "mansionDifficulty": "nightmare",
+            "stat": {
+              "pnt": 900,
+              "crit": 0.6,
+              "critMul": 2.25
+            }
+          }
+        },
+        {
+          "type": "boss",
+          "name": "2관문 · 위플래쉬",
+          "monster": {
+            "name": "위플래쉬",
+            "image": "대저택/위플래쉬.png",
+            "hp": 40000000,
+            "atk": 12500,
+            "def": 400,
+            "actionInterval": 2.8,
+            "enrageSec": 840,
+            "hpLines": 4000,
+            "mansionDifficulty": "nightmare",
+            "stat": {
+              "pnt": 950,
+              "crit": 0.6,
+              "critMul": 2.25,
+              "darkAtk": 400
+            }
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 0,
+        "gold": 100000000,
+        "courageGemChance": 0.1,
+        "base": [
+          {
+            "type": "아티팩트",
+            "count": 3,
+            "rarityWeights": [
+              {
+                "rarity": "레어",
+                "roll": 0.4
+              },
+              {
+                "rarity": "유니크",
+                "roll": 0.5
+              },
+              {
+                "rarity": "레전더리",
+                "roll": 0.1
+              }
+            ]
+          },
+          {
+            "type": "아이템",
+            "item_name": "헬 도전장",
+            "count": {
+              "min": 250,
+              "max": 300
+            }
+          },
+          {
+            "type": "아이템",
+            "item_name": "상급 강화석",
+            "count": 300
+          },
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 25
+          }
+        ],
+        "bonus": [
+          {
+            "type": "아이템",
+            "item_name": "이세계 파편",
+            "count": 10,
+            "roll": 0.5
+          },
+          {
+            "type": "아이템",
+            "item_name": "초월 상자",
+            "count": 1,
+            "roll": 0.2
+          },
+          {
+            "type": "아티팩트",
+            "rarity": "유니크",
+            "count": 1,
+            "roll": 0.1
+          },
+          {
+            "type": "아티팩트",
+            "rarity": "레전더리",
+            "count": 1,
+            "roll": 0.04
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 8,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.08
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 9,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.03
+          },
+          {
+            "type": "캐릭터카드",
+            "display_star": 10,
+            "card_type": "랜덤",
+            "count": 1,
+            "roll": 0.005
+          },
+          {
+            "type": "보주랜덤",
+            "related": true,
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "보주랜덤",
+            "count": 1,
+            "roll": 0.01
+          },
+          {
+            "type": "펫",
+            "pet_name": "조각",
+            "count": 1,
+            "roll": 0.015
+          },
+          {
+            "type": "펫",
+            "pet_name": "위플래쉬",
+            "count": 1,
+            "roll": 0.01
+          }
+        ]
+      },
+      "firstClearRewards": [
+        {
+          "type": "아티팩트",
+          "rarity": "레전더리",
+          "count": 2
+        },
+        {
+          "type": "아이템",
+          "item_name": "헬 도전장",
+          "count": 500
+        },
+        {
+          "type": "아이템",
+          "item_name": "상급 강화석",
+          "count": 1000
+        },
+        {
+          "type": "아이템",
+          "item_name": "이세계 파편",
+          "count": 50
+        },
+        {
+          "type": "가넷",
+          "count": 3000
+        },
+        {
+          "type": "아이템",
+          "item_name": "제타 카드팩",
+          "count": 1
+        },
+        {
+          "type": "보주랜덤",
+          "related": true,
+          "count": 1
+        },
+        {
+          "type": "아이템",
+          "item_name": "용기의 보석",
+          "count": 1
+        }
+      ]
     }
   ]
 }

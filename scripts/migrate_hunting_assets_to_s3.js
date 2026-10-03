@@ -22,9 +22,114 @@ const providedDefinitions = [
     ['한가위맞이강화패키지.png', 'itemImage', '번들/한가위맞이강화패키지.png']
 ];
 
+const mansionDefinitions = [
+    [
+        "E세계 대저택 표지.png",
+        "ui",
+        "대저택/E세계 대저택 표지.png"
+    ],
+    [
+        "조각.png",
+        "ui",
+        "대저택/조각.png"
+    ],
+    [
+        "위플래쉬.png",
+        "ui",
+        "대저택/위플래쉬.png"
+    ],
+    [
+        "위플래쉬(0줄).png",
+        "ui",
+        "대저택/위플래쉬(0줄).png"
+    ],
+    [
+        "피카츄.png",
+        "ui",
+        "대저택/피카츄.png"
+    ],
+    [
+        "오로라.png",
+        "ui",
+        "대저택/오로라.png"
+    ],
+    [
+        "눈뜬 장님.png",
+        "ui",
+        "대저택/눈뜬 장님.png"
+    ],
+    [
+        "아티팩트.png",
+        "itemImage",
+        "장비/레어 아티팩트.png"
+    ],
+    [
+        "아티팩트.png",
+        "itemImage",
+        "장비/유니크 아티팩트.png"
+    ],
+    [
+        "아티팩트.png",
+        "itemImage",
+        "장비/레전더리 아티팩트.png"
+    ],
+    [
+        "아티팩트 재료.png",
+        "itemImage",
+        "재료/아티팩트 재료.png"
+    ],
+    [
+        "이세계 파편.png",
+        "itemImage",
+        "재료/이세계 파편.png"
+    ],
+    [
+        "투신의 함성 포션.png",
+        "itemImage",
+        "소모품/투신의 함성 포션.png"
+    ],
+    [
+        "유니크 조각.png",
+        "itemImage",
+        "펫/유니크 조각.png"
+    ],
+    [
+        "레전더리 위플래쉬.png",
+        "itemImage",
+        "펫/레전더리 위플래쉬.png"
+    ],
+    [
+        "이세계의축복을.png",
+        "ui",
+        "칭호/이세계에게축복을.png"
+    ],
+    [
+        "대저택 마스터.png",
+        "ui",
+        "칭호/대저택마스터.png"
+    ],
+    [
+        "저 눈 뜨고 있습니다.png",
+        "ui",
+        "칭호/저 눈 뜨고 있습니다..png"
+    ],
+    [
+        "악몽의 대저택.png",
+        "ui",
+        "칭호/악몽의 대저택.png"
+    ],
+    [
+        "E세계 대저택 퍼스트 클리어.png",
+        "ui",
+        "칭호/E세계 대저택 퍼스트 클리어.png"
+    ]
+];
+
 async function main() {
     const sourceIndex = process.argv.indexOf('--source-dir');
     const provided = sourceIndex >= 0;
+    const mansion = process.argv.includes('--mansion');
+    if (mansion && !provided) throw new Error('--mansion에는 --source-dir 원본 폴더가 필요합니다.');
     if (provided && (!process.argv[sourceIndex + 1] || process.argv[sourceIndex + 1].startsWith('--'))) throw new Error('--source-dir 뒤에 PNG 원본 폴더를 지정해주세요.');
     const sourceDir = provided ? path.resolve(process.argv[sourceIndex + 1]) : generatedSourceDir;
     for (const name of ['.env', '.env.local']) {
@@ -37,7 +142,7 @@ async function main() {
     }
     const bucket = process.env.S3_ASSET_BUCKET || process.env.S3_BANNER_BUCKET || 'eefl-image';
     const s3 = new AWS.S3({ region: process.env.AWS_REGION || 'ap-northeast-2', credentials: new AWS.Credentials({ accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_KEY_ID }) });
-    const assets = (provided ? providedDefinitions : definitions).map(([file, category, relative]) => {
+    const assets = (mansion ? mansionDefinitions : provided ? providedDefinitions : definitions).map(([file, category, relative]) => {
         const source = path.resolve(sourceDir, file), destination = path.resolve(localAssetDir, category, relative);
         if (!source.startsWith(sourceDir + path.sep) || !destination.startsWith(localAssetDir + path.sep)) throw new Error('자산 이동 경로가 작업 폴더를 벗어납니다.');
         const body = fs.readFileSync(provided || fs.existsSync(source) ? source : destination);
@@ -61,4 +166,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { definitions, providedDefinitions };
+module.exports = { definitions, providedDefinitions, mansionDefinitions };
