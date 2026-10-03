@@ -16048,7 +16048,8 @@ function claimQuestReward(user, questId, options) {
     if (totalExp > 0) lines.push('- XP ' + comma(totalExp));
     Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
-    const result = { ok: true, name: def.name, skipped: skip, lines: lines };
+    const rewardSummary = totalExp > 0 ? { exp: { label: '경험치', count: totalExp }, ...summary } : summary;
+    const result = { ok: true, name: def.name, skipped: skip, lines: lines, rewardSummary: rewardSummary };
     entry.claimResult = result; // 저장 실패/응답 유실 재시도 시 보상은 다시 지급하지 않는다.
     return result;
 }

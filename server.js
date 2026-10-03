@@ -1903,7 +1903,10 @@ server.post('/api/quests/claim', requireUser, async (req, res) => {
             if (result.error) return { status: 400, error: result.error };
             const saved = await user.save();
             if (!saved || !saved.success) return { status: 503, error: '보상 저장을 확인하지 못했습니다. 보상 받기를 다시 누르면 중복 지급 없이 저장을 재시도합니다.' };
-            return Object.assign({}, result, { list: decorateQuestBoard(user) });
+            return Object.assign({}, result, {
+                ...(result.rewardSummary ? { rewards: buildRewardSummaryDisplay(result.rewardSummary) } : {}),
+                list: decorateQuestBoard(user)
+            });
         });
         res.status(payload.status || 200).json(payload);
     } catch (e) {
@@ -7261,7 +7264,7 @@ function buildRewardSummaryDisplay(summary) {
             iconUrl = assets.iconUrl || assets.imageUrl;
             frameUrl = assets.iconUrl ? assets.frameUrl : null;
         }
-        return { name: entry.label, count: entry.count, iconUrl, frameUrl };
+        return { type, name: entry.label, count: entry.count, iconUrl, frameUrl };
     });
 }
 

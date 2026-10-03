@@ -3734,7 +3734,11 @@ function questObjectivePct(objective) {
 function questFallbackMark(type, name) {
     if (type === '경험치') return 'XP';
     if (type === '마일리지') return 'M';
-    return String(type || name || '?').charAt(0);
+    const marks = { exp: 'XP', mileage: 'M', card: '카드', '캐릭터카드': '카드',
+        item: '템', gold: '골드', garnet: '가넷', point: 'P', title: '칭호', raid: '해금',
+        weapon: '무기', hat: '모자', armor: '갑옷', pants: '바지', shoes: '신발',
+        accessory: '장신구', support: '보조', artifact: '장비', pet: '펫', avatar: '외형' };
+    return marks[type] || String(type || name || '?').match(/[0-9A-Za-z가-힣]/u)?.[0] || '?';
 }
 
 // 아이콘이 없거나 불러오지 못하면 깨진 이미지 대신 짧은 글자 표식을 보인다.
@@ -4006,13 +4010,19 @@ function questRewardVisual(result, configured, usedIndexes) {
 
 function showQuestRewardModal(quest, result) {
     const parsed = (result.lines || []).map(parseQuestRewardLine).filter(Boolean);
-    const rewards = parsed.filter(item => !item.levelUp);
+    const hasRewardImages = Array.isArray(result.rewards);
+    const rewards = hasRewardImages ? result.rewards.map(reward => ({ ...reward,
+        name: String(reward.name || '').replace(/^(?:🪙|💠|Ⓜ️|🏅|💰)\s*/u, ''),
+        count: reward.type === 'raid' ? '' : (['exp', 'point'].includes(reward.type) ? '+' : '')
+            + comma(reward.count) + (reward.type === 'point' ? 'P' : '')
+    })) : parsed.filter(item => !item.levelUp);
     const levelUp = parsed.find(item => item.levelUp);
     const usedIndexes = new Set();
     const rewardList = el('ul', { class: 'quest-claim-rewards' });
     if (rewards.length) {
         rewards.forEach((reward, index) => {
-            const visual = questRewardVisual(reward, quest.rewards || [], usedIndexes);
+            const visual = hasRewardImages ? { iconUrl: reward.iconUrl, fallback: questFallbackMark(reward.type, reward.name) }
+                : questRewardVisual(reward, quest.rewards || [], usedIndexes);
             rewardList.appendChild(el('li', { class: 'quest-claim-reward', style: '--reward-delay:' + index * 70 + 'ms' },
                 questThumb(visual.iconUrl, visual.fallback),
                 el('strong', { class: 'quest-claim-reward-name' }, reward.name),

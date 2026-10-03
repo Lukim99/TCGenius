@@ -116,6 +116,46 @@ test('게시판은 운영 목표와 보상을 대상, 이름, 수량, 실제 이
     assert.deepEqual(rpg.getDataCache('Quest', [])[0].rewards, questDefinition.rewards);
 });
 
+test('수령한 일반, 전직, 각성, 랜덤 성급 카드의 실제 정보로 보상 이미지를 연결하고 재전송에도 유지한다', async t => {
+    const user = await reset();
+    user.inventory.card = [];
+    t.mock.method(Math, 'random', () => .5);
+    const questDefinition = { ...definition, id: 92, name: '카드 보상 표시', categories: ['일반'],
+        objectives: [{ type: 'kill', count: 1 }],
+        rewards: [{ type: '골드', count: { min: 500, max: 1500 } },
+            ...['일반', '전직', '각성'].map(card_type => ({ type: '캐릭터카드', card_id: 0, display_star: 7, card_type, count: card_type === '전직' ? 2 : 1 })),
+            { type: '캐릭터카드', card_id: 0, range: { min: 8, max: 9 }, count: 1 },
+            { type: '아이템', item_id: 0, count: 4 }, { type: '경험치', count: 2500 }] };
+    rpg.__setQuestDefs([questDefinition]);
+    rpg.recordQuestEvent(user, 'kill', { count: 1 });
+    assert.equal((await user.save()).success, true);
+    const received = await request('/claim', { id: 92, period: 'once' });
+    assert.equal(received.status, 200);
+    assert.ok(Array.isArray(received.data.rewards));
+    assert.deepEqual(received.data.rewards.filter(reward => reward.type !== 'card').map(reward => [reward.type, reward.count]),
+        [['exp', 2500], ['gold', 1000], ['item', 4]]);
+    const cards = received.data.rewards.filter(reward => reward.type === 'card');
+    const actualCards = (await rpg.getRPGUserByName(account.name)).inventory.card;
+    assert.deepEqual(cards.map(reward => [reward.name, reward.count]),
+        [['[7성] 빵귤', 1], ['[7성] 전직 빵귤', 2], ['[7성] 각성 빵귤', 1], ['[9성] 빵귤', 1]]);
+    const cardComposite = require('../card_composite');
+    cards.forEach(reward => {
+        const card = actualCards.find(card => rpg.formatUserCard(card) === reward.name);
+        assert.ok(card);
+        if (cardComposite.canCompose({ name: '빵귤', star: card.star, type: card.type })) {
+            const url = new URL(reward.iconUrl, base);
+            assert.equal(url.pathname, '/card-image');
+            assert.equal(url.searchParams.get('name'), '빵귤');
+            assert.equal(Number(url.searchParams.get('star')), card.star);
+            assert.equal(url.searchParams.get('type'), card.type);
+        } else assert.equal(reward.iconUrl, null);
+    });
+    assert.equal(decodeURIComponent(received.data.rewards.find(reward => reward.type === 'gold').iconUrl), '/item-image?dir=화폐&file=골드.png');
+    assert.deepEqual((await request('/claim', { id: 92, period: 'once' })).data.rewards, received.data.rewards);
+    assert.equal((await rpg.getRPGUserByName(account.name)).inventory.card.length, 5);
+    assert.deepEqual(rpg.getDataCache('Quest', [])[0].rewards, questDefinition.rewards);
+});
+
 test('잘못된 형식·다른 계정의 문제·스킵·이벤트 위조로 퍼즐 보상을 받을 수 없다', async () => {
     const user = await reset();
     const quest = rpg.buildQuestBoard(user)[0];
