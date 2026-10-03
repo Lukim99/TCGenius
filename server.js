@@ -1375,12 +1375,12 @@ server.post('/api/inventory/items/:id/use', requireUser, serializeItemUse(async 
         const before = gamePresentation.snapshot(user);
         const resultKind = getItemUseResultKind(item);
         const effectsBefore = resultKind === 'effect' || resultKind === 'bait' ? captureItemUseEffects(user) : null;
-        const message = await rpgenius.useItem(user, item.name, count);
+        const message = await rpgenius.useItem(user, item.name, count, { webItemUse: true });
         if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
         // 대상이 없어 아이템이 반환된 경우: 성공 화면 대신 사유를 알린다.
         const refunded = String(message).split('\n').find(line => line.startsWith('❌') && line.includes('반환'));
         if (refunded) return res.status(400).json({ error: refunded.replace(/^❌\s*/, '') });
-        if (user.pendingAction) {
+        if (user.pendingAction && item.use !== '아티팩트옵션변경') {
             user.pendingAction.webItemUse = true;
             await user.save();
         }
@@ -1400,15 +1400,20 @@ server.post('/api/inventory/item-use/resolve', requireUser, serializeItemUse(asy
         if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.status(400).json({ error: '진행 중인 아이템 사용이 없습니다.' });
         const before = gamePresentation.snapshot(user);
         const captured = captureItemUseTarget(user, req.body && req.body.choice);
-        const message = rpgenius.resolveWebItemUsePending(user, req.body && req.body.choice, req.body && req.body.confirm === true);
-        if (user.pendingAction) user.pendingAction.webItemUse = true;
-        await user.save();
+        const artifactKey = user.pendingAction.type === '아티팩트옵션변경';
+        const artifactKeyId = artifactKey ? user.pendingAction.itemId : null;
+        const message = await rpgenius.resolveWebItemUsePending(user, req.body && req.body.choice, req.body && req.body.confirm === true);
+        if (!artifactKey) {
+            if (user.pendingAction) user.pendingAction.webItemUse = true;
+            await user.save();
+        }
         const pending = decorateWebItemUsePending(rpgenius.getWebItemUsePending(user), user);
         // 강화 실패(하락)는 오류가 아니라 사용 결과다.
         const upgradeFailed = captured && captured.action === '장비강화' && String(message).startsWith('❌ 강화 실패');
         if (String(message).startsWith('❌') && !upgradeFailed) return res.status(400).json({ error: String(message).replace(/^❌\s*/, ''), pending });
         const target = pending ? null : buildItemUseTargetResult(captured, user, upgradeFailed);
-        res.json({ ok: true, changes: gamePresentation.changes(before, user), result: target ? { target } : null, pending });
+        res.json({ ok: true, changes: gamePresentation.changes(before, user), result: target ? { target } : null, pending,
+            remainingCount: artifactKey ? rpgenius.getInventoryItemCount(user, artifactKeyId) : undefined });
     } catch (error) {
         console.error('inventory item resolve error:', error);
         res.status(500).json({ error: '아이템 적용 중 오류가 발생했습니다.' });
@@ -1420,8 +1425,10 @@ server.post('/api/inventory/item-use/cancel', requireUser, serializeItemUse(asyn
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         if (!user.pendingAction || user.pendingAction.webItemUse !== true) return res.json({ ok: true, message: '취소할 아이템 사용이 없습니다.' });
-        const message = rpgenius.cancelWebItemUsePending(user);
-        await user.save();
+        const artifactKey = user.pendingAction.type === '아티팩트옵션변경';
+        const message = await rpgenius.cancelWebItemUsePending(user);
+        if (!artifactKey) await user.save();
+        if (String(message).startsWith('❌')) return res.status(400).json({ error: String(message).replace(/^❌\s*/, '') });
         res.json({ ok: true, message });
     } catch (error) {
         console.error('inventory item cancel error:', error);
@@ -4000,6 +4007,9 @@ function buildProtectOptions(user) {
 
 // ===== 핫딜샵 =====
 
+const HOTDEAL_ENABLED = false;
+const HOTDEAL_PAUSED_MESSAGE = '핫딜샵은 잠시 이용할 수 없습니다.';
+
 const HOTDEAL_SECTORS = [
     { name: '강화 섹터', items: [
         { id: 3,   count: 1,     goods: 'gold',   amount: 1200000,  weight: 1.5 },
@@ -4244,6 +4254,7 @@ function buildHotDealData(user) {
 }
 
 server.get('/api/hotdeal', requireUser, async (req, res) => {
+    if (!HOTDEAL_ENABLED) return res.status(503).json({ error: HOTDEAL_PAUSED_MESSAGE });
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
@@ -4255,6 +4266,7 @@ server.get('/api/hotdeal', requireUser, async (req, res) => {
 });
 
 server.post('/api/hotdeal/buy', requireUser, async (req, res) => {
+    if (!HOTDEAL_ENABLED) return res.status(503).json({ error: HOTDEAL_PAUSED_MESSAGE });
     try {
         const slot = Number(req.body && req.body.slot);
         if (slot !== 0 && slot !== 1) return res.status(400).json({ error: '슬롯이 올바르지 않습니다.' });
@@ -5845,7 +5857,7 @@ function serializeCard(card, user) {
 }
 
 const WEB_ITEM_USE_KEYS = new Set([
-    '축복사용권',
+    '축복사용권', '아티팩트옵션변경',
     '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
     '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
@@ -5864,7 +5876,7 @@ const WEB_ITEM_USE_RESULT_KINDS = {
     '변환': 'transform', '캐릭터변환': 'transform', '만능캐릭터변환': 'transform', '전직캐릭터변환': 'transform',
     '장신구선택권': 'open', '아이템선택': 'open',
     '축복사용권': 'effect', '스탯초기화': 'effect', '전직프레스티지': 'effect',
-    '보조장비리롤': 'modify', '잠재능력부여': 'modify', '장비강화권': 'modify', '영혼석': 'modify',
+    '아티팩트옵션변경': 'modify', '보조장비리롤': 'modify', '잠재능력부여': 'modify', '장비강화권': 'modify', '영혼석': 'modify',
     '보주': 'modify', '보주선택': 'modify', '가위': 'modify', '생명수': 'modify',
     '초월업그레이드': 'modify', '초월선택': 'modify', '스펙터': 'modify'
 };
@@ -7051,7 +7063,7 @@ function buildItemApplications(itemId, item, user) {
 // 웹 아이템 사용 결과 연출 데이터. 명령어 응답 문자열이 아니라 대상의 사용 전/후 실제 데이터로 구성한다.
 const WEB_ITEM_USE_TARGET_KINDS = {
     '지정캐릭터변환': 'card', '캐릭터변환': 'card', '만능캐릭터변환': 'card', '전직캐릭터변환': 'card', '스펙터부여': 'card',
-    '보조장비리롤': 'equipment', '잠재능력부여': 'equipment', '장비강화권': 'equipment', '영혼부여': 'equipment', '보주부여': 'equipment',
+    '아티팩트옵션변경': 'equipment', '보조장비리롤': 'equipment', '잠재능력부여': 'equipment', '장비강화권': 'equipment', '영혼부여': 'equipment', '보주부여': 'equipment',
     '귀속해제': 'equipment', '초월업그레이드': 'equipment', '장비강화': 'equipment',
     '생명수': 'pet'
 };
@@ -7069,7 +7081,11 @@ function readItemUseTarget(user, kind, number) {
 function captureItemUseTarget(user, choice) {
     const action = user.pendingAction;
     const kind = action && WEB_ITEM_USE_TARGET_KINDS[action.type];
-    const number = Number(action && (action.cardNumber || action.equipNumber || action.number) || choice);
+    let number = Number(action && (action.cardNumber || action.equipNumber || action.number) || choice);
+    if (action?.type === '아티팩트옵션변경') {
+        const uid = action.targetUids?.[number - 1];
+        number = buildInventoryEquipment(user).find(entry => entry.artifact?.uid === uid)?.number;
+    }
     if (!kind || !Number.isInteger(number) || number < 1) return null;
     return Object.assign({ kind, number, action: action.type }, readItemUseTarget(user, kind, number));
 }
@@ -7338,7 +7354,7 @@ function buildShopData(user) {
         });
     }
     return {
-        tabs: ['핫딜샵', ...tabs],
+        tabs: HOTDEAL_ENABLED ? ['핫딜샵', ...tabs] : tabs,
         shop,
         currencies: {
             gold: Number(user.gold || 0),
@@ -9296,7 +9312,7 @@ function renderPvpApp(sess, opponent) {
 
 function renderPartyApp(sess) {
     return `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>파티 퀘스트 · RPGenius</title>
+<html lang="ko"><head><meta charset="utf-8"><title>레이드 | RPGenius</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"></head><body>
 <div class="frame" id="frame">
@@ -9515,9 +9531,9 @@ function renderPartyApp(sess) {
   </div>
 
   <div class="pq-modal-bg" id="pqRewardBg">
-    <div class="pq-modal" style="max-width:460px">
-      <h3>파티 보상</h3>
-      <div style="font-size:12px;color:#94a3b8">파티원별 획득 아이템</div>
+    <div class="pq-modal pq-reward-modal">
+      <h3 id="pqRewardTitle">전리품 획득</h3>
+      <div class="pq-reward-sub" id="pqRewardSummary">획득 보상</div>
       <div id="pqRewardList" class="pq-reward-list"></div>
       <div class="pq-actions"><button class="pq-btn primary" id="pqRewardClose" type="button">확인</button></div>
     </div>
@@ -9526,8 +9542,8 @@ function renderPartyApp(sess) {
   <div class="pq-modal-bg" id="pqFirstClearBg">
     <div class="pq-modal pq-fc-modal">
       <div class="pq-fc-badge">최초 클리어</div>
-      <h3 class="pq-fc-title" id="pqFirstClearTitle">최초 클리어!</h3>
-      <div class="pq-fc-sub">개인 최초 클리어 특별 보상을 획득했습니다.</div>
+      <h3 class="pq-fc-title" id="pqFirstClearTitle">최초 클리어</h3>
+      <div class="pq-fc-sub">최초 클리어 보상</div>
       <div id="pqFirstClearList" class="pq-fc-list"></div>
       <div class="pq-actions"><button class="pq-btn primary" id="pqFirstClearClose" type="button">확인</button></div>
     </div>

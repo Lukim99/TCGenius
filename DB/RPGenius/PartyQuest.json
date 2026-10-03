@@ -854,8 +854,8 @@
     },
     {
       "id": "mansionNormal",
-      "name": "E세계 대저택 · 노말",
-      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "name": "E세계 대저택 (노말)",
+      "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
       "maxPlayers": 4,
@@ -874,7 +874,7 @@
       "phases": [
         {
           "type": "boss",
-          "name": "1관문 · 조각",
+          "name": "1관문 조각",
           "monster": {
             "name": "조각",
             "image": "대저택/조각.png",
@@ -894,7 +894,7 @@
         },
         {
           "type": "boss",
-          "name": "2관문 · 위플래쉬",
+          "name": "2관문 위플래쉬",
           "monster": {
             "name": "위플래쉬",
             "image": "대저택/위플래쉬.png",
@@ -1014,8 +1014,8 @@
     },
     {
       "id": "mansionHard",
-      "name": "E세계 대저택 · 하드",
-      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "name": "E세계 대저택 (하드)",
+      "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
       "maxPlayers": 4,
@@ -1034,7 +1034,7 @@
       "phases": [
         {
           "type": "boss",
-          "name": "1관문 · 조각",
+          "name": "1관문 조각",
           "monster": {
             "name": "조각",
             "image": "대저택/조각.png",
@@ -1054,7 +1054,7 @@
         },
         {
           "type": "boss",
-          "name": "2관문 · 위플래쉬",
+          "name": "2관문 위플래쉬",
           "monster": {
             "name": "위플래쉬",
             "image": "대저택/위플래쉬.png",
@@ -1190,8 +1190,8 @@
     },
     {
       "id": "mansionNightmare",
-      "name": "E세계 대저택 · 나이트메어",
-      "description": "조각의 시험을 넘어 위플래쉬의 잔향을 잠재우세요.",
+      "name": "E세계 대저택 (나이트메어)",
+      "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
       "maxPlayers": 4,
@@ -1210,7 +1210,7 @@
       "phases": [
         {
           "type": "boss",
-          "name": "1관문 · 조각",
+          "name": "1관문 조각",
           "monster": {
             "name": "조각",
             "image": "대저택/조각.png",
@@ -1230,7 +1230,7 @@
         },
         {
           "type": "boss",
-          "name": "2관문 · 위플래쉬",
+          "name": "2관문 위플래쉬",
           "monster": {
             "name": "위플래쉬",
             "image": "대저택/위플래쉬.png",

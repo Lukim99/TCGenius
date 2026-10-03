@@ -8,6 +8,7 @@ const AWS = require('aws-sdk');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const artifacts = require('../artifacts');
 const { appendMansion } = require('../scripts/init_mansion_content');
+const { appendOctober } = require('../scripts/init_october_content');
 
 // 기존 엔진과 인증된 Express 요청을 사용하며 모든 AWS 전송을 메모리로 격리한다.
 const data = {};
@@ -17,13 +18,16 @@ for (const key of ['Item', 'Equipment', 'Pet', 'Recipe', 'Bundle', 'Pack']) {
 }
 data.Quest = []; data.Shop = {}; data.ShopState = {};
 for (const name of ['제타 카드팩', '9성 카드팩', '8성 카드팩', '상급 강화석', '헬 도전장', '고유 보조 장비 상자', '고유의 보석', '용기의 보석', '초월 상자']) {
-    if (!data.Item.some(item => item?.name === name)) data.Item.push({ name, type: '재료' });
+    if (!data.Item.some(item => item?.name === name)) data.Item.push({ name, type: name === '헬 도전장' ? '티켓' : name === '초월 상자' ? '가챠' : '재료' });
 }
 for (const name of ['조각 보주', '눈뜬 장님 보주', '오로라 보주']) {
-    if (!data.Item.some(item => item?.name === name)) data.Item.push({ name, type: '소모품', use: '보주' });
+    if (!data.Item.some(item => item?.name === name)) data.Item.push({ name, type: '사용', use: '보주' });
 }
 const registration = appendMansion(data);
 Object.assign(data, registration.after);
+const octoberBefore = structuredClone(data);
+const october = appendOctober(data);
+Object.assign(data, october.after);
 const seeds = ['mansion-test', 'mansion-guest', 'mansion-third'].map(name => ({
     _get: 1, id: name + '-id', name, code: 'TEST', level: 300, logged_in: [], avatarMigrated: true,
     need_character_card_select: false, main_card: { id: 0, star: 6, type: '일반' },
@@ -51,6 +55,15 @@ DynamoDBDocumentClient.prototype.send = async command => {
         }
         writes.push(structuredClone(input));
         const record = records.get(input.Key.id);
+        if (input.ConditionExpression?.startsWith('attribute_exists(id) AND')) {
+            const reject = () => { const error = new Error('simulated concurrent user change'); error.name = 'ConditionalCheckFailedException'; throw error; };
+            for (const match of input.ConditionExpression.matchAll(/(#k\d+)\s*=\s*(:p\d+)/g)) {
+                if (!require('node:util').isDeepStrictEqual(record[input.ExpressionAttributeNames[match[1]]], input.ExpressionAttributeValues[match[2]])) reject();
+            }
+            for (const match of input.ConditionExpression.matchAll(/attribute_not_exists\((#k\d+)\)/g)) {
+                if (Object.hasOwn(record, input.ExpressionAttributeNames[match[1]])) reject();
+            }
+        }
         for (const match of input.UpdateExpression.matchAll(/(#\w+)\s*=\s*(:\w+)/g)) {
             record[input.ExpressionAttributeNames[match[1]]] = structuredClone(input.ExpressionAttributeValues[match[2]]);
         }
@@ -142,6 +155,134 @@ test('신규 등록은 기존 운영 값·빈 제작식·상점 식별자를 보
     edited.Shop.레이드[0].price.amount = 99;
     assert.deepEqual(appendMansion(edited).after, edited);
     assert.throws(() => appendMansion({}), /초기화하지 않습니다/);
+});
+
+test('10월 등록은 9월 아이템과 운영 구성을 보존하고 자물쇠의 월별 두 항목만 교체한다', () => {
+    assert.deepEqual(appendOctober(data).after, data);
+    assert.deepEqual(data.Item.slice(0, octoberBefore.Item.length), octoberBefore.Item);
+    assert.deepEqual(data.Bundle.slice(0, octoberBefore.Bundle.length), octoberBefore.Bundle);
+    const expectedPack = structuredClone(octoberBefore.Pack);
+    for (const entry of expectedPack[0]) {
+        const name = octoberBefore.Item[entry.item_id]?.name;
+        if (name === '[9월]8성 보호카드') entry.item_id = october.gemSetId;
+        if (name === '[9월]9성 보호카드') entry.item_id = october.luckyId;
+    }
+    assert.deepEqual(data.Pack, expectedPack);
+    assert.equal(data.Item[october.gemSetId].sellPrice, 60000000);
+    assert.equal(data.Item[october.luckyId].sellPrice, 30000000);
+    assert.equal(data.Item[october.luckyId].lucky, .3);
+    assert.ok(!data.Item[october.gemSetId].no_trade && !data.Item[october.luckyId].no_trade);
+    assert.deepEqual(data.Bundle[data.Item[october.gemSetId].pack].map(entry => [data.Item[entry.item_id].name, entry.count]), ['용기의 보석', '희생의 보석', '투지의 보석', '권능의 보석', '지혜의 보석', '인내의 보석'].map(name => [name, 1]));
+    const edited = structuredClone(data);
+    edited.Bundle[edited.Item[october.packageId].pack] = [];
+    edited.Shop.패키지[0].price.amount = 999; edited.Item[october.keyId].desc = '운영자 설명';
+    assert.deepEqual(appendOctober(edited).after, edited);
+    assert.throws(() => appendOctober({}), /초기화하지 않습니다/);
+});
+
+test('옵션 변경열쇠는 등급별 모든 옵션을 추첨하고 재설정 횟수, 골드와 장비 신원을 유지한다', async () => {
+    for (const [rarity, count] of Object.entries(artifacts.GRADES)) {
+        let user = await reset(); const equip = rpg.grantArtifact(user, rarity);
+        equip.artifact.rerollsUsed = 3; equip.tradeUsed = true; equip.tradeCount = 1;
+        const old = structuredClone(equip); rpg.addInventoryItem(user, october.keyId, 2); await user.save();
+        const started = await request('/api/inventory/items/' + october.keyId + '/use', { count: 1 });
+        assert.equal(started.status, 200, JSON.stringify(started)); assert.equal(started.data.pending.type, '아티팩트옵션변경');
+        assert.equal(started.data.pending.options[0].artifact.rerollsUsed, 3);
+        assert.equal(started.data.pending.options[0].artifact.options.length, count);
+        assert.equal(started.data.remainingCount, 2, '대상 적용 전에는 열쇠를 소모하지 않는다');
+        const applied = await request('/api/inventory/item-use/resolve', { choice: started.data.pending.options[0].value });
+        assert.equal(applied.status, 200, JSON.stringify(applied)); assert.equal(applied.data.pending, null);
+        assert.equal(applied.data.remainingCount, 1);
+        user = await rpg.getRPGUserByName(user.name); const next = user.inventory.equipment[0];
+        assert.equal(next.artifact.options.length, count); assert.equal(new Set(next.artifact.options.map(option => option.type)).size, count);
+        assert.ok(next.artifact.options.every(option => artifacts.ABILITIES[option.ability] && option.n >= 1 && option.n <= 10));
+        assert.deepEqual({ ...next, artifact: { ...next.artifact, options: old.artifact.options } }, old);
+        assert.equal(user.gold, 1000000000); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 1);
+        assert.equal(applied.data.result.target.after.artifact.rerollsUsed, 3);
+        assert.equal((await request('/api/inventory/item-use/resolve', { choice: 1 })).status, 400);
+    }
+});
+
+test('옵션 변경은 고정 UID 대상을 선택하며 잘못된 대상, 잠금, 전투와 일괄 사용을 거부하고 취소 시 열쇠를 보존한다', async () => {
+    let user = await reset(); rpg.addInventoryItem(user, october.keyId, 2); await user.save();
+    assert.equal((await request('/api/inventory/items/' + october.keyId + '/use', {})).status, 400);
+    const target = rpg.grantArtifact(user, '유니크'); target.locked = true; await user.save();
+    assert.equal((await request('/api/inventory/items/' + october.keyId + '/use', {})).status, 400);
+    target.locked = false; await user.save();
+    assert.equal((await request('/api/inventory/items/' + october.keyId + '/use', { count: 2 })).status, 400);
+    const started = await request('/api/inventory/items/' + october.keyId + '/use', {});
+    assert.equal(started.status, 200);
+    assert.equal((await request('/api/artifact/reroll', { uid: target.uid, locks: [] })).status, 400);
+    assert.equal((await request('/api/inventory/item-use/resolve', { choice: 999 })).status, 400);
+    user = await rpg.getRPGUserByName(user.name);
+    const other = rpg.grantArtifact(user, '레어'); user.inventory.equipment.reverse(); await user.save();
+    const otherOptions = structuredClone(other.artifact);
+    const applied = await request('/api/inventory/item-use/resolve', { choice: 1 });
+    assert.equal(applied.status, 200); assert.equal(applied.data.result.target.before.artifact.uid, target.uid);
+    user = await rpg.getRPGUserByName(user.name); assert.deepEqual(user.inventory.equipment[0].artifact, otherOptions);
+    assert.equal((await request('/api/inventory/items/' + october.keyId + '/use', {})).status, 200);
+    user = await rpg.getRPGUserByName(user.name); user.field = { name: '테스트 전투' }; await user.save();
+    assert.equal((await request('/api/inventory/item-use/resolve', { choice: 1 })).status, 400);
+    assert.equal((await request('/api/inventory/item-use/cancel', {})).status, 200);
+    user = await rpg.getRPGUserByName(user.name); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 1);
+    user.field = null; await user.save();
+});
+
+test('옵션 변경 저장 충돌과 동시 적용은 열쇠 소실이나 중복 적용을 만들지 않는다', async () => {
+    let user = await reset(); const equip = rpg.grantArtifact(user, '레전더리'); rpg.addInventoryItem(user, october.keyId, 2); await user.save();
+    assert.equal((await request('/api/inventory/items/' + october.keyId + '/use', {})).status, 200);
+    const old = structuredClone(equip.artifact); failProtectedWrite = true;
+    assert.equal((await request('/api/inventory/item-use/resolve', { choice: 1 })).status, 400);
+    user = await rpg.getRPGUserByName(user.name);
+    assert.deepEqual(user.inventory.equipment[0].artifact, old); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 2); assert.ok(user.pendingAction);
+    const requests = await Promise.all([request('/api/inventory/item-use/resolve', { choice: 1 }), request('/api/inventory/item-use/resolve', { choice: 1 })]);
+    assert.equal(requests.filter(result => result.status === 200).length, 1);
+    user = await rpg.getRPGUserByName(user.name); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 1);
+    assert.equal(user.inventory.equipment[0].artifact.rerollsUsed, 0);
+});
+
+test('카카오 명령 경로에서도 옵션 변경 대상을 선택하고 취소하거나 적용할 수 있다', async () => {
+    let user = await reset(); const equip = rpg.grantArtifact(user, '레전더리'); equip.artifact.rerollsUsed = 2;
+    rpg.addInventoryItem(user, october.keyId, 1); await user.save();
+    const replies = [];
+    let receive;
+    const channel = { channelId: 'web-chat:isolated-key', sendChat: text => { replies.push(text); receive(); } };
+    const command = async text => {
+        const reply = new Promise(resolve => { receive = resolve; });
+        assert.equal(await rpg.onChat({ text, getSenderInfo: () => ({ userId: user.id }) }, channel, { getUser: () => rpg.getRPGUserByName(user.name), queueKey: 'isolated-key-command' }), true);
+        await reply;
+    };
+    await command('/RPGenius 사용 아티팩트 옵션 변경열쇠');
+    assert.match(replies.at(-1), /선택/);
+    await command('/RPGenius 사용취소');
+    user = await rpg.getRPGUserByName(user.name); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 1); assert.equal(user.pendingAction, null);
+    user = await reset(seeds[1].name); const second = rpg.grantArtifact(user, '레전더리'); second.artifact.rerollsUsed = 2;
+    rpg.addInventoryItem(user, october.keyId, 1); await user.save();
+    await command('/RPGenius 사용 아티팩트 옵션 변경열쇠'); await command('/RPGenius 선택 1');
+    assert.match(replies.at(-1), /옵션 변경 완료/);
+    user = await rpg.getRPGUserByName(user.name); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 0);
+    assert.equal(user.inventory.equipment[0].artifact.rerollsUsed, 2); assert.equal(user.gold, 1000000000);
+});
+
+test('아티팩트패키지는 550포인트로 구성품을 즉시 지급하며 계정 구매 2회와 저장 충돌을 검사한다', async () => {
+    let user = await reset(); user.point = 549; user.shopPurchases = {}; await user.save();
+    const product = data.Shop.패키지.find(entry => entry.item_id === october.packageId);
+    const body = { shopType: '패키지', shopId: product.shopId, count: 1 };
+    assert.equal((await request('/api/shop/buy', body)).status, 400);
+    user.point = 1100; await user.save(); failProtectedWrite = true;
+    assert.equal((await request('/api/shop/buy', body)).status, 400);
+    user = await rpg.getRPGUserByName(user.name); assert.equal(user.point, 1100); assert.equal(rpg.getInventoryItemCount(user, october.keyId), 0);
+    const attempts = await Promise.all([request('/api/shop/buy', { ...body, count: 2 }), request('/api/shop/buy', { ...body, count: 2 })]);
+    assert.equal(attempts.filter(result => result.status === 200).length, 1);
+    assert.equal((await request('/api/shop/buy', body)).status, 400);
+    user = await rpg.getRPGUserByName(user.name); assert.equal(user.point, 0);
+    assert.equal(rpg.getInventoryItemCount(user, october.keyId), 2);
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item?.name === '황금 주머니')), 40);
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item?.name === '윷')), 8);
+    assert.equal(rpg.getInventoryItemCount(user, october.packageId), 0);
+    user.point = 10000; await user.save(); data.Shop.패키지.reverse();
+    assert.equal((await request('/api/shop/buy', body)).status, 400); data.Shop.패키지.reverse();
+    assert.equal((await rpg.getRPGUserByName(user.name)).point, 10000);
 });
 
 test('아티팩트 등급별 조건 종류는 중복 없고, 발현도와 네 임계 보너스가 실제 충족 조건만 누적한다', () => {
@@ -300,7 +441,7 @@ test('조의 의지는 지정 대상 혼자 또는 받쳐준 사람과 피해를
     raid.tickEvents(room, room.monster, 8); assert.equal(blessed.runtime.hp, hp - 120000);
 });
 
-test('받아쓰기는 틀려도 끝까지 입력하며 성공·실패를 관문 내 누적하고 시간 초과를 판정한다', async () => {
+test('받아쓰기는 오답 이후에도 정해진 글자 수를 입력하며 성공과 실패를 관문 내 누적하고 시간 초과를 판정한다', async () => {
     const room = await battle('hard', 2); const event = pattern(room, 'dictation'); assert.equal(event.sequence.length, 6);
     const wrong = event.sequence[0] === 'a' ? 'b' : 'a';
     raid.action(room, seeds[0].name, { eventId: event.id, action: 'letter', letter: wrong });
@@ -445,6 +586,25 @@ test('단단해지기는 축복 직후를 피하고 막은 피해만큼 회복�
     party.__test.applyBossHpDamage(room, room.monster, stone.hpMax);
     assert.equal(room.monster.hp, hp); assert.equal(room.members[0].runtime.hp, 500000);
     assert.equal(room.monster.bossState.outcome.ok, false);
+});
+
+test('레이드 보상은 티켓, 가챠, 카드, 펫과 아티팩트의 이미지 경로를 제공한다', async () => {
+    const room = await battle('nightmare'); room.state = 'cleared'; room.result = { cleared: true };
+    mock.method(Math, 'random', () => .6);
+    try { await party.__test.grantPartyQuestClearRewards(room); } finally { mock.restoreAll(); }
+    const reward = room.result.rewards[0];
+    const all = [...reward.items, ...reward.firstClear.rewards];
+    const user = await rpg.getRPGUserByName(seeds[0].name);
+    all.push(party.__test.grantPartyQuestPackReward(user, { type: '캐릭터카드', card_id: 0, display_star: 7, card_type: '일반', count: 1 }, {}));
+    all.push(party.__test.grantPartyQuestPackReward(user, { type: '펫', pet_name: '조각', count: 1 }, {}));
+    const ticket = all.find(item => item.name === '헬 도전장');
+    const box = all.find(item => item.name === '초월 상자');
+    assert.equal(new URL(ticket.iconUrl, base).searchParams.get('dir'), '티켓');
+    assert.equal(new URL(box.iconUrl, base).searchParams.get('dir'), '가챠');
+    assert.ok(all.find(item => item.kind === 'card')?.iconUrl);
+    assert.ok(all.find(item => item.kind === 'pet')?.iconUrl);
+    for (const url of all.map(item => item.iconUrl).filter(Boolean)) assert.match(new URL(url, base).pathname, /^\/((item|card)-image|rpg-ui-title)$/);
+    assert.equal(new URL(all.find(item => item.kind === 'pet').iconUrl, base).searchParams.get('dir'), '펫');
 });
 
 test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고 레이드 투신 포션은 중첩 없이 지속시간을 연장한다', async () => {

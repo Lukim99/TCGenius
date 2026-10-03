@@ -393,7 +393,7 @@
     function attemptJoin(r) {
         if (r.hasPassword) {
             const sub = $('#pqJoinSub');
-            sub.textContent = r.questName + ' · ' + r.hostName + '님의 파티';
+            sub.textContent = r.hostName + '님의 파티 (' + r.questName + ')';
             $('#pqJoinPw').value = '';
             $('#pqJoinBg').classList.add('active');
             $('#pqJoinConfirm').onclick = async () => {
@@ -701,7 +701,7 @@
             return;
         }
         if (def.description) box.append(el('div', null, def.description));
-        const phases = (def.phases || []).map(p => p.name).join(' · ');
+        const phases = (def.phases || []).map(p => p.name).join(', ');
         if (phases) box.append(el('div', { style: 'margin-top:6px' }, el('b', null, '페이즈: '), phases));
         if (def.potionLimit) box.append(el('div', { style: 'margin-top:4px;color:#94a3b8' }, '물약 최대 ' + def.potionLimit + '개 휴대 가능'));
     }
@@ -954,65 +954,99 @@
         return root;
     }
 
+    function frameImageUrl(file) {
+        return '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent(file);
+    }
+
+    // 보상 한 줄: 아이템 아트 + 이름 + 수량. frameUrl이 없으면 defaultFrame, 화폐는 프레임 없이 아이콘만
+    function lootRow(it, defaultFrame, amount) {
+        const art = el('div', { class: 'pq-loot-art' });
+        const currency = it.kind === 'currency' ? it.currency : it.kind;
+        const currencyName = { gold: '골드', garnet: '가넷', mileage: '마일리지' }[currency];
+        const fallback = () => el('span', { class: 'pq-loot-fallback' }, currencyName ? { gold: '🪙', garnet: '💎', mileage: 'Ⓜ' }[currency] : it.kind === 'title' ? '🏆' : '🎁');
+        const imageError = e => e.currentTarget.replaceWith(fallback());
+        if (currencyName) {
+            art.append(el('img', { class: 'pq-loot-icon currency', src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(currencyName + '.png'), alt: '', onError: imageError }));
+        } else {
+            const frame = it.frameUrl || defaultFrame;
+            if (frame) art.append(el('img', { class: 'pq-loot-frame', src: frame, alt: '' }));
+            if (it.iconUrl) art.append(el('img', { class: 'pq-loot-icon', src: it.iconUrl, alt: '', onError: imageError }));
+            else art.append(fallback());
+        }
+        return el('div', { class: 'pq-loot-row' + (it.bonus ? ' bonus' : '') },
+            art,
+            el('div', { class: 'pq-loot-name' },
+                it.kind === 'title' ? '칭호 「' + (it.name || '') + '」' : (it.name || '-'),
+                it.bonus ? el('span', { class: 'pq-loot-tag' }, '추가 보상') : null),
+            amount ? el('b', { class: 'pq-loot-qty' }, amount) : null
+        );
+    }
+
+    function rewardItems(rv) {
+        // 부타게임은 기본 보상 여러 개 + 추가 보상 1개 → items 배열, 그 외는 단일 item
+        return Array.isArray(rv.items) && rv.items.length ? rv.items : (rv.item ? [rv.item] : []);
+    }
+
+    function rewardAmount(item) {
+        if (item.kind === 'title') return '획득';
+        const currency = item.kind === 'currency' || item.kind === 'gold' || item.kind === 'garnet';
+        return (currency ? '+' : '×') + Number(item.count || 1).toLocaleString();
+    }
+
+    function rewardBody(rv) {
+        const list = rewardItems(rv);
+        const body = el('div', { class: 'pq-loot-body' });
+        if (rv.weeklyLocked) body.append(el('div', { class: 'pq-loot-note warn' }, '이번 주 보상 횟수를 모두 사용했습니다.'));
+        if (rv.error) body.append(el('div', { class: 'pq-loot-note error' }, String(rv.error)));
+        if (list.length) {
+            body.append(el('div', { class: 'pq-loot-items' }, ...list.map(raw => {
+                const item = raw || {};
+                const frame = frameImageUrl(Number(item.rewardIndex || 0) === 1 ? '특수.png' : '아이템.png');
+                return lootRow(item, frame, rewardAmount(item));
+            })));
+        } else if (!rv.weeklyLocked && !rv.error) {
+            body.append(el('div', { class: 'pq-loot-note empty' }, '보상 없음'));
+        }
+        const chips = [];
+        if (rv.exp) chips.push(['XP', '+' + Number(rv.exp).toLocaleString()]);
+        if (rv.gold) chips.push(['골드', '+' + Number(rv.gold).toLocaleString()]);
+        if (rv.levelUps) chips.push(['레벨업', '+' + rv.levelUps]);
+        if (chips.length) body.append(el('div', { class: 'pq-loot-chips' }, ...chips.map(([k, v]) => el('span', { class: 'pq-loot-chip' }, k + ' ', el('b', null, v)))));
+        return body;
+    }
+
     function openRewardModal(rewards) {
+        const all = (rewards || []).slice().sort((a, b) => (b.name === me) - (a.name === me));
         const root = $('#pqRewardList');
         root.replaceChildren();
-        (rewards || []).forEach(rv => {
-            // 부타게임은 기본 보상 여러 개 + 추가 보상 1개 → items 배열, 그 외는 단일 item
-            const list = Array.isArray(rv.items) && rv.items.length ? rv.items : (rv.item ? [rv.item] : []);
-            const item = list.find(x => x && x.bonus) || rv.item || list[0] || {};
-            const thumb = el('div', { class: 'pq-reward-thumb' });
-            const frameUrl = item.frameUrl || ('/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent(Number(item.rewardIndex || 0) === 1 ? '특수.png' : '아이템.png'));
-            thumb.append(el('img', { class: 'frame', src: frameUrl, alt: '' }));
-            if (item.iconUrl) thumb.append(el('img', { class: 'icon', src: item.iconUrl, alt: item.name || '' }));
-            else thumb.append(el('span', { class: 'fallback' }, '🎁'));
-            const lines = [];
-            if (rv.exp) lines.push('XP +' + Number(rv.exp || 0).toLocaleString());
-            if (rv.gold) lines.push('골드 +' + Number(rv.gold || 0).toLocaleString());
-            if (rv.levelUps) lines.push('레벨업 +' + rv.levelUps);
-            root.append(el('div', { class: 'pq-reward-row' },
-                thumb,
-                el('div', { class: 'info' },
-                    el('div', { class: 'owner' }, rv.name || '-'),
-                    rv.weeklyLocked
-                        ? el('div', { class: 'item', style: 'color:#fbbf24' }, '이번 주 보상 횟수를 모두 사용했습니다')
-                        : list.length
-                            ? el('div', { class: 'item' }, ...list.map(it => el('div', null, (it.bonus ? '✨ ' : '') + it.name + (it.count > 1 ? ' x' + Number(it.count).toLocaleString() : ''))))
-                            : el('div', { class: 'item' }, rv.error || '보상 없음'),
-                    lines.length ? el('div', { class: 'meta' }, lines.join(' · ')) : null
-                )
+        const solo = all.length === 1 && all[0].name === me;
+        $('#pqRewardSummary').textContent = all.length > 1 ? '파티원별 획득 보상' : '획득 보상';
+        all.forEach(rv => {
+            if (solo) { root.append(rewardBody(rv)); return; }
+            const isMe = rv.name === me;
+            const count = rewardItems(rv).length;
+            const state = rv.weeklyLocked ? '주간 한도' : rv.error ? '오류' : count ? '보상 ' + count + '개' : '보상 없음';
+            root.append(el('details', { class: 'pq-loot-member' + (isMe ? ' me' : ''), open: isMe ? '' : false },
+                el('summary', null,
+                    el('span', { class: 'who' }, (rv.name || '-') + (isMe ? ' (나)' : '')),
+                    el('span', { class: 'state' }, state)),
+                rewardBody(rv)
             ));
         });
+        root.scrollTop = 0;
         $('#pqRewardBg').classList.add('active');
     }
 
     function openFirstClearModal(fc) {
         if (!fc) return;
         const titleEl = $('#pqFirstClearTitle');
-        if (titleEl) titleEl.textContent = (fc.questName || '') + ' 최초 클리어!';
+        if (titleEl) titleEl.textContent = (fc.questName || '') + ' 최초 클리어';
         const root = $('#pqFirstClearList');
         root.replaceChildren();
         (fc.rewards || []).forEach(rw => {
-            const thumb = el('div', { class: 'pq-fc-thumb' });
-            if (rw.kind === 'item') {
-                thumb.append(el('img', { class: 'frame', src: rw.frameUrl || ('/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('아이템.png')), alt: '' }));
-                if (rw.iconUrl) thumb.append(el('img', { class: 'icon', src: rw.iconUrl, alt: rw.name || '' }));
-                else thumb.append(el('span', { class: 'fallback' }, '🎁'));
-            } else if (rw.kind === 'gold' || rw.kind === 'garnet') {
-                thumb.append(el('img', { class: 'icon', src: '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent((rw.kind === 'gold' ? '골드' : '가넷') + '.png'), alt: rw.name || '' }));
-            } else {
-                thumb.append(el('span', { class: 'fallback' }, '🏆'));
-            }
-            let amount;
-            if (rw.kind === 'item') amount = 'x' + (rw.count || 1);
-            else if (rw.kind === 'gold' || rw.kind === 'garnet') amount = '+' + Number(rw.count || 0).toLocaleString();
-            else amount = '획득';
-            root.append(el('div', { class: 'pq-fc-row' },
-                thumb,
-                el('div', { class: 'pq-fc-name' }, rw.kind === 'title' ? '칭호 「' + rw.name + '」' : rw.name),
-                el('div', { class: 'pq-fc-amount' }, amount)
-            ));
+            root.append(lootRow(rw, rw.kind === 'item' ? frameImageUrl('아이템.png') : null, rewardAmount(rw)));
         });
+        root.scrollTop = 0;
         $('#pqFirstClearBg').classList.add('active');
     }
 
@@ -1764,7 +1798,7 @@
             voteSig = sig;
             $('#pqVoteTitle').textContent = vote.prompt;
             $('#pqVoteDone').style.display = voted || dead ? '' : 'none';
-            $('#pqVoteDone').textContent = dead && !voted ? '전투불능 상태에서는 투표할 수 없습니다.' : '투표 완료 — 결과를 기다리는 중...';
+            $('#pqVoteDone').textContent = dead && !voted ? '전투불능 상태에서는 투표할 수 없습니다.' : '투표 완료. 결과를 기다리는 중입니다.';
             const list = $('#pqVoteList');
             list.replaceChildren();
             const myVote = (vote.votes || {})[me];

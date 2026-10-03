@@ -10386,6 +10386,7 @@ async function rerollArtifactForUser(name, uid, locks) {
         const user = await getRPGUserByName(name);
         if (!user) return { error: '유저를 찾을 수 없습니다.' };
         if (user.field || require('./partyquest').getRoomOf(name)?.state === 'inProgress') return { error: '전투 중에는 재설정할 수 없습니다.' };
+        if (user.pendingAction?.type === '아티팩트옵션변경') return { error: '진행 중인 아티팩트 옵션 변경을 먼저 완료하거나 취소해주세요.' };
         const target = getAllUserEquipments(user).find(entry => entry.equip.type === 'artifact' && entry.equip.uid === uid);
         if (!target) return { error: '소유한 아티팩트를 찾을 수 없습니다.' };
         const result = artifacts.reroll(user, target.equip, locks, readJson(CHARACTER_CARDS_PATH, []));
@@ -10396,6 +10397,52 @@ async function rerollArtifactForUser(name, uid, locks) {
     });
     artifactRerollQueue.set(name, work);
     try { return await work; } finally { if (artifactRerollQueue.get(name) === work) artifactRerollQueue.delete(name); }
+}
+
+function getArtifactOptionChangeTargets(user, pending) {
+    const owned = getAllUserEquipments(user).filter(entry => entry.equip.type === 'artifact' && entry.equip.uid && entry.equip.artifact && !entry.equip.locked && artifacts.GRADES[getEquipmentData('artifact', entry.equip.id)?.rarity]);
+    if (!pending) return owned;
+    return (pending.targetUids || []).map((uid, index) => ({ number: index + 1, entry: owned.find(entry => entry.equip.uid === uid) })).filter(target => target.entry);
+}
+
+async function startArtifactOptionChange(user, itemId, webItemUse) {
+    if (user.pendingAction) return '❌ 진행 중인 작업을 먼저 완료하거나 취소해주세요.';
+    if (user.field || require('./partyquest').getRoomOf(user.name)?.state === 'inProgress') return '❌ 전투 중에는 옵션을 변경할 수 없습니다.';
+    const targets = getArtifactOptionChangeTargets(user);
+    if (!targets.length) return '❌ 옵션을 변경할 수 있는 잠금 해제된 아티팩트가 없습니다.';
+    // 열쇠는 대상 적용 시 소모한다. 선택 취소나 저장 충돌로 아이템을 잃지 않는다.
+    user.pendingAction = { type: '아티팩트옵션변경', itemId, targetUids: targets.map(entry => entry.equip.uid), webItemUse: webItemUse === true };
+    try { await commitProtectedUserChange(user, ['pendingAction']); }
+    catch (error) { console.error('[artifact] key selection:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 다시 불러와주세요.'; }
+    return ['✅ 옵션을 변경할 아티팩트를 선택해주세요.', '모든 옵션을 다시 뽑습니다. 재설정 사용 횟수는 유지됩니다.', '/RPGenius 선택 [번호]', '/RPGenius 사용취소', ...targets.flatMap((entry, index) => {
+        const view = getArtifactView(user, entry.equip);
+        return [(index + 1) + '. <' + view.rarity + '> 아티팩트 (' + (entry.source === 'equipped' ? '장착 중' : '인벤토리') + ', 재설정 ' + view.rerollsUsed + '/3)', ...view.options.map(option => '  ' + option.conditionLabel + ' [' + option.conditionValue + '], ' + option.abilityLabel + ' +' + option.n + '%')];
+    })].join('\n');
+}
+
+async function changeArtifactOptions(user, numberArg, cancel = false) {
+    const pending = user.pendingAction;
+    if (pending?.type !== '아티팩트옵션변경') return '❌ 진행 중인 아티팩트 옵션 변경이 없습니다.';
+    if (!cancel) {
+        if (user.field || require('./partyquest').getRoomOf(user.name)?.state === 'inProgress') return '❌ 전투 중에는 옵션을 변경할 수 없습니다.';
+        const number = Number(numberArg);
+        const target = getArtifactOptionChangeTargets(user, pending).find(target => target.number === number);
+        if (!Number.isInteger(number) || !target) return '❌ 선택할 수 없는 아티팩트입니다. 대상과 장비 잠금을 확인해주세요.';
+        const item = getDataCache('Item', [])[pending.itemId];
+        if (item?.use !== '아티팩트옵션변경' || getInventoryItemCount(user, pending.itemId) < 1) return '❌ 아티팩트 옵션 변경열쇠가 부족합니다.';
+        const equip = target.entry.equip;
+        const rarity = getEquipmentData('artifact', equip.id).rarity;
+        const next = artifacts.create(rarity, equip.id, readJson(CHARACTER_CARDS_PATH, []));
+        equip.artifact.options = next.artifact.options;
+        removeInventoryItem(user, pending.itemId, 1);
+    }
+    user.pendingAction = null;
+    try { await commitProtectedUserChange(user, ['inventory', 'equipments', 'pendingAction']); }
+    catch (error) { console.error('[artifact] key apply:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 다시 불러와주세요.'; }
+    if (cancel) return '✅ 아티팩트 옵션 변경을 취소했습니다. 열쇠는 소모되지 않았습니다.';
+    const equip = getAllUserEquipments(user).find(entry => entry.equip.uid === pending.targetUids[Number(numberArg) - 1]).equip;
+    const view = getArtifactView(user, equip);
+    return ['✅ 아티팩트 옵션 변경 완료', '재설정 사용 횟수: ' + view.rerollsUsed + '/3', ...view.options.map(option => option.conditionLabel + ' [' + option.conditionValue + '], ' + option.abilityLabel + ' +' + option.n + '%')].join('\n');
 }
 
 function autoUnequipInvalidSupport(user) {
@@ -11924,7 +11971,7 @@ async function useSongpyeon(user, countArg) {
     }
 }
 
-async function useItem(user, itemName, countArg) {
+async function useItem(user, itemName, countArg, options = {}) {
     const items = getDataCache('Item', []);
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
@@ -11978,6 +12025,7 @@ async function useItem(user, itemName, countArg) {
         if (item.use == '스탯초기화' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장신구선택권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '보조장비리롤' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use == '아티팩트옵션변경' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '잠재능력부여' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '장비강화권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '영혼석' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -12000,7 +12048,7 @@ async function useItem(user, itemName, countArg) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '축복사용권' && item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '축복사용권' && item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '아티팩트옵션변경' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -12014,6 +12062,7 @@ async function useItem(user, itemName, countArg) {
         }
     }
 
+    if (item.type === '사용' && item.use === '아티팩트옵션변경') return startArtifactOptionChange(user, itemId, options.webItemUse);
     removeInventoryItem(user, itemId, useCount);
     requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
 
@@ -12453,6 +12502,10 @@ function getWebItemUsePending(user) {
     } else if (pending.type == '보조장비리롤') {
         title = '재설정할 보조 장비 선택';
         options = getSupportRerollTargets(user).map(webItemEquipmentOption);
+    } else if (pending.type == '아티팩트옵션변경') {
+        title = '옵션을 변경할 아티팩트 선택';
+        description = '열쇠 1개를 소모해 모든 옵션을 다시 뽑습니다. 기존 옵션 종류도 다시 나올 수 있으며, 재설정 사용 횟수는 유지됩니다.';
+        options = getArtifactOptionChangeTargets(user, pending).map(target => ({ ...webItemEquipmentOption(target), name: target.number + '. 아티팩트', artifact: getArtifactView(user, target.entry.equip) }));
     } else if (pending.type == '잠재능력부여') {
         title = '잠재능력을 부여할 장비 선택';
         description = pending.tier ? pending.tier + ' 등급 잠재능력을 부여합니다.' : '잠재능력이 없는 장비를 선택해주세요.';
@@ -12528,6 +12581,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     if (pending.type == '초월선택') return selectTranscendChoice(user, choice);
     if (pending.type == '아이템선택') return selectItemChoice(user, choice);
     if (pending.type == '보조장비리롤') return rerollSupportEquipment(user, choice);
+    if (pending.type == '아티팩트옵션변경') return changeArtifactOptions(user, choice);
     if (pending.type == '잠재능력부여') return awakenEquipmentPotential(user, choice);
     if (pending.type == '장비강화권') return applyUpgradeTicket(user, choice);
     if (pending.type == '영혼부여') return applySoulToEquipment(user, choice);
@@ -12543,6 +12597,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
 function cancelWebItemUsePending(user) {
     const pending = user && user.pendingAction;
     if (!pending) return '진행 중인 아이템 사용이 없습니다.';
+    if (pending.type === '아티팩트옵션변경') return changeArtifactOptions(user, null, true);
     const refund = refundPendingActionItem(user, pending);
     user.pendingAction = null;
     return '아이템 사용을 취소했습니다.' + (refund ? '\n- 반환: ' + refund : '');
@@ -12653,7 +12708,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
-    if (shopType === '레이드') {
+    if (shopType === '레이드' || shopItem.contentKey === 'artifact-package') {
         try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
     } else await user.save();
@@ -14678,6 +14733,13 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
+    if (user.pendingAction && user.pendingAction.type === '아티팩트옵션변경') {
+        if (args[0] === '사용취소') reply(await changeArtifactOptions(user, null, true));
+        else if (args[0] === '선택') reply(await changeArtifactOptions(user, args[1]));
+        else reply('❌ 옵션을 변경할 아티팩트를 먼저 선택해주세요.\n/RPGenius 선택 [번호]\n/RPGenius 사용취소');
+        return true;
+    }
+
     if (user.pendingAction && user.pendingAction.type == '보조장비리롤') {
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
@@ -15508,7 +15570,7 @@ async function handleRPGCommand(data, channel, context = {}) {
         const target = getAllUserEquipments(user)[Number(args[1]) - 1];
         if (!target || target.equip.type !== 'artifact') { reply('❌ 아티팩트 장비 번호를 입력하세요.'); return; }
         const result = await rerollArtifactForUser(user.name, target.equip.uid, args.slice(2));
-        reply(result.error || ('✅ 아티팩트 재설정 완료 · ' + comma(result.cost) + '골드 · 남은 횟수 ' + (3 - result.artifact.rerollsUsed)));
+        reply(result.error || ('✅ 아티팩트 재설정 완료\n소모: ' + comma(result.cost) + '골드\n남은 횟수 ' + (3 - result.artifact.rerollsUsed)));
         return;
     }
     if (args[0] == '분해') {

@@ -14,6 +14,7 @@ AWS.S3 = class {
 // 실제 AWS/운영 DB를 사용하지 않고, 기존 게임 데이터를 테스트용 메모리에 읽는다.
 const fixture = { id: 'web-actions-test', name: '웹기능테스트', code: 'WEB-TEST-ONLY', _get: 1, avatarMigrated: true,
     logged_in: [], logged_in_agent: [], need_character_card_select: true };
+let databaseWrites = 0;
 DynamoDBDocumentClient.prototype.send = async command => {
     const input = command.input;
     if (command.constructor.name === 'GetCommand') {
@@ -25,7 +26,7 @@ DynamoDBDocumentClient.prototype.send = async command => {
         return { Item: { key: input.Key.key, data } };
     }
     if (command.constructor.name === 'ScanCommand') return { Items: input.TableName === 'rpgenius_user' ? [structuredClone(fixture)] : [] };
-    if (['UpdateCommand', 'PutCommand', 'TransactWriteCommand', 'DeleteCommand'].includes(command.constructor.name)) return {};
+    if (['UpdateCommand', 'PutCommand', 'TransactWriteCommand', 'DeleteCommand'].includes(command.constructor.name)) { databaseWrites++; return {}; }
     throw new Error('Unexpected isolated DynamoDB command: ' + command.constructor.name);
 };
 const rpg = require('../rpgenius');
@@ -75,6 +76,29 @@ after(async () => {
 test('인증 없는 상태에서 플레이 API에 접근할 수 없다', async () => {
     assert.equal((await request('/api/game/state', undefined, false)).status, 401);
     assert.equal((await request('/api/inventory/actions/confirm', {}, false)).status, 401);
+});
+test('핫딜샵 중단 시 메뉴와 직접 구매를 막고 상품, 재화, 구매 기록을 보존한다', async () => {
+    const user = await reset({ garnet: 5000, hotDealPurchases: { previous: [0] } });
+    const snapshot = JSON.stringify({ gold: user.gold, garnet: user.garnet, inventory: user.inventory, hotDealPurchases: user.hotDealPurchases });
+    const catalog = ['Shop', 'ShopState', 'HotDealOverride'].map(key => JSON.stringify(rpg.getDataCache(key, {})));
+    const count = databaseWrites;
+    const shop = await request('/api/shop');
+    assert.equal(shop.status, 200);
+    assert.ok(!shop.data.tabs.includes('핫딜샵'));
+    assert.ok(shop.data.tabs.includes('일반'));
+    const paused = await request('/api/hotdeal');
+    assert.equal(paused.status, 503);
+    assert.equal(paused.data.error, '핫딜샵은 잠시 이용할 수 없습니다.');
+    for (const slot of [0, 1]) {
+        const purchase = await request('/api/hotdeal/buy', { slot });
+        assert.equal(purchase.status, 503);
+        assert.equal(purchase.data.error, paused.data.error);
+    }
+    assert.equal((await request('/api/hotdeal/buy', { slot: 0 }, false)).status, 401);
+    const current = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(JSON.stringify({ gold: current.gold, garnet: current.garnet, inventory: current.inventory, hotDealPurchases: current.hotDealPurchases }), snapshot);
+    assert.deepEqual(['Shop', 'ShopState', 'HotDealOverride'].map(key => JSON.stringify(rpg.getDataCache(key, {}))), catalog);
+    assert.equal(databaseWrites, count, '중단된 상점 요청은 DB에 쓰지 않는다');
 });
 test('시작 카드 선택은 초보자 키트와 HP/MP를 한 번만 지급한다', async () => {
     await reset({ need_character_card_select: true, main_card: {} });

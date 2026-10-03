@@ -606,7 +606,7 @@ function grantPartyQuestPackReward(user, reward, summary) {
             last = card;
             addPartyQuestRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), rpgenius.formatUserCard(card), 1);
         }
-        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count } : null;
+        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count, iconUrl: cardImageUrlResolver ? cardImageUrlResolver(last, user) : null } : null;
     }
     if (reward.type === '골드') {
         user.gold = Number(user.gold || 0) + count;
@@ -629,7 +629,9 @@ function grantPartyQuestPackReward(user, reward, summary) {
         const pet = typeof rpgenius.getPetData === 'function' ? rpgenius.getPetData(Number(reward.pet_id)) : null;
         const name = pet ? '<' + pet.rarity + '> ' + pet.name + ' (펫)' : '알 수 없는 펫';
         addPartyQuestRewardSummary(summary, 'pet:' + reward.pet_id, name, count);
-        return { kind: 'pet', petId: Number(reward.pet_id), name, count };
+        return { kind: 'pet', petId: Number(reward.pet_id), name, count,
+            iconUrl: pet ? '/item-image?dir=' + encodeURIComponent('펫') + '&file=' + encodeURIComponent(pet.rarity + ' ' + pet.name + '.png') : null,
+            frameUrl: pet ? '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + pet.rarity + '.png') : null };
     }
     // 등급 지정 랜덤 장비 (예: 고유 등급 보조장비)
     if (reward.type === '랜덤장비') {
@@ -642,7 +644,9 @@ function grantPartyQuestPackReward(user, reward, summary) {
         addPartyQuestEquipment(user, slot, id);
         const name = '<' + list[id].rarity + '> ' + list[id].name;
         addPartyQuestRewardSummary(summary, slot + ':' + id, name, 1);
-        return { kind: 'equipment', equipType: slot, equipmentId: id, rarity: list[id].rarity, name, count: 1 };
+        return { kind: 'equipment', equipType: slot, equipmentId: id, rarity: list[id].rarity, name, count: 1,
+            iconUrl: '/item-image?dir=' + encodeURIComponent('장비') + '&file=' + encodeURIComponent(list[id].rarity + ' ' + list[id].name + '.png'),
+            frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + list[id].rarity + '.png') };
     }
     // 보주 랜덤 (use:'보주' 아이템 중 균등 1개)
     if (reward.type === '보주랜덤') {
@@ -680,11 +684,11 @@ function getPartyQuestItemAsset(itemId, rewardIndex) {
     const items = typeof rpgenius.getDataCache === 'function' ? rpgenius.getDataCache('Item', []) : [];
     const item = items[Number(itemId)];
     const frameFile = Number(rewardIndex || 0) === 1 ? '특수.png' : '아이템.png';
-    // 보주는 type이 '사용'이지만 이미지는 itemImage/보주/에 있다
-    const dir = item && item.use === '보주' ? '보주' : String((item && item.type) || '아이템');
+    const dir = item && item.use === '보주' ? '보주' : item && item.use === '스펙터' ? '스펙터' : String((item && item.type) || '아이템');
+    const name = item?.use === '축복사용권' ? rpgenius.BLESSING_DEFINITIONS[item.blessing]?.name + ' 사용권' : item?.name;
     return {
         frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent(frameFile),
-        iconUrl: item ? '/item-image?dir=' + encodeURIComponent(dir) + '&file=' + encodeURIComponent(String(item.name) + '.png') : null
+        iconUrl: item ? '/item-image?dir=' + encodeURIComponent(dir) + '&file=' + encodeURIComponent(String(name) + '.png') : null
     };
 }
 
@@ -1631,7 +1635,7 @@ async function start(hostName) {
             battleStats: createPartyBattleStats()
         };
         const potion = userMap.get(m.name)?.battleCryPotion;
-        if (potion && Date.now() < potion.expired_at) upsertMemberBuff(m, { id: 'battleCry', label: '투신의 함성 · 최종 공격력 +25%', value: Number(potion.amount || 0), remain: (potion.expired_at - Date.now()) / 1000 });
+        if (potion && Date.now() < potion.expired_at) upsertMemberBuff(m, { id: 'battleCry', label: '투신의 함성 (최종 공격력 +25%)', value: Number(potion.amount || 0), remain: (potion.expired_at - Date.now()) / 1000 });
         m.skills = posDef && posDef.baseSkill ? [posDef.baseSkill] : [];
         m.skillDefs = {};
         for (const entry of (m.baseSnapshot.mainCardSkills || [])) {

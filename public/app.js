@@ -2356,6 +2356,7 @@ const ITEM_USE_TARGET_HEADS = {
     '보주부여': { title: '보주 부여 완료', sub: '장비에 보주의 힘이 더해졌습니다.', tone: 'blue', mark: '◉' },
     '귀속해제': { title: '귀속 해제 완료', sub: '이제 이 장비를 거래할 수 있습니다.', tone: 'good', mark: '✂' },
     '초월업그레이드': { title: '초월 업그레이드 완료', sub: '초월 단계가 상승했습니다.', tone: 'bad', mark: '▲' },
+    '아티팩트옵션변경': { title: '아티팩트 옵션 변경 완료', sub: '모든 옵션이 같은 개수로 새로 정해졌습니다.', tone: 'violet', mark: '↻' },
     '스펙터부여': { title: '스펙터 부여 완료', sub: '카드에 새로운 궁극기가 부여되었습니다.', tone: 'violet', mark: '★' },
     '생명수': { title: '사용 기한 연장', sub: '펫의 사용 기한이 늘어났습니다.', tone: 'good', mark: '✚' }
 };
@@ -2429,6 +2430,22 @@ function itemUseStatDiffNode(beforeLines, afterLines) {
     return el('div', { class: 'iur-block' }, el('div', { class: 'iur-label' }, '능력치 변화'), el('div', { class: 'iur-stats' }, ...rows));
 }
 
+// 아티팩트옵션변경: 새로 정해진 옵션(조건·능력·수치)과 유지된 골드 재설정 횟수.
+function itemUseArtifactNodes(artifact) {
+    const rows = (artifact.options || []).map((option, index) => {
+        const node = el('div', { class: 'iur-stat-row new' },
+            el('span', { class: 'iur-stat-label' }, option.conditionLabel + ' ' + option.conditionValue),
+            el('span', { class: 'iur-stat-values' }, option.abilityLabel + ' ', el('b', null, '+' + option.n + '%')),
+            el('span', { class: 'iur-stat-delta' }, option.active ? '✓ 충족' : '✕ 미충족'));
+        node.style.setProperty('--i', Math.min(index, 14));
+        return node;
+    });
+    return [
+        el('div', { class: 'iur-block' }, el('div', { class: 'iur-label' }, '새 옵션'), el('div', { class: 'iur-stats' }, ...rows)),
+        el('div', { class: 'iur-note' }, el('strong', null, '재설정 사용 횟수'), el('span', null, comma(artifact.rerollsUsed || 0) + '/' + (artifact.maxRerolls || 3) + ' 유지'))
+    ];
+}
+
 function itemUseEquipmentResult(target) {
     const before = target.before, after = target.after || target.before;
     const upgrade = ITEM_USE_UPGRADE_HEADS[target.outcome];
@@ -2447,7 +2464,8 @@ function itemUseEquipmentResult(target) {
     if (upgrade) body.push(el('div', { class: 'iur-level' }, el('s', null, '+' + before.level), el('i', { 'aria-hidden': 'true' }, '→'),
         el('b', null, target.destroyed ? '파괴' : '+' + after.level)));
     if (!target.destroyed) {
-        body.push(itemUseStatDiffNode(before.statLines, after.statLines));
+        if (target.action !== '아티팩트옵션변경') body.push(itemUseStatDiffNode(before.statLines, after.statLines));
+        if (target.action === '아티팩트옵션변경' && after.artifact) body.push(...itemUseArtifactNodes(after.artifact));
         if (JSON.stringify(before.potentialDisplay) !== JSON.stringify(after.potentialDisplay)) {
             const oldBlock = potentialBlockNode(before.potentialDisplay), newBlock = potentialBlockNode(after.potentialDisplay);
             if (oldBlock) oldBlock.classList.add('old', 'iur-pot-old');
@@ -2554,10 +2572,21 @@ function renderItemUseResult(item, changes, result) {
     ));
 }
 
+// 아티팩트 대상: 현재 옵션(조건·능력·수치)과 골드 재설정 사용 횟수. 일반 span/strong 말줄임 규칙을 피하려고 div/b/em/small을 쓴다.
+function itemUseOptionArtifactNodes(artifact) {
+    return [
+        el('ul', { class: 'item-use-artifact-opts' }, ...(artifact.options || []).map(opt => el('li', { class: opt.active ? 'on' : 'off' },
+            el('div', { class: 'item-use-artifact-cond' }, opt.conditionLabel + ' ' + opt.conditionValue, el('em', null, opt.active ? '✓ 충족' : '✕ 미충족')),
+            el('b', { class: 'item-use-artifact-ability' }, opt.abilityLabel + ' ', el('i', null, '+' + opt.n + '%'))))),
+        el('small', { class: 'item-use-artifact-reroll' }, '골드 재설정 ' + comma(artifact.rerollsUsed || 0) + '/' + (artifact.maxRerolls || 3) + '회 사용')
+    ];
+}
+
 function itemUseOptionNode(item, option) {
-    return el('button', { class: 'item-use-option', type: 'button', onclick: event => resolveInventoryItemUse(item, option.value, false, event.currentTarget) },
+    return el('button', { class: 'item-use-option' + (option.artifact ? ' artifact' : ''), type: 'button', onclick: event => resolveInventoryItemUse(item, option.value, false, event.currentTarget) },
         itemDetailArtwork(option, 'use-option-art'),
-        el('div', { class: 'item-use-option-copy' }, el('strong', null, option.name), option.meta ? el('span', null, option.meta) : null),
+        el('div', { class: 'item-use-option-copy' }, el('strong', null, option.name), option.meta ? el('span', null, option.meta) : null,
+            ...(option.artifact ? itemUseOptionArtifactNodes(option.artifact) : [])),
         el('span', { class: 'item-use-option-arrow' }, '›')
     );
 }
@@ -2619,6 +2648,7 @@ async function resolveInventoryItemUse(item, choice, confirm, button) {
     modalLocked = true;
     try {
         const response = await postItemUse('/api/inventory/item-use/resolve', { choice, confirm });
+        if (Number.isFinite(response.remainingCount)) item.count = response.remainingCount;
         loadInventory('items').catch(() => {});
         if (response.pending) renderItemUsePending(item, response.pending, response.changes);
         else renderItemUseResult(item, response.changes, response.result);
@@ -3026,7 +3056,7 @@ function loadLockbox() {
     const root = $('#lockboxRoot');
     if (!root) return;
     const title = el('img', { class: 'lockbox-title', src: lockboxUi('글씨.png'), alt: '봉인된 자물쇠' });
-    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png'), alt: '이달의 아이템' });
+    const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202610', alt: '10월 이달의 아이템' });
     const char = el('img', { class: 'lockbox-char', src: lockboxUi('캐릭터.png'), alt: '' });
     const btns = el('div', { class: 'lockbox-btns' });
     btns.appendChild(el('button', { class: 'lockbox-btn', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));

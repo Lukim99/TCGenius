@@ -70,7 +70,7 @@ function createMansionRaid(engine) {
             event.remain -= dt;
             if (event.stage === 'shield' && mon.shield <= 0) {
                 E.clearBossShield(mon);
-                for (const member of alive(room)) E.upsertMemberBuff(member, { id: 'mansionTrial', label: '잔향 시련 · 최종 피해 +20%', value: .2, remain: 8 });
+                for (const member of alive(room)) E.upsertMemberBuff(member, { id: 'mansionTrial', label: '잔향 시련 (최종 피해 +20%)', value: .2, remain: 8 });
                 rewardGimmick(room, mon, event, 8, 0);
             } else if (event.remain <= 1e-6 && event.stage === 'record') {
                 const amount = Math.max(byDifficulty(mon, 350000, 600000, 1000000), Math.min(byDifficulty(mon, 900000, 1600000, 2700000), Math.round(event.recorded * byDifficulty(mon, 1.1, 1.2))));
@@ -105,7 +105,7 @@ function createMansionRaid(engine) {
         const ok = answer.length === event.sequence.length && answer.every((letter, i) => letter === event.sequence[i]);
         const field = ok ? 'mansionDictationDamage' : 'mansionDictationTaken';
         member.runtime[field] = Number(member.runtime[field] || 0) + .1;
-        E.upsertMemberBuff(member, { id: field, label: '받아쓰기 · ' + (ok ? '최종 피해' : '받는 피해') + ' +' + Math.round(member.runtime[field] * 100) + '%', remain: 100000 });
+        E.upsertMemberBuff(member, { id: field, label: '받아쓰기 (' + (ok ? '최종 피해' : '받는 피해') + ' +' + Math.round(member.runtime[field] * 100) + '%)', remain: 100000 });
         E.pushCombat(room, member.name + ' 받아쓰기 ' + (ok ? '성공' : '실패'), ok ? 'buff' : 'danger');
     }
     function tickEvents(room, mon, dt) {
@@ -152,7 +152,7 @@ function createMansionRaid(engine) {
         const st = mon.bossState;
         st.form = 'transition'; st.transitionRemain = 4; st.events = []; st.gimmickActive = null; mon.nextPattern = null;
         E.clearBossShield(mon);
-        E.pushNotice(room, '위플래쉬 — 잔향이 깨어납니다', 'big', 4000);
+        E.pushNotice(room, '위플래쉬 잔향으로 전환됩니다', 'big', 4000);
     }
     function transition(room, dt) {
         const mon = room.monster;
@@ -172,13 +172,13 @@ function createMansionRaid(engine) {
         if (st.transitionRemain <= 1e-6) {
             st.form = 'echo'; st.echoElapsed = 0; st.echoTimer = 10; st.inversionIndex = 0; st.inversionTargetIndex = -1;
             st.hpGimmicks = []; mon.hpFloor = 0;
-            mon.name = '위플래쉬 · 잔향'; mon.image = '대저택/위플래쉬(0줄).png';
+            mon.name = '위플래쉬 (잔향)'; mon.image = '대저택/위플래쉬(0줄).png';
             mon.hp = mon.hpMax = byDifficulty(mon, 4000000, 4000000, 7000000);
             mon.atk = byDifficulty(mon, 14000, 14000, 14800); mon.def = byDifficulty(mon, 450, 450, 500); mon.pnt = byDifficulty(mon, 1050, 1050, 1150);
             Object.assign(mon.stats, { hp: mon.hpMax, atk: mon.atk, def: mon.def, pnt: mon.pnt, crit: .6, critMul: byDifficulty(mon, 2, 2, 2.25) });
             mon.actionInterval = 2; mon.gauge = 0; mon.stunRemain = 0; mon.debuffs = []; mon.hpLines = mon.hpMax / 10000;
             mon.enrageSec = mon.enrageRemain = 60; mon.enraged = false;
-            E.addSupportGauge(room, 20); E.pushNotice(room, '위플래쉬 · 잔향 — 봉인 규칙이 뒤집힙니다', 'danger', 5000);
+            E.addSupportGauge(room, 20); E.pushNotice(room, '잔향 봉인의 흡수와 방출 규칙이 반전됩니다', 'danger', 5000);
         }
         return true;
     }
@@ -279,7 +279,7 @@ function createMansionRaid(engine) {
         } else if (event.kind === 'blessing' && ['accept', 'reject'].includes(payload.action)) {
             if (event.target !== name || event.stage !== 'choice') return { error: '지정 대상만 선택할 수 있습니다.' };
             if (payload.action === 'reject') outcome(room, mon, event, true, '축복을 거절했습니다');
-            else { event.stage = 'accepted'; event.remain = event.duration = 8; E.upsertMemberBuff(member, { id: 'mansionBlessing', label: '미완성의 축복 · 최종 피해 +20%', value: .2, remain: 8 }); }
+            else { event.stage = 'accepted'; event.remain = event.duration = 8; E.upsertMemberBuff(member, { id: 'mansionBlessing', label: '미완성의 축복 (최종 피해 +20%)', value: .2, remain: 8 }); }
         } else if (event.kind === 'dictation' && payload.action === 'letter') {
             if (!['a', 'b', 'c', 'd', 'e'].includes(payload.letter) || event.responded.includes(name)) return { error: '입력할 수 없습니다.' };
             if (!event.answers[name]) event.answers[name] = [];
@@ -298,7 +298,7 @@ function createMansionRaid(engine) {
         const mon = room.monster;
         if (name === '피카츄' && mon) {
             const dealt = E.applyBossHpDamage(room, mon, byDifficulty(mon, 400000, 650000, 1100000), 'support');
-            E.recordPartyDamage(source, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '지원군 · 피카츄');
+            E.recordPartyDamage(source, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, '지원군 피카츄');
             E.pushCombat(room, '피카츄 → ' + mon.name + ' [-' + dealt + ']', 'skill');
         } else if (name === '오로라') {
             for (const member of alive(room)) {

@@ -16,10 +16,10 @@
     const DIFFICULTY_LABEL = { normal: 'NORMAL', hard: 'HARD', nightmare: 'NIGHTMARE' };
     const FORM_LABEL = { body: '본체', echo: '잔향', transition: '잔향 전환' };
     const FORECAST_HINT = {
-        shards: '전원 — 1초 간격 3회 타격',
-        resonance: '전원 — 암속성 공격',
-        echo: '대상 — 1초 후 타격, 3초 후 후속',
-        harden: '보스 피해 감소 — 막은 만큼 회복'
+        shards: '전원에게 1초 간격으로 3회 타격',
+        resonance: '전원에게 암속성 피해',
+        echo: '대상에게 1초 후 타격, 3초 후 후속 타격',
+        harden: '보스가 피해를 줄이고 감소한 만큼 회복'
     };
 
     const roots = new WeakMap();
@@ -136,15 +136,15 @@
                     setText(p.pick, picked ? '출발' : (ls.from != null ? '도착' : ''));
                     setPressed(p.b, picked);
                     setDisabled(p.b, lock || (ls.from == null && v <= 0));
-                    p.b.setAttribute('aria-label', '기둥 ' + (i + 1) + ' 하중 ' + v + (picked ? ' — 출발 선택됨' : ''));
+                    p.b.setAttribute('aria-label', '기둥 ' + (i + 1) + ' 하중 ' + v + (picked ? ' (출발 선택됨)' : ''));
                 });
                 return {
                     mine: !lock,
                     tag: '전원',
-                    doText: done ? '4기둥 모두 6 — 판정 대기'
+                    doText: done ? '모든 기둥 하중 6 달성. 판정 대기 중'
                         : card.expired ? '시간 종료'
-                        : ls.from == null ? '출발 기둥 선택 — 네 기둥을 모두 6으로'
-                        : '도착 기둥 선택 — 출발 ' + PILLAR_NAMES[ls.from] + ' · 다시 누르면 해제'
+                        : ls.from == null ? '하중을 모두 6으로 맞추세요. 출발 기둥 선택'
+                        : PILLAR_NAMES[ls.from] + '에서 옮길 기둥 선택 (다시 누르면 취소)'
                 };
             }
         },
@@ -164,7 +164,7 @@
                 card.dmg = node('b', 'mr-num');
                 card.pct = node('span', 'mr-pct');
                 nums.append(card.zoneState, card.dmg, card.pct);
-                card.hidden75 = node('div', 'mr-hidden', '"내가 맞춰주겠다." — 석재 75%');
+                card.hidden75 = node('div', 'mr-hidden', '눈뜬 장님 효과: 석재 진행률 75%');
                 card.hidden75.hidden = true;
                 card.finish = button('mr-act mr-finish', '완성', () => act(st, card, { action: 'finish' }, 'finish'));
                 card.body.append(g, nums, card.hidden75, card.finish);
@@ -194,14 +194,14 @@
                 const hname = hostName(st);
                 const pressed = names(ev.responded).includes(st.ctx.me) || ls.pending.has('finish');
                 card.finish.hidden = !host;
-                setText(card.finish, pressed ? '판정 중' : (zone === 'in' ? '완성' : '완성 — 구간 밖'));
+                setText(card.finish, pressed ? '판정 중' : (zone === 'in' ? '완성' : '완성 (구간 밖)'));
                 setDisabled(card.finish, card.expired || pressed);
                 const mine = host && !pressed && !card.expired;
                 return {
                     mine,
-                    tag: host ? (mine ? MY_TURN : '공대장 — 나') : '공대장 ' + hname,
-                    doText: host ? '성공 구간에서 완성 — 누르는 순간 판정'
-                        : '석재 공격 — 구간 도달 시 공대장이 완성'
+                    tag: host ? (mine ? MY_TURN : '공대장 (나)') : '공대장 ' + hname,
+                    doText: host ? '성공 구간에 도달하면 완성을 누르세요'
+                        : '석재 공격. 성공 구간에서 공대장이 완성 선택'
                 };
             }
         },
@@ -224,7 +224,7 @@
                 const count = Math.max(1, group.length);
                 const total = Math.max(0, Number(ev.damage) || 0);
                 setText(card.split, '1인 ' + fmt(total / count));
-                setText(card.splitSub, '분담 ' + count + '명 — 총 ' + fmt(total));
+                setText(card.splitSub, '분담 ' + count + '명 (총 ' + fmt(total) + ')');
                 const meTarget = !!me && target === me;
                 const joined = group.includes(me) || ls.pending.has('support');
                 card.support.hidden = meTarget;
@@ -234,10 +234,10 @@
                 const mine = !meTarget && !joined && !card.expired;
                 return {
                     mine,
-                    tag: meTarget ? '◆ 지정 — 나' : (mine ? MY_TURN : '지정 ' + target),
-                    doText: meTarget ? '자동 참여 — 받쳐주는 동료와 피해 분담'
-                        : joined ? '참여 완료 — ' + target + '와 피해 분담'
-                        : '받쳐주기 — ' + target + '의 피해를 나눈다',
+                    tag: meTarget ? '지정 대상 (나)' : (mine ? MY_TURN : '지정 ' + target),
+                    doText: meTarget ? '동료와 피해를 나누어 받습니다'
+                        : joined ? '참여 중. ' + target + '와 피해 분담'
+                        : target + '의 피해를 함께 받으려면 참여하세요',
                     who: group
                 };
             }
@@ -248,7 +248,7 @@
             build(st, card) {
                 const lines = node('div', 'mr-lines');
                 card.acceptLine = node('div', 'mr-line');
-                card.rejectLine = node('div', 'mr-line', '거절 — 효과 없음 · 미응답은 거절');
+                card.rejectLine = node('div', 'mr-line', '거절: 효과 없음 (미응답 시 거절)');
                 lines.append(card.acceptLine, card.rejectLine);
                 const row = node('div', 'mr-btn-row');
                 card.accept = button('mr-act', '받아들이기', () => choose(st, card, 'accept'));
@@ -262,7 +262,7 @@
                 const target = ev.target ? String(ev.target) : '';
                 const meTarget = !!st.ctx.me && target === st.ctx.me;
                 const hpPct = st.view && st.view.difficulty === 'normal' ? 12 : 18;
-                setText(card.acceptLine, '수락 — 8초 최종 피해 +20% · 종료 시 최대 HP ' + hpPct + '% 피해');
+                setText(card.acceptLine, '수락: 8초간 최종 피해 +20%, 종료 시 최대 HP ' + hpPct + '% 피해');
                 const done = names(ev.responded).includes(target) || !!ls.choice;
                 card.btnRow.hidden = !meTarget;
                 setPressed(card.accept, ls.choice === 'accept');
@@ -273,9 +273,9 @@
                 const mine = meTarget && !done && !card.expired;
                 return {
                     mine,
-                    tag: meTarget ? (mine ? MY_TURN : '◆ 대상 — 나') : '대상 ' + target,
+                    tag: meTarget ? (mine ? MY_TURN : '대상 (나)') : '대상 ' + target,
                     doText: meTarget
-                        ? (done ? (ls.choice === 'accept' ? '수락' : ls.choice === 'reject' ? '거절' : '선택') + ' 완료 — 결과 대기' : '받아들일지 선택')
+                        ? (done ? (ls.choice === 'accept' ? '수락' : ls.choice === 'reject' ? '거절' : '선택') + ' 완료. 결과 대기 중' : '받아들일지 선택')
                         : (done ? target + ' 선택 완료' : target + ' 선택 대기')
                 };
             }
@@ -338,9 +338,9 @@
                 return {
                     mine: !lock,
                     tag: lock ? '전원' : MY_TURN,
-                    doText: full ? (seq.length ? (allOk ? '✓ 전부 일치 — 결과 대기' : '✕ 불일치 포함 — 결과 대기') : '입력 완료 — 결과 대기')
+                    doText: full ? (seq.length ? (allOk ? '입력 일치. 결과 대기 중' : '입력 불일치. 결과 대기 중') : '입력 완료. 결과 대기 중')
                         : card.expired ? '시간 종료'
-                        : '순서대로 입력 — 틀려도 끝까지'
+                        : '표시된 글자를 순서대로 입력하세요'
                 };
             }
         },
@@ -373,12 +373,12 @@
                     card.shieldFill.style.transform = 'scaleX(' + Math.min(1, cur / max) + ')';
                 } else {
                     setText(card.big, fmt(ev.recorded));
-                    setText(card.sub, '기록 피해 — 보호막 산정');
+                    setText(card.sub, '기록 피해로 보호막 결정');
                 }
                 return {
                     mine: false,
-                    tag: shield ? '전원 — 파괴' : '전원 — 기록',
-                    doText: shield ? '보호막 파괴 — 시간 안에' : '최대 피해 기록 — 보스 공격 정지 · 지원군 제외'
+                    tag: shield ? '전원 파괴' : '전원 기록',
+                    doText: shield ? '제한 시간 안에 보호막을 파괴하세요' : '최대한 공격하세요. 보스 공격 정지, 지원군 피해 제외'
                 };
             }
         },
@@ -386,7 +386,7 @@
         transition: {
             who: '',
             build() {},
-            patch() { return { mine: false, tag: '전원', doText: '전투 정지 — 잔향 각성' }; }
+            patch() { return { mine: false, tag: '전원', doText: '잔향 전환 중 (전투 정지)' }; }
         }
     };
 
@@ -398,7 +398,7 @@
                 card.cueGlyph = node('span', 'mr-cue-glyph');
                 card.cueWord = node('b', 'mr-cue-word');
                 cue.append(card.cueGlyph, card.cueWord);
-                card.rule = node('div', 'mr-rule', inverse ? '역전 — 모여듦 → 흡수 · 흩어짐 → 방출' : '모여듦 → 방출 · 흩어짐 → 흡수');
+                card.rule = node('div', 'mr-rule', inverse ? '모여듦: 흡수 / 흩어짐: 방출 (반전)' : '모여듦: 방출 / 흩어짐: 흡수');
                 const row = node('div', 'mr-btn-row');
                 card.absorb = button('mr-act', '흡수', () => choose(st, card, 'absorb'));
                 card.release = button('mr-act', '방출', () => choose(st, card, 'release'));
@@ -424,10 +424,10 @@
                 const mine = meTarget && !done && !card.expired;
                 return {
                     mine,
-                    tag: meTarget ? (mine ? MY_TURN : '◆ 담당 — 나') : '담당 ' + target,
+                    tag: meTarget ? (mine ? MY_TURN : '담당 (나)') : '담당 ' + target,
                     doText: meTarget
-                        ? (done ? '응답 완료 — 결과 대기' : (inverse ? '반대로 — 신호를 보고 선택' : '신호를 보고 선택'))
-                        : (done ? target + ' 응답 완료' : target + ' 대응 중 — 계속 공격')
+                        ? (done ? '응답 완료. 결과 대기 중' : (inverse ? '반전된 규칙에 맞춰 선택하세요' : '신호를 보고 선택'))
+                        : (done ? target + ' 응답 완료' : target + ' 대응 중. 계속 공격하세요')
                 };
             }
         };
@@ -549,7 +549,7 @@
             card.node.dataset.mine = hit ? '1' : '';
             const base = FORECAST_HINT[card.kind] || '';
             const who = uniq.length ? uniq.map(x => x === me ? '나' : x).join(', ') : '';
-            setText(card.hint, (hit ? '◆ ' : '') + [who, base].filter(Boolean).join(' — '));
+            setText(card.hint, (hit ? '◆ ' : '') + [who, base].filter(Boolean).join(': '));
             return;
         }
         const ls = loc(card.id);

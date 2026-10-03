@@ -1304,6 +1304,15 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .item-detail-art.use-option-art{width:50px;height:50px;border-radius:6px;background:#090d12}
 .item-use-option-copy{display:grid;min-width:0;gap:4px}.item-use-option-copy strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.item-use-option-copy span{overflow:hidden;color:#8f9dad;font-size:9px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}
 .item-use-option-arrow{color:#7791a9;font-size:22px;text-align:center}.item-use-option:hover .item-use-option-arrow{color:#b6d7f2}
+.item-use-option.artifact{grid-column:1/-1;align-items:start;padding:10px}.item-use-option.artifact .item-use-option-arrow{align-self:center}
+.item-use-artifact-opts{display:grid;gap:4px;margin:2px 0 0;padding:0;list-style:none}
+.item-use-artifact-opts li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;align-items:center;padding:6px 9px;border:1px solid #273039;border-left:2px solid #6c8aa5;border-radius:5px;background:#0e141b;font-size:11px;line-height:1.45;white-space:normal}
+.item-use-artifact-opts li.off{border-left-color:#4a525d}
+.item-use-artifact-cond{min-width:0;color:#a9b6c5;overflow-wrap:anywhere;word-break:keep-all}
+.item-use-artifact-cond em{margin-left:7px;color:#86c79a;font-size:10px;font-style:normal;white-space:nowrap}.item-use-artifact-opts li.off .item-use-artifact-cond em{color:#7d8794}
+.item-use-artifact-ability{color:#e6ebf2;font-weight:700;text-align:right;overflow-wrap:anywhere;word-break:keep-all}.item-use-artifact-ability i{color:#f2c46d;font-style:normal;font-variant-numeric:tabular-nums;white-space:nowrap}
+.item-use-artifact-reroll{color:#8f9dad;font-size:10px;font-variant-numeric:tabular-nums}
+@media(max-width:520px){.item-use-artifact-opts li{grid-template-columns:1fr}.item-use-artifact-ability{text-align:left}}
 .item-use-confirm{display:block;width:100%;height:44px;margin-top:10px}
 .item-use-cancel{display:block;width:100%;margin-top:8px;border:1px solid #353e49;background:#151b22;color:#9ba7b5;font-size:11px}.item-use-cancel:hover{background:#202832;color:#d6dde6}
 .item-use-message{display:grid;gap:4px;padding:11px 12px;border:1px solid #303946;border-radius:7px;background:#0e141b}

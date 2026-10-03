@@ -113,7 +113,7 @@
         const mani = node('section', 'af-mani');
         const maniHead = node('div', 'af-mani-head');
         st.maniVal = node('b', 'af-mani-v');
-        maniHead.append(node('span', 'af-mani-k', '발현도'), st.maniVal, node('span', 'af-mani-note', '충족 옵션 수치 합계 · 누적 적용'));
+        maniHead.append(node('span', 'af-mani-k', '발현도'), st.maniVal, node('span', 'af-mani-note', '충족 수치 합계 (보너스 누적)'));
         const track = node('div', 'af-track');
         st.maniFill = node('i', 'af-track-fill');
         track.append(st.maniFill);
@@ -165,10 +165,10 @@
         const gold = Math.max(0, Number(v.gold) || 0);
         let block = '';
         if (typeof st.submit !== 'function') block = '아티팩트 옵션 보기';
-        else if (remain <= 0) block = '재설정 횟수 소진 — ' + maxRerolls + '/' + maxRerolls + ' 사용';
+        else if (remain <= 0) block = '재설정 횟수 소진: ' + maxRerolls + '/' + maxRerolls + ' 사용';
         else if (!total) block = '바꿀 옵션 없음';
-        else if (count >= total) block = '모든 칸 잠금 — 바꿀 변수 없음';
-        else if (gold < cost) block = '골드 부족 — ' + fmt(cost - gold) + ' 더 필요';
+        else if (count >= total) block = '모든 칸이 잠겨 있어 재설정할 수 없습니다';
+        else if (gold < cost) block = '골드 부족: ' + fmt(cost - gold) + ' 더 필요';
         const reasons = [];
         if (cost >= CONFIRM_COST) reasons.push('고액 ' + fmt(cost) + ' 골드');
         if (remain === 1) reasons.push('마지막 재설정');
@@ -199,7 +199,7 @@
                 const val = valueOf(opt, cell.field);
                 setText(cell.v, val == null || val === '' ? '-' : val);
                 cell.b.setAttribute('aria-pressed', locked ? 'true' : 'false');
-                cell.b.setAttribute('aria-label', cell.label + ' ' + (val == null ? '' : val) + (readonly ? '' : locked ? ' — 잠금' : ' — 잠금 해제'));
+                cell.b.setAttribute('aria-label', cell.label + ' ' + (val == null ? '' : val) + (readonly ? '' : locked ? ' (잠금)' : ' (잠금 해제)'));
                 setText(cell.lockText, locked ? '잠금' : '');
                 setDisabled(cell.b, lockedOut);
             });
@@ -220,12 +220,12 @@
         const armed = !c.block && st.armedUntil > Date.now();
         if (!armed && st.armedUntil) st.armedUntil = 0;
         st.confirm.hidden = !armed;
-        setText(st.confirm, armed ? c.reasons.join(' · ') + ' — 한 번 더 눌러 확정' : '');
+        setText(st.confirm, armed ? c.reasons.join(', ') + '. 한 번 더 누르면 확정됩니다.' : '');
         st.submitBtn.dataset.armed = armed ? '1' : '';
         setText(st.submitBtn, st.pending ? '재설정 중'
             : c.block ? '재설정 불가'
-            : armed ? '확정 — ' + fmt(c.cost) + ' 골드'
-            : '재설정 — ' + fmt(c.cost) + ' 골드');
+            : armed ? '확정 (' + fmt(c.cost) + ' 골드)'
+            : '재설정 (' + fmt(c.cost) + ' 골드)');
         setDisabled(st.submitBtn, !!c.block || st.pending);
         st.submitBtn.setAttribute('aria-busy', st.pending ? 'true' : 'false');
         st.errEl.hidden = !st.err;
@@ -258,7 +258,7 @@
         st.bonusRows.forEach((r, i) => {
             const on = !!(bonuses[i] && bonuses[i].active);
             r.row.dataset.active = on ? '1' : '0';
-            setText(r.mark, on ? '✓' : '·');
+            setText(r.mark, on ? '✓' : '');
             setText(r.state, on ? '적용' : (r.threshold - val) + ' 부족');
         });
     }
