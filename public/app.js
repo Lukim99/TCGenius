@@ -4098,16 +4098,21 @@ function combineType() {
 
 // ===== 장비 강화 =====
 let enhanceState = { preview: null, busy: false, selectedProtectLevel: 'auto' };
-
+let enhanceFx = null, enhanceForge = null, enhanceReturnFocus = null, enhancePreviewRequest = 0;
 
 function openEnhanceModal(eq) {
     if (!Number(eq.number || 0)) return;
+    enhanceReturnFocus = $('[data-page="inventory"] [role="tab"][aria-selected="true"]');
     $('#enhanceOverlay').classList.add('active');
     document.body.style.overflow = 'hidden';
+    $('#enhanceOverlay').focus();
     loadEnhancePreview(eq.number);
 }
 
 function showEnhanceError(msg) {
+    enhanceFx?.destroy(); enhanceFx = null;
+    $('#enhanceContent').hidden = false;
+    $('#enhanceResultOverlay').classList.remove('active', 'warning-mode');
     $('#enhanceContent').replaceChildren(
         el('div', { class: 'enhance-error-wrap' },
             el('div', { class: 'empty err' }, msg),
@@ -4117,52 +4122,25 @@ function showEnhanceError(msg) {
 }
 
 async function loadEnhancePreview(number) {
+    const request = ++enhancePreviewRequest;
+    $('#enhanceContent').hidden = false;
     $('#enhanceContent').replaceChildren(el('div', { class: 'loading', style: 'padding:60px 0;text-align:center' }, '불러오는 중...'));
     $('#enhanceResultOverlay').classList.remove('active');
     try {
         const data = await api('/api/equipment/upgrade/preview/' + number);
+        if (request !== enhancePreviewRequest || !$('#enhanceOverlay').classList.contains('active')) return;
         if (data.error) { showEnhanceError(data.error); return; }
         enhanceState.preview = data;
         renderEnhancePreview(data);
     } catch (e) {
-        showEnhanceError(e.message);
+        if (request === enhancePreviewRequest) showEnhanceError(e.message);
     }
 }
 
 function renderEnhancePreview(data) {
-    const thumbParts = [];
-    if (data.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: data.frameUrl, alt: '' }));
-    if (data.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: data.iconUrl, alt: data.name }));
-
-    const beforeContent = el('div', { class: 'enhance-before-content' });
-    const afterContent = el('div', { class: 'enhance-after-content' });
-    if (data.statDiffs && data.statDiffs.length) {
-        data.statDiffs.forEach(d => {
-            beforeContent.appendChild(el('div', { class: 'enhance-stat-row' },
-                el('span', { class: 'enhance-stat-label' }, d.label),
-                el('span', { class: 'enhance-stat-val' }, d.before)
-            ));
-            afterContent.appendChild(el('div', { class: 'enhance-stat-row' },
-                el('span', { class: 'enhance-stat-label' }, d.label),
-                el('span', { class: 'enhance-stat-val better' }, d.after,
-                    el('span', { class: 'enhance-stat-delta' }, ' (' + d.delta + ')'))
-            ));
-        });
-    } else {
-        beforeContent.appendChild(el('div', { class: 'enhance-empty-stat' }, '—'));
-        afterContent.appendChild(el('div', { class: 'enhance-empty-stat' }, '—'));
-    }
-
-    const win = el('div', { class: 'enhance-window' },
-        el('button', { class: 'enhance-close-btn', onclick: closeEnhanceModal }, '✕'),
-        el('div', { class: 'enhance-item-zone' },
-            el('div', { class: 'auc-thumb square' }, ...thumbParts),
-            el('div', { class: 'enhance-item-level' }, data.name + '  +' + data.level + ' → +' + data.nextLevel)
-        ),
-        beforeContent,
-        afterContent
-    );
-
+    enhanceFx?.destroy();
+    enhanceForge = el('div', { class: 'enh-forge' }, enhanceLevel(data.level, data.nextLevel));
+    enhanceFx = EnhanceEffects.mount(enhanceForge, data);
     const getEffectiveProtect = () => {
         const opts = data.protectOptions || [];
         const sel = enhanceState.selectedProtectLevel;
@@ -4171,64 +4149,72 @@ function renderEnhancePreview(data) {
         return opts.find(o => o.level === sel) || null;
     };
 
-    const buildProtectCard = () => {
-        const opts = data.protectOptions || [];
-        const effective = getEffectiveProtect();
-        const canPick = opts.length > 0;
-        const cardClass = 'enhance-protect ' + (effective ? (effective.level || 'basic') : 'none') + (canPick ? ' clickable' : '');
-        const card = el('div', { class: cardClass, onclick: canPick ? () => openProtectPicker(data) : null });
-        if (effective) {
-            card.appendChild(el('div', { class: 'enhance-protect-icon' },
-                effective.iconUrl ? el('img', { class: 'enhance-protect-img', src: effective.iconUrl, alt: '' }) : '🛡'));
-            card.appendChild(el('div', { class: 'enhance-protect-text' },
-                el('div', { class: 'enhance-protect-name' }, effective.label),
-                el('div', { class: 'enhance-protect-detail' }, effective.detail)
-            ));
-            card.appendChild(el('div', { class: 'enhance-protect-badge' }, '보유 ' + effective.count + '개'));
-        } else {
-            card.appendChild(el('div', { class: 'enhance-protect-icon' }, '⊘'));
-            card.appendChild(el('div', { class: 'enhance-protect-text' },
-                el('div', { class: 'enhance-protect-name' }, '보호 없음'),
-                el('div', { class: 'enhance-protect-detail' }, opts.length ? '클릭하여 보호권 선택' : '보호권 미보유')
-            ));
-        }
-        if (canPick) card.appendChild(el('div', { class: 'enhance-protect-pick-arrow' }, '▾'));
-        return card;
-    };
-
     const confirmBtn = el('button', { class: 'enhance-confirm-btn', id: 'enhanceConfirmBtn', onclick: () => {
         const effective = getEffectiveProtect();
         if (Number(data.rates.reset || 0) > 0 && !effective) showEnhanceWarning(() => runEnhancement(data.number));
         else runEnhancement(data.number);
-    } }, '강화');
+    } }, '강화하기');
     if (!data.canUpgrade) confirmBtn.disabled = true;
+    const protection = el('fieldset', { class: 'enh-protection' }, el('legend', null, '보호권'));
+    const selectedLevel = getEffectiveProtect()?.level || 'none';
+    const options = [{ level: 'none', label: '보호권 사용 안 함', detail: '파괴나 하락을 막지 않습니다.' }, ...(data.protectOptions || [])];
+    options.forEach(option => protection.append(el('label', { class: 'enh-protect-option' + (option.level === selectedLevel ? ' selected' : '') },
+        el('input', { type: 'radio', name: 'enhance-protect', value: option.level, checked: option.level === selectedLevel,
+            onchange: () => {
+                enhanceState.selectedProtectLevel = option.level;
+                renderEnhancePreview(data);
+                [...$$('#enhanceOverlay input[name="enhance-protect"]')].find(input => input.value === option.level)?.focus();
+            } }),
+        option.iconUrl ? el('img', { src: option.iconUrl, alt: '' }) : el('span', { class: 'enh-protect-empty', 'aria-hidden': 'true' }, '◇'),
+        el('span', { class: 'enh-protect-description' }, el('strong', null, option.label), el('small', null, option.detail)),
+        option.count != null ? el('b', null, comma(option.count) + '개') : null)));
 
-    const protectNodes = (data.protectOptions != null)
-        ? [buildProtectCard()]
-        : [];
-
+    $('#enhanceContent').hidden = false;
     $('#enhanceContent').replaceChildren(
-        win,
-        el('div', { class: 'enhance-info' },
+        enhanceHeader(data.name), enhanceForge,
+        el('div', { class: 'enh-body' },
+            enhanceStatTable(data.statDiffs || []),
             el('div', { class: 'enhance-section-label' }, '강화 확률'),
+            el('div', { class: 'enh-rate-bar', 'aria-hidden': 'true' }, ...['great', 'success', 'down', 'reset'].map(kind => el('i', { class: kind, style: { flexGrow: Number(data.rates[kind] || 0) } }))),
             el('div', { class: 'enhance-rates-row' },
                 enhRateChip('great', '대성공', data.rates.great),
                 enhRateChip('success', '성공', data.rates.success),
                 enhRateChip('down', '하락', data.rates.down),
                 enhRateChip('destroy', '파괴', data.rates.reset)
             ),
-            el('div', { class: 'enhance-section-label' }, '필요 재료' + (Number(data.cost.discountRate || 0) > 0 ? ' · 축복 ' + Math.round(Number(data.cost.discountRate) * 100) + '% 할인' : '')),
+            el('div', { class: 'enhance-section-label' }, '필요 재료', Number(data.cost.discountRate || 0) > 0 ? el('small', null, '축복 ' + Math.round(Number(data.cost.discountRate) * 100) + '% 할인') : null),
             el('div', { class: 'enhance-cost-row' },
-                enhCostItem(data.cost.stoneName || '강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개 보유', data.hasStone),
-                enhCostItem('🪙 골드', comma(data.cost.gold), comma(data.gold) + ' 보유', data.hasGold)
-            ),
-            ...protectNodes
+                enhCostItem(data.cost.stoneName || '강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개', data.hasStone, data.stoneIconUrl),
+                enhCostItem('골드', comma(data.cost.gold), comma(data.gold), data.hasGold, QUEST_REWARD_CURRENCY_ICONS['골드'])),
+            protection
         ),
         el('div', { class: 'enhance-footer' },
             el('button', { class: 'enhance-cancel-btn', onclick: closeEnhanceModal }, '닫기'),
-            confirmBtn
+            confirmBtn,
+            !data.canUpgrade ? el('p', { class: 'enh-block-reason' }, [!data.hasStone ? '강화석 부족' : '', !data.hasGold ? '골드 부족' : ''].filter(Boolean).join(' / ')) : null
         )
     );
+    $('#enhanceOverlay').setAttribute('aria-busy', 'false');
+    $('#enhanceOverlay .enh-close')?.focus();
+}
+
+function enhanceHeader(name) {
+    return el('div', { class: 'enh-header' }, el('h2', null, name),
+        enhanceFx?.soundButton(), el('button', { class: 'enh-close', type: 'button', 'aria-label': '강화 창 닫기', onclick: closeEnhanceModal }, '×'));
+}
+
+function enhanceLevel(before, after) {
+    return el('div', { class: 'enh-level' }, el('b', null, '+' + before), el('span', { 'aria-hidden': 'true' }, '→'), el('strong', null, after == null ? '파괴' : '+' + after));
+}
+
+function enhanceStatTable(diffs, result = false) {
+    if (!diffs.length) return el('p', { class: 'enh-stat-empty' }, result ? '능력치는 유지되었습니다.' : '변경되는 능력치가 없습니다.');
+    return el('table', { class: 'enh-stat-table' },
+        el('caption', null, result ? '적용된 능력치' : '성공 시 능력치'),
+        el('thead', null, el('tr', null, ...['능력치', result ? '강화 전' : '현재', result ? '결과' : '성공 시'].map(name => el('th', { scope: 'col' }, name)))),
+        el('tbody', null, ...diffs.map(d => el('tr', null,
+            el('th', { scope: 'row' }, d.label), el('td', null, d.before),
+            el('td', { class: d.improved ? 'improved' : 'reduced' }, el('b', null, d.after), el('small', null, /^[-+]/.test(d.delta) ? d.delta : '+' + d.delta))))));
 }
 
 function enhRateChip(kind, label, value) {
@@ -4238,63 +4224,26 @@ function enhRateChip(kind, label, value) {
     );
 }
 
-function enhCostItem(name, need, have, ok) {
+function enhCostItem(name, need, have, ok, icon) {
     return el('div', { class: 'enhance-cost-item ' + (ok ? 'ok' : 'lack') },
+        icon ? el('img', { src: icon, alt: '' }) : null,
         el('div', { class: 'enhance-cost-text' },
-            el('div', { class: 'enhance-cost-name' }, name),
-            el('div', { class: 'enhance-cost-val' }, need)
+            el('div', { class: 'enhance-cost-name' }, name), !ok ? el('small', null, '부족') : null
         ),
-        el('div', { style: 'font-size:10px;color:' + (ok ? '#86efac' : '#fca5a5') + ';font-weight:700;white-space:nowrap' }, have)
+        el('div', { class: 'enh-cost-count' }, el('b', null, '필요 ' + need), el('small', null, '보유 ' + have))
     );
-}
-
-function openProtectPicker(previewData) {
-    const opts = previewData.protectOptions || [];
-    const cur = enhanceState.selectedProtectLevel;
-
-    const body = el('div', { class: 'protect-picker' });
-    const makeRow = (level, label, detail, iconUrl, count, isCur) => {
-        const row = el('div', {
-            class: 'protect-pick-row' + (isCur ? ' selected' : ''),
-            onclick: () => {
-                enhanceState.selectedProtectLevel = level;
-                closeModal();
-                renderEnhancePreview(previewData);
-            }
-        });
-        const icon = el('div', { class: 'protect-pick-icon' });
-        if (iconUrl) icon.appendChild(el('img', { src: iconUrl, alt: '' }));
-        else icon.textContent = level === 'none' ? '⊘' : '🛡';
-        row.appendChild(icon);
-        const txt = el('div', { class: 'protect-pick-text' });
-        txt.appendChild(el('div', { class: 'protect-pick-name' }, label));
-        txt.appendChild(el('div', { class: 'protect-pick-detail' }, detail));
-        row.appendChild(txt);
-        if (count != null) row.appendChild(el('div', { class: 'protect-pick-count' }, count + '개'));
-        if (isCur) row.appendChild(el('div', { class: 'protect-pick-check' }, '✓'));
-        return row;
-    };
-
-    const isNone = cur === 'none';
-    const isAuto = !cur || cur === 'auto';
-    body.appendChild(makeRow('none', '보호 없음', '보호권을 사용하지 않습니다', null, null, isNone));
-    opts.forEach(opt => {
-        const isCur = isAuto ? opt === opts[0] : cur === opt.level;
-        body.appendChild(makeRow(opt.level, opt.label, opt.detail, opt.iconUrl, opt.count, isCur));
-    });
-
-    $('#modalTitle').textContent = '보호권 선택';
-    $('#modalSub').style.display = 'none';
-    $('#modalBody').replaceChildren(body);
-    $('#modalBg').classList.add('active');
 }
 
 async function runEnhancement(number) {
     if (enhanceState.busy) return;
     enhanceState.busy = true;
+    $('#enhanceOverlay').setAttribute('aria-busy', 'true');
+    $$('#enhanceOverlay button:not(.enh-sound), #enhanceOverlay input').forEach(control => control.disabled = true);
+    $('#enhanceOverlay .enh-sound')?.focus();
     const btn = $('#enhanceConfirmBtn');
-    if (btn) btn.disabled = true;
-    const itemInfo = enhanceState.preview ? { name: enhanceState.preview.name, iconUrl: enhanceState.preview.iconUrl, frameUrl: enhanceState.preview.frameUrl } : {};
+    if (btn) btn.textContent = '강화 중';
+    const itemInfo = enhanceState.preview || {};
+    enhanceFx?.start();
     // resolve effective protectLevel
     const opts = enhanceState.preview && enhanceState.preview.protectOptions || [];
     const sel = enhanceState.selectedProtectLevel;
@@ -4304,13 +4253,15 @@ async function runEnhancement(number) {
     else protectLevel = sel;
     try {
         const data = await postApi('/api/equipment/upgrade/run', { number, protectLevel });
+        await enhanceFx?.finish(data.resultKind);
         enhanceState.busy = false;
+        $('#enhanceOverlay').setAttribute('aria-busy', 'false');
         if (data.profile) renderProfile(data.profile);
-        showEnhanceResult(data.resultKind, number, data.preview, data.appliedDiffs || [], itemInfo);
+        showEnhanceResult(data, itemInfo);
     } catch (e) {
         enhanceState.busy = false;
-        if (btn) { btn.disabled = false; }
-        showAlert(e.message);
+        $('#enhanceOverlay').setAttribute('aria-busy', 'false');
+        showEnhanceError(e.message);
     }
 }
 
@@ -4355,94 +4306,32 @@ function buildRayLayer(count, color) {
     return svg;
 }
 
-// 무기가 부서질 때 사방으로 튀는 파편 SVG (파괴)
-function buildShardLayer(count) {
-    const svg = svgEl('svg', { class: 'enh-fx-shards', viewBox: '0 0 200 200', preserveAspectRatio: 'xMidYMid meet' });
-    for (let i = 0; i < count; i++) {
-        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-        const dist = 70 + Math.random() * 50;
-        const dx = (Math.cos(ang) * dist).toFixed(1);
-        const dy = (Math.sin(ang) * dist).toFixed(1);
-        const rot = (Math.random() * 540 - 270).toFixed(0);
-        const s = 5 + Math.random() * 7;
-        const shade = ['#94a3b8', '#cbd5e1', '#64748b', '#e2e8f0'][i % 4];
-        const poly = svgEl('polygon', { points: '0,' + (-s).toFixed(1) + ' ' + (s * 0.8).toFixed(1) + ',' + (s * 0.6).toFixed(1) + ' ' + (-s * 0.7).toFixed(1) + ',' + (s * 0.7).toFixed(1), fill: shade });
-        const g = svgEl('g', { class: 'enh-shard', style: '--dx:' + dx + 'px;--dy:' + dy + 'px;--rot:' + rot + 'deg;transform-origin:100px 100px;animation-delay:' + (Math.random() * 0.12).toFixed(2) + 's' });
-        g.appendChild(svgEl('g', { transform: 'translate(100 100)' }, poly));
-        svg.appendChild(g);
-    }
-    return svg;
-}
-
 function showEnhanceWarning(onConfirm) {
     const ov = $('#enhanceResultOverlay');
     ov.replaceChildren(
         el('div', { class: 'enh-warn-icon' }, '⚠️'),
         el('div', { class: 'enh-warn-title' }, '장비가 파괴될 수 있습니다'),
-        el('div', { class: 'enh-warn-sub' }, '보호권 없이 강화하면 실패 시 장비가 사라집니다. 진행하시겠습니까?'),
+        el('div', { class: 'enh-warn-sub' }, '파괴 시 장비를 잃습니다. 계속 강화하시겠습니까?'),
         el('div', { class: 'enh-warn-actions' },
-            el('button', { class: 'enhance-cancel-btn', onclick: () => ov.classList.remove('active') }, '취소'),
-            el('button', { class: 'enh-warn-confirm', onclick: () => { ov.classList.remove('active'); onConfirm(); } }, '진행')
+            el('button', { class: 'enhance-cancel-btn', onclick: () => { ov.classList.remove('active', 'warning-mode'); $('#enhanceConfirmBtn')?.focus(); } }, '취소'),
+            el('button', { class: 'enh-warn-confirm', onclick: () => { ov.classList.remove('active', 'warning-mode'); onConfirm(); } }, '그래도 강화')
         )
     );
-    ov.classList.add('active');
+    ov.classList.add('active', 'warning-mode');
+    ov.querySelector('button')?.focus();
 }
 
-function showEnhanceResult(kind, number, nextPreview, appliedDiffs, itemInfo) {
+function showEnhanceResult(data, itemInfo) {
+    const kind = data.resultKind, nextPreview = data.preview;
     const headline = { great: '강화 대성공', success: '강화 성공', protected: '보호 효과 적용', destroy: '장비 파괴', down: '강화 단계 하락', fail: '강화 실패' }[kind] || '강화 결과';
-    const sub = { protected: '보호 아이템으로 장비를 지켰습니다.', destroy: '강화에 실패해 장비가 소모되었습니다.' }[kind] || '';
+    const sub = kind === 'protected' ? String(data.message || '').split('\n')[0].replace(/^[^\p{L}\p{N}]+/u, '') : kind === 'destroy' ? '장비가 파괴되었습니다.' : '';
     const resultOverlay = $('#enhanceResultOverlay');
-    const info = itemInfo || {};
-
-    // 무기 썸네일
-    const thumbParts = [];
-    if (info.frameUrl) thumbParts.push(el('img', { class: 'auc-frame', src: info.frameUrl, alt: '' }));
-    if (info.iconUrl) thumbParts.push(el('img', { class: 'auc-item-img', src: info.iconUrl, alt: info.name || '' }));
-    const weapon = el('div', { class: 'enh-fx-weapon' }, el('div', { class: 'auc-thumb square' }, ...thumbParts));
-
-    // 결과 종류별 이펙트 레이어 구성
-    const fxLayers = [el('div', { class: 'enh-fx-aura' })];
-    if (kind === 'great') {
-        fxLayers.push(buildRayLayer(16, '#fde68a'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(16, ['#fde68a', '#fca5a5', '#86efac', '#93c5fd', '#f0abfc', '#fbbf24']));
-    } else if (kind === 'success') {
-        fxLayers.push(buildRayLayer(12, 'rgba(186,230,253,.7)'));
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(11, ['#e0f2fe', '#bae6fd', '#ffffff']));
-    } else if (kind === 'destroy') {
-        fxLayers.push(weapon);
-        fxLayers.push(buildShardLayer(14));
-    } else if (kind === 'protected') {
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(8, ['#e8b04b', '#f0cd87', '#fff2d4']));
-    } else { // down / fail
-        fxLayers.push(weapon);
-        fxLayers.push(buildSparkleLayer(6, ['#fca5a5', '#fecaca']));
-    }
-    const fxStage = el('div', { class: 'enh-fx ' + kind }, ...fxLayers);
-
-    // 차례차례 등장하는 스탯 변화
-    const diffs = Array.isArray(appliedDiffs) ? appliedDiffs : [];
-    const FX_DURATION = 1.25; // 이펙트 후 스탯 등장 시작 (초)
-    const STEP = 0.28;
-    const statsBox = el('div', { class: 'enh-result-stats' });
-    diffs.forEach((d, i) => {
-        const row = el('div', { class: 'enh-result-stat-row ' + (d.improved ? 'up' : 'down'), style: 'animation-delay:' + (FX_DURATION + i * STEP).toFixed(2) + 's' },
-            el('span', { class: 'enh-result-stat-label' }, d.label),
-            el('span', { class: 'enh-result-stat-val' }, d.after,
-                el('span', { class: 'enh-result-stat-delta' }, ' (' + d.delta + ')'))
-        );
-        statsBox.appendChild(row);
-    });
-
-    const btnDelay = (FX_DURATION + diffs.length * STEP + 0.15).toFixed(2);
+    enhanceForge.querySelector('.enh-level')?.replaceWith(enhanceLevel(data.levelBefore, data.levelAfter));
     const confirmBtn = el('button', {
-        class: 'enh-result-confirm ' + kind,
-        style: 'animation-delay:' + btnDelay + 's',
+        class: 'enh-result-confirm',
         onclick: () => {
             resultOverlay.classList.remove('active');
-            if (nextPreview && !nextPreview.error) {
+            if (kind !== 'destroy' && nextPreview && !nextPreview.error) {
                 enhanceState.preview = nextPreview;
                 renderEnhancePreview(nextPreview);
             } else {
@@ -4450,25 +4339,52 @@ function showEnhanceResult(kind, number, nextPreview, appliedDiffs, itemInfo) {
             }
         }
     }, '확인');
-
+    $('#enhanceContent').hidden = true;
     resultOverlay.replaceChildren(
-        fxStage,
-        el('div', { class: 'enh-result-headline ' + kind }, headline),
-        ...(sub ? [el('div', { class: 'enhance-result-sub' }, sub)] : []),
-        statsBox,
-        confirmBtn
+        enhanceHeader(itemInfo.name), enhanceForge,
+        el('div', { class: 'enh-body enh-outcome ' + kind },
+            el('div', { class: 'enh-outcome-title', role: 'status', 'aria-live': 'polite' }, headline),
+            sub ? el('p', { class: 'enh-outcome-sub' }, sub) : null,
+            kind !== 'destroy' ? enhanceStatTable(data.appliedDiffs || [], true) : null),
+        el('div', { class: 'enhance-footer result' }, confirmBtn)
     );
+    resultOverlay.classList.remove('warning-mode');
     resultOverlay.classList.add('active');
+    confirmBtn.focus();
 }
 
 function closeEnhanceModal() {
+    if (enhanceState.busy) return;
+    enhancePreviewRequest++;
+    enhanceFx?.destroy(); enhanceFx = null; enhanceForge = null;
     $('#enhanceOverlay').classList.remove('active');
+    $('#enhanceResultOverlay').classList.remove('active', 'warning-mode');
+    $('#enhanceContent').hidden = false;
     document.body.style.overflow = '';
     enhanceState.preview = null;
     enhanceState.busy = false;
     enhanceState.selectedProtectLevel = 'auto';
+    if (enhanceReturnFocus?.isConnected) enhanceReturnFocus.focus();
+    enhanceReturnFocus = null;
     if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
 }
+
+$('#enhanceOverlay').addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation();
+        if ($('#enhanceResultOverlay').classList.contains('warning-mode')) {
+            $('#enhanceResultOverlay').classList.remove('active', 'warning-mode'); $('#enhanceConfirmBtn')?.focus();
+        } else closeEnhanceModal();
+    }
+    if (e.key === 'Tab') {
+        const scope = $('#enhanceResultOverlay').classList.contains('active') ? $('#enhanceResultOverlay') : $('#enhanceContent');
+        const buttons = [...scope.querySelectorAll('button,input')].filter(n => !n.disabled && n.getClientRects().length);
+        if (!buttons.length) { e.preventDefault(); return; }
+        const first = buttons[0], last = buttons.at(-1);
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+});
 
 function buildCombineStage() {
     const stage = $('#combineStage');

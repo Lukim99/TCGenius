@@ -210,6 +210,59 @@ test('장비 잠금·해제, 잠긴 장비와 장착 장비 제외, 다중 분�
     assert.ok(gained >= preview.data.rewards[0].min && gained <= preview.data.rewards[0].max);
     assert.equal((await rpg.getRPGUserByName(fixture.name)).inventory.equipment.length, 0);
 });
+test('강화 결과 화면은 실제 단계와 보호권 판정, 파괴와 최대 단계를 정확히 반환한다', async t => {
+    const id = rpg.getDataCache('Equipment', {}).weapon.findIndex(equipment => equipment?.upgrade?.length === 15);
+    assert.ok(id >= 0);
+    const equipment = rpg.getEquipmentData('weapon', id);
+    const scenarios = [
+        { level: 0, roll: .5, kind: 'success', after: 1 },
+        { level: 0, roll: .01, kind: 'great', after: 2 },
+        { level: 8, roll: .6, kind: 'down', after: 7 },
+        { level: 8, roll: .96, kind: 'destroy', after: null },
+        { level: 8, roll: .96, protect: 'basic', ticket: rpg.EQUIPMENT_PROTECT_ITEM_ID, kind: 'protected', after: 0 },
+        { level: 8, roll: .96, protect: 'advanced', ticket: rpg.EQUIPMENT_ADVANCED_PROTECT_ITEM_ID, kind: 'protected', after: 8 },
+        { level: 8, roll: .6, protect: 'blessed', ticket: rpg.EQUIPMENT_BLESSED_PROTECT_ITEM_ID, kind: 'protected', after: 8 },
+        { level: 14, roll: .005, kind: 'success', after: 15 }
+    ];
+    for (const scenario of scenarios) {
+        const user = await reset({ gold: 1000000000 });
+        user.inventory.equipment = [{ id, type: 'weapon', level: scenario.level }, { id, type: 'weapon', level: 2 }];
+        const cost = rpg.getEquipmentUpgradeCost(equipment, 'weapon', scenario.level);
+        const stoneId = cost.stoneItemId ?? rpg.EQUIPMENT_STONE_ITEM_ID;
+        const stoneCount = cost.stone + 10;
+        rpg.addInventoryItem(user, stoneId, stoneCount);
+        if (scenario.ticket) rpg.addInventoryItem(user, scenario.ticket, 2);
+        await user.save();
+        const preview = await request('/api/equipment/upgrade/preview/1');
+        assert.equal(preview.status, 200);
+        assert.equal(preview.data.canUpgrade, true);
+        assert.ok(preview.data.stoneIconUrl, '강화 재료의 실제 이미지 경로를 제공한다');
+        const random = t.mock.method(Math, 'random', () => scenario.roll);
+        let result;
+        try { result = await request('/api/equipment/upgrade/run', { number: 1, protectLevel: scenario.protect || 'none' }); }
+        finally { random.mock.restore(); }
+        assert.equal(result.status, 200, JSON.stringify(result.data));
+        assert.equal(result.data.resultKind, scenario.kind);
+        assert.equal(result.data.levelBefore, scenario.level);
+        assert.equal(result.data.levelAfter, scenario.after);
+        const after = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(after.gold, 1000000000 - preview.data.cost.gold);
+        assert.equal(rpg.getInventoryItemCount(after, stoneId), stoneCount - preview.data.cost.stone);
+        assert.equal(after.pendingAction, null);
+        if (scenario.ticket) assert.equal(rpg.getInventoryItemCount(after, scenario.ticket), 1);
+        if (scenario.kind === 'destroy') {
+            assert.equal(after.inventory.equipment.length, 1);
+            assert.equal(after.inventory.equipment[0].level, 2);
+            assert.deepEqual(result.data.appliedDiffs, [], '파괴 결과를 다음 장비의 능력치로 표시하지 않는다');
+        } else {
+            assert.equal(after.inventory.equipment[0].level, scenario.after);
+            assert.equal(after.inventory.equipment[1].level, 2);
+        }
+        if (scenario.after === 15) assert.equal(result.data.preview.error, '이미 최대 강화 단계입니다.');
+        if (scenario.protect === 'basic') assert.match(result.data.message, /0강으로 초기화/);
+    }
+});
+
 test('펫 장착·해제·추출은 거래 횟수와 장착 상태를 지킨다', async () => {
     const user = await reset();
     const id = rpg.getDataCache('Pet', []).findIndex(p => p && rpg.PET_EXTRACT_YIELD[p.rarity] && Number(p.requireLevel || 0) <= user.level);

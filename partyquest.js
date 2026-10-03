@@ -698,6 +698,7 @@ function isButaQuest(questId) {
 
 function grantPartyQuestClearRewards(room) {
     const isMansion = room.questId.startsWith('mansion');
+    const isMansionNightmare = room.questId === 'mansionNightmare';
     if (isMansion && room.state !== 'cleared') return Promise.resolve();
     if (isMansion && room.rewardPromise) return room.rewardPromise;
     const work = (async () => {
@@ -724,12 +725,13 @@ function grantPartyQuestClearRewards(room) {
                 const hoduRewardCount = isHodu && prog.hoduRewardWeek === weekKey ? Number(prog.hoduRewardCount || 0) : 0;
                 const weeklyLocked = (isButaQuest(room.questId) && prog.butaRewardWeek === weekKey)
                     || (isHodu && hoduRewardCount >= HODU_WEEKLY_REWARD_LIMIT)
-                    || (isMansion && prog.mansionRewardWeek === weekKey);
-                const exp = weeklyLocked ? 0 : Math.max(0, Math.round(Number(rewards.exp || 0)));
+                    || (isMansion && !isMansionNightmare && prog.mansionRewardWeek === weekKey);
+                const grantRegularRewards = !weeklyLocked && !isMansionNightmare;
+                const exp = grantRegularRewards ? Math.max(0, Math.round(Number(rewards.exp || 0))) : 0;
                 const levelUps = exp > 0 ? addPartyQuestExperience(user, exp) : 0;
                 if (exp > 0) addPartyQuestRewardSummary(summary, 'exp', 'XP', exp);
                 const goldDef = rewards.gold || {};
-                const baseGold = weeklyLocked ? 0 : (typeof goldDef === 'number'
+                const baseGold = !grantRegularRewards ? 0 : (typeof goldDef === 'number'
                     ? Math.max(0, Math.round(goldDef))
                     : randomInt(Math.max(0, Number(goldDef.min || 0)), Math.max(0, Number(goldDef.max || goldDef.min || 0))));
                 const gold = Math.max(0, Math.round(baseGold * (1 + getPartyGoldBonus(member))));
@@ -745,7 +747,7 @@ function grantPartyQuestClearRewards(room) {
                 }
                 const selected = pickPartyQuestRewardEntry(rewards.reward);
                 let itemReward = null;
-                if (!weeklyLocked && selected.entry && typeof selected.entry.pack !== 'undefined') {
+                if (grantRegularRewards && selected.entry && typeof selected.entry.pack !== 'undefined') {
                     const pack = packs[Number(selected.entry.pack)];
                     const packEntry = Array.isArray(pack) ? pickPartyQuestPackEntry(pack) : null;
                     itemReward = grantPartyQuestPackReward(user, packEntry, summary);
@@ -757,7 +759,7 @@ function grantPartyQuestClearRewards(room) {
                 }
                 // 기본 보상(전부 지급) + 추가 보상(가중 1개 추첨)
                 const extraRewards = [];
-                if (!weeklyLocked) {
+                if (grantRegularRewards) {
                     const courageGem = rpgenius.rollAwakeningGemDrop(user, '용기의 보석', rewards.courageGemChance ?? 0.05);
                     if (courageGem) {
                         addPartyQuestRewardSummary(summary, 'item:' + courageGem.itemId, courageGem.name, courageGem.count);
@@ -793,9 +795,9 @@ function grantPartyQuestClearRewards(room) {
                 let firstClear = null;
                 if (isMansion) {
                     prog.mansionClears = Number(prog.mansionClears || 0) + 1;
-                    if (!weeklyLocked) prog.mansionRewardWeek = weekKey;
+                    if (!isMansionNightmare && !weeklyLocked) prog.mansionRewardWeek = weekKey;
                     rpgenius.checkAndUnlockTitles(user);
-                    if (room.questId === 'mansionNightmare' && !prog.mansionNightmareFirst) {
+                    if (isMansionNightmare && !prog.mansionNightmareFirst) {
                         const granted = (quest.firstClearRewards || []).flatMap(entry => { const reward = grantPartyQuestPackReward(user, entry, summary); return reward ? reward.pieces || [reward] : []; });
                         for (const reward of granted) if (reward.kind === 'item') Object.assign(reward, getPartyQuestItemAsset(reward.itemId, 0));
                         rpgenius.unlockTitle(user, 'mansionNightmare');

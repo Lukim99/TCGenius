@@ -1143,6 +1143,7 @@
     }
 
     function rewardItems(rv) {
+        if (currentRoom?.questId === 'mansionNightmare' && rv.firstClear) return rv.firstClear.rewards || [];
         // 부타게임은 기본 보상 여러 개 + 추가 보상 1개 → items 배열, 그 외는 단일 item
         return Array.isArray(rv.items) && rv.items.length ? rv.items : (rv.item ? [rv.item] : []);
     }
@@ -1165,7 +1166,8 @@
                 return lootRow(item, frame, rewardAmount(item));
             })));
         } else if (!rv.weeklyLocked && !rv.error) {
-            body.append(el('div', { class: 'pq-loot-note empty' }, '보상 없음'));
+            body.append(el('div', { class: 'pq-loot-note empty' }, currentRoom?.questId === 'mansionNightmare'
+                ? '나이트메어는 최초 클리어 보상만 지급됩니다.' : '보상 없음'));
         }
         const chips = [];
         if (rv.exp) chips.push(['XP', '+' + Number(rv.exp).toLocaleString()]);

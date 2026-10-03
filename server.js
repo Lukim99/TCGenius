@@ -3877,10 +3877,12 @@ server.post('/api/equipment/upgrade/run', requireUser, async (req, res) => {
         const resultKind = getUpgradeResultKind(result);
         // compute actual stat changes that were applied (skip when item was destroyed/lost)
         let appliedDiffs = [];
+        let levelAfter = null;
         if (resultKind !== 'destroy') {
             const afterSel = rpgenius.getEquipmentByNumber(user, number);
             if (afterSel && afterSel.equip.id === beforeId) {
                 const afterLevel = Number(afterSel.equip.level || 0);
+                levelAfter = afterLevel;
                 const afterStats = rpgenius.getEquipmentStatsAtLevel(beforeEquip, afterLevel);
                 const afterPlus = rpgenius.getEquipmentPlusStatsAtLevel(beforeEquip, afterLevel);
                 appliedDiffs = buildStatDiffs(beforeStats, afterStats, beforePlus, afterPlus);
@@ -3890,6 +3892,8 @@ server.post('/api/equipment/upgrade/run', requireUser, async (req, res) => {
             ok: true,
             message: result,
             resultKind,
+            levelBefore: beforeLevel,
+            levelAfter,
             appliedDiffs,
             equipment: buildInventoryEquipment(user),
             profile: buildUserProfile(user),
@@ -3949,6 +3953,7 @@ function buildEquipmentUpgradePreview(user, number) {
         rates: { great: rates.great, success: rates.success, down: rates.down, reset: rates.reset },
         cost,
         stoneCount,
+        stoneIconUrl: getItemIconUrl(rpgenius.getDataCache('Item', [])[stoneItemId]),
         gold,
         hasStone,
         hasGold,
@@ -9226,7 +9231,7 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
 </main>
 <div id="modalBg" class="modal-bg"><div class="modal"><h3 id="modalTitle">-</h3><div class="sub" id="modalSub"></div><div id="modalBody"></div><button class="primary close" id="modalClose">닫기</button></div></div>
-<div id="enhanceOverlay" class="enhance-overlay"><div class="enhance-wrap"><div id="enhanceContent"></div><div id="enhanceResultOverlay" class="enhance-result-overlay"></div></div></div>
+<div id="enhanceOverlay" class="enhance-overlay" role="dialog" aria-modal="true" aria-label="장비 강화" tabindex="-1"><div class="enhance-wrap"><div id="enhanceContent"></div><div id="enhanceResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="potentialOverlay" class="enhance-overlay"><div class="enhance-wrap pot-wrap"><div id="potentialContent"></div><div id="potentialResultOverlay" class="enhance-result-overlay"></div></div></div>
 <div id="lockboxOverlay" class="lockbox-overlay"><video id="lockboxVideo" src="/static/assets/%EC%9E%90%EB%AC%BC%EC%87%A0.mp4" playsinline muted></video><button id="lockboxSkip" class="lockbox-skip-btn">건너뛰기</button></div>
 <div id="lockboxResultOverlay" class="lockbox-result-overlay"></div>
@@ -9244,6 +9249,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/artifact-ui.js"></script>
 <script src="/static/quest-board-effects.js"></script>
 <script src="/static/pvp-lobby.js"></script>
+<script src="/static/enhance-effects.js"></script>
 <script src="/static/app.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

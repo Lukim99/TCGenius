@@ -661,7 +661,7 @@ test('레이드별 퀘스트 조건은 모든 난이도를 합산하고 주간 �
         for (const questId of ['blackHodu', 'blackHoduExtreme', 'butaGame', 'butaGameHard', 'mansionHard', 'mansionNightmare']) {
             const cleared = { ...room, questId, rewardPromise: null, result: {} };
             await party.__test.grantPartyQuestClearRewards(cleared);
-            assert.equal(cleared.result.rewards[0].weeklyLocked, true);
+            assert.equal(cleared.result.rewards[0].weeklyLocked, questId !== 'mansionNightmare');
         }
         user = await rpg.getRPGUserByName(user.name);
         assert.deepEqual(user.quests[951].counters, { 0: 2, 1: 2, 2: 3, 3: 1 });
@@ -678,27 +678,38 @@ test('레이드별 퀘스트 조건은 모든 난이도를 합산하고 주간 �
     } finally { rpg.__setQuestDefs([]); }
 });
 
-test('나이트메어 최초는 별도 보상과 남은 주간 하드 보상을 함께 지급하고 이후 두 보상을 중복하지 않는다', async t => {
+test('나이트메어는 최초 보상만 한 번 지급하고 주가 바뀌어도 후속 보상이 없으며 노말과 하드의 기회를 소모하지 않는다', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-03T03:00:00Z') });
     const room = await battle('nightmare', 1, 1); room.state = 'cleared'; room.result = {};
     t.mock.method(Math, 'random', () => 0);
     let user = await rpg.getRPGUserByName(seeds[0].name); const gold = user.gold;
-    await party.__test.grantPartyQuestClearRewards(room);
+    await Promise.all([party.__test.grantPartyQuestClearRewards(room), party.__test.grantPartyQuestClearRewards(room)]);
     user = await rpg.getRPGUserByName(user.name);
-    assert.equal(user.gold, gold + 100000000); assert.equal(user.inventory.equipment.length, 5);
+    assert.equal(user.gold, gold); assert.equal(user.inventory.equipment.length, 2);
     assert.equal(user.inventory.equipment.filter(equip => rpg.getEquipmentData('artifact', equip.id).rarity === '레전더리').length, 2);
-    assert.equal(rpg.getInventoryItemCount(user, registration.shardId), 85); assert.equal(user.garnet, 3000);
+    assert.equal(rpg.getInventoryItemCount(user, registration.shardId), 50); assert.equal(user.garnet, 3000);
     assert.ok(user.titleProgress.mansionNightmareFirst); assert.ok(rpg.getUnlockedTitles(user).includes('mansionNightmare'));
+    assert.equal(user.titleProgress.mansionRewardWeek, undefined);
     assert.ok(!rpg.getUnlockedTitles(user).includes('mansionFirstClear'));
-    assert.ok(room.result.rewards[0].firstClear); assert.equal(room.result.rewards[0].items.filter(item => item.equipType === 'artifact').length, 3);
+    assert.ok(room.result.rewards[0].firstClear); assert.deepEqual(room.result.rewards[0].items, []);
+    assert.equal(room.result.rewards[0].item, null);
+    const received = structuredClone(user.inventory);
     const second = { ...room, rewardPromise: null, result: {} };
     await party.__test.grantPartyQuestClearRewards(second);
-    assert.equal(second.result.rewards[0].firstClear, null); assert.equal(second.result.rewards[0].weeklyLocked, true);
+    assert.equal(second.result.rewards[0].firstClear, null); assert.equal(second.result.rewards[0].weeklyLocked, false);
     user = await rpg.getRPGUserByName(user.name);
-    assert.equal(user.inventory.equipment.length, 5); assert.equal(user.titleProgress.mansionClears, 2);
-    delete user.titleProgress.mansionRewardWeek; await user.save();
+    assert.deepEqual(user.inventory, received); assert.equal(user.titleProgress.mansionClears, 2);
+    t.mock.timers.tick(7 * 86400000);
     const third = { ...room, rewardPromise: null, result: {} }; await party.__test.grantPartyQuestClearRewards(third);
     user = await rpg.getRPGUserByName(user.name);
-    assert.equal(user.inventory.equipment.length, 8); assert.equal(user.gold, gold + 200000000); assert.equal(user.garnet, 3000);
+    assert.deepEqual(user.inventory, received); assert.equal(user.gold, gold); assert.equal(user.garnet, 3000);
+    assert.equal(third.result.rewards[0].firstClear, null); assert.equal(third.result.rewards[0].item, null);
+    await party.__test.grantPartyQuestClearRewards({ ...room, questId: 'mansionNormal', rewardPromise: null, result: {} });
+    user = await rpg.getRPGUserByName(user.name);
+    assert.equal(user.gold, gold + 60000000); assert.equal(user.inventory.equipment.length, 5);
+    const hard = { ...room, questId: 'mansionHard', rewardPromise: null, result: {} };
+    await party.__test.grantPartyQuestClearRewards(hard);
+    assert.equal(hard.result.rewards[0].weeklyLocked, true);
 });
 
 test('이미 주간 보상을 받은 계정의 나이트메어 최초 보상은 주간 보상과 독립적으로 지급된다', async () => {
@@ -707,8 +718,9 @@ test('이미 주간 보상을 받은 계정의 나이트메어 최초 보상은 
     user.titleProgress.mansionRewardWeek = rpg.getKoreanWeekKey(new Date()); await user.save();
     await party.__test.grantPartyQuestClearRewards(room);
     user = await rpg.getRPGUserByName(user.name);
-    assert.equal(user.gold, gold); assert.equal(user.inventory.equipment.length, 2); assert.ok(room.result.rewards[0].weeklyLocked);
+    assert.equal(user.gold, gold); assert.equal(user.inventory.equipment.length, 2); assert.equal(room.result.rewards[0].weeklyLocked, false);
     assert.equal(rpg.getInventoryItemCount(user, registration.shardId), 50); assert.equal(user.garnet, 3000);
+    assert.equal(user.titleProgress.mansionRewardWeek, rpg.getKoreanWeekKey(new Date()));
 });
 
 test('카드 추가 보상은 문서 성급과 유효한 일반·전직·각성 캐릭터를 지급하며 투신 포션은 최종 공격력을 올린다', async () => {
@@ -755,6 +767,10 @@ test('레이드 보상은 티켓, 가챠, 카드, 펫과 아티팩트의 이미�
     try { await party.__test.grantPartyQuestClearRewards(room); } finally { mock.restoreAll(); }
     const reward = room.result.rewards[0];
     const all = [...reward.items, ...reward.firstClear.rewards];
+    const normal = { ...room, questId: 'mansionNormal', rewardPromise: null, result: {} };
+    mock.method(Math, 'random', () => .6);
+    try { await party.__test.grantPartyQuestClearRewards(normal); } finally { mock.restoreAll(); }
+    all.push(...normal.result.rewards[0].items);
     const user = await rpg.getRPGUserByName(seeds[0].name);
     all.push(party.__test.grantPartyQuestPackReward(user, { type: '캐릭터카드', card_id: 0, display_star: 7, card_type: '일반', count: 1 }, {}));
     all.push(party.__test.grantPartyQuestPackReward(user, { type: '펫', pet_name: '조각', count: 1 }, {}));
