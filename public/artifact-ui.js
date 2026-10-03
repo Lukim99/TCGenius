@@ -70,8 +70,7 @@
 
         st.wrap = wrap;
         const head = node('div', 'af-head');
-        st.title = node('b', 'af-title', '아티팩트 재설정');
-        head.append(node('span', 'af-rarity', rarity.label), st.title);
+        head.append(node('span', 'af-rarity', rarity.label));
         const uses = node('div', 'af-uses');
         st.usesText = node('span', 'af-uses-t');
         st.pips = node('span', 'af-pips');
@@ -107,9 +106,13 @@
                 cells.append(b);
                 return { key, field: f.key, label: f.label, b, v, lockText: lk.lastChild };
             });
-            row.append(top, cells);
+            const summary = node('div', 'af-result');
+            const ability = node('span');
+            const amount = node('b', 'af-result-v');
+            summary.append(ability, amount);
+            row.append(top, cells, summary);
             list.append(row);
-            st.rows.push({ row, tpl, state, cells: cellNodes });
+            st.rows.push({ row, tpl, state, ability, amount, cells: cellNodes });
         });
 
         // 발현도 — 지금 충족한 옵션의 n 합계, 임계치 보너스는 누적
@@ -189,7 +192,7 @@
 
         const readonly = typeof st.submit !== 'function';
         st.wrap.dataset.readonly = readonly ? '1' : '';
-        setText(st.title, readonly ? '아티팩트 옵션' : '아티팩트 재설정');
+        st.wrap.dataset.finalized = c.remain <= 0 && !st.pending ? '1' : '';
         const lockedOut = readonly || c.remain <= 0 || st.pending;
         st.rows.forEach((r, i) => {
             const opt = options[i] || {};
@@ -197,6 +200,8 @@
             r.row.dataset.active = active ? '1' : '0';
             r.tpl.replaceChildren(document.createTextNode(opt.conditionPrefix || ''), node('b', '', opt.conditionValue), document.createTextNode(opt.conditionSuffix || ''));
             setText(r.state, active ? '✓ 충족' : '✕ 미충족');
+            setText(r.ability, opt.abilityLabel || opt.ability || '');
+            setText(r.amount, opt.n == null ? '-' : '+' + opt.n + '%');
             r.cells.forEach(cell => {
                 const locked = !readonly && st.locks.has(cell.key);
                 const val = valueOf(opt, cell.field);

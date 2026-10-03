@@ -22,7 +22,6 @@
 /* 헤더 */
 .af-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;border-bottom:1px solid var(--af-edge)}
 .af-rarity{padding:2px 8px;border:1px solid var(--af-rarity);color:var(--af-rarity);font-size:10px;font-weight:700;letter-spacing:.14em;clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)}
-.af-title{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:18px;letter-spacing:.04em}
 .af-uses{margin-left:auto;display:flex;align-items:center;gap:7px}
 .af-uses-t{font-size:12px;font-weight:700;color:var(--af-text-2);font-variant-numeric:tabular-nums}
 .af-pips{display:flex;gap:3px}
@@ -108,6 +107,12 @@
 .af[data-readonly="1"] .af-cost,.af[data-readonly="1"] .af-gold,.af[data-readonly="1"] .af-block,.af[data-readonly="1"] .af-confirm,.af[data-readonly="1"] .af-submit{display:none}
 .af[data-readonly="1"] .af-cell,.af[data-readonly="1"] .af-cell:hover{cursor:default;opacity:1;background:var(--af-panel-2)}
 .af[data-readonly="1"] .af-cell-lock{display:none}
+
+/* 재설정이 끝난 아티팩트는 조건과 효과만 표시 */
+.af-result{display:none;align-items:baseline;justify-content:space-between;gap:10px;font-size:14px;font-weight:700}
+.af-result-v{color:var(--af-gold-hi);font-size:16px;white-space:nowrap}
+.af[data-finalized="1"] .af-head,.af[data-finalized="1"] .af-foot,.af[data-finalized="1"] .af-cells,.af[data-finalized="1"] .af-fixed{display:none}
+.af[data-finalized="1"] .af-result{display:flex}
 
 @media (max-width:380px){
   .af-cells{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 56px;gap:5px}
