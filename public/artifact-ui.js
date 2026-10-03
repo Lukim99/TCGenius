@@ -192,7 +192,7 @@
             const opt = options[i] || {};
             const active = !!opt.active;
             r.row.dataset.active = active ? '1' : '0';
-            setText(r.tpl, opt.conditionLabel || '');
+            r.tpl.replaceChildren(document.createTextNode(opt.conditionPrefix || ''), node('b', '', opt.conditionValue), document.createTextNode(opt.conditionSuffix || ''));
             setText(r.state, active ? '✓ 충족' : '✕ 미충족');
             r.cells.forEach(cell => {
                 const locked = !readonly && st.locks.has(cell.key);

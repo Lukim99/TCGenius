@@ -2434,7 +2434,7 @@ function itemUseStatDiffNode(beforeLines, afterLines) {
 function itemUseArtifactNodes(artifact) {
     const rows = (artifact.options || []).map((option, index) => {
         const node = el('div', { class: 'iur-stat-row new' },
-            el('span', { class: 'iur-stat-label' }, option.conditionLabel + ' ' + option.conditionValue),
+            el('span', { class: 'iur-stat-label' }, option.conditionPrefix, el('b', null, option.conditionValue), option.conditionSuffix),
             el('span', { class: 'iur-stat-values' }, option.abilityLabel + ' ', el('b', null, '+' + option.n + '%')),
             el('span', { class: 'iur-stat-delta' }, option.active ? '✓ 충족' : '✕ 미충족'));
         node.style.setProperty('--i', Math.min(index, 14));
@@ -2576,7 +2576,7 @@ function renderItemUseResult(item, changes, result) {
 function itemUseOptionArtifactNodes(artifact) {
     return [
         el('ul', { class: 'item-use-artifact-opts' }, ...(artifact.options || []).map(opt => el('li', { class: opt.active ? 'on' : 'off' },
-            el('div', { class: 'item-use-artifact-cond' }, opt.conditionLabel + ' ' + opt.conditionValue, el('em', null, opt.active ? '✓ 충족' : '✕ 미충족')),
+            el('div', { class: 'item-use-artifact-cond' }, opt.conditionPrefix, el('b', null, opt.conditionValue), opt.conditionSuffix, el('em', null, opt.active ? '✓ 충족' : '✕ 미충족')),
             el('b', { class: 'item-use-artifact-ability' }, opt.abilityLabel + ' ', el('i', null, '+' + opt.n + '%'))))),
         el('small', { class: 'item-use-artifact-reroll' }, '골드 재설정 ' + comma(artifact.rerollsUsed || 0) + '/' + (artifact.maxRerolls || 3) + '회 사용')
     ];

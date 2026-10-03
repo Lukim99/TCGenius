@@ -36,7 +36,7 @@
 .af-opt[data-active="0"]::before{background:var(--af-edge-hi)}
 .af-opt-head{display:flex;align-items:center;gap:7px;min-width:0}
 .af-opt-no{flex:0 0 auto;font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-size:13px;color:var(--af-text-3)}
-.af-tpl{flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--af-text-2);line-height:1.35;word-break:keep-all}
+.af-tpl{flex:1;min-width:0;font-size:12px;font-weight:400;color:var(--af-text-2);line-height:1.35;word-break:keep-all}.af-tpl b{font-weight:700;color:var(--af-text)}
 .af-fixed{flex:0 0 auto;padding:1px 5px;border:1px dashed var(--af-edge-hi);color:var(--af-text-3);font-size:9px;font-weight:700;letter-spacing:.08em}
 .af-state{flex:0 0 auto;padding:1px 6px;border:1px solid var(--af-edge-hi);font-size:10.5px;font-weight:700;color:var(--af-text-2);white-space:nowrap}
 .af-opt[data-active="1"] .af-state{border-color:rgba(127,201,138,.6);color:#bfe8c5}

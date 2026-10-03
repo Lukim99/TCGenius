@@ -70,15 +70,17 @@ function evaluate(equip, rarity, user, stats, equipmentData) {
 
 function describe(option, characters) {
     let conditionValue = option.condition;
-    let conditionLabel = '';
+    let conditionPrefix = '', conditionSuffix = '';
     if (option.type === 'mainStar' || option.type === 'slotStar') {
         conditionValue = starLabel(option.condition);
-        conditionLabel = option.type === 'mainStar' ? '내 메인 카드가 해당 별 등급일 때' : '슬롯 카드 중 해당 별 등급이 있을 때';
-    } else if (option.type === 'element') conditionLabel = '최고 속성 강화가 기준 이상일 때';
-    else if (option.type === 'equipmentRarity') conditionLabel = '장착 장비에 해당 등급이 있을 때';
-    else if (option.type === 'character') { conditionLabel = '메인 캐릭터가 해당 캐릭터일 때'; conditionValue = characters[option.condition]?.name || '알 수 없는 캐릭터'; }
-    else if (option.type === 'cardType') conditionLabel = '메인 카드가 해당 형태일 때';
-    return { type: option.type, conditionLabel, conditionValue, ability: option.ability, abilityLabel: ABILITIES[option.ability], n: option.n };
+        conditionPrefix = option.type === 'mainStar' ? '메인 카드가 ' : '슬롯 카드 중 ';
+        conditionSuffix = option.type === 'mainStar' ? '일 때' : ' 카드가 있을 때';
+    } else if (option.type === 'element') { conditionPrefix = '최고 속성 강화가 '; conditionSuffix = ' 이상일 때'; }
+    else if (option.type === 'equipmentRarity') { conditionPrefix = '장착 장비에 '; conditionSuffix = ' 등급이 있을 때'; }
+    else if (option.type === 'character') { conditionPrefix = '메인 캐릭터가 '; conditionSuffix = '일 때'; conditionValue = characters[option.condition]?.name || '알 수 없는 캐릭터'; }
+    else if (option.type === 'cardType') { conditionPrefix = '메인 카드가 '; conditionSuffix = ' 카드일 때'; }
+    const conditionLabel = conditionPrefix + conditionValue + conditionSuffix;
+    return { type: option.type, conditionLabel, conditionPrefix, conditionSuffix, conditionValue, ability: option.ability, abilityLabel: ABILITIES[option.ability], n: option.n };
 }
 
 function view(equip, rarity, user, stats, equipmentData, characters) {

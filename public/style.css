@@ -1308,7 +1308,7 @@ img[src*="%5B%EC%9E%A5%EB%B9%84%5D%EC%8B%A0%ED%99%94.png"]{animation:mythicFrame
 .item-use-artifact-opts{display:grid;gap:4px;margin:2px 0 0;padding:0;list-style:none}
 .item-use-artifact-opts li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;align-items:center;padding:6px 9px;border:1px solid #273039;border-left:2px solid #6c8aa5;border-radius:5px;background:#0e141b;font-size:11px;line-height:1.45;white-space:normal}
 .item-use-artifact-opts li.off{border-left-color:#4a525d}
-.item-use-artifact-cond{min-width:0;color:#a9b6c5;overflow-wrap:anywhere;word-break:keep-all}
+.item-use-artifact-cond{min-width:0;color:#a9b6c5;font-weight:400;overflow-wrap:anywhere;word-break:keep-all}
 .item-use-artifact-cond em{margin-left:7px;color:#86c79a;font-size:10px;font-style:normal;white-space:nowrap}.item-use-artifact-opts li.off .item-use-artifact-cond em{color:#7d8794}
 .item-use-artifact-ability{color:#e6ebf2;font-weight:700;text-align:right;overflow-wrap:anywhere;word-break:keep-all}.item-use-artifact-ability i{color:#f2c46d;font-style:normal;font-variant-numeric:tabular-nums;white-space:nowrap}
 .item-use-artifact-reroll{color:#8f9dad;font-size:10px;font-variant-numeric:tabular-nums}

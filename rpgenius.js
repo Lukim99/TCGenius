@@ -10416,7 +10416,7 @@ async function startArtifactOptionChange(user, itemId, webItemUse) {
     catch (error) { console.error('[artifact] key selection:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 다시 불러와주세요.'; }
     return ['✅ 옵션을 변경할 아티팩트를 선택해주세요.', '모든 옵션을 다시 뽑습니다. 재설정 사용 횟수는 유지됩니다.', '/RPGenius 선택 [번호]', '/RPGenius 사용취소', ...targets.flatMap((entry, index) => {
         const view = getArtifactView(user, entry.equip);
-        return [(index + 1) + '. <' + view.rarity + '> 아티팩트 (' + (entry.source === 'equipped' ? '장착 중' : '인벤토리') + ', 재설정 ' + view.rerollsUsed + '/3)', ...view.options.map(option => '  ' + option.conditionLabel + ' [' + option.conditionValue + '], ' + option.abilityLabel + ' +' + option.n + '%')];
+        return [(index + 1) + '. <' + view.rarity + '> 아티팩트 (' + (entry.source === 'equipped' ? '장착 중' : '인벤토리') + ', 재설정 ' + view.rerollsUsed + '/3)', ...view.options.map(option => '  ' + option.conditionLabel + ', ' + option.abilityLabel + ' +' + option.n + '%')];
     })].join('\n');
 }
 
@@ -10442,7 +10442,7 @@ async function changeArtifactOptions(user, numberArg, cancel = false) {
     if (cancel) return '✅ 아티팩트 옵션 변경을 취소했습니다. 열쇠는 소모되지 않았습니다.';
     const equip = getAllUserEquipments(user).find(entry => entry.equip.uid === pending.targetUids[Number(numberArg) - 1]).equip;
     const view = getArtifactView(user, equip);
-    return ['✅ 아티팩트 옵션 변경 완료', '재설정 사용 횟수: ' + view.rerollsUsed + '/3', ...view.options.map(option => option.conditionLabel + ' [' + option.conditionValue + '], ' + option.abilityLabel + ' +' + option.n + '%')].join('\n');
+    return ['✅ 아티팩트 옵션 변경 완료', '재설정 사용 횟수: ' + view.rerollsUsed + '/3', ...view.options.map(option => option.conditionLabel + ', ' + option.abilityLabel + ' +' + option.n + '%')].join('\n');
 }
 
 function autoUnequipInvalidSupport(user) {
@@ -15908,7 +15908,7 @@ function getRaidUnlockError(user, raidId) {
     const required = definitions.filter(def => def && (def.rewards || []).some(reward => reward && reward.type == '레이드해금' && reward.raid_id === raidId));
     if (user && Array.isArray(user.unlockedRaids) && user.unlockedRaids.includes(raidId)) return null;
     const raid = (readJson(path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json'), {}).quests || []).find(raid => raid.id === raidId);
-    if (!required.length) return raid && raid.requiresUnlock ? '해금 퀘스트 또는 이전 난이도 클리어가 필요합니다.' : null;
+    if (!required.length) return raid && raid.requiresUnlock ? '퀘스트 보상으로 해금해야 합니다.' : null;
     return required.map(def => '[' + def.name + ']').join(' 또는 ') + ' 퀘스트 보상으로 해금해야 합니다.';
 }
 

@@ -498,18 +498,18 @@ test('본체 1HP 전환은 실제 tick에서 4초 동결 후 잔향으로 진행
     raid.step(room, mon, 12); event = mon.bossState.events.find(event => event.kind === 'inversion'); assert.equal(event.target, seeds[2].name);
 });
 
-test('노말·하드 해금과 통합 주간 보상을 저장하며 반복 보상 호출로 중복 지급하지 않는다', async () => {
+test('클리어로 다음 난이도를 해금하지 않으며 통합 주간 보상과 칭호 진행을 중복 없이 저장한다', async () => {
     const room = await battle(); room.state = 'cleared'; room.result = {};
     let user = await rpg.getRPGUserByName(seeds[0].name); const gold = user.gold;
     await Promise.all([party.__test.grantPartyQuestClearRewards(room), party.__test.grantPartyQuestClearRewards(room)]);
     user = await rpg.getRPGUserByName(user.name);
     assert.equal(user.gold, gold + 60000000); assert.equal(user.inventory.equipment.length, 3);
-    assert.ok(user.unlockedRaids.includes('mansionHard')); assert.equal(user.titleProgress.mansionClears, 1);
+    assert.deepEqual(user.unlockedRaids, ['mansionNormal']); assert.equal(user.titleProgress.mansionClears, 1);
     const second = { ...room, questId: 'mansionHard', rewardPromise: null, result: {} };
     await party.__test.grantPartyQuestClearRewards(second);
     user = await rpg.getRPGUserByName(user.name);
     assert.equal(user.gold, gold + 60000000); assert.equal(second.result.rewards[0].weeklyLocked, true);
-    assert.ok(user.unlockedRaids.includes('mansionNightmare')); assert.equal(user.titleProgress.mansionClears, 2);
+    assert.deepEqual(user.unlockedRaids, ['mansionNormal']); assert.equal(user.titleProgress.mansionClears, 2);
     assert.ok(rpg.getUnlockedTitles(user).includes('mansionBlessing'));
     for (let i = 0; i < 3; i++) await party.__test.grantPartyQuestClearRewards({ ...room, rewardPromise: null, result: {} });
     user = await rpg.getRPGUserByName(user.name);

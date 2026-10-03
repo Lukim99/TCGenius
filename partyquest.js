@@ -794,9 +794,6 @@ function grantPartyQuestClearRewards(room) {
                 if (isMansion) {
                     prog.mansionClears = Number(prog.mansionClears || 0) + 1;
                     if (!weeklyLocked) prog.mansionRewardWeek = weekKey;
-                    if (!Array.isArray(user.unlockedRaids)) user.unlockedRaids = [];
-                    const next = room.questId === 'mansionNormal' ? 'mansionHard' : room.questId === 'mansionHard' ? 'mansionNightmare' : null;
-                    if (next && !user.unlockedRaids.includes(next)) user.unlockedRaids.push(next);
                     rpgenius.checkAndUnlockTitles(user);
                     if (room.questId === 'mansionNightmare' && !prog.mansionNightmareFirst) {
                         const granted = (quest.firstClearRewards || []).flatMap(entry => { const reward = grantPartyQuestPackReward(user, entry, summary); return reward ? reward.pieces || [reward] : []; });
@@ -827,7 +824,7 @@ function grantPartyQuestClearRewards(room) {
                         ]
                     };
                 }
-                if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'unlockedRaids', 'quests']); else await user.save();
+                if (isMansion) await rpgenius.commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'titleProgress', 'titles', 'quests']); else await user.save();
                 results.push({
                     name: member.name,
                     exp,

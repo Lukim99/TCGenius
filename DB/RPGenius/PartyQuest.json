@@ -854,7 +854,7 @@
     },
     {
       "id": "mansionNormal",
-      "name": "E세계 대저택 (노말)",
+      "name": "E세계대저택",
       "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
@@ -1014,7 +1014,7 @@
     },
     {
       "id": "mansionHard",
-      "name": "E세계 대저택 (하드)",
+      "name": "E세계대저택 (하드)",
       "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
@@ -1190,7 +1190,7 @@
     },
     {
       "id": "mansionNightmare",
-      "name": "E세계 대저택 (나이트메어)",
+      "name": "E세계대저택 (나이트메어)",
       "description": "조각과 위플래쉬를 상대하는 2관문 레이드입니다.",
       "minLevel": 141,
       "minPlayers": 1,
