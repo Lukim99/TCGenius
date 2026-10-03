@@ -91,6 +91,31 @@ test('로그인 필수, 새로고침 시 문제 고정, 서버 해답/시드 비
     assert.equal(writes.length, 0, '게시판 조회는 운영/유저 데이터를 저장하지 않는다.');
 });
 
+test('게시판은 운영 목표와 보상을 대상, 이름, 수량, 실제 이미지로 나누어 표시한다', async () => {
+    await reset();
+    const questDefinition = { ...definition, id: 91, name: '게시판 표시', categories: ['일반'],
+        objectives: [{ type: 'kill', field: '인트리그미션', count: 10 },
+            { type: 'partyClear', quest: 'E세계대저택 (난이도 상관 없이)', count: 1 },
+            { type: 'deliver', item_id: 0, count: 2 }],
+        rewards: [{ type: '골드', count: { min: 500, max: 1500 } },
+            { type: '아이템', item_id: 0, count: 3 }, { type: '경험치', count: 2500 },
+            { type: '캐릭터카드', card_id: 0, display_star: 7, count: 2 }] };
+    rpg.__setQuestDefs([questDefinition]);
+    const { data } = await request('');
+    const quest = data.list[0];
+    assert.deepEqual(quest.objectives.map(o => [o.subject, o.actionLabel]),
+        [['인트리그미션', '몬스터 처치'], ['E세계대저택 (난이도 상관 없이)', '파티 퀘스트 클리어'], ['지혜의 보석', '아이템 납품']]);
+    assert.ok(quest.objectives.every(o => !o.actionLabel.includes('—') && !o.subject.includes('—')));
+    assert.deepEqual(quest.rewards.slice(0, 3).map(r => [r.name, r.amountText]),
+        [['골드', '500~1,500'], ['지혜의 보석', '3'], ['경험치', '2,500']]);
+    assert.equal(decodeURIComponent(quest.rewards[0].iconUrl), '/item-image?dir=화폐&file=골드.png');
+    assert.deepEqual(quest.rewards[3].card, { id: 0, star: 6, type: '일반' });
+    assert.equal(quest.rewards[3].amountText, '2');
+    assert.doesNotMatch(quest.rewards[3].name, /\s+x2$/);
+    assert.equal(writes.length, 0, '조회와 표시 변경으로 운영 데이터나 보상을 쓰지 않는다.');
+    assert.deepEqual(rpg.getDataCache('Quest', [])[0].rewards, questDefinition.rewards);
+});
+
 test('잘못된 형식·다른 계정의 문제·스킵·이벤트 위조로 퍼즐 보상을 받을 수 없다', async () => {
     const user = await reset();
     const quest = rpg.buildQuestBoard(user)[0];

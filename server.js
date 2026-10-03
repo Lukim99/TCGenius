@@ -1869,9 +1869,15 @@ function decorateQuestBoard(user) {
         const data = Number.isInteger(itemId) && itemId >= 0 ? items[itemId] : null;
         return data ? getItemDisplayAssets(data).iconUrl : null;
     };
+    // 이미지 라우트가 S3 복원을 기다리므로 게시판에서는 재화 경로를 바로 제공한다.
+    const currencyIcons = Object.fromEntries(['골드', '가넷', '포인트'].map(name => [name,
+        '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent(name + '.png')]));
     return rpgenius.buildQuestBoard(user).map(quest => Object.assign({}, quest, {
         objectives: quest.objectives.map(objective => Object.assign({}, objective, objective.itemId != null ? { iconUrl: iconOf(objective.itemId) } : {})),
-        rewards: quest.rewards.map(reward => Object.assign({}, reward, reward.itemId != null ? { iconUrl: iconOf(reward.itemId) } : {}))
+        rewards: quest.rewards.map(reward => Object.assign({}, reward,
+            reward.itemId != null ? { iconUrl: iconOf(reward.itemId) }
+                : reward.card ? { iconUrl: getCardImageUrl(reward.card) }
+                : currencyIcons[reward.type] ? { iconUrl: currencyIcons[reward.type] } : {}))
     }));
 }
 
@@ -9186,9 +9192,16 @@ function renderUserDashboard(sess, opts) {
     <section class="panel"><h2>레벨 달성 보상</h2><div id="levelRewardList" class="lvreward-list"></div></section>
   </div>
   <div class="page" data-page="퀘스트">
-    <section class="panel quest-board">
-      <div class="quest-detail" id="questDetail"><div class="empty">퀘스트를 선택하세요.</div></div>
-      <aside class="quest-list-wrap"><h2>퀘스트</h2><div id="questList" class="quest-list"></div></aside>
+    <section class="quest-board" aria-labelledby="questBoardTitle">
+      <canvas id="questBoardFx" class="quest-board-fx" aria-hidden="true"></canvas>
+      <aside class="quest-pinboard">
+        <div class="quest-pinboard-head">
+          <h2 id="questBoardTitle">의뢰 게시판</h2>
+          <span id="questReadyCount" class="quest-ready-count"></span>
+        </div>
+        <div id="questList" class="quest-list"></div>
+      </aside>
+      <article id="questDetail" class="quest-scroll"><div class="empty">불러오는 중...</div></article>
     </section>
   </div>
   <div class="page" data-page="사냥">
@@ -9226,6 +9239,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/game-actions.js"></script>
 <script src="/static/artifact-effects.js"></script>
 <script src="/static/artifact-ui.js"></script>
+<script src="/static/quest-board-effects.js"></script>
 <script src="/static/app.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

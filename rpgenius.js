@@ -15926,9 +15926,18 @@ function buildQuestBoard(user) {
         const objectives = (Array.isArray(def.objectives) ? def.objectives : []).map((objective, index) => {
             const target = getQuestObjectiveTarget(objective);
             const current = entry.claimed ? target : getQuestObjectiveCurrent(user, entry, index, objective);
+            const subject = ['kill', 'eliteKill'].includes(objective.type) ? objective.field
+                : objective.type == 'worldboss' ? objective.boss
+                : objective.type == 'craft' ? objective.recipe
+                : ['partyJoin', 'partyClear', 'partyClearMin', 'partyClearMax'].includes(objective.type) ? objective.quest
+                : objective.type == 'deliver' ? (getDataCache('Item', [])[Number(objective.item_id)]?.name || '아이템') : '';
+            const actionLabel = objective.type == 'deliver' ? '아이템 납품'
+                : formatQuestObjectiveLabel(Object.assign({}, objective, { field: '', boss: '', recipe: '', quest: '' }));
             return {
                 type: objective.type,
                 label: formatQuestObjectiveLabel(objective),
+                actionLabel: actionLabel,
+                subject: String(subject || ''),
                 itemId: objective.type == 'deliver' ? Number(objective.item_id) : null,
                 current: current,
                 target: target,
@@ -15950,11 +15959,25 @@ function buildQuestBoard(user) {
             period: entry.period,
             puzzle: isWisdomQuest(def) ? getWisdomPuzzleView(user, def, entry) : null,
             objectives: objectives,
-            rewards: (Array.isArray(def.rewards) ? def.rewards : []).filter(reward => reward && reward.type).map(reward => ({
-                type: reward.type,
-                label: formatQuestRewardLabel(reward),
-                itemId: reward.type == '아이템' ? Number(reward.item_id) : null
-            })),
+            rewards: (Array.isArray(def.rewards) ? def.rewards : []).filter(reward => reward && reward.type).map(reward => {
+                const label = formatQuestRewardLabel(reward);
+                const counted = ['아이템', '경험치', '골드', '가넷', '마일리지', '포인트', '아티팩트', '캐릭터카드'].includes(reward.type);
+                const name = reward.type == '아이템' ? (getDataCache('Item', [])[Number(reward.item_id)]?.name || '알 수 없는 아이템')
+                    : ['경험치', '골드', '가넷', '마일리지', '포인트'].includes(reward.type) ? reward.type
+                    : ['아티팩트', '캐릭터카드'].includes(reward.type) ? label.replace(/\s+x[\d,~]+$/, '')
+                    : reward.type == '칭호' ? label.replace(/^🏅\s*/u, '') : label;
+                const card = reward.type == '캐릭터카드' && getCharacterCardRewardId(reward) >= 0
+                    && typeof reward.star != 'object' && !reward.range
+                    ? { id: getCharacterCardRewardId(reward), star: getCharacterCardRewardStar(reward), type: reward.card_type || reward.cardType || '일반' } : null;
+                return {
+                    type: reward.type,
+                    label: label,
+                    name: name,
+                    amountText: counted ? formatCount(reward.count).slice(1) : '',
+                    card: card,
+                    itemId: reward.type == '아이템' ? Number(reward.item_id) : null
+                };
+            }),
             claimed: !!entry.claimed,
             complete: complete && !entry.claimed,
             canSkip: !entry.claimed && !complete && canSkipQuest(user, def)

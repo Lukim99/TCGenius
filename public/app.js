@@ -3707,7 +3707,7 @@ function renderHuntMenu() {
 }
 
 // ===== 퀘스트 게시판 =====
-const questState = { list: [], selectedId: null, busy: false, puzzleDrafts: {} };
+const questState = { list: [], selectedId: null, shownId: null, busy: false, puzzleDrafts: {} };
 const QUEST_BADGE_CLASS = { '에픽': 'epic', '일일': 'daily', '주간': 'weekly', '일반': 'normal', '이벤트': 'event' };
 
 async function loadQuests() {
@@ -3717,7 +3717,6 @@ async function loadQuests() {
     try {
         const data = await api('/api/quests');
         questState.list = data.list || [];
-        if (!questState.list.some(q => q.id === questState.selectedId)) questState.selectedId = null;
         renderQuests();
     } catch (e) {
         listEl.replaceChildren(el('div', { class: 'empty err' }, e.message));
@@ -3728,26 +3727,100 @@ function questBadgeNode(quest) {
     return el('span', { class: 'quest-badge ' + (QUEST_BADGE_CLASS[quest.badge] || 'normal') }, quest.badge);
 }
 
+function questObjectivePct(objective) {
+    return Math.min(100, Math.round(objective.current / Math.max(1, objective.target) * 100));
+}
+
+function questFallbackMark(type, name) {
+    if (type === '경험치') return 'XP';
+    if (type === '마일리지') return 'M';
+    return String(type || name || '?').charAt(0);
+}
+
+// 아이콘이 없거나 불러오지 못하면 깨진 이미지 대신 짧은 글자 표식을 보인다.
+function questThumb(iconUrl, mark) {
+    const box = el('span', { class: 'quest-thumb' });
+    const showMark = () => box.replaceChildren(el('span', { class: 'quest-thumb-mark' }, mark));
+    if (iconUrl) box.appendChild(el('img', { src: iconUrl, alt: '', onerror: showMark }));
+    else showMark();
+    return box;
+}
+
+function selectQuest(id) {
+    questState.selectedId = id;
+    renderQuests();
+    if (matchMedia('(max-width: 860px)').matches) {
+        $('#questDetail').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }
+}
+
+function questCardNode(quest) {
+    const objectives = quest.objectives || [];
+    const pct = objectives.length ? Math.round(objectives.reduce((sum, objective) => sum + questObjectivePct(objective), 0) / objectives.length) : 0;
+    const progress = objectives.length === 1
+        ? comma(objectives[0].current) + ' / ' + comma(objectives[0].target)
+        : objectives.length ? '목표 ' + objectives.filter(objective => objective.done).length + ' / ' + objectives.length : '';
+    const ready = quest.complete && !quest.claimed;
+    const selected = quest.id === questState.selectedId;
+    return el('button', {
+        type: 'button',
+        class: 'quest-card' + (selected ? ' on' : '') + (quest.claimed ? ' claimed' : '') + (ready ? ' ready' : ''),
+        'aria-current': selected ? 'true' : 'false',
+        onclick: () => selectQuest(quest.id)
+    },
+        el('span', { class: 'quest-card-top' },
+            questBadgeNode(quest),
+            quest.claimed ? el('span', { class: 'quest-card-stamp claimed' }, '수령함')
+                : ready ? el('span', { class: 'quest-card-stamp ready' }, '완료') : null),
+        el('span', { class: 'quest-card-name' }, quest.name),
+        progress ? el('span', { class: 'quest-card-progress' },
+            el('span', { class: 'quest-card-bar' }, el('i', { style: 'width:' + pct + '%' })),
+            el('span', { class: 'quest-card-count' }, progress)) : null);
+}
+
 function renderQuests() {
     const listEl = $('#questList');
     if (!listEl) return;
-    if (!questState.list.length) {
-        listEl.replaceChildren(el('div', { class: 'empty' }, '진행할 수 있는 퀘스트가 없습니다.'));
-        renderQuestDetail();
-        return;
+    const list = questState.list;
+    if (!list.some(quest => quest.id === questState.selectedId)) {
+        const first = list.find(quest => !quest.claimed) || list[0];
+        questState.selectedId = first ? first.id : null;
     }
-    listEl.replaceChildren(...questState.list.map(quest =>
-        el('button', {
-            type: 'button',
-            class: 'quest-row' + (quest.id === questState.selectedId ? ' on' : '') + (quest.claimed ? ' claimed' : ''),
-            onclick: () => { questState.selectedId = quest.id; renderQuests(); }
-        },
-            questBadgeNode(quest),
-            el('span', { class: 'quest-row-name ' + (QUEST_BADGE_CLASS[quest.badge] || 'normal') }, quest.name),
-            quest.complete ? el('span', { class: 'quest-row-state ok' }, '완료') : (quest.claimed ? el('span', { class: 'quest-row-state done' }, '수령됨') : null)
-        )
-    ));
+    const readyCount = list.filter(quest => quest.complete && !quest.claimed).length;
+    const readyEl = $('#questReadyCount');
+    if (readyEl) readyEl.textContent = readyCount ? '보상 대기 ' + readyCount : '';
+    if (!list.length) {
+        listEl.replaceChildren(el('div', { class: 'empty' }, '진행할 수 있는 퀘스트가 없습니다.'));
+    } else {
+        const hadFocus = listEl.contains(document.activeElement), scrollTop = listEl.scrollTop;
+        listEl.replaceChildren(...list.map(questCardNode));
+        listEl.scrollTop = scrollTop;
+        if (hadFocus) listEl.querySelector('.quest-card.on')?.focus({ preventScroll: true });
+    }
     renderQuestDetail();
+    window.QuestBoardEffects?.wake();
+}
+
+function questObjectiveNode(objective) {
+    const pct = questObjectivePct(objective);
+    const title = objective.subject || objective.actionLabel || objective.label;
+    return el('li', { class: 'quest-objective' + (objective.done ? ' done' : '') },
+        objective.iconUrl ? el('img', { class: 'quest-objective-icon', src: objective.iconUrl, alt: '', onerror: event => event.target.remove() }) : null,
+        el('span', { class: 'quest-objective-text' },
+            objective.subject && objective.actionLabel ? el('span', { class: 'quest-objective-action' }, objective.actionLabel) : null,
+            el('strong', null, title)),
+        el('span', { class: 'quest-objective-count' }, el('b', null, comma(objective.current)), ' / ' + comma(objective.target)),
+        el('span', { class: 'quest-progress', role: 'progressbar', 'aria-label': title + ' 진행도', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': pct },
+            el('i', { style: 'width:' + pct + '%' })));
+}
+
+function questRewardNode(reward) {
+    const name = reward.name || reward.label;
+    return el('li', { class: 'quest-reward' },
+        el('span', { class: 'quest-reward-slot' },
+            questThumb(reward.iconUrl, questFallbackMark(reward.type, name)),
+            reward.amountText ? el('b', { class: 'quest-reward-amount' }, reward.amountText) : null),
+        el('span', { class: 'quest-reward-name' }, name));
 }
 
 function renderQuestDetail() {
@@ -3755,50 +3828,51 @@ function renderQuestDetail() {
     if (!detail) return;
     const quest = questState.list.find(item => item.id === questState.selectedId);
     if (!quest) {
+        questState.shownId = null;
         detail.replaceChildren(el('div', { class: 'empty' }, questState.list.length ? '퀘스트를 선택하세요.' : '표시할 퀘스트가 없습니다.'));
         return;
     }
-    const head = el('div', { class: 'quest-detail-head' },
-        el('div', { class: 'quest-detail-title' }, questBadgeNode(quest), el('h2', null, quest.name)),
-        el('span', { class: 'quest-level' },
-            '수행 가능 Lv.' + quest.minLevel + ' ~ ' + quest.maxLevel
-            + (quest.resetType ? ' · ' + quest.resetType + ' 초기화' : '')
-            + (quest.epicOrder ? ' · 에픽 ' + quest.epicOrder + '번' : ''))
-    );
-    const desc = el('p', { class: 'quest-desc' }, quest.desc || '설명이 없습니다.');
-    const objectives = el('div', { class: 'quest-section' },
+    const seal = quest.claimed ? el('span', { class: 'quest-seal claimed' }, '수령')
+        : quest.complete ? el('span', { class: 'quest-seal' }, '완료') : null;
+    const head = el('div', { class: 'quest-detail-head' + (seal ? ' has-seal' : '') },
+        el('div', { class: 'quest-detail-tags' },
+            questBadgeNode(quest),
+            el('span', { class: 'quest-chip' }, '수행 가능 Lv.' + quest.minLevel + ' ~ ' + quest.maxLevel),
+            quest.resetType ? el('span', { class: 'quest-chip' }, quest.resetType + ' 초기화') : null,
+            quest.epicOrder ? el('span', { class: 'quest-chip' }, '에픽 ' + quest.epicOrder + '번') : null),
+        el('h2', null, quest.name),
+        seal);
+    const desc = el('p', { class: 'quest-desc', tabIndex: 0, 'aria-label': '퀘스트 설명' }, quest.desc || '설명이 없습니다.');
+    const objectives = el('section', { class: 'quest-section' },
         el('h3', null, '목표'),
-        ...(quest.objectives.length ? quest.objectives.map(objective => {
-            const pct = Math.min(100, Math.round(objective.current / Math.max(1, objective.target) * 100));
-            return el('div', { class: 'quest-objective' + (objective.done ? ' done' : '') },
-                el('div', { class: 'quest-objective-row' },
-                    el('span', { class: 'quest-objective-label' },
-                        objective.iconUrl ? el('img', { class: 'quest-obj-icon', src: objective.iconUrl, alt: '' }) : null,
-                        objective.label),
-                    el('span', { class: 'quest-objective-count' }, comma(objective.current) + ' / ' + comma(objective.target))),
-                el('div', { class: 'quest-progress' }, el('div', { class: 'quest-progress-fill', style: { width: pct + '%' } })));
-        }) : [el('div', { class: 'quest-empty-note' }, '목표가 설정되지 않은 퀘스트입니다.')])
-    );
-    const rewards = el('div', { class: 'quest-section' },
+        quest.objectives.length
+            ? el('ul', { class: 'quest-objectives' }, ...quest.objectives.map(questObjectiveNode))
+            : el('p', { class: 'quest-empty-note' }, '목표가 설정되지 않은 퀘스트입니다.'));
+    const rewards = el('section', { class: 'quest-section' },
         el('h3', null, '보상'),
         quest.rewards.length
-            ? el('div', { class: 'quest-reward-list' }, ...quest.rewards.map(reward =>
-                el('span', { class: 'quest-reward' },
-                    reward.iconUrl ? el('img', { src: reward.iconUrl, alt: '' }) : null,
-                    reward.label)))
-            : el('div', { class: 'quest-empty-note' }, '보상이 없습니다.')
-    );
-    const actions = el('div', { class: 'quest-actions' });
+            ? el('ul', { class: 'quest-rewards' }, ...quest.rewards.map(questRewardNode))
+            : el('p', { class: 'quest-empty-note' }, '보상이 없습니다.'));
+    const actions = el('footer', { class: 'quest-actions' });
     if (quest.claimed) {
-        actions.appendChild(el('span', { class: 'quest-claimed-note' },
-            '보상 수령 완료' + (quest.resetType ? ' — ' + quest.resetType + ' 초기화 후 다시 진행할 수 있습니다.' : '')));
+        actions.appendChild(el('p', { class: 'quest-claimed-note' },
+            el('strong', null, '보상을 받았습니다.'),
+            quest.resetType ? el('span', null, quest.resetType + ' 초기화 후 다시 진행할 수 있습니다.') : null));
     } else {
-        actions.appendChild(el('button', { class: 'primary', type: 'button', disabled: !quest.complete || questState.busy, onclick: () => claimQuest(quest, false) }, '보상 받기'));
-        if (quest.canSkip) actions.appendChild(el('button', { class: 'quest-skip-btn', type: 'button', disabled: questState.busy, onclick: () => claimQuest(quest, true) }, '스킵 (보상 수령)'));
+        actions.appendChild(el('button', { class: 'quest-btn brass claim', type: 'button', disabled: !quest.complete || questState.busy, onclick: () => claimQuest(quest, false) }, questState.busy ? '처리 중...' : '보상 받기'));
+        if (quest.canSkip) actions.appendChild(el('button', { class: 'quest-btn plain', type: 'button', disabled: questState.busy, onclick: () => claimQuest(quest, true) }, '스킵하고 보상 받기'));
+        if (!quest.complete) actions.appendChild(el('p', { class: 'quest-actions-note' }, '목표를 모두 달성하면 받을 수 있습니다.'));
     }
     const contents = [head, desc];
     if (quest.puzzle) contents.push(renderWisdomPuzzle(quest));
     detail.replaceChildren(...contents, objectives, rewards, actions);
+    if (questState.shownId !== quest.id) {
+        questState.shownId = quest.id;
+        detail.classList.remove('unroll');
+        void detail.offsetWidth;
+        detail.classList.add('unroll');
+        window.QuestBoardEffects?.flourish('select', detail);
+    }
 }
 
 function renderWisdomPuzzle(quest) {
@@ -3809,7 +3883,7 @@ function renderWisdomPuzzle(quest) {
     }
     const form = el('form', { class: 'quest-puzzle', onsubmit: event => { event.preventDefault(); submitQuestPuzzle(quest); } },
         el('div', { class: 'quest-puzzle-heading' }, el('h3', null, puzzle.title), el('span', null, puzzle.typeCount ? puzzle.typeCount + '종 순환' : '논리 도전')),
-        el('p', { class: 'quest-puzzle-date' }, puzzle.date + ' · 매일 00:00 (한국시간) 새 문제'),
+        el('p', { class: 'quest-puzzle-date' }, el('span', null, puzzle.date), el('span', null, '매일 00:00 (한국시간) 새 문제')),
         ...puzzle.rules.map(rule => el('p', { class: 'quest-puzzle-rule' }, rule)),
         puzzle.clues.length ? el('ol', { class: 'quest-puzzle-clues' }, ...puzzle.clues.map(clue => el('li', null, clue))) : null);
     if (puzzle.displayGrid) {
@@ -3832,7 +3906,7 @@ function renderWisdomPuzzle(quest) {
         form.appendChild(grid);
     }
     if (puzzle.solved || quest.claimed) {
-        form.appendChild(el('p', { class: 'quest-puzzle-success', role: 'status' }, quest.claimed ? '오늘의 지혜를 증명했습니다. 내일 새로운 퍼즐에 도전하세요.' : '정답입니다! 아래의 보상 받기를 눌러주세요.'));
+        form.appendChild(el('p', { class: 'quest-puzzle-success', role: 'status' }, quest.claimed ? '오늘의 문제를 풀었습니다. 내일 새 문제가 열립니다.' : '정답입니다. 아래에서 보상을 받으세요.'));
         return form;
     }
     if (puzzle.grid) {
@@ -3854,7 +3928,7 @@ function renderWisdomPuzzle(quest) {
                     onfocus: event => event.target.select() }));
             }
         }
-        form.appendChild(el('p', { class: 'quest-puzzle-date' }, '답안 격자 · 사용 가능: ' + puzzle.symbols.split('').join(', ')));
+        form.appendChild(el('p', { class: 'quest-puzzle-date' }, el('span', null, '답안 격자'), el('span', null, '사용 가능: ' + puzzle.symbols.split('').join(', '))));
         form.appendChild(grid);
     } else {
         form.appendChild(el('label', { class: 'quest-puzzle-answer' }, puzzle.inputLabel || '왼쪽부터 ' + puzzle.length + '자리 답안',
@@ -3865,9 +3939,10 @@ function renderWisdomPuzzle(quest) {
     }
     form.appendChild(el('p', { class: 'quest-puzzle-feedback', role: 'status', 'aria-live': 'polite' }, draft.message));
     form.appendChild(el('div', { class: 'quest-puzzle-actions' },
-        el('button', { class: 'primary', type: 'submit', disabled: questState.busy }, questState.busy ? '확인 중...' : '답안 제출'),
-        el('button', { type: 'button', disabled: questState.busy, onclick: loadQuests }, '오늘의 문제 새로고침')));
-    form.appendChild(el('p', { class: 'quest-puzzle-date' }, '오답이어도 다시 도전할 수 있습니다. 제출 간격 5초 · 제출 ' + puzzle.attempts + '회'));
+        el('button', { class: 'quest-btn brass', type: 'submit', disabled: questState.busy }, questState.busy ? '확인 중...' : '답안 제출'),
+        el('button', { class: 'quest-btn plain', type: 'button', disabled: questState.busy, onclick: loadQuests }, '오늘의 문제 새로고침')));
+    form.appendChild(el('p', { class: 'quest-puzzle-date' },
+        el('span', null, '오답이어도 다시 도전할 수 있습니다.'), el('span', null, '제출 간격 5초'), el('span', null, '제출 ' + puzzle.attempts + '회')));
     return form;
 }
 
@@ -3925,7 +4000,7 @@ function questRewardVisual(result, configured, usedIndexes) {
     const reward = matchIndex >= 0 ? configured[matchIndex] : null;
     return {
         iconUrl: reward && reward.iconUrl ? reward.iconUrl : QUEST_REWARD_CURRENCY_ICONS[result.type] || null,
-        fallback: result.type === '경험치' ? 'XP' : result.type === '마일리지' ? 'M' : result.type === '칭호' ? '★' : '◆'
+        fallback: questFallbackMark(result.type, result.name)
     };
 }
 
@@ -3934,34 +4009,36 @@ function showQuestRewardModal(quest, result) {
     const rewards = parsed.filter(item => !item.levelUp);
     const levelUp = parsed.find(item => item.levelUp);
     const usedIndexes = new Set();
-    const rewardList = el('div', { class: 'quest-claim-rewards' });
+    const rewardList = el('ul', { class: 'quest-claim-rewards' });
     if (rewards.length) {
         rewards.forEach((reward, index) => {
             const visual = questRewardVisual(reward, quest.rewards || [], usedIndexes);
-            rewardList.appendChild(el('div', { class: 'quest-claim-reward', style: { '--reward-delay': (index * 55) + 'ms' } },
-                el('div', { class: 'quest-claim-icon' },
-                    visual.iconUrl
-                        ? el('img', { src: visual.iconUrl, alt: reward.name })
-                        : el('span', { class: 'quest-claim-fallback' }, visual.fallback)),
-                el('div', { class: 'quest-claim-reward-copy' },
-                    el('span', { class: 'quest-claim-reward-label' }, '획득 보상'),
-                    el('strong', null, reward.name)),
-                reward.count ? el('b', { class: 'quest-claim-count' }, reward.count) : null));
+            rewardList.appendChild(el('li', { class: 'quest-claim-reward', style: '--reward-delay:' + index * 70 + 'ms' },
+                questThumb(visual.iconUrl, visual.fallback),
+                el('strong', { class: 'quest-claim-reward-name' }, reward.name),
+                reward.count ? el('b', { class: 'quest-claim-count' }, reward.count.replace(/^x/, '')) : null));
         });
     } else {
-        rewardList.appendChild(el('div', { class: 'quest-claim-empty' }, '보상이 인벤토리에 지급되었습니다.'));
+        rewardList.appendChild(el('li', { class: 'quest-claim-empty' }, '보상이 인벤토리에 지급되었습니다.'));
     }
 
     const bg = el('div', { class: 'quest-claim-modal-bg' });
-    const close = () => bg.remove();
+    const close = () => {
+        if (!bg.isConnected) return;
+        bg.remove();
+        const seal = $('#questDetail .quest-seal');
+        if (seal) {
+            seal.classList.add('stamped');
+            window.QuestBoardEffects?.flourish('claim', seal);
+        }
+    };
     const closeBtn = el('button', { class: 'quest-claim-confirm', type: 'button', onclick: close }, '확인');
     const modal = el('section', { class: 'quest-claim-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'questClaimTitle' },
-        el('div', { class: 'quest-claim-shine', 'aria-hidden': 'true' }),
         el('div', { class: 'quest-claim-hero' },
             el('div', { class: 'quest-claim-seal', 'aria-hidden': 'true' },
                 svgIcon('<svg viewBox="0 0 24 24" fill="none"><path d="m7 12 3.2 3.2L17.5 8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')),
-            el('span', { class: 'quest-claim-eyebrow' }, result.skipped ? 'QUEST SKIPPED' : 'QUEST COMPLETE'),
-            el('h2', { id: 'questClaimTitle' }, '보상을 획득했어요'),
+            el('span', { class: 'quest-claim-eyebrow' }, result.skipped ? '스킵 완료' : '의뢰 완료'),
+            el('h2', { id: 'questClaimTitle' }, '보상 획득'),
             el('p', null, result.name || quest.name)),
         el('div', { class: 'quest-claim-body' },
             rewardList,
