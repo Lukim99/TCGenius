@@ -182,7 +182,7 @@
     },
     {
       "id": "mansionBlessing",
-      "name": "이세계에게축복을",
+      "name": "이세계의축복을",
       "description": "E세계 대저택 레이드 1회 클리어",
       "condition": {
         "progressKey": "mansionClears",
@@ -209,7 +209,7 @@
     },
     {
       "id": "mansionEyes",
-      "name": "저 눈 뜨고 있습니다.",
+      "name": "저 눈 뜨고 있습니다",
       "description": "???",
       "plusStat": {
         "eliteDmg": 0.1
