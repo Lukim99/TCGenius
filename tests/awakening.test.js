@@ -5,7 +5,9 @@ const path = require('node:path');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const characters = require('../DB/RPGenius/CharacterCards.json');
 const awakening = require('../card_awakening');
-const items = [...require('../scripts/init_awakening_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
+const items = [...require('../scripts/init_awakening_items').definitions, ...require('../DB/RPGenius/Item.json').filter(i => i.use === '변환' || ['캐릭터 변환석', '[7월]만능 캐릭터 변환석'].includes(i.name))];
+const equipment = structuredClone(require('../DB/RPGenius/Equipment.json'));
+equipment.weapon.push(...require('../transcend_equipment').definitions.weapon.filter(i => ['초심권', '엘리멘탈 부스터'].includes(i.name)));
 const writes = [];
 // 실제 게임 모듈을 사용하되 모든 DB 입출력은 격리한다. 환경 파일을 읽지 않는다.
 DynamoDBDocumentClient.prototype.send = async command => {
@@ -13,7 +15,9 @@ DynamoDBDocumentClient.prototype.send = async command => {
     if (command.constructor.name === 'GetCommand') {
         if (input.TableName !== 'rpgenius_data') return {};
         const file = path.join(__dirname, '../DB/RPGenius', input.Key.key + '.json');
-        return { Item: { data: input.Key.key === 'Item' ? structuredClone(items) : fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {} } };
+        if (input.Key.key === 'Item') return { Item: { data: structuredClone(items) } };
+        if (input.Key.key === 'Equipment') return { Item: { data: structuredClone(equipment) } };
+        return { Item: { data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {} } };
     }
     if (command.constructor.name === 'ScanCommand') return { Items: [] };
     if (['UpdateCommand', 'PutCommand'].includes(command.constructor.name)) { writes.push(structuredClone(input)); return {}; }
@@ -266,6 +270,97 @@ test('각성 카드 등급 상승 및 일반 변환석 차단·만능 변환석 
             await rolls(.5, () => assert.match(rpg.resolveWebItemUsePending(u, 1), /변환되었습니다/));
             assert.notEqual(u.inventory.card[0].id, card('빵귤').id);
             assert.equal(u.inventory.card[0].type, '각성'); assert.equal(u.inventory.card[0].star, 5);
+        }
+    }
+});
+
+test('지정 변환석 14종은 모든 각성 등급과 스펙터 상태를 유지하고 같은 캐릭터는 제외한다', async () => {
+    for (const stone of items.filter(i => i.use === '변환')) for (let star = 4; star <= 11; star++) {
+        const u = user('빵귤');
+        const source = stone.charId === 0 ? '뭔마' : '빵귤';
+        const original = { ...card(source, star), specter: true, awakeningSpecter: true, tradeCount: 1, skin: '기존 패션' };
+        u.inventory.card = [{ ...card(characters[stone.charId].name, star) }, { ...original }];
+        const id = items.indexOf(stone); rpg.addInventoryItem(u, id, 2);
+        await rpg.useItem(u, stone.name, 1);
+        assert.deepEqual(rpg.getWebItemUsePending(u).options.map(option => option.value), [2]);
+        assert.match(rpg.resolveWebItemUsePending(u, 1), /이미 변환 대상/);
+        assert.ok(u.pendingAction);
+        assert.match(rpg.resolveWebItemUsePending(u, 2), /변환되었습니다/);
+        const { skin, ...preserved } = original;
+        assert.deepEqual(u.inventory.card[1], { ...preserved, id: stone.charId });
+        assert.ok(awakening.getPassive(u.inventory.card[1]));
+        assert.equal(u.pendingAction, null);
+        assert.equal(rpg.getInventoryItemCount(u, id), 1);
+        assert.match(rpg.resolveWebItemUsePending(u, 2), /^❌/);
+        assert.equal(rpg.getInventoryItemCount(u, id), 1, '재전송은 변환석을 다시 소비하지 않는다');
+    }
+});
+
+test('지정 변환석은 일반·전직 카드도 유지하고 취소하면 변환석을 반환한다', async () => {
+    const stone = items.find(i => i.use === '변환' && i.charId === 0), id = items.indexOf(stone);
+    for (const type of ['일반', '전직', '각성']) {
+        const u = user('뭔마', 6, type); u.inventory.card = [{ ...u.main_card }];
+        rpg.addInventoryItem(u, id, 1); await rpg.useItem(u, stone.name, 1);
+        assert.match(rpg.resolveWebItemUsePending(u, 1), /변환되었습니다/);
+        assert.deepEqual(u.inventory.card, [card('빵귤', 6, type)]);
+        rpg.addInventoryItem(u, id, 1);
+        assert.match(await rpg.useItem(u, stone.name, 1), /변환 가능한 캐릭터 카드가 없습니다/);
+        assert.equal(rpg.getInventoryItemCount(u, id), 1);
+        u.inventory.card.push(card('뭔마', 6, type));
+        await rpg.useItem(u, stone.name, 1);
+        assert.match(rpg.resolveWebItemUsePending(u, 0), /존재하지 않는 카드/);
+        rpg.cancelWebItemUsePending(u);
+        assert.equal(rpg.getInventoryItemCount(u, id), 1);
+        assert.equal(u.pendingAction, null);
+    }
+});
+
+test('엘리멘탈 부스터 초월 단계는 속성 저항·추가 피해와 일반 전투·레이드·PVP에 반영된다', async () => {
+    const id = equipment.weapon.findIndex(i => i.name === '엘리멘탈 부스터');
+    const u = user('빵귤', 4, '일반');
+    for (const [stage, resist, bonus] of [[1, 40, .10], [2, 60, .15], [3, 80, .20]]) {
+        u.equipments.weapon = { id, level: 0, transcendStage: stage };
+        const stats = rpg.calculateUserStats(u);
+        assert.equal(stats.allElementAtk, 80); assert.equal(stats.allElementRes, resist); near(stats.elementalExtraDamage, bonus);
+        const lines = rpg.formatCurrentEquipmentStatLines(equipment.weapon[id], 0, null, { transcendStage: stage });
+        assert.ok(lines.includes('모든 속성 저항 +' + resist));
+        assert.ok(lines.includes('속성 공격 추가 피해 +' + Math.round(bonus * 100) + '%'));
+        const pvpStats = pvp.buildSideSnapshot(u, { mainCard: u.main_card, cardSlot: [] }).stats;
+        assert.equal(pvpStats.allElementRes, resist); near(pvpStats.elementalExtraDamage, bonus);
+        const member = { baseSnapshot: { stats, slotEffects: {}, transcendEquipment: rpg.getTranscendEquipmentSnapshot(u) }, runtime: { equipmentState: {}, equipmentAtkBuffs: {}, buffs: [] } };
+        const monster = { type: 'boss', hp: 1e9, hpMax: 1e9, stats: { def: 0 }, debuffs: [] };
+        await rolls(.5, () => {
+            for (const element of ['화', '수', '명', '암', null]) {
+                const extra = { attackElement: element, disableCritical: true };
+                const normal = rpg.calculateAttackHitResult(10000, 0, 0, stats, {}, extra, {});
+                const base = rpg.calculateAttackHitResult(10000, 0, 0, { ...stats, elementalExtraDamage: 0 }, {}, extra, {});
+                assert.equal(normal.finalDamage, base.finalDamage + (element ? Math.floor(base.finalDamage * bonus) : 0));
+                const raid = party.calculateOutgoingDamage(member, monster, {}, 10000, { skillElement: element, disableCritical: true });
+                assert.ok(Math.abs(raid.damage - normal.finalDamage) <= 1);
+            }
+        });
+    }
+});
+
+test('초심권 초월 단계는 궁극기 피해만 늘리고 일반 전투·레이드·PVP에 반영된다', () => {
+    const id = equipment.weapon.findIndex(i => i.name === '초심권');
+    const u = user('빵귤', 4, '전직'); u.field = { enteredAt: Date.now(), equipmentState: {} };
+    const skills = rpg.getMainCardSkills(u), ultimate = skills[skills.length - 1].skill;
+    for (const [stage, bonus] of [[1, .50], [2, .60], [3, .70]]) {
+        u.equipments.weapon = { id, level: 0, transcendStage: stage };
+        const stats = rpg.calculateUserStats(u); near(stats.ultimateDamage, bonus);
+        assert.equal(stats.ultimateCooldownFlat, 10000);
+        const lines = rpg.formatCurrentEquipmentStatLines(equipment.weapon[id], 0, null, { transcendStage: stage });
+        assert.ok(lines.includes('궁극기 스킬 피해 +' + Math.round(bonus * 100) + '%'));
+        near(pvp.buildSideSnapshot(u, { mainCard: u.main_card, cardSlot: [] }).stats.ultimateDamage, bonus);
+        const member = { baseSnapshot: { stats, transcendEquipment: rpg.getTranscendEquipmentSnapshot(u) }, runtime: { equipmentState: {}, hp: 1000, hpMax: 1000 } };
+        for (const [skill, expected] of [[ultimate, bonus], [skills[0].skill, 0]]) {
+            const extra = {};
+            rpg.applyTranscendPreAttack(u, { type: 'field' }, 1000, extra, 'skill', skill);
+            near(Number(extra.damageBonusMul || 0), expected);
+            const raid = party.preparePartyTranscendSkill(member, skill.name, skill === ultimate, {});
+            near(Number(raid.extra.damageBonusMul || 0), expected);
+            assert.equal(raid.cooldownFlat, skill === ultimate ? 10 : 0);
         }
     }
 });

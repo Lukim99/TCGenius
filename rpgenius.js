@@ -3547,7 +3547,7 @@ function convertCharacterCard(user, numberArg, confirmedFashion, can) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     if (characterCards.length <= 1) return '❌ 변환할 수 있는 캐릭터 카드 데이터가 부족합니다.';
     const card = cards[number - 1];
-    if (card.type === '각성') return '❌ 각성 카드는 만능 캐릭터 변환석으로만 변환할 수 있습니다.';
+    if (card.type === '각성') return '❌ 각성 카드는 지정 캐릭터 변환석 또는 만능 캐릭터 변환석으로 변환할 수 있습니다.';
     if (card.type === '전직') return '❌ 전직 카드는 캐릭터 변환석을 사용할 수 없습니다. (전직 변환석 사용)';
     const maxStar = CHARACTER_CONVERT_MAX_STAR[can] || 9;
     if (Number(card.star || 0) >= maxStar) return '❌ 해당 등급 카드는 캐릭터 변환석을 사용할 수 없습니다.';
@@ -3574,7 +3574,6 @@ function convertCharacterCardToTarget(user, numberArg) {
     const targetId = Number(pending.charId);
     if (!Number.isInteger(targetId) || !characterCards[targetId]) return '❌ 변환 대상 캐릭터 정보가 없습니다.';
     const card = cards[number - 1];
-    if (card.type === '각성') return '❌ 각성 카드는 만능 캐릭터 변환석으로만 변환할 수 있습니다.';
     if (Number(card.id) == targetId) return '❌ 이미 변환 대상 캐릭터 카드입니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소';
     const before = Object.assign({}, card);
     card.id = targetId;
@@ -12448,7 +12447,7 @@ function getWebItemUsePending(user) {
 
     if (pending.type == '지정캐릭터변환') {
         title = '변환할 카드 선택';
-        options = makeCardOptions(entry => entry.card.type !== '각성' && Number(entry.card.id) != Number(pending.charId));
+        options = makeCardOptions(entry => Number(entry.card.id) != Number(pending.charId));
     } else if (pending.type == '캐릭터변환') {
         if (pending.cardNumber) {
             title = '패션 카드 변환 확인';

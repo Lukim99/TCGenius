@@ -296,6 +296,26 @@ rpg.getRPGUserByName = async () => buyer;
         }
         assert.equal(rpg.getInventoryItemCount(buyer, pouch.itemId), 0);
         assert.deepEqual(stoneIds.map(id => rpg.getInventoryItemCount(buyer, id)), beforeStoneCounts.map(count => count + 1));
+        const awakenedCard = { id: 1, star: 11, type: '각성', specter: true, awakeningSpecter: true };
+        buyer.inventory.card = [structuredClone(awakenedCard)];
+        const stonesBeforeUse = rpg.getInventoryItemCount(buyer, stoneIds[0]);
+        const used = await post('/api/inventory/items/' + stoneIds[0] + '/use', { count: 1 });
+        assert.equal(used.status, 200);
+        const pending = (await used.json()).pending;
+        assert.equal(pending.options.length, 1);
+        assert.equal(pending.options[0].card.type, '각성');
+        assert.equal(pending.options[0].card.star, 11);
+        assert.ok(pending.options[0].iconUrl, '각성 카드 선택창에도 카드 이미지를 표시한다');
+        const converted = await post('/api/inventory/item-use/resolve', { choice: pending.options[0].value });
+        assert.equal(converted.status, 200);
+        const target = (await converted.json()).result.target;
+        assert.equal(target.before.name, '뭔마'); assert.equal(target.after.name, '빵귤');
+        assert.equal(target.after.type, '각성'); assert.equal(target.after.starText, target.before.starText);
+        assert.ok(target.after.imageUrl, '변환 결과에도 각성 카드 이미지를 표시한다');
+        assert.deepEqual(buyer.inventory.card, [{ ...awakenedCard, id: 0 }]);
+        assert.equal(rpg.getInventoryItemCount(buyer, stoneIds[0]), stonesBeforeUse - 1);
+        assert.equal((await post('/api/inventory/item-use/resolve', { choice: 1 })).status, 400);
+        assert.equal(rpg.getInventoryItemCount(buyer, stoneIds[0]), stonesBeforeUse - 1);
         console.log('admin_shop_actions.test.js: OK (관리자 인증, 선택 초기화, 패키지 14종, 칭호 이미지, 변환석 개별 선택·3회 제한·중복 요청·채팅 사용; DB/S3 격리)');
     } finally { await new Promise(resolve => http.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
