@@ -176,6 +176,7 @@ if ($('#pointAddBtn')) $('#pointAddBtn').onclick = openPointChargeModal;
 const PAGE_LABELS = { home: '메인', chat: '채팅', info: '정보', inventory: '인벤토리', mail: '메일함', preset: '프리셋', event: '이벤트', '퀘스트': '게시판', '사냥': '사냥', '[H]필드': '[H]필드', pvp: 'PVP', '자물쇠': '자물쇠', combine: '조합', jobcombine: '전직조합', 'equipment-synthesis': '장비합성', dex: '도감', '레벨보상': '레벨보상', auction: '팝니다', buyorder: '삽니다', shop: '상점', ranking: '랭킹', patchnotes: '패치노트', party: '레이드' };
 PAGE_LABELS.awakeningcombine = '각성조합';
 PAGE_LABELS['낚시'] = '낚시';
+PAGE_LABELS.directtrade = '1:1거래';
 const mailState = { mails: [], unread: 0, selectedId: null, page: 1, totalPages: 1 };
 const ICONS = {
     home:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>`,
@@ -195,7 +196,7 @@ const GROUPS = [
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
     { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['윷놀이', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
-    { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder'] },
+    { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
 
@@ -255,6 +256,7 @@ function navigatePage(pageId) {
     if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
     if (activePage === '낚시' && pageId !== '낚시') stopFishingRefresh();
+    if (activePage === 'directtrade' && pageId !== 'directtrade') window.DirectTradeUI?.close();
     activePage = pageId;
     document.body.classList.toggle('yut-active', pageId === '윷놀이');
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
@@ -288,6 +290,7 @@ function navigatePage(pageId) {
     if (pageId === 'shop') loadShop(); else stopHotdealCountdown();
     if (pageId === 'auction') loadAuctions();
     if (pageId === 'buyorder') loadBuyOrders();
+    if (pageId === 'directtrade') window.DirectTradeUI?.open();
     if (pageId === 'ranking') loadRanking();
     if (pageId === 'dex') {
         setDexSidebarVisible(true);
@@ -2443,6 +2446,14 @@ function itemUseStatDiffNode(beforeLines, afterLines) {
 }
 
 // 아티팩트옵션변경: 새로 정해진 옵션(조건·능력·수치)과 유지된 골드 재설정 횟수.
+function artifactOptionSummary(artifact) {
+    return el('div', { class: 'artifact-summary' }, ...(artifact.options || []).map(option =>
+        el('div', { class: 'artifact-summary-option' },
+            el('span', null, option.conditionPrefix, el('b', null, option.conditionValue), option.conditionSuffix),
+            el('strong', null, option.abilityLabel + ' +' + option.n + '%'))),
+        el('small', null, '재설정 ' + Math.max(0, Number(artifact.maxRerolls || 3) - Number(artifact.rerollsUsed || 0)) + '회 남음'));
+}
+
 function itemUseArtifactNodes(artifact) {
     const rows = (artifact.options || []).map((option, index) => {
         const node = el('div', { class: 'iur-stat-row new' },
@@ -2820,6 +2831,7 @@ async function openLockbox(count = 1) {
         overlay.classList.remove('active');
         try {
             const data = await postApi('/api/inventory/use-lockbox', { count });
+            updateLockboxKeys(data);
             showLockboxResult(data.opens || []);
             loadInventory('items');
         } catch (e) {
@@ -2950,7 +2962,9 @@ function renderInventoryData(kind, data) {
     }
     if (kind === 'equipment') {
         const sections = [];
-        const equipment = data.equipment.filter(eq => inventoryMatches(eq.name, query));
+        const rarities = ['일반', '고급', '레어', '희귀', '에픽', '유니크', '영웅', '레전더리', '전설', '초월', '신화', '고유'];
+        const rank = eq => rarities.indexOf(String(eq.baseRarity || eq.rarity || '').split(' ')[0]);
+        const equipment = data.equipment.filter(eq => inventoryMatches(eq.name, query)).sort((a, b) => rank(b) - rank(a));
         EQUIP_TYPE_ORDER.forEach(([type, label]) => {
             const filtered = equipment.filter(eq => eq.type === type);
             if (filtered.length) sections.push(categorySection(label, [el('div', { class: 'equip-grid inventory-equip-grid' }, filtered.map(equipmentCard))]));
@@ -3064,16 +3078,26 @@ function scheduleEventDiceEndRedirect() {
 // ===== 봉인된 자물쇠 탭 =====
 const lockboxUi = name => '/lockbox-ui?file=' + encodeURIComponent(name);
 
-function loadLockbox() {
+function updateLockboxKeys(data) {
+    const keys = $('#lockboxKeys');
+    if (!keys) return;
+    keys.replaceChildren(...[data.keyIconUrl ? el('img', { src: data.keyIconUrl, alt: '' }) : null,
+        el('span', null, '지니어스의 열쇠'), el('b', null, comma(data.keyCount) + '개')].filter(Boolean));
+}
+
+async function loadLockbox() {
     const root = $('#lockboxRoot');
     if (!root) return;
     const title = el('img', { class: 'lockbox-title', src: lockboxUi('글씨.png'), alt: '봉인된 자물쇠' });
     const item = el('img', { class: 'lockbox-item', src: lockboxUi('이달의 아이템.png') + '&v=202610', alt: '10월 이달의 아이템' });
     const char = el('img', { class: 'lockbox-char', src: lockboxUi('캐릭터.png'), alt: '' });
     const btns = el('div', { class: 'lockbox-btns' });
-    btns.appendChild(el('button', { class: 'lockbox-btn', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));
-    btns.appendChild(el('button', { class: 'lockbox-btn', style: "background-image:url('" + lockboxUi('10회 열기 버튼.png') + "')", onclick: () => openLockbox(10) }));
-    root.replaceChildren(title, item, char, btns);
+    btns.appendChild(el('button', { class: 'lockbox-btn', 'aria-label': '1회 열기', style: "background-image:url('" + lockboxUi('1회 열기 버튼.png') + "')", onclick: () => openLockbox(1) }));
+    btns.appendChild(el('button', { class: 'lockbox-btn', 'aria-label': '10회 열기', style: "background-image:url('" + lockboxUi('10회 열기 버튼.png') + "')", onclick: () => openLockbox(10) }));
+    const keys = el('div', { id: 'lockboxKeys', class: 'lockbox-keys', role: 'status' }, '열쇠 수량 확인 중');
+    root.replaceChildren(title, item, char, keys, btns);
+    try { updateLockboxKeys(await api('/api/lockbox')); }
+    catch (e) { keys.textContent = e.message; }
 }
 
 function generateEventLightningBolt(targetX, targetY) {
@@ -4139,7 +4163,7 @@ async function loadEnhancePreview(number) {
 
 function renderEnhancePreview(data) {
     enhanceFx?.destroy();
-    enhanceForge = el('div', { class: 'enh-forge' }, enhanceLevel(data.level, data.nextLevel));
+    enhanceForge = el('div', { class: 'enh-forge' }, enhanceHeader(data.name), enhanceLevel(data.level, data.nextLevel));
     enhanceFx = EnhanceEffects.mount(enhanceForge, data);
     const getEffectiveProtect = () => {
         const opts = data.protectOptions || [];
@@ -4155,43 +4179,43 @@ function renderEnhancePreview(data) {
         else runEnhancement(data.number);
     } }, '강화하기');
     if (!data.canUpgrade) confirmBtn.disabled = true;
-    const protection = el('fieldset', { class: 'enh-protection' }, el('legend', null, '보호권'));
+    const protection = el('fieldset', { class: 'enh-protection', 'aria-label': '보호권 선택' });
     const selectedLevel = getEffectiveProtect()?.level || 'none';
-    const options = [{ level: 'none', label: '보호권 사용 안 함', detail: '파괴나 하락을 막지 않습니다.' }, ...(data.protectOptions || [])];
+    const options = [{ level: 'none', label: '보호권 사용 안 함', detail: '보호권을 사용하지 않습니다.' }, ...(data.protectOptions || [])].sort((a, b) => ['none', 'basic', 'advanced', 'blessed'].indexOf(a.level) - ['none', 'basic', 'advanced', 'blessed'].indexOf(b.level));
     options.forEach(option => protection.append(el('label', { class: 'enh-protect-option' + (option.level === selectedLevel ? ' selected' : '') },
-        el('input', { type: 'radio', name: 'enhance-protect', value: option.level, checked: option.level === selectedLevel,
+        el('input', { type: 'radio', name: 'enhance-protect', value: option.level, checked: option.level === selectedLevel, 'aria-label': option.label + ' ' + option.detail + (option.count != null ? ' ' + option.count + '개' : ''),
             onchange: () => {
                 enhanceState.selectedProtectLevel = option.level;
                 renderEnhancePreview(data);
                 [...$$('#enhanceOverlay input[name="enhance-protect"]')].find(input => input.value === option.level)?.focus();
             } }),
-        option.iconUrl ? el('img', { src: option.iconUrl, alt: '' }) : el('span', { class: 'enh-protect-empty', 'aria-hidden': 'true' }, '◇'),
-        el('span', { class: 'enh-protect-description' }, el('strong', null, option.label), el('small', null, option.detail)),
-        option.count != null ? el('b', null, comma(option.count) + '개') : null)));
+        option.iconUrl ? el('img', { src: option.iconUrl, alt: '' }) : el('span', { class: 'enh-protect-empty', 'aria-hidden': 'true' }),
+        el('span', { class: 'enh-protect-description', title: option.label }, { none: '없음', basic: '기본', advanced: '고급', blessed: '축복' }[option.level],
+            option.count != null ? el('small', null, '×' + comma(option.count)) : null))));
 
     $('#enhanceContent').hidden = false;
     $('#enhanceContent').replaceChildren(
-        enhanceHeader(data.name), enhanceForge,
+        enhanceForge,
         el('div', { class: 'enh-body' },
-            enhanceStatTable(data.statDiffs || []),
-            el('div', { class: 'enhance-section-label' }, '강화 확률'),
-            el('div', { class: 'enh-rate-bar', 'aria-hidden': 'true' }, ...['great', 'success', 'down', 'reset'].map(kind => el('i', { class: kind, style: { flexGrow: Number(data.rates[kind] || 0) } }))),
+            enhanceStatGrid(data.statDiffs || []),
+            el('div', { class: 'enh-odds', 'aria-label': '강화 확률' },
+                el('div', { class: 'enh-rate-bar', 'aria-hidden': 'true' }, ...['great', 'success', 'down', 'reset'].map(kind => el('i', { class: kind, style: { flexGrow: Number(data.rates[kind] || 0) } }))),
             el('div', { class: 'enhance-rates-row' },
                 enhRateChip('great', '대성공', data.rates.great),
                 enhRateChip('success', '성공', data.rates.success),
                 enhRateChip('down', '하락', data.rates.down),
                 enhRateChip('destroy', '파괴', data.rates.reset)
-            ),
-            el('div', { class: 'enhance-section-label' }, '필요 재료', Number(data.cost.discountRate || 0) > 0 ? el('small', null, '축복 ' + Math.round(Number(data.cost.discountRate) * 100) + '% 할인') : null),
+            )),
             el('div', { class: 'enhance-cost-row' },
                 enhCostItem(data.cost.stoneName || '강화석', comma(data.cost.stone) + '개', comma(data.stoneCount) + '개', data.hasStone, data.stoneIconUrl),
                 enhCostItem('골드', comma(data.cost.gold), comma(data.gold), data.hasGold, QUEST_REWARD_CURRENCY_ICONS['골드'])),
-            protection
+            data.cost.discountRate > 0 ? el('div', { class: 'enh-protect-rule' }, '강화 비용 ' + Math.round(data.cost.discountRate * 100) + '% 할인') : null,
+            protection,
+            el('div', { class: 'enh-protect-rule', role: 'status' }, getEffectiveProtect()?.detail || '보호권을 사용하지 않습니다.')
         ),
         el('div', { class: 'enhance-footer' },
-            el('button', { class: 'enhance-cancel-btn', onclick: closeEnhanceModal }, '닫기'),
-            confirmBtn,
-            !data.canUpgrade ? el('p', { class: 'enh-block-reason' }, [!data.hasStone ? '강화석 부족' : '', !data.hasGold ? '골드 부족' : ''].filter(Boolean).join(' / ')) : null
+            !data.canUpgrade ? el('p', { class: 'enh-block-reason' }, [!data.hasStone ? '강화석 부족' : '', !data.hasGold ? '골드 부족' : ''].filter(Boolean).join(' / ')) : null,
+            confirmBtn
         )
     );
     $('#enhanceOverlay').setAttribute('aria-busy', 'false');
@@ -4199,22 +4223,21 @@ function renderEnhancePreview(data) {
 }
 
 function enhanceHeader(name) {
-    return el('div', { class: 'enh-header' }, el('h2', null, name),
-        enhanceFx?.soundButton(), el('button', { class: 'enh-close', type: 'button', 'aria-label': '강화 창 닫기', onclick: closeEnhanceModal }, '×'));
+    return el('div', { class: 'enh-header' }, el('h2', { title: name }, name),
+        el('button', { class: 'enh-close', type: 'button', 'aria-label': '강화 창 닫기', onclick: closeEnhanceModal }, '×'));
 }
 
 function enhanceLevel(before, after) {
     return el('div', { class: 'enh-level' }, el('b', null, '+' + before), el('span', { 'aria-hidden': 'true' }, '→'), el('strong', null, after == null ? '파괴' : '+' + after));
 }
 
-function enhanceStatTable(diffs, result = false) {
+function enhanceStatGrid(diffs, result = false) {
     if (!diffs.length) return el('p', { class: 'enh-stat-empty' }, result ? '능력치는 유지되었습니다.' : '변경되는 능력치가 없습니다.');
-    return el('table', { class: 'enh-stat-table' },
-        el('caption', null, result ? '적용된 능력치' : '성공 시 능력치'),
-        el('thead', null, el('tr', null, ...['능력치', result ? '강화 전' : '현재', result ? '결과' : '성공 시'].map(name => el('th', { scope: 'col' }, name)))),
-        el('tbody', null, ...diffs.map(d => el('tr', null,
-            el('th', { scope: 'row' }, d.label), el('td', null, d.before),
-            el('td', { class: d.improved ? 'improved' : 'reduced' }, el('b', null, d.after), el('small', null, /^[-+]/.test(d.delta) ? d.delta : '+' + d.delta))))));
+    return el('div', { class: 'enh-stats', role: 'list', 'aria-label': result ? '적용된 능력치' : '성공 시 능력치' }, ...diffs.map((d, i) =>
+        el('div', { class: 'enh-stat ' + (d.improved ? 'improved' : 'reduced') + (result ? ' reveal' : ''), role: 'listitem',
+            style: '--enh-stat-delay:' + (120 + i * Math.min(140, 600 / diffs.length)) + 'ms' },
+            el('div', { class: 'enh-stat-head' }, el('span', { title: d.label }, d.label), el('b', null, /^[-+]/.test(d.delta) ? d.delta : '+' + d.delta)),
+            el('div', { class: 'enh-stat-values' }, el('span', null, d.before), el('i', { 'aria-label': result ? '강화 결과' : '성공 시' }, '→'), el('strong', null, d.after)))));
 }
 
 function enhRateChip(kind, label, value) {
@@ -4226,11 +4249,10 @@ function enhRateChip(kind, label, value) {
 
 function enhCostItem(name, need, have, ok, icon) {
     return el('div', { class: 'enhance-cost-item ' + (ok ? 'ok' : 'lack') },
-        icon ? el('img', { src: icon, alt: '' }) : null,
+        icon ? el('img', { src: icon, alt: name }) : null,
         el('div', { class: 'enhance-cost-text' },
-            el('div', { class: 'enhance-cost-name' }, name), !ok ? el('small', null, '부족') : null
-        ),
-        el('div', { class: 'enh-cost-count' }, el('b', null, '필요 ' + need), el('small', null, '보유 ' + have))
+            el('div', { class: 'enhance-cost-name' }, name + ' ', el('b', null, need)),
+            el('small', null, '보유 ' + have + (!ok ? ' 부족' : '')))
     );
 }
 
@@ -4238,11 +4260,10 @@ async function runEnhancement(number) {
     if (enhanceState.busy) return;
     enhanceState.busy = true;
     $('#enhanceOverlay').setAttribute('aria-busy', 'true');
-    $$('#enhanceOverlay button:not(.enh-sound), #enhanceOverlay input').forEach(control => control.disabled = true);
-    $('#enhanceOverlay .enh-sound')?.focus();
+    $$('#enhanceOverlay button, #enhanceOverlay input').forEach(control => control.disabled = true);
+    $('#enhanceOverlay').focus();
     const btn = $('#enhanceConfirmBtn');
     if (btn) btn.textContent = '강화 중';
-    const itemInfo = enhanceState.preview || {};
     enhanceFx?.start();
     // resolve effective protectLevel
     const opts = enhanceState.preview && enhanceState.preview.protectOptions || [];
@@ -4253,11 +4274,11 @@ async function runEnhancement(number) {
     else protectLevel = sel;
     try {
         const data = await postApi('/api/equipment/upgrade/run', { number, protectLevel });
-        await enhanceFx?.finish(data.resultKind);
+        await enhanceFx?.finish(data.resultKind, protectLevel);
         enhanceState.busy = false;
         $('#enhanceOverlay').setAttribute('aria-busy', 'false');
         if (data.profile) renderProfile(data.profile);
-        showEnhanceResult(data, itemInfo);
+        showEnhanceResult(data);
     } catch (e) {
         enhanceState.busy = false;
         $('#enhanceOverlay').setAttribute('aria-busy', 'false');
@@ -4321,12 +4342,13 @@ function showEnhanceWarning(onConfirm) {
     ov.querySelector('button')?.focus();
 }
 
-function showEnhanceResult(data, itemInfo) {
+function showEnhanceResult(data) {
     const kind = data.resultKind, nextPreview = data.preview;
     const headline = { great: '강화 대성공', success: '강화 성공', protected: '보호 효과 적용', destroy: '장비 파괴', down: '강화 단계 하락', fail: '강화 실패' }[kind] || '강화 결과';
     const sub = kind === 'protected' ? String(data.message || '').split('\n')[0].replace(/^[^\p{L}\p{N}]+/u, '') : kind === 'destroy' ? '장비가 파괴되었습니다.' : '';
     const resultOverlay = $('#enhanceResultOverlay');
     enhanceForge.querySelector('.enh-level')?.replaceWith(enhanceLevel(data.levelBefore, data.levelAfter));
+    enhanceForge.querySelector('.enh-close').disabled = false;
     const confirmBtn = el('button', {
         class: 'enh-result-confirm',
         onclick: () => {
@@ -4341,11 +4363,11 @@ function showEnhanceResult(data, itemInfo) {
     }, '확인');
     $('#enhanceContent').hidden = true;
     resultOverlay.replaceChildren(
-        enhanceHeader(itemInfo.name), enhanceForge,
+        enhanceForge,
         el('div', { class: 'enh-body enh-outcome ' + kind },
             el('div', { class: 'enh-outcome-title', role: 'status', 'aria-live': 'polite' }, headline),
             sub ? el('p', { class: 'enh-outcome-sub' }, sub) : null,
-            kind !== 'destroy' ? enhanceStatTable(data.appliedDiffs || [], true) : null),
+            kind !== 'destroy' ? enhanceStatGrid(data.appliedDiffs || [], true) : null),
         el('div', { class: 'enhance-footer result' }, confirmBtn)
     );
     resultOverlay.classList.remove('warning-mode');
@@ -5442,6 +5464,7 @@ function auctionCardEl(entry) {
         el('div', { class: 'auc-info' },
             title,
             d.sub ? el('div', { class: 'auc-sub' }, d.sub + (entry.kind === 'equipment' && d.level > 0 ? ' · +' + d.level : '')) : null,
+            d.equipmentDetail && d.equipmentDetail.artifact ? artifactOptionSummary(d.equipmentDetail.artifact) : null,
             el('div', { class: 'auc-seller' }, '판매자: ' + entry.sellerName + (entry.ticketCost > 0 ? ' · 거래권 ' + entry.ticketCost + '장' : ''))
         ),
         el('div', { class: 'auc-price' }, currencyNode(entry.currency, entry.unitPrice, entry.kind === 'item' ? ' / 1개' : ''))
@@ -6442,6 +6465,7 @@ function renderRegisterModal() {
                 nameText = item.name; metaText = item.type + ' · 보유 ' + comma(item.count) + '개';
             }
             const infoEl = el('div', null, el('div', { class: 'reg-item-name' }, nameText), el('div', { class: 'reg-item-meta' }, metaText));
+            if (kind === 'equipment' && item.artifact) infoEl.appendChild(artifactOptionSummary(item.artifact));
             if (kind === 'equipment' && item.potentialDisplay) {
                 const pb = potentialBlockNode(item.potentialDisplay);
                 if (pb) infoEl.appendChild(pb);

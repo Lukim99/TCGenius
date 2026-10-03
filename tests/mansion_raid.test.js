@@ -36,6 +36,7 @@ const seeds = ['mansion-test', 'mansion-guest', 'mansion-third'].map(name => ({
 const records = new Map(seeds.map(seed => [seed.id, structuredClone(seed)]));
 const writes = [];
 let failProtectedWrite = false;
+let failTradeWrite = false, loseTradeResponse = false;
 process.env.ADMIN_SESSION_SECRET = 'mansion-isolated-test';
 AWS.S3.prototype.makeRequest = function (operation) {
     if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
@@ -48,6 +49,28 @@ DynamoDBDocumentClient.prototype.send = async command => {
         if (input.TableName === 'rpgenius_user') return { Item: structuredClone(records.get(input.Key.id)) };
     }
     if (command.constructor.name === 'ScanCommand') return { Items: input.TableName === 'rpgenius_user' ? [...records.values()].map(record => structuredClone(record)) : [] };
+    if (command.constructor.name === 'TransactWriteCommand' && input.TransactItems.every(entry => entry.Update?.TableName === 'rpgenius_user')) {
+        if (failTradeWrite) { failTradeWrite = false; throw new Error('simulated trade transaction failure'); }
+        const staged = new Map();
+        for (const { Update: update } of input.TransactItems) {
+            const record = structuredClone(records.get(update.Key.id));
+            const reject = () => { const error = new Error('simulated concurrent trade change'); error.name = 'TransactionCanceledException'; throw error; };
+            if (!record) reject();
+            for (const match of update.ConditionExpression.matchAll(/(#k\d+)\s*=\s*(:p\d+)/g)) {
+                if (!require('node:util').isDeepStrictEqual(record[update.ExpressionAttributeNames[match[1]]], update.ExpressionAttributeValues[match[2]])) reject();
+            }
+            for (const match of update.ConditionExpression.matchAll(/attribute_not_exists\((#k\d+)\)/g)) {
+                if (Object.hasOwn(record, update.ExpressionAttributeNames[match[1]])) reject();
+            }
+            for (const match of update.UpdateExpression.matchAll(/(#\w+)\s*=\s*(:\w+)/g)) record[update.ExpressionAttributeNames[match[1]]] = structuredClone(update.ExpressionAttributeValues[match[2]]);
+            for (const match of (update.UpdateExpression.split('REMOVE ')[1] || '').matchAll(/#\w+/g)) delete record[update.ExpressionAttributeNames[match[0]]];
+            staged.set(update.Key.id, record);
+        }
+        for (const [id, record] of staged) records.set(id, record);
+        writes.push(...input.TransactItems.map(entry => structuredClone(entry.Update)));
+        if (loseTradeResponse) { loseTradeResponse = false; throw new Error('simulated lost transaction response'); }
+        return {};
+    }
     if (command.constructor.name === 'UpdateCommand' && input.TableName === 'rpgenius_user') {
         if (failProtectedWrite && input.ConditionExpression?.startsWith('attribute_exists(id) AND')) {
             failProtectedWrite = false;
@@ -87,7 +110,13 @@ before(async () => {
     base = 'http://127.0.0.1:' + listener.address().port;
 });
 after(async () => {
-    for (const seed of seeds) { party.leaveRoom(seed.name); rpg.clearFieldRuntimeTimers(seed.name); }
+    for (const seed of seeds) {
+        const state = rpg.getDirectTradeState(seed.name);
+        const user = await rpg.getRPGUserByName(seed.name);
+        if (state.status === 'active') await rpg.cancelTradeByUser(user);
+        if (state.status === 'outgoing') rpg.cancelTradeRequest(user);
+        party.leaveRoom(seed.name); rpg.clearFieldRuntimeTimers(seed.name);
+    }
     await new Promise(resolve => listener.close(resolve));
 });
 function cookie(name, admin = false) {
@@ -424,6 +453,77 @@ test('파티 준비 API는 레이드 표지, 메인 카드와 물약 이미지�
     } finally { party.leaveRoom(user.name); }
 });
 
+test('파티 스냅샷과 전투 tick은 반올림된 잔여 시간이 아닌 실제 쿨타임 종료 시각을 유지한다', async () => {
+    const room = await battle(); const member = room.members[0];
+    let now = Date.now() + 37;
+    mock.method(Date, 'now', () => now);
+    const deadlines = { actionUntil: now + 1234, potionUntil: now + 2678, cooldownsUntil: { test: now + 5678 } };
+    Object.assign(member.runtime, structuredClone(deadlines));
+    const chunks = [];
+    member.sseRes = { writableEnded: false, write: chunk => chunks.push(chunk) };
+    try {
+        const snapshot = party.getMyRoomSnapshot(member.name);
+        assert.equal(snapshot.serverNow, now);
+        for (const [key, value] of Object.entries(deadlines)) assert.deepEqual(snapshot.members[0].runtime[key], value);
+        assert.equal(snapshot.members[0].runtime.actionCdRemain, 1.2);
+        now += 237; tick(room);
+        const payload = JSON.parse(chunks[chunks.findLastIndex(chunk => chunk === 'event: tick\n') + 1].slice(6));
+        assert.equal(payload.serverNow, now);
+        for (const [key, value] of Object.entries(deadlines)) assert.deepEqual(payload.members[0].runtime[key], value);
+        snapshot.members[0].runtime.cooldownsUntil.test = 0;
+        assert.equal(member.runtime.cooldownsUntil.test, deadlines.cooldownsUntil.test, '직렬화된 맵은 전투 상태와 독립적이다');
+    } finally { member.sseRes = null; mock.restoreAll(); }
+});
+
+test('공격·스킬·물약 API는 실제 감소된 쿨타임을 반환하고 거절된 행동은 새 쿨타임을 만들지 않는다', async () => {
+    const room = await battle(); const member = room.members[0];
+    const skill = member.skills.find(name => member.skillDefs[name]?.type === 'active' && member.skillDefs[name].mp > 0);
+    assert.ok(skill); const definition = member.skillDefs[skill];
+    Object.assign(member.baseSnapshot.stats, { cooldown: .5, skillCooldown: 0 });
+    const now = Date.now() + 43;
+    mock.method(Date, 'now', () => now);
+    room.awaitingChoices = false;
+    try {
+        member.runtime.mp = 0;
+        const denied = await request('/api/party/skill', { skill });
+        assert.equal(denied.status, 400); assert.match(denied.data.error, /MP/);
+        assert.equal(denied.data.cooldowns.actionUntil, 0); assert.deepEqual(denied.data.cooldowns.cooldownsUntil, {});
+        member.runtime.mp = 1000000;
+        const used = await request('/api/party/skill', { skill });
+        assert.equal(used.status, 200, JSON.stringify(used));
+        assert.equal(used.data.cooldowns.serverNow, now); assert.equal(used.data.cooldowns.roomId, room.id);
+        assert.equal(used.data.cooldowns.cooldownsUntil[skill], now + Math.max(500, definition.cd * .5 * 1000));
+        assert.equal(used.data.cooldowns.actionUntil, member.runtime.actionUntil);
+        const repeat = await request('/api/party/skill', { skill });
+        assert.equal(repeat.status, 400); assert.deepEqual(repeat.data.cooldowns, used.data.cooldowns);
+        const attack = await request('/api/party/attack', {});
+        assert.equal(attack.status, 400); assert.deepEqual(attack.data.cooldowns, used.data.cooldowns);
+        member.runtime.actionUntil = 0;
+        const attacked = await request('/api/party/attack', {});
+        assert.equal(attacked.status, 200); assert.equal(attacked.data.cooldowns.actionUntil, member.runtime.actionUntil);
+        member.potions = [{ name: '상급 체력 포션', count: 2 }];
+        const potion = await request('/api/party/use-potion', { name: '상급 체력 포션' });
+        assert.equal(potion.status, 200); assert.equal(potion.data.cooldowns.potionUntil, now + 3000);
+        const potionRepeat = await request('/api/party/use-potion', { name: '상급 체력 포션' });
+        assert.equal(potionRepeat.status, 400); assert.deepEqual(potionRepeat.data.cooldowns, potion.data.cooldowns);
+        assert.equal(member.potions[0].count, 1);
+    } finally { room.awaitingChoices = true; mock.restoreAll(); }
+});
+
+test('부타게임 지원군 X가 초기화한 스킬 쿨타임은 빈 종료 시각 맵으로 전달된다', async () => {
+    const user = await reset();
+    assert.ok((await party.createRoom(user.name, 'butaGame')).roomId);
+    party.setReady(user.name, true); assert.equal((await party.start(user.name)).ok, true);
+    const room = party.getRoomOf(user.name); room.introUntil = 0; room.awaitingChoices = true; room.supportGauge = 100;
+    const member = room.members[0];
+    member.runtime.cooldownsUntil = { test: Date.now() + 60000 };
+    member.runtime.actionUntil = Date.now() + 2500;
+    assert.equal(party.useSupportSkill(user.name, 'X').ok, true);
+    assert.deepEqual(party.getMyRoomSnapshot(user.name).members[0].runtime.cooldownsUntil, {});
+    assert.deepEqual(party.getMyCooldownState(user.name).cooldownsUntil, {});
+    assert.equal(party.getMyCooldownState(user.name).actionUntil, member.runtime.actionUntil);
+});
+
 test('기둥은 0.5초 조작 간격을 검사하며 공용 하중 6 성공과 노말 피해·하드 전멸을 판정한다', async () => {
     let room = await battle('normal', 2); let event = fixedGimmick(room, 0);
     event.loads = [7, 5, 7, 5];
@@ -487,6 +587,27 @@ test('석재는 성공 구간 밖에서도 완성 요청을 받아 실패를 판
         assert.equal(mon.bossState.gimmickActive, null);
         assert.equal(mon.bossState.events.length, 0);
         assert.equal(room.members[0].runtime.hp, 500000);
+    }
+});
+
+test('석재는 0.1초마다 0.1% 증가하며 전투 틱 사이의 완성 요청에도 같은 진행률로 판정한다', async () => {
+    for (const difficulty of ['normal', 'hard', 'nightmare']) {
+        const room = await battle(difficulty); const mon = room.monster;
+        let now = Date.now(); const clock = mock.method(Date, 'now', () => now);
+        try {
+            const event = fixedGimmick(room, 1); const max = event.hpMax;
+            now += 99; assert.equal(raid.view(mon).events[0].damage, 0);
+            now++; assert.equal(raid.view(mon).events[0].damage, max * .001);
+            now += 100; mon.bossState.gimmickActive.tick(room, mon, .2);
+            assert.equal(event.damage, max * .002);
+            party.__test.applyBossHpDamage(room, mon, max * .1);
+            assert.equal(event.damage, max * .102, '같은 시점의 공격은 자동 진행을 중복 적용하지 않는다');
+            event.damage = Math.round(max * (event.minPct - .001));
+            now += 100;
+            assert.equal(raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' }).ok, true);
+            assert.equal(mon.bossState.outcome.ok, true);
+            assert.equal(mon.bossState.events.length, 0);
+        } finally { clock.mock.restore(); }
     }
 });
 
@@ -784,6 +905,205 @@ test('레이드 보상은 티켓, 가챠, 카드, 펫과 아티팩트의 이미�
     assert.equal(new URL(all.find(item => item.kind === 'pet').iconUrl, base).searchParams.get('dir'), '펫');
 });
 
+async function prepareDirectTrade() {
+    for (const seed of seeds) {
+        const state = rpg.getDirectTradeState(seed.name), user = await rpg.getRPGUserByName(seed.name);
+        if (state.status === 'active') await rpg.cancelTradeByUser(user);
+        if (state.status === 'outgoing') rpg.cancelTradeRequest(user);
+    }
+    for (const seed of seeds) await reset(seed.name);
+    const sent = await request('/api/trade/request', { name: seeds[1].name });
+    assert.equal(sent.status, 200, JSON.stringify(sent));
+    const accepted = await request('/api/trade/accept', { requestId: sent.data.state.request.id }, seeds[1].name);
+    assert.equal(accepted.status, 200, JSON.stringify(accepted));
+    return (await request('/api/trade')).data.state;
+}
+const tradeVersion = state => ({ sessionId: state.session.id, revision: state.session.revision });
+
+test('웹 거래는 채팅처럼 진행 중인 아이템 선택과 편린을 먼저 처리하고 낚시를 중단한다', async () => {
+    for (const seed of seeds) await reset(seed.name);
+    for (const blocked of [{ need_character_card_select: true }, { pendingFragment: { count: 1 } }, { pendingAction: { type: '캐릭터변환' } }]) {
+        const user = await reset(); Object.assign(user, blocked); await user.save();
+        assert.equal((await request('/api/trade/request', { name: seeds[1].name })).status, 409);
+        assert.equal(rpg.getDirectTradeState(user.name).status, 'idle');
+    }
+    const sender = await reset(); sender.fishing = true; await sender.save();
+    const sent = await request('/api/trade/request', { name: seeds[1].name }); assert.equal(sent.status, 200);
+    assert.equal((await rpg.getRPGUserByName(sender.name)).fishing, false);
+    const receiver = await rpg.getRPGUserByName(seeds[1].name); receiver.pendingAction = { type: '캐릭터변환' }; await receiver.save();
+    assert.equal((await request('/api/trade/accept', { requestId: sent.data.state.request.id }, receiver.name)).status, 409);
+    assert.equal(rpg.getDirectTradeState(receiver.name).status, 'incoming');
+    assert.equal((await request('/api/trade/request-cancel', { requestId: sent.data.state.request.id })).status, 200);
+    receiver.pendingAction = null; await receiver.save();
+});
+
+test('1:1거래 API는 인증과 본인 거래만 허용하고 채팅에서 보낸 신청을 같은 세션으로 수락한다', async () => {
+    for (const seed of seeds) await reset(seed.name);
+    assert.equal((await request('/api/trade', undefined, null)).status, 401);
+    assert.equal((await request('/api/trade/request', { name: '없는 테스트 유저' })).status, 404);
+    const replies = []; let receive;
+    const channel = { channelId: 'web-chat:isolated-trade', sendChat: text => { replies.push(text); receive(); } };
+    const reply = new Promise(resolve => { receive = resolve; });
+    assert.equal(await rpg.onChat({ text: '/RPGenius 거래신청 ' + seeds[1].name, getSenderInfo: () => ({ userId: seeds[0].id }) }, channel,
+        { getUser: () => rpg.getRPGUserByName(seeds[0].name), queueKey: 'account:' + seeds[0].id }), true);
+    await reply; assert.match(replies.at(-1), /거래를 신청/);
+    const incoming = (await request('/api/trade', undefined, seeds[1].name)).data.state;
+    assert.equal(incoming.status, 'incoming'); assert.equal(incoming.request.partnerName, seeds[0].name);
+    assert.equal((await request('/api/trade/accept', { requestId: incoming.request.id }, seeds[2].name)).status, 409);
+    assert.equal((await request('/api/trade/accept', { requestId: incoming.request.id }, seeds[1].name)).status, 200);
+    const state = (await request('/api/trade')).data.state;
+    const registered = await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 100 });
+    assert.equal(registered.status, 200, JSON.stringify(registered));
+    assert.equal(rpg.getDirectTradeState(seeds[1].name).session.partnerOffer.gold, 100);
+    const outsider = (await request('/api/trade', undefined, seeds[2].name)).data.state;
+    assert.equal(outsider.status, 'idle'); assert.equal(outsider.session, undefined); assert.equal(outsider.partner, null);
+    assert.equal((await request('/api/trade/cancel', tradeVersion(state), seeds[2].name)).status, 409);
+    assert.equal((await request('/api/trade/cancel', tradeVersion(registered.data.state))).status, 200);
+    assert.equal((await rpg.getRPGUserByName(seeds[0].name)).gold, 1000000000);
+});
+
+test('품목 변경은 양쪽 확정을 해제하고 중복 등록과 이전 내역으로 보낸 확정을 거부한다', async () => {
+    let state = await prepareDirectTrade();
+    const body = { ...tradeVersion(state), kind: 'gold', amount: 1000 };
+    const added = await request('/api/trade/register', body); assert.equal(added.status, 200, JSON.stringify(added)); state = added.data.state;
+    assert.equal((await request('/api/trade/register', body)).status, 409);
+    assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+    const stale = tradeVersion(state);
+    const changed = await request('/api/trade/register', { ...stale, kind: 'garnet', amount: 1 }, seeds[1].name);
+    assert.equal(changed.status, 409, '가넷이 부족하면 품목/확정 상태를 변경하지 않는다');
+    const user = await rpg.getRPGUserByName(seeds[1].name); user.garnet = 50; await user.save();
+    const changedAgain = await request('/api/trade/register', { ...stale, kind: 'garnet', amount: 10 }, seeds[1].name);
+    assert.equal(changedAgain.status, 200, JSON.stringify(changedAgain)); state = changedAgain.data.state;
+    assert.equal(state.session.confirmed, false); assert.equal(state.session.partnerConfirmed, false);
+    assert.equal((await request('/api/trade/confirm', stale)).status, 409);
+    assert.equal(state.session.partnerOffer.net.gold, 950); assert.equal(state.session.partnerOffer.fees.gold, 50);
+    assert.equal((await request('/api/trade/cancel', tradeVersion(state), seeds[1].name)).status, 200);
+    assert.equal((await rpg.getRPGUserByName(seeds[0].name)).gold, 1000000000);
+    assert.equal((await rpg.getRPGUserByName(seeds[1].name)).garnet, 50);
+});
+
+test('1:1거래는 카드 거래권, 재화 수수료와 아티팩트 옵션/거래 횟수를 기존 규칙대로 정산한다', async () => {
+    let state = await prepareDirectTrade();
+    let a = await rpg.getRPGUserByName(seeds[0].name), b = await rpg.getRPGUserByName(seeds[1].name);
+    a.inventory.card.push({ id: 0, star: 6, type: '일반', skin: '테스트' });
+    const equip = rpg.grantArtifact(a, '레전더리'); equip.artifact.rerollsUsed = 2; const original = structuredClone(equip);
+    b.garnet = 100; const ticketId = data.Item.findIndex(item => item?.name === '거래권'); rpg.addInventoryItem(b, ticketId, 5);
+    await a.save(); await b.save();
+    const candidates = (await request('/api/trade/inventory')).data;
+    assert.equal(candidates.equipment[0].artifact.options.length, 3);
+    for (const [kind, entry] of [['card', candidates.cards[0]], ['equipment', candidates.equipment[0]]]) {
+        const out = await request('/api/trade/register', { ...tradeVersion(state), kind, number: entry.number, version: entry.version });
+        assert.equal(out.status, 200, JSON.stringify({ kind, ...out })); state = out.data.state;
+    }
+    let out = await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 1000 });
+    assert.equal(out.status, 200); state = out.data.state;
+    out = await request('/api/trade/register', { ...tradeVersion(state), kind: 'garnet', amount: 10 }, seeds[1].name);
+    assert.equal(out.status, 200); state = out.data.state;
+    assert.equal(state.session.partnerOffer.ticketCost, 3);
+    assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+    out = await request('/api/trade/confirm', tradeVersion(state), seeds[1].name);
+    assert.equal(out.status, 200, JSON.stringify(out)); assert.equal(out.data.state.result.status, 'completed');
+    a = await rpg.getRPGUserByName(a.name); b = await rpg.getRPGUserByName(b.name);
+    assert.equal(a.gold, 1000000000 - 1000); assert.equal(a.garnet, 9); assert.equal(b.gold, 1000000000 + 950); assert.equal(b.garnet, 90);
+    assert.equal(rpg.getInventoryItemCount(b, ticketId), 2); assert.equal(b.inventory.card[0].skin, undefined);
+    assert.equal(b.inventory.equipment[0].uid, original.uid); assert.deepEqual(b.inventory.equipment[0].artifact, original.artifact);
+    assert.equal(b.inventory.equipment[0].tradeCount, 1); assert.equal(rpg.getEquipmentTradeLimitInfo(b.inventory.equipment[0]).remaining, 0);
+    assert.equal(a.tradeEscrow, undefined); assert.equal(b.tradeEscrow, undefined);
+    assert.equal((await request('/api/trade/confirm', tradeVersion(state), seeds[1].name)).status, 409);
+    assert.equal((await rpg.getRPGUserByName(b.name)).gold, 1000000950);
+});
+
+test('거래 저장 실패는 양쪽 자산과 보관 품목을 유지하며 응답 유실은 중복 지급 없이 완료한다', async () => {
+    for (const mode of ['fail', 'lost']) {
+        let state = await prepareDirectTrade();
+        const added = await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 1000 }); state = added.data.state;
+        assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+        if (mode === 'fail') failTradeWrite = true; else loseTradeResponse = true;
+        const completed = await request('/api/trade/confirm', tradeVersion(state), seeds[1].name);
+        assert.equal(completed.status, mode === 'fail' ? 500 : 200, JSON.stringify(completed));
+        const a = await rpg.getRPGUserByName(seeds[0].name), b = await rpg.getRPGUserByName(seeds[1].name);
+        if (mode === 'fail') {
+            assert.equal(a.gold, 999999000); assert.equal(b.gold, 1000000000);
+            assert.equal(a.tradeEscrow.offer.gold, 1000); assert.equal(b.tradeEscrow.offer.gold, 0);
+            const latest = (await request('/api/trade')).data.state;
+            assert.equal(latest.session.confirmed, false); assert.equal(latest.session.partnerConfirmed, false);
+            assert.equal((await request('/api/trade/cancel', tradeVersion(latest))).status, 200);
+            assert.equal((await rpg.getRPGUserByName(a.name)).gold, 1000000000);
+        } else {
+            assert.equal(a.gold, 999999000); assert.equal(b.gold, 1000000950); assert.equal(completed.data.state.result.status, 'completed');
+            assert.equal(a.tradeEscrow, undefined); assert.equal(b.tradeEscrow, undefined);
+        }
+    }
+});
+
+test('아이템 거래는 귀속 수량과 이전 보유 목록을 제외하고 취소 시 등록한 수량을 반환한다', async () => {
+    let state = await prepareDirectTrade(); const user = await rpg.getRPGUserByName(seeds[0].name);
+    const id = data.Item.findIndex(item => item?.name === '황금 주머니');
+    rpg.addInventoryItem(user, id, 5); user.boundItems = { [id]: 2 }; await user.save();
+    let candidate = (await request('/api/trade/inventory')).data.items.find(item => item.id === id);
+    assert.equal(candidate.count, 3);
+    const base = { ...tradeVersion(state), kind: 'item', itemId: id, version: candidate.version };
+    assert.equal((await request('/api/trade/register', { ...base, count: 4 })).status, 409);
+    const added = await request('/api/trade/register', { ...base, count: 3 }); assert.equal(added.status, 200, JSON.stringify(added)); state = added.data.state;
+    assert.equal((await rpg.getRPGUserByName(user.name)).inventory.item.find(item => item.id === id).count, 2);
+    assert.equal(state.session.offer.items[0].count, 3); assert.ok(state.session.offer.items[0].iconUrl);
+    assert.equal((await request('/api/trade/register', { ...base, ...tradeVersion(state), count: 1 })).status, 409);
+    assert.equal((await request('/api/trade/cancel', tradeVersion(state))).status, 200);
+    const restored = await rpg.getRPGUserByName(user.name);
+    assert.equal(rpg.getInventoryItemCount(restored, id), 5); assert.equal(rpg.getBoundItemCount(restored, id), 2);
+});
+
+test('동시에 확정과 취소가 도착해도 정산을 시작한 거래는 한 번만 완료한다', async () => {
+    let state = await prepareDirectTrade();
+    state = (await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 1000 })).data.state;
+    assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+    const send = DynamoDBDocumentClient.prototype.send;
+    let release, entered;
+    const held = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { entered = resolve; });
+    const control = mock.method(DynamoDBDocumentClient.prototype, 'send', async function (command) {
+        if (command.constructor.name === 'TransactWriteCommand') { entered(); await held; }
+        return send.call(this, command);
+    });
+    try {
+        const completing = request('/api/trade/confirm', tradeVersion(state), seeds[1].name);
+        await started;
+        assert.equal((await request('/api/trade/cancel', tradeVersion(state))).status, 409);
+        assert.equal((await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 1000 })).status, 409);
+        release(); assert.equal((await completing).status, 200);
+        assert.equal((await rpg.getRPGUserByName(seeds[0].name)).gold, 999999000);
+        assert.equal((await rpg.getRPGUserByName(seeds[1].name)).gold, 1000000950);
+    } finally { release(); control.mock.restore(); }
+});
+
+test('자물쇠 화면은 실제 열쇠 수량을 제공하며 개봉 결과에는 소모 후 수량을 제공한다', async () => {
+    const user = await reset(); const id = data.Item.findIndex(item => item?.name === '지니어스의 열쇠');
+    assert.ok(id >= 0); rpg.addInventoryItem(user, id, 25); await user.save();
+    assert.equal((await request('/api/lockbox', undefined, null)).status, 401);
+    const before = await request('/api/lockbox');
+    assert.equal(before.data.keyCount, 25); assert.match(before.data.keyIconUrl, /지니어스|%EC%A7%80/);
+    const lockbox = data.Item.find(item => item?.name === '봉인된 자물쇠');
+    const need = lockbox.require.find(entry => entry.id === id).count;
+    const opened = await request('/api/inventory/use-lockbox', { count: 1 });
+    assert.equal(opened.status, 200, JSON.stringify(opened)); assert.equal(opened.data.keyCount, 25 - need);
+    assert.equal((await request('/api/lockbox')).data.keyCount, 25 - need);
+});
+
+test('거래소 판매 후보와 올라온 아티팩트는 모든 조건, 능력, 수치와 재설정 횟수를 제공한다', async () => {
+    const user = await reset(); const equip = rpg.grantArtifact(user, '레전더리'); equip.artifact.rerollsUsed = 2; await user.save();
+    const sellable = await request('/api/auction/sellable');
+    const artifact = sellable.data.equipment[0].artifact;
+    assert.equal(artifact.options.length, 3); assert.equal(artifact.rerollsUsed, 2); assert.equal(artifact.uid, equip.uid);
+    for (const option of artifact.options) { assert.ok(option.conditionPrefix && option.conditionValue && option.abilityLabel); assert.ok(option.n >= 1 && option.n <= 10); }
+    data.Auction = { items: [{ id: 'isolated-artifact', sellerName: user.name, kind: 'equipment', payload: structuredClone(equip), count: 1, currency: 'gold', price: 1000 }] };
+    await rpg.loadRpgeniusDataEntry('Auction');
+    const listed = await request('/api/auction', undefined, seeds[1].name);
+    const view = listed.data.items[0].display.equipmentDetail.artifact;
+    assert.equal(view.uid, equip.uid); assert.equal(view.rerollsUsed, 2);
+    assert.deepEqual(view.options.map(({ active, ...option }) => option), artifact.options.map(({ active, ...option }) => option));
+    data.Auction = { items: [] }; await rpg.loadRpgeniusDataEntry('Auction');
+});
+
 test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고 레이드 투신 포션은 중첩 없이 지속시간을 연장한다', async () => {
     const user = await reset(); const baseline = rpg.calculateUserStats(user);
     user.equipments.pet = [{ id: registration.pets.조각, level: 0 }];
@@ -800,4 +1120,30 @@ test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고
     assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true);
     const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1250);
     buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1000);
+});
+
+test('엔진을 다시 불러오면 보관한 거래 품목을 복구하고 확정은 해제한 상태로 이어간다', async () => {
+    let state = await prepareDirectTrade(); let user = await rpg.getRPGUserByName(seeds[0].name);
+    const equip = rpg.grantArtifact(user, '레전더리'); equip.artifact.rerollsUsed = 2; const original = structuredClone(equip); await user.save();
+    const candidate = (await request('/api/trade/inventory')).data.equipment[0];
+    state = (await request('/api/trade/register', { ...tradeVersion(state), kind: 'equipment', number: candidate.number, version: candidate.version })).data.state;
+    state = (await request('/api/trade/register', { ...tradeVersion(state), kind: 'gold', amount: 1000 })).data.state;
+    assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+    const snapshots = seeds.slice(0, 2).map(seed => structuredClone(records.get(seed.id)));
+    await rpg.cancelTradeByUser(await rpg.getRPGUserByName(seeds[0].name));
+    for (const record of snapshots) records.set(record.id, record);
+    const modulePath = require.resolve('../rpgenius'), cached = require.cache[modulePath];
+    let recovered;
+    try { delete require.cache[modulePath]; recovered = require('../rpgenius'); }
+    finally { require.cache[modulePath] = cached; }
+    await recovered.initRpgeniusData();
+    user = await recovered.getRPGUserByName(seeds[0].name);
+    const restored = recovered.getDirectTradeState(user.name);
+    assert.equal(restored.session.id, state.session.id); assert.equal(restored.session.revision, state.session.revision);
+    assert.equal(restored.session.confirmed, false); assert.equal(restored.session.partnerConfirmed, false);
+    assert.equal(restored.session.offer.gold, 1000); assert.deepEqual(restored.session.offer.equipments[0], original);
+    await recovered.cancelTradeByUser(user);
+    assert.equal((await recovered.getRPGUserByName(user.name)).gold, 1000000000);
+    assert.deepEqual((await recovered.getRPGUserByName(user.name)).inventory.equipment[0], original);
+    await rpg.reloadAllUsersFromDb(true);
 });

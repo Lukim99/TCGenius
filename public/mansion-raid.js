@@ -149,7 +149,9 @@
             patch(st, card, ls) {
                 const ev = card.ev;
                 const max = Math.max(1, Number(ev.hpMax) || 1);
-                const dmg = Math.max(0, Number(ev.damage) || 0);
+                const serverTime = Date.now() - Number(st.ctx.serverOffset || 0);
+                const steps = !card.expired && ev.growthNextAt ? Math.max(0, 1 + Math.floor((serverTime - ev.growthNextAt) / 100)) : 0;
+                const dmg = Math.min(max, Math.max(0, Number(ev.damage) || 0) + steps * max / 1000);
                 const pct = Math.min(100, dmg / max * 100);
                 card.gFill.style.transform = 'scaleX(' + (pct / 100) + ')';
                 card.gMark.style.left = pct + '%';
@@ -596,6 +598,7 @@
                 }
             }
             if (card.forecast) continue;
+            if (card.kind === 'sculpture') KINDS.sculpture.patch(st, card, loc(card.id));
             const ls = loc(card.id);
             if (card.cd) {
                 const left = Math.max(0, ls.cdUntil - now);

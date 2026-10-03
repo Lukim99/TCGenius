@@ -3688,6 +3688,23 @@ server.post('/api/presets/unlock', requireUser, async (req, res) => {
 // ===== 봉인된 자물쇠 =====
 const LOCKBOX_ITEM_NAME = '봉인된 자물쇠';
 
+function buildLockboxKeys(user) {
+    const items = rpgenius.getDataCache('Item', []);
+    const id = items.findIndex(item => item && item.name === '지니어스의 열쇠');
+    return { keyCount: id < 0 ? 0 : rpgenius.getInventoryItemCount(user, id), keyIconUrl: id < 0 ? null : getItemIconUrl(items[id]) };
+}
+
+server.get('/api/lockbox', requireUser, async (req, res) => {
+    try {
+        const user = await rpgenius.getRPGUserByName(req.session.name);
+        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        res.json(buildLockboxKeys(user));
+    } catch (e) {
+        console.error('lockbox keys error:', e);
+        res.status(500).json({ error: '열쇠 수량을 불러오지 못했습니다.' });
+    }
+});
+
 server.post('/api/inventory/lockbox-check', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -3721,7 +3738,7 @@ server.post('/api/inventory/use-lockbox', requireUser, async (req, res) => {
             };
         };
         const opens = out.opens.map(o => ({ main: o.main.map(enrich), bonus: o.bonus.map(enrich) }));
-        res.json({ ok: true, opens });
+        res.json({ ok: true, opens, ...buildLockboxKeys(user) });
     } catch (e) {
         console.error('lockbox error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -4315,12 +4332,134 @@ server.post('/api/hotdeal/buy', requireUser, async (req, res) => {
 
 // ===== 경매장 =====
 
+// 채팅 거래와 같은 세션을 사용한다. 상대방 잔액/인벤토리는 이 응답에 포함하지 않는다.
+function directTradeOfferView(offer, viewer) {
+    const items = rpgenius.getDataCache('Item', []);
+    const context = { user: viewer, entries: buildInventoryEquipment(viewer), setCache: {} };
+    const fees = { gold: Math.round(Number(offer.gold || 0) * rpgenius.TRADE_FEE_RATE), garnet: Math.round(Number(offer.garnet || 0) * rpgenius.TRADE_FEE_RATE) };
+    return {
+        gold: Number(offer.gold || 0), garnet: Number(offer.garnet || 0),
+        fees, net: { gold: Number(offer.gold || 0) - fees.gold, garnet: Number(offer.garnet || 0) - fees.garnet },
+        ticketCost: (offer.cards || []).reduce((sum, card) => sum + rpgenius.getCardTicketCost(card), 0),
+        cards: (offer.cards || []).map(card => serializeCard(card, viewer)).filter(Boolean),
+        equipment: (offer.equipments || []).map(payload => serializeAuctionEntry({ kind: 'equipment', payload }, viewer.name, context).display.equipmentDetail).filter(Boolean),
+        items: Object.entries(offer.items || {}).filter(([, count]) => count > 0).map(([id, count]) => ({ id: Number(id), count, name: items[id]?.name || '아이템', ...getItemDisplayAssets(items[id]) }))
+    };
+}
+
+async function buildDirectTradeState(user) {
+    const state = rpgenius.getDirectTradeState(user.name);
+    const partnerName = state.session?.partnerName || state.request?.partnerName;
+    const partner = partnerName ? await rpgenius.getRPGUserByName(partnerName) : null;
+    const ticketId = rpgenius.getDataCache('Item', []).findIndex(item => item && item.name === '거래권');
+    const player = entry => entry ? { name: entry.name, level: entry.level, mainCard: serializeCard(entry.main_card, entry) } : null;
+    if (state.session) {
+        state.session.offer = directTradeOfferView(state.session.offer, user);
+        state.session.partnerOffer = directTradeOfferView(state.session.partnerOffer, user);
+    }
+    if (state.result?.receivedOffer) state.result.receivedOffer = directTradeOfferView(state.result.receivedOffer, user);
+    return { ...state, me: player(user), partner: player(partner), serverNow: Date.now(), feeRate: rpgenius.TRADE_FEE_RATE,
+        ticketIconUrl: ticketId < 0 ? null : getItemIconUrl(rpgenius.getDataCache('Item', [])[ticketId]),
+        cardSpace: rpgenius.getRemainingCardInventorySpace(user),
+        balances: { gold: Number(user.gold || 0), garnet: Number(user.garnet || 0), tickets: ticketId < 0 ? 0 : rpgenius.getInventoryItemCount(user, ticketId) } };
+}
+
+function directTradeRoute(method, path, handle) {
+    server[method](path, requireUser, async (req, res) => {
+        try {
+            const seed = await rpgenius.getRPGUserByName(req.session.name);
+            if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+            const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+                const user = await rpgenius.getRPGUserByName(req.session.name);
+                if (method === 'post') {
+                    if (!['/api/trade/cancel', '/api/trade/request-cancel', '/api/trade/unconfirm'].includes(path)) {
+                        if (user.need_character_card_select) tradeFail('먼저 시작 캐릭터를 선택해주세요.', 409);
+                        if (user.pendingFragment) tradeFail('먼저 편린 보상을 받아주세요.', 409);
+                        if (user.pendingAction) tradeFail('먼저 진행 중인 작업을 완료하거나 취소해주세요.', 409);
+                    }
+                    await rpgenius.stopFishingForCommand(user);
+                }
+                const extra = await handle(user, req.body || {});
+                const current = await rpgenius.getRPGUserByName(req.session.name);
+                return { ...extra, state: await buildDirectTradeState(current), ...(method === 'post' ? { profile: buildUserProfile(current) } : {}) };
+            });
+            res.json(payload);
+        } catch (error) {
+            if (!error.status) console.error('direct trade error:', error);
+            res.status(error.status || 500).json({ error: error.status ? error.message : '거래 저장에 실패했습니다. 현재 내역을 확인하고 다시 시도해주세요.' });
+        }
+    });
+}
+
+const tradeFail = (message, status = 400) => { throw Object.assign(new Error(String(message).replace(/^❌\s*/, '')), { status }); };
+const checkTradeMessage = message => { if (String(message || '').startsWith('❌')) tradeFail(message, 409); };
+const expectedTrade = body => {
+    if (typeof body.sessionId !== 'string' || !body.sessionId || !Number.isSafeInteger(body.revision) || body.revision < 0) tradeFail('현재 거래 내역을 다시 확인해주세요.', 409);
+    return { sessionId: body.sessionId, revision: body.revision };
+};
+
+directTradeRoute('get', '/api/trade', () => ({}));
+directTradeRoute('get', '/api/trade/inventory', user => {
+    if (rpgenius.getDirectTradeState(user.name).status !== 'active') tradeFail('진행 중인 거래가 없습니다.', 409);
+    const versions = { cards: inventoryVersion(user, 'cards'), equipment: inventoryVersion(user, 'equipment'), items: inventoryVersion(user, 'items') };
+    return {
+        cards: buildInventoryCards(user).map(entry => ({ ...entry, version: versions.cards })),
+        equipment: buildInventoryEquipment(user).filter(entry => entry.source === 'inventory' && !rpgenius.getEquipmentTradeBlockReason(user.inventory.equipment[entry.index], user.name)).map(entry => ({ ...entry, version: versions.equipment })),
+        items: buildInventoryItems(user).filter(item => !item.noTrade).map(item => ({ ...item, version: versions.items, count: rpgenius.getTradableItemCount(user, item.id) })).filter(item => item.count > 0)
+    };
+});
+directTradeRoute('post', '/api/trade/request', async (user, body) => {
+    const name = String(body.name || '').trim();
+    if (!name || name.length > 100) tradeFail('상대방 닉네임을 입력해주세요.');
+    if (!await rpgenius.getRPGUserByName(name)) tradeFail('해당 닉네임의 유저를 찾을 수 없습니다.', 404);
+    checkTradeMessage(rpgenius.createTradeRequest(user, name));
+    return { ok: true };
+});
+directTradeRoute('post', '/api/trade/request-cancel', (user, body) => {
+    if (typeof body.requestId !== 'string' || !body.requestId) tradeFail('거래 신청을 다시 확인해주세요.', 409);
+    checkTradeMessage(rpgenius.cancelTradeRequest(user, body.requestId)); return { ok: true };
+});
+directTradeRoute('post', '/api/trade/accept', async (user, body) => {
+    if (typeof body.requestId !== 'string' || !body.requestId) tradeFail('거래 신청을 다시 확인해주세요.', 409);
+    checkTradeMessage(await rpgenius.acceptTradeRequest(user, body.requestId)); return { ok: true };
+});
+directTradeRoute('post', '/api/trade/register', async (user, body) => {
+    const expected = expectedTrade(body);
+    const kinds = { card: 'cards', equipment: 'equipment', item: 'items' };
+    let args;
+    if (body.kind === 'gold' || body.kind === 'garnet') {
+        if (!Number.isSafeInteger(body.amount) || body.amount < 1) tradeFail('등록할 수량을 입력해주세요.');
+        args = ['거래등록', body.kind === 'gold' ? '골드' : '가넷', String(body.amount)];
+    } else if (Object.hasOwn(kinds, body.kind)) {
+        if (body.version !== inventoryVersion(user, kinds[body.kind])) tradeFail('보유 목록이 변경되었습니다. 다시 선택해주세요.', 409);
+        if (body.kind === 'item') {
+            const item = rpgenius.getDataCache('Item', [])[body.itemId];
+            if (!Number.isSafeInteger(body.itemId) || !item || !Number.isSafeInteger(body.count) || body.count < 1) tradeFail('등록할 아이템과 수량을 확인해주세요.');
+            args = ['거래등록', '아이템', item.name, String(body.count)];
+        } else {
+            if (!Number.isSafeInteger(body.number) || body.number < 1) tradeFail('등록할 대상을 선택해주세요.');
+            args = ['거래등록', body.kind === 'card' ? '카드' : '장비', String(body.number)];
+        }
+    } else tradeFail('등록할 품목을 선택해주세요.');
+    checkTradeMessage(await rpgenius.registerTradeOffer(user, args, expected));
+    return { ok: true };
+});
+directTradeRoute('post', '/api/trade/confirm', async (user, body) => {
+    checkTradeMessage(await rpgenius.confirmTrade(user, null, expectedTrade(body))); return { ok: true };
+});
+directTradeRoute('post', '/api/trade/unconfirm', (user, body) => {
+    checkTradeMessage(rpgenius.unconfirmTrade(user, expectedTrade(body))); return { ok: true };
+});
+directTradeRoute('post', '/api/trade/cancel', async (user, body) => {
+    checkTradeMessage(await rpgenius.cancelTradeByUser(user, null, expectedTrade(body))); return { ok: true };
+});
+
 server.get('/api/auction', requireUser, async (req, res) => {
     try {
         const list = await getAuctionList();
         const me = req.session.name;
         const user = await rpgenius.getRPGUserByName(me);
-        const equipmentContext = { entries: user ? buildInventoryEquipment(user) : [], setCache: {} };
+        const equipmentContext = { user, entries: user ? buildInventoryEquipment(user) : [], setCache: {} };
         res.json({ items: list.map(entry => serializeAuctionEntry(entry, me, equipmentContext)) });
     } catch (e) {
         console.error('auction list error:', e);
@@ -4552,8 +4691,7 @@ server.post('/api/party/use-potion', requirePartyQuest, async (req, res) => {
     try {
         const name = String((req.body && req.body.name) || '').trim();
         const out = await partyquest.usePotion(req.session.name, name);
-        if (out.error) return res.status(400).json({ error: out.error });
-        res.json(out);
+        res.status(out.error ? 400 : 200).json({ ...out, cooldowns: partyquest.getMyCooldownState(req.session.name) });
     } catch (e) {
         console.error('party use-potion error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -4579,16 +4717,14 @@ server.post('/api/party/restart', requirePartyQuest, (req, res) => {
 
 server.post('/api/party/attack', requirePartyQuest, (req, res) => {
     const out = partyquest.attackMobPhase(req.session.name);
-    if (out.error) return res.status(400).json({ error: out.error });
-    res.json(out);
+    res.status(out.error ? 400 : 200).json({ ...out, cooldowns: partyquest.getMyCooldownState(req.session.name) });
 });
 
 server.post('/api/party/skill', requirePartyQuest, (req, res) => {
     const skill = String((req.body && req.body.skill) || '').trim();
     const target = req.body && req.body.target ? String(req.body.target) : null;
     const out = partyquest.useSkill(req.session.name, skill, target);
-    if (out.error) return res.status(400).json({ error: out.error });
-    res.json(out);
+    res.status(out.error ? 400 : 200).json({ ...out, cooldowns: partyquest.getMyCooldownState(req.session.name) });
 });
 
 server.post('/api/party/pick-skill', requirePartyQuest, (req, res) => {
@@ -7727,6 +7863,8 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
                 rarity: rpgenius.getEquipmentRarityLabel(data, entry.payload || {}),
                 level,
                 equipped: false,
+                baseRarity: data.rarity,
+                artifact: type === 'artifact' && equipmentContext && equipmentContext.user ? rpgenius.getArtifactView(equipmentContext.user, entry.payload) : null,
                 statLines: statLines || [],
                 description: data.desc || '',
                 passive,
@@ -7833,6 +7971,7 @@ function buildSellableAssets(user) {
                 boundOwner: rpgenius.isEquipmentBindingEnabled() ? (eq.boundOwner || null) : null,
                 tradeCount: Number(eq.tradeCount || 0),
                 statLines,
+                artifact: eq.type === 'artifact' ? rpgenius.getArtifactView(user, eq) : null,
                 potentialDisplay,
                 soul: soulActive ? { name: soulActive.name || '', expiredAt: Number(soulActive.expired_at || 0) } : null,
                 iconUrl: getEquipmentIconUrl(data),
@@ -9226,6 +9365,7 @@ function renderUserDashboard(sess, opts) {
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>
   </section></div>
+  <div class="page dt-page" data-page="directtrade"><section id="directTradeRoot"></section></div>
   <div class="page" data-page="shop"><section class="panel shop-wrap"><div id="shopBody"></div></section></div>
   <div class="page" data-page="buyorder"><section class="panel"><div class="auction-bar"><h2 style="margin:0">삽니다</h2><div class="actions"><input id="boSearch" class="search-input" placeholder="검색..." autocomplete="off"><select id="boSort" class="sort-select" aria-label="정렬"><option value="new">최신순</option><option value="priceAsc">가격 낮은순</option><option value="priceDesc">가격 높은순</option></select><div class="seg" id="boFilter"><button data-filter="all" class="on">전체</button><button data-filter="card">카드</button><button data-filter="equipment">장비</button><button data-filter="pet">펫</button><button data-filter="item">아이템</button><button data-filter="avatar">아바타</button><button data-filter="mine">내 구매</button></div><div class="seg" id="boCurrFilter"><button data-curr="all" class="on">전체</button><button data-curr="gold">골드</button><button data-curr="garnet">가넷</button></div><button class="primary" id="boNew">+ 구매 등록</button></div></div><div id="buyOrderList" class="auction-grid"></div><div id="boPager" class="auc-pager" style="display:none"></div></section></div>
   <div class="page" data-page="patchnotes"><section class="panel patch-wrap"><div class="auction-bar"><h2 style="margin:0">패치노트</h2><button class="primary" id="patchNew" style="display:none">+ 작성</button></div><div class="patch-editor" id="patchEditor"><input id="patchTitle" placeholder="제목"><input id="patchDate" placeholder="패치 일자 (비워두면 작성일시)" type="datetime-local"><textarea id="patchBody" placeholder="본문 (Markdown 지원)"></textarea><div class="actions"><button class="primary" id="patchSubmit">등록</button><button id="patchCancel">취소</button></div></div><div id="patchList" class="patch-list"></div></section></div>
@@ -9251,6 +9391,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/pvp-lobby.js"></script>
 <script src="/static/enhance-effects.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/direct-trade.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
 }

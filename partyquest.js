@@ -973,6 +973,7 @@ function serializeMember(m) {
         skills: (m.skills || []).slice(),
         skillDefs: publicSkillDefs(m.skillDefs),
         runtime: m.runtime ? {
+            ...serializeCooldownDeadlines(m.runtime),
             hp: Math.max(0, Math.round(m.runtime.hp)),
             hpMax: Math.round(m.runtime.hpMax),
             mp: Math.max(0, Math.round(m.runtime.mp)),
@@ -1017,6 +1018,20 @@ function publicSkillDefs(defs) {
 }
 
 function nowMs() { return Date.now(); }
+
+function serializeCooldownDeadlines(runtime) {
+    return {
+        actionUntil: Number(runtime.actionUntil || 0),
+        potionUntil: Number(runtime.potionUntil || 0),
+        cooldownsUntil: { ...runtime.cooldownsUntil }
+    };
+}
+
+function getMyCooldownState(name) {
+    const room = getRoomOf(name);
+    const member = room && findMember(room, name);
+    return member?.runtime ? { roomId: room.id, serverNow: nowMs(), ...serializeCooldownDeadlines(member.runtime) } : null;
+}
 
 // 전투 시작 카운트다운(클라 3-2-1 연출) 동안 전투를 동결한다.
 // 클라 연출(페이드 450 + 카운트 2400 + 개시 950 = 3800ms)과 맞춘 값.
@@ -1192,6 +1207,7 @@ function serializeRoomForMember(room) {
     const quest = getQuestById(room.questId);
     return {
         id: room.id,
+        serverNow: nowMs(),
         questId: room.questId,
         questName: quest ? quest.name : room.questId,
         hostName: room.hostName,
@@ -1958,6 +1974,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
     } else if (counterAttack && attacker.runtime && !attacker.runtime.dead) {
         performMobCounterAttack(room, monster, attacker);
         broadcast(room, 'tick', {
+            serverNow: nowMs(),
             members: room.members.map(serializeMember),
             monster: null,
             tauntTarget: room.tauntTarget || null,
@@ -2234,6 +2251,7 @@ function stepRoom(room) {
             if (room.state !== 'inProgress' || room.monster !== mon) return;
             if (patternConsumed) {
                 broadcast(room, 'tick', {
+                    serverNow: nowMs(),
                     members: room.members.map(serializeMember),
                     monster: serializeMonster(mon),
                     tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
@@ -2257,6 +2275,7 @@ function stepRoom(room) {
 
     // 스냅샷 푸시 (가벼운 tick)
     broadcast(room, 'tick', {
+        serverNow: nowMs(),
         members: room.members.map(serializeMember),
         monster: serializeMonster(mon),
         tauntTarget: room.tauntTarget || (mon && mon.tauntTarget) || null,
@@ -5454,6 +5473,7 @@ module.exports = {
     getAvailablePotions,
     usePotion,
     getMyRoomSnapshot,
+    getMyCooldownState,
     getRoomOf,
     POSITION_LIST,
     __test: {

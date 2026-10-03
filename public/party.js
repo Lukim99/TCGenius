@@ -18,6 +18,8 @@
     let supportBarSig = '';
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
+    const pendingCD = { action: false, potion: false };
+    let cooldownClockOffset = null, lastCooldownServerTime = 0;
     let localCdTimer = null;
 
     const POS_DETAILS = {
@@ -99,21 +101,20 @@
         }
         const now = Date.now();
         const r = myMember.runtime;
-        // 서버가 남은 초로 보내줌 — 데드라인으로 변환. 로컬 클릭 직후 시점이면 로컬값이 더 클 수 있으므로 max로 병합.
-        myCD.action = Math.max(myCD.action, now + Number(r.actionCdRemain || 0) * 1000);
-        myCD.potion = Math.max(myCD.potion, now + Number(r.potionCdRemain || 0) * 1000);
-        // 서버 cooldowns: { skillName: 남은초 }. 서버에 없는 키는 만료된 것이므로 로컬도 청소.
-        const serverSkills = r.cooldowns || {};
-        const merged = {};
-        for (const k of Object.keys(serverSkills)) {
-            const serverEpoch = now + Number(serverSkills[k] || 0) * 1000;
-            merged[k] = Math.max(myCD.skills[k] || 0, serverEpoch);
+        const serverTime = Number(snap.serverNow || 0);
+        if (serverTime && serverTime < lastCooldownServerTime) return;
+        if (serverTime) {
+            lastCooldownServerTime = serverTime;
+            const offset = now - serverTime;
+            cooldownClockOffset = cooldownClockOffset == null ? offset : Math.min(cooldownClockOffset, offset);
         }
-        // 로컬에서 방금 클릭해 추가한 데드라인이 서버 스냅샷보다 빨라 누락되는 경우 (스냅샷 송신 시점 기준)
-        for (const k of Object.keys(myCD.skills)) {
-            if (myCD.skills[k] > now && !(k in merged)) merged[k] = myCD.skills[k];
-        }
-        myCD.skills = merged;
+        const offset = cooldownClockOffset || 0;
+        // 실제 종료 시각을 유지한다. 감소/초기화도 서버 값으로 즉시 교체한다.
+        myCD.action = r.actionUntil != null ? Number(r.actionUntil) + offset : now + Number(r.actionCdRemain || 0) * 1000;
+        myCD.potion = r.potionUntil != null ? Number(r.potionUntil) + offset : now + Number(r.potionCdRemain || 0) * 1000;
+        myCD.skills = r.cooldownsUntil != null
+            ? Object.fromEntries(Object.entries(r.cooldownsUntil).map(([key, until]) => [key, Number(until) + offset]))
+            : Object.fromEntries(Object.entries(r.cooldowns || {}).map(([key, remain]) => [key, now + Number(remain) * 1000]));
     }
 
     function applyMyDeadlinesToRuntime() {
@@ -145,7 +146,7 @@
             updateSkillPotionButtons();
             updateBuffChips();
             updateAttackBtn();
-        }, 150);
+        }, 100);
     }
 
     function applyLocalBuffTick() {
@@ -226,7 +227,7 @@
             const remain = Number((r.cooldowns && r.cooldowns[skillName]) || 0);
             // 시벌론: 일반 공격 5회 충전 후 활성화 — 충전 부족 시 게이지 표시
             const needCharge = skillName === '시벌론' && Number(r.sivalonCharge || 0) < 5;
-            const blocked = isPassive || dead || transitioning || seal > 0 || remain > 0 || acd > 0 || needCharge;
+            const blocked = pendingCD.action || isPassive || dead || transitioning || seal > 0 || remain > 0 || acd > 0 || needCharge;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
             const text = seal > 0 && !isPassive ? ('봉인 ' + seal.toFixed(1))
@@ -239,7 +240,7 @@
             }
         });
         $$('.pq-skill-btn[data-kind="potion"]').forEach(btn => {
-            btn.disabled = dead || transitioning || seal > 0 || pcd > 0;
+            btn.disabled = pendingCD.potion || dead || transitioning || seal > 0 || pcd > 0;
             const cd = btn.querySelector('.cd');
             if (cd) {
                 const text = seal > 0 ? '봉인' : (pcd > 0 ? pcd.toFixed(1) : '');
@@ -264,30 +265,43 @@
         const seal = Number(r.sealRemain || 0);
         const transition = currentRoom.monster?.mansion?.form === 'transition';
         const stone = currentRoom.monster?.mansion?.events?.some(event => event.kind === 'sculpture');
-        const blocked = dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition;
+        const blocked = pendingCD.action || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition;
         btn.disabled = blocked;
         btn.textContent = seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : '공격');
     }
 
-    function getMyActionCooldownMs() {
-        if (!currentRoom) return 2500;
-        const myMember = currentRoom.members.find(m => m.name === me);
-        const mul = myMember && myMember.runtime ? Number(myMember.runtime.actionCdMul || 1) : 1;
-        return Math.max(500, 2500 * mul);
+    async function manualAttack() {
+        try { await performPartyAction('/api/party/attack', {}, 'action'); } catch (e) { toast(e.message); }
     }
 
-    async function manualAttack() {
-        myCD.action = Math.max(myCD.action, Date.now() + getMyActionCooldownMs());
-        applyMyDeadlinesToRuntime();
-        updateAttackBtn();
-        updateSkillPotionButtons();
-        try { await api('/api/party/attack', { method: 'POST', body: JSON.stringify({}) }); } catch (e) { toast(e.message); }
+    async function performPartyAction(path, payload, kind) {
+        if (!currentRoom || pendingCD[kind]) return;
+        const roomId = currentRoom.id;
+        const sync = state => {
+            if (!state || state.roomId !== currentRoom?.id) return;
+            syncMyDeadlinesFromSnapshot({ serverNow: state.serverNow, members: [{ name: me, runtime: state }] });
+            applyMyDeadlinesToRuntime();
+        };
+        pendingCD[kind] = true;
+        updateAttackBtn(); updateSkillPotionButtons();
+        try {
+            const result = await api(path, { method: 'POST', body: JSON.stringify(payload) });
+            sync(result.cooldowns);
+        } catch (e) {
+            sync(e.cooldowns);
+            throw e;
+        } finally {
+            if (currentRoom?.id === roomId) {
+                pendingCD[kind] = false;
+                updateAttackBtn(); updateSkillPotionButtons();
+            }
+        }
     }
 
     async function api(path, opts) {
         const res = await fetch(path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, opts || {}));
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!res.ok) { const error = new Error(data.error || ('HTTP ' + res.status)); error.cooldowns = data.cooldowns; throw error; }
         return data;
     }
 
@@ -737,6 +751,10 @@
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
         const previous = currentRoom;
+        if (previous?.id !== snap.id) {
+            cooldownClockOffset = null; lastCooldownServerTime = 0; lastTickAt = 0;
+            pendingCD.action = false; pendingCD.potion = false;
+        }
         currentRoom = snap;
         syncDefeatPresentation(snap, previous);
         localBuffTickAt = Date.now();
@@ -750,6 +768,7 @@
         renderRoomControls(snap);
         renderPotionSummary(snap);
         syncMyDeadlinesFromSnapshot(snap);
+        applyMyDeadlinesToRuntime();
         ensureLocalCdTimer();
         // 전투 화면
         renderPlayUI();
@@ -1015,7 +1034,7 @@
             stage.replaceChildren();
         }
 
-        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, serverOffset: cooldownClockOffset || 0, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
         syncVoteModal(snap);
         renderSupportBar(snap);
         renderPlayMembers(snap);
@@ -1453,7 +1472,7 @@
 
     function updateBossMonster(monster) {
         if (!monster) return;
-        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, serverOffset: cooldownClockOffset || 0, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
         updateEnrageLabel(monster);
         // 폭주 모드 등으로 일러스트/이름이 바뀌면 스테이지를 다시 그린다
         const sig = bossStageSigOf(monster);
@@ -1765,13 +1784,10 @@
             const btn = el('button', {
                 class: 'pq-skill-btn',
                 'data-kind': 'potion',
-                disabled: cdRemain > 0 || (r && r.dead) ? true : false,
+                disabled: pendingCD.potion || cdRemain > 0 || (r && r.dead) ? true : false,
                 onClick: async () => {
                     playSfx('potion');
-                    myCD.potion = Math.max(myCD.potion, Date.now() + 3000);
-                    applyMyDeadlinesToRuntime();
-                    updateSkillPotionButtons();
-                    try { await api('/api/party/use-potion', { method: 'POST', body: JSON.stringify({ name: p.name }) }); } catch (e) { toast(e.message); }
+                    try { await performPartyAction('/api/party/use-potion', { name: p.name }, 'potion'); } catch (e) { toast(e.message); }
                 }
             },
                 keyCode ? el('span', { class: 'key' }, keyLabel(keyCode)) : null,
@@ -1811,7 +1827,7 @@
             const isPassive = sd.type === 'passive';
             const charge = Number(myMember.runtime && myMember.runtime.sivalonCharge || 0);
             const needCharge = skillName === '시벌론' && charge < 5;
-            const blocked = isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge;
+            const blocked = pendingCD.action || isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge;
             const overlay = remain > 0 ? remain.toFixed(1) : (needCharge ? '충전 ' + charge + '/5' : (acd > 0 && !isPassive ? acd.toFixed(1) : null));
             const keyCode = isPassive ? null : keybinds.skills[i];
             const btn = el('button', {
@@ -1903,27 +1919,8 @@
                 payload = { skill: skillName };
             }
             playSfx('skill');
-            // 낙관적 로컬 쿨다운 — 행동 쿨 + 스킬 쿨 (시벌론은 서버가 행동 쿨을 초기화하므로 로컬도 초기화)
-            const now = Date.now();
-            myCD.action = skillName === '시벌론' ? 0 : Math.max(myCD.action, now + getMyActionCooldownMs());
-            const cdSec = Math.max(0.5, Number((sd && sd.cd) || 0) * getMySkillCdMul());
-            myCD.skills[skillName] = Math.max(myCD.skills[skillName] || 0, now + cdSec * 1000);
-            applyMyDeadlinesToRuntime();
-            updateSkillPotionButtons();
-            updateAttackBtn();
-            await api('/api/party/skill', { method: 'POST', body: JSON.stringify(payload) });
+            await performPartyAction('/api/party/skill', payload, 'action');
         } catch (e) { toast(e.message); }
-    }
-
-    function getMySkillCdMul() {
-        if (!currentRoom) return 1;
-        const myMember = currentRoom.members.find(m => m.name === me);
-        if (!myMember) return 1;
-        const def = currentRoom.questDef;
-        if (!def || !def.positions) return 1;
-        const pos = def.positions[myMember.position];
-        if (!pos || !pos.stats) return 1;
-        return Number(pos.stats.skillCd || 1);
     }
 
     function pickAllyTarget(title) {
@@ -2076,6 +2073,8 @@
                     lastTickAt = now;
                     if (currentRoom) {
                         currentRoom.members = t.members || currentRoom.members;
+                        syncMyDeadlinesFromSnapshot(t);
+                        applyMyDeadlinesToRuntime();
                         currentRoom.monster = t.monster || currentRoom.monster;
                         if (typeof t.tauntTarget !== 'undefined') currentRoom.tauntTarget = t.tauntTarget;
                         if (typeof t.tauntRemain !== 'undefined') currentRoom.tauntRemain = t.tauntRemain;
@@ -2147,6 +2146,8 @@
         syncBgm(null);
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
+        pendingCD.action = false; pendingCD.potion = false;
+        cooldownClockOffset = null; lastCooldownServerTime = 0;
         skillBarSig = '';
         potionBarSig = '';
         localBuffTickAt = 0;

@@ -2,6 +2,7 @@
 const { DynamoDBDocumentClient, PutCommand, UpdateCommand, GetCommand, DeleteCommand, BatchGetCommand, TransactWriteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const ragbot = require('./ragbot');
 const transcendEquipment = require('./transcend_equipment');
 const combatEffects = require('./public/combat-effects.js');
@@ -3470,7 +3471,7 @@ function canUsePartyQuest(user) {
 
 function getWebGameActionBlock(user, allowStarter = false) {
     if (!allowStarter && user.need_character_card_select) return '먼저 시작 캐릭터를 선택해주세요.';
-    if (activeTrades[user.name]) return '거래를 완료하거나 취소한 뒤 이용해주세요.';
+    if (getTradeSessionForUser(user.name)) return '거래를 완료하거나 취소한 뒤 이용해주세요.';
     if (user.pendingFragment) return '먼저 편린 보상을 받아주세요.';
     if (user.pendingAction) return '먼저 진행 중인 작업을 완료하거나 취소해주세요.';
     if (user.field && user.field.name) return '사냥을 마친 뒤 이용해주세요.';
@@ -13216,9 +13217,10 @@ class RPGUser {
 
 initUserCache();
 
-const tradeRequests = {};
-const activeTrades = {};
-const tradeRequestTimers = {};
+const tradeRequests = Object.create(null);
+const activeTrades = Object.create(null);
+const tradeRequestTimers = Object.create(null);
+const tradeResults = Object.create(null);
 const TRADE_FEE_RATE = 0.05;
 const TRADE_REQUEST_TTL_MS = 5 * 60 * 1000;
 
@@ -13237,6 +13239,9 @@ function emptyTradeOffer() {
 
 function createTradeSession(aName, bName) {
     return {
+        id: crypto.randomUUID(),
+        revision: 0,
+        processing: false,
         a: aName,
         b: bName,
         aOffer: emptyTradeOffer(),
@@ -13247,7 +13252,98 @@ function createTradeSession(aName, bName) {
 }
 
 function getTradeSessionForUser(name) {
-    return activeTrades[name] || null;
+    if (activeTrades[name]) return activeTrades[name];
+    const user = userCacheById.get(userIdByName.get(name))?.raw;
+    const escrow = user?.tradeEscrow;
+    if (!escrow) return null;
+    const partner = userCacheById.get(userIdByName.get(escrow.partner))?.raw;
+    if (!partner?.tradeEscrow || partner.tradeEscrow.id !== escrow.id || partner.tradeEscrow.partner !== name) return null;
+    const session = createTradeSession(name, partner.name);
+    session.id = escrow.id;
+    session.aOffer = cloneUserRaw(escrow.offer);
+    session.bOffer = cloneUserRaw(partner.tradeEscrow.offer);
+    session.revision = Number(escrow.revision || 0) + Number(partner.tradeEscrow.revision || 0);
+    activeTrades[name] = activeTrades[partner.name] = session;
+    return session;
+}
+
+function getDirectTradeState(name) {
+    const session = getTradeSessionForUser(name), side = getMyTradeSide(session, name);
+    if (side) return { status: 'active', session: {
+        id: session.id, revision: session.revision, partnerName: side.partnerName,
+        offer: cloneUserRaw(side.offer), partnerOffer: cloneUserRaw(side.partnerOffer),
+        confirmed: side.isA ? session.aConfirmed : session.bConfirmed,
+        partnerConfirmed: side.isA ? session.bConfirmed : session.aConfirmed, processing: session.processing
+    } };
+    const sender = tradeRequests[name] ? name : Object.keys(tradeRequests).find(key => tradeRequests[key]?.target === name);
+    if (sender) return { status: sender === name ? 'outgoing' : 'incoming', request: {
+        id: tradeRequests[sender].id, partnerName: sender === name ? tradeRequests[sender].target : sender,
+        expiresAt: tradeRequests[sender].createdAt + TRADE_REQUEST_TTL_MS, processing: !!tradeRequests[sender].processing
+    } };
+    return { status: 'idle', result: cloneUserRaw(tradeResults[name] || null) };
+}
+
+function tradeVersionError(session, expected) {
+    if (session.processing) return '❌ 거래를 처리 중입니다. 잠시 후 상태를 확인해주세요.';
+    if (expected && (expected.sessionId !== session.id || expected.revision !== session.revision)) return '❌ 거래 품목이 변경되었습니다. 현재 내역을 확인하고 다시 진행해주세요.';
+    return null;
+}
+
+// 보관 품목과 자산을 함께 저장한다. 거래 완료/취소는 양쪽 계정을 같은 트랜잭션으로 반영한다.
+async function commitTradeUsers(users) {
+    const updates = users.map(user => {
+        const names = {}, values = {}, conditions = ['attribute_exists(id)'], sets = [], removes = [], changes = {};
+        for (const [i, key] of ['gold', 'garnet', 'inventory', 'tradeEscrow'].entries()) {
+            const previous = user.__loaded[key], next = JSON.stringify(user[key]);
+            if (previous === next) continue;
+            names['#k' + i] = key; changes[key] = cloneUserRaw(user[key]);
+            if (next === undefined) removes.push('#k' + i);
+            else { sets.push('#k' + i + ' = :v' + i); values[':v' + i] = changes[key]; }
+            if (previous === undefined) conditions.push('attribute_not_exists(#k' + i + ')');
+            else { conditions.push('#k' + i + ' = :p' + i); values[':p' + i] = JSON.parse(previous); }
+        }
+        const clauses = [];
+        if (sets.length) clauses.push('SET ' + sets.join(', '));
+        if (removes.length) clauses.push('REMOVE ' + removes.join(', '));
+        return { user, changes, input: clauses.length ? { TableName: TABLE_NAME, Key: { id: user.id },
+            UpdateExpression: clauses.join(' '), ConditionExpression: conditions.join(' AND '),
+            ExpressionAttributeNames: names, ExpressionAttributeValues: values } : null };
+    }).filter(update => update.input);
+    if (!updates.length) return;
+    try {
+        for (const user of users) {
+            const flushed = await flushCachedUser(user.id);
+            if (!flushed.success) throw flushed.result[0];
+        }
+        await docClient.send(new TransactWriteCommand({ ClientRequestToken: crypto.randomUUID(), TransactItems: updates.map(update => ({ Update: update.input })) }));
+    } catch (error) {
+        const latest = await Promise.all(updates.map(async update => {
+            const result = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { id: update.user.id }, ConsistentRead: true }));
+            if (result.Item) putUserCacheEntry(result.Item);
+            return result.Item;
+        }));
+        // 응답만 유실된 경우 이미 반영한 거래를 중복 처리하지 않는다.
+        const committed = updates.every((update, index) => latest[index] && Object.entries(update.changes).every(([key, value]) => JSON.stringify(latest[index][key]) === JSON.stringify(value)));
+        if (!committed) {
+            for (const { user, changes } of updates) for (const key of Object.keys(changes)) {
+                if (user.__loaded[key] === undefined) delete user[key]; else user[key] = JSON.parse(user.__loaded[key]);
+            }
+            throw error;
+        }
+    }
+    for (const { user, changes } of updates) {
+        applyDirectDbWriteToCache(user.id, changes);
+        for (const key of Object.keys(changes)) {
+            if (changes[key] === undefined) delete user.__loaded[key]; else user.__loaded[key] = JSON.stringify(changes[key]);
+        }
+    }
+}
+
+function finishTradeSession(session, status, message, received) {
+    for (const name of [session.a, session.b]) {
+        tradeResults[name] = { id: session.id, status, message, at: Date.now(), receivedOffer: received ? cloneUserRaw(received[name]) : null };
+        delete activeTrades[name];
+    }
 }
 
 function getMyTradeSide(session, name) {
@@ -13258,7 +13354,7 @@ function getMyTradeSide(session, name) {
 }
 
 function hasAnyTradeInvolvement(name) {
-    if (activeTrades[name]) return true;
+    if (getTradeSessionForUser(name)) return true;
     if (tradeRequests[name]) return true;
     return Object.keys(tradeRequests).some(key => tradeRequests[key] && tradeRequests[key].target == name);
 }
@@ -13314,6 +13410,7 @@ function formatTradeStatus(session) {
 }
 
 function resetTradeConfirmations(session) {
+    session.revision++;
     session.aConfirmed = false;
     session.bConfirmed = false;
 }
@@ -13333,18 +13430,18 @@ function refundOfferToUser(user, offer) {
 }
 
 async function cancelActiveTrade(session, reason, channel) {
-    delete activeTrades[session.a];
-    delete activeTrades[session.b];
     const aUser = await getRPGUserByName(session.a);
     const bUser = await getRPGUserByName(session.b);
     if (aUser) {
         refundOfferToUser(aUser, session.aOffer);
-        await aUser.save();
+        delete aUser.tradeEscrow;
     }
     if (bUser) {
         refundOfferToUser(bUser, session.bOffer);
-        await bUser.save();
+        delete bUser.tradeEscrow;
     }
+    await commitTradeUsers([aUser, bUser].filter(Boolean));
+    finishTradeSession(session, 'canceled', reason.replace(/^[⛔❌]\s*/, ''));
     if (channel && reason) channel.sendChat(reason);
 }
 
@@ -13353,7 +13450,8 @@ function createTradeRequest(user, targetName, channel) {
     if (targetName == user.name) return '❌ 자기 자신에게는 거래를 신청할 수 없습니다.';
     if (hasAnyTradeInvolvement(user.name)) return '❌ 이미 진행 중인 거래가 있습니다.';
     if (hasAnyTradeInvolvement(targetName)) return '❌ 상대방이 이미 다른 거래에 참여 중입니다.';
-    tradeRequests[user.name] = { target: targetName, createdAt: Date.now() };
+    tradeRequests[user.name] = { id: crypto.randomUUID(), target: targetName, createdAt: Date.now() };
+    delete tradeResults[user.name]; delete tradeResults[targetName];
     clearTradeRequestTimer(user.name);
     tradeRequestTimers[user.name] = setTimeout(() => {
         if (tradeRequests[user.name] && tradeRequests[user.name].target == targetName) {
@@ -13365,23 +13463,37 @@ function createTradeRequest(user, targetName, channel) {
     return '✅ ' + targetName + '님에게 거래를 신청했습니다.\n5분 안에 상대방이 /RPGenius 거래수락을 입력하지 않으면 자동으로 취소됩니다.';
 }
 
-function cancelTradeRequest(user) {
+function cancelTradeRequest(user, expected) {
     if (!tradeRequests[user.name]) return '❌ 진행 중인 거래 신청이 없습니다.';
+    if (tradeRequests[user.name].processing || expected && expected !== tradeRequests[user.name].id) return '❌ 거래 신청이 변경되었습니다. 현재 상태를 확인해주세요.';
     const targetName = tradeRequests[user.name].target;
     delete tradeRequests[user.name];
     clearTradeRequestTimer(user.name);
     return '✅ ' + targetName + '님에 대한 거래 신청을 취소했습니다.';
 }
 
-function acceptTradeRequest(user) {
+async function acceptTradeRequest(user, expected) {
     const senderName = Object.keys(tradeRequests).find(key => tradeRequests[key] && tradeRequests[key].target == user.name);
     if (!senderName) return '❌ 수락할 거래 신청이 없습니다.';
-    if (activeTrades[user.name]) return '❌ 이미 진행 중인 거래가 있습니다.';
-    delete tradeRequests[senderName];
-    clearTradeRequestTimer(senderName);
+    if (getTradeSessionForUser(user.name)) return '❌ 이미 진행 중인 거래가 있습니다.';
+    const request = tradeRequests[senderName];
+    if (request.processing || expected && expected !== request.id) return '❌ 거래 신청이 변경되었습니다. 현재 상태를 확인해주세요.';
+    request.processing = true;
+    const sender = await getRPGUserByName(senderName);
+    if (!sender) { request.processing = false; return '❌ 거래 대상을 찾을 수 없습니다.'; }
     const session = createTradeSession(senderName, user.name);
+    session.processing = true;
     activeTrades[senderName] = session;
     activeTrades[user.name] = session;
+    try {
+        sender.tradeEscrow = { id: session.id, partner: user.name, offer: cloneUserRaw(session.aOffer), revision: 0 };
+        user.tradeEscrow = { id: session.id, partner: senderName, offer: cloneUserRaw(session.bOffer), revision: 0 };
+        await commitTradeUsers([sender, user]);
+        delete tradeRequests[senderName]; clearTradeRequestTimer(senderName);
+    } catch (error) {
+        delete activeTrades[senderName]; delete activeTrades[user.name]; request.processing = false;
+        throw error;
+    } finally { session.processing = false; }
     return '✅ ' + senderName + '님과 ' + user.name + '님의 거래가 시작되었습니다.\n\n' + formatTradeStatus(session);
 }
 
@@ -13390,7 +13502,7 @@ function parseTradeRegisterArgs(args) {
     if (!kind) return { error: '❌ /RPGenius 거래등록 [골드/가넷/카드/장비/아이템] ...' };
     if (kind == '골드' || kind == '가넷') {
         const amount = Number(args[2]);
-        if (!Number.isInteger(amount) || amount < 1) return { error: '❌ 금액은 1 이상의 정수여야 합니다.' };
+        if (!Number.isSafeInteger(amount) || amount < 1) return { error: '❌ 금액은 1 이상의 정수여야 합니다.' };
         return { kind, amount };
     }
     if (kind == '카드' || kind == '장비') {
@@ -13405,13 +13517,31 @@ function parseTradeRegisterArgs(args) {
         const hasCount = rest.length > 1 && /^\d+$/.test(last);
         const count = hasCount ? Number(last) : 1;
         const itemName = (hasCount ? rest.slice(0, -1) : rest).join(' ');
-        if (count < 1) return { error: '❌ 갯수는 1 이상의 정수여야 합니다.' };
+        if (!Number.isSafeInteger(count) || count < 1) return { error: '❌ 갯수는 1 이상의 정수여야 합니다.' };
         return { kind, itemName, count };
     }
     return { error: '❌ 지원하지 않는 거래 항목입니다.' };
 }
 
-function registerTradeOffer(user, args) {
+async function registerTradeOffer(user, args, expected) {
+    const session = getTradeSessionForUser(user.name);
+    if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const error = tradeVersionError(session, expected);
+    if (error) return error;
+    const before = cloneUserRaw(session);
+    session.processing = true;
+    try {
+        const message = applyTradeOffer(user, args);
+        if (message.startsWith('❌')) return message;
+        const side = getMyTradeSide(session, user.name);
+        user.tradeEscrow = { id: session.id, partner: side.partnerName, offer: cloneUserRaw(side.offer), revision: Number(user.tradeEscrow?.revision || 0) + 1 };
+        await commitTradeUsers([user]);
+        return message;
+    } catch (error) { Object.assign(session, before); throw error; }
+    finally { session.processing = false; }
+}
+
+function applyTradeOffer(user, args) {
     const session = getTradeSessionForUser(user.name);
     if (!session) return '❌ 진행 중인 거래가 없습니다.';
     const side = getMyTradeSide(session, user.name);
@@ -13421,6 +13551,7 @@ function registerTradeOffer(user, args) {
 
     if (parsed.kind == '골드') {
         if (Number(user.gold || 0) < parsed.amount) return '❌ 골드가 부족합니다.';
+        if (!Number.isSafeInteger(Number(side.offer.gold || 0) + parsed.amount)) return '❌ 등록할 수 있는 금액을 초과했습니다.';
         user.gold = Number(user.gold || 0) - parsed.amount;
         side.offer.gold = Number(side.offer.gold || 0) + parsed.amount;
         resetTradeConfirmations(session);
@@ -13428,6 +13559,7 @@ function registerTradeOffer(user, args) {
     }
     if (parsed.kind == '가넷') {
         if (Number(user.garnet || 0) < parsed.amount) return '❌ 가넷이 부족합니다.';
+        if (!Number.isSafeInteger(Number(side.offer.garnet || 0) + parsed.amount)) return '❌ 등록할 수 있는 금액을 초과했습니다.';
         user.garnet = Number(user.garnet || 0) - parsed.amount;
         side.offer.garnet = Number(side.offer.garnet || 0) + parsed.amount;
         resetTradeConfirmations(session);
@@ -13511,11 +13643,7 @@ async function finalizeTrade(session, channel) {
     const aUser = await getRPGUserByName(session.a);
     const bUser = await getRPGUserByName(session.b);
     if (!aUser || !bUser) {
-        if (aUser) { refundOfferToUser(aUser, session.aOffer); await aUser.save(); }
-        if (bUser) { refundOfferToUser(bUser, session.bOffer); await bUser.save(); }
-        delete activeTrades[session.a];
-        delete activeTrades[session.b];
-        if (channel) channel.sendChat('❌ 거래 대상을 찾을 수 없어 거래가 취소되었습니다.');
+        await cancelActiveTrade(session, '❌ 거래 대상을 찾을 수 없어 거래가 취소되었습니다.', channel);
         return;
     }
     const ticketId = getTradeTicketItemId();
@@ -13526,27 +13654,15 @@ async function finalizeTrade(session, channel) {
     const aHasTickets = ticketId == -1 ? aTicketsNeeded == 0 : getInventoryItemCount(aUser, ticketId) >= aTicketsNeeded;
     const bHasTickets = ticketId == -1 ? bTicketsNeeded == 0 : getInventoryItemCount(bUser, ticketId) >= bTicketsNeeded;
     if (!aHasTickets || !bHasTickets) {
-        refundOfferToUser(aUser, session.aOffer);
-        refundOfferToUser(bUser, session.bOffer);
-        await aUser.save();
-        await bUser.save();
-        delete activeTrades[session.a];
-        delete activeTrades[session.b];
         const fail = !aHasTickets ? aUser.name : bUser.name;
-        if (channel) channel.sendChat('❌ ' + fail + '님의 거래권이 부족하여 거래가 성사되지 못했습니다.');
+        await cancelActiveTrade(session, '❌ ' + fail + '님의 거래권이 부족하여 거래가 성사되지 못했습니다.', channel);
         return;
     }
     const aCardSpace = getRemainingCardInventorySpace(aUser);
     const bCardSpace = getRemainingCardInventorySpace(bUser);
     if (aCardSpace < aReceivesCards.length || bCardSpace < bReceivesCards.length) {
-        refundOfferToUser(aUser, session.aOffer);
-        refundOfferToUser(bUser, session.bOffer);
-        await aUser.save();
-        await bUser.save();
-        delete activeTrades[session.a];
-        delete activeTrades[session.b];
         const fail = aCardSpace < aReceivesCards.length ? aUser.name : bUser.name;
-        if (channel) channel.sendChat('❌ ' + fail + '님의 캐릭터 카드 인벤토리가 가득 차서 거래가 성사되지 못했습니다.');
+        await cancelActiveTrade(session, '❌ ' + fail + '님의 캐릭터 카드 인벤토리가 가득 차서 거래가 성사되지 못했습니다.', channel);
         return;
     }
 
@@ -13570,10 +13686,9 @@ async function finalizeTrade(session, channel) {
     refundOfferToUser(aUser, aReceive);
     refundOfferToUser(bUser, bReceive);
 
-    await aUser.save();
-    await bUser.save();
-    delete activeTrades[session.a];
-    delete activeTrades[session.b];
+    delete aUser.tradeEscrow; delete bUser.tradeEscrow;
+    await commitTradeUsers([aUser, bUser]);
+    finishTradeSession(session, 'completed', '거래가 완료되었습니다.', { [session.a]: aReceive, [session.b]: bReceive });
 
     const lines = ['✅ 거래가 성사되었습니다!', ''];
     const aGain = buildTradeGainLines(session.bOffer);
@@ -13586,23 +13701,30 @@ async function finalizeTrade(session, channel) {
     if (channel) channel.sendChat(lines.join('\n'));
 }
 
-async function confirmTrade(user, channel) {
+async function confirmTrade(user, channel, expected) {
     const session = getTradeSessionForUser(user.name);
     if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const error = tradeVersionError(session, expected);
+    if (error) return error;
     const side = getMyTradeSide(session, user.name);
     if (!side) return '❌ 거래 세션 오류입니다.';
     if (side.isA) session.aConfirmed = true;
     else session.bConfirmed = true;
     if (session.aConfirmed && session.bConfirmed) {
-        await finalizeTrade(session, channel);
+        session.processing = true;
+        try { await finalizeTrade(session, channel); }
+        catch (error) { session.aConfirmed = false; session.bConfirmed = false; throw error; }
+        finally { session.processing = false; }
         return null;
     }
     return '✅ ' + user.name + '님이 거래를 성사시키고자 합니다.';
 }
 
-function unconfirmTrade(user) {
+function unconfirmTrade(user, expected) {
     const session = getTradeSessionForUser(user.name);
     if (!session) return '❌ 진행 중인 거래가 없습니다.';
+    const error = tradeVersionError(session, expected);
+    if (error) return error;
     const side = getMyTradeSide(session, user.name);
     if (!side) return '❌ 거래 세션 오류입니다.';
     if (side.isA) session.aConfirmed = false;
@@ -13610,10 +13732,14 @@ function unconfirmTrade(user) {
     return '🛑 ' + user.name + '님이 거래 성사 요청을 취소했습니다.';
 }
 
-async function cancelTradeByUser(user, channel) {
+async function cancelTradeByUser(user, channel, expected) {
     const session = getTradeSessionForUser(user.name);
     if (!session) return '❌ 진행 중인 거래가 없습니다.';
-    await cancelActiveTrade(session, '⛔ ' + user.name + '님이 거래를 취소했습니다.', channel);
+    const error = tradeVersionError(session, expected);
+    if (error) return error;
+    session.processing = true;
+    try { await cancelActiveTrade(session, '⛔ ' + user.name + '님이 거래를 취소했습니다.', channel); }
+    finally { session.processing = false; }
     return null;
 }
 
@@ -15050,13 +15176,12 @@ async function handleRPGCommand(data, channel, context = {}) {
     }
 
     if (args[0] == '거래수락') {
-        reply(acceptTradeRequest(user));
+        reply(await acceptTradeRequest(user));
         return true;
     }
 
     if (args[0] == '거래등록') {
-        const result = registerTradeOffer(user, args);
-        await user.save();
+        const result = await registerTradeOffer(user, args);
         reply(result);
         return true;
     }
@@ -15078,7 +15203,7 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
-    if (activeTrades[user.name] && !['내정보', '장착정보', '설명', '인벤토리', '인벤', 'i', '캐릭인벤', 'ci', '장비인벤', 'ei', '스탯'].includes(args[0])) {
+    if (getTradeSessionForUser(user.name) && !['내정보', '장착정보', '설명', '인벤토리', '인벤', 'i', '캐릭인벤', 'ci', '장비인벤', 'ei', '스탯'].includes(args[0])) {
         reply('❌ 거래 진행 중에는 사용할 수 없는 명령어입니다.\n/RPGenius 거래취소');
         return true;
     }
@@ -16073,6 +16198,8 @@ module.exports = {
     selectStarterCard,
     canUsePartyQuest,
     getWebGameActionBlock,
+    TRADE_FEE_RATE, getDirectTradeState, createTradeRequest, cancelTradeRequest, acceptTradeRequest,
+    registerTradeOffer, confirmTrade, unconfirmTrade, cancelTradeByUser,
     refreshPetShortcuts,
     getRandomCardCombineNumbers,
     getCardSalePrice,
