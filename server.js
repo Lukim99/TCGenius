@@ -9107,7 +9107,7 @@ function renderUserDashboard(sess, opts) {
       <div id="viewer" class="viewer inventory-viewer"></div>
     </section>
   </div>
-  <div class="page" data-page="낚시"><section id="fishingPanel" class="panel"></section></div>
+  <div class="page" data-page="낚시"><section id="fishingPanel"></section></div>
   <div class="page" data-page="mail">
     <div class="mailbox" id="mailbox">
       <div class="mailbox-list-pane">
@@ -9134,7 +9134,7 @@ function renderUserDashboard(sess, opts) {
   </div>
   <div class="page" data-page="윷놀이"><div id="yutRoot"></div></div>
   <div class="page" data-page="pvp">
-    <section class="panel"><div id="pvpRoot"></div></section>
+    <div id="pvpRoot"></div>
   </div>
   <div class="page" data-page="자물쇠">
     <section class="lockbox-panel"><div id="lockboxRoot"></div></section>
@@ -9243,6 +9243,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/artifact-effects.js"></script>
 <script src="/static/artifact-ui.js"></script>
 <script src="/static/quest-board-effects.js"></script>
+<script src="/static/pvp-lobby.js"></script>
 <script src="/static/app.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

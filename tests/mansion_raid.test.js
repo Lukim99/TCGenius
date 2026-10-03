@@ -438,6 +438,35 @@ test('기둥은 0.5초 조작 간격을 검사하며 공용 하중 6 성공과 �
     assert.equal(room.state, 'failed'); assert.ok(room.members.every(member => member.runtime.dead));
 });
 
+test('마지막 파티원 전투불능과 기믹 전멸은 3초 연출 시간을 보내며 실패 로그와 재접속 결과를 보존한다', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-03T03:00:00Z') });
+    let room = await battle('normal', 2);
+    party.__test.applyDamageToMember(room, room.members[0], 99999999, '테스트 공격');
+    assert.equal(room.state, 'inProgress');
+    party.__test.applyDamageToMember(room, room.members[1], 99999999, '마지막 공격');
+    assert.equal(room.state, 'failed');
+    const first = party.getMyRoomSnapshot(seeds[0].name);
+    assert.equal(first.result.defeatRemainingMs, 3000);
+    assert.ok(first.combatLog.some(entry => entry.text.includes('마지막 공격')));
+    assert.ok(first.members.every(member => member.runtime.hp === 0 && member.runtime.dead));
+    assert.equal((await request('/api/party/attack', {})).status, 400, '연출 중에도 종료된 전투에서 추가 행동은 허용하지 않는다.');
+    t.mock.timers.tick(1200);
+    const reconnect = party.getMyRoomSnapshot(seeds[1].name);
+    assert.equal(reconnect.result.defeatRemainingMs, 1800);
+    assert.deepEqual(reconnect.combatLog, first.combatLog);
+    t.mock.timers.tick(1800);
+    assert.equal(party.getMyRoomSnapshot(seeds[0].name).result.defeatRemainingMs, 0);
+    assert.equal(party.restartQuest(seeds[0].name).ok, true);
+    for (const member of room.members) party.setReady(member.name, true);
+    assert.equal((await party.start(seeds[0].name)).ok, true);
+    assert.equal(room.combatLog.length, 0, '재도전의 전투 기록은 새로 시작한다.');
+    room = await battle('hard', 2);
+    party.__test.wipeParty(room, '기둥 붕괴', '기둥 붕괴로 전원 전투불능');
+    const wipe = party.getMyRoomSnapshot(seeds[0].name);
+    assert.equal(wipe.result.defeatRemainingMs, 3000);
+    assert.ok(wipe.combatLog.some(entry => entry.text === '기둥 붕괴로 전원 전투불능'));
+});
+
 test('석재는 본체 HP 대신 피해를 받으며 공대장 판정·75% 히든 지원군·히든 칭호가 연결된다', async () => {
     const room = await battle('hard', 2); const mon = room.monster; const event = fixedGimmick(room, 1); const hp = mon.hp;
     party.__test.applyBossHpDamage(room, mon, 100000); assert.equal(mon.hp, hp); assert.equal(event.damage, 100000);

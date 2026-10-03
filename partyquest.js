@@ -1019,6 +1019,7 @@ function nowMs() { return Date.now(); }
 // 전투 시작 카운트다운(클라 3-2-1 연출) 동안 전투를 동결한다.
 // 클라 연출(페이드 450 + 카운트 2400 + 개시 950 = 3800ms)과 맞춘 값.
 const INTRO_GRACE_MS = 3800;
+const DEFEAT_FADE_MS = 3000;
 function isIntroActive(room) {
     return !!(room && (room.introUntil && nowMs() < room.introUntil || room.monster?.bossState?.form === 'transition'));
 }
@@ -1211,7 +1212,8 @@ function serializeRoomForMember(room) {
         supportSkills: serializeSupportSkills(room),
         supportGauge: getQuestSupportSkills(room).length ? Math.floor(Number(room.supportGauge || 0)) : null,
         voteState: serializeVoteState(room),
-        result: room.result || null
+        combatLog: room.result ? (room.combatLog || []).slice(-120) : null,
+        result: room.result ? Object.assign({}, room.result, { defeatRemainingMs: Math.max(0, Number(room.result.defeatUntil || 0) - Date.now()) }) : null
     };
 }
 
@@ -1294,7 +1296,11 @@ function pushNotice(room, text, kind, ttl) {
 }
 
 function pushCombat(room, line, severity) {
-    broadcast(room, 'combat', { text: String(line || ''), severity: severity || 'info', at: Date.now() });
+    const entry = { text: String(line || ''), severity: severity || 'info', at: Date.now() };
+    if (!room.combatLog) room.combatLog = [];
+    room.combatLog.push(entry);
+    if (room.combatLog.length > 120) room.combatLog.shift();
+    broadcast(room, 'combat', entry);
 }
 
 // ===== 방 조작 =====
@@ -1669,6 +1675,7 @@ async function start(hostName) {
     room.result = null;
     room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
+    room.combatLog = [];
     // 퀘스트: 파티 퀘스트 참여 집계 (진행도가 변한 유저만 저장)
     if (typeof rpgenius.recordQuestEvent === 'function') {
         for (const m of room.members) {
@@ -1784,6 +1791,7 @@ function proceedToNextPhase(room) {
 }
 
 function endQuest(room, cleared, reason) {
+    const wiped = !cleared && room.members.length > 0 && room.members.every(m => m.runtime && m.runtime.hp <= 0);
     stopTick(room);
     room.state = cleared ? 'cleared' : 'failed';
     room.monster = null;
@@ -1799,12 +1807,13 @@ function endQuest(room, cleared, reason) {
     }
     room.result = {
         cleared: !!cleared,
+        defeatUntil: wiped ? Date.now() + DEFEAT_FADE_MS : 0,
         reason: reason || (cleared ? '모든 페이즈 클리어!' : '파티 전멸'),
         rewards: [],
         statistics: buildPartyBattleStatistics(room)
     };
     if (cleared) grantPartyQuestClearRewards(room);
-    pushNotice(room, cleared ? '퀘스트 클리어' : '파티 전멸', cleared ? 'success' : 'danger', 6000);
+    if (!wiped) pushNotice(room, cleared ? '퀘스트 클리어' : '파티 전멸', cleared ? 'success' : 'danger', 6000);
     broadcastRoom(room);
 }
 

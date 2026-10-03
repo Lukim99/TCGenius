@@ -235,6 +235,12 @@ test('낚시 시작은 멱등이며 살림망 수령은 한 번만 지급하고 
     assert.ok(baitId >= 0);
     rpg.addInventoryItem(user, baitId, 5);
     user.fishingNet = { [baitId]: 2 }; await user.save();
+    const preview = (await request('/api/fishing')).data;
+    assert.equal(preview.baitCount, 5);
+    assert.equal(preview.baits[0].count, 5);
+    assert.equal(preview.baitIconUrl, preview.baits[0].iconUrl);
+    assert.ok(Object.hasOwn(preview.baits[0], 'iconUrl'));
+    assert.ok(Object.hasOwn(preview.baits[0], 'frameUrl'));
     assert.equal((await request('/api/fishing/start', {})).status, 200);
     assert.equal((await request('/api/fishing/start', {})).data.state.fishing.active, true);
     const results = await Promise.all([request('/api/fishing/collect', {}), request('/api/fishing/collect', {})]);

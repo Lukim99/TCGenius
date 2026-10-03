@@ -1518,49 +1518,50 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .msg-modal-input{width:100%;margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-strong);background:var(--panel-2);color:var(--text);font-size:14px;font-family:inherit;outline:none}
 .msg-modal-input:focus{border-color:rgba(232,176,75,.55)}
 
+/* ===== 낚시 ===== */
+#fishingPanel{display:grid;gap:18px;color:#f4ebd8}#fishingPanel p{margin:0}
+.fish-scene{position:relative;isolation:isolate;width:100%;min-height:390px;aspect-ratio:16/9;max-height:min(620px,calc(100svh - 154px));overflow:hidden;border:1px solid #8a6424;border-radius:12px;background-position:center 38%;background-size:cover;background-color:#112329;box-shadow:0 16px 42px rgba(0,0,0,.3)}
+.fish-scene::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(11,10,18,.25),transparent 25%,transparent 52%,rgba(11,10,18,.82))}
+.fish-scene-head{display:flex;justify-content:space-between;align-items:center;padding:22px 24px;text-shadow:0 2px 8px #000}.fish-scene-head h2{margin:0;font-size:26px;color:#f4ebd8}.fish-scene-head>span{padding:6px 12px;border:1px solid rgba(242,207,122,.45);border-radius:5px;background:rgba(21,19,31,.75);font-size:13px;color:#f2cf7a}
+.fish-float{display:none;position:absolute;left:57%;top:52%;width:14px;height:22px}.fish-scene.active .fish-float{display:block}.fish-float>i{position:absolute;inset:0;border:1px solid #342617;border-radius:50% 50% 40% 40%;background:linear-gradient(#e0564f 50%,#f4ebd8 50%);box-shadow:0 2px 4px rgba(0,0,0,.5);animation:fishbob 2.4s ease-in-out infinite}
+.fish-float>span::before,.fish-float>span::after{content:'';position:absolute;left:-14px;top:17px;width:42px;height:12px;border:1px solid rgba(244,235,216,.55);border-radius:50%;animation:fishripple 2.8s linear infinite}.fish-float>span::after{animation-delay:-1.4s}
+@keyframes fishbob{50%{transform:translateY(3px)}}@keyframes fishripple{0%{transform:scale(.4);opacity:.8}100%{transform:scale(2.2);opacity:0}}
+.fish-hud{position:absolute;left:20px;right:20px;bottom:20px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,1fr) 160px;align-items:center;gap:20px;padding:18px 20px;border:1px solid rgba(217,164,65,.6);border-radius:10px;background:rgba(21,19,31,.87);box-shadow:inset 0 0 0 1px rgba(242,207,122,.12);backdrop-filter:blur(6px)}
+.fish-current-bait{display:flex;align-items:center;gap:10px;min-width:0}.fish-current-bait>div{display:grid;gap:3px}.fish-current-bait small{font-size:11px;color:#aaa2b8}.fish-current-bait strong{font-size:14px}.fish-current-bait b{font-size:13px;color:#f2cf7a;font-variant-numeric:tabular-nums}
+.fish-item-icon{position:relative;flex:0 0 48px;display:grid;place-items:center;width:48px;height:48px;overflow:hidden;border:1px solid #6d522c;border-radius:8px;background:#221e30;color:#f2cf7a}.fish-item-icon>img{position:absolute;object-fit:contain}.fish-item-art{inset:0;width:100%;height:100%;z-index:3}.fish-item-frame{z-index:2;inset:0;width:100%;height:100%}
+.fish-keepnet>div:first-child{display:flex;justify-content:space-between;gap:8px;margin-bottom:10px;font-size:14px}.fish-keepnet b{font-variant-numeric:tabular-nums;color:#f2cf7a}
+.fishing-capacity{height:10px;overflow:hidden;border-radius:6px;background:rgba(255,255,255,.12)}.fishing-capacity i{display:block;height:100%;border-radius:inherit;background:#5bc489;transition:width .2s}.fishing-capacity.near-full i{background:#d9a441}.fishing-capacity.full i{background:#e0564f}
+.fish-button{min-height:44px;padding:10px 18px;border:1px solid #8a6424;border-radius:7px;background:#221e30;color:#f4ebd8;font-size:14px;font-weight:700}.fish-button:focus-visible,.fish-bait-tile:focus-visible{outline:2px solid #f2cf7a;outline-offset:3px}.fish-button:disabled{opacity:.45;cursor:default}.fish-start{min-height:56px;background:linear-gradient(#f2cf7a,#9a6a23);color:#1a1408;font-size:17px}.fish-start.running{background:linear-gradient(#d26754,#923d35);color:#fff0e2}
+.fish-panel{display:grid;gap:16px;padding:20px;border:1px solid #514027;border-radius:10px;background:linear-gradient(135deg,#211a25,#15131f);box-shadow:inset 0 0 0 1px rgba(242,207,122,.05)}
+.fish-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.fish-section-head h3{margin:0;color:#f2cf7a;font-size:16px}
+.fish-note{font-size:13px;color:#aaa2b8;line-height:1.6}.fish-empty{grid-column:1/-1;padding:16px 0;color:#aaa2b8;font-size:14px}
+.fishing-bait .game-choice-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}.fishing-bait .fish-bait-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:150px;height:auto;padding:14px 8px;border:1px solid #514027;border-radius:8px;background:#221e30;color:#f4ebd8;white-space:normal;font-size:13px}.fish-bait-tile[aria-pressed="true"]{border-color:#d9a441!important;box-shadow:inset 0 0 0 1px #d9a441,0 0 16px rgba(217,164,65,.12)}.fish-bait-tile b{color:#f2cf7a;font-size:13px}.fish-bait-tile small{font-size:11px;color:#5bc489}
+.fishing-net{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.fishing-catch{display:flex;align-items:center;gap:12px;min-height:72px;padding:10px;background:#221e30;border:1px solid #393040;border-radius:8px;font-size:14px}.fishing-catch>span:not(.fish-item-icon){flex:1;overflow-wrap:anywhere}.fishing-catch>b{color:#f2cf7a;font-variant-numeric:tabular-nums}
+@media(max-width:700px){.fish-scene{aspect-ratio:4/5;min-height:420px;background-position:57% 38%}.fish-scene-head{padding:18px}.fish-hud{left:12px;right:12px;bottom:12px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;padding:14px}.fish-start{grid-column:1/-1}.fish-panel{padding:16px}.fish-current-bait strong{font-size:13px}.fish-current-bait .fish-item-icon{width:40px;height:40px;flex-basis:40px}.fish-keepnet>div:first-child{font-size:12px;flex-wrap:wrap}.fishing-net{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.fish-float>i,.fish-float>span::before,.fish-float>span::after{animation:none}.fish-float>span{display:none}}
+
 /* ===== PVP ===== */
-.pvp-shell{display:grid;gap:16px}
+.pvp-stage{position:relative;isolation:isolate;width:100%;min-width:0;height:622px;overflow:hidden;border:1px solid #8a6424;border-radius:12px;background:#0b0a12;box-shadow:inset 0 0 0 1px rgba(242,207,122,.15),0 16px 42px rgba(0,0,0,.35)}
+.pvp-gl,.pvp-hud{position:absolute;top:0;left:0;display:block;width:100%}.pvp-hud{height:100%;pointer-events:none}.pvp-hit{position:absolute;inset:0;pointer-events:none}
+.pvp-control{position:absolute;pointer-events:auto;padding:0!important;background:transparent!important;border:0!important;border-radius:9px;color:transparent!important;box-shadow:none!important;text-shadow:none!important;cursor:pointer;touch-action:manipulation}
+.pvp-control:hover:not(:disabled){background:rgba(242,207,122,.08)!important}.pvp-control:focus-visible{outline:2px solid #f2cf7a;outline-offset:3px}.pvp-control:disabled{cursor:default}
+.pvp-accessible{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.pvp-flat{position:absolute;inset:0;background:radial-gradient(ellipse at 65% 40%,#19313e,transparent 52%),radial-gradient(ellipse at 30% 60%,#382457,#0b0a12 72%)}
+.pvp-flat>img{position:absolute;top:28%;left:19%;width:19%;max-height:44%;object-fit:contain;border:2px solid #d9a441;border-radius:4px;box-shadow:0 12px 30px #000}.pvp-flat>img+img{left:62%}
+.pvp-flat[hidden],.pvp-gl[hidden],.pvp-flat>img[hidden]{display:none}
+.pvp-native .pvp-accessible{clip-path:none;width:auto;height:auto;white-space:normal;inset:20px 20px auto;margin:0;padding:12px;color:#f4ebd8;background:#15131f;border:1px solid #d9a441}
+.pvp-native .pvp-control{color:#f4ebd8!important;background:#221e30!important;border:1px solid #d9a441!important}
+.pvp-panel-bg{position:fixed;inset:0;z-index:65;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(6,5,10,.78);backdrop-filter:blur(4px)}
+.pvp-panel-dialog{display:flex;flex-direction:column;width:min(720px,100%);max-height:86dvh;overflow:hidden;border:1px solid #d9a441;border-radius:12px;background:#15131f;color:#f4ebd8;box-shadow:inset 0 0 0 1px rgba(242,207,122,.15),0 24px 80px #000}
+.pvp-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #514027}.pvp-dialog-head h2{margin:0;color:#f2cf7a;font-size:20px}.pvp-dialog-head>button{width:44px;height:44px;padding:0;font-size:24px;background:transparent;border:0;color:#f4ebd8}
+.pvp-dialog-body{display:grid;gap:24px;min-height:0;overflow-y:auto;padding:20px;scrollbar-width:thin}.pvp-dialog-footer{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;background:#0f0d17;border-top:1px solid #514027}.pvp-dialog-footer>button{min-width:112px;min-height:48px;font-size:14px}
+.pvp-panel-dialog button:focus-visible,.pvp-panel-dialog select:focus-visible,.pvp-panel-dialog [tabindex]:focus-visible{outline:2px solid #f2cf7a;outline-offset:2px}
+.pvp-panel-dialog .pvp-select,.pvp-panel-dialog .pvp-num{height:44px;background:#221e30;border:1px solid #6d522c;color:#f4ebd8}
 .pvp-section{display:grid;gap:12px}
 .pvp-section-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .pvp-section-head h3{margin:0;font-size:15px;font-weight:700;color:var(--text)}
 .pvp-caption{font-size:12px;font-weight:600;color:var(--text-3)}
-.pvp-head-btns{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
-.pvp-section-head .pvp-refresh,.pvp-section-head .pvp-extra{background:var(--panel-2);border:1px solid var(--border);font-size:13px;padding:8px 12px}
-.pvp-section-head .pvp-refresh:hover:not(:disabled),.pvp-section-head .pvp-extra:hover:not(:disabled){background:var(--panel-3);border-color:var(--border-strong)}
-.pvp-section-head .pvp-refresh:disabled,.pvp-section-head .pvp-extra:disabled{color:var(--text-3);cursor:default}
-.pvp-section-head .pvp-extra:not(:disabled){color:var(--accent);border-color:rgba(232,176,75,.45)}
-.pvp-opp-reward{display:block;margin-top:3px;font-size:11px;font-weight:600;color:var(--text-2)}
-.pvp-hist-reward{font-size:12px;color:var(--text-2);white-space:nowrap}
-.pvp-me-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.pvp-rating,.pvp-metric{display:grid;gap:6px;align-content:start;padding:13px 15px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius)}
-.pvp-metric-label{font-size:12px;font-weight:700;color:var(--text-2)}
-.pvp-rating-line{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.pvp-rating-line b{font-size:30px;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
-.pvp-rank-badge{padding:3px 8px;border-radius:999px;font-size:12px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
-.pvp-rank-badge.rk2,.pvp-rank-badge.rk3{background:var(--panel-3);color:var(--text);border:1px solid var(--border-strong)}
-.pvp-wl{display:flex;gap:10px;align-items:baseline}
-.pvp-wl b{font-size:18px;font-variant-numeric:tabular-nums}
-.pvp-wl .win{color:var(--good)}
-.pvp-wl .lose{color:var(--bad)}
-.pvp-metric-value{font-size:18px;color:var(--text);font-variant-numeric:tabular-nums}
-.pvp-resume{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 15px;border-radius:var(--radius);background:var(--accent-dim);border:1px solid rgba(232,176,75,.45);font-weight:700;font-size:14px}
-.pvp-resume button{margin-left:auto;padding:8px 14px;font-size:13px}
-.pvp-opp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
-.pvp-opp{display:grid;gap:7px;align-content:start;padding:11px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius)}
-.pvp-opp.done{opacity:.72}
-.pvp-opp-art{position:relative;aspect-ratio:3/4;border-radius:var(--radius-s);overflow:hidden;background:var(--panel-3)}
-.pvp-opp-art img{width:100%;height:100%;object-fit:cover;display:block}
-.pvp-opp-art .no-img{min-height:0;height:100%;border:0;font-size:12px;text-align:center;padding:6px}
-.pvp-kind{position:absolute;top:6px;left:6px;padding:2px 7px;border-radius:var(--radius-s);background:rgba(16,18,22,.82);border:1px solid var(--border-strong);font-size:11px;font-weight:700;color:var(--text-2)}
-.pvp-opp-name{font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pvp-opp-meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
-.pvp-opp-meta span{color:var(--accent)}
-.pvp-opp-btn{width:100%;padding:9px;font-size:13px}
-.pvp-opp-result{padding:9px;border-radius:var(--radius-s);text-align:center;font-size:13px;font-weight:700;background:var(--panel-3);font-variant-numeric:tabular-nums}
-.pvp-opp-result.win{color:var(--good)}
-.pvp-opp-result.lose{color:var(--bad)}
-.pvp-seg{align-self:start;width:max-content;max-width:100%}
-.pvp-warn{padding:10px 13px;border-radius:var(--radius-s);border:1px solid var(--bad);color:var(--bad);font-size:13px;font-weight:700}
+.pvp-hist-reward{font-size:12px;color:var(--text-2);white-space:normal}
 .pvp-deck{display:grid;grid-template-columns:minmax(0,132px) minmax(0,1fr);gap:14px;align-items:start}
 .pvp-deck-col{display:grid;gap:7px;min-width:0}
 .pvp-deck-label{font-size:12px;font-weight:700;color:var(--text-2)}
@@ -1581,8 +1582,6 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .pvp-rule-actions{display:flex;gap:8px;flex-wrap:wrap}
 .pvp-rule-actions button{font-size:13px;border:1px solid var(--border)}
 .pvp-rule-actions button:disabled{color:var(--text-3);cursor:default}
-.pvp-save-row{display:flex;justify-content:flex-end}
-.pvp-save-row button{min-width:132px;padding:11px 18px}
 .pvp-rank .rank-row{cursor:default}
 .pvp-rank .rank-row:hover{background:transparent}
 .pvp-rank .rank-row.me:hover{background:rgba(232,176,75,.09)}
@@ -1592,23 +1591,20 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .pvp-hist{display:grid;gap:6px}
 .pvp-hist-row{display:flex;align-items:center;gap:10px;padding:10px 13px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-s);font-size:13px}
 .pvp-role{padding:2px 8px;border-radius:var(--radius-s);font-size:11px;font-weight:700;background:var(--panel-3);color:var(--text-2)}
-.pvp-hist-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvp-hist-name{min-width:0;overflow-wrap:anywhere}
 .pvp-hist-result{font-weight:700}
 .pvp-hist-result.win,.pvp-hist-delta.win{color:var(--good)}
 .pvp-hist-result.lose,.pvp-hist-delta.lose{color:var(--bad)}
 .pvp-hist-delta{font-weight:700;font-variant-numeric:tabular-nums}
 .pvp-hist-time{margin-left:auto;font-size:12px;color:var(--text-3);white-space:nowrap}
 @media(max-width:760px){
-.pvp-me-grid{grid-template-columns:1fr}
-.pvp-head-btns{width:100%;margin-left:0}
-.pvp-section-head .pvp-refresh,.pvp-section-head .pvp-extra{flex:1 1 100%}
-.pvp-opp-grid{grid-template-columns:repeat(auto-fill,minmax(136px,1fr))}
+.pvp-flat>img{top:39%;left:7%;width:23%;max-height:20%}.pvp-flat>img+img{top:24%;left:34%;width:39%;max-height:34%}
+.pvp-panel-bg{padding:10px}.pvp-dialog-body{padding:16px}.pvp-dialog-head{padding:10px 16px}.pvp-dialog-footer{padding:12px 16px}.pvp-hist-row{flex-wrap:wrap}.pvp-hist-reward{white-space:normal}
 .pvp-deck{grid-template-columns:1fr}
 .pvp-deck-main{width:132px}
 .pvp-rule{gap:6px}
 .pvp-rule .pvp-select{flex:1 1 40%}
 .pvp-rule-btns{margin-left:0;width:100%;justify-content:flex-end}
-.pvp-save-row button{width:100%}
 }
 
 /* ===== 퀘스트 게시판 ===== */
@@ -1931,12 +1927,7 @@ button.preset-detail-gear-item:hover{border-color:var(--rar,var(--border-strong)
 .game-quantity-stepper>button{width:32px;padding:0;border-radius:0;background:#292e38;color:var(--text);font-size:16px}.game-quantity-stepper>button:hover{background:#343b47}.game-quantity-stepper>button:disabled{color:var(--text-3);cursor:default}
 .game-quantity-stepper>input{width:58px;min-width:0;padding:0 4px;text-align:center;border:0;border-radius:0;background:transparent;font-size:13px;color:var(--text);appearance:textfield}.game-quantity-stepper>input::-webkit-inner-spin-button,.game-quantity-stepper>input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .game-sale-total{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)}.game-sale-total strong{color:var(--accent);font-size:15px;font-variant-numeric:tabular-nums}
-#fishingPanel{display:grid;gap:18px}#fishingPanel p{margin:0}.fishing-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fishing-summary .kv{font-size:13px;flex-wrap:wrap}
-.fishing-active{color:var(--good)!important}.fishing-capacity{height:6px;overflow:hidden;background:var(--panel-2);border-radius:9px}.fishing-capacity i{display:block;height:100%;background:var(--accent);border-radius:inherit;transition:width .2s}
-.fishing-bait{display:grid;gap:10px;padding-top:16px;border-top:1px solid var(--border)}.fishing-bait>.game-button{justify-self:start}
-.fishing-net{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border-top:1px solid var(--border);padding-top:18px}.fishing-net>.empty{grid-column:1/-1}
-.fishing-catch{display:flex;align-items:center;gap:10px;padding:12px;background:var(--panel-2);border-radius:var(--radius-s);font-size:13px}.fishing-catch img{width:32px;height:32px;object-fit:contain}.fishing-catch span{flex:1}.fishing-catch b{color:var(--accent)}
-@media(max-width:560px){.game-home-head{align-items:flex-start;flex-direction:column;gap:6px}.game-start{align-items:flex-start;flex-direction:column}.game-home-actions>button{flex:1}.fishing-summary,.fishing-net{grid-template-columns:1fr}.inventory-actions{margin:12px 14px 0;padding:12px;gap:10px}.inventory-action-copy>span{font-size:10px}.inventory-actions>button{padding:8px 10px}.starter-grid{gap:8px}.game-management-row{padding:12px;gap:10px}.game-management-copy span{font-size:10px}.combine-auto-controls{grid-template-columns:1fr}.combine-auto-controls>.game-button{justify-self:stretch}.item-sale-controls{padding:16px}}
+@media(max-width:560px){.game-home-head{align-items:flex-start;flex-direction:column;gap:6px}.game-start{align-items:flex-start;flex-direction:column}.game-home-actions>button{flex:1}.inventory-actions{margin:12px 14px 0;padding:12px;gap:10px}.inventory-action-copy>span{font-size:10px}.inventory-actions>button{padding:8px 10px}.starter-grid{gap:8px}.game-management-row{padding:12px;gap:10px}.game-management-copy span{font-size:10px}.combine-auto-controls{grid-template-columns:1fr}.combine-auto-controls>.game-button{justify-self:stretch}.item-sale-controls{padding:16px}}
 
 .game-asset-section{display:grid;gap:12px}.game-asset-section+.game-asset-section{padding-top:16px;border-top:1px solid var(--border)}
 .game-asset-section>.game-section-head{justify-content:center}.game-asset-section>.game-section-head strong{color:var(--text-2);font-size:11px;letter-spacing:.06em}

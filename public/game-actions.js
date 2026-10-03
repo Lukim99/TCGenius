@@ -126,29 +126,48 @@ function renderFishing(data) {
     const root = $('#fishingPanel');
     const previous = root.querySelector('.fishing-bait .game-choice-chips')?.value;
     const selected = data.baits.some(b => b.name === previous) ? previous : data.baits.some(b => b.name === data.bait) ? data.bait : data.baits[0]?.name;
-    const bait = gameChoiceChips('낚시 미끼', data.baits.map(b => ({ value: b.name, label: b.name + ' · ' + comma(b.count) + '개' + (b.name === data.bait ? ' · 사용 중' : '') })), selected,
+    const bait = gameChoiceChips('낚시 미끼', data.baits.map(b => ({ value: b.name, label: b.name })), selected,
         value => { change.disabled = value === data.bait; });
+    [...bait.children].forEach((button, i) => {
+        const item = data.baits[i];
+        button.classList.add('fish-bait-tile');
+        button.replaceChildren(...[fishingItemIcon(item), el('span', null, item.name), el('b', null, comma(item.count) + '개'),
+            item.name === data.bait ? el('small', null, '사용 중') : null].filter(Boolean));
+    });
     if (!data.baits.length) bait.appendChild(el('span', { class: 'game-note' }, '보유한 미끼가 없습니다.'));
-    const change = el('button', { type: 'button', class: 'game-button', disabled: !data.baits.length || selected === data.bait,
+    const change = el('button', { type: 'button', class: 'fish-button', disabled: !data.baits.length || selected === data.bait,
         onclick: e => runGameAction('/api/fishing/bait', { name: bait.value }, e.currentTarget) }, '미끼 적용');
     const items = el('div', { class: 'fishing-net' }, ...data.items.map(item => el('div', { class: 'fishing-catch' },
-        item.iconUrl ? el('img', { src: item.iconUrl, alt: '' }) : null,
+        fishingItemIcon(item),
         el('span', null, item.name), el('b', null, '×' + comma(item.count)))));
-    if (!data.items.length) items.appendChild(el('div', { class: 'empty' }, '아직 살림망이 비어 있습니다. 미끼를 준비하고 낚시를 시작해보세요.'));
+    if (!data.items.length) items.appendChild(el('div', { class: 'fish-empty' }, '살림망이 비어 있습니다.'));
+    const percent = Math.min(100, data.count / Math.max(1, data.capacity) * 100);
     root.replaceChildren(
-        el('div', { class: 'game-home-head' }, el('h2', null, '낚시'), el('span', { class: data.active ? 'fishing-active' : '' }, data.active ? '낚시 중' : '대기 중')),
-        el('p', { class: 'game-note' }, '자동으로 미끼를 소모해 살림망에 보상을 모읍니다. 살림망이 가득 차거나 미끼가 없으면 멈춥니다.'),
-        el('div', { class: 'fishing-summary' },
-            el('div', { class: 'kv' }, el('span', null, '사용 중인 미끼'), el('b', null, data.bait + ' · ' + comma(data.baitCount) + '개')),
-            el('div', { class: 'kv' }, el('span', null, '살림망'), el('b', null, comma(data.count) + ' / ' + comma(data.capacity)))),
-        el('div', { class: 'fishing-capacity', role: 'progressbar', 'aria-label': '살림망 사용량', 'aria-valuenow': data.count, 'aria-valuemax': data.capacity },
-            el('i', { style: { width: Math.min(100, data.count / Math.max(1, data.capacity) * 100) + '%' } })),
-        el('div', { class: 'game-actions-row' },
-            el('button', { type: 'button', class: 'primary', disabled: !data.active && (!data.baitCount || data.count >= data.capacity),
-                onclick: e => runGameAction('/api/fishing/' + (data.active ? 'stop' : 'start'), {}, e.currentTarget, { quiet: true }) }, data.active ? '낚시 중단' : '낚시 시작'),
-            el('button', { type: 'button', disabled: !data.count, onclick: e => runGameAction('/api/fishing/collect', {}, e.currentTarget) }, '모두 받기')),
-        el('div', { class: 'fishing-bait' }, el('span', { class: 'game-field-label' }, '미끼 선택'), bait, change),
-        el('p', { class: 'game-note' }, '보상 받기와 미끼 변경은 낚시를 중단합니다. 다른 명령이나 인벤토리 작업을 실행할 때도 낚시가 중단될 수 있습니다.'), items);
+        el('div', { class: 'fish-scene' + (data.active ? ' active' : ''), style: { backgroundImage: 'url("/rpg-ui?file=' + encodeURIComponent('낚시/fishing-lake-v1.png') + '")' } },
+            el('div', { class: 'fish-scene-head' }, el('h2', null, '낚시'), el('span', { role: 'status' }, data.active ? '낚시 중' : '대기 중')),
+            el('div', { class: 'fish-float', 'aria-hidden': 'true' }, el('i'), el('span')),
+            el('div', { class: 'fish-hud' },
+                el('div', { class: 'fish-current-bait' }, fishingItemIcon({ iconUrl: data.baitIconUrl, name: data.bait }),
+                    el('div', null, el('small', null, '사용 중인 미끼'), el('strong', null, data.bait), el('b', null, comma(data.baitCount) + '개'))),
+                el('div', { class: 'fish-keepnet' },
+                    el('div', null, el('strong', null, '살림망'), el('b', null, comma(data.count) + ' / ' + comma(data.capacity))),
+                    el('div', { class: 'fishing-capacity' + (percent >= 100 ? ' full' : percent >= 80 ? ' near-full' : ''), role: 'progressbar', 'aria-label': '살림망 사용량', 'aria-valuemin': 0, 'aria-valuenow': data.count, 'aria-valuemax': data.capacity },
+                        el('i', { style: { width: percent + '%' } }))),
+                el('button', { type: 'button', class: 'fish-button fish-start' + (data.active ? ' running' : ''), disabled: !data.active && (!data.baitCount || data.count >= data.capacity),
+                    onclick: e => runGameAction('/api/fishing/' + (data.active ? 'stop' : 'start'), {}, e.currentTarget, { quiet: true }) }, data.active ? '낚시 중단' : '낚시 시작'))),
+        el('section', { class: 'fish-panel fish-catches' },
+            el('div', { class: 'fish-section-head' }, el('h3', null, '살림망'),
+                el('button', { type: 'button', class: 'fish-button', disabled: !data.count, onclick: e => runGameAction('/api/fishing/collect', {}, e.currentTarget) }, '모두 받기')),
+            items, el('p', { class: 'fish-note' }, '보상을 받으면 낚시가 멈춥니다.')),
+        el('section', { class: 'fish-panel fishing-bait' },
+            el('div', { class: 'fish-section-head' }, el('h3', null, '미끼 선택'), change), bait,
+            el('p', { class: 'fish-note' }, '미끼를 바꾸면 낚시가 멈춥니다. 살림망이 가득 차거나 미끼가 없으면 자동으로 멈춥니다.')));
+}
+
+function fishingItemIcon(item) {
+    return el('span', { class: 'fish-item-icon' },
+        item.frameUrl ? el('img', { class: 'fish-item-frame', src: item.frameUrl, alt: '', loading: 'lazy' }) : null,
+        item.iconUrl ? el('img', { class: 'fish-item-art', src: item.iconUrl, alt: '', loading: 'lazy', onerror: e => e.currentTarget.remove() }) : el('span', null, '◇'));
 }
 
 const INVENTORY_ACTIONS = {

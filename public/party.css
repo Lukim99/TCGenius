@@ -504,6 +504,13 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-stage-mob .n{font-family:var(--font-game);font-weight:400;font-size:44px;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:.04em}
 .pq-stage-mob .pq-prog{width:min(80%,340px)}
 .pq-game-stage>.pq-result{position:absolute;inset:0;z-index:5;justify-content:flex-start;align-items:stretch;overflow-y:auto;border:0;border-radius:0;padding:16px;background:#101318;text-align:left;scrollbar-width:thin}
+.pq-screen[data-screen="play"].defeat-pending{position:relative}
+.pq-defeat-veil{position:absolute;inset:0;z-index:40;background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,.9),#000 78%);opacity:0;pointer-events:none}
+.pq-defeat-still{position:absolute;inset:0}.pq-defeat-still>img{width:100%;height:100%;object-fit:cover}
+.pq-result-log{margin:12px 0;border:1px solid var(--border);border-radius:6px;background:rgba(0,0,0,.22)}
+.pq-result-log>summary{padding:12px 14px;font-weight:700;font-size:13px;cursor:pointer;color:var(--text)}
+.pq-result-log>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pq-result-log .pq-result-log-lines{height:150px;min-height:70px;padding:4px 14px 12px;overflow-y:auto;background:transparent;border:0;scrollbar-width:thin;font-size:12px;line-height:1.8}
 .pq-screen[data-screen="play"].result-mode .pq-game-chat,.pq-screen[data-screen="play"].result-mode .pq-my-vitals,.pq-screen[data-screen="play"].result-mode .pq-member-detail,.pq-screen[data-screen="play"].result-mode .pq-game-party{display:none!important}
 @media(max-width:620px){
   .pq-game-stage>.pq-result{padding:12px 10px}

@@ -65,8 +65,9 @@ function registerGameActionRoutes(server, deps) {
         return {
             active: !!user.fishing, count, capacity: rpg.getEffectiveFishingNetLimit(user),
             bait: rpg.getCurrentBaitName(user), baitCount: rpg.getInventoryItemCount(user, rpg.getCurrentBaitItemId(user)),
+            baitIconUrl: itemAssets(items[rpg.getCurrentBaitItemId(user)]).iconUrl,
             baits: (user.inventory.item || []).filter(e => items[e.id] && items[e.id].type === '미끼' && e.count > 0)
-                .map(e => ({ name: items[e.id].name, count: e.count })),
+                .map(e => ({ name: items[e.id].name, count: e.count, ...itemAssets(items[e.id]) })),
             items: Object.entries(user.fishingNet || {}).filter(([, count]) => count > 0).map(([id, count]) => ({
                 name: items[id] ? items[id].name : '알 수 없는 아이템', count,
                 ...itemAssets(items[id])

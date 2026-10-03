@@ -457,8 +457,12 @@
     bgm.volume = sound.bgm;
     bgm.preload = 'none';
     let bgmWanted = false;
+    let defeatActive = false;
+    let defeatTimer = null;
+    let defeatFrame = null;
+    let defeatVeil = null;
     function syncBgm(snap) {
-        const want = !!(snap && snap.state === 'inProgress');
+        const want = !!(snap && (snap.state === 'inProgress' || defeatActive));
         if (want) preloadSfx();
         if (want === bgmWanted && !(want && bgm.paused)) return;
         bgmWanted = want;
@@ -642,6 +646,55 @@
     let lastRoomState = null;
     let introTimer = null;
 
+    function resetDefeatPresentation() {
+        clearTimeout(defeatTimer);
+        cancelAnimationFrame(defeatFrame);
+        defeatTimer = defeatFrame = null;
+        defeatActive = false;
+        defeatVeil?.remove();
+        defeatVeil = null;
+        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('defeat-pending');
+        bgm.playbackRate = 1;
+        bgm.preservesPitch = true;
+        bgm.volume = sound.bgm;
+    }
+
+    function syncDefeatPresentation(snap, previous) {
+        if (snap.state !== 'failed') { resetDefeatPresentation(); return; }
+        const remaining = Number(snap.result?.defeatRemainingMs || 0);
+        if (defeatActive || remaining <= 0) return;
+        hideBattleIntro();
+        $('#pqTargetBg').classList.remove('active');
+        defeatActive = true;
+        const screen = document.querySelector('.pq-screen[data-screen="play"]');
+        if (previous?.id !== snap.id || previous.state !== 'inProgress') {
+            const cover = roomQuest(snap).coverImage;
+            $('#pqPhaseStage').replaceChildren(el('div', { class: 'pq-defeat-still' },
+                cover ? el('img', { src: coverUrl(cover), alt: '' }) : null));
+        }
+        screen.classList.add('defeat-pending');
+        defeatVeil = el('div', { class: 'pq-defeat-veil', 'aria-hidden': 'true' });
+        screen.append(defeatVeil);
+        bgm.preservesPitch = false;
+        const deadline = performance.now() + remaining;
+        const frame = () => {
+            if (!defeatActive) return;
+            const progress = Math.min(1, Math.max(0, 1 - (deadline - performance.now()) / 3000));
+            bgm.playbackRate = 1 - .65 * progress * progress;
+            bgm.volume = sound.bgm * Math.pow(1 - progress, 1.7);
+            defeatVeil.style.opacity = String(progress);
+            defeatFrame = requestAnimationFrame(frame);
+        };
+        frame();
+        defeatTimer = setTimeout(() => {
+            resetDefeatPresentation();
+            if (currentRoom?.id !== snap.id || currentRoom.state !== 'failed') return;
+            syncBgm(currentRoom);
+            playSfx('fail');
+            renderPlayUI();
+        }, remaining);
+    }
+
     function hideBattleIntro() {
         clearTimeout(introTimer);
         introTimer = null;
@@ -678,12 +731,14 @@
         lastRoomState = snap ? snap.state : null;
         if (!snap) return;
         if (snap.state === 'inProgress' && (prev === 'lobby' || prev === 'preparing')) playBattleIntro(snap);
-        if (prev === 'inProgress' && (snap.state === 'cleared' || snap.state === 'failed')) playSfx(snap.state === 'cleared' ? 'clear' : 'fail');
+        if (prev === 'inProgress' && (snap.state === 'cleared' || (snap.state === 'failed' && !defeatActive))) playSfx(snap.state === 'cleared' ? 'clear' : 'fail');
     }
 
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
+        const previous = currentRoom;
         currentRoom = snap;
+        syncDefeatPresentation(snap, previous);
         localBuffTickAt = Date.now();
         maybePlayIntro(snap);
         syncBgm(snap);
@@ -884,6 +939,13 @@
         log.append(ln);
         while (log.childElementCount > 120) log.firstElementChild.remove();
         if (shouldStick) log.scrollTop = log.scrollHeight;
+        const resultLog = $('#pqResultLog');
+        if (resultLog) {
+            const stick = resultLog.scrollTop + resultLog.clientHeight >= resultLog.scrollHeight - 12;
+            resultLog.append(el('div', { class: 'ln ' + (entry.severity || 'info') }, entry.text));
+            while (resultLog.childElementCount > 120) resultLog.firstElementChild.remove();
+            if (stick) resultLog.scrollTop = resultLog.scrollHeight;
+        }
     }
 
     function renderRoomControls(snap) {
@@ -923,7 +985,7 @@
     function renderPlayUI() {
         if (!currentRoom) return;
         const snap = currentRoom;
-        const ended = snap.state === 'cleared' || snap.state === 'failed';
+        const ended = !defeatActive && (snap.state === 'cleared' || snap.state === 'failed');
         const playScreen = document.querySelector('.pq-screen[data-screen="play"]');
         if (playScreen) playScreen.classList.toggle('result-mode', ended);
         $('#pqPhaseLabel').textContent = snap.phaseType ? snap.phaseType.toUpperCase() : 'PHASE';
@@ -931,8 +993,10 @@
 
         const stage = $('#pqPhaseStage');
         const actionRow = $('#pqActionRow');
-        if (actionRow) actionRow.style.display = ended ? 'none' : '';
-        if (ended) {
+        if (actionRow) actionRow.style.display = ended || defeatActive ? 'none' : '';
+        if (defeatActive) {
+            updateEnrageLabel(null);
+        } else if (ended) {
             bossStageSig = '';
             updateEnrageLabel(null);
             stage.replaceChildren(renderResult(snap));
@@ -974,6 +1038,9 @@
             el('div', { class: 'pq-result-reason' }, r.reason || '')
         ));
         if (r.statistics) wrap.append(renderBattleGraph(r.statistics));
+        const log = el('div', { id: 'pqResultLog', class: 'pq-combat-log pq-result-log-lines', role: 'log', 'aria-label': '전투 로그' },
+            ...(snap.combatLog || []).map(entry => el('div', { class: 'ln ' + (entry.severity || 'info') }, entry.text)));
+        wrap.append(el('details', { class: 'pq-result-log', open: !r.cleared }, el('summary', null, '전투 로그'), log));
         const footer = el('div', { class: 'pq-result-footer' });
         if (r.cleared && r.rewards && r.rewards.length) {
             footer.append(el('button', { class: 'pq-btn primary', type: 'button', onClick: () => openRewardModal(r.rewards) }, '파티 보상 확인'));
@@ -2070,6 +2137,7 @@
     $('#pqFirstClearClose').onclick = () => $('#pqFirstClearBg').classList.remove('active');
 
     async function leaveRoom() {
+        resetDefeatPresentation();
         try { await api('/api/party/leave', { method: 'POST', body: JSON.stringify({}) }); } catch (_) {}
         closeStream();
         stopLocalCdTimer();
