@@ -579,7 +579,7 @@
         {
             "name": "게임체인저",
             "rarity": "고유",
-            "desc": "보스 몬스터 대상 추가 피해 +10%\n받는 피해 증가 +10%",
+            "desc": "GCL OFFLINE 우승자에게 주어진 트로피다.",
             "plusStat": {
                 "bossDmg": 0.1,
                 "takenDamage": 0.1

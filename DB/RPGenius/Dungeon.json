@@ -2239,31 +2239,31 @@
         },
         "dailyDungeon": {
             "enabled": true,
-            "exp": 48000000,
+            "exp": 45000000,
             "gold": {
-                "min": 11000000,
+                "min": 10500000,
                 "max": 12500000
             },
             "items": [
                 {
                     "name": "일반 떡밥",
                     "count": {
-                        "min": 1800,
-                        "max": 2300
+                        "min": 2000,
+                        "max": 2500
                     }
                 },
                 {
                     "name": "강화석",
                     "count": {
-                        "min": 1800,
-                        "max": 2300
+                        "min": 2000,
+                        "max": 2500
                     }
                 },
                 {
                     "name": "상급 강화석",
                     "count": {
                         "min": 8,
-                        "max": 12
+                        "max": 13
                     }
                 }
             ],
@@ -2271,7 +2271,12 @@
                 [
                     {
                         "name": "6성 카드팩",
-                        "weight": 100,
+                        "weight": 80,
+                        "count": 1
+                    },
+                    {
+                        "name": "7성 카드팩",
+                        "weight": 20,
                         "count": 1
                     }
                 ],
@@ -2279,21 +2284,21 @@
                     {
                         "name": "헬 초대장",
                         "weight": 50,
-                        "count": 140
+                        "count": 130
                     },
                     {
                         "name": "헬 도전장",
                         "weight": 50,
-                        "count": 100
+                        "count": 90
                     }
                 ]
             ]
         },
-        "atk": 4300,
-        "pnt": 240,
+        "atk": 4100,
+        "pnt": 280,
         "pntPercent": 0,
-        "def": 220,
-        "hp": 8000,
+        "def": 205,
+        "hp": 8820,
         "crit": 0.15,
         "critMul": 1.6,
         "critDef": 0,
@@ -2301,11 +2306,11 @@
         "maxCmb": 0,
         "elite": {
             "name": "의문의 문지기",
-            "atk": 11500,
-            "pnt": 630,
+            "atk": 11950,
+            "pnt": 620,
             "pntPercent": 0.1,
             "def": 650,
-            "hp": 150000,
+            "hp": 146000,
             "crit": 0.3,
             "critMul": 1.85,
             "critDef": 0.1,

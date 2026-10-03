@@ -5,8 +5,8 @@ const { isDeepStrictEqual } = require('node:util');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 
-const material = { type: '재료', name: '금괴0.1돈', desc: '인트리그미션 엘리트 고유 드랍 재료. 10개로 [고유]게임체인저를 제작한다.' };
-const accessory = { name: '게임체인저', rarity: '고유', desc: '보스 몬스터 대상 추가 피해 +10%\n받는 피해 증가 +10%', plusStat: { bossDmg: 0.1, takenDamage: 0.1 } };
+const material = { type: '재료', name: '금괴0.1돈', desc: '우승상품으로 주어졌던 금괴0.1돈이다.' };
+const accessory = { name: '게임체인저', rarity: '고유', desc: 'GCL OFFLINE 우승자에게 주어진 트로피다.', plusStat: { bossDmg: 0.1, takenDamage: 0.1 } };
 
 function appendContent(before) {
     if (!Array.isArray(before.Item) || !before.Equipment || !Array.isArray(before.Equipment.accessory) || !Array.isArray(before.Recipe)) throw new Error('운영 Item/Equipment/Recipe 데이터가 없습니다. 초기화하지 않습니다.');

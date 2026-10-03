@@ -121,12 +121,27 @@ test('인트리그미션은 기존 배경·문지기 설정으로 일반 필드�
     assert.equal(rpg.getDungeonConfigurationError(dungeon, true), null);
     assert.equal(rpg.getDungeonConfigurationError(dungeon, false), null);
     assert.equal(dungeon.elite.name, '의문의 문지기');
+    assert.deepEqual([dungeon.atk, dungeon.pnt, dungeon.def, dungeon.hp], [4100, 280, 205, 8820]);
+    assert.deepEqual([dungeon.elite.atk, dungeon.elite.pnt, dungeon.elite.def, dungeon.elite.hp], [11950, 620, 650, 146000]);
     assert.equal(dungeon.elite.reward.find(reward => reward.item_name === '금괴0.1돈').roll, .3);
     const incomplete = structuredClone(dungeon); incomplete.elite.name = '';
     assert.match(rpg.getDungeonConfigurationError(incomplete, false), /엘리트/);
     user = await reset(); user.level = 160; await user.save();
     assert.equal((await request('/api/daily-dungeon/enter', { fieldName: dungeon.name })).data.ok, false);
     assert.equal((await request('/api/daily-dungeon')).data.daily.used, false);
+});
+
+test('인트리그미션 일일 보상은 문서 수량 범위와 6성 80%·7성 20% 추첨을 적용한다', () => {
+    const dungeon = rpg.getDailyDungeons().find(dungeon => dungeon.name === '인트리그미션');
+    const lower = rpg.rollDailyDungeonClearReward(dungeon, () => 0);
+    assert.equal(lower.exp, 45000000);
+    assert.equal(lower.gold, 10500000);
+    assert.deepEqual(lower.items, { '일반 떡밥': 2000, '강화석': 2000, '상급 강화석': 8, '6성 카드팩': 1, '헬 초대장': 130 });
+    const upper = rpg.rollDailyDungeonClearReward(dungeon, () => 1 - Number.EPSILON);
+    assert.equal(upper.gold, 12500000);
+    assert.deepEqual(upper.items, { '일반 떡밥': 2500, '강화석': 2500, '상급 강화석': 13, '7성 카드팩': 1, '헬 도전장': 90 });
+    assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .799999).items['6성 카드팩'], 1);
+    assert.equal(rpg.rollDailyDungeonClearReward(dungeon, () => .8).items['7성 카드팩'], 1);
 });
 
 test('일일 던전 웹 API는 기존 전투·타임 중첩·하루 한 번 입장 규칙과 클리어 보상 복구를 제공한다', async t => {

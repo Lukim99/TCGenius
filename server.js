@@ -5583,8 +5583,6 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
-    if (item.name === '한가위맞이각성패키지') return getItemImageUrl('번들', '각성보석세트패키지.png');
-    if (item.name === '한가위맞이강화패키지') return getItemImageUrl('번들', '강화도전1100패키지.png');
     if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
     if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');
     if (item.use == '축복사용권') {
