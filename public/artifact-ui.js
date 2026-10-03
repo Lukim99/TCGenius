@@ -1,5 +1,5 @@
 // 아티팩트 재설정 패널. 부모(app.js)가 장비 메뉴에서 root를 열고 ArtifactUI.render(root, view, { submit })를 호출한다.
-// 변수칸(조건값·능력·n)을 각각 잠그고, 비용 = 100 × 10^잠금수. 성공 후 결과 반영(render 재호출)은 부모 담당.
+// 변수칸을 각각 잠그고 비용 = 100 × 10^잠금수. 서버 결과를 받은 뒤 연출과 옵션 확정을 진행한다.
 (() => {
     'use strict';
 
@@ -77,6 +77,9 @@
         st.pips = node('span', 'af-pips');
         uses.append(st.usesText, st.pips);
         head.append(uses);
+        if (window.ArtifactEffects) head.append(ArtifactEffects.soundControl());
+        st.effectHost = node('div', 'af-effect-host');
+        st.effectHost.hidden = true;
 
         const list = node('div', 'af-opts');
         options.forEach((opt, i) => {
@@ -145,7 +148,7 @@
         ro.append(node('b', 'af-ro-k', '열람'), node('span', 'af-ro-t', '장비 주인만 재설정할 수 있습니다'));
         foot.append(costRow, goldRow, st.block, st.confirm, st.submitBtn, st.errEl, ro);
 
-        wrap.append(head, list, mani, foot);
+        wrap.append(head, st.effectHost, list, mani, foot);
         root.replaceChildren(wrap);
         return st;
     }
@@ -197,7 +200,7 @@
             r.cells.forEach(cell => {
                 const locked = !readonly && st.locks.has(cell.key);
                 const val = valueOf(opt, cell.field);
-                setText(cell.v, val == null || val === '' ? '-' : val);
+                if (!cell.b.classList.contains('rolling')) setText(cell.v, val == null || val === '' ? '-' : val);
                 cell.b.setAttribute('aria-pressed', locked ? 'true' : 'false');
                 cell.b.setAttribute('aria-label', cell.label + ' ' + (val == null ? '' : val) + (readonly ? '' : locked ? ' (잠금)' : ' (잠금 해제)'));
                 setText(cell.lockText, locked ? '잠금' : '');
@@ -264,11 +267,12 @@
     }
 
     // 직전 결과와 달라진 변수칸만 짧게 표시
-    function markChanges(st, prev, next) {
+    function markChanges(st, prev, next, rowIndex) {
         if (!prev || String(prev.uid) !== String(next.uid)) return;
         const a = Array.isArray(prev.options) ? prev.options : [];
         const b = Array.isArray(next.options) ? next.options : [];
         st.rows.forEach((r, i) => {
+            if (rowIndex != null && i !== rowIndex) return;
             r.cells.forEach(cell => {
                 if (!a[i] || !b[i] || String(valueOf(a[i], cell.field)) === String(valueOf(b[i], cell.field))) return;
                 cell.b.classList.remove('changed');
@@ -282,6 +286,43 @@
     function disarm(st) {
         st.armedUntil = 0;
         clearTimeout(st.armTimer);
+    }
+
+    function startReels(st) {
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        st.wrap.classList.add('recalibrating');
+        st.rows.forEach(row => row.cells.forEach(cell => {
+            if (st.locks.has(cell.key)) return;
+            cell.b.classList.add('rolling');
+            if (reduced || !cell.v.animate) return;
+            const height = parseFloat(getComputedStyle(cell.v).lineHeight) || 18;
+            const value = cell.v.textContent;
+            const reel = node('span');
+            reel.style.display = 'block';
+            reel.setAttribute('aria-hidden', 'true');
+            [value, 'ᚠ', value, 'ᛉ', value].forEach(text => {
+                const entry = node('span', '', text);
+                Object.assign(entry.style, { display: 'block', height: height + 'px' });
+                reel.append(entry);
+            });
+            cell.v.style.height = height + 'px';
+            cell.v.replaceChildren(reel);
+            cell.reel = reel.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + (-height * 4) + 'px)' }],
+                { duration: 260 + Math.random() * 100, iterations: Infinity, easing: 'linear' });
+        }));
+    }
+
+    function stopReels(st, rowIndex) {
+        st.rows.forEach((row, index) => {
+            if (rowIndex != null && index !== rowIndex) return;
+            row.cells.forEach(cell => {
+                cell.reel?.cancel();
+                cell.reel = null;
+                cell.b.classList.remove('rolling');
+                cell.v.style.height = '';
+                setText(cell.v, valueOf(st.view.options[index], cell.field));
+            });
+        });
     }
 
     async function onSubmit(st) {
@@ -304,11 +345,38 @@
         const order = key => { const [i, f] = key.split('.'); return Number(i) * 10 + FIELDS.findIndex(x => x.key === f); };
         const locks = Array.from(st.locks).sort((x, y) => order(x) - order(y));
         try {
-            await st.submit({ uid: st.view.uid, locks });
+            st.opts.setBusy?.(true);
+            try {
+                startReels(st);
+                st.effect = window.ArtifactEffects?.begin(st.effectHost, { rarity: st.view.rarity, imageUrl: st.opts.imageUrl, lockedCount: st.locks.size });
+                const modal = st.wrap.closest('.modal');
+                if (st.effect && modal) modal.scrollTo({
+                    top: modal.scrollTop + st.wrap.getBoundingClientRect().top - modal.getBoundingClientRect().top - 12,
+                    behavior: 'instant'
+                });
+            } catch (_) {}
+            const result = await st.submit({ uid: st.view.uid, locks });
+            try { await st.effect?.finish(true); } catch (_) {}
+            const previous = st.view;
+            st.view = { ...previous, options: previous.options.slice() };
+            for (let index = 0; index < st.rows.length; index++) {
+                st.view.options[index] = result.artifact.options[index];
+                stopReels(st, index);
+                patch(st);
+                markChanges(st, previous, st.view, index);
+                if (!matchMedia('(prefers-reduced-motion: reduce)').matches) await new Promise(resolve => setTimeout(resolve, 140));
+            }
+            st.view = result.artifact;
         } catch (e) {
             st.err = (e && e.message) || '재설정 실패';
+            try { await st.effect?.finish(false); } catch (_) {}
         } finally {
+            try { st.effect?.dispose(); } catch (_) {}
+            st.effect = null;
+            stopReels(st);
+            st.wrap.classList.remove('recalibrating');
             st.pending = false;
+            st.opts.setBusy?.(false);
             if (states.get(st.root) === st) patch(st);
         }
     }
@@ -332,6 +400,7 @@
         }
         st.view = view;
         st.submit = opts && opts.submit;
+        st.opts = opts || {};
         const n = Array.isArray(view.options) ? view.options.length : 0;
         for (const key of Array.from(st.locks)) {
             const [i, f] = key.split('.');

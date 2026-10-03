@@ -1555,7 +1555,7 @@ function equipmentModalView(eq, interactive) {
     const orbInfo = equipmentOrbInfo(eq);
     const orbLineSet = new Set((orbInfo && orbInfo.lines || []).map(line => String(line).replace(/^-\s*/, '')));
     const lines = (eq.statLines || []).map(line => line.replace(/^-\s*/, '')).filter(line => !orbLineSet.has(line) && !/^(고유 옵션|설명):/.test(line) && !/^(세트 효과 ·|\d+세트:)/.test(line));
-    const showDescription = description
+    const showDescription = eq.type !== 'artifact' && description
         && !/^(초월|신화)/.test(String(eq.rarity || ''))
         && (!eq.passive || comparableEquipmentText(description) !== comparableEquipmentText(eq.passive.desc));
     if (showDescription) nodes.push(equipmentDescriptionNode(description));
@@ -1582,17 +1582,29 @@ function equipmentModalView(eq, interactive) {
     }
     if (eq.artifact && window.ArtifactUI) {
         const root = el('div');
+        const controls = new Map();
+        const setBusy = busy => {
+            modalLocked = busy;
+            if (busy) {
+                $('#modalBg').querySelectorAll('button:not(.af-cell):not(.af-submit):not(.af-sound)').forEach(button => {
+                    controls.set(button, button.disabled);
+                    button.disabled = true;
+                });
+            } else {
+                controls.forEach((disabled, button) => { button.disabled = disabled; });
+                controls.clear();
+            }
+        };
         const submit = interactive !== false && ownEquipContext() ? async payload => {
             const result = await postApi('/api/artifact/reroll', payload);
             const updated = result.equipment && result.equipment.find(entry => entry.uid === eq.uid);
             if (updated) Object.assign(eq, updated);
             eq.artifact = result.artifact;
-            ArtifactUI.render(root, result.artifact, { submit });
             if (result.profile) renderProfile(result.profile);
-            if (pageIsActive('inventory')) await loadInventory('equipment');
+            if (pageIsActive('inventory')) loadInventory('equipment').catch(() => {});
             return result;
         } : null;
-        ArtifactUI.render(root, eq.artifact, { submit });
+        ArtifactUI.render(root, eq.artifact, { submit, setBusy, imageUrl: eq.iconUrl });
         nodes.push(root);
     }
     const potBlock = potentialBlockNode(eq.potentialDisplay);

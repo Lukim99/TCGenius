@@ -9223,6 +9223,7 @@ function renderUserDashboard(sess, opts) {
 <script src="/static/awakening-effects.js"></script>
 <script src="/static/fusion-effects.js"></script>
 <script src="/static/game-actions.js"></script>
+<script src="/static/artifact-effects.js"></script>
 <script src="/static/artifact-ui.js"></script>
 <script src="/static/app.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
