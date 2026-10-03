@@ -101,7 +101,7 @@ const mansionDefinitions = [
     [
         "이세계의축복을.png",
         "ui",
-        "칭호/이세계에게축복을.png"
+        "칭호/이세계의축복을.png"
     ],
     [
         "대저택 마스터.png",
@@ -111,7 +111,7 @@ const mansionDefinitions = [
     [
         "저 눈 뜨고 있습니다.png",
         "ui",
-        "칭호/저 눈 뜨고 있습니다..png"
+        "칭호/저 눈 뜨고 있습니다.png"
     ],
     [
         "악몽의 대저택.png",

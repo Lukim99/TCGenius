@@ -1306,7 +1306,7 @@ function questNameSelect(target, key, options, allLabel) {
 
 function questObjectiveRow(objective, onDelete) {
     const wrap = el('div', { class: 'entry' });
-    const sel = el('select');
+    const sel = el('select', { style: { width: 'auto' } });
     QUEST_OBJECTIVE_TYPES.forEach(([value, label]) => sel.appendChild(el('option', { value }, label)));
     if (!QUEST_OBJECTIVE_TYPES.some(([value]) => value === objective.type)) objective.type = 'kill';
     sel.value = objective.type;
@@ -1329,7 +1329,10 @@ function questObjectiveRow(objective, onDelete) {
         } else if (t === 'deliver') {
             targetSlot.appendChild(questItemPickButton(objective, 'item_id'));
         } else if (t === 'partyJoin' || t === 'partyClear' || t === 'partyClearMin' || t === 'partyClearMax') {
-            targetSlot.appendChild(questNameSelect(objective, 'quest', targets.partyQuests, '모든 파티 퀘스트'));
+            const choices = t === 'partyClear' ? targets.partyQuests.concat(targets.partyQuestClearGroups || []) : targets.partyQuests;
+            const questSelect = questNameSelect(objective, 'quest', choices, '모든 파티 퀘스트');
+            if (t === 'partyClear') questSelect.style.width = '100%';
+            targetSlot.appendChild(questSelect);
             if (t === 'partyClearMin' || t === 'partyClearMax') {
                 const membersIn = el('input', { class: 'qe-num', type: 'number', min: 1, max: 10, value: Number(objective.members || 2), oninput: () => objective.members = Math.max(1, Number(membersIn.value) || 1) });
                 targetSlot.appendChild(el('span', { class: 'lab' }, '인원'));

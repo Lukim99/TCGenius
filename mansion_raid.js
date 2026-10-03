@@ -2,6 +2,22 @@
 function createMansionRaid(engine) {
     const E = engine;
     const labels = { pillars: '기둥 하중 이동', sculpture: '완성하면 안 되는 작품', burden: '조의 의지', blessing: '미완성의 축복', dictation: 'edaa 받아쓰기', pulse: '맥동 제어', inversion: '봉인 역전', shards: '쏟아지는 조각', resonance: '공명 폭발', echo: '되울림', harden: '단단해지기', trial: '잔향 보호막 시련' };
+    const messages = {
+        pillars: '네 개의 기둥이 비명을 지릅니다. 무게를 옮겨 붕괴를 막으십시오.',
+        sculpture: '그의 큰 그림을 완성시켜 주세요',
+        burden: '{user}에게 조의 의지를 수여하겠습니다.',
+        blessing: '조각이 {user}를 본인의 일부로 지정합니다.',
+        dictation: '그가 이상한 언어를 읊습니다...',
+        pulse: '[System]기운 봉인',
+        inversion: '조형물의 안과 밖이 뒤집혔습니다.',
+        shards: '조각의 파편들이 무수히 쏟아집니다.',
+        resonance: '삐비빅',
+        echo: '삐빅. 삐빅.',
+        wall: '우우웅.... 위잉....',
+        harden: '조각의 피부가 윤택해집니다.',
+        trial: '플레이어들에게 [시련]이 주어집니다.',
+        transition: '틀이 깨졌다'
+    };
     const alive = room => E.getAliveMembers(room);
     const pick = values => values[Math.floor(Math.random() * values.length)];
     const hard = mon => mon.bossState.difficulty !== 'normal';
@@ -14,9 +30,11 @@ function createMansionRaid(engine) {
     function start(room, mon, kind, duration, fields = {}) {
         const st = mon.bossState;
         const event = { id: room.id + ':' + room.startedAt + ':' + room.phaseIndex + ':mansion-' + (++st.serial), kind, label: labels[kind], remain: duration, duration, responded: [], ...fields };
+        event.message = messages[kind].replace('{user}', () => event.target);
+        if (kind === 'pulse' || kind === 'inversion') event.cueText = event.pulse === 'gather' ? '기운이 한점으로 모여듭니다' : '기운이 사방으로 흩어집니다';
         st.events.push(event);
         mon.nextPattern = event.label;
-        E.pushCombat(room, mon.name + ' [' + event.label + ']', 'danger');
+        E.pushCombat(room, mon.name + ' [' + event.label + '] ' + event.message, 'danger');
         return event;
     }
     function remove(mon, event) {
@@ -152,7 +170,7 @@ function createMansionRaid(engine) {
         const st = mon.bossState;
         st.form = 'transition'; st.transitionRemain = 4; st.events = []; st.gimmickActive = null; mon.nextPattern = null;
         E.clearBossShield(mon);
-        E.pushNotice(room, '위플래쉬 잔향으로 전환됩니다', 'big', 4000);
+        E.pushNotice(room, messages.transition, 'big', 4000);
     }
     function transition(room, dt) {
         const mon = room.monster;
@@ -207,7 +225,7 @@ function createMansionRaid(engine) {
             if (mon.stunRemain > 0) return true;
             if (st.echoTimer <= 1e-6) {
                 st.echoTimer += 10; mon.nextPattern = '잔향 파열'; attack(room, mon, .8);
-                E.pushNotice(room, '잔향 파열', 'danger', 1500);
+                E.pushNotice(room, '잔향 파열: ...', 'danger', 1500);
                 mon.nextPattern = st.events.at(-1)?.label || null;
                 return true;
             }
@@ -226,7 +244,7 @@ function createMansionRaid(engine) {
         else if (kind === 'resonance') start(room, mon, kind, 3);
         else if (kind === 'echo') { const members = alive(room).slice(); const targets = []; while (members.length && targets.length < 2) targets.push(members.splice(Math.floor(Math.random() * members.length), 1)[0].name); start(room, mon, kind, 4, { targets, hits: 0 }); }
         else if (kind === 'wall') {
-            E.pushNotice(room, '울리는 벽', 'danger', 1500);
+            E.pushNotice(room, messages.wall, 'danger', 1500);
             fixedAoe(room, byDifficulty(mon, .04, .06), '울리는 벽');
         }
         else if (kind === 'pulse') { const target = pick(alive(room)); if (target) start(room, mon, kind, byDifficulty(mon, 4, 3), { target: target.name, pulse: pick(['gather', 'scatter']) }); }
@@ -321,8 +339,8 @@ function createMansionRaid(engine) {
     function view(mon) {
         const st = mon?.bossState;
         if (!st?.mansion) return null;
-        const fields = ['id', 'kind', 'label', 'remain', 'duration', 'target', 'targets', 'responded', 'loads', 'damage', 'hpMax', 'minPct', 'maxPct', 'sequence', 'answers', 'pulse', 'stage', 'recorded'];
-        return { difficulty: st.difficulty, form: st.form, transitionRemain: st.transitionRemain || 0, outcome: st.outcome, events: st.events.map(event => {
+        const fields = ['id', 'kind', 'label', 'message', 'cueText', 'remain', 'duration', 'target', 'targets', 'responded', 'loads', 'damage', 'hpMax', 'minPct', 'maxPct', 'sequence', 'answers', 'pulse', 'stage', 'recorded'];
+        return { difficulty: st.difficulty, form: st.form, transitionRemain: st.transitionRemain || 0, transitionMessage: st.form === 'transition' ? messages.transition : '', outcome: st.outcome, events: st.events.map(event => {
             const out = {}; for (const key of fields) if (event[key] !== undefined) out[key] = event[key];
             if (event.kind === 'trial') { out.shield = mon.shield; out.shieldMax = mon.shieldMax; }
             return out;

@@ -4922,6 +4922,7 @@ server.get('/api/lookup/quest-targets', requireAdmin, (req, res) => {
         fields: readNames('Dungeon.json', data => (Array.isArray(data) ? data : []).map(d => d && d.name).filter(Boolean)),
         bosses: readNames('WorldBoss.json', data => (Array.isArray(data) ? data : []).map(b => b && b.name).filter(Boolean)),
         partyQuests: readNames('PartyQuest.json', data => (data && Array.isArray(data.quests) ? data.quests : []).map(q => q && q.name).filter(Boolean)),
+        partyQuestClearGroups: rpgenius.PARTY_QUEST_CLEAR_GROUPS.map(group => group.name),
         raids: readNames('PartyQuest.json', data => (data && Array.isArray(data.quests) ? data.quests : []).map(q => ({ id: q.id, name: q.name }))),
         recipes: (rpgenius.getDataCache('Recipe', []) || []).map(r => r && r.name).filter(Boolean)
     });

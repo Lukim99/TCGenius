@@ -90,13 +90,13 @@ after(async () => {
     for (const seed of seeds) { party.leaveRoom(seed.name); rpg.clearFieldRuntimeTimers(seed.name); }
     await new Promise(resolve => listener.close(resolve));
 });
-function cookie(name) {
-    const body = Buffer.from(JSON.stringify({ name, admin: false, canPartyQuest: true, exp: Date.now() + 3600000 })).toString('base64url');
+function cookie(name, admin = false) {
+    const body = Buffer.from(JSON.stringify({ name, admin, canPartyQuest: true, exp: Date.now() + 3600000 })).toString('base64url');
     return 'rpg_admin=' + body + '.' + crypto.createHmac('sha256', process.env.ADMIN_SESSION_SECRET).update(body).digest('base64url');
 }
-async function request(route, body, name = seeds[0].name) {
+async function request(route, body, name = seeds[0].name, admin = false) {
     const response = await fetch(base + route, { method: body === undefined ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json', ...(name ? { Cookie: cookie(name) } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(name ? { Cookie: cookie(name, admin) } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, data: await response.json() };
 }
@@ -515,6 +515,49 @@ test('클리어로 다음 난이도를 해금하지 않으며 통합 주간 보�
     user = await rpg.getRPGUserByName(user.name);
     assert.ok(rpg.getUnlockedTitles(user).includes('mansionMaster'));
     assert.ok(!rpg.getUnlockedTitles(user).includes('mansionFirstClear'));
+});
+
+test('레이드별 퀘스트 조건은 모든 난이도를 합산하고 주간 보상 제한과 무관하게 저장한다', async () => {
+    const room = await battle();
+    const objectives = [
+        { type: 'partyClear', quest: '흑화 호두 (난이도 상관 없이)', count: 10 },
+        { type: 'partyClear', quest: '부타게임 (난이도 상관 없이)', count: 10 },
+        { type: 'partyClear', quest: 'E세계대저택 (난이도 상관 없이)', count: 10 },
+        { type: 'partyClear', quest: 'E세계대저택', count: 10 }
+    ];
+    rpg.__setQuestDefs([{ id: 951, name: '레이드 클리어 테스트', categories: ['일반'], minLevel: 1, objectives, rewards: [] }]);
+    try {
+        let user = await rpg.getRPGUserByName(seeds[0].name);
+        assert.equal(rpg.recordQuestEvent(user, 'partyJoin', { questId: 'mansionNormal' }), false);
+        assert.equal(rpg.recordQuestEvent(user, 'partyClear', { questId: 'otherRaid', quest: '다른 레이드' }), false);
+        assert.equal(rpg.recordQuestEvent(user, 'partyClear', { quest: '흑화 호두' }), false, '이름만 같은 다른 전투는 집계하지 않는다');
+        await party.__test.grantPartyQuestClearRewards(room);
+        assert.deepEqual(user.quests[951]?.counters || {}, {}, '진행 중인 레이드는 클리어로 집계하지 않는다');
+        const week = rpg.getKoreanWeekKey(new Date());
+        Object.assign(user.titleProgress, { hoduRewardWeek: week, hoduRewardCount: 3, butaRewardWeek: week, mansionRewardWeek: week });
+        await user.save();
+        room.state = 'cleared'; room.result = {};
+        await Promise.all([party.__test.grantPartyQuestClearRewards(room), party.__test.grantPartyQuestClearRewards(room)]);
+        user = await rpg.getRPGUserByName(user.name);
+        assert.deepEqual(user.quests[951].counters, { 2: 1, 3: 1 }, '중복 지급 요청은 퀘스트도 한 번만 집계한다');
+        for (const questId of ['blackHodu', 'blackHoduExtreme', 'butaGame', 'butaGameHard', 'mansionHard', 'mansionNightmare']) {
+            const cleared = { ...room, questId, rewardPromise: null, result: {} };
+            await party.__test.grantPartyQuestClearRewards(cleared);
+            assert.equal(cleared.result.rewards[0].weeklyLocked, true);
+        }
+        user = await rpg.getRPGUserByName(user.name);
+        assert.deepEqual(user.quests[951].counters, { 0: 2, 1: 2, 2: 3, 3: 1 });
+        const board = await request('/api/quests');
+        assert.equal(board.status, 200);
+        const view = board.data.list.find(quest => quest.id === 951);
+        assert.deepEqual(view.objectives.map(objective => objective.current), [2, 2, 3, 1]);
+        assert.deepEqual(view.objectives.slice(0, 3).map(objective => objective.label), objectives.slice(0, 3).map(objective => '파티 퀘스트 클리어 — ' + objective.quest));
+        assert.equal((await request('/api/lookup/quest-targets')).status, 401);
+        const targets = await request('/api/lookup/quest-targets', undefined, seeds[0].name, true);
+        assert.equal(targets.status, 200);
+        assert.deepEqual(targets.data.partyQuestClearGroups, objectives.slice(0, 3).map(objective => objective.quest));
+        assert.deepEqual(targets.data.partyQuests, quests.map(quest => quest.name));
+    } finally { rpg.__setQuestDefs([]); }
 });
 
 test('나이트메어 최초는 별도 보상과 남은 주간 하드 보상을 함께 지급하고 이후 두 보상을 중복하지 않는다', async t => {

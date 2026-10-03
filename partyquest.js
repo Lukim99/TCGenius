@@ -712,7 +712,7 @@ function grantPartyQuestClearRewards(room) {
                 if (!user) continue;
                 // 퀘스트: 파티 퀘스트 클리어 집계 (인원 조건 포함, 아래 user.save로 저장)
                 if (typeof rpgenius.recordQuestEvent === 'function') {
-                    rpgenius.recordQuestEvent(user, 'partyClear', { quest: quest && quest.name || '', members: room.members.length });
+                    rpgenius.recordQuestEvent(user, 'partyClear', { quest: quest && quest.name || '', questId: room.questId, members: room.members.length });
                 }
                 const summary = {};
                 // 부타게임 주간 보상 제한 (노말/하드 통합 주 1회, 월요일 0시 KST 초기화).

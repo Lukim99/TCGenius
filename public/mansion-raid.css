@@ -71,6 +71,7 @@
 .mr-ev-tag{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 6px;border:1px solid var(--mr-edge-hi);color:var(--mr-text-2);font-size:10px;font-weight:700;letter-spacing:.02em}
 .mr-ev[data-mine="1"] .mr-ev-tag{border-color:var(--mr-gold);background:var(--mr-gold);color:var(--mr-ink)}
 .mr-ev-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:15px;letter-spacing:.03em;color:var(--mr-text)}
+.mr-ev-message,.mr-fc-message{font-size:12px;line-height:1.45;color:#ded2f1;word-break:keep-all;overflow-wrap:anywhere}
 .mr-ev-time{min-width:44px;text-align:right;font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:19px;line-height:1;color:var(--mr-text);font-variant-numeric:tabular-nums}
 .mr-ev.urgent .mr-ev-time{color:#ff9b92}
 .mr-ev.expired .mr-ev-time{font-size:15px;color:var(--mr-text-3)}
@@ -178,7 +179,8 @@
 /* ===== 맥동 제어 / 봉인 역전 ===== */
 .mr-cue{display:flex;align-items:center;justify-content:center;gap:12px;padding:6px 8px;background:#0b090e;box-shadow:inset 0 0 0 1px var(--mr-edge-hi)}
 .mr-cue-glyph{font-size:18px;font-weight:700;letter-spacing:.12em;color:var(--mr-text-2);white-space:nowrap}
-.mr-cue-word{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-weight:400;font-size:24px;letter-spacing:.1em;line-height:1.1}
+.mr-cue-word{font-weight:700;font-size:14px;line-height:1.4;word-break:keep-all;overflow-wrap:anywhere}
+.mr-cue-glyph{flex-shrink:0}
 .mr-ev[data-cue="gather"] .mr-cue-glyph{color:#e8c98a}
 .mr-ev[data-cue="scatter"] .mr-cue-glyph{color:#b9a8ea}
 .mr-rule{font-size:11px;font-weight:700;color:var(--mr-text-2);text-align:center}
@@ -197,6 +199,7 @@
 .mr-fc-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:700;color:var(--mr-text-2)}
 .mr-fc[data-mine="1"] .mr-fc-hint{color:var(--mr-gold-hi)}
 .mr-fc-time{font-family:var(--font-game,'Black Han Sans',Pretendard,sans-serif);font-size:15px;font-variant-numeric:tabular-nums;color:var(--mr-text)}
+.mr-fc-message{grid-column:2/-1}
 .mr-fc.urgent .mr-fc-time{color:#ff9b92}
 
 /* ===== 좁은 화면 (360px) ===== */
@@ -209,7 +212,7 @@
   .mr-pillar-col{--col-h:48px;width:22px}
   .mr-pillar-val{font-size:20px}
   .mr-key{min-height:46px;font-size:22px}
-  .mr-cue-word{font-size:21px}
+  .mr-cue-word{font-size:13px}
   .mr-cue-glyph{font-size:15px}
   .mr-fc-hint{font-size:10px}
 }
@@ -227,7 +230,7 @@
   .mr-gauge{height:18px}
   .mr-slot{height:30px}
   .mr-cue{padding:4px 8px}
-  .mr-cue-word{font-size:21px}
+  .mr-cue-word{font-size:13px}
 }
 /* ===== 모바일 대저택 — 줄어든 보스 스테이지와 겹치는 패널 정리 =====
    스테이지: 보스 HUD를 위로 압축하고, 내 HP/MP는 하단 한 줄 띠로 — 보스 HP·패턴 위를 덮지 않는다.
@@ -260,7 +263,7 @@
   .mr-root[data-stack="multi"] .mr-slot b{font-size:18px}
   .mr-root[data-stack="multi"] .mr-pillar-col{--col-h:40px}
   .mr-root[data-stack="multi"] .mr-cue{padding:3px 8px}
-  .mr-root[data-stack="multi"] .mr-cue-word{font-size:20px}
+  .mr-root[data-stack="multi"] .mr-cue-word{font-size:13px}
 }
 /* ===== 데스크톱 와이드 — 하단 액션 바와 같은 폭 ===== */
 @media (min-width:900px) and (min-height:700px){

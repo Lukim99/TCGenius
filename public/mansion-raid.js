@@ -411,7 +411,7 @@
                 const cue = ev.pulse === 'scatter' ? 'scatter' : 'gather';
                 card.node.dataset.cue = cue;
                 setText(card.cueGlyph, cue === 'gather' ? '→ ● ←' : '← ● →');
-                setText(card.cueWord, cue === 'gather' ? '모여듦' : '흩어짐');
+                setText(card.cueWord, ev.cueText || (cue === 'gather' ? '기운이 한점으로 모여듭니다' : '기운이 사방으로 흩어집니다'));
                 const target = ev.target ? String(ev.target) : '';
                 const meTarget = !!st.ctx.me && target === st.ctx.me;
                 const done = names(ev.responded).includes(target) || !!ls.choice;
@@ -508,6 +508,7 @@
         card.time = node('span', 'mr-ev-time');
         card.time.setAttribute('aria-hidden', 'true');
         head.append(card.tag, card.title, card.time);
+        card.message = node('div', 'mr-ev-message');
         const bar = node('div', 'mr-ev-bar');
         card.barFill = node('i');
         bar.append(card.barFill);
@@ -517,7 +518,7 @@
         card.err = node('div', 'mr-ev-err');
         card.err.setAttribute('role', 'alert');
         card.err.hidden = true;
-        n.append(head, bar, card.doEl, card.body, card.who, card.err);
+        n.append(head, card.message, bar, card.doEl, card.body, card.who, card.err);
         card.node = n;
         spec.build(st, card);
         st.list.append(n);
@@ -532,7 +533,8 @@
         card.hint = node('span', 'mr-fc-hint');
         card.time = node('span', 'mr-fc-time');
         card.time.setAttribute('aria-hidden', 'true');
-        n.append(node('span', 'mr-fc-mark', '!'), card.title, card.hint, card.time);
+        card.message = node('div', 'mr-fc-message');
+        n.append(node('span', 'mr-fc-mark', '!'), card.title, card.hint, card.time, card.message);
         card.node = n;
         st.fc.append(n);
         return card;
@@ -542,6 +544,8 @@
         const ev = card.ev;
         const me = st.ctx.me;
         setText(card.title, ev.label || card.kind);
+        card.message.hidden = !ev.message;
+        setText(card.message, ev.message || '');
         if (card.forecast) {
             const targets = names(ev.targets).concat(ev.target ? [String(ev.target)] : []);
             const uniq = Array.from(new Set(targets));
@@ -600,6 +604,7 @@
         st.head.dataset.form = form;
         setText(st.diff, DIFFICULTY_LABEL[view.difficulty] || '');
         setText(st.form, FORM_LABEL[form] || '');
+        setText(st.formSub, view.transitionMessage || '전투 정지');
         st.transitionDeadline = form === 'transition' ? now + Math.max(0, Number(view.transitionRemain) || 0) * 1000 : 0;
         st.formTime.hidden = !st.transitionDeadline;
         st.transitionText = '';

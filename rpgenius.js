@@ -15770,6 +15770,11 @@ function getQuestObjectiveTarget(objective) {
     return Math.max(1, Math.floor(Number(objective && objective.count || 1)));
 }
 
+const PARTY_QUEST_CLEAR_GROUPS = [
+    { name: '흑화 호두 (난이도 상관 없이)', ids: ['blackHodu', 'blackHoduExtreme'] },
+    { name: '부타게임 (난이도 상관 없이)', ids: ['butaGame', 'butaGameHard'] },
+    { name: 'E세계대저택 (난이도 상관 없이)', ids: ['mansionNormal', 'mansionHard', 'mansionNightmare'] }
+];
 // 목표 타입 → 발생 이벤트 (기본은 type == event, 파티 클리어 인원 조건 변형만 별도 매핑)
 const QUEST_OBJECTIVE_EVENT_MAP = { partyClearMin: 'partyClear', partyClearMax: 'partyClear' };
 
@@ -15785,6 +15790,8 @@ function questObjectiveMatchesEvent(objective, event, meta) {
     if (objective.type == 'pvp') return !objective.winOnly || !!(meta && meta.win);
     if (objective.type == 'craft') return !objective.recipe || String(meta && meta.recipe || '') == String(objective.recipe);
     if (objective.type == 'partyJoin' || objective.type == 'partyClear' || objective.type == 'partyClearMin' || objective.type == 'partyClearMax') {
+        const group = objective.type == 'partyClear' && PARTY_QUEST_CLEAR_GROUPS.find(group => group.name === objective.quest);
+        if (group) return group.ids.includes(meta && meta.questId);
         if (objective.quest && String(meta && meta.quest || '') != String(objective.quest)) return false;
         if (objective.type == 'partyClearMin') return Number(meta && meta.members || 0) >= Math.max(1, Number(objective.members || 1));
         if (objective.type == 'partyClearMax') return Number(meta && meta.members || 0) <= Math.max(1, Number(objective.members || 1));
@@ -16029,6 +16036,7 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    PARTY_QUEST_CLEAR_GROUPS,
     getDailyDungeons,
     clearFieldRuntimeTimers,
     getDungeonConfigurationError,
