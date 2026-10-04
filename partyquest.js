@@ -1072,17 +1072,37 @@ function cloneCooldowns(cd) {
 }
 
 // 공개 신호만 화면으로 보낸다. 피해 판정과 대응법은 기존 보스 핸들러에 둔다.
+function cueBossEffect(mon, effect, label, duration, details) {
+    const st = mon && mon.bossState;
+    if (!st) return;
+    const time = nowMs(), previous = st.visualCues?.[effect];
+    if (effect === 'crit-reflect' && previous && time - previous.startedAt < previous.duration * 1000) return;
+    st.visualCueSequence = Number(st.visualCueSequence || 0) + 1;
+    if (!st.visualCues) st.visualCues = {};
+    st.visualCues[effect] = { id: 'fx:' + effect + ':' + st.visualCueSequence, effect, label, duration, startedAt: time, ...details };
+}
+
 function serializeBossPatternEvents(mon) {
     const st = mon && mon.bossState;
-    if (!st || st.disabled || st.mansion) return [];
+    if (!st || st.mansion) return [];
     const events = [];
-    const effects = { curse: 'curse', 'role-shield': 'shield', 'self-buff': 'empower', reflect: 'reflect', mochi: 'shield', rain: 'shield', berserk: 'flame' };
+    const effects = { curse: 'curse', 'role-shield': 'dark-shield', 'self-buff': 'empower', reflect: 'reflect', mochi: 'mochi-shield', rain: 'rain-shield', berserk: 'berserk' };
     const add = (id, label, remain, duration, tag, details) => events.push(Object.assign({ id, kind: 'raidCue', effect: effects[id] || (id.startsWith('mark:') ? 'mark' : 'voice'), label, remain, duration, tag }, details));
+    for (const cue of Object.values(st.visualCues || {})) {
+        const remain = cue.duration - (nowMs() - cue.startedAt) / 1000;
+        if (remain > 0) add(cue.id, cue.label, remain, cue.duration, '', { effect: cue.effect, amount: cue.amount, count: cue.count, targets: cue.targets });
+    }
+    if (st.disabled) return events;
+    const castEffects = { half: 'purge', execute: 'execute', flame: 'flame', charge: 'charge', cannon: 'cannon' };
     const pattern = (type, fallback) => getMonsterPattern(mon, type).name || fallback;
+    if (st.finishedCast && nowMs() - st.finishedCast.finishedAt < 650) {
+        const cast = st.finishedCast;
+        add(cast.uiId, cast.name, (cast.finishedAt - nowMs()) / 1000, cast.duration, '', { effect: castEffects[cast.id], stage: 'resolved' });
+    }
     if (st.casting) {
         const cast = st.casting;
         add(cast.uiId || 'cast:' + cast.id, cast.name, cast.remain, cast.duration, st.blockUsers ? '저지' : '시전', {
-            effect: { half: 'purge', execute: 'execute', flame: 'flame', charge: 'charge', cannon: 'cannon' }[cast.id] || 'charge',
+            effect: castEffects[cast.id] || 'charge',
             responded: st.blockUsers ? Array.from(st.blockUsers) : [], requiresResponse: !!st.blockUsers
         });
     }
@@ -3335,6 +3355,7 @@ function tickBossCast(room, mon, dt) {
     if (cast.remain <= 0) {
         st.casting = null;
         mon.nextPattern = null;
+        if (['half', 'execute', 'flame', 'cannon'].includes(cast.id)) st.finishedCast = { id: cast.id, uiId: cast.uiId, name: cast.name, duration: cast.duration, finishedAt: nowMs() };
         if (typeof cast.onFinish === 'function') cast.onFinish(room, mon, cast);
     }
     return true;
@@ -3439,6 +3460,7 @@ function stepBlackHoduBoss(room, mon, dt) {
         const pattern = getMonsterPattern(mon, 'fixedAoe');
         const amount = Number(pattern.fixedDamage || 1000);
         st.shockTimer += Number(pattern.interval || 20);
+        cueBossEffect(mon, 'dark-blast', pattern.name || '어둠 폭발', 1.2);
         const alive = getAliveMembers(room);
         const taunted = pickTauntOrNull(room, mon);
         if (taunted) {
@@ -3458,7 +3480,9 @@ function stepBlackHoduBoss(room, mon, dt) {
         if (st.healTimer <= 0) {
             st.healTimer += regenInterval;
             const amount = Math.max(1, Math.round(mon.hpMax * Number(regenPattern.healMaxHpPct || 0.05)));
+            const before = mon.hp;
             mon.hp = Math.min(mon.hpMax, mon.hp + amount);
+            if (mon.hp > before) cueBossEffect(mon, 'regenerate', regenPattern.name || '재생', 1.4, { amount: mon.hp - before });
             pushCombat(room, mon.name + ' [' + (regenPattern.name || '재생') + '] +' + comma(amount), 'heal');
         }
     }
@@ -3872,6 +3896,7 @@ function applyBlackHoduCritReflect(room, attacker, result) {
     const reflect = Math.max(1, Math.round(critDamage * Number(pattern.reflectPct || 0.15)));
     const target = pickTauntOrNull(room, mon) || attacker;
     if (!target || !target.runtime || target.runtime.dead) return;
+    if (pattern.type) cueBossEffect(mon, 'crit-reflect', pattern.name || '치명 반사', .8, { targets: [target.name] });
     applyDamageToMember(room, target, calculateNormalDamageToMember(room, mon, target, reflect), mon.name + ' [치명 반사]');
 }
 
@@ -3980,6 +4005,7 @@ function stepTabuzago(room, mon, dt) {
     if (st.puzzleTimer <= 0) {
         const p = getMonsterPattern(mon, 'puzzleThrow');
         st.puzzleTimer += Number(p.interval || 17);
+        cueBossEffect(mon, 'puzzle', p.name || '퍼즐 던지기', 1.2);
         pushCombat(room, mon.name + '가 퍼즐을 요리조리 던져댑니다.', 'danger');
         const hits = Number(p.hits || 15);
         const raw = bossAtk(mon) * Number(p.atkRatio || 0.5);
@@ -4001,6 +4027,7 @@ function stepTabuzago(room, mon, dt) {
         st.dealingCount += 1;
         if (st.dealingCount >= need) {
             st.dealingCount = 0;
+            cueBossEffect(mon, 'dealing-strike', p.finishName || '확실한 딜링', 1.2);
             pushNotice(room, mon.name + ' — 확실한 딜링 예고', 'danger', 4500);
             const pct = Number(p.targetMaxHpPct || 0.3);
             for (const m of getAliveMembers(room)) {
@@ -4008,6 +4035,7 @@ function stepTabuzago(room, mon, dt) {
                 if (room.state !== 'inProgress' || room.monster !== mon) return true;
             }
         } else {
+            cueBossEffect(mon, 'dealing', p.name || '무난한 딜링', 1.2, { count: st.dealingCount });
             pushCombat(room, mon.name + '가 딜링을 준비 중입니다... (' + st.dealingCount + '/' + need + ')', 'danger');
         }
         return true;
@@ -4312,6 +4340,7 @@ function stepIngyeoWang(room, mon, dt) {
         const alive = getAliveMembers(room);
         if (alive.length) {
             const target = alive[Math.floor(Math.random() * alive.length)];
+            cueBossEffect(mon, 'bounce', p.name || '튀어오르기', 1, { targets: [target.name] });
             // remain 무한 대신 충분히 큰 값 — 관문 내내 유지된다
             const buff = addTakenDamageUpStack(target, Number(p.takenDamageUp || 0.5), 999999, p.name || '튀어오르기');
             pushCombat(room, mon.name + '가 ' + target.name + '를 튀어오르게 합니다 (x' + (buff ? buff.stack : 1) + ')', 'danger');
@@ -4633,6 +4662,7 @@ function onMonsterDefeated(room) {
         mon.bossState.buffRemain = 0;
         mon.nextPattern = null;
         mon.hp = Math.max(1, Math.round(mon.hpMax * reviveHpPct));
+        cueBossEffect(mon, 'revive', pattern.name || '흑화 부활', 1.8, { amount: mon.hp });
         mon.gauge = 0;
         mon.debuffs = [];
         const pctLabel = Math.round(reviveHpPct * 100) + '%';

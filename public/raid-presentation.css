@@ -1,5 +1,5 @@
 /* Claude Opus 5.5의 고정 전투 무대와 패턴 overlay 구성. */
-.pq-screen[data-screen="play"].raid-dock:not(.result-mode){
+.pq-screen[data-screen="play"].raid-dock.active:not(.result-mode){
   --gap:8px;--top-h:34px;--act-h:108px;--portrait-h:104px;--card-w:104px;--hud-h:64px;--pot:48px;--skill:46px;--support:81px;--support-icon:34px;--attack-w:96px;
   display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto var(--act-h);
   grid-template-areas:"top" "stage" "party" "act";gap:var(--gap);padding:10px

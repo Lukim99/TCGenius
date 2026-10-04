@@ -411,6 +411,75 @@ test('익스트림의 저주와 역할 방패는 원래 명칭과 지속시간�
         assert.equal(event.remain, remain); assert.ok(event.duration >= remain);
     }
     assert.equal(events.find(event => event.id === 'role-shield').tag, '탱커');
+    assert.equal(events.find(event => event.id === 'role-shield').effect, 'dark-shield');
+    assert.equal(events.find(event => event.id === 'self-buff').effect, 'empower');
+});
+
+test('시전 완료의 타격 연출은 실제 완료 신호를 사용하며 마지막 순간 기절은 타격을 만들지 않는다', async () => {
+    const room = await battle(); room.questId = 'blackHodu'; room.phaseIndex = 2;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
+    const handler = party.__test.BOSS_HANDLERS[mon.bossKey];
+    let hits = 0;
+    party.__test.startBossCast(room, mon, 'half', '파멸의 정화', .2, () => { hits++; });
+    const id = mon.bossState.casting.uiId;
+    handler.step(room, mon, .2);
+    const finished = party.__test.serializeMonster(mon).patternEvents.find(e => e.id === id);
+    assert.equal(hits, 1); assert.equal(finished.stage, 'resolved'); assert.equal(finished.effect, 'purge');
+    assert.ok(finished.remain <= 0); assert.equal(finished.onFinish, undefined);
+    mon.bossState.finishedCast.finishedAt -= 700;
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.length, 0);
+    party.__test.startBossCast(room, mon, 'half', '파멸의 정화', 2, () => { hits++; });
+    mon.bossState.casting.remain = .1; mon.stunRemain = 1;
+    tick(room);
+    assert.equal(mon.bossState.casting, null); assert.equal(hits, 1);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.length, 0);
+});
+
+test('재생 효과는 실제 회복 때만 발생하고 반복 회복과 만료를 스냅샷에 반영한다', async () => {
+    const room = await battle(); room.questId = 'blackHodu'; room.phaseIndex = 2;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
+    const st = mon.bossState, handler = party.__test.BOSS_HANDLERS[mon.bossKey];
+    st.phase50Started = true; st.phase10Started = true; st.shockTimer = st.buffTimer = 999;
+    mon.hp = mon.hpMax * .25; st.healTimer = 1;
+    handler.step(room, mon, .2);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.length, 0);
+    const hp = mon.hp;
+    st.healTimer = 0; handler.step(room, mon, .2);
+    const first = party.__test.serializeMonster(mon).patternEvents[0];
+    assert.equal(first.effect, 'regenerate'); assert.equal(first.label, '재생');
+    assert.equal(first.amount, mon.hp - hp); assert.equal(first.amount, Math.round(mon.hpMax * .05));
+    assert.equal(first.duration, 1.4); assert.ok(first.remain > 1.2);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents[0].id, first.id);
+    assert.equal(first.startedAt, undefined);
+    st.visualCues.regenerate.startedAt -= 1500;
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.length, 0);
+    mon.hp = mon.hpMax * .25; st.healTimer = 0; handler.step(room, mon, .2);
+    assert.notEqual(party.__test.serializeMonster(mon).patternEvents[0].id, first.id);
+    st.visualCues.regenerate.startedAt -= 1500;
+    mon.hp = mon.hpMax * .6; st.healTimer = 0; handler.step(room, mon, .2);
+    assert.equal(mon.hp, mon.hpMax * .6);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.length, 0);
+});
+
+test('타부자고의 즉시 패턴 효과는 실제 발동과 누적 단계에 연결된다', async () => {
+    const room = await battle(); room.questId = 'butaGame'; room.phaseIndex = 0;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[0]);
+    const st = mon.bossState, handler = party.__test.BOSS_HANDLERS[mon.bossKey];
+    handler.onSpawn(room, mon);
+    st.hpGimmicks = []; st.reflectTimer = st.mochiTimer = st.dealingTimer = 999; st.puzzleTimer = 0;
+    handler.step(room, mon, .2);
+    const puzzle = party.__test.serializeMonster(mon).patternEvents.find(e => e.effect === 'puzzle');
+    assert.equal(puzzle.label, '퍼즐 던지기'); assert.equal(puzzle.duration, 1.2);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.find(e => e.effect === 'puzzle').id, puzzle.id);
+    st.puzzleTimer = 999; st.dealingTimer = 0; handler.step(room, mon, .2);
+    const prepare = party.__test.serializeMonster(mon).patternEvents.find(e => e.effect === 'dealing');
+    assert.equal(prepare.count, 1);
+    st.dealingCount = 2; st.dealingTimer = 0;
+    const before = room.members[0].runtime.hp;
+    handler.step(room, mon, .2);
+    const strike = party.__test.serializeMonster(mon).patternEvents.find(e => e.effect === 'dealing-strike');
+    assert.equal(strike.label, '확실한 딜링'); assert.equal(st.dealingCount, 0);
+    assert.ok(room.members[0].runtime.hp < before);
 });
 
 test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참여 상태를 중복 없이 제공한다', async () => {
@@ -424,6 +493,7 @@ test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참
     events = party.__test.serializeMonster(room.monster).patternEvents;
     const rain = events.find(event => event.id === 'rain');
     assert.equal(rain.label, '레인! 도와줘!'); assert.equal(rain.duration, 10); assert.deepEqual(rain.targets, [st.markName]);
+    assert.equal(rain.effect, 'rain-shield');
     assert.equal(new Set(events.map(event => event.id)).size, events.length);
     st.gimmickActive = null; st.hpGimmicks = []; st.flameTimer = 999; st.chargeTimer = .2;
     tick(room);

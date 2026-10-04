@@ -24,6 +24,9 @@
 | hodu-retainer-court.png | 신규 | 붉은 등불과 봉인된 문이 있는 장례 사원 안뜰. 부하와 같은 조명 |
 | fx-dark-mist.png | 신규 | 정화 효과용 검정과 진홍색 연기. 가장자리는 알파 투명 |
 | fx-bronze-shard.png | 신규 | 조각 패턴용 입체 청동 파편. 알파 투명 배경 |
+| fx-fire-plume-v1.png | 신규 | 난류와 미세한 불꽃 결이 있는 화염. 예열과 분출, 폭주지대에서 사용 |
+| fx-healing-wisp-v1.png | 신규 | 옅은 비취색과 금빛 실이 섞인 투명 회복 기운. 실제 HP 회복 때 사용 |
+| fx-puzzle-piece-v1.png | 신규 | 두께, 흠집과 황동 테두리가 있는 석재 퍼즐 조각. 회전하며 날아가는 패턴에서 사용 |
 
 공통 생성 조건: 기존 인물의 정체성, 표현, 색과 자세를 유지한다. 기존 보스 전경은 실제 알파 투명 배경에 원본 좌표와 크기를 유지하며, 배경도 같은 카메라와 원근을 사용한다. 두 레이어는 화면 크기에 따라 함께 확대하고 잘라낸다. 신규 부하는 안뜰 바닥과 맞도록 따로 배치한다. 새 글자, 워터마크, 테두리는 추가하지 않는다.
 
@@ -50,6 +53,30 @@ FFmpeg로 시작 무음을 제거하고 피크를 제한해 모노 44.1kHz, MP3 
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 18개와 외부 효과음 8개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 21개와 외부 효과음 8개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
 
 2026-10-04에 `eefl-image` 버킷의 현재 사용 파일 26개를 확인했다. 마지막 수정의 신규 이미지 13개를 업로드했으며 모든 파일의 MD5, 크기와 MIME 형식이 일치했다.
+
+2026-10-05에 신규 효과 질감 3개를 업로드했다. 현재 사용 파일 29개의 MD5, 크기와 MIME 형식을 확인했다. 시각 방향은 Claude Opus 5.5가 실제 전투 화면과 질감을 읽고 검토했으며, 최종 합성은 PC와 320px 모바일의 실제 레이드 화면에서 확인했다.
+
+## 효과 질감 생성 프롬프트
+
+내장 imagegen을 사용했다. 생성된 PNG의 알파를 보존해 위 표의 프로젝트 경로로 복사했다. Canvas에서 위치, 회전, 높이와 광량을 바꾸며 이미지 자체는 수정하지 않는다.
+
+### fx-fire-plume-v1.png
+
+```text
+Create one production quality raster VFX texture for a dark fantasy RPG raid, isolated on a truly transparent background. A single irregular vertical turbulent flame plume, narrow at its rooted base, rises upward and spreads into torn wispy curls. Physically convincing fire with fine lacy orange tongues, warm amber yellow hot filaments, deep reddish orange translucent outer edges, a few tiny incandescent sparks. Dense rich painterly detail matched to high end realistic fantasy game paintings, like a fire explosion from molten rock. The upper and side edges dissolve organically into transparency; no opaque smoke, no ground, no object. Moderate controlled luminance: NO broad white center, NO white flash. Leave 10 percent transparent padding at all edges. This is a reusable small alpha billboard texture that must still read as real fire when rendered at 150 to 250 pixels high. It must NOT look like flat vector flames, leaf shapes, smooth petal shapes, neon graphic, cartoon, logo, emoji, diagram, icon, radial sun, solid shape, sticker or UI element. One single plume only, no sheet, no grid, no text, no border, no watermark, no background, no checkerboard painted into image.
+```
+
+### fx-healing-wisp-v1.png
+
+```text
+A production raster VFX billboard texture for a realistic painted dark fantasy RPG, isolated on a truly transparent background. One delicate vertical wisp of healing energy made of semi-transparent pale emerald and antique gold luminous vapor, wispy filament threads and very fine tiny light motes. Natural flowing curling vapor, light gently soaking into skin, elegant controlled luminance, painterly physical atmosphere at high detail. Sparse irregular wisps, open empty space between strands, softly dissolving alpha edges. The effect rises gently from a small lower base and curves inward near the middle, occupies the central 70 percent of the image with transparent padding. This is a MATERIAL texture for game healing, NOT a logo or diagram. No crosses, leaves, diamonds, petals, glyphs, rings, geometric pattern, hard edges, UI symbols, objects, person, floor, text, white core, border, watermark, opaque cloud or colored background. Keep it subtle enough not to cover a character portrait when layered at low opacity. One continuous energy wisp only, no grid, no animation sheet.
+```
+
+### fx-puzzle-piece-v1.png
+
+```text
+One small thick interlocking jigsaw puzzle piece, production game VFX sprite for a realistic painted dark fantasy RPG. A single heavy piece seen in a three quarter tilted perspective, made of worn blue gray stone and antique brass edge, visible thickness, chipped corners, subtle engraved surface grooves, physical shadows inside the shape, sharp small pale warm highlight on its upper left beveled edge. Muted rich colors, realistic painterly material matching fantasy boss artwork, intricate tactile detail, intended to be rendered only 24 to 45 pixels across as a thrown tumbling object. Jigsaw shape clearly has one rounded tab and one rounded recess. Fully isolated on a truly transparent background, 15 percent empty padding, no cast shadow outside the object. No bright saturated primary colors, cartoon, vector icon, black outline, emoji, logo, text, background, border, watermark, halo, UI graphic, checkerboard. One object only, not a grid or sheet.
+```

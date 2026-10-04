@@ -56,6 +56,11 @@
         toast._t = setTimeout(() => t.classList.remove('active'), 2400);
     }
 
+    function formatCardStar(star) {
+        const displayStar = Number(star || 0) + 1;
+        return { 10: '𝛧', 11: '𝛴', 12: '𝛀' }[displayStar] || displayStar + '성';
+    }
+
     // 공통 메시지 모달 (네이티브 alert/confirm 대체)
     function openMsgModal(message, isConfirm) {
         return new Promise(resolve => {
@@ -1001,8 +1006,7 @@
             if (key) used.add(key);
             const art = el('div', { class: 'pq-slot-art' }, slotPortrait(m, key));
             if (m.card) {
-                const star = Number(m.card.star || 0);
-                art.append(el('span', { class: 'pq-slot-star' }, ['제타', '시그마', '오메가'][star - 9] || '★' + (star + 1)));
+                art.append(el('span', { class: 'pq-slot-star' }, formatCardStar(m.card.star)));
             }
             if (isHost) art.append(el('span', { class: 'pq-slot-lead' }, '공대장'));
             if (m.card) art.append(el('span', { class: 'pq-slot-card' }, el('span', null, m.card.name || ''), m.card.type ? el('i', null, m.card.type) : null));
@@ -1716,7 +1720,7 @@
                     : el('span', { class: 'ph' }, (m.name || '?').slice(0, 1))
             );
             if (!snap.noPositions && m.position) img.append(el('span', { class: 'pos' }, m.position));
-            if (m.card) img.append(el('span', { class: 'star' }, '★' + (Number(m.card.star || 0) + 1)));
+            if (m.card) img.append(el('span', { class: 'star' }, formatCardStar(m.card.star)));
             if (r && r.dead) img.append(el('span', { class: 'ko' }, '전투불능'));
             // 버프 칩 — 카드 일러스트 하단 오버레이. 내 카드는 전체 버프, 타인은 주요 디버프만.
             const chips = [];
@@ -2341,7 +2345,12 @@
         localBuffTickAt = 0;
         currentRoom = null;
         updateRaidPatterns();
+        syncVoteModal(null);
+        $('#pqChoiceBg').classList.remove('active');
+        $('#pqTargetBg').classList.remove('active');
+        renderMemberDetail();
         $('#frame').classList.remove('spectating');
+        showScreen('lobby');
         await loadLobby();
     }
     $('#pqLeave').onclick = leaveRoom;

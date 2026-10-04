@@ -16,7 +16,7 @@ const files = [
     ...['black-hodu', 'black-hodu-aura', 'hodu-retainer', 'hodu-retainer-court',
         'ingyeo', 'ingyeo-berserk', 'ingyeo-berserk-arena', 'volcanic-arena', 'tabujago-scene', 'dungeon-gate',
         'sculpture-scene', 'sculpture-hall', 'whiplash-scene', 'whiplash-hall', 'whiplash-echo-scene', 'whiplash-echo-hall',
-        'fx-dark-mist', 'fx-bronze-shard'].map(name => '레이드/' + name + '.png'),
+        'fx-dark-mist', 'fx-bronze-shard', 'fx-fire-plume-v1', 'fx-healing-wisp-v1', 'fx-puzzle-piece-v1'].map(name => '레이드/' + name + '.png'),
     ...['beep', 'gloss', 'shards-fall', 'shards-impact', 'resonance-blast', 'wall-hum', 'rupture', 'charge'].map(name => 'sfx/raid/' + name + '.mp3')
 ];
 const assets = files.map(file => {
