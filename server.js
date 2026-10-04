@@ -4626,11 +4626,25 @@ server.get('/api/party/quests', requirePartyQuest, async (req, res) => {
 });
 
 server.get('/api/party/rooms', requirePartyQuest, (req, res) => {
-    res.json({ rooms: partyquest.publicRoomList(), my: partyquest.getMyRoomSnapshot(req.session.name) });
+    res.json({ rooms: partyquest.publicRoomList(), my: partyquest.getMyViewSnapshot(req.session.name) });
 });
 
 server.get('/api/party/me', requirePartyQuest, (req, res) => {
-    res.json({ room: partyquest.getMyRoomSnapshot(req.session.name) });
+    res.json({ room: partyquest.getMyViewSnapshot(req.session.name) });
+});
+
+server.post('/api/party/rooms/:id/spectate', requirePartyQuest, (req, res) => {
+    const out = partyquest.spectateRoom(String(req.params.id || ''), req.session.name, String(req.body?.password || ''));
+    if (out.error) return res.status(400).json({ error: out.error });
+    res.json(out);
+});
+
+server.post('/api/party/spectate/leave', requirePartyQuest, (req, res) => {
+    res.json(partyquest.stopSpectating(req.session.name));
+});
+
+server.get('/api/party/spectate/stream', requirePartyQuest, (req, res) => {
+    partyquest.attachSpectatorStream(req.session.name, res);
 });
 
 server.post('/api/party/rooms', requirePartyQuest, async (req, res) => {
@@ -9481,7 +9495,7 @@ function renderPartyApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>레이드 | RPGenius</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"></head><body>
+<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"><link rel="stylesheet" href="/static/raid-presentation.css"></head><body>
 <div class="frame" id="frame">
   <div class="pq-header">
     <button class="pq-icon-btn" id="pqHome" title="홈으로">←</button>
@@ -9529,7 +9543,7 @@ function renderPartyApp(sess) {
             <div id="pqPositionGrid" class="pq-position-grid"></div>
             <div id="pqPositionDetail" class="pq-stat-list" style="display:none"></div>
           </div>
-          <div class="pq-prep-block">
+          <div class="pq-prep-block" id="pqPotionPanel">
             <div class="pq-room-label">휴대 물약 <b id="pqPotionCount"></b><button class="pq-btn" id="pqOpenPotion" type="button">변경</button></div>
             <div id="pqPotionSummary" class="pq-belt"></div>
           </div>
@@ -9554,11 +9568,13 @@ function renderPartyApp(sess) {
       <div class="pq-game-top">
         <button class="pq-game-leave" id="pqPlayLeave" type="button">← 나가기</button>
         <div class="pq-game-phase"><span id="pqPhaseLabel">PHASE</span><b id="pqPhaseName">-</b></div>
+        <span id="pqSpectatorBadge" class="pq-spectator-badge" hidden>관전</span>
         <div class="pq-enrage" style="display:none" id="pqEnrage"></div>
         <button class="pq-game-leave" id="pqSettingsBtn" type="button">설정</button>
       </div>
       <div class="pq-game-stagewrap">
         <div id="pqPhaseStage" class="pq-game-stage"></div>
+        <canvas id="pqRaidFx" class="pq-raid-fx" aria-hidden="true"></canvas>
         <div class="pq-game-chat" id="pqGameChat">
           <div class="tabs">
             <button type="button" class="on" id="pqTabChat">채팅</button>
@@ -9578,15 +9594,15 @@ function renderPartyApp(sess) {
       <div id="pqMansionRoot" hidden></div>
       <div id="pqPlayMembers" class="pq-game-party"></div>
       <div class="pq-game-actions" id="pqActionRow">
-        <div class="pq-game-bars">
-          <div id="pqSupportPanel" style="display:none">
+        <div id="pqSupportPanel" style="display:none">
             <div class="sup-head">
               <span>지원군</span>
               <div class="pq-prog gauge"><div id="pqSupportGaugeFill" class="fill" style="width:0%"></div></div>
               <span id="pqSupportGaugeVal">0%</span>
             </div>
             <div id="pqSupportSkills" class="pq-skill-strip"></div>
-          </div>
+        </div>
+        <div class="pq-game-bars">
           <div id="pqSkillBar" class="pq-skill-strip"></div>
           <div id="pqPotionBar" class="pq-skill-strip potion"></div>
           <div id="pqSealOverlay" class="pq-seal-overlay" style="display:none"></div>
@@ -9732,6 +9748,7 @@ function renderPartyApp(sess) {
 </div>
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
 <script src="/static/mansion-raid.js"></script>
+<script src="/static/raid-pattern-fx.js"></script>
 <script src="/static/party.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

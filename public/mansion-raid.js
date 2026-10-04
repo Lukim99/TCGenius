@@ -1,5 +1,5 @@
 // 레이드 공통 패턴 HUD. 대저택의 입력 기믹도 같은 카드 구조로 표시한다.
-// party.js가 보스 스테이지 아래 별도 root에 SSE마다 MansionRaidUI.update(root, view, { me, host, send })를 호출한다.
+// party.js가 고정 dock에 SSE마다 MansionRaidUI.update(root, view, { me, host, send })를 호출한다.
 // 사건은 id로 키잉해 한 번만 만들고 이후에는 숫자·상태만 패치한다 (누르던 버튼 교체·초점 유실 방지).
 (() => {
     'use strict';
@@ -76,7 +76,7 @@
     function act(st, card, payload, key, onFail) {
         const ls = loc(card.id);
         const send = st.ctx.send;
-        if (ls.pending.has(key) || typeof send !== 'function') return;
+        if (st.ctx.readOnly || ls.pending.has(key) || typeof send !== 'function') return;
         ls.pending.add(key);
         patchCard(st, card);
         Promise.resolve()
@@ -249,7 +249,7 @@
                 seqWrap.append(node('span', 'mr-row-k', '제시'));
                 card.seq = node('div', 'mr-seq');
                 seqWrap.append(card.seq);
-                const inWrap = node('div', 'mr-seq-wrap');
+                const inWrap = node('div', 'mr-seq-wrap mr-input-row');
                 inWrap.append(node('span', 'mr-row-k', '입력'));
                 card.typed = node('div', 'mr-seq mr-typed');
                 inWrap.append(card.typed);
@@ -426,7 +426,7 @@
     function onLetter(st, card, letter) {
         const ls = loc(card.id);
         const send = st.ctx.send;
-        if (card.expired || ls.typed.length >= card.seqLen || typeof send !== 'function') return;
+        if (st.ctx.readOnly || card.expired || ls.typed.length >= card.seqLen || typeof send !== 'function') return;
         ls.typed.push(letter);
         ls.inflight++;
         // 글자 순서가 서버에 그대로 도착하도록 직렬로 보낸다
@@ -503,7 +503,8 @@
         }
         const ls = loc(card.id);
         const r = card.spec.patch(st, card, ls) || {};
-        card.node.dataset.mine = r.mine ? '1' : '';
+        card.node.dataset.mine = !st.ctx.readOnly && r.mine ? '1' : '';
+        if (st.ctx.readOnly) card.node.querySelectorAll('button').forEach(b => setDisabled(b, true));
         setText(card.tag, r.tag || '전원');
         patchWho(st, card, r.whoLabel || card.spec.who, r.who || names(ev.responded));
         const showErr = !!ls.err && performance.now() < ls.errUntil;
@@ -589,7 +590,7 @@
         if (st.root.dataset.stack !== stack) st.root.dataset.stack = stack;
         st.root.hidden = mode === 'idle';
         const screen = st.root.closest('.pq-screen');
-        if (screen) screen.classList.toggle('mr-on', !!view && (!view.generic || mode !== 'idle'));
+        if (screen) screen.dataset.mr = mode;
     }
 
     // ===== 타이머 — 서버 remain을 받은 시점 기준으로 로컬 보간 =====
@@ -640,6 +641,7 @@
         let st = roots.get(root);
         if (!st) { st = mount(root); roots.set(root, st); }
         st.ctx = ctx || {};
+        st.root.dataset.readonly = st.ctx.readOnly ? '1' : '';
         st.view = view || null;
         if (!view) {
             for (const card of st.cards.values()) card.node.remove();
@@ -654,12 +656,16 @@
         const seen = new Set();
         for (const ev of Array.isArray(view.events) ? view.events : []) {
             if (!ev || ev.id == null) continue;
+            if (st.ctx.visualOnly?.(ev)) continue;
             const id = String(ev.id);
             if (seen.has(id)) continue;
             seen.add(id);
             let card = st.cards.get(id);
             if (card && card.kind !== String(ev.kind || '')) { card.node.remove(); card = null; }
-            if (!card) { card = buildCard(st, ev); st.cards.set(id, card); }
+            if (!card) {
+                card = buildCard(st, ev); st.cards.set(id, card);
+                if (!st.ctx.readOnly && !card.forecast) root.scrollTop = 0;
+            }
             card.ev = ev;
             card.persistent = ev.remain == null;
             card.node.dataset.persistent = card.persistent ? '1' : '';

@@ -16,6 +16,8 @@
     let bossStageSig = '';
     let voteSig = '';
     let supportBarSig = '';
+    let raidEffects = null;
+    let sceneObserver = null;
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
     const pendingCD = { action: false, potion: false };
@@ -242,6 +244,8 @@
         });
         $$('.pq-skill-btn[data-kind="potion"]').forEach(btn => {
             btn.disabled = pendingCD.potion || dead || transitioning || seal > 0 || pcd > 0;
+            btn.dataset.block = dead || transitioning || seal > 0 ? '1' : '';
+            btn.style.setProperty('--cd', String(Math.min(1, pcd / 3)));
             const cd = btn.querySelector('.cd');
             if (cd) {
                 const text = seal > 0 ? '봉인' : (pcd > 0 ? pcd.toFixed(1) : '');
@@ -277,6 +281,7 @@
     }
 
     async function performPartyAction(path, payload, kind) {
+        if (currentRoom?.spectating) return;
         if (isPhaseTransitionActive()) return;
         if (!currentRoom || pendingCD[kind]) return;
         const roomId = currentRoom.id;
@@ -365,7 +370,8 @@
             if (q && q.coverImage) cover.append(el('img', { src: coverUrl(q.coverImage), alt: '', loading: 'lazy', decoding: 'async', draggable: 'false', onError: e => e.currentTarget.remove() }));
             const pips = el('div', { class: 'pq-room-pips', 'aria-hidden': 'true' });
             for (let i = 0; i < max; i++) pips.append(el('i', { class: i < count ? 'on' : null }));
-            root.append(el('button', { type: 'button', class: 'pq-room-card' + (full ? ' full' : ''), 'data-difficulty': difficulty, onClick: () => attemptJoin(r) },
+            const fighting = r.state === 'inProgress';
+            root.append(el('article', { class: 'pq-room-card' + (full ? ' full' : ''), 'data-difficulty': difficulty },
                 cover,
                 el('div', { class: 'pq-room-body' },
                     el('span', { class: 'pq-diff-tag', 'data-difficulty': difficulty }, difficulty.toUpperCase()),
@@ -375,7 +381,10 @@
                 el('div', { class: 'pq-room-side' },
                     el('b', null, count + '/' + max),
                     pips,
-                    r.hasPassword ? el('span', { class: 'lock' }, '비공개') : el('span', null, full ? '인원 마감' : r.state === 'lobby' ? '대기 중' : '준비 중')
+                    r.hasPassword ? el('span', { class: 'lock' }, '비공개') : el('span', null, fighting ? '전투 중' : full ? '인원 마감' : r.state === 'lobby' ? '대기 중' : '준비 중'),
+                    el('div', { class: 'pq-room-entry' },
+                        !fighting && !full ? el('button', { type: 'button', class: 'pq-btn', onClick: () => attemptJoin(r) }, '입장') : null,
+                        el('button', { type: 'button', class: 'pq-btn primary', onClick: () => attemptJoin(r, true) }, '관전'))
                 )
             ));
         }
@@ -422,8 +431,14 @@
         if (next) next.onclick = () => { if (questPickerIdx < questDefs.length - 1) { questPickerIdx++; renderQuestCard(); } };
     }
 
-    function attemptJoin(r) {
+    function attemptJoin(r, spectate = false) {
+        const enter = async password => {
+            await api('/api/party/rooms/' + r.id + (spectate ? '/spectate' : '/join'), { method: 'POST', body: JSON.stringify({ password }) });
+            await afterEnterRoom();
+        };
         if (r.hasPassword) {
+            $('#pqJoinTitle').textContent = spectate ? '파티 관전' : '파티 입장';
+            $('#pqJoinConfirm').textContent = spectate ? '관전' : '입장';
             const sub = $('#pqJoinSub');
             sub.textContent = r.hostName + '님의 파티 (' + r.questName + ')';
             $('#pqJoinPw').value = '';
@@ -431,16 +446,14 @@
             $('#pqJoinConfirm').onclick = async () => {
                 const pw = $('#pqJoinPw').value;
                 try {
-                    await api('/api/party/rooms/' + r.id + '/join', { method: 'POST', body: JSON.stringify({ password: pw }) });
+                    await enter(pw);
                     $('#pqJoinBg').classList.remove('active');
-                    afterEnterRoom();
                 } catch (e) { toast(e.message); }
             };
         } else {
             (async () => {
                 try {
-                    await api('/api/party/rooms/' + r.id + '/join', { method: 'POST', body: JSON.stringify({}) });
-                    afterEnterRoom();
+                    await enter('');
                 } catch (e) { toast(e.message); }
             })();
         }
@@ -636,7 +649,7 @@
     // 전투 중 키 입력 → 해당 슬롯 버튼 클릭 (버튼의 disabled/쿨다운 로직을 그대로 탄다)
     document.addEventListener('keydown', e => {
         if (e.repeat) return;
-        if (!currentRoom || currentRoom.state !== 'inProgress') return;
+        if (!currentRoom || currentRoom.spectating || currentRoom.state !== 'inProgress') return;
         const play = document.querySelector('.pq-screen[data-screen="play"]');
         if (!play || !play.classList.contains('active')) return;
         const tag = (document.activeElement && document.activeElement.tagName) || '';
@@ -838,12 +851,15 @@
         const elapsed = Math.max(0, Date.now() - Number(transition.startedAt) - (cooldownClockOffset || 0));
         phaseCut = el('div', { class: 'pq-gate-cut', 'data-id': transition.id, role: 'status', 'aria-label': transition.phaseName + ' ' + transition.toName });
         phaseCut.style.setProperty('--gate-offset', '-' + elapsed + 'ms');
-        for (const [kind, image] of [['prev', transition.fromImage], ['next', transition.toImage]]) {
-            if (image) phaseCut.append(el('img', { class: 'pq-gate-' + kind, src: image, alt: '', draggable: 'false' }));
+        for (const [kind, image, background, scene] of [['prev', transition.fromImage, transition.fromBackground, transition.fromScene],
+            ['next', transition.toImage, transition.toBackground, transition.toScene]]) {
+            if (scene && background) phaseCut.append(el('div', { class: 'pq-gate-layer ' + kind }, renderRaidScene({ image, background, scene })));
+            else if (image) phaseCut.append(el('img', { class: 'pq-gate-' + kind, src: image, alt: '', draggable: 'false' }));
         }
         phaseCut.append(el('i', { class: 'pq-gate-line', 'aria-hidden': 'true' }),
             el('div', { class: 'pq-gate-title' }, el('span', null, transition.phaseNumber + '관문'), el('b', null, transition.toName)));
         stage.append(phaseCut);
+        syncRaidScenes();
         phaseCutTimer = setTimeout(() => {
             hidePhaseTransition();
             updateRaidPatterns();
@@ -855,8 +871,13 @@
         const snap = currentRoom, monster = snap?.monster;
         const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() ? null
             : monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
-        MansionRaidUI.update($('#pqMansionRoot'), view, { me, host: snap?.hostName, serverOffset: cooldownClockOffset || 0,
-            send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+        if (!raidEffects && window.RaidPatternFX) raidEffects = RaidPatternFX.create($('#pqRaidFx'));
+        const purification = snap?.state === 'inProgress' && snap.phaseType === 'mob' && !isPhaseTransitionActive()
+            ? { progress: Math.min(1, (snap.sharedKillCount || 0) / Math.max(1, snap.killTarget)), complete: snap.sharedKillCount >= snap.killTarget } : null;
+        raidEffects?.update(view, { scope: snap ? snap.id + ':' + snap.startedAt + ':' + snap.phaseIndex : '', volume: sound.sfx, purification });
+        MansionRaidUI.update($('#pqMansionRoot'), view, { me: snap?.spectating ? '' : me, host: snap?.hostName, serverOffset: cooldownClockOffset || 0,
+            readOnly: !!snap?.spectating, visualOnly: raidEffects?.visualOnly,
+            send: snap?.spectating ? null : payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
     }
 
     // ====== 방 화면 ======
@@ -867,6 +888,19 @@
             pendingCD.action = false; pendingCD.potion = false;
         }
         currentRoom = snap;
+        $('#frame').classList.toggle('spectating', !!snap.spectating);
+        const watchBadge = $('#pqSpectatorBadge');
+        if (watchBadge) { watchBadge.hidden = !snap.spectating; watchBadge.textContent = '관전'; }
+        $('#pqPlayLeave').textContent = snap.spectating ? '관전 종료' : '← 나가기';
+        $('#pqLeave').textContent = snap.spectating ? '관전 종료' : '← 나가기';
+        if (snap.spectating && previous?.id !== snap.id) showGameTab('log');
+        if (snap.spectating && snap.combatLog) {
+            const log = $('#pqCombatLog'), top = log.scrollTop;
+            const stick = previous?.id !== snap.id || !log.closest('.pq-game-chat').classList.contains('open') || top + log.clientHeight >= log.scrollHeight - 12;
+            log.replaceChildren(...snap.combatLog.map(entry => el('div', { class: 'ln ' + (entry.severity || 'info') }, entry.text)));
+            if (stick) requestAnimationFrame(() => { if (currentRoom?.id === snap.id) log.scrollTop = log.scrollHeight; });
+            else log.scrollTop = top;
+        }
         syncDefeatPresentation(snap, previous);
         localBuffTickAt = Date.now();
         maybePlayIntro(snap);
@@ -1083,6 +1117,7 @@
         const myMember = snap.members.find(m => m.name === me);
         const isHost = snap.hostName === me;
         const readyBtn = $('#pqReadyBtn');
+        readyBtn.hidden = !!snap.spectating;
         const startBtn = $('#pqStartBtn');
         if (myMember) {
             readyBtn.textContent = myMember.ready ? '준비 해제' : '준비';
@@ -1118,13 +1153,20 @@
         const snap = currentRoom;
         const ended = !defeatActive && (snap.state === 'cleared' || snap.state === 'failed');
         const playScreen = document.querySelector('.pq-screen[data-screen="play"]');
-        if (playScreen) playScreen.classList.toggle('result-mode', ended);
-        $('#pqPhaseLabel').textContent = snap.phaseType ? snap.phaseType.toUpperCase() : 'PHASE';
+        if (playScreen) {
+            playScreen.classList.add('raid-dock');
+            playScreen.classList.toggle('result-mode', ended);
+            playScreen.classList.toggle('spectate', !!snap.spectating);
+            playScreen.dataset.support = (snap.supportSkills || []).length ? '1' : '';
+        }
+        $('#pqPhaseLabel').textContent = snap.phaseType === 'mob' ? '정화' : snap.phaseType ? snap.phaseType.toUpperCase() : 'PHASE';
         $('#pqPhaseName').textContent = snap.phaseName || '-';
 
         const stage = $('#pqPhaseStage');
+        stage.style.backgroundImage = snap.monster?.background || snap.phaseArtwork?.background ? ''
+            : 'url(' + JSON.stringify(coverUrl(roomQuest(snap).coverImage)) + ')';
         const actionRow = $('#pqActionRow');
-        if (actionRow) actionRow.style.display = ended || defeatActive ? 'none' : '';
+        if (actionRow) actionRow.style.display = ended || defeatActive || snap.spectating ? 'none' : '';
         if (defeatActive) {
             updateEnrageLabel(null);
         } else if (ended) {
@@ -1146,13 +1188,14 @@
             stage.replaceChildren();
         }
 
+        syncRaidScenes();
         updateRaidPatterns();
         syncVoteModal(snap);
         renderSupportBar(snap);
         renderPlayMembers(snap);
         renderSkillBar(snap);
         renderPotionBar(snap);
-        if (snap.state === 'cleared' && snap.result && Array.isArray(snap.result.rewards) && snap.result.rewards.length && shownRewardRoomId !== snap.id) {
+        if (!snap.spectating && snap.state === 'cleared' && snap.result && Array.isArray(snap.result.rewards) && snap.result.rewards.length && shownRewardRoomId !== snap.id) {
             shownRewardRoomId = snap.id;
             openRewardModal(snap.result.rewards);
             const mine = snap.result.rewards.find(rv => rv.name === me);
@@ -1175,10 +1218,10 @@
         const footer = el('div', { class: 'pq-result-footer' });
         if (r.cleared && r.rewards && r.rewards.length) {
             footer.append(el('button', { class: 'pq-btn primary', type: 'button', onClick: () => openRewardModal(r.rewards) }, '파티 보상 확인'));
-        } else if (r.cleared) {
+        } else if (r.cleared && !snap.spectating) {
             footer.append(el('div', { class: 'pq-result-reward-wait' }, '보상 지급 중...'));
         }
-        if (snap.hostName === me) {
+        if (!snap.spectating && snap.hostName === me) {
             const btn = el('button', { class: 'pq-btn', type: 'button' }, '다시 도전');
             btn.addEventListener('click', async () => {
                 btn.disabled = true;
@@ -1343,14 +1386,44 @@
         $('#pqFirstClearBg').classList.add('active');
     }
 
+    // 배경과 전경은 같은 원본 좌표에서 함께 확대/잘라낸다. 별도 contain 배치로 구도가 어긋나지 않게 한다.
+    function renderRaidScene(art, boss = false, name = '') {
+        const plane = el('div', { class: 'pq-scene-plane', 'data-aspect': art.scene.aspect });
+        if (art.scene.alignY === 0) { plane.style.top = '0'; plane.style.transform = 'translateX(-50%)'; }
+        if (art.background) plane.append(el('img', { class: 'pq-stage-background', src: art.background, alt: '', draggable: 'false' }));
+        if (art.image) {
+            const subject = art.scene.subject || [0, 0, 1, 1];
+            const foreground = el('div', { id: boss ? 'pqBossIllust' : null, class: 'pq-stage-illust pq-scene-foreground',
+                'data-framed': art.scene.framed === false ? '0' : '1' });
+            if (art.scene.framed === false) {
+                foreground.style.cssText = 'left:' + subject[0] * 100 + '%;top:' + subject[1] * 100 + '%;width:' + subject[2] * 100 + '%;height:' + subject[3] * 100 + '%';
+            }
+            foreground.append(el('img', { id: boss ? 'pqBossIllustImg' : null, src: art.image, alt: name, draggable: 'false',
+                'data-sprite': '1', 'data-subject': art.scene.framed === false ? '[0,0,1,1]' : JSON.stringify(subject) }));
+            plane.append(foreground);
+        }
+        return plane;
+    }
+
+    function syncRaidScenes() {
+        const stage = $('#pqPhaseStage');
+        if (!sceneObserver && window.ResizeObserver) { sceneObserver = new ResizeObserver(syncRaidScenes); sceneObserver.observe(stage); }
+        document.querySelector('.pq-game-stagewrap').querySelectorAll('.pq-scene-plane').forEach(plane => {
+            const parent = plane.parentElement, aspect = Number(plane.dataset.aspect);
+            const width = Math.max(parent.clientWidth, parent.clientHeight * aspect);
+            plane.style.width = width + 'px'; plane.style.height = width / aspect + 'px';
+        });
+    }
+
     function renderMobStage(snap) {
         const wrap = el('div', { id: 'pqMobStage', class: 'pq-stage-mob' });
-        wrap.append(el('div', { class: 'lbl' }, '잡몹 처치'));
-        wrap.append(el('div', { id: 'pqMobCount', class: 'n' }, (snap.sharedKillCount || 0).toLocaleString() + ' / ' + (snap.killTarget || 0).toLocaleString()));
+        if (snap.phaseArtwork?.background) wrap.append(renderRaidScene(snap.phaseArtwork));
+        const hud = el('div', { class: 'pq-purification-hud' }, el('div', { class: 'lbl' }, '어둠 정화'), el('div', { id: 'pqMobCount', class: 'n' }));
         const bar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqMobBarFill', class: 'fill' }));
-        wrap.append(bar);
-        const pct = (snap.killTarget > 0 ? (snap.sharedKillCount / snap.killTarget) : 0) * 100;
-        bar.firstChild.style.width = Math.min(100, pct) + '%';
+        hud.append(bar); wrap.append(hud);
+        const pct = Math.min(100, (snap.sharedKillCount || 0) / Math.max(1, snap.killTarget) * 100);
+        hud.querySelector('.n').textContent = pct.toFixed(1) + '%';
+        bar.firstChild.style.width = pct + '%';
         updateAttackBtn();
         return wrap;
     }
@@ -1358,8 +1431,9 @@
     function updateMobCounter(total, target) {
         const c = document.getElementById('pqMobCount');
         const f = document.getElementById('pqMobBarFill');
-        if (c) c.textContent = (total || 0).toLocaleString() + ' / ' + (target || 0).toLocaleString();
+        if (c) c.textContent = Math.min(100, (total || 0) / Math.max(1, target) * 100).toFixed(1) + '%';
         if (f) f.style.width = Math.min(100, (target > 0 ? (total / target) : 0) * 100) + '%';
+        updateRaidPatterns();
     }
 
     function updateMobStage(snap) {
@@ -1436,12 +1510,13 @@
         pop.append(main);
         if (payload.comboTotal > 1) pop.append(el('span', { class: 'sub combo-label' }, payload.comboIndex + '/' + payload.comboTotal + ' HIT'));
         if (payload.comboLastCrit) pop.append(el('span', { class: 'sub combo-label' }, '최대 연격'));
-        if (payload.kills > 1) pop.append(el('span', { class: 'sub' }, '×' + payload.kills.toLocaleString() + ' 처치'));
+        if (payload.kills > 1) pop.append(el('span', { class: 'sub' }, '정화 +' + (payload.kills / Math.max(1, payload.target || currentRoom?.killTarget) * 100).toFixed(1) + '%'));
         else if (payload.skill) pop.append(el('span', { class: 'sub' }, payload.skill));
         if (hasFixed) pop.append(el('span', { class: 'sub fixed-label' }, '고정 ' + Number(payload.fixedDamage || 0).toLocaleString()));
         if (hasDestiny) pop.append(el('span', { class: 'sub fixed-label' }, '운명 ' + Number(payload.destinyDamage || 0).toLocaleString()));
-        const offsetX = illustHost ? (30 + Math.random() * 40) : (50 + (Math.random() * 30 - 15));
-        const offsetY = illustHost ? (20 + Math.random() * 40) : null;
+        const subject = illustHost ? JSON.parse($('#pqBossIllustImg')?.dataset.subject || '[0,0,1,1]') : null;
+        const offsetX = subject ? (subject[0] + subject[2] * (.35 + Math.random() * .3)) * 100 : (50 + Math.random() * 30 - 15);
+        const offsetY = subject ? (subject[1] + subject[3] * (.25 + Math.random() * .35)) * 100 : null;
         pop.style.left = offsetX + '%';
         if (offsetY !== null) pop.style.top = offsetY + '%';
         host.append(pop);
@@ -1464,7 +1539,7 @@
     }
 
     function bossStageSigOf(m) {
-        return m ? (m.name || '') + '|' + (m.image || '') : '';
+        return m ? (m.name || '') + '|' + (m.image || '') + '|' + (m.background || '') : '';
     }
 
     const BOSS_HP_LINE_SIZE = 10000;
@@ -1553,9 +1628,10 @@
         bossStageSig = bossStageSigOf(m);
         const hasIllust = !!m.image;
         const wrap = el('div', { id: 'pqBossStage', class: 'pq-stage-boss' + (hasIllust ? '' : ' no-illust') });
-        if (hasIllust) {
+        if (m.scene) { wrap.classList.add('registered-scene'); wrap.append(renderRaidScene(m, true, m.name)); }
+        else if (hasIllust) {
             const illustWrap = el('div', { id: 'pqBossIllust', class: 'pq-stage-illust' });
-            illustWrap.append(el('img', { id: 'pqBossIllustImg', src: m.image, alt: m.name, draggable: 'false' }));
+            illustWrap.append(el('img', { id: 'pqBossIllustImg', src: m.image, alt: m.name, draggable: 'false', 'data-sprite': m.sprite ? '1' : '' }));
             wrap.append(illustWrap);
         }
         const hud = el('div', { class: 'pq-stage-hud' });
@@ -1591,6 +1667,7 @@
             const stage = document.getElementById('pqPhaseStage');
             if (stage && document.getElementById('pqBossStage')) {
                 stage.replaceChildren(renderBossStage(currentRoom));
+                syncRaidScenes();
                 return;
             }
         }
@@ -1679,6 +1756,7 @@
         if (ao) ao.textContent = mine && mine.runtime && mine.runtime.attackOrder ? '다음 공격 ' + mine.runtime.attackOrder + '번째' : '';
         renderMyVitals(mine);
         renderMemberDetail();
+        raidEffects?.markTargets();
     }
 
     // 내 HP/MP 플레이트 — 스테이지 우하단, 전체 수치 표시. 접으면 작은 칩만 남는다.
@@ -1875,7 +1953,7 @@
         if (!bar) return;
         const myMember = snap.members.find(m => m.name === me);
         const list = (myMember && myMember.potions) || [];
-        const sig = list.map(p => p.name + ':' + p.count).join('|');
+        const sig = list.map(p => p.name + ':' + p.count + ':' + (p.iconUrl || '')).join('|');
         if (potionBarSig === sig && bar.childElementCount) { updateSkillPotionButtons(); return; }
         potionBarSig = sig;
         bar.replaceChildren();
@@ -1888,7 +1966,7 @@
         list.forEach((p, i) => {
             const keyCode = keybinds.potions[i];
             const btn = el('button', {
-                class: 'pq-skill-btn',
+                class: 'pq-skill-btn pq-battle-potion', type: 'button', title: p.name, 'aria-label': p.name + ' ' + p.count + '개',
                 'data-kind': 'potion',
                 disabled: pendingCD.potion || cdRemain > 0 || (r && r.dead) ? true : false,
                 onClick: async () => {
@@ -1897,8 +1975,8 @@
                 }
             },
                 keyCode ? el('span', { class: 'key' }, keyLabel(keyCode)) : null,
-                el('div', null, p.name),
-                el('div', { class: 'mp' }, '× ' + p.count),
+                el('span', { class: 'pq-battle-potion-art' }, potionIcon(p)),
+                el('span', { class: 'pq-battle-potion-count' }, '×' + p.count),
                 el('div', { class: 'cd', style: cdRemain > 0 ? '' : 'display:none' }, cdRemain > 0 ? cdRemain.toFixed(1) : '')
             );
             bar.append(btn);
@@ -1978,7 +2056,7 @@
                     disabled: true,
                     onClick: () => useSupportSkillFlow(s.name)
                 },
-                    s.icon ? el('img', { src: s.icon, alt: s.name, style: 'width:34px;height:34px;object-fit:cover;border-radius:6px' }) : null,
+                    s.icon ? el('img', { src: s.icon, alt: '', class: 'pq-support-icon' }) : null,
                     el('div', null, s.name)
                 );
                 if (!isHost) btn.title = '공대장만 사용할 수 있습니다.';
@@ -2064,7 +2142,7 @@
         const bg = $('#pqVoteBg');
         if (!bg) return;
         const vote = snap && snap.voteState;
-        if (!vote) {
+        if (!vote || snap.spectating) {
             voteSig = '';
             bg.classList.remove('active');
             return;
@@ -2134,7 +2212,8 @@
     function openStream() {
         closeStream();
         try {
-            stream = new EventSource('/api/party/stream');
+            stream = new EventSource(currentRoom?.spectating ? '/api/party/spectate/stream' : '/api/party/stream');
+            stream.addEventListener('room-closed', () => { toast('파티가 종료되었습니다.'); leaveRoom(); });
             stream.addEventListener('room', e => {
                 try {
                     const snap = JSON.parse(e.data);
@@ -2246,12 +2325,13 @@
 
     async function leaveRoom() {
         resetDefeatPresentation();
-        try { await api('/api/party/leave', { method: 'POST', body: JSON.stringify({}) }); } catch (_) {}
+        try { await api(currentRoom?.spectating ? '/api/party/spectate/leave' : '/api/party/leave', { method: 'POST', body: JSON.stringify({}) }); } catch (_) {}
         closeStream();
         stopLocalCdTimer();
         hideBattleIntro();
         hidePhaseTransition();
         syncBgm(null);
+        raidEffects?.reset();
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
         pendingCD.action = false; pendingCD.potion = false;
@@ -2260,11 +2340,13 @@
         potionBarSig = '';
         localBuffTickAt = 0;
         currentRoom = null;
+        updateRaidPatterns();
+        $('#frame').classList.remove('spectating');
         await loadLobby();
     }
     $('#pqLeave').onclick = leaveRoom;
     $('#pqPlayLeave').onclick = async () => {
-        if (currentRoom && currentRoom.state === 'inProgress' && !(await showConfirm('전투 중입니다. 파티에서 나가시겠습니까?'))) return;
+        if (currentRoom && !currentRoom.spectating && currentRoom.state === 'inProgress' && !(await showConfirm('전투 중입니다. 파티에서 나가시겠습니까?'))) return;
         leaveRoom();
     };
     $('#pqAttackBtn').onclick = manualAttack;
@@ -2274,7 +2356,7 @@
         $('#pqTabChat').classList.toggle('on', which === 'chat');
         $('#pqTabLog').classList.toggle('on', which === 'log');
         $('#pqPlayChat').style.display = which === 'chat' ? '' : 'none';
-        $('#pqPlayChatForm').style.display = which === 'chat' ? '' : 'none';
+        $('#pqPlayChatForm').style.display = which === 'chat' && !currentRoom?.spectating ? '' : 'none';
         $('#pqCombatLog').style.display = which === 'log' ? '' : 'none';
         if (which === 'chat') { const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight; }
         else { const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight; }
@@ -2302,6 +2384,7 @@
         });
         $('#pqVolSfx').addEventListener('input', e => {
             sound.sfx = clamp01(Number(e.target.value) / 100);
+            raidEffects?.setVolume(sound.sfx);
             $('#pqVolSfxVal').textContent = Math.round(sound.sfx * 100) + '%';
             saveSound();
         });
@@ -2347,7 +2430,7 @@
     }
 
     $('#pqReadyBtn').onclick = async () => {
-        if (!currentRoom) return;
+        if (!currentRoom || currentRoom.spectating) return;
         const myMember = currentRoom.members.find(m => m.name === me);
         const next = !(myMember && myMember.ready);
         try { await api('/api/party/ready', { method: 'POST', body: JSON.stringify({ ready: next }) }); } catch (e) { toast(e.message); }
@@ -2363,6 +2446,7 @@
         if (!form || !input) return;
         form.addEventListener('submit', async ev => {
             ev.preventDefault();
+            if (currentRoom?.spectating) return;
             const text = input.value.trim();
             if (!text) return;
             input.value = '';

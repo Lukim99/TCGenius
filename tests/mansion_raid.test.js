@@ -115,7 +115,7 @@ after(async () => {
         const user = await rpg.getRPGUserByName(seed.name);
         if (state.status === 'active') await rpg.cancelTradeByUser(user);
         if (state.status === 'outgoing') rpg.cancelTradeRequest(user);
-        party.leaveRoom(seed.name); rpg.clearFieldRuntimeTimers(seed.name);
+        party.stopSpectating(seed.name); party.leaveRoom(seed.name); rpg.clearFieldRuntimeTimers(seed.name);
     }
     await new Promise(resolve => listener.close(resolve));
 });
@@ -130,7 +130,7 @@ async function request(route, body, name = seeds[0].name, admin = false) {
     return { status: response.status, data: await response.json() };
 }
 async function reset(name = seeds[0].name) {
-    party.leaveRoom(name); rpg.clearFieldRuntimeTimers(name); rpg.__setQuestDefs([]);
+    party.stopSpectating(name); party.leaveRoom(name); rpg.clearFieldRuntimeTimers(name); rpg.__setQuestDefs([]);
     const user = await rpg.getRPGUserByName(name);
     Object.assign(user, new rpg.RPGUser(name, name + '-id'), structuredClone(seeds.find(seed => seed.name === name)));
     user.gold = 1000000000; user.battleCryPotion = null; user.field = null; user.unlockedRaids = []; user.titleProgress = {}; user.titles = []; user.quests = {};
@@ -186,6 +186,103 @@ function combatMember(stats = {}) {
             equipmentState: {}, equipmentAtkBuffs: {}, cooldownsUntil: {}, stackCounters: {}, actionUntil: 0 }
     };
 }
+
+test('관전은 비밀번호와 인증을 확인하며 참가 인원, 전투 조작과 계정 데이터를 변경하지 않는다', async () => {
+    const room = await battle(); room.password = 'raid-secret';
+    const viewer = await reset(seeds[1].name);
+    const before = structuredClone(viewer.inventory), writeCount = writes.length;
+    const url = '/api/party/rooms/' + room.id + '/spectate';
+    assert.equal((await request(url, {}, '')).status, 401);
+    assert.equal((await request(url, {}, viewer.name)).status, 400);
+    assert.equal((await request(url, { password: 'wrong' }, viewer.name)).status, 400);
+    const watched = await request(url, { password: 'raid-secret' }, viewer.name);
+    assert.equal(watched.status, 200); assert.equal(watched.data.room.spectating, true);
+    assert.equal(watched.data.room.spectatorCount, 1);
+    assert.equal(room.members.length, 1); assert.equal(party.getMyRoomSnapshot(viewer.name), null);
+    assert.equal((await request('/api/party/me', undefined, viewer.name)).data.room.id, room.id);
+    assert.ok(party.publicRoomList().some(entry => entry.id === room.id && entry.state === 'inProgress'));
+    for (const [route, body] of [['attack', {}], ['skill', { skill: '방어' }], ['mansion-action', { action: 'finish' }], ['support-skill', { skill: '오로라' }], ['use-potion', { name: '상급 체력 포션' }], ['chat', { text: '관전' }], ['restart', {}]]) {
+        assert.equal((await request('/api/party/' + route, body, viewer.name)).status, 400, route);
+    }
+    assert.equal(writes.length, writeCount); assert.deepEqual(viewer.inventory, before);
+    assert.equal((await request('/api/party/spectate/leave', {}, viewer.name)).status, 200);
+    assert.equal(party.getMyViewSnapshot(viewer.name), null); assert.equal(room.members.length, 1);
+});
+
+test('관전 SSE는 로그와 최신 관문을 전달하며 선택지와 보상은 노출하지 않고 방 종료 시 정리한다', async () => {
+    const room = await battle(); const viewer = (await reset(seeds[1].name)).name;
+    room.members[0].pendingChoices = ['private-choice'];
+    assert.equal(party.spectateRoom(room.id, viewer, '').ok, true);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(base + '/api/party/spectate/stream', { headers: { Cookie: cookie(viewer) }, signal: controller.signal });
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader(); const decoder = new TextDecoder(); let text = '';
+    const readUntil = async needle => { while (!text.includes(needle)) { const value = await reader.read(); assert.equal(value.done, false); text += decoder.decode(value.value); } };
+    try {
+        await readUntil('\n\n');
+        assert.ok(text.includes('"spectating":true')); assert.ok(!text.includes('private-choice'));
+        text = ''; tick(room); await readUntil('\n\n'); assert.ok(text.includes('event: tick')); assert.ok(!text.includes('private-choice'));
+        room.result = { cleared: true, rewards: [{ name: room.members[0].name, items: ['private-reward'] }] };
+        const view = party.getMyViewSnapshot(viewer);
+        assert.deepEqual(view.result.rewards, []); assert.equal(view.members[0].pendingChoices, null);
+        const snapshot = party.getMyRoomSnapshot(room.members[0].name);
+        assert.equal(snapshot.result.rewards[0].items[0], 'private-reward');
+        party.leaveRoom(room.members[0].name); await readUntil('event: room-closed');
+        assert.equal(party.getMyViewSnapshot(viewer), null);
+        assert.equal((await request('/api/party/spectate/stream', undefined, viewer)).status, 403);
+    } finally { clearTimeout(timeout); controller.abort(); party.stopSpectating(viewer); }
+});
+
+test('관전은 참가자의 접속을 바꾸지 않고 새 파티 참가 시 종료된다', async () => {
+    const room = await battle(); const viewer = await reset(seeds[1].name);
+    assert.ok(party.spectateRoom(room.id, seeds[0].name, '').error);
+    assert.equal(party.spectateRoom(room.id, viewer.name, '').ok, true);
+    viewer.unlockedRaids = ['mansionNormal'];
+    await viewer.save();
+    const created = await party.createRoom(viewer.name, 'mansionNormal'); assert.ok(created.roomId);
+    assert.equal(room.spectators.size, 0); assert.equal(party.getMyViewSnapshot(viewer.name).spectating, undefined);
+    party.leaveRoom(viewer.name);
+});
+
+test('보스와 관문 컷씬은 투명 보스 이미지와 별도의 전투 배경을 제공한다', async () => {
+    const room = await battle();
+    const mon = party.getMyRoomSnapshot(seeds[0].name).monster;
+    assert.equal(mon.sprite, true); assert.ok(decodeURIComponent(mon.image).endsWith('레이드/sculpture-scene.png'));
+    assert.ok(decodeURIComponent(mon.background).endsWith('레이드/sculpture-hall.png'));
+    assert.equal(mon.scene.framed, true); assert.ok(mon.scene.aspect > 1.7);
+    party.__test.proceedToNextPhase(room);
+    const cut = party.getMyRoomSnapshot(seeds[0].name).phaseTransition;
+    assert.ok(decodeURIComponent(cut.toImage).endsWith('레이드/whiplash-scene.png'));
+    assert.ok(decodeURIComponent(cut.toBackground).endsWith('레이드/whiplash-hall.png'));
+    assert.equal(cut.fromScene.framed, true); assert.equal(cut.toScene.framed, true);
+    const custom = party.__test.serializeMonster({ ...room.monster, image: 'custom-boss.png' });
+    assert.equal(custom.sprite, false); assert.equal(custom.image, '/rpg-ui?file=custom-boss.png');
+});
+
+test('호두 두 난이도의 어둠 정화와 부하 관문은 전용 배경을 유지하고 호두의 붉은 기운으로 전환한다', async () => {
+    for (const id of ['blackHodu', 'blackHoduExtreme']) {
+        const user = await reset();
+        assert.ok((await party.createRoom(user.name, id)).roomId);
+        party.setPosition(user.name, '브루저'); party.setReady(user.name, true);
+        assert.equal((await party.start(user.name)).ok, true);
+        const room = party.getRoomOf(user.name); room.awaitingChoices = true;
+        const snap = party.getMyRoomSnapshot(user.name);
+        assert.equal(snap.phaseName, '어둠 정화'); assert.equal(snap.monster, null);
+        assert.ok(decodeURIComponent(snap.phaseArtwork.background).endsWith('레이드/hodu-retainer-court.png'));
+        party.__test.proceedToNextPhase(room);
+        const elite = party.getMyRoomSnapshot(user.name);
+        assert.equal(elite.monster.name, '흑화한 호두 부하');
+        assert.ok(decodeURIComponent(elite.monster.image).endsWith('레이드/hodu-retainer.png'));
+        assert.equal(elite.monster.background, snap.phaseArtwork.background);
+        assert.equal(elite.phaseTransition.fromImage, null);
+        assert.equal(elite.phaseTransition.fromBackground, elite.phaseTransition.toBackground);
+        party.__test.proceedToNextPhase(room);
+        const boss = party.getMyRoomSnapshot(user.name);
+        assert.ok(decodeURIComponent(boss.monster.background).endsWith('레이드/black-hodu-aura.png'));
+        assert.equal(boss.phaseTransition.toBackground, boss.monster.background);
+        party.leaveRoom(user.name);
+    }
+});
 
 test('레이드 타격 계산은 필드 공통 계산과 치명타, 연격, 속성, 고정 피해까지 일치한다', () => {
     const random = mock.method(Math, 'random', () => .23);
@@ -266,12 +363,12 @@ test('잡몹 단계에서 화상과 유서새김은 유지되고 지속 피해�
         for (let i = 0; i < 11; i++) tick(room);
         assert.ok(room.sharedKillCount > kills); assert.ok(member.runtime.battleStats.damage > damage);
         assert.ok(room.combatLog.some(log => /화상/.test(log.text)));
-        assert.ok(room.combatLog.some(log => /유서새김/.test(log.text) && /처치/.test(log.text)));
+        assert.ok(room.combatLog.some(log => /유서새김/.test(log.text) && /정화/.test(log.text)));
         assert.equal(member.runtime.equipmentState.attackCount, 1, '지속 피해로 장비 공격 횟수가 추가되면 안 된다.');
         for (let i = 0; i < 40; i++) tick(room);
         assert.equal(target.debuffs.length, 0, '정해진 마지막 틱까지 적용한 뒤 디버프가 만료되어야 한다.');
-        assert.equal(room.combatLog.filter(log => /\[화상\]/.test(log.text) && /처치/.test(log.text)).length, 4);
-        assert.equal(room.combatLog.filter(log => /\[유서새김\]/.test(log.text) && /처치/.test(log.text)).length, 5);
+        assert.equal(room.combatLog.filter(log => /\[화상\]/.test(log.text) && /정화/.test(log.text)).length, 4);
+        assert.equal(room.combatLog.filter(log => /\[유서새김\]/.test(log.text) && /정화/.test(log.text)).length, 5);
         member.skills.push(...quests.find(quest => quest.id === 'blackHodu').randomSkillPool[member.position]);
         room.sharedKillCount = room.killTarget - 1;
         party.__test.addMonsterDebuff(target, { id: 'last-burn', label: '화상', type: 'dot', element: '화', disableCritical: true,

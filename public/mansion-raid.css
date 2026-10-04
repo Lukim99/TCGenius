@@ -16,7 +16,7 @@
   --mr-text-2:#a39cad;
   --mr-text-3:#6c6578;
   flex:0 0 auto;display:flex;flex-direction:column;gap:6px;
-  max-height:min(46dvh,380px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;
   color:var(--mr-text);font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   -webkit-tap-highlight-color:transparent
 }
@@ -28,14 +28,8 @@
 /* 내가 조작할 사건이 항상 맨 위 — DOM은 그대로라 누르던 버튼의 초점이 유지된다 */
 .mr-ev[data-mine="1"]{order:-1}
 
-/* ===== 대저택 전용 화면 배분 (.mr-on은 mansion-raid.js가 play 화면에 붙인다 — 다른 레이드는 영향 없음) =====
-   보스 스테이지는 최소 높이까지만 줄고, 남는 높이는 기믹 패널이 내용만큼 가져간다.
-   넘치면 패널만 내부 스크롤 — 하단 파티 행·공격/지원군 바는 항상 화면 안에 남는다. */
-.pq-screen[data-screen="play"].mr-on .pq-game-stagewrap{min-height:clamp(100px,16dvh,220px)}
-.pq-screen[data-screen="play"].mr-on>.mr-root{flex:0 1 auto;min-height:0}
-.pq-screen[data-screen="play"].mr-on .pq-boss-pattern{display:none}
-/* 파티원 카드는 초상을 짧게 — 이름·HP·버프는 그대로 */
-.pq-screen[data-screen="play"].mr-on .pq-char-card .img{aspect-ratio:auto;height:clamp(44px,7dvh,72px)}
+/* 입력 내용은 패턴 overlay 안에서 축소되거나 잘리지 않는다. */
+.mr-root>*,.mr-list>*,.mr-fc-list>*{flex-shrink:0}
 
 /* ===== 상단 — 난이도·형태 ===== */
 .mr-head{display:flex;align-items:center;gap:8px;min-height:20px;padding:0 2px}
@@ -204,23 +198,8 @@
   .mr-cue{padding:4px 8px}
   .mr-cue-word{font-size:13px}
 }
-/* ===== 모바일 대저택 — 줄어든 보스 스테이지와 겹치는 패널 정리 =====
-   스테이지: 보스 HUD를 위로 압축하고, 내 HP/MP는 하단 한 줄 띠로 — 보스 HP·패턴 위를 덮지 않는다.
-   패널 2개 이상(data-stack="multi"): 여백·버튼 높이를 줄여 두 번째 패널의 입력까지 스크롤 없이 보이게. */
+/* 여러 패턴의 입력은 같은 overlay 안에 배치한다. */
 @media (max-width:620px){
-  .pq-screen[data-screen="play"].mr-on .pq-game-stagewrap{min-height:clamp(128px,16dvh,220px)}
-  .pq-screen[data-screen="play"].mr-on .pq-stage-hud{gap:4px;padding:6px 10px 0}
-  .pq-screen[data-screen="play"].mr-on .pq-stage-boss.no-illust .pq-stage-hud{top:0;transform:none}
-  .pq-screen[data-screen="play"].mr-on .pq-stage-hud .pq-boss-name{font-size:16px}
-  .pq-screen[data-screen="play"].mr-on .pq-prog.pq-boss-hpbar{height:20px}
-  .pq-screen[data-screen="play"].mr-on .pq-hp-text{font-size:11px}
-  .pq-screen[data-screen="play"].mr-on .pq-boss-pattern{padding:3px 8px;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  /* 내 HP/MP — HP | MP 두 칸 띠 (접힌 칩은 그대로) */
-  .pq-screen[data-screen="play"].mr-on .pq-my-vitals:not(.folded){left:8px;right:8px;bottom:6px;width:auto;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);grid-template-rows:auto auto;grid-auto-flow:column;column-gap:12px;row-gap:2px;padding:4px 8px 5px}
-  .pq-screen[data-screen="play"].mr-on .pq-my-vitals .vrow b{font-size:11px}
-  .pq-screen[data-screen="play"].mr-on .pq-my-vitals .vrow b.hpv{font-size:11.5px}
-  .pq-screen[data-screen="play"].mr-on .pq-my-vitals .pq-prog{height:4px}
-
   .mr-root[data-stack="multi"],.mr-root[data-stack="multi"] .mr-list{gap:4px}
   .mr-root[data-stack="multi"]:not([data-mode="transition"]) .mr-head{display:none}
   .mr-root[data-stack="multi"] .mr-ev{padding:6px 9px 7px 12px;gap:4px}
@@ -239,7 +218,7 @@
 }
 /* ===== 데스크톱 와이드 — 하단 액션 바와 같은 폭 ===== */
 @media (min-width:900px) and (min-height:700px){
-  .mr-root{max-width:760px;width:100%;margin-inline:auto;max-height:min(40dvh,400px)}
+  .mr-root{max-width:760px;width:100%;margin-inline:auto}
   .mr-ev-title{font-size:16px}
   .mr-pillar-col{--col-h:60px;width:30px}
 }

@@ -874,13 +874,14 @@ function listQuestSummaries(user) {
 
 const rooms = new Map();
 const memberIndex = new Map();
+const spectatorIndex = new Map();
 
 function newRoomId() { return crypto.randomBytes(6).toString('hex'); }
 
 function publicRoomList() {
     const out = [];
     for (const room of rooms.values()) {
-        if (room.state !== 'lobby' && room.state !== 'preparing') continue;
+        if (!['lobby', 'preparing', 'inProgress'].includes(room.state)) continue;
         out.push({
             id: room.id,
             questId: room.questId,
@@ -889,6 +890,7 @@ function publicRoomList() {
             memberCount: room.members.length,
             maxPlayers: room.maxPlayers,
             hasPassword: !!room.password,
+            spectatorCount: room.spectators?.size || 0,
             state: room.state
         });
     }
@@ -1074,11 +1076,13 @@ function serializeBossPatternEvents(mon) {
     const st = mon && mon.bossState;
     if (!st || st.disabled || st.mansion) return [];
     const events = [];
-    const add = (id, label, remain, duration, tag, details) => events.push(Object.assign({ id, kind: 'raidCue', label, remain, duration, tag }, details));
+    const effects = { curse: 'curse', 'role-shield': 'shield', 'self-buff': 'empower', reflect: 'reflect', mochi: 'shield', rain: 'shield', berserk: 'flame' };
+    const add = (id, label, remain, duration, tag, details) => events.push(Object.assign({ id, kind: 'raidCue', effect: effects[id] || (id.startsWith('mark:') ? 'mark' : 'voice'), label, remain, duration, tag }, details));
     const pattern = (type, fallback) => getMonsterPattern(mon, type).name || fallback;
     if (st.casting) {
         const cast = st.casting;
         add(cast.uiId || 'cast:' + cast.id, cast.name, cast.remain, cast.duration, st.blockUsers ? '저지' : '시전', {
+            effect: { half: 'purge', execute: 'execute', flame: 'flame', charge: 'charge', cannon: 'cannon' }[cast.id] || 'charge',
             responded: st.blockUsers ? Array.from(st.blockUsers) : [], requiresResponse: !!st.blockUsers
         });
     }
@@ -1099,6 +1103,24 @@ function serializeBossPatternEvents(mon) {
     return events;
 }
 
+const RAID_ARTWORK = {
+    '흑화 호두.png': { image: 'black-hodu', background: 'black-hodu-aura', aspect: 1601 / 982, alignY: 0, subject: [.13, .02, .87, .98] },
+    '부타게임/타부자고.png': { image: 'tabujago-scene', background: 'dungeon-gate', subject: [.37, .30, .22, .51] },
+    '부타게임/잉여왕(기본).png': { image: 'ingyeo', background: 'volcanic-arena', subject: [.13, 0, .87, 1] },
+    '부타게임/잉여왕(하드 부활).png': { image: 'ingyeo-berserk', background: 'ingyeo-berserk-arena', subject: [0, 0, 1, 1] },
+    '대저택/조각.png': { image: 'sculpture-scene', background: 'sculpture-hall', subject: [.435, .361, .163, .307] },
+    '대저택/위플래쉬.png': { image: 'whiplash-scene', background: 'whiplash-hall', subject: [.376, .03, .25, .644] },
+    '대저택/위플래쉬(0줄).png': { image: 'whiplash-echo-scene', background: 'whiplash-echo-hall', subject: [.260, 0, .585, 1] },
+    '레이드/hodu-retainer.png': { image: 'hodu-retainer', background: 'hodu-retainer-court', subject: [.36, .24, .28, .55], framed: false }
+};
+function raidAssetUrl(file) { return file ? '/rpg-ui?file=' + encodeURIComponent(file) : null; }
+function raidArtwork(image) {
+    const art = RAID_ARTWORK[image];
+    return { image: raidAssetUrl(art ? '레이드/' + art.image + '.png' : image),
+        background: art ? raidAssetUrl('레이드/' + art.background + '.png') : null, sprite: !!art,
+        scene: art ? { aspect: art.aspect || 1672 / 941, alignY: art.alignY ?? .5, subject: art.subject, framed: art.framed !== false } : null };
+}
+
 function serializeMonster(mon) {
     if (!mon) return null;
     const gimmick = mon.bossState && mon.bossState.chatGimmick;
@@ -1111,7 +1133,7 @@ function serializeMonster(mon) {
         gauge: Math.max(0, Math.min(100, Math.round(mon.gauge || 0))),
         stunRemain: Math.max(0, Math.round(Number(mon.stunRemain || 0) * 10) / 10),
         nextPattern: mon.nextPattern || null,
-        image: mon.image ? '/rpg-ui?file=' + encodeURIComponent(mon.image) : null,
+        ...raidArtwork(mon.image),
         shield: Math.max(0, Math.round(Number(mon.shield || 0))),
         shieldMax: Math.max(0, Math.round(Number(mon.shieldMax || 0))),
         hpLines: Number(mon.hpLines || 0),
@@ -1248,6 +1270,7 @@ function getPhaseCombatMonster(room) {
 
 function serializeRoomForMember(room) {
     const quest = getQuestById(room.questId);
+    const phase = quest && quest.phases[room.phaseIndex];
     return {
         id: room.id,
         serverNow: nowMs(),
@@ -1255,9 +1278,12 @@ function serializeRoomForMember(room) {
         questName: quest ? quest.name : room.questId,
         hostName: room.hostName,
         state: room.state,
+        spectatorCount: room.spectators?.size || 0,
+        startedAt: room.startedAt,
         phaseIndex: room.phaseIndex,
         phaseName: room.phaseIndex >= 0 && quest && quest.phases[room.phaseIndex] ? quest.phases[room.phaseIndex].name : null,
         phaseType: room.phaseIndex >= 0 && quest && quest.phases[room.phaseIndex] ? quest.phases[room.phaseIndex].type : null,
+        phaseArtwork: phase?.type === 'mob' ? { background: raidAssetUrl(phase.backgroundImage), scene: { aspect: 16 / 9 } } : null,
         phaseTransition: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? room.phaseTransition : null,
         sharedKillCount: room.sharedKillCount,
         killTarget: room.killTarget,
@@ -1326,6 +1352,63 @@ function sseSend(res, event, payload) {
 
 function broadcast(room, event, payload) {
     for (const m of room.members) sseSend(m.sseRes, event, payload);
+    if (!room.spectators?.size) return;
+    const view = event === 'room' ? serializeRoomForSpectator(room)
+        : event === 'tick' ? { ...payload, members: (payload.members || []).map(m => ({ ...m, pendingChoices: null })) } : payload;
+    for (const spectator of room.spectators.values()) sseSend(spectator.res, event, view);
+}
+
+function serializeRoomForSpectator(room) {
+    const snapshot = serializeRoomForMember(room);
+    snapshot.spectating = true;
+    snapshot.members.forEach(member => { member.pendingChoices = null; });
+    snapshot.awaitingChoices = false;
+    snapshot.combatLog = (room.combatLog || []).slice(-120);
+    if (snapshot.result) snapshot.result = { ...snapshot.result, rewards: [] };
+    return snapshot;
+}
+
+function stopSpectating(name) {
+    const spectator = spectatorIndex.get(name);
+    if (!spectator) return { ok: true };
+    spectatorIndex.delete(name);
+    clearTimeout(spectator.expiry);
+    const room = rooms.get(spectator.roomId);
+    room?.spectators?.delete(name);
+    if (spectator.res && !spectator.res.writableEnded) spectator.res.end();
+    if (room) broadcastRoom(room);
+    return { ok: true };
+}
+
+function expireSpectator(name, spectator) {
+    clearTimeout(spectator.expiry);
+    spectator.expiry = setTimeout(() => {
+        if (spectatorIndex.get(name) === spectator && !spectator.res) stopSpectating(name);
+    }, 30000);
+    spectator.expiry.unref?.();
+}
+
+function spectateRoom(roomId, name, password) {
+    if (memberIndex.has(name)) return { error: '참여 중인 파티에서 나온 후 관전할 수 있습니다.' };
+    const room = rooms.get(roomId);
+    if (!room || !['lobby', 'preparing', 'inProgress'].includes(room.state)) return { error: '관전할 수 있는 파티가 없습니다.' };
+    if (room.password && String(password || '') !== room.password) return { error: '비밀번호가 일치하지 않습니다.' };
+    stopSpectating(name);
+    const spectator = { roomId, res: null, expiry: null };
+    if (!room.spectators) room.spectators = new Map();
+    room.spectators.set(name, spectator);
+    spectatorIndex.set(name, spectator);
+    expireSpectator(name, spectator);
+    broadcastRoom(room);
+    return { ok: true, roomId, room: serializeRoomForSpectator(room) };
+}
+
+function getMyViewSnapshot(name) {
+    const own = getMyRoomSnapshot(name);
+    if (own) return own;
+    const spectator = spectatorIndex.get(name);
+    const room = spectator && rooms.get(spectator.roomId);
+    return room ? serializeRoomForSpectator(room) : null;
 }
 
 function broadcastRoom(room) {
@@ -1437,6 +1520,7 @@ async function createRoom(hostName, questId, password) {
 }
 
 function addMember(room, name, info) {
+    stopSpectating(name);
     if (!findMember(room, name)) {
         room.members.push({
             name,
@@ -1511,6 +1595,10 @@ function leaveRoom(name) {
     }
     if (room.members.length === 0) {
         stopTick(room);
+        for (const [name, spectator] of room.spectators || []) {
+            sseSend(spectator.res, 'room-closed', {});
+            stopSpectating(name);
+        }
         rooms.delete(room.id);
         return { ok: true };
     }
@@ -1773,7 +1861,7 @@ function setupPhase(room) {
     if (phase.type === 'mob') {
         room.monster = null;
         startTick(room);
-        pushNotice(room, phase.name + ' (목표 ' + phase.killTarget + '마리)', 'big', 4500);
+        pushNotice(room, phase.name, 'big', 4500);
     } else {
         room.monster = createPhaseMonster(phase);
         // 게이지 초기화
@@ -1844,13 +1932,19 @@ function proceedToNextPhase(room) {
     const next = quest.phases[room.phaseIndex + 1];
     const startedAt = nowMs();
     const fromImage = room.monster?.image || previous?.monster?.image || quest.coverImage;
+    const fromArt = previous?.type === 'mob' ? { image: null, background: raidAssetUrl(previous.backgroundImage), scene: { aspect: 16 / 9 } } : raidArtwork(fromImage);
+    const toArt = next ? raidArtwork(next.monster?.image || quest.coverImage) : null;
     room.phaseTransition = next ? {
         id: room.id + ':' + (room.phaseIndex + 1) + ':' + startedAt,
         startedAt, endsAt: startedAt + PHASE_TRANSITION_MS,
         fromName: room.monster?.name || previous?.monster?.name || previous?.name || '',
-        fromImage: fromImage ? '/rpg-ui?file=' + encodeURIComponent(fromImage) : null,
+        fromImage: fromArt.image,
+        fromBackground: fromArt.background,
+        fromScene: fromArt.scene,
         phaseName: next.name, phaseNumber: room.phaseIndex + 2, toName: next.monster?.name || next.name,
-        toImage: next.monster?.image || quest.coverImage ? '/rpg-ui?file=' + encodeURIComponent(next.monster?.image || quest.coverImage) : null
+        toImage: toArt.image,
+        toBackground: toArt.background,
+        toScene: toArt.scene
     } : null;
     if (room.phaseTransition) room.introUntil = room.phaseTransition.endsAt;
     room.phaseIndex += 1;
@@ -2026,7 +2120,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
         skill: skillName || null
     };
     broadcast(room, 'kill', payload);
-    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' (치명타)' : ''), type || 'attack');
+    pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 정화 +' + (kills / Math.max(1, room.killTarget) * 100).toFixed(1) + '% [-' + comma(damage) + ']' + (result && result.isCrit ? ' (치명타)' : ''), type || 'attack');
     if (result && result.equipmentTriggerAllowed !== false) {
         applyAttackPotentialRecovery(room, attacker);
         applyMainCardPassiveMpRecovery(room, attacker);
@@ -5183,6 +5277,31 @@ function evalFormula(expr, ctx) {
 
 // ===== SSE 등록 =====
 
+function attachSpectatorStream(name, res) {
+    const spectator = spectatorIndex.get(name);
+    const room = spectator && rooms.get(spectator.roomId);
+    if (!room) return res.status(403).json({ error: '관전 중인 파티가 없습니다.' });
+    if (spectator.res && !spectator.res.writableEnded) spectator.res.end();
+    spectator.res = res;
+    clearTimeout(spectator.expiry);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    sseSend(res, 'room', serializeRoomForSpectator(room));
+    const heartbeat = setInterval(() => {
+        if (res.writableEnded) return clearInterval(heartbeat);
+        res.write(': ping\n\n');
+    }, 25000);
+    res.on('close', () => {
+        clearInterval(heartbeat);
+        if (spectator.res !== res) return;
+        spectator.res = null;
+        if (spectatorIndex.get(name) === spectator) expireSpectator(name, spectator);
+    });
+}
+
 function attachStream(name, res) {
     const room = getRoomOf(name);
     if (!room) {
@@ -5399,6 +5518,10 @@ module.exports = {
     createRoom,
     joinRoom,
     leaveRoom,
+    spectateRoom,
+    stopSpectating,
+    getMyViewSnapshot,
+    attachSpectatorStream,
     setPosition,
     setReady,
     setPotions,

@@ -474,7 +474,7 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-game-phase b{font-family:var(--font-game);font-weight:400;font-size:15px;letter-spacing:.04em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 스테이지 */
 .pq-game-stagewrap{position:relative;flex:1;min-height:0;display:flex}
-.pq-game-stage{flex:1;position:relative;min-height:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:radial-gradient(ellipse at 50% 100%,rgba(45,20,60,.55),rgba(10,8,18,.95)),#0a0812}
+.pq-game-stage{flex:1;position:relative;min-height:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#101216 center/cover no-repeat}
 .pq-game-stage::before{content:'';position:absolute;inset:6px;z-index:4;pointer-events:none;background:
   linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 0/16px 2px no-repeat,
   linear-gradient(rgba(232,176,75,.5),rgba(232,176,75,.5)) 0 0/2px 16px no-repeat,
@@ -487,11 +487,12 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 .pq-game-stage::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;box-shadow:inset 0 0 90px rgba(0,0,0,.75)}
 .pq-stage-boss{position:absolute;inset:0}
 .pq-stage-boss::before{content:'';position:absolute;left:50%;bottom:10px;width:64%;height:38px;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(232,176,75,.16),transparent 70%);pointer-events:none}
-.pq-stage-illust{position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:center;animation:pqIdle 4.5s ease-in-out infinite}
-.pq-stage-illust img{max-width:100%;max-height:88%;object-fit:contain;user-select:none;filter:drop-shadow(0 14px 26px rgba(0,0,0,.65))}
+.pq-stage-background{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;pointer-events:none;user-select:none}
+.pq-stage-illust{position:absolute;left:5%;right:5%;top:var(--hud-h,64px);bottom:5%;display:flex;align-items:flex-end;justify-content:center;animation:pqIdle 4.5s ease-in-out infinite}
+.pq-stage-illust img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;user-select:none;filter:drop-shadow(0 14px 26px rgba(0,0,0,.65))}
 .pq-stage-illust img.shake{animation:pqShake .18s linear}
 .pq-stage-boss::after{content:'';position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(0deg,rgba(10,8,18,.75),transparent);pointer-events:none}
-.pq-stage-hud{position:absolute;top:0;left:0;right:0;z-index:2;display:flex;flex-direction:column;gap:6px;padding:10px 12px 14px;background:linear-gradient(180deg,rgba(0,0,0,.62),rgba(0,0,0,.28) 70%,transparent)}
+.pq-stage-hud{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;flex-direction:column;gap:6px;padding:10px 12px 14px;background:linear-gradient(180deg,rgba(0,0,0,.62),rgba(0,0,0,.28) 70%,transparent)}
 .pq-stage-boss.no-illust .pq-stage-hud{top:50%;transform:translateY(-50%);background:none}
 .pq-stage-hud .pq-boss-head{justify-content:center}
 .pq-stage-hud .pq-boss-name{display:flex;align-items:center;gap:10px;font-family:var(--font-game);font-weight:400;font-size:19px;color:#fff;letter-spacing:.06em}
@@ -609,7 +610,7 @@ body{background:#000;color:var(--text);font-family:Pretendard,-apple-system,Blin
 @keyframes pqIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes pqShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-6px,3px)}50%{transform:translate(5px,-2px)}75%{transform:translate(-3px,1px)}}
 /* 관문 전환: 서버 phaseTransition의 3초 구간과 같은 타임라인. */
-.pq-gate-cut{position:absolute;inset:0;z-index:30;overflow:hidden;pointer-events:none;background:#141118;animation:pqGateCut 3s linear both;animation-delay:var(--gate-offset,0ms)}
+.pq-gate-cut{position:absolute;inset:0;z-index:30;overflow:hidden;pointer-events:none;background:#141118 center/cover no-repeat;animation:pqGateCut 3s linear both;animation-delay:var(--gate-offset,0ms)}
 .pq-gate-prev,.pq-gate-next{position:absolute;left:50%;bottom:8%;max-width:94%;height:85%;object-fit:contain;transform:translateX(-50%);animation-duration:3s;animation-timing-function:ease;animation-fill-mode:both;animation-delay:var(--gate-offset,0ms)}
 .pq-gate-prev{animation-name:pqGatePrev}
 .pq-gate-next{animation-name:pqGateNext}

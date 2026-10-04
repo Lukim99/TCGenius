@@ -13,7 +13,8 @@
       "phases": [
         {
           "type": "mob",
-          "name": "정화 작업",
+          "name": "어둠 정화",
+          "backgroundImage": "레이드/hodu-retainer-court.png",
           "killTarget": 1000,
           "monster": {
             "name": "어둠",
@@ -29,6 +30,7 @@
           "name": "엘리트",
           "monster": {
             "name": "흑화한 호두 부하",
+            "image": "레이드/hodu-retainer.png",
             "hp": 96600,
             "atk": 940,
             "def": 680,
@@ -182,7 +184,8 @@
       "phases": [
         {
           "type": "mob",
-          "name": "정화 작업",
+          "name": "어둠 정화",
+          "backgroundImage": "레이드/hodu-retainer-court.png",
           "killTarget": 1000,
           "monster": {
             "name": "어둠",
@@ -198,6 +201,7 @@
           "name": "엘리트",
           "monster": {
             "name": "흑화한 호두 부하",
+            "image": "레이드/hodu-retainer.png",
             "hp": 193200,
             "atk": 1880,
             "def": 1360,
