@@ -4631,6 +4631,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     let destinyDamageCount = 0;
     const trueChance = Number(stats && stats.trueDamageChance || 0);
     let totalHits = hitCount;
+    const maxCriticalHits = extra && extra.extraOnCrit ? Math.max(hitCount, Math.floor(Number(extra.extraOnCrit.max || hitCount))) : hitCount;
     let abyssDoomUsed = false;
     const maxComboHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
     for (let i = 0; i < totalHits; i++) {
@@ -4670,6 +4671,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         const criticalResult = applyCriticalDamage(baseDamage, stats, hitExtra, defenderStats);
         if (finalDamageMultiplier > 0) criticalResult.damage *= Math.max(0, finalDamageMultiplier + cardAwakening.conditionalFinalDamage(stats, criticalResult.isCritical)) / finalDamageMultiplier;
+        if (criticalResult.isCritical && extra && extra.extraOnCrit && totalHits < maxCriticalHits) totalHits++;
         if (criticalResult.isCritical && stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
             totalHits++;
             abyssDoomUsed = true;
@@ -4680,8 +4682,9 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             const value = Math.max(0, Number(damage || 0));
             if (value > 0) earlyDamageComponents.push({ damage: value, label });
         };
-        const isDestinyDamage = trueChance > 0 && Math.random() < trueChance;
-        hitDamage = isDestinyDamage
+        const isFixedCriticalDamage = !!(hitExtra.trueDamageOnCrit && criticalResult.isCritical);
+        const isDestinyDamage = !isFixedCriticalDamage && trueChance > 0 && Math.random() < trueChance;
+        hitDamage = isFixedCriticalDamage ? Math.max(0, Math.round(criticalResult.damage)) : isDestinyDamage
             ? getDamageAfterDestinyDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))))
             : getDamageAfterReducedDefense(criticalResult.damage, defense, Number(penetration || 0) + Number(unitModifier.pntBonus || 0), Math.max(0, Math.min(1, getTotalDefenseReductionRate(stats, slotEffects) + Number(hitExtra.defReductionBonus || 0))));
         
@@ -4728,7 +4731,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             hitDamage += value;
             damageComponents.push(Object.assign({}, componentMeta, { damage: value, type, label, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboLastCrit: false }));
         };
-        // 명속성/암속성/수속성 추가 피해는 속성 배수 적용 뒤에 해당 속성 배수만 곱해 가산 (파티 calculateOutgoingDamage와 동일 순서 — 공격 속성 배수로 이중 스케일되지 않음)
+        // 각 속성 추가 피해는 주 타격의 속성 계산 뒤에 해당 속성 배수만 적용한다.
         if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && Number(stats && stats.critLightBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(stats.critLightBonus) * lightMul, 'additional', '치명 명속성 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && !criticalResult.isCritical && Number(stats && stats.nonCritLightBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(stats.nonCritLightBonus) * lightMul, 'additional', '명속성 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && i == 0 && Number(extra && extra.bribeDarkBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(extra.bribeDarkBonus) * darkMul, 'additional', '비리의 맛 추가 피해');
@@ -4742,7 +4745,8 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         }
         if (i == 0 && Number(extra && extra.oneTimeFinalDamage || 0) > 0) addDamageComponent(extra.oneTimeFinalDamage, 'additional', extra.oneTimeFinalDamageLabel || '일회 추가 피해');
         hitDamages.push(hitDamage);
-        hitDetails.push({ damage: hitDamage, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit, isComboLastCrit: forceComboLastCrit, isAbyssExtraHit });
+        const fixedDamage = transformedEarly.reduce((sum, component) => sum + component.damage, 0) + (isFixedCriticalDamage ? Math.max(0, baseComponentDamage) : 0);
+        hitDetails.push({ damage: hitDamage, fixedDamage, destinyDamage: isDestinyDamage ? Math.max(0, baseComponentDamage) : 0, isCritical: criticalResult.isCritical, isDestinyDamage, isTenthAtk, isComboHit: isComboExtraHit, isComboLastCrit: forceComboLastCrit, isAbyssExtraHit });
         finalDamage += hitDamage;
     }
     if (isFixedMultiHit && extra && typeof extra.afterAttackUnit == 'function') {
@@ -16488,6 +16492,10 @@ module.exports = {
     useTranscendUpgradeKit,
     getElementDamageMultiplier,
     getComboHitCount,
+    getDamageAfterReducedDefense,
+    getDamageAfterDestinyDefense,
+    applyCriticalDamage,
+    applyDamageVariance,
     calculateAttackHitResult,
     getSkillValue,
     getMainCardSkills,

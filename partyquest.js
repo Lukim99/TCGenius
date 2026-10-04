@@ -108,8 +108,7 @@ function getMainCardSkillEntries(user) {
 }
 
 function getSkillValue(skill, index, star) {
-    const format = skill && skill.format && skill.format[index];
-    return Number(format && format.base || 0) + Number(format && format.per_star || 0) * Number(star || 0);
+    return rpgenius.getSkillValue(skill, index, star);
 }
 
 function getTranscendEquipmentEntry(member, name) {
@@ -419,19 +418,20 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
         state.darkAttackBuff = { value: .25, expiredAt: now + (12 + durationBonus) * 1000 };
         state.abyssBuff = { expiredAt: now + (12 + durationBonus) * 1000 };
     }
-    const burn = room && room.monster && Array.isArray(room.monster.debuffs) && room.monster.debuffs.find(d => d.id === 'emberBurn:' + member.name && d.type === 'dot');
+    const combatMonster = getPhaseCombatMonster(room);
+    const burn = combatMonster && Array.isArray(combatMonster.debuffs) && combatMonster.debuffs.find(d => d.id === 'emberBurn:' + member.name && d.type === 'dot');
     if (burn) {
         const mythic = getTranscendEquipmentEntry(member, '종말을 걷는 장송곡');
         const emberStage = getTranscendEquipmentEntry(member, '잿불 신발');
         const readyKey = mythic ? 'mythicBurnShoesReadyAt' : 'emberShoesReadyAt';
         const cooldownSeconds = mythic ? 8 : 10;
         if ((mythic || emberStage) && now >= Number(state[readyKey] || 0)) {
-            const remainingTicks = Math.max(0, Math.ceil(Number(burn.remain || 0) / Number(burn.interval || 2)));
+            const remainingTicks = Math.max(0, Math.floor((Number(burn.remain || 0) - Number(burn.tick || 0)) / Number(burn.interval || 2) + 1 + 1e-9));
             const rate = mythic ? 1 : getTranscendStageValue(member, '잿불 신발', .60, .10);
             extra.oneTimeFinalDamage = Number(extra.oneTimeFinalDamage || 0) + Math.round(Number(burn.dmg || 0) * remainingTicks * rate);
             result.removeBurnId = burn.id;
             state[readyKey] = now + Math.max(0, cooldownSeconds - cooldownReduction) * 1000;
-            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50 * (1 + Number(member.baseSnapshot.stats.dotDamage || 0)))), interval: 2, tick: 2, remain: 6, sourceName: member.name, sourceSkill: '겁화' };
+            if (mythic) result.hellfire = { id: 'hellfire:' + member.name, label: '겁화', type: 'dot', element: '화', disableCritical: true, dmg: Math.max(1, Math.round(Number(member.baseSnapshot.stats.atk || 0) * .50 * (1 + Number(member.baseSnapshot.stats.dotDamage || 0)))), interval: 2, tick: 2, remain: 6, sourceName: member.name, sourceSkill: '겁화' };
         }
     }
     state.lastSkillAt = now;
@@ -439,9 +439,10 @@ function preparePartyTranscendSkill(member, skillName, isUltimate, room) {
 }
 
 function commitPartySkillEquipmentSideEffects(room, equipmentSkill) {
-    if (!room || !room.monster || !equipmentSkill) return;
-    if (equipmentSkill.removeBurnId && Array.isArray(room.monster.debuffs)) room.monster.debuffs = room.monster.debuffs.filter(d => d.id !== equipmentSkill.removeBurnId);
-    if (equipmentSkill.hellfire) addMonsterDebuff(room.monster, equipmentSkill.hellfire);
+    const monster = getPhaseCombatMonster(room);
+    if (!monster || !equipmentSkill) return;
+    if (equipmentSkill.removeBurnId && Array.isArray(monster.debuffs)) monster.debuffs = monster.debuffs.filter(d => d.id !== equipmentSkill.removeBurnId);
+    if (equipmentSkill.hellfire) addMonsterDebuff(monster, equipmentSkill.hellfire);
 }
 
 function toPartyMainCardSkillDef(entry) {
@@ -1235,6 +1236,16 @@ function createPhaseMonster(phase) {
     };
 }
 
+function getPhaseCombatMonster(room) {
+    if (!room) return null;
+    if (room.monster) return room.monster;
+    const quest = getQuestById(room.questId);
+    const phase = quest && quest.phases[room.phaseIndex];
+    if (!phase || phase.type !== 'mob') return null;
+    if (!room.mobMonster) room.mobMonster = createPhaseMonster(phase);
+    return room.mobMonster;
+}
+
 function serializeRoomForMember(room) {
     const quest = getQuestById(room.questId);
     return {
@@ -1758,6 +1769,7 @@ function setupPhase(room) {
     room.sharedKillCount = 0;
     room.tauntTarget = null;
     room.tauntRemain = 0;
+    room.mobMonster = phase.type === 'mob' ? createPhaseMonster(phase) : null;
     if (phase.type === 'mob') {
         room.monster = null;
         startTick(room);
@@ -1860,6 +1872,7 @@ function endQuest(room, cleared, reason) {
     stopTick(room);
     room.state = cleared ? 'cleared' : 'failed';
     room.monster = null;
+    room.mobMonster = null;
     room.awaitingChoices = false;
     // 남은 물약은 인벤토리로 반환
     for (const m of room.members) {
@@ -1976,7 +1989,7 @@ function attackMobPhase(name) {
         me.runtime.sivalonCharge = Math.min(5, Number(me.runtime.sivalonCharge || 0) + 1);
     }
     if (phase.type === 'mob') {
-        const fakeMon = createPhaseMonster(phase);
+        const fakeMon = getPhaseCombatMonster(room);
         const result = computeBasicDamage(me, fakeMon, room);
         const applied = applyMobPhaseDamage(room, me, fakeMon, result, 'attack', null, true);
         return { ok: true, damage: result.damage, kills: applied.kills, crit: !!result.isCrit };
@@ -2014,7 +2027,10 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
     };
     broadcast(room, 'kill', payload);
     pushCombat(room, attacker.name + (skillName ? ' [' + skillName + ']' : '') + ' → 어둠 ' + comma(kills) + '마리 처치 [-' + comma(damage) + ']' + (result && result.isCrit ? ' (치명타)' : ''), type || 'attack');
-    applyAttackPotentialRecovery(room, attacker);
+    if (result && result.equipmentTriggerAllowed !== false) {
+        applyAttackPotentialRecovery(room, attacker);
+        applyMainCardPassiveMpRecovery(room, attacker);
+    }
     if (room.sharedKillCount >= room.killTarget) {
         room.sharedKillCount = room.killTarget;
         endPhase(room);
@@ -2062,8 +2078,8 @@ function stepRoom(room) {
             const phase = quest && quest.phases[room.phaseIndex];
             const attacker = findMember(room, delayed.attackerName);
             if (!phase || phase.type !== 'mob' || !attacker) continue;
-            const fakeMon = createPhaseMonster(phase);
-            applyMobPhaseDamage(room, attacker, fakeMon, { damage: Number(delayed.damage || 0), fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, 'skill', '그림자 공격', false);
+            const fakeMon = getPhaseCombatMonster(room);
+            applyMobPhaseDamage(room, attacker, fakeMon, { damage: Number(delayed.damage || 0), fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false, equipmentTriggerAllowed: false }, 'skill', '그림자 공격', false);
             if (room.state !== 'inProgress' || Number(delayed.phaseIndex) !== Number(room.phaseIndex)) break;
         }
         room.delayedEquipmentDamage = waiting;
@@ -2126,9 +2142,7 @@ function stepRoom(room) {
                 const judgment = equipmentState.judgment;
                 delete equipmentState.judgment;
                 if (Number(judgment.phaseIndex) === Number(room.phaseIndex) && Number(judgment.damage || 0) > 0) {
-                    const quest = getQuestById(room.questId);
-                    const phase = quest && quest.phases[room.phaseIndex];
-                    const target = room.monster || (phase && phase.type === 'mob' ? createPhaseMonster(phase) : null);
+                    const target = getPhaseCombatMonster(room);
                     if (target) {
                         const lightMul = typeof rpgenius.getElementDamageMultiplier === 'function'
                             ? rpgenius.getElementDamageMultiplier('명', m.baseSnapshot.stats || {}, target.stats || {})
@@ -2172,7 +2186,7 @@ function stepRoom(room) {
                 let targetMon = room.monster;
                 const quest = getQuestById(room.questId);
                 const phase = quest && quest.phases[room.phaseIndex];
-                if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
+                if (!targetMon && phase && phase.type === 'mob') targetMon = getPhaseCombatMonster(room);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
                     const botDamage = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.iktaeBot.atkMul));
                     const res = calculateOutgoingDamage(m, targetMon, room, botDamage, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
@@ -2198,7 +2212,7 @@ function stepRoom(room) {
                 let targetMon = room.monster;
                 const quest = getQuestById(room.questId);
                 const phase = quest && quest.phases[room.phaseIndex];
-                if (!targetMon && phase && phase.type === 'mob') targetMon = createPhaseMonster(phase);
+                if (!targetMon && phase && phase.type === 'mob') targetMon = getPhaseCombatMonster(room);
                 if (targetMon && targetMon.hp > 0 && !m.runtime.dead) {
                     const dmg = Math.max(1, Math.round(Number(m.baseSnapshot.stats.atk || 0) * r.sunata.atkMul));
                     const res = calculateOutgoingDamage(m, targetMon, room, dmg, { isSkill: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1 });
@@ -2242,6 +2256,7 @@ function stepRoom(room) {
         stepSupportXBarrage(room, dt);
         if (room.state !== 'inProgress') return;
     }
+    if (!room.monster && room.mobMonster && stepMonsterDebuffs(room, room.mobMonster, dt)) return;
     const mon = room.monster;
     if (mon) {
         // 처치 판정을 하지 않는 경로(익테봇/수나타/지원군 등)로 HP가 0이 된 경우의 안전망
@@ -2260,38 +2275,7 @@ function stepRoom(room) {
         for (const k of Object.keys(mon.patternCooldowns || {})) {
             mon.patternCooldowns[k] = Math.max(0, mon.patternCooldowns[k] - dt);
         }
-        // 몬스터 디버프 (잔류 전격, 유서새김 지속 피해 등)
-        if (mon.debuffs && mon.debuffs.length) {
-            let dotKilled = false;
-            for (let i = mon.debuffs.length - 1; i >= 0; i--) {
-                const d = mon.debuffs[i];
-                if (!dotKilled && d.type === 'dot' && mon.hp > 0) {
-                    d.tick = Number(typeof d.tick !== 'undefined' ? d.tick : (d.interval || 2)) - dt;
-                    if (d.tick <= 0) {
-                        d.tick += Number(d.interval || 2);
-                        const dotDmg = Math.max(1, Math.round(Number(d.dmg || 0)));
-                        const dealt = applyBossHpDamage(room, mon, dotDmg);
-                        const sourceMember = d.sourceName ? findMember(room, d.sourceName) : null;
-                        if (sourceMember) recordPartyDamage(sourceMember, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, d.sourceSkill || d.label || '지속 피해');
-                        pushCombat(room, (d.label || d.id || '지속 피해') + ' → ' + mon.name + ' [-' + dealt + ']', 'skill');
-                        if (mon.hp <= 0) dotKilled = true;
-                    }
-                }
-                d.remain -= dt;
-                if (d.remain <= 0) {
-                    if (!dotKilled && Number(d.explodeDamage || 0) > 0 && mon.hp > 0) {
-                        const explosion = Math.max(1, Math.round(Number(d.explodeDamage || 0)));
-                        const dealt = applyBossHpDamage(room, mon, explosion);
-                        const sourceMember = d.sourceName ? findMember(room, d.sourceName) : null;
-                        if (sourceMember) recordPartyDamage(sourceMember, { damage: dealt, fixedDamage: 0, destinyDamage: 0, hitDetails: [], isCrit: false }, d.explodeLabel || d.sourceSkill || '지속 피해 폭발');
-                        pushCombat(room, (d.explodeLabel || '장송곡 폭발') + ' → ' + mon.name + ' [-' + dealt + ']', 'skill');
-                        if (mon.hp <= 0) dotKilled = true;
-                    }
-                    mon.debuffs.splice(i, 1);
-                }
-            }
-            if (dotKilled) { onMonsterDefeated(room); return; }
-        }
+        if (stepMonsterDebuffs(room, mon, dt)) return;
 
         if (mon.stunRemain <= 0) {
             const patternConsumed = stepBoss(room, mon, dt);
@@ -2380,6 +2364,51 @@ function hasPassive(member, name) {
     return Array.isArray(member.skills) && member.skills.includes(name);
 }
 
+// 잡몹도 같은 대상 상태와 타격 계산을 사용한다. 관문이 끝나면 즉시 이번 틱을 중단한다.
+function stepMonsterDebuffs(room, monster, dt) {
+    const debuffs = monster.debuffs || [];
+    const phaseIndex = room.phaseIndex;
+    const dealDot = (debuff, rawDamage, label) => {
+        const source = findMember(room, debuff.sourceName);
+        const result = source ? calculateOutgoingDamage(source, monster, room, rawDamage, {
+            dotAttack: true, summonAttack: true, disableEquipmentBonusDamage: true, hitCount: 1,
+            disableCritical: !!debuff.disableCritical, attackElement: debuff.element || resolvePartyAttackElement(source),
+            precalculatedDamage: !!debuff.precalculatedDamage
+        }) : { damage: rawDamage, isCrit: false, hitDetails: [], equipmentTriggerAllowed: false };
+        if (monster === room.mobMonster && source) {
+            applyMobPhaseDamage(room, source, monster, result, 'skill', label, false);
+        } else {
+            result.damage = monster.bossState && monster.bossState.casting ? 0
+                : source ? applyPlayerDamageToBoss(room, monster, source, result.damage) : applyBossHpDamage(room, monster, result.damage);
+            if (source) recordPartyDamage(source, result);
+            pushCombat(room, (source ? source.name + ' [' + label + ']' : label) + ' → ' + monster.name + ' [-' + result.damage + ']', 'skill');
+            broadcast(room, 'hit', { by: source && source.name, type: 'skill', skill: label, damage: result.damage,
+                fixedDamage: result.fixedDamage || 0, destinyDamage: result.destinyDamage || 0, crit: !!result.isCrit,
+                hitDetails: result.hitDetails || [], monster: serializeMonster(monster) });
+            if (monster.hp <= 0) { onMonsterDefeated(room); return true; }
+        }
+        return room.state !== 'inProgress' || room.phaseIndex !== phaseIndex || room.awaitingChoices;
+    };
+    for (let i = debuffs.length - 1; i >= 0; i--) {
+        const debuff = debuffs[i];
+        if (debuff.type === 'dot' && monster.hp > 0) {
+            const interval = Number(debuff.interval || 2);
+            debuff.tick = Number(debuff.tick ?? interval) - Math.min(dt, Math.max(0, Number(debuff.remain || 0)));
+            while (debuff.tick <= 1e-9) {
+                debuff.tick += interval;
+                if (dealDot(debuff, Math.max(1, Math.round(Number(debuff.dmg || 0))), debuff.sourceSkill || debuff.label || debuff.id || '지속 피해')) return true;
+            }
+        }
+        debuff.remain -= dt;
+        if (debuff.remain <= 1e-9) {
+            if (Number(debuff.explodeDamage || 0) > 0 && monster.hp > 0
+                && dealDot(debuff, Math.max(1, Math.round(Number(debuff.explodeDamage))), debuff.explodeLabel || '장송곡 폭발')) return true;
+            debuffs.splice(i, 1);
+        }
+    }
+    return false;
+}
+
 function getFinalDamageMul(attacker, options) {
     let mul = 1;
     const summonAttack = !!(options && options.summonAttack);
@@ -2392,12 +2421,6 @@ function getFinalDamageMul(attacker, options) {
         const r = attacker.runtime;
         const missingPct = r.hpMax > 0 ? Math.max(0, (r.hpMax - r.hp) / r.hpMax) : 0;
         mul *= 1 + missingPct * 0.4;
-    }
-    // 마력 감응: MP 75% 이상일 때 최종 피해 +5%
-    const mr = attacker.baseSnapshot && attacker.baseSnapshot.manaResonance;
-    if (mr && attacker.runtime) {
-        const r = attacker.runtime;
-        if (r.mpMax > 0 && r.mp / r.mpMax >= mr.threshold) mul *= 1 + mr.bonus;
     }
     // 수나타 소환: 소환 중 본인 공격력(피해) +buff — 소환수 자동공격에는 미적용 (솔로와 동일)
     if (!summonAttack && attacker.runtime && attacker.runtime.sunata && Date.now() < Number(attacker.runtime.sunata.expired_at || 0)) {
@@ -2476,11 +2499,7 @@ function randomInt(min, max) {
 }
 
 function getComboHitCount(stats) {
-    const chance = Math.max(0, Math.min(1, Number(stats && stats.cmb || 0)));
-    const maxHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
-    let hitCount = 1;
-    while (hitCount < maxHits && Math.random() < chance) hitCount++;
-    return hitCount;
+    return rpgenius.getComboHitCount(stats);
 }
 
 function getReducedDefenseRate(stats, slotEffects, extraRate) {
@@ -2630,7 +2649,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         if (Number(stats.manaBurnAttackRecovery || 0) > 0) runtime.mp = Math.min(runtime.mpMax, Number(runtime.mp || 0) + Math.max(1, Math.round(runtime.mpMax * Number(stats.manaBurnAttackRecovery))));
     }
     extra.perAttackUnitExtras = perAttackUnitExtras;
-    extra.partyBeforeAttackUnit = hitExtra => {
+    extra.beforeAttackUnit = ({ hitExtra }) => {
         if (!activeAttackBuffAtStart.encore && attackBuffs.encore && Date.now() < Number(attackBuffs.encore.expiredAt || 0)) {
             hitExtra.damageBonusMul = Number(hitExtra.damageBonusMul || 0) + Number(attackBuffs.encore.value || 0);
             hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + .20;
@@ -2641,7 +2660,7 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
             hitExtra.critMulBonus = Number(hitExtra.critMulBonus || 0) + Math.min(4, Number(state.dropoutStacks || 0)) * value('왓 타임 이즈 잇 나우', .08, .03);
         }
     };
-    extra.partyAfterAttackUnit = isCritical => {
+    extra.afterAttackUnit = ({ isCritical }) => {
         let additionalDamage = 0;
         if (stage('앵콜') && isCritical) attackBuffs.encore = { value: scalePartyAttackBuff(attacker, value('앵콜', .12, .03)), expiredAt: Date.now() + duration(6) * 1000 };
         if (stage('왓 타임 이즈 잇 나우')) {
@@ -2654,10 +2673,10 @@ function preparePartyAttackUnits(room, attacker, monster, extra, stats) {
         if (stage('진사이') && Math.random() < .05) healMember(attacker, Math.round(200 * getPartyRecoveryMultiplier(attacker)));
         if (stage('잿불 모자') && monster && Date.now() >= Number(state.burnReadyAt || 0)) {
             const burnDamage = Math.max(1, Math.round(Number(stats.atk || 0) * value('잿불 모자', .30, .05) * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? .35 : 0))));
-            addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발', sourceName: attacker.name, sourceSkill: '화상' });
+            addMonsterDebuff(monster, { id: 'emberBurn:' + attacker.name, label: '화상', type: 'dot', element: '화', disableCritical: true, dmg: burnDamage, interval: 2, tick: 2, remain: duration(8 + Number(stats.burnDurationFlat || 0) + (stage('행운의 복주머니') ? 3 : 0)), explodeDamage: getTranscendSetCount(attacker, '잿불의 장송곡') >= 4 ? Number(stats.atk || 0) : 0, explodeLabel: '장송곡 폭발', sourceName: attacker.name, sourceSkill: '화상' });
             state.burnReadyAt = Date.now() + cooldown(6) * 1000;
         }
-        return additionalDamage;
+        return { additionalDamage };
     };
 }
 
@@ -2668,13 +2687,7 @@ function getPositionStatMul(room, member, key) {
 }
 
 function getDamageAfterDefense(damage, defense, penetration, defenseReductionRate) {
-    const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
-    const finalDefense = Math.max(0, reducedDefense - Number(penetration || 0));
-    return Math.floor(Number(damage || 0) * (100 / (100 + finalDefense)));
-}
-
-function getFixedDamageAgainstMonster(damage, monster, penetration, defenseReductionRate) {
-    return Math.max(0, Math.round(Number(damage || 0)));
+    return rpgenius.getDamageAfterReducedDefense(damage, defense, penetration, defenseReductionRate);
 }
 
 function getDestinyDamageAgainstMonster(damage, monster, penetration, defenseReductionRate) {
@@ -2684,9 +2697,7 @@ function getDestinyDamageAgainstMonster(damage, monster, penetration, defenseRed
 }
 
 function getDestinyDamageAfterDefense(damage, defense, penetration, defenseReductionRate) {
-    const reducedDefense = Number(defense || 0) * (1 - Math.min(1, Math.max(0, Number(defenseReductionRate || 0))));
-    const penetratedDefense = Math.max(0, reducedDefense - Number(penetration || 0));
-    return getDamageAfterDefense(damage, penetratedDefense * 0.5, 0);
+    return rpgenius.getDamageAfterDestinyDefense(damage, defense, penetration, defenseReductionRate);
 }
 
 // 파티 공격 속성 판정: 무기 > 스킬 > 보조>갑옷>장신구 (rest). 없으면 null
@@ -2745,7 +2756,7 @@ function calculateNormalDamageToMember(room, mon, target, rawDamage) {
         if (buff && Date.now() < Number(buff.expiredAt || 0)) equipmentReduction += Number(buff.takenDamageReduction || 0);
     }
     const targetTakenMul = Math.max(0, 1 + Number(targetStats.takenDamage || 0)) * (target.runtime.takenDmgMul || 1) * Math.max(0, 1 - equipmentReduction);
-    const defense = Number(targetStats.def || 50) * finalDefMul;
+    const defense = Number(targetStats.def ?? 50) * finalDefMul;
     const defenseReductionRate = Math.max(0, Math.min(1, Number(monStats.pntPercent || 0)));
     const penetration = Number(monStats.pnt || mon.pnt || 0);
     const beforeReduction = Number(rawDamage || 0) * monDealtMul;
@@ -2779,7 +2790,7 @@ function queuePartyBlackShadow(room, attacker, monster, damage, extra) {
         room.delayedEquipmentDamage.push({ dueAt: Date.now() + 2000, phaseIndex: room.phaseIndex, attackerName: attacker.name, damage: shadowDamage });
         return;
     }
-    if (monster && room.monster === monster) addMonsterDebuff(monster, { id: 'blackShadow:' + attacker.name + ':' + Date.now(), label: '그림자 공격', type: 'dot', dmg: shadowDamage, interval: 2, tick: 2, remain: 2, sourceName: attacker.name, sourceSkill: '그림자 공격' });
+    if (monster && room.monster === monster) addMonsterDebuff(monster, { id: 'blackShadow:' + attacker.name + ':' + Date.now(), label: '그림자 공격', type: 'dot', precalculatedDamage: true, dmg: shadowDamage, interval: 2, tick: 2, remain: 2, sourceName: attacker.name, sourceSkill: '그림자 공격' });
 }
 
 function recordPartyJudgmentDamage(room, attacker, result) {
@@ -2790,7 +2801,7 @@ function recordPartyJudgmentDamage(room, attacker, result) {
 }
 
 function applyDamageVariance(damage) {
-    return Math.max(0, Math.round(Number(damage || 0) * (randomInt(98, 102) / 100)));
+    return rpgenius.applyDamageVariance(damage);
 }
 
 function computeBasicDamage(attacker, monster, room) {
@@ -2818,7 +2829,7 @@ function computeBasicDamage(attacker, monster, room) {
             equipmentBasicBonus = getTranscendStageValue(attacker, '쿨다운 목걸이', .35, .10);
         }
     }
-    let rawDamage = Math.round(Number(stats.atk || 100) * finalAtkMul * (1 + getPartyAttackBuffValue(attacker)) * (1 + getPartyConditionalFinalAttack(attacker) + finalAttackBonus) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus + equipmentBasicBonus));
+    let rawDamage = Math.round(Number(stats.atk ?? 100) * finalAtkMul * (1 + getPartyAttackBuffValue(attacker)) * (1 + getPartyConditionalFinalAttack(attacker) + finalAttackBonus) * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0) + nextBasicBonus + equipmentBasicBonus));
     const extra = { isBasic: true };
     const equipmentState = runtime.equipmentState || {};
     if (equipmentState.bribeNextBasic) {
@@ -2839,6 +2850,9 @@ function computeBasicDamage(attacker, monster, room) {
 }
 
 function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
+    extra = extra || {};
+    const originalRawDamage = rawDamage;
+    const isDirectAttack = !extra.summonAttack && !extra.dotAttack;
     const snapshot = (attacker && attacker.baseSnapshot) || {};
     const stats = snapshot.stats || {};
     const slotEffects = snapshot.slotEffects || {};
@@ -2868,65 +2882,67 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (!monster || monster.type === 'mob') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.damageBonus || 0));
     if (monster && monster.type === 'elite') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.eliteDmg || 0));
     if (monster && monster.type === 'boss') contextMul *= (1 + Number(stats.bossDmg || 0));
-    if (getTranscendEquipmentEntry(attacker, '과소평가')) {
-        const elapsed = Date.now() - Number(runtime.equipmentState && runtime.equipmentState.combatStartedAt || Date.now());
-        if (elapsed < 10000) contextMul *= .85;
-        else {
-            contextMul *= 1 + getTranscendStageValue(attacker, '과소평가', .25, .08);
-            extra.critMulBonus = Number(extra && extra.critMulBonus || 0) + getTranscendStageValue(attacker, '과소평가', .20, .06);
+    if (isDirectAttack) {
+        if (getTranscendEquipmentEntry(attacker, '과소평가')) {
+            const elapsed = Date.now() - Number(runtime.equipmentState && runtime.equipmentState.combatStartedAt || Date.now());
+            if (elapsed < 10000) contextMul *= .85;
+            else {
+                contextMul *= 1 + getTranscendStageValue(attacker, '과소평가', .25, .08);
+                extra.critMulBonus = Number(extra && extra.critMulBonus || 0) + getTranscendStageValue(attacker, '과소평가', .20, .06);
+            }
+        }
+        const targetHpRatio = Number(monster && monster.hp || 0) / Math.max(1, Number(monster && monster.hpMax || 1));
+        const attackerHpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
+        const equipmentStateForTrigger = runtime.equipmentState || (runtime.equipmentState = {});
+        if (Date.now() < Number(equipmentStateForTrigger.beomStacksUntil || 0) && Number(equipmentStateForTrigger.beomStacks || 0) > 0
+            && actionElement === '명') {
+            extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + Math.min(7, Number(equipmentStateForTrigger.beomStacks || 0)) * .02;
+        }
+        if (Date.now() < Number(equipmentStateForTrigger.trueBeomUntil || 0) && extra && extra.isSkill) {
+            extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '범부의 대나무', .30, .10);
+        }
+        if (equipmentStateForTrigger.fortuneExtraDamage && Date.now() < Number(equipmentStateForTrigger.fortuneExtraDamage.expiredAt || 0)) {
+            extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(equipmentStateForTrigger.fortuneExtraDamage.value || 0);
+        }
+        if (targetHpRatio <= .50 && getTranscendEquipmentEntry(attacker, '최후통첩 모자') && Date.now() >= Number(equipmentStateForTrigger.ultimatumHatReadyAt || 0)) {
+            if (!runtime.equipmentAtkBuffs) runtime.equipmentAtkBuffs = {};
+            runtime.equipmentAtkBuffs.ultimatumHat = {
+                value: scalePartyAttackBuff(attacker, getTranscendStageValue(attacker, '최후통첩 모자', .15, .04)),
+                expiredAt: Date.now() + (8 + getEquipmentEffectDurationBonus(attacker)) * 1000
+            };
+            equipmentStateForTrigger.ultimatumHatReadyAt = Date.now() + Math.max(0, 12 - getEquipmentEffectCooldownReduction(attacker)) * 1000;
+        }
+        if (getTranscendSetCount(attacker, '최후 통첩') >= 4) {
+            if (targetHpRatio >= .70) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .10;
+            if (targetHpRatio <= .30) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .18;
+        }
+        if (targetHpRatio <= .60 && getTranscendEquipmentEntry(attacker, '정복자의 최후통첩')) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .20;
+        if (targetHpRatio <= .30) {
+            extra.pntBonus = Number(extra && extra.pntBonus || 0) + getTranscendStageValue(attacker, '최후통첩 트라우저', 150, 40);
+            extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '최후통첩 슈즈', .20, .05);
+        }
+        if (attackerHpRatio <= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0);
+        if (attackerHpRatio <= .20 && getTranscendEquipmentEntry(attacker, '진사이')) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '진사이', .30, .05);
+        if (extra && extra.isSkill && attackerHpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
+            const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
+            contextMul *= (currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul;
+        }
+        if (attackerHpRatio <= .50 && equipmentStateForTrigger.abyssBuff && Date.now() < Number(equipmentStateForTrigger.abyssBuff.expiredAt || 0)) contextMul *= 1.08;
+        if (getTranscendEquipmentEntry(attacker, '마나 증폭 장치')) {
+            const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
+            if (mpRatio > .20) contextMul *= 1 + Number(stats.manaAmplifierFinalAtk || 0);
+            if (mpRatio >= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '마나 증폭 장치', .08, .04);
+        }
+        if (getTranscendEquipmentEntry(attacker, '포상 정산 반지')) {
+            const hpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
+            const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
+            const diff = Math.abs(hpRatio - mpRatio);
+            if (diff >= .30) contextMul *= 1 + getTranscendStageValue(attacker, '포상 정산 반지', .12, .04);
+            if (diff >= .50) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '포상 정산 반지', .16, .04);
         }
     }
-    const targetHpRatio = Number(monster && monster.hp || 0) / Math.max(1, Number(monster && monster.hpMax || 1));
-    const attackerHpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
-    const equipmentStateForTrigger = runtime.equipmentState || (runtime.equipmentState = {});
-    if (Date.now() < Number(equipmentStateForTrigger.beomStacksUntil || 0) && Number(equipmentStateForTrigger.beomStacks || 0) > 0
-        && actionElement === '명') {
-        extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + Math.min(7, Number(equipmentStateForTrigger.beomStacks || 0)) * .02;
-    }
-    if (Date.now() < Number(equipmentStateForTrigger.trueBeomUntil || 0) && extra && extra.isSkill) {
-        extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '범부의 대나무', .30, .10);
-    }
-    if (equipmentStateForTrigger.fortuneExtraDamage && Date.now() < Number(equipmentStateForTrigger.fortuneExtraDamage.expiredAt || 0)) {
-        extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(equipmentStateForTrigger.fortuneExtraDamage.value || 0);
-    }
-    if (targetHpRatio <= .50 && getTranscendEquipmentEntry(attacker, '최후통첩 모자') && Date.now() >= Number(equipmentStateForTrigger.ultimatumHatReadyAt || 0)) {
-        if (!runtime.equipmentAtkBuffs) runtime.equipmentAtkBuffs = {};
-        runtime.equipmentAtkBuffs.ultimatumHat = {
-            value: scalePartyAttackBuff(attacker, getTranscendStageValue(attacker, '최후통첩 모자', .15, .04)),
-            expiredAt: Date.now() + (8 + getEquipmentEffectDurationBonus(attacker)) * 1000
-        };
-        equipmentStateForTrigger.ultimatumHatReadyAt = Date.now() + Math.max(0, 12 - getEquipmentEffectCooldownReduction(attacker)) * 1000;
-    }
-    if (getTranscendSetCount(attacker, '최후 통첩') >= 4) {
-        if (targetHpRatio >= .70) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .10;
-        if (targetHpRatio <= .30) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .18;
-    }
-    if (targetHpRatio <= .60 && getTranscendEquipmentEntry(attacker, '정복자의 최후통첩')) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + .20;
-    if (targetHpRatio <= .30) {
-        extra.pntBonus = Number(extra && extra.pntBonus || 0) + getTranscendStageValue(attacker, '최후통첩 트라우저', 150, 40);
-        extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '최후통첩 슈즈', .20, .05);
-    }
-    if (attackerHpRatio <= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0);
-    if (attackerHpRatio <= .20 && getTranscendEquipmentEntry(attacker, '진사이')) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '진사이', .30, .05);
-    if (extra && extra.isSkill && attackerHpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
-        const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
-        contextMul *= (currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul;
-    }
-    if (attackerHpRatio <= .50 && equipmentStateForTrigger.abyssBuff && Date.now() < Number(equipmentStateForTrigger.abyssBuff.expiredAt || 0)) contextMul *= 1.08;
-    if (getTranscendEquipmentEntry(attacker, '마나 증폭 장치')) {
-        const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
-        if (mpRatio > .20) contextMul *= 1 + Number(stats.manaAmplifierFinalAtk || 0);
-        if (mpRatio >= .50) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + getTranscendStageValue(attacker, '마나 증폭 장치', .08, .04);
-    }
-    if (getTranscendEquipmentEntry(attacker, '포상 정산 반지')) {
-        const hpRatio = Number(runtime.hp || 0) / Math.max(1, Number(runtime.hpMax || 1));
-        const mpRatio = Number(runtime.mp || 0) / Math.max(1, Number(runtime.mpMax || 1));
-        const diff = Math.abs(hpRatio - mpRatio);
-        if (diff >= .30) contextMul *= 1 + getTranscendStageValue(attacker, '포상 정산 반지', .12, .04);
-        if (diff >= .50) extra.finalDamageBonus = Number(extra && extra.finalDamageBonus || 0) + getTranscendStageValue(attacker, '포상 정산 반지', .16, .04);
-    }
     // 공격 시 5초간 방어력 감소(flat) — 몬스터 디버프(파티 전체 이득), 공격자별 누적, 소환 자동공격 제외
-    if (monster && !(extra && extra.summonAttack) && Number(stats.atkDefReduce || 0) > 0) {
+    if (monster && isDirectAttack && Number(stats.atkDefReduce || 0) > 0) {
         addMonsterDebuff(monster, { id: 'atkDefReduce:' + (attacker && attacker.name), type: 'defFlat', value: Number(stats.atkDefReduce || 0), remain: 5 });
     }
     // '월도랜드' 필드(퀘스트) 공격 시 추가 피해
@@ -2935,190 +2951,67 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     if (/부타게임/.test(String(quest.name || '') + ' ' + String(quest.id || ''))) extra.extraDamageBonus = Number(extra && extra.extraDamageBonus || 0) + Number(stats.butagamePartyQuestDmg || 0);
     // 10번째 공격마다 최종 공격력 증가 (흠시원; 소환수 자동공격 제외, 연격 각각 별도 집계해 해당 타격에만 적용)
     const tenthAtk = Number(slotEffects.tenthHitFinalAtk || 0);
-    const tenthAtkStart = (!(extra && extra.summonAttack) && tenthAtk > 0) ? Number(runtime.attackCounter || 0) : null;
-    contextMul *= 1 + Number(extra && extra.damageBonusMul || 0);
+    const tenthAtkStart = (isDirectAttack && tenthAtk > 0) ? Number(runtime.attackCounter || 0) : null;
     // [무]속성 공격 시 최종 피해 증가 + 범인은 이 안에(다음 공격 최종 피해)
     let extraFinalDamage = Number(extra && extra.finalDamageBonus || 0);
     const equipmentState = runtime.equipmentState || {};
-    if (equipmentState.cleanWaterBuff && Date.now() < Number(equipmentState.cleanWaterBuff.expiredAt || 0) && actionElement === '수') {
+    if (isDirectAttack && equipmentState.cleanWaterBuff && Date.now() < Number(equipmentState.cleanWaterBuff.expiredAt || 0) && actionElement === '수') {
         extraFinalDamage += Number(equipmentState.cleanWaterBuff.value || 0);
     }
-    if (equipmentState.deepWaterAttackBuff && Date.now() < Number(equipmentState.deepWaterAttackBuff.expiredAt || 0) && actionElement === '수') {
+    if (isDirectAttack && equipmentState.deepWaterAttackBuff && Date.now() < Number(equipmentState.deepWaterAttackBuff.expiredAt || 0) && actionElement === '수') {
         extraFinalDamage += Number(equipmentState.deepWaterAttackBuff.value || 0);
     }
-    if (equipmentState.darkAttackBuff && Date.now() < Number(equipmentState.darkAttackBuff.expiredAt || 0) && actionElement === '암') {
+    if (isDirectAttack && equipmentState.darkAttackBuff && Date.now() < Number(equipmentState.darkAttackBuff.expiredAt || 0) && actionElement === '암') {
         extraFinalDamage += Number(equipmentState.darkAttackBuff.value || 0);
     }
-    if (equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && actionElement === '암') {
+    if (isDirectAttack && equipmentState.blackEchoShoesBuff && Date.now() < Number(equipmentState.blackEchoShoesBuff.expiredAt || 0) && actionElement === '암') {
         extra.extraDamageBonus = Number(extra.extraDamageBonus || 0) + Number(equipmentState.blackEchoShoesBuff.value || 0);
     }
-    // 명속성 공격 최종 피해(lightFinalDamage): 천공의 갑옷 등 스탯 보유 장비 공통 (솔로 calculateAttackHitResult와 동일 규칙)
-    if (actionElement === '명') extraFinalDamage += Number(stats.lightFinalDamage || 0);
     if (!actionElement) extraFinalDamage += Number(slotEffects.nonElementFinalDamage || 0);
     // 보호막 공격 시 최종 피해 증가 (전직 흠시원 슬롯 효과)
     if (Number(monster && monster.shield || 0) > 0) extraFinalDamage += Number(slotEffects.shieldFinalDamage || 0);
-    if (extra && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
+    if (isDirectAttack && extra.isBasic && Number(runtime.nextFinalDamageBonus || 0) > 0) {
         extraFinalDamage += Number(runtime.nextFinalDamageBonus || 0);
         runtime.nextFinalDamageBonus = 0;
     }
-    const isFixedMultiHit = !!(extra && extra.hitCount);
-    const comboHitCount = isFixedMultiHit ? 1 : Math.max(1, Math.floor(Number(extra && extra.comboHitCount || getComboHitCount(stats))));
-    const hitCount = isFixedMultiHit ? Math.max(1, Math.floor(Number(extra.hitCount || 1))) : comboHitCount;
-    const defenseReductionRate = Math.min(1, getReducedDefenseRate(stats, slotEffects, posDef && posDef.stats && posDef.stats.armorPen) + getMonsterDefReduce(monster) + Number(extra && extra.defReductionBonus || 0));
-    let penetration = (typeof extra.pnt !== 'undefined' ? Number(extra.pnt || 0) : Number(stats.pnt || 0)) + Number(extra && extra.pntBonus || 0);
+    // 레이드 상태의 보정을 준비하고, 타격 판정은 필드와 PVP의 공통 계산기로 처리한다.
+    const hitStats = Object.assign({}, stats, { allElementAtk: Number(stats.allElementAtk || 0) + getActiveKingElementBonus(attacker) });
+    const manaResonance = snapshot.manaResonance;
+    if (manaResonance && runtime.mpMax > 0 && runtime.mp / runtime.mpMax >= manaResonance.threshold) extraFinalDamage += Number(manaResonance.bonus || 0);
+    let penetration = (extra.pnt != null ? Number(extra.pnt) : Number(stats.pnt || 0)) + Number(extra.pntBonus || 0);
     if (runtime.pntBonusUntil && Date.now() < Number(runtime.pntBonusUntil)) penetration += Number(runtime.pntBonusValue || 0);
-    // 방어력 감소(flat) 반영한 유효 방어력
+    const hitExtra = Object.assign({}, extra, {
+        attackElement: actionElement,
+        finalDamageBonus: extraFinalDamage,
+        defReductionBonus: Number(extra.defReductionBonus || 0) + Number(posDef.stats && posDef.stats.armorPen || 0) + getMonsterDefReduce(monster),
+        tenthAtkBonus: tenthAtkStart === null ? 0 : tenthAtk,
+        tenthAtkStart: tenthAtkStart || 0
+    });
+    if (isDirectAttack && extra.isBasic) {
+        hitExtra.critChanceBonus = Number(hitExtra.critChanceBonus || 0) + Number(runtime.critBoostNext || 0);
+        hitExtra.trueDamageOnCrit = !!hitExtra.trueDamageOnCrit || !!runtime.trueDamageOnCritNext;
+        runtime.critBoostNext = 0; runtime.trueDamageOnCritNext = false;
+    }
     const monsterDef = Math.max(0, Number(monster && monster.def || 0) - getMonsterDefFlat(monster));
-    let crit = Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0);
-    if (extra && typeof extra.critChanceMul !== 'undefined') crit *= Number(extra.critChanceMul || 0);
-    crit += Number(extra && extra.awakeningCritChanceBonus || 0);
-    const trueDamageOnCrit = !!(extra && extra.trueDamageOnCrit) || !!runtime.trueDamageOnCritNext;
-    if (runtime.critBoostNext > 0) { crit += runtime.critBoostNext; runtime.critBoostNext = 0; }
-    if (runtime.trueDamageOnCritNext) runtime.trueDamageOnCritNext = false;
-    let damage = 0;
-    let fixedDamage = 0;
-    let destinyDamage = 0;
-    let criticalCount = 0;
-    const hitDamages = [];
-    const hitDetails = [];
-    let totalHits = hitCount;
-    const maxHits = extra && extra.extraOnCrit ? Math.max(totalHits, Math.floor(Number(extra.extraOnCrit.max || totalHits))) : totalHits;
-    const maxComboHits = 2 + Math.max(0, Math.floor(Number(stats.maxCmb || 0)));
-    let abyssDoomUsed = false;
-    for (let i = 0; i < totalHits; i++) {
-        const unitIndex = isFixedMultiHit ? 0 : Math.min(i, comboHitCount - 1);
-        const unitModifier = extra && Array.isArray(extra.perAttackUnitExtras) ? (extra.perAttackUnitExtras[unitIndex] || {}) : {};
-        const hitExtra = Object.assign({}, extra || {});
-        Object.keys(unitModifier).forEach(key => {
-            if (typeof unitModifier[key] === 'number') hitExtra[key] = Number(hitExtra[key] || 0) + Number(unitModifier[key]);
-            else hitExtra[key] = unitModifier[key];
-        });
-        if (typeof hitExtra.partyBeforeAttackUnit === 'function') hitExtra.partyBeforeAttackUnit(hitExtra);
-        const hitStats = Object.assign({}, stats || {});
-        hitStats.allElementAtk = Number(hitStats.allElementAtk || 0) + getActiveKingElementBonus(attacker);
-        ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
-        const attackElement = hitExtra.attackElement || resolvePartyAttackElement(attacker, hitExtra.skillElement);
-        // 무속성 공격일 때만 [무]속성 공격 피해가 적용된다 (속성 배수 자리에 곱연산)
-        const elementMul = attackElement
-            ? (typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier(attackElement, hitStats, monsterStats) : 1)
-            : 1 + Number(hitStats.nonElementDamage || 0);
-        const darkMul = typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier('암', hitStats, monsterStats) : 1;
-        const waterMul = typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier('수', hitStats, monsterStats) : 1;
-        const unitDamageBonus = Number(hitExtra.damageBonusMul || 0) - Number(extra && extra.damageBonusMul || 0);
-        const unitFinalBonus = Number(hitExtra.finalDamageBonus || 0) - Number(extra && extra.finalDamageBonus || 0);
-        const unitCritBonus = Number(hitExtra.critChanceBonus || 0) - Number(extra && extra.critChanceBonus || 0);
-        const unitPntBonus = Number(hitExtra.pntBonus || 0) - Number(extra && extra.pntBonus || 0);
-        const unitDefReductionBonus = Number(hitExtra.defReductionBonus || 0) - Number(extra && extra.defReductionBonus || 0);
-        const unitExtraDamageBonus = Number(hitExtra.extraDamageBonus || 0) - Number(extra && extra.extraDamageBonus || 0);
-        let hitContextMul = contextMul * (1 + unitDamageBonus);
-        const tenthOffset = isFixedMultiHit ? 0 : i;
-        if (tenthAtkStart !== null && i < comboHitCount && (tenthAtkStart + tenthOffset + 1) % 10 === 0) hitContextMul *= 1 + tenthAtk;
-        const awakeningBaseFinal = 1 + Number(stats.finalDamage || 0) + extraFinalDamage + unitFinalBonus;
-        let hitDamage = rawDamage * hitContextMul * awakeningBaseFinal * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!(extra && extra.summonAttack) }) * cardAwakening.basicHitMultiplier(stats, hitExtra);
-        let fixedHitDamage = 0;
-        let destinyHitDamage = 0;
-        const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
-        const forceComboLastCrit = !!(isComboExtraHit && stats.comboLastCrit && comboHitCount >= maxComboHits && i === comboHitCount - 1);
-        const unitCrit = crit + unitCritBonus;
-        const isCrit = hitExtra.disableCritical ? false : (hitExtra.forceCritical || forceComboLastCrit ? true : Math.random() < Math.max(0, unitCrit));
-        if (awakeningBaseFinal > 0) hitDamage *= Math.max(0, awakeningBaseFinal + cardAwakening.conditionalFinalDamage(stats, isCrit)) / awakeningBaseFinal;
-        if (isCrit) {
-            const comboCritBonus = isComboExtraHit ? Number(stats.comboCritMul || 0) : 0;
-            const lastCritBonus = forceComboLastCrit ? Number(stats.comboLastCritMul || 0) : 0;
-            // 치명타 배율: 솔로 applyCriticalDamage와 동일 — 치명타 피해 감소율(critDef)은 치명타 추가분에 대한 감소율로 적용
-            const totalCritMul = Number(stats.critMul || 1.4) + Number(hitExtra.critMulBonus || 0) + comboCritBonus + lastCritBonus;
-            hitDamage = Math.round(hitDamage * (1 + Math.max(0, totalCritMul - 1) * (1 - Math.min(1, Math.max(0, Number(monsterStats.critDef || 0))))));
-            criticalCount++;
-            if (extra && extra.extraOnCrit && totalHits < maxHits) totalHits++;
-            if (stats && stats.hasAbyssDoom && extra && extra.isBasic && !abyssDoomUsed && Math.random() < 0.3) {
-                totalHits++;
-                abyssDoomUsed = true;
-            }
-        }
-        
-        // 별빛의 축복: 방어 연산 전 피해의 15%를 고정 피해로 추가 (솔로 calculateAttackHitResult와 동일 — 방어 연산 뒤에 가산)
-        const celestiaBonus = !(extra && extra.disableEquipmentBonusDamage) && stats && stats.hasCelestia && extra && extra.isSkill && Math.random() < 0.2
-            ? Math.round(hitDamage * 0.15) : 0;
-
-        hitDamage *= Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
-        const unitPenetration = penetration + unitPntBonus;
-        const unitDefenseReduction = Math.min(1, defenseReductionRate + unitDefReductionBonus);
-        if (trueDamageOnCrit && isCrit) {
-            hitDamage = getFixedDamageAgainstMonster(hitDamage, monster, unitPenetration, unitDefenseReduction);
-            fixedHitDamage += hitDamage;
-        } else if (Number(stats.trueDamageChance || 0) > 0 && Math.random() < Number(stats.trueDamageChance || 0)) {
-            hitDamage = getDestinyDamageAfterDefense(hitDamage, monsterDef, unitPenetration, unitDefenseReduction);
-            destinyHitDamage += hitDamage;
-        } else {
-            hitDamage = getDamageAfterDefense(hitDamage, monsterDef, unitPenetration, unitDefenseReduction);
-        }
-        if (celestiaBonus > 0) {
-            hitDamage += celestiaBonus;
-            fixedHitDamage += celestiaBonus;
-        }
-        if (!(extra && extra.disableEquipmentBonusDamage) && Number(stats['000'] || 0) > 0 && Math.random() < Number(stats['000'])) {
-            const bonus = getFixedDamageAgainstMonster([10, 100, 1000][randomInt(0, 2)], monster, penetration, defenseReductionRate);
-            hitDamage += bonus;
-            fixedHitDamage += bonus;
-        }
-        if (extra && Number(extra.skillTrueDmg || 0) > 0) {
-            const bonus = getFixedDamageAgainstMonster(Number(extra.skillTrueDmg || 0), monster, penetration, defenseReductionRate);
-            hitDamage += bonus;
-            fixedHitDamage += bonus;
-        }
-        if (elementMul !== 1) { // 속성 배수: 맨 마지막 적용 (총/고정/운명 비례 스케일)
-            hitDamage = Math.max(0, hitDamage * elementMul);
-            fixedHitDamage *= elementMul;
-            destinyHitDamage *= elementMul;
-        }
-        const lightMul = typeof rpgenius.getElementDamageMultiplier === 'function' ? rpgenius.getElementDamageMultiplier('명', hitStats, monsterStats) : 1;
-        if (!(extra && extra.disableEquipmentBonusDamage) && isCrit && Number(stats.critLightBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(stats.critLightBonus) * lightMul;
-        if (!(extra && extra.disableEquipmentBonusDamage) && !isCrit && Number(stats.nonCritLightBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(stats.nonCritLightBonus) * lightMul;
-        if (!(extra && extra.disableEquipmentBonusDamage) && isCrit && i === 0 && Number(extra && extra.bribeDarkBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(extra.bribeDarkBonus) * darkMul;
-        if (!(extra && extra.disableEquipmentBonusDamage) && i === 0 && Number(extra && extra.deepWaterBonus || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(extra.deepWaterBonus) * waterMul;
-        if (!(extra && extra.disableEquipmentBonusDamage) && actionElement && Number(stats.elementalExtraDamage || 0) > 0) hitDamage += hitDamage * Number(stats.elementalExtraDamage);
-        if (isComboExtraHit && Number(stats.comboDamage || 0) !== 0) hitDamage *= 1 + Number(stats.comboDamage);
-        if (!(extra && extra.disableEquipmentBonusDamage) && Number(hitExtra.rainbowAttackRatio || 0) > 0) hitDamage += Number(stats.atk || 0) * Number(hitExtra.rainbowAttackRatio) * elementMul;
-        if (unitExtraDamageBonus > 0) hitDamage += hitDamage * unitExtraDamageBonus;
-        if (!isFixedMultiHit && i < comboHitCount && typeof hitExtra.partyAfterAttackUnit === 'function') hitDamage += Math.max(0, Number(hitExtra.partyAfterAttackUnit(isCrit) || 0));
-        fixedDamage += fixedHitDamage;
-        destinyDamage += destinyHitDamage;
-        let finalHitDamage = applyDamageVariance(hitDamage);
-        if (i === 0 && Number(extra && extra.oneTimeFinalDamage || 0) > 0) finalHitDamage += Math.max(0, Math.round(Number(extra.oneTimeFinalDamage)));
-        hitDamages.push(finalHitDamage);
-        hitDetails.push({ damage: finalHitDamage, fixedDamage: Math.max(0, Math.round(fixedHitDamage)), destinyDamage: Math.max(0, Math.round(destinyHitDamage)), crit: !!isCrit, isComboHit: isComboExtraHit, comboLastCrit: forceComboLastCrit });
-        damage += finalHitDamage;
+    const targetTakenMul = Math.max(0, 1 + Number(monsterStats.takenDamage || 0)) * getMonsterTakenDmgMul(monster);
+    const adjustedRawDamage = extra.precalculatedDamage ? originalRawDamage
+        : rawDamage * contextMul * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!extra.summonAttack }) * targetTakenMul;
+    const hit = rpgenius.calculateAttackHitResult(adjustedRawDamage, monsterDef, penetration, hitStats, slotEffects, hitExtra, monsterStats);
+    const attackUnits = hit.attackUnitCount;
+    if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + attackUnits;
+    if (!extra.summonAttack && !extra.dotAttack && extra.isBasic && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
+        if (!runtime.stackCounters) runtime.stackCounters = {};
+        runtime.stackCounters['나인멘스'] = Math.min(9, Number(runtime.stackCounters['나인멘스'] || 0) + attackUnits);
     }
-    if (isFixedMultiHit && typeof extra.partyAfterAttackUnit === 'function') {
-        const additional = Math.max(0, Math.round(Number(extra.partyAfterAttackUnit(hitDetails.some(detail => detail.crit)) || 0)));
-        if (additional > 0 && hitDetails.length > 0) {
-            hitDetails[hitDetails.length - 1].damage += additional;
-            hitDamages[hitDamages.length - 1] += additional;
-            damage += additional;
-        }
-    }
-    // 10번째 공격마다 최종 공격력 증가: 이번 행동에서 실제로 발생한 히트 수만큼 카운터 전진
-    // 고정 다단 일반 공격(포커 못 하시네)은 실제 타격 수만큼 공격 횟수로 집계한다 (솔로 separateBasicAttackHits와 동일)
-    const attackUnitsForCounters = extra && extra.separateBasicAttackHits ? Math.max(1, hitDetails.length) : comboHitCount;
-    if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + attackUnitsForCounters;
-    // 나인 멘스 모리스 패시브: 일반 공격/일반 취급 공격(countAsBasic)은 각 타격마다 중첩 (연격 각각), 최대 9
-    if (!(extra && extra.summonAttack) && extra && extra.isBasic && attacker && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
-        if (!attacker.runtime.stackCounters) attacker.runtime.stackCounters = {};
-        attacker.runtime.stackCounters['나인멘스'] = Math.min(9, Number(attacker.runtime.stackCounters['나인멘스'] || 0) + attackUnitsForCounters);
-    }
-    // 추가 피해: 모든 계산이 끝난 최종 피해에 마지막으로 비율만큼 더한다
-    let extraDamageDealt = 0;
-    const extraDamageRate = extra && extra.disableEquipmentBonusDamage ? 0 : Math.max(0, Number(stats.extraDamage || 0)) + Math.max(0, Number(extra && extra.extraDamageBonus || 0));
-    if (extraDamageRate > 0 && damage > 0) {
-        extraDamageDealt = Math.floor(damage * extraDamageRate);
-        damage += extraDamageDealt;
-    }
-    if (Number(extra.awakeningExtraDamage || 0) > 0 && damage > 0) {
-        const awakeningDamage = Math.round(damage * extra.awakeningExtraDamage);
-        damage += awakeningDamage;
-        extraDamageDealt += awakeningDamage;
-    }
-    const result = { damage: Math.max(1, Math.round(damage)), fixedDamage: Math.max(0, Math.round(fixedDamage)), destinyDamage: Math.max(0, Math.round(destinyDamage)), isCrit: criticalCount > 0, hitCount: hitDetails.length, attackUnitCount: comboHitCount, criticalCount, hitDamages, hitDetails, extraDamageDealt: Math.round(extraDamageDealt), equipmentTriggerAllowed: !(extra && (extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack)) };
+    const hitDetails = hit.hitDetails.map(detail => Object.assign({}, detail, { crit: detail.isCritical, comboLastCrit: detail.isComboLastCrit }));
+    const result = {
+        damage: hit.finalDamage, isCrit: hit.criticalCount > 0, hitCount: hitDetails.length, attackUnitCount: attackUnits,
+        criticalCount: hit.criticalCount, hitDamages: hit.hitDamages, hitDetails,
+        fixedDamage: hitDetails.reduce((sum, detail) => sum + Number(detail.fixedDamage || 0), 0),
+        destinyDamage: hitDetails.reduce((sum, detail) => sum + Number(detail.destinyDamage || 0), 0),
+        extraDamageDealt: hit.extraDamageDealt, damageComponents: hit.damageComponents,
+        equipmentTriggerAllowed: !(extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack)
+    };
     queuePartyBlackShadow(room, attacker, monster, result.damage, extra);
     return result;
 }
@@ -4404,7 +4297,7 @@ function computeMonsterDamage(room, mon, target) {
     }
     const targetTakenMul = Math.max(0, 1 + Number(targetStats.takenDamage || 0)) * (target.runtime.takenDmgMul || 1) * Math.max(0, 1 - equipmentReduction);
     const rawDamage = Math.max(0, Number(monStats.atk || mon.atk || 0) * (1 + Number(monStats.afterBasic || 0)));
-    const defense = Number(targetStats.def || 50) * finalDefMul;
+    const defense = Number(targetStats.def ?? 50) * finalDefMul;
     const defenseReductionRate = Math.max(0, Math.min(1, Number(monStats.pntPercent || 0)));
     const penetration = Number(monStats.pnt || mon.pnt || 0);
     let total = 0;
@@ -4413,12 +4306,9 @@ function computeMonsterDamage(room, mon, target) {
     for (let i = 0; i < hitCount; i++) {
         let beforeReduction = rawDamage * (1 + Number(monStats.finalDamage || 0)) * monDealtMul;
         let hitDamage = beforeReduction * mitigation * targetTakenMul;
-        const isCrit = Math.random() < Math.max(0, Number(monStats.crit || 0));
-        if (isCrit) {
-            const critMul = 1 + Math.max(0, Number(monStats.critMul || 1.4) - 1) * (1 - Math.min(1, Math.max(0, Number(targetStats.critDef || 0)))); // 솔로와 동일한 치명타 피해 감소율 공식
-            beforeReduction = Math.round(beforeReduction * critMul);
-            hitDamage = Math.round(hitDamage * critMul);
-        }
+        const critical = rpgenius.applyCriticalDamage(hitDamage, monStats, {}, targetStats);
+        if (critical.isCritical) beforeReduction = rpgenius.applyCriticalDamage(beforeReduction, monStats, { forceCritical: true }, targetStats).damage;
+        hitDamage = critical.damage;
         const afterReduction = hitDamage;
         if (Number(monStats.trueDamageChance || 0) > 0 && Math.random() < Number(monStats.trueDamageChance || 0)) {
             hitDamage = getDestinyDamageAfterDefense(hitDamage, defense, penetration, defenseReductionRate);
@@ -4772,7 +4662,7 @@ function usePartySelfDestruct(room, member) {
     const phase = quest && quest.phases[room.phaseIndex];
     let result;
     if (!room.monster && phase && phase.type === 'mob') {
-        const fakeMon = createPhaseMonster(phase);
+        const fakeMon = getPhaseCombatMonster(room);
         result = calculateOutgoingDamage(member, fakeMon, room, rawDamage, extra);
         applyMobPhaseDamage(room, member, fakeMon, result, 'skill', '자폭', false);
     } else if (room.monster) {
@@ -4821,9 +4711,9 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
     };
     const phase = quest && quest.phases[room.phaseIndex];
     if (def.damage && (room.monster || (phase && phase.type === 'mob'))) {
-        const targetMonster = room.monster || createPhaseMonster(phase);
+        const targetMonster = getPhaseCombatMonster(room);
         ctx.targetMaxHp = targetMonster.hpMax || ctx.targetMaxHp;
-        // getFinalDamageMul(복수의 칼날/마력 감응/수나타/건력)은 calculateOutgoingDamage 안에서 1회 적용된다 — 여기서 곱하면 중복 적용
+        // 최종 피해 보정은 calculateOutgoingDamage에서 한 번만 적용한다.
         let dmg = evalFormula(def.damage, ctx) * skillDmgMul;
         if (def.countAsBasic) dmg *= (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0));
         // 스택형 (낙뢰)
@@ -4979,6 +4869,8 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
     const multiplier = getSkillValue(skill, 0, star);
     const extra = Object.assign({}, equipmentSkill && equipmentSkill.extra || {});
+    extra.isSkill = true;
+    const combatMonster = getPhaseCombatMonster(room);
     if (Number(equipmentSkill && equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     extra.skillName = skillName;
     if (skill && skill.element) extra.skillElement = skill.element;
@@ -5191,13 +5083,13 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         return;
     }
     if (skillName === '유서새김') {
-        if (room.monster) {
+        if (combatMonster) {
             const defDown = getSkillValue(skill, 0, star) + getTranscendStageValue(caster, '흐음티콘', .12, .04);
             const dotMul = 1 + Number(stats.dotDamage || 0) + getTranscendStageValue(caster, '흐음티콘', .40, .15);
             const dotDmg = Math.max(1, Math.round(Number(stats.atk || 0) * getSkillValue(skill, 1, star) * dotMul));
-            addMonsterDebuff(room.monster, { id: '유서새김-def', type: 'defReduce', value: defDown, remain: 10 });
-            addMonsterDebuff(room.monster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10, sourceName: caster.name, sourceSkill: '유서새김' });
-            pushCombat(room, caster.name + ' [유서새김] → ' + room.monster.name + ' 표식 (방어력 ▼ / 2초마다 지속 피해)', 'buff');
+            addMonsterDebuff(combatMonster, { id: '유서새김-def', type: 'defReduce', value: defDown, remain: 10 });
+            addMonsterDebuff(combatMonster, { id: '유서새김', label: '유서새김', type: 'dot', dmg: dotDmg, interval: 2, tick: 2, remain: 10, sourceName: caster.name, sourceSkill: '유서새김' });
+            pushCombat(room, caster.name + ' [유서새김] → ' + combatMonster.name + ' 표식 (방어력 ▼ / 2초마다 지속 피해)', 'buff');
         }
         applyMainCardPassiveMpRecovery(room, caster);
         return;
@@ -5207,11 +5099,11 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const fdmg = getSkillValue(skill, 1, star);
         const bloodOath = getTranscendEquipmentEntry(caster, '피의 서약');
         let recipients = [];
-        if (bloodOath && room.monster) {
+        if (bloodOath && combatMonster) {
             const finalTaken = getTranscendStageValue(caster, '피의 서약', .12, .04);
             const defDown = getTranscendStageValue(caster, '피의 서약', .15, .05);
-            addMonsterDebuff(room.monster, { id: '피의 서약-final', type: 'takenDamage', value: finalTaken, remain: 10 });
-            addMonsterDebuff(room.monster, { id: '피의 서약-def', type: 'defReduce', value: defDown, remain: 10 });
+            addMonsterDebuff(combatMonster, { id: '피의 서약-final', type: 'takenDamage', value: finalTaken, remain: 10 });
+            addMonsterDebuff(combatMonster, { id: '피의 서약-def', type: 'defReduce', value: defDown, remain: 10 });
         } else {
             const ally = pickAllyTarget(room, caster, targetName);
             recipients = ally && ally !== caster ? [caster, ally] : [caster];
@@ -5226,7 +5118,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         caster.runtime.nextFinalDamageBonus = fdmg;
         const hpCost = Math.floor(Number(caster.runtime.hp || 0) * 0.1);
         caster.runtime.hp = Math.max(1, Number(caster.runtime.hp || 0) - hpCost);
-        pushCombat(room, caster.name + ' [범인은 이 안에] → ' + (bloodOath ? room.monster.name + ' 범인 지정' : recipients.map(t => t.name).join(', ') + ' 방어 관통 ▲') + ' / 다음 공격 최종 피해 ▲ (HP -' + comma(hpCost) + ')', 'buff');
+        pushCombat(room, caster.name + ' [범인은 이 안에] → ' + (bloodOath && combatMonster ? combatMonster.name + ' 범인 지정' : recipients.map(t => t.name).join(', ') + ' 방어 관통 ▲') + ' / 다음 공격 최종 피해 ▲ (HP -' + comma(hpCost) + ')', 'buff');
         applyMainCardPassiveMpRecovery(room, caster);
         return;
     }
@@ -5234,7 +5126,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     const quest = getQuestById(room.questId);
     const phase = quest && quest.phases[room.phaseIndex];
     if (phase && phase.type === 'mob') {
-        const fakeMon = createPhaseMonster(phase);
+        const fakeMon = getPhaseCombatMonster(room);
         const result = calculateOutgoingDamage(caster, fakeMon, room, rawDamage, extra);
         applyMobPhaseDamage(room, caster, fakeMon, result, 'skill', skillName, true);
         if (extra.lifeStealFromPreMitigation) healMember(caster, Math.round(rawDamage * Number(extra.lifeStealFromPreMitigation || 0)));

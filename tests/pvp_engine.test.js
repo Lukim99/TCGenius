@@ -2,13 +2,24 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const envPath = path.join(__dirname, '..', '.env.local');
-if (fs.existsSync(envPath)) {
-    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-        const match = line.match(/^\s*([^#=]+)=(.*)$/);
-        if (match) process.env[match[1].trim()] = match[2].trim();
+// rpgenius의 import 초기화도 운영 DB와 S3에 접근하지 않게 격리한다.
+const AWS = require('aws-sdk');
+const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+AWS.S3.prototype.makeRequest = function (operation) {
+    if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
+    throw new Error('Unexpected isolated S3 operation: ' + operation);
+};
+DynamoDBDocumentClient.prototype.send = async command => {
+    const input = command.input;
+    if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_data') {
+        // 아래 FAKE_ITEMS 보상 표에는 각성 보석이 없으므로 엔진 내부 캐시도 같은 범위를 사용한다.
+        if (input.Key.key === 'Item') return { Item: { data: [] } };
+        const file = path.join(__dirname, '..', 'DB', 'RPGenius', input.Key.key + '.json');
+        return { Item: { data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {} } };
     }
-}
+    if (command.constructor.name === 'ScanCommand' && input.TableName === 'rpgenius_user') return { Items: [] };
+    throw new Error('Unexpected isolated DB command: ' + command.constructor.name + '/' + input.TableName);
+};
 
 const rpg = require('../rpgenius');
 const pvp = require('../pvp');

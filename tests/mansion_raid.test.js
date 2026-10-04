@@ -175,6 +175,115 @@ function tick(room) {
     room.awaitingChoices = false; party.__test.stepRoom(room); room.awaitingChoices = true;
 }
 
+function combatMember(stats = {}) {
+    return {
+        name: seeds[0].name, position: '브루저', skills: [], skillDefs: {},
+        baseSnapshot: {
+            stats: { atk: 1000, def: 0, hp: 1000000, mp: 1000000, crit: 0, critMul: 1.5, ...stats },
+            slotEffects: {}, mainCardSkills: [], elementChain: {}, transcendEquipment: { entries: [], setCounts: {} }
+        },
+        runtime: { hp: 1000000, hpMax: 1000000, mp: 1000000, mpMax: 1000000, dead: false, buffs: [],
+            equipmentState: {}, equipmentAtkBuffs: {}, cooldownsUntil: {}, stackCounters: {}, actionUntil: 0 }
+    };
+}
+
+test('레이드 타격 계산은 필드 공통 계산과 치명타, 연격, 속성, 고정 피해까지 일치한다', () => {
+    const random = mock.method(Math, 'random', () => .23);
+    try {
+        for (const type of ['mob', 'elite', 'boss']) for (const options of [
+            { stats: { cmb: 1, maxCmb: 2, comboDamage: .3, crit: .7, critMul: 2, comboCritMul: .2, extraDamage: .2 }, extra: { isBasic: true } },
+            { stats: { lightAtk: 200, lightFinalDamage: .1, crit: 1, critLightBonus: .3, elementalExtraDamage: .1 }, extra: { isSkill: true, skillElement: '명', hitCount: 3, skillTrueDmg: 70 } },
+            { stats: { trueDamageChance: 1, pntPercent: .2, nonElementDamage: .3 }, extra: { isSkill: true, oneTimeTrueDmg: 250, oneTimeFinalDamage: 170 } },
+            { stats: { crit: 0, '000': 1, extraDamage: .3 }, extra: { hitCount: 2, disableCritical: true } },
+            { stats: { crit: 1 }, extra: { isSkill: true, hitCount: 2, extraOnCrit: { max: 5 } } },
+            { stats: { crit: 1 }, extra: { isBasic: true, trueDamageOnCrit: true } },
+            { stats: { crit: 1, cmb: 1 }, extra: { isBasic: true, hitCount: 9, separateBasicAttackHits: true } },
+            { stats: { crit: 1, finalDamage: .4, extraDamage: .5 }, extra: { hitCount: 1, dotAttack: true, summonAttack: true, precalculatedDamage: true } }
+        ]) {
+            const member = combatMember(options.stats);
+            const monster = { type, hp: 1000000, hpMax: 1000000, def: 350, stats: { lightRes: 90, critDef: .25 }, debuffs: [] };
+            const extra = { ...options.extra };
+            const expected = rpg.calculateAttackHitResult(1357, monster.def, 0, member.baseSnapshot.stats, {},
+                { ...extra, attackElement: extra.skillElement }, monster.stats);
+            const actual = party.__test.calculateOutgoingDamage(member, monster, {}, 1357, extra);
+            assert.equal(actual.damage, expected.finalDamage, type + '/' + JSON.stringify(options));
+            assert.deepEqual(actual.hitDamages, expected.hitDamages);
+            assert.equal(actual.criticalCount, expected.criticalCount);
+            assert.equal(actual.attackUnitCount, expected.attackUnitCount);
+        }
+        const zero = party.__test.calculateOutgoingDamage(combatMember(), { type: 'boss', def: 0, stats: {} }, {}, 0, { hitCount: 1 });
+        assert.equal(zero.damage, 0, '피해가 0일 때 강제로 1 피해를 만들면 안 된다.');
+        assert.equal(party.__test.computeBasicDamage(combatMember({ atk: 0 }), { type: 'boss', def: 0, stats: {} }, {}).damage, 0);
+    } finally { random.mock.restore(); }
+});
+
+test('보스 화상도 필드 계산의 방어력과 속성 저항을 적용하고 장비 및 다음 공격 버프를 발동시키지 않는다', async () => {
+    const room = await battle();
+    const member = room.members[0]; Object.assign(member, combatMember({ fireAtk: 200, finalDamage: .2, pnt: 30 }));
+    member.baseSnapshot.transcendEquipment.entries = [{ name: '잿불 모자', stage: 1 }, { name: '최후통첩 모자', stage: 1 }];
+    member.runtime.critBoostNext = .3; member.runtime.trueDamageOnCritNext = true;
+    room.monster.def = 200; room.monster.stats = { fireRes: 80 };
+    room.monster.hp = Math.round(room.monster.hpMax * .4);
+    room.monster.bossState.hpGimmicks = []; room.monster.bossState.timers = {};
+    const burn = { id: 'emberBurn:' + member.name, type: 'dot', label: '화상', element: '화', disableCritical: true,
+        dmg: 600, interval: 2, tick: .2, remain: 8, sourceName: member.name, sourceSkill: '화상' };
+    party.__test.addMonsterDebuff(room.monster, burn);
+    const random = mock.method(Math, 'random', () => .5);
+    try {
+        const expected = rpg.calculateAttackHitResult(600, 200, 30, member.baseSnapshot.stats, {},
+            { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, attackElement: '화' }, room.monster.stats);
+        const hp = room.monster.hp; tick(room);
+        assert.equal(hp - room.monster.hp, expected.finalDamage);
+        assert.equal(member.runtime.battleStats.damage, expected.finalDamage);
+        assert.equal(member.runtime.equipmentState.attackCount, undefined);
+        assert.equal(member.runtime.equipmentState.ultimatumHatReadyAt, undefined);
+        assert.equal(member.runtime.critBoostNext, .3); assert.equal(member.runtime.trueDamageOnCritNext, true);
+    } finally { random.mock.restore(); }
+});
+
+test('잡몹 단계에서 화상과 유서새김은 유지되고 지속 피해가 처치 수와 전투 기록에 반영된다', async () => {
+    const user = await reset();
+    assert.ok((await party.createRoom(user.name, 'blackHodu')).roomId);
+    assert.equal(party.setPosition(user.name, '브루저').ok, true); party.setReady(user.name, true);
+    const started = await party.start(user.name); assert.equal(started.ok, true, JSON.stringify(started));
+    const room = party.getRoomOf(user.name); room.introUntil = 0; room.awaitingChoices = true;
+    const member = room.members[0]; Object.assign(member, combatMember());
+    member.baseSnapshot.transcendEquipment.entries = [{ name: '잿불 모자', stage: 1 }];
+    member.skills = ['유서새김'];
+    member.skillDefs = { '유서새김': { type: 'active', source: 'mainCard', mp: 0, cd: 1, star: 0,
+        raw: { name: '유서새김', format: [{ base: .2 }, { base: .5 }] } } };
+    const random = mock.method(Math, 'random', () => .5);
+    try {
+        room.awaitingChoices = false; assert.equal(party.attackMobPhase(user.name).ok, true); room.awaitingChoices = true;
+        assert.ok(room.mobMonster?.debuffs.some(debuff => debuff.label === '화상'));
+        const target = room.mobMonster;
+        member.runtime.actionUntil = 0;
+        room.awaitingChoices = false; assert.equal(party.useSkill(user.name, '유서새김').ok, true); room.awaitingChoices = true;
+        assert.equal(room.mobMonster, target);
+        assert.ok(target.debuffs.some(debuff => debuff.id === '유서새김-def'));
+        assert.ok(target.debuffs.some(debuff => debuff.id === '유서새김'));
+        const kills = room.sharedKillCount, damage = member.runtime.battleStats.damage;
+        for (let i = 0; i < 11; i++) tick(room);
+        assert.ok(room.sharedKillCount > kills); assert.ok(member.runtime.battleStats.damage > damage);
+        assert.ok(room.combatLog.some(log => /화상/.test(log.text)));
+        assert.ok(room.combatLog.some(log => /유서새김/.test(log.text) && /처치/.test(log.text)));
+        assert.equal(member.runtime.equipmentState.attackCount, 1, '지속 피해로 장비 공격 횟수가 추가되면 안 된다.');
+        for (let i = 0; i < 40; i++) tick(room);
+        assert.equal(target.debuffs.length, 0, '정해진 마지막 틱까지 적용한 뒤 디버프가 만료되어야 한다.');
+        assert.equal(room.combatLog.filter(log => /\[화상\]/.test(log.text) && /처치/.test(log.text)).length, 4);
+        assert.equal(room.combatLog.filter(log => /\[유서새김\]/.test(log.text) && /처치/.test(log.text)).length, 5);
+        member.skills.push(...quests.find(quest => quest.id === 'blackHodu').randomSkillPool[member.position]);
+        room.sharedKillCount = room.killTarget - 1;
+        party.__test.addMonsterDebuff(target, { id: 'last-burn', label: '화상', type: 'dot', element: '화', disableCritical: true,
+            dmg: 300, tick: .2, interval: 2, remain: 1, sourceName: member.name });
+        tick(room);
+        assert.equal(room.phaseIndex, 1, '지속 피해의 마지막 처치도 실제 관문 완료 경로를 거쳐야 한다.');
+        assert.equal(room.mobMonster, null); assert.equal(room.monster.type, 'elite');
+        assert.equal(room.monster.hp, room.monster.hpMax);
+        assert.equal(room.monster.debuffs?.length || 0, 0);
+    } finally { room.awaitingChoices = true; random.mock.restore(); }
+});
+
 test('흑화 호두 시전은 공통 카드에 원래 이름, 남은 시간과 안정된 식별자만 공개한다', async () => {
     const room = await battle(); room.questId = 'blackHodu'; room.phaseIndex = 2;
     room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
