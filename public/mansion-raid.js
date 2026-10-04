@@ -1,4 +1,4 @@
-// E세계 대저택 레이드 — 기믹 HUD.
+// 레이드 공통 패턴 HUD. 대저택의 입력 기믹도 같은 카드 구조로 표시한다.
 // party.js가 보스 스테이지 아래 별도 root에 SSE마다 MansionRaidUI.update(root, view, { me, host, send })를 호출한다.
 // 사건은 id로 키잉해 한 번만 만들고 이후에는 숫자·상태만 패치한다 (누르던 버튼 교체·초점 유실 방지).
 (() => {
@@ -90,6 +90,19 @@
 
     // ===== 기믹별 구성 =====
     const KINDS = {
+        raidCue: {
+            who: '참여',
+            build(st, card) {
+                card.progress = node('div', 'mr-cue-progress');
+                card.body.append(card.progress);
+            },
+            patch(st, card) {
+                const ev = card.ev, targets = names(ev.targets), responded = names(ev.responded);
+                card.progress.hidden = !ev.requiresResponse;
+                setText(card.progress, ev.need ? responded.length + ' / ' + ev.need : '참여 ' + responded.length);
+                return { mine: targets.includes(st.ctx.me), tag: ev.tag || '시전', who: targets.length ? targets : responded, whoLabel: targets.length ? '대상' : '참여' };
+            }
+        },
         pillars: {
             who: '이동',
             build(st, card) {
@@ -492,7 +505,7 @@
         const r = card.spec.patch(st, card, ls) || {};
         card.node.dataset.mine = r.mine ? '1' : '';
         setText(card.tag, r.tag || '전원');
-        patchWho(st, card, card.spec.who, r.who || names(ev.responded));
+        patchWho(st, card, r.whoLabel || card.spec.who, r.who || names(ev.responded));
         const showErr = !!ls.err && performance.now() < ls.errUntil;
         card.err.hidden = !showErr;
         if (showErr) setText(card.err, ls.err);
@@ -530,6 +543,7 @@
     }
 
     function patchHead(st, view, now) {
+        st.head.hidden = !!view.generic;
         const form = view.form || 'body';
         st.root.dataset.difficulty = view.difficulty || 'normal';
         st.head.dataset.form = form;
@@ -575,7 +589,7 @@
         if (st.root.dataset.stack !== stack) st.root.dataset.stack = stack;
         st.root.hidden = mode === 'idle';
         const screen = st.root.closest('.pq-screen');
-        if (screen) screen.classList.toggle('mr-on', !!view);
+        if (screen) screen.classList.toggle('mr-on', !!view && (!view.generic || mode !== 'idle'));
     }
 
     // ===== 타이머 — 서버 remain을 받은 시점 기준으로 로컬 보간 =====
@@ -583,6 +597,7 @@
         if (!st.root.isConnected) { stopTick(st); return; }
         const now = performance.now();
         for (const card of st.cards.values()) {
+            if (card.persistent) continue;
             const remain = Math.max(0, (card.deadline - now) / 1000);
             const t = remain.toFixed(1);
             if (t !== card.lastTime) {
@@ -646,11 +661,15 @@
             if (card && card.kind !== String(ev.kind || '')) { card.node.remove(); card = null; }
             if (!card) { card = buildCard(st, ev); st.cards.set(id, card); }
             card.ev = ev;
+            card.persistent = ev.remain == null;
+            card.node.dataset.persistent = card.persistent ? '1' : '';
+            card.time.hidden = card.persistent;
+            if (card.barFill) card.barFill.parentElement.hidden = card.persistent;
             const remain = Math.max(0, Number(ev.remain) || 0);
             card.deadline = now + remain * 1000;
             card.duration = Math.max(Number(ev.duration) || 0, remain);
             card.lastTime = '';
-            card.expired = remain <= 0;
+            card.expired = !card.persistent && remain <= 0;
             card.node.classList.toggle('expired', card.expired);
             patchCard(st, card);
         }

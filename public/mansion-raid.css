@@ -1,4 +1,4 @@
-/* E세계 대저택 레이드 — 기믹 HUD (mansion-raid.js). 보스 스테이지 아래 in-flow 블록. */
+/* 모든 레이드가 공유하는 패턴 HUD. 대저택 입력 기믹도 같은 카드 구조를 사용한다. */
 .mr-root{
   --mr-panel:#141118;
   --mr-panel-2:#0e0c12;
@@ -82,6 +82,11 @@
 .mr-ev.urgent .mr-ev-bar i{background:var(--mr-bad)}
 .mr-ev-body{display:flex;flex-direction:column;gap:7px}
 .mr-ev-body:empty{display:none}
+.mr-cue-progress{color:var(--mr-gold-hi);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.mr-ev[data-kind="raidCue"] .mr-ev-title{white-space:normal;overflow:visible;word-break:keep-all;line-height:1.35}
+.mr-ev[data-kind="raidCue"] .mr-ev-tag{max-width:110px}
+.mr-ev[data-kind="raidCue"] .mr-ev-body:has(.mr-cue-progress[hidden]){display:none}
+.mr-ev[data-persistent="1"]{padding-top:5px;padding-bottom:5px}
 .mr-ev-who{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .mr-who-k{font-size:9.5px;font-weight:700;color:var(--mr-text-3);letter-spacing:.06em;margin-right:2px}
 .mr-chip{padding:1px 6px;border:1px solid var(--mr-edge-hi);background:rgba(0,0,0,.35);color:var(--mr-text-2);font-size:10px;font-weight:700;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

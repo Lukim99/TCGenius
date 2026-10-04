@@ -175,6 +175,100 @@ function tick(room) {
     room.awaitingChoices = false; party.__test.stepRoom(room); room.awaitingChoices = true;
 }
 
+test('흑화 호두 시전은 공통 카드에 원래 이름, 남은 시간과 안정된 식별자만 공개한다', async () => {
+    const room = await battle(); room.questId = 'blackHodu'; room.phaseIndex = 2;
+    room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
+    room.monster.hp = room.monster.hpMax * .49;
+    tick(room);
+    const first = party.getMyRoomSnapshot(seeds[0].name).monster.patternEvents;
+    assert.equal(first.length, 1); assert.equal(first[0].kind, 'raidCue'); assert.equal(first[0].label, '파멸의 정화');
+    assert.equal(first[0].remain, 2); assert.equal(first[0].duration, 2); assert.equal(first[0].tag, '시전');
+    assert.equal(first[0].onFinish, undefined);
+    tick(room);
+    const following = party.getMyRoomSnapshot(seeds[0].name).monster.patternEvents[0];
+    assert.equal(following.id, first[0].id); assert.ok(following.remain < first[0].remain);
+    room.monster.bossState.casting = null;
+    party.__test.startBossCast(room, room.monster, 'half', '파멸의 정화', 2, () => {});
+    assert.notEqual(party.__test.serializeMonster(room.monster).patternEvents[0].id, first[0].id);
+});
+
+test('익스트림의 저주와 역할 방패는 원래 명칭과 지속시간을 공통 카드에 표시한다', async () => {
+    const room = await battle(); room.questId = 'blackHoduExtreme'; room.phaseIndex = 2;
+    room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[2]);
+    const st = room.monster.bossState;
+    st.curseRemain = 4.8; st.shieldRemain = 9.8; st.shieldRole = '탱커'; st.buffRemain = 14.8;
+    const events = party.__test.serializeMonster(room.monster).patternEvents;
+    assert.equal(events.length, 3); assert.equal(new Set(events.map(event => event.id)).size, 3);
+    for (const [id, type, remain] of [['curse', 'curseRevive', 4.8], ['role-shield', 'roleDamageLock', 9.8], ['self-buff', 'selfBuff', 14.8]]) {
+        const event = events.find(event => event.id === id);
+        assert.equal(event.label, room.monster.patterns.find(pattern => pattern.type === type).name);
+        assert.equal(event.remain, remain); assert.ok(event.duration >= remain);
+    }
+    assert.equal(events.find(event => event.id === 'role-shield').tag, '탱커');
+});
+
+test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참여 상태를 중복 없이 제공한다', async () => {
+    const room = await battle('normal', 3); room.questId = 'butaGame'; room.phaseIndex = 1;
+    room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[1]);
+    party.__test.BOSS_HANDLERS[room.monster.bossKey].onSpawn(room, room.monster);
+    const st = room.monster.bossState;
+    let events = party.__test.serializeMonster(room.monster).patternEvents;
+    assert.equal(events.length, 1); assert.equal(events[0].remain, null); assert.deepEqual(events[0].targets, [st.markName]);
+    room.monster.hp = room.monster.hpMax * .7; tick(room);
+    events = party.__test.serializeMonster(room.monster).patternEvents;
+    const rain = events.find(event => event.id === 'rain');
+    assert.equal(rain.label, '레인! 도와줘!'); assert.equal(rain.duration, 10); assert.deepEqual(rain.targets, [st.markName]);
+    assert.equal(new Set(events.map(event => event.id)).size, events.length);
+    st.gimmickActive = null; st.hpGimmicks = []; st.flameTimer = 999; st.chargeTimer = .2;
+    tick(room);
+    const charge = party.__test.serializeMonster(room.monster).patternEvents.find(event => event.tag === '저지');
+    assert.equal(charge.requiresResponse, true); assert.deepEqual(charge.responded, []);
+    st.blockUsers.add(seeds[0].name);
+    const progress = party.__test.serializeMonster(room.monster).patternEvents.find(event => event.id === charge.id);
+    assert.deepEqual(progress.responded, [seeds[0].name]); assert.equal(progress.label, charge.label);
+});
+
+test('모든 레이드 관문 컷씬은 3초 동안 실제 전투와 모든 전투 행동을 멈춘다', async () => {
+    for (const questId of ['blackHodu', 'blackHoduExtreme', 'butaGame', 'butaGameHard', 'mansionNormal', 'mansionHard', 'mansionNightmare']) {
+        const room = await battle(); room.questId = questId;
+        const quest = quests.find(quest => quest.id === questId);
+        room.phaseIndex = quest.phases.length - 2;
+        room.monster = null; // 실제 처치 경로에서도 이전 보스 이미지를 복원한다.
+        const member = room.members[0];
+        if (quest.reviveOnPhaseClear) { member.runtime.dead = true; member.runtime.hp = 0; }
+        let now = Date.now(); const clock = mock.method(Date, 'now', () => now);
+        try {
+            party.__test.proceedToNextPhase(room);
+            const transition = party.getMyRoomSnapshot(member.name).phaseTransition;
+            assert.equal(transition.startedAt, now); assert.equal(transition.endsAt, now + 3000);
+            assert.equal(room.introUntil, transition.endsAt); assert.equal(transition.phaseNumber, quest.phases.length);
+            assert.equal(transition.toName, room.monster.name); assert.ok(transition.fromImage); assert.ok(transition.toImage);
+            if (quest.reviveOnPhaseClear) { assert.equal(member.runtime.dead, false); assert.equal(member.runtime.hp, member.runtime.hpMax); }
+            member.potions = [{ name: '상급 체력 포션', count: 2 }]; room.supportGauge = 100;
+            const skill = member.skills.find(name => member.skillDefs[name]?.type === 'active');
+            member.runtime.buffs = [{ id: 'cut-test', label: 'test', remain: 5 }];
+            const hp = room.monster.hp, mp = member.runtime.mp, gauge = room.monster.gauge, enrage = room.monster.enrageRemain;
+            const cooldowns = party.getMyCooldownState(member.name);
+            now += 1500;
+            const reconnect = party.getMyRoomSnapshot(member.name);
+            assert.equal(reconnect.phaseTransition.id, transition.id); assert.equal(reconnect.phaseTransition.endsAt - reconnect.serverNow, 1500);
+            party.__test.stepRoom(room);
+            assert.equal(room.monster.hp, hp); assert.equal(room.monster.gauge, gauge); assert.equal(room.monster.enrageRemain, enrage);
+            assert.equal(member.runtime.buffs[0].remain, 5);
+            for (const [route, payload] of [['attack', {}], ['skill', { skill }], ['use-potion', { name: '상급 체력 포션' }], ['support-skill', { skill: 'X' }], ['mansion-action', { eventId: 'test', action: 'complete' }]]) {
+                const denied = await request('/api/party/' + route, payload);
+                assert.equal(denied.status, 400, questId + '/' + route); assert.equal(denied.data.error, '관문 전환 중입니다.');
+            }
+            assert.equal(member.runtime.mp, mp); assert.equal(member.potions[0].count, 2); assert.equal(room.supportGauge, 100);
+            assert.deepEqual({ ...party.getMyCooldownState(member.name), serverNow: cooldowns.serverNow }, cooldowns);
+            now = transition.endsAt;
+            assert.equal(party.getMyRoomSnapshot(member.name).phaseTransition, null);
+            party.__test.stepRoom(room);
+            assert.equal(member.runtime.buffs[0].remain, 4.8);
+        } finally { room.awaitingChoices = true; clock.mock.restore(); }
+    }
+});
+
 test('신규 등록은 기존 운영 값·빈 제작식·상점 식별자를 보존하고 재실행해도 중복되지 않는다', () => {
     const again = appendMansion(data).after;
     assert.deepEqual(again, data);

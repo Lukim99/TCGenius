@@ -82,6 +82,7 @@
     }
 
     function showNotice(text, kind, ttl) {
+        if (isPhaseTransitionActive()) return;
         const stack = $('#pqNoticeStack');
         const node = el('div', { class: 'pq-notice ' + (kind || 'info') }, text);
         stack.append(node);
@@ -212,7 +213,7 @@
         const acd = Number(r.actionCdRemain || 0);
         const pcd = Number(r.potionCdRemain || 0);
         const dead = !!r.dead;
-        const transitioning = currentRoom.monster?.mansion?.form === 'transition';
+        const transitioning = isPhaseTransitionActive() || currentRoom.monster?.mansion?.form === 'transition';
         const seal = Number(r.sealRemain || 0);
         const bar = $('#pqSkillBar');
         if (bar) bar.style.opacity = seal > 0 ? '.45' : '';
@@ -263,11 +264,12 @@
         const acd = Number(r.actionCdRemain || 0);
         const dead = !!r.dead;
         const seal = Number(r.sealRemain || 0);
-        const transition = currentRoom.monster?.mansion?.form === 'transition';
+        const gateTransition = isPhaseTransitionActive();
+        const transition = gateTransition || currentRoom.monster?.mansion?.form === 'transition';
         const stone = currentRoom.monster?.mansion?.events?.some(event => event.kind === 'sculpture');
         const blocked = pendingCD.action || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition;
         btn.disabled = blocked;
-        btn.textContent = seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : '공격');
+        btn.textContent = gateTransition ? '관문 전환 중' : seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : '공격');
     }
 
     async function manualAttack() {
@@ -275,6 +277,7 @@
     }
 
     async function performPartyAction(path, payload, kind) {
+        if (isPhaseTransitionActive()) return;
         if (!currentRoom || pendingCD[kind]) return;
         const roomId = currentRoom.id;
         const sync = state => {
@@ -466,26 +469,86 @@
     function saveSound() { try { localStorage.setItem('pqSound', JSON.stringify(sound)); } catch (_) {} }
 
     // ====== 전투 BGM ======
-    const bgm = new Audio('/rpg-ui?file=' + encodeURIComponent('boss fight.mp3'));
+    const RAID_BGM = {
+        blackHodu: ['boss fight.mp3'],
+        blackHoduExtreme: ['boss fight.mp3'],
+        butaGame: ['sfx/부타게임.mp3'],
+        butaGameHard: ['sfx/부타게임.mp3'],
+        mansionNormal: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3'],
+        mansionHard: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3'],
+        mansionNightmare: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3']
+    };
+    let bgm = new Audio();
     bgm.loop = true;
     bgm.volume = sound.bgm;
     bgm.preload = 'none';
     let bgmWanted = false;
+    let bgmUrl = '';
+    let fadingBgm = null, bgmFadeFrame = null, bgmPlayPending = null;
+    let bgmBlend = 1, fadingGain = 1;
     let defeatActive = false;
     let defeatTimer = null;
     let defeatFrame = null;
     let defeatVeil = null;
+    function updateBgmVolume() {
+        bgm.volume = sound.bgm * bgmBlend;
+        if (fadingBgm) fadingBgm.volume = sound.bgm * fadingGain * Math.sqrt(Math.max(0, 1 - bgmBlend * bgmBlend));
+    }
+    function finishBgmFade() {
+        cancelAnimationFrame(bgmFadeFrame);
+        bgmFadeFrame = null;
+        if (fadingBgm) fadingBgm.pause();
+        fadingBgm = null;
+        bgmBlend = 1;
+        updateBgmVolume();
+    }
+    function playBgm() {
+        const audio = bgm;
+        if (!bgmWanted || sound.bgm <= 0 || bgmPlayPending === audio || !audio.paused) return;
+        bgmPlayPending = audio;
+        audio.play().then(() => {
+            if (bgmPlayPending === audio) bgmPlayPending = null;
+            if (audio !== bgm) { if (audio !== fadingBgm) audio.pause(); return; }
+            if (!bgmWanted || sound.bgm <= 0) { audio.pause(); return; }
+            if (!fadingBgm) return;
+            const started = performance.now();
+            const fade = () => {
+                const progress = Math.min(1, (performance.now() - started) / 1500);
+                bgmBlend = Math.sin(progress * Math.PI / 2);
+                updateBgmVolume();
+                if (progress >= 1) finishBgmFade();
+                else bgmFadeFrame = requestAnimationFrame(fade);
+            };
+            bgmFadeFrame = requestAnimationFrame(fade);
+        }).catch(() => { if (bgmPlayPending === audio) bgmPlayPending = null; });
+    }
     function syncBgm(snap) {
-        const want = !!(snap && (snap.state === 'inProgress' || defeatActive));
+        const tracks = RAID_BGM[snap?.questId];
+        const file = tracks?.[snap?.phaseIndex] || tracks?.[0];
+        const url = file ? '/rpg-ui?file=' + encodeURIComponent(file) : '';
+        const want = !!(url && snap && (snap.state === 'inProgress' || defeatActive));
+        if (want && url !== bgmUrl) {
+            const previous = bgm;
+            const keepPrevious = bgmWanted && !previous.paused && sound.bgm > 0;
+            const previousGain = sound.bgm > 0 ? previous.volume / sound.bgm : 1;
+            finishBgmFade();
+            bgm = new Audio(url);
+            bgm.loop = true; bgm.preload = 'none';
+            bgmBlend = keepPrevious ? 0 : 1;
+            if (keepPrevious) { fadingBgm = previous; fadingGain = previousGain; }
+            else previous.pause();
+            updateBgmVolume();
+            bgmUrl = url;
+        }
         if (want) preloadSfx();
         if (want === bgmWanted && !(want && bgm.paused)) return;
         bgmWanted = want;
-        if (want) { if (sound.bgm > 0) bgm.play().catch(() => {}); }
-        else { bgm.pause(); try { bgm.currentTime = 0; } catch (_) {} }
+        if (want) playBgm();
+        else { finishBgmFade(); bgm.pause(); try { bgm.currentTime = 0; } catch (_) {} }
     }
     // 자동재생 차단(새로고침 재접속 등) 대비 — 첫 상호작용에서 재시도
     for (const evt of ['pointerdown', 'keydown']) {
-        document.addEventListener(evt, () => { if (bgmWanted && sound.bgm > 0 && bgm.paused) bgm.play().catch(() => {}); }, true);
+        document.addEventListener(evt, playBgm, true);
     }
 
     // ====== 효과음 (Kenney CC0 → DB/RPGenius/ui/sfx) ======
@@ -661,6 +724,8 @@
     let introTimer = null;
 
     function resetDefeatPresentation() {
+        if (!defeatActive && !defeatTimer && !defeatFrame && !defeatVeil) return;
+        finishBgmFade();
         clearTimeout(defeatTimer);
         cancelAnimationFrame(defeatFrame);
         defeatTimer = defeatFrame = null;
@@ -678,6 +743,8 @@
         const remaining = Number(snap.result?.defeatRemainingMs || 0);
         if (defeatActive || remaining <= 0) return;
         hideBattleIntro();
+        hidePhaseTransition();
+        finishBgmFade();
         $('#pqTargetBg').classList.remove('active');
         defeatActive = true;
         const screen = document.querySelector('.pq-screen[data-screen="play"]');
@@ -748,6 +815,50 @@
         if (prev === 'inProgress' && (snap.state === 'cleared' || (snap.state === 'failed' && !defeatActive))) playSfx(snap.state === 'cleared' ? 'clear' : 'fail');
     }
 
+    let phaseCut = null, phaseCutTimer = null;
+    function isPhaseTransitionActive() {
+        return currentRoom?.state === 'inProgress' && Number(currentRoom.phaseTransition?.endsAt || 0) + (cooldownClockOffset || 0) > Date.now();
+    }
+    function hidePhaseTransition() {
+        clearTimeout(phaseCutTimer);
+        phaseCutTimer = null;
+        phaseCut?.remove(); phaseCut = null;
+        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('gate-transition');
+    }
+    function syncPhaseTransition(snap) {
+        const transition = snap.phaseTransition;
+        if (!isPhaseTransitionActive()) { hidePhaseTransition(); return; }
+        if (phaseCut?.dataset.id === transition.id) return;
+        hidePhaseTransition(); hideBattleIntro();
+        const screen = document.querySelector('.pq-screen[data-screen="play"]');
+        const stage = screen?.querySelector('.pq-game-stagewrap');
+        if (!stage) return;
+        screen.classList.add('gate-transition');
+        $('#pqNoticeStack').replaceChildren();
+        const elapsed = Math.max(0, Date.now() - Number(transition.startedAt) - (cooldownClockOffset || 0));
+        phaseCut = el('div', { class: 'pq-gate-cut', 'data-id': transition.id, role: 'status', 'aria-label': transition.phaseName + ' ' + transition.toName });
+        phaseCut.style.setProperty('--gate-offset', '-' + elapsed + 'ms');
+        for (const [kind, image] of [['prev', transition.fromImage], ['next', transition.toImage]]) {
+            if (image) phaseCut.append(el('img', { class: 'pq-gate-' + kind, src: image, alt: '', draggable: 'false' }));
+        }
+        phaseCut.append(el('i', { class: 'pq-gate-line', 'aria-hidden': 'true' }),
+            el('div', { class: 'pq-gate-title' }, el('span', null, transition.phaseNumber + '관문'), el('b', null, transition.toName)));
+        stage.append(phaseCut);
+        phaseCutTimer = setTimeout(() => {
+            hidePhaseTransition();
+            updateRaidPatterns();
+            updateAttackBtn(); updateSkillPotionButtons(); updateSupportGauge();
+        }, Math.max(0, Number(transition.endsAt) + (cooldownClockOffset || 0) - Date.now()));
+    }
+    function updateRaidPatterns() {
+        if (!window.MansionRaidUI) return;
+        const snap = currentRoom, monster = snap?.monster;
+        const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() ? null
+            : monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
+        MansionRaidUI.update($('#pqMansionRoot'), view, { me, host: snap?.hostName, serverOffset: cooldownClockOffset || 0,
+            send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+    }
+
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
         const previous = currentRoom;
@@ -768,6 +879,7 @@
         renderRoomControls(snap);
         renderPotionSummary(snap);
         syncMyDeadlinesFromSnapshot(snap);
+        syncPhaseTransition(snap);
         applyMyDeadlinesToRuntime();
         ensureLocalCdTimer();
         // 전투 화면
@@ -1034,7 +1146,7 @@
             stage.replaceChildren();
         }
 
-        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, serverOffset: cooldownClockOffset || 0, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+        updateRaidPatterns();
         syncVoteModal(snap);
         renderSupportBar(snap);
         renderPlayMembers(snap);
@@ -1463,7 +1575,6 @@
         const gBar = el('div', { class: 'pq-prog gauge' }, el('div', { id: 'pqBossGaugeFill', class: 'fill' }));
         gBar.firstChild.style.width = (m.gauge || 0) + '%';
         hud.append(gBar);
-        hud.append(el('div', { id: 'pqBossPattern', class: 'pq-boss-pattern', style: m.nextPattern ? '' : 'display:none' }, m.nextPattern || ''));
         wrap.append(hud);
         updateEnrageLabel(m);
         updateAttackBtn();
@@ -1472,7 +1583,7 @@
 
     function updateBossMonster(monster) {
         if (!monster) return;
-        if (window.MansionRaidUI) MansionRaidUI.update($('#pqMansionRoot'), currentRoom && currentRoom.state === 'inProgress' ? currentRoom.monster?.mansion : null, { me, host: currentRoom?.hostName, serverOffset: cooldownClockOffset || 0, send: payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
+        updateRaidPatterns();
         updateEnrageLabel(monster);
         // 폭주 모드 등으로 일러스트/이름이 바뀌면 스테이지를 다시 그린다
         const sig = bossStageSigOf(monster);
@@ -1487,7 +1598,6 @@
         const hpVal = document.getElementById('pqBossHpVal');
         const gaugeFill = document.getElementById('pqBossGaugeFill');
         const stun = document.getElementById('pqBossStun');
-        const pattern = document.getElementById('pqBossPattern');
         const bossNameEl = document.querySelector('.pq-boss-name');
         if (bossNameEl) {
             // 이름 텍스트만 교체 (pqBossStun span은 보존)
@@ -1507,10 +1617,6 @@
             const remain = Number(monster.stunRemain || 0);
             stun.style.display = remain > 0 ? '' : 'none';
             stun.textContent = remain > 0 ? ('기절 ' + remain.toFixed(1) + 's') : '';
-        }
-        if (pattern) {
-            pattern.style.display = monster.nextPattern ? '' : 'none';
-            pattern.textContent = monster.nextPattern || '';
         }
     }
 
@@ -1896,12 +2002,13 @@
             fill.style.background = ready ? 'linear-gradient(90deg,#fbbf24,#f97316)' : '';
         }
         $$('.pq-support-btn').forEach(btn => {
-            btn.disabled = !(ready && isHost);
+            btn.disabled = isPhaseTransitionActive() || !(ready && isHost);
             btn.style.outline = ready && isHost ? '2px solid #fbbf24' : '';
         });
     }
 
     async function useSupportSkillFlow(skillName) {
+        if (isPhaseTransitionActive()) return;
         try {
             await api('/api/party/support-skill', { method: 'POST', body: JSON.stringify({ skill: skillName }) });
         } catch (e) { toast(e.message); }
@@ -2143,6 +2250,7 @@
         closeStream();
         stopLocalCdTimer();
         hideBattleIntro();
+        hidePhaseTransition();
         syncBgm(null);
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
@@ -2186,9 +2294,9 @@
     if ($('#pqVolBgm')) {
         $('#pqVolBgm').addEventListener('input', e => {
             sound.bgm = clamp01(Number(e.target.value) / 100);
-            bgm.volume = sound.bgm;
-            if (sound.bgm <= 0) bgm.pause();
-            else if (bgmWanted && bgm.paused) bgm.play().catch(() => {});
+            updateBgmVolume();
+            if (sound.bgm <= 0) { finishBgmFade(); bgm.pause(); }
+            else playBgm();
             $('#pqVolBgmVal').textContent = Math.round(sound.bgm * 100) + '%';
             saveSound();
         });

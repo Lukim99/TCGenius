@@ -49,6 +49,10 @@ The test: Every changed line should trace directly to the user's request.
 - 초기 데이터 생성은 명시적으로 요청된 작업에서 누락된 항목에 한해 수행한다. 기존 항목, 번들 인덱스, 수량, 스탯, 제작식 및 운영자가 비워 둔 구성은 보존한다.
 - 기존 운영 데이터의 수정·삭제·중복 정리·연결 변경은 사용자가 해당 변경을 명시적으로 요청한 경우에만 한다. 코드 수정 요청을 운영 데이터 변경 허가로 간주하지 않는다.
 
+### 레이드 연출 기준
+
+- 신규 레이드 추가와 기존 레이드 화면 변경은 [공통 연출 기준](docs/raid-presentation.md)의 패턴 HUD, 관문 컷씬, 음악 전환 규칙을 따른다.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**

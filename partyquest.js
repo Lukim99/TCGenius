@@ -1033,9 +1033,10 @@ function getMyCooldownState(name) {
     return member?.runtime ? { roomId: room.id, serverNow: nowMs(), ...serializeCooldownDeadlines(member.runtime) } : null;
 }
 
-// 전투 시작 카운트다운(클라 3-2-1 연출) 동안 전투를 동결한다.
+// 전투 시작 카운트다운과 관문 컷씬 동안 전투를 동결한다.
 // 클라 연출(페이드 450 + 카운트 2400 + 개시 950 = 3800ms)과 맞춘 값.
 const INTRO_GRACE_MS = 3800;
+const PHASE_TRANSITION_MS = 3000;
 const DEFEAT_FADE_MS = 3000;
 function isIntroActive(room) {
     return !!(room && (room.introUntil && nowMs() < room.introUntil || room.monster?.bossState?.form === 'transition'));
@@ -1067,11 +1068,42 @@ function cloneCooldowns(cd) {
     return out;
 }
 
+// 공개 신호만 화면으로 보낸다. 피해 판정과 대응법은 기존 보스 핸들러에 둔다.
+function serializeBossPatternEvents(mon) {
+    const st = mon && mon.bossState;
+    if (!st || st.disabled || st.mansion) return [];
+    const events = [];
+    const add = (id, label, remain, duration, tag, details) => events.push(Object.assign({ id, kind: 'raidCue', label, remain, duration, tag }, details));
+    const pattern = (type, fallback) => getMonsterPattern(mon, type).name || fallback;
+    if (st.casting) {
+        const cast = st.casting;
+        add(cast.uiId || 'cast:' + cast.id, cast.name, cast.remain, cast.duration, st.blockUsers ? '저지' : '시전', {
+            responded: st.blockUsers ? Array.from(st.blockUsers) : [], requiresResponse: !!st.blockUsers
+        });
+    }
+    if (st.chatGimmick) {
+        const g = st.chatGimmick;
+        add(g.uiId || 'chat:' + g.label, g.label, g.remain, g.duration, '채팅', { responded: Array.from(g.responded), need: g.need, requiresResponse: true });
+    }
+    if (Number(st.curseRemain || 0) > 0) add('curse', pattern('curseRevive', '암흑의 저주'), st.curseRemain, Number(getMonsterPattern(mon, 'curseRevive').windowSec || 5), '저주');
+    if (Number(st.shieldRemain || 0) > 0) add('role-shield', pattern('roleDamageLock', '칠흑의 방패'), st.shieldRemain, st.shieldDuration, st.shieldRole);
+    if (Number(st.buffRemain || 0) > 0) add('self-buff', pattern('selfBuff', '흑화 증폭'), st.buffRemain, Number(getMonsterPattern(mon, 'selfBuff').duration || 15), '강화');
+    if (Number(st.reflectWindow || 0) > 0) add('reflect', pattern('reflectWindow', '반사'), st.reflectWindow, Number(getMonsterPattern(mon, 'reflectWindow').windowSec || 5), '반사');
+    if (Number(st.mochiWindow || 0) > 0) add('mochi', pattern('mochiShield', '모찌나간다'), st.mochiWindow, Number(getMonsterPattern(mon, 'mochiShield').windowSec || 8), '보호막');
+    if (st.gimmickActive?.tick === tickIngyeoRain) {
+        add('rain', pattern('rainShield', '레인! 도와줘!'), st.gimmickActive.remain, Number(getMonsterPattern(mon, 'rainShield').windowSec || 10), '보호막', { targets: st.markName ? [st.markName] : [] });
+    }
+    if (st.markName && !st.berserk) add('mark:' + st.markName, pattern('markDot', '잉여왕 표식'), null, null, '주시', { targets: [st.markName] });
+    if (st.berserk) add('berserk', pattern('burnZone', '폭주지대'), null, null, '폭주');
+    return events;
+}
+
 function serializeMonster(mon) {
     if (!mon) return null;
     const gimmick = mon.bossState && mon.bossState.chatGimmick;
     return {
         mansion: mansionRaid.view(mon),
+        patternEvents: serializeBossPatternEvents(mon),
         name: mon.name,
         hp: Math.max(0, Math.round(mon.hp)),
         hpMax: Math.round(mon.hpMax),
@@ -1215,6 +1247,7 @@ function serializeRoomForMember(room) {
         phaseIndex: room.phaseIndex,
         phaseName: room.phaseIndex >= 0 && quest && quest.phases[room.phaseIndex] ? quest.phases[room.phaseIndex].name : null,
         phaseType: room.phaseIndex >= 0 && quest && quest.phases[room.phaseIndex] ? quest.phases[room.phaseIndex].type : null,
+        phaseTransition: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? room.phaseTransition : null,
         sharedKillCount: room.sharedKillCount,
         killTarget: room.killTarget,
         members: room.members.map(serializeMember),
@@ -1693,6 +1726,7 @@ async function start(hostName) {
     room.result = null;
     room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
+    room.phaseTransition = null;
     room.combatLog = [];
     // 퀘스트: 파티 퀘스트 참여 집계 (진행도가 변한 유저만 저장)
     if (typeof rpgenius.recordQuestEvent === 'function') {
@@ -1793,8 +1827,21 @@ function pickRandomSkill(name, skillName) {
 
 function proceedToNextPhase(room) {
     room.awaitingChoices = false;
-    room.phaseIndex += 1;
     const quest = getQuestById(room.questId);
+    const previous = quest.phases[room.phaseIndex];
+    const next = quest.phases[room.phaseIndex + 1];
+    const startedAt = nowMs();
+    const fromImage = room.monster?.image || previous?.monster?.image || quest.coverImage;
+    room.phaseTransition = next ? {
+        id: room.id + ':' + (room.phaseIndex + 1) + ':' + startedAt,
+        startedAt, endsAt: startedAt + PHASE_TRANSITION_MS,
+        fromName: room.monster?.name || previous?.monster?.name || previous?.name || '',
+        fromImage: fromImage ? '/rpg-ui?file=' + encodeURIComponent(fromImage) : null,
+        phaseName: next.name, phaseNumber: room.phaseIndex + 2, toName: next.monster?.name || next.name,
+        toImage: next.monster?.image || quest.coverImage ? '/rpg-ui?file=' + encodeURIComponent(next.monster?.image || quest.coverImage) : null
+    } : null;
+    if (room.phaseTransition) room.introUntil = room.phaseTransition.endsAt;
+    room.phaseIndex += 1;
     if (quest && quest.reviveOnPhaseClear) {
         for (const m of room.members) {
             if (!m.runtime || !m.runtime.dead) continue;
@@ -1911,7 +1958,7 @@ function attackMobPhase(name) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
-    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
+    if (isIntroActive(room)) return { error: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? '관문 전환 중입니다.' : '전투 시작 카운트다운 중입니다.' };
     const quest = getQuestById(room.questId);
     const phase = quest.phases[room.phaseIndex];
     if (!phase) return { error: '진행 중인 페이즈가 없습니다.' };
@@ -2003,7 +2050,7 @@ function stepRoom(room) {
     if (room.awaitingChoices) return;
     const dt = TICK_MS / 1000;
     if (mansionRaid.transition(room, dt)) { broadcastRoom(room); return; }
-    if (isIntroActive(room)) return; // 시작 카운트다운 동안 전투 동결 (몬스터 게이지·버프·광폭화 타이머 전부)
+    if (isIntroActive(room)) return; // 카운트다운과 관문 컷씬 동안 몬스터 게이지·버프·광폭화 타이머 동결
     mansionRaid.tickAurora(room, dt);
     if (Array.isArray(room.delayedEquipmentDamage) && room.delayedEquipmentDamage.length > 0) {
         const now = Date.now();
@@ -3286,7 +3333,8 @@ function executeMember(room, member, source) {
 function startBossCast(room, mon, id, name, duration, onFinish) {
     const st = mon && mon.bossState;
     if (!st || st.disabled || st.casting) return;
-    st.casting = { id, name, remain: Number(duration || 0), onFinish: onFinish || null };
+    st.castSequence = Number(st.castSequence || 0) + 1;
+    st.casting = { id, name, uiId: 'cast:' + id + ':' + st.castSequence, duration: Number(duration || 0), remain: Number(duration || 0), onFinish: onFinish || null };
     mon.nextPattern = name + ' ' + Number(duration || 0).toFixed(1) + 's';
     pushCombat(room, mon.name + ' [' + name + '] 캐스팅 시작', 'danger');
 }
@@ -3532,7 +3580,7 @@ function useSupportSkill(name, skillName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
-    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
+    if (isIntroActive(room)) return { error: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? '관문 전환 중입니다.' : '전투 시작 카운트다운 중입니다.' };
     if (room.hostName !== name) return { error: '공대장만 사용할 수 있습니다.' };
     const skills = getQuestSupportSkills(room);
     if (!skills.length) return { error: '이 퀘스트에는 지원군 스킬이 없습니다.' };
@@ -3678,6 +3726,8 @@ function startChatGimmick(room, mon, opts) {
     const o = opts || {};
     st.chatGimmick = {
         label: o.label || '채팅',
+        uiId: 'chat:' + (o.label || '채팅') + ':' + nowMs(),
+        duration: Number(o.seconds || 10),
         remain: Number(o.seconds || 10),
         responded: new Set(),
         need: chatGimmickMajority(getAliveMembers(room).length),
@@ -4621,7 +4671,7 @@ function useSkill(name, skillName, targetName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
-    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
+    if (isIntroActive(room)) return { error: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? '관문 전환 중입니다.' : '전투 시작 카운트다운 중입니다.' };
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
@@ -5374,7 +5424,7 @@ async function usePotion(name, potionName) {
     const room = getRoomOf(name);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.state !== 'inProgress') return { error: '진행 중이 아닙니다.' };
-    if (isIntroActive(room)) return { error: '전투 시작 카운트다운 중입니다.' };
+    if (isIntroActive(room)) return { error: room.phaseTransition && nowMs() < room.phaseTransition.endsAt ? '관문 전환 중입니다.' : '전투 시작 카운트다운 중입니다.' };
     const me = findMember(room, name);
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
@@ -5469,7 +5519,12 @@ module.exports = {
     pickRandomSkill,
     castVote,
     useSupportSkill,
-    mansionAction: (name, payload) => { const room = getRoomOf(name); return room ? mansionRaid.action(room, name, payload || {}) : { error: '참여 중인 파티가 없습니다.' }; },
+    mansionAction: (name, payload) => {
+        const room = getRoomOf(name);
+        if (!room) return { error: '참여 중인 파티가 없습니다.' };
+        if (isIntroActive(room)) return { error: '관문 전환 중입니다.' };
+        return mansionRaid.action(room, name, payload || {});
+    },
     getAvailablePotions,
     usePotion,
     getMyRoomSnapshot,
@@ -5477,6 +5532,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
+        proceedToNextPhase,
         applyDamageToMember,
         preparePartyAttackUnits,
         computeBasicDamage,
