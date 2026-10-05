@@ -17,7 +17,7 @@ const files = [
         'ingyeo', 'ingyeo-berserk', 'ingyeo-berserk-arena', 'volcanic-arena', 'tabujago-scene', 'dungeon-gate',
         'sculpture-scene', 'sculpture-hall', 'whiplash-scene', 'whiplash-hall', 'whiplash-echo-scene', 'whiplash-echo-hall',
         'fx-dark-mist', 'fx-bronze-shard', 'fx-fire-flow-v2', 'fx-puzzle-piece-v1', 'fx-sculpture-carving-v1', 'whiplash-echo-body-v1',
-        'fx-party-heal', 'fx-party-aegis'].map(name => '레이드/' + name + '.png'),
+        'fx-party-heal', 'fx-party-aegis', 'lukim-birthday-boss-v1', 'lukim-birthday-hall-v1'].map(name => '레이드/' + name + '.png'),
     ...['signal', 'bronze-set', 'shards-rush', 'stone-hit', 'resonance-impact', 'wall-pressure', 'echo-break',
         'ward-form', 'obsidian-close', 'mochi-flex', 'rain-veil', 'mirror-glint', 'power-gather', 'life-drain',
         'dark-surge', 'dark-growl', 'dealing-aura', 'revival-bloom', 'fire-ignite', 'fire-erupt', 'sky-load',
