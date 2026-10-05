@@ -27,6 +27,9 @@
         finale: k => S.finale[0] + k * B2
     };
 
+    // 석재 조형: 8분음표마다 정으로 쪼아 낸다(1관문 박 번호)
+    const SCULPT_HITS = Array.from({ length: 11 }, (_, i) => 14.25 + i * 0.25);
+
     // 마지막 곡의 원본 224.0초 타격이 놓이는 시각
     const FINAL_HIT = S.finale[0] + (224.01 - 221.30);
 
@@ -72,9 +75,11 @@
     add(beat.gate1(13), 'raid-clear-v2.mp3', -8);
     add(beat.gate1(13), 'synth:hit', -5);
     add(beat.gate1(14) - 0.25, 'synth:whoosh', -9, { dur: 0.5 });
-    for (const k of [14.5, 15, 15.5, 16, 16.5]) add(beat.gate1(k), 'stone-hit-v2.mp3', -9);
-    add(beat.gate1(17), 'mirror-glint-v2.mp3', -6);
+    SCULPT_HITS.forEach((k, i) => add(beat.gate1(k), i % 2 ? 'puzzle-hit-v2.mp3' : 'stone-hit-v2.mp3', i % 2 ? -11 : -8));
+    add(beat.gate1(17), 'shards-rush-v2.mp3', -6);
+    add(beat.gate1(17), 'ground-land-v2.mp3', -6);
     add(beat.gate1(17), 'synth:hit', -4);
+    add(beat.gate1(17.2), 'mirror-glint-v2.mp3', -8);
     add(beat.gate1(18) - 0.25, 'synth:whoosh', -9, { dur: 0.5 });
     for (let i = 0; i < 6; i++) add(beat.gate1(18.25 + i * 0.25), 'count.mp3', -6);
     for (let i = 0; i < 6; i++) add(beat.gate1(20) + i * B1 * 0.25, 'puzzle-hit-v2.mp3', -12);
@@ -94,9 +99,11 @@
     add(beat.gate2(9.5), 'echo-break-v2.mp3', -6);
     add(beat.gate2(10), 'wall-pressure-v2.mp3', -3);
     add(beat.gate2(12), 'power-gather-v2.mp3', -5);
-    add(beat.gate2(14), 'synth:hit', -4);
-    add(beat.gate2(14), 'resonance-impact-v2.mp3', -10);
-    add(beat.gate2(15), 'healing-absorb-v2.mp3', -8);
+    add(beat.gate2(13), 'signal-v2.mp3', -8);
+    add(beat.gate2(14), 'synth:hit', -5);
+    add(beat.gate2(14), 'power-gather-v2.mp3', -9);
+    add(beat.gate2(15), 'signal-v2.mp3', -8);
+    add(beat.gate2(15.5), 'synth:riser', -9, { dur: B2 * 0.5 });
     for (let i = 0; i < 12; i++) add(beat.gate2(16) + i * B2 * 0.33, ['hit_0.mp3', 'hit_1.mp3', 'hit_2.mp3', 'crit.mp3'][i % 4], -9);
     add(beat.gate2(19), 'critical-hit-v2.mp3', -5);
 
@@ -121,7 +128,7 @@
         add(beat.echo(k), 'synth:slam', -3);
         add(beat.echo(k), 'bronze-set-v2.mp3', -9);
     }
-    for (const k of [12, 13, 14]) add(beat.echo(k), 'mirror-glint-v2.mp3', -5);
+    for (const k of [12, 13, 14]) add(beat.echo(k), 'mirror-glint-v2.mp3', -7);
 
     // 지원군
     add(beat.echo(16), 'sky-impact-v2.mp3', -5);
@@ -148,5 +155,5 @@
     add(FINAL_HIT, 'resonance-impact-v2.mp3', -6);
     add(FINAL_HIT + 1.6, 'raid-start-v2.mp3', -10);
 
-    return { B1, B2, DURATION, FPS, S, beat, FINAL_HIT, MUSIC, SFX };
+    return { B1, B2, DURATION, FPS, S, beat, SCULPT_HITS, FINAL_HIT, MUSIC, SFX };
 });

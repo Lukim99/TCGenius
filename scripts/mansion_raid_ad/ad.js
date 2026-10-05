@@ -212,7 +212,7 @@
         let out = '';
         for (let i = 0; i < n; i++) {
             const ch = str[i];
-            if (i < done || ch === ' ' || ch === '·') out += ch;
+            if (i < done || ch === ' ') out += ch;
             else if (i < done + 4) out += GLYPHS[Math.floor(hash(seed + i * 13 + Math.floor(t * 30) * 7) * GLYPHS.length)];
             else out += ' ';
         }
@@ -224,18 +224,18 @@
         if (a <= 0.003) return 0;
         const size = o.size || 17, ls = o.ls ?? 5;
         ctx.save();
-        font(ctx, F.mono, size, 700, ls);
+        font(ctx, o.f || F.mono, size, o.fw || 700, ls);
         const tw = measureW(ctx, label, ls);
         const padX = 14, h = size + 18, w = tw + padX * 2;
         const x0 = o.align === 'right' ? x - w : o.align === 'center' ? x - w / 2 : x;
         ctx.globalAlpha = a;
         cutPath(ctx, x0, y, w, h, 8);
-        ctx.fillStyle = o.bg || 'rgba(10,8,14,0.55)';
+        ctx.fillStyle = o.solid ? rgba(color, 0.92) : o.bg || 'rgba(10,8,14,0.55)';
         ctx.fill();
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = rgba(color, 0.9);
         ctx.stroke();
-        ctx.fillStyle = color;
+        ctx.fillStyle = o.solid ? '#0b0910' : color;
         ctx.textBaseline = 'middle';
         ctx.fillText(o.shown ?? label, x0 + padX, y + h / 2 + 1);
         ctx.restore();
@@ -420,7 +420,7 @@
     }
     function makeStone(img) {
         const c = mk(img.width, img.height), g = c.getContext('2d');
-        g.filter = 'grayscale(1) contrast(1.25) brightness(0.95)';
+        g.filter = 'grayscale(1) contrast(1.2) brightness(0.78)';
         g.drawImage(img, 0, 0);
         g.filter = 'none';
         g.globalCompositeOperation = 'source-atop';
@@ -478,7 +478,7 @@
         await Promise.all([
             ['900 100px "Noto Serif KR"', '조각위플래쉬잔향아티팩트지원군보상칭호난이도'],
             ['700 100px "Noto Serif KR"', '저택의 문이 열린다'],
-            ['500 100px "Noto Sans KR"', '클리어하면 다음 난이도가 열린다'],
+            ['500 100px "Noto Sans KR"', '입장 인원 난이도'],
             ['700 100px "Noto Sans KR"', '1관문 2관문'],
             ['900 100px "Noto Sans KR"', '쏟아지는 조각'],
             ['500 100px Cinzel', 'A'], ['700 100px Cinzel', 'A'], ['900 100px Cinzel', 'A'],
@@ -503,6 +503,7 @@
         PRE.wBlur = makeBlurDark(IMG.wHall, 10, 0.3);
         PRE.fBlur = makeBlurDark(IMG.field, 8, 0.28);
         PRE.stone = makeStone(IMG.sScene);
+        PRE.block = makeBlock();
         PRE.pika = duotone(IMG.pikachu, '#0b090e', '#8a6a12', '#ffe066');
         PRE.aurora = duotone(IMG.aurora, '#071512', '#1f8b78', '#b9ffe9');
         PRE.justice = duotone(IMG.justice, '#0b090e', '#7a5a26', '#ffe2a6');
@@ -732,33 +733,6 @@
         });
     }
 
-    function lockIcon(x, y, s, open, color, alpha) {
-        if (alpha <= 0) return;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.scale(s, s);
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = color;
-        ctx.fillStyle = color;
-        // 고리
-        ctx.save();
-        ctx.translate(10, -6 - open * 10);
-        ctx.rotate(-open * 0.5);
-        ctx.beginPath();
-        ctx.moveTo(-10, 0);
-        ctx.lineTo(-10, -12);
-        ctx.arc(0, -12, 10, Math.PI, 0);
-        ctx.lineTo(10, 0);
-        ctx.stroke();
-        ctx.restore();
-        cutPath(ctx, -4, -6, 28, 24, 4);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(8, 2, 4, 8);
-        ctx.restore();
-    }
-
     // ---------- 카메라 흔들림·섬광·색수차 ----------
     const SHAKES = [];
     const FLASHES = [];
@@ -768,7 +742,7 @@
     function buildEvents() {
         const g1 = beat.gate1, g2 = beat.gate2, e = beat.echo;
         SHAKES.push([g1(0), 16, 0.22], [g1(5), 11, 0.18], [g1(6), 13, 0.18], [g1(7), 20, 0.24], [g1(13), 7, 0.15]);
-        for (const k of [14.5, 15, 15.5, 16, 16.5]) SHAKES.push([g1(k), 4, 0.1]);
+        TL.SCULPT_HITS.forEach((k, i) => SHAKES.push([g1(k), i % 2 ? 3 : 5, 0.09]));
         SHAKES.push([g1(17), 12, 0.2], [g2(0), 16, 0.22], [g2(7), 30, 0.3], [g2(8.5), 7, 0.12], [g2(9.5), 7, 0.12], [g2(10), 14, 0.5]);
         SHAKES.push([e(0), 26, 0.3], [e(5), 10, 0.2], [e(6), 8, 0.16], [e(8), 8, 0.14], [e(9), 8, 0.14], [e(10), 10, 0.16]);
         SHAKES.push([e(16), 6, 0.12], [e(17), 6, 0.12], [e(18), 6, 0.12], [e(20), 8, 0.2], [FINAL_HIT, 22, 0.3]);
@@ -779,7 +753,7 @@
         for (const k of [12, 13, 14]) FLASHES.push([beat.intro(k), '#ffffff', 0.75, 0.09]);
         FLASHES.push([e(0), '#ffd3cc', 0.5, 0.12], [FINAL_HIT, '#ffffff', 1, 0.28]);
         for (const k of [8, 9, 10, 16, 17, 18]) FLASHES.push([e(k), '#ffffff', 0.18, 0.08]);
-        FLASHES.push([e(20), '#fff2c9', 0.45, 0.14], [g1(13), '#ffe2a8', 0.3, 0.12], [g1(17), '#ffe2a8', 0.45, 0.12]);
+        FLASHES.push([e(20), '#fff2c9', 0.45, 0.14], [g1(13), '#ffe2a8', 0.3, 0.12], [g1(17), '#ffe2a8', 0.22, 0.1]);
         for (let k = 0; k < 5; k++) FLASHES.push([beat.finale(k), '#ffffff', 0.22, 0.08]);
 
         CA.push([g2(7), 16, 0.28], [e(0), 10, 0.25], [FINAL_HIT, 12, 0.3], [beat.intro(14), 10, 0.2], [g1(7), 6, 0.15]);
@@ -847,11 +821,13 @@
             const sp = E.outBack(prog(t, 0.35, 0.9));
             star(W / 2, cy, 20 * sp, C.violetHi, 0.95 * flick, t * 0.6);
             glow(W / 2, cy, 140, C.violet, 0.35 * sp);
-            const label = 'RPGENIUS  ·  NEW RAID';
-            const lp = prog(t, 0.55, 1.35);
-            text(scramble(label, lp, 9, t), W / 2, cy + 64, {
-                f: F.mono, size: 20, w: 500, ls: 10, align: 'center', color: C.violetHi,
-                alpha: Math.min(1, lp * 4) * (1 - prog(t, b(4) - 0.25, b(4) - 0.06))
+            const la = 1 - prog(t, b(4) - 0.25, b(4) - 0.06);
+            const lp = prog(t, 0.55, 1.15), lp2 = prog(t, 0.85, 1.4);
+            text(scramble('RPGENIUS', lp, 9, t), W / 2, cy + 68, {
+                f: F.mono, size: 22, w: 700, ls: 14, align: 'center', color: C.violetHi, alpha: Math.min(1, lp * 4) * la
+            });
+            text(scramble('NEW RAID', lp2, 19, t), W / 2, cy + 102, {
+                f: F.mono, size: 15, w: 500, ls: 10, align: 'center', color: C.text2, alpha: Math.min(1, lp2 * 4) * la
             });
         }
     }
@@ -1242,111 +1218,279 @@
         patternLabel(t, g(8), g(14), '02', '기둥 하중 이동', C.bronzeHi);
     }
 
+    // 조각 레이어 위로 광택 띠를 한 번 훑는다
+    function sheenLayer(img, pa, sp, alpha, hi = 'rgba(255,245,220,1)', lo = 'rgba(255,220,160,0)') {
+        if (sp <= 0 || sp >= 1) return;
+        const [c, gg] = buf('_sheen', W, H);
+        gg.drawImage(img, pa.x, pa.y, pa.w, pa.h);
+        gg.globalCompositeOperation = 'source-atop';
+        const [bx, by] = at(pa, BULL[0], BULL[1]);
+        const span = pa.w * 0.18;
+        const sx = bx - span + sp * span * 2;
+        const gr = gg.createLinearGradient(sx - 140, by - 200, sx + 140, by + 200);
+        gr.addColorStop(0, lo);
+        gr.addColorStop(0.5, hi);
+        gr.addColorStop(1, lo);
+        gg.fillStyle = gr;
+        gg.fillRect(0, 0, W, H);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(c, 0, 0);
+        ctx.restore();
+    }
+
+    // 석재 조형: 받침대 위 돌덩이를 정으로 쪼아 황소 조각을 드러낸다
+    const BLOCK = { u0: 0.41, u1: 0.625, v0: 0.325, v1: 0.668, cols: 11, rows: 11 };
+    function makeBlock() {
+        const src = PRE.stone;
+        const bx = Math.round(BLOCK.u0 * src.width), by = Math.round(BLOCK.v0 * src.height);
+        const bw = Math.round((BLOCK.u1 - BLOCK.u0) * src.width), bh = Math.round((BLOCK.v1 - BLOCK.v0) * src.height);
+        const c = mk(bw, bh), g = c.getContext('2d');
+        const id = g.createImageData(bw, bh), d = id.data;
+        for (let y = 0; y < bh; y++) {
+            for (let x = 0; x < bw; x++) {
+                const broad = valueNoise(x / 60, y / 60, 31);
+                const mid = valueNoise(x / 9, y / 9, 37) * 0.6 + valueNoise(x / 4, y / 4, 41) * 0.4;
+                const grain = hash(x * 13.1 + y * 71.7) - 0.5;
+                const pit = hash(x * 3.7 + y * 19.3) > 0.985 ? 0.62 : 1;
+                const light = 1.0 - 0.36 * (y / bh) + 0.1 * (1 - x / bw);
+                const v = (0.56 + (broad - 0.5) * 0.22 + (mid - 0.5) * 0.2 + grain * 0.12) * light * pit;
+                const i = (y * bw + x) * 4;
+                d[i] = 110 * v;
+                d[i + 1] = 108 * v;
+                d[i + 2] = 106 * v;
+                d[i + 3] = 255;
+            }
+        }
+        g.putImageData(id, 0, 0);
+        // 정으로 다듬은 자국
+        g.lineCap = 'round';
+        for (let k = 0; k < 160; k++) {
+            const cx = rnd(k * 3.1, 0, bw), cy = rnd(k * 5.7, 0, bh);
+            const a = -0.6 + rnd(k * 7.3, -0.35, 0.35), len = rnd(k * 2.9, 16, 46);
+            g.beginPath();
+            g.moveTo(cx, cy);
+            g.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+            g.lineWidth = rnd(k * 1.7, 2, 7);
+            g.strokeStyle = k % 2 ? `rgba(255,238,215,${rnd(k, 0.05, 0.12)})` : `rgba(18,12,6,${rnd(k, 0.08, 0.18)})`;
+            g.stroke();
+        }
+        // 윗면 빛
+        const tg = g.createLinearGradient(0, 0, 0, bh * 0.14);
+        tg.addColorStop(0, 'rgba(255,236,210,0.2)');
+        tg.addColorStop(1, 'rgba(255,236,210,0)');
+        g.fillStyle = tg;
+        g.fillRect(0, 0, bw, bh * 0.14);
+        const eg = g.createLinearGradient(0, 0, bw, 0);
+        eg.addColorStop(0, 'rgba(0,0,0,0.25)');
+        eg.addColorStop(0.15, 'rgba(0,0,0,0)');
+        eg.addColorStop(0.85, 'rgba(0,0,0,0)');
+        eg.addColorStop(1, 'rgba(0,0,0,0.4)');
+        g.fillStyle = eg;
+        g.fillRect(0, 0, bw, bh);
+        // 꼭짓점을 흔든 격자로 돌 조각을 나눈다
+        const { cols, rows } = BLOCK;
+        const P = [];
+        for (let j = 0; j <= rows; j++) {
+            for (let i = 0; i <= cols; i++) {
+                const ex = i === 0 || i === cols, ey = j === 0 || j === rows;
+                let x = (i / cols) * bw + (ex ? 0 : (rnd(i * 17 + j * 3, -0.3, 0.3) * bw) / cols);
+                let y = (j / rows) * bh + (ey ? 0 : (rnd(i * 5 + j * 23, -0.3, 0.3) * bh) / rows);
+                if (j === 0) y += (rnd(i * 9.1, 0, 0.6) * bh) / rows;
+                if (ex && !ey) x += ((i === 0 ? 1 : -1) * rnd(j * 4.3, 0, 0.5) * bw) / cols;
+                P.push([x, y]);
+            }
+        }
+        const alpha = src.getContext('2d').getImageData(bx, by, bw, bh).data;
+        const solid = (x, y) => alpha[(clamp(Math.round(y), 0, bh - 1) * bw + clamp(Math.round(x), 0, bw - 1)) * 4 + 3] > 40;
+        const cells = [];
+        for (let j = 0; j < rows; j++) {
+            for (let i = 0; i < cols; i++) {
+                const a = P[j * (cols + 1) + i], b = P[j * (cols + 1) + i + 1];
+                const cc = P[(j + 1) * (cols + 1) + i + 1], dd = P[(j + 1) * (cols + 1) + i];
+                let cov = 0;
+                for (let sy = 0; sy < 5; sy++) {
+                    for (let sx = 0; sx < 5; sx++) {
+                        if (solid(lerp(Math.min(a[0], dd[0]), Math.max(b[0], cc[0]), (sx + 0.5) / 5), lerp(Math.min(a[1], b[1]), Math.max(cc[1], dd[1]), (sy + 0.5) / 5))) cov++;
+                    }
+                }
+                cells.push({ poly: [a, b, cc, dd], cx: (a[0] + b[0] + cc[0] + dd[0]) / 4, cy: (a[1] + b[1] + cc[1] + dd[1]) / 4, cov: cov / 25, seed: j * 31 + i });
+            }
+        }
+        // 조각을 덮지 않는 돌부터 떨어지고, 나머지는 마지막 타격에 한꺼번에 깨진다
+        const order = cells.slice().sort((p, q) => p.cov + hash(p.seed) * 0.3 - (q.cov + hash(q.seed) * 0.3));
+        const early = Math.round(order.length * 0.58), n = TL.SCULPT_HITS.length;
+        order.forEach((cell, k) => {
+            cell.hit = k < early ? Math.min(n - 1, Math.floor((k / early) * n)) : n;
+        });
+        return { c, bx, by, bw, bh, cells };
+    }
+
     function g1Sculpt(t) {
         const g = beat.gate1, lt = t - g(14);
-        const z = 1.3 + 0.05 * prog(lt, 0, B1 * 4);
-        const { pa } = stage(IMG.sHall, PRE.stone, z, BULL[0], 0.46, { par: 0.04, actorImg: PRE.stone });
-        fill('#8f8a80', 0.18, 'soft-light');
-        vgrad([[0, 'rgba(0,0,0,0)'], [1, 'rgba(6,5,4,0.85)']], 1, 'source-over', H * 0.5, H);
-        const hits = [14.5, 15, 15.5, 16, 16.5];
-        const vals = [0.16, 0.33, 0.47, 0.61, 0.74];
-        let f = 0;
-        hits.forEach((k, i) => {
-            f = lerp(f, vals[i], E.outCubic(prog(t, g(k), g(k) + 0.14)));
-        });
-        f = lerp(f, 0.82, E.outCubic(prog(t, g(17), g(17) + 0.16)));
-        // 조각에 튀는 돌가루
-        hits.forEach((k, i) => {
-            const age = t - g(k);
-            if (age < 0 || age > 0.5) return;
-            const [bx, by] = at(pa, BULL[0] + rnd(i + 4, -0.05, 0.05), BULL[1] + rnd(i + 9, -0.08, 0.06));
-            glow(bx, by, 120, '#fff4e0', 0.7 * (1 - prog(age, 0, 0.25)));
+        const hits = TL.SCULPT_HITS.map(k => g(k));
+        const tFinal = g(17);
+        const z = 1.24 + 0.08 * E.inOutSine(prog(lt, 0, B1 * 4)) + 0.04 * E.outExpo(prog(t, tFinal, tFinal + 0.6));
+        const { pa } = stage(IMG.sHall, PRE.stone, z, BULL[0], 0.5, { par: 0.04, actorImg: PRE.stone });
+        const B = PRE.block;
+        const k = pa.w / PRE.stone.width;
+        const X0 = pa.x + B.bx * k, Y0 = pa.y + B.by * k;
+        const map = ([x, y]) => [X0 + x * k, Y0 + y * k];
+        const polyPath = poly => {
+            poly.forEach((pt, i) => {
+                const [x, y] = map(pt);
+                if (i) ctx.lineTo(x, y);
+                else ctx.moveTo(x, y);
+            });
+            ctx.closePath();
+        };
+        const tOf = cell => (cell.hit < hits.length ? hits[cell.hit] : tFinal);
+        // 아직 붙어 있는 돌
+        const rest = B.cells.filter(cell => t < tOf(cell));
+        if (rest.length) {
+            // 두께: 오른쪽 위로 밀어낸 어두운 옆면
+            ctx.save();
+            for (let st = 7; st >= 1; st--) {
+                ctx.save();
+                ctx.translate(st * 2.2 * k, -st * 1.5 * k);
+                ctx.beginPath();
+                rest.forEach(cell => polyPath(cell.poly));
+                ctx.fillStyle = st === 7 ? '#16120f' : '#2a2420';
+                ctx.fill();
+                ctx.restore();
+            }
+            ctx.beginPath();
+            rest.forEach(cell => polyPath(cell.poly));
+            ctx.clip();
+            ctx.drawImage(B.c, X0, Y0, B.bw * k, B.bh * k);
+            // 조각마다 기울기가 다른 깎인 면
+            for (const cell of rest) {
+                const hv = hash(cell.seed * 1.37);
+                const [ax, ay] = map(cell.poly[0]), [cx2, cy2] = map(cell.poly[2]);
+                const fg = ctx.createLinearGradient(ax, ay, cx2, cy2);
+                fg.addColorStop(0, `rgba(255,244,230,${0.03 + hv * 0.07})`);
+                fg.addColorStop(1, `rgba(0,0,0,${0.06 + (1 - hv) * 0.16})`);
+                ctx.beginPath();
+                polyPath(cell.poly);
+                ctx.fillStyle = fg;
+                ctx.fill();
+            }
+            ctx.beginPath();
+            rest.forEach(cell => polyPath(cell.poly));
+            ctx.strokeStyle = 'rgba(12,9,6,0.14)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // 곧 떨어질 돌에 먼저 금이 간다
+            for (const cell of rest) {
+                const fin = cell.hit >= hits.length;
+                const lead = tOf(cell) - t, win = fin ? 0.3 : 0.28;
+                if (lead > win) continue;
+                const cp = 1 - lead / win;
+                ctx.beginPath();
+                polyPath(cell.poly);
+                ctx.strokeStyle = `rgba(8,5,3,${(0.25 + 0.55 * cp) * (fin ? 0.6 : 1)})`;
+                ctx.lineWidth = 1 + 1.6 * cp;
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+        // 떨어져 나가는 돌 조각
+        const ccx = B.bw / 2, ccy = B.bh * 0.45;
+        for (const cell of B.cells) {
+            const age = t - tOf(cell);
+            if (age < 0 || age > 0.75) continue;
+            const fin = cell.hit >= hits.length;
+            const dx = cell.cx - ccx, dy = cell.cy - ccy, d = Math.hypot(dx, dy) || 1;
+            const sp = rnd(cell.seed + 0.4, 260, 620) * (fin ? 1.7 : 1);
+            const vx = (dx / d) * sp, vy = (dy / d) * sp - rnd(cell.seed + 0.9, 150, 380);
+            const [cx, cy] = map([cell.cx, cell.cy]);
+            const sc = 1 - 0.35 * prog(age, 0, 0.75);
+            const rot = rnd(cell.seed + 1.3, -7, 7) * age;
+            const tumble = 0.45 + 0.55 * Math.abs(Math.cos(rnd(cell.seed + 2.1, 4, 9) * age));
+            ctx.save();
+            ctx.globalAlpha = 1 - prog(age, 0.35, 0.75);
+            ctx.translate(cx + vx * age, cy + vy * age + 1700 * age * age);
+            ctx.rotate(rot);
+            ctx.scale(sc * tumble, sc);
+            ctx.translate(-cx, -cy);
+            ctx.save();
+            ctx.translate(4 * k, 3 * k);
+            ctx.beginPath();
+            polyPath(cell.poly);
+            ctx.fillStyle = '#1c1714';
+            ctx.fill();
+            ctx.restore();
+            ctx.beginPath();
+            polyPath(cell.poly);
+            ctx.save();
+            ctx.clip();
+            ctx.drawImage(B.c, X0, Y0, B.bw * k, B.bh * k);
+            ctx.fillStyle = `rgba(0,0,0,${0.18 + 0.4 * (1 - tumble)})`;
+            ctx.fill();
+            ctx.restore();
+            ctx.strokeStyle = 'rgba(30,20,12,0.55)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+        }
+        warmGrade();
+        // 정이 닿는 자리: 불꽃, 정 자국, 돌가루
+        hits.forEach((th, h) => {
+            const age = t - th;
+            if (age < 0 || age > 0.6) return;
+            const grp = B.cells.filter(cell => cell.hit === h);
+            if (!grp.length) return;
+            const [x, y] = map([grp.reduce((a, cell) => a + cell.cx, 0) / grp.length, grp.reduce((a, cell) => a + cell.cy, 0) / grp.length]);
+            glow(x, y - age * 60, 90 + 180 * age, '#d9cfc2', 0.4 * (1 - prog(age, 0, 0.6)), 'screen');
+            glow(x, y, 150, '#fff3dc', 0.9 * pulse(t, th, 0.06));
+            if (age < 0.12) {
+                const a = rnd(h * 3.3, -2.6, -2.0);
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 1 - age / 0.12;
+                ctx.strokeStyle = '#fff6e6';
+                ctx.shadowColor = '#ffcf8a';
+                ctx.shadowBlur = 18;
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + Math.cos(a) * 90, y + Math.sin(a) * 90);
+                ctx.stroke();
+                ctx.restore();
+            }
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            for (let c = 0; c < 10; c++) {
-                const ang = rnd(i * 10 + c, 0, Math.PI * 2);
-                const sp = rnd(i * 10 + c + 0.3, 200, 600);
-                const px = bx + Math.cos(ang) * sp * age, py = by + Math.sin(ang) * sp * age + 700 * age * age;
-                ctx.globalAlpha = 1 - prog(age, 0.1, 0.5);
-                ctx.drawImage(PRE.dot['#ffffff'], px - 5, py - 5, 10, 10);
+            for (let i = 0; i < 12; i++) {
+                const ang = rnd(h * 20 + i, -Math.PI, 0.2), v = rnd(h * 20 + i + 0.5, 250, 700);
+                const r = 4 * (1 - prog(age, 0, 0.45));
+                ctx.globalAlpha = 1 - prog(age, 0.1, 0.45);
+                ctx.drawImage(PRE.dot['#ffb27a'], x + Math.cos(ang) * v * age - r * 2, y + Math.sin(ang) * v * age + 1200 * age * age - r * 2, r * 4, r * 4);
             }
             ctx.restore();
         });
-        const done = t >= g(17);
-        const dp = pulse(t, g(17), 0.3);
-        if (done) {
+        // 마지막 타격: 남은 돌이 한꺼번에 깨지며 조각이 드러난다
+        if (t >= tFinal) {
+            const age = t - tFinal;
             const [bx, by] = at(pa, BULL[0], BULL[1]);
-            glow(bx, by, 520, C.goldHi, 0.5 * dp + 0.12);
-        }
-        vig();
-        // 게이지
-        const gx = 360, gw = 1200, gy = 790, gh = 28;
-        const ap = E.outExpo(prog(lt, 0.05, 0.5));
-        ctx.save();
-        ctx.globalAlpha = ap;
-        cutPath(ctx, gx, gy, gw, gh, 8);
-        ctx.fillStyle = 'rgba(8,7,6,0.8)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        // 성공 구간
-        const zx = gx + gw * 0.7, zw = gw * 0.2;
-        const inZone = f >= 0.7;
-        ctx.save();
-        cutPath(ctx, gx, gy, gw, gh, 8);
-        ctx.clip();
-        ctx.fillStyle = rgba(C.goldHi, inZone ? 0.35 + 0.25 * Math.sin(t * 30) ** 2 : 0.18);
-        ctx.fillRect(zx, gy, zw, gh);
-        ctx.strokeStyle = rgba(C.goldHi, 0.35);
-        ctx.lineWidth = 2;
-        for (let hx = zx - gh; hx < zx + zw; hx += 12) {
-            ctx.beginPath();
-            ctx.moveTo(hx, gy + gh);
-            ctx.lineTo(hx + gh, gy);
-            ctx.stroke();
-        }
-        // 누적 피해
-        const fg = ctx.createLinearGradient(gx, 0, gx + gw, 0);
-        fg.addColorStop(0, '#5c5550');
-        fg.addColorStop(1, done ? '#fff0c8' : '#d8d0c4');
-        ctx.fillStyle = fg;
-        ctx.fillRect(gx, gy + 5, gw * f, gh - 10);
-        ctx.restore();
-        ctx.fillStyle = C.goldHi;
-        ctx.fillRect(zx - 1, gy - 10, 2, gh + 20);
-        ctx.fillRect(zx + zw - 1, gy - 10, 2, gh + 20);
-        // 눈금
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        for (let i = 1; i < 10; i++) ctx.fillRect(gx + (gw * i) / 10 - 0.5, gy + gh + 6, 1, 8);
-        ctx.restore();
-        text('70%', zx, gy - 22, { f: F.mono, size: 18, w: 700, align: 'center', color: C.goldHi, alpha: ap });
-        text('90%', zx + zw, gy - 22, { f: F.mono, size: 18, w: 700, align: 'center', color: C.goldHi, alpha: ap });
-        text(`${Math.round(f * 100)}%`, gx + gw * f, gy + gh + 52, { f: F.cond, size: 40, w: 700, align: 'center', color: done ? C.goldHi : C.text, alpha: ap });
-        // 완성 버튼
-        const bp = E.outBack(prog(t, g(16.4), g(16.4) + 0.3));
-        if (bp > 0) {
-            const press = t >= g(17) ? 1 - 0.08 * pulse(t, g(17), 0.06) : 1;
-            const bx = gx + gw + 40, by = gy - 30, bw = 210, bh = 88;
+            for (let i = 0; i < 7; i++) {
+                glow(bx + rnd(i, -300, 300), by + 160 + rnd(i + 3, -60, 60) - age * 50, 200 + 280 * E.outCubic(prog(age, 0, 1.2)), '#b8ab9c', 0.22 * (1 - prog(age, 0.1, 1.3)), 'screen');
+            }
+            glow(bx, by, 600, C.goldHi, 0.25 * pulse(t, tFinal, 0.35) + 0.06);
+            sheenLayer(PRE.stone, pa, prog(t, tFinal + 0.05, tFinal + 0.85), 0.22, 'rgba(255,246,228,1)', 'rgba(255,236,210,0)');
             ctx.save();
-            ctx.translate(bx + bw / 2, by + bh / 2);
-            ctx.scale(bp * press, bp * press);
-            cutPath(ctx, -bw / 2, -bh / 2, bw, bh, 12);
-            const bg = ctx.createLinearGradient(0, -bh / 2, 0, bh / 2);
-            bg.addColorStop(0, done ? '#fff1c8' : '#3a2c14');
-            bg.addColorStop(1, done ? '#d9a54b' : '#1a1309');
-            ctx.fillStyle = bg;
-            ctx.shadowColor = C.goldHi;
-            ctx.shadowBlur = 20 + dp * 50;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = C.goldHi;
-            ctx.stroke();
-            text('완성', 0, 16, { f: F.game, size: 46, w: 400, ls: 8, align: 'center', color: done ? '#2a1a04' : C.goldHi });
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = 0; i < 50; i++) {
+                const x = bx + rnd(i * 2.7, -360, 360) + noise1(t + i, 9) * 20, y = by + rnd(i * 4.1, -120, 260) - age * rnd(i, 20, 90);
+                const r = rnd(i * 1.9, 2, 5);
+                ctx.globalAlpha = 0.55 * prog(age, 0, 0.2) * (1 - prog(age, 1.2, 2.2));
+                ctx.drawImage(PRE.dot['#ffffff'], x - r * 2, y - r * 2, r * 4, r * 4);
+            }
             ctx.restore();
         }
-        patternLabel(t, g(14), g(18), '03', '완성하면 안 되는 작품', C.bronzeHi, { y: 1000 });
+        vig();
+        patternLabel(t, g(14), g(18), '03', '완성하면 안 되는 작품', C.bronzeHi);
     }
 
     const EDAA = ['e', 'd', 'a', 'a', 'c', 'b'];
@@ -1440,24 +1584,8 @@
         warmGrade();
         // 청동 광택이 몸을 훑는다
         const sp = prog(t, g(22) + 0.05, g(23.2));
+        sheenLayer(IMG.sScene, pa, sp, 0.55);
         if (sp > 0 && sp < 1) {
-            const [c, gg] = buf('_sheen', W, H);
-            gg.drawImage(IMG.sScene, pa.x, pa.y, pa.w, pa.h);
-            gg.globalCompositeOperation = 'source-atop';
-            const [bx, by] = at(pa, BULL[0], BULL[1]);
-            const span = pa.w * 0.18;
-            const sx = bx - span + sp * span * 2;
-            const gr = gg.createLinearGradient(sx - 140, by - 200, sx + 140, by + 200);
-            gr.addColorStop(0, 'rgba(255,220,160,0)');
-            gr.addColorStop(0.5, 'rgba(255,245,220,1)');
-            gr.addColorStop(1, 'rgba(255,220,160,0)');
-            gg.fillStyle = gr;
-            gg.fillRect(0, 0, W, H);
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.55;
-            ctx.drawImage(c, 0, 0);
-            ctx.restore();
             const [gx, gy] = at(pa, BULL[0] + 0.03, BULL[1] - 0.06);
             star(gx, gy, 34 * Math.sin(Math.PI * sp), '#fff6e0', 0.9, sp * 2);
         }
@@ -1542,7 +1670,7 @@
             ctx.strokeStyle = isT ? C.goldHi : 'rgba(255,255,255,0.18)';
             ctx.stroke();
             text(name, x + 18, y + 30, { f: F.mono, size: 18, w: 700, ls: 3, color: C.text2 });
-            if (isT) tag(x + w - 16, y + 9, '대상', C.goldHi, { align: 'right', size: 14, ls: 2 });
+            if (isT) tag(x + w - 16, y + 9, '대상', C.goldHi, { align: 'right', size: 14, ls: 2, f: F.sans });
             ctx.fillStyle = 'rgba(255,255,255,0.1)';
             ctx.fillRect(x + 18, y + 44, w - 36, 10);
             const hg = ctx.createLinearGradient(x, 0, x + w, 0);
@@ -1689,99 +1817,85 @@
         patternLabel(t, g(8), g(10), '02', '되울림', C.teal);
         patternLabel(t, g(10), g(12), '03', '울리는 벽', C.teal);
     }
+    // 맥동 제어: 기운이 모였다 흩어지는 맥동과 대상의 입력 버튼만 보여 준다(정답·결과 비공개)
     function g2Pulse(t) {
         const g = beat.gate2, lt = t - g(12);
-        ctx.drawImage(PRE.wBlur, 0, 0);
-        fill('#2f8f88', 0.12, 'soft-light');
+        const z = 1.24 + 0.07 * prog(lt, 0, B2 * 4);
+        const { pa } = whipStage(t, z, 0.47, thump(t, 12, 16, 0.01));
+        fill('#020407', 0.4);
         vig();
-        const ap = E.outExpo(prog(lt, 0, 0.35));
+        const [cx, cy] = at(pa, CONE[0], CONE[1]);
+        const rise = prog(lt, 0, B2 * 4);
+        const breathe = tt => 0.5 - 0.5 * Math.cos((Math.PI * (tt - g(12))) / B2);
+        const cols = [C.teal, C.violetHi];
+        const fadeIn = Math.min(1, prog(t, g(12), g(12) + 0.25) * 4);
         ctx.save();
-        ctx.globalAlpha = 0.3 * ap;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(W / 2 - 0.5, 160 + (1 - ap) * 300, 1, (H - 380) * ap);
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 180; i++) {
+            const s = i * 2.71;
+            const base = rnd(s, 120, 460), ang0 = rnd(s + 1, 0, Math.PI * 2), r = rnd(s + 2, 4, 11);
+            const dot = PRE.dot[cols[i % 2]];
+            for (let k = 2; k >= 0; k--) {
+                const tt = t - k * 0.03;
+                const m = lerp(0.12, 1.15, breathe(tt)) * (0.85 + 0.15 * noise1(tt * 3 + i, 4));
+                const ang = ang0 + (tt - g(12)) * (i % 2 ? 0.9 : -0.7);
+                const x = cx + Math.cos(ang) * base * m, y = cy + Math.sin(ang) * base * m * 0.85;
+                const rk = r * (k ? 0.7 : 1);
+                ctx.globalAlpha = (k ? 0.22 / k : 0.9) * fadeIn * (0.6 + 0.4 * rise);
+                ctx.drawImage(dot, x - rk, y - rk, rk * 2, rk * 2);
+            }
+        }
         ctx.restore();
-        const halves = [
-            { cx: W * 0.27, color: C.teal, head: '모여듦', res: '방출', gather: true },
-            { cx: W * 0.73, color: C.violetHi, head: '흩어짐', res: '흡수', gather: false }
-        ];
-        const cy = H * 0.52;
-        const tFlip = g(14);
-        // 입자 반지름: 앞 단계(모이거나 흩어짐) → 뒤 단계(방출 또는 흡수)
-        const radius = (hf, s, tt) => {
-            const rFar = rnd(s + 1, 230, 400), rNear = rnd(s + 2, 6, 46);
-            if (tt < tFlip) {
-                const e = E.inOutCubic(prog(tt, g(12), tFlip - 0.06));
-                return hf.gather ? lerp(rFar, rNear, e) : lerp(rNear, rFar, e);
-            }
-            const p2 = prog(tt, tFlip, tFlip + 0.55);
-            return hf.gather ? lerp(rNear, rFar * 2.6, E.outExpo(p2)) : lerp(rFar, 0, E.inCubic(p2));
-        };
-        halves.forEach((hf, side) => {
-            const dot = PRE.dot[hf.color];
-            const ringR = hf.gather
-                ? (t < tFlip ? lerp(360, 70, E.inOutCubic(prog(t, g(12), tFlip))) : lerp(70, 900, E.outExpo(prog(t, tFlip, tFlip + 0.6))))
-                : (t < tFlip ? lerp(70, 360, E.inOutCubic(prog(t, g(12), tFlip))) : lerp(360, 20, E.inCubic(prog(t, tFlip, tFlip + 0.5))));
-            const ringA = ap * (t < tFlip ? 0.55 : 1 - prog(t, tFlip + 0.2, tFlip + 0.6));
+        const m = breathe(t);
+        glow(cx, cy, 120 + 130 * (1 - m), '#e9fffb', (0.3 + 0.55 * (1 - m)) * (0.6 + 0.4 * rise) * fadeIn);
+        for (let k = 12; k < 16; k++) {
+            const age = t - g(k);
+            if (age < 0 || age > 0.5) continue;
             ctx.save();
-            ctx.translate(hf.cx, cy);
-            ctx.rotate(t * (hf.gather ? 0.6 : -0.6));
             ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = ringA;
-            ctx.strokeStyle = hf.color;
-            ctx.shadowColor = hf.color;
-            ctx.shadowBlur = 18;
-            ctx.lineWidth = 2;
-            ctx.setLineDash([18, 14]);
+            ctx.globalAlpha = (1 - age / 0.5) * 0.6;
+            ctx.strokeStyle = C.teal;
+            ctx.shadowColor = C.teal;
+            ctx.shadowBlur = 20;
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+            ctx.arc(cx, cy, 80 + 620 * E.outCubic(age / 0.5), 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
+        }
+        partyFrames(t, prog(t, g(12) + 0.05, g(12) + 0.5) * (1 - prog(t, g(15.8), g(16))), [1], g(12.5));
+        // 대상에게 뜨는 입력 버튼
+        const bp = E.outBack(prog(t, g(13), g(13) + 0.35));
+        if (bp > 0) {
+            const bw = 230, bh = 86, gap = 28, by = 878;
+            const tp = 1 - prog(t, g(13), g(16));
             ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            for (let i = 0; i < 150; i++) {
-                const s = side * 900 + i * 3.1;
-                const ang = rnd(s, 0, Math.PI * 2);
-                const spin = (hf.gather ? 1 : -1) * 0.9 * prog(t, g(12), tFlip + 0.5);
-                const r = rnd(s + 3, 5, 13);
-                for (let k = 2; k >= 0; k--) {
-                    const rr = radius(hf, s, t - k * 0.025);
-                    const x = hf.cx + Math.cos(ang + spin) * rr, y = cy + Math.sin(ang + spin) * rr * 0.92;
-                    const fade = !hf.gather && t > tFlip + 0.5 ? 0 : hf.gather && t > tFlip ? 1 - prog(t, tFlip + 0.25, tFlip + 0.6) : 1;
-                    ctx.globalAlpha = ap * fade * (k ? 0.25 / k : 0.95) * Math.min(1, prog(t, g(12), g(12) + 0.2) * 5);
-                    const rk = r * (k ? 0.7 : 1);
-                    ctx.drawImage(dot, x - rk, y - rk, rk * 2, rk * 2);
-                }
-            }
+            ctx.globalAlpha = Math.min(1, bp);
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.fillRect(W / 2 - bw - gap / 2, by - 26, bw * 2 + gap, 4);
+            ctx.fillStyle = tp < 0.3 ? C.bloodHi : C.teal;
+            ctx.fillRect(W / 2 - bw - gap / 2, by - 26, (bw * 2 + gap) * tp, 4);
             ctx.restore();
-            const gatherCore = hf.gather ? E.inOutCubic(prog(t, g(12), tFlip)) : prog(t, tFlip + 0.25, tFlip + 0.55);
-            glow(hf.cx, cy, 120 + 160 * gatherCore, hf.color, ap * (0.25 + 0.6 * gatherCore) * (1 - prog(t, tFlip + 0.6, tFlip + 1.4) * 0.6));
-            glow(hf.cx, cy, 420, hf.color, ap * pulse(t, hf.gather ? tFlip : tFlip + 0.5, 0.18));
-            const hp = E.outExpo(prog(t, g(12) + side * 0.08, g(12) + 0.5 + side * 0.08));
-            text(hf.head, hf.cx, 205, { f: F.sans, size: 64, w: 900, align: 'center', color: '#ffffff', alpha: hp, glow: rgba(hf.color, 0.5), glowBlur: 24 });
-            const rp = E.outExpo(prog(t, tFlip, tFlip + 0.35));
-            ctx.save();
-            ctx.translate(hf.cx, 892);
-            ctx.scale(lerp(1.3, 1, rp), lerp(1.3, 1, rp));
-            text(`→  ${hf.res}`, 0, 0, { f: F.sans, size: 56, w: 900, align: 'center', color: hf.color, alpha: rp, glow: rgba(hf.color, 0.6), glowBlur: 28 });
-            ctx.restore();
-        });
-        const sp = E.outExpo(prog(t, g(15), g(15) + 0.3));
-        if (sp > 0) {
-            ctx.save();
-            ctx.translate(W / 2, cy);
-            ctx.scale(lerp(1.5, 1, sp), lerp(1.5, 1, sp));
-            ctx.globalAlpha = sp;
-            cutPath(ctx, -130, -56, 260, 112, 16);
-            ctx.fillStyle = 'rgba(8,16,12,0.9)';
-            ctx.shadowColor = C.ok;
-            ctx.shadowBlur = 30 + 40 * pulse(t, g(15), 0.25);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = C.ok;
-            ctx.stroke();
-            ctx.restore();
-            text('성공', W / 2, cy + 24, { f: F.game, size: 66, w: 400, ls: 12, align: 'center', color: '#d6ffe0', alpha: sp, glow: rgba(C.ok, 0.8), glowBlur: 24 });
+            ['흡수', '방출'].forEach((label, i) => {
+                const x = W / 2 + (i ? gap / 2 : -gap / 2 - bw);
+                ctx.save();
+                ctx.translate(x + bw / 2, by + bh / 2);
+                ctx.scale(bp, bp);
+                cutPath(ctx, -bw / 2, -bh / 2, bw, bh, 14);
+                const bg = ctx.createLinearGradient(0, -bh / 2, 0, bh / 2);
+                bg.addColorStop(0, '#1b2a2c');
+                bg.addColorStop(1, '#0b1213');
+                ctx.fillStyle = bg;
+                ctx.shadowColor = C.teal;
+                ctx.shadowBlur = 18 + 14 * Math.sin(t * 6) ** 2;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = rgba(C.teal, 0.8);
+                ctx.stroke();
+                text(label, 0, 15, { f: F.game, size: 42, w: 400, ls: 8, align: 'center', color: '#e6fffb' });
+                ctx.restore();
+            });
         }
         patternLabel(t, g(12), g(16), '04', '맥동 제어', C.teal);
     }
@@ -1933,7 +2047,7 @@
         drawCracks(cx, cy, Math.min(1, crack), 0.95);
         // 표식과 카운트
         const tp = E.outExpo(prog(lt, 0.05, 0.4));
-        tag(W / 2, H / 2 + 170, 'HP 1  ·  전투 정지', C.bloodHi, { align: 'center', size: 22, ls: 6, alpha: tp * (1 - prog(t, f(5), f(5.5))), bg: 'rgba(20,2,4,0.8)' });
+        tag(W / 2, H / 2 + 170, '전투 정지', C.bloodHi, { align: 'center', size: 22, ls: 8, f: F.sans, alpha: tp * (1 - prog(t, f(5), f(5.5))), bg: 'rgba(20,2,4,0.8)' });
         for (const k of [1, 2, 3, 4]) {
             const age = t - f(k);
             if (age < 0 || age > B2) continue;
@@ -2073,7 +2187,9 @@
         // 제목
         const X = 112;
         const tp = prog(lt, B2 * 0.9, B2 * 0.9 + 0.5);
-        tag(X, 300, 'HARD  ·  NIGHTMARE', C.bloodHi, { shown: scramble('HARD  ·  NIGHTMARE', prog(lt, 0.4, 0.9), 13, t), alpha: Math.min(1, prog(lt, 0.4, 0.6) * 3) });
+        const ta = Math.min(1, prog(lt, 0.4, 0.6) * 3);
+        const hw = tag(X, 300, 'HARD', C.bloodHi, { shown: scramble('HARD', prog(lt, 0.4, 0.7), 13, t), alpha: ta });
+        tag(X + hw + 12, 300, 'NIGHTMARE', C.violetHi, { shown: scramble('NIGHTMARE', prog(lt, 0.5, 0.9), 17, t), alpha: ta });
         const tb = tbuf('_echo', '잔향', { f: F.serif, size: 250, w: 900, ls: 10, stops: METAL.blood, sheen: prog(lt, 1.6, 2.6), edge: 'rgba(255,200,190,0.2)' });
         drawTB(tb, X, 590, {
             glow: 'rgba(255,40,30,0.55)', glowBlur: 60,
@@ -2127,14 +2243,15 @@
         fog(t, PRE.fogA, 0.12, { vx: 30, y: H * 0.55, scale: 7 });
         vig();
         sectionHead(t, e(8), 'DIFFICULTY', '난이도');
-        const cw = 470, ch = 590, top = 248;
+        const cw = 470, ch = 590, top = 276;
         TIERS.forEach((tier, i) => {
             const ts = e(8 + i);
             const sp = E.outExpo(prog(t, ts, ts + 0.4));
             if (sp <= 0) return;
             const x0 = W / 2 + (i - 1) * 530 - cw / 2;
             const y0 = top + (1 - sp) * 90;
-            const fl = pulse(t, ts, 0.18);
+            const hl = e(12 + i);
+            const fl = pulse(t, ts, 0.18) + 0.6 * pulse(t, hl, 0.3);
             ctx.save();
             ctx.globalAlpha = sp;
             ctx.translate(x0 + cw / 2, y0 + ch / 2);
@@ -2151,18 +2268,29 @@
             ctx.lineWidth = 2;
             ctx.strokeStyle = rgba(tier.color, 0.65 + fl * 0.35);
             ctx.shadowColor = tier.color;
-            ctx.shadowBlur = 16 + fl * 40;
+            ctx.shadowBlur = 16 + fl * 40 + (i === 2 ? 30 * prog(t, hl, hl + 0.5) : 0);
             ctx.stroke();
             ctx.shadowBlur = 0;
             ctx.fillStyle = tier.color;
             ctx.fillRect(18, 0, 120, 4);
-            text(tier.en, 40, 96, { f: F.cinzel, size: tier.en.length > 6 ? 36 : 46, w: 700, ls: 8, color: tier.color, glow: rgba(tier.color, 0.5), glowBlur: 20 });
+            // 박마다 카드 하나씩 빛이 훑는다
+            const sw = prog(t, hl - 0.05, hl + 0.5);
+            if (sw > 0 && sw < 1) {
+                ctx.save();
+                cutPath(ctx, 0, 0, cw, ch, 18);
+                ctx.clip();
+                const sx = lerp(-260, cw + 260, E.inOutCubic(sw));
+                const gr = ctx.createLinearGradient(sx - 180, 0, sx + 180, ch * 0.5);
+                gr.addColorStop(0, rgba(tier.color, 0));
+                gr.addColorStop(0.5, rgba(tier.color, 0.28));
+                gr.addColorStop(1, rgba(tier.color, 0));
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = gr;
+                ctx.fillRect(0, 0, cw, ch);
+                ctx.restore();
+            }
+            text(tier.en, 40, 96, { f: F.cinzel, size: tier.en.length > 6 ? 40 : 46, w: 700, ls: 8, color: tier.color, glow: rgba(tier.color, 0.5), glowBlur: 20 });
             text(tier.ko, 40, 142, { f: F.sans, size: 26, w: 700, ls: 6, color: C.text2 });
-            // 잠금
-            const unlockT = e(12 + i);
-            const op = E.outBack(prog(t, unlockT, unlockT + 0.35));
-            lockIcon(cw - 82, 76, 1.5, op, op > 0.5 ? tier.color : '#6c6578', 1);
-            if (t >= unlockT) glow(cw - 66, 70, 120, tier.color, 0.9 * pulse(t, unlockT, 0.2));
             // 보스 순서
             const n = tier.bosses.length, gap = 128, bx0 = cw / 2 - ((n - 1) * gap) / 2;
             tier.bosses.forEach((key, j) => {
@@ -2198,33 +2326,12 @@
             text(fmt(tier.hp * E.outExpo(prog(t, ts + 0.1, ts + 0.9))), 40, 528, { f: F.cond, size: 72, w: 800, ls: 1, color: '#ffffff' });
             ctx.restore();
         });
-        // 해금 연결선
-        for (const i of [0, 1]) {
-            const ts = e(13 + i);
-            const lp = E.inOutCubic(prog(t, ts - 0.25, ts));
-            if (lp <= 0) continue;
-            const xa = W / 2 + (i - 1) * 530 + cw / 2 - 8, xb = W / 2 + i * 530 - cw / 2 + 8;
-            const y = top + 76;
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.strokeStyle = TIERS[i + 1].color;
-            ctx.shadowColor = TIERS[i + 1].color;
-            ctx.shadowBlur = 16;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(xa, y);
-            ctx.lineTo(lerp(xa, xb, lp), y);
-            ctx.stroke();
-            ctx.restore();
-            glow(lerp(xa, xb, lp), y, 40, TIERS[i + 1].color, 0.9 * (1 - prog(t, ts, ts + 0.2)));
-        }
-        text('클리어하면 다음 난이도가 열린다', W / 2, 922, { f: F.sans, size: 32, w: 500, ls: 4, align: 'center', color: C.text, alpha: E.outCubic(prog(t, e(12), e(12) + 0.4)) });
     }
 
     const SUPPORTS = [
-        { key: 'pika', name: '피카츄', fx: '고정 피해 1,100,000', color: '#ffe066' },
-        { key: 'aurora', name: '오로라', fx: 'HP 30% 회복 · 보호막', color: '#9cf5dc' },
-        { key: 'justice', name: '눈뜬 장님', fx: '스킬 쿨타임 초기화', color: '#ffd795' }
+        { key: 'pika', name: '피카츄', fx: ['고정 피해 1,100,000'], color: '#ffe066' },
+        { key: 'aurora', name: '오로라', fx: ['HP 30% 회복', '보호막 50,000'], color: '#9cf5dc' },
+        { key: 'justice', name: '눈뜬 장님', fx: ['스킬 쿨타임 초기화'], color: '#ffd795' }
     ];
     function echoSupport(t) {
         const e = beat.echo, lt = t - e(16);
@@ -2278,17 +2385,17 @@
             ctx.stroke();
             ctx.shadowBlur = 0;
             text(sp.name, 36, ih + 92, { f: F.sans, size: 54, w: 900, color: '#ffffff' });
-            text(sp.fx, 36, ih + 148, { f: F.sans, size: 28, w: 700, color: sp.color });
+            sp.fx.forEach((line, j) => text(line, 36, ih + 146 + j * 38, { f: F.sans, size: 28, w: 700, color: sp.color }));
             ctx.restore();
             if (i === 0 && t >= ts && t < ts + 0.3) bolt(5, x0 + cw * 0.85, y0 - 40, x0 + cw * 0.55, y0 + 260, '#fff2a0', 1 - prog(t, ts + 0.05, ts + 0.3), 2.5);
         });
     }
 
     const ITEMS = [
-        { key: 'fragment', name: '이세계 파편', color: '#7aa8ff' },
-        { key: 'potion', name: '투신의 함성 포션', color: '#ff6b5e' },
-        { key: 'petJogak', name: '유니크 펫 · 조각', color: '#c48bff' },
-        { key: 'petWhip', name: '레전더리 펫 · 위플래쉬', color: C.goldHi }
+        { key: 'fragment', name: '이세계 파편', sub: '재료', color: '#7aa8ff' },
+        { key: 'potion', name: '투신의 함성 포션', sub: '소모품', color: '#ff6b5e' },
+        { key: 'petJogak', name: '조각', sub: '유니크 펫', color: '#c48bff' },
+        { key: 'petWhip', name: '위플래쉬', sub: '레전더리 펫', color: C.goldHi }
     ];
     function echoReward(t) {
         const e = beat.echo, lt = t - e(20);
@@ -2341,31 +2448,32 @@
                 return { a: pp, dy: (1 - pp) * 30 };
             }
         });
+        // 등급 배지
         const rar = [['RARE', '#6aa8ff'], ['UNIQUE', '#c48bff'], ['LEGENDARY', C.goldHi]];
-        font(ctx, F.cinzel, 26, 700, 6);
-        const ws = rar.map(([s]) => measureW(ctx, s, 6));
-        const total = ws.reduce((a, b) => a + b, 0) + 2 * 60;
-        let rx = hx - total / 2;
+        font(ctx, F.cinzel, 22, 700, 6);
+        const ws = rar.map(([s]) => measureW(ctx, s, 6) + 28);
+        let rx = hx - (ws.reduce((a, b) => a + b, 0) + 2 * 16) / 2;
+        const ra = (1 - out) * prog(lt, 0.2, 0.5);
         rar.forEach(([s, col], i) => {
             const on = t >= e(20.5 + i * 0.5);
             const pp = pulse(t, e(20.5 + i * 0.5), 0.2);
-            text(s, rx, 920, { f: F.cinzel, size: 26, w: 700, ls: 6, color: on ? col : '#4a4552', glow: on ? rgba(col, 0.6 + pp * 0.4) : null, glowBlur: 18 + pp * 30, alpha: (1 - out) * prog(lt, 0.2, 0.5) });
-            if (i < 2) star(rx + ws[i] + 30, 911, 7, '#8a8296', (1 - out) * prog(lt, 0.2, 0.5));
-            rx += ws[i] + 60;
+            if (on) glow(rx + ws[i] / 2, 908, 110, col, 0.5 * pp * ra);
+            tag(rx, 888, s, on ? col : '#4a4552', { f: F.cinzel, size: 22, ls: 6, alpha: ra, bg: on ? rgba(col, 0.12) : 'rgba(10,8,14,0.55)' });
+            rx += ws[i] + 16;
         });
         // 아이템 격자
         ITEMS.forEach((it, i) => {
             const ts = e(22 + i);
             const p = E.outBack(prog(t, ts, ts + 0.35));
             if (p <= 0) return;
-            const cx = W * (i % 2 ? 0.83 : 0.6), cy = i < 2 ? 350 : 715;
+            const cx = W * (i % 2 ? 0.83 : 0.6), cy = i < 2 ? 330 : 690;
             const fl2 = pulse(t, ts, 0.2);
             ctx.save();
             ctx.globalAlpha = Math.min(1, p) * (1 - out);
             ctx.translate(cx, cy);
             ctx.scale(p, p);
-            cutPath(ctx, -160, -150, 320, 300, 16);
-            const bg = ctx.createRadialGradient(0, -20, 0, 0, -20, 220);
+            cutPath(ctx, -130, -130, 260, 260, 14);
+            const bg = ctx.createRadialGradient(0, -10, 0, 0, -10, 200);
             bg.addColorStop(0, rgba(it.color, 0.28 + fl2 * 0.3));
             bg.addColorStop(1, 'rgba(12,10,16,0.92)');
             ctx.fillStyle = bg;
@@ -2373,9 +2481,11 @@
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = rgba(it.color, 0.7);
             ctx.stroke();
-            ctx.drawImage(IMG[it.key], -140, -150, 280, 280);
+            ctx.drawImage(IMG[it.key], -120, -128, 240, 240);
             ctx.restore();
-            text(it.name, cx, cy + 196, { f: F.sans, size: 30, w: 900, align: 'center', color: '#ffffff', alpha: Math.min(1, p) * (1 - out) });
+            const ia = Math.min(1, p) * (1 - out);
+            text(it.sub, cx, cy + 168, { f: F.sans, size: 20, w: 700, ls: 4, align: 'center', color: it.color, alpha: ia });
+            text(it.name, cx, cy + 206, { f: F.sans, size: 30, w: 900, align: 'center', color: '#ffffff', alpha: ia });
         });
         fill('#050308', out * 0.85);
     }
@@ -2459,20 +2569,24 @@
         vig();
         // 정보와 입장
         const ip = E.outExpo(prog(lt, 0.7, 1.4));
-        tag(116, 880, 'RPGENIUS  ·  NEW RAID', C.violetHi, { alpha: ip, shown: scramble('RPGENIUS  ·  NEW RAID', prog(lt, 0.7, 1.3), 21, t) });
-        const info = ['Lv.141 이상', '1–4인 파티', '노말 · 하드 · 나이트메어'];
+        const w1 = tag(116, 852, 'RPGENIUS', C.violetHi, { alpha: ip, shown: scramble('RPGENIUS', prog(lt, 0.7, 1.1), 21, t) });
+        tag(116 + w1 + 10, 852, 'NEW RAID', C.violetHi, { alpha: ip, solid: true, shown: scramble('NEW RAID', prog(lt, 0.8, 1.2), 23, t) });
+        const specs = [['입장', 'Lv.141 이상'], ['인원', '1–4인 파티'], ['난이도', null]];
         let ix = 116;
-        info.forEach((s, i) => {
-            const p = E.outExpo(prog(lt, 0.9 + i * 0.1, 1.5 + i * 0.1));
-            const w = text(s, ix, 978 + (1 - p) * 20, { f: F.sans, size: 34, w: 700, ls: 1, color: C.text, alpha: p });
-            if (i < info.length - 1) {
-                ctx.save();
-                ctx.globalAlpha = p * 0.5;
-                ctx.fillStyle = C.violetHi;
-                ctx.fillRect(ix + w + 28, 950, 1.5, 34);
-                ctx.restore();
+        specs.forEach(([label, value], i) => {
+            const p = E.outExpo(prog(lt, 0.9 + i * 0.12, 1.5 + i * 0.12));
+            const dy = (1 - p) * 18;
+            text(label, ix, 936 + dy, { f: F.sans, size: 20, w: 500, ls: 4, color: C.text3, alpha: p });
+            let w;
+            if (value) w = text(value, ix, 984 + dy, { f: F.sans, size: 34, w: 700, ls: 1, color: C.text, alpha: p });
+            else {
+                let bx = ix;
+                TIERS.forEach(tier => {
+                    bx += tag(bx, 951 + dy, tier.ko, tier.color, { f: F.sans, size: 22, ls: 2, alpha: p, bg: rgba(tier.color, 0.1) }) + 10;
+                });
+                w = bx - ix;
             }
-            ix += w + 58;
+            ix += Math.max(w, 80) + 64;
         });
         const bp = E.outExpo(prog(lt, 1.3, 1.9));
         if (bp > 0) {
