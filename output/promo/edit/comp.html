@@ -1,0 +1,429 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:'BHS';src:url(f/BlackHanSans-Regular.ttf)}
+@font-face{font-family:'NSerif';src:url(f/NotoSerifKR-Bold.otf);font-weight:700}
+@font-face{font-family:'NSerif';src:url(f/NotoSerifKR-Medium.otf);font-weight:500}
+@font-face{font-family:'Cinzel';src:url(f/Cinzel.ttf)}
+@font-face{font-family:'Pret';src:url(f/Pretendard-SemiBold.otf);font-weight:600}
+@font-face{font-family:'Pret';src:url(f/Pretendard-Light.otf);font-weight:300}
+html,body{margin:0;background:#000;overflow:hidden}
+canvas{display:block}
+</style></head><body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+'use strict';
+const W = 1920, H = 1080, FPS = 30;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let FR = [];
+const IMG = {};
+const cache = new Map();
+
+// ---------- helpers ----------
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeIn = t => t * t * t;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function loadImg(src) {
+    if (cache.has(src)) return cache.get(src);
+    const p = new Promise((res, rej) => { const im = new Image(); im.onload = () => im.decode().then(() => res(im), () => res(im)); im.onerror = rej; im.src = src; });
+    cache.set(src, p);
+    if (cache.size > 160) { const k = cache.keys().next().value; cache.delete(k); }
+    return p;
+}
+function nextFrame(t) {
+    let lo = 0, hi = FR.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (FR[m].t <= t) lo = m; else hi = m - 1; }
+    const a = FR[lo], b = FR[lo + 1]; if (!b) return null;
+    const gap = b.t - a.t; return { file: b.file, gap, w: clamp((t - a.t) / gap) };
+}
+function frameAt(t) { // 녹화 시각 t(초)에 화면에 보이던 프레임
+    let lo = 0, hi = FR.length - 1;
+    if (t <= FR[0].t) return FR[0].file;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (FR[m].t <= t) lo = m; else hi = m - 1; }
+    return FR[lo].file;
+}
+
+// ---------- 촬영 좌표 (녹화 화면 1920x1480 기준) ----------
+const STAGE = { x: 14, y: 52, w: 1892, h: 1064 };
+function Z(cx, cy, s) { // 무대 안에서 (cx,cy) 중심 s배 확대 16:9 영역
+    const w = STAGE.w / s, h = STAGE.h / s;
+    const x = clamp(cx - w / 2, STAGE.x, STAGE.x + STAGE.w - w), y = clamp(cy - h / 2, STAGE.y, STAGE.y + STAGE.h - h);
+    return { x, y, w, h };
+}
+const mix = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t) });
+const BULL = [990, 590], SPEAKER = [960, 520], FACE = [900, 360];
+
+// ---------- 샷 목록 (출력 초) ----------
+// src: [녹화 시작, 녹화 끝], from/to: 크롭, inT: 진입 전환
+const SHOTS = [
+    { a: 8.0, b: 9.7, src: [8.55, 10.25], from: Z(...BULL, 1.25), to: STAGE, inT: 'flash' },
+    { a: 9.7, b: 11.4, src: [11.0, 12.7], from: Z(...BULL, 1.12), to: Z(1010, 560, 1.42) },
+    { a: 11.4, b: 13.8, src: [15.75, 18.15], from: STAGE, to: Z(960, 640, 1.12), inT: 'whip' },
+    { a: 13.8, b: 15.4, src: [19.85, 21.45], from: Z(...BULL, 1.35), to: Z(990, 560, 1.6), inT: 'flash' },
+    { a: 15.4, b: 16.8, src: [24.4, 25.8], from: Z(990, 520, 1.28), to: Z(990, 540, 1.38) },
+    { a: 16.8, b: 18.0, src: [35.2, 36.4], from: Z(1010, 600, 1.3), to: Z(1030, 580, 1.4), inT: 'whip' },
+    { a: 18.0, b: 20.2, src: [48.15, 50.35], from: Z(...BULL, 1.2), to: Z(990, 560, 1.38), inT: 'flash' },
+    { a: 20.2, b: 22.7, src: [55.9, 58.4], from: STAGE, to: Z(960, 560, 1.08), inT: 'dip' },
+    { a: 22.7, b: 24.0, src: [59.15, 60.45], from: Z(...SPEAKER, 1.35), to: Z(...SPEAKER, 1.18), inT: 'flash' },
+    { a: 24.0, b: 26.4, src: [66.9, 69.3], from: Z(...SPEAKER, 1.15), to: Z(960, 560, 1.55) },
+    { a: 26.4, b: 28.0, src: [74.4, 76.0], from: STAGE, to: Z(960, 640, 1.08), inT: 'whip' },
+    { a: 28.0, b: 29.2, src: [76.6, 77.8], from: Z(960, 560, 1.1), to: Z(960, 560, 1.22), inT: 'cut' },
+    { a: 29.2, b: 31.4, src: [96.8, 99.0], from: Z(1000, 470, 1.15), to: Z(1050, 460, 1.3), inT: 'flash' },
+    { a: 31.4, b: 32.6, src: [101.7, 102.9], from: Z(...SPEAKER, 1.4), to: Z(...SPEAKER, 1.2), inT: 'cut' },
+    { a: 32.6, b: 35.7, src: [107.4, 111.0], from: Z(960, 560, 1.05), to: Z(960, 540, 1.6), inT: 'cut' },
+    { a: 35.7, b: 38.7, src: [112.15, 115.15], from: STAGE, to: Z(...FACE, 1.45), inT: 'white' },
+    { a: 38.7, b: 40.5, src: [119.45, 121.25], from: Z(780, 600, 1.12), to: STAGE, inT: 'flash' },
+];
+
+// ---------- 그레인 ----------
+const grains = [];
+function makeGrain() {
+    for (let k = 0; k < 6; k++) {
+        const g = document.createElement('canvas'); g.width = g.height = 256;
+        const gx = g.getContext('2d'), d = gx.createImageData(256, 256);
+        for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+        gx.putImageData(d, 0, 0); grains.push(g);
+    }
+}
+
+// ---------- 그리기 원소 ----------
+function drawCrop(im, r, alpha = 1, filter = 'none') {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.filter = filter;
+    ctx.drawImage(im, r.x, r.y, r.w, r.h, 0, 0, W, H);
+    ctx.restore();
+}
+function drawCover(im, scale = 1, ox = 0, oy = 0, alpha = 1, filter = 'none') {
+    const s = Math.max(W / im.width, H / im.height) * scale;
+    const w = im.width * s, h = im.height * s;
+    ctx.save(); ctx.globalAlpha = alpha; ctx.filter = filter;
+    ctx.drawImage(im, (W - w) / 2 + ox, (H - h) / 2 + oy, w, h);
+    ctx.restore();
+}
+function vignette(strength = .62) {
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * 1.02);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${strength})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function grade(warm = 0) { // 은은한 색보정: 어두운 영역은 청록, 밝은 영역은 호박색
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgba(${40 + warm},${60},${90 - warm},.35)`); g.addColorStop(1, `rgba(${120 + warm},${70},${30},.28)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+}
+function grain(t, a = .055) {
+    const g = grains[Math.floor(t * FPS) % grains.length];
+    ctx.save(); ctx.globalAlpha = a; ctx.globalCompositeOperation = 'overlay';
+    const ox = Math.floor(rand(Math.floor(t * FPS)) * 256), oy = Math.floor(rand(Math.floor(t * FPS) + 9) * 256);
+    for (let x = -ox; x < W; x += 256) for (let y = -oy; y < H; y += 256) ctx.drawImage(g, x, y);
+    ctx.restore();
+}
+function embers(t, n = 70, a = 1, hue = 'gold') {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+        const sp = 40 + rand(i) * 90, life = H + 200;
+        const y = H + 100 - ((t * sp + rand(i + 50) * life) % life);
+        const x = rand(i + 7) * W + Math.sin(t * (.4 + rand(i + 3)) + i) * 40;
+        const r = .8 + rand(i + 11) * 2.4, fl = .5 + .5 * Math.sin(t * (2 + rand(i) * 4) + i);
+        const col = hue === 'red' ? `rgba(255,${80 + rand(i) * 60},${50},` : `rgba(255,${170 + rand(i) * 60},${90},`;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
+        g.addColorStop(0, col + (.85 * fl * a) + ')'); g.addColorStop(1, col + '0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+function lightSweep(p, a = .35) { // 사선으로 지나가는 빛
+    if (p <= 0 || p >= 1) return;
+    const x = lerp(-W * .4, W * 1.4, easeOut(p));
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    ctx.translate(x, 0); ctx.rotate(.32);
+    const g = ctx.createLinearGradient(-220, 0, 220, 0);
+    g.addColorStop(0, 'rgba(255,220,160,0)'); g.addColorStop(.5, `rgba(255,225,170,${a})`); g.addColorStop(1, 'rgba(255,220,160,0)');
+    ctx.fillStyle = g; ctx.fillRect(-220, -H, 440, H * 3);
+    ctx.restore();
+}
+function flashOverlay(a, color = '255,248,235') { if (a > 0) { ctx.fillStyle = `rgba(${color},${a})`; ctx.fillRect(0, 0, W, H); } }
+function blackOverlay(a) { if (a > 0) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); } }
+
+function text(str, x, y, o) {
+    ctx.save();
+    ctx.font = o.font; ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'alphabetic';
+    if (o.ls) ctx.letterSpacing = o.ls + 'px';
+    ctx.globalAlpha = o.alpha ?? 1;
+    if (o.blur) ctx.filter = `blur(${o.blur}px)`;
+    if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowSize || 30; }
+    if (o.stroke) { ctx.lineWidth = o.strokeW || 2; ctx.strokeStyle = o.stroke; ctx.strokeText(str, x, y); }
+    if (o.grad) {
+        const m = ctx.measureText(str); const asc = m.actualBoundingBoxAscent;
+        const g = ctx.createLinearGradient(0, y - asc, 0, y + 4);
+        o.grad.forEach(([s, c]) => g.addColorStop(s, c)); ctx.fillStyle = g;
+    } else ctx.fillStyle = o.color || '#fff';
+    ctx.fillText(str, x, y);
+    ctx.restore();
+}
+const GOLD = [[0, '#fff3d0'], [.45, '#f0c87a'], [1, '#a8742f']];
+
+// 공식 대사 자막 (하단 중앙)
+function subtitle(t, a, b, str, opt = {}) {
+    if (t < a - .01 || t > b) return;
+    const pin = easeOut(prog(t, a, a + .35)), pout = 1 - prog(t, b - .3, b);
+    const al = Math.min(pin, pout);
+    const y = (opt.y || H - 118);
+    ctx.save();
+    const g = ctx.createLinearGradient(0, y - 90, 0, H);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${.55 * al})`);
+    ctx.fillStyle = g; ctx.fillRect(0, y - 90, W, H - y + 90);
+    ctx.restore();
+    // 장식선
+    const lw = 46 * pin;
+    ctx.save(); ctx.globalAlpha = al * .8; ctx.strokeStyle = '#d9b06a'; ctx.lineWidth = 1.5;
+    ctx.font = "500 38px NSerif"; ctx.letterSpacing = '2px';
+    const tw = ctx.measureText(str).width;
+    ctx.beginPath(); ctx.moveTo(W / 2 - tw / 2 - 30 - lw, y - 13); ctx.lineTo(W / 2 - tw / 2 - 30, y - 13);
+    ctx.moveTo(W / 2 + tw / 2 + 30, y - 13); ctx.lineTo(W / 2 + tw / 2 + 30 + lw, y - 13); ctx.stroke();
+    ctx.restore();
+    text(str, W / 2, y + (1 - pin) * 10, { font: "500 38px NSerif", ls: 2, alpha: al, color: '#f6ead2', glow: 'rgba(0,0,0,.9)', glowSize: 18, blur: (1 - pin) * 6 });
+}
+
+// 관문 표제 (좌하단)
+function chapter(t, a, b, roman, name, sub) {
+    if (t < a || t > b) return;
+    const p = prog(t, a, a + .9), q = 1 - prog(t, b - .4, b);
+    const al = Math.min(easeOut(p), q);
+    const x = 120, y = H - 150;
+    ctx.save();
+    const g = ctx.createLinearGradient(0, 0, 900, 0);
+    g.addColorStop(0, `rgba(0,0,0,${.6 * al})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, y - 200, 900, 300);
+    ctx.restore();
+    text(roman, x, y - 112, { font: "30px Cinzel", align: 'left', ls: 10, alpha: al, grad: GOLD });
+    ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = '#d9b06a';
+    ctx.fillRect(x, y - 92, 340 * easeOut(prog(t, a + .1, a + .9)), 1.5); ctx.restore();
+    text(name, x - 4 + (1 - easeOut(p)) * -30, y - 10, { font: "700 104px NSerif", align: 'left', ls: 6, alpha: al, color: '#fbf3e3', glow: 'rgba(0,0,0,.8)', glowSize: 24 });
+    text(sub, x, y + 40, { font: "300 26px Pret", align: 'left', ls: 8, alpha: al * .85, color: '#e8dcc4' });
+}
+
+// 지원군 컷인
+function cutin(t, a, b, im, label, name, quote) {
+    if (t < a || t > b) return;
+    const pin = easeOut(prog(t, a, a + .32)), pout = easeIn(prog(t, b - .3, b));
+    const off = (1 - pin) * 700 + pout * 700;
+    const x = W - 640 + off, y = 180, w = 560, h = 300, sk = 60;
+    ctx.save();
+    ctx.globalAlpha = 1 - pout * .3;
+    ctx.beginPath(); ctx.moveTo(x + sk, y); ctx.lineTo(x + w + sk, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.closePath();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = '#120d08'; ctx.fillRect(x, y, w + sk, h);
+    const s = (w + sk) / im.width * 1.05, ih = im.height * s;
+    ctx.filter = 'sepia(.55) saturate(1.2) contrast(1.15) brightness(.85)';
+    ctx.drawImage(im, x - 10 + (t - a) * 18, y - ih * .12, (w + sk) * 1.05, ih);
+    ctx.filter = 'none';
+    const g = ctx.createLinearGradient(x, 0, x + w + sk, 0);
+    g.addColorStop(0, 'rgba(10,6,3,.92)'); g.addColorStop(.55, 'rgba(10,6,3,.45)'); g.addColorStop(1, 'rgba(10,6,3,0)');
+    ctx.fillStyle = g; ctx.fillRect(x, y, w + sk, h);
+    ctx.restore();
+    ctx.strokeStyle = '#d9b06a'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+    const al = pin * (1 - pout);
+    text(label, x + 50, y + 70, { font: "20px Cinzel", align: 'left', ls: 6, alpha: al, grad: GOLD });
+    text(name, x + 46, y + 150, { font: "700 64px NSerif", align: 'left', ls: 2, alpha: al, color: '#fff7e6', glow: 'rgba(0,0,0,.9)', glowSize: 16 });
+    if (quote) text(quote, x + 50, y + 214, { font: "500 30px NSerif", align: 'left', alpha: al * clamp((t - a - .25) / .3), color: '#f0d9a8', glow: 'rgba(0,0,0,.9)', glowSize: 14 });
+}
+
+// ---------- 장면 렌더 ----------
+async function drawShot(s, t, alpha = 1) {
+    const p = clamp((t - s.a) / (s.b - s.a));
+    const st = lerp(s.src[0], s.src[1], p);
+    const im = await loadImg('frames/' + frameAt(st));
+    const nx = nextFrame(st);
+    const r = mix(s.from, s.to, ease(p));
+    // 진입 전환
+    const k = t - s.a;
+    if (s.inT === 'whip' && k < .22) {
+        const q = 1 - k / .22;
+        const dx = q * 260;
+        ctx.save(); ctx.filter = `blur(${q * 18}px)`;
+        ctx.drawImage(im, r.x - dx * r.w / W, r.y, r.w, r.h, 0, 0, W, H); ctx.restore();
+        return;
+    }
+    drawCrop(im, r, alpha);
+    // 녹화 프레임 사이를 부드럽게 보간
+    if (nx && nx.gap < .12 && nx.w > .02) drawCrop(await loadImg('frames/' + nx.file), r, alpha * nx.w);
+}
+
+async function render(t) {
+    ctx.save(); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();
+
+    // ===== 0 ~ 4.2 : 오프닝 =====
+    if (t < 4.2) {
+        const im = IMG.field;
+        const al = prog(t, 0, 1.4) * (1 - prog(t, 3.75, 4.2) * .6);
+        drawCover(im, 1.22 - t * .025, 0, 30 - t * 8, al * .55, 'brightness(.55) saturate(.7) contrast(1.1)');
+        // 안개 띠
+        ctx.save(); ctx.globalCompositeOperation = 'screen';
+        for (let i = 0; i < 3; i++) {
+            const g = ctx.createRadialGradient(W * (.2 + i * .3) + Math.sin(t * .4 + i) * 80, H * .78, 10, W * (.2 + i * .3), H * .78, 520);
+            g.addColorStop(0, `rgba(120,130,160,${.10 * al})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        }
+        ctx.restore();
+        embers(t, 40, al * .8);
+        vignette(.8);
+        const l1 = Math.min(easeOut(prog(t, .35, 1.25)), 1 - prog(t, 1.95, 2.25));
+        text('아무도 돌아오지 못한 저택', W / 2, H / 2 + 14, { font: "500 54px NSerif", ls: 10, alpha: l1, color: '#efe3cc', blur: (1 - easeOut(prog(t, .35, 1.25))) * 10, glow: 'rgba(0,0,0,.9)' });
+        const l2 = Math.min(easeOut(prog(t, 2.2, 3.0)), 1 - prog(t, 3.75, 4.15));
+        text('그 문이, 다시 열린다', W / 2, H / 2 + 14, { font: "700 64px NSerif", ls: 14, alpha: l2, grad: GOLD, blur: (1 - easeOut(prog(t, 2.2, 3.0))) * 10, glow: 'rgba(0,0,0,.9)' });
+        grain(t, .07);
+        return;
+    }
+    // ===== 4.2 ~ 8.0 : 표지 =====
+    if (t < 8.0) {
+        const k = t - 4.2;
+        drawCover(IMG.cover, 1.14 - .1 * easeOut(clamp(k / 3.8)), 0, 0, 1, `brightness(${.85 + .15 * prog(k, 0, .8)}) contrast(1.08)`);
+        lightSweep(prog(k, .55, 1.9), .28);
+        embers(t, 55, .9);
+        vignette(.55);
+        const tag = easeOut(prog(k, 1.1, 1.9)) * (1 - prog(t, 7.6, 8.0));
+        ctx.save(); ctx.globalAlpha = tag; ctx.fillStyle = '#d9b06a';
+        ctx.fillRect(W / 2 - 170 * tag, H - 128, 340 * tag, 1.2); ctx.restore();
+        text('NEW  PARTY  RAID', W / 2, H - 82, { font: "30px Cinzel", ls: 14, alpha: tag, grad: GOLD, glow: 'rgba(0,0,0,.8)', glowSize: 16 });
+        flashOverlay(1 - easeOut(prog(k, 0, .6)));
+        blackOverlay(prog(t, 7.75, 8.0) * .6);
+        grain(t);
+        return;
+    }
+    // ===== 8.0 ~ 40.5 : 실제 플레이 =====
+    if (t < 40.5) {
+        const i = SHOTS.findIndex(s => t >= s.a && t < s.b);
+        const s = SHOTS[i];
+        await drawShot(s, t);
+        // 위플래쉬 잔향 등장의 붉은 기운
+        if (t >= 32.6 && t < 35.7) {
+            const q = prog(t, 33.8, 35.6);
+            ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = `rgba(160,20,20,${q * .35})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+        }
+        grade(t > 35.7 ? 30 : 0);
+        vignette(.5);
+        if (t >= 35.7) embers(t, 45, .55, 'red');
+        // 텍스트
+        chapter(t, 8.1, 11.2, 'CHAPTER  I', '조각', '1관문');
+        subtitle(t, 11.6, 13.7, '조각의 파편들이 무수히 쏟아집니다.');
+        subtitle(t, 13.9, 15.35, '조각의 피부가 윤택해집니다.');
+        subtitle(t, 16.85, 17.95, '네 개의 기둥이 비명을 지릅니다.');
+        cutin(t, 18.25, 20.1, IMG.eyes, 'SUPPORT', '눈뜬 장님', '“내가 맞춰주겠다.”');
+        chapter(t, 22.8, 25.25, 'CHAPTER  II', '위플래쉬', '2관문');
+        subtitle(t, 25.3, 26.35, '삐비빅');
+        subtitle(t, 26.5, 27.95, '삐빅. 삐빅.');
+        subtitle(t, 28.05, 29.15, '우우웅.... 위잉....');
+        subtitle(t, 29.3, 31.3, '플레이어들에게 [시련]이 주어집니다.');
+        // 틀이 깨졌다
+        if (t >= 33.9 && t < 35.75) {
+            const k = t - 33.9, al = Math.min(easeOut(clamp(k / .25)), 1 - prog(t, 35.45, 35.75));
+            const sh = (1 - clamp(k / .5)) * 14;
+            const jx = (rand(Math.floor(t * 60)) - .5) * sh, jy = (rand(Math.floor(t * 60) + 3) - .5) * sh;
+            const sc = 1.25 - .25 * easeOut(clamp(k / .4));
+            ctx.save(); ctx.translate(W / 2 + jx, H / 2 + jy); ctx.scale(sc, sc);
+            text('틀이 깨졌다', -6, 40, { font: "700 150px NSerif", ls: 18, alpha: al * .7, color: '#ff2a2a', blur: 2 });
+            text('틀이 깨졌다', 6, 40, { font: "700 150px NSerif", ls: 18, alpha: al * .5, color: '#2ad4ff', blur: 2 });
+            text('틀이 깨졌다', 0, 40, { font: "700 150px NSerif", ls: 18, alpha: al, color: '#fff2ec', glow: 'rgba(255,40,40,.9)', glowSize: 40 });
+            ctx.restore();
+            flashOverlay((1 - clamp(k / .18)) * .5, '255,90,70');
+        }
+        // 잔향 표제
+        if (t >= 36.3 && t < 38.7) {
+            const al = Math.min(easeOut(prog(t, 36.3, 37.1)), 1 - prog(t, 38.35, 38.7));
+            text('HARD  ·  NIGHTMARE', W - 120, H - 205, { font: "24px Cinzel", align: 'right', ls: 8, alpha: al, color: '#ff8f84', glow: 'rgba(0,0,0,.9)', glowSize: 14 });
+            ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = '#c0423b'; ctx.fillRect(W - 120 - 380 * easeOut(prog(t, 36.4, 37.2)), H - 185, 380 * easeOut(prog(t, 36.4, 37.2)), 1.5); ctx.restore();
+            text('위플래쉬 : 잔향', W - 116, H - 100, { font: "700 84px NSerif", align: 'right', ls: 6, alpha: al, color: '#fff0ea', glow: 'rgba(120,0,0,.9)', glowSize: 34 });
+        }
+        // 전환 효과
+        const k = t - s.a;
+        if (s.inT === 'flash') flashOverlay((1 - clamp(k / .2)) * .75);
+        if (s.inT === 'white') flashOverlay(1 - easeOut(clamp(k / .9)));
+        if (s.inT === 'dip') blackOverlay(1 - easeOut(clamp(k / .5)));
+        if (t > 32.6 && t < 35.7) flashOverlay(prog(t, 35.35, 35.7));
+        if (t > 40.1) blackOverlay(prog(t, 40.1, 40.5));
+        grain(t);
+        return;
+    }
+    // ===== 40.5 ~ 43.6 : 클리어 / 보상 =====
+    if (t < 43.6) {
+        const k = t - 40.5;
+        drawCover(IMG.echo, 1.12 + k * .02, -120, 0, 1, 'blur(14px) brightness(.38) saturate(.9)');
+        embers(t, 60, .8);
+        vignette(.7);
+        const res = await loadImg('frames/' + frameAt(125.8));
+        // 실제 보상 창 (녹화 화면 740,262,440,956)
+        const pin = easeOut(prog(k, .25, .85));
+        const pw = 440 * 1.02, ph = 956 * 1.02, px = W - 300 - pw / 2 + (1 - pin) * 120, py = (H - ph) / 2 + 6;
+        ctx.save(); ctx.globalAlpha = pin; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 50;
+        ctx.drawImage(res, 740, 262, 440, 956, px, py, pw, ph); ctx.restore();
+        ctx.save(); ctx.globalAlpha = pin * .9; ctx.strokeStyle = '#d9b06a'; ctx.lineWidth = 1.5; ctx.strokeRect(px - 8, py - 8, pw + 16, ph + 16); ctx.restore();
+        const a1 = easeOut(prog(k, .1, .7));
+        text('RAID  CLEAR', 150 + (1 - a1) * -40, H / 2 - 40, { font: "96px Cinzel", align: 'left', ls: 16, alpha: a1, grad: GOLD, glow: 'rgba(255,190,90,.35)', glowSize: 40 });
+        ctx.save(); ctx.globalAlpha = a1; ctx.fillStyle = '#d9b06a'; ctx.fillRect(154, H / 2 - 4, 560 * easeOut(prog(k, .3, 1.1)), 1.5); ctx.restore();
+        const a2 = easeOut(prog(k, .6, 1.2));
+        text('아티팩트 · 이세계 파편 · 레전더리 펫', 154, H / 2 + 60, { font: "500 34px NSerif", align: 'left', ls: 3, alpha: a2, color: '#f2e6cf' });
+        text('잠든 보물이 주인을 기다립니다', 154, H / 2 + 112, { font: "300 26px Pret", align: 'left', ls: 4, alpha: a2 * .8, color: '#cfc2a8' });
+        lightSweep(prog(k, .9, 2.2), .18);
+        flashOverlay((1 - easeOut(clamp(k / .5))) * .9);
+        blackOverlay(prog(t, 43.2, 43.6));
+        grain(t);
+        return;
+    }
+    // ===== 43.6 ~ 50 : 엔딩 =====
+    {
+        const k = t - 43.6;
+        drawCover(IMG.field, 1.06 + k * .012, 0, 0, easeOut(clamp(k / 1.2)), 'brightness(.5) saturate(.75) contrast(1.1)');
+        ctx.save(); ctx.globalCompositeOperation = 'screen';
+        const g = ctx.createRadialGradient(W / 2, H * .42, 10, W / 2, H * .42, 700);
+        g.addColorStop(0, 'rgba(255,190,110,.12)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+        embers(t, 80, .9);
+        vignette(.75);
+        blackOverlay(.25);
+        const a1 = easeOut(prog(k, .3, 1.3));
+        ctx.save(); ctx.translate(W / 2, H / 2 - 40); const sc = 1.06 - .06 * a1; ctx.scale(sc, sc);
+        text('E세계 대저택', 0, 0, { font: "150px BHS", ls: 10, alpha: a1, grad: [[0, '#fff6dc'], [.5, '#f1c777'], [1, '#9c6a2a']], glow: 'rgba(255,170,80,.35)', glowSize: 50, blur: (1 - a1) * 8 });
+        ctx.restore();
+        const a2 = easeOut(prog(k, .9, 1.6));
+        text('PARTY  RAID', W / 2, H / 2 + 34, { font: "34px Cinzel", ls: 26, alpha: a2, grad: GOLD });
+        ctx.save(); ctx.globalAlpha = a2; ctx.fillStyle = '#d9b06a';
+        ctx.fillRect(W / 2 - 330 * a2, H / 2 + 62, 660 * a2, 1.2); ctx.restore();
+        // 난이도
+        const diffs = [['NORMAL', '#cfd8e6'], ['HARD', '#ffb35c'], ['NIGHTMARE', '#ff5d55']];
+        diffs.forEach(([d, c], i) => {
+            const a = easeOut(prog(k, 1.4 + i * .18, 2.0 + i * .18));
+            const x = W / 2 + (i - 1) * 250, y = H / 2 + 136;
+            ctx.save(); ctx.globalAlpha = a * .9; ctx.strokeStyle = c; ctx.lineWidth = 1.5;
+            ctx.strokeRect(x - 105, y - 34 + (1 - a) * 10, 210, 50); ctx.restore();
+            text(d, x, y + (1 - a) * 10, { font: "24px Cinzel", ls: 6, alpha: a, color: c });
+        });
+        const a3 = easeOut(prog(k, 2.2, 2.9));
+        text('입장 Lv.141  ·  1–4인 파티', W / 2, H / 2 + 236, { font: "600 30px Pret", ls: 6, alpha: a3, color: '#efe5d2' });
+        const a4 = easeOut(prog(k, 2.8, 3.6));
+        text('지금, 저택의 문을 두드리십시오', W / 2, H - 92, { font: "500 34px NSerif", ls: 8, alpha: a4, color: '#e9cf98', glow: 'rgba(0,0,0,.9)' });
+        lightSweep(prog(k, 1.2, 2.6), .16);
+        blackOverlay(prog(t, 49.0, 50.0));
+        grain(t, .06);
+    }
+}
+
+async function init() {
+    const ix = await (await fetch('index.json')).json();
+    FR = ix.frames.map(f => ({ file: f.file, t: f.ts - ix.wallStart }));
+    for (const [k, src] of Object.entries({ field: 'a/field.png', cover: 'a/cover.png', echo: 'a/echo.png', eyes: 'a/eyes.png' })) IMG[k] = await loadImg(src);
+    await document.fonts.load('150px BHS'); await document.fonts.load('700 50px NSerif'); await document.fonts.load('500 50px NSerif');
+    await document.fonts.load('30px Cinzel'); await document.fonts.load('600 30px Pret'); await document.fonts.load('300 30px Pret');
+    makeGrain();
+    return true;
+}
+window.init = init;
+window.render = render;
+window.DURATION = 50;
+</script></body></html>
