@@ -482,6 +482,76 @@ test('타부자고의 즉시 패턴 효과는 실제 발동과 누적 단계에 
     assert.ok(room.members[0].runtime.hp < before);
 });
 
+test('확실한 딜링은 마지막 3초에만 전조를 보내고 기존 시점과 피해량으로 공격한다', async () => {
+    const room = await battle(); room.questId = 'butaGame'; room.phaseIndex = 0;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[0]);
+    const st = mon.bossState, handler = party.__test.BOSS_HANDLERS[mon.bossKey], member = room.members[0];
+    handler.onSpawn(room, mon); st.hpGimmicks = [];
+    st.puzzleTimer = st.reflectTimer = st.mochiTimer = 999; st.dealingCount = 2; st.dealingTimer = 4;
+    const hp = member.runtime.hp, sent = [];
+    member.sseRes = { writableEnded: false, write: text => sent.push(text), end() {} };
+    handler.step(room, mon, .2);
+    assert.ok(!party.__test.serializeMonster(mon).patternEvents.some(event => event.effect === 'dealing-ready'));
+    st.dealingTimer = 3; handler.step(room, mon, .2);
+    const warning = party.__test.serializeMonster(mon).patternEvents.find(event => event.effect === 'dealing-ready');
+    assert.equal(warning.duration, 3); assert.equal(warning.remain, 2.8); assert.equal(member.runtime.hp, hp);
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.find(event => event.effect === 'dealing-ready').id, warning.id);
+    st.reflectWindow = 1;
+    assert.ok(!party.__test.serializeMonster(mon).patternEvents.some(event => event.effect === 'dealing-ready'));
+    st.reflectWindow = 0; mon.stunRemain = 1;
+    assert.ok(!party.__test.serializeMonster(mon).patternEvents.some(event => event.effect === 'dealing-ready'));
+    mon.stunRemain = 0; st.dealingTimer = .2; handler.step(room, mon, .2);
+    assert.equal(hp - member.runtime.hp, Math.ceil(member.runtime.hpMax * .3));
+    assert.equal(st.dealingTimer, 20); assert.equal(st.dealingCount, 0);
+    assert.ok(party.__test.serializeMonster(mon).patternEvents.some(event => event.effect === 'dealing-strike'));
+    assert.ok(!party.__test.serializeMonster(mon).patternEvents.some(event => event.effect === 'dealing-ready'));
+    assert.ok(!sent.includes('event: notice\n'));
+    st.dealingCount = 2; st.dealingTimer = 3;
+    assert.notEqual(party.__test.serializeMonster(mon).patternEvents.find(event => event.effect === 'dealing-ready').id, warning.id);
+});
+
+test('타부자고의 외침은 말풍선으로 전달하며 생존자의 서로 다른 응답이 충분하면 즉시 한 번만 그로기된다', async () => {
+    const room = await battle('normal', 3); room.questId = 'butaGame'; room.phaseIndex = 0;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[0]);
+    party.__test.BOSS_HANDLERS[mon.bossKey].onSpawn(room, mon);
+    const sent = [];
+    room.members[0].sseRes = { writableEnded: false, write: text => sent.push(text), end() {} };
+    mon.hp = mon.hpMax * mon.bossState.hpGimmicks[0].ratio * .99; tick(room);
+    const g = mon.bossState.chatGimmick, call = party.__test.serializeMonster(mon).patternEvents.find(event => event.presentation === 'speech');
+    assert.equal(g.need, 2); assert.equal(call.message, '야, 김쁠뿡!!!!!!'); assert.equal(call.effect, 'tabujago-call');
+    assert.equal(party.__test.serializeMonster(mon).patternEvents.find(event => event.presentation === 'speech').id, call.id);
+    assert.equal((await request('/api/party/chat', { text: '   ' })).status, 400); assert.equal(g.responded.size, 0);
+    assert.equal((await request('/api/party/chat', { text: '대답' })).status, 200);
+    assert.equal((await request('/api/party/chat', { text: '또 대답' })).status, 200); assert.equal(g.responded.size, 1);
+    room.members[2].runtime.dead = true; room.members[2].runtime.hp = 0;
+    assert.equal((await request('/api/party/chat', { text: '사망자 대답' }, seeds[2].name)).status, 200); assert.equal(g.responded.size, 1);
+    assert.equal(mon.stunRemain, 0); assert.ok(mon.bossState.gimmickActive);
+    const gauge = room.supportGauge;
+    assert.equal((await request('/api/party/chat', { text: '두 번째 생존자 대답' }, seeds[1].name)).status, 200);
+    assert.equal(mon.bossState.chatGimmick, null); assert.equal(mon.bossState.gimmickActive, null);
+    assert.equal(mon.stunRemain, 8); assert.equal(mon.debuffs.find(debuff => debuff.id === 'groggyTakenUp').value, .2);
+    const cry = party.__test.serializeMonster(mon).patternEvents.find(event => event.presentation === 'speech');
+    assert.equal(cry.message, '으악!'); assert.equal(cry.effect, 'tabujago-cry'); assert.notEqual(cry.id, call.id);
+    assert.equal(room.supportGauge, gauge + 20);
+    assert.equal((await request('/api/party/chat', { text: '추가 대답' }, seeds[1].name)).status, 200);
+    assert.equal(room.supportGauge, gauge + 20); assert.ok(!sent.includes('event: notice\n'));
+});
+
+test('타부자고 응답 시간 초과는 기존 전멸 판정을 유지하고 다른 채팅 기믹은 마감 시점에 판정한다', async () => {
+    const room = await battle(); room.questId = 'butaGame'; room.phaseIndex = 0;
+    const mon = room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[0]);
+    party.__test.BOSS_HANDLERS[mon.bossKey].onSpawn(room, mon);
+    mon.hp = mon.hpMax * mon.bossState.hpGimmicks[0].ratio * .99; tick(room);
+    mon.bossState.chatGimmick.remain = .2; tick(room);
+    assert.equal(room.state, 'failed'); assert.equal(mon.stunRemain, 0);
+    const other = await battle('normal', 3); let finished = 0;
+    party.__test.startChatGimmick(other, other.monster, { label: '다른 채팅 기믹', seconds: 10, onFinish: () => { finished++; } });
+    party.chat(seeds[0].name, '대답'); party.chat(seeds[1].name, '대답');
+    assert.equal(finished, 0); assert.equal(other.monster.bossState.chatGimmick.responded.size, 2);
+    other.monster.bossState.chatGimmick.remain = .2; tick(other);
+    assert.equal(finished, 1); assert.equal(other.monster.bossState.chatGimmick, null);
+});
+
 test('잉여왕의 주시, 레인 보호막과 저지 시전은 대상자와 참여 상태를 중복 없이 제공한다', async () => {
     const room = await battle('normal', 3); room.questId = 'butaGame'; room.phaseIndex = 1;
     room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[1]);

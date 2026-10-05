@@ -13,7 +13,7 @@
     };
     // 즉시 발동한 실제 사건. 카드 없이 효과만 보여 주고, 서버 목록에서 빠져도 끝까지 그린다.
     const INSTANT = new Set(['regenerate', 'dark-blast', 'crit-reflect', 'revive', 'puzzle', 'dealing', 'dealing-strike', 'bounce']);
-    const VISUAL_ONLY = new Set(['harden', 'shards', 'resonance', 'echo', 'wall', 'rupture', ...INSTANT]);
+    const VISUAL_ONLY = new Set(['harden', 'shards', 'resonance', 'echo', 'wall', 'rupture', 'dealing-ready', ...INSTANT]);
     // 자연 종료 직전에 빠지면 마무리(폭발, 착탄, 사라짐)를 이어서 그린다.
     const TAIL = new Set(['resonance', 'echo', 'shards', 'shatter', 'purge', 'execute', 'flame', 'cannon', 'empower', 'dark-shield', 'mochi-shield', 'rain-shield', 'reflect']);
     const CAST_IMPACT = new Set(['purge', 'execute', 'flame', 'cannon']);
@@ -99,6 +99,7 @@
         case 'purge': return [[0, 'purge', .4]];
         case 'empower': return [[0, 'empower', .4], [.18, 'growl', .3]];
         case 'dealing': return [[0, 'dealing', .4]];
+        case 'dealing-ready': return [[0, 'dealing', .3]];
         case 'revive': return [[0, 'revive', .4]];
         // 시전 끝의 실제 타격만 한 번 더 울린다.
         case 'flame': return [[0, 'fire', .35], [duration, 'fireBlast', .6]];
@@ -235,7 +236,7 @@
             if (art.includes('black-hodu')) texture('mist');
             if (art.includes('tabujago')) texture('puzzle');
             const seen = new Set(), announcements = [];
-            const events = [...(view.events || [])];
+            const events = (view.events || []).filter(event => event.presentation !== 'speech');
             if (view.form === 'transition') events.push({ id: 'form-transition', kind: 'transition', duration: 4, remain: view.transitionRemain });
             // 직접 본 보호막 시련이 성공으로 끝났을 때만 깨지는 연출을 붙인다.
             const outcome = view.outcome;
@@ -288,6 +289,7 @@
             const b = spriteRect;
             return b ? [b.x + b.w * u, b.y + b.h * v] : [scene.x + scene.w * .5, scene.y + scene.h * (.3 + v * .4)];
         }
+        const scenePoint = (u, v) => spriteDrawRect ? [spriteDrawRect.x + spriteDrawRect.w * u, spriteDrawRect.y + spriteDrawRect.h * v] : point(u, v);
         const unit = () => Math.max(.6, Math.min(1.6, Math.min(scene.w, scene.h) / 400));
         const groundY = () => spriteRect ? Math.min(scene.y + scene.h - 6, spriteRect.y + spriteRect.h * .97) : scene.y + scene.h * .86;
         function glow(x, y, r, c, alpha, add = true) {
@@ -1158,9 +1160,42 @@
             }
             glint(x, y, 10 * u, -.5, show * .4);
         }
+        // 마지막 3초: 원본 무기 좌표에 열기가 올라가고, 몸의 기운이 창끝으로 응축된다.
+        function dealingReady(t, duration, reduced, seed) {
+            const [hx, hy] = scenePoint(.403, .445), [gx, gy] = scenePoint(.444, .675), [cx, cy] = scenePoint(.50, .63);
+            const u = unit(), p = clamp(t / Math.max(.1, duration)), heat = ease(clamp(p / .65)), compress = clamp((p - .6) / .27);
+            const show = clamp(t / .25) * (p > .96 ? .35 : 1), rise = reduced ? 1 : ease(clamp(p / .6));
+            // 빛은 실제 창의 알파 안에만 남긴다. 무기를 새 도형으로 덧그리지 않는다.
+            skin(m => {
+                const g = m.createLinearGradient(gx, gy, hx, hy);
+                g.addColorStop(0, rgba([234, 103, 32], .12));
+                g.addColorStop(Math.max(.01, rise - .25), rgba(BRONZE, .15));
+                g.addColorStop(Math.min(.99, rise), rgba(BRONZE_HOT, .85));
+                g.addColorStop(1, rgba(BRONZE, rise >= .99 ? .8 : 0));
+                m.strokeStyle = g; m.lineWidth = 14 * u; m.lineCap = 'round';
+                m.beginPath(); m.moveTo(gx, gy); m.lineTo(hx, hy); m.stroke();
+                for (const tip of [[.386, .303], [.406, .331], [.43, .389]]) {
+                    const [tx, ty] = scenePoint(...tip);
+                    const shine = m.createLinearGradient(hx, hy, tx, ty);
+                    shine.addColorStop(0, rgba(BRONZE_HOT, heat)); shine.addColorStop(1, rgba([255, 153, 68], heat * .65));
+                    m.strokeStyle = shine; m.lineWidth = 12 * u;
+                    m.beginPath(); m.moveTo(hx, hy); m.lineTo(tx, ty); m.stroke();
+                }
+            }, show * (.35 + heat * .55), 'lighter');
+            skin(m => mote(m, cx, cy, 24 * u, BRONZE, (1 - compress) * heat * .25), show, 'lighter');
+            behind(m => mote(m, hx, hy - 14 * u, (25 - compress * 10) * u, BRONZE, heat * .3), show);
+            glow(hx, hy, (14 - compress * 5) * u, BRONZE_HOT, heat * compress * show * .45);
+            if (!reduced) for (let i = 0; i < 7; i++) {
+                const age = (p - .35 - i * .065) / .25;
+                if (age <= 0 || age >= 1) continue;
+                const q = ease(age), bend = (rand(seed + i) - .5) * 18 * u;
+                glow(cx + (hx - cx) * q + Math.sin(q * Math.PI) * bend, cy + (hy - cy) * q, (1.2 + rand(seed + i + 11)) * u, BRONZE_HOT, Math.sin(age * Math.PI) * show * .6);
+            }
+            if (compress > 0 && compress < 1) glint(hx, hy - 8 * u, 18 * u, -1.35, Math.sin(compress * Math.PI) * show * .45);
+        }
         // 확실한 딜링: 무기에 축적된 열기가 한 번의 넓은 궤적으로 터진다.
         function dealingStrike(t, reduced) {
-            const [x, y] = point(.5, .5), b = body(), u = unit(), AMBER = [255, 150, 50], AMBER_HOT = [255, 232, 186];
+            const [x, y] = scenePoint(.403, .445), b = body(), u = unit(), AMBER = [255, 150, 50], AMBER_HOT = [255, 232, 186];
             ctx.lineCap = 'round'; ctx.globalCompositeOperation = 'lighter';
             if (t < .25) glow(x, y, Math.min(b.w, b.h) * (.12 + .1 * clamp(t / .25)), AMBER, .35 * (1 - t / .25));
             if (t > .18 && t < .45) glow(x, y, b.w * .3, AMBER_HOT, (1 - Math.abs(t - .25) / .2) * .7);
@@ -1248,6 +1283,7 @@
             else if (kind === 'revive') revive(t, duration, reduced);
             else if (kind === 'puzzle') puzzle(t, reduced, seed);
             else if (kind === 'dealing') dealing(t, duration, ev, reduced);
+            else if (kind === 'dealing-ready') dealingReady(t, duration, reduced, seed);
             else if (kind === 'dealing-strike') dealingStrike(t, reduced);
             else if (kind === 'bounce') bounce(t, ev, reduced);
             else if (kind === 'mark') markCue(t, ev, reduced);

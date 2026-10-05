@@ -6,6 +6,7 @@
 }
 .pq-screen[data-screen="play"].raid-dock[data-support="1"]:not(.result-mode){--act-h:188px}
 .raid-dock>.pq-game-top{grid-area:top}
+.pq-chat-open{display:none}
 .raid-dock>.pq-game-stagewrap{grid-area:stage;min-height:0;min-width:0}
 .raid-dock>.mr-root{grid-area:stage;align-self:end;justify-self:center;width:calc(100% - 12px);max-width:560px;max-height:calc(100% - var(--hud-h) - 12px);margin-bottom:6px;position:relative;z-index:7;min-height:0;min-width:0}
 .raid-dock>.pq-game-party{grid-area:party;min-height:0;min-width:0;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,var(--card-w));justify-content:center}
@@ -53,6 +54,7 @@
 .pq-scene-plane>.pq-stage-background{object-fit:fill}
 .raid-dock .pq-scene-plane>.pq-scene-foreground{left:0;right:auto;top:0;bottom:auto;width:100%;height:100%;display:block;animation:none}
 .pq-scene-plane>.pq-scene-foreground img{width:100%;height:100%;max-width:none;max-height:none;object-fit:fill;filter:none}
+.raid-dock .pq-scene-plane>.pq-scene-foreground.groggy img{filter:grayscale(.65) brightness(.7);transition:filter .3s ease-out}
 .pq-scene-plane>.pq-scene-foreground[data-framed="0"] img{object-fit:contain;object-position:center bottom;filter:drop-shadow(0 4px 8px #0009)}
 .pq-stage-boss.registered-scene::before{display:none}
 .pq-gate-layer{position:absolute;inset:0;animation-duration:3s;animation-timing-function:ease;animation-fill-mode:both;animation-delay:var(--gate-offset,0ms)}
@@ -84,10 +86,13 @@
   .pq-screen[data-screen="play"].raid-dock:not(.result-mode){--portrait-h:88px;--card-w:88px}
 }
 @media(max-width:899px),(max-height:699px){
-  .raid-dock:is([data-mr="event"],[data-mr="transition"]) .pq-my-vitals{opacity:0;pointer-events:none}
-  .raid-dock:not(.spectate):is([data-mr="event"],[data-mr="transition"]) .pq-game-chat:not(.open){opacity:0;pointer-events:none}
+  .raid-dock .pq-chat-open{display:block;min-width:44px;flex:0 0 auto}
+  .raid-dock .pq-game-chat.open{z-index:9}
+  .raid-dock:is([data-mr="event"],[data-mr="transition"],[data-speech="1"]) .pq-my-vitals{opacity:0;pointer-events:none}
+  .raid-dock:not(.spectate):is([data-mr="event"],[data-mr="transition"],[data-speech="1"]) .pq-game-chat:not(.open){opacity:0;pointer-events:none}
   .raid-dock.spectate>.mr-root{margin-bottom:78px;max-height:calc(100% - var(--hud-h) - 84px)}
 }
+@media(max-width:360px){.raid-dock .pq-game-phase{display:none}}
 @media(max-width:620px),(orientation:landscape) and (max-height:500px){
   .raid-dock .mr-head{display:none}
   .raid-dock .mr-ev{padding:6px 9px 7px 12px;gap:4px}

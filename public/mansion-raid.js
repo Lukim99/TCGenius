@@ -656,6 +656,7 @@
         const seen = new Set();
         for (const ev of Array.isArray(view.events) ? view.events : []) {
             if (!ev || ev.id == null) continue;
+            if (ev.presentation === 'speech') continue;
             if (st.ctx.visualOnly?.(ev)) continue;
             const id = String(ev.id);
             if (seen.has(id)) continue;

@@ -715,7 +715,10 @@
         node.textContent = '키 입력...';
     }
     function stopKeyCapture() {
-        if (kbCapture && kbCapture.node) kbCapture.node.classList.remove('listening');
+        if (kbCapture && kbCapture.node) {
+            kbCapture.node.classList.remove('listening');
+            kbCapture.node.textContent = keyLabel(kbCapture.row.get());
+        }
         kbCapture = null;
     }
 
@@ -876,6 +879,19 @@
         const snap = currentRoom, monster = snap?.monster;
         const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() ? null
             : monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
+        const speech = view?.events?.find(event => event.presentation === 'speech');
+        document.querySelector('.pq-screen[data-screen="play"]').dataset.speech = speech ? '1' : '';
+        const bubble = $('#pqBossSpeech');
+        bubble.hidden = !speech;
+        if (speech) {
+            if (bubble.dataset.event !== String(speech.id)) {
+                bubble.dataset.event = String(speech.id);
+                bubble.textContent = speech.message;
+            }
+            bubble.classList.toggle('cry', speech.effect === 'tabujago-cry');
+            syncBossSpeech();
+        }
+        $('#pqBossIllust')?.classList.toggle('groggy', tabujagoGroggy(monster));
         if (!raidEffects && window.RaidPatternFX) raidEffects = RaidPatternFX.create($('#pqRaidFx'));
         const purification = snap?.state === 'inProgress' && snap.phaseType === 'mob' && !isPhaseTransitionActive()
             ? { progress: Math.min(1, (snap.sharedKillCount || 0) / Math.max(1, snap.killTarget)), complete: snap.sharedKillCount >= snap.killTarget } : null;
@@ -1417,7 +1433,22 @@
             const width = Math.max(parent.clientWidth, parent.clientHeight * aspect);
             plane.style.width = width + 'px'; plane.style.height = width / aspect + 'px';
         });
+        syncBossSpeech();
     }
+    function syncBossSpeech() {
+        const bubble = $('#pqBossSpeech'), image = $('#pqBossIllustImg');
+        if (bubble.hidden || !image) return;
+        const stage = bubble.parentElement.getBoundingClientRect(), art = image.getBoundingClientRect();
+        const x = art.left - stage.left + art.width * .5, y = art.top - stage.top + art.height * .6;
+        const left = Math.max(8, Math.min(x - 10, stage.width - bubble.offsetWidth - 12));
+        const hud = $('#pqBossStage .pq-stage-hud')?.getBoundingClientRect();
+        const below = hud && y - bubble.offsetHeight - 14 < hud.bottom - stage.top + 4;
+        bubble.classList.toggle('below', !!below);
+        bubble.style.setProperty('--speech-x', (left + 10) + 'px');
+        bubble.style.setProperty('--speech-y', (below ? y + bubble.offsetHeight + 28 : y) + 'px');
+        bubble.style.setProperty('--speech-tail', Math.max(7, Math.min(bubble.offsetWidth - 28, x - left - 1)) + 'px');
+    }
+    const tabujagoGroggy = monster => monster?.image?.includes('tabujago-scene') && Number(monster.stunRemain || 0) > 0;
 
     function renderMobStage(snap) {
         const wrap = el('div', { id: 'pqMobStage', class: 'pq-stage-mob' });
@@ -1640,7 +1671,7 @@
         }
         const hud = el('div', { class: 'pq-stage-hud' });
         hud.append(el('div', { class: 'pq-boss-head' },
-            el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ('기절 ' + Number(m.stunRemain || 0).toFixed(1) + 's') : ''))
+            el('div', { class: 'pq-boss-name' }, m.name, el('span', { id: 'pqBossStun', style: Number(m.stunRemain || 0) > 0 ? 'margin-left:8px;color:#fbbf24;font-size:12px' : 'display:none' }, Number(m.stunRemain || 0) > 0 ? ((tabujagoGroggy(m) ? '그로기 ' : '기절 ') + Number(m.stunRemain || 0).toFixed(1) + 's') : ''))
         ));
         const linesText = bossHpLinesText(m);
         const hpBar = el('div', { class: 'pq-prog hp pq-boss-hpbar' },
@@ -1697,7 +1728,7 @@
         if (stun) {
             const remain = Number(monster.stunRemain || 0);
             stun.style.display = remain > 0 ? '' : 'none';
-            stun.textContent = remain > 0 ? ('기절 ' + remain.toFixed(1) + 's') : '';
+            stun.textContent = remain > 0 ? ((tabujagoGroggy(monster) ? '그로기 ' : '기절 ') + remain.toFixed(1) + 's') : '';
         }
     }
 
@@ -2193,22 +2224,43 @@
 
     function openChoiceModal(choices) {
         const root = $('#pqChoiceList');
+        const signature = JSON.stringify(choices);
+        if (root.dataset.choices === signature && $('#pqChoiceBg').classList.contains('active')) return;
+        root.dataset.choices = signature;
         root.replaceChildren();
         const snap = currentRoom;
         const def = snap && snap.questDef ? Object.assign({}, snap.questDef.skills || {}, snap.questDef.extraSkills || {}) : {};
-        for (const sk of choices) {
+        let picking = false;
+        choices.forEach((sk, index) => {
             const sd = def[sk] || {};
             const desc = sd.desc || (sd.type === 'passive' ? '패시브 효과' : '활성 스킬');
-            root.append(el('div', { class: 'pq-choice', onClick: async () => {
+            const meta = el('div', { class: 'pq-choice-meta' });
+            if (sd.type === 'passive') meta.append(el('span', null, '패시브'));
+            else meta.append(el('span', null, 'MP ' + Number(sd.mp || 0)), el('span', null, '재사용 ' + Number(sd.cd || 0) + '초'));
+            const description = el('div', { class: 'desc' });
+            String(desc).split(/\n+|(?<=\.)\s+/).filter(Boolean).forEach(line => {
+                const paragraph = el('p');
+                line.split(/(\d+(?:\.\d+)?%?)/g).forEach(part => paragraph.append(/^\d/.test(part) ? el('strong', null, part) : document.createTextNode(part)));
+                description.append(paragraph);
+            });
+            const select = el('button', { type: 'button', class: 'pq-choice-select', 'aria-label': sk + ' 선택', onClick: async () => {
+                if (picking) return;
+                picking = true;
+                root.querySelectorAll('button').forEach(button => button.disabled = true);
                 try {
                     await api('/api/party/pick-skill', { method: 'POST', body: JSON.stringify({ skill: sk }) });
                     $('#pqChoiceBg').classList.remove('active');
-                } catch (e) { toast(e.message); }
-            } },
-                el('div', { class: 'ttl' }, sk + (sd.type === 'passive' ? ' [패시브]' : '')),
-                el('div', { class: 'desc' }, desc)
+                } catch (e) {
+                    picking = false;
+                    root.querySelectorAll('button').forEach(button => button.disabled = false);
+                    toast(e.message);
+                }
+            } }, '선택');
+            root.append(el('article', { class: 'pq-choice' },
+                el('span', { class: 'pq-choice-number' }, String(index + 1).padStart(2, '0')),
+                el('h4', { class: 'ttl' }, sk), meta, description, select
             ));
-        }
+        });
         $('#pqChoiceBg').classList.add('active');
     }
 
@@ -2403,7 +2455,31 @@
     function openSettings() {
         renderKeybindList();
         syncVolumeUI();
+        showSettingsPage('sound');
         $('#pqKeybindBg').classList.add('active');
+    }
+    function showSettingsPage(page) {
+        stopKeyCapture();
+        const keys = page === 'keys';
+        $('#pqSettingsSoundPage').hidden = keys;
+        $('#pqSettingsKeysPage').hidden = !keys;
+        $('#pqKeybindReset').hidden = !keys;
+        for (const [id, selected] of [['pqSettingsSoundTab', !keys], ['pqSettingsKeysTab', keys]]) {
+            const tab = $('#' + id);
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+        }
+    }
+    for (const [id, page] of [['pqSettingsSoundTab', 'sound'], ['pqSettingsKeysTab', 'keys']]) {
+        const tab = $('#' + id);
+        tab.onclick = () => showSettingsPage(page);
+        tab.onkeydown = event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 'sound' : event.key === 'End' ? 'keys' : page === 'sound' ? 'keys' : 'sound';
+            showSettingsPage(next);
+            $(next === 'keys' ? '#pqSettingsKeysTab' : '#pqSettingsSoundTab').focus();
+        };
     }
     if ($('#pqSettingsBtn')) $('#pqSettingsBtn').onclick = openSettings; // 전투 중에도 조절 가능
     if ($('#pqRoomSettings')) $('#pqRoomSettings').onclick = openSettings;
@@ -2422,16 +2498,26 @@
     // 기본은 접힌 상태(최근 몇 줄만 반투명 표시) — 일러스트를 가리지 않게. 클릭하면 펼침.
     const gameChat = $('#pqGameChat');
     if (gameChat) {
-        gameChat.addEventListener('click', () => {
+        const openChat = () => {
             if (gameChat.classList.contains('open')) return;
             gameChat.classList.add('open');
+            $('#pqChatOpen').setAttribute('aria-expanded', 'true');
             const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight;
             const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight;
-        });
+        };
+        const closeChat = () => {
+            gameChat.classList.remove('open');
+            $('#pqChatOpen').setAttribute('aria-expanded', 'false');
+        };
+        gameChat.addEventListener('click', openChat);
+        $('#pqChatOpen').onclick = () => {
+            if (gameChat.classList.contains('open') && $('#pqTabChat').classList.contains('on')) closeChat();
+            else { showGameTab('chat'); openChat(); }
+        };
         const collapseBtn = $('#pqChatCollapse');
         if (collapseBtn) collapseBtn.onclick = e => {
             e.stopPropagation();
-            gameChat.classList.remove('open');
+            closeChat();
             // 높이가 줄어든 접힌 뷰에서도 최신 줄이 보이게 재고정
             const c = $('#pqPlayChat'); c.scrollTop = c.scrollHeight;
             const l = $('#pqCombatLog'); l.scrollTop = l.scrollHeight;

@@ -1090,7 +1090,7 @@ function serializeBossPatternEvents(mon) {
     const add = (id, label, remain, duration, tag, details) => events.push(Object.assign({ id, kind: 'raidCue', effect: effects[id] || (id.startsWith('mark:') ? 'mark' : 'voice'), label, remain, duration, tag }, details));
     for (const cue of Object.values(st.visualCues || {})) {
         const remain = cue.duration - (nowMs() - cue.startedAt) / 1000;
-        if (remain > 0) add(cue.id, cue.label, remain, cue.duration, '', { effect: cue.effect, amount: cue.amount, count: cue.count, targets: cue.targets });
+        if (remain > 0) add(cue.id, cue.label, remain, cue.duration, '', { effect: cue.effect, amount: cue.amount, count: cue.count, targets: cue.targets, presentation: cue.presentation, message: cue.message });
     }
     if (st.disabled) return events;
     const castEffects = { half: 'purge', execute: 'execute', flame: 'flame', charge: 'charge', cannon: 'cannon' };
@@ -1108,7 +1108,13 @@ function serializeBossPatternEvents(mon) {
     }
     if (st.chatGimmick) {
         const g = st.chatGimmick;
-        add(g.uiId || 'chat:' + g.label, g.label, g.remain, g.duration, '채팅', { responded: Array.from(g.responded), need: g.need, requiresResponse: true });
+        add(g.uiId || 'chat:' + g.label, g.label, g.remain, g.duration, '채팅', { effect: g.effect || 'voice', presentation: g.speech ? 'speech' : undefined, message: g.speech, responded: Array.from(g.responded), need: g.need, requiresResponse: true });
+    }
+    if (mon.bossKey === '타부자고' && Number(mon.stunRemain || 0) <= 0 && !st.gimmickActive && !st.casting && !st.reflectWindow && !st.mochiWindow) {
+        const dealing = getMonsterPattern(mon, 'dealingCharge'), duration = Math.min(3, Number(dealing.interval || 20));
+        if (st.dealingCount === Number(dealing.count || 3) - 1 && st.dealingTimer > 0 && st.dealingTimer <= duration) {
+            add('dealing-ready:' + st.dealingCycle, dealing.finishName || '확실한 딜링', st.dealingTimer, duration, '', { effect: 'dealing-ready' });
+        }
     }
     if (Number(st.curseRemain || 0) > 0) add('curse', pattern('curseRevive', '암흑의 저주'), st.curseRemain, Number(getMonsterPattern(mon, 'curseRevive').windowSec || 5), '저주');
     if (Number(st.shieldRemain || 0) > 0) add('role-shield', pattern('roleDamageLock', '칠흑의 방패'), st.shieldRemain, st.shieldDuration, st.shieldRole);
@@ -3538,12 +3544,12 @@ function bossAtk(mon) {
 }
 
 // 그로기(=몬스터 기절) + 선택적 받는 피해 증가 디버프
-function applyBossGroggy(room, mon, seconds, takenDamageUp) {
+function applyBossGroggy(room, mon, seconds, takenDamageUp, notify = true) {
     const sec = Number(seconds || 0);
     mon.stunRemain = Math.max(Number(mon.stunRemain || 0), sec);
     const up = Number(takenDamageUp || 0);
     if (up > 0) addMonsterDebuff(mon, { id: 'groggyTakenUp', type: 'takenDamage', value: up, remain: sec });
-    pushNotice(room, mon.name + ' 그로기 ' + sec + '초' + (up > 0 ? ' / 받는 피해 +' + Math.round(up * 100) + '%' : ''), 'success', 4500);
+    if (notify) pushNotice(room, mon.name + ' 그로기 ' + sec + '초' + (up > 0 ? ' / 받는 피해 +' + Math.round(up * 100) + '%' : ''), 'success', 4500);
 }
 
 // 공대장 지원군 스킬 게이지
@@ -3742,6 +3748,9 @@ function startChatGimmick(room, mon, opts) {
         remain: Number(o.seconds || 10),
         responded: new Set(),
         need: chatGimmickMajority(getAliveMembers(room).length),
+        effect: o.effect,
+        speech: o.speech,
+        finishOnResponse: !!o.finishOnResponse,
         onFinish: o.onFinish || null
     };
     return st.chatGimmick;
@@ -3908,6 +3917,7 @@ function createTabuzagoBossState(monDef) {
         puzzleTimer: Number(find('puzzleThrow').interval || 17),
         dealingTimer: Number(find('dealingCharge').interval || 20),
         dealingCount: 0,
+        dealingCycle: 0,
         reflectTimer: Number(find('reflectWindow').interval || 50),
         reflectWindow: 0,
         reflectAccum: 0,
@@ -3930,15 +3940,19 @@ function onSpawnTabuzago(room, mon) {
 function startTabuzagoChatGimmick(room, mon) {
     const p = getMonsterPattern(mon, 'chatCallGimmick');
     const sec = Number(p.seconds || 7);
-    pushNotice(room, '“야, 김쁠뿡!!!!!!” 타부자고가 파티원을 부릅니다. ' + sec + '초 안에 대답해줘야만 할 것 같습니다.', 'danger', 6000);
+    pushCombat(room, mon.name + ' "야, 김쁠뿡!!!!!!"', 'danger');
     startChatGimmick(room, mon, {
         label: p.name || '김쁠뿡',
         seconds: sec,
+        effect: 'tabujago-call',
+        speech: '야, 김쁠뿡!!!!!!',
+        finishOnResponse: true,
         onFinish: (rm, mo, g) => {
             endBossGimmick(mo);
             if (g.responded.size >= g.need) {
                 pushCombat(rm, mo.name + " '으악!'", 'buff');
-                applyBossGroggy(rm, mo, Number(p.groggy || 8), Number(p.takenDamageUp || 0.2));
+                cueBossEffect(mo, 'tabujago-cry', '으악!', 2.4, { presentation: 'speech', message: '으악!' });
+                applyBossGroggy(rm, mo, Number(p.groggy || 8), Number(p.takenDamageUp || 0.2), false);
                 addSupportGauge(rm, Number(p.gauge || 0));
             } else {
                 wipeParty(rm, '김쁠뿡', mo.name + ' [' + (p.name || '김쁠뿡') + '] 아무도 대답하지 않았다 — 파티 전멸');
@@ -4027,8 +4041,8 @@ function stepTabuzago(room, mon, dt) {
         st.dealingCount += 1;
         if (st.dealingCount >= need) {
             st.dealingCount = 0;
+            st.dealingCycle += 1;
             cueBossEffect(mon, 'dealing-strike', p.finishName || '확실한 딜링', 1.2);
-            pushNotice(room, mon.name + ' — 확실한 딜링 예고', 'danger', 4500);
             const pct = Number(p.targetMaxHpPct || 0.3);
             for (const m of getAliveMembers(room)) {
                 applyFixedDamageToMember(room, m, Math.ceil(Number(m.runtime.hpMax || 0) * pct), mon.name + ' [' + (p.finishName || '확실한 딜링') + ']');
@@ -5525,6 +5539,10 @@ function chat(name, text) {
     if (gimmick) {
         const me = findMember(room, name);
         if (me && me.runtime && !me.runtime.dead) gimmick.responded.add(name);
+        if (gimmick.finishOnResponse && gimmick.responded.size >= gimmick.need) {
+            tickChatGimmick(room, room.monster, gimmick.remain);
+            broadcastRoom(room);
+        }
     }
     return { ok: true };
 }

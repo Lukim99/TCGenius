@@ -9570,11 +9570,13 @@ function renderPartyApp(sess) {
         <div class="pq-game-phase"><span id="pqPhaseLabel">PHASE</span><b id="pqPhaseName">-</b></div>
         <span id="pqSpectatorBadge" class="pq-spectator-badge" hidden>관전</span>
         <div class="pq-enrage" style="display:none" id="pqEnrage"></div>
+        <button class="pq-game-leave pq-chat-open" id="pqChatOpen" type="button" aria-controls="pqGameChat" aria-expanded="false">채팅</button>
         <button class="pq-game-leave" id="pqSettingsBtn" type="button">설정</button>
       </div>
       <div class="pq-game-stagewrap">
         <div id="pqPhaseStage" class="pq-game-stage"></div>
         <canvas id="pqRaidFx" class="pq-raid-fx" aria-hidden="true"></canvas>
+        <div id="pqBossSpeech" class="pq-boss-speech" role="status" aria-live="polite" hidden></div>
         <div class="pq-game-chat" id="pqGameChat">
           <div class="tabs">
             <button type="button" class="on" id="pqTabChat">채팅</button>
@@ -9668,9 +9670,12 @@ function renderPartyApp(sess) {
   </div>
 
   <div class="pq-modal-bg" id="pqChoiceBg">
-    <div class="pq-modal">
-      <h3>스킬 선택</h3>
-      <div style="font-size:12px;color:#94a3b8">페이즈 보상으로 1개를 습득합니다.</div>
+    <div class="pq-modal pq-raid-dialog pq-skill-modal" role="dialog" aria-modal="true" aria-labelledby="pqChoiceTitle">
+      <header class="pq-dialog-head">
+        <span class="pq-dialog-kicker">관문 보상</span>
+        <h3 id="pqChoiceTitle">스킬 선택</h3>
+        <p class="pq-dialog-sub">이번 전투에서 사용할 스킬을 선택하세요.</p>
+      </header>
       <div id="pqChoiceList" class="pq-choice-grid"></div>
     </div>
   </div>
@@ -9697,16 +9702,27 @@ function renderPartyApp(sess) {
   </div>
 
   <div class="pq-modal-bg" id="pqKeybindBg">
-    <div class="pq-modal">
-      <h3>설정</h3>
-      <div class="pq-section-title" style="margin:0">사운드</div>
-      <div class="pq-sound-row"><span>배경음악</span><input type="range" id="pqVolBgm" min="0" max="100" step="1"><b id="pqVolBgmVal">18%</b></div>
-      <div class="pq-sound-row"><span>효과음</span><input type="range" id="pqVolSfx" min="0" max="100" step="1"><b id="pqVolSfxVal">50%</b></div>
-      <div class="pq-section-title" style="margin:6px 0 0">단축키</div>
-      <div style="font-size:12px;color:#94a3b8">항목을 클릭한 뒤 원하는 키를 누르세요. Backspace로 해제, Esc로 취소.</div>
-      <div id="pqKeybindList" class="pq-keybind-list"></div>
-      <div class="pq-actions">
-        <button class="pq-btn" id="pqKeybindReset" type="button">키 기본값</button>
+    <div class="pq-modal pq-raid-dialog pq-settings-modal" role="dialog" aria-modal="true" aria-labelledby="pqSettingsTitle">
+      <header class="pq-dialog-head">
+        <span class="pq-dialog-kicker">레이드</span>
+        <h3 id="pqSettingsTitle">설정</h3>
+      </header>
+      <div class="pq-settings-tabs" role="tablist" aria-label="설정 항목">
+        <button id="pqSettingsSoundTab" class="pq-settings-tab" type="button" role="tab" aria-controls="pqSettingsSoundPage" aria-selected="true">사운드</button>
+        <button id="pqSettingsKeysTab" class="pq-settings-tab" type="button" role="tab" aria-controls="pqSettingsKeysPage" aria-selected="false" tabindex="-1">단축키</button>
+      </div>
+      <div class="pq-settings-body">
+        <section id="pqSettingsSoundPage" class="pq-settings-page" role="tabpanel" aria-labelledby="pqSettingsSoundTab">
+          <div class="pq-sound-row"><label for="pqVolBgm">배경음악</label><input type="range" id="pqVolBgm" min="0" max="100" step="1"><b id="pqVolBgmVal">18%</b></div>
+          <div class="pq-sound-row"><label for="pqVolSfx">효과음</label><input type="range" id="pqVolSfx" min="0" max="100" step="1"><b id="pqVolSfxVal">50%</b></div>
+        </section>
+        <section id="pqSettingsKeysPage" class="pq-settings-page" role="tabpanel" aria-labelledby="pqSettingsKeysTab" hidden>
+          <p class="pq-dialog-sub">항목을 선택한 뒤 키를 누르세요. Backspace로 해제, Esc로 취소.</p>
+          <div id="pqKeybindList" class="pq-keybind-list"></div>
+        </section>
+      </div>
+      <div class="pq-actions pq-dialog-footer">
+        <button class="pq-btn" id="pqKeybindReset" type="button" hidden>키 기본값</button>
         <button class="pq-btn primary" id="pqKeybindClose" type="button">닫기</button>
       </div>
     </div>
