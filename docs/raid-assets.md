@@ -89,7 +89,9 @@ FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kH
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 기존 레이드와 신규 이벤트 준비용 이미지 26개 및 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 기존 레이드와 신규 이벤트 준비용 이미지 26개, 외부 효과음 31개, 직접 편곡한 생일 레이드 1페이즈 BGM 1개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+
+2026-10-05에 `sfx/lukim-birthday-phase1-v1.mp3`를 새로 업로드하고 전체 58개의 MD5, 크기와 MIME 형식이 일치함을 확인했다. 악보, 편곡과 제작 도구 기록은 [생일 레이드 에셋 문서](lukim-birthday-assets.md)에 있다.
 
 2026-10-04에 `eefl-image` 버킷의 현재 사용 파일 26개를 확인했다. 마지막 수정의 신규 이미지 13개를 업로드했으며 모든 파일의 MD5, 크기와 MIME 형식이 일치했다.
 

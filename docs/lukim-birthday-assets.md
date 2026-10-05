@@ -1,6 +1,6 @@
 # 루킴의 생일파티 에셋
 
-2026-10-05 제작. 이벤트 레이드 구현에 앞서 보스, 전투 배경과 BGM 후보를 준비했다. 전투 패턴, 능력치, 보상과 입장 규칙은 아직 구현하지 않았다.
+2026-10-05 제작. 이벤트 레이드 구현에 앞서 보스, 전투 배경과 직접 편곡한 1페이즈 BGM을 준비했다. 이전 Suno 후보는 별도로 보관한다. 전투 패턴, 능력치, 보상과 입장 규칙은 아직 구현하지 않았다.
 
 ## 이미지
 
@@ -40,6 +40,31 @@ Composition: generous EMPTY central arena floor, a large clear cream marble circ
 Light and materials match the boss: warm amber key light from upper LEFT chandeliers, golden candle backlight, soft warm cream bounce, refined burgundy velvet and gold metal. Premium painterly 3D hybrid fantasy game environment, sumptuous surfaces with restrained detail, clear spatial composition, softly atmospheric distance, sharp central floor. Celebratory and magical, no nightclub neon or modern conference room.
 WIDE landscape 16:9. No people, creatures, boss, faces, statues of the boss, text, letters, logos, UI, health bars, watermark, border, or blank colored margins.
 ```
+
+## 1페이즈 직접 편곡 BGM
+
+생일 축하합니다 원곡의 25개 음과 리듬을 그대로 사용해 직접 편곡했다. 첫 음부터 익숙한 선율을 연주하며 76 BPM, 3박자, C장조의 잔잔한 피아노 왈츠로 구성했다. 총 48마디, 약 1분 54초이며 원곡 선율을 다섯 번 반복한다. 낮은 피아노 반주 위에 첼레스타와 현악기를 조용히 더하고 중간에 짧은 간주를 넣었다. 보컬과 드럼은 없다.
+
+| 파일 | 용도 |
+| --- | --- |
+| DB/RPGenius/ui/sfx/lukim-birthday-phase1-v1.mp3 | 게임용 MP3, 44.1kHz 스테레오, 192kbps |
+| output/lukim-birthday/bgm/lukim-birthday-phase1-v1.wav | 무손실 제작 원본 |
+| output/lukim-birthday/bgm/lukim-birthday-phase1-v1.ogg | OGG 출력본 |
+| output/lukim-birthday/bgm/lukim-birthday-phase1-v1.mid | 악보와 악기 설정 |
+| output/lukim-birthday/bgm/lukim-birthday-phase1-v1.json | 제작 수치 기록 |
+| scripts/compose_lukim_birthday_bgm.py | 악보, 편곡과 렌더링 소스 |
+
+악기 소리는 [GeneralUser GS 2.0.3](https://github.com/mrbumpy409/GeneralUser-GS)의 녹음 샘플을 [FluidSynth 2.6.1](https://github.com/FluidSynth/fluidsynth/releases/tag/v2.6.1)로 연주해 만들었다. [GeneralUser GS 라이선스](https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/main/documentation/LICENSE.txt)는 해당 악기를 사용한 개인용 및 상업용 음악 제작을 허용한다. SoundFont와 렌더러 바이너리는 게임이나 Git에 포함하지 않는다. 이 음원은 Suno 생성 파일을 사용하지 않는다.
+
+재현에는 Python의 NumPy, 해당 SoundFont, FluidSynth와 FFmpeg가 필요하다. 도구 경로를 지정해서 실행한다.
+
+```text
+python scripts/compose_lukim_birthday_bgm.py --soundfont GeneralUser-GS.sf2 --fluidsynth fluidsynth.exe --ffmpeg ffmpeg
+```
+
+세 번 이어서 연주한 결과의 가운데 반복 구간을 추출해 이전 음의 여운을 보존했다. 양 끝 8ms만 다듬어 경계 클릭을 줄였으며 곡 전체에는 페이드아웃을 넣지 않았다. 음량은 일정한 배율로 조정했다. 최종 MP3에서 FFmpeg로 측정한 평균 음량은 -21.26 LUFS, 최대 실제 피크는 -7.74 dBTP로 클리핑이 없다. 디코딩한 길이는 WAV 원본과 같은 5,013,474프레임(113.684초)이고 반복 경계의 샘플 차이는 0.000092 이하다.
+
+2026-10-05에 eefl-image 버킷의 `tcgenius/assets/ui/sfx/lukim-birthday-phase1-v1.mp3`로 업로드했다. 파일 크기는 2,729,855바이트, MD5는 `ba19052320be0a8a82244695c4190964`다. 마이그레이션 대상 58개에서 내용, 크기와 MIME 형식이 일치함을 확인했으며 이번에 추가한 MP3 한 개만 새로 업로드했다. 출력 폴더의 원본과 이전 Suno 미리보기는 S3에 올리지 않는다.
 
 ## Suno BGM 후보
 

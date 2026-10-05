@@ -1,4 +1,4 @@
-// 신규 레이드 이미지와 외부 효과음만 업로드한다. 운영 데이터나 원본 이미지는 수정하지 않는다.
+// 신규 레이드 이미지, 외부 효과음과 직접 편곡한 BGM만 업로드한다. 운영 데이터나 원본 이미지는 수정하지 않는다.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -22,7 +22,8 @@ const files = [
         'ward-form', 'obsidian-close', 'mochi-flex', 'rain-veil', 'mirror-glint', 'power-gather', 'life-drain',
         'dark-surge', 'dark-growl', 'dealing-aura', 'revival-bloom', 'fire-ignite', 'fire-erupt', 'sky-load',
         'sky-impact', 'doom-pressure', 'doom-cut', 'healing-absorb', 'dark-impact', 'dealing-cut', 'ground-land',
-        'puzzle-hit', 'raid-clear', 'raid-fail'].map(name => 'sfx/raid/' + name + '-v2.mp3')
+        'puzzle-hit', 'raid-clear', 'raid-fail'].map(name => 'sfx/raid/' + name + '-v2.mp3'),
+    'sfx/lukim-birthday-phase1-v1.mp3'
 ];
 const assets = files.map(file => {
     const body = fs.readFileSync(path.join(root, 'DB', 'RPGenius', 'ui', ...file.split('/')));
