@@ -163,8 +163,8 @@
                 const ev = card.ev;
                 const max = Math.max(1, Number(ev.hpMax) || 1);
                 const serverTime = Date.now() - Number(st.ctx.serverOffset || 0);
-                const steps = !card.expired && ev.growthNextAt ? Math.max(0, 1 + Math.floor((serverTime - ev.growthNextAt) / 100)) : 0;
-                const dmg = Math.min(max, Math.max(0, Number(ev.damage) || 0) + steps * max / 1000);
+                const steps = !card.expired && ev.decayNextAt ? Math.max(0, 1 + Math.floor((serverTime - ev.decayNextAt) / 100)) : 0;
+                const dmg = Math.min(max, Math.max(0, (Number(ev.damage) || 0) - steps * max / 1000));
                 const pct = Math.min(100, dmg / max * 100);
                 card.gFill.style.transform = 'scaleX(' + (pct / 100) + ')';
                 card.gMark.style.left = pct + '%';

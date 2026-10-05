@@ -250,6 +250,8 @@ test('보스와 관문 컷씬은 투명 보스 이미지와 별도의 전투 배
     assert.equal(mon.sprite, true); assert.ok(decodeURIComponent(mon.image).endsWith('레이드/sculpture-scene.png'));
     assert.ok(decodeURIComponent(mon.background).endsWith('레이드/sculpture-hall.png'));
     assert.equal(mon.scene.framed, true); assert.ok(mon.scene.aspect > 1.7);
+    const upcoming = party.getMyRoomSnapshot(seeds[0].name).questDef.phases[1].artwork;
+    assert.ok(decodeURIComponent(upcoming.image).endsWith('레이드/whiplash-scene.png'));
     party.__test.proceedToNextPhase(room);
     const cut = party.getMyRoomSnapshot(seeds[0].name).phaseTransition;
     assert.ok(decodeURIComponent(cut.toImage).endsWith('레이드/whiplash-scene.png'));
@@ -257,6 +259,11 @@ test('보스와 관문 컷씬은 투명 보스 이미지와 별도의 전투 배
     assert.equal(cut.fromScene.framed, true); assert.equal(cut.toScene.framed, true);
     const custom = party.__test.serializeMonster({ ...room.monster, image: 'custom-boss.png' });
     assert.equal(custom.sprite, false); assert.equal(custom.image, '/rpg-ui?file=custom-boss.png');
+    const hardRoom = await battle('hard', 1, 1);
+    const echoArt = party.__test.serializeMonster(hardRoom.monster).mansion.transitionArt;
+    assert.ok(decodeURIComponent(echoArt.image).endsWith('레이드/whiplash-echo-scene.png'));
+    assert.ok(decodeURIComponent(echoArt.background).endsWith('레이드/whiplash-echo-hall.png'));
+    assert.equal(echoArt.scene.framed, true);
 });
 
 test('호두 두 난이도의 어둠 정화와 부하 관문은 전용 배경을 유지하고 호두의 붉은 기운으로 전환한다', async () => {
@@ -1010,9 +1017,11 @@ test('마지막 파티원 전투불능과 기믹 전멸은 3초 연출 시간을
 test('석재는 본체 HP 대신 피해를 받으며 공대장 판정·75% 히든 지원군·히든 칭호가 연결된다', async () => {
     const room = await battle('hard', 2); const mon = room.monster; const event = fixedGimmick(room, 1); const hp = mon.hp;
     party.__test.applyBossHpDamage(room, mon, 100000); assert.equal(mon.hp, hp); assert.equal(event.damage, 100000);
+    assert.equal(raid.view(mon).events[0].carveHits, 1);
     assert.match(raid.action(room, seeds[1].name, { eventId: event.id, action: 'finish' }).error, /공대장/);
     room.supportGauge = 100; assert.match(party.useSupportSkill(seeds[1].name, '눈뜬 장님').error, /공대장/);
     assert.equal(party.useSupportSkill(seeds[0].name, '눈뜬 장님').ok, true); assert.equal(event.damage, event.hpMax * .75);
+    assert.equal(raid.view(mon).events[0].carveHits, 2);
     assert.equal(raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' }).ok, true);
     await Promise.all(room.pendingTitleGrants); const user = await rpg.getRPGUserByName(seeds[0].name);
     assert.ok(rpg.getUnlockedTitles(user).includes('mansionEyes')); assert.equal(room.monster.bossState.gimmickActive, null);
@@ -1030,25 +1039,49 @@ test('석재는 성공 구간 밖에서도 완성 요청을 받아 실패를 판
     }
 });
 
-test('석재는 0.1초마다 0.1% 증가하며 전투 틱 사이의 완성 요청에도 같은 진행률로 판정한다', async () => {
+test('석재는 0.1초마다 0.1% 감소하며 전투 틱 사이의 완성 요청에도 같은 진행률로 판정한다', async () => {
     for (const difficulty of ['normal', 'hard', 'nightmare']) {
         const room = await battle(difficulty); const mon = room.monster;
         let now = Date.now(); const clock = mock.method(Date, 'now', () => now);
         try {
             const event = fixedGimmick(room, 1); const max = event.hpMax;
-            now += 99; assert.equal(raid.view(mon).events[0].damage, 0);
-            now++; assert.equal(raid.view(mon).events[0].damage, max * .001);
-            now += 100; mon.bossState.gimmickActive.tick(room, mon, .2);
-            assert.equal(event.damage, max * .002);
             party.__test.applyBossHpDamage(room, mon, max * .1);
-            assert.equal(event.damage, max * .102, '같은 시점의 공격은 자동 진행을 중복 적용하지 않는다');
-            event.damage = Math.round(max * (event.minPct - .001));
+            now += 99; assert.equal(raid.view(mon).events[0].damage, max * .1);
+            now++; assert.equal(raid.view(mon).events[0].damage, max * .099);
+            now += 100; mon.bossState.gimmickActive.tick(room, mon, .2);
+            assert.equal(event.damage, max * .098);
+            assert.equal(raid.view(mon).events[0].carveHits, 1, '시간 감소는 세공 타격을 만들지 않는다');
+            party.__test.applyBossHpDamage(room, mon, max * .1);
+            assert.equal(event.damage, max * .198, '같은 시점의 공격은 감소량을 중복 적용하지 않는다');
+            event.damage = Math.round(max * (event.minPct + .001));
             now += 100;
             assert.equal(raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' }).ok, true);
             assert.equal(mon.bossState.outcome.ok, true);
             assert.equal(mon.bossState.events.length, 0);
         } finally { clock.mock.restore(); }
     }
+});
+
+test('석재 진행률은 0 아래로 감소하지 않으며 대기 중 감소량을 다음 공격에 이월하지 않는다', async () => {
+    const room = await battle(); const mon = room.monster;
+    let now = Date.now(); const clock = mock.method(Date, 'now', () => now);
+    try {
+        const event = fixedGimmick(room, 1); const max = event.hpMax;
+        now += 1000;
+        assert.equal(raid.view(mon).events[0].damage, 0);
+        party.__test.applyBossHpDamage(room, mon, max * .003);
+        assert.equal(event.damage, max * .003);
+        now += 500;
+        assert.equal(raid.view(mon).events[0].damage, 0);
+        mon.bossState.gimmickActive.tick(room, mon, .5);
+        assert.equal(event.damage, 0);
+        party.__test.applyBossHpDamage(room, mon, max * .01);
+        assert.equal(event.damage, max * .01);
+        event.damage = Math.round(max * event.minPct);
+        now += 100;
+        raid.action(room, seeds[0].name, { eventId: event.id, action: 'finish' });
+        assert.equal(mon.bossState.outcome.ok, false, '틱 사이에도 감소한 수치로 완성 여부를 판정한다');
+    } finally { clock.mock.restore(); }
 });
 
 test('진행 중인 받아쓰기, 수락한 축복, 단단해지기와 조의 의지가 끝난 뒤 체력 기믹을 먼저 시작한다', async () => {

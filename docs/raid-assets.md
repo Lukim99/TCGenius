@@ -26,6 +26,8 @@
 | fx-bronze-shard.png | 신규 | 조각 패턴용 입체 청동 파편. 알파 투명 배경 |
 | fx-fire-flow-v2.png | highwizard의 [Animated Flame](https://opengameart.org/content/animated-flame-fire-sprite-sheet), CC0 | 원본 5×5 시트의 25프레임 화염. 예열, 분출과 폭주지대에서 사용 |
 | fx-puzzle-piece-v1.png | 신규 | 두께, 흠집과 황동 테두리가 있는 석재 퍼즐 조각. 회전하며 날아가는 패턴에서 사용 |
+| fx-sculpture-carving-v1.png | sculpture.png 참조 | 원석부터 청동 황소까지 외곽과 세공 면이 달라지는 6단계. 1536×1024, 3열 2행, 셀 512×512, PNG 알파 유지 |
+| whiplash-echo-body-v1.png | whiplash-echo-scene.png | 뻗은 팔만 제거하고 뒤의 망토 복원. 원본 장면 좌표의 몸통과 움직이는 팔을 분리해 잔향 등장에 사용 |
 
 imagegen으로 만든 이미지의 공통 생성 조건: 기존 인물의 정체성, 표현, 색과 자세를 유지한다. 기존 보스 전경은 실제 알파 투명 배경에 원본 좌표와 크기를 유지하며, 배경도 같은 카메라와 원근을 사용한다. 두 레이어는 화면 크기에 따라 함께 확대하고 잘라낸다. 신규 부하는 안뜰 바닥과 맞도록 따로 배치한다. 새 글자, 워터마크, 테두리는 추가하지 않는다.
 
@@ -83,7 +85,7 @@ FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kH
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 20개와 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 22개와 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
 
 2026-10-04에 `eefl-image` 버킷의 현재 사용 파일 26개를 확인했다. 마지막 수정의 신규 이미지 13개를 업로드했으며 모든 파일의 MD5, 크기와 MIME 형식이 일치했다.
 
@@ -91,7 +93,21 @@ FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kH
 
 2026-10-05 자연스러운 화염과 회복 동작을 적용하면서 신규 화염 시트 1개와 효과음 38개를 업로드했다. 업로드한 58개 파일의 MD5, 크기와 MIME 형식을 확인했다. 최종 적용 범위는 패턴과 종료 효과음 31개 및 이미지 20개이며, 이 51개 파일을 다시 검증했다. 적용하지 않은 일반 전투용 신규 음원 7개는 참조하지 않는다. 이전 화염과 회복 질감, 효과음은 삭제하거나 덮어쓰지 않았다. 새 화염 시트는 외부 원본을 그대로 저장한다. 검은 배경은 실행 중 한 번만 광량 알파로 변환해 합성하며 원본 파일을 편집하지 않는다.
 
-## 이전 효과 질감 생성 프롬프트
+## 효과 에셋 생성 기록
+
+2026-10-05 석재 세공 시트와 잔향 몸통 레이어를 신규 경로로 업로드했다. 총 53개 파일의 MD5, 크기와 MIME 형식이 일치했다. 아래 두 프롬프트는 내장 imagegen에 전달한 최종 요청이다. 생성한 PNG를 편집 없이 프로젝트에 복사했으며, 시트의 셀 분리와 합성은 브라우저에서 처리한다.
+
+### fx-sculpture-carving-v1.png
+
+```text
+Use case: stylized-concept. Asset type: a production sprite atlas for an RPG stone-carving boss mechanic. Input image is a reference of the final bronze bull statue, preserve its exact upward tilted head, horn placement, three-quarter orientation facing left, arched neck, legs and overall proportions. Create one image: a 3 columns by 2 rows sprite sheet, SIX separate equal-sized cells, each with fully transparent background, no grid lines, NO text/labels/numbers. Each cell uses EXACTLY the same locked orthographic three-quarter camera, identical object position, ground line, scale and lighting. The sprite itself must not change viewpoint or pose. Read cells left-to-right then top-to-bottom. 1: a solid ochre-grey quarry stone cuboid, tall rough-cut block with visible top and right side, enough stone to contain this entire bull including horns and legs. 2: external corners deeply chiseled off, rough head/neck and torso bulk begin to form, still angular stone mass, NO complete bull visible inside. 3: recognizable rough bull being sculpted out of the SAME block, defined horn stalks, snout, chest and flank, leg gaps just opening, deep fresh planar chisel cuts and granular stone texture. 4: most exterior stone removed, bull outline and separate legs almost complete, large angular unrefined facets on body, horns and ankles. 5: finely hewn stone bull matching reference silhouette, tiny chisel marks and faceted polished edges, still stone not bronze. 6: finished bronze bull statue faithfully matching reference, warm copper patina and restrained specular highlights. This depicts PHYSICAL FORM CHANGING, not a finished statue being revealed by dust, no dust clouds, no floating fragments, no dissolve mask, no embedded complete bull in early stone. Sophisticated realistic dark fantasy RPG art, believable volumetric weight, consistent warm upper-left candlelight with cool rim fill, crisp usable alpha edges, richly textured stone and shaded cut faces. All six sprites centered with ample identical padding, fully contained, common baseline at 90% of each cell, identical maximum dimensions, no floor/background, no cast shadow beyond feet. Transparent RGBA, 1536x1024 canvas with 512x512 cells if possible.
+```
+
+### whiplash-echo-body-v1.png
+
+```text
+Use case: precise-object-edit. Asset: a body layer for a 4 second RPG boss transformation. Edit the referenced transparent 1672x941 registered scene. Remove ONLY the woman's right arm, black armored sleeve, outstretched clawed fingers and hand reaching toward the viewer (the foreground arm on image right, from the shoulder at approximately x=955 y=525 through the hand at x=1200 y=615, and forearm descending to the bottom right). Replace the arm-covered torso area with the plausible continuation of her black and crimson thorned cloak and armor. Replace the arm-covered empty background with genuine transparency. Keep her exact face, hairstyle, crown, all hair strand positions, left arm, chest armor, shoulders, torso position, scale, camera framing and the 1672x941 canvas pixel registration identical. She must have the exact same identity and facial expression; do not redesign any of the untouched areas. The extended arm will be animated separately from the original; no new arm or hand should appear. Preserve original warm and crimson lighting and richly detailed realistic painterly dark fantasy style. Transparent RGBA background, no background scene, no shadow outside character, no text, no watermark, no border. Maintain the original wide canvas, unchanged subject placement, empty transparent area on left and right; DO NOT recenter or enlarge the woman.
+```
 
 아래 질감은 내장 imagegen으로 만들고 PNG 알파를 보존했다. `fx-fire-plume-v1.png`와 `fx-healing-wisp-v1.png`는 현재 레이드에서 사용하지 않는다. 퍼즐 조각 질감은 계속 사용한다.
 

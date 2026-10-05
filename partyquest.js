@@ -1151,7 +1151,8 @@ function serializeMonster(mon) {
     if (!mon) return null;
     const gimmick = mon.bossState && mon.bossState.chatGimmick;
     return {
-        mansion: mansionRaid.view(mon),
+        mansion: mon.bossState?.mansion ? { ...mansionRaid.view(mon),
+            ...(mon.bossKey === '위플래쉬' && mon.bossState.difficulty !== 'normal' ? { transitionArt: raidArtwork('대저택/위플래쉬(0줄).png') } : {}) } : null,
         patternEvents: serializeBossPatternEvents(mon),
         name: mon.name,
         hp: Math.max(0, Math.round(mon.hp)),
@@ -1354,7 +1355,8 @@ function safePublicQuestInfo(questId) {
         minPlayers: q.minPlayers || 1,
         maxPlayers: q.maxPlayers || 5,
         recommendedPower: q.recommendedPower || null,
-        phases: (q.phases || []).map(p => ({ name: p.name, type: p.type })),
+        phases: (q.phases || []).map(p => ({ name: p.name, type: p.type,
+            artwork: p.type === 'mob' ? { background: raidAssetUrl(p.backgroundImage), scene: { aspect: 16 / 9 } } : raidArtwork(p.monster?.image || q.coverImage) })),
         noPositions: !!q.noPositions,
         positions: Object.fromEntries(POSITION_LIST.map(pos => {
             const def = (q.positions && q.positions[pos]) || {};

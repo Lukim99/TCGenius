@@ -15,18 +15,28 @@
     const INSTANT = new Set(['regenerate', 'dark-blast', 'crit-reflect', 'revive', 'puzzle', 'dealing', 'dealing-strike', 'bounce']);
     const VISUAL_ONLY = new Set(['harden', 'shards', 'resonance', 'echo', 'wall', 'rupture', 'dealing-ready', ...INSTANT]);
     // 자연 종료 직전에 빠지면 마무리(폭발, 착탄, 사라짐)를 이어서 그린다.
-    const TAIL = new Set(['resonance', 'echo', 'shards', 'shatter', 'purge', 'execute', 'flame', 'cannon', 'empower', 'dark-shield', 'mochi-shield', 'rain-shield', 'reflect']);
+    const TAIL = new Set(['resonance', 'echo', 'shards', 'shatter', 'carve-break', 'purge', 'execute', 'flame', 'cannon', 'empower', 'dark-shield', 'mochi-shield', 'rain-shield', 'reflect']);
     const CAST_IMPACT = new Set(['purge', 'execute', 'flame', 'cannon']);
-    const TEXTURES = { mist: '레이드/fx-dark-mist.png', shard: '레이드/fx-bronze-shard.png', fire: '레이드/fx-fire-flow-v2.png', puzzle: '레이드/fx-puzzle-piece-v1.png' };
+    const TEXTURES = { mist: '레이드/fx-dark-mist.png', shard: '레이드/fx-bronze-shard.png', fire: '레이드/fx-fire-flow-v2.png', puzzle: '레이드/fx-puzzle-piece-v1.png',
+        carve: '레이드/fx-sculpture-carving-v1.png', echoBody: '레이드/whiplash-echo-body-v1.png' };
+    // 조각 아틀라스(3x2칸) 단계: 원석, 머리 윤곽, 다리 틈, 전체 윤곽, 다듬은 석상, 청동. 진행도가 이 지점을 지날 때 다음 단계로 깎인다.
+    const CARVE_KNOTS = [0, .2, .45, .7, .9, 1];
+    // 등록 원본(1672x941) 좌표. 우퍼 중심과 반지름, 초록 램프, 기계 외곽, 잔향의 뻗은 팔(어깨 기준점, 잘라낼 범위, 다각형), 손.
+    const PLANE = [1672, 941];
+    const WHIP = { woofer: [835, 452, 130], lamp: [688, 295, 24], box: [626, 26, 424, 612] };
+    const ARM = { pivot: [905, 640], hand: [1190, 640], box: [820, 450, 500, 450],
+        poly: [[835, 585], [960, 520], [1060, 468], [1135, 462], [1312, 568], [1302, 640], [1268, 720], [1285, 892], [1175, 892], [1115, 765], [1000, 705], [900, 692], [835, 662]] };
     // 분리 보스 그림 안의 기준점(가로, 세로 비율): 황소 몸통, 스피커 우퍼, 잔향의 뻗은 손.
     const FOCUS = { sculpture: [.55, .52], whiplash: [.5, .66], 'whiplash-echo': [.7, .66] };
     const GLINTS = [[.42, .05], [.39, .3], [.58, .45], [.79, .58], [.3, .83], [.66, .74]];
     const BRONZE = [255, 196, 120], BRONZE_HOT = [255, 246, 222], VIOLET = [168, 120, 255], VIOLET_HOT = [236, 222, 255];
     const RED = [232, 40, 52], RED_HOT = [255, 196, 188], PALE = [196, 204, 255], PALE_HOT = [244, 246, 255];
     const TAU = Math.PI * 2;
-    const buffers = new Map(), textures = new Map();
-    let audio = null, loading = null, hexTile = null, puffTile = null, fireTint = null;
-    const tailTime = kind => kind === 'flame' ? 1.5 : .65;
+    const buffers = new Map(), images = new Map(), puffTiles = new Map();
+    let audio = null, loading = null, hexTile = null, fireTint = null, carve = null, armCut = null;
+    const tailTime = kind => kind === 'flame' ? 1.5 : kind === 'carve-break' ? 1.1 : .65;
+    const assetUrl = file => '/rpg-ui?file=' + encodeURIComponent(file);
+    const idle = fn => window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 400 }) : setTimeout(fn, 30);
     function unlockAudio() {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
@@ -43,22 +53,221 @@
     document.addEventListener('pointerdown', unlockAudio, { passive: true });
     document.addEventListener('keydown', unlockAudio);
     // 텍스처는 처음 필요할 때 불러오고, 준비되기 전에는 대체 그림을 쓴다.
-    function texture(key) {
-        let image = textures.get(key);
-        if (!image) { image = new Image(); image.decoding = 'async'; image.src = '/rpg-ui?file=' + encodeURIComponent(TEXTURES[key]); textures.set(key, image); }
-        return image.complete && image.naturalWidth ? image : null;
+    // decoded는 decode()가 끝난 그림만 돌려준다. 장면을 통째로 대신 그리는 연출은 반쯤 풀린 그림을 쓰지 않는다.
+    function picture(src, decoded) {
+        if (!src) return null;
+        let image = images.get(src);
+        if (!image) {
+            image = new Image(); image.decoding = 'async'; image.src = src; images.set(src, image);
+            image.decode().then(() => { image.ready = true; }, () => {});
+        }
+        return (decoded ? image.ready : image.complete) && image.naturalWidth ? image : null;
     }
-    function puff() {
-        if (puffTile) return puffTile;
-        puffTile = document.createElement('canvas'); puffTile.width = puffTile.height = 128;
-        const g = puffTile.getContext('2d');
+    const texture = (key, decoded) => picture(assetUrl(TEXTURES[key]), decoded);
+    // 연기 덩어리 타일. 기본은 어두운 연기, 돌가루는 밝은 석회색으로 같은 모양을 쓴다.
+    function puff(color = '46,40,44') {
+        let tile = puffTiles.get(color);
+        if (tile) return tile;
+        tile = document.createElement('canvas'); tile.width = tile.height = 128; puffTiles.set(color, tile);
+        const g = tile.getContext('2d');
         for (let i = 0; i < 7; i++) {
             const x = 30 + rand(i) * 68, y = 34 + rand(i + 9) * 60, r = 26 + rand(i + 3) * 30;
             const gradient = g.createRadialGradient(x, y, 0, x, y, r);
-            gradient.addColorStop(0, 'rgba(46,40,44,.55)'); gradient.addColorStop(1, 'rgba(46,40,44,0)');
+            gradient.addColorStop(0, 'rgba(' + color + ',.55)'); gradient.addColorStop(1, 'rgba(' + color + ',0)');
             g.fillStyle = gradient; g.fillRect(0, 0, 128, 128);
         }
-        return puffTile;
+        return tile;
+    }
+    const stoneDust = () => puff('178,164,142');
+
+    // ---- 조각 아틀라스 준비: 유휴 시간에 한 단계씩 처리한다 ----
+    // 단계마다 다음 단계 표면까지의 거리로 깎이는 순서를 정하고 256개 묶음으로 나눈다.
+    // 진행도가 바뀌면 사이에 있는 묶음의 픽셀만 다시 쓴다.
+    function chamfer(zero, N) {
+        const d = new Float32Array(N * N), D = Math.SQRT2;
+        for (let i = 0; i < d.length; i++) d[i] = zero[i] ? 0 : 1e6;
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            const i = y * N + x;
+            let v = d[i];
+            if (!v) continue;
+            if (x) v = Math.min(v, d[i - 1] + 1);
+            if (y) { v = Math.min(v, d[i - N] + 1); if (x) v = Math.min(v, d[i - N - 1] + D); if (x < N - 1) v = Math.min(v, d[i - N + 1] + D); }
+            d[i] = v;
+        }
+        for (let y = N - 1; y >= 0; y--) for (let x = N - 1; x >= 0; x--) {
+            const i = y * N + x;
+            let v = d[i];
+            if (!v) continue;
+            if (x < N - 1) v = Math.min(v, d[i + 1] + 1);
+            if (y < N - 1) { v = Math.min(v, d[i + N] + 1); if (x < N - 1) v = Math.min(v, d[i + N + 1] + D); if (x) v = Math.min(v, d[i + N - 1] + D); }
+            d[i] = v;
+        }
+        return d;
+    }
+    // 각진 면: 흔들린 격자점의 보로노이 칸마다 같은 값을 준다. 깎인 자리가 먼지처럼 흩어지지 않고 면 단위로 떨어진다.
+    function facet(x, y, cell, seed) {
+        const gx = Math.floor(x / cell), gy = Math.floor(y / cell);
+        let best = 1e9, value = 0;
+        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+            const h = (gx + i) * 131 + (gy + j) * 977 + seed;
+            const dx = (gx + i + rand(h)) * cell - x, dy = (gy + j + rand(h + 5)) * cell - y, d = dx * dx + dy * dy;
+            if (d < best) { best = d; value = rand(h + 11); }
+        }
+        return value;
+    }
+    function carvePair(k) {
+        const N = carve.size, n = N * N, a = carve.stages[k], b = carve.stages[k + 1];
+        const outside = new Uint8Array(n), next = new Uint8Array(n);
+        for (let i = 0; i < n; i++) { outside[i] = a[i * 4 + 3] < 128 ? 1 : 0; next[i] = b[i * 4 + 3] >= 128 ? 1 : 0; }
+        const dOut = chamfer(outside, N), dIn = chamfer(next, N), cell = Math.max(4, Math.round(N * .028));
+        const bucket = new Int16Array(n).fill(-1), start = new Uint32Array(257), surface = [];
+        for (let i = 0; i < n; i++) {
+            if (!a[i * 4 + 3]) continue;
+            if (next[i]) { surface.push(i); continue; }
+            const x = i % N, y = (i / N) | 0, cr = facet(x, y, cell, k * 7919);
+            // 떨어질 부분은 바깥에서 안쪽으로, 막힌 다리 틈은 가운데부터 면 단위로 깎인다.
+            const o = .75 * dOut[i] / (dOut[i] + dIn[i] + 1e-6) + .25 * cr;
+            bucket[i] = Math.min(255, Math.floor(o * 256));
+            start[bucket[i] + 1]++;
+        }
+        for (let i = 1; i <= 256; i++) start[i] += start[i - 1];
+        const fill = start.slice(0, 256), index = new Uint32Array(start[256]);
+        for (let i = 0; i < n; i++) if (bucket[i] >= 0) index[fill[bucket[i]]++] = i;
+        carve.pairs[k] = { start, index, surface: new Uint32Array(surface) };
+    }
+    function nestCarveStage(k) {
+        const N = carve.size, a = carve.stages[k], b = carve.stages[k + 1];
+        // 반투명 경계만 다음 형태까지 메운다. 불투명도 1 차이로 다음 단계의 청동색을 원석에 복사하지 않는다.
+        const nearest = new Int32Array(N * N).fill(-1), distance = new Int32Array(N * N).fill(N * 2);
+        for (let i = 0; i < nearest.length; i++) if (a[i * 4 + 3] >= 128) { nearest[i] = i; distance[i] = 0; }
+        const take = (i, j) => {
+            if (distance[j] + 1 < distance[i]) { distance[i] = distance[j] + 1; nearest[i] = nearest[j]; }
+        };
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+            const i = y * N + x;
+            if (x) take(i, i - 1);
+            if (y) take(i, i - N);
+        }
+        for (let y = N - 1; y >= 0; y--) for (let x = N - 1; x >= 0; x--) {
+            const i = y * N + x;
+            if (x < N - 1) take(i, i + 1);
+            if (y < N - 1) take(i, i + N);
+        }
+        for (let i = 0; i < nearest.length; i++) {
+            const p = i * 4;
+            if (b[p + 3] <= a[p + 3]) continue;
+            if (a[p + 3] < 128 && nearest[i] >= 0) {
+                const q = nearest[i] * 4;
+                a[p] = a[q]; a[p + 1] = a[q + 1]; a[p + 2] = a[q + 2];
+            }
+            a[p + 3] = b[p + 3];
+        }
+    }
+    function carveAtlas(size) {
+        if (carve) return carve.ready ? carve : null;
+        carve = { size, ready: false, stages: [], pairs: [] };
+        const N = size, jobs = [];
+        const run = () => { try { jobs.shift()?.(); } catch (_) { jobs.length = 0; } if (jobs.length) idle(run); };
+        for (let c = 0; c < 6; c++) jobs.push(() => {
+            const atlas = texture('carve'), canvas = document.createElement('canvas'); canvas.width = canvas.height = N;
+            const g = canvas.getContext('2d', { willReadFrequently: true });
+            g.drawImage(atlas, (c % 3) * 512, Math.floor(c / 3) * 512, 512, 512, 0, 0, N, N);
+            const data = g.getImageData(0, 0, N, N).data;
+            // 투명 배경이 아니면 원본 청동을 가리지 않는다.
+            if (data[3] > 16 || data[(N - 1) * 4 + 3] > 16) { jobs.length = 0; return; }
+            carve.stages[c] = data;
+        });
+        // 앞 단계가 다음 단계를 모두 품게 한다. 깎기는 재료를 덜어 낼 뿐 새로 붙이지 않는다.
+        for (let k = 4; k >= 0; k--) jobs.push(() => nestCarveStage(k));
+        jobs.push(() => {
+            const last = carve.stages[5];
+            let x0 = N, y0 = N, x1 = 0, y1 = 0;
+            for (let i = 0; i < N * N; i++) if (last[i * 4 + 3] > 64) { const x = i % N, y = (i / N) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+            carve.box = [x0, y0, x1 + 1, y1 + 1];
+        });
+        for (let k = 0; k < 5; k++) jobs.push(() => carvePair(k));
+        jobs.push(() => { carve.ready = true; });
+        let tries = 0;
+        const wait = () => { if (texture('carve', true)) idle(run); else if (++tries < 120) setTimeout(wait, 250); };
+        wait();
+        return null;
+    }
+
+    // ---- 파편 공용 도구 ----
+    // 영역을 보로노이 판으로 나눈다. 같은 씨앗이면 재접속해도 같은 금과 조각이 나온다.
+    function voronoi(sites, [x, y, w, h]) {
+        return sites.map((s, i) => {
+            let poly = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+            for (let j = 0; j < sites.length && poly.length; j++) {
+                if (j === i) continue;
+                const o = sites[j], nx = o[0] - s[0], ny = o[1] - s[1], c = (nx * (s[0] + o[0]) + ny * (s[1] + o[1])) / 2, next = [];
+                for (let k = 0; k < poly.length; k++) {
+                    const p = poly[k], q = poly[(k + 1) % poly.length], dp = nx * p[0] + ny * p[1] - c, dq = nx * q[0] + ny * q[1] - c;
+                    if (dp <= 0) next.push(p);
+                    if ((dp <= 0) !== (dq <= 0)) { const f = dp / (dp - dq); next.push([p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]); }
+                }
+                poly = next;
+            }
+            return poly;
+        }).filter(poly => poly.length > 2);
+    }
+    // 원본 그림에서 판 모양대로 잘라 판마다 작은 캔버스에 둔다. 어두운 사본은 돌아갈 때 보이는 두께 면이다.
+    function cutPlates(source, polys, scale, sw, sh, finish) {
+        return polys.map(poly => {
+            const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+            const x = Math.floor(Math.min(...xs)), y = Math.floor(Math.min(...ys)), w = Math.ceil(Math.max(...xs)) - x + 1, h = Math.ceil(Math.max(...ys)) - y + 1;
+            const make = dark => {
+                const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+                const g = c.getContext('2d');
+                g.scale(scale, scale); g.translate(-x, -y);
+                g.beginPath(); poly.forEach(([px, py], i) => i ? g.lineTo(px, py) : g.moveTo(px, py)); g.closePath(); g.clip();
+                g.drawImage(source, 0, 0, sw, sh);
+                finish?.(g);
+                if (dark) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(16,13,16,.86)'; g.fillRect(x, y, w, h); }
+                return c;
+            };
+            return { x, y, w, h, cx: xs.reduce((a, v) => a + v) / xs.length, cy: ys.reduce((a, v) => a + v) / ys.length, image: make(false), edge: make(true) };
+        });
+    }
+    const inside = (pts, x, y) => {
+        let hit = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const [xi, yi] = pts[i], [xj, yj] = pts[j];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+        }
+        return hit;
+    };
+    // 잔향의 뻗은 팔만 원본 장면에서 떼어 낸다. 팔을 지운 몸 그림과 달라진 픽셀만 남긴다.
+    function extractArm(scene, body) {
+        if (armCut?.src === scene.src) return;
+        const cut = armCut = { src: scene.src, canvas: null };
+        idle(() => {
+            try {
+                const kx = scene.naturalWidth / PLANE[0], ky = scene.naturalHeight / PLANE[1], [bx, by, bw, bh] = ARM.box;
+                const w = Math.round(bw * kx), h = Math.round(bh * ky), c = document.createElement('canvas'); c.width = w; c.height = h;
+                const g = c.getContext('2d', { willReadFrequently: true });
+                g.drawImage(body, bx / PLANE[0] * body.naturalWidth, by / PLANE[1] * body.naturalHeight, bw / PLANE[0] * body.naturalWidth, bh / PLANE[1] * body.naturalHeight, 0, 0, w, h);
+                const base = g.getImageData(0, 0, w, h).data;
+                g.clearRect(0, 0, w, h);
+                g.beginPath(); ARM.poly.forEach(([x, y], i) => i ? g.lineTo((x - bx) * kx, (y - by) * ky) : g.moveTo((x - bx) * kx, (y - by) * ky)); g.closePath(); g.fill();
+                const region = g.getImageData(0, 0, w, h).data;
+                g.clearRect(0, 0, w, h);
+                g.drawImage(scene, bx * kx, by * ky, w, h, 0, 0, w, h);
+                const pixels = g.getImageData(0, 0, w, h), data = pixels.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const diff = Math.abs(data[i] - base[i]) + Math.abs(data[i + 1] - base[i + 1]) + Math.abs(data[i + 2] - base[i + 2]) + Math.abs(data[i + 3] - base[i + 3]) * 2;
+                    data[i + 3] = data[i + 3] * clamp((diff - 28) / 60) * region[i + 3] / 255;
+                }
+                g.putImageData(pixels, 0, 0);
+                cut.canvas = c;
+            } catch (_) { cut.failed = true; }
+        });
+    }
+    // 잔향 장면(등록 인물, 배경)과 팔 없는 몸. 해독이 끝나기 전에는 null이라 들어올 장면을 미리 드러내지 않는다.
+    function echoArt(art) {
+        const scene = picture(art?.image, true), hall = picture(art?.background, true), body = texture('echoBody', true);
+        if (scene && body) extractArm(scene, body);
+        return scene && hall ? { scene, hall, body } : null;
     }
     // 원본의 검은 바탕을 광량 알파로 바꾼다. 투명 효과 캔버스에 검은 사각형이 남지 않는다.
     function fireSheet() {
@@ -111,6 +320,9 @@
         case 'crit-reflect': return [[0, 'mirror', .4]];
         case 'bounce': return [[0, 'bounce', .5]];
         case 'puzzle': return [[.3, 'puzzle', .4], [.6, 'puzzle', .3]];
+        // 외피가 갈라지는 세 번, 고요 뒤 파열과 파편, 마지막 착지.
+        case 'transition': return [[.55, 'stone', .3], [1.15, 'stone', .35], [1.7, 'stone', .4], [2.65, 'rupture', .7], [2.65, 'fall', .55], [3.2, 'bounce', .45]];
+        case 'carve-break': return [[0, 'stone', .35]];
         default: return [];
         }
     }
@@ -126,6 +338,8 @@
         if (!ctx) return null;
         const mask = document.createElement('canvas'), maskCtx = mask.getContext('2d');
         const fog = document.createElement('canvas'), fogCtx = fog.getContext('2d');
+        // 잔향 인물(몸과 팔)을 먼저 합성해 두는 화면 크기 캔버스.
+        const layer = document.createElement('canvas'), layerCtx = layer.getContext('2d');
         const live = document.createElement('div');
         live.className = 'pq-fx-announcement'; live.setAttribute('aria-live', 'polite');
         canvas.parentElement.append(live);
@@ -134,6 +348,9 @@
         let scope = '', frame = 0, lastFrame = 0, width = 0, height = 0, ratio = 1, volume = 0, master = null;
         let sprite = null, spriteRect = null, spriteDrawRect = null, currentView = null, focus = [.5, .55], scene = { x: 0, y: 0, w: 0, h: 0 };
         let mist = null, lastOutcome = '';
+        // carved: 깎는 중인 조각 출력, chips: 실제 타격에서 떨어진 돌 조각, handoff: 실제 무대가 잔향으로 바뀔 때까지 유지하는 마지막 장면.
+        let clockOffset = 0, frameDt = 0, carved = null, chips = [], whip = null, whipQueued = false, handoff = null, held = null;
+        const boxes = new Map();
 
         function setVolume(value) {
             volume = clamp(Number(value) || 0);
@@ -160,8 +377,8 @@
             ratio = Math.min(2, window.devicePixelRatio || 1);
             const w = Math.round(width * ratio), h = Math.round(height * ratio);
             if (canvas.width !== w || canvas.height !== h) {
-                canvas.width = mask.width = w; canvas.height = mask.height = h;
-                ctx.setTransform(ratio, 0, 0, ratio, 0, 0); maskCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                canvas.width = mask.width = layer.width = w; canvas.height = mask.height = layer.height = h;
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0); maskCtx.setTransform(ratio, 0, 0, ratio, 0, 0); layerCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
             }
             locate(bounds);
         }
@@ -184,20 +401,27 @@
         }
         const observer = new ResizeObserver(measure); observer.observe(canvas);
 
+        // 연출이 실제 보스 그림을 대신 그리는 동안만 원본을 숨긴다. 무대가 다시 그려져도 새 요소에 이어 붙인다.
+        function hold(on) {
+            const host = on ? document.getElementById('pqBossIllust') : null;
+            if (held && held !== host) delete held.dataset.fxHold;
+            if (host && host.dataset.fxHold !== '1') host.dataset.fxHold = '1';
+            held = host;
+        }
         function clearPatterns() {
-            stopSounds(); states.clear(); currentView = null;
+            stopSounds(); states.clear(); currentView = null; chips = [];
             document.querySelectorAll('[data-raid-target]').forEach(card => delete card.dataset.raidTarget);
         }
         function reset() {
             cancelAnimationFrame(frame); frame = 0;
-            clearPatterns(); mist = null; lastOutcome = '';
+            clearPatterns(); mist = null; lastOutcome = ''; handoff = null; carved = null; hold(false);
             ctx.clearRect(0, 0, width, height); live.textContent = '';
         }
         const mistAlive = () => !!mist && (!mist.doneAt || performance.now() - mist.doneAt < 600);
-        const busy = () => states.size > 0 || mistAlive();
+        const busy = () => states.size > 0 || mistAlive() || !!handoff;
         function kick() {
             if (!frame && busy() && !document.hidden) frame = requestAnimationFrame(render);
-            if (!busy()) ctx.clearRect(0, 0, width, height);
+            if (!busy()) { ctx.clearRect(0, 0, width, height); hold(false); }
         }
         // 잡몹 단계의 정화 진행. 재접속하면 현재 진행도에서 바로 시작한다.
         function syncMist(info, now) {
@@ -219,10 +443,15 @@
             });
         }
         function update(view, options) {
-            const nextScope = (options.scope || '') + ':' + (view?.form || '');
-            if (nextScope !== scope) { reset(); scope = nextScope; }
+            const nextScope = (options.scope || '') + ':' + (view?.form || ''), now = performance.now();
+            if (nextScope !== scope) {
+                // 같은 방에서 잔향 형태로 넘어오면 전환의 마지막 장면을 실제 무대가 바뀔 때까지 그대로 둔다.
+                const ending = states.get('form-transition'), echo = ending && view?.form === 'echo' && scope === (options.scope || '') + ':transition' ? echoArt(ending.event.art) : null;
+                reset(); scope = nextScope;
+                if (echo) handoff = { hall: echo.hall, scene: echo.scene, at: now };
+            }
+            clockOffset = Number(options.serverOffset) || 0;
             setVolume(options.volume);
-            const now = performance.now();
             syncMist(options.purification, now);
             if (!view) {
                 if (!mist) { reset(); return; }
@@ -235,9 +464,15 @@
             if (art.includes('ingyeo')) texture('fire');
             if (art.includes('black-hodu')) texture('mist');
             if (art.includes('tabujago')) texture('puzzle');
-            const seen = new Set(), announcements = [];
+            // 조각 아틀라스는 보스가 처음 보일 때부터 유휴 시간에 준비한다. 잔향 그림은 위플래쉬 단계 내내 미리 해독해 둔다.
+            if (art.includes('sculpture-scene')) carveAtlas(width < 420 ? 256 : 384);
+            if (view.transitionArt) {
+                echoArt(view.transitionArt);
+                if (art.includes('whiplash-scene') && !whipQueued) { whipQueued = true; idle(() => { whipQueued = false; whipPlates(); }); }
+            }
+            const seen = new Set(), announcements = [], breaks = [];
             const events = (view.events || []).filter(event => event.presentation !== 'speech');
-            if (view.form === 'transition') events.push({ id: 'form-transition', kind: 'transition', duration: 4, remain: view.transitionRemain });
+            if (view.form === 'transition') events.push({ id: 'form-transition', kind: 'transition', duration: 4, remain: view.transitionRemain, art: view.transitionArt });
             // 직접 본 보호막 시련이 성공으로 끝났을 때만 깨지는 연출을 붙인다.
             const outcome = view.outcome;
             if (outcome?.id && outcome.id !== lastOutcome) {
@@ -252,7 +487,7 @@
                 let state = states.get(id);
                 if (!state) {
                     const age = Math.max(0, Number(event.duration || 0) - Number(event.remain || 0));
-                    state = { event, kind: kindOf(event), seed: hash(id), start: now - age * 1000, plan: soundPlan(kindOf(event), Number(event.duration || 0)), fired: new Set(), sources: new Set(), hits: [], removed: false };
+                    state = { event, kind: kindOf(event), seed: hash(id), start: now - age * 1000, plan: soundPlan(kindOf(event), Number(event.duration || 0)), fired: new Set(), sources: new Set(), hits: [], removed: false, fresh: age < .6 };
                     // 재접속으로 이미 지난 신호를 다시 울리지 않는다.
                     state.plan.forEach(([at], i) => { if (age - at > .15) state.fired.add(i); });
                     states.set(id, state);
@@ -260,6 +495,7 @@
                     if (['empower', 'dark-shield', 'flame', 'bounce', 'burden'].includes(state.kind)) texture('mist');
                     if (['flame', 'berserk'].includes(state.kind)) texture('fire');
                     if (state.kind === 'puzzle') texture('puzzle');
+                    if (state.kind === 'sculpture') { carved = null; chips = []; }
                     if (VISUAL_ONLY.has(state.kind)) announcements.push(event.message || event.label);
                 }
                 if (event.remain != null) state.start = now - Math.max(0, Number(event.duration || 0) - Number(event.remain || 0)) * 1000;
@@ -269,17 +505,30 @@
                     state.hits.push({ at: now, angle: Math.random() * TAU });
                     if (state.hits.length > 4) state.hits.shift();
                 }
+                // 실제 공격과 지원이 늘린 누적 타격 수만 끌 자국을 낸다. 스냅샷 반복이나 감쇠로는 생기지 않는다.
+                const carvedNow = Number(event.carveHits || 0), carvedBefore = Number(state.event.carveHits || 0);
+                if (event.kind === 'sculpture' && carvedNow > carvedBefore) {
+                    state.pending = Math.min(6, (state.pending || 0) + (carvedNow - carvedBefore) * 2);
+                    if (now - (state.chiselAt || 0) > 250) { state.chiselAt = now; play(state, 'stone', .18); }
+                }
                 state.event = event; state.removed = false;
             }
             for (const [id, state] of states) {
                 if (seen.has(id)) continue;
                 const age = (now - state.start) / 1000;
+                // 깎던 돌은 판으로 갈라져 떨어지고 그 뒤에 원래 청동 황소가 남는다.
+                if (state.kind === 'sculpture' && state.hold && carved) {
+                    const snap = document.createElement('canvas'); snap.width = snap.height = carve.size;
+                    snap.getContext('2d').drawImage(carved.canvas, 0, 0);
+                    breaks.push(['carve-break:' + id, { event: { duration: 0 }, kind: 'carve-break', seed: state.seed, start: now, plan: soundPlan('carve-break'), fired: new Set(), sources: new Set(), hits: [], removed: true, snap }]);
+                }
                 // 공명과 연속 타격은 마지막 서버 틱과 화면 프레임 사이도 이어서 그린다.
                 if (INSTANT.has(state.kind)) state.removed = true;
                 else if (CAST_IMPACT.has(state.kind) && state.event.stage !== 'resolved') { stopSounds(state); states.delete(id); }
                 else if (!TAIL.has(state.kind) || age < Number(state.event.duration || 0) - .35) { stopSounds(state); states.delete(id); }
                 else state.removed = true;
             }
+            for (const [id, state] of breaks) states.set(id, state);
             if (announcements.length) live.textContent = announcements.join(' ');
             targets(events);
             kick();
@@ -1254,6 +1503,367 @@
                 shard(state.loadX + (rand(seed + i + 21) - .5) * 55 * u, y + p * p * 40 * u, 1.5 * u, i + p * 3, p * 4, .3, (1 - p) * show);
             }
         }
+        // ---- 조각: 원석이 실제로 깎여 황소가 된다 ----
+        // 서버 감쇠는 100ms마다 최대치의 0.1%다. 다음 감쇠 시각 뒤로 지난 칸만큼 빼서 게이지와 같은 값을 쓴다.
+        function carveTarget(ev) {
+            const max = Math.max(1, Number(ev.hpMax || 0)), next = Number(ev.decayNextAt || 0), at = Date.now() - clockOffset;
+            let damage = Number(ev.damage || 0);
+            if (next && at >= next) damage -= (Math.floor((at - next) / 100) + 1) * max / 1000;
+            return clamp(damage / max);
+        }
+        // 실제 청동 황소의 알파 경계(원본 픽셀). 그림마다 한 번만 잰다.
+        function liveBox() {
+            if (!sprite?.naturalWidth || !spriteDrawRect) return null;
+            let box = boxes.get(sprite.src);
+            if (!box) {
+                const subject = JSON.parse(sprite.dataset.subject || '[0,0,1,1]'), W = sprite.naturalWidth, H = sprite.naturalHeight;
+                const sx = subject[0] * W, sy = subject[1] * H, sw = subject[2] * W, sh = subject[3] * H;
+                box = [sx, sy, sw, sh];
+                try {
+                    const k = Math.min(1, 200 / Math.max(sw, sh)), w = Math.max(1, Math.round(sw * k)), h = Math.max(1, Math.round(sh * k));
+                    const c = document.createElement('canvas'); c.width = w; c.height = h;
+                    const g = c.getContext('2d', { willReadFrequently: true });
+                    g.drawImage(sprite, sx, sy, sw, sh, 0, 0, w, h);
+                    const data = g.getImageData(0, 0, w, h).data;
+                    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+                    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[(y * w + x) * 4 + 3] > 40) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+                    if (x1 >= x0) box = [sx + x0 / k, sy + y0 / k, (x1 - x0 + 1) / k, (y1 - y0 + 1) / k];
+                } catch (_) {}
+                boxes.set(sprite.src, box);
+            }
+            const s = spriteDrawRect.w / sprite.naturalWidth;
+            return { x: spriteDrawRect.x + box[0] * s, y: spriteDrawRect.y + box[1] * s, w: box[2] * s, h: box[3] * s };
+        }
+        // 아틀라스 칸을 실제 황소 경계에 맞춘다. 발바닥과 가로 중심을 맞추고 모든 단계에 같은 배율을 쓴다.
+        function carveRect() {
+            const live = liveBox();
+            if (!live || !carve?.box) return null;
+            const [x0, y0, x1, y1] = carve.box, s = Math.min(live.w / (x1 - x0), live.h / (y1 - y0));
+            return { x: live.x + live.w / 2 - (x0 + x1) / 2 * s, y: live.y + live.h - y1 * s, s, live };
+        }
+        const FRONT = 5;
+        function carveWrite(from, to) {
+            const k = carved.k, s0 = carve.stages[k], s1 = carve.stages[k + 1], o = carved.out.data, pair = carve.pairs[k];
+            const qb = carved.q * 256, hw = carved.hw[k] * 256;
+            for (let b = Math.max(0, from); b < Math.min(256, to); b++) {
+                const done = b < qb, front = !done && b < qb + FRONT, crust = !done && b < hw;
+                for (let j = pair.start[b]; j < pair.start[b + 1]; j++) {
+                    const p = pair.index[j] * 4, src = done ? s1 : s0;
+                    let r = src[p], g = src[p + 1], bl = src[p + 2];
+                    // 감쇠로 되돌아온 자리는 무광 돌 껍질로 메워지고, 곧 떨어질 자리는 끌 자국처럼 어둡다.
+                    if (crust) { r = r * .65 + 42; g = g * .65 + 39; bl = bl * .65 + 35; }
+                    if (front && s1[p + 3] < 128) { r *= .82; g *= .82; bl *= .82; }
+                    o[p] = r; o[p + 1] = g; o[p + 2] = bl; o[p + 3] = src[p + 3];
+                }
+            }
+        }
+        // 진행도가 바뀐 만큼의 묶음만 다시 쓴다. 단계가 바뀔 때만 전체를 새로 쓴다.
+        function carveSet(p) {
+            if (!carved) {
+                const c = document.createElement('canvas'); c.width = c.height = carve.size;
+                const g = c.getContext('2d');
+                carved = { canvas: c, g, out: g.createImageData(carve.size, carve.size), k: -1, q: 0, hw: new Float32Array(5) };
+            }
+            let k = 0;
+            while (k < 4 && p >= CARVE_KNOTS[k + 1]) k++;
+            const q = clamp((p - CARVE_KNOTS[k]) / (CARVE_KNOTS[k + 1] - CARVE_KNOTS[k])), last = carved.q;
+            if (k !== carved.k) { carved.k = k; carved.q = q; carved.hw[k] = Math.max(carved.hw[k], q); carved.out.data.fill(0); carveWrite(0, 256); }
+            else if (Math.abs(q - last) >= 1 / 1024) { carved.q = q; carved.hw[k] = Math.max(carved.hw[k], q); carveWrite(Math.floor(Math.min(q, last) * 256) - 1, Math.ceil(Math.max(q, last) * 256) + FRONT + 1); }
+            else return;
+            // 남겨 둔 석재의 면과 조명은 이어서 다듬는다. 내부를 무작위 얼룩처럼 교체하지 않는다.
+            const a = carve.stages[k], b = carve.stages[k + 1], out = carved.out.data;
+            for (const i of carve.pairs[k].surface) {
+                const p = i * 4;
+                for (let c = 0; c < 4; c++) out[p + c] = a[p + c] + (b[p + c] - a[p + c]) * q;
+            }
+            carved.g.putImageData(carved.out, 0, 0);
+        }
+        // 실제 타격마다 깎이는 면에서 그 단계의 돌 재질 그대로 작은 조각을 떼어 낸다.
+        function spawnChips(rect, n) {
+            const N = carve.size, pair = carve.pairs[carved.k], src = carve.stages[carved.k], b0 = Math.floor(carved.q * 256), u = unit(), now = performance.now();
+            const lo = pair.start[Math.max(0, Math.min(255, b0 - 2))], hi = pair.start[Math.min(256, b0 + 12)];
+            for (let i = 0; i < n && hi > lo; i++) {
+                const idx = pair.index[lo + Math.floor(Math.random() * (hi - lo))], px = idx % N, py = (idx / N) | 0;
+                const size = Math.max(4, Math.round(N * (.018 + Math.random() * .022))), c = document.createElement('canvas'); c.width = c.height = size;
+                const g = c.getContext('2d'), image = g.createImageData(size, size), pts = [];
+                for (let k = 0; k < 5; k++) { const a = (k + Math.random() * .7) / 5 * TAU, r = size * (.28 + Math.random() * .22); pts.push([size / 2 + Math.cos(a) * r, size / 2 + Math.sin(a) * r]); }
+                for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                    const sx = px - (size >> 1) + x, sy = py - (size >> 1) + y;
+                    if (sx < 0 || sy < 0 || sx >= N || sy >= N || !inside(pts, x + .5, y + .5)) continue;
+                    const s = (sy * N + sx) * 4, d = (y * size + x) * 4;
+                    image.data[d] = src[s]; image.data[d + 1] = src[s + 1]; image.data[d + 2] = src[s + 2]; image.data[d + 3] = src[s + 3];
+                }
+                g.putImageData(image, 0, 0);
+                chips.push({ image: c, x: rect.x + px * rect.s, y: rect.y + py * rect.s, size: size * rect.s, vx: (px / N > .5 ? 1 : -1) * (30 + Math.random() * 90) * u, vy: -(70 + Math.random() * 130) * u, spin: (Math.random() - .5) * 14, born: now });
+                if (chips.length > (width < 420 ? 10 : 24)) chips.shift();
+            }
+        }
+        function drawChips(now, reduced) {
+            const ground = groundY(), u = unit(), gravity = 900 * u, dust = stoneDust();
+            chips = chips.filter(c => now - c.born < 2200);
+            ctx.globalCompositeOperation = 'source-over';
+            for (const c of chips) {
+                const t = (now - c.born) / 1000, fall = ground - c.y;
+                const land = fall > 0 ? (-c.vy + Math.sqrt(c.vy * c.vy + 2 * gravity * fall)) / gravity : 0, k = Math.min(t, land);
+                if (t < .45) material(ctx, dust, c.x, c.y, (20 + t * 60) * u, (14 + t * 40) * u, (1 - t / .45) * .5);
+                const alpha = 1 - clamp((t - land - .5) / .5);
+                if (reduced || alpha <= 0) continue;
+                ctx.save(); ctx.translate(c.x + c.vx * k, Math.min(ground, c.y + c.vy * k + gravity * k * k / 2)); ctx.rotate(c.spin * k);
+                ctx.globalAlpha = alpha; ctx.drawImage(c.image, -c.size / 2, -c.size / 2, c.size, c.size); ctx.restore();
+            }
+        }
+        function sculpture(state, t, reduced) {
+            const target = carveTarget(state.event), rect = carve?.ready ? carveRect() : null, now = performance.now();
+            if (!rect) {
+                // 아틀라스가 준비되기 전에는 청동을 숨기지 않는다.
+                state.hold = false;
+                skin((m, b) => { m.fillStyle = 'rgba(236,226,206,1)'; m.fillRect(b.x, b.y, b.w, b.h); }, target * .55, 'overlay');
+                return;
+            }
+            // 받침에서 돌가루가 올라 가장 짙을 때 청동 대신 원석이 놓인다. 재접속은 먼지 없이 현재 모양을 바로 보인다.
+            if (state.showAt == null) state.showAt = state.fresh ? now + (t < .3 ? .3 - t : .3) * 1000 : now;
+            // 타격은 잠깐 따라붙고, 감쇠는 게이지와 같이 바로 내려간다.
+            state.shown = state.shown == null || target <= state.shown ? target : state.shown + (target - state.shown) * (1 - Math.exp(-frameDt / .09));
+            if (now >= state.showAt) {
+                carveSet(state.shown);
+                state.hold = true;
+                ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+                ctx.drawImage(carved.canvas, rect.x, rect.y, carve.size * rect.s, carve.size * rect.s);
+                if (state.pending) { spawnChips(rect, state.pending); state.pending = 0; }
+            }
+            drawChips(now, reduced);
+            const live = rect.live, d = (now - state.showAt) / 1000 + .3;
+            if (state.fresh && d > 0 && d < 1.1) {
+                const image = stoneDust(), rise = reduced ? .6 : ease(clamp(d / .5)), show = d < .3 ? d / .3 : 1 - (d - .3) / .8;
+                ctx.globalCompositeOperation = 'source-over';
+                for (let i = 0; i < 9; i++) {
+                    const size = live.w * (.5 + rand(state.seed + i + 7) * .25), x = live.x + live.w * ((i % 5) + .5) / 5 + (rand(state.seed + i) - .5) * live.w * .1;
+                    material(ctx, image, x, live.y + live.h * (1 - (i < 5 ? .2 : .55) * rise - .1 * rand(state.seed + i + 3)), size, size * .8, show);
+                }
+            }
+        }
+        function drawPlate(p, map, dx, dy, rot, thick, alpha) {
+            if (alpha <= .01) return;
+            const w = p.w * map.s, h = p.h * map.s, ox = (p.x - p.cx) * map.s, oy = (p.y - p.cy) * map.s;
+            ctx.save(); ctx.translate(map.x + p.cx * map.s + dx, map.y + p.cy * map.s + dy); ctx.rotate(rot);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = clamp(alpha);
+            // 돌아갈수록 판의 두께 면이 드러난다. 제자리에서는 원본과 같다.
+            const side = thick * Math.min(1, Math.abs(rot) * 1.5);
+            if (side > .3) ctx.drawImage(p.edge, ox + Math.sin(rot) * side, oy + side, w, h);
+            ctx.drawImage(p.image, ox, oy, w, h);
+            ctx.restore();
+        }
+        // 조각이 끝나면 깎던 돌이 판으로 갈라져 받침 위로 무너지고, 그 뒤에 원래 청동 황소가 남는다.
+        function carveBreak(state, t, reduced) {
+            const rect = carve?.ready ? carveRect() : null;
+            if (!rect || t > 1.1) return;
+            const N = carve.size, [x0, y0, x1, y1] = carve.box, mx = (x0 + x1) / 2, map = { x: rect.x, y: rect.y, s: rect.s }, live = rect.live;
+            if (!state.plates) {
+                const sites = [];
+                for (let i = 0; i < (width < 420 ? 8 : 12); i++) sites.push([x0 + (x1 - x0) * rand(state.seed + i * 3), y0 + (y1 - y0) * rand(state.seed + i * 3 + 1)]);
+                state.plates = cutPlates(state.snap, voronoi(sites, [0, 0, N, N]), 1, N, N);
+            }
+            state.plates.forEach((p, i) => {
+                if (reduced) { drawPlate(p, map, 0, 0, 0, 0, 1 - clamp(t / .5)); return; }
+                const s = state.seed + i * 5, tau = Math.max(0, t - rand(s + 40) * .08), g = 1500, vx = (p.cx - mx) * 1.4, vy = -(20 + rand(s + 41) * 60);
+                const fall = Math.max(0, y1 - p.cy - p.h * .25), land = (-vy + Math.sqrt(vy * vy + 2 * g * fall)) / g, k = Math.min(tau, land);
+                drawPlate(p, map, vx * k * map.s, Math.min(fall, vy * k + g * k * k / 2) * map.s, (rand(s + 42) - .5) * 5 * k, (4 + rand(s + 43) * 4) * map.s, 1 - clamp((tau - land - .15) / .3));
+            });
+            const image = stoneDust(), show = 1 - clamp(t / .9);
+            ctx.globalCompositeOperation = 'source-over';
+            for (let i = 0; i < 6; i++) material(ctx, image, live.x + live.w * (i + .5) / 6, live.y + live.h * (.95 - (reduced ? 0 : ease(clamp(t / .9)) * .25)), live.w * .45, live.w * .3, show * .8);
+        }
+
+        // ---- 위플래쉬에서 잔향으로: 외피가 갈라져 깨지고 안의 잔향이 손을 뻗는다 ----
+        // 장면 전체를 대신 그릴 때 실제 무대의 가장자리 그늘(.pq-game-stage::after)과 바닥 그늘(.pq-stage-boss::after)도 같이 얹는다.
+        function chrome(g) {
+            const s = scene, off = 4000;
+            g.save(); g.beginPath(); g.rect(s.x, s.y, s.w, s.h); g.clip();
+            g.globalCompositeOperation = 'source-atop'; g.globalAlpha = 1; g.fillStyle = '#000';
+            g.shadowColor = 'rgba(0,0,0,.75)'; g.shadowBlur = 90 * ratio; g.shadowOffsetX = off * ratio;
+            g.beginPath(); g.rect(s.x - off - 300, s.y - 300, s.w + 600, s.h + 600); g.rect(s.x - off, s.y, s.w, s.h); g.fill('evenodd');
+            g.restore();
+            const bottom = g.createLinearGradient(0, s.y + s.h, 0, s.y + s.h - 36);
+            bottom.addColorStop(0, 'rgba(10,8,18,.75)'); bottom.addColorStop(1, 'rgba(10,8,18,0)');
+            g.globalCompositeOperation = 'source-atop'; g.fillStyle = bottom; g.fillRect(s.x, s.y + s.h - 36, s.w, 36);
+            g.globalCompositeOperation = 'source-over';
+        }
+        // 등록 장면을 무대와 같은 평면(보스 그림 사각형)에 그린다. reveal이 있으면 기계 자리와 원 안만 드러낸다.
+        function paintScene(hall, figure, reveal, alpha = 1) {
+            const r = spriteDrawRect, m = maskCtx;
+            if (!r || alpha <= 0) return;
+            m.globalCompositeOperation = 'source-over'; m.globalAlpha = 1; m.clearRect(0, 0, width, height);
+            if (reveal) {
+                m.drawImage(sprite, r.x, r.y, r.w, r.h);
+                m.fillStyle = '#000'; m.beginPath(); m.arc(reveal[0], reveal[1], reveal[2], 0, TAU); m.fill();
+                m.globalCompositeOperation = 'source-in';
+            }
+            m.drawImage(hall, r.x, r.y, r.w, r.h);
+            m.globalCompositeOperation = 'source-atop';
+            if (figure === layer) m.drawImage(layer, 0, 0, layer.width, layer.height, 0, 0, width, height);
+            else m.drawImage(figure, r.x, r.y, r.w, r.h);
+            chrome(m);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = clamp(alpha);
+            ctx.drawImage(mask, 0, 0, mask.width, mask.height, 0, 0, width, height);
+        }
+        // 위플래쉬 외피를 판으로 나눈다. 우퍼 둘레에 판이 촘촘하고, 위쪽 가시 둘은 따로 넘어진다.
+        function whipPlates() {
+            if (!sprite?.src.includes('whiplash-scene') || !sprite.complete || !sprite.naturalWidth || !spriteDrawRect) return null;
+            const small = width < 420, key = sprite.src + (small ? ':s' : '');
+            if (whip?.key === key) return whip;
+            const [wx, wy, wr] = WHIP.woofer, [bx, by, bw, bh] = WHIP.box, ring = small ? 4 : 7, sites = [[680, 110], [1000, 110]];
+            for (let i = 0; i < ring; i++) { const a = (i + rand(i + 400) * .6) / ring * TAU, r = wr * (.45 + rand(i + 401) * .6); sites.push([wx + Math.cos(a) * r, wy + Math.sin(a) * r]); }
+            for (let i = sites.length; i < (small ? 10 : 18); i++) sites.push([bx + bw * (.08 + rand(i + 420) * .84), by + bh * (.25 + rand(i + 421) * .72)]);
+            const polys = voronoi(sites, WHIP.box), scale = Math.min(1, spriteDrawRect.w * ratio / PLANE[0]);
+            // 날아가는 판에도 꺼진 램프가 남는다.
+            const [lx, ly, lr] = WHIP.lamp, dim = g => {
+                const d = g.createRadialGradient(lx, ly, 0, lx, ly, lr * 1.3);
+                d.addColorStop(0, 'rgba(6,14,9,.9)'); d.addColorStop(1, 'rgba(6,14,9,0)');
+                g.fillStyle = d; g.fillRect(lx - lr * 2, ly - lr * 2, lr * 4, lr * 4);
+            };
+            const plates = cutPlates(sprite, polys, scale, PLANE[0], PLANE[1], dim);
+            // 판 경계가 곧 금이다. 상자 테두리 위의 변은 빼고, 우퍼에 가까운 끝에서 갈라지기 시작한다.
+            const side = p => (Math.abs(p[0] - bx) < .5 ? 1 : 0) | (Math.abs(p[0] - bx - bw) < .5 ? 2 : 0) | (Math.abs(p[1] - by) < .5 ? 4 : 0) | (Math.abs(p[1] - by - bh) < .5 ? 8 : 0);
+            const edges = new Map();
+            polys.forEach(poly => poly.forEach((p, i) => {
+                const q = poly[(i + 1) % poly.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+                if (side(p) & side(q) || len < 4) return;
+                const id = [p, q].map(v => Math.round(v[0]) + ',' + Math.round(v[1])).sort().join('|');
+                if (edges.has(id)) return;
+                const [a, b] = Math.hypot(p[0] - wx, p[1] - wy) <= Math.hypot(q[0] - wx, q[1] - wy) ? [p, q] : [q, p];
+                const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len, seed = edges.size * 13 + 700, points = [];
+                for (let j = 0; j <= 5; j++) { const off = j % 5 ? (rand(seed + j) - .5) * len * .12 : 0; points.push([a[0] + (b[0] - a[0]) * j / 5 + nx * off, a[1] + (b[1] - a[1]) * j / 5 + ny * off]); }
+                edges.set(id, { points, begin: .55 + 1.35 * clamp((Math.hypot(a[0] - wx, a[1] - wy) - wr * .4) / 520) });
+            }));
+            const list = [...edges.values()].sort((a, b) => a.begin - b.begin);
+            // 처음 갈라지는 교차점에서 작은 외피 조각이 떨어진다.
+            const spalls = list.slice(0, small ? 4 : 8).map((e, i) => {
+                const [x, y] = e.points[0], r = 7 + rand(i + 800) * 5;
+                return { begin: e.begin, plate: cutPlates(sprite, [[0, 1, 2].map(k => [x + Math.cos(k * 2.1 + i) * r, y + Math.sin(k * 2.1 + i) * r])], scale, PLANE[0], PLANE[1])[0] };
+            });
+            return whip = { key, plates, edges: list, spalls };
+        }
+        function partial(g, pts, f, map) {
+            const end = f * (pts.length - 1);
+            g.moveTo(map.x + pts[0][0] * map.s, map.y + pts[0][1] * map.s);
+            for (let i = 1; i < pts.length; i++) {
+                const k = Math.min(1, end - (i - 1));
+                if (k <= 0) break;
+                const a = pts[i - 1], b = pts[i];
+                g.lineTo(map.x + (a[0] + (b[0] - a[0]) * k) * map.s, map.y + (a[1] + (b[1] - a[1]) * k) * map.s);
+            }
+        }
+        // 잔향 인물: 팔 없는 몸에 떼어 낸 팔을 어깨 기준으로 붙인다. 3.7초에 원본과 같은 자리, 마지막 0.3초에 원본 장면으로 넘긴다.
+        function composeEcho(echo, t) {
+            const r = spriteDrawRect, g = layerCtx, s = r.w / PLANE[0], arm = armCut?.src === echo.scene.src ? armCut.canvas : null;
+            g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.clearRect(0, 0, width, height);
+            if (!arm || !echo.body || t >= 4) g.drawImage(echo.scene, r.x, r.y, r.w, r.h);
+            else {
+                g.drawImage(echo.body, r.x, r.y, r.w, r.h);
+                if (t > 2.95) {
+                    const k = ease(clamp((t - 2.95) / .75)), [px, py] = ARM.pivot, [bx, by, bw, bh] = ARM.box, x = r.x + px * s, y = r.y + py * s;
+                    g.save(); g.globalAlpha = clamp((t - 2.95) / .15);
+                    g.translate(x, y); g.rotate(-.14 * (1 - k)); g.scale(.78 + .22 * k, .78 + .22 * k); g.translate(-x, -y);
+                    g.drawImage(arm, r.x + bx * s, r.y + by * s, bw * s, bh * s); g.restore();
+                }
+                if (t > 3.7) {
+                    const f = clamp((t - 3.7) / .3);
+                    g.globalCompositeOperation = 'destination-out'; g.globalAlpha = f; g.fillRect(0, 0, width, height);
+                    g.globalCompositeOperation = 'lighter'; g.drawImage(echo.scene, r.x, r.y, r.w, r.h);
+                    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+                }
+            }
+            // 깨지기 전에는 금 사이로 붉은 안쪽 빛만 받고, 팔을 뻗으면 손끝부터 밝아진다.
+            const lit = clamp((t - 2.95) / .7), dark = .62 * (1 - ease(lit));
+            if (dark <= .01) return;
+            const x = r.x + ARM.hand[0] * s, y = r.y + ARM.hand[1] * s, reach = r.w * .9 * lit;
+            let fill = 'rgba(14,3,8,' + dark + ')';
+            if (lit > 0) { fill = g.createRadialGradient(x, y, reach * .35, x, y, reach + 1); fill.addColorStop(0, 'rgba(14,3,8,0)'); fill.addColorStop(1, 'rgba(14,3,8,' + dark + ')'); }
+            g.globalCompositeOperation = 'source-atop'; g.fillStyle = fill; g.fillRect(r.x, r.y, r.w, r.h);
+            if (t < 2.95) { g.fillStyle = 'rgba(190,24,40,.22)'; g.fillRect(r.x, r.y, r.w, r.h); }
+            g.globalCompositeOperation = 'source-over';
+        }
+        // 금: 외피 알파 안에서만 벌어지고, 틈으로 뒤의 잔향이 비친다. 위쪽 턱은 빛을 받는다.
+        function cracks(net, t, reduced, map, pulse, echo) {
+            const u = unit(), lines = (m, scale) => {
+                for (const e of net.edges) {
+                    const grow = reduced ? (t >= e.begin ? 1 : 0) : clamp((t - e.begin) / .3);
+                    if (grow <= 0) continue;
+                    m.lineWidth = (.5 + 2 * clamp((t - e.begin) / 1.4)) * u * scale;
+                    m.beginPath(); partial(m, e.points, grow, map); m.stroke();
+                }
+            };
+            skin(m => {
+                m.lineCap = m.lineJoin = 'round'; m.strokeStyle = 'rgb(44,6,12)'; lines(m, 1);
+                if (echo) { m.globalCompositeOperation = 'source-atop'; m.drawImage(layer, 0, 0, layer.width, layer.height, 0, 0, width, height); }
+            }, 1);
+            skin(m => { m.lineCap = 'round'; m.strokeStyle = 'rgb(255,226,214)'; m.translate(-.6 * u, -.6 * u); lines(m, .3); m.setTransform(ratio, 0, 0, ratio, 0, 0); }, .3, 'lighter');
+            if (pulse > 0) skin(m => { m.lineCap = 'round'; m.strokeStyle = rgba(RED, 1); lines(m, .6); }, pulse * .8, 'lighter');
+        }
+        // 들어올 장면이 아직 해독되지 않았으면 연기로 덮어 둔다.
+        function veil(alpha) {
+            if (alpha <= .01) return;
+            const image = texture('mist') || puff();
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = clamp(alpha * .75); ctx.fillStyle = 'rgb(9,7,10)'; ctx.fillRect(scene.x, scene.y, scene.w, scene.h);
+            for (let i = 0; i < 6; i++) material(ctx, image, scene.x + scene.w * (i % 3 + .5) / 3, scene.y + scene.h * (i < 3 ? .3 : .75), scene.w * .6, scene.h * .6, alpha * .8, i);
+        }
+        // 0~.55 압력, .55~2.1 금, 2.1~2.65 고요, 2.65~3.3 파열, 2.95~3.65 팔, 3.7~4 원본 장면. 서버 남은 시간 기준이라 재접속해도 이어진다.
+        function transition(state, t, reduced) {
+            const r = spriteDrawRect;
+            if (!r || !sprite?.src.includes('whiplash-scene')) { state.hold = false; return; }
+            const map = { x: r.x, y: r.y, s: r.w / PLANE[0] }, echo = echoArt(state.event.art), net = whipPlates(), u = unit();
+            const ready = !!(echo && net), [wx, wy, wr] = WHIP.woofer, cx = map.x + wx * map.s, cy = map.y + wy * map.s;
+            const broken = ready && !reduced && t >= 2.65;
+            state.hold = ready && t >= (reduced ? 3.25 : 2.65);
+            state.veil = (state.veil || 0) + ((!ready && t > 2.4 ? 1 : 0) - (state.veil || 0)) * (1 - Math.exp(-frameDt / .25));
+            if (echo) composeEcho(echo, t);
+            if (!broken) {
+                // 압력: 우퍼 콘이 안으로 빨려 들고 초록 램프가 깜빡이다 꺼진다.
+                if (!reduced) {
+                    const k = .015 * ease(clamp(t / .55)), rr = wr * map.s;
+                    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.clip();
+                    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = 'rgb(7,7,9)'; ctx.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+                    ctx.translate(cx, cy); ctx.scale(1 - k, 1 - k); ctx.translate(-cx, -cy);
+                    ctx.drawImage(sprite, r.x, r.y, r.w, r.h); ctx.restore();
+                }
+                const [lx, ly, lr] = WHIP.lamp, x = map.x + lx * map.s, y = map.y + ly * map.s, size = lr * 2 * map.s;
+                const off = t >= .55 ? 1 : reduced ? t / .55 : (rand(Math.floor(t * 18) + 900) > .45 ? .85 : .2) * t / .55;
+                const lamp = ctx.createRadialGradient(x, y, 0, x, y, lr * 1.3 * map.s);
+                lamp.addColorStop(0, 'rgba(6,14,9,.9)'); lamp.addColorStop(1, 'rgba(6,14,9,0)');
+                ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = clamp(off); ctx.fillStyle = lamp; ctx.fillRect(x - size, y - size, size * 2, size * 2);
+                if (net && t >= .55) cracks(net, t, reduced, map, t > 2.2 && t < 2.6 ? Math.sin((t - 2.2) / .4 * Math.PI) : 0, echo);
+                if (net && !reduced) net.spalls.forEach((s, i) => {
+                    const k = t - s.begin - .1;
+                    if (k > 0 && k < 1.2) drawPlate(s.plate, map, (rand(i + 820) - .5) * 60 * k * map.s, 750 * k * k * map.s, k * (rand(i + 821) - .5) * 9, 2 * map.s, 1);
+                });
+                // 고요: 새 금 없이 장면 빛이 15% 가라앉는다.
+                if (t > 2.1) { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = .15 * clamp((t - 2.1) / .25); ctx.fillStyle = '#000'; ctx.fillRect(scene.x, scene.y, scene.w, scene.h); }
+                if (reduced && ready && t >= 2.65) paintScene(echo.hall, echo.scene, null, clamp((t - 2.65) / .6));
+            } else {
+                // 파열: 우퍼에서 퍼지는 먼지 앞선 안쪽으로 잔향의 방이 드러나고, 판은 바깥으로 날아가며 일부는 그녀 앞을 지난다.
+                const e = t - 2.65, R = 980 * map.s * ease(clamp(e / .65));
+                paintScene(echo.hall, layer, e < .65 ? [cx, cy, R] : null);
+                net.plates.forEach((p, i) => {
+                    const dx = p.cx - wx, dy = p.cy - wy, d = Math.hypot(dx, dy) || 1, tau = Math.max(0, e - d / 2400);
+                    let vx, vy, w;
+                    if (p.cy < 210) { vx = Math.sign(dx) * 160; vy = -40; w = Math.sign(dx) * (1.6 + rand(i + 510)); }
+                    else { const v = (650 + rand(i + 500) * 450) * (1.25 - Math.min(1, d / 420) * .6); vx = dx / d * v; vy = dy / d * v - 220; w = (rand(i + 501) - .5) * 7; }
+                    drawPlate(p, map, vx * tau * map.s, (vy * tau + 1000 * tau * tau) * map.s, w * tau, (5 + rand(i + 502) * 6) * map.s, 1 - clamp((t - 3.6) / .3));
+                });
+                const smoke = texture('mist') || puff(), dust = stoneDust(), thin = 1 - clamp((t - 3.65) / .35);
+                ctx.globalCompositeOperation = 'source-over';
+                if (e < .9) for (let k = 0; k < 12; k++) {
+                    const a = k / 12 * TAU + rand(k + 830) * .4, rr = R * (.92 + rand(k + 831) * .12), size = Math.max(40 * u, R * .55);
+                    material(ctx, smoke, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * .8, size, size * .62, (1 - clamp(e / .9)) * .7, a);
+                }
+                for (let k = 0; k < (width < 420 ? 5 : 8); k++) {
+                    const a = rand(k + 840) * TAU, dist = (60 + rand(k + 841) * 260) * map.s * (.4 + ease(clamp(e / 1.1))), size = (120 + rand(k + 842) * 140) * map.s;
+                    material(ctx, dust, cx + Math.cos(a) * dist, cy + Math.sin(a) * dist * .6 + e * 30 * map.s, size, size * .7, .5 * thin * clamp(e / .15));
+                }
+            }
+            veil(state.veil);
+        }
+
         function draw(state, t) {
             const kind = state.kind, ev = state.event, reduced = motion.matches;
             const duration = Number(ev.duration || 0), seed = state.seed;
@@ -1288,10 +1898,9 @@
             else if (kind === 'bounce') bounce(t, ev, reduced);
             else if (kind === 'mark') markCue(t, ev, reduced);
             else if (kind === 'burden') burden(t, state, reduced);
-            else if (kind === 'sculpture') {
-                const pct = clamp(Number(ev.damage || 0) / Math.max(1, Number(ev.hpMax || 0)));
-                skin((m, b) => { m.fillStyle = 'rgba(236,226,206,1)'; m.fillRect(b.x, b.y, b.w, b.h); }, pct * .55, 'overlay');
-            } else if (kind === 'shards') shards(t, fade, reduced);
+            else if (kind === 'sculpture') sculpture(state, t, reduced);
+            else if (kind === 'carve-break') carveBreak(state, t, reduced);
+            else if (kind === 'shards') shards(t, fade, reduced);
             else if (kind === 'resonance') charge(t, duration, VIOLET, VIOLET_HOT, true, fade, reduced);
             else if (kind === 'echo') echo(t, fade, reduced);
             else if (kind === 'dictation' || kind === 'voice') {
@@ -1319,19 +1928,8 @@
                 ctx.save(); ctx.translate(point(.5, 1)[0], groundY()); ctx.scale(1, .25);
                 glow(0, 0, (spriteRect?.w || scene.w * .4) * .6, [120, 60, 190], .35);
                 ctx.restore();
-            } else if (kind === 'transition') {
-                // 스피커가 안에서부터 붉게 갈라진다.
-                const p = clamp(t / 4);
-                skin((m, b) => { m.fillStyle = 'rgba(30,6,10,1)'; m.fillRect(b.x, b.y, b.w, b.h); }, p * .45, 'multiply');
-                skin((m, b) => {
-                    const x = b.x + b.w * .5, y = b.y + b.h * .66;
-                    for (let i = 0; i < 3 + Math.floor(p * 9); i++) {
-                        const angle = rand(i + 70) * TAU, r = b.w * (.15 + rand(i + 71) * .45) * clamp(p * 1.5);
-                        bolt(m, x, y, x + Math.cos(angle) * r, y + Math.sin(angle) * r * 1.2, i * 11, RED, RED_HOT, 1, 1.4);
-                    }
-                }, .5 + p * .5, 'lighter');
-                if (t > 3.6) glow(...point(.5, .66), (spriteRect?.w || scene.w * .4) * .7, RED_HOT, clamp((t - 3.6) / .4) * .6);
-            } else if (kind === 'wall') {
+            } else if (kind === 'transition') transition(state, Math.min(t, 4), reduced);
+            else if (kind === 'wall') {
                 // 양쪽 벽이 소리에 떨린다.
                 const strength = Math.sin(clamp(t / Math.max(.1, duration)) * Math.PI), size = scene.w * .14;
                 ctx.globalCompositeOperation = 'lighter';
@@ -1384,15 +1982,21 @@
         }
         function render(now) {
             frame = 0;
-            if (document.hidden || !busy() || !width || !height) { ctx.clearRect(0, 0, width, height); return; }
+            if (document.hidden || !busy() || !width || !height) { ctx.clearRect(0, 0, width, height); if (!busy()) hold(false); return; }
             if (now - lastFrame < 32) { frame = requestAnimationFrame(render); return; }
             const dt = Math.min(.1, (now - lastFrame) / 1000);
-            lastFrame = now; ctx.clearRect(0, 0, width, height);
+            lastFrame = now; frameDt = dt; ctx.clearRect(0, 0, width, height);
             locate();
             if (mistAlive()) { ctx.save(); drawMist(now, dt, motion.matches); ctx.restore(); }
+            if (handoff) {
+                // 실제 무대가 잔향 그림으로 바뀌고 해독이 끝난 뒤에 넘긴다. 같은 픽셀이라 이음새가 없다.
+                const image = document.getElementById('pqBossIllustImg'), background = image?.closest('.pq-scene-plane')?.querySelector('.pq-stage-background');
+                if ((image?.src === handoff.scene.src && image.complete && image.naturalWidth && (!background || background.complete)) || now - handoff.at > 8000) handoff = null;
+                else { ctx.save(); ctx.beginPath(); ctx.rect(scene.x, scene.y, scene.w, scene.h); ctx.clip(); paintScene(handoff.hall, handoff.scene, null); ctx.restore(); }
+            }
             for (const [id, state] of states) {
                 const age = (now - state.start) / 1000, ev = state.event;
-                const finite = ev.remain != null || state.kind === 'shatter';
+                const finite = ev.remain != null || state.kind === 'shatter' || state.kind === 'carve-break';
                 if (state.removed && age > Number(ev.duration || 0) + tailTime(state.kind)) { stopSounds(state); states.delete(id); continue; }
                 state.plan.forEach(([at, key, gain], i) => {
                     if (state.fired.has(i) || age < at) return;
@@ -1400,8 +2004,11 @@
                     state.fired.add(i);
                     if (age - at <= .15) play(state, key, gain);
                 });
-                if (!finite || age <= Number(ev.duration || 0) + tailTime(state.kind)) draw(state, age);
+                // 형태 전환은 서버가 잔향으로 넘길 때까지 마지막 장면을 유지한다.
+                state.hold = false;
+                if (!finite || state.kind === 'transition' || age <= Number(ev.duration || 0) + tailTime(state.kind)) draw(state, age);
             }
+            hold(!!handoff || [...states.values()].some(state => state.hold));
             if (busy()) frame = requestAnimationFrame(render);
         }
         document.addEventListener('visibilitychange', () => {

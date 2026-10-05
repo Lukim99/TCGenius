@@ -57,11 +57,40 @@
 .raid-dock .pq-scene-plane>.pq-scene-foreground.groggy img{filter:grayscale(.65) brightness(.7);transition:filter .3s ease-out}
 .pq-scene-plane>.pq-scene-foreground[data-framed="0"] img{object-fit:contain;object-position:center bottom;filter:drop-shadow(0 4px 8px #0009)}
 .pq-stage-boss.registered-scene::before{display:none}
-.pq-gate-layer{position:absolute;inset:0;animation-duration:3s;animation-timing-function:ease;animation-fill-mode:both;animation-delay:var(--gate-offset,0ms)}
+/* 관문 도착(3초, --gate-offset): 이전 장면이 보스 쪽으로 밀려 들고, 렌즈 앞을 지나는 짙은 연기 뒤에서 다음 장면이 켜진다.
+   다음 장면은 보스 발밑 기준으로 장면 평면 전체가 1.07에서 1로 자리 잡고, 배경이 먼저 밝아진 뒤 보스가 실루엣에서 빛을 받는다.
+   2.7초에는 변형과 덮개가 모두 0이라 실제 무대와 같은 픽셀이다. 위치 이동이나 투명도로 보스만 따로 등장시키지 않는다. */
+.pq-gate-layer{position:absolute;inset:1px;overflow:hidden;animation-duration:3s;animation-timing-function:linear;animation-fill-mode:both;animation-delay:var(--gate-offset,0ms)}
 .pq-gate-layer.prev{animation-name:pqGateScenePrev}.pq-gate-layer.next{animation-name:pqGateSceneNext}
-@keyframes pqGateScenePrev{0%{opacity:1;filter:brightness(1)}34%,100%{opacity:0;filter:brightness(.35)}}
-@keyframes pqGateSceneNext{0%,30%{opacity:0;filter:brightness(.25)}78%,100%{opacity:1;filter:brightness(1)}}
+.pq-gate-layer .pq-scene-foreground{animation:none}
+.pq-gate-shade,.pq-gate-silhouette,.pq-gate-foot,.pq-gate-mist,.pq-gate-hold{position:absolute;pointer-events:none;animation-duration:3s;animation-fill-mode:both;animation-delay:var(--gate-offset,0ms)}
+.pq-gate-shade{inset:0;background:#07060a;animation-timing-function:linear}
+.pq-gate-layer.prev>.pq-gate-shade{animation-name:pqGateShadePrev}.pq-gate-layer.next>.pq-gate-shade{animation-name:pqGateShadeNext}
+.pq-gate-silhouette{inset:0;background:#0b080d;-webkit-mask:var(--gate-boss) center/100% 100% no-repeat;mask:var(--gate-boss) center/100% 100% no-repeat;animation-name:pqGateSilhouette;animation-timing-function:ease-in-out}
+[data-framed="0"]>.pq-gate-silhouette{-webkit-mask-size:contain;mask-size:contain;-webkit-mask-position:center bottom;mask-position:center bottom}
+.pq-gate-foot{background:var(--gate-mist) center/100% 100% no-repeat;animation-name:pqGateFoot;animation-timing-function:ease-out}
+.pq-gate-mist{inset:-8% -60%;z-index:1;background:var(--gate-mist) 0 35%/38% 80% repeat-x,var(--gate-mist) 40% 80%/55% 95% repeat-x,linear-gradient(90deg,transparent 6%,rgba(9,7,11,.97) 26%,rgba(9,7,11,.97) 74%,transparent 94%);animation-name:pqGateMist;animation-timing-function:linear}
+.pq-gate-hold{inset:0;z-index:1;opacity:0;transition:opacity .35s ease-out;background:var(--gate-mist) 20% 50%/70% 100% repeat-x,#0a080c}
+.pq-gate-cut.waiting .pq-gate-hold{opacity:1;transition:none}
+.pq-gate-cut.waiting .pq-gate-layer.next{visibility:hidden}
 .pq-gate-title,.pq-gate-line{z-index:2}
+@keyframes pqGateScenePrev{0%{transform:none;visibility:visible;animation-timing-function:cubic-bezier(.4,0,.7,1)}28.33%{transform:scale(1.035);visibility:visible}33.33%,100%{transform:scale(1.035);visibility:hidden}}
+@keyframes pqGateSceneNext{0%,28.32%{transform:scale(1.07);visibility:hidden}28.33%{transform:scale(1.07);visibility:visible;animation-timing-function:cubic-bezier(.2,.6,.3,1)}90%,100%{transform:none;visibility:visible}}
+@keyframes pqGateShadePrev{0%{opacity:0}23.33%,100%{opacity:.7}}
+@keyframes pqGateShadeNext{0%,28.33%{opacity:.75}63.33%,100%{opacity:0}}
+@keyframes pqGateSilhouette{0%,45%{opacity:.92}85%,100%{opacity:0}}
+@keyframes pqGateFoot{0%,40%{opacity:.9;transform:none}90%,100%{opacity:0;transform:translateX(-14%)}}
+@keyframes pqGateMist{0%,15%{opacity:0;transform:translateX(30%)}25%{opacity:1;transform:translateX(4%)}33.33%{opacity:1;transform:translateX(-4%)}48.33%,100%{opacity:0;transform:translateX(-30%)}}
+@media(prefers-reduced-motion:reduce){
+  .pq-gate-layer.prev{animation-name:pqGatePrevStill}.pq-gate-layer.next{animation-name:pqGateNextStill}
+  .pq-gate-mist{animation-name:pqGateMistStill}.pq-gate-foot{animation-name:pqGateFootStill}
+  @keyframes pqGatePrevStill{0%,33.32%{visibility:visible}33.33%,100%{visibility:hidden}}
+  @keyframes pqGateNextStill{0%,28.32%{visibility:hidden}28.33%,100%{visibility:visible}}
+  @keyframes pqGateMistStill{0%,15%{opacity:0}25%,33.33%{opacity:1}48.33%,100%{opacity:0}}
+  @keyframes pqGateFootStill{0%,40%{opacity:.9}90%,100%{opacity:0}}
+}
+/* 패턴 연출이 보스 그림을 대신 그리는 동안(조각 깎기, 외피 파열, 잔향 인계) 원본만 숨긴다. 피해 숫자는 그대로 보인다. */
+#pqBossIllust[data-fx-hold] img{opacity:0}
 .pq-purification-hud{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 16px 18px;background:linear-gradient(#000b,#0004 75%,transparent);text-shadow:0 2px 5px #000}
 .pq-purification-hud .lbl{font-family:var(--font-game);font-size:19px;letter-spacing:.04em;color:#eee4cf;font-weight:400}
 .pq-purification-hud .n{font-size:17px;line-height:1;color:#cfbd8d}

@@ -18,6 +18,15 @@
     let supportBarSig = '';
     let raidEffects = null;
     let sceneObserver = null;
+    const raidImages = new Map();
+    function preloadRaidArt(art) {
+        for (const src of [art?.background, art?.image]) {
+            if (!src || raidImages.has(src)) continue;
+            const image = new Image(); image.decoding = 'async'; image.src = src;
+            raidImages.set(src, image);
+            image.decode().catch(() => {});
+        }
+    }
     // 클라이언트 로컬 쿨다운 데드라인 (epoch ms) 
     const myCD = { action: 0, skills: {}, potion: 0 };
     const pendingCD = { action: false, potion: false };
@@ -836,15 +845,16 @@
         if (prev === 'inProgress' && (snap.state === 'cleared' || (snap.state === 'failed' && !defeatActive))) playSfx(snap.state === 'cleared' ? 'clear' : 'fail');
     }
 
-    let phaseCut = null, phaseCutTimer = null;
+    let phaseCut = null, phaseCutTimers = [];
+    const GATE_MIST = '/rpg-ui?file=' + encodeURIComponent('레이드/fx-dark-mist.png');
     function isPhaseTransitionActive() {
         return currentRoom?.state === 'inProgress' && Number(currentRoom.phaseTransition?.endsAt || 0) + (cooldownClockOffset || 0) > Date.now();
     }
     function hidePhaseTransition() {
-        clearTimeout(phaseCutTimer);
-        phaseCutTimer = null;
+        phaseCutTimers.forEach(clearTimeout);
+        phaseCutTimers = [];
         phaseCut?.remove(); phaseCut = null;
-        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('gate-transition');
+        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('gate-transition', 'gate-settle');
     }
     function syncPhaseTransition(snap) {
         const transition = snap.phaseTransition;
@@ -859,20 +869,47 @@
         const elapsed = Math.max(0, Date.now() - Number(transition.startedAt) - (cooldownClockOffset || 0));
         phaseCut = el('div', { class: 'pq-gate-cut', 'data-id': transition.id, role: 'status', 'aria-label': transition.phaseName + ' ' + transition.toName });
         phaseCut.style.setProperty('--gate-offset', '-' + elapsed + 'ms');
+        phaseCut.style.setProperty('--gate-mist', 'url("' + GATE_MIST + '")');
+        // 각 장면은 한 평면으로 움직인다. 다음 장면은 짙은 연기 뒤에서 켜지고, 보스는 처음부터 불투명한 채 실루엣에서 빛을 받는다.
         for (const [kind, image, background, scene] of [['prev', transition.fromImage, transition.fromBackground, transition.fromScene],
             ['next', transition.toImage, transition.toBackground, transition.toScene]]) {
-            if (scene && background) phaseCut.append(el('div', { class: 'pq-gate-layer ' + kind }, renderRaidScene({ image, background, scene })));
-            else if (image) phaseCut.append(el('img', { class: 'pq-gate-' + kind, src: image, alt: '', draggable: 'false' }));
+            if (scene && background) {
+                const plane = renderRaidScene({ image, background, scene }), [sx, sy, sw, sh] = scene.subject || [0, 0, 1, 1];
+                const layer = el('div', { class: 'pq-gate-layer ' + kind, 'data-origin': JSON.stringify([sx + sw / 2, sy + sh]) }, plane, el('i', { class: 'pq-gate-shade', 'aria-hidden': 'true' }));
+                if (kind === 'next' && image) {
+                    const silhouette = el('i', { class: 'pq-gate-silhouette', 'aria-hidden': 'true' });
+                    silhouette.style.setProperty('--gate-boss', 'url("' + image + '")');
+                    plane.querySelector('.pq-scene-foreground')?.append(silhouette);
+                    const foot = el('i', { class: 'pq-gate-foot', 'aria-hidden': 'true' });
+                    foot.style.cssText = 'left:' + (sx - sw * .2) * 100 + '%;width:' + sw * 140 + '%;top:' + (sy + sh * .7) * 100 + '%;height:' + sh * 45 + '%';
+                    plane.append(foot);
+                }
+                phaseCut.append(layer);
+            } else if (image) phaseCut.append(el('img', { class: 'pq-gate-' + kind, src: image, alt: '', draggable: 'false' }));
         }
-        phaseCut.append(el('i', { class: 'pq-gate-line', 'aria-hidden': 'true' }),
+        phaseCut.append(el('i', { class: 'pq-gate-mist', 'aria-hidden': 'true' }), el('i', { class: 'pq-gate-hold', 'aria-hidden': 'true' }),
+            el('i', { class: 'pq-gate-line', 'aria-hidden': 'true' }),
             el('div', { class: 'pq-gate-title' }, el('span', null, transition.phaseNumber + '관문'), el('b', null, transition.toName)));
         stage.append(phaseCut);
         syncRaidScenes();
-        phaseCutTimer = setTimeout(() => {
+        // 다음 장면 그림이 해독되기 전에는 연기 장막을 유지한다. 캐시된 그림이면 장막이 보이지 않는다.
+        const cut = phaseCut, nextImages = [...cut.querySelectorAll('.pq-gate-layer.next img')];
+        let decoded = nextImages.every(image => image.complete && image.naturalWidth);
+        if (!decoded) {
+            Promise.all(nextImages.map(image => image.decode().catch(() => {}))).then(() => {
+                decoded = true;
+                if (phaseCut === cut) cut.classList.remove('waiting');
+            });
+            if (elapsed >= 750) cut.classList.add('waiting');
+            else phaseCutTimers.push(setTimeout(() => { if (!decoded && phaseCut === cut) cut.classList.add('waiting'); }, 750 - elapsed));
+        }
+        // 2.7초에 컷 장면이 실제 무대와 같아지면 실제 보스를 다시 보이고, 컷은 마지막 0.3초 동안 걷힌다.
+        phaseCutTimers.push(setTimeout(() => { if (phaseCut === cut) screen.classList.add('gate-settle'); }, Math.max(0, 2700 - elapsed)));
+        phaseCutTimers.push(setTimeout(() => {
             hidePhaseTransition();
             updateRaidPatterns();
             updateAttackBtn(); updateSkillPotionButtons(); updateSupportGauge();
-        }, Math.max(0, Number(transition.endsAt) + (cooldownClockOffset || 0) - Date.now()));
+        }, Math.max(0, Number(transition.endsAt) + (cooldownClockOffset || 0) - Date.now())));
     }
     function updateRaidPatterns() {
         if (!window.MansionRaidUI) return;
@@ -895,7 +932,7 @@
         if (!raidEffects && window.RaidPatternFX) raidEffects = RaidPatternFX.create($('#pqRaidFx'));
         const purification = snap?.state === 'inProgress' && snap.phaseType === 'mob' && !isPhaseTransitionActive()
             ? { progress: Math.min(1, (snap.sharedKillCount || 0) / Math.max(1, snap.killTarget)), complete: snap.sharedKillCount >= snap.killTarget } : null;
-        raidEffects?.update(view, { scope: snap ? snap.id + ':' + snap.startedAt + ':' + snap.phaseIndex : '', volume: sound.sfx, purification });
+        raidEffects?.update(view, { scope: snap ? snap.id + ':' + snap.startedAt + ':' + snap.phaseIndex : '', volume: sound.sfx, serverOffset: cooldownClockOffset || 0, purification });
         MansionRaidUI.update($('#pqMansionRoot'), view, { me: snap?.spectating ? '' : me, host: snap?.hostName, serverOffset: cooldownClockOffset || 0,
             readOnly: !!snap?.spectating, visualOnly: raidEffects?.visualOnly,
             send: snap?.spectating ? null : payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
@@ -904,6 +941,8 @@
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
         const previous = currentRoom;
+        for (const phase of snap.questDef?.phases || []) preloadRaidArt(phase.artwork);
+        preloadRaidArt(snap.monster?.mansion?.transitionArt);
         if (previous?.id !== snap.id) {
             cooldownClockOffset = null; lastCooldownServerTime = 0; lastTickAt = 0;
             pendingCD.action = false; pendingCD.potion = false;
@@ -1200,7 +1239,8 @@
             else updateMobStage(snap);
         } else if (snap.phaseType === 'elite' || snap.phaseType === 'boss') {
             if (!snap.monster) { bossStageSig = ''; updateEnrageLabel(null); stage.replaceChildren(); }
-            else if (!document.getElementById('pqBossStage') || bossStageSig !== bossStageSigOf(snap.monster)) stage.replaceChildren(renderBossStage(snap));
+            else if (!document.getElementById('pqBossStage') || !bossStageSig) stage.replaceChildren(renderBossStage(snap));
+            // 같은 보스의 형태 변화는 updateBossMonster가 새 그림을 해독한 뒤 바꾼다.
             else updateBossStage(snap);
         } else {
             bossStageSig = '';
@@ -1430,8 +1470,13 @@
         if (!sceneObserver && window.ResizeObserver) { sceneObserver = new ResizeObserver(syncRaidScenes); sceneObserver.observe(stage); }
         document.querySelector('.pq-game-stagewrap').querySelectorAll('.pq-scene-plane').forEach(plane => {
             const parent = plane.parentElement, aspect = Number(plane.dataset.aspect);
-            const width = Math.max(parent.clientWidth, parent.clientHeight * aspect);
-            plane.style.width = width + 'px'; plane.style.height = width / aspect + 'px';
+            const width = Math.max(parent.clientWidth, parent.clientHeight * aspect), height = width / aspect;
+            plane.style.width = width + 'px'; plane.style.height = height + 'px';
+            // 관문 카메라는 보스 발밑을 기준으로 장면 평면 전체를 함께 확대한다.
+            if (parent.dataset.origin) {
+                const [ox, oy] = JSON.parse(parent.dataset.origin), top = plane.style.top === '0px' ? 0 : (parent.clientHeight - height) / 2;
+                parent.style.transformOrigin = ((parent.clientWidth - width) / 2 + ox * width) + 'px ' + (top + oy * height) + 'px';
+            }
         });
         syncBossSpeech();
     }
@@ -1701,8 +1746,14 @@
         if (bossStageSig && bossStageSig !== sig && currentRoom) {
             const stage = document.getElementById('pqPhaseStage');
             if (stage && document.getElementById('pqBossStage')) {
-                stage.replaceChildren(renderBossStage(currentRoom));
-                syncRaidScenes();
+                // 새 무대 그림을 해독한 뒤에 바꾼다. 그동안 패턴 연출이 이전 장면의 마지막 프레임을 유지한다.
+                const next = renderBossStage(currentRoom), roomId = currentRoom.id;
+                Promise.all([...next.querySelectorAll('img')].map(image => image.decode().catch(() => {}))).then(() => {
+                    if (bossStageSig !== sig || currentRoom?.id !== roomId || !stage.isConnected || !document.getElementById('pqBossStage')) return;
+                    stage.replaceChildren(next);
+                    syncRaidScenes();
+                    updateBossMonster(currentRoom.monster);
+                });
                 return;
             }
         }

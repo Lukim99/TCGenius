@@ -80,7 +80,7 @@ function createMansionRaid(engine) {
         mon.bossState.gimmickActive.tick = (room, mon, dt) => { event.remain -= dt; if (event.remain <= 1e-6) failGimmick(room, mon, event, .5); };
     }
     function sculpture(room, mon) {
-        const event = start(room, mon, 'sculpture', byDifficulty(mon, 20, 18), { hpMax: byDifficulty(mon, 1000000, 1600000, 2800000), damage: 0, growthAt: Date.now(), growthSteps: 0, minPct: byDifficulty(mon, .65, .7), maxPct: byDifficulty(mon, .95, .9) });
+        const event = start(room, mon, 'sculpture', byDifficulty(mon, 20, 18), { hpMax: byDifficulty(mon, 1000000, 1600000, 2800000), damage: 0, decayAt: Date.now(), decaySteps: 0, carveHits: 0, minPct: byDifficulty(mon, .65, .7), maxPct: byDifficulty(mon, .95, .9) });
         mon.bossState.gimmickActive.tick = (room, mon, dt) => {
             if (!advanceSculpture(room, mon, event)) return;
             event.remain -= dt;
@@ -88,12 +88,12 @@ function createMansionRaid(engine) {
         };
     }
     function sculptureProgress(event) {
-        const steps = Math.max(event.growthSteps, Math.min(event.duration * 10, Math.floor((Date.now() - event.growthAt) / 100)));
-        return { steps, damage: Math.min(event.hpMax, event.damage + (steps - event.growthSteps) * event.hpMax / 1000) };
+        const steps = Math.max(event.decaySteps, Math.min(event.duration * 10, Math.floor((Date.now() - event.decayAt) / 100)));
+        return { steps, damage: Math.max(0, event.damage - (steps - event.decaySteps) * event.hpMax / 1000) };
     }
     function advanceSculpture(room, mon, event) {
         const progress = sculptureProgress(event);
-        event.damage = progress.damage; event.growthSteps = progress.steps;
+        event.damage = progress.damage; event.decaySteps = progress.steps;
         if (event.damage >= event.hpMax) { failGimmick(room, mon, event, .5); return false; }
         return true;
     }
@@ -276,6 +276,7 @@ function createMansionRaid(engine) {
             if (!advanceSculpture(room, mon, stone)) return 0;
             const dealt = Math.min(damage, Math.max(0, stone.hpMax - stone.damage));
             stone.damage += dealt;
+            if (dealt > 0) stone.carveHits++;
             if (stone.damage >= stone.hpMax) failGimmick(room, mon, stone, .5);
             return dealt;
         }
@@ -345,7 +346,7 @@ function createMansionRaid(engine) {
         } else if (name === '눈뜬 장님') {
             for (const member of room.members) if (member.runtime) member.runtime.cooldownsUntil = {};
             const stone = mon?.bossState?.events.find(event => event.kind === 'sculpture');
-            if (stone && advanceSculpture(room, mon, stone)) { stone.damage = Math.round(stone.hpMax * .75); E.pushNotice(room, '내가 맞춰주겠다.', 'big', 4000); E.grantTitleAsync(room, room.hostName, 'mansionEyes'); }
+            if (stone && advanceSculpture(room, mon, stone)) { stone.damage = Math.round(stone.hpMax * .75); stone.carveHits++; E.pushNotice(room, '내가 맞춰주겠다.', 'big', 4000); E.grantTitleAsync(room, room.hostName, 'mansionEyes'); }
         }
     }
     function tickAurora(room, dt) {
@@ -358,10 +359,10 @@ function createMansionRaid(engine) {
     function view(mon) {
         const st = mon?.bossState;
         if (!st?.mansion) return null;
-        const fields = ['id', 'kind', 'label', 'message', 'cueText', 'remain', 'duration', 'target', 'targets', 'responded', 'loads', 'damage', 'hpMax', 'minPct', 'maxPct', 'sequence', 'answers', 'pulse', 'stage', 'recorded'];
+        const fields = ['id', 'kind', 'label', 'message', 'cueText', 'remain', 'duration', 'target', 'targets', 'responded', 'loads', 'damage', 'hpMax', 'minPct', 'maxPct', 'carveHits', 'sequence', 'answers', 'pulse', 'stage', 'recorded'];
         return { difficulty: st.difficulty, form: st.form, transitionRemain: st.transitionRemain || 0, transitionMessage: st.form === 'transition' ? messages.transition : '', outcome: st.outcome, events: st.events.map(event => {
             const out = {}; for (const key of fields) if (event[key] !== undefined) out[key] = event[key];
-            if (event.kind === 'sculpture') { const progress = sculptureProgress(event); out.damage = progress.damage; out.growthNextAt = event.growthAt + (progress.steps + 1) * 100; }
+            if (event.kind === 'sculpture') { const progress = sculptureProgress(event); out.damage = progress.damage; out.decayNextAt = event.decayAt + (progress.steps + 1) * 100; }
             if (event.kind === 'trial') { out.shield = mon.shield; out.shieldMax = mon.shieldMax; }
             return out;
         }) };
