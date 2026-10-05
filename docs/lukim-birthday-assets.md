@@ -82,9 +82,19 @@ python scripts/compose_lukim_birthday_bgm.py --soundfont GeneralUser-GS.sf2 --fl
 | ui/레이드/lukim-birthday-props-v1.png | 1536×1024 RGBA. 3열 2행, 케이크/촛불/성냥/케이크 조각/노트북/쟁반 순서 | 2239221 | 366d43cb543c390fd1b364c05fa317a1 |
 | ui/레이드/lukim-birthday-poses-v1.png | 1254×1254 RGBA. 2열 2행, 불기/던지기/손을 내리기/마시기 순서. 최종 코딩은 별도 이미지 사용 | 1568863 | 4486f78a7b54dec49979c17c3b28bd5d |
 | ui/레이드/lukim-birthday-coding-v1.png | 1254×1254 RGBA. 키보드에 손을 얹은 루킴과 낮은 강연대, 얼굴이 모두 보이는 노트북 | 1373502 | ffc9a8a7df05a8c07f38ea8c5ff89325 |
-| itemImage/소모품/케이크.png | 1254×1254 RGBA. 금색 접시에 놓인 딸기 케이크 조각, 약 12% 투명 여백 | 1876437 | d4a62c2ebe1ee1dc71766b6539ea5b71 |
+| itemImage/소모품/케이크.png | 1254×1254 RGBA. 케이크와 접시가 가로 48.1%, 세로 41.9%를 차지하고 좌우 약 26% 투명 여백 유지 | 559571 | ef90cc17ff35ea4e81ac4f7da3d8bec2 |
 
 소품은 보스와 같은 아이보리, 버건디 벨벳, 금박과 따뜻한 왼쪽 위 광원을 사용한다. 촛불은 심지가 보이는 꺼진 상태, 성냥은 오른쪽 끝에서 타는 수평 형태로 제작했다. 모든 소품은 셀 안에 온전히 들어가며 UI, 문자와 바탕을 넣지 않았다. 보스 동작은 빈 타원 눈, w형 입, 생일 모자와 망토를 유지하고 같은 발 위치와 시점으로 제작했다.
+
+### 케이크 여백 수정
+
+2026-10-06에 사용자의 요청으로 내장 imagegen을 사용해 케이크와 접시를 함께 축소했다. 기존 엘릭서, 파이브의 빵과 황금 주머니의 투명 여백을 참조했다. 이전 케이크는 가로폭의 94.5%를 차지했으며 수정본은 48.1%로, 황금 주머니의 47.1%와 비슷하다. 투명 알파와 원래 케이크의 모양을 유지했다. 기존 파일을 백업한 뒤 S3의 같은 경로만 교체했고, S3에서 다시 받은 PNG와 로컬 파일의 바이트 및 MD5가 일치함을 확인했다.
+
+최종 편집 요청:
+
+```text
+Use case: precise-object-edit. Asset type: existing Korean fantasy RPG inventory item icon, transparent PNG. Image 1 is the EDIT TARGET, the existing cake on its gold plate. Images 2, 3, and 4 are ONLY references for the amount of empty padding used by other inventory item icons (bread, elixir, golden pouch). Change ONLY the scale and padding of Image 1: uniformly reduce the entire existing cake AND its ornate gold plate together so that the complete visible silhouette occupies approximately 42% of the square canvas WIDTH and 37% of its HEIGHT, and center this silhouette exactly horizontally and vertically. Leave approximately 29% genuinely transparent empty margin on both left and right, and approximately 31.5% on both top and bottom. The cake must feel the same icon size as the reference items in an inventory slot, not fill the canvas. Preserve the exact original cake identity, single triangular slice, pale cream piping, raspberry on top, golden beads, burgundy ribbon, golden crest, ornate plate, perspective, proportions, baked texture, colors, warm light, and visual finish. No redesign, no new garnish, no new objects, no perspective change. Preserve all plate edges and fine details; no cropping. The complete exterior padding must have true zero alpha, with no white fill, no black fill, no checkerboard, no glow, no frame, no shadow outside the cake/plate, no text, no UI. Single square icon with a small central subject and generous transparent padding.
+```
 
 ### 코딩 동작의 최종 생성 요청
 
