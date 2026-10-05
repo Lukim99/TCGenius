@@ -9495,7 +9495,7 @@ function renderPartyApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>레이드 | RPGenius</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"><link rel="stylesheet" href="/static/raid-presentation.css"></head><body>
+<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"><link rel="stylesheet" href="/static/raid-presentation.css"><link rel="stylesheet" href="/static/raid-party-fx.css"></head><body>
 <div class="frame" id="frame">
   <div class="pq-header">
     <button class="pq-icon-btn" id="pqHome" title="홈으로">←</button>
@@ -9765,6 +9765,7 @@ function renderPartyApp(sess) {
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
 <script src="/static/mansion-raid.js"></script>
 <script src="/static/raid-pattern-fx.js"></script>
+<script src="/static/raid-party-fx.js"></script>
 <script src="/static/party.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

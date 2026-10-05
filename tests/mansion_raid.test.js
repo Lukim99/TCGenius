@@ -187,6 +187,111 @@ function combatMember(stats = {}) {
     };
 }
 
+test('파티 피해와 회복 연출은 같은 순간의 실제 수치와 시전자, 대상을 각각 전달한다', async () => {
+    const room = await battle('normal', 2), [source, target] = room.members;
+    let sent = ''; source.sseRes = { write: text => { sent += text; } };
+    const effects = () => [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+    try {
+        party.__test.applyDamageToMember(room, target, 200, '전투 피해');
+        assert.equal(party.__test.healMember(target, 250, source), 200);
+        assert.equal(party.__test.healMember(target, 250, source), 0);
+        const actual = effects();
+        assert.deepEqual(actual.map(event => [event.kind, event.source, event.target, event.amount]),
+            [['damage', null, target.name, 200], ['heal', source.name, target.name, 200]]);
+        assert.equal(target.runtime.hp, target.runtime.hpMax);
+        assert.notEqual(actual[0].id, actual[1].id);
+        for (const event of actual) {
+            assert.equal(event.roomId, room.id); assert.equal(event.startedAt, room.startedAt);
+            assert.equal(event.phaseIndex, room.phaseIndex); assert.ok(event.at > 0);
+        }
+        const invincible = mock.method(rpg, 'isAwakeningInvincible', () => true);
+        party.__test.applyDamageToMember(room, target, 100, '무적');
+        invincible.mock.restore();
+        target.runtime.hp -= 100; target.runtime.equipmentState.ignoreHealingUntil = Date.now() + 1000;
+        assert.equal(party.__test.healMember(target, 100, source), 0);
+        assert.equal(effects().length, 2);
+        assert.ok(!JSON.stringify(party.getMyRoomSnapshot(source.name)).includes('party-effect'));
+    } finally { source.sseRes = null; }
+});
+
+test('보호막으로 막은 피해와 파괴, 초과 체력 피해를 구분하며 회피는 재생하지 않는다', async () => {
+    const room = await battle('normal', 2), [source, target] = room.members;
+    let sent = ''; source.sseRes = { write: text => { sent += text; } };
+    const effects = () => [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+    try {
+        party.__test.grantMemberShield(room, source, target, 1000);
+        party.__test.applyDamageToMember(room, target, 400, '공격');
+        assert.equal(target.runtime.shield, 600); assert.equal(target.runtime.hp, 1000000);
+        party.__test.applyDamageToMember(room, target, 800, '공격');
+        assert.equal(target.runtime.shield, 0); assert.equal(target.runtime.hp, 999800);
+        assert.deepEqual(effects().map(event => [event.kind, event.amount]),
+            [['shield-grant', 1000], ['shield-block', 400], ['shield-block', 600], ['shield-break', 600], ['damage', 200]]);
+        assert.equal(effects()[0].source, source.name); assert.equal(effects()[0].target, target.name);
+        target.runtime.dodgeNext = true;
+        party.__test.applyDamageToMember(room, target, 100, '회피');
+        assert.equal(effects().length, 5);
+        assert.equal(target.runtime.battleStats.damageReduced.shield, 1000);
+    } finally { source.sseRes = null; }
+});
+
+test('보호막 횟수 소진은 파괴로, 자연 만료는 소멸과 실제 회복으로 전달한다', async () => {
+    const room = await battle(), member = room.members[0];
+    let sent = ''; member.sseRes = { write: text => { sent += text; } };
+    const kinds = () => [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]).kind);
+    try {
+        Object.assign(member.runtime, { shield: 1000, shieldHits: 1, shieldExpireAt: Date.now() + 8000, shieldExpireHeal: 20, hp: 999950 });
+        party.__test.applyDamageToMember(room, member, 25, '공격');
+        assert.equal(member.runtime.shield, 0); assert.equal(member.runtime.hp, 999970);
+        assert.deepEqual(kinds(), ['shield-block', 'shield-break', 'heal']);
+        sent = '';
+        Object.assign(member.runtime, { shield: 1000, shieldHits: 99, shieldExpireHeal: 60, hp: 999970 });
+        party.__test.triggerShieldExpire(room, member);
+        assert.equal(member.runtime.hp, 1000000); assert.equal(member.runtime.shield, 0);
+        assert.deepEqual(kinds(), ['shield-expire', 'heal']);
+        party.__test.triggerShieldExpire(room, member);
+        assert.deepEqual(kinds(), ['shield-expire', 'heal']);
+    } finally { member.sseRes = null; }
+});
+
+test('지원군 연출은 유효한 호출에만 한 번 전송하며 보호막 무효 대상과 재접속은 보존한다', async () => {
+    const room = await battle('normal', 2), [host, guest] = room.members;
+    host.baseSnapshot.stats.disableShield = 1;
+    room.supportGauge = 100;
+    let sent = ''; host.sseRes = { write: text => { sent += text; } };
+    const effects = () => [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+    try {
+        assert.ok(party.useSupportSkill(guest.name, '오로라').error);
+        assert.ok(party.useSupportSkill(host.name, '지오').error);
+        assert.deepEqual(effects(), []);
+        assert.equal(party.useSupportSkill(host.name, '오로라').ok, true);
+        assert.equal(host.runtime.shield, 0); assert.equal(guest.runtime.shield, 50000);
+        assert.deepEqual(effects().map(event => event.kind), ['support', 'shield-grant']);
+        const support = effects()[0];
+        assert.equal(support.support, '오로라'); assert.equal(support.source, host.name);
+        assert.equal(decodeURIComponent(support.icon), '/rpg-ui?file=대저택/오로라.png');
+        assert.equal(effects()[1].source, host.name); assert.equal(effects()[1].target, guest.name);
+        assert.equal(effects()[1].support, '오로라');
+        assert.equal(room.supportGauge, 0); assert.ok(party.useSupportSkill(host.name, '오로라').error);
+        assert.equal(effects().length, 2); assert.ok(!sent.includes('event: notice\n'));
+        assert.ok(!JSON.stringify(party.getMyRoomSnapshot(host.name)).includes(support.id));
+    } finally { host.sseRes = null; }
+});
+
+test('주기적인 자가 회복과 아군 회복도 실제 회복량과 담당자를 전달한다', async () => {
+    const room = await battle('normal', 2), [healer, target] = room.members;
+    let sent = ''; healer.sseRes = { write: text => { sent += text; } };
+    try {
+        healer.runtime.hp -= 100; healer.runtime.petHpRegenRate = .0001;
+        target.runtime.hp -= 100; room.mansionAurora = { remain: 4, tick: .2, sourceName: healer.name };
+        tick(room);
+        const effects = [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+        assert.ok(effects.some(event => event.kind === 'heal' && event.source === healer.name && event.target === target.name && event.amount === 100));
+        assert.ok(effects.some(event => event.kind === 'heal' && event.target === target.name && event.support === '오로라'));
+        assert.ok(effects.some(event => event.kind === 'heal' && event.source === healer.name && event.target === healer.name));
+        assert.equal(target.runtime.hp, target.runtime.hpMax);
+    } finally { healer.sseRes = null; }
+});
+
 test('관전은 비밀번호와 인증을 확인하며 참가 인원, 전투 조작과 계정 데이터를 변경하지 않는다', async () => {
     const room = await battle(); room.password = 'raid-secret';
     const viewer = await reset(seeds[1].name);
@@ -222,6 +327,13 @@ test('관전 SSE는 로그와 최신 관문을 전달하며 선택지와 보상�
         await readUntil('\n\n');
         assert.ok(text.includes('"spectating":true')); assert.ok(!text.includes('private-choice'));
         text = ''; tick(room); await readUntil('\n\n'); assert.ok(text.includes('event: tick')); assert.ok(!text.includes('private-choice'));
+        text = '';
+        room.members[0].runtime.hp -= 100;
+        party.__test.healMember(room.members[0], 100);
+        await readUntil('event: party-effect'); await readUntil('\n\n');
+        const heal = JSON.parse(text.match(/event: party-effect\ndata: ([^\n]+)/)[1]);
+        assert.equal(heal.kind, 'heal'); assert.equal(heal.target, room.members[0].name); assert.equal(heal.amount, 100);
+        assert.ok(!text.includes('private-choice'));
         room.result = { cleared: true, rewards: [{ name: room.members[0].name, items: ['private-reward'] }] };
         const view = party.getMyViewSnapshot(viewer);
         assert.deepEqual(view.result.rewards, []); assert.equal(view.members[0].pendingChoices, null);

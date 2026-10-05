@@ -17,6 +17,7 @@
     let voteSig = '';
     let supportBarSig = '';
     let raidEffects = null;
+    let partyEffects = null;
     let sceneObserver = null;
     const raidImages = new Map();
     function preloadRaidArt(art) {
@@ -1843,6 +1844,9 @@
         renderMyVitals(mine);
         renderMemberDetail();
         raidEffects?.markTargets();
+        if (!partyEffects && window.RaidPartyFX) partyEffects = RaidPartyFX.create();
+        partyEffects?.update(defeatActive ? { ...snap, state: 'inProgress' } : snap,
+            { volume: sound.sfx, serverOffset: cooldownClockOffset || 0 });
     }
 
     // 내 HP/MP 플레이트 — 스테이지 우하단, 전체 수치 표시. 접으면 작은 칩만 남는다.
@@ -2337,6 +2341,9 @@
             stream.addEventListener('combat', e => {
                 try { appendCombat(JSON.parse(e.data)); } catch (_) {}
             });
+            stream.addEventListener('party-effect', e => {
+                try { partyEffects?.enqueue(JSON.parse(e.data)); } catch (_) {}
+            });
             stream.addEventListener('kill', e => {
                 try {
                     const k = JSON.parse(e.data);
@@ -2439,6 +2446,7 @@
         hidePhaseTransition();
         syncBgm(null);
         raidEffects?.reset();
+        partyEffects?.reset();
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
         pendingCD.action = false; pendingCD.potion = false;
@@ -2497,6 +2505,7 @@
         $('#pqVolSfx').addEventListener('input', e => {
             sound.sfx = clamp01(Number(e.target.value) / 100);
             raidEffects?.setVolume(sound.sfx);
+            partyEffects?.setVolume(sound.sfx);
             $('#pqVolSfxVal').textContent = Math.round(sound.sfx * 100) + '%';
             saveSound();
         });

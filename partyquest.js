@@ -245,7 +245,7 @@ function applyTranscendAllyEffect(room, source, target, kind) {
     if (kind === 'shield') {
         const sanctuaryArmor = getTranscendStageValue(source, '성역의 인도자 아머', .02, .02);
         if (sanctuaryArmor > 0 && Number(target.runtime.hp || 0) / Math.max(1, Number(target.runtime.hpMax || 1)) <= .50 && canPartyApplyShield(source, target)) {
-            target.runtime.shield = Number(target.runtime.shield || 0) + Math.max(1, Math.round(target.runtime.hpMax * sanctuaryArmor * getPartyShieldMultiplier(source)));
+            grantMemberShield(room, source, target, Math.max(1, Math.round(target.runtime.hpMax * sanctuaryArmor * getPartyShieldMultiplier(source))));
         }
         const pantsMp = getTranscendStageValue(source, '성역의 인도자 트라우저', .01, .01);
         if (pantsMp > 0) target.runtime.mp = Math.min(target.runtime.mpMax, target.runtime.mp + Math.max(1, Math.round(target.runtime.mpMax * pantsMp)));
@@ -919,13 +919,17 @@ function recordPartyDamage(member, result) {
     if (damage > 0) stats.damage += damage;
 }
 
-function recordPartyHealing(source, target, amount) {
+function recordPartyHealing(source, target, amount, support) {
     const healed = Math.max(0, Number(amount || 0));
     if (healed <= 0) return;
     const healer = source || target;
     const stats = getPartyBattleStats(healer);
     if (!stats) return;
     if (healer !== target) stats.allyHealing += healed;
+    const room = getRoomOf(target.name);
+    if (room && findMember(room, target.name) === target) {
+        emitPartyEffect(room, 'heal', healer, target, healed, support ? { support } : undefined);
+    }
 }
 
 function recordPartyDamageReduced(member, kind, amount) {
@@ -1190,7 +1194,7 @@ function mergeMonsterStats(monsterDef) {
 const mansionRaid = require('./mansion_raid').createMansionRaid({
     getAliveMembers, findMember, pushNotice, pushCombat, applyFixedDamageToMember, applyDamageToMember, computeMonsterDamage,
     bossAtk, endBossGimmick, applyBossGroggy, addSupportGauge, wipeParty, upsertMemberBuff, healMember, setBossShield, clearBossShield,
-    registerHpGimmicks, applyBossHpDamage, broadcastRoom, recordPartyDamage, canPartyApplyShield, grantTitleAsync
+    registerHpGimmicks, applyBossHpDamage, broadcastRoom, recordPartyDamage, canPartyApplyShield, grantMemberShield, grantTitleAsync
 });
 const BOSS_HANDLERS = {
     '조각': { step: mansionRaid.step, init: mansionRaid.init, onSpawn: mansionRaid.onSpawn },
@@ -1384,6 +1388,23 @@ function broadcast(room, event, payload) {
     const view = event === 'room' ? serializeRoomForSpectator(room)
         : event === 'tick' ? { ...payload, members: (payload.members || []).map(m => ({ ...m, pendingChoices: null })) } : payload;
     for (const spectator of room.spectators.values()) sseSend(spectator.res, event, view);
+}
+
+// 체력 차이 추측 대신 실제 전투 판정만 연출로 전달한다. 스냅샷에는 저장하지 않는다.
+function emitPartyEffect(room, kind, source, target, amount, extra) {
+    if (!room || room.state !== 'inProgress') return;
+    if (kind !== 'support' && !(amount > 0)) return;
+    room.partyEffectSerial = Number(room.partyEffectSerial || 0) + 1;
+    broadcast(room, 'party-effect', {
+        id: room.id + ':' + room.startedAt + ':' + room.phaseIndex + ':party-' + room.partyEffectSerial,
+        roomId: room.id, startedAt: room.startedAt, phaseIndex: room.phaseIndex, at: Date.now(), kind,
+        source: source?.name || null, target: target?.name || null, amount: Number(amount || 0), ...extra
+    });
+}
+
+function grantMemberShield(room, source, target, amount, support) {
+    target.runtime.shield = Number(target.runtime.shield || 0) + amount;
+    emitPartyEffect(room, 'shield-grant', source, target, amount, support ? { support } : undefined);
 }
 
 function serializeRoomForSpectator(room) {
@@ -2440,6 +2461,7 @@ function stepRoom(room) {
 function triggerShieldExpire(room, m) {
     const r = m.runtime;
     const heal = Math.round(Number(r.shieldExpireHeal || 0));
+    emitPartyEffect(room, 'shield-expire', null, m, Number(r.shield || 0));
     r.shield = 0;
     r.shieldHits = 0;
     r.shieldExpireAt = 0;
@@ -3278,7 +3300,10 @@ function wipePartyByCurse(room, mon) {
 // 기믹 실패 전멸 공용 처리
 function wipeParty(room, reason, combatLine) {
     for (const m of room.members) {
-        if (m.runtime && !m.runtime.dead) { m.runtime.hp = 0; m.runtime.dead = true; }
+        if (m.runtime && !m.runtime.dead) {
+            emitPartyEffect(room, 'damage', null, m, m.runtime.hp);
+            m.runtime.hp = 0; m.runtime.dead = true;
+        }
     }
     pushCombat(room, combatLine || (reason + ' — 파티 전멸'), 'danger');
     endQuest(room, false, reason);
@@ -3333,7 +3358,9 @@ function applyBossHpDamage(room, mon, damage, source) {
 
 function executeMember(room, member, source) {
     if (!member || !member.runtime || member.runtime.dead) return;
+    const hpBefore = member.runtime.hp;
     member.runtime.hp = rpgenius.resolveAwakeningHp(member.name, member.baseSnapshot.stats, member.runtime.hp, 0);
+    emitPartyEffect(room, 'damage', null, member, Math.max(0, hpBefore - member.runtime.hp));
     if (member.runtime.hp > 0) {
         pushCombat(room, source + ' → ' + member.name + ' [각성 생존]', 'buff');
         return;
@@ -3609,7 +3636,9 @@ function useSupportSkill(name, skillName) {
     if (Number(room.supportGauge || 0) < 100) return { error: '지원군 게이지가 부족합니다. (' + Math.floor(Number(room.supportGauge || 0)) + '%)' };
     room.supportGauge = 0;
     room.supportGaugeAccum = 0;
-    pushNotice(room, name + ' — 지원군 [' + skillName + '] 호출', 'big', 4000);
+    emitPartyEffect(room, 'support', me, null, 0, {
+        support: skillName, icon: '/rpg-ui?file=' + encodeURIComponent(SUPPORT_SKILL_ICONS[skillName])
+    });
     if (skillName === '지오') useSupportGeo(room, me);
     else if (skillName === 'SitoSoym') useSupportSito(room, me);
     else if (skillName === 'X') useSupportX(room, me);
@@ -3631,7 +3660,7 @@ function useSupportSito(room, source) {
         // 보호막 무효 스탯(disableShield)을 가진 대상만 제외 — 시전자는 파티원이 아니므로 source는 없다.
         if (!canPartyApplyShield(null, m)) continue;
         const r = m.runtime;
-        r.shield = Number(r.shield || 0) + SUPPORT_SITO_SHIELD;
+        grantMemberShield(room, source, m, SUPPORT_SITO_SHIELD, 'SitoSoym');
         r.shieldHits = 99;
         r.shieldExpireAt = nowMs() + SUPPORT_SITO_SEC * 1000;
         r.shieldExpireHeal = 0;
@@ -3650,13 +3679,13 @@ function stepSupportSito(room, dt) {
         sp.tick += 1;
         for (const m of getAliveMembers(room)) {
             if (Number(m.runtime.shield || 0) <= 0) continue;
-            healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT), source);
+            healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT), source, 'SitoSoym');
         }
     }
     if (sp.remain > 0) return;
     room.supportSito = null;
     for (const m of getAliveMembers(room)) {
-        healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT), source);
+        healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_END_PCT), source, 'SitoSoym');
         m.runtime.mp = Math.min(m.runtime.mpMax, m.runtime.mp + Math.round(Number(m.runtime.mpMax || 0) * SUPPORT_SITO_END_PCT));
     }
     pushCombat(room, '[SitoSoym] 종료 — 전원 HP/MP ' + Math.round(SUPPORT_SITO_END_PCT * 100) + '% 회복', 'heal');
@@ -4507,6 +4536,7 @@ function applyDamageToMember(room, member, dmg, source) {
             dmg = Math.max(0, dmg - absorbed);
             const protectorHpBefore = protector.runtime.hp;
             protector.runtime.hp = rpgenius.resolveAwakeningHp(protector.name, protector.baseSnapshot.stats, protectorHpBefore, Math.max(0, protectorHpBefore - absorbed));
+            emitPartyEffect(room, 'damage', null, protector, Math.max(0, protectorHpBefore - protector.runtime.hp));
             recordPartyDamageReduced(member, 'other', beforeRedirect - dmg);
             const protectorStats = getPartyBattleStats(protector);
             if (protectorStats) protectorStats.damageTaken += Math.max(0, protectorHpBefore - protector.runtime.hp);
@@ -4536,10 +4566,12 @@ function applyDamageToMember(room, member, dmg, source) {
         r.shield -= absorbed;
         dmg -= absorbed;
         recordPartyDamageReduced(member, 'shield', absorbed);
+        emitPartyEffect(room, 'shield-block', null, member, absorbed);
         if (r.shieldHits > 0) {
             r.shieldHits -= 1;
             if (r.shieldHits <= 0) r.shield = 0;
         }
+        if (r.shield <= 0) emitPartyEffect(room, 'shield-break', null, member, absorbed);
         if (r.shield <= 0 && r.shieldExpireAt) triggerShieldExpire(room, member);
         if (dmg <= 0) {
             pushCombat(room, source + ' → ' + member.name + ' [방어]', 'damage');
@@ -4561,6 +4593,7 @@ function applyDamageToMember(room, member, dmg, source) {
     }
     const hpBefore = r.hp;
     r.hp = rpgenius.resolveAwakeningHp(member.name, member.baseSnapshot.stats, hpBefore, Math.max(0, hpBefore - dmg));
+    emitPartyEffect(room, 'damage', null, member, Math.max(0, hpBefore - r.hp));
     if (r.hp !== Math.max(0, hpBefore - dmg)) dmg = Math.max(0, hpBefore - r.hp);
     const battleStats = getPartyBattleStats(member);
     if (battleStats) battleStats.damageTaken += Math.max(0, hpBefore - r.hp);
@@ -4628,12 +4661,12 @@ async function persistImmortalArmorCooldown(name, readyAt) {
     }
 }
 
-function healMember(member, amount, source) {
+function healMember(member, amount, source, support) {
     if (!member || !member.runtime || member.runtime.dead || !canPartyReceiveHealing(member)) return 0;
     const before = member.runtime.hp;
     member.runtime.hp = Math.min(member.runtime.hpMax, member.runtime.hp + Math.max(0, Math.round(Number(amount || 0))));
     const healed = member.runtime.hp - before;
-    recordPartyHealing(source || member, member, healed);
+    recordPartyHealing(source || member, member, healed, support);
     return healed;
 }
 
@@ -4753,7 +4786,7 @@ function useSkill(name, skillName, targetName) {
         me.runtime.cooldownsUntil[ultimateName] = Math.max(nowMs(), Number(me.runtime.cooldownsUntil[ultimateName] || nowMs()) - Number(equipmentSkill.reduceUltimateCooldown) * 1000);
     }
     if (Number(equipmentSkill.selfShield || 0) > 0 && canPartyApplyShield(me, me)) {
-        me.runtime.shield = Number(me.runtime.shield || 0) + Number(equipmentSkill.selfShield);
+        grantMemberShield(room, me, me, Number(equipmentSkill.selfShield));
         me.runtime.shieldHits = 99;
         me.runtime.shieldExpireAt = nowMs() + Number(equipmentSkill.selfShieldDuration || 5) * 1000;
         me.runtime.shieldExpireHeal = 0;
@@ -4778,7 +4811,7 @@ function usePartySelfDestruct(room, member) {
     if (typeof equipmentSkill.hpAfter !== 'undefined') runtime.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
     if (Number(equipmentSkill.selfShield || 0) > 0 && canPartyApplyShield(member, member)) {
-        runtime.shield = Number(runtime.shield || 0) + Number(equipmentSkill.selfShield);
+        grantMemberShield(room, member, member, Number(equipmentSkill.selfShield));
         runtime.shieldHits = 99;
         runtime.shieldExpireAt = now + Number(equipmentSkill.selfShieldDuration || 5) * 1000;
     }
@@ -4948,7 +4981,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         const target = pickAllyTarget(room, caster, targetName) || caster;
         const amount = Math.max(1, Math.round(evalFormula(def.shield, ctx) * getPartyShieldMultiplier(caster)));
         if (canPartyApplyShield(caster, target)) {
-            target.runtime.shield = (target.runtime.shield || 0) + amount;
+            grantMemberShield(room, caster, target, amount);
             target.runtime.shieldHits = Number(def.shieldHits || 99);
             applyTranscendAllyEffect(room, caster, target, 'shield');
             pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' 보호막 +' + amount, 'buff');
@@ -5046,7 +5079,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (canPartyApplyShield(caster, m)) {
-                m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+                grantMemberShield(room, caster, m, shieldAmt);
                 m.runtime.shieldHits = 99;
                 m.runtime.shieldExpireAt = Date.now() + 8000;
                 m.runtime.shieldExpireHeal = expireHeal;
@@ -5102,7 +5135,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         // 8초간 최대 MP의 ${2}만큼 본인 보호막 (솔로와 동일; 파티 전용 효과는 아래 공격력/MP)
         const piastShield = Math.max(1, Math.round(caster.runtime.mpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster)));
         if (canPartyApplyShield(caster, caster)) {
-            caster.runtime.shield = (caster.runtime.shield || 0) + piastShield;
+            grantMemberShield(room, caster, caster, piastShield);
             caster.runtime.shieldHits = 99;
             caster.runtime.shieldExpireAt = Date.now() + 8000;
             caster.runtime.shieldExpireHeal = 0;
@@ -5135,7 +5168,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            grantMemberShield(room, caster, m, shieldAmt);
             m.runtime.shieldHits = 99;
             m.runtime.shieldExpireAt = Date.now() + 10000;
             m.runtime.shieldExpireHeal = 0;
@@ -5179,7 +5212,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            grantMemberShield(room, caster, m, shieldAmt);
             m.runtime.shieldHits = 99;
             m.runtime.shieldExpireAt = Date.now() + 12000;
             m.runtime.shieldExpireHeal = 0;
@@ -5192,7 +5225,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            m.runtime.shield = (m.runtime.shield || 0) + shieldAmt;
+            grantMemberShield(room, caster, m, shieldAmt);
             m.runtime.shieldHits = 99;
             m.runtime.shieldExpireAt = Date.now() + 12000;
             m.runtime.shieldExpireHeal = 0;
@@ -5599,6 +5632,9 @@ module.exports = {
     __test: {
         proceedToNextPhase,
         applyDamageToMember,
+        healMember,
+        grantMemberShield,
+        triggerShieldExpire,
         preparePartyAttackUnits,
         computeBasicDamage,
         calculateOutgoingDamage,

@@ -28,6 +28,8 @@
 | fx-puzzle-piece-v1.png | 신규 | 두께, 흠집과 황동 테두리가 있는 석재 퍼즐 조각. 회전하며 날아가는 패턴에서 사용 |
 | fx-sculpture-carving-v1.png | sculpture.png 참조 | 원석부터 청동 황소까지 외곽과 세공 면이 달라지는 6단계. 1536×1024, 3열 2행, 셀 512×512, PNG 알파 유지 |
 | whiplash-echo-body-v1.png | whiplash-echo-scene.png | 뻗은 팔만 제거하고 뒤의 망토 복원. 원본 장면 좌표의 몸통과 움직이는 팔을 분리해 잔향 등장에 사용 |
+| fx-party-heal.png | 신규 | 비취색과 아이보리빛이 휘어 모이는 회복 기운. PNG 알파를 유지해 시전자와 대상 사이의 흐름, 초상에 흡수되는 회복에 사용 |
+| fx-party-aegis.png | 신규 | 가운데가 투명한 청색과 금빛 유리막. 생성, 피격 굴절, 실제 질감의 파편과 자연 만료에 사용 |
 
 imagegen으로 만든 이미지의 공통 생성 조건: 기존 인물의 정체성, 표현, 색과 자세를 유지한다. 기존 보스 전경은 실제 알파 투명 배경에 원본 좌표와 크기를 유지하며, 배경도 같은 카메라와 원근을 사용한다. 두 레이어는 화면 크기에 따라 함께 확대하고 잘라낸다. 신규 부하는 안뜰 바닥과 맞도록 따로 배치한다. 새 글자, 워터마크, 테두리는 추가하지 않는다.
 
@@ -85,9 +87,19 @@ FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kH
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 22개와 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 24개와 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
 
 2026-10-04에 `eefl-image` 버킷의 현재 사용 파일 26개를 확인했다. 마지막 수정의 신규 이미지 13개를 업로드했으며 모든 파일의 MD5, 크기와 MIME 형식이 일치했다.
+
+2026-10-05에 파티 회복과 보호막 이미지 2개를 추가했다. 전체 파일 55개의 MD5, 크기와 MIME 형식을 확인했다. 아래 생성 요청은 내장 imagegen에 전달했고 원본 알파를 유지해 `DB/RPGenius/ui/레이드/fx-party-heal.png`, `DB/RPGenius/ui/레이드/fx-party-aegis.png`에 저장했다.
+
+### 파티 회복 이미지 생성 요청
+
+Production sprite texture for a polished dark fantasy RPG healing spell, square 1024px, genuine transparent alpha background. A single painterly flowing cascade of ethereal pale jade, emerald and warm ivory light, gracefully curved ribbon-like wisps gently gathering inward toward a bright soft glowing center, fine pearlescent sparks, subtle gold dust motes, luminous volumetric soft edges, high fidelity Korean MMORPG magic VFX quality. Weight centered in bottom-middle so it can flow upward and wrap a character card. The flow is organic and fluid, not rigid streaks, not spikes, not rising grass, not a circular badge, no healing cross icon, no symbol, no geometric shapes, no ground plane, no objects, no characters, no UI, no text, no checkerboard or black background. Sparse luminous energy with substantial transparent negative space between wisps, softly tapered energy trails, no harsh hard white edges. This is an actual magic energy sprite to be composited additively over character portraits at 150px size, not concept art.
+
+### 파티 보호막 이미지 생성 요청
+
+Create a production transparent spell sprite for a high-end dark fantasy Korean RPG: one vertical convex magical energy shield sheath, aspect 2:3 within a square1024px canvas, generous transparent margin. Authentic semi transparent glass/ice blue surface, softly curved like a protective shell viewed from front, fine refractive contours, subtle pale warm gold threads at left and right edge, very delicate physically irregular luminous highlights and restrained arcane etching embedded in the glass, soft volumetric blue glow near outer edge. Central interior almost entirely clear so underlying character portrait remains highly readable. Shield is an oval dome membrane, not a medieval solid metal shield, not an icon badge, no thick outlines, no wings, no cross, no emblem, no text, no geometric hexagons, no cartoon lightning, no huge colored opaque glow. Sophisticated game VFX painterly realistic energy material, polished iceglass glints, lightly damaged irregular facets near rims suitable for shader and shard breakup animation. True transparent alpha everywhere outside the membrane and through clear center, no black or checkerboard background. This sprite will be composited over a 100px wide character card.
 
 2026-10-05에 신규 효과 질감 3개를 업로드했다. 현재 사용 파일 29개의 MD5, 크기와 MIME 형식을 확인했다. 시각 방향은 Claude Opus 5.5가 실제 전투 화면과 질감을 읽고 검토했으며, 최종 합성은 PC와 320px 모바일의 실제 레이드 화면에서 확인했다.
 

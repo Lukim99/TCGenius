@@ -340,7 +340,7 @@ function createMansionRaid(engine) {
             E.pushCombat(room, '피카츄 → ' + mon.name + ' [-' + dealt + ']', 'skill');
         } else if (name === '오로라') {
             for (const member of alive(room)) {
-                if (E.canPartyApplyShield(null, member)) { member.runtime.shield = Number(member.runtime.shield || 0) + 50000; member.runtime.shieldHits = 99; member.runtime.shieldExpireAt = Date.now() + 12000; }
+                if (E.canPartyApplyShield(null, member)) { E.grantMemberShield(room, source, member, 50000, '오로라'); member.runtime.shieldHits = 99; member.runtime.shieldExpireAt = Date.now() + 12000; }
             }
             room.mansionAurora = { remain: 4, tick: 1, sourceName: source.name };
         } else if (name === '눈뜬 장님') {
@@ -353,7 +353,7 @@ function createMansionRaid(engine) {
         const buff = room.mansionAurora;
         if (!buff) return;
         buff.remain -= dt; buff.tick -= dt;
-        if (buff.tick <= 1e-6) { buff.tick += 1; for (const member of alive(room)) E.healMember(member, Math.round(member.runtime.hpMax * .075), E.findMember(room, buff.sourceName)); }
+        if (buff.tick <= 1e-6) { buff.tick += 1; for (const member of alive(room)) E.healMember(member, Math.round(member.runtime.hpMax * .075), E.findMember(room, buff.sourceName), '오로라'); }
         if (buff.remain <= 1e-6) room.mansionAurora = null;
     }
     function view(mon) {
