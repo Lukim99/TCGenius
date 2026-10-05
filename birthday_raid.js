@@ -30,8 +30,28 @@ function createBirthdayRaid(ctx) {
             event(mon, 'birthdayCandles', null, { label: '촛불', remain: null });
         } else {
             st.stage = 'battle';
-            event(mon, 'birthdayThrow', .65, { label: '케이크 투척', opening: true });
+            if (room.phaseTransition?.presentation === 'birthdayThrow') throwCake(room, mon, true);
         }
+    }
+    function throwCake(room, mon, opening = false) {
+        return event(mon, 'birthdayThrow', 1.45, { label: '케이크 투척', opening, impactDelay: .6,
+            ...(opening ? { startedAt: room.phaseTransition.startedAt } : {}),
+            stage: 'flying', targets: alive(room).map(m => m.name) });
+    }
+    function cakeImpact(room, ev) {
+        if (ev.stage === 'resolved') return;
+        ev.stage = 'resolved';
+        ev.impactAt = Date.now();
+        for (const m of alive(room)) ctx.applyFixedDamageToMember(room, m, Math.max(1, Math.round(m.runtime.hpMax * .025)), '루킴 [케이크 투척]');
+    }
+    function transition(room) {
+        if (room.phaseTransition?.presentation !== 'birthdayThrow') return false;
+        const ev = room.monster?.bossState?.events.find(e => e.kind === 'birthdayThrow' && e.opening);
+        if (!ev) return false;
+        const age = Math.max(0, (Date.now() - ev.startedAt) / 1000);
+        ev.remain = Math.max(0, ev.duration - age);
+        if (age >= ev.impactDelay) cakeImpact(room, ev);
+        return true;
     }
     function fail(room, reason) { ctx.wipeParty(room, reason, reason + ': 파티 전멸'); }
     function lightAttack(room, member) {
@@ -61,7 +81,7 @@ function createBirthdayRaid(ctx) {
             if (!ev.responded.includes(name)) ev.responded.push(name);
             if (alive(room).every(m => ev.responded.includes(m.name))) {
                 st.stage = 'celebrate';
-                st.events = [event(mon, 'birthdayCelebrate', .8, { label: '생일 축하' })];
+                st.events = [event(mon, 'birthdayCelebrate', .8, { label: '생일 축하', responded: ev.responded.slice() })];
             }
         } else if (ev.kind === 'birthdayGift' && payload.action === 'gift') {
             if (ev.responded.includes(name)) return { ok: true };
@@ -115,7 +135,8 @@ function createBirthdayRaid(ctx) {
             ctx.pushCombat(room, '루킴 → ' + ev.target + ' [' + potion.name + '] 강탈', 'info');
         } else if (ev.kind === 'birthdayCoding') {
             st.coding = null;
-            st.shuffle = event(mon, 'birthdayShuffle', 15, { label: '코딩', nextChange: 0 });
+            ctx.shuffleCards(room);
+            st.shuffle = event(mon, 'birthdayShuffle', 15, { label: '코딩' });
         } else if (ev.kind === 'birthdayShuffle') {
             ctx.restoreCards(room);
             st.shuffle = null;
@@ -143,10 +164,7 @@ function createBirthdayRaid(ctx) {
                     ctx.applyFixedDamageToMember(room, target, amount, '루킴 [514]');
                     event(mon, 'birthdayStrike', .55, { target: target.name, amount });
                 }
-            } else if (ev.kind === 'birthdayShuffle') {
-                ev.nextChange -= used;
-                if (ev.nextChange <= 0) { ev.nextChange += 1; ctx.shuffleCards(room); }
-            }
+            } else if (ev.kind === 'birthdayThrow' && ev.duration - ev.remain + used >= ev.impactDelay - 1e-9) cakeImpact(room, ev);
             if (room.state !== 'inProgress' || room.monster !== mon) return true;
             ev.remain = Math.max(0, ev.remain - dt);
             if (ev.remain <= 1e-9) {
@@ -175,8 +193,7 @@ function createBirthdayRaid(ctx) {
         if (st.coding) return true;
         if (st.elapsed >= st.cakeAt) {
             st.cakeAt += 3;
-            event(mon, 'birthdayThrow', .65, { label: '케이크 투척' });
-            for (const m of alive(room)) ctx.applyFixedDamageToMember(room, m, Math.max(1, Math.round(m.runtime.hpMax * .025)), '루킴 [케이크 투척]');
+            throwCake(room, mon);
         }
         if (room.state !== 'inProgress') return true;
         if (st.elapsed >= st.stealAt) {
@@ -191,9 +208,9 @@ function createBirthdayRaid(ctx) {
         const st = mon.bossState;
         return { birthday: true, generic: true, stage: st.stage, candles: st.candles, elapsed: st.elapsed, updatedAt: st.updatedAt,
             lit: st.lit.slice(), candle: st.candle,
-            events: st.events.map(({ nextAttack, nextChange, ...ev }) => ({ ...ev, targets: ev.target ? [ev.target] : [] })) };
+            events: st.events.map(({ nextAttack, ...ev }) => ({ ...ev, targets: ev.target ? [ev.target] : ev.targets || [] })) };
     }
-    return { init, onSpawn, step, view, lightAttack, action, interceptDamage };
+    return { init, onSpawn, step, view, lightAttack, action, interceptDamage, transition };
 }
 
 module.exports = { ID, START, END, CLAIM, available, admissionError, createBirthdayRaid };

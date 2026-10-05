@@ -1802,7 +1802,7 @@ test('생일 촛불은 생존자 전원의 타격을 받아야 하며 숫자 판
     assert.ok(room.members.every(m => m.runtime.dead));
 });
 
-test('촛불 여섯 개와 2.5초 박수 협동이 완료되면 공통 컷씬으로 2관문에 진입한다', async t => {
+test('촛불과 박수 협동 뒤 바로 케이크를 던지며 2관문에 진입하고 충돌 때 피해가 적용된다', async t => {
     const clock = birthdayClock(t), room = await birthdayBattle(2), logic = party.__test.birthdayRaid;
     for (let i = 0; i < 6; i++) {
         while (room.monster.bossState.elapsed < 3 + i * 3) birthdayTick(room, clock);
@@ -1820,7 +1820,22 @@ test('촛불 여섯 개와 2.5초 박수 협동이 완료되면 공통 컷씬으
     while (room.phaseIndex === 0) birthdayTick(room, clock);
     assert.equal(room.phaseIndex, 1); assert.equal(room.monster.hp, 1006);
     assert.ok(room.phaseTransition.toBackground.includes('lukim-birthday-hall-v1'));
+    assert.equal(room.phaseTransition.presentation, 'birthdayThrow');
+    assert.equal(room.phaseTransition.endsAt - room.phaseTransition.startedAt, 1200);
+    assert.ok(room.members.every(m => m.runtime.hp === 1000000));
     assert.ok((await party.attackMobPhase(seeds[0].name)).error.includes('관문'));
+    clock.advance(400); party.__test.stepRoom(room);
+    assert.ok(room.members.every(m => m.runtime.hp === 1000000));
+    clock.advance(200); party.__test.stepRoom(room);
+    assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    assert.equal(room.monster.bossState.elapsed, 0);
+    party.__test.stepRoom(room);
+    assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    assert.equal(party.getMyRoomSnapshot(seeds[0].name).monster.birthday.events[0].stage, 'resolved');
+    clock.advance(600); party.__test.stepRoom(room);
+    assert.equal(party.getMyRoomSnapshot(seeds[0].name).phaseTransition, null);
+    room.members[0].runtime.actionUntil = 0;
+    assert.equal((await party.attackMobPhase(seeds[0].name)).ok, true);
 });
 
 test('박수 마감 이후 입력은 거부하며 박수 누락은 전멸한다', async t => {
@@ -1860,8 +1875,15 @@ test('생일 보스의 연격, 다단히트와 간접 공격은 타격마다 1�
 
 test('케이크 주기 피해와 강탈은 공통 피해와 실제 휴대 수량을 사용하며 물약이 없으면 실패한다', async t => {
     const clock = birthdayClock(t), room = await birthdayBattle(2, 1), mon = room.monster;
-    birthdayTick(room, clock, 3); assert.ok(room.members.every(m => m.runtime.hp === 975000));
-    birthdayTick(room, clock, 3); assert.ok(room.members.every(m => m.runtime.hp === 950000));
+    birthdayTick(room, clock, 3); assert.ok(room.members.every(m => m.runtime.hp === 1000000));
+    const thrown = mon.bossState.events.find(e => e.kind === 'birthdayThrow');
+    assert.equal(thrown.impactDelay, .6); assert.equal(thrown.stage, 'flying');
+    birthdayTick(room, clock, .4); assert.ok(room.members.every(m => m.runtime.hp === 1000000));
+    birthdayTick(room, clock, .2); assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    assert.equal(thrown.stage, 'resolved');
+    birthdayTick(room, clock, .2); assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    birthdayTick(room, clock, 2.2); assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    birthdayTick(room, clock, .6); assert.ok(room.members.every(m => m.runtime.hp === 950000));
     mon.bossState.elapsed = 26.9; mon.bossState.cakeAt = 30;
     birthdayTick(room, clock);
     const steal = mon.bossState.events.find(e => e.kind === 'birthdaySteal'); assert.ok(steal);
@@ -1873,18 +1895,24 @@ test('케이크 주기 피해와 강탈은 공통 피해와 실제 휴대 수량
     birthdayTick(room, clock, 2); assert.equal(room.state, 'failed');
 });
 
-test('코딩 5초 후 15초간 카드와 스킬만 뒤섞으며 계정 카드, 쿨타임과 원래 스킬을 복원한다', async t => {
+test('코딩 5초 후 카드와 스킬을 한 번 바꾸어 15초 고정하고 계정 카드, 쿨타임과 원래 스킬을 복원한다', async t => {
     const clock = birthdayClock(t), room = await birthdayBattle(1, 1), mon = room.monster, m = room.members[0];
     const user = await rpg.getRPGUserByName(m.name), original = { card: structuredClone(m.card), skills: [...m.skills], defs: structuredClone(m.skillDefs), main: structuredClone(user.main_card) };
     m.runtime.cooldowns[original.skills[0]] = Date.now() + 200000;
     const cooldowns = structuredClone(m.runtime.cooldowns);
     mon.bossState.elapsed = 69.9; mon.bossState.cakeAt = 100; mon.bossState.stealAt = 100;
     birthdayTick(room, clock); assert.equal(mon.bossState.coding.duration, 5);
+    t.mock.method(Math, 'random', () => .9);
     birthdayTick(room, clock, 5); assert.equal(mon.bossState.shuffle.duration, 15);
-    t.mock.method(Math, 'random', () => .9); birthdayTick(room, clock);
     assert.notDeepEqual(m.card, original.card); assert.notDeepEqual(m.skills, original.skills);
     assert.deepEqual(user.main_card, original.main); assert.deepEqual(m.runtime.cooldowns, cooldowns);
-    birthdayTick(room, clock, 14.9);
+    const changed = { card: structuredClone(m.card), skills: [...m.skills], defs: structuredClone(m.skillDefs) };
+    t.mock.method(Math, 'random', () => .1);
+    for (let i = 0; i < 14; i++) {
+        birthdayTick(room, clock, 1);
+        assert.deepEqual(m.card, changed.card); assert.deepEqual(m.skills, changed.skills); assert.deepEqual(m.skillDefs, changed.defs);
+    }
+    birthdayTick(room, clock, 1);
     assert.equal(mon.bossState.shuffle, null); assert.equal(mon.bossState.codeAt, mon.bossState.elapsed + 70);
     assert.deepEqual(m.skills, original.skills); assert.deepEqual(m.skillDefs, original.defs);
     assert.equal(m.card.imageUrl, original.card.imageUrl); assert.deepEqual(m.runtime.cooldowns, cooldowns);

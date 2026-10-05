@@ -2028,7 +2028,7 @@ function setupPhase(room) {
         const handler = BOSS_HANDLERS[room.monster.bossKey];
         if (handler && handler.onSpawn) handler.onSpawn(room, room.monster);
         startTick(room);
-        pushNotice(room, phase.name + ' — ' + room.monster.name + ' 등장', 'big', 4500);
+        if (room.phaseTransition?.presentation !== 'birthdayThrow') pushNotice(room, phase.name + ' — ' + room.monster.name + ' 등장', 'big', 4500);
     }
 }
 
@@ -2036,7 +2036,7 @@ function endPhase(room) {
     stopTick(room);
     const quest = getQuestById(room.questId);
     const next = quest.phases[room.phaseIndex + 1];
-    pushNotice(room, (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어', 'big', 4500);
+    if (room.questId !== birthdayEvent.ID) pushNotice(room, (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어', 'big', 4500);
     // 3택 스킵 퀘스트: 바로 다음 관문으로
     if (next && quest.noPhaseChoices) {
         for (const m of room.members) m.pendingChoices = null;
@@ -2093,9 +2093,11 @@ function proceedToNextPhase(room) {
     const fromImage = room.monster?.image || previous?.monster?.image || quest.coverImage;
     const fromArt = previous?.type === 'mob' ? { image: null, background: raidAssetUrl(previous.backgroundImage), scene: { aspect: 16 / 9 } } : raidArtwork(fromImage);
     const toArt = next ? raidArtwork(next.monster?.image || quest.coverImage) : null;
+    const birthdayThrow = room.questId === birthdayEvent.ID && room.phaseIndex === 0 && !!next;
     room.phaseTransition = next ? {
         id: room.id + ':' + (room.phaseIndex + 1) + ':' + startedAt,
-        startedAt, endsAt: startedAt + PHASE_TRANSITION_MS,
+        startedAt, endsAt: startedAt + (birthdayThrow ? 1200 : PHASE_TRANSITION_MS),
+        ...(birthdayThrow ? { presentation: 'birthdayThrow' } : {}),
         fromName: room.monster?.name || previous?.monster?.name || previous?.name || '',
         fromImage: fromArt.image,
         fromBackground: fromArt.background,
@@ -2326,7 +2328,10 @@ function stepRoom(room) {
     if (room.awaitingChoices) return;
     const dt = TICK_MS / 1000;
     if (mansionRaid.transition(room, dt)) { broadcastRoom(room); return; }
-    if (isIntroActive(room)) return; // 카운트다운과 관문 컷씬 동안 몬스터 게이지·버프·광폭화 타이머 동결
+    if (isIntroActive(room)) {
+        if (birthdayRaid.transition(room)) broadcastRoom(room);
+        return; // 카운트다운과 관문 컷씬 동안 몬스터 게이지·버프·광폭화 타이머 동결
+    }
     mansionRaid.tickAurora(room, dt);
     if (Array.isArray(room.delayedEquipmentDamage) && room.delayedEquipmentDamage.length > 0) {
         const now = Date.now();

@@ -860,7 +860,7 @@
         phaseCutTimers.forEach(clearTimeout);
         phaseCutTimers = [];
         phaseCut?.remove(); phaseCut = null;
-        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('gate-transition', 'gate-settle');
+        document.querySelector('.pq-screen[data-screen="play"]')?.classList.remove('gate-transition', 'gate-settle', 'birthday-transition');
     }
     function syncPhaseTransition(snap) {
         const transition = snap.phaseTransition;
@@ -870,6 +870,17 @@
         const screen = document.querySelector('.pq-screen[data-screen="play"]');
         const stage = screen?.querySelector('.pq-game-stagewrap');
         if (!stage) return;
+        if (transition.presentation === 'birthdayThrow') {
+            screen.classList.add('birthday-transition');
+            $('#pqNoticeStack').replaceChildren();
+            phaseCut = el('span', { 'data-id': transition.id, hidden: true });
+            stage.append(phaseCut);
+            phaseCutTimers.push(setTimeout(() => {
+                hidePhaseTransition(); updateRaidPatterns();
+                updateAttackBtn(); updateSkillPotionButtons(); updateSupportGauge();
+            }, Math.max(0, Number(transition.endsAt) + (cooldownClockOffset || 0) - Date.now())));
+            return;
+        }
         screen.classList.add('gate-transition');
         $('#pqNoticeStack').replaceChildren();
         const elapsed = Math.max(0, Date.now() - Number(transition.startedAt) - (cooldownClockOffset || 0));
@@ -920,9 +931,11 @@
     function updateRaidPatterns() {
         if (!window.MansionRaidUI) return;
         const snap = currentRoom, monster = snap?.monster;
-        const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() ? null
+        const birthdayTransition = isPhaseTransitionActive() && snap?.phaseTransition?.presentation === 'birthdayThrow';
+        const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() && !birthdayTransition ? null
             : monster?.birthday || monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
         const play = document.querySelector('.pq-screen[data-screen="play"]');
+        play.classList.toggle('birthday-raid', snap?.state === 'inProgress' && !!monster?.birthday);
         play.classList.toggle('birthday-candles', !!view?.candles);
         const speech = view?.events?.find(event => event.presentation === 'speech');
         document.querySelector('.pq-screen[data-screen="play"]').dataset.speech = speech ? '1' : '';
@@ -954,6 +967,7 @@
     // ====== 방 화면 ======
     function applyRoomSnapshot(snap) {
         const previous = currentRoom;
+        if (snap.questId === 'lukimBirthday2026') window.BirthdayRaidFX?.preload();
         for (const phase of snap.questDef?.phases || []) preloadRaidArt(phase.artwork);
         preloadRaidArt(snap.monster?.mansion?.transitionArt);
         if (previous?.id !== snap.id) {

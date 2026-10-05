@@ -1,6 +1,9 @@
 .pq-birthday-fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6}
+.birthday-raid #pqMyVitals{z-index:7}
 .birthday-candles #pqBossStage .pq-stage-hud{visibility:hidden}
 .birthday-candles #pqSkillBar,.birthday-candles #pqSupportPanel{visibility:hidden}
+.birthday-candles #pqBossIllustImg,.birthday-transition #pqBossIllustImg{visibility:hidden}
+.birthday-transition .pq-attack-btn,.birthday-transition .pq-skill-btn,.birthday-transition .pq-support-btn{pointer-events:none}
 .pq-boss-speech.birthday{left:var(--speech-x);top:var(--speech-y);bottom:auto;transform:none;transform-origin:0 50%;animation:pqBirthdaySpeechIn .22s ease-out both}
 .pq-boss-speech.birthday::before{left:auto;right:100%;top:0;width:var(--speech-tail);height:28px;clip-path:polygon(100% 35%,100% 95%,0 6px)}
 .pq-boss-speech.birthday::after{left:auto;right:calc(100% - 1px);top:2px;width:calc(var(--speech-tail) - 4px);height:22px;clip-path:polygon(100% 30%,100% 90%,0 4px)}

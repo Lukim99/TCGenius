@@ -79,12 +79,34 @@ python scripts/compose_lukim_birthday_bgm.py --soundfont GeneralUser-GS.sf2 --fl
 | 파일 | 규격과 배치 | 바이트 | MD5 |
 | --- | --- | --- | --- |
 | ui/레이드/lukim-birthday-banner-v1.png | 1672×941 RGB. 버건디와 금색 연회장, 오른쪽 루킴과 케이크, 왼쪽 제목 공간 | 2320797 | 7e1809260c22efcc38a8581d53d287a7 |
-| ui/레이드/lukim-birthday-props-v1.png | 1536×1024 RGBA. 3열 2행, 케이크/촛불/성냥/케이크 조각/노트북/쟁반 순서 | 2239221 | 366d43cb543c390fd1b364c05fa317a1 |
+| ui/레이드/lukim-birthday-props-v1.png | 1536×1024 RGBA. 케이크/촛불/성냥/케이크 조각/노트북/쟁반을 3열 2행에 배치. 균등 셀 대신 실제 소품 영역을 지정 | 2239221 | 366d43cb543c390fd1b364c05fa317a1 |
 | ui/레이드/lukim-birthday-poses-v1.png | 1254×1254 RGBA. 2열 2행, 불기/던지기/손을 내리기/마시기 순서. 최종 코딩은 별도 이미지 사용 | 1568863 | 4486f78a7b54dec49979c17c3b28bd5d |
 | ui/레이드/lukim-birthday-coding-v1.png | 1254×1254 RGBA. 키보드에 손을 얹은 루킴과 낮은 강연대, 얼굴이 모두 보이는 노트북 | 1373502 | ffc9a8a7df05a8c07f38ea8c5ff89325 |
 | itemImage/소모품/케이크.png | 1254×1254 RGBA. 케이크와 접시가 가로 48.1%, 세로 41.9%를 차지하고 좌우 약 26% 투명 여백 유지 | 559571 | ef90cc17ff35ea4e81ac4f7da3d8bec2 |
 
-소품은 보스와 같은 아이보리, 버건디 벨벳, 금박과 따뜻한 왼쪽 위 광원을 사용한다. 촛불은 심지가 보이는 꺼진 상태, 성냥은 오른쪽 끝에서 타는 수평 형태로 제작했다. 모든 소품은 셀 안에 온전히 들어가며 UI, 문자와 바탕을 넣지 않았다. 보스 동작은 빈 타원 눈, w형 입, 생일 모자와 망토를 유지하고 같은 발 위치와 시점으로 제작했다.
+소품은 보스와 같은 아이보리, 버건디 벨벳, 금박과 따뜻한 왼쪽 위 광원을 사용한다. 촛불은 심지가 보이는 꺼진 상태, 성냥은 오른쪽 끝에서 타는 수평 형태로 제작했다. 균등 셀 경계를 넘는 그림은 실제 픽셀 영역을 사용해 잘림을 피한다. UI, 문자와 바탕은 넣지 않았다. 보스 동작은 빈 타원 눈, w형 입, 생일 모자와 망토를 유지하고 같은 발 위치와 시점으로 제작했다.
+
+### 박수 동작 에셋
+
+2026-10-06에 내장 imagegen으로 박수 손의 초안 `DB/RPGenius/ui/레이드/lukim-birthday-clap-v1.png`를 만들었다. 1774×887 RGBA이며, 크기는 1,071,194바이트, MD5는 `a52f5970649a749d47ca2066a326c93f`다. S3의 `tcgenius/assets/ui/레이드/lukim-birthday-clap-v1.png`에 보관했다. 최종 화면은 아래 v2를 사용한다.
+
+최종 프롬프트:
+
+```text
+Use case: stylized-concept. Asset type: transparent RPG animation source sheet of TWO INDIVIDUAL human hands for applause, 2 columns and 1 row. The supplied birthday mascot pose image is ONLY a lighting/material style reference; do not draw its character. Primary request: create two separate realistically proportioned white ivory satin-gloved hands with short burgundy velvet cuffs and delicate gold piping, palms facing each other inward in natural clapping profile, four joined relaxed fingers extended diagonally upward and a visible thumb. LEFT HALF: a left hand with the wrist entering from the bottom left, fingertips pointing toward the upper right, palm facing right toward the sheet center. RIGHT HALF: corresponding right hand, wrist entering from the bottom right, fingertips toward upper left, palm facing left. The hands are SEPARATE with ample transparent space between them, not already touching. Identical scale, camera, warm chandelier light, cohesive high quality painterly 3D Korean fantasy RPG inventory/game asset. Very clear human finger and palm silhouettes readable at 60px, full wrists and cuffs within the frame. Keep each whole hand fully within its own half with 15 percent transparent safe padding to every cell edge, no objects crossing the midpoint. Transparent background with actual alpha zero, no gray fill or checkerboard, no shadow on a floor, no text, no labels, no borders, no UI, no sparkles, no emoji symbols, no mascot or face. These hands will move together and contact for a true clapping animation, so profile rather than palms facing the camera.
+```
+
+### 박수 동작 최종본
+
+Claude Opus 5.5가 실제 화면 코드와 소품 이미지를 검토한 뒤 손의 측면, 접촉 동작, 얼굴과 체력 표시를 가리지 않는 배치를 제안했다. 내장 imagegen으로 `DB/RPGenius/ui/레이드/lukim-birthday-clap-v2.png`를 생성했다. 2172×724 RGBA, 1,040,524바이트이며 MD5는 `f30514251df886ff64ca1fb94331f88d`다. 가로 세 칸에 왼손 측면, 오른손 측면, 두 손이 맞닿는 모습을 담았다. 손목을 축으로 접근하고 실제 접촉 순간에 녹음된 박수음을 재생한다.
+
+2026-10-06에 S3의 `tcgenius/assets/ui/레이드/lukim-birthday-clap-v2.png`에 신규 업로드했다. 마이그레이션 대상 77개 파일의 MD5, 크기와 MIME 일치를 확인했고 v2 한 개만 신규 업로드했다. 기존 소품 시트는 바꾸지 않고 케이크, 촛불의 왁스와 심지, 불꽃의 실제 픽셀 영역을 각각 사용한다. 촛대가 없는 루킴 동작을 케이크 뒤에 배치한다.
+
+최종 프롬프트:
+
+```text
+Use case: precise-object-edit. Asset type: production RPG clapping animation sprite sheet, THREE SQUARE CELLS in a single horizontal row, canvas 3:1. Image 1 is the edit/style target of ivory gloves and burgundy gold-trimmed cuffs; correct their camera-facing palms into real three-quarter SIDE PROFILE for clapping and add the actual contact frame. Image 2 is a supporting material/lighting reference only. Keep white ivory satin formal gloves, wine red velvet cuffs, delicate gold braid embroidery and warm chandelier light. CELL 1: LEFT HAND ALONE, accurate three-quarter profile from its thumb side, PALM FACING RIGHT INTO THE SHEET, NOT FACING THE CAMERA, four joined fingers pointing up and a little right, thumb naturally placed, wrist and complete cuff at the bottom. CELL 2: RIGHT HAND ALONE, same scale and camera, PALM FACING LEFT, NOT FACING CAMERA, fingers upward slightly left, wrist and complete cuff at bottom. These two profiles have narrow silhouettes so that their actual palm surfaces can meet. CELL 3: a pair of these same gloved hands AT THE INSTANT OF A CLAP, palms pressed flat together, fingers aligned and slightly splayed from physical contact, thumbs naturally side by side, both burgundy cuffs visible. This cell is the unmistakable applause/contact pose, not two hands separated. Match wrist and fingertip heights, scale and illumination across every cell, whole hands and cuffs fully visible, 12 percent genuine transparent padding to all cell edges, no crossing cell boundaries. High quality realistic painterly 3D fantasy game sprite with visible satin seams and finger creases, strong readable side silhouettes at 60 pixels, precise anatomy. True transparent alpha outside subjects. No glow, no bright halo, no drop shadow, no floor, no motion blur, no confetti, no glitter, no gold particles, no lens flare, no text, no grid, no labels, no extra hands, no characters, no praying emoji style.
+```
 
 ### 케이크 여백 수정
 
