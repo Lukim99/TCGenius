@@ -50,7 +50,9 @@ test('모든 레이드 난이도에 음악이 있으며 흑화 호두는 기존 
     assert.deepEqual(tracks.mansionNightmare, tracks.mansionNormal);
     assert.equal(tracks.mansionNormal[0], 'sfx/E세계대저택 1관문.mp3');
     assert.equal(tracks.mansionNormal[1], 'sfx/E세계대저택 2관문.mp3');
-    assert.equal(new Set(Object.values(tracks).flat()).size, 4);
+    assert.equal(tracks.lukimBirthday2026[0], 'sfx/lukim-birthday-phase1-v1.mp3');
+    assert.equal(tracks.lukimBirthday2026[1], 'sfx/lukim-birthday-phase2.mp3');
+    assert.equal(new Set(Object.values(tracks).flat()).size, 6);
     assert.equal(bgm.loop, true);
     assert.equal(bgm.volume, .18);
     assert.equal(bgm.preload, 'none');
@@ -104,20 +106,21 @@ test('음악은 레이드 전환 때 교체되고 전투 갱신 때 이어지며
     assert.ok(p.audios.every(audio => audio.paused));
 });
 
-test('대저택은 모든 난이도에서 관문별로 교체하고 같은 관문 갱신에서는 음악을 이어간다', async () => {
-    for (const questId of ['mansionNormal', 'mansionHard', 'mansionNightmare']) {
+test('대저택과 생일 레이드는 관문별로 교체하고 같은 관문 갱신에서는 음악을 이어간다', async () => {
+    for (const questId of ['mansionNormal', 'mansionHard', 'mansionNightmare', 'lukimBirthday2026']) {
         const p = player();
         const { syncBgm } = p;
+        const tracks = p.tracks[questId];
         const room = phaseIndex => ({ questId, phaseIndex, state: 'inProgress' });
         syncBgm(room(0));
         await p.settle();
-        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent('sfx/E세계대저택 1관문.mp3'));
+        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent(tracks[0]));
         p.bgm.currentTime = 45;
         syncBgm(room(0));
         assert.equal(p.bgm.currentTime, 45);
         syncBgm(room(1));
         await p.settle();
-        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent('sfx/E세계대저택 2관문.mp3'));
+        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent(tracks[1]));
         assert.equal(p.bgm.currentTime, 0);
         assert.equal(p.bgm.paused, false);
         p.bgm.currentTime = 30;
@@ -125,7 +128,7 @@ test('대저택은 모든 난이도에서 관문별로 교체하고 같은 관�
         assert.equal(p.bgm.currentTime, 30);
         syncBgm(room(0));
         await p.settle();
-        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent('sfx/E세계대저택 1관문.mp3'));
+        assert.equal(p.bgm.src, '/rpg-ui?file=' + encodeURIComponent(tracks[0]));
         assert.equal(p.bgm.currentTime, 0);
     }
 });

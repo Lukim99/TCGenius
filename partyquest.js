@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
+const birthdayEvent = require('./birthday_raid');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -697,7 +698,54 @@ function isButaQuest(questId) {
     return questId === 'butaGame' || questId === 'butaGameHard';
 }
 
+function grantBirthdayClearRewards(room) {
+    if (room.state !== 'cleared') return Promise.resolve();
+    if (room.rewardPromise) return room.rewardPromise;
+    room.rewardPromise = (async () => {
+        await Promise.all(room.refundTasks || []);
+        const items = rpgenius.getDataCache('Item', []);
+        const itemId = name => items.findIndex(item => item?.name === name);
+        const rewards = [
+            { type: '아이템', item_id: items.findIndex(item => item?.use === '축복사용권' && item.blessing === 'rukim' && Number(item.durationDays) === 30), count: 1 },
+            { type: '아티팩트', rarity: '레전더리', count: 1 },
+            { type: '가넷', count: 1006 },
+            { type: '아이템', item_id: itemId('9성 카드팩'), count: 1 },
+            { type: '아이템', item_id: itemId('케이크'), count: 10 },
+            { type: '아이템', item_id: itemId('고급 장비 보호권'), count: 3 },
+            { type: '아이템', item_id: itemId('럭키카드30%'), count: 1 }
+        ];
+        const results = [];
+        for (const member of room.members) {
+            try {
+                const user = await rpgenius.getRPGUserByName(member.name);
+                if (!user) throw new Error('계정 정보를 찾지 못했습니다.');
+                const progress = rpgenius.getTitleProgress(user), summary = {}, granted = [];
+                const received = !!progress[birthdayEvent.CLAIM];
+                if (!received) {
+                    if (rewards.some(reward => reward.type === '아이템' && reward.item_id < 0)) throw new Error('생일 보상 아이템 등록이 필요합니다.');
+                    for (const entry of rewards) {
+                        const reward = grantPartyQuestPackReward(user, entry, summary);
+                        granted.push(reward.kind === 'item' ? { ...reward, ...getPartyQuestItemAsset(reward.itemId, 0) } : reward);
+                    }
+                    progress[birthdayEvent.CLAIM] = true;
+                }
+                rpgenius.recordQuestEvent(user, 'partyClear', { quest: '루킴의 생일파티', questId: room.questId, members: room.members.length });
+                await rpgenius.commitProtectedUserChange(user, ['inventory', 'garnet', 'titleProgress', 'quests']);
+                results.push({ name: member.name, exp: 0, gold: 0, items: granted, birthdayReceived: received,
+                    summary: Object.values(summary) });
+            } catch (error) {
+                console.error('[birthday] reward grant error:', member.name, error.message);
+                results.push({ name: member.name, error: '보상 지급 실패' });
+            }
+        }
+        room.result.rewards = results;
+        broadcastRoom(room);
+    })();
+    return room.rewardPromise;
+}
+
 function grantPartyQuestClearRewards(room) {
+    if (room.questId === birthdayEvent.ID) return grantBirthdayClearRewards(room);
     const isMansion = room.questId.startsWith('mansion');
     const isMansionNightmare = room.questId === 'mansionNightmare';
     if (isMansion && room.state !== 'cleared') return Promise.resolve();
@@ -853,8 +901,13 @@ function grantPartyQuestClearRewards(room) {
     return work;
 }
 
+function canOpenPartyQuest(user) {
+    return !!user && (rpgenius.canUsePartyQuest(user) || birthdayEvent.available()
+        || getRoomOf(user.name)?.questId === birthdayEvent.ID);
+}
+
 function listQuestSummaries(user) {
-    return loadQuests().map(q => ({
+    return loadQuests().filter(q => q.id !== birthdayEvent.ID || birthdayEvent.available()).map(q => ({
         id: q.id,
         name: q.name,
         description: q.description || '',
@@ -1134,6 +1187,8 @@ function serializeBossPatternEvents(mon) {
 }
 
 const RAID_ARTWORK = {
+    '레이드/lukim-birthday-boss-v1.png': { image: 'lukim-birthday-boss-v1', background: 'lukim-birthday-hall-v1',
+        aspect: 16 / 9, subject: [.30, .13, .40, .72], framed: false, mouth: [.48, .52] },
     '흑화 호두.png': { image: 'black-hodu', background: 'black-hodu-aura', aspect: 1601 / 982, alignY: 0, subject: [.13, .02, .87, .98] },
     '부타게임/타부자고.png': { image: 'tabujago-scene', background: 'dungeon-gate', subject: [.37, .30, .22, .51] },
     '부타게임/잉여왕(기본).png': { image: 'ingyeo', background: 'volcanic-arena', subject: [.13, 0, .87, 1] },
@@ -1148,13 +1203,15 @@ function raidArtwork(image) {
     const art = RAID_ARTWORK[image];
     return { image: raidAssetUrl(art ? '레이드/' + art.image + '.png' : image),
         background: art ? raidAssetUrl('레이드/' + art.background + '.png') : null, sprite: !!art,
-        scene: art ? { aspect: art.aspect || 1672 / 941, alignY: art.alignY ?? .5, subject: art.subject, framed: art.framed !== false } : null };
+        scene: art ? { aspect: art.aspect || 1672 / 941, alignY: art.alignY ?? .5, subject: art.subject, framed: art.framed !== false,
+            ...(art.mouth ? { mouth: art.mouth } : {}) } : null };
 }
 
 function serializeMonster(mon) {
     if (!mon) return null;
     const gimmick = mon.bossState && mon.bossState.chatGimmick;
     return {
+        birthday: mon.bossState?.birthday ? birthdayRaid.view(mon) : null,
         mansion: mon.bossState?.mansion ? { ...mansionRaid.view(mon),
             ...(mon.bossKey === '위플래쉬' && mon.bossState.difficulty !== 'normal' ? { transitionArt: raidArtwork('대저택/위플래쉬(0줄).png') } : {}) } : null,
         patternEvents: serializeBossPatternEvents(mon),
@@ -1196,7 +1253,12 @@ const mansionRaid = require('./mansion_raid').createMansionRaid({
     bossAtk, endBossGimmick, applyBossGroggy, addSupportGauge, wipeParty, upsertMemberBuff, healMember, setBossShield, clearBossShield,
     registerHpGimmicks, applyBossHpDamage, broadcastRoom, recordPartyDamage, canPartyApplyShield, grantMemberShield, grantTitleAsync
 });
+const birthdayRaid = birthdayEvent.createBirthdayRaid({ getAliveMembers, findMember, pushCombat,
+    applyFixedDamageToMember, wipeParty, endPhase, endQuest, broadcastRoom,
+    shuffleCards: shuffleBirthdayCards, restoreCards: restoreBirthdayCards });
 const BOSS_HANDLERS = {
+    '생일 케이크': { step: birthdayRaid.step, init: birthdayRaid.init, onSpawn: birthdayRaid.onSpawn },
+    '루킴': { step: birthdayRaid.step, init: birthdayRaid.init, onSpawn: birthdayRaid.onSpawn },
     '조각': { step: mansionRaid.step, init: mansionRaid.init, onSpawn: mansionRaid.onSpawn },
     '위플래쉬': { step: mansionRaid.step, init: mansionRaid.init, onSpawn: mansionRaid.onSpawn },
     '흑화 호두': { step: stepBlackHoduBoss, init: createBlackHoduBossState },
@@ -1526,7 +1588,47 @@ function buildMemberCard(user) {
     return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl };
 }
 
+function shuffleBirthdayCards(room) {
+    const cards = loadJsonCached(CHARACTER_CARDS_PATH, 'cards');
+    const candidates = cards.map((card, id) => card ? id : -1).filter(id => id >= 0);
+    for (const member of room.members) {
+        if (!member.runtime || !candidates.length) continue;
+        if (!member.birthdayOriginal) member.birthdayOriginal = {
+            card: member.card, skills: member.skills, skillDefs: member.skillDefs,
+            mainCardSkills: member.baseSnapshot.mainCardSkills };
+        const id = candidates[Math.floor(Math.random() * candidates.length)];
+        const types = cards[id].class ? ['일반', '전직', '각성'] : ['일반'];
+        const main_card = { id, star: Number(member.birthdayMainCard?.star || 0), type: types[Math.floor(Math.random() * types.length)] };
+        const user = { main_card };
+        const entries = getMainCardSkillEntries(user);
+        member.card = buildMemberCard(user);
+        member.card.revision = Number(member.birthdayCardRevision || 0) + 1;
+        member.birthdayCardRevision = member.card.revision;
+        member.skills = entries.map(entry => entry.skill.name);
+        member.skillDefs = Object.fromEntries(entries.map(entry => [entry.skill.name, toPartyMainCardSkillDef(entry)]));
+        member.baseSnapshot.mainCardSkills = entries;
+        // 장비에서 부여된 행동은 카드 교체와 무관하게 유지한다.
+        for (const [name, def] of Object.entries(member.birthdayOriginal.skillDefs)) if (def.source === 'equipment') {
+            member.skills.push(name); member.skillDefs[name] = def;
+        }
+    }
+}
+
+function restoreBirthdayCards(room) {
+    for (const member of room.members) {
+        const original = member.birthdayOriginal;
+        if (!original) continue;
+        member.card = { ...original.card, revision: Number(member.birthdayCardRevision || 0) + 1 };
+        member.birthdayCardRevision = member.card.revision;
+        member.skills = original.skills; member.skillDefs = original.skillDefs;
+        member.baseSnapshot.mainCardSkills = original.mainCardSkills;
+        member.birthdayOriginal = null;
+    }
+}
+
 async function createRoom(hostName, questId, password) {
+    const birthdayError = birthdayEvent.admissionError(questId);
+    if (birthdayError) return { error: birthdayError };
     if (memberIndex.has(hostName)) return { error: '이미 참여 중인 파티가 있습니다.' };
     const quest = getQuestById(questId);
     if (!quest) return { error: '존재하지 않는 파티 퀘스트입니다.' };
@@ -1598,6 +1700,8 @@ async function joinRoom(roomId, name, password) {
     }
     const room = rooms.get(roomId);
     if (!room) return { error: '존재하지 않는 파티입니다.' };
+    const birthdayError = birthdayEvent.admissionError(room.questId);
+    if (birthdayError) return { error: birthdayError };
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '입장할 수 없는 상태입니다.' };
     if (room.members.length >= room.maxPlayers) return { error: '파티가 가득 찼습니다.' };
     if (room.password && String(password || '') !== room.password) return { error: '비밀번호가 일치하지 않습니다.' };
@@ -1741,6 +1845,8 @@ async function setPotions(name, items) {
 async function start(hostName) {
     const room = getRoomOf(hostName);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
+    const birthdayError = birthdayEvent.admissionError(room.questId);
+    if (birthdayError) return { error: birthdayError };
     if (room.hostName !== hostName) return { error: '공대장만 시작할 수 있습니다.' };
     if (room.state !== 'lobby' && room.state !== 'preparing') return { error: '이미 진행 중입니다.' };
     if (room.members.length < room.minPlayers) return { error: '최소 ' + room.minPlayers + '명이 필요합니다.' };
@@ -1788,6 +1894,10 @@ async function start(hostName) {
     for (const m of room.members) {
         try {
             const user = userMap.get(m.name) || await rpgenius.getRPGUserByName(m.name);
+            if (room.questId === birthdayEvent.ID) {
+                m.birthdayMainCard = structuredClone(user.main_card);
+                m.birthdayOriginal = null;
+            }
             const baseStats = user ? rpgenius.calculateUserStats(user) : null;
             const slotEffects = user && typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : null;
             const mainCardSkills = user ? getMainCardSkillEntries(user) : [];
@@ -2013,6 +2123,7 @@ function proceedToNextPhase(room) {
 function endQuest(room, cleared, reason) {
     const wiped = !cleared && room.members.length > 0 && room.members.every(m => m.runtime && m.runtime.hp <= 0);
     stopTick(room);
+    if (room.questId === birthdayEvent.ID) restoreBirthdayCards(room);
     room.state = cleared ? 'cleared' : 'failed';
     room.monster = null;
     room.mobMonster = null;
@@ -2021,7 +2132,7 @@ function endQuest(room, cleared, reason) {
     for (const m of room.members) {
         if (m.potions && m.potions.length) {
             const refund = refundLeftoverPotionsAsync(m.name, m.potions);
-            if (room.questId.startsWith('mansion')) { if (!room.refundTasks) room.refundTasks = []; room.refundTasks.push(refund); }
+            if (room.questId.startsWith('mansion') || room.questId === birthdayEvent.ID) { if (!room.refundTasks) room.refundTasks = []; room.refundTasks.push(refund); }
             m.potions = [];
         }
         if (!cleared && Number(m.runtime && m.runtime.pendingEquipmentGold || 0) > 0) grantPendingEquipmentGoldAsync(m);
@@ -2071,6 +2182,8 @@ function restartQuest(hostName) {
     const room = getRoomOf(hostName);
     if (!room) return { error: '참여 중인 파티가 없습니다.' };
     if (room.hostName !== hostName) return { error: '공대장만 다시 시작할 수 있습니다.' };
+    const birthdayError = birthdayEvent.admissionError(room.questId);
+    if (birthdayError) return { error: birthdayError };
     if (room.state !== 'cleared' && room.state !== 'failed') return { error: '퀘스트가 종료된 후에만 사용할 수 있습니다.' };
     stopTick(room);
     room.state = 'lobby';
@@ -2125,6 +2238,10 @@ function attackMobPhase(name) {
     if (me.runtime && me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (me.runtime && nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
+    if (room.monster?.bossState?.birthday && room.monster.bossState.candles) {
+        me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
+        return birthdayRaid.lightAttack(room, me);
+    }
     // 시벌론: 상태 중 일반 공격 쿨타임 0.5초, 상태가 아니면 충전 +1
     const sivalonActive = isPartySivalonActive(me);
     if (me.runtime) me.runtime.actionUntil = nowMs() + (sivalonActive ? 500 : getActionCooldownSeconds(me) * 1000);
@@ -2420,7 +2537,7 @@ function stepRoom(room) {
         }
         if (stepMonsterDebuffs(room, mon, dt)) return;
 
-        if (mon.stunRemain <= 0) {
+        if (mon.stunRemain <= 0 || mon.bossState?.birthday) {
             const patternConsumed = stepBoss(room, mon, dt);
             if (room.state !== 'inProgress' || room.monster !== mon) return;
             if (patternConsumed) {
@@ -2523,7 +2640,7 @@ function stepMonsterDebuffs(room, monster, dt) {
             applyMobPhaseDamage(room, source, monster, result, 'skill', label, false);
         } else {
             result.damage = monster.bossState && monster.bossState.casting ? 0
-                : source ? applyPlayerDamageToBoss(room, monster, source, result.damage) : applyBossHpDamage(room, monster, result.damage);
+                : source ? applyPlayerDamageToBoss(room, monster, source, result.damage, result) : applyBossHpDamage(room, monster, result.damage);
             if (source) recordPartyDamage(source, result);
             pushCombat(room, (source ? source.name + ' [' + label + ']' : label) + ' → ' + monster.name + ' [-' + result.damage + ']', 'skill');
             broadcast(room, 'hit', { by: source && source.name, type: 'skill', skill: label, damage: result.damage,
@@ -3156,6 +3273,15 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         extraDamageDealt: hit.extraDamageDealt, damageComponents: hit.damageComponents,
         equipmentTriggerAllowed: !(extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack)
     };
+    if (monster?.bossState?.birthday) {
+        for (const detail of result.hitDetails) {
+            detail.damage = detail.damage > 0 || detail.fixedDamage > 0 || detail.destinyDamage > 0 ? 1 : 0;
+            detail.fixedDamage = 0; detail.destinyDamage = 0;
+        }
+        result.hitDamages = result.hitDetails.map(detail => detail.damage);
+        result.damage = result.hitDamages.reduce((sum, amount) => sum + amount, 0);
+        result.fixedDamage = 0; result.destinyDamage = 0;
+    }
     queuePartyBlackShadow(room, attacker, monster, result.damage, extra);
     return result;
 }
@@ -3167,7 +3293,7 @@ function dealSkillDamageToMonster(room, attacker, rawDamage, extra) {
     const result = calculateOutgoingDamage(attacker, room.monster, room, rawDamage, extra);
     const invincible = !!(room.monster.bossState && room.monster.bossState.casting);
     if (invincible) result.damage = 0;
-    else result.damage = applyPlayerDamageToBoss(room, room.monster, attacker, result.damage);
+    else result.damage = applyPlayerDamageToBoss(room, room.monster, attacker, result.damage, result);
     recordPartyDamage(attacker, result, extra.skillName || '스킬 피해');
     recordPartyJudgmentDamage(room, attacker, result);
     applyBlackHoduCritReflect(room, attacker, result);
@@ -3180,7 +3306,7 @@ function performBasicAttack(room, attacker) {
     const r = computeBasicDamage(attacker, mon, room);
     const invincible = !!(mon.bossState && mon.bossState.casting);
     if (invincible) r.damage = 0;
-    else r.damage = applyPlayerDamageToBoss(room, mon, attacker, r.damage);
+    else r.damage = applyPlayerDamageToBoss(room, mon, attacker, r.damage, r);
     recordPartyDamage(attacker, r, '기본 공격');
     recordPartyJudgmentDamage(room, attacker, r);
     applyAttackPotentialRecovery(room, attacker);
@@ -3310,7 +3436,7 @@ function wipeParty(room, reason, combatLine) {
 }
 
 // 플레이어가 보스에게 피해를 줄 때의 익스트림 기믹 처리. 실제 적용된 피해를 반환.
-function applyPlayerDamageToBoss(room, mon, attacker, damage) {
+function applyPlayerDamageToBoss(room, mon, attacker, damage, result) {
     damage = Math.max(0, Math.round(Number(damage) || 0));
     const st = mon && mon.bossState;
     if (st && damage > 0) {
@@ -3335,7 +3461,13 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage) {
             }
         }
     }
-    return applyBossHpDamage(room, mon, damage);
+    const applied = applyBossHpDamage(room, mon, damage, result ? { birthdayHits: result.hitDetails?.filter(hit => hit.damage > 0).length || result.hitCount || 1 } : undefined);
+    if (st?.birthday && result?.hitDetails) {
+        let remaining = applied;
+        for (const detail of result.hitDetails) if (detail.damage > 0) detail.damage = remaining-- > 0 ? 1 : 0;
+        result.hitDamages = result.hitDetails.map(detail => detail.damage);
+    }
+    return applied;
 }
 
 // 몬스터 HP를 깎는 유일한 경로. 보호막이 남아있으면 먼저 소모하고 HP는 무손상(초과분 소멸).
@@ -3343,6 +3475,8 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage) {
 function applyBossHpDamage(room, mon, damage, source) {
     damage = Math.max(0, Math.round(Number(damage) || 0));
     if (!mon || damage <= 0) return 0;
+    const birthdayDamage = birthdayRaid.interceptDamage(room, mon, damage, source?.birthdayHits || 1);
+    if (birthdayDamage !== null) return birthdayDamage;
     const mansionDamage = mansionRaid.interceptDamage(room, mon, damage, source);
     if (mansionDamage !== null) return mansionDamage;
     if (Number(mon.shield || 0) > 0) {
@@ -4740,6 +4874,7 @@ function useSkill(name, skillName, targetName) {
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
     if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
+    if (room.monster?.bossState?.birthday && room.monster.bossState.candles) return { error: '지금은 스킬을 사용할 수 없습니다.' };
     if (skillName === '자폭') return usePartySelfDestruct(room, me);
     if (skillName === '저지') return usePartyBlockSkill(room, me);
     if (!me.skills.includes(skillName)) return { error: '습득하지 않은 스킬입니다.' };
@@ -5595,6 +5730,7 @@ function getMyRoomSnapshot(name) {
 }
 
 module.exports = {
+    canOpenPartyQuest,
     listQuestSummaries,
     publicRoomList,
     setCardImageResolver,
@@ -5621,7 +5757,7 @@ module.exports = {
         const room = getRoomOf(name);
         if (!room) return { error: '참여 중인 파티가 없습니다.' };
         if (isIntroActive(room)) return { error: '관문 전환 중입니다.' };
-        return mansionRaid.action(room, name, payload || {});
+        return room.monster?.bossState?.birthday ? birthdayRaid.action(room, name, payload || {}) : mansionRaid.action(room, name, payload || {});
     },
     getAvailablePotions,
     usePotion,
@@ -5672,7 +5808,7 @@ module.exports = {
         getPartyQuestItemAsset,
         applyBossGroggy,
         __moveMark: moveIngyeoMark,
-        mansionRaid, serializeMonster,
+        mansionRaid, birthdayRaid, serializeMonster,
         BOSS_HANDLERS
     }
 };

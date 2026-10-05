@@ -1,4 +1,4 @@
-// 신규 레이드 이미지, 외부 효과음과 직접 편곡한 BGM만 업로드한다. 운영 데이터나 원본 이미지는 수정하지 않는다.
+// 신규 레이드 이미지, 외부 효과음과 요청된 BGM만 업로드한다. 운영 데이터나 원본 이미지는 수정하지 않는다.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -17,18 +17,20 @@ const files = [
         'ingyeo', 'ingyeo-berserk', 'ingyeo-berserk-arena', 'volcanic-arena', 'tabujago-scene', 'dungeon-gate',
         'sculpture-scene', 'sculpture-hall', 'whiplash-scene', 'whiplash-hall', 'whiplash-echo-scene', 'whiplash-echo-hall',
         'fx-dark-mist', 'fx-bronze-shard', 'fx-fire-flow-v2', 'fx-puzzle-piece-v1', 'fx-sculpture-carving-v1', 'whiplash-echo-body-v1',
-        'fx-party-heal', 'fx-party-aegis', 'lukim-birthday-boss-v1', 'lukim-birthday-hall-v1'].map(name => '레이드/' + name + '.png'),
+        'fx-party-heal', 'fx-party-aegis', 'lukim-birthday-boss-v1', 'lukim-birthday-hall-v1',
+        'lukim-birthday-banner-v1', 'lukim-birthday-props-v1', 'lukim-birthday-poses-v1', 'lukim-birthday-coding-v1'].map(name => '레이드/' + name + '.png'),
     ...['signal', 'bronze-set', 'shards-rush', 'stone-hit', 'resonance-impact', 'wall-pressure', 'echo-break',
         'ward-form', 'obsidian-close', 'mochi-flex', 'rain-veil', 'mirror-glint', 'power-gather', 'life-drain',
         'dark-surge', 'dark-growl', 'dealing-aura', 'revival-bloom', 'fire-ignite', 'fire-erupt', 'sky-load',
         'sky-impact', 'doom-pressure', 'doom-cut', 'healing-absorb', 'dark-impact', 'dealing-cut', 'ground-land',
         'puzzle-hit', 'raid-clear', 'raid-fail'].map(name => 'sfx/raid/' + name + '-v2.mp3'),
-    'sfx/lukim-birthday-phase1-v1.mp3'
+    'sfx/lukim-birthday-phase1-v1.mp3', 'sfx/lukim-birthday-phase2.mp3',
+    ...['match', 'ignite', 'blow', 'clap', 'throw', 'cream', 'cork', 'drink', 'typing', 'shuffle', 'gift'].map(name => 'sfx/birthday/' + name + '-v1.mp3')
 ];
-const assets = files.map(file => {
-    const body = fs.readFileSync(path.join(root, 'DB', 'RPGenius', 'ui', ...file.split('/')));
+const assets = [...files.map(file => 'ui/' + file), 'itemImage/소모품/케이크.png'].map(file => {
+    const body = fs.readFileSync(path.join(root, 'DB', 'RPGenius', ...file.split('/')));
     if (!body.length || body.length > 10 * 1024 * 1024) throw new Error(file + ': 잘못된 파일 크기');
-    return { key: 'tcgenius/assets/ui/' + file, body, md5: crypto.createHash('md5').update(body).digest('hex'),
+    return { key: 'tcgenius/assets/' + file, body, md5: crypto.createHash('md5').update(body).digest('hex'),
         type: file.endsWith('.png') ? 'image/png' : 'audio/mpeg' };
 });
 const bucket = process.env.S3_ASSET_BUCKET || process.env.S3_BANNER_BUCKET || 'eefl-image';

@@ -1408,6 +1408,50 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": "lukimBirthday2026",
+      "name": "루킴의 생일파티",
+      "description": "10월 6일 생일파티",
+      "coverImage": "레이드/lukim-birthday-banner-v1.png",
+      "minPlayers": 1,
+      "maxPlayers": 4,
+      "potionLimit": 10,
+      "noPositions": true,
+      "noPhaseChoices": true,
+      "phases": [
+        {
+          "name": "생일 케이크",
+          "type": "boss",
+          "monster": {
+            "image": "레이드/lukim-birthday-boss-v1.png",
+            "atk": 0,
+            "def": 0,
+            "mp": 0,
+            "actionInterval": 3,
+            "name": "생일 케이크",
+            "hp": 6
+          }
+        },
+        {
+          "name": "루킴의 생일파티",
+          "type": "boss",
+          "monster": {
+            "image": "레이드/lukim-birthday-boss-v1.png",
+            "atk": 0,
+            "def": 0,
+            "mp": 0,
+            "actionInterval": 3,
+            "name": "루킴",
+            "hp": 1006
+          }
+        }
+      ],
+      "rewards": {
+        "exp": 0,
+        "gold": 0,
+        "courageGemChance": 0
+      }
     }
   ]
 }

@@ -18,6 +18,7 @@
     let supportBarSig = '';
     let raidEffects = null;
     let partyEffects = null;
+    let birthdayEffects = null;
     let sceneObserver = null;
     const raidImages = new Map();
     function preloadRaidArt(art) {
@@ -286,9 +287,11 @@
         const gateTransition = isPhaseTransitionActive();
         const transition = gateTransition || currentRoom.monster?.mansion?.form === 'transition';
         const stone = currentRoom.monster?.mansion?.events?.some(event => event.kind === 'sculpture');
-        const blocked = pendingCD.action || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition;
+        const birthday = currentRoom.monster?.birthday;
+        const birthdayPause = birthday?.candles && birthday.stage !== 'lighting';
+        const blocked = pendingCD.action || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition || birthdayPause;
         btn.disabled = blocked;
-        btn.textContent = gateTransition ? '관문 전환 중' : seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : '공격');
+        btn.textContent = gateTransition ? '관문 전환 중' : seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : birthday?.candles ? '불 붙이기' : '공격');
     }
 
     async function manualAttack() {
@@ -362,6 +365,7 @@
     // 퀘스트 ID 난이도 분류: Nightmare > Extreme > Hard > Normal
     function questDifficulty(id) {
         const s = String(id || '');
+        if (s === 'lukimBirthday2026') return 'event';
         return /Nightmare/i.test(s) ? 'nightmare' : (/Extreme/i.test(s) ? 'extreme' : (/Hard/i.test(s) ? 'hard' : 'normal'));
     }
     function coverUrl(file) { return file ? '/rpg-ui?file=' + encodeURIComponent(file) : ''; }
@@ -504,7 +508,8 @@
         butaGameHard: ['sfx/부타게임.mp3'],
         mansionNormal: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3'],
         mansionHard: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3'],
-        mansionNightmare: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3']
+        mansionNightmare: ['sfx/E세계대저택 1관문.mp3', 'sfx/E세계대저택 2관문.mp3'],
+        lukimBirthday2026: ['sfx/lukim-birthday-phase1-v1.mp3', 'sfx/lukim-birthday-phase2.mp3']
     };
     let bgm = new Audio();
     bgm.loop = true;
@@ -916,11 +921,14 @@
         if (!window.MansionRaidUI) return;
         const snap = currentRoom, monster = snap?.monster;
         const view = snap?.state !== 'inProgress' || isPhaseTransitionActive() ? null
-            : monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
+            : monster?.birthday || monster?.mansion || (monster ? { generic: true, events: monster.patternEvents || [] } : null);
+        const play = document.querySelector('.pq-screen[data-screen="play"]');
+        play.classList.toggle('birthday-candles', !!view?.candles);
         const speech = view?.events?.find(event => event.presentation === 'speech');
         document.querySelector('.pq-screen[data-screen="play"]').dataset.speech = speech ? '1' : '';
         const bubble = $('#pqBossSpeech');
         bubble.hidden = !speech;
+        bubble.classList.toggle('birthday', !!monster?.birthday);
         if (speech) {
             if (bubble.dataset.event !== String(speech.id)) {
                 bubble.dataset.event = String(speech.id);
@@ -934,8 +942,12 @@
         const purification = snap?.state === 'inProgress' && snap.phaseType === 'mob' && !isPhaseTransitionActive()
             ? { progress: Math.min(1, (snap.sharedKillCount || 0) / Math.max(1, snap.killTarget)), complete: snap.sharedKillCount >= snap.killTarget } : null;
         raidEffects?.update(view, { scope: snap ? snap.id + ':' + snap.startedAt + ':' + snap.phaseIndex : '', volume: sound.sfx, serverOffset: cooldownClockOffset || 0, purification });
+        if (!birthdayEffects && window.BirthdayRaidFX && monster?.birthday) birthdayEffects = BirthdayRaidFX.create();
+        birthdayEffects?.update(view, { scope: snap ? snap.id + ':' + snap.startedAt + ':' + snap.phaseIndex : '',
+            volume: sound.sfx, serverOffset: cooldownClockOffset || 0, members: snap?.members || [], paused: $('#pqIntro')?.classList.contains('active') });
         MansionRaidUI.update($('#pqMansionRoot'), view, { me: snap?.spectating ? '' : me, host: snap?.hostName, serverOffset: cooldownClockOffset || 0,
-            readOnly: !!snap?.spectating, visualOnly: raidEffects?.visualOnly,
+            readOnly: !!snap?.spectating, potions: snap?.members?.find(m => m.name === me)?.potions || [],
+            visualOnly: ev => birthdayEffects?.visualOnly(ev) || raidEffects?.visualOnly(ev),
             send: snap?.spectating ? null : payload => api('/api/party/mansion-action', { method: 'POST', body: JSON.stringify(payload) }) });
     }
 
@@ -1460,7 +1472,8 @@
                 foreground.style.cssText = 'left:' + subject[0] * 100 + '%;top:' + subject[1] * 100 + '%;width:' + subject[2] * 100 + '%;height:' + subject[3] * 100 + '%';
             }
             foreground.append(el('img', { id: boss ? 'pqBossIllustImg' : null, src: art.image, alt: name, draggable: 'false',
-                'data-sprite': '1', 'data-subject': art.scene.framed === false ? '[0,0,1,1]' : JSON.stringify(subject) }));
+                'data-sprite': '1', 'data-subject': art.scene.framed === false ? '[0,0,1,1]' : JSON.stringify(subject),
+                'data-mouth': art.scene.mouth ? JSON.stringify(art.scene.mouth) : null }));
             plane.append(foreground);
         }
         return plane;
@@ -1485,6 +1498,18 @@
         const bubble = $('#pqBossSpeech'), image = $('#pqBossIllustImg');
         if (bubble.hidden || !image) return;
         const stage = bubble.parentElement.getBoundingClientRect(), art = image.getBoundingClientRect();
+        if (bubble.classList.contains('birthday') && image.dataset.mouth && image.naturalWidth) {
+            const mouth = JSON.parse(image.dataset.mouth), ratio = image.naturalWidth / image.naturalHeight;
+            const width = Math.min(art.width, art.height * ratio), height = width / ratio;
+            const x = art.left - stage.left + (art.width - width) / 2 + width * mouth[0];
+            const y = art.top - stage.top + (art.height - height) / 2 + height * mouth[1];
+            const left = Math.max(8, Math.min(x + Math.max(22, width * .14), stage.width - bubble.offsetWidth - 12));
+            bubble.classList.remove('below');
+            bubble.style.setProperty('--speech-x', left + 'px');
+            bubble.style.setProperty('--speech-y', (y - 6) + 'px');
+            bubble.style.setProperty('--speech-tail', Math.max(8, left - x - 5) + 'px');
+            return;
+        }
         const x = art.left - stage.left + art.width * .5, y = art.top - stage.top + art.height * .6;
         const left = Math.max(8, Math.min(x - 10, stage.width - bubble.offsetWidth - 12));
         const hud = $('#pqBossStage .pq-stage-hud')?.getBoundingClientRect();
@@ -2042,7 +2067,7 @@
         const bar = $('#pqPotionBar');
         if (!bar) return;
         const myMember = snap.members.find(m => m.name === me);
-        const list = (myMember && myMember.potions) || [];
+        const list = ((myMember && myMember.potions) || []).filter(p => Number(p.count) > 0);
         const sig = list.map(p => p.name + ':' + p.count + ':' + (p.iconUrl || '')).join('|');
         if (potionBarSig === sig && bar.childElementCount) { updateSkillPotionButtons(); return; }
         potionBarSig = sig;
@@ -2383,6 +2408,10 @@
                         if ((currentRoom.phaseType === 'elite' || currentRoom.phaseType === 'boss') && document.getElementById('pqBossStage')) {
                             updateBossMonster(currentRoom.monster);
                             renderPlayMembers(currentRoom);
+                            if (currentRoom.monster?.birthday) {
+                                renderSkillBar(currentRoom);
+                                renderPotionBar(currentRoom);
+                            }
                             updateSkillPotionButtons();
                             updateAttackBtn();
                         } else {
@@ -2447,6 +2476,7 @@
         syncBgm(null);
         raidEffects?.reset();
         partyEffects?.reset();
+        birthdayEffects?.reset();
         lastRoomState = null;
         myCD.action = 0; myCD.potion = 0; myCD.skills = {};
         pendingCD.action = false; pendingCD.potion = false;
@@ -2506,6 +2536,7 @@
             sound.sfx = clamp01(Number(e.target.value) / 100);
             raidEffects?.setVolume(sound.sfx);
             partyEffects?.setVolume(sound.sfx);
+            birthdayEffects?.setVolume(sound.sfx);
             $('#pqVolSfxVal').textContent = Math.round(sound.sfx * 100) + '%';
             saveSound();
         });

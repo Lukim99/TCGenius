@@ -1,6 +1,6 @@
 # 루킴의 생일파티 에셋
 
-2026-10-05 제작. 이벤트 레이드 구현에 앞서 보스, 전투 배경과 직접 편곡한 1페이즈 BGM을 준비했다. 이전 Suno 후보는 별도로 보관한다. 전투 패턴, 능력치, 보상과 입장 규칙은 아직 구현하지 않았다.
+2026-10-05에 보스, 전투 배경과 직접 편곡한 1페이즈 BGM을 준비했다. 2026-10-06에 배너, 전투 소품, 보스 동작, 케이크 아이콘과 외부 패턴 효과음을 추가하고 사용자가 제공한 2페이즈 BGM을 연결했다. 전투 규칙과 구현은 [생일 레이드 문서](lukim-birthday-raid.md)를 따른다. 이전 Suno 후보는 별도로 보관한다.
 
 ## 이미지
 
@@ -65,6 +65,56 @@ python scripts/compose_lukim_birthday_bgm.py --soundfont GeneralUser-GS.sf2 --fl
 세 번 이어서 연주한 결과의 가운데 반복 구간을 추출해 이전 음의 여운을 보존했다. 양 끝 8ms만 다듬어 경계 클릭을 줄였으며 곡 전체에는 페이드아웃을 넣지 않았다. 음량은 일정한 배율로 조정했다. 최종 MP3에서 FFmpeg로 측정한 평균 음량은 -21.26 LUFS, 최대 실제 피크는 -7.74 dBTP로 클리핑이 없다. 디코딩한 길이는 WAV 원본과 같은 5,013,474프레임(113.684초)이고 반복 경계의 샘플 차이는 0.000092 이하다.
 
 2026-10-05에 eefl-image 버킷의 `tcgenius/assets/ui/sfx/lukim-birthday-phase1-v1.mp3`로 업로드했다. 파일 크기는 2,729,855바이트, MD5는 `ba19052320be0a8a82244695c4190964`다. 마이그레이션 대상 58개에서 내용, 크기와 MIME 형식이 일치함을 확인했으며 이번에 추가한 MP3 한 개만 새로 업로드했다. 출력 폴더의 원본과 이전 Suno 미리보기는 S3에 올리지 않는다.
+
+## 2페이즈 BGM
+
+사용자가 지정한 `DB/RPGenius/ui/sfx/lukim-birthday-phase2.mp3`를 변환 없이 사용한다. MP3 오디오는 48kHz 스테레오이며 파일 길이는 159.294초, 크기는 3,679,520바이트, MD5는 `b79f8f9bf5fa8e6e5877056fb76b2b8c`다. 관문 배열의 두 번째 음원으로 등록해 공통 1.5초 교차 재생을 사용한다. 기존 Suno 미리보기 파일을 대신 연결하지 않는다.
+
+2026-10-06에 eefl-image 버킷의 `tcgenius/assets/ui/sfx/lukim-birthday-phase2.mp3`로 업로드했다. 전체 대상 75개의 MD5, 크기와 MIME 형식이 일치했고 이번에는 2페이즈 MP3 한 개만 추가했다.
+
+## 2026-10-06 전투 이미지
+
+내장 imagegen으로 생성한 PNG를 변환 없이 복사했다. 소품, 동작과 아이템의 투명 알파를 유지한다. Claude Opus 5.5가 보스와 연회장 원본을 보고 물리적인 소품 동선과 조명, 모바일 구성을 제안했고, 아래 제작 규격과 Canvas 합성에 반영했다.
+
+| 파일 | 규격과 배치 | 바이트 | MD5 |
+| --- | --- | --- | --- |
+| ui/레이드/lukim-birthday-banner-v1.png | 1672×941 RGB. 버건디와 금색 연회장, 오른쪽 루킴과 케이크, 왼쪽 제목 공간 | 2320797 | 7e1809260c22efcc38a8581d53d287a7 |
+| ui/레이드/lukim-birthday-props-v1.png | 1536×1024 RGBA. 3열 2행, 케이크/촛불/성냥/케이크 조각/노트북/쟁반 순서 | 2239221 | 366d43cb543c390fd1b364c05fa317a1 |
+| ui/레이드/lukim-birthday-poses-v1.png | 1254×1254 RGBA. 2열 2행, 불기/던지기/손을 내리기/마시기 순서. 최종 코딩은 별도 이미지 사용 | 1568863 | 4486f78a7b54dec49979c17c3b28bd5d |
+| ui/레이드/lukim-birthday-coding-v1.png | 1254×1254 RGBA. 키보드에 손을 얹은 루킴과 낮은 강연대, 얼굴이 모두 보이는 노트북 | 1373502 | ffc9a8a7df05a8c07f38ea8c5ff89325 |
+| itemImage/소모품/케이크.png | 1254×1254 RGBA. 금색 접시에 놓인 딸기 케이크 조각, 약 12% 투명 여백 | 1876437 | d4a62c2ebe1ee1dc71766b6539ea5b71 |
+
+소품은 보스와 같은 아이보리, 버건디 벨벳, 금박과 따뜻한 왼쪽 위 광원을 사용한다. 촛불은 심지가 보이는 꺼진 상태, 성냥은 오른쪽 끝에서 타는 수평 형태로 제작했다. 모든 소품은 셀 안에 온전히 들어가며 UI, 문자와 바탕을 넣지 않았다. 보스 동작은 빈 타원 눈, w형 입, 생일 모자와 망토를 유지하고 같은 발 위치와 시점으로 제작했다.
+
+### 코딩 동작의 최종 생성 요청
+
+```text
+Use case: precise-object-edit. Production transparent full-body action sprite for an existing fantasy RPG boss. Use the provided boss image as exact identity reference: round satin ivory creature, two empty black oval outline eyes with tiny top strokes, w shaped mouth, ivory and gold striped party hat, burgundy velvet cape with intricate gold brocade, gold gift necklace and short rounded feet. Preserve this identity, proportions, color, material, warm upper-left banquet lighting and near frontal three-quarter camera. Change ONLY the pose and prop: REMOVE the tall candle scepter. The boss is quietly coding, both rounded hands naturally resting on the keyboard of a SMALL believable laptop sitting firmly on a narrow dark burgundy and carved gold waist-high lectern. Render the boss, lectern, laptop and hands together as one coherent physical scene, correctly occluded, with no floating props. Laptop is modest, about one third of boss body width. It is open toward the boss so the viewer sees the back of its thin lid, restrained burgundy with fine gold trim; only a little amber screen light falls upward onto the lower face. The lid and lectern stay BELOW THE MOUTH, do not cover either eye or mouth; face remains completely visible. Keyboard at waist height and both hands touch it, slight forward intent, no cartoon typing symbols. Boss keeps same feet baseline at 91% canvas height, hat top at 6%, centered, full body fully contained with 6% transparent margin. Near-square composition, one single sprite only, no grid or sheet. Premium painterly physically shaded Korean RPG item/character art matched to reference, not flat vector. True RGBA transparent alpha everywhere outside character and lectern, preserve fine cape edges; no floor, no background, no cast shadow extending beyond feet, no glow rings, no neon, no emoji, no text, no code letters, no UI, no watermark, no checkerboard. This image will replace the standing boss momentarily at the same screen size.
+```
+
+## 외부 패턴 효과음
+
+아래는 새 생일 패턴 전용 음원이다. 모두 원본 게시자가 CC0로 제공한다. 기존 카운트다운과 일반 전투 효과음은 바꾸지 않았고, 기본 합성음 또는 대체 발진음을 새 패턴에 추가하지 않았다.
+
+| 게임 파일 (`ui/sfx/birthday/`) | 원본과 제작자 | 원본 파일 | 출력 길이 |
+| --- | --- | --- | --- |
+| match-v1.mp3 | qubodup, [Flare Ignition](https://opengameart.org/content/flare-ignition) | ignition.flac, 처음 0.35초 | 0.350초 |
+| ignite-v1.mp3 | qubodup, Flare Ignition | ignition.flac, 0.30초부터 0.65초 | 0.650초 |
+| blow-v1.mp3 | AntumDeluge, [Jug Instrument](https://opengameart.org/content/jug-instrument) | jug-1.wav, 0.15초부터 1.40초 | 1.400초 |
+| clap-v1.mp3 | qubodup, [Well Done](https://opengameart.org/content/well-done) | Well Done CCBY3.ogg, 0.12초부터 0.90초 | 0.900초 |
+| throw-v1.mp3 | artisticdude, [Swishes Sound Pack](https://opengameart.org/content/swishes-sound-pack) | swishes/swish-6.wav | 0.138초 |
+| cream-v1.mp3 | EZduzziteh, [Squish Sounds Effects](https://opengameart.org/content/squish-sounds-effects) | squishsplat_impact.mp3 | 0.239초 |
+| cork-v1.mp3 | qubodup, [Liquid Bottle Drink Set](https://opengameart.org/content/liquid-bottle-drink-set) | bottle-open-02.flac | 0.358초 |
+| drink-v1.mp3 | qubodup, Liquid Bottle Drink Set | swallow-03.flac | 0.461초 |
+| typing-v1.mp3 | unicaegames, [Keyboard Soundpack 1](https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes) | Human Typing/human_vel-003.wav, 처음 4초 | 4.000초 |
+| shuffle-v1.mp3 | Kenney, [RPG Audio](https://kenney.nl/assets/rpg-audio) | Audio/bookFlip2.ogg | 0.430초 |
+| gift-v1.mp3 | Kenney, RPG Audio | Audio/metalPot2.ogg, 처음 0.55초 | 0.550초 |
+
+`Well Done CCBY3.ogg`는 예전 라이선스가 파일명에 남아 있으나 원본 페이지는 2024-10-05 업데이트에서 CC0로 변경됐다. 타자음은 실제 키보드를 녹음한 Human Typing 파일이다.
+
+FFmpeg로 필요한 구간을 추출하고 `highpass=f=90,loudnorm=I=-20:TP=-2:LRA=7,afade=t=in:d=0.005`를 적용해 모노 44.1kHz, MP3 160kbps로 변환했다. 원본이 요청 구간보다 짧은 경우 원본 길이를 유지했다. 게임 효과음 볼륨과 음소거에 연결하고, 숨겨진 탭과 전투 종료에서는 재생 중인 음원을 정리한다.
+
+2026-10-06에 eefl-image의 `tcgenius/assets/` 아래로 신규 이미지 5개와 효과음 11개를 업로드했다. `scripts/migrate_raid_presentation_assets_to_s3.js`가 전체 74개 파일의 MD5, 바이트 수와 MIME 형식 일치를 검증했다. 기존 파일은 덮어쓰지 않았다. 운영 Item에는 엘릭서 기능을 복사한 케이크 ID 415만 추가했고, 기존 30일 축복 사용권 ID 370과 모든 기존 아이템 설정은 보존했다.
 
 ## Suno BGM 후보
 

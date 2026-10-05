@@ -89,7 +89,11 @@ FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kH
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 기존 레이드와 신규 이벤트 준비용 이미지 26개, 외부 효과음 31개, 직접 편곡한 생일 레이드 1페이즈 BGM 1개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 레이드 이미지 30개, 외부 효과음 42개, 생일 레이드 BGM 2개와 케이크 아이콘 1개를 `tcgenius/assets/`에 업로드한다. 1페이즈 BGM은 직접 편곡했고, 2페이즈 BGM은 사용자가 지정한 `lukim-birthday-phase2.mp3`다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+
+2026-10-06에 생일 레이드 이미지 5개와 외부 효과음 11개를 신규 업로드하고 전체 74개 파일을 검증했다. 제작 규격과 출처는 [생일 레이드 에셋 문서](lukim-birthday-assets.md), 전투와 연출 규칙은 [구현 문서](lukim-birthday-raid.md)에 있다.
+
+같은 날 사용자가 지정한 `sfx/lukim-birthday-phase2.mp3`를 추가 업로드하고 전체 75개의 MD5, 크기와 MIME 형식을 다시 검증했다.
 
 2026-10-05에 `sfx/lukim-birthday-phase1-v1.mp3`를 새로 업로드하고 전체 58개의 MD5, 크기와 MIME 형식이 일치함을 확인했다. 악보, 편곡과 제작 도구 기록은 [생일 레이드 에셋 문서](lukim-birthday-assets.md)에 있다.
 

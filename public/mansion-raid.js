@@ -90,6 +90,43 @@
 
     // ===== 기믹별 구성 =====
     const KINDS = {
+        birthdayClap: {
+            who: '박수',
+            build(st, card) {
+                card.clap = button('mr-act', '박수', () => act(st, card, { action: 'clap' }, 'clap'));
+                card.body.append(card.clap);
+            },
+            patch(st, card, ls) {
+                const done = names(card.ev.responded).includes(st.ctx.me);
+                setText(card.clap, done ? '박수!' : '박수');
+                setDisabled(card.clap, done || card.expired || ls.pending.has('clap'));
+                return { mine: !done && !card.expired, tag: '전원', who: names(card.ev.responded) };
+            }
+        },
+        birthdayGift: {
+            who: '선물',
+            build(st, card) {
+                const row = node('div', 'mr-birthday-potions');
+                card.potions = (st.ctx.potions || []).map(potion => {
+                    const b = button('mr-birthday-potion', null, () => act(st, card, { action: 'gift', potion: potion.name }, 'gift'));
+                    const img = node('img'); img.src = potion.iconUrl; img.alt = potion.name;
+                    const count = node('b'); b.title = potion.name; b.append(img, count); row.append(b);
+                    return { b, count, name: potion.name };
+                });
+                card.empty = node('span', 'mr-subtle', '휴대 물약 없음');
+                card.body.append(row, card.empty);
+            },
+            patch(st, card, ls) {
+                const done = names(card.ev.responded).includes(st.ctx.me);
+                let stock = 0;
+                for (const p of card.potions) {
+                    const count = Number((st.ctx.potions || []).find(v => v.name === p.name)?.count || 0); stock += count;
+                    setText(p.count, count); setDisabled(p.b, done || !count || card.expired || ls.pending.has('gift'));
+                }
+                card.empty.hidden = stock > 0 || done;
+                return { mine: !done && !card.expired, tag: '전원', who: names(card.ev.responded) };
+            }
+        },
         raidCue: {
             who: '참여',
             build(st, card) {

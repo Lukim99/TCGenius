@@ -53,6 +53,7 @@ function createGamePresentation({ inventories, card, itemAssets, rpg }) {
 }
 
 function registerGameActionRoutes(server, deps) {
+    const canUsePartyQuest = deps.canUsePartyQuest || deps.rpg.canUsePartyQuest;
     const { rpg, requireUser, serializeItemUse, getPartyBlock, buildProfile, buildCards, getStarterCards, itemAssets, inventories, presentation } = deps;
     const fail = (message, status = 400) => { throw Object.assign(new Error(String(message).replace(/^❌\s*/, '')), { status }); };
     const checked = message => { if (String(message).startsWith('❌')) fail(message); return message; };
@@ -78,7 +79,7 @@ function registerGameActionRoutes(server, deps) {
         return {
             needsStarter: !!user.need_character_card_select,
             attended: user.lastAttendanceDate === rpg.getKoreanDateKey(new Date()),
-            canPartyQuest: rpg.canUsePartyQuest(user),
+            canPartyQuest: canUsePartyQuest(user),
             fishing: fishingState(user)
         };
     }

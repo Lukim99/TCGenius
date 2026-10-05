@@ -9,6 +9,8 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const artifacts = require('../artifacts');
 const { appendMansion } = require('../scripts/init_mansion_content');
 const { appendOctober } = require('../scripts/init_october_content');
+const { appendBirthday, appendQuestText } = require('../scripts/init_birthday_content');
+const birthday = require('../birthday_raid');
 
 // 기존 엔진과 인증된 Express 요청을 사용하며 모든 AWS 전송을 메모리로 격리한다.
 const data = {};
@@ -28,6 +30,7 @@ Object.assign(data, registration.after);
 const octoberBefore = structuredClone(data);
 const october = appendOctober(data);
 Object.assign(data, october.after);
+data.Item = appendBirthday(data.Item).items;
 const seeds = ['mansion-test', 'mansion-guest', 'mansion-third'].map(name => ({
     _get: 1, id: name + '-id', name, code: 'TEST', level: 300, logged_in: [], avatarMigrated: true,
     need_character_card_select: false, main_card: { id: 0, star: 6, type: '일반' },
@@ -1322,7 +1325,8 @@ test('봉인 역전 중에는 잔향 파열을 대기시키고 울리는 벽 표
     assert.deepEqual(mon.bossState.events.map(e => e.kind), ['echo']);
 });
 
-test('클리어로 다음 난이도를 해금하지 않으며 통합 주간 보상과 칭호 진행을 중복 없이 저장한다', async () => {
+test('클리어로 다음 난이도를 해금하지 않으며 통합 주간 보상과 칭호 진행을 중복 없이 저장한다', async t => {
+    t.mock.method(Math, 'random', () => 0); // 추가 아티팩트 대신 첫 추가 보상을 선택한다.
     const room = await battle(); room.state = 'cleared'; room.result = {};
     let user = await rpg.getRPGUserByName(seeds[0].name); const gold = user.gold;
     await Promise.all([party.__test.grantPartyQuestClearRewards(room), party.__test.grantPartyQuestClearRewards(room)]);
@@ -1705,6 +1709,263 @@ test('두 펫과 최종 공격력 정보 표시는 지정 효과를 반영하고
     assert.equal((await party.usePotion(member.name, '투신의 함성 포션')).ok, true);
     const buff = member.runtime.buffs.find(buff => buff.id === 'battleCry'); assert.equal(buff.remain, 120); assert.equal(member.baseSnapshot.stats.atk, 1250);
     buff.remain = .2; tick(room); assert.equal(member.baseSnapshot.stats.atk, 1000);
+});
+
+function birthdayClock(t) {
+    let time = birthday.START + 12 * 3600000;
+    t.mock.method(Date, 'now', () => time);
+    t.mock.method(global, 'setInterval', () => undefined);
+    return { advance(ms) { time += ms; }, set(value) { time = value; } };
+}
+
+async function birthdayBattle(count = 1, phaseIndex = 0) {
+    for (const seed of seeds) party.leaveRoom(seed.name);
+    for (const seed of seeds.slice(0, count)) await reset(seed.name);
+    const created = await party.createRoom(seeds[0].name, birthday.ID);
+    assert.ok(created.roomId, JSON.stringify(created));
+    for (const seed of seeds.slice(1, count)) assert.equal((await party.joinRoom(created.roomId, seed.name)).ok, true);
+    for (const seed of seeds.slice(0, count)) party.setReady(seed.name, true);
+    assert.equal((await party.start(seeds[0].name)).ok, true);
+    const room = party.getRoomOf(seeds[0].name);
+    room.introUntil = 0; room.phaseTransition = null; room.phaseIndex = phaseIndex;
+    room.monster = party.__test.createPhaseMonster(quests.find(q => q.id === birthday.ID).phases[phaseIndex]);
+    party.__test.birthdayRaid.onSpawn(room, room.monster);
+    for (const m of room.members) {
+        Object.assign(m.runtime, { hp: 1000000, hpMax: 1000000, mp: 1000000, mpMax: 1000000, shield: 0, buffs: [], dead: false });
+        Object.assign(m.baseSnapshot.stats, { atk: 1000, avd: 0, takenDamage: 0, dmgReduce: 0, crit: 0, cmb: 0 });
+        m.potions = [{ name: '엘릭서', count: 4 }];
+    }
+    return room;
+}
+
+function birthdayTick(room, clock, seconds = .1) {
+    clock.advance(seconds * 1000); party.__test.birthdayRaid.step(room, room.monster, seconds);
+}
+
+test('생일 콘텐츠는 기존 운영 항목을 보존하며 케이크는 운영 엘릭서 기능을 복사한다', () => {
+    const before = [{ name: '엘릭서', use_func: [{ type: '체력회복%', amount: .9 }], desc: '운영 설정' },
+        { name: '루킴의 축복 사용권 (30일)', use: '축복사용권', blessing: 'rukim', durationDays: 30 }];
+    const added = appendBirthday(before);
+    assert.deepEqual(added.items.slice(0, before.length), before);
+    assert.deepEqual(added.items[added.cakeId].use_func, before[0].use_func);
+    assert.deepEqual(appendBirthday(added.items).items, added.items);
+    const text = '{\n  "quests": [\n    {"id":"operator","rewards":{}}\n  ]\n}\n';
+    const appended = appendQuestText(text);
+    assert.ok(appended.includes('    {"id":"operator","rewards":{}}'));
+    assert.equal(appendQuestText(appended), appended);
+});
+
+test('생일 레이드는 한국 시간 10월 6일에만 목록, 생성, 참가, 시작을 허용하고 레벨 제한은 없다', async t => {
+    const clock = birthdayClock(t);
+    assert.equal(birthday.available(birthday.START - 1), false);
+    assert.equal(birthday.available(birthday.START), true);
+    assert.equal(birthday.available(birthday.END - 1), true);
+    assert.equal(birthday.available(birthday.END), false);
+    const user = await reset(); user.level = 1; await user.save();
+    const guest = await reset(seeds[1].name); guest.level = 1; await guest.save();
+    const made = await party.createRoom(user.name, birthday.ID); assert.ok(made.roomId);
+    assert.equal((await request('/api/party/quests')).status, 200);
+    assert.equal((await request('/api/game/state')).data.canPartyQuest, true);
+    clock.set(birthday.END);
+    assert.equal(party.listQuestSummaries().some(q => q.id === birthday.ID), false);
+    assert.ok((await party.createRoom(guest.name, birthday.ID)).error);
+    assert.ok((await party.joinRoom(made.roomId, guest.name)).error);
+    assert.ok((await party.start(user.name)).error);
+    assert.equal((await request('/api/party/quests', undefined, guest.name)).status, 403);
+    clock.set(birthday.START);
+    assert.equal((await party.joinRoom(made.roomId, guest.name)).ok, true);
+    party.setReady(user.name, true); party.setReady(guest.name, true);
+    assert.equal((await party.start(user.name)).ok, true);
+    const snap = party.getMyRoomSnapshot(user.name);
+    assert.equal(snap.noPositions, true);
+    assert.equal(snap.monster.birthday.candles, true);
+    assert.ok(snap.monster.background.includes('lukim-birthday-hall-v1'));
+    assert.deepEqual(snap.monster.scene.mouth, [.48, .52]);
+});
+
+test('생일 촛불은 생존자 전원의 타격을 받아야 하며 숫자 판정 창을 공개하지 않는다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(2), logic = party.__test.birthdayRaid;
+    while (room.monster.bossState.elapsed < 2.2) birthdayTick(room, clock);
+    assert.equal((await party.attackMobPhase(seeds[0].name)).ok, true);
+    assert.deepEqual(room.monster.bossState.responses, []); // 아직 범위 밖
+    clock.advance(800); logic.step(room, room.monster, .8);
+    room.members[0].runtime.actionUntil = 0;
+    assert.equal((await party.attackMobPhase(seeds[0].name)).damage, 0);
+    assert.deepEqual(room.monster.bossState.responses, [seeds[0].name]);
+    assert.equal(room.monster.hp, 6);
+    assert.ok((await party.useSkill(seeds[0].name, room.members[0].skills[0])).error);
+    const view = party.getMyRoomSnapshot(seeds[0].name).monster.birthday;
+    assert.equal(view.events[0].remain, null);
+    assert.equal(view.window, undefined);
+    while (room.state === 'inProgress' && room.monster.bossState.elapsed < 4) birthdayTick(room, clock);
+    assert.equal(room.state, 'failed');
+    assert.ok(room.members.every(m => m.runtime.dead));
+});
+
+test('촛불 여섯 개와 2.5초 박수 협동이 완료되면 공통 컷씬으로 2관문에 진입한다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(2), logic = party.__test.birthdayRaid;
+    for (let i = 0; i < 6; i++) {
+        while (room.monster.bossState.elapsed < 3 + i * 3) birthdayTick(room, clock);
+        for (const m of room.members) { m.runtime.actionUntil = 0; assert.equal((await party.attackMobPhase(m.name)).ok, true); }
+        while (room.monster.bossState.stage === 'lighting' && room.monster.bossState.candle === i) birthdayTick(room, clock);
+    }
+    assert.equal(room.monster.bossState.stage, 'blow');
+    while (room.monster.bossState.stage === 'blow') birthdayTick(room, clock);
+    const clap = room.monster.bossState.events.find(e => e.kind === 'birthdayClap');
+    assert.equal(clap.duration, 2.5);
+    const payload = { eventId: clap.id, action: 'clap' };
+    assert.equal((await request('/api/party/mansion-action', payload)).status, 200);
+    assert.equal(room.monster.bossState.stage, 'clap');
+    assert.equal(logic.action(room, seeds[1].name, payload).ok, true);
+    while (room.phaseIndex === 0) birthdayTick(room, clock);
+    assert.equal(room.phaseIndex, 1); assert.equal(room.monster.hp, 1006);
+    assert.ok(room.phaseTransition.toBackground.includes('lukim-birthday-hall-v1'));
+    assert.ok((await party.attackMobPhase(seeds[0].name)).error.includes('관문'));
+});
+
+test('박수 마감 이후 입력은 거부하며 박수 누락은 전멸한다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(2), st = room.monster.bossState;
+    st.stage = 'clap'; st.events = [{ id: 'birthday:clap:deadline', kind: 'birthdayClap', duration: 2.5, remain: 2.5, startedAt: Date.now(), responded: [] }];
+    clock.advance(2501);
+    assert.ok(party.mansionAction(seeds[0].name, { eventId: st.events[0].id, action: 'clap' }).error);
+    party.__test.birthdayRaid.step(room, room.monster, 2.5);
+    assert.equal(room.state, 'failed');
+});
+
+test('생일 보스의 연격, 다단히트와 간접 공격은 타격마다 1이며 514와 1에서 멈춘다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(1, 1), m = room.members[0], mon = room.monster;
+    let result = party.__test.calculateOutgoingDamage(m, mon, room, 50000, { isSkill: true, hitCount: 3, disableCritical: true });
+    assert.deepEqual(result.hitDamages, [1, 1, 1]); assert.equal(result.damage, 3);
+    assert.equal(party.__test.applyPlayerDamageToBoss(room, mon, m, result.damage, result), 3); assert.equal(mon.hp, 1003);
+    m.baseSnapshot.stats.cmb = 1; m.baseSnapshot.stats.maxCmb = 2;
+    result = party.__test.calculateOutgoingDamage(m, mon, room, 50000, { isBasic: true, disableCritical: true });
+    assert.ok(result.hitCount > 1); assert.equal(result.damage, result.hitCount);
+    for (const extra of [{ dotAttack: true, hitCount: 1 }, { summonAttack: true, hitCount: 1 }]) {
+        result = party.__test.calculateOutgoingDamage(m, mon, room, 50000, extra);
+        assert.equal(party.__test.applyPlayerDamageToBoss(room, mon, m, result.damage, result), 1);
+    }
+    mon.hp = 516;
+    result = party.__test.calculateOutgoingDamage(m, mon, room, 50000, { isSkill: true, hitCount: 3, disableCritical: true });
+    assert.equal(party.__test.applyPlayerDamageToBoss(room, mon, m, result.damage, result), 2);
+    assert.deepEqual(result.hitDamages, [1, 1, 0]);
+    assert.equal(mon.hp, 514); assert.equal(mon.bossState.frenzy.duration, 10);
+    assert.equal(party.__test.applyBossHpDamage(room, mon, 1000), 0);
+    t.mock.method(Math, 'random', () => 0);
+    while (mon.bossState.frenzy) birthdayTick(room, clock);
+    assert.equal(m.runtime.hp, 1000000 - 20 * 10 - 3 * 25000);
+    assert.equal(party.__test.applyBossHpDamage(room, mon, 9999, { birthdayHits: 9999 }), 513);
+    assert.equal(mon.hp, 1); assert.equal(mon.bossState.gift.duration, 10);
+    assert.equal(party.__test.applyBossHpDamage(room, mon, 9999), 0);
+});
+
+test('케이크 주기 피해와 강탈은 공통 피해와 실제 휴대 수량을 사용하며 물약이 없으면 실패한다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(2, 1), mon = room.monster;
+    birthdayTick(room, clock, 3); assert.ok(room.members.every(m => m.runtime.hp === 975000));
+    birthdayTick(room, clock, 3); assert.ok(room.members.every(m => m.runtime.hp === 950000));
+    mon.bossState.elapsed = 26.9; mon.bossState.cakeAt = 30;
+    birthdayTick(room, clock);
+    const steal = mon.bossState.events.find(e => e.kind === 'birthdaySteal'); assert.ok(steal);
+    birthdayTick(room, clock, 2);
+    assert.equal(room.members.find(m => m.name === steal.target).potions[0].count, 3);
+    assert.equal(mon.bossState.events.find(e => e.kind === 'birthdayDrink').duration, 1);
+    mon.bossState.elapsed = 53.9; mon.bossState.cakeAt = 57;
+    room.members.forEach(m => { m.potions = []; }); birthdayTick(room, clock);
+    birthdayTick(room, clock, 2); assert.equal(room.state, 'failed');
+});
+
+test('코딩 5초 후 15초간 카드와 스킬만 뒤섞으며 계정 카드, 쿨타임과 원래 스킬을 복원한다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(1, 1), mon = room.monster, m = room.members[0];
+    const user = await rpg.getRPGUserByName(m.name), original = { card: structuredClone(m.card), skills: [...m.skills], defs: structuredClone(m.skillDefs), main: structuredClone(user.main_card) };
+    m.runtime.cooldowns[original.skills[0]] = Date.now() + 200000;
+    const cooldowns = structuredClone(m.runtime.cooldowns);
+    mon.bossState.elapsed = 69.9; mon.bossState.cakeAt = 100; mon.bossState.stealAt = 100;
+    birthdayTick(room, clock); assert.equal(mon.bossState.coding.duration, 5);
+    birthdayTick(room, clock, 5); assert.equal(mon.bossState.shuffle.duration, 15);
+    t.mock.method(Math, 'random', () => .9); birthdayTick(room, clock);
+    assert.notDeepEqual(m.card, original.card); assert.notDeepEqual(m.skills, original.skills);
+    assert.deepEqual(user.main_card, original.main); assert.deepEqual(m.runtime.cooldowns, cooldowns);
+    birthdayTick(room, clock, 14.9);
+    assert.equal(mon.bossState.shuffle, null); assert.equal(mon.bossState.codeAt, mon.bossState.elapsed + 70);
+    assert.deepEqual(m.skills, original.skills); assert.deepEqual(m.skillDefs, original.defs);
+    assert.equal(m.card.imageUrl, original.card.imageUrl); assert.deepEqual(m.runtime.cooldowns, cooldowns);
+});
+
+test('생일 선물은 중복 요청에서 한 병만 소모하며 생존자 전원이 제출해야 클리어한다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(2, 1), mon = room.monster, logic = party.__test.birthdayRaid;
+    mon.hp = 2; mon.bossState.frenzyDone = true;
+    party.__test.applyBossHpDamage(room, mon, 100);
+    const gift = mon.bossState.gift, payload = { eventId: gift.id, action: 'gift', potion: '엘릭서' };
+    assert.equal(logic.action(room, seeds[0].name, payload).ok, true);
+    assert.equal(logic.action(room, seeds[0].name, payload).ok, true);
+    assert.equal(room.members[0].potions[0].count, 3);
+    room.members[1].potions = []; assert.ok(logic.action(room, seeds[1].name, payload).error);
+    birthdayTick(room, clock, 10); assert.equal(room.state, 'failed');
+    const success = await birthdayBattle(2, 1), boss = success.monster;
+    boss.hp = 2; boss.bossState.frenzyDone = true; party.__test.applyBossHpDamage(success, boss, 1);
+    for (const m of success.members) assert.equal(logic.action(success, m.name, { eventId: boss.bossState.gift.id, action: 'gift' }).ok, true);
+    birthdayTick(success, clock, 10); assert.equal(success.state, 'cleared');
+    await success.rewardPromise;
+    const rewards = success.result.rewards;
+    assert.ok(rewards.every(r => r.items.length === 7));
+    assert.ok(rewards[0].items.some(it => it.iconUrl?.includes(encodeURIComponent('케이크.png'))));
+    assert.deepEqual(rewards[0].items.map(item => item.count), [1, 1, 1006, 1, 10, 3, 1]);
+    const user = await rpg.getRPGUserByName(seeds[0].name); assert.equal(user.titleProgress[birthday.CLAIM], true);
+    for (const [name, count] of [['9성 카드팩', 1], ['케이크', 10], ['고급 장비 보호권', 3], ['럭키카드30%', 1]]) {
+        const id = data.Item.findIndex(item => item?.name === name);
+        assert.equal(rpg.getInventoryItemCount(user, id), count, name);
+        assert.equal(records.get(user.id).inventory.item.find(item => item.id === id).count, count, name);
+    }
+    assert.equal(user.garnet, 1006); assert.equal(records.get(user.id).garnet, 1006);
+    const artifact = user.inventory.equipment.find(equip => equip.type === 'artifact');
+    assert.equal(artifact.artifact.options.length, 3);
+    assert.equal(artifact.artifact.rerollsUsed, 0);
+    assert.equal(rpg.getEquipmentData('artifact', artifact.id).rarity, '레전더리');
+    assert.deepEqual(records.get(user.id).inventory.equipment.find(equip => equip.uid === artifact.uid), artifact);
+    assert.equal(records.get(user.id).titleProgress[birthday.CLAIM], true);
+    const inv = structuredClone(user.inventory); success.rewardPromise = null;
+    await party.__test.grantPartyQuestClearRewards(success);
+    assert.deepEqual(user.inventory, inv); assert.equal(user.garnet, 1006);
+    assert.equal(success.result.rewards[0].birthdayReceived, true);
+});
+
+test('생일 보상 저장 충돌은 수령 표시와 지급을 함께 되돌리고 재시도에 한 번만 지급한다', async t => {
+    birthdayClock(t); const room = await birthdayBattle(1, 1);
+    room.members[0].potions = []; room.state = 'cleared'; room.result = { cleared: true };
+    const user = await rpg.getRPGUserByName(seeds[0].name), before = structuredClone(user.inventory), garnet = user.garnet;
+    failProtectedWrite = true;
+    await party.__test.grantPartyQuestClearRewards(room);
+    assert.deepEqual(user.inventory, before); assert.equal(user.titleProgress[birthday.CLAIM], undefined);
+    assert.equal(user.garnet, garnet); assert.equal(records.get(user.id).garnet, garnet);
+    assert.equal(records.get(user.id).titleProgress[birthday.CLAIM], undefined);
+    assert.equal(room.result.rewards[0].error, '보상 지급 실패');
+    room.rewardPromise = null;
+    const first = party.__test.grantPartyQuestClearRewards(room), duplicate = party.__test.grantPartyQuestClearRewards(room);
+    assert.equal(first, duplicate); await first;
+    assert.equal(room.result.rewards[0].items.length, 7);
+    const saved = await rpg.getRPGUserByName(user.name);
+    assert.equal(saved.garnet, garnet + 1006); assert.equal(records.get(user.id).garnet, garnet + 1006);
+    assert.equal(saved.inventory.equipment.filter(equip => equip.type === 'artifact').length, 1);
+    assert.equal(records.get(user.id).titleProgress[birthday.CLAIM], true);
+});
+
+test('생일 강탈과 선물은 시작 때 휴대한 물약만 소비하며 종료 때 남은 물약만 환불한다', async t => {
+    const clock = birthdayClock(t); party.leaveRoom(seeds[0].name);
+    const user = await reset(), elixir = data.Item.findIndex(item => item?.name === '엘릭서');
+    rpg.addInventoryItem(user, elixir, 3); await user.save();
+    const created = await party.createRoom(user.name, birthday.ID); assert.ok(created.roomId);
+    assert.equal((await party.setPotions(user.name, [{ name: '엘릭서', count: 3 }])).ok, true);
+    party.setReady(user.name, true); assert.equal((await party.start(user.name)).ok, true);
+    assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(user.name), elixir), 0);
+    const room = party.getRoomOf(user.name); room.phaseIndex = 1; room.introUntil = 0;
+    room.monster = party.__test.createPhaseMonster(quests.find(q => q.id === birthday.ID).phases[1]);
+    party.__test.birthdayRaid.onSpawn(room, room.monster);
+    const mon = room.monster; mon.bossState.elapsed = 26.9; mon.bossState.cakeAt = 100;
+    birthdayTick(room, clock); birthdayTick(room, clock, 2); assert.equal(room.members[0].potions[0].count, 2);
+    mon.bossState.frenzyDone = true; mon.hp = 2; party.__test.applyBossHpDamage(room, mon, 1);
+    assert.equal(party.mansionAction(user.name, { eventId: mon.bossState.gift.id, action: 'gift' }).ok, true);
+    birthdayTick(room, clock, 10); await room.rewardPromise;
+    assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(user.name), elixir), 1);
+    assert.equal(records.get(user.id).inventory.item.find(it => it.id === elixir).count, 1);
 });
 
 test('엔진을 다시 불러오면 보관한 거래 품목을 복구하고 확정은 해제한 상태로 이어간다', async () => {

@@ -373,7 +373,7 @@ async function requirePartyQuest(req, res, next) {
     }
     try {
         const user = await rpgenius.getRPGUserByName(sess.name);
-        if (!rpgenius.canUsePartyQuest(user)) {
+        if (!partyquest.canOpenPartyQuest(user)) {
             if (req.path === '/party') return res.redirect('/');
             return res.status(403).json({ error: '파티 퀘스트가 활성화되지 않았습니다.' });
         }
@@ -420,7 +420,7 @@ server.get('/', async (req, res) => {
             const user = await rpgenius.getRPGUserByName(sess.name);
             return res.send(renderUserDashboard(Object.assign({}, sess, {
                 admin: user ? !!user.isAdmin : !!sess.admin,
-                canPartyQuest: rpgenius.canUsePartyQuest(user)
+                canPartyQuest: partyquest.canOpenPartyQuest(user)
             })));
         } catch (_) {
             return res.send(renderUserDashboard(sess));
@@ -437,7 +437,7 @@ server.get('/mail', async (req, res) => {
         const user = await rpgenius.getRPGUserByName(sess.name);
         return res.send(renderUserDashboard(Object.assign({}, sess, {
             admin: user ? !!user.isAdmin : !!sess.admin,
-            canPartyQuest: rpgenius.canUsePartyQuest(user)
+            canPartyQuest: partyquest.canOpenPartyQuest(user)
         }), { initialPage: 'mail' }));
     } catch (_) {
         return res.send(renderUserDashboard(sess, { initialPage: 'mail' }));
@@ -505,7 +505,7 @@ server.post('/api/login', async (req, res) => {
         const knownAgent = ua && Array.isArray(user.logged_in_agent) && user.logged_in_agent.includes(ua);
         if (!code && !otp) {
             if (knownAgent) {
-                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: rpgenius.canUsePartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
+                setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: partyquest.canOpenPartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
                 return res.json({ ok: true, name: user.name });
             }
             return res.json({ needCode: true, canOtp: !!user.otpSecret });
@@ -522,7 +522,7 @@ server.post('/api/login', async (req, res) => {
             latest.logged_in_agent.push(ua);
             await latest.save();
         }
-        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: rpgenius.canUsePartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
+        setSession(res, { name: user.name, admin: !!user.isAdmin, canPartyQuest: partyquest.canOpenPartyQuest(user), exp: Date.now() + SESSION_TTL_MS });
         res.json({ ok: true, name: user.name });
     } catch (e) {
         console.error('login error:', e);
@@ -1278,7 +1278,7 @@ const gameInventories = { items: buildInventoryItems, cards: buildInventoryCards
 const gamePresentation = createGamePresentation({ inventories: gameInventories, card: serializeCard, itemAssets: getItemDisplayAssets, rpg: rpgenius });
 registerGameActionRoutes(server, {
     inventories: gameInventories, presentation: gamePresentation,
-    rpg: rpgenius, requireUser, serializeItemUse,
+    rpg: rpgenius, requireUser, serializeItemUse, canUsePartyQuest: partyquest.canOpenPartyQuest,
     getPartyBlock: user => {
         const room = partyquest.getMyRoomSnapshot(user.name);
         return room && room.state === 'inProgress' ? '레이드를 마친 뒤 이용해주세요.' : null;
@@ -8940,7 +8940,7 @@ function buildUserProfile(user) {
             point: Number(user.point || 0),
             mileage: Number(user.mileage || 0),
             isAdmin: !!user.isAdmin,
-            canPartyQuest: rpgenius.canUsePartyQuest(user),
+            canPartyQuest: partyquest.canOpenPartyQuest(user),
             maxAccessory: Number(user.maxAccessory || 3),
             title: buildTitleDisplay(user)
         },
@@ -9495,7 +9495,7 @@ function renderPartyApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>레이드 | RPGenius</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"><link rel="stylesheet" href="/static/raid-presentation.css"><link rel="stylesheet" href="/static/raid-party-fx.css"></head><body>
+<link rel="stylesheet" href="/static/party.css"><link rel="stylesheet" href="/static/mansion-raid.css"><link rel="stylesheet" href="/static/raid-presentation.css"><link rel="stylesheet" href="/static/raid-party-fx.css"><link rel="stylesheet" href="/static/birthday-raid.css"></head><body>
 <div class="frame" id="frame">
   <div class="pq-header">
     <button class="pq-icon-btn" id="pqHome" title="홈으로">←</button>
@@ -9765,6 +9765,7 @@ function renderPartyApp(sess) {
 <script>window.PARTY_ME = ${JSON.stringify(sess.name)};</script>
 <script src="/static/mansion-raid.js"></script>
 <script src="/static/raid-pattern-fx.js"></script>
+<script src="/static/birthday-raid.js"></script>
 <script src="/static/raid-party-fx.js"></script>
 <script src="/static/party.js"></script>
 <script type="module" src="/static/chuseok.js"></script>

@@ -126,7 +126,8 @@ test('출석 동시 요청과 쿠폰 재등록은 보상을 중복 지급하지 
     assert.equal((await request('/api/game/coupon', { code: 'WEB-REWARD' })).status, 400);
     assert.equal((await rpg.getRPGUserByName(fixture.name)).gold, beforeGold + 123);
 });
-test('레이드 권한은 저장된 활성화 플래그가 아니라 현재 레벨로 결정한다', async () => {
+test('생일 이벤트가 없는 날의 레이드 권한은 저장된 활성화 플래그가 아니라 현재 레벨로 결정한다', async t => {
+    t.mock.method(Date, 'now', () => Date.parse('2026-10-05T12:00:00+09:00'));
     await reset({ level: 70, canPartyQuest: true });
     assert.equal((await request('/api/party/quests')).status, 403);
     await reset({ level: 71, canPartyQuest: false });
