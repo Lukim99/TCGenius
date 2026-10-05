@@ -2,8 +2,14 @@
 (() => {
     'use strict';
     const FILES = {
-        beep: 'beep', gloss: 'gloss', fall: 'shards-fall', stone: 'shards-impact',
-        blast: 'resonance-blast', wall: 'wall-hum', rupture: 'rupture', charge: 'charge'
+        beep: 'signal-v2', gloss: 'bronze-set-v2', fall: 'shards-rush-v2', stone: 'stone-hit-v2',
+        blast: 'resonance-impact-v2', wall: 'wall-pressure-v2', rupture: 'echo-break-v2',
+        shield: 'ward-form-v2', darkShield: 'obsidian-close-v2', mochi: 'mochi-flex-v2', rain: 'rain-veil-v2',
+        mirror: 'mirror-glint-v2', charge: 'power-gather-v2', purge: 'life-drain-v2',
+        empower: 'dark-surge-v2', growl: 'dark-growl-v2', dealing: 'dealing-aura-v2', revive: 'revival-bloom-v2',
+        fire: 'fire-ignite-v2', fireBlast: 'fire-erupt-v2', cannon: 'sky-load-v2', cannonHit: 'sky-impact-v2',
+        execute: 'doom-pressure-v2', executeHit: 'doom-cut-v2', heal: 'healing-absorb-v2',
+        darkBlast: 'dark-impact-v2', dealingHit: 'dealing-cut-v2', bounce: 'ground-land-v2', puzzle: 'puzzle-hit-v2'
     };
     // 즉시 발동한 실제 사건. 카드 없이 효과만 보여 주고, 서버 목록에서 빠져도 끝까지 그린다.
     const INSTANT = new Set(['regenerate', 'dark-blast', 'crit-reflect', 'revive', 'puzzle', 'dealing', 'dealing-strike', 'bounce']);
@@ -11,7 +17,7 @@
     // 자연 종료 직전에 빠지면 마무리(폭발, 착탄, 사라짐)를 이어서 그린다.
     const TAIL = new Set(['resonance', 'echo', 'shards', 'shatter', 'purge', 'execute', 'flame', 'cannon', 'empower', 'dark-shield', 'mochi-shield', 'rain-shield', 'reflect']);
     const CAST_IMPACT = new Set(['purge', 'execute', 'flame', 'cannon']);
-    const TEXTURES = { mist: '레이드/fx-dark-mist.png', shard: '레이드/fx-bronze-shard.png', fire: '레이드/fx-fire-plume-v1.png', heal: '레이드/fx-healing-wisp-v1.png', puzzle: '레이드/fx-puzzle-piece-v1.png' };
+    const TEXTURES = { mist: '레이드/fx-dark-mist.png', shard: '레이드/fx-bronze-shard.png', fire: '레이드/fx-fire-flow-v2.png', puzzle: '레이드/fx-puzzle-piece-v1.png' };
     // 분리 보스 그림 안의 기준점(가로, 세로 비율): 황소 몸통, 스피커 우퍼, 잔향의 뻗은 손.
     const FOCUS = { sculpture: [.55, .52], whiplash: [.5, .66], 'whiplash-echo': [.7, .66] };
     const GLINTS = [[.42, .05], [.39, .3], [.58, .45], [.79, .58], [.3, .83], [.66, .74]];
@@ -19,7 +25,7 @@
     const RED = [232, 40, 52], RED_HOT = [255, 196, 188], PALE = [196, 204, 255], PALE_HOT = [244, 246, 255];
     const TAU = Math.PI * 2;
     const buffers = new Map(), textures = new Map();
-    let audio = null, loading = null, hexTile = null, puffTile = null;
+    let audio = null, loading = null, hexTile = null, puffTile = null, fireTint = null;
     const tailTime = kind => kind === 'flame' ? 1.5 : .65;
     function unlockAudio() {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -54,6 +60,27 @@
         }
         return puffTile;
     }
+    // 원본의 검은 바탕을 광량 알파로 바꾼다. 투명 효과 캔버스에 검은 사각형이 남지 않는다.
+    function fireSheet() {
+        const image = texture('fire');
+        if (!image) return null;
+        if (!fireTint) {
+            fireTint = document.createElement('canvas'); fireTint.width = image.naturalWidth; fireTint.height = image.naturalHeight;
+            const g = fireTint.getContext('2d');
+            g.drawImage(image, 0, 0);
+            const pixels = g.getImageData(0, 0, fireTint.width, fireTint.height), data = pixels.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const light = Math.max(data[i], data[i + 1], data[i + 2]);
+                if (light < 5) { data[i + 3] = 0; continue; }
+                data[i] = data[i] * 255 / light;
+                data[i + 1] = data[i + 1] * 176 / light;
+                data[i + 2] = data[i + 2] * 100 / light;
+                data[i + 3] = data[i + 3] * light / 255;
+            }
+            g.putImageData(pixels, 0, 0);
+        }
+        return fireTint;
+    }
 
     function soundPlan(kind, duration) {
         switch (kind) {
@@ -63,16 +90,26 @@
         case 'echo': return [[0, 'beep', .5], [.22, 'beep', .5], [3, 'beep', .6], [3.22, 'beep', .6]];
         case 'wall': return [[0, 'wall', .4]];
         case 'rupture': return [[0, 'rupture', .45]];
-        case 'shield': case 'dark-shield': case 'mochi-shield': case 'rain-shield': case 'reflect':
-        case 'charge': case 'purge': case 'empower': case 'dealing': case 'revive': return [[0, 'charge', .3]];
+        case 'shield': return [[0, 'shield', .4]];
+        case 'dark-shield': return [[0, 'darkShield', .45]];
+        case 'mochi-shield': return [[0, 'mochi', .5]];
+        case 'rain-shield': return [[0, 'rain', .4]];
+        case 'reflect': return [[0, 'mirror', .45]];
+        case 'charge': return [[0, 'charge', .4]];
+        case 'purge': return [[0, 'purge', .4]];
+        case 'empower': return [[0, 'empower', .4], [.18, 'growl', .3]];
+        case 'dealing': return [[0, 'dealing', .4]];
+        case 'revive': return [[0, 'revive', .4]];
         // 시전 끝의 실제 타격만 한 번 더 울린다.
-        case 'flame': return [[0, 'charge', .3], [duration, 'blast', .5]];
-        case 'cannon': return [[0, 'charge', .3], [duration, 'stone', .55]];
-        case 'execute': return [[0, 'charge', .3], [duration, 'rupture', .45]];
-        case 'regenerate': return [[0, 'gloss', .22]];
-        case 'dark-blast': case 'dealing-strike': return [[0, 'blast', .5]];
-        case 'crit-reflect': case 'bounce': return [[0, 'stone', .4]];
-        case 'puzzle': return [[.3, 'stone', .3], [.6, 'stone', .25]];
+        case 'flame': return [[0, 'fire', .35], [duration, 'fireBlast', .6]];
+        case 'cannon': return [[0, 'cannon', .35], [duration, 'cannonHit', .6]];
+        case 'execute': return [[0, 'execute', .4], [duration, 'executeHit', .65]];
+        case 'regenerate': return [[0, 'heal', .35]];
+        case 'dark-blast': return [[0, 'darkBlast', .5]];
+        case 'dealing-strike': return [[0, 'dealingHit', .5]];
+        case 'crit-reflect': return [[0, 'mirror', .4]];
+        case 'bounce': return [[0, 'bounce', .5]];
+        case 'puzzle': return [[.3, 'puzzle', .4], [.6, 'puzzle', .3]];
         default: return [];
         }
     }
@@ -195,7 +232,7 @@
             // 짧은 즉시 효과가 첫 이미지 요청을 기다리다 끝나지 않도록 해당 보스의 재질을 미리 읽는다.
             const art = sprite?.src || '';
             if (art.includes('ingyeo')) texture('fire');
-            if (art.includes('black-hodu')) { texture('heal'); texture('mist'); }
+            if (art.includes('black-hodu')) texture('mist');
             if (art.includes('tabujago')) texture('puzzle');
             const seen = new Set(), announcements = [];
             const events = [...(view.events || [])];
@@ -221,12 +258,11 @@
                     if (['shards', 'bounce', 'burden'].includes(state.kind)) texture('shard');
                     if (['empower', 'dark-shield', 'flame', 'bounce', 'burden'].includes(state.kind)) texture('mist');
                     if (['flame', 'berserk'].includes(state.kind)) texture('fire');
-                    if (state.kind === 'regenerate') texture('heal');
                     if (state.kind === 'puzzle') texture('puzzle');
                     if (VISUAL_ONLY.has(state.kind)) announcements.push(event.message || event.label);
                 }
                 if (event.remain != null) state.start = now - Math.max(0, Number(event.duration || 0) - Number(event.remain || 0)) * 1000;
-                if (event.kind === 'trial' && state.event.stage !== event.stage && event.stage === 'shield') play(state, 'charge', .3);
+                if (event.kind === 'trial' && state.event.stage !== event.stage && event.stage === 'shield') play(state, 'shield', .4);
                 // 보호막 수치가 줄어든 스냅샷마다 피격 파문을 남긴다.
                 if (event.kind === 'trial' && event.stage === 'shield' && state.event.stage === 'shield' && Number(event.shield) < Number(state.event.shield)) {
                     state.hits.push({ at: now, angle: Math.random() * TAU });
@@ -297,6 +333,26 @@
             if (x1 <= x0 || y1 <= y0) return;
             ctx.globalCompositeOperation = op; ctx.globalAlpha = clamp(alpha);
             ctx.drawImage(mask, x0 * ratio, y0 * ratio, (x1 - x0) * ratio, (y1 - y0) * ratio, x0, y0, x1 - x0, y1 - y0);
+        }
+        // skin의 반대: 보스 그림 뒤에 있는 것처럼 알파 바깥에만 남긴다.
+        function behind(paint, alpha) {
+            if (!spriteRect) { paint(ctx); return; }
+            if (alpha <= 0) return;
+            maskCtx.globalCompositeOperation = 'source-over'; maskCtx.globalAlpha = 1;
+            maskCtx.clearRect(0, 0, width, height);
+            paint(maskCtx);
+            maskCtx.globalCompositeOperation = 'destination-out'; maskCtx.globalAlpha = 1;
+            maskCtx.drawImage(sprite, spriteDrawRect.x, spriteDrawRect.y, spriteDrawRect.w, spriteDrawRect.h);
+            ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(alpha);
+            ctx.drawImage(mask, 0, 0, mask.width, mask.height, 0, 0, width, height);
+        }
+        // 가장자리가 흐린 작은 빛 덩어리. glow와 같지만 마스크 캔버스에도 그린다.
+        function mote(g, x, y, r, c, alpha) {
+            if (alpha <= .01 || r <= 0) return;
+            const gradient = g.createRadialGradient(x, y, 0, x, y, r);
+            gradient.addColorStop(0, rgba(c, 1)); gradient.addColorStop(.35, rgba(c, .4)); gradient.addColorStop(1, rgba(c, 0));
+            g.globalCompositeOperation = 'lighter'; g.globalAlpha = clamp(alpha); g.fillStyle = gradient;
+            g.fillRect(x - r, y - r, r * 2, r * 2);
         }
 
         // ---- 패턴별 효과 ----
@@ -674,15 +730,16 @@
             g.save(); g.translate(x, y); g.rotate(angle); g.scale(flip, 1); g.globalAlpha = clamp(alpha);
             g.drawImage(image, -w / 2, -h / 2, w, h); g.restore();
         }
-        // 밑동을 고정한 채 난류 방향과 높이를 바꾼다. 한 장으로 합성해 가산 합성의 줄 경계를 막는다.
-        function firePlume(x, base, w, h, t, seed, alpha, lean = 0, reduced = false) {
-            const image = texture('fire');
-            if (!image || alpha <= .01 || h < 2) return;
-            ctx.save(); ctx.translate(x, base); ctx.rotate(lean); ctx.scale(rand(seed) > .5 ? -1 : 1, 1);
+        // 화염 애니메이션 시트의 한 프레임. 밑동(셀 높이 95%)을 고정하고 크기와 기울기는 움직이지 않는다.
+        // 불마다 20~25fps와 시작 프레임이 달라 같은 모양이 나란히 반복되지 않는다.
+        function fireFrame(x, base, size, t, seed, alpha, reduced) {
+            const sheet = fireSheet();
+            if (!sheet || alpha <= .01 || size < 2) return;
+            const cell = sheet.width / 5, offset = Math.floor(rand(seed + 1) * 25);
+            const f = reduced ? offset : (Math.floor(t * (20 + rand(seed) * 5)) + offset) % 25;
+            ctx.save(); ctx.translate(x, base); if (rand(seed + 2) > .5) ctx.scale(-1, 1);
             ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(alpha);
-            const flicker = reduced ? 1 : 1 + .045 * Math.sin(t * 8.1 + seed);
-            ctx.transform(1, 0, reduced ? 0 : .055 * Math.sin(t * 4.7 + seed), flicker, 0, 0);
-            ctx.drawImage(image, -w / 2, -h * .96, w, h);
+            ctx.drawImage(sheet, (f % 5) * cell, Math.floor(f / 5) * cell, cell, cell, -size / 2, -size * .95, size, size);
             ctx.restore();
         }
         function embers(x0, w, base, rise, n, t, seed, alpha) {
@@ -727,28 +784,48 @@
             ctx.globalCompositeOperation = 'source-over';
             material(ctx, image, cx, groundY(), b.w * .9, h * .28, .22 * sink, reduced ? 0 : Math.sin(t * .2) * .04);
         }
-        // 재생: 부드러운 회복광이 몸의 결에 스며든다. 수평 주사선과 보석 모양 입자는 쓰지 않는다.
+        // 재생: 옆구리와 아랫몸 주변의 작은 빛 알갱이가 곡선을 그리며 몸의 여러 지점으로 모이고,
+        // 닿은 자리의 보스 알파 안에서만 잠깐 번진 뒤 사라진다. 일부는 몸 뒤로 지나가 가려진다.
         function regenerate(t, duration, reduced, seed) {
-            const b = body(), ground = groundY(), h = Math.min(b.h, scene.h * .85), image = texture('heal');
-            const p = reduced ? .45 : ease(clamp(t / (duration * .7))), show = clamp(t / .18) * clamp((duration - t) / .4), JADE = [140, 210, 170];
-            ctx.globalCompositeOperation = 'lighter';
-            for (let i = 0; i < 2; i++) {
-                const drift = reduced ? 0 : Math.sin(t * 1.8 + i * 2) * b.w * .012;
-                material(ctx, image, b.x + b.w * (.32 + i * .35) + drift, ground - h * (.24 + p * .22), h * .42, h * .85, .34 * show, (i ? .13 : -.13));
+            const b = body(), ground = groundY(), h = Math.min(b.h, scene.h * .85), cx = b.x + b.w / 2, u = unit(), n = width < 420 ? 9 : 14;
+            const MINT = [150, 232, 190], GOLD = [255, 220, 150], WHITE = [255, 250, 232], out = clamp((duration - t) / .3);
+            const front = [], back = [], blooms = [];
+            for (let i = 0; i < n; i++) {
+                const s = seed + i * 11, side = rand(s) < .5 ? -1 : 1, warm = rand(s + 11) < .45;
+                // 출발 시각을 구간별로 나눠 한꺼번에 몰리지 않게 한다.
+                const born = duration * .4 * (i + rand(s + 1)) / n, life = duration * (.38 + rand(s + 2) * .14);
+                const [tx, ty] = point(.3 + rand(s + 3) * .4, .38 + rand(s + 4) * .45);
+                blooms.push([tx, ty, born + life, rand(s + 5), warm]);
+                const q = (t - born) / life;
+                if (reduced || q <= 0 || q >= 1) continue;
+                const sx = cx + side * b.w * (.4 + rand(s + 6) * .3), sy = ground - h * (.1 + rand(s + 7) * .35);
+                const mx = (sx + tx) / 2 + side * b.w * (.08 + rand(s + 8) * .12), my = Math.min(sy, ty) - h * (.04 + rand(s + 9) * .1);
+                const k = q * q * (3 - 2 * q), sink = clamp((q - .65) / .35), absorb = 1 - sink * sink * (3 - 2 * sink);
+                const x = (1 - k) ** 2 * sx + 2 * (1 - k) * k * mx + k * k * tx, y = (1 - k) ** 2 * sy + 2 * (1 - k) * k * my + k * k * ty;
+                (rand(s + 12) < .4 ? back : front).push([x, y, (4 + rand(s + 10) * 5) * u * (.35 + .65 * absorb), warm ? GOLD : MINT, clamp(q / .2) * absorb, rand(s + 13) < .25]);
             }
-            skin((m, b) => {
-                const cy = ground - h * (.2 + p * .65), cx = b.x + b.w * .5;
-                const g = m.createRadialGradient(cx, cy, 0, cx, cy, h * .55);
-                g.addColorStop(0, 'rgba(190,240,206,.65)'); g.addColorStop(.4, 'rgba(98,185,139,.18)'); g.addColorStop(1, 'rgba(98,185,139,0)');
-                m.fillStyle = g; m.fillRect(b.x, b.y, b.w, b.h);
-                material(m, image, cx, cy, h * .7, h, .5, reduced ? 0 : t * .06);
-            }, .45 * show, 'lighter');
-            for (let i = 0; i < (width < 420 ? 5 : 8); i++) {
-                const ph = reduced ? .5 : clamp((t - rand(seed + i) * .4) / .95), s = (1 + rand(seed + i + 1)) * unit();
-                if (ph <= 0 || ph >= 1) continue;
-                const x = b.x + b.w * (.22 + rand(seed + i + 2) * .56), y = ground - ph * h * (.4 + rand(seed + i + 3) * .4);
-                glow(x, y, s * 2.5, JADE, Math.sin(ph * Math.PI) * show * .4);
-            }
+            const paint = (g, list, dim) => list.forEach(([x, y, r, c, a, spark]) => {
+                mote(g, x, y, r * 2.2, c, a * .3 * dim);
+                mote(g, x, y, r * .6, spark ? WHITE : c, a * (spark ? .85 : .5) * dim);
+            });
+            behind(g => paint(g, back, .7), out);
+            paint(ctx, front, out);
+            skin(m => {
+                const lift = m.createLinearGradient(0, ground, 0, ground - h * .7);
+                lift.addColorStop(0, rgba(MINT, .5)); lift.addColorStop(1, rgba(MINT, 0));
+                m.globalAlpha = .2 * clamp(t / (duration * .8)); m.fillStyle = lift; m.fillRect(b.x, b.y, b.w, b.h);
+                for (const [x, y, at, v, warm] of blooms) {
+                    // 동작 줄이기는 이동 없이 닿을 자리만 천천히 밝아졌다가 사라진다.
+                    let a;
+                    if (reduced) a = .45 * Math.sin(clamp(t / duration) * Math.PI);
+                    else {
+                        const x0 = (t - at + .06) / .4;
+                        if (x0 <= 0 || x0 >= 1) continue;
+                        a = .7 * (x0 < .25 ? x0 / .25 : (1 - (x0 - .25) / .75) ** 2);
+                    }
+                    mote(m, x, y, h * (.05 + v * .04), warm ? GOLD : MINT, a);
+                }
+            }, .9 * out, 'lighter');
         }
         // 파멸의 정화: 무대 아래 파티 쪽에서 잿빛 생명줄이 보스로 빨려 올라가고, 끝나면 몸이 붉게 차오른다.
         function purge(t, duration, reduced, seed) {
@@ -807,7 +884,8 @@
                 for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x - dx * len * .6 + nx * shift * side, y - dy * len * .6 + ny * shift * side); ctx.lineTo(x + dx * len * .6 + nx * shift * side, y + dy * len * .6 + ny * shift * side); ctx.stroke(); }
             }
         }
-        // 화염 폭발: 두 곳의 바닥 열기, 한 번의 분출, 가라앉는 연기와 중력이 있는 잔불.
+        // 화염 폭발: 바닥 곳곳의 작은 불씨가 천천히 달아오르고, 완료 신호에서만 한 번 분출해 위로 말려 오른다.
+        // 몸 아래쪽이 잠깐 밝아지고, 연기는 계속 올라가며 흩어진다. 크기는 분출 때 한 번만 커졌다가 줄어든다.
         function flame(t, duration, reduced, seed) {
             const b = body(), ground = groundY(), end = t - duration, p = clamp(t / duration), cx = b.x + b.w / 2, u = unit(), h = Math.min(b.h, scene.h);
             const light = (strength, radius) => skin((m, b) => {
@@ -815,32 +893,41 @@
                 g.addColorStop(0, 'rgba(255,174,84,.8)'); g.addColorStop(.35, 'rgba(235,72,20,.25)'); g.addColorStop(1, 'rgba(180,34,10,0)');
                 m.fillStyle = g; m.fillRect(b.x, b.y, b.w, b.h);
             }, strength, 'lighter');
+            // 바닥 불씨: 간격, 깊이, 크기, 점화 시각이 모두 다르다.
+            const n = width < 420 ? 4 : 6, sources = [];
+            for (let i = 0; i < n; i++) {
+                const s = seed + i * 7;
+                sources.push({ s, x: cx + b.w * (-.44 + .88 * (i + .15 + rand(s) * .7) / n), y: ground - h * rand(s + 3) * .05, size: h * (.11 + rand(s + 4) * .1), on: rand(s + 5) * .55 });
+            }
             if (end < 0) {
-                light(.16 + p * .3, h * (.3 + p * .3));
+                light(.1 + p * .22, h * (.28 + p * .22));
                 ctx.save(); ctx.translate(cx, ground); ctx.scale(1, .12);
-                glow(0, 0, b.w * .42, [235, 82, 22], .14 + p * .15);
+                glow(0, 0, b.w * .42, [235, 82, 22], .1 + p * .15);
                 ctx.restore();
-                for (let i = 0; i < 2; i++) {
-                    const flicker = reduced ? 1 : 1 + Math.sin(t * (6.2 + i) + seed) * .08;
-                    const size = h * (.12 + p * .27) * (i ? .8 : 1) * flicker;
-                    firePlume(cx + b.w * (i ? .26 : -.23), ground, size * .82, size, t, seed + i * 5, .45 + p * .25, i ? .08 : -.1, reduced);
+                for (const f of sources) {
+                    const lit = ease(clamp((p - f.on) / .35));
+                    fireFrame(f.x, f.y, f.size * (.55 + .45 * ease(p)), t, f.s, (.3 + .25 * p) * lit, reduced);
                 }
                 if (!reduced) embers(cx - b.w * .25, b.w * .5, ground, h * .45, width < 420 ? 5 : 8, t, seed + 50, .4);
             } else if (end < 1.5) {
-                const e = end / 1.5, image = texture('mist') || puff();
-                light(end < .12 ? .5 * (1 - end / .12) : .24 * (1 - e), h * .65);
-                // 질감 있는 연기는 불길보다 늦게 부풀어 올라 남는다.
+                const image = texture('mist') || puff();
+                light(end < .1 ? .45 * end / .1 : .45 * (1 - clamp((end - .1) / .55)) ** 2, h * .6);
+                // 연기는 불길보다 늦게 나와 계속 올라가며 옅어진다.
                 ctx.globalCompositeOperation = 'source-over';
-                for (let i = 0; i < 3; i++) {
-                    const size = h * (.55 + e * .22), x = cx + (i - 1) * h * .3;
-                    material(ctx, image, x, ground - h * (.1 + e * .2), size, size * .7, Math.sin(e * Math.PI) * .3, (i - 1) * .12);
+                for (let i = 0; i < 4; i++) {
+                    const k = clamp((end - .08 - i * .06) / 1.3), s = seed + 40 + i * 3;
+                    if (k <= 0 || k >= 1) continue;
+                    const x = cx + (rand(s) - .5) * b.w * .6 + (rand(s + 1) - .5) * b.w * .2 * k, size = h * (.35 + .35 * k);
+                    material(ctx, image, x, ground - h * (.12 + .5 * (reduced ? 0 : ease(k))), size, size * .7, Math.sin(k * Math.PI) * .28, (rand(s + 2) - .5) * .4);
                 }
-                for (let i = 0; i < 3; i++) {
-                    const age = end - (reduced ? 0 : i * .065), life = .64 - i * .045;
-                    if (age < 0 || age >= life) continue;
-                    const q = age / life, size = h * (i ? .5 : .76) * (reduced ? .8 : ease(clamp(age / .12))) * (1 - q * .2);
-                    const side = i === 1 ? -1 : i === 2 ? 1 : 0;
-                    firePlume(cx + side * b.w * .23, ground, size * (i ? .82 : 1), size, t * 1.6, seed + i * 8, Math.min(.85, (1 - q) * 1.1), side * .27, reduced);
+                // 예열 불씨는 분출에 흡수되듯 바로 꺼진다.
+                for (const f of sources) fireFrame(f.x, f.y, f.size, t, f.s, .55 * (1 - clamp(end / .3)), reduced);
+                for (let i = 0; i < (width < 420 ? 3 : 4); i++) {
+                    const s = seed + 30 + i * 5, age = end - (reduced ? 0 : i * .05 + rand(s + 3) * .04), q = age / .9;
+                    if (age < 0 || q >= 1) continue;
+                    const grow = reduced ? 1 : ease(clamp(age / .2)), size = h * (.3 + rand(s + 4) * .12) * (.5 + .5 * grow) * (1 - .25 * q);
+                    const x = cx + (rand(s + 5) - .5) * b.w * .5 + (rand(s + 6) - .5) * b.w * .15 * q, rise = reduced ? 0 : h * .16 * ease(q);
+                    fireFrame(x, ground - rise, size, t, s, .8 * (1 - q) ** 1.5 * clamp(age / .06), reduced);
                 }
                 if (!reduced) for (let i = 0; i < (width < 420 ? 8 : 12); i++) {
                     const a = end - rand(seed + i + 60) * .08;
@@ -894,13 +981,14 @@
             const ground = groundY(), bottom = scene.y + scene.h, top = ground - scene.h * .1;
             const g = ctx.createLinearGradient(0, top, 0, bottom);
             g.addColorStop(0, 'rgba(255,80,20,0)'); g.addColorStop(1, 'rgba(255,80,20,.15)');
-            ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = reduced ? .8 : .75 + .25 * Math.sin(t * 2.3); ctx.fillStyle = g;
+            ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.fillStyle = g;
             ctx.fillRect(scene.x, top, scene.w, bottom - top);
-            for (let i = 0; i < 3; i++) {
-                const x = scene.x + scene.w * (.13 + i * .34 + (rand(seed + i) - .5) * .1);
-                const flick = reduced ? 1 : 1 + .12 * Math.sin(t * (4.5 + i) + i * 2);
-                const h = scene.h * (.12 + rand(seed + i + 2) * .08) * flick;
-                firePlume(x, ground, h * .9, h, t, seed + i, .48, (i - 1) * .1, reduced);
+            // 고정된 바닥 지점마다 실제 화염 프레임만 돈다. 높이는 지점별로 다르되 시간에 따라 변하지 않는다.
+            const n = width < 420 ? 4 : 5;
+            for (let i = 0; i < n; i++) {
+                const s = seed + i * 5, x = scene.x + scene.w * (.06 + .88 * (i + .1 + rand(s + 3) * .8) / n);
+                const y = ground + (bottom - ground) * rand(s + 4) * .6;
+                fireFrame(x, y, scene.h * (.12 + rand(s + 5) * .1), t, s, .5, reduced);
             }
             if (!reduced) embers(scene.x, scene.w, bottom, scene.h * .5, width < 420 ? 6 : 10, t, seed + 200, .4);
         }

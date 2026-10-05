@@ -16,8 +16,12 @@ const files = [
     ...['black-hodu', 'black-hodu-aura', 'hodu-retainer', 'hodu-retainer-court',
         'ingyeo', 'ingyeo-berserk', 'ingyeo-berserk-arena', 'volcanic-arena', 'tabujago-scene', 'dungeon-gate',
         'sculpture-scene', 'sculpture-hall', 'whiplash-scene', 'whiplash-hall', 'whiplash-echo-scene', 'whiplash-echo-hall',
-        'fx-dark-mist', 'fx-bronze-shard', 'fx-fire-plume-v1', 'fx-healing-wisp-v1', 'fx-puzzle-piece-v1'].map(name => '레이드/' + name + '.png'),
-    ...['beep', 'gloss', 'shards-fall', 'shards-impact', 'resonance-blast', 'wall-hum', 'rupture', 'charge'].map(name => 'sfx/raid/' + name + '.mp3')
+        'fx-dark-mist', 'fx-bronze-shard', 'fx-fire-flow-v2', 'fx-puzzle-piece-v1'].map(name => '레이드/' + name + '.png'),
+    ...['signal', 'bronze-set', 'shards-rush', 'stone-hit', 'resonance-impact', 'wall-pressure', 'echo-break',
+        'ward-form', 'obsidian-close', 'mochi-flex', 'rain-veil', 'mirror-glint', 'power-gather', 'life-drain',
+        'dark-surge', 'dark-growl', 'dealing-aura', 'revival-bloom', 'fire-ignite', 'fire-erupt', 'sky-load',
+        'sky-impact', 'doom-pressure', 'doom-cut', 'healing-absorb', 'dark-impact', 'dealing-cut', 'ground-land',
+        'puzzle-hit', 'raid-clear', 'raid-fail'].map(name => 'sfx/raid/' + name + '-v2.mp3')
 ];
 const assets = files.map(file => {
     const body = fs.readFileSync(path.join(root, 'DB', 'RPGenius', 'ui', ...file.split('/')));

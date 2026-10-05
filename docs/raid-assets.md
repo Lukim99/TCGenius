@@ -24,44 +24,76 @@
 | hodu-retainer-court.png | 신규 | 붉은 등불과 봉인된 문이 있는 장례 사원 안뜰. 부하와 같은 조명 |
 | fx-dark-mist.png | 신규 | 정화 효과용 검정과 진홍색 연기. 가장자리는 알파 투명 |
 | fx-bronze-shard.png | 신규 | 조각 패턴용 입체 청동 파편. 알파 투명 배경 |
-| fx-fire-plume-v1.png | 신규 | 난류와 미세한 불꽃 결이 있는 화염. 예열과 분출, 폭주지대에서 사용 |
-| fx-healing-wisp-v1.png | 신규 | 옅은 비취색과 금빛 실이 섞인 투명 회복 기운. 실제 HP 회복 때 사용 |
+| fx-fire-flow-v2.png | highwizard의 [Animated Flame](https://opengameart.org/content/animated-flame-fire-sprite-sheet), CC0 | 원본 5×5 시트의 25프레임 화염. 예열, 분출과 폭주지대에서 사용 |
 | fx-puzzle-piece-v1.png | 신규 | 두께, 흠집과 황동 테두리가 있는 석재 퍼즐 조각. 회전하며 날아가는 패턴에서 사용 |
 
-공통 생성 조건: 기존 인물의 정체성, 표현, 색과 자세를 유지한다. 기존 보스 전경은 실제 알파 투명 배경에 원본 좌표와 크기를 유지하며, 배경도 같은 카메라와 원근을 사용한다. 두 레이어는 화면 크기에 따라 함께 확대하고 잘라낸다. 신규 부하는 안뜰 바닥과 맞도록 따로 배치한다. 새 글자, 워터마크, 테두리는 추가하지 않는다.
+imagegen으로 만든 이미지의 공통 생성 조건: 기존 인물의 정체성, 표현, 색과 자세를 유지한다. 기존 보스 전경은 실제 알파 투명 배경에 원본 좌표와 크기를 유지하며, 배경도 같은 카메라와 원근을 사용한다. 두 레이어는 화면 크기에 따라 함께 확대하고 잘라낸다. 신규 부하는 안뜰 바닥과 맞도록 따로 배치한다. 새 글자, 워터마크, 테두리는 추가하지 않는다.
 
 첫 분리 시안인 `sculpture.png`, `whiplash.png`, `whiplash-echo.png`, `tabujago.png`, `mansion-hall.png`는 현재 화면 매핑에서 사용하지 않는다. 작은 여백으로 자른 보스를 임의로 배치하면 원본의 받침대와 바닥 위치가 어긋나므로 등록된 전체 캔버스 전경을 사용한다.
 
 ## 외부 효과음
 
-Kenney의 [Interface Sounds](https://kenney.nl/assets/interface-sounds), [Impact Sounds](https://kenney.nl/assets/impact-sounds), [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds)를 사용한다. 각 배포본의 `License.txt`에서 CC0를 확인했다. 합성 기본 효과음 대신 아래 실제 샘플을 재생한다.
+레이드의 패턴과 클리어 및 실패 효과음은 아래 CC0 배포본에서 선택했다. 패턴의 공통 `charge.mp3` 매핑은 제거했다. 카운트다운, 일반 타격, 치명타, 스킬, 물약과 전투 시작은 기존 `public/party.js`의 효과음을 유지한다. 원래 파일은 보존한다.
 
-저장 위치는 `DB/RPGenius/ui/sfx/raid/`이다.
+| 제작자 | 배포본 | 라이선스 |
+| --- | --- | --- |
+| Lentikula | [Healing Spell Impacts](https://lentikula.itch.io/healing-spell-impacts) | CC0 |
+| Lentikula | [Basic Spell Impacts](https://lentikula.itch.io/freecc0-basic-spell-impacts-sfx) | CC0 |
+| Lentikula | [Druid Spell Impacts](https://lentikula.itch.io/druid-spell-impacts) | CC0 |
+| rubberduck | [80 CC0 RPG SFX](https://opengameart.org/node/86018) | CC0 |
+| yd | [Short Alarm](https://opengameart.org/content/short-alarm) | CC0 |
 
-| 파일 | 배포본 | 원본 파일 | 최대 길이 |
+저장 위치는 `DB/RPGenius/ui/sfx/raid/`이다. 회복은 회복 마법, 화염은 점화와 분출, 보호막은 얼음, 흑화는 대지 충격과 괴물 소리처럼 사건의 성격에 맞춰 연결한다. 공명의 세 번 신호와 되울림의 두 번 신호는 외부 경보 샘플을 기존 시각에 재생한다. 길이는 변환된 MP3를 FFprobe로 확인한 값이다.
+
+| 파일 | 제작자 | 원본 파일 | 길이 |
 | --- | --- | --- | --- |
-| beep.mp3 | Interface Sounds | confirmation_002.ogg | 0.10초 |
-| gloss.mp3 | Interface Sounds | glass_004.ogg | 0.8초 |
-| shards-fall.mp3 | Impact Sounds | impactGlass_light_003.ogg | 0.6초 |
-| shards-impact.mp3 | Impact Sounds | impactGeneric_light_001.ogg | 0.7초 |
-| resonance-blast.mp3 | Sci-fi Sounds | explosionCrunch_001.ogg | 1초 |
-| wall-hum.mp3 | Sci-fi Sounds | forceField_003.ogg | 1.2초 |
-| rupture.mp3 | Impact Sounds | impactGlass_heavy_003.ogg | 0.8초 |
-| charge.mp3 | Sci-fi Sounds | forceField_002.ogg | 1초 |
+| signal-v2.mp3 | yd | alarm.ogg | 0.12초 |
+| bronze-set-v2.mp3 | rubberduck | rubberduck/metal_01.ogg | 0.53초 |
+| shards-rush-v2.mp3 | rubberduck | rubberduck/stones_03.ogg | 1.15초 |
+| stone-hit-v2.mp3 | rubberduck | rubberduck/stones_01.ogg | 0.65초 |
+| resonance-impact-v2.mp3 | Lentikula | basic/Lightning Spell Impacts/Lightning Spell Impact 3.wav | 1.35초 |
+| wall-pressure-v2.mp3 | Lentikula | druid/Wind Spell Impacts/Wind Spell Impact 5.wav | 1.70초 |
+| echo-break-v2.mp3 | Lentikula | basic/Ice Spell Impacts/Ice Spell Impact 2.wav | 1.30초 |
+| ward-form-v2.mp3 | Lentikula | basic/Ice Spell Impacts/Ice Spell Impact 1.wav | 1.50초 |
+| obsidian-close-v2.mp3 | Lentikula | druid/Earth Spell Impacts/Earth Spell Impact 4.wav | 1.35초 |
+| mochi-flex-v2.mp3 | rubberduck | rubberduck/creature_slime_02.ogg | 0.69초 |
+| rain-veil-v2.mp3 | Lentikula | basic/Water Spell Impacts/Water Spell Impact 4.wav | 1.60초 |
+| mirror-glint-v2.mp3 | rubberduck | rubberduck/metal_03.ogg | 0.41초 |
+| power-gather-v2.mp3 | Lentikula | druid/Wind Spell Impacts/Wind Spell Impact 1.wav | 1.70초 |
+| life-drain-v2.mp3 | Lentikula | druid/Plant Spell Impacts/Plant Spell Impact 4.wav | 1.80초 |
+| dark-surge-v2.mp3 | Lentikula | druid/Earth Spell Impacts/Earth Spell Impact 2.wav | 1.65초 |
+| dark-growl-v2.mp3 | rubberduck | rubberduck/creature_monster_03.ogg | 0.84초 |
+| dealing-aura-v2.mp3 | rubberduck | rubberduck/spell_02.ogg | 0.52초 |
+| revival-bloom-v2.mp3 | Lentikula | healing/Impacts/Healing Spell Impact 11.wav | 1.90초 |
+| fire-ignite-v2.mp3 | rubberduck | rubberduck/spell_fire_03.ogg | 1.80초 |
+| fire-erupt-v2.mp3 | Lentikula | basic/Fire Spell Impacts/Fire Spell Impact 1.wav | 1.48초 |
+| sky-load-v2.mp3 | Lentikula | druid/Wind Spell Impacts/Wind Spell Impact 3.wav | 1.50초 |
+| sky-impact-v2.mp3 | Lentikula | basic/Fire Spell Impacts/Fire Spell Impact 5.wav | 0.80초 |
+| doom-pressure-v2.mp3 | Lentikula | druid/Earth Spell Impacts/Earth Spell Impact 1.wav | 1.70초 |
+| doom-cut-v2.mp3 | rubberduck | rubberduck/blade_03.ogg | 0.38초 |
+| healing-absorb-v2.mp3 | Lentikula | healing/Impacts/Healing Spell Impact 4.wav | 1.40초 |
+| dark-impact-v2.mp3 | Lentikula | druid/Earth Spell Impacts/Earth Spell Impact 3.wav | 1.20초 |
+| dealing-cut-v2.mp3 | rubberduck | rubberduck/blade_02.ogg | 0.30초 |
+| ground-land-v2.mp3 | rubberduck | rubberduck/stones_02.ogg | 0.65초 |
+| puzzle-hit-v2.mp3 | rubberduck | rubberduck/item_stone_02.ogg | 0.27초 |
+| raid-clear-v2.mp3 | Lentikula | healing/Impacts/Healing Spell Impact 10.wav | 1.60초 |
+| raid-fail-v2.mp3 | rubberduck | rubberduck/creature_die_01.ogg | 0.97초 |
 
-FFmpeg로 시작 무음을 제거하고 피크를 제한해 모노 44.1kHz, MP3 128k로 변환했다. 필터는 `silenceremove=start_periods=1:start_duration=0.005:start_threshold=-45dB,alimiter=limit=0.7:level=false`이다. 공명 폭발의 세 번 신호와 되울림의 두 번 신호는 동일한 외부 샘플을 정해진 시각에 재생한다.
+FFmpeg로 시작 무음을 제거하고 필요한 구간만 잘라 모노 44.1kHz, MP3 160k로 변환했다. `silenceremove=start_periods=1:start_duration=0.005:start_threshold=-45dB`, `atrim`, `asetpts=PTS-STARTPTS`, `loudnorm=I=-18:TP=-3:LRA=7`과 마지막 최대 0.18초의 `afade`를 적용했다. 브라우저에서 합성한 기본 효과음을 추가하지 않으며 기존 효과음 볼륨, 음소거, 중단 및 재접속 규칙을 유지한다.
 
 ## S3 반영
 
-`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 21개와 외부 효과음 8개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
+`scripts/migrate_raid_presentation_assets_to_s3.js`는 현재 화면에서 쓰는 이미지 20개와 외부 효과음 31개를 `tcgenius/assets/ui/`에 업로드한다. `--dry-run`으로 대상과 크기를 확인할 수 있다. 내용이 다른 기존 파일은 덮어쓰지 않으며, 업로드의 MD5, 크기와 MIME 형식을 확인한다. 운영 DB, 아이템 설정, 기존 이미지와 레이드 음악은 변경하지 않는다.
 
 2026-10-04에 `eefl-image` 버킷의 현재 사용 파일 26개를 확인했다. 마지막 수정의 신규 이미지 13개를 업로드했으며 모든 파일의 MD5, 크기와 MIME 형식이 일치했다.
 
 2026-10-05에 신규 효과 질감 3개를 업로드했다. 현재 사용 파일 29개의 MD5, 크기와 MIME 형식을 확인했다. 시각 방향은 Claude Opus 5.5가 실제 전투 화면과 질감을 읽고 검토했으며, 최종 합성은 PC와 320px 모바일의 실제 레이드 화면에서 확인했다.
 
-## 효과 질감 생성 프롬프트
+2026-10-05 자연스러운 화염과 회복 동작을 적용하면서 신규 화염 시트 1개와 효과음 38개를 업로드했다. 업로드한 58개 파일의 MD5, 크기와 MIME 형식을 확인했다. 최종 적용 범위는 패턴과 종료 효과음 31개 및 이미지 20개이며, 이 51개 파일을 다시 검증했다. 적용하지 않은 일반 전투용 신규 음원 7개는 참조하지 않는다. 이전 화염과 회복 질감, 효과음은 삭제하거나 덮어쓰지 않았다. 새 화염 시트는 외부 원본을 그대로 저장한다. 검은 배경은 실행 중 한 번만 광량 알파로 변환해 합성하며 원본 파일을 편집하지 않는다.
 
-내장 imagegen을 사용했다. 생성된 PNG의 알파를 보존해 위 표의 프로젝트 경로로 복사했다. Canvas에서 위치, 회전, 높이와 광량을 바꾸며 이미지 자체는 수정하지 않는다.
+## 이전 효과 질감 생성 프롬프트
+
+아래 질감은 내장 imagegen으로 만들고 PNG 알파를 보존했다. `fx-fire-plume-v1.png`와 `fx-healing-wisp-v1.png`는 현재 레이드에서 사용하지 않는다. 퍼즐 조각 질감은 계속 사용한다.
 
 ### fx-fire-plume-v1.png
 

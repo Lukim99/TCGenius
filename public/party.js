@@ -569,7 +569,7 @@
         document.addEventListener(evt, playBgm, true);
     }
 
-    // ====== 효과음 (Kenney CC0 → DB/RPGenius/ui/sfx) ======
+    // ====== 효과음 (기존 전투음 유지, 종료 음원 출처: docs/raid-assets.md) ======
     const SFX_FILES = {
         hit: ['sfx/hit_0.mp3', 'sfx/hit_1.mp3', 'sfx/hit_2.mp3'],
         crit: ['sfx/crit.mp3'],
@@ -577,8 +577,8 @@
         potion: ['sfx/potion.mp3'],
         count: ['sfx/count.mp3'],
         start: ['sfx/start.mp3'],
-        clear: ['sfx/clear.mp3'],
-        fail: ['sfx/fail.mp3']
+        clear: ['sfx/raid/raid-clear-v2.mp3'],
+        fail: ['sfx/raid/raid-fail-v2.mp3']
     };
     const sfxCache = {};
     let sfxPreloaded = false;
