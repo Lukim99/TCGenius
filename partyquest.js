@@ -2460,6 +2460,11 @@ function stepRoom(room) {
                     if (room.monster) {
                         res.damage = applyBossHpDamage(room, room.monster, res.damage);
                         recordPartyDamage(m, res, '익테봇 소환');
+                        broadcast(room, 'hit', {
+                            by: m.name, type: 'skill', skill: '익테봇 소환', damage: res.damage,
+                            fixedDamage: res.fixedDamage || 0, destinyDamage: res.destinyDamage || 0,
+                            crit: !!res.isCrit, hitDetails: res.hitDetails || [], monster: serializeMonster(room.monster)
+                        });
                     }
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '익테봇 소환', false);
                     pushCombat(room, m.name + ' 익테봇 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');
@@ -2486,6 +2491,11 @@ function stepRoom(room) {
                     if (room.monster) {
                         res.damage = applyBossHpDamage(room, room.monster, res.damage);
                         recordPartyDamage(m, res, '수나타 소환');
+                        broadcast(room, 'hit', {
+                            by: m.name, type: 'skill', skill: '수나타 소환', damage: res.damage,
+                            fixedDamage: res.fixedDamage || 0, destinyDamage: res.destinyDamage || 0,
+                            crit: !!res.isCrit, hitDetails: res.hitDetails || [], monster: serializeMonster(room.monster)
+                        });
                     }
                     else applyMobPhaseDamage(room, m, targetMon, res, 'skill', '수나타 소환', false);
                     pushCombat(room, m.name + ' 수나타 → ' + targetMon.name + ' [-' + res.damage + ']', 'skill');

@@ -436,6 +436,56 @@ test('레이드 타격 계산은 필드 공통 계산과 치명타, 연격, 속�
     } finally { random.mock.restore(); }
 });
 
+test('익테봇과 수나타는 엘리트와 보스에게 실제 피해와 소환 이름을 파티 전원에게 한 번 전달한다', async t => {
+    t.mock.method(Math, 'random', () => .5);
+    for (const phaseIndex of [1, 2]) {
+        const room = await battle('normal', 2); room.questId = 'blackHodu'; room.phaseIndex = phaseIndex;
+        room.monster = party.__test.createPhaseMonster(quests.find(quest => quest.id === room.questId).phases[phaseIndex]);
+        const member = room.members[0]; Object.assign(member, combatMember());
+        const sent = ['', ''];
+        room.members.forEach((m, index) => { m.sseRes = { write: text => { sent[index] += text; } }; });
+        try {
+            for (const [key, skill] of [['iktaeBot', '익테봇 소환'], ['sunata', '수나타 소환']]) {
+                sent.fill('');
+                const hp = room.monster.hp, totalDamage = member.runtime.battleStats?.damage || 0;
+                member.runtime[key] = { hp: 10000, atkMul: 1, buff: 0, expired_at: Date.now() + 60000, nextAttackAt: Date.now() };
+                tick(room);
+                const hits = sent.map(text => [...text.matchAll(/event: hit\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1])));
+                assert.equal(hits[0].length, 1, room.monster.type + '/' + skill);
+                assert.deepEqual(hits[1], hits[0]);
+                const hit = hits[0][0];
+                assert.equal(hit.by, member.name); assert.equal(hit.type, 'skill'); assert.equal(hit.skill, skill);
+                assert.equal(hit.damage, hp - room.monster.hp); assert.ok(hit.damage > 0);
+                assert.equal(hit.monster.hp, room.monster.hp); assert.equal(hit.monster.name, room.monster.name);
+                assert.equal(member.runtime.battleStats.damage - totalDamage, hit.damage);
+                tick(room);
+                assert.equal([...sent[0].matchAll(/event: hit\ndata: /g)].length, 1, '다음 공격 시각 전에는 중복해서 표시하지 않는다.');
+                member.runtime[key] = null;
+            }
+        } finally { room.members.forEach(m => { m.sseRes = null; }); }
+    }
+});
+
+test('소환수의 잡몹 타격은 기존 정화 피해 사건만 한 번 전달한다', async t => {
+    t.mock.method(Math, 'random', () => .5);
+    const room = await battle(); room.questId = 'blackHodu'; room.phaseIndex = 0; room.monster = null;
+    room.sharedKillCount = 0; room.killTarget = 1000; room.mobMonster = null;
+    const member = room.members[0]; Object.assign(member, combatMember());
+    let sent = ''; member.sseRes = { write: text => { sent += text; } };
+    try {
+        for (const [key, skill] of [['iktaeBot', '익테봇 소환'], ['sunata', '수나타 소환']]) {
+            sent = ''; const kills = room.sharedKillCount;
+            member.runtime[key] = { hp: 10000, atkMul: 1, buff: 0, expired_at: Date.now() + 60000, nextAttackAt: Date.now() };
+            tick(room);
+            const events = [...sent.matchAll(/event: kill\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+            assert.equal(events.length, 1); assert.equal(events[0].skill, skill);
+            assert.ok(events[0].damage > 0); assert.equal(events[0].kills, room.sharedKillCount - kills);
+            assert.ok(!sent.includes('event: hit\n'), '정화와 보스 타격 사건을 중복해서 보내면 안 된다.');
+            member.runtime[key] = null;
+        }
+    } finally { member.sseRes = null; }
+});
+
 test('보스 화상도 필드 계산의 방어력과 속성 저항을 적용하고 장비 및 다음 공격 버프를 발동시키지 않는다', async () => {
     const room = await battle();
     const member = room.members[0]; Object.assign(member, combatMember({ fireAtk: 200, finalDamage: .2, pnt: 30 }));
@@ -1871,6 +1921,29 @@ test('생일 보스의 연격, 다단히트와 간접 공격은 타격마다 1�
     assert.equal(party.__test.applyBossHpDamage(room, mon, 9999, { birthdayHits: 9999 }), 513);
     assert.equal(mon.hp, 1); assert.equal(mon.bossState.gift.duration, 10);
     assert.equal(party.__test.applyBossHpDamage(room, mon, 9999), 0);
+});
+
+test('생일 레이드 소환수 표시도 타격당 1 피해와 514 패턴 중 0 피해를 따른다', async t => {
+    const clock = birthdayClock(t), room = await birthdayBattle(1, 1), member = room.members[0], mon = room.monster;
+    Object.assign(member.baseSnapshot.stats, { atk: 1000, crit: 0 });
+    let sent = ''; member.sseRes = { write: text => { sent += text; } };
+    try {
+        for (const [key, skill] of [['iktaeBot', '익테봇 소환'], ['sunata', '수나타 소환']]) {
+            mon.hp = 515; mon.bossState.frenzyDone = false; mon.bossState.frenzy = null; mon.bossState.events = [];
+            sent = ''; const hp = mon.hp;
+            member.runtime[key] = { hp: 10000, atkMul: 1, buff: 0, expired_at: Date.now() + 60000, nextAttackAt: Date.now() };
+            clock.advance(200); party.__test.stepRoom(room);
+            const hits = [...sent.matchAll(/event: hit\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+            assert.equal(hits.length, 1); assert.equal(hits[0].skill, skill);
+            assert.equal(hits[0].damage, 1); assert.equal(mon.hp, hp - 1);
+            assert.equal(mon.bossState.frenzy.duration, 10);
+            sent = ''; member.runtime[key].nextAttackAt = Date.now();
+            clock.advance(200); party.__test.stepRoom(room);
+            const blocked = [...sent.matchAll(/event: hit\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+            assert.equal(blocked.length, 1); assert.equal(blocked[0].damage, 0); assert.equal(mon.hp, 514);
+            member.runtime[key] = null;
+        }
+    } finally { member.sseRes = null; }
 });
 
 test('케이크 주기 피해와 강탈은 공통 피해와 실제 휴대 수량을 사용하며 물약이 없으면 실패한다', async t => {
