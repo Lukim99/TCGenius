@@ -21,7 +21,8 @@ const pick = values => values[Math.floor(Math.random() * values.length)];
 const starLabel = star => star <= 9 ? star + '성' : ['제타', '시그마', '오메가'][star - 10];
 
 function conditionValues(type, characters) {
-    if (type === 'mainStar' || type === 'slotStar') return Array.from({ length: 12 }, (_, i) => i + 1);
+    if (type === 'mainStar') return Array.from({ length: 12 }, (_, i) => i + 1);
+    if (type === 'slotStar') return Array.from({ length: 8 }, (_, i) => i + 5);
     if (type === 'element') return Array.from({ length: 10 }, (_, i) => (i + 1) * 100);
     if (type === 'equipmentRarity') return RARITIES;
     if (type === 'cardType') return FORMS;

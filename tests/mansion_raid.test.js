@@ -949,6 +949,44 @@ test('아티팩트 등급별 조건 종류는 중복 없고, 발현도와 네 �
     assert.equal(artifacts.view(equip, '레전더리', user, {}, () => null, []).options[0].conditionValue, '오메가');
 });
 
+test('아티팩트 슬롯 카드 조건은 생성 시 5성부터 오메가까지 나오고 메인 카드 범위는 유지한다', () => {
+    for (const [typeIndex, minimum] of [[0, 1], [1, 5]]) {
+        const conditions = [];
+        for (let i = 0; i < 13 - minimum; i++) {
+            const sequence = [(typeIndex + .5) / 6, (i + .5) / (13 - minimum), 0, 0];
+            const random = mock.method(Math, 'random', () => sequence.shift());
+            try {
+                const equip = artifacts.create('레어', 0, [{ name: '빵귤' }]);
+                assert.equal(equip.artifact.options[0].type, typeIndex ? 'slotStar' : 'mainStar');
+                conditions.push(equip.artifact.options[0].condition);
+            } finally { random.mock.restore(); }
+        }
+        assert.deepEqual(conditions, Array.from({ length: 13 - minimum }, (_, i) => i + minimum));
+    }
+});
+
+test('아티팩트 슬롯 카드 재설정은 5성 이상만 나오며 잠근 조건과 메인 카드 범위를 보존한다', () => {
+    const user = { gold: 10000 };
+    const equip = { artifact: { options: [
+        { type: 'slotStar', condition: 8, ability: 'hp', n: 6 },
+        { type: 'mainStar', condition: 4, ability: 'crit', n: 2 }
+    ], rerollsUsed: 0 } };
+    for (const [value, expected] of [[0, [5, 1]], [1 - Number.EPSILON, [12, 12]]]) {
+        const random = mock.method(Math, 'random', () => value);
+        try {
+            assert.equal(artifacts.reroll(user, equip, [], []).ok, true);
+            assert.deepEqual(equip.artifact.options.map(option => option.condition), expected);
+        } finally { random.mock.restore(); }
+    }
+    const random = mock.method(Math, 'random', () => 0);
+    try {
+        assert.equal(artifacts.reroll(user, equip, ['0.condition'], []).ok, true);
+        assert.deepEqual(equip.artifact.options.map(option => option.condition), [12, 1]);
+        assert.equal(artifacts.view(equip, '유니크', user, {}, () => null, []).options[0].conditionValue, '오메가');
+        assert.equal(artifacts.evaluate(equip, '유니크', { card_slot: [{ star: 11 }] }, {}, () => null).active[0], true);
+    } finally { random.mock.restore(); }
+});
+
 test('실제 스탯·장착·프리셋 경로에서 아티팩트는 전용 슬롯이며 최초 장착으로 거래 1회가 소모된다', async () => {
     const user = await reset(); const baseline = rpg.calculateUserStats(user);
     const equip = rpg.grantArtifact(user, '레전더리');
