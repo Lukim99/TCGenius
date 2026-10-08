@@ -99,8 +99,8 @@ test('빵귤 공격 종류 전환·첫 공격 제외·간접 피해 제외·실�
 
 test('뭔마 연격 독립 추첨, 켄시 치확 감소, 마쉐비 수속성, 딜러장 확정 치명타', async () => {
     await rolls([0, .5, .5, .99, .5, .5], () => {
-        const hits = rpg.calculateAttackHitResult(1000, 0, 0, { crit: 0, awakening: passive('뭔마') }, {}, { isBasic: true, comboHitCount: 2 }, {});
-        assert.deepEqual(hits.hitDamages, [2000, 1000]);
+        const hits = rpg.calculateAttackHitResult(1000, 0, 0, { crit: 0, awakening: passive('뭔마') }, {}, { isBasic: true, comboHitCount: 64 }, {});
+        assert.deepEqual(hits.hitDamages, Array.from({ length: 64 }, (_, index) => index % 2 === 0 ? 2000 : 1000));
     });
     near(awakening.skillCritMultiplier(card('켄시', 11)), .67);
     for (const [name, expected] of [['마쉐비', '수'], ['딜러장', true]]) {
@@ -108,6 +108,31 @@ test('뭔마 연격 독립 추첨, 켄시 치확 감소, 마쉐비 수속성, �
         awakening.prepareAttack({ awakening: passive(name) }, {}, {}, extra, 'basic', 0);
         assert.equal(name === '마쉐비' ? extra.attackElement : extra.forceCritical, expected);
     }
+});
+
+test('연격의 타격별 속성 강화는 다음 타격에 누적되지 않고 원본 능력치를 보존한다', async () => {
+    await rolls(.5, () => {
+        const stats = Object.freeze({ atk: 1000, crit: 1, critMul: 1.5, allElementAtk: 100, waterAtk: 200,
+            lightAtk: 50, nonElementDamage: .2, lightFinalDamage: .1, critLightBonus: .1 });
+        const modifiers = [{ allElementAtk: 100, waterAtk: 200 }, { lightAtk: 250 }, { darkAtk: 200 }, {}];
+        const defender = { def: 100, waterRes: 50, lightRes: 80, darkRes: 90 };
+        for (const element of ['화', '수', '명', '암', null]) {
+            const extra = { isBasic: true, attackElement: element, deepWaterBonus: .15, bribeDarkBonus: .2 };
+            const actual = rpg.calculateAttackHitResult(1000, 100, 0, stats, {},
+                { ...extra, comboHitCount: modifiers.length, perAttackUnitExtras: modifiers }, defender);
+            const expected = modifiers.map((modifier, index) => {
+                const unitStats = { ...stats };
+                for (const key of ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk']) {
+                    unitStats[key] = Number(stats[key] || 0) + Number(modifier[key] || 0);
+                }
+                return rpg.calculateAttackHitResult(1000, 100, 0, unitStats, {},
+                    { ...extra, hitCount: 1, deepWaterBonus: index === 0 ? .15 : 0, bribeDarkBonus: index === 0 ? .2 : 0 }, defender).finalDamage;
+            });
+            assert.deepEqual(actual.hitDamages, expected, String(element));
+            assert.equal(actual.finalDamage, expected.reduce((sum, damage) => sum + damage, 0));
+        }
+        assert.equal(stats.allElementAtk, 100); assert.equal(stats.waterAtk, 200);
+    });
 });
 
 test('제우스 및 켄시 슬롯 최종 피해는 치명타 여부에 맞춰 반영', async () => {

@@ -436,6 +436,61 @@ test('레이드 타격 계산은 필드 공통 계산과 치명타, 연격, 속�
     } finally { random.mock.restore(); }
 });
 
+test('시벌론 상태의 많은 연격도 타격 수, 피해, 장비 집계와 0.5초 쿨타임을 유지한다', async () => {
+    const room = await battle('normal', 3, 1);
+    const stats = Object.fromEntries(Object.keys(rpg.calculateUserStats(await rpg.getRPGUserByName(seeds[0].name))).map(key => [key, 0]));
+    let now = Date.now();
+    room.awaitingChoices = false;
+    room.monster = { name: '연격 테스트 대상', type: 'elite', hp: 1e12, hpMax: 1e12, def: 0, stats: {}, debuffs: [] };
+    const sent = room.members.map(() => []);
+    for (const [index, member] of room.members.entries()) {
+        Object.assign(member, combatMember({ ...stats, atk: 1000, cmb: 1, maxCmb: 62, crit: 0, critMul: 1.5, comboDamage: .5 }), { name: seeds[index].name });
+        member.skills = ['시벌론'];
+        member.runtime.sivalonUntil = now + 3600000;
+        member.baseSnapshot.transcendEquipment.entries = [{ name: '예고의 예고', stage: 1 }];
+        member.sseRes = { write: text => { sent[index].push(text); } };
+    }
+    const attacks = 250, hitCount = 64;
+    const originalNow = Date.now, originalRandom = Math.random, originalStringify = JSON.stringify;
+    let damage = 0, serializedHits = 0;
+    try {
+        Date.now = () => now; Math.random = () => .5;
+        JSON.stringify = function (value, ...args) {
+            if (value?.type === 'attack' && value?.hitDetails?.length === hitCount) serializedHits++;
+            return originalStringify(value, ...args);
+        };
+        for (let action = 0; action < attacks; action++) {
+            for (const member of room.members) {
+                const result = party.attackMobPhase(member.name);
+                assert.equal(result.ok, true);
+                assert.equal(member.runtime.actionUntil, now + 500);
+                assert.equal(party.attackMobPhase(member.name).error, '행동 쿨타임 중입니다.');
+                damage += result.damage;
+            }
+            now += 500;
+        }
+        assert.equal(room.monster.hp, room.monster.hpMax - damage);
+        assert.equal(serializedHits, attacks * room.members.length, '같은 연격 결과는 수신자 수에 관계없이 한 번만 직렬화한다.');
+        for (const member of room.members) {
+            assert.equal(member.runtime.equipmentState.attackCount, attacks * hitCount);
+            assert.equal(member.runtime.battleStats.damage, damage / room.members.length);
+        }
+        assert.deepEqual(sent[1], sent[0]); assert.deepEqual(sent[2], sent[0]);
+        const hits = [...sent[0].join('').matchAll(/event: hit\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+        assert.equal(hits.length, attacks * room.members.length);
+        for (const hit of hits) {
+            assert.equal(hit.hitCount, hitCount); assert.equal(hit.hitDetails.length, hitCount);
+            assert.equal(hit.damage, hit.hitDetails.reduce((sum, detail) => sum + detail.damage, 0));
+            assert.equal(hit.hitDetails[0].damage, 1000);
+            assert.deepEqual(hit.hitDetails.slice(1).map(detail => detail.damage),
+                Array.from({ length: hitCount - 1 }, (_, index) => (index + 2) % 2 === 0 ? 1725 : 1500));
+        }
+    } finally {
+        Date.now = originalNow; Math.random = originalRandom; JSON.stringify = originalStringify;
+        room.members.forEach(member => { member.sseRes = null; });
+    }
+});
+
 test('익테봇과 수나타는 엘리트와 보스에게 실제 피해와 소환 이름을 파티 전원에게 한 번 전달한다', async t => {
     t.mock.method(Math, 'random', () => .5);
     for (const phaseIndex of [1, 2]) {

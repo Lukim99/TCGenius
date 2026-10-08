@@ -1436,20 +1436,24 @@ function safePublicQuestInfo(questId) {
 
 // ===== SSE =====
 
-function sseSend(res, event, payload) {
-    if (!res || res.writableEnded) return;
+function sseSend(res, event, payload, serializedPayload) {
+    if (!res || res.writableEnded) return serializedPayload;
     try {
+        serializedPayload = serializedPayload ?? JSON.stringify(payload);
         res.write('event: ' + event + '\n');
-        res.write('data: ' + JSON.stringify(payload) + '\n\n');
+        res.write('data: ' + serializedPayload + '\n\n');
     } catch (_) {}
+    return serializedPayload;
 }
 
 function broadcast(room, event, payload) {
-    for (const m of room.members) sseSend(m.sseRes, event, payload);
+    let serializedPayload;
+    for (const m of room.members) serializedPayload = sseSend(m.sseRes, event, payload, serializedPayload);
     if (!room.spectators?.size) return;
     const view = event === 'room' ? serializeRoomForSpectator(room)
         : event === 'tick' ? { ...payload, members: (payload.members || []).map(m => ({ ...m, pendingChoices: null })) } : payload;
-    for (const spectator of room.spectators.values()) sseSend(spectator.res, event, view);
+    let serializedView = view === payload ? serializedPayload : undefined;
+    for (const spectator of room.spectators.values()) serializedView = sseSend(spectator.res, event, view, serializedView);
 }
 
 // 체력 차이 추측 대신 실제 전투 판정만 연출로 전달한다. 스냅샷에는 저장하지 않는다.

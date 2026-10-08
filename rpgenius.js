@@ -4634,6 +4634,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
     const maxCriticalHits = extra && extra.extraOnCrit ? Math.max(hitCount, Math.floor(Number(extra.extraOnCrit.max || hitCount))) : hitCount;
     let abyssDoomUsed = false;
     const maxComboHits = 2 + Math.max(0, Math.floor(Number(stats && stats.maxCmb || 0)));
+    const hitElementStats = {};
     for (let i = 0; i < totalHits; i++) {
         const unitIndex = isFixedMultiHit ? 0 : Math.min(i, comboHitCount - 1);
         const unitModifier = extra && Array.isArray(extra.perAttackUnitExtras) ? (extra.perAttackUnitExtras[unitIndex] || {}) : {};
@@ -4643,14 +4644,14 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
             else hitExtra[key] = unitModifier[key];
         });
         if (extra && typeof extra.beforeAttackUnit == 'function') extra.beforeAttackUnit({ unitIndex, hitIndex: i, isFixedMultiHit, hitExtra });
-        const hitStats = Object.assign({}, stats || {});
-        ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitStats[key] = Number(hitStats[key] || 0) + Number(unitModifier[key] || 0); });
+        // 연격마다 전체 능력치를 복사하지 않고, 타격별로 달라지는 속성 강화만 갱신한다.
+        ['allElementAtk', 'fireAtk', 'waterAtk', 'lightAtk', 'darkAtk'].forEach(key => { hitElementStats[key] = Number(stats && stats[key] || 0) + Number(unitModifier[key] || 0); });
         // 무속성 공격일 때만 [무]속성 공격 피해가 적용된다 (속성 배수 자리에 곱연산)
         const elementMul = hitExtra.attackElement
-            ? getElementDamageMultiplier(hitExtra.attackElement, hitStats, defenderStats)
-            : 1 + Number(hitStats.nonElementDamage || 0);
-        const lightMul = getElementDamageMultiplier('명', hitStats, defenderStats);
-        const darkMul = getElementDamageMultiplier('암', hitStats, defenderStats);
+            ? getElementDamageMultiplier(hitExtra.attackElement, hitElementStats, defenderStats)
+            : 1 + Number(stats && stats.nonElementDamage || 0);
+        const lightMul = getElementDamageMultiplier('명', hitElementStats, defenderStats);
+        const darkMul = getElementDamageMultiplier('암', hitElementStats, defenderStats);
         let hitBonusMul = Number(hitExtra.damageBonusMul || 0);
         // 고정 다단 공격은 명령 1회를 공격 1회로, 연격은 타격마다 별도 공격으로 집계한다.
         const countsAsAttack = isFixedMultiHit ? true : i < comboHitCount;
@@ -4658,7 +4659,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const isTenthAtk = !!(countsAsAttack && Number(hitExtra.tenthAtkBonus || 0) > 0 && (Number(hitExtra.tenthAtkStart || 0) + attackOffset + 1) % 10 === 0);
         if (isTenthAtk) hitBonusMul += Number(extra.tenthAtkBonus || 0);
         // 명속성 공격 최종 피해(lightFinalDamage): 공격 속성이 명일 때 최종 피해%에 가산 (천공의 갑옷 등 스탯 보유 장비 공통)
-        const lightFinalBonus = hitExtra.attackElement == '명' ? Number(hitStats.lightFinalDamage || 0) : 0;
+        const lightFinalBonus = hitExtra.attackElement == '명' ? Number(stats && stats.lightFinalDamage || 0) : 0;
         const finalDamageMultiplier = 1 + Number(stats && stats.finalDamage || 0) + Number(hitExtra.finalDamageBonus || 0) + lightFinalBonus;
         const baseDamage = Number(rawDamage || 0) * (1 + hitBonusMul) * finalDamageMultiplier * cardAwakening.basicHitMultiplier(stats, hitExtra);
         const isComboExtraHit = !isFixedMultiHit && i > 0 && i < comboHitCount;
@@ -4735,7 +4736,7 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && Number(stats && stats.critLightBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(stats.critLightBonus) * lightMul, 'additional', '치명 명속성 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && !criticalResult.isCritical && Number(stats && stats.nonCritLightBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(stats.nonCritLightBonus) * lightMul, 'additional', '명속성 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && criticalResult.isCritical && i == 0 && Number(extra && extra.bribeDarkBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(extra.bribeDarkBonus) * darkMul, 'additional', '비리의 맛 추가 피해');
-        if (!(extra && extra.disableEquipmentBonusDamage) && i == 0 && Number(extra && extra.deepWaterBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(extra.deepWaterBonus) * getElementDamageMultiplier('수', hitStats, defenderStats), 'additional', '심해 추가 피해');
+        if (!(extra && extra.disableEquipmentBonusDamage) && i == 0 && Number(extra && extra.deepWaterBonus || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(extra.deepWaterBonus) * getElementDamageMultiplier('수', hitElementStats, defenderStats), 'additional', '심해 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && extra && extra.attackElement && Number(stats && stats.elementalExtraDamage || 0) > 0) addDamageComponent(Math.floor(hitDamage * Number(stats.elementalExtraDamage)), 'additional', '속성 추가 피해');
         if (!(extra && extra.disableEquipmentBonusDamage) && Number(hitExtra.rainbowAttackRatio || 0) > 0) addDamageComponent(Number(stats.atk || 0) * Number(hitExtra.rainbowAttackRatio) * elementMul, 'additional', '프리즘 추가 공격'); // 레인보우 프리즘 추가타: 공격력 × 비율 × 속성 배수 (파티와 동일)
         if (Number(unitModifier.extraDamageBonus || 0) > 0) addDamageComponent(Math.floor(hitDamage * Number(unitModifier.extraDamageBonus)), 'additional', '장비 추가 피해');
