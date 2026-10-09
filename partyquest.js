@@ -3160,7 +3160,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const dealtDmgMul = (posDef && posDef.stats && posDef.stats.dealtDmg) || 1;
     let contextMul = 1;
     if (!monster || monster.type === 'mob') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.damageBonus || 0));
-    if (monster && monster.type === 'elite') contextMul *= (1 + Number(slotEffects.damageBonus || 0)) * (1 + Number(stats.eliteDmg || 0));
+    if (monster && monster.type === 'elite') contextMul *= 1 + Number(stats.eliteDmg || 0);
     if (monster && monster.type === 'boss') contextMul *= (1 + Number(stats.bossDmg || 0));
     if (isDirectAttack) {
         if (getTranscendEquipmentEntry(attacker, '과소평가')) {

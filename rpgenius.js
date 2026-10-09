@@ -5996,13 +5996,13 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     const elite = getCombatStats(dungeon.elite);
     const isHell = !!(user.field && user.field.hell);
     const currentHp = Math.min(Number(user.field.elite && user.field.elite.hp || elite.hp || 0), Number(elite.hp || 0));
-    const damageWithSlotBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + slotEffects.damageBonus) * (1 + Number(stats.eliteDmg || 0));
+    const damageWithEliteBonus = extra && extra.precalculatedDamage ? Number(rawDamage || 0) : Number(rawDamage || 0) * (1 + Number(stats.eliteDmg || 0));
     const eliteExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra && extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     // '월도랜드' 필드 공격 시 추가 피해
     if (user.field && /월도랜드/.test(String(user.field.name || ''))) eliteExtra.extraDamageBonus = Number(eliteExtra.extraDamageBonus || 0) + Number(stats.waldolandDmg || 0);
     // 공격 시 방어력 감소(flat)
     const eliteDef = Math.max(0, Number(elite.def || 0) - Number(stats.atkDefReduce || 0));
-    const hitResult = calculateAttackHitResult(damageWithSlotBonus, eliteDef, (eliteExtra && eliteExtra.pnt || stats.pnt) + Number(eliteExtra.pntBonus || 0), stats, slotEffects, eliteExtra, elite);
+    const hitResult = calculateAttackHitResult(damageWithEliteBonus, eliteDef, (eliteExtra && eliteExtra.pnt || stats.pnt) + Number(eliteExtra.pntBonus || 0), stats, slotEffects, eliteExtra, elite);
     applyNmmStackGain(user, extra, hitResult);
     applyTenthAtkCounter(user, extra, hitResult);
     const finalDamage = hitResult.finalDamage;
@@ -6019,7 +6019,7 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (!(extra && (extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack))) applyAttackPotentialRecovery(user, stats, lines); // 소환수/지속피해 틱 제외 (파티와 동일: 본인 공격에만)
-    if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
+    if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithEliteBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
     if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
     if (extra && Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, Number(stats.mp || 0), Number(extra.skillMpRecovery || 0), stats, lines);
     if (!extra || !extra.skipPassiveMpRecovery) {
@@ -7213,7 +7213,8 @@ function buildTrainingHuntResult(user, target, rawDamage, extra) {
     const slotEffects = calculateCardSlotEffects(user);
     cardAwakening.prepareAttack(stats, user.field, training, extra, extra.awakeningAttackKind || 'basic', Date.now());
     const contextBonus = target.kind == 'boss' ? Number(stats.bossDmg || 0) : target.kind == 'elite' ? Number(stats.eliteDmg || 0) : Number(stats.damageBonus || 0);
-    const raw = extra.precalculatedDamage ? Number(rawDamage) : Number(rawDamage) * (1 + Number(slotEffects.damageBonus || 0)) * (1 + contextBonus) * Math.max(0, 1 + Number(target.takenDamage || 0));
+    const slotDamageBonus = target.kind == 'elite' ? 0 : Number(slotEffects.damageBonus || 0);
+    const raw = extra.precalculatedDamage ? Number(rawDamage) : Number(rawDamage) * (1 + slotDamageBonus) * (1 + contextBonus) * Math.max(0, 1 + Number(target.takenDamage || 0));
     const attackExtra = Object.assign({}, extra, { finalDamageBonus: Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats) });
     const hit = calculateAttackHitResult(raw, Math.max(0, target.def - Number(stats.atkDefReduce || 0)), (extra.pnt != null ? extra.pnt : stats.pnt) + Number(extra.pntBonus || 0), stats, slotEffects, attackExtra, getCombatStats(target));
     applyNmmStackGain(user, extra, hit);

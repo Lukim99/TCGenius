@@ -87,6 +87,16 @@ function raidQuest(raidId = 'blackHodu') {
         objectives: [{ type: 'kill', count: 1 }], rewards: [{ type: '레이드해금', raid_id: raidId }] };
 }
 
+function mockDamageBonusSlot(t, user) {
+    const file = path.join(__dirname, '..', 'DB', 'RPGenius', 'CharacterCards.json');
+    const readFile = fs.readFileSync;
+    const cards = JSON.parse(readFile(file, 'utf8'));
+    cards[0].slot_effect = { effect: 'damageBonus', values: [.5] };
+    t.mock.method(fs, 'readFileSync', (target, ...args) => target === file ? JSON.stringify(cards) : readFile(target, ...args));
+    user.card_slot = [{ id: 0, star: 6, type: '일반' }];
+    assert.equal(rpg.calculateCardSlotEffects(user).damageBonus, .5);
+}
+
 test('신규 등록은 운영 인덱스·변경된 스탯·비워 둔 제작식을 보존하고 재실행해도 중복되지 않는다', () => {
     const before = { Item: [{ name: '기존 재료' }], Equipment: { accessory: [{ name: '기존 장신구' }], weapon: [] }, Recipe: [] };
     const first = appendContent(before);
@@ -231,6 +241,66 @@ test('훈련장 대상 종류·방어력·관통·치명타 설정이 공용 피
     assert.ok(armored < normal);
     assert.ok(await damage('normal', 1000, { pnt: 1000 }) > armored);
     assert.ok(await damage('normal', 0, { crit: 1, critMul: 2 }) > normal);
+});
+
+test('일반 몬스터 피해 슬롯은 훈련장 일반 대상 피해를 높이고 엘리트 피해는 늘리지 않는다', async t => {
+    const real = await reset();
+    mockDamageBonusSlot(t, real);
+    t.mock.method(Math, 'random', () => .5);
+    const slots = real.card_slot;
+    async function damage(kind, withSlot) {
+        real.card_slot = withSlot ? slots : [];
+        const user = training.configure(real, { player: { atk: 1000, crit: 0, cmb: 0, pnt: 0, pntPercent: 0, damageBonus: .2, eliteDmg: .5 }, target: { kind, hp: 1000000, def: 0, counterAttack: false } });
+        await rpg.useBasicAttackInField(user);
+        return training.describe(user).metrics.lastDamage;
+    }
+    assert.equal(await damage('normal', false), 1200);
+    assert.equal(await damage('normal', true), 1800);
+    assert.equal(await damage('elite', false), 1500);
+    assert.equal(await damage('elite', true), 1500);
+    assert.equal(writes.length, 0);
+});
+
+test('일반 몬스터 피해 슬롯은 일반 필드와 헬 던전의 엘리트 피해를 늘리지 않는다', async t => {
+    const user = await reset();
+    mockDamageBonusSlot(t, user);
+    t.mock.method(Math, 'random', () => .5);
+    const slots = user.card_slot;
+    user.statPointStats.atk = 250;
+    user.statPointStats.hp = 1000;
+    async function damage(dungeon, withSlot) {
+        user.card_slot = withSlot ? slots : [];
+        user.hp = 1000000000;
+        user.field = { name: dungeon.name, hell: !!dungeon.isHell, phase: 'elite', nextActionAt: 0, skillCooldowns: {}, elite: { hp: dungeon.elite.hp }, killCount: 0 };
+        await rpg.useBasicAttackInField(user);
+        assert.ok(user.field && user.field.elite, '피해 비교 동안 엘리트가 생존해야 한다.');
+        return dungeon.elite.hp - user.field.elite.hp;
+    }
+    for (const dungeon of [rpg.getRegularFieldDungeons().find(entry => entry.name === '서울오프라인'), rpg.getHellDungeon()]) {
+        const baseline = await damage(dungeon, false);
+        assert.ok(baseline > 0);
+        assert.equal(await damage(dungeon, true), baseline, dungeon.name);
+    }
+    assert.equal(writes.length, 0);
+});
+
+test('일반 몬스터 피해 슬롯은 파티 일반 공격·스킬·소환·지속 피해에서 엘리트를 강화하지 않는다', t => {
+    t.mock.method(Math, 'random', () => .5);
+    function damage(type, slotBonus, extra) {
+        const attacker = { name: 'slot-damage-test', position: '딜러',
+            baseSnapshot: { stats: { atk: 1000, crit: 0, cmb: 0, damageBonus: .25, eliteDmg: .5, bossDmg: .25 }, slotEffects: { damageBonus: slotBonus }, mainCardSkills: [] },
+            runtime: { hp: 1000, hpMax: 1000, mp: 1000, mpMax: 1000, buffs: [], equipmentState: {} } };
+        const monster = { type, hp: 1000000, hpMax: 1000000, def: 0, stats: {}, debuffs: [] };
+        return party.__test.calculateOutgoingDamage(attacker, monster, {}, 1000, { ...extra }).damage;
+    }
+    for (const extra of [{ isBasic: true }, { isSkill: true, hitCount: 2 }, { summonAttack: true }, { dotAttack: true }]) {
+        const hits = extra.hitCount || 1;
+        assert.equal(damage('mob', 0, extra), 1250 * hits);
+        assert.equal(damage('mob', .5, extra), 1875 * hits);
+        assert.equal(damage('elite', 0, extra), 1500 * hits);
+        assert.equal(damage('elite', .5, extra), 1500 * hits);
+        assert.equal(damage('boss', .5, extra), 1250 * hits);
+    }
 });
 
 test('훈련장 소환수 후속 공격은 같은 전투 계산과 웹 이벤트를 사용하고 DB에 저장하지 않는다', async t => {
