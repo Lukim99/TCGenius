@@ -11,6 +11,7 @@ const pvp = require('./pvp.js');
 const cardComposite = require('./card_composite.js');
 const assetStore = require('./asset_store.js');
 const { registerYutRoutes } = require('./yut_event.js');
+const { registerPointMineRoutes } = require('./point_mine_event.js');
 const { registerChuseokRoutes } = require('./chuseok_event.js');
 partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
 const { createWebChat } = require('./webchat.js');
@@ -85,7 +86,7 @@ const BANNER_TARGET_TABS = [
     { value: 'equipment-synthesis', label: '콘텐츠 · 장비합성' },
     { value: 'dex', label: '콘텐츠 · 도감' },
     { value: '레벨보상', label: '콘텐츠 · 레벨보상' },
-    { value: '윷놀이', label: '이벤트 · 윷놀이' },
+    { value: '포인트 광산', label: '이벤트 · 포인트 광산' },
     { value: '자물쇠', label: '이벤트 · 자물쇠' },
     { value: 'shop', label: '거래 · 상점' },
     { value: 'auction', label: '거래 · 팝니다' },
@@ -326,7 +327,7 @@ function normalizeBannerList(data) {
         .filter(entry => entry && typeof entry.id == 'string' && typeof entry.key == 'string' && entry.key.startsWith(BANNER_PREFIX))
         .map(entry => {
             const targetUrl = normalizeBannerTargetUrl(entry.targetUrl);
-            let targetTab = entry.targetTab === '캡슐' ? '윷놀이' : (BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : '');
+            let targetTab = ['캡슐', '윷놀이'].includes(entry.targetTab) ? '포인트 광산' : (BANNER_TARGET_VALUES.has(entry.targetTab) ? entry.targetTab : '');
             if (targetTab == 'custom-url' && !targetUrl) targetTab = '';
             return Object.assign({}, entry, { targetTab, targetUrl });
         });
@@ -1456,6 +1457,7 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
+registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, serializeItemUse });
 registerChuseokRoutes(server, { rpgenius, requireUser });
 
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 서버 차원에서 굴리기 차단.
@@ -5781,6 +5783,7 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.name === '곡괭이 상자 열쇠') return '/static/assets/point-mine/key.png';
     if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
     if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');
     if (item.use == '축복사용권') {
@@ -9290,7 +9293,7 @@ function renderUserDashboard(sess, opts) {
   <div class="page" data-page="event">
     <section class="event-dice-panel"><div id="eventDiceRoot"></div></section>
   </div>
-  <div class="page" data-page="윷놀이"><div id="yutRoot"></div></div>
+  <div class="page" data-page="포인트 광산"><div id="pointMineRoot"></div></div>
   <div class="page" data-page="pvp">
     <div id="pvpRoot"></div>
   </div>

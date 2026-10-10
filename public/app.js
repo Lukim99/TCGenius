@@ -195,7 +195,7 @@ const GROUPS = [
     { id: 'chat',      label: '채팅',     iconSvg: ICONS.chat,      pages: ['chat'] },
     { id: 'me',        label: '캐릭터',   iconSvg: ICONS.me,        pages: ['info', 'inventory', 'mail', 'preset'] },
     { id: 'content',   label: '콘텐츠',   iconSvg: ICONS.content,   pages: ['퀘스트', '사냥', '낚시', 'pvp', 'combine', 'jobcombine', 'awakeningcombine', 'equipment-synthesis', 'dex', '레벨보상'] },
-    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['윷놀이', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
+    { id: 'events',    label: '이벤트',   iconSvg: ICONS.event,     pages: ['포인트 광산', '자물쇠', ...(EVENT_DICE_ENDED ? [] : ['event'])] },
     { id: 'market',    label: '거래',     iconSvg: ICONS.market,    pages: ['shop', 'auction', 'buyorder', 'directtrade'] },
     { id: 'community', label: '커뮤니티', iconSvg: ICONS.community, pages: ['ranking', 'patchnotes'] },
 ];
@@ -251,14 +251,14 @@ function activateGroup(groupId) {
 }
 
 function navigatePage(pageId) {
-    if (pageId === '캡슐') pageId = '윷놀이';
-    if (activePage === '윷놀이' && pageId !== '윷놀이' && window.yutGame) window.yutGame.pause();
+    if (pageId === '캡슐' || pageId === '윷놀이') pageId = '포인트 광산';
+    if (activePage === '포인트 광산' && pageId !== '포인트 광산' && window.pointMineGame) window.pointMineGame.pause();
     if (pageId === '[H]필드') { location.href = '/hfield'; return; }
     if (activePage === 'chat' && pageId !== 'chat') closeWebChatStream();
     if (activePage === '낚시' && pageId !== '낚시') stopFishingRefresh();
     if (activePage === 'directtrade' && pageId !== 'directtrade') window.DirectTradeUI?.close();
     activePage = pageId;
-    document.body.classList.toggle('yut-active', pageId === '윷놀이');
+    document.body.classList.toggle('point-mine-active', pageId === '포인트 광산');
     $$('.page').forEach(p => p.classList.toggle('active', p.dataset.page === pageId));
     $$('.subnav-tab').forEach(t => t.classList.toggle('active', t.dataset.page === pageId));
     if (pageId === 'home') { loadHomeBanners(); refreshGameHome().catch(e => { $('#gameHome').textContent = e.message; }); }
@@ -278,7 +278,7 @@ function navigatePage(pageId) {
     if (pageId === 'preset') loadPresets();
     if (pageId === 'pvp') loadPvp();
     if (pageId === 'event') loadEventDice();
-    if (pageId === '윷놀이') loadYut();
+    if (pageId === '포인트 광산') loadPointMine();
     if (pageId === '자물쇠') loadLockbox();
     if (pageId === '퀘스트') loadQuests();
     if (pageId === '사냥') renderHuntMenu();
@@ -3001,23 +3001,23 @@ if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
     if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
 };
 
-async function loadYut() {
-    const root = $('#yutRoot');
+async function loadPointMine() {
+    const root = $('#pointMineRoot');
     if (!root) return;
-    if (!document.querySelector('link[data-yut]')) {
-        const css = el('link', { rel: 'stylesheet', href: '/static/yut.css' });
-        css.dataset.yut = 'true';
+    if (!document.querySelector('link[data-point-mine]')) {
+        const css = el('link', { rel: 'stylesheet', href: '/static/point-mine.css' });
+        css.dataset.pointMine = 'true';
         document.head.appendChild(css);
     }
     try {
-        if (!window.yutGame) {
-            const { mountYut } = await import('/static/yut.js');
-            if (!window.yutGame) window.yutGame = mountYut(root);
+        if (!window.pointMineGame) {
+            const { mountPointMine } = await import('/static/point-mine.js');
+            if (!window.pointMineGame) window.pointMineGame = mountPointMine(root);
         }
-        await window.yutGame.refresh();
+        await window.pointMineGame.refresh();
     } catch (error) {
-        root.replaceChildren(el('div', { class: 'empty err' }, '윷놀이를 불러오지 못했습니다. ', error.message,
-            el('button', { onclick: loadYut }, '다시 불러오기')));
+        root.replaceChildren(el('div', { class: 'empty err' }, '포인트 광산을 불러오지 못했습니다. ', error.message,
+            el('button', { onclick: loadPointMine }, '다시 불러오기')));
     }
 }
 
@@ -9040,7 +9040,8 @@ async function openMailCompose() {
         const profile = await api('/api/profile');
         renderProfile(profile);
         refreshMailBadge();
-        const tab = new URLSearchParams(location.search).get('tab');
+        const requestedTab = new URLSearchParams(location.search).get('tab');
+        const tab = ['캡슐', '윷놀이'].includes(requestedTab) ? '포인트 광산' : requestedTab;
         const initialPage = (typeof window !== 'undefined' && window.__INITIAL_PAGE) || '';
         if (tab && GROUPS.some(g => g.pages.includes(tab))) activatePage(tab);
         else if (initialPage && GROUPS.some(g => g.pages.includes(initialPage))) activatePage(initialPage);

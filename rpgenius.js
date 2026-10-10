@@ -27,7 +27,7 @@ const BLESSING_DEFINITIONS = Object.freeze({
     rukim: Object.freeze({ key: 'rukim', name: '루킴의 축복', price: 990, durationMs: BLESSING_DURATION_MS })
 });
 const DATA_TABLE_NAME = 'rpgenius_data';
-const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest'];
+const RPGENIUS_DATA_KEYS = ['Bundle', 'Coupon', 'Equipment', 'Item', 'Pack', 'Recipe', 'Shop', 'EliteState', 'Ices', 'Fashion', 'Auction', 'BuyOrder', 'Bait', 'ShopState', 'TradeLog', 'Patchnote', 'WorldBossState', 'VoteState', 'Pet', 'HotDealOverride', 'Logs', 'Ceil', 'Prob', 'PunchRank', 'PunchState', 'PointLogs', 'NameMatch', 'Banner', 'Capsule100', 'Quest', 'PointMine'];
 const VIEWMORE = '\u200e'.repeat(500);
 const pendingChecks = {};
 const CHARACTER_CARDS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'CharacterCards.json');
@@ -78,11 +78,11 @@ const HELL_PILLAR_MAX_HP = 2;
 const HELL_INVITATION_COST = 30;
 const EVENT_DICE_DROP_ITEM_NAME = '유생의 주사위';
 const PUNCH_TOKEN_ITEM_NAME = '펀치기계 토큰';
-// 사냥 이벤트 드랍은 송편으로 지급한다.
-const SONGPYEON_DROP_ITEM_NAME = '송편';
+// 송편을 대체하며 기존 확률과 사냥 조건을 유지한다.
+const POINT_MINE_DROP_ITEM_NAME = '곡괭이 상자 열쇠';
 const EVENT_DICE_END_TS = new Date('2026-07-10T23:59:00+09:00').getTime();
-const SONGPYEON_DROP_CHANCE = 0.10;
-const SONGPYEON_DROP_DAILY_LIMIT = 10;
+const POINT_MINE_DROP_CHANCE = 0.10;
+const POINT_MINE_DROP_DAILY_LIMIT = 2;
 const AWAKENING_GEM_NAMES = ['용기의 보석', '희생의 보석', '투지의 보석', '권능의 보석', '지혜의 보석', '인내의 보석'];
 const FRAGMENT_TIERS = {
     low: {
@@ -5814,11 +5814,11 @@ function getWorldBossDailyState(user) {
     return user.worldBossDaily;
 }
 
-function getSongpyeonDropDailyState(user) {
+function getPointMineDropDailyState(user) {
     const today = getKoreanDateKey(new Date());
-    if (!user.songpyeonDropDaily || user.songpyeonDropDaily.date != today) user.songpyeonDropDaily = { date: today, count: 0 };
-    user.songpyeonDropDaily.count = Number(user.songpyeonDropDaily.count || 0);
-    return user.songpyeonDropDaily;
+    if (!user.pointMineDropDaily || user.pointMineDropDaily.date != today) user.pointMineDropDaily = { date: today, count: 0 };
+    user.pointMineDropDaily.count = Number(user.pointMineDropDaily.count || 0);
+    return user.pointMineDropDaily;
 }
 
 function getValorTokenItemId() {
@@ -6433,14 +6433,14 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
                 lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
             }
         }
-        const songpyeonDaily = getSongpyeonDropDailyState(user);
-        if (Number(songpyeonDaily.count || 0) < SONGPYEON_DROP_DAILY_LIMIT && Math.random() < SONGPYEON_DROP_CHANCE * dropMultiplier * levelMultiplier) {
+        const pointMineDaily = getPointMineDropDailyState(user);
+        if (getDataCache('PointMine', null)?.active === true && Number(pointMineDaily.count || 0) < POINT_MINE_DROP_DAILY_LIMIT && Math.random() < POINT_MINE_DROP_CHANCE * dropMultiplier * levelMultiplier) {
             const items = getDataCache('Item', []);
-            const dropItemId = items.findIndex(item => item.name == SONGPYEON_DROP_ITEM_NAME);
+            const dropItemId = items.findIndex(item => item.name == POINT_MINE_DROP_ITEM_NAME);
             if (dropItemId != -1) {
                 addInventoryItem(user, dropItemId, 1);
-                songpyeonDaily.count = Number(songpyeonDaily.count || 0) + 1;
-                lines.push('- 🍡 [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(songpyeonDaily.count) + '/' + comma(SONGPYEON_DROP_DAILY_LIMIT) + ')');
+                pointMineDaily.count = Number(pointMineDaily.count || 0) + 1;
+                lines.push('- 🗝️ [이벤트]' + items[dropItemId].name + ' 획득! (' + comma(pointMineDaily.count) + '/' + comma(POINT_MINE_DROP_DAILY_LIMIT) + ')');
             }
         }
         const patienceGem = rollAwakeningGemDrop(user, '인내의 보석', 0.001 * dropMultiplier * levelMultiplier);
@@ -11984,7 +11984,8 @@ async function useItem(user, itemName, countArg, options = {}) {
     const itemId = items.findIndex(item => item.name == itemName);
     const item = items[itemId];
     if (!item) return '❌ 존재하지 않는 아이템입니다.';
-    if (item.name === '송편' && item.use === '송편') return useSongpyeon(user, countArg);
+    if (item.name === '송편' && item.use === '송편') return '❌ 윷놀이 이벤트가 종료되어 송편을 사용할 수 없습니다.';
+    if (item.name === POINT_MINE_DROP_ITEM_NAME) return '❌ 곡괭이 상자 열쇠는 웹 포인트 광산에서 사용할 수 있습니다.\n\nhttps://rpgenius.kro.kr/?tab=' + encodeURIComponent('포인트 광산');
     if (item.name == '봉인된 자물쇠') return '❌ 봉인된 자물쇠는 웹버전에서 이용 가능합니다.\n\nhttps://rpgenius.kro.kr/sealed-lock';
     if (!['소모품', '가챠', '번들', '사용', '미끼'].includes(item.type)) return '❌ 사용할 수 없는 아이템입니다.';
     if (item.type == '소모품' && isBlackCurtainHealingBlocked(user) && (item.use_func || []).some(func => /회복/.test(String(func && func.type || '')))) {
