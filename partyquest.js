@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
+const randoCharacters = require('./rando_characters');
 const birthdayEvent = require('./birthday_raid');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
@@ -183,8 +184,32 @@ function getPartyDynamicDefenseStats(member) {
 }
 
 function getPartyLiveStats(member) {
-    return ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
+    const stats = ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
         member?.baseSnapshot?.slotEffects, Date.now());
+    randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
+    return randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
+        member?.runtime?.shieldExpireAt > Date.now() ? member.runtime.shield : 0, Date.now());
+}
+
+function tickPartyKino(room, member) {
+    if (!member.baseSnapshot.stats.kino) return;
+    const stats = getPartyLiveStats(member), dot = member.runtime.kino?.dot;
+    if (!dot) return;
+    const monster = getPhaseCombatMonster(room);
+    const targetKey = 'party:' + room.phaseIndex + ':' + (monster?.name || '');
+    const ticks = randoCharacters.sprayTicks(stats, member.runtime, targetKey, Date.now());
+    const phase = getQuestById(room.questId)?.phases[room.phaseIndex];
+    for (let i = 0; i < ticks && room.state === 'inProgress'; i++) {
+        if (!monster || targetKey !== 'party:' + room.phaseIndex + ':' + (getPhaseCombatMonster(room)?.name || '')) break;
+        const extra = { skillName: '카스 살포', isSkill: true, hitCount: 1, dotAttack: true, summonAttack: true, disableCritical: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['skill:카스 살포'] };
+        const raw = Math.round(stats.atk * dot.rate * (1 + Number(stats.dotDamage || 0)) * getPositionStatMul(room, member, 'finalAtk') * getPositionStatMul(room, member, 'skillDmg') * (1 + getPartyAttackBuffValue(member)));
+        if (phase?.type === 'mob') applyMobPhaseDamage(room, member, monster, calculateOutgoingDamage(member, monster, room, raw, extra), 'skill', '카스 살포', false);
+        else {
+            const result = dealSkillDamageToMonster(room, member, raw, extra);
+            broadcast(room, 'hit', { by: member.name, type: 'skill', skill: '카스 살포', damage: result.damage, hitDetails: result.hitDetails || [], monster: serializeMonster(room.monster) });
+            if (room.monster && room.monster.hp <= 0) onMonsterDefeated(room);
+        }
+    }
 }
 
 function tickPartyIlion(room, member) {
@@ -480,6 +505,7 @@ function toPartyMainCardSkillDef(entry) {
         type: 'active',
         source: 'mainCard',
         mp: Number(skill.mp_cost || 0),
+        mental: skill.mental_cost,
         cd: Number(skill.cooltime || 0) / 1000,
         target: skill.name === '글버지' ? 'allAllies' : 'enemy',
         desc: cardAwakening.formatSkillDescription(entry.card, skill, skill.desc || ''),
@@ -1059,9 +1085,11 @@ function serializeMember(m) {
         potions: m.potions.map(potion => ({ ...potion, iconUrl: getPartyQuestItemAsset(getItemDef(potion.name)?.id).iconUrl })),
         online: !!m.sseRes,
         skills: (m.skills || []).slice(),
-        skillDefs: publicSkillDefs(m.skillDefs),
+        skillDefs: publicSkillDefs(m.skillDefs, m),
         runtime: m.runtime ? {
             ...serializeCooldownDeadlines(m.runtime),
+            ...randoCharacters.view(getPartyLiveStats(m), m.runtime),
+            basicUntil: Number(m.runtime.basicUntil || 0),
             hp: Math.max(0, Math.round(m.runtime.hp)),
             hpMax: Math.round(m.runtime.hpMax),
             mp: Math.max(0, Math.round(m.runtime.mp)),
@@ -1088,7 +1116,7 @@ function serializeMember(m) {
     };
 }
 
-function publicSkillDefs(defs) {
+function publicSkillDefs(defs, member) {
     const out = {};
     if (!defs) return out;
     for (const name of Object.keys(defs)) {
@@ -1097,6 +1125,7 @@ function publicSkillDefs(defs) {
             type: d.type || 'active',
             source: d.source || 'party',
             mp: Number(d.mp || 0),
+            mental: member?.baseSnapshot?.stats?.kino ? randoCharacters.mentalCost(member.baseSnapshot.stats, { mental_cost: d.mental, mp: d.mp }) : d.mental,
             cd: Number(d.cd || 0),
             target: d.target || 'enemy',
             desc: d.desc || ''
@@ -1930,7 +1959,7 @@ async function start(hostName) {
                 m.birthdayMainCard = structuredClone(user.main_card);
                 m.birthdayOriginal = null;
             }
-            const baseStats = user ? rpgenius.calculateUserStats(Object.assign({}, user, { field: user.field ? { ...user.field, ilion: null } : null })) : null;
+            const baseStats = user ? rpgenius.calculateUserStats(Object.assign({}, user, { field: user.field ? { ...user.field, ilion: null, wonyoddi: null, kino: null, shield: null } : null }), { skipRandoRuntime: true }) : null;
             const slotEffects = user && typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : null;
             const mainCardSkills = user ? getMainCardSkillEntries(user) : [];
             const immortalArmor = user ? getImmortalArmorSnapshot(user) : null;
@@ -2272,6 +2301,10 @@ function attackMobPhase(name) {
     if (me.runtime && me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (me.runtime && nowMs() < (me.runtime.actionUntil || 0)) return { error: '행동 쿨타임 중입니다.' };
+    const randoStats = getPartyLiveStats(me);
+    if (randoStats.kino && me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
+    if (randoStats.wonyoddi && nowMs() < Number(me.runtime.basicUntil || 0)) return { error: '일반 공격 쿨타임 중입니다.' };
+    if (randoStats.wonyoddi) me.runtime.basicUntil = nowMs() + randoCharacters.basicCooldown(randoStats, me.runtime, me.baseSnapshot.slotEffects, getActionCooldownSeconds(me) * 1000);
     if (room.monster?.bossState?.birthday && room.monster.bossState.candles) {
         me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
         return birthdayRaid.lightAttack(room, me);
@@ -2306,6 +2339,7 @@ function applyMobPhaseDamage(room, attacker, monster, result, type, skillName, c
     const remaining = Math.max(0, room.killTarget - room.sharedKillCount);
     const kills = damage > 0 ? Math.min(remaining, Math.max(1, Math.floor(damage / mobHp))) : 0;
     room.sharedKillCount += kills;
+    randoCharacters.onHit(getPartyLiveStats(attacker), attacker.runtime, 0, { dotAttack: true, skillName }, kills, nowMs());
     const payload = {
         by: attacker.name,
         total: room.sharedKillCount,
@@ -2388,6 +2422,7 @@ function stepRoom(room) {
         if (!r) continue;
         if (!r.dead) {
             tickPartyIlion(room, m);
+            tickPartyKino(room, m);
             if (room.state !== 'inProgress') return;
             if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax && canPartyReceiveHealing(m)) {
                 const before = r.hp;
@@ -3178,6 +3213,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         return { damage: 0, isCrit: false, hitCount: 0, criticalCount: 0, dodged: true };
     }
     if (extra && extra.isSkill && !extra.summonAttack) applyPartyCurrentShoesOnSkillHit(room, attacker, extra.skillName);
+    randoCharacters.prepareAttack(stats, runtime, extra);
     const mainSkills = (snapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const attackKind = extra.skillName && mainSkills.length > 1 && extra.skillName === mainSkills[mainSkills.length - 1] ? 'ultimate' : extra.isSkill ? 'skill' : 'basic';
     cardAwakening.prepareAttack(stats, runtime, monster, extra, attackKind, Date.now());
@@ -3310,6 +3346,7 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         : rawDamage * contextMul * dealtDmgMul * getFinalDamageMul(attacker, { summonAttack: !!extra.summonAttack }) * targetTakenMul;
     const hit = rpgenius.calculateAttackHitResult(adjustedRawDamage, monsterDef, penetration, hitStats, slotEffects, hitExtra, monsterStats);
     const attackUnits = hit.attackUnitCount;
+    randoCharacters.onHit(stats, runtime, hit.hitCount, extra, 0, Date.now());
     if (tenthAtkStart !== null) runtime.attackCounter = tenthAtkStart + attackUnits;
     if (!extra.summonAttack && !extra.dotAttack && extra.isBasic && attacker.skills && attacker.skills.includes('나인 멘스 모리스')) {
         if (!runtime.stackCounters) runtime.stackCounters = {};
@@ -3322,7 +3359,8 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
         fixedDamage: hitDetails.reduce((sum, detail) => sum + Number(detail.fixedDamage || 0), 0),
         destinyDamage: hitDetails.reduce((sum, detail) => sum + Number(detail.destinyDamage || 0), 0),
         extraDamageDealt: hit.extraDamageDealt, damageComponents: hit.damageComponents,
-        equipmentTriggerAllowed: !(extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack)
+        equipmentTriggerAllowed: !(extra.disableEquipmentBonusDamage || extra.summonAttack || extra.dotAttack),
+        skillName: extra.skillName
     };
     if (monster?.bossState?.birthday) {
         for (const detail of result.hitDetails) {
@@ -3513,6 +3551,7 @@ function applyPlayerDamageToBoss(room, mon, attacker, damage, result) {
         }
     }
     const applied = applyBossHpDamage(room, mon, damage, result ? { birthdayHits: result.hitDetails?.filter(hit => hit.damage > 0).length || result.hitCount || 1 } : undefined);
+    if (attacker) randoCharacters.onHit(getPartyLiveStats(attacker), attacker.runtime, 0, { dotAttack: true, skillName: result?.skillName }, mon.hp <= 0 ? 1 : 0, nowMs());
     if (st?.birthday && result?.hitDetails) {
         let remaining = applied;
         for (const detail of result.hitDetails) if (detail.damage > 0) detail.damage = remaining-- > 0 ? 1 : 0;
@@ -4924,6 +4963,7 @@ function useSkill(name, skillName, targetName) {
     if (!me || me.runtime.dead) return { error: '행동할 수 없습니다.' };
     if (me.runtime.stunRemain > 0) return { error: '기절 상태입니다.' };
     if (me.runtime.sealRemain > 0) return { error: '봉인 상태입니다.' };
+    if (getPartyLiveStats(me).kino && me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
     if (room.awaitingChoices) return { error: '스킬 선택 후 진행됩니다.' };
     if (room.monster?.bossState?.birthday && room.monster.bossState.candles) return { error: '지금은 스킬을 사용할 수 없습니다.' };
     if (skillName === '자폭') return usePartySelfDestruct(room, me);
@@ -4949,12 +4989,14 @@ function useSkill(name, skillName, targetName) {
     if (hasPassive(me, '과부하')) mpCostMul *= 1.20;
     mpCostMul *= Number(equipmentSkill.mpCostMul || 1);
     mpCostMul *= ilionCards.mpMultiplier(stats, me.runtime, skillName, nowMs());
-    const mp = equipmentSkill.noMp ? 0 : Math.round(Number(def.mp || 0) * mpCostMul);
-    if (me.runtime.mp < mp) return { error: 'MP가 부족합니다.' };
+    const mp = stats.kino ? randoCharacters.mentalCost(stats, { mental_cost: def.mental, mp: def.mp }) : equipmentSkill.noMp ? 0 : Math.round(Number(def.mp || 0) * mpCostMul);
+    if (stats.kino) {
+        if (!randoCharacters.spendMental(stats, me.runtime, mp, nowMs())) return { error: me.runtime.kino.exhausted ? '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' : '정신력이 부족합니다.' };
+    } else if (me.runtime.mp < mp) return { error: 'MP가 부족합니다.' };
     me.runtime.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter !== 'undefined') me.runtime.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
-    me.runtime.mp -= mp;
+    me.runtime.mp = stats.kino ? 0 : me.runtime.mp - mp;
     me.runtime.actionUntil = nowMs() + getActionCooldownSeconds(me) * 1000;
     // 건력 상태에서 스킬 사용 시 해제 (건력 자체는 executeMainCardSkillEffect에서 토글 처리)
     if (skillName !== '건력') clearPartyGunryeokOnSkillUse(room, me);
@@ -4963,7 +5005,7 @@ function useSkill(name, skillName, targetName) {
     const cdPct = typeof rpgenius.getSkillCooldownRate === 'function' ? rpgenius.getSkillCooldownRate(stats) : Math.max(.2, 1 - Number(stats.cooldown || 0));
     if (skillName === '느억맘') equipmentSkill.cooldownFlat = Number(equipmentSkill.cooldownFlat || 0) + getTranscendStageValue(me, '어머니의 마음', 10, 5);
     const baseCooldown = equipmentSkill.cooldownOverride == null ? Number(def.cd || 0) * cdMul + statCd : Number(equipmentSkill.cooldownOverride || 0);
-    const cooldownMs = Math.max(equipmentSkill.cooldownOverride === 0 ? 0 : 500, (baseCooldown * cdPct - Number(equipmentSkill.cooldownFlat || 0)) * 1000);
+    const cooldownMs = Math.max(equipmentSkill.cooldownOverride === 0 ? 0 : 500, (baseCooldown * cdPct * randoCharacters.cooldownMultiplier(stats, skillName) - Number(equipmentSkill.cooldownFlat || 0)) * 1000);
     me.runtime.cooldownsUntil[skillName] = nowMs() + cooldownMs;
     if (Number(equipmentSkill.selfCooldownRate || 0) > 0) {
         const reductionMs = Math.min(Number(equipmentSkill.selfCooldownCap || 0) * 1000, cooldownMs * Number(equipmentSkill.selfCooldownRate));
@@ -5240,13 +5282,38 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     const stats = getPartyLiveStats(caster);
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const finalAtkMul = getPositionStatMul(room, caster, 'finalAtk');
-    const finalAtk = Number(stats.atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
+    let finalAtk = Number(stats.atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
     let skillDmgMul = getPositionStatMul(room, caster, 'skillDmg');
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
-    const multiplier = skillName === '헤즈업' ? Number(stats.awakening?.effect === 'headsUpDamage' ? stats.awakening.value : 0) : getSkillValue(skill, 0, star);
+    let multiplier = skillName === '헤즈업' ? Number(stats.awakening?.effect === 'headsUpDamage' ? stats.awakening.value : 0) : getSkillValue(skill, 0, star);
     const extra = Object.assign({}, equipmentSkill && equipmentSkill.extra || {});
     extra.isSkill = true;
     const combatMonster = getPhaseCombatMonster(room);
+    if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(skillName)) {
+        const mode = randoCharacters.switchMode({ ...stats, hp: caster.runtime.hpMax }, caster.runtime, caster.runtime.cooldownsUntil, skillName, nowMs());
+        if (mode.shield && canPartyApplyShield(caster, caster)) {
+            caster.runtime.shield = mode.shield;
+            caster.runtime.shieldHits = 99;
+            caster.runtime.shieldExpireAt = nowMs() + 7000;
+        }
+        finalAtk = Number(getPartyLiveStats(caster).atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
+        multiplier = mode.skillRate;
+        extra.modeFixedDamage = mode.fixed;
+        extra.modeSwitchDamage = true;
+        extra.triggeredEffectIds = ['skill:' + skillName];
+        if (mode.skillRate) extra.triggeredEffectIds.push('equipment:가면 스위처');
+        if (stats.randoEquipment['존버의 미학']) extra.triggeredEffectIds.push('equipment:존버의 미학');
+        pushCombat(room, caster.name + ' ' + mode.mode + ' 모드로 전환', 'buff');
+        if (!mode.skillRate && !mode.fixed) {
+            broadcast(room, 'hit', { by: caster.name, type: 'skill', skill: skillName, damage: 0, hitDetails: [], triggeredEffectIds: extra.triggeredEffectIds, monster: serializeMonster(room.monster) });
+            return;
+        }
+    }
+    if (skillName === '카스 살포') {
+        multiplier *= randoCharacters.sprayDamageMultiplier(stats);
+        randoCharacters.startSpray(stats, caster.runtime, getSkillValue(skill, 1, star), 'party:' + room.phaseIndex + ':' + (combatMonster?.name || ''), nowMs());
+        if (stats.randoEquipment['박카스 스프레이']) extra.triggeredEffectIds = ['equipment:박카스 스프레이'];
+    }
     if (Number(equipmentSkill && equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     extra.skillName = skillName;
     if (skillName === '느억맘') extra.damageBonusMul = Number(extra.damageBonusMul || 0) + getTranscendStageValue(caster, '어머니의 마음', .60, .20);
@@ -5634,7 +5701,7 @@ const ACTION_GLOBAL_CD = 2.5; // 일반공격/스킬 공용 행동 쿨다운 (�
 
 function getActionCooldownSeconds(member) {
     const mul = member && member.runtime ? Number(member.runtime.actCdMul || 1) : 1;
-    return Math.max(0.5, ACTION_GLOBAL_CD * mul - ilionCards.actionReduction(member?.baseSnapshot?.stats || {}, member?.runtime, Date.now()) / 1000);
+    return Math.max(0.5, ACTION_GLOBAL_CD * mul - ilionCards.actionReduction(member?.baseSnapshot?.stats || {}, member?.runtime, Date.now()) / 1000 - Number(member?.baseSnapshot?.slotEffects?.actionCooldownFlat || 0));
 }
 
 function getItemDef(name) {
@@ -5836,7 +5903,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
-        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion,
+        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion, tickPartyKino, serializeMember,
         proceedToNextPhase,
         applyDamageToMember,
         healMember,

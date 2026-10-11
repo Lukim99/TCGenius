@@ -55,6 +55,7 @@ const ORB_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Orb.json');
 const SPECTER_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Specter.json');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
+const randoCharacters = require('./rando_characters');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -465,7 +466,7 @@ function ensureFieldEquipmentDotTimer(user, channel) {
     if (!user || !user.field || user.field.training) return;
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = deckStage ? getEquipmentCombatState(user) : user.field.equipmentState || {};
-    if (!deckStage && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    if (!deckStage && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
     if (deckStage) ilionCards.autoDrawAt(user.field, deckStage, Number(user.field.enteredAt || Date.now()));
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldEquipmentDotTimers[user.name]) return;
@@ -481,7 +482,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
     const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
     const state = user && user.field && (deckStage ? getEquipmentCombatState(user) : user.field.equipmentState);
-    if (!user || !user.field || !state || (!deckStage && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
+    if (!user || !user.field || !state || (!deckStage && !user.field.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
     const context = getFieldCombatContext(user);
     if (context.error) { clearFieldEquipmentDotTimer(userName); return; }
     const tickTargetKey = getFieldCombatTargetKey(user, context);
@@ -495,7 +496,11 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
             { cardDamage: true, dotAttack: true, disableEquipmentBonusDamage: true, notice: drawn.text, triggeredEffectIds: ['equipment:무한홀덤덱'] }, 'card', null);
         pushFieldTickEvent(userName, '무한홀덤덱', ilionBefore, user, parseFieldTickDamage(message), message);
     }
-    if (!drawn && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length)) return;
+    const sprayRate = user.field.kino?.dot?.rate;
+    const sprayStats = sprayRate != null ? calculateUserStats(user) : null;
+    const sprayTicks = sprayStats ? randoCharacters.sprayTicks(sprayStats, user.field, tickTargetKey, now) : 0;
+    for (let i = 0; i < sprayTicks; i++) pending.push({ label: '카스 살포', rawDamage: Math.round(sprayStats.atk * sprayRate * (1 + Number(sprayStats.dotDamage || 0))), element: getAttackElement(user, findUsableSkill(user, '카스 살포')?.skill) });
+    if (!drawn && !pending.length && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length)) return;
     if (Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0) {
         const currentTargetKey = getFieldCombatTargetKey(user, context);
         const waiting = [];
@@ -560,7 +565,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         if (!user.field) break;
         const effectContext = getFieldCombatContext(user);
         if (effectContext.error || getFieldCombatTargetKey(user, effectContext) !== tickTargetKey) break;
-        const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated };
+        const extra = { hitCount: 1, disableCritical: true, disableEquipmentBonusDamage: true, summonAttack: true, dotAttack: true, isBotAutoAttack: true, attackElement: effect.label === '카스 살포' ? effect.element : effect.element || (effect.precalculated ? '암' : '화'), precalculatedDamage: !!effect.precalculated, skillName: effect.label === '카스 살포' ? effect.label : null };
         const tickBefore = captureFieldTickState(user);
         let tickDamage;
         let effectMessage = '';
@@ -591,7 +596,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         }
         pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickBefore, user, tickDamage, effectMessage);
     }
-    if (!deckStage && !state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
+    if (!deckStage && !user.field?.kino?.dot && !state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -881,9 +886,9 @@ function formatIncreaseText(format) {
 function formatSlotEffectProgression(se) {
     if (!se) return '';
     if (Array.isArray(se.values) && se.values.length > 0) {
-        const flat = se.type == 'flat';
+        const flat = se.type == 'flat' || se.type == 'seconds';
         const nums = se.values.map(v => flat ? String(Number(v || 0)) : String(Math.round(Number(v || 0) * 1000) / 10));
-        return nums.join(' / ') + (flat ? '' : '%');
+        return nums.join(' / ') + (se.type === 'seconds' ? '초' : flat ? '' : '%');
     }
     return formatValue(se);
 }
@@ -1241,6 +1246,7 @@ function formatCharacterCardDetail(card) {
 }
 
 const EQUIP_STAT_LABELS = {
+    mental: '최대 정신력',
     atk: '공격력',
     pnt: '방어 관통력',
     def: '방어력',
@@ -1286,6 +1292,7 @@ const EQUIP_STAT_LABELS = {
     atkDefReduce: '공격 시 5초간 방어력 감소'
 };
 const EQUIP_PLUSSTAT_LABELS = {
+    wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
     atk: '최종 공격력',
     def: '최종 방어력',
     hp: '최종 체력',
@@ -2896,12 +2903,14 @@ function calculateCardSlotEffects(user) {
         shieldFinalDamage: 0,
         finalAttackBonus: 0, cmb: 0, recoveryEfficiency: 0, bossDmg: 0, defBonus: 0,
         criticalFinalDamage: 0, pnt: 0, summonDuration: 0, dotDamage: 0,
-        ilionDeckAttack: 0, firstStrikeDamage: 0
+        ilionDeckAttack: 0, firstStrikeDamage: 0,
+        wonyoddiBasicCooldown: 0, actionCooldownFlat: 0, shieldAttack: 0, mentalRegen: 0, nonCriticalFinalDamage: 0
     };
     // 감소형 페널티 키는 대응 보너스 키에서 차감 (표시 수치는 양수로 저장)
     const applyEffect = (key, value) => {
         if (!value) return;
         if (key === 'ilionDeckAttack' && Number(user.main_card?.id) !== ilionCards.CARD_ID) return;
+        if (key === 'wonyoddiBasicCooldown' && Number(user.main_card?.id) !== randoCharacters.WONYODDI_ID) return;
         if (key === 'skillDamageReduction') { effects.skillDamageBonus -= value; return; }
         if (key === 'basicDamageReduction') { effects.basicDamageBonus -= value; return; }
         if (typeof effects[key] === 'undefined') return;
@@ -2929,7 +2938,7 @@ function calculateCardSlotEffects(user) {
 
 function formatCardSlotEffectLines(user) {
     const slotEffects = calculateCardSlotEffects(user);
-    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk', 'pnt']);
+    const flatKeys = new Set(['lightAtk', 'waterAtk', 'darkAtk', 'pnt', 'mentalRegen']);
     const effectMap = [
         ['skillCoolReduction', '스킬 쿨타임 감소'],
         ['basicDamageBonus', '일반 공격 피해'],
@@ -2959,13 +2968,15 @@ function formatCardSlotEffectLines(user) {
         ['finalAttackBonus', '최종 공격력 증가'], ['cmb', '연격 확률 증가'], ['recoveryEfficiency', '회복 효율 증가'],
         ['bossDmg', '보스 추가 피해 증가'], ['defBonus', '방어력 증가'], ['criticalFinalDamage', '치명타 공격 시 최종 피해 증가'],
         ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가'],
-        ['ilionDeckAttack', '카드덱의 카드 1장당 최종 공격력 증가'], ['firstStrikeDamage', '선제공격 강화']
+        ['ilionDeckAttack', '카드덱의 카드 1장당 최종 공격력 증가'], ['firstStrikeDamage', '선제공격 강화'],
+        ['wonyoddiBasicCooldown', '일반 공격 쿨타임 감소'], ['actionCooldownFlat', '행동 쿨타임 감소'],
+        ['shieldAttack', '보호막 유지 중 공격력 강화'], ['mentalRegen', '초당 정신력 회복량'], ['nonCriticalFinalDamage', '비치명타 최종 피해 증가']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) != 0)
         .map(entry => {
             const value = Number(slotEffects[entry[0]] || 0);
-            const display = flatKeys.has(entry[0]) ? '+' + comma(value) : Math.round(value * 1000) / 10 + '%';
+            const display = entry[0] === 'actionCooldownFlat' ? value + '초' : flatKeys.has(entry[0]) ? '+' + comma(value) : Math.round(value * 1000) / 10 + '%';
             return '◆ ' + entry[1] + ' ' + display;
         });
 }
@@ -3645,6 +3656,20 @@ function convertJobCharacterCard(user, numberArg, can) {
     return '✅ 전직 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
 }
 
+function convertAwakeningCharacterCard(user, numberArg) {
+    const card = getCharacterInventoryCard(user, numberArg);
+    if (!card) return '❌ 존재하지 않는 카드 번호입니다.';
+    if (card.type !== '각성') return '❌ 각성 카드만 각성 캐릭터 변환석으로 변환할 수 있습니다.';
+    const candidates = readJson(CHARACTER_CARDS_PATH, []).map((_, id) => id)
+        .filter(id => id !== Number(card.id) && cardAwakening.getDefinition({ id, type: '각성' }));
+    if (!candidates.length) return '❌ 변환할 수 있는 다른 각성 캐릭터가 없습니다.';
+    const before = { ...card };
+    card.id = candidates[randomInt(0, candidates.length - 1)];
+    delete card.skin;
+    user.pendingAction = null;
+    return '✅ 각성 캐릭터 카드가 변환되었습니다.\n- 이전: ' + formatUserCard(before) + '\n- 결과: ' + formatUserCard(card);
+}
+
 function getBaseStat(card) {
     const table = readJsonCached(BASE_STAT_PATH, []);
     const star = Number(card && card.star || 0);
@@ -4022,7 +4047,7 @@ function calculateUserStats(user, _out) {
     stats.lightAtk = Number(stats.lightAtk || 0) + Number(slotEffects.lightAtk || 0);
     stats.waterAtk = Number(stats.waterAtk || 0) + Number(slotEffects.waterAtk || 0);
     stats.darkAtk = Number(stats.darkAtk || 0) + Number(slotEffects.darkAtk || 0);
-    ['cmb', 'recoveryEfficiency', 'bossDmg', 'criticalFinalDamage', 'pnt', 'summonDuration', 'dotDamage'].forEach(key => {
+    ['cmb', 'recoveryEfficiency', 'bossDmg', 'criticalFinalDamage', 'nonCriticalFinalDamage', 'pnt', 'summonDuration', 'dotDamage'].forEach(key => {
         stats[key] = Number(stats[key] || 0) + Number(slotEffects[key] || 0);
     });
     stats.def = Math.round(Number(stats.def || 0) * (1 + Number(slotEffects.defBonus || 0)));
@@ -4094,6 +4119,11 @@ function calculateUserStats(user, _out) {
     stats.ilion = Number(user.main_card?.id) === ilionCards.CARD_ID;
     stats.ilionStar = Number(user.main_card?.star || 0);
     ilionCards.applyStats(stats, user.field, slotEffects, Date.now());
+    randoCharacters.configureStats(stats, user.main_card, getTranscendEquipmentSnapshot(user));
+    stats.wonyoddiShieldChance = Number(stats.wonyoddiShieldChance || 0) + Number(plusStats.wonyoddiShieldChance || 0);
+    if (!_out?.skipRandoRuntime) randoCharacters.tickMental(stats, user.field, slotEffects, Date.now());
+    const randoShield = user.field?.shield;
+    if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     return stats;
 }
 
@@ -4807,6 +4837,11 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         criticalCount += balance.criticalCount;
         damageComponents.push({ damage: balance.finalDamage, type: 'additional', label: '균형', hitIndex: null, isCritical: balance.criticalCount > 0, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
     }
+    const modeFixedDamage = Math.max(0, Number(extra?.modeFixedDamage || 0));
+    if (modeFixedDamage > 0) {
+        finalDamage += modeFixedDamage;
+        damageComponents.push({ damage: modeFixedDamage, type: 'additional', label: '각성 고정 피해', hitIndex: null, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
+    }
     return { hitCount, comboHitCount, attackUnitCount: separateBasicAttackHits ? hitCount : comboHitCount, hitDamages, hitDetails, damageComponents, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
 
@@ -5298,7 +5333,7 @@ async function enterDailyDungeon(user, dungeonName, channel) {
         name: dungeon.name,
         dailyDungeon: true,
         enteredAt: now,
-        nextActionAt: Number(cooldowns.nextActionAt || 0),
+        basicUntil: Number(cooldowns.basicUntil || 0), nextActionAt: Number(cooldowns.nextActionAt || 0),
         skillCooldowns: cooldowns.skillCooldowns,
         killCount: 0,
         elite: null,
@@ -5355,13 +5390,13 @@ async function enterField(user, fieldName, options, channel) {
         if (!removeInventoryItem(user, hellInvitationId, HELL_INVITATION_COST)) return '❌ 헬 초대장 차감에 실패했습니다.';
         user.field = {
             name: dungeon.name, hell: true, phase: 'elite', enteredAt: Date.now(),
-            nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns,
+            basicUntil: Number(cooldowns.basicUntil || 0), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns,
             elite: { hp: Number(dungeon.elite.hp || 1) }, killCount: 0
         };
         ensureFieldEquipmentDotTimer(user, channel);
         return '✅ 부타게임[H]에 입장했습니다.\n- 헬 초대장 x' + HELL_INVITATION_COST + ' 소모\n- ' + dungeon.elite.name + ' 등장!\n- HP ' + comma(dungeon.elite.hp);
     }
-    user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
+    user.field = { name: dungeon.name, enteredAt: Date.now(), basicUntil: Number(cooldowns.basicUntil || 0), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
     ensureFieldEquipmentDotTimer(user, channel);
     return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
 }
@@ -5572,6 +5607,7 @@ function saveFieldCooldowns(user) {
     const cooldowns = getFieldCooldowns(user);
     if (!user.field.dailyDungeon) cooldowns.nextActionAt = Number(user.field.nextActionAt || 0);
     cooldowns.skillCooldowns = user.field.skillCooldowns && typeof user.field.skillCooldowns == 'object' ? user.field.skillCooldowns : {};
+    cooldowns.basicUntil = Number(user.field.basicUntil || 0);
 }
 
 function setFieldNextActionAt(user, nextActionAt) {
@@ -5601,7 +5637,7 @@ function getActiveDailyDungeonEffect(user, now) {
 
 function getFieldActionCooldownMs(user, now) {
     const base = getActiveDailyDungeonEffects(user, now).some(effect => effect.type == 'punch') ? 1000 : randomInt(2000, 3000);
-    return Math.max(500, base - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, now));
+    return Math.max(500, base - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, now) - Number(calculateCardSlotEffects(user).actionCooldownFlat || 0) * 1000);
 }
 
 function setNextFieldActionAt(user) {
@@ -6042,13 +6078,14 @@ function buildEliteHuntResult(user, dungeon, rawDamage, extra) {
     let remainHp = Math.max(0, currentHp - finalDamage);
     const executedByTaxationGun = remainHp > 0 && Number(elite.hp || 0) > 0 && remainHp / Number(elite.hp || 0) < TAXATION_GUN_EXECUTE_THRESHOLD && hasActiveSupportEquipment(user, TAXATION_GUN_NAME);
     if (executedByTaxationGun) remainHp = 0;
+    randoCharacters.onHit(stats, user.field, hitResult.hitCount, extra || {}, remainHp === 0 ? 1 : 0, Date.now());
     const maxHp = Number(stats.hp || 0);
     const lines = hitResult.hitCount > 1 || hasSeparateDamageComponents(hitResult)
         ? formatHitDetailLines(hitResult, '⚔️ ' + elite.name + '에게 ', '피해를 입혔습니다!')
         : [(hitResult.hitDetails[0] && hitResult.hitDetails[0].isTenthAtk ? '✨ ' : '') + '⚔️ ' + elite.name + '에게 ' + comma(finalDamage) + (hitResult.destinyDamageCount > 0 ? ' 운명' : '') + (hitResult.criticalCount > 0 ? ' 치명타 ' : ' ') + '피해를 입혔습니다!'];
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
-    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- ' + (extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (!(extra && (extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack))) applyAttackPotentialRecovery(user, stats, lines); // 소환수/지속피해 틱 제외 (파티와 동일: 본인 공격에만)
     if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithEliteBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
     if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
@@ -6285,6 +6322,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
         const remaining = Math.max(0, DAILY_DUNGEON_KILL_TARGET - Number(user.field.killCount || 0));
         killCount = Math.min(killCount, remaining);
     }
+    randoCharacters.onHit(stats, user.field, hitResult.hitCount, extra || {}, killCount, Date.now());
     if (killCount > 0) recordQuestEvent(user, 'kill', { count: killCount, field: dungeon.name });
     const avoided = Number(stats.avd || 0) > 0 && Math.random() < Number(stats.avd);
     const monsterHitResult = avoided ? null : calculateMonsterAttackHitResult(monster, stats, slotEffects, extra);
@@ -6346,7 +6384,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
     lines.push('- 총 ' + comma(killCount) + '마리 처치');
     if (killCapNote) lines.push(killCapNote);
-    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- ' + (extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (!(extra && (extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack))) applyAttackPotentialRecovery(user, stats, lines); // 소환수/지속피해 틱 제외 (파티와 동일: 본인 공격에만)
     if (extra && Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, maxHp, damageWithSlotBonus * Number(extra.lifeStealFromPreMitigation || 0), stats, lines);
     if (extra && Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, maxHp, Number(extra.skillHpRecovery || 0), stats, lines);
@@ -6529,6 +6567,9 @@ async function useBasicAttackInField(user, channel) {
     if (context.type == 'worldBoss') ensureWorldBossSkillTimer(user, channel);
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
+    if (stats.kino && user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
+    if (stats.wonyoddi && now < Number(user.field.basicUntil || 0)) return '❌ 일반 공격 쿨타임입니다. (' + ((user.field.basicUntil - now) / 1000).toFixed(1) + '초)';
+    if (stats.wonyoddi) user.field.basicUntil = now + randoCharacters.basicCooldown(stats, user.field, slotEffects, getFieldActionCooldownMs(user, now));
     const buffs = getFieldBuffs(user);
     const isHellPillar = context.type == 'hell' && context.phase == 'pillar';
     const nextBasicBuff = isHellPillar ? null : buffs.nextBasicDamageBonus;
@@ -6636,7 +6677,7 @@ function buildHellPillarResult(user, extra) {
     user.field.pillarHp = Math.max(0, Math.min(Number(user.field.pillarHp || HELL_PILLAR_MAX_HP), HELL_PILLAR_MAX_HP) - 1);
     const lines = ['🏛️ 기둥에 1 피해를 입혔습니다.', '- 기둥 HP: ' + user.field.pillarHp + '/' + HELL_PILLAR_MAX_HP];
     if (extra.notice) lines.push('- ' + extra.notice);
-    if (typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (typeof extra.mpCost != 'undefined') lines.push('- ' + (extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     if (user.field.pillarHp <= 0) return grantHellPillarRewards(user);
     setNextFieldActionAt(user);
     return lines.join('\n');
@@ -7194,6 +7235,8 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     extra.attackElement = getAttackElement(user, actionType === 'skill' ? skill : null);
     if (actionType === 'basic' && cardAwakening.getPassive(user.main_card)?.effect === 'waterBasic') extra.attackElement = '수';
     extra.combatTargetKey = getFieldCombatTargetKey(user, context);
+    if (skill) extra.skillName = skill.name;
+    randoCharacters.prepareAttack(calculateUserStats(user), user.field, extra);
     ilionCards.prepareAttack(calculateUserStats(user), user.field, calculateCardSlotEffects(user), extra.combatTargetKey,
         context.type === 'normal' || context.type === 'dailyDungeon' || (context.type === 'training' && context.dungeon.kind === 'normal'), extra, Date.now());
     const isHellPillar = context && context.type === 'hell' && context.phase === 'pillar';
@@ -7261,6 +7304,7 @@ function buildTrainingHuntResult(user, target, rawDamage, extra) {
     queueBlackShadow(user, extra, hit.finalDamage);
     recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
     training.targetHp = Math.max(0, training.targetHp - hit.finalDamage);
+    randoCharacters.onHit(stats, user.field, hit.hitCount, extra, training.targetHp === 0 ? 1 : 0, Date.now());
     const metrics = training.metrics;
     if (!metrics.startedAt) metrics.startedAt = Date.now();
     metrics.damage += hit.finalDamage;
@@ -7271,7 +7315,7 @@ function buildTrainingHuntResult(user, target, rawDamage, extra) {
     if (!training.targetHp) { metrics.kills++; training.targetHp = target.hp; }
     const lines = formatHitDetailLines(hit, '⚔️ 훈련장 허수아비에게 ', '피해를 입혔습니다!');
     if (extra.notice) lines.push('- ' + extra.notice);
-    if (extra.mpCost != null) lines.push('- MP ' + comma(extra.mpCost) + ' 소모');
+    if (extra.mpCost != null) lines.push('- ' + (extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모');
     if (Number(extra.lifeStealFromPreMitigation || 0) > 0) applyFlatSkillRecovery(user, stats.hp, raw * Number(extra.lifeStealFromPreMitigation), stats, lines);
     if (Number(extra.skillHpRecovery || 0) > 0) applyFlatSkillRecovery(user, stats.hp, extra.skillHpRecovery, stats, lines);
     if (Number(extra.skillMpRecovery || 0) > 0) applySkillMpRecovery(user, stats.mp, extra.skillMpRecovery, stats, lines);
@@ -7320,7 +7364,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
     const lines = formatWorldBossDamageLines(boss, result, prefix);
     if (extra && extra.notice) lines.push('- ' + extra.notice);
     if (extra && extra.shieldNotice) lines.push('- ' + extra.shieldNotice);
-    if (extra && typeof extra.mpCost != 'undefined') lines.push('- MP ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
+    if (extra && typeof extra.mpCost != 'undefined') lines.push('- ' + (extra.resourceLabel || 'MP') + ' ' + comma(extra.mpCost) + ' 소모 (' + comma(extra.mpAfter) + '/' + comma(extra.maxMp) + ')');
     // 공격 시 HP/MP 회복(잠재능력)은 일반/엘리트 사냥과 동일하게 월드보스 공격에서도 발동
     applyAttackPotentialRecovery(user, stats, lines);
     grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
@@ -7342,6 +7386,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
 function useSkillInField(user, skillName, channel) {
     if (user && user.name) storeFieldActionEffectIds(user.name, []);
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
+    if (calculateUserStats(user).kino && user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
     if (channel) activeFieldChannels[user.name] = channel;
     if (user.field.iktaeBot) ensureFieldIktaeBotTimer(user, channel);
     if (user.field.sunata) ensureFieldSunataTimer(user, channel);
@@ -7565,7 +7610,7 @@ function commitFieldSkillCooldown(user, skill, stats, equipmentSkill, now) {
         ? Number(equipmentSkill.cooldownOverride)
         : Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0);
     const cooldownRate = getSkillCooldownRate(stats);
-    let duration = Math.max(0, baseCooldown * cooldownRate - Number(equipmentSkill.cooldownFlatReduction || 0));
+    let duration = Math.max(0, baseCooldown * cooldownRate * randoCharacters.cooldownMultiplier(stats, skill.name) - Number(equipmentSkill.cooldownFlatReduction || 0));
     if (Number(equipmentSkill.selfCooldownRate || 0) > 0) duration -= Math.min(Number(equipmentSkill.selfCooldownCap || 0), duration * Number(equipmentSkill.selfCooldownRate));
     user.field.skillCooldowns[skill.name] = Math.max(now, now + duration);
     if (Number(equipmentSkill.ultimateCooldownReduction || 0) > 0) {
@@ -7605,22 +7650,59 @@ function executeMainCardSkillInField(user, skillName) {
     const equipmentSkill = isHellPillar
         ? { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state: JSON.parse(JSON.stringify(getEquipmentCombatState(user))) }
         : prepareTranscendSkillEffects(user, skillData.skill, stats);
-    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
-    if (mp < mpCost) return '❌ MP가 부족합니다.';
+    const mpCost = stats.kino ? randoCharacters.mentalCost(stats, skillData.skill) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
+    if (stats.kino) {
+        if (user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
+        if (!randoCharacters.spendMental(stats, user.field, mpCost, now)) return '❌ 정신력이 부족합니다.';
+    } else if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.field.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     if (equipmentSkill.selfShield) user.field.shield = equipmentSkill.selfShield;
-    user.mp = mp - mpCost;
+    user.mp = stats.kino ? 0 : mp - mpCost;
+    if (stats.kino) Object.assign(stats, calculateUserStats(user));
 
     const star = Number(user.main_card && user.main_card.star || 0);
     let multiplier = getSkillValue(skillData.skill, 0, star);
     const extra = Object.assign({}, equipmentSkill.extra || {});
     if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     extra.mpCost = mpCost;
-    extra.mpAfter = user.mp;
-    extra.maxMp = maxMp;
+    extra.resourceLabel = stats.kino ? '정신력' : 'MP';
+    extra.skillName = skillData.skill.name;
+    extra.mpAfter = stats.kino ? Math.floor(user.field.kino.value) : user.mp;
+    extra.maxMp = stats.kino ? stats.mental : maxMp;
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
+    if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(skillData.skill.name)) {
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+        if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);
+        const mode = randoCharacters.switchMode(stats, user.field, user.field.skillCooldowns, skillData.skill.name, now);
+        if (mode.shield) user.field.shield = { amount: mode.shield, expired_at: now + 7000 };
+        extra.modeSwitchDamage = true;
+        extra.modeFixedDamage = mode.fixed;
+        extra.notice = mode.mode + ' 모드로 전환했습니다.';
+        markTriggeredCombatEffect(extra, 'skill', skillData.skill.name);
+        if (mode.skillRate) markTriggeredCombatEffect(extra, 'equipment', '가면 스위처');
+        if (stats.randoEquipment['존버의 미학']) markTriggeredCombatEffect(extra, 'equipment', '존버의 미학');
+        const finish = result => {
+            if (user.field && !stats.randoEquipment['존버의 미학']) setFieldNextActionAt(user, now + Math.max(0, user.field.nextActionAt - now) * .70);
+            return result;
+        };
+        if (mode.skillRate || mode.fixed) {
+            const liveStats = calculateUserStats(user);
+            const damage = Math.round(liveStats.atk * mode.skillRate * (1 + Number(liveStats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
+            const result = applyFieldDamageAction(user, context, damage, extra, 'skill', skillData.skill);
+            return result && typeof result.then === 'function' ? result.then(finish) : finish(result);
+        }
+        storeFieldActionEffectIds(user.name, extra.triggeredEffectIds);
+        return '✨ ' + extra.notice + '\n- MP ' + comma(mpCost) + ' 소모';
+    }
+    if (skillData.skill.name === '카스 살포') {
+        multiplier *= randoCharacters.sprayDamageMultiplier(stats);
+        randoCharacters.startSpray(stats, user.field, getSkillValue(skillData.skill, 1, star), getFieldCombatTargetKey(user, context), now);
+        getEquipmentCombatState(user);
+        ensureFieldEquipmentDotTimer(user);
+        if (stats.randoEquipment['박카스 스프레이']) markTriggeredCombatEffect(extra, 'equipment', '박카스 스프레이');
+    }
     if (skillData.skill.name === '헤즈업') {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         const drawn = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now);
@@ -7881,7 +7963,7 @@ function setWorldBossNextActionAt(user) {
     } else if (buffs.actionCooldownReduction) {
         delete buffs.actionCooldownReduction;
     }
-    cooldown = Math.max(500, cooldown - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, Date.now()));
+    cooldown = Math.max(500, cooldown - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, Date.now()) - Number(calculateCardSlotEffects(user).actionCooldownFlat || 0) * 1000);
     setFieldNextActionAt(user, Date.now() + cooldown);
 }
 
@@ -7905,6 +7987,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const slotEffects = calculateCardSlotEffects(user);
     const extra = Object.assign({}, opts || {});
     ilionCards.prepareAttack(stats, user.field, slotEffects, 'worldBoss:' + boss.name, false, extra, Date.now());
+    randoCharacters.prepareAttack(stats, user.field, extra);
     cardAwakening.prepareAttack(stats, user.field, getWorldBossState(boss.name), extra, extra.awakeningAttackKind || (extra.isBasic ? 'basic' : 'skill'), Date.now());
     extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats);
     const defenderStats = getWorldBossDefenderStats(boss);
@@ -7940,6 +8023,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const before = Number(state.hp || 0);
     const dealt = Math.min(before, finalDamage);
     state.hp = Math.max(0, before - finalDamage);
+    randoCharacters.onHit(stats, user.field, hitResult ? hitResult.hitCount : 1, extra, state.hp === 0 ? 1 : 0, Date.now());
     state.contributions[user.name] = Number(state.contributions[user.name] || 0) + dealt;
     persistWorldBossState();
     if ((boss.name === '독재자' || boss.name === '흑막') && dealt > 0) {
@@ -7987,9 +8071,13 @@ async function useWorldBossChosenSkill(user, skillName) {
     const slotEffects = calculateCardSlotEffects(user);
     const maxMp = Number(stats.mp || 0);
     const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-    const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier(stats, user.field, skill.name, now)));
-    if (mp < mpCost) return '❌ MP가 부족합니다.';
-    user.mp = mp - mpCost;
+    const mpCost = stats.kino ? randoCharacters.mentalCost(stats, skill) : Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier(stats, user.field, skill.name, now)));
+    if (stats.kino) {
+        if (user.field.kino.exhausted) return '❌ 정신력이 30까지 회복될 때까지 전투불능 상태입니다.';
+        if (!randoCharacters.spendMental(stats, user.field, mpCost, now)) return '❌ 정신력이 부족합니다.';
+        Object.assign(stats, calculateUserStats(user));
+    } else if (mp < mpCost) return '❌ MP가 부족합니다.';
+    user.mp = stats.kino ? 0 : mp - mpCost;
     const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * getSkillCooldownRate(stats));
     user.field.skillCooldowns[skill.name] = now + cooltime;
     const wbElement = getAttackElement(user, skill);
@@ -8067,7 +8155,7 @@ async function useWorldBossChosenSkill(user, skillName) {
     } else {
         lines.unshift('✨ ' + skill.name + '을(를) 사용했습니다.');
     }
-    lines.push('- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')');
+    lines.push('- ' + (stats.kino ? '정신력' : 'MP') + ' ' + comma(mpCost) + ' 소모 (' + comma(stats.kino ? Math.floor(user.field.kino.value) : user.mp) + '/' + comma(stats.kino ? stats.mental : maxMp) + ')');
     if (result) recordQuestEvent(user, 'worldboss', { boss: boss.name });
     if (result) resolveBlackCurtainDamageRetaliation(user, boss, result, lines);
     if (result) grantWorldBossThresholdRewards(user, boss, getWorldBossState(boss.name), lines, '[ 월드보스 딜량 달성 보상 ]');
@@ -8647,7 +8735,7 @@ function formatCharacterInventory(user) {
 }
 
 const SUPPORT_STAT_LABELS = {
-    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', pnt: '방어 관통력', pntPercent: '방어력 감소율', plusGold: '처치 당 골드',
+    atk: '공격력', def: '방어력', hp: '체력', mp: 'MP', mental: '최대 정신력', pnt: '방어 관통력', pntPercent: '방어력 감소율', plusGold: '처치 당 골드',
     crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
     cmb: '연격 확률', maxCmb: '추가 공격 횟수',
     skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
@@ -8667,6 +8755,7 @@ const SUPPORT_STAT_LABELS = {
 };
 
 const SUPPORT_PLUS_STAT_LABELS = {
+    wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
     atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
     pnt: '방어력 관통',
     gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
@@ -10158,12 +10247,13 @@ function pickBaitReward(user) {
     let acc = 0;
     for (const r of rewards) {
         acc += Number(r.rate || 0);
-        if (roll < acc) return Number(r.id);
+        if (roll < acc) return r.card ? buildCharacterCardReward({ ...r.card, card_type: r.card.type }) : Number(r.id);
     }
-    return Number(rewards[0].id);
+    return rewards[0].card ? buildCharacterCardReward({ ...rewards[0].card, card_type: rewards[0].card.type }) : Number(rewards[0].id);
 }
 
 function normalizeFishingData(user) {
+    if (!Array.isArray(user.fishingCards)) user.fishingCards = [];
     if (!user.fishingNet || typeof user.fishingNet != 'object') user.fishingNet = {};
     Object.keys(user.fishingNet).forEach(itemId => {
         user.fishingNet[itemId] = Number(user.fishingNet[itemId] || 0);
@@ -10176,12 +10266,21 @@ function normalizeFishingData(user) {
 
 function getFishingNetCount(user) {
     normalizeFishingData(user);
-    return Object.keys(user.fishingNet).reduce((sum, itemId) => sum + Number(user.fishingNet[itemId] || 0), 0);
+    return user.fishingCards.length + Object.keys(user.fishingNet).reduce((sum, itemId) => sum + Number(user.fishingNet[itemId] || 0), 0);
 }
 
 function addFishingNetItem(user, itemId, count) {
     normalizeFishingData(user);
     user.fishingNet[itemId] = Number(user.fishingNet[itemId] || 0) + Number(count || 0);
+}
+
+function addFishingReward(user, reward) {
+    if (reward == null) return;
+    normalizeFishingData(user);
+    if (typeof reward === 'object') {
+        if (getRemainingCardInventorySpace(user) > 0) user.inventory.card.push(reward);
+        else user.fishingCards.push(reward);
+    } else addFishingNetItem(user, reward, 1);
 }
 
 function formatFishingNet(user) {
@@ -10194,6 +10293,7 @@ function formatFishingNet(user) {
         const count = Number(user.fishingNet[itemId] || 0);
         if (data && count > 0) lines.push('- ' + data.name + ' x' + comma(count));
     });
+    user.fishingCards.forEach(card => lines.push('- ' + formatUserCard(card)));
     if (lines.length == 1) lines.push('- 비어있음');
     return lines.join('\n');
 }
@@ -10243,8 +10343,7 @@ function scheduleFishing(user, channel) {
             return;
         }
         removeInventoryItem(latest, baitId, 1);
-        const rewardId = pickBaitReward(latest);
-        if (rewardId != null) addFishingNetItem(latest, rewardId, 1);
+        addFishingReward(latest, pickBaitReward(latest));
         await latest.save({ defer: true });
         if (getFishingNetCount(latest) >= getEffectiveFishingNetLimit(latest)) {
             await stopFishingByName(latest.name, stoppedUser => '🪣 ' + stoppedUser.name + '님의 살림망이 가득 찼습니다!\n- 현재 살림망: ' + comma(getFishingNetCount(stoppedUser)) + '/' + comma(getEffectiveFishingNetLimit(stoppedUser)));
@@ -10323,7 +10422,10 @@ async function clearFishingNet(user) {
         if (data) lines.push('- ' + data.name + ' x' + comma(count));
         hasItem = true;
     });
-    if (!hasItem) lines.push('- 없음');
+    const caughtCards = user.fishingCards.splice(0, getRemainingCardInventorySpace(user));
+    caughtCards.forEach(card => { user.inventory.card.push(card); lines.push('- ' + formatUserCard(card)); });
+    if (!hasItem && !caughtCards.length) lines.push('- 없음');
+    if (user.fishingCards.length) lines.push('- 카드 인벤토리 공간 부족: 카드 ' + user.fishingCards.length + '장은 살림망에 남아 있습니다.');
     user.fishingNet = {};
     user.fishing = false;
     clearFishingTimer(user.name);
@@ -11488,7 +11590,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         addStats(nextPlus, nxtResolved.plusStat);
     }
     const statNames = {
-        atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', plusGold: '처치 당 골드',
+        atk: '공격력', pnt: '방어 관통력', def: '방어력', hp: '체력', mp: 'MP', mental: '최대 정신력', plusGold: '처치 당 골드',
         crit: '치명타 확률', critMul: '치명타 피해량', critDef: '치명타 피해 감소율',
         cmb: '연격 확률', maxCmb: '추가 공격 횟수',
         skillCooldown: '스킬 쿨타임', skillTrueDmg: '스킬 사용 시 추가 고정 피해',
@@ -11505,6 +11607,7 @@ function formatEquipmentUpgradePreview(user, numberArg, options) {
         atkDefReduce: '공격 시 5초간 방어력 감소'
     };
     const plusStatNames = {
+        wonyoddiShieldChance: '각성 패시브 보호막 획득 확률',
         atk: '최종 공격력', def: '최종 방어력', hp: '최종 체력', mp: '최종 MP',
         pnt: '방어력 관통',
         gold: '골드 획득량', potion: '물약 효율', recoveryEfficiency: '회복 효율', afterBasic: '일반 공격 피해',
@@ -12092,6 +12195,10 @@ async function useItem(user, itemName, countArg, options = {}) {
         if (item.use == '캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '만능캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.use == '전직캐릭터변환' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+        if (item.use === '각성캐릭터변환') {
+            if (useCount !== 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
+            if (!(user.inventory?.card || []).some(card => card.type === '각성')) return '❌ 변환할 각성 카드가 없습니다.';
+        }
         if (item.use == '전직프레스티지' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (itemId == EQUIPMENT_UPGRADER_ITEM_ID && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
         if (item.name == '프레스티지 증표' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -12121,7 +12228,7 @@ async function useItem(user, itemName, countArg, options = {}) {
             const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
             if (!cards.some(card => Number(card.id) != charId)) return '❌ 변환 가능한 캐릭터 카드가 없습니다.';
         }
-        if (item.use != '축복사용권' && item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '전직프레스티지' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '아티팩트옵션변경' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
+        if (item.use != '축복사용권' && item.use != '변환' && item.use != '캐릭터변환' && item.use != '만능캐릭터변환' && item.use != '전직캐릭터변환' && item.use != '각성캐릭터변환' && item.use != '전직프레스티지' && item.use != '스탯초기화' && item.use != '장신구선택권' && item.use != '보조장비리롤' && item.use != '아티팩트옵션변경' && item.use != '잠재능력부여' && item.use != '장비강화권' && item.use != '영혼석' && item.use != '보주' && item.use != '보주선택' && item.use != '스펙터' && item.use != '가위' && item.use != '생명수' && item.use != '초월업그레이드' && item.use != '초월선택' && item.use != '아이템선택' && itemId != EQUIPMENT_UPGRADER_ITEM_ID && item.name != '프레스티지 증표') return '❌ 사용할 수 없는 아이템입니다.';
     }
     if (item.type == '소모품') {
         for (const func of (item.use_func || [])) {
@@ -12459,6 +12566,10 @@ async function useItem(user, itemName, countArg, options = {}) {
                 lines.push('', formatCharacterInventory(user));
             }
         }
+        if (item.use === '각성캐릭터변환') {
+            user.pendingAction = { type: '각성캐릭터변환', consumedItemId: itemId, consumedItemCount: useCount };
+            lines.push('변환할 각성 캐릭터 카드를 선택해주세요.', '/RPGenius 선택 [카드번호]', '/RPGenius 사용취소', '', formatCharacterInventory(user));
+        }
     }
 
     await user.save();
@@ -12542,6 +12653,10 @@ function getWebItemUsePending(user) {
             title = '변환할 카드 선택';
             options = makeCardOptions(() => true);
         }
+    } else if (pending.type === '각성캐릭터변환') {
+        title = '변환할 각성 카드 선택';
+        description = '등급과 각성 상태를 유지하고 다른 각성 캐릭터로 변환합니다. 적용된 아바타는 제거됩니다.';
+        options = makeCardOptions(entry => entry.card.type === '각성');
     } else if (pending.type == '전직캐릭터변환') {
         const jobMaxStar = CHARACTER_CONVERT_MAX_STAR[pending.can] || 9;
         title = '변환할 전직 카드 선택';
@@ -12646,6 +12761,7 @@ function resolveWebItemUsePending(user, choice, confirmed) {
     if (pending.type == '캐릭터변환') return convertCharacterCard(user, pending.cardNumber || choice, confirmed === true, pending.can);
     if (pending.type == '만능캐릭터변환') return convertCharacterCardUniversal(user, pending.cardNumber || choice, confirmed === true);
     if (pending.type == '전직캐릭터변환') return convertJobCharacterCard(user, choice, pending.can);
+    if (pending.type === '각성캐릭터변환') return convertAwakeningCharacterCard(user, choice);
     if (pending.type == '무료장비강화') {
         return formatEquipmentUpgradePreview(user, choice, { free: true, consumedItemId: pending.consumedItemId, consumedItemCount: pending.consumedItemCount });
     }
@@ -14832,19 +14948,20 @@ async function handleRPGCommand(data, channel, context = {}) {
         return true;
     }
 
-    if (user.pendingAction && user.pendingAction.type == '전직캐릭터변환') {
+    if (user.pendingAction && ['전직캐릭터변환', '각성캐릭터변환'].includes(user.pendingAction.type)) {
+        const cardType = user.pendingAction.type === '각성캐릭터변환' ? '각성' : '전직';
         if (args[0] == '사용취소') {
             const refund = refundPendingActionItem(user, user.pendingAction);
             user.pendingAction = null;
             await user.save();
-            reply('✅ 전직 변환석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
+            reply('✅ ' + cardType + ' 변환석 사용을 취소했습니다.' + (refund ? '\n[ 반환 ]\n- ' + refund : ''));
             return true;
         }
         if (args[0] != '선택') {
-            reply('❌ 변환할 전직 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
+            reply('❌ 변환할 ' + cardType + ' 카드를 먼저 선택해야 합니다.\n/RPGenius 선택 [카드번호]\n/RPGenius 사용취소');
             return true;
         }
-        const result = convertJobCharacterCard(user, args[1], user.pendingAction.can);
+        const result = user.pendingAction.type === '각성캐릭터변환' ? convertAwakeningCharacterCard(user, args[1]) : convertJobCharacterCard(user, args[1], user.pendingAction.can);
         await user.save();
         reply(result);
         return true;
@@ -16288,6 +16405,7 @@ module.exports = {
     stopFishingForCommand,
     clearFishingNet,
     getFishingNetCount,
+    pickBaitReward, addFishingReward,
     getEffectiveFishingNetLimit,
     getCurrentBaitName,
     getCurrentBaitItemId,

@@ -6,6 +6,7 @@ const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
+const randoCharacters = require('./rando_characters');
 const combatEffects = require('./public/combat-effects.js');
 
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
@@ -315,12 +316,13 @@ function findSideSkill(side, skillName) {
 function skillMpCost(side, skill, t = now()) {
     const stats = side.snapshot.stats;
     const slotEffects = side.snapshot.slotEffects;
+    if (stats.kino) return randoCharacters.mentalCost(stats, skill);
     return Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier(stats, side.runtime, skill.name, t)));
 }
 
 function skillCooldownMs(side, skill, t = now()) {
     const stats = getLiveEquipmentStats(side, t);
-    return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)));
+    return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)) * randoCharacters.cooldownMultiplier(stats, skill.name));
 }
 
 function isDefending(side, t) {
@@ -332,6 +334,7 @@ function defendUsable(side, t) {
 }
 
 function minimumSkillMpCost(side, skill, t) {
+    if (side.snapshot.stats.kino) return skillMpCost(side, skill, t);
     if (equipmentStage(side, '불량 배터리')) return 0;
     const state = side.runtime && side.runtime.equipment || {};
     let multiplier = 1;
@@ -346,7 +349,10 @@ function minimumSkillMpCost(side, skill, t) {
 
 function skillUsable(side, skill, t) {
     if (Number(side.skillCooldowns[skill.name] || 0) > t) return false;
-    if (side.mp < minimumSkillMpCost(side, skill, t)) return false;
+    if (side.snapshot.stats.kino) {
+        getLiveEquipmentStats(side, t);
+        if (side.runtime.kino.exhausted || side.runtime.kino.value < minimumSkillMpCost(side, skill, t)) return false;
+    } else if (side.mp < minimumSkillMpCost(side, skill, t)) return false;
     if (skill.name == '시벌론' && Number(side.runtime.sivalonCharge || 0) < 5) return false;
     return true;
 }
@@ -402,7 +408,7 @@ function pushEvent(battle, event) {
 
 function actionCooldownMs(side, isBasic, t) {
     if (isBasic && side.runtime.sivalon && Number(side.runtime.sivalon.until || 0) > t) return SIVALON_BASIC_COOLDOWN_MS;
-    return Math.max(500, randomInt(2000, 3000) - ilionCards.actionReduction(side.snapshot.stats, side.runtime, t));
+    return Math.max(500, randomInt(2000, 3000) - ilionCards.actionReduction(side.snapshot.stats, side.runtime, t) - Number(side.snapshot.slotEffects.actionCooldownFlat || 0) * 1000);
 }
 
 // 만료 처리는 지연 평가한다. 항상 처리 시각 t를 넘겨 캐치업 순서가 어긋나지 않게 한다.
@@ -532,7 +538,9 @@ function getLiveEquipmentStats(side, t) {
     if (encore) stats.critMul = Number(stats.critMul || 0) + Number(encore.critMul || 0);
     if (liberation && (liberation.choices || []).includes('element')) stats.allElementAtk = Number(stats.allElementAtk || 0) + Number(liberation.elementValue || 0);
     if (liberation && (liberation.choices || []).includes('resist')) stats.allElementRes = Number(stats.allElementRes || 0) + Number(liberation.resistValue || 0);
-    return ilionCards.applyStats(stats, side.runtime, side.snapshot.slotEffects, t);
+    ilionCards.applyStats(stats, side.runtime, side.snapshot.slotEffects, t);
+    randoCharacters.tickMental(stats, side.runtime, side.snapshot.slotEffects, t);
+    return randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, side.shield && side.shield.until > t ? side.shield.amount : 0, t);
 }
 
 function prepareEquipmentAttack(actor, target, extra, t) {
@@ -902,6 +910,8 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     };
     const isDirectAttack = !(extra.summonAttack || extra.dotAttack);
     const aStats = Object.assign({}, extra.combatStats || getLiveEquipmentStats(attacker, t));
+    if (extra.skill) extra.skillName = extra.skill.name;
+    randoCharacters.prepareAttack(aStats, attacker.runtime, extra);
     if (Number(extra.equipmentAllElementAtk || 0) > 0) aStats.allElementAtk = Number(aStats.allElementAtk || 0) + Number(extra.equipmentAllElementAtk);
     if (Number(extra.equipmentWaterAtk || 0) > 0) aStats.waterAtk = Number(aStats.waterAtk || 0) + Number(extra.equipmentWaterAtk);
     const aSlot = attacker.snapshot.slotEffects;
@@ -1069,6 +1079,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         defenderState.dragonRegenReadyAt = t + 65000;
         defenderEffectIds.push(combatEffects.id('equipment', '불굴'));
     }
+    randoCharacters.onHit(aStats, attacker.runtime, result.hitCount, extra, defender.hp <= 0 ? 1 : 0, t);
     const hit = { damage, hits: components, criticalCount: Number(result.criticalCount || 0), hitCount: Number(result.hitCount || 1), absorbed, dodged: false, heal, mpRecovery, targetHeal, reflectedDamage, reflectedHits, selfDamage: reflectedDamage, effectElement: extra.attackElement || null, triggeredEffectIds: combatEffects.unique(extra.triggeredEffectIds || []) };
     if (judgmentDamage != damage) hit.judgmentDamage = judgmentDamage;
     return hit;
@@ -1177,6 +1188,15 @@ function doBasicAttack(battle, actorKey, t) {
     const target = battle[actorKey == 'me' ? 'opp' : 'me'];
     const stats = getLiveEquipmentStats(actor, t);
     const slotEffects = actor.snapshot.slotEffects;
+    if (stats.kino && actor.runtime.kino.exhausted) {
+        actor.nextActionAt = t + 200;
+        return { ok: false, message: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
+    }
+    if (stats.wonyoddi && t < Number(actor.runtime.basicUntil || 0)) {
+        actor.nextActionAt = Math.max(actor.nextActionAt, Math.min(actor.runtime.basicUntil, t + 200));
+        return { ok: false, message: '일반 공격 쿨타임입니다.' };
+    }
+    if (stats.wonyoddi) actor.runtime.basicUntil = t + randoCharacters.basicCooldown(stats, actor.runtime, slotEffects, actionCooldownMs(actor, true, t));
     const nextBasic = actor.runtime.buffs.nextBasicDamageBonus;
     const nextBasicBonus = Number(nextBasic && nextBasic.value || 0);
     if (nextBasic) delete actor.runtime.buffs.nextBasicDamageBonus;
@@ -1213,11 +1233,14 @@ function doSkill(battle, actorKey, skill, t) {
     const value = (index) => rpgenius.getSkillValue(skill, index, star);
     const name = skill.name;
     const equipmentSkill = prepareEquipmentSkill(actor, skill, t, stats);
-    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(skillMpCost(actor, skill, t) * Number(equipmentSkill.mpCostMul || 1)));
-    if (actor.mp < mpCost) return { ok: false, message: 'MP가 부족합니다.' };
+    const mpCost = stats.kino ? skillMpCost(actor, skill, t) : equipmentSkill.noMp ? 0 : Math.max(0, Math.round(skillMpCost(actor, skill, t) * Number(equipmentSkill.mpCostMul || 1)));
+    if (stats.kino) {
+        if (!randoCharacters.spendMental(stats, actor.runtime, mpCost, t)) return { ok: false, message: actor.runtime.kino.exhausted ? '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' : '정신력이 부족합니다.' };
+    } else if (actor.mp < mpCost) return { ok: false, message: 'MP가 부족합니다.' };
     actor.runtime.equipment = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') actor.hp = Math.max(1, Number(equipmentSkill.hpAfter));
-    actor.mp = Math.max(0, actor.mp - mpCost);
+    actor.mp = stats.kino ? 0 : Math.max(0, actor.mp - mpCost);
+    if (stats.kino) Object.assign(stats, getLiveEquipmentStats(actor, t));
     if (name === '느억맘' && equipmentStage(actor, '어머니의 마음')) equipmentSkill.cooldownFlatReduction = Number(equipmentSkill.cooldownFlatReduction || 0) + equipmentStep(actor, '어머니의 마음', 10000, 5000);
     commitEquipmentSkillCooldown(actor, skill, equipmentSkill, t);
     actor.nextActionAt = t + actionCooldownMs(actor, false, t);
@@ -1226,6 +1249,30 @@ function doSkill(battle, actorKey, skill, t) {
 
     let multiplier = value(0);
     const extra = Object.assign({ isSkill: true, skill, combatStats: stats }, equipmentSkill.extra || {});
+    if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(name)) {
+        const mode = randoCharacters.switchMode(stats, actor.runtime, actor.skillCooldowns, name, t);
+        if (!stats.randoEquipment['존버의 미학']) {
+            actor.nextActionAt = t + (actor.nextActionAt - t) * .70;
+            if (actor.defendCooldownEnd > t) actor.defendCooldownEnd = t + (actor.defendCooldownEnd - t) * .70;
+        }
+        if (mode.shield) setShield(actor, mode.shield * PVP_HP_SCALE, 7000, t);
+        Object.assign(stats, getLiveEquipmentStats(actor, t));
+        extra.modeSwitchDamage = true;
+        extra.modeFixedDamage = mode.fixed;
+        extra.skillName = name;
+        markTriggeredEffect(extra, 'skill', name);
+        if (mode.skillRate) markTriggeredEffect(extra, 'equipment', '가면 스위처');
+        if (stats.randoEquipment['존버의 미학']) markTriggeredEffect(extra, 'equipment', '존버의 미학');
+        const raw = Math.round(stats.atk * mode.skillRate * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
+        const hit = raw || mode.fixed ? dealDamage(actor, target, raw, extra, t) : { damage: 0, triggeredEffectIds: extra.triggeredEffectIds };
+        pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'skill', skillName: name, text: mode.mode + ' 모드로 전환' + (hit.damage ? ' / 피해 ' + comma(hit.damage) : '') }, hit));
+        return { ok: true };
+    }
+    if (name === '카스 살포') {
+        multiplier *= randoCharacters.sprayDamageMultiplier(stats);
+        randoCharacters.startSpray(stats, actor.runtime, value(1), 'pvp:' + target.name, t);
+        if (stats.randoEquipment['박카스 스프레이']) markTriggeredEffect(extra, 'equipment', '박카스 스프레이');
+    }
     if (name === '느억맘' && equipmentStage(actor, '어머니의 마음')) {
         ilionCards.excludeAll(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '어머니의 마음'), t);
         Object.assign(stats, getLiveEquipmentStats(actor, t));
@@ -1532,6 +1579,7 @@ function doEquipmentJudgment(battle, actorKey, t) {
 
 function doAiAction(battle, t) {
     const opp = battle.opp;
+    if (getLiveEquipmentStats(opp, t).kino && opp.runtime.kino.exhausted) { opp.nextActionAt = t + 200; return; }
     const decision = evaluateRules(opp, battle.me, t);
     if (decision.action == 'defend') return doDefend(battle, 'opp', t);
     if (decision.action == 'skill') {
@@ -1550,6 +1598,8 @@ function nextDueItem(battle, limit) {
     const items = [];
     if (battle.opp.nextActionAt <= limit) items.push({ kind: 'action', side: 'opp', t: battle.opp.nextActionAt, order: 5 });
     ['me', 'opp'].forEach(key => {
+        const spray = battle[key].runtime.kino?.dot;
+        if (spray && spray.nextAt <= limit) items.push({ kind: 'kinoSpray', side: key, t: spray.nextAt, order: 2 });
         if (battle[key].snapshot.stats.ilion) {
             const drawAt = ilionCards.autoDrawAt(battle[key].runtime, equipmentStage(battle[key], '무한홀덤덱'), battle[key].enteredAt);
             if (drawAt != null && drawAt <= limit) items.push({ kind: 'ilionDraw', side: key, t: drawAt, order: 0 });
@@ -1589,6 +1639,17 @@ function nextDueItem(battle, limit) {
     if (items.length == 0) return null;
     items.sort((a, b) => a.t - b.t || a.order - b.order);
     return items[0];
+}
+
+function doKinoSprayTick(battle, actorKey, t) {
+    const actor = battle[actorKey], target = battle[actorKey === 'me' ? 'opp' : 'me'];
+    const stats = getLiveEquipmentStats(actor, t), rate = actor.runtime.kino.dot.rate;
+    const ticks = randoCharacters.sprayTicks(stats, actor.runtime, 'pvp:' + target.name, t);
+    for (let i = 0; i < ticks; i++) {
+        const extra = { hitCount: 1, dotAttack: true, summonAttack: true, disableCritical: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['skill:카스 살포'] };
+        const hit = dealDamage(actor, target, Math.round(stats.atk * rate * (1 + Number(stats.dotDamage || 0))), extra, t);
+        pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'dot', skillName: '카스 살포', text: damageText('카스 살포 지속 피해', hit) }, hit));
+    }
 }
 
 function doIlionDrawTick(battle, actorKey, t) {
@@ -1649,6 +1710,7 @@ function advanceBattle(user, nowMs) {
         if (!item || item.t >= battle.endsAt) break;
         expireStates(battle, item.t);
         if (item.kind === 'ilionDraw') doIlionDrawTick(battle, item.side, item.t);
+        else if (item.kind === 'kinoSpray') doKinoSprayTick(battle, item.side, item.t);
         else if (item.kind == 'action') doAiAction(battle, item.t);
         else if (item.kind == 'summon') doSummonTick(battle, item.side, item.t);
         else if (item.kind == 'mark') doMarkTick(battle, item.side, item.t);
@@ -1677,6 +1739,7 @@ function playerActionGuard(user, t) {
     const battle = user.pvp.battle;
     if (!battle || battle.phase == 'ended') return { error: '진행 중인 전투가 없습니다.' };
     if (battle.phase == 'countdown') return { error: '전투 시작 전입니다.' };
+    if (getLiveEquipmentStats(battle.me, t).kino && battle.me.runtime.kino.exhausted) return { error: '정신력이 30까지 회복될 때까지 전투불능 상태입니다.' };
     if (t < battle.me.nextActionAt) return { error: '아직 행동할 수 없습니다.' };
     return { battle };
 }
@@ -1688,7 +1751,8 @@ function playerAttack(user) {
     if (guard.error) return { ok: false, message: guard.error, battle: buildBattleView(user, -1) };
     const battle = guard.battle;
     expireStates(battle, t);
-    doBasicAttack(battle, 'me', t);
+    const result = doBasicAttack(battle, 'me', t);
+    if (result?.ok === false) return { ok: false, message: result.message, battle: buildBattleView(user, -1) };
     checkKo(user, battle, t);
     return { ok: true, message: '', battle: buildBattleView(user, -1) };
 }
@@ -2110,6 +2174,7 @@ function buildSideView(side) {
     const meta = {};
     (display.skillsMeta || []).forEach(entry => { meta[entry.name] = entry; });
     return {
+        ...randoCharacters.view(getLiveEquipmentStats(side, now()), side.runtime),
         name: side.name,
         level: side.level,
         rating: side.rating,
@@ -2132,7 +2197,8 @@ function buildSideView(side) {
         skills: sideSkills(side).map(skill => ({
             name: skill.name,
             element: skill.element || null,
-            mpCost: Number(meta[skill.name] && meta[skill.name].mpCost || 0),
+            mpCost: skillMpCost(side, skill),
+            resourceLabel: side.snapshot.stats.kino ? '정신력' : 'MP',
             cooldownEnd: Number(side.skillCooldowns[skill.name] || 0),
             cooltimeText: meta[skill.name] && meta[skill.name].cooltimeText || '',
             descLines: meta[skill.name] && meta[skill.name].descLines || []

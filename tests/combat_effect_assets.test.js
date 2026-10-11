@@ -11,7 +11,7 @@ const equipmentPassives = require('../DB/RPGenius/EquipmentPassive.json');
 
 const expected = {
     '속성': ['화', '수', '명', '암'],
-    '스킬': [...skills, ...extraSkills].map(skill => skill.name).concat('자폭'),
+    '스킬': [...skills, ...extraSkills].map(skill => combatEffects.fileName(skill.name)).concat('자폭'),
     '소환수': ['익테봇 공격', '익테봇 피해대행', '수나타 공격', '수나타 강화'],
     '장비': Object.keys(transcendEquipment.uniquePassiveDescriptions)
         .concat(equipmentPassives.map(passive => passive.name), ['000 장비', '데우스 엑스 마키나', '징수의 총']),
@@ -47,7 +47,7 @@ for (const [category, names] of Object.entries(expected)) {
     total += uniqueNames.length;
 }
 
-assert.strictEqual(total, 216, '전체 개별 이펙트 수');
+assert.strictEqual(total, 224, '전체 개별 이펙트 수');
 
 const attackEvent = combatEffects.annotateEvent({
     actor: 'opp', action: 'attack', effectElement: '화',

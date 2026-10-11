@@ -57,6 +57,7 @@
     // 스킬 원본 설명 기준: 공격 연출은 대상, 자기 강화/회복 연출은 시전자에게 배치한다.
     const SKILL_TARGETS = Object.freeze({
         '헤즈업': 'both', '느억맘': 'target',
+        '모드 전환': 'actor', '원영적사고 모드 전환': 'actor', '아이돌 할래?': 'target', '카스 살포': 'target',
         '자인': 'both', '시벌론': 'actor', '글버지': 'both', '불사조': 'both', '피아스트': 'both',
         '수업끝': 'both', 'SUPER EASY': 'target', '백억이요': 'target', '건력': 'actor', '청정수 투척': 'target',
         '비리': 'target', '익테봇 소환': 'actor', '유드 알레프': 'both', '안면강타': 'both',
@@ -248,9 +249,11 @@
         return DIRS[kind] && name ? { kind, name, dir: DIRS[kind] } : null;
     }
 
+    const fileName = name => name === '아이돌 할래?' ? '아이돌 할래' : name;
+
     function assetPath(effectId) {
         const parsed = parseEffectId(effectId);
-        return parsed ? '필드/이펙트/' + parsed.dir + '/' + parsed.name + '.png' : null;
+        return parsed ? '필드/이펙트/' + parsed.dir + '/' + fileName(parsed.name) + '.png' : null;
     }
 
     function assetUrl(effectId) {
@@ -289,6 +292,6 @@
         DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
-        assetPath, assetUrl, motionProfile, drawCardDeck
+        fileName, assetPath, assetUrl, motionProfile, drawCardDeck
     };
 });

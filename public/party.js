@@ -209,6 +209,12 @@
             if (buffId === 'taunt') {
                 const taunted = currentRoom.tauntTarget === memberName || (currentRoom.monster && currentRoom.monster.tauntTarget === memberName);
                 remain = taunted ? Number(currentRoom.tauntRemain || (currentRoom.monster && currentRoom.monster.tauntRemain) || 0) : 0;
+            } else if (buffId === 'wonyoddiMode') {
+                remain = m?.runtime?.mode ? null : 0;
+            } else if (buffId === 'mentalExhausted') {
+                remain = m?.runtime?.incapacitated ? null : 0;
+            } else if (buffId === 'kinoBerserk') {
+                remain = m?.runtime?.berserk ? null : 0;
             } else if (m && m.runtime && Array.isArray(m.runtime.buffs)) {
                 const b = m.runtime.buffs.find(bb => String(bb.id || bb.label || '') === buffId);
                 remain = b ? b.remain : 0;
@@ -246,7 +252,8 @@
             const remain = Number((r.cooldowns && r.cooldowns[skillName]) || 0);
             // 시벌론: 일반 공격 5회 충전 후 활성화 — 충전 부족 시 게이지 표시
             const needCharge = skillName === '시벌론' && Number(r.sivalonCharge || 0) < 5;
-            const blocked = pendingCD.action || isPassive || dead || transitioning || seal > 0 || remain > 0 || acd > 0 || needCharge;
+            const cost = Number(myMember.skillDefs?.[skillName]?.mental ?? myMember.skillDefs?.[skillName]?.mp ?? 0);
+            const blocked = pendingCD.action || isPassive || r.incapacitated || dead || transitioning || seal > 0 || remain > 0 || acd > 0 || needCharge || Number(r.resource ?? r.mp) < cost;
             btn.disabled = blocked;
             const cd = btn.querySelector('.cd');
             const text = seal > 0 && !isPassive ? ('봉인 ' + seal.toFixed(1))
@@ -281,7 +288,7 @@
         const myMember = currentRoom.members.find(m => m.name === me);
         if (!myMember) return;
         const r = myMember.runtime || {};
-        const acd = Number(r.actionCdRemain || 0);
+        const acd = Math.max(Number(r.actionCdRemain || 0), (Number(r.basicUntil || 0) + (cooldownClockOffset || 0) - Date.now()) / 1000);
         const dead = !!r.dead;
         const seal = Number(r.sealRemain || 0);
         const gateTransition = isPhaseTransitionActive();
@@ -289,9 +296,9 @@
         const stone = currentRoom.monster?.mansion?.events?.some(event => event.kind === 'sculpture');
         const birthday = currentRoom.monster?.birthday;
         const birthdayPause = birthday?.candles && birthday.stage !== 'lighting';
-        const blocked = pendingCD.action || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition || birthdayPause;
+        const blocked = pendingCD.action || r.incapacitated || dead || currentRoom.awaitingChoices || seal > 0 || acd > 0 || transition || birthdayPause;
         btn.disabled = blocked;
-        btn.textContent = gateTransition ? '관문 전환 중' : seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : birthday?.candles ? '불 붙이기' : '공격');
+        btn.textContent = gateTransition ? '관문 전환 중' : r.incapacitated ? '정신력 회복 중' : seal > 0 ? ('봉인 ' + seal.toFixed(1) + 's') : (transition ? '잔향 전환 중' : acd > 0 ? (acd.toFixed(1) + 's') : stone ? '석재 공격' : birthday?.candles ? '불 붙이기' : '공격');
     }
 
     async function manualAttack() {
@@ -1590,7 +1597,9 @@
 
     function makeMpBar(r, className) {
         const mp = el('div', { class: 'pq-prog mp' + (className ? ' ' + className : '') }, el('div', { class: 'fill' }));
-        mp.firstChild.style.width = (r && r.mpMax > 0 ? Math.max(0, Math.min(100, r.mp / r.mpMax * 100)) : 0) + '%';
+        const max = Number(r?.maxResource ?? r?.mpMax ?? 0);
+        mp.firstChild.style.width = (max > 0 ? Math.max(0, Math.min(100, Number(r.resource ?? r.mp) / max * 100)) : 0) + '%';
+        if (r?.resourceLabel === '정신력') mp.firstChild.style.background = 'linear-gradient(90deg,#795ae9,#bda7ff)';
         return mp;
     }
 
@@ -1847,6 +1856,9 @@
             // 버프 칩 — 카드 일러스트 하단 오버레이. 내 카드는 전체 버프, 타인은 주요 디버프만.
             const chips = [];
             if (r) {
+                if (r.mode) chips.push({ id: 'wonyoddiMode', label: r.mode + ' 모드', remain: null });
+                if (r.incapacitated) chips.push({ id: 'mentalExhausted', label: '정신력 회복 중', remain: null });
+                if (r.berserk) chips.push({ id: 'kinoBerserk', label: '폭주', remain: null });
                 if (isMe) {
                     if (isTaunt) chips.push({ id: 'taunt', label: '도발', remain: snap.tauntRemain || (snap.monster && snap.monster.tauntRemain) || 0 });
                     (r.buffs || []).forEach(b => chips.push(b));
@@ -1918,8 +1930,8 @@
             ),
             makeHpBar(r),
             el('div', { class: 'vrow' },
-                el('span', { class: 'lbl' }, 'MP'),
-                el('b', null, Number(r.mp).toLocaleString() + ' / ' + Number(r.mpMax).toLocaleString())
+                el('span', { class: 'lbl' }, r.resourceLabel || 'MP'),
+                el('b', null, Number(r.resource ?? r.mp).toLocaleString() + ' / ' + Number(r.maxResource ?? r.mpMax).toLocaleString())
             ),
             makeMpBar(r)
         );
@@ -1953,7 +1965,7 @@
             el('div', { class: 'line' }, el('span', null, 'HP'), el('b', { class: 'hpv' }, Number(r.hp).toLocaleString() + ' / ' + Number(r.hpMax).toLocaleString() + ' (' + hpPct(r).toFixed(1) + '%)')),
             makeHpBar(r),
             shield > 0 ? el('div', { class: 'line' }, el('span', null, '보호막'), el('b', { class: 'shv' }, shield.toLocaleString())) : null,
-            el('div', { class: 'line' }, el('span', null, 'MP'), el('b', null, Number(r.mp).toLocaleString() + ' / ' + Number(r.mpMax).toLocaleString())),
+            el('div', { class: 'line' }, el('span', null, r.resourceLabel || 'MP'), el('b', null, Number(r.resource ?? r.mp).toLocaleString() + ' / ' + Number(r.maxResource ?? r.mpMax).toLocaleString())),
             makeMpBar(r),
             r.dead ? el('div', { class: 'line dead' }, '전투불능') : null
         ].filter(Boolean));
@@ -2140,7 +2152,8 @@
             const isPassive = sd.type === 'passive';
             const charge = Number(myMember.runtime && myMember.runtime.sivalonCharge || 0);
             const needCharge = skillName === '시벌론' && charge < 5;
-            const blocked = pendingCD.action || isPassive || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge;
+            const cost = Number(sd.mental ?? sd.mp ?? 0);
+            const blocked = pendingCD.action || isPassive || myMember.runtime?.incapacitated || (myMember.runtime && myMember.runtime.dead) || remain > 0 || acd > 0 || needCharge || Number(myMember.runtime?.resource ?? myMember.runtime?.mp) < cost;
             const overlay = remain > 0 ? remain.toFixed(1) : (needCharge ? '충전 ' + charge + '/5' : (acd > 0 && !isPassive ? acd.toFixed(1) : null));
             const keyCode = isPassive ? null : keybinds.skills[i];
             const btn = el('button', {
@@ -2153,7 +2166,7 @@
             },
                 keyCode ? el('span', { class: 'key' }, keyLabel(keyCode)) : null,
                 el('div', null, skillName),
-                isPassive ? el('div', { class: 'mp' }, '패시브') : (sd.mp ? el('div', { class: 'mp' }, 'MP ' + sd.mp) : null),
+                isPassive ? el('div', { class: 'mp' }, '패시브') : (sd.mp || sd.mental ? el('div', { class: 'mp' }, (sd.mental != null ? '정신력 ' + sd.mental : 'MP ' + sd.mp)) : null),
                 el('div', { class: 'cd', style: overlay ? '' : 'display:none' }, overlay || '')
             );
             bar.append(btn);
@@ -2330,7 +2343,7 @@
             const desc = sd.desc || (sd.type === 'passive' ? '패시브 효과' : '활성 스킬');
             const meta = el('div', { class: 'pq-choice-meta' });
             if (sd.type === 'passive') meta.append(el('span', null, '패시브'));
-            else meta.append(el('span', null, 'MP ' + Number(sd.mp || 0)), el('span', null, '재사용 ' + Number(sd.cd || 0) + '초'));
+            else meta.append(el('span', null, (sd.mental != null ? '정신력 ' : 'MP ') + Number(sd.mental ?? sd.mp ?? 0)), el('span', null, '재사용 ' + Number(sd.cd || 0) + '초'));
             const description = el('div', { class: 'desc' });
             String(desc).split(/\n+|(?<=\.)\s+/).filter(Boolean).forEach(line => {
                 const paragraph = el('p');

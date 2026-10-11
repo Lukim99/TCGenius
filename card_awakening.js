@@ -82,7 +82,7 @@ function basicHitMultiplier(stats, extra) {
 
 function conditionalFinalDamage(stats, critical) {
     const passive = stats && stats.awakening;
-    return (critical ? Number(stats && stats.criticalFinalDamage || 0) : 0)
+    return (critical ? Number(stats && stats.criticalFinalDamage || 0) : Number(stats && stats.nonCriticalFinalDamage || 0))
         + (passive && passive.effect === 'criticalTradeoff' ? (critical ? passive.value : -passive.value) : 0);
 }
 

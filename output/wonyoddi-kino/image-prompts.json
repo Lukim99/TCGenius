@@ -1,0 +1,178 @@
+[
+  {
+    "key": "wonyoddi",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-6fe4c000-fb50-4212-823d-864827a8d7aa.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit.\nAsset type: transparent WebGL RPG full-body battle character sprite.\nImage 1 is the edit target. KEEP its energetic, wide combat stance, angled torso, bent knees, counterbalanced arms, flowing hair and flared clothing. Preserve recognizable facial identity, realistic cinematic rendering, clothing detail and whole-body framing. \nRequired edits: BOTH HANDS EMPTY. Remove the held mask or spray can completely. Make the previously holding hand a natural empty open hand or loose fist in the same combat gesture. Remove floating props, detached particles and aura around the figure.\nOrient the entire stance, torso, face and eyes toward SCREEN RIGHT: a clear right-facing three-quarter battle view. Adjust or mirror the original dynamic pose to face the right edge while keeping its motion and silhouette.\nDo not turn this into a relaxed standing portrait. Preserve the original combat pose and sense of movement. A single full-body character with both shoes fully visible and clear margins, centered, portrait 2:3. Genuine transparent alpha background; no backdrop, ground plane, lettering, logos, props or held objects.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "wonyoddi-job",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-b7e73943-b4bd-40a0-8b79-6ed81b2d7d72.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠__전직.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit.\nAsset type: transparent WebGL RPG full-body battle character sprite.\nImage 1 is the edit target. KEEP its energetic, wide combat stance, angled torso, bent knees, counterbalanced arms, flowing hair and flared clothing. Preserve recognizable facial identity, realistic cinematic rendering, clothing detail and whole-body framing. \nRequired edits: BOTH HANDS EMPTY. Remove the held mask or spray can completely. Make the previously holding hand a natural empty open hand or loose fist in the same combat gesture. Remove floating props, detached particles and aura around the figure.\nOrient the entire stance, torso, face and eyes toward SCREEN RIGHT: a clear right-facing three-quarter battle view. Adjust or mirror the original dynamic pose to face the right edge while keeping its motion and silhouette.\nDo not turn this into a relaxed standing portrait. Preserve the original combat pose and sense of movement. A single full-body character with both shoes fully visible and clear margins, centered, portrait 2:3. Genuine transparent alpha background; no backdrop, ground plane, lettering, logos, props or held objects.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "wonyoddi-awake",
+    "source": "C:\\Users\\dodom\\Downloads\\역동적인 스트리트 파이터 캐릭터.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠__각성.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "웹 ChatGPT: 원본 각성 워뇨띠와 기존 역동적 스프라이트 첨부. 첫 이미지의 역동적인 넓은 전투 자세, 무릎을 굽힌 동작, 날리는 긴 머리, 검은 무대용 상의와 회색 와이드 청바지, 운동화, 사실적인 게임 일러스트 스타일을 유지. 양손 빈손, 가면과 금빛 파편 및 오라 제거. 얼굴·시선·상체·자세는 화면 오른쪽. 한 명의 전신, 2:3, 투명 알파, 바닥·글자·로고·소품 제외.",
+    "generator": "web ChatGPT"
+  },
+  {
+    "key": "wonyoddi-avatar",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-9be238d1-b56f-411f-8a79-414becea9645.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠__일반__란도랜드2.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: character battle sprite edit. Image 1 is an adult woman battle character edit target. Image 2 is her actual Randoland2 avatar appearance reference. Replace Image 1 clothing and hairstyle with the appearance of Image 2: white fine blue pinstripe soft bonnet/headscarf with loose rounded sides, long dark wavy hair, pale pink long-sleeve knit sweater. Use dark full-length jeans and simple shoes for the unseen lower outfit. Match Image 2 facial identity. Keep the dynamic wide battle stance and bent knees from Image 1, flowing hair, counterbalanced EMPTY hands. Entire torso, face and eyes face SCREEN RIGHT in clear three-quarter right view. No held objects, no mask, no spray can, no loose particles or aura. Full body from bonnet to BOTH shoes, centered with clear margin, portrait 2:3. Detailed realistic cinematic RPG sprite, consistent lighting, transparent alpha background; no background, ground plane, lettering or logo. This is a battle pose, not a straight standing portrait. Clothing must be pink knit sweater and white striped bonnet, not a pink suit.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "kino",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-4b1d4343-16dc-4a8b-82b4-561893d6cb44.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/키노.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit.\nAsset type: transparent WebGL RPG full-body battle character sprite.\nImage 1 is the edit target. KEEP its energetic, wide combat stance, angled torso, bent knees, counterbalanced arms, flowing hair and flared clothing. Preserve recognizable facial identity, realistic cinematic rendering, clothing detail and whole-body framing. \nRequired edits: BOTH HANDS EMPTY. Remove the held mask or spray can completely. Make the previously holding hand a natural empty open hand or loose fist in the same combat gesture. Remove floating props, detached particles and aura around the figure.\nOrient the entire stance, torso, face and eyes toward SCREEN RIGHT: a clear right-facing three-quarter battle view. Adjust or mirror the original dynamic pose to face the right edge while keeping its motion and silhouette.\nDo not turn this into a relaxed standing portrait. Preserve the original combat pose and sense of movement. A single full-body character with both shoes fully visible and clear margins, centered, portrait 2:3. Genuine transparent alpha background; no backdrop, ground plane, lettering, logos, props or held objects.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "kino-job",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-26f7180c-9a47-45ab-9c36-b32fc53e36a4.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/키노__전직.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit.\nAsset type: transparent WebGL RPG full-body battle character sprite.\nImage 1 is the edit target. KEEP its energetic, wide combat stance, angled torso, bent knees, counterbalanced arms, flowing hair and flared clothing. Preserve recognizable facial identity, realistic cinematic rendering, clothing detail and whole-body framing. \nRequired edits: BOTH HANDS EMPTY. Remove the held mask or spray can completely. Make the previously holding hand a natural empty open hand or loose fist in the same combat gesture. Remove floating props, detached particles and aura around the figure.\nOrient the entire stance, torso, face and eyes toward SCREEN RIGHT: a clear right-facing three-quarter battle view. Adjust or mirror the original dynamic pose to face the right edge while keeping its motion and silhouette.\nDo not turn this into a relaxed standing portrait. Preserve the original combat pose and sense of movement. A single full-body character with both shoes fully visible and clear margins, centered, portrait 2:3. Genuine transparent alpha background; no backdrop, ground plane, lettering, logos, props or held objects.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "kino-awake",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-00daaf2b-c82d-4031-82a6-67122601ec65.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/키노__각성.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit.\nAsset type: transparent WebGL RPG full-body battle character sprite.\nImage 1 is the edit target. KEEP its energetic, wide combat stance, angled torso, bent knees, counterbalanced arms, flowing hair and flared clothing. Preserve recognizable facial identity, realistic cinematic rendering, clothing detail and whole-body framing. \nRequired edits: BOTH HANDS EMPTY. Remove the held mask or spray can completely. Make the previously holding hand a natural empty open hand or loose fist in the same combat gesture. Remove floating props, detached particles and aura around the figure.\nOrient the entire stance, torso, face and eyes toward SCREEN RIGHT: a clear right-facing three-quarter battle view. Adjust or mirror the original dynamic pose to face the right edge while keeping its motion and silhouette.\nDo not turn this into a relaxed standing portrait. Preserve the original combat pose and sense of movement. A single full-body character with both shoes fully visible and clear margins, centered, portrait 2:3. Genuine transparent alpha background; no backdrop, ground plane, lettering, logos, props or held objects.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "kino-avatar",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-dbec7a5e-7942-4914-ae42-51002f7ba117.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/키노__일반__란도랜드2.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit. Edit only head orientation and gaze in this adult male transparent full-body game sprite. Keep exactly the existing energetic combat pose, empty hands, dusty rose suit, white shirt and black tie, body proportions and framing. The head and eyes must face SCREEN RIGHT toward the right edge, aligned with the right-facing torso. Use a clear right-facing three-quarter or profile facial view; do not face the viewer or left side. Keep recognizable male face and auburn hair. Preserve genuine transparent alpha background. No objects, backdrop, aura or text. Keep both shoes visible and the original dynamic bent-knee battle pose.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "모드 전환",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-5c00c796-89c1-4bcc-8e4a-65aa31bea755.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/스킬/모드 전환.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A violet and cyan circular morphing energy sigil with three rotating luminous segments, energetic ripple, abstract mode switch; no letters. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "원영적사고 모드 전환",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-59cf454e-3906-4dd8-b71e-5aa3ef7f0baf.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/스킬/원영적사고 모드 전환.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A radiant rose gold starburst surrounded by an elegant translucent golden ring and sweeping pink light arcs, optimistic powerful transformation aura; no letters. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "아이돌 할래?",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-d8d2a4aa-2d53-445a-be2a-9b470ba978e7.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/스킬/아이돌 할래.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A fast teal and white diagonal impact slash, sharp flowing streaks and small sparkling blue stars, modern idol performance energy; no people or text. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "카스 살포",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-0d543d5c-4266-4e25-b509-958303f062fd.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/스킬/카스 살포.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A concentrated emerald and electric blue mist blast sweeping left to right, curling liquid vapor tendrils and bright droplets, magical spray impact; no bottle or people. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "가면 스위처",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-0ff73489-9ffb-4487-ba91-b88c52f174a2.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/장비/가면 스위처.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: Two elegant silver and violet masquerade mask silhouettes orbiting a purple ring of switching energy, luminous edges and compact sparks. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "존버의 미학",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-9b6a4f2c-db4a-4102-aecc-7e0f7933580f.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/장비/존버의 미학.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A gold hourglass-like abstract crystal within four slow rotating concentric amber clock rings, blue to gold restrained energy, no numbers. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "청심환",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-03b14abb-dba4-470d-919c-267d65ca2589.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/장비/청심환.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A small glowing white jade orb inside a circular red and teal berserk energy burst, with three sharp swirling crescents and violet sparks. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  },
+  {
+    "key": "박카스 스프레이",
+    "source": "C:\\Users\\dodom\\.codex\\generated_images\\01a127d1-7d22-7a40-8880-0dfb2d720d2f\\exec-3c754eda-383c-4102-aefe-43ae8e0163c8.png",
+    "file": "DB/RPGenius/ui/필드/이펙트/장비/박카스 스프레이.png",
+    "size": [
+      512,
+      512
+    ],
+    "prompt": "Use case: stylized-concept. Asset type: RPG WebGL combat VFX texture. Create one square effect sprite: A spiral of bright cobalt liquid droplets and teal medicinal mist erupting outward, powerful concentrated magic vapor emblem, no bottle or lettering. Polished high contrast fantasy game rendering, crisp luminous main shape with translucent energy falloff, composition centered with 8% clear margins. All negative space genuinely transparent RGBA alpha. No opaque background or ground, no people, no lettering, no watermark. Same visual quality as the reference VFX; make a distinct new effect.",
+    "generator": "builtin imagegen"
+  }
+]

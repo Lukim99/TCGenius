@@ -6,6 +6,7 @@ const rpgenius = require('./rpgenius.js');
 const shopCatalog = require('./shop_catalog');
 const combatEffects = require('./public/combat-effects.js');
 const ilionCards = require('./ilion_cards');
+const randoCharacters = require('./rando_characters');
 const partyquest = require('./partyquest.js');
 const training = require('./training');
 const pvp = require('./pvp.js');
@@ -1990,6 +1991,7 @@ function getHFieldSkills(user, mainCard, fieldName) {
         name: skill.name,
         element: skill.element || null,
         mpCost: Number(skill.mpCost || 0),
+        resourceLabel: skill.resourceLabel || 'MP',
         cooltimeText: skill.cooltimeText || '',
         descLines: Array.isArray(skill.descLines) ? skill.descLines : [],
         cooldownEnd: Number(cooldowns[skill.name] || 0)
@@ -2085,6 +2087,8 @@ function buildHFieldState(user) {
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
             spriteUrl: getHFieldCharacterSprite(mainCard),
+            ...randoCharacters.view(stats, user.field),
+            basicUntil: Number(user.field?.basicUntil || 0),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2524,6 +2528,8 @@ function buildGeneralFieldState(user, dailyMode = false) {
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
             spriteUrl: getHFieldCharacterSprite(mainCard),
+            ...randoCharacters.view(stats, user.field),
+            basicUntil: Number(user.field?.basicUntil || 0),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2855,11 +2861,13 @@ function describeWorldBossReward(entry) {
 function serializeWorldBossExtraSkill(id, cooldowns, user) {
     const skill = WORLD_BOSS_EXTRA_SKILLS[Number(id)];
     if (!skill) return null;
+    const stats = rpgenius.calculateUserStats(user);
     return {
         id: Number(id),
         name: skill.name,
         element: skill.element || null,
-        mpCost: Math.round(Number(skill.mp_cost || 0) * ilionCards.mpMultiplier({ ilion: Number(user?.main_card?.id) === ilionCards.CARD_ID }, user?.field, skill.name, Date.now())),
+        mpCost: stats.kino ? randoCharacters.mentalCost(stats, skill) : Math.round(Number(skill.mp_cost || 0) * ilionCards.mpMultiplier({ ilion: Number(user?.main_card?.id) === ilionCards.CARD_ID }, user?.field, skill.name, Date.now())),
+        resourceLabel: stats.kino ? '정신력' : 'MP',
         cooldownMs: Number(skill.cooltime || 0),
         cooldownEnd: Number(cooldowns && cooldowns[skill.name] || 0),
         desc: rpgenius.formatCurrentSkillDesc(skill, 0),
@@ -2942,6 +2950,8 @@ function buildWorldBossState(user) {
             cardName: mainCard && mainCard.name || '', cardFormatted: mainCard && mainCard.formatted || '',
             cardImageUrl: mainCard && mainCard.imageUrl || null,
             spriteUrl: getHFieldCharacterSprite(mainCard),
+            ...randoCharacters.view(stats, user.field),
+            basicUntil: Number(user.field?.basicUntil || 0),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -5911,7 +5921,7 @@ function buildSlotEffectInfo(card, data) {
     const baseValue = hasValues ? Number(eff.values[0] || 0) : Number(eff.base || 0);
     const perLevel = hasValues ? 0 : Number(eff.per_level || 0);
     const currentValue = rpgenius.getSlotEffectValueAtStar(eff, star);
-    const fmt = v => eff.type == 'flat' ? String(v) : (Math.round(Number(v || 0) * 1000) / 10) + '%';
+    const fmt = v => eff.type === 'seconds' ? String(v) + '초' : eff.type == 'flat' ? String(v) : (Math.round(Number(v || 0) * 1000) / 10) + '%';
     return {
         name: eff.name,
         type: eff.type || 'percent',
@@ -5936,12 +5946,13 @@ function buildSkillInfo(card, user) {
     return data.skills.map(skillIndex => {
         const skill = skills[skillIndex];
         if (!skill) return null;
-        const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
+        const mpCost = Number(card.id) === randoCharacters.KINO_ID ? randoCharacters.mentalCost(stats, skill) : Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
         const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
         return {
             name: skill.name,
             mpCost,
-            baseMpCost: Number(skill.mp_cost || 0),
+            resourceLabel: Number(card.id) === randoCharacters.KINO_ID ? '정신력' : 'MP',
+            baseMpCost: Number(skill.mental_cost ?? skill.mp_cost ?? 0),
             cooltimeText: rpgenius.formatCooltime(cooltime),
             descLines: rpgenius.cardAwakening.formatSkillDescription(card, skill, rpgenius.formatCurrentSkillDesc(skill, star)).split('\n').filter(Boolean)
         };
@@ -5966,7 +5977,7 @@ function serializeCard(card, user) {
                 const base = hasValues ? Number(se.values[0] || 0) : Number(se.base || 0);
                 const perLevel = hasValues ? 0 : Number(se.per_level || 0);
                 const current = rpgenius.getSlotEffectValueAtStar(se, star);
-                const fmt = v => se.type === 'flat' ? String(v) : fmtPct(v);
+                const fmt = v => se.type === 'seconds' ? String(v) + '초' : se.type === 'flat' ? String(v) : fmtPct(v);
                 return {
                     name: se.name,
                     baseText: fmt(base),
@@ -5981,11 +5992,12 @@ function serializeCard(card, user) {
             skills: Array.isArray(data.class.skills) ? data.class.skills.map(skillId => {
                 const skill = skills[Number(skillId)];
                 if (!skill) return null;
-                const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
+                const mpCost = Number(card.id) === randoCharacters.KINO_ID ? randoCharacters.mentalCost(stats, skill) : Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
                 const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
                 return {
                     name: skill.name,
                     mpCost,
+                    resourceLabel: Number(card.id) === randoCharacters.KINO_ID ? '정신력' : 'MP',
                     cooltimeText: rpgenius.formatCooltime(cooltime),
                     descLines: rpgenius.cardAwakening.formatSkillDescription(card, skill, rpgenius.formatCurrentSkillDesc(skill, star)).split('\n').filter(Boolean)
                 };
@@ -6041,7 +6053,7 @@ function serializeCard(card, user) {
 
 const WEB_ITEM_USE_KEYS = new Set([
     '축복사용권', '아티팩트옵션변경',
-    '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '전직프레스티지',
+    '변환', '캐릭터변환', '만능캐릭터변환', '전직캐릭터변환', '각성캐릭터변환', '전직프레스티지',
     '스탯초기화', '장신구선택권',
     '보조장비리롤', '잠재능력부여', '장비강화권', '영혼석', '보주', '보주선택',
     '가위', '생명수', '초월업그레이드', '초월선택', '아이템선택', '스펙터'
@@ -6056,7 +6068,7 @@ function isUsableInventoryItem(item) {
 
 // 웹 사용 결과 연출 분류: open(개봉·획득), transform(카드 변환), modify(장비·펫 변경), effect(효과 적용), bait(미끼)
 const WEB_ITEM_USE_RESULT_KINDS = {
-    '변환': 'transform', '캐릭터변환': 'transform', '만능캐릭터변환': 'transform', '전직캐릭터변환': 'transform',
+    '변환': 'transform', '캐릭터변환': 'transform', '만능캐릭터변환': 'transform', '전직캐릭터변환': 'transform', '각성캐릭터변환': 'transform',
     '장신구선택권': 'open', '아이템선택': 'open',
     '축복사용권': 'effect', '스탯초기화': 'effect', '전직프레스티지': 'effect',
     '아티팩트옵션변경': 'modify', '보조장비리롤': 'modify', '잠재능력부여': 'modify', '장비강화권': 'modify', '영혼석': 'modify',
@@ -7058,9 +7070,12 @@ function buildBaitDetail(item) {
         kind: 'chance',
         title: '낚시 획득 확률',
         rollCount: 1,
-        note: '낚시 1회마다 아래 아이템 중 하나를 획득합니다.',
+        note: rewards.some(r => r.card) ? '낚은 카드는 카드 인벤토리에 들어갑니다. 공간이 부족하면 살림망에 보관됩니다.' : '낚시 1회마다 아래 아이템 중 하나를 획득합니다.',
         entries: rewards.map(reward => {
-            const display = buildDetailRewardDisplay({ type: '아이템', item_id: reward.id, count: 1 });
+            const display = reward.card ? (reward.card.id != null
+                ? buildDetailRewardDisplay({ type: '캐릭터카드', ...reward.card, card_type: reward.card.type, count: 1 })
+                : { type: '캐릭터카드', name: (reward.card.star + 1) + '성 ' + reward.card.type + ' 카드', count: '1', label: '카드' })
+                : buildDetailRewardDisplay({ type: '아이템', item_id: reward.id, count: 1 });
             return display ? Object.assign(display, { chance: totalRate > 0 ? Number(reward.rate || 0) / totalRate : 0 }) : null;
         }).filter(Boolean)
     };
@@ -7134,6 +7149,7 @@ function buildItemUsageFacts(item) {
         '캐릭터변환': ['적용 대상', '조건에 맞는 캐릭터 카드를 다른 캐릭터로 무작위 변환'],
         '만능캐릭터변환': ['적용 대상', '등급과 전직 여부에 관계없이 캐릭터 카드를 무작위 변환'],
         '전직캐릭터변환': ['적용 대상', '전직 캐릭터 카드를 다른 전직 캐릭터로 무작위 변환'],
+        '각성캐릭터변환': ['적용 대상', '각성 상태와 등급을 유지하고 다른 각성 캐릭터로 무작위 변환'],
         '전직프레스티지': ['사용 효과', '제타 이상 전직 카드에 프레스티지 표시 및 영구 효과 적용'],
         '스탯초기화': ['사용 효과', '투자한 스탯포인트를 모두 회수'],
         '장신구선택권': ['사용 효과', (item.rarity || '지정 등급') + ' 장신구 중 하나를 선택해 획득'],
@@ -7246,7 +7262,7 @@ function buildItemApplications(itemId, item, user) {
 
 // 웹 아이템 사용 결과 연출 데이터. 명령어 응답 문자열이 아니라 대상의 사용 전/후 실제 데이터로 구성한다.
 const WEB_ITEM_USE_TARGET_KINDS = {
-    '지정캐릭터변환': 'card', '캐릭터변환': 'card', '만능캐릭터변환': 'card', '전직캐릭터변환': 'card', '스펙터부여': 'card',
+    '지정캐릭터변환': 'card', '캐릭터변환': 'card', '만능캐릭터변환': 'card', '전직캐릭터변환': 'card', '각성캐릭터변환': 'card', '스펙터부여': 'card',
     '아티팩트옵션변경': 'equipment', '보조장비리롤': 'equipment', '잠재능력부여': 'equipment', '장비강화권': 'equipment', '영혼부여': 'equipment', '보주부여': 'equipment',
     '귀속해제': 'equipment', '초월업그레이드': 'equipment', '장비강화': 'equipment',
     '생명수': 'pet'

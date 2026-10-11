@@ -158,7 +158,7 @@ function renderFishing(data) {
         el('section', { class: 'fish-panel fish-catches' },
             el('div', { class: 'fish-section-head' }, el('h3', null, '살림망'),
                 el('button', { type: 'button', class: 'fish-button', disabled: !data.count, onclick: e => runGameAction('/api/fishing/collect', {}, e.currentTarget) }, '모두 받기')),
-            items, el('p', { class: 'fish-note' }, '보상을 받으면 낚시가 멈춥니다.')),
+            items, el('p', { class: 'fish-note' }, '왕꿈틀이로 낚은 카드는 바로 카드 인벤토리에 들어갑니다. 공간이 부족하면 살림망에 남습니다. 보상을 받으면 낚시가 멈춥니다.')),
         el('section', { class: 'fish-panel fishing-bait' },
             el('div', { class: 'fish-section-head' }, el('h3', null, '미끼 선택'), change), bait,
             el('p', { class: 'fish-note' }, '미끼를 바꾸면 낚시가 멈춥니다. 살림망이 가득 차거나 미끼가 없으면 자동으로 멈춥니다.')));
@@ -300,7 +300,7 @@ function showGameActionResult(result) {
     }
     openRichModal(title, '', [
         el('div', { class: 'game-result-banner' }, el('span', { 'aria-hidden': 'true' }, '✦'),
-            el('p', null, result.targets?.length ? result.targets.reduce((sum, entry) => sum + entry.count, 0) + '개 ' + (result.action === 'equipment-disassemble' ? '분해' : result.action === 'pets-extract' ? '추출' : '판매') + ' 완료' : '보상이 지급되었습니다.'), el('span', { 'aria-hidden': 'true' }, '✦')),
+            el('p', null, result.action === 'fishing-collect' && result.remainingCards > 0 ? '카드 인벤토리에 공간이 부족해 카드 ' + comma(result.remainingCards) + '장이 살림망에 남아 있습니다.' : result.targets?.length ? result.targets.reduce((sum, entry) => sum + entry.count, 0) + '개 ' + (result.action === 'equipment-disassemble' ? '분해' : result.action === 'pets-extract' ? '추출' : '판매') + ' 완료' : '보상이 지급되었습니다.'), el('span', { 'aria-hidden': 'true' }, '✦')),
         gameChangesView(result.changes)]);
 }
 

@@ -6,10 +6,10 @@ const content = require('../transcend_equipment');
 const allEntries = Object.entries(content.definitions)
     .flatMap(([type, list]) => list.map(data => ({ type, data })));
 
-assert.strictEqual(allEntries.length, 106, '초월·신화 장비는 총 106종이어야 한다.');
-assert.strictEqual(new Set(allEntries.map(entry => entry.data.name)).size, 106, '장비 이름은 중복되면 안 된다.');
+assert.strictEqual(allEntries.length, 112, '초월·신화 장비는 총 112종이어야 한다.');
+assert.strictEqual(new Set(allEntries.map(entry => entry.data.name)).size, 112, '장비 이름은 중복되면 안 된다.');
 assert.strictEqual(allEntries.filter(entry => entry.data.rarity === '신화').length, 14, '신화 장비는 14종이어야 한다.');
-assert.strictEqual(allEntries.filter(entry => entry.data.rarity === '초월').length, 92, '초월 장비는 92종이어야 한다.');
+assert.strictEqual(allEntries.filter(entry => entry.data.rarity === '초월').length, 98, '초월 장비는 98종이어야 한다.');
 
 for (const { type, data } of allEntries) {
     assert.ok(['초월', '신화'].includes(data.rarity), `${data.name}: 잘못된 등급`);

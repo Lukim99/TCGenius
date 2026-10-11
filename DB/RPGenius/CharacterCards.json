@@ -419,5 +419,91 @@
                 30
             ]
         }
+    },
+    {
+        "name": "워뇨띠",
+        "slot_effect": {
+            "effect": "wonyoddiBasicCooldown",
+            "name": "(워뇨띠 전용) 일반 공격 쿨타임 감소 (행동 쿨타임과 별개)",
+            "values": [
+                0.05,
+                0.08,
+                0.11,
+                0.14,
+                0.18,
+                0.22,
+                0.26,
+                0.3
+            ]
+        },
+        "skills": [
+            31
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "actionCooldownFlat",
+                    "name": "행동 쿨타임 감소",
+                    "type": "seconds",
+                    "values": [
+                        0.02,
+                        0.04,
+                        0.07,
+                        0.1,
+                        0.15,
+                        0.2,
+                        0.27,
+                        0.35
+                    ]
+                }
+            ],
+            "skills": [
+                32
+            ]
+        }
+    },
+    {
+        "name": "키노",
+        "slot_effect": {
+            "effect": "mentalRegen",
+            "name": "초당 정신력 회복량",
+            "type": "flat",
+            "values": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+            ]
+        },
+        "skills": [
+            33
+        ],
+        "class": {
+            "name": "전직",
+            "slot_effects": [
+                {
+                    "effect": "nonCriticalFinalDamage",
+                    "name": "비치명타 최종 피해 증가",
+                    "values": [
+                        0.015,
+                        0.03,
+                        0.045,
+                        0.06,
+                        0.09,
+                        0.12,
+                        0.17,
+                        0.22
+                    ]
+                }
+            ],
+            "skills": [
+                34
+            ]
+        }
     }
 ]

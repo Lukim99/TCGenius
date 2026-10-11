@@ -1059,7 +1059,7 @@ function skillPanelNode(skill) {
         el('div', { class: 'mc-head' },
             el('span', { class: 'mc-name' }, skill.name),
             el('div', { class: 'mc-chips' },
-                el('span', { class: 'mc-chip mp' }, 'MP ' + comma(skill.mpCost)),
+                el('span', { class: 'mc-chip mp' }, (skill.resourceLabel || 'MP') + ' ' + comma(skill.mpCost)),
                 el('span', { class: 'mc-chip cd' }, '⏱ ' + skill.cooltimeText)
             )
         ),
@@ -2522,7 +2522,7 @@ function itemUseCardResult(target) {
             el('div', { class: 'iur-specter-info' },
                 replaced ? el('s', { class: 'iur-specter-old' }, replaced.name) : null,
                 el('strong', null, granted ? granted.name : ''),
-                skill ? el('div', { class: 'iur-specter-skill' }, el('b', null, skill.name), el('span', null, 'MP ' + comma(skill.mpCost) + ' · ' + skill.cooltimeText)) : null,
+                skill ? el('div', { class: 'iur-specter-skill' }, el('b', null, skill.name), el('span', null, (skill.resourceLabel || 'MP') + ' ' + comma(skill.mpCost) + ' · ' + skill.cooltimeText)) : null,
                 ...lines.map(line => el('p', null, line)))));
 }
 
@@ -7982,7 +7982,7 @@ function dexSpecterCard(entry) {
     const effect = el('div', { class: 'dex-orb-effect' },
         el('div', { class: 'dex-orb-effect-title' }, (entry.specterType || '전직') + ' 스펙터 효과'),
         el('div', { class: 'dex-orb-effect-lines' },
-            skill ? el('div', null, skill.name + ' (MP ' + comma(skill.mpCost) + ' · 쿨타임 ' + skill.cooltimeText + ')') : null,
+            skill ? el('div', null, skill.name + ' (' + (skill.resourceLabel || 'MP') + ' ' + comma(skill.mpCost) + ' · 쿨타임 ' + skill.cooltimeText + ')') : null,
             ...((skill && skill.descLines) || entry.descLines || []).map(line => el('div', null, line))
         )
     );
@@ -8044,7 +8044,7 @@ function dexCharacterDetail(entry) {
                 el('div', { class: 'dex-skill-heading' }, el('strong', null, skill.name),
                     ultimate ? el('span', { class: 'dex-skill-badge' }, '궁극기') : null),
                 el('dl', { class: 'dex-skill-costs' },
-                    el('div', { class: 'dex-skill-mp' }, el('dt', null, 'MP'), el('dd', null, comma(skill.mpCost))),
+                    el('div', { class: 'dex-skill-mp' }, el('dt', null, skill.resourceLabel || 'MP'), el('dd', null, comma(skill.mpCost))),
                     el('div', null, el('dt', null, '쿨타임'), el('dd', null, skill.cooltimeText))),
                 el('div', { class: 'lines' }, ...(skill.descLines || []).map(line => el('div', null, line)))
             ));

@@ -72,7 +72,7 @@ function registerGameActionRoutes(server, deps) {
             items: Object.entries(user.fishingNet || {}).filter(([, count]) => count > 0).map(([id, count]) => ({
                 name: items[id] ? items[id].name : '알 수 없는 아이템', count,
                 ...itemAssets(items[id])
-            }))
+            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.imageUrl })))
         };
     }
     function state(user) {
@@ -133,7 +133,7 @@ function registerGameActionRoutes(server, deps) {
         await rpg.stopFishingForCommand(user);
         return { action: 'fishing-stop' };
     });
-    route('post', '/api/fishing/collect', async user => { checked(await rpg.clearFishingNet(user)); return { action: 'fishing-collect' }; });
+    route('post', '/api/fishing/collect', async user => { checked(await rpg.clearFishingNet(user)); return { action: 'fishing-collect', remainingCards: (user.fishingCards || []).length }; });
     route('post', '/api/fishing/bait', async (user, body) => {
         const item = rpg.getDataCache('Item', []).find(item => item && item.name === body.name && item.type === '미끼');
         if (!item || rpg.getInventoryItemCount(user, rpg.getDataCache('Item', []).indexOf(item)) < 1) fail('보유한 미끼를 선택해주세요.');

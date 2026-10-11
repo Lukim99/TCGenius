@@ -467,8 +467,8 @@
             const hpY=y+(narrow?46:52),mpY=y+(narrow?66:72);
             this.bar(infoX,hpY,infoW,6,side.hp,side.maxHp,'#b92d2d',side.shield);
             this.text(number(side.hp)+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
-            this.bar(infoX,mpY,infoW,6,side.mp,side.maxMp,'#147fc4');
-            this.text('MP '+number(side.mp),infoRight,mpY-8,8,800,'right','#a9b6c4');
+            this.bar(infoX,mpY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
+            this.text((side.resourceLabel||'MP')+' '+number(side.resource??side.mp),infoRight,mpY-8,8,800,'right','#a9b6c4');
         }
         myPlate(w,h){
             if(stage!=='battle'||!view||!view.me)return;
@@ -486,7 +486,7 @@
             this.bar(infoX,hpBarY,infoW,6,side.hp,side.maxHp,'#b92d2d',side.shield);
             this.text('MP',infoX,mpTextY,8,800,'left','#bbb1a0');
             this.text(number(side.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');
-            this.bar(infoX,mpBarY,infoW,6,side.mp,side.maxMp,'#147fc4');
+            this.bar(infoX,mpBarY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
         }
         // 소환수·표식·버프 배지를 각 캐릭터 머리 위에 표시
         sideBadges(w,h){
@@ -520,13 +520,14 @@
             const sw=skills.length?Math.max(40,Math.min(narrow?58:92,(maxW-attackW-defendW-gap*(skills.length+1))/skills.length)):0;
             const usedW=skills.length*(sw+gap)+defendW+gap+attackW,x=(w-usedW)/2;
             skills.forEach((skill,index)=>{
-                const left=Math.max(actionLeft,(Number(skill.cooldownEnd||0)-current)/1000),mpLow=Number(view.me.mp)<Number(skill.mpCost||0);
-                this.actionButton(x+index*(sw+gap),y,sw,ah,{label:String(skill.name||'').slice(0,6),sub:number(skill.mpCost)+' MP',key:String(index+1),disabled:busy||locked||left>0||mpLow,cooldown:Math.max(0,left),action:()=>useSkill(skill.name)});
+                const left=Math.max(actionLeft,(Number(skill.cooldownEnd||0)-current)/1000),mpLow=Number((view.me.resource??view.me.mp))<Number(skill.mpCost||0);
+                this.actionButton(x+index*(sw+gap),y,sw,ah,{label:String(skill.name||'').slice(0,6),sub:number(skill.mpCost)+' '+(skill.resourceLabel||'MP'),key:String(index+1),disabled:busy||locked||left>0||mpLow||view.me.incapacitated,cooldown:Math.max(0,left),action:()=>useSkill(skill.name)});
             });
             const dx=x+skills.length*(sw+gap);
             const defendLeft=Math.max(actionLeft,(Number(view.me.defendCooldownEnd||0)-current)/1000);
-            this.actionButton(dx,y,defendW,ah,{label:'방어',sub:'D',kind:'defend',disabled:busy||locked||defendLeft>0,cooldown:Math.max(0,defendLeft),action:()=>defend()});
-            this.actionButton(dx+defendW+gap,y,attackW,ah,{label:'공격',sub:narrow?'J':'SPACE / J',key:'J',kind:'attack',disabled:busy||locked||actionLeft>0,cooldown:actionLeft,action:()=>attack()});
+            const basicLeft=Math.max(actionLeft,(Number(view.me.basicUntil||0)-current)/1000);
+            this.actionButton(dx,y,defendW,ah,{label:'방어',sub:'D',kind:'defend',disabled:busy||locked||defendLeft>0||view.me.incapacitated,cooldown:Math.max(0,defendLeft),action:()=>defend()});
+            this.actionButton(dx+defendW+gap,y,attackW,ah,{label:view.me.incapacitated?'회복 중':'공격',sub:narrow?'J':'SPACE / J',key:'J',kind:'attack',disabled:busy||locked||basicLeft>0||view.me.incapacitated,cooldown:Math.max(0,basicLeft),action:()=>attack()});
         }
         vsCard(side,x,y,cw,ch,accent,narrow){
             const c=this.ctx;this.panel(x,y,cw,ch,accent,true);
@@ -851,8 +852,8 @@
         } catch (error) { addLog(error.message, 'bad'); audio.play('fail', .42); }
         finally { setBusy(false); }
     }
-    function ready() { return view && view.me && now() >= Number(view.me.nextActionAt || 0); }
-    function attack() { if (ready()) act('/api/pvp/battle/attack', {}); }
+    function ready() { return view && view.me && !view.me.incapacitated && now() >= Number(view.me.nextActionAt || 0); }
+    function attack() { if (ready() && now() >= Number(view.me.basicUntil || 0)) act('/api/pvp/battle/attack', {}); }
     function defend() { if (ready() && now() >= Number(view.me.defendCooldownEnd || 0)) act('/api/pvp/battle/defend', {}); }
     function useSkill(name) {
         const skill = view && view.me && (view.me.skills || []).find(entry => entry.name === name);

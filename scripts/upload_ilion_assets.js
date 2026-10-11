@@ -4,11 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const AWS = require('aws-sdk');
-const assets = require('./ilion_assets.json');
 const root = path.resolve(__dirname, '..');
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
 async function main() {
+    const manifestIndex = process.argv.indexOf('--manifest');
+    const assets = JSON.parse(fs.readFileSync(manifestIndex < 0 ? path.join(__dirname, 'ilion_assets.json') : path.resolve(root, process.argv[manifestIndex + 1]), 'utf8'));
     for (const name of ['.env', '.env.local']) {
         const file = path.join(root, name);
         if (!fs.existsSync(file)) continue;
