@@ -158,15 +158,21 @@ function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDi
                         } else {
                             const reward = config.rewards.find(entry => entry.id === request.rewardId);
                             if (!reward) fail(400, '교환할 보상을 선택해주세요.');
+                            const count = request.count === undefined ? 1 : request.count;
+                            if (!positive(count)) fail(400, '교환 수량은 1 이상의 정수로 입력해주세요.');
                             const redeemed = state.exchanges[reward.id] || 0;
                             if (reward.limit && redeemed >= reward.limit) fail(400, '이미 교환한 보상입니다.');
-                            if (state.points < reward.cost) fail(400, '광산 포인트가 부족합니다.');
+                            if (reward.limit && redeemed + count > reward.limit) fail(400, '남은 교환 횟수를 초과했습니다.');
+                            const cost = reward.cost * count, itemCount = reward.count * count;
+                            if (!positive(cost) || !positive(itemCount) || !Number.isSafeInteger(redeemed + count)) fail(400, '교환 수량이 너무 많습니다.');
+                            if (request.expectedCost !== undefined && request.expectedCost !== cost) fail(409, '보상 가격이 변경되었습니다. 최신 가격을 확인한 뒤 다시 교환해주세요.', { refresh: true });
+                            if (state.points < cost) fail(400, '광산 포인트가 부족합니다.');
                             const id = rpg.getDataCache('Item', []).findIndex(item => item?.name === reward.name);
                             if (id < 0) fail(503, '보상 아이템을 확인 중입니다. 포인트는 소모되지 않았습니다.');
-                            state.points -= reward.cost;
-                            state.exchanges[reward.id] = redeemed + 1;
-                            rpg.addInventoryItem(user, id, reward.count);
-                            result = { name: reward.name, count: reward.count, ...getItemDisplayAssets(rpg.getDataCache('Item', [])[id]) };
+                            state.points -= cost;
+                            state.exchanges[reward.id] = redeemed + count;
+                            rpg.addInventoryItem(user, id, itemCount);
+                            result = { name: reward.name, count: itemCount, exchangeCount: count, spentPoints: cost, ...getItemDisplayAssets(rpg.getDataCache('Item', [])[id]) };
                         }
                         state.revision++;
                         state.lastAction = { requestId: request.requestId, action, result, at: now() };

@@ -40,13 +40,14 @@ export function mountPointMine(root) {
         sounds[kind].play().catch(() => {});
     }
     function closeDialog() { if (dialog) { dialog.close(); dialog.remove(); dialog = null; } }
-    function openDialog(title, content) {
+    function openDialog(title, content, className = '') {
         closeDialog();
-        dialog = node('dialog', { class: 'pm-dialog' }, node('div', { class: 'pm-dialog-head' }, node('h2', {}, title), node('button', { type: 'button', 'aria-label': '닫기', onclick: closeDialog }, '×')), content);
+        dialog = node('dialog', { class: 'pm-dialog ' + className, 'aria-labelledby': 'pm-dialog-title' }, node('div', { class: 'pm-dialog-head' }, node('h2', { id: 'pm-dialog-title' }, title), node('button', { type: 'button', 'aria-label': '닫기', onclick: closeDialog }, '×')), content);
         dialog.addEventListener('click', event => { if (event.target === dialog) closeDialog(); });
         const popup = dialog;
         popup.addEventListener('close', () => { popup.remove(); if (dialog === popup) dialog = null; });
         root.append(dialog); dialog.showModal();
+        content.querySelector('[autofocus]')?.focus();
     }
     async function perform(action, values = {}) {
         if (busy) return;
@@ -55,13 +56,14 @@ export function mountPointMine(root) {
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         const delay = pending.action === 'mine' && !reduced ? state.mineIntervalMs : pending.action === 'open' && !reduced ? 650 : 0;
         if (pending.action === 'mine') soundTimer = setTimeout(() => sound('hit'), reduced ? 0 : 280);
-        let opened;
+        let opened, exchanged;
         try {
             const [next] = await Promise.all([request('/' + pending.action, pending.body), new Promise(resolve => setTimeout(resolve, delay))]);
             const completed = pending.action;
             state = next; pending = null; selected.clear();
             if (completed === 'open' || completed === 'exchange') sound('reward');
             if (completed === 'open') opened = next.lastAction.result;
+            if (completed === 'exchange') exchanged = next.lastAction.result;
             if (completed === 'mine') {
                 minedResult = next.lastAction.result;
                 clearTimeout(resultTimer);
@@ -79,6 +81,7 @@ export function mountPointMine(root) {
             const type = typeOf(opened.pickaxe);
             openDialog('곡괭이 획득', node('div', { class: 'pm-chest-reveal' }, sprite('pickaxes', type.spriteIndex, type.name, 'pm-large'), node('span', { class: 'pm-kicker' }, 'NEW PICKAXE'), node('h3', {}, type.name), node('p', {}, '내구도 +' + number(opened.addedDurability) + ' · 합산 내구도 ' + number(opened.pickaxe.durability) + ' / ' + number(opened.pickaxe.maxDurability)), node('button', { type: 'button', class: 'pm-button pm-primary', onclick: closeDialog }, '확인')));
         }
+        if (exchanged && !paused) showExchangeResult(exchanged);
     }
     function resultMessage() {
         const last = state.lastAction;
@@ -167,16 +170,60 @@ export function mountPointMine(root) {
             node('div', { class: 'pm-panel-heading' }, node('div', {}, node('span', { class: 'pm-kicker' }, '보관함'), node('h2', {}, '인벤토리')), node('span', { class: 'pm-slot-count' }, number(state.pickaxes.length + state.ores.filter(ore => ore.count > 0).length) + '칸')),
             node('div', { class: 'pm-inventory-scroll', 'data-pm-scroll': compact ? 'side' : 'inventory' }, toolSection(), ores.content), ores.dock);
     }
+    function rewardArt(reward) {
+        return node('div', { class: 'pm-reward-art' }, reward.iconUrl ? node('img', { src: reward.iconUrl, alt: '', loading: 'lazy' }) : node('span', { 'aria-hidden': 'true' }, '🎁'));
+    }
+    function confirmExchange(reward) {
+        if (blocked() || !reward.available) return;
+        const remaining = reward.limit ? Math.max(0, reward.limit - reward.exchanged) : Infinity;
+        const max = Math.min(remaining, Math.floor(state.points / reward.cost));
+        if (max < 1) return;
+        const repeatable = reward.limit !== 1;
+        let count = 1;
+        const received = node('strong'), spent = node('strong'), balance = node('strong');
+        const hint = node('p', { class: 'pm-quantity-hint', id: 'pm-exchange-hint', 'aria-live': 'polite' });
+        const input = node('input', { id: 'pm-exchange-count', type: 'number', inputmode: 'numeric', min: 1, max, step: 1, value: 1, autofocus: '', 'aria-describedby': 'pm-exchange-hint', oninput: update });
+        const setCount = value => { input.value = value; update(); };
+        const decrease = node('button', { type: 'button', 'aria-label': '수량 줄이기', onclick: () => setCount(count - 1) }, '−');
+        const increase = node('button', { type: 'button', 'aria-label': '수량 늘리기', onclick: () => setCount(count + 1) }, '+');
+        const maximum = node('button', { type: 'button', class: 'pm-quantity-max', 'aria-label': '최대 수량', onclick: () => setCount(max) }, '최대');
+        const confirm = node('button', { type: 'submit', class: 'pm-button pm-primary', ...(repeatable ? {} : { autofocus: '' }) });
+        function update() {
+            count = Number(input.value);
+            const valid = Number.isSafeInteger(count) && count >= 1 && count <= max;
+            input.setAttribute('aria-invalid', String(!valid));
+            decrease.disabled = !valid || count <= 1;
+            increase.disabled = !valid || count >= max;
+            maximum.disabled = valid && count === max;
+            confirm.disabled = !valid;
+            received.textContent = valid ? number(reward.count * count) + '개' : '—';
+            spent.textContent = valid ? number(reward.cost * count) + ' P' : '—';
+            balance.textContent = valid ? number(state.points - reward.cost * count) + ' P' : '—';
+            confirm.textContent = valid ? number(reward.cost * count) + ' P로 교환' : '수량을 확인해주세요';
+            hint.textContent = valid ? (reward.limit ? '남은 교환 ' + number(remaining) + '회 · ' : '') + '최대 ' + number(max) + '회 교환할 수 있습니다.' : '1 ~ ' + number(max) + ' 사이의 정수를 입력해주세요.';
+            hint.classList.toggle('pm-short', !valid);
+        }
+        const form = node('form', { class: 'pm-exchange-form', onsubmit: event => { event.preventDefault(); if (!confirm.disabled) perform('exchange', { rewardId: reward.id, count, expectedCost: reward.cost * count }); } },
+            node('div', { class: 'pm-exchange-item' }, rewardArt(reward), node('div', {}, node('span', { class: 'pm-kicker' }, '교환할 보상'), node('h3', {}, reward.name), node('p', {}, '1회당 ' + number(reward.count) + '개 · ' + number(reward.cost) + ' P'))),
+            repeatable ? node('div', { class: 'pm-quantity' }, node('label', { for: 'pm-exchange-count' }, '교환 수량'), node('div', { class: 'pm-quantity-controls' }, decrease, node('div', { class: 'pm-quantity-input' }, input, node('span', { 'aria-hidden': 'true' }, '회')), increase, maximum), hint) : null,
+            node('dl', { class: 'pm-exchange-summary' }, node('div', {}, node('dt', {}, '총 획득 수량'), node('dd', {}, received)), node('div', { class: 'pm-exchange-total' }, node('dt', {}, '사용할 광산 포인트'), node('dd', {}, spent)), node('div', {}, node('dt', {}, '교환 후 잔액'), node('dd', {}, balance))),
+            !repeatable ? node('p', { class: 'pm-exchange-note' }, '이 보상은 1회만 교환할 수 있습니다.') : null,
+            node('div', { class: 'pm-exchange-actions' }, node('button', { type: 'button', class: 'pm-button pm-cancel', onclick: closeDialog }, '취소'), confirm));
+        update();
+        openDialog('교환하시겠습니까?', form, 'pm-exchange-dialog');
+    }
+    function showExchangeResult(result) {
+        openDialog('교환 완료', node('div', { class: 'pm-exchange-result' }, node('span', { class: 'pm-result-badge' }, node('span', { 'aria-hidden': 'true' }, '✓'), '보상 획득'), rewardArt(result), node('h3', {}, result.name), node('strong', { class: 'pm-acquired-count' }, '×' + number(result.count)), node('p', {}, '아이템 인벤토리에 지급되었습니다.'),
+            node('dl', { class: 'pm-exchange-summary' }, node('div', {}, node('dt', {}, '사용한 광산 포인트'), node('dd', {}, number(result.spentPoints) + ' P')), node('div', {}, node('dt', {}, '남은 광산 포인트'), node('dd', {}, number(state.points) + ' P'))),
+            node('button', { type: 'button', class: 'pm-button pm-primary', autofocus: '', onclick: closeDialog }, '확인')), 'pm-exchange-dialog pm-result-dialog');
+    }
     function rewardView() {
         return node('section', { class: 'pm-shop-panel' }, node('div', { class: 'pm-panel-heading' }, node('div', {}, node('span', { class: 'pm-kicker' }, 'MINERAL EXCHANGE'), node('h2', {}, '광산 교환소')), node('span', { class: 'pm-slot-count' }, number(state.points) + ' P')),
             node('div', { class: 'pm-shop-scroll', 'data-pm-scroll': 'rewards' }, node('p', { class: 'pm-help' }, '광물을 판매해 얻은 포인트로 교환합니다. 보상별 가격과 교환 한도를 확인하세요.'),
             node('div', { class: 'pm-reward-grid' }, ...state.rewards.map(reward => {
                 const complete = reward.limit > 0 && reward.exchanged >= reward.limit;
-                const art = node('div', { class: 'pm-reward-art' });
-                if (reward.iconUrl) art.append(node('img', { src: reward.iconUrl, alt: '', loading: 'lazy' }));
-                else art.append(node('span', {}, '🎁'));
-                return node('article', { class: 'pm-reward' + (complete ? ' pm-complete' : '') }, node('span', { class: 'pm-reward-limit' }, reward.limit ? '교환 ' + number(reward.exchanged) + ' / ' + number(reward.limit) + '회' : '반복 교환'), art, node('h3', {}, reward.name), node('p', { class: 'pm-muted' }, number(reward.count) + '개 지급'),
-                    button(node('span', { class: 'pm-buy-label' }, node('span', {}, complete ? '교환 완료' : !reward.available ? '보상 준비 중' : '교환하기'), node('strong', {}, number(reward.cost) + ' P')), () => perform('exchange', { rewardId: reward.id }), complete || !reward.available || state.points < reward.cost));
+                return node('article', { class: 'pm-reward' + (complete ? ' pm-complete' : '') }, node('span', { class: 'pm-reward-limit' }, reward.limit ? '교환 ' + number(reward.exchanged) + ' / ' + number(reward.limit) + '회' : '반복 교환'), rewardArt(reward), node('h3', {}, reward.name), node('p', { class: 'pm-muted' }, number(reward.count) + '개 지급'),
+                    button(node('span', { class: 'pm-buy-label' }, node('span', {}, complete ? '교환 완료' : !reward.available ? '보상 준비 중' : '교환하기'), node('strong', {}, number(reward.cost) + ' P')), () => confirmExchange(reward), complete || !reward.available || state.points < reward.cost));
             }))));
     }
     function render() {
@@ -202,7 +249,7 @@ export function mountPointMine(root) {
         if (oreFocus) root.querySelector('[data-pm-ore="' + oreFocus + '"]')?.focus({ preventScroll: true });
     }
     return {
-        async refresh() { paused = false; if (busy) return; state = await request(''); if (pending && state.lastAction?.requestId === pending.body.requestId) pending = null; render(); },
+        async refresh() { paused = false; if (busy) return; state = await request(''); const completed = pending && state.lastAction?.requestId === pending.body.requestId ? state.lastAction : null; if (completed) { pending = null; error = ''; } render(); if (completed?.action === 'exchange') showExchangeResult(completed.result); },
         pause() { paused = true; clearTimeout(soundTimer); clearTimeout(resultTimer); minedResult = null; closeDialog(); Object.values(sounds).forEach(audio => audio.pause()); }
     };
 }

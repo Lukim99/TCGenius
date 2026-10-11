@@ -206,14 +206,20 @@ test('내구도 0·종료된 수리·부분 판매·수량 위조·없는 보상
 test('모든 변경 행동은 저장 실패 재시도에서도 재차감·재추첨·재지급하지 않는다', async () => {
     for (const [action, values] of [
         ['open', {}], ['equip', { uid: 'stone-tool' }], ['mine', {}],
-        ['sell', { ores: [{ id: 'stone' }] }], ['exchange', { rewardId: 'genius-key' }]
+        ['sell', { ores: [{ id: 'stone' }] }], ['exchange', { rewardId: 'genius-key', count: 3 }]
     ]) {
         await setState({ pointMine: { revision: 0, pickaxes: [{ uid: 'stone-tool', id: 'stone', durability: 4, maxDurability: 8 }], equippedUid: 'stone-tool', ores: { stone: 30 }, points: 100, exchanges: {}, totalMined: 0, nextMineAt: 0, lastAction: null } });
         const input = body(0, values); failedWrites = true;
         const failure = await forceDraw(.3, () => request(action, input));
         assert.equal(failure.status, 503, action); assert.equal(failure.data.retry, true);
         const changed = (await rpg.getRPGUserByName(fixture.name)).pointMine;
+        const inventoryAfterFailure = structuredClone((await rpg.getRPGUserByName(fixture.name)).inventory);
         assert.equal(changed.revision, 1);
+        if (action === 'exchange') {
+            assert.equal(changed.points, 10);
+            assert.equal(changed.exchanges['genius-key'], 3);
+            assert.equal(changed.lastAction.result.count, 9);
+        }
         if (action === 'open') {
             assert.equal(changed.pickaxes.length, 1);
             assert.equal(changed.pickaxes[0].durability, 12);
@@ -224,7 +230,90 @@ test('모든 변경 행동은 저장 실패 재시도에서도 재차감·재추
         const replay = await forceDraw(.999, () => request(action, input));
         assert.equal(replay.status, 200, action); assert.equal(replay.data.replayed, true);
         assert.deepEqual((await rpg.getRPGUserByName(fixture.name)).pointMine, changed);
+        assert.deepEqual((await rpg.getRPGUserByName(fixture.name)).inventory, inventoryAfterFailure);
     }
+});
+
+test('반복 보상은 입력 수량을 한 번에 교환·저장하며 재요청으로 중복 지급하지 않는다', async () => {
+    await forceDraw(.3, () => request('open', body(0)));
+    let user = await rpg.getRPGUserByName(fixture.name);
+    user.pointMine.points = 120; await user.save(); writes = [];
+    const input = body(1, { rewardId: 'genius-key', count: 4 });
+    const result = await request('exchange', input);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.points, 0);
+    assert.equal(result.data.exchanges['genius-key'], 4);
+    assert.equal(result.data.revision, 2);
+    assert.equal(result.data.lastAction.result.exchangeCount, 4);
+    assert.equal(result.data.lastAction.result.spentPoints, 120);
+    assert.equal(result.data.lastAction.result.count, 12);
+    const itemId = itemData.findIndex(item => item?.name === '지니어스의 열쇠');
+    user = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(rpg.getInventoryItemCount(user, itemId), 12);
+    assert.equal(writes.filter(write => write.TableName === 'rpgenius_user').length, 1);
+    const replay = await request('exchange', input);
+    assert.equal(replay.status, 200); assert.equal(replay.data.replayed, true);
+    assert.deepEqual(replay.data.lastAction.result, result.data.lastAction.result);
+    user = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(rpg.getInventoryItemCount(user, itemId), 12);
+    assert.equal(user.pointMine.points, 0);
+    assert.equal(user.pointMine.exchanges['genius-key'], 4);
+});
+
+test('다량 교환도 정수·잔액·남은 교환 한도를 확인한 후 전체 수량만 지급한다', async () => {
+    await forceDraw(.3, () => request('open', body(0)));
+    let user = await rpg.getRPGUserByName(fixture.name);
+    user.pointMine.points = 120; await user.save();
+    const before = structuredClone({ pointMine: user.pointMine, inventory: user.inventory });
+    for (const count of [0, -1, 1.5, '2', null, Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER, 5]) {
+        assert.equal((await request('exchange', body(1, { rewardId: 'genius-key', count }))).status, 400, String(count));
+        user = await rpg.getRPGUserByName(fixture.name);
+        assert.deepEqual({ pointMine: user.pointMine, inventory: user.inventory }, before);
+    }
+    user.pointMine.points = 20000;
+    user.pointMine.exchanges['advanced-protection'] = 2; await user.save();
+    const limitedBefore = structuredClone({ pointMine: user.pointMine, inventory: user.inventory });
+    for (const values of [{ rewardId: 'advanced-protection', count: 4 }, { rewardId: 'orb-choice', count: 2 }]) {
+        assert.equal((await request('exchange', body(1, values))).status, 400);
+        user = await rpg.getRPGUserByName(fixture.name);
+        assert.deepEqual({ pointMine: user.pointMine, inventory: user.inventory }, limitedBefore);
+    }
+    const result = await request('exchange', body(1, { rewardId: 'advanced-protection', count: 3 }));
+    assert.equal(result.status, 200);
+    assert.equal(result.data.exchanges['advanced-protection'], 5);
+    assert.equal(result.data.points, 18500);
+    assert.equal(result.data.lastAction.result.count, 3);
+    user = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(rpg.getInventoryItemCount(user, itemData.findIndex(item => item?.name === '고급 장비 보호권')), 3);
+});
+
+test('다량 교환을 동시에 요청해도 같은 진행 번호에서는 한 번만 처리한다', async () => {
+    await forceDraw(.3, () => request('open', body(0)));
+    let user = await rpg.getRPGUserByName(fixture.name);
+    user.pointMine.points = 120; await user.save();
+    const responses = await Promise.all([request('exchange', body(1, { rewardId: 'genius-key', count: 3 })), request('exchange', body(1, { rewardId: 'genius-key', count: 3 }))]);
+    assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+    user = await rpg.getRPGUserByName(fixture.name);
+    assert.equal(user.pointMine.points, 30);
+    assert.equal(user.pointMine.exchanges['genius-key'], 3);
+    assert.equal(rpg.getInventoryItemCount(user, itemData.findIndex(item => item?.name === '지니어스의 열쇠')), 9);
+});
+
+test('확인창의 금액과 운영 가격이 달라지면 차감 없이 최신 가격을 다시 확인한다', async () => {
+    await forceDraw(.3, () => request('open', body(0)));
+    let user = await rpg.getRPGUserByName(fixture.name);
+    user.pointMine.points = 120; await user.save();
+    const before = structuredClone({ pointMine: user.pointMine, inventory: user.inventory });
+    rpg.getDataCache('PointMine').rewards.find(reward => reward.id === 'genius-key').cost = 40;
+    const changedPrice = await request('exchange', body(1, { rewardId: 'genius-key', count: 3, expectedCost: 90 }));
+    assert.equal(changedPrice.status, 409); assert.equal(changedPrice.data.refresh, true);
+    user = await rpg.getRPGUserByName(fixture.name);
+    assert.deepEqual({ pointMine: user.pointMine, inventory: user.inventory }, before);
+    const confirmed = await request('exchange', body(1, { rewardId: 'genius-key', count: 3, expectedCost: 120 }));
+    assert.equal(confirmed.status, 200);
+    assert.equal(confirmed.data.points, 0);
+    assert.equal(confirmed.data.lastAction.result.spentPoints, 120);
+    assert.equal(confirmed.data.lastAction.result.count, 9);
 });
 
 test('반복 열쇠 보상과 운영 가격·수량을 사용하며 누락된 보상은 포인트를 보존', async () => {
