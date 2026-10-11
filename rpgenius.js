@@ -1135,7 +1135,7 @@ function formatStatValue(key, value) {
         'dotDamage%', 'waldolandDmg%', 'butagamePartyQuestDmg%',
         'ultimateDamage%', 'elementalExtraDamage%', 'burnDamage%', 'lightFinalDamage%',
         'attackBuffEfficiency', 'shieldEfficiency', 'critLightBonus', 'nonCritLightBonus',
-        'manaAmplifierFinalAtk', 'comboCritMul', 'comboDamage', 'comboLastCritMul'
+        'manaAmplifierFinalAtk', 'comboCritMul', 'comboDamage', 'comboLastCritMul', 'wonyoddiShieldChance%'
     ].includes(key)) return sign + (Math.round(number * 1000) / 10) + '%';
     return sign + comma(number);
 }
