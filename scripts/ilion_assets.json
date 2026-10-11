@@ -1,67 +1,83 @@
 [
   {
     "category": "itemImage",
-    "file": "보주/급락전문 보주.png"
+    "file": "보주/급락전문 보주.png",
+    "sha256": "dc47849ac98d5461ef0d0fbc69815fd7b78e9b3127631de102437113970eb4e6"
   },
   {
     "category": "itemImage",
-    "file": "보주/나무 보주.png"
+    "file": "보주/나무 보주.png",
+    "sha256": "329fd6a2ad4e55984ebcc1e6da9650b3ae3d5ada4cf4468b84b7705cfff904a6"
   },
   {
     "category": "itemImage",
-    "file": "보주/나일로머스크 보주.png"
+    "file": "보주/나일로머스크 보주.png",
+    "sha256": "f3155a341cb776039482b8fa8bec24680e71ebb23cf374e0221fff0e97567fe8"
   },
   {
     "category": "itemImage",
-    "file": "보주/대학원생 보주.png"
+    "file": "보주/대학원생 보주.png",
+    "sha256": "64eb76ff7a01ea7cd914ecfa90f2fa53e7d885ba64f01fbd0b62f14da9c6693f"
   },
   {
     "category": "itemImage",
-    "file": "보주/베재댜겨쇼 보주.png"
+    "file": "보주/베재댜겨쇼 보주.png",
+    "sha256": "758652f0aee389ee0e04b05c72e22fe785eba4f398d9914d2600b4a33075e965"
   },
   {
     "category": "itemImage",
-    "file": "보주/스테브잡션 보주.png"
+    "file": "보주/스테브잡션 보주.png",
+    "sha256": "1eb2b2b4060fe4311c0980e21be053bd01c245feb3560f56e74f986c61e10d5c"
   },
   {
     "category": "itemImage",
-    "file": "보주/신호등 보주.png"
+    "file": "보주/신호등 보주.png",
+    "sha256": "b8cf6f76e3c21a71bebdf666b6bb1e7b2a8dc9f148dc4a1b426f15fc34e7ca40"
   },
   {
     "category": "itemImage",
-    "file": "보주/야치요 보주.png"
+    "file": "보주/야치요 보주.png",
+    "sha256": "c78e5f3a029481eaa361c3d97a877a50bfdc0c2e782452f26acad4dd72f13de8"
   },
   {
     "category": "itemImage",
-    "file": "보주/에스코바르 보주.png"
+    "file": "보주/에스코바르 보주.png",
+    "sha256": "9ec33d9120db9032d9314d114a9ab35a4fd304243ce86a3f5b8d99a662fd82bf"
   },
   {
     "category": "itemImage",
-    "file": "보주/연기금 보주.png"
+    "file": "보주/연기금 보주.png",
+    "sha256": "8adf334934470c48d232ff2cafca52f56dd975ee21ce58a9c328430f5c1111f4"
   },
   {
     "category": "itemImage",
-    "file": "보주/워뇨띠 보주.png"
+    "file": "보주/워뇨띠 보주.png",
+    "sha256": "d630944043f88c5c0b7d075c46d38e9e5f2cde67af5995f087d7b955ea51a794"
   },
   {
     "category": "itemImage",
-    "file": "보주/코트 보주.png"
+    "file": "보주/코트 보주.png",
+    "sha256": "9f6e3f8c6e04ecd4fdbecfeceee83340ab185e2725a428edf5f19f147da548ab"
   },
   {
     "category": "itemImage",
-    "file": "보주/키노 보주.png"
+    "file": "보주/키노 보주.png",
+    "sha256": "a4d44d660a2dc9f71ae601a0389a70f88ec7872cbfc767fa71d56803d849b70c"
   },
   {
     "category": "itemImage",
-    "file": "장비/초월 무한홀덤덱.png"
+    "file": "장비/초월 무한홀덤덱.png",
+    "sha256": "7a83085147315d4dd9cc55aa74a0d60e12dc8ba7417f83fdf6f1764b75c18c6c"
   },
   {
     "category": "itemImage",
-    "file": "장비/초월 어머니의 마음.png"
+    "file": "장비/초월 어머니의 마음.png",
+    "sha256": "43c960569c8464b9a4adc88a9a3be3327a4e445c87c11af6bc604eea8d8f45ee"
   },
   {
     "category": "itemImage",
-    "file": "장비/고유 래퍼의 증표.png"
+    "file": "장비/고유 래퍼의 증표.png",
+    "sha256": "3234ea2247ec63e5e442726e66bc9e1499378ffcc59836b4575743b278102b90"
   },
   {
     "category": "itemImage",
