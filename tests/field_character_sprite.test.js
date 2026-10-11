@@ -51,3 +51,10 @@ test('일반 필드, 헬 필드, 월드보스와 PVP가 공통 스프라이트 �
     }
     assert.ok(source.includes('pvp.configure({ serializeCard, getCharacterSprite: getHFieldCharacterSprite,'));
 });
+
+test('일리온의 일반·전직·각성과 2018 아바타는 생성된 전투 외형을 사용한다', () => {
+    for (const [type, suffix] of [['일반', ''], ['전직', '__전직'], ['각성', '__각성']]) {
+        assert.equal(spriteFile({ name: '일리온', type }), '필드/캐릭터/일리온' + suffix + '.png');
+        assert.equal(spriteFile({ name: '일리온', type, skin: '2018' }), '필드/캐릭터/일리온__일반__2018.png');
+    }
+});

@@ -19,6 +19,7 @@
     };
 
     const SKILL_RESULTS = Object.freeze({
+        '헤즈업': [id('combat', '버프')],
         '자인': [id('combat', '버프'), id('combat', '공격력 강화')],
         '시벌론': [id('combat', '행동 가속')],
         '글버지': [id('combat', '보호막 부여')],
@@ -55,6 +56,7 @@
 
     // 스킬 원본 설명 기준: 공격 연출은 대상, 자기 강화/회복 연출은 시전자에게 배치한다.
     const SKILL_TARGETS = Object.freeze({
+        '헤즈업': 'both', '느억맘': 'target',
         '자인': 'both', '시벌론': 'actor', '글버지': 'both', '불사조': 'both', '피아스트': 'both',
         '수업끝': 'both', 'SUPER EASY': 'target', '백억이요': 'target', '건력': 'actor', '청정수 투척': 'target',
         '비리': 'target', '익테봇 소환': 'actor', '유드 알레프': 'both', '안면강타': 'both',
@@ -269,10 +271,24 @@
         };
     }
 
+    function drawCardDeck(hud, deck, limit, x, y, width, now) {
+        if (!Array.isArray(deck)) return;
+        const height = 29 + Math.max(1, deck.length) * 19;
+        hud.panel(x, y, width, height, 'rgba(90,210,235,.55)');
+        hud.text('카드덱  ' + deck.length + '/' + limit, x + 10, y + 14, 10, 900, 'left', '#9be6f2');
+        if (!deck.length) hud.text('헤즈업으로 카드를 뽑으세요', x + 10, y + 35, 10, 700, 'left', '#aeb4bf');
+        deck.forEach((card, i) => {
+            const expired = card.until && card.until <= now;
+            const time = expired ? '효과 종료' : card.until ? Math.ceil((card.until - now) / 1000) + '초' : '제외 시 발동';
+            hud.text((i + 1) + ' · ' + card.name, x + 10, y + 35 + i * 19, 11, 800, 'left', expired ? '#858c96' : '#fff5df', width - 95);
+            hud.text(time, x + width - 10, y + 35 + i * 19, 10, 700, 'right', expired ? '#858c96' : '#9be6f2');
+        });
+    }
+
     return {
         DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
-        assetPath, assetUrl, motionProfile
+        assetPath, assetUrl, motionProfile, drawCardDeck
     };
 });

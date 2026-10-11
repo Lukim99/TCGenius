@@ -47,7 +47,7 @@ for (const [category, names] of Object.entries(expected)) {
     total += uniqueNames.length;
 }
 
-assert.strictEqual(total, 212, '전체 개별 이펙트 수');
+assert.strictEqual(total, 216, '전체 개별 이펙트 수');
 
 const attackEvent = combatEffects.annotateEvent({
     actor: 'opp', action: 'attack', effectElement: '화',

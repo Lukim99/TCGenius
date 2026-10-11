@@ -225,6 +225,141 @@
             "name": "YR 보주",
             "parts": ["weapon"],
             "plusStat": { "crit": 0.05 }
+        },
+        {
+            "name": "급락전문 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "takenDamage": -0.02
+            }
+        },
+        {
+            "name": "나무 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "cmb": 0.01
+            }
+        },
+        {
+            "name": "나일로머스크 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "stat": {
+                "fireAtk": 25,
+                "fireRes": 25
+            }
+        },
+        {
+            "name": "대학원생 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "recoveryEfficiency": -0.05,
+                "potion": 0.1
+            }
+        },
+        {
+            "name": "베재댜겨쇼 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "crit": 0.05,
+                "critMul": -0.05
+            }
+        },
+        {
+            "name": "스테브잡션 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "def": 0.02
+            }
+        },
+        {
+            "name": "신호등 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "stat": {
+                "darkAtk": 25,
+                "darkRes": 25
+            }
+        },
+        {
+            "name": "야치요 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "stat": {
+                "waterAtk": 25,
+                "waterRes": 25
+            }
+        },
+        {
+            "name": "에스코바르 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "nonElementDamage": 0.01
+            }
+        },
+        {
+            "name": "연기금 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "gold": 0.01
+            }
+        },
+        {
+            "name": "워뇨띠 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "pnt": 0.03
+            }
+        },
+        {
+            "name": "코트 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "eliteDmg": 0.03
+            }
+        },
+        {
+            "name": "키노 보주",
+            "parts": [
+                "hat",
+                "shoes"
+            ],
+            "plusStat": {
+                "damageBonus": 0.03
+            }
         }
     ]
 }

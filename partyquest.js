@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
+const ilionCards = require('./ilion_cards');
 const birthdayEvent = require('./birthday_raid');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
@@ -173,12 +174,39 @@ function clearPartyGunryeokOnSkillUse(room, member) {
 }
 
 function getPartyDynamicDefenseStats(member) {
-    const stats = Object.assign({}, member && member.baseSnapshot && member.baseSnapshot.stats || {});
+    const stats = getPartyLiveStats(member);
     const state = member && member.runtime && member.runtime.equipmentState || {};
     if (state.liberationBuff && Date.now() < Number(state.liberationBuff.expiredAt || 0) && (state.liberationBuff.choices || []).includes('resist')) {
         stats.allElementRes = Number(stats.allElementRes || 0) + Number(state.liberationBuff.resistValue || 0);
     }
     return stats;
+}
+
+function getPartyLiveStats(member) {
+    return ilionCards.applyStats(Object.assign({}, member?.baseSnapshot?.stats || {}), member?.runtime,
+        member?.baseSnapshot?.slotEffects, Date.now());
+}
+
+function tickPartyIlion(room, member) {
+    if (!member.baseSnapshot.stats.ilion) return;
+    const stage = Number(getTranscendEquipmentEntry(member, '무한홀덤덱')?.stage || 0);
+    const motherStage = Number(getTranscendEquipmentEntry(member, '어머니의 마음')?.stage || 0);
+    const drawn = ilionCards.tick(member.runtime, member.runtime.cooldownsUntil, stage, motherStage,
+        Number(member.runtime.equipmentState?.combatStartedAt || Date.now()), Date.now());
+    if (!drawn) return;
+    pushCombat(room, member.name + ' [무한홀덤덱] ' + drawn.text, 'buff');
+    const monster = getPhaseCombatMonster(room);
+    if (monster && Number(member.runtime.ilion.balanceHits || 0) > 0) {
+        const extra = { cardDamage: true, dotAttack: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['equipment:무한홀덤덱'] };
+        const result = calculateOutgoingDamage(member, monster, room, 0, extra);
+        const phase = getQuestById(room.questId)?.phases[room.phaseIndex];
+        if (phase?.type === 'mob') applyMobPhaseDamage(room, member, monster, result, 'skill', '균형', false);
+        else {
+            applyPlayerDamageToBoss(room, room.monster, member, result.damage, result);
+            broadcast(room, 'hit', { by: member.name, type: 'skill', skill: '무한홀덤덱', damage: result.damage, crit: !!result.isCrit, hitDetails: result.hitDetails || [], monster: serializeMonster(room.monster) });
+            if (room.monster && room.monster.hp <= 0) onMonsterDefeated(room);
+        }
+    }
 }
 
 function getActiveKingElementBonus(member) {
@@ -1046,7 +1074,7 @@ function serializeMember(m) {
                 label: b.label,
                 remain: Number(b.remain || 0) >= PERMANENT_BUFF_SEC ? null : Math.max(0, Math.round(b.remain * 10) / 10),
                 stack: Math.max(0, Math.round(Number(b.stack || 0)))
-            })),
+            })).concat(ilionCards.views(m.runtime, nowMs()).map(card => ({ id: 'ilion:' + card.name, label: card.label, remain: card.active && card.until ? remainSeconds(card.until) : null, stack: 0 }))),
             shield: Math.round(m.runtime.shield || 0),
             sealRemain: Math.max(0, Math.round(Number(m.runtime.sealRemain || 0) * 10) / 10),
             dead: !!m.runtime.dead,
@@ -1902,7 +1930,7 @@ async function start(hostName) {
                 m.birthdayMainCard = structuredClone(user.main_card);
                 m.birthdayOriginal = null;
             }
-            const baseStats = user ? rpgenius.calculateUserStats(user) : null;
+            const baseStats = user ? rpgenius.calculateUserStats(Object.assign({}, user, { field: user.field ? { ...user.field, ilion: null } : null })) : null;
             const slotEffects = user && typeof rpgenius.calculateCardSlotEffects === 'function' ? rpgenius.calculateCardSlotEffects(user) : null;
             const mainCardSkills = user ? getMainCardSkillEntries(user) : [];
             const immortalArmor = user ? getImmortalArmorSnapshot(user) : null;
@@ -2359,6 +2387,8 @@ function stepRoom(room) {
         const r = m.runtime;
         if (!r) continue;
         if (!r.dead) {
+            tickPartyIlion(room, m);
+            if (room.state !== 'inProgress') return;
             if (r.petHpRegenRate > 0 && r.hp > 0 && r.hp < r.hpMax && canPartyReceiveHealing(m)) {
                 const before = r.hp;
                 r.hp = Math.min(r.hpMax, r.hp + r.hpMax * r.petHpRegenRate * dt);
@@ -3086,7 +3116,7 @@ function applyDamageVariance(damage) {
 
 function computeBasicDamage(attacker, monster, room) {
     const snapshot = (attacker && attacker.baseSnapshot) || {};
-    const stats = snapshot.stats || {};
+    const stats = getPartyLiveStats(attacker);
     const slotEffects = snapshot.slotEffects || {};
     const quest = getQuestById(room && room.questId) || {};
     const posDef = (quest.positions && attacker && quest.positions[attacker.position]) || {};
@@ -3134,12 +3164,14 @@ function calculateOutgoingDamage(attacker, monster, room, rawDamage, extra) {
     const originalRawDamage = rawDamage;
     const isDirectAttack = !extra.summonAttack && !extra.dotAttack;
     const snapshot = (attacker && attacker.baseSnapshot) || {};
-    const stats = snapshot.stats || {};
+    const stats = getPartyLiveStats(attacker);
     const slotEffects = snapshot.slotEffects || {};
     const quest = getQuestById(room && room.questId) || {};
     const posDef = (quest.positions && attacker && quest.positions[attacker.position]) || {};
     const runtime = (attacker && attacker.runtime) || {};
     const monsterStats = (monster && monster.stats) || {};
+    const phase = quest.phases && quest.phases[room.phaseIndex];
+    ilionCards.prepareAttack(stats, runtime, slotEffects, 'party:' + room.phaseIndex + ':' + (monster?.name || ''), phase?.type === 'mob', extra, Date.now());
     preparePartyAttackUnits(room, attacker, monster, extra, stats);
     if (Number(monsterStats.avd || 0) > 0 && Math.random() < Math.max(0, Number(monsterStats.avd || 0))) {
         if (typeof extra.previewNextBefore !== 'undefined') runtime.equipmentState.previewNextFinal = Number(extra.previewNextBefore || 0);
@@ -4599,7 +4631,7 @@ function computeMonsterDamage(room, mon, target) {
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[target.position]) || {};
     const finalDefMul = (posDef && posDef.stats && posDef.stats.finalDef) || 1;
-    const targetStats = target.baseSnapshot.stats || {};
+    const targetStats = getPartyLiveStats(target);
     const targetSlotEffects = target.baseSnapshot.slotEffects || {};
     const monStats = mon.stats || {};
     if (Number(targetStats.avd || 0) > 0 && Math.random() < Math.max(0, Number(targetStats.avd || 0))) return 0;
@@ -4907,7 +4939,7 @@ function useSkill(name, skillName, targetName) {
     }
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[me.position]) || {};
-    const stats = me.baseSnapshot.stats || {};
+    const stats = getPartyLiveStats(me);
     const slotEffects = me.baseSnapshot.slotEffects || {};
     const mainCardSkillNames = (me.baseSnapshot.mainCardSkills || []).map(entry => entry.skill && entry.skill.name).filter(Boolean);
     const equipmentSkill = preparePartyTranscendSkill(me, skillName, mainCardSkillNames.length > 0 && mainCardSkillNames[mainCardSkillNames.length - 1] === skillName, room);
@@ -4916,6 +4948,7 @@ function useSkill(name, skillName, targetName) {
     mpCostMul *= (1 + Number(stats.mpReduce || 0));
     if (hasPassive(me, '과부하')) mpCostMul *= 1.20;
     mpCostMul *= Number(equipmentSkill.mpCostMul || 1);
+    mpCostMul *= ilionCards.mpMultiplier(stats, me.runtime, skillName, nowMs());
     const mp = equipmentSkill.noMp ? 0 : Math.round(Number(def.mp || 0) * mpCostMul);
     if (me.runtime.mp < mp) return { error: 'MP가 부족합니다.' };
     me.runtime.equipmentState = equipmentSkill.state;
@@ -4928,6 +4961,7 @@ function useSkill(name, skillName, targetName) {
     const cdMul = (posDef && posDef.stats && posDef.stats.skillCd) || 1;
     const statCd = Number(stats.skillCooldown || 0) / 1000;
     const cdPct = typeof rpgenius.getSkillCooldownRate === 'function' ? rpgenius.getSkillCooldownRate(stats) : Math.max(.2, 1 - Number(stats.cooldown || 0));
+    if (skillName === '느억맘') equipmentSkill.cooldownFlat = Number(equipmentSkill.cooldownFlat || 0) + getTranscendStageValue(me, '어머니의 마음', 10, 5);
     const baseCooldown = equipmentSkill.cooldownOverride == null ? Number(def.cd || 0) * cdMul + statCd : Number(equipmentSkill.cooldownOverride || 0);
     const cooldownMs = Math.max(equipmentSkill.cooldownOverride === 0 ? 0 : 500, (baseCooldown * cdPct - Number(equipmentSkill.cooldownFlat || 0)) * 1000);
     me.runtime.cooldownsUntil[skillName] = nowMs() + cooldownMs;
@@ -5018,7 +5052,7 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         executeMainCardSkillEffect(room, caster, skillName, def, targetName, equipmentSkill);
         return;
     }
-    const stats = caster.baseSnapshot.stats;
+    const stats = getPartyLiveStats(caster);
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const quest = getQuestById(room.questId);
     const posDef = (quest.positions && quest.positions[caster.position]) || {};
@@ -5188,18 +5222,35 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
 function executeMainCardSkillEffect(room, caster, skillName, def, targetName, equipmentSkill) {
     const skill = def.raw || {};
     const star = Number(def.star || 0);
-    const stats = caster.baseSnapshot.stats || {};
+    if (skillName === '헤즈업') {
+        const drawn = ilionCards.draw(caster.runtime, caster.runtime.cooldownsUntil,
+            Number(getTranscendEquipmentEntry(caster, '무한홀덤덱')?.stage || 0), Number(getTranscendEquipmentEntry(caster, '어머니의 마음')?.stage || 0), Date.now());
+        pushCombat(room, caster.name + ' [헤즈업] ' + drawn.text, 'buff');
+        caster.runtime.actionUntil = nowMs() + getActionCooldownSeconds(caster) * 1000;
+        if (caster.baseSnapshot.stats.awakening?.effect !== 'headsUpDamage' && !caster.runtime.ilion.balanceHits) {
+            broadcast(room, 'hit', { by: caster.name, type: 'skill', skill: skillName, damage: 0, hitDetails: [], monster: serializeMonster(room.monster) });
+            return;
+        }
+    }
+    if (skillName === '느억맘' && getTranscendEquipmentEntry(caster, '어머니의 마음')) {
+        const excluded = ilionCards.excludeAll(caster.runtime, caster.runtime.cooldownsUntil,
+            Number(getTranscendEquipmentEntry(caster, '어머니의 마음').stage || 1), Date.now());
+        pushCombat(room, caster.name + ' [어머니의 마음] ' + excluded.join(', ') + ' 제외', 'buff');
+    }
+    const stats = getPartyLiveStats(caster);
     const slotEffects = caster.baseSnapshot.slotEffects || {};
     const finalAtkMul = getPositionStatMul(room, caster, 'finalAtk');
     const finalAtk = Number(stats.atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
     let skillDmgMul = getPositionStatMul(room, caster, 'skillDmg');
     if (hasPassive(caster, '과부하')) skillDmgMul *= 1.25;
-    const multiplier = getSkillValue(skill, 0, star);
+    const multiplier = skillName === '헤즈업' ? Number(stats.awakening?.effect === 'headsUpDamage' ? stats.awakening.value : 0) : getSkillValue(skill, 0, star);
     const extra = Object.assign({}, equipmentSkill && equipmentSkill.extra || {});
     extra.isSkill = true;
     const combatMonster = getPhaseCombatMonster(room);
     if (Number(equipmentSkill && equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     extra.skillName = skillName;
+    if (skillName === '느억맘') extra.damageBonusMul = Number(extra.damageBonusMul || 0) + getTranscendStageValue(caster, '어머니의 마음', .60, .20);
+    if (skillName === '헤즈업' && stats.awakening?.effect !== 'headsUpDamage') { extra.cardDamage = true; extra.dotAttack = true; }
     if (skill && skill.element) extra.skillElement = skill.element;
     let nextSkillBonus = 0;
     // 일반 공격으로 간주되는 스킬(포커 못 하시네/비리)은 유드 알레프의 '다음 스킬 피해' 버프를 소모하지 않는다 (솔로 basicAttackSkill 가드와 동일)
@@ -5455,7 +5506,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (phase && phase.type === 'mob') {
         const fakeMon = getPhaseCombatMonster(room);
         const result = calculateOutgoingDamage(caster, fakeMon, room, rawDamage, extra);
-        applyMobPhaseDamage(room, caster, fakeMon, result, 'skill', skillName, true);
+        applyMobPhaseDamage(room, caster, fakeMon, result, 'skill', skillName, !extra.cardDamage);
         if (extra.lifeStealFromPreMitigation) healMember(caster, Math.round(rawDamage * Number(extra.lifeStealFromPreMitigation || 0)));
         if (extra.partyMpFlat) recoverPartyMp(room, extra.partyMpFlat);
         return;
@@ -5583,7 +5634,7 @@ const ACTION_GLOBAL_CD = 2.5; // 일반공격/스킬 공용 행동 쿨다운 (�
 
 function getActionCooldownSeconds(member) {
     const mul = member && member.runtime ? Number(member.runtime.actCdMul || 1) : 1;
-    return Math.max(0.5, ACTION_GLOBAL_CD * mul);
+    return Math.max(0.5, ACTION_GLOBAL_CD * mul - ilionCards.actionReduction(member?.baseSnapshot?.stats || {}, member?.runtime, Date.now()) / 1000);
 }
 
 function getItemDef(name) {
@@ -5785,6 +5836,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
+        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion,
         proceedToNextPhase,
         applyDamageToMember,
         healMember,

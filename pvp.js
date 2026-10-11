@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
+const ilionCards = require('./ilion_cards');
 const combatEffects = require('./public/combat-effects.js');
 
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
@@ -311,14 +312,14 @@ function findSideSkill(side, skillName) {
 
 // ===== 방어 AI 규칙 =====
 
-function skillMpCost(side, skill) {
+function skillMpCost(side, skill, t = now()) {
     const stats = side.snapshot.stats;
     const slotEffects = side.snapshot.slotEffects;
-    return Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+    return Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier(stats, side.runtime, skill.name, t)));
 }
 
-function skillCooldownMs(side, skill) {
-    const stats = side.snapshot.stats;
+function skillCooldownMs(side, skill, t = now()) {
+    const stats = getLiveEquipmentStats(side, t);
     return Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * Math.max(.2, 1 - Number(stats.cooldown || 0)));
 }
 
@@ -340,7 +341,7 @@ function minimumSkillMpCost(side, skill, t) {
         const nextOrder = equipmentStage(side, '리턴즈파겜') ? ((Number(state.attackCount || 0) + 1) % 3) + 1 : (Number(state.attackCount || 0) % 3) + 1;
         if (nextOrder == 1) multiplier *= .80;
     }
-    return Math.max(0, Math.round(skillMpCost(side, skill) * multiplier));
+    return Math.max(0, Math.round(skillMpCost(side, skill, t) * multiplier));
 }
 
 function skillUsable(side, skill, t) {
@@ -401,7 +402,7 @@ function pushEvent(battle, event) {
 
 function actionCooldownMs(side, isBasic, t) {
     if (isBasic && side.runtime.sivalon && Number(side.runtime.sivalon.until || 0) > t) return SIVALON_BASIC_COOLDOWN_MS;
-    return randomInt(2000, 3000);
+    return Math.max(500, randomInt(2000, 3000) - ilionCards.actionReduction(side.snapshot.stats, side.runtime, t));
 }
 
 // 만료 처리는 지연 평가한다. 항상 처리 시각 t를 넘겨 캐치업 순서가 어긋나지 않게 한다.
@@ -531,7 +532,7 @@ function getLiveEquipmentStats(side, t) {
     if (encore) stats.critMul = Number(stats.critMul || 0) + Number(encore.critMul || 0);
     if (liberation && (liberation.choices || []).includes('element')) stats.allElementAtk = Number(stats.allElementAtk || 0) + Number(liberation.elementValue || 0);
     if (liberation && (liberation.choices || []).includes('resist')) stats.allElementRes = Number(stats.allElementRes || 0) + Number(liberation.resistValue || 0);
-    return stats;
+    return ilionCards.applyStats(stats, side.runtime, side.snapshot.slotEffects, t);
 }
 
 function prepareEquipmentAttack(actor, target, extra, t) {
@@ -892,7 +893,9 @@ function setShield(side, amount, durationMs, t) {
 
 // 피해 계산 — 양방향 동일. 솔로 buildHuntResult + calculateMonsterAttackHitResult 순서를 그대로 따른다.
 function dealDamage(attacker, defender, rawDamage, extra, t) {
-    if (Math.random() < Number(defender.snapshot.stats.avd || 0)) return {
+    ilionCards.prepareAttack(extra.combatStats || getLiveEquipmentStats(attacker, t), attacker.runtime, attacker.snapshot.slotEffects,
+        'pvp:' + defender.name, false, extra, t);
+    if (Math.random() < Number(getLiveEquipmentStats(defender, t).avd || 0)) return {
         damage: 0, criticalCount: 0, hitCount: 0, absorbed: 0, dodged: true,
         effectElement: extra.attackElement || attackElementOf(attacker, extra.skill),
         triggeredEffectIds: combatEffects.unique(extra.triggeredEffectIds || [])
@@ -1158,7 +1161,7 @@ function prepareEquipmentSkill(side, skill, t, combatStats) {
 }
 
 function commitEquipmentSkillCooldown(side, skill, equipmentSkill, t) {
-    const base = equipmentSkill.cooldownOverride != null ? Number(equipmentSkill.cooldownOverride) : skillCooldownMs(side, skill);
+    const base = equipmentSkill.cooldownOverride != null ? Number(equipmentSkill.cooldownOverride) : skillCooldownMs(side, skill, t);
     let duration = Math.max(0, base - Number(equipmentSkill.cooldownFlatReduction || 0));
     if (Number(equipmentSkill.selfCooldownRate || 0) > 0) duration -= Math.min(Number(equipmentSkill.selfCooldownCap || 0), duration * Number(equipmentSkill.selfCooldownRate));
     side.skillCooldowns[skill.name] = Math.max(t, t + duration);
@@ -1210,11 +1213,12 @@ function doSkill(battle, actorKey, skill, t) {
     const value = (index) => rpgenius.getSkillValue(skill, index, star);
     const name = skill.name;
     const equipmentSkill = prepareEquipmentSkill(actor, skill, t, stats);
-    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(skillMpCost(actor, skill) * Number(equipmentSkill.mpCostMul || 1)));
+    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(skillMpCost(actor, skill, t) * Number(equipmentSkill.mpCostMul || 1)));
     if (actor.mp < mpCost) return { ok: false, message: 'MP가 부족합니다.' };
     actor.runtime.equipment = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') actor.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     actor.mp = Math.max(0, actor.mp - mpCost);
+    if (name === '느억맘' && equipmentStage(actor, '어머니의 마음')) equipmentSkill.cooldownFlatReduction = Number(equipmentSkill.cooldownFlatReduction || 0) + equipmentStep(actor, '어머니의 마음', 10000, 5000);
     commitEquipmentSkillCooldown(actor, skill, equipmentSkill, t);
     actor.nextActionAt = t + actionCooldownMs(actor, false, t);
     // 건력 상태에서 다른 스킬을 쓰면 해제된다
@@ -1222,6 +1226,22 @@ function doSkill(battle, actorKey, skill, t) {
 
     let multiplier = value(0);
     const extra = Object.assign({ isSkill: true, skill, combatStats: stats }, equipmentSkill.extra || {});
+    if (name === '느억맘' && equipmentStage(actor, '어머니의 마음')) {
+        ilionCards.excludeAll(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '어머니의 마음'), t);
+        Object.assign(stats, getLiveEquipmentStats(actor, t));
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + equipmentStep(actor, '어머니의 마음', .60, .20);
+        markTriggeredEffect(extra, 'equipment', '어머니의 마음');
+    }
+    if (name === '헤즈업') {
+        const drawn = ilionCards.draw(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'), equipmentStage(actor, '어머니의 마음'), t);
+        Object.assign(stats, getLiveEquipmentStats(actor, t));
+        const raw = stats.awakening?.effect === 'headsUpDamage' ? Math.round(stats.atk * stats.awakening.value * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0))) : 0;
+        if (!raw) { extra.cardDamage = true; extra.dotAttack = true; }
+        actor.nextActionAt = t + actionCooldownMs(actor, false, t);
+        const hit = raw > 0 || actor.runtime.ilion.balanceHits > 0 ? dealDamage(actor, target, raw, extra, t) : { damage: 0 };
+        pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'skill', skillName: name, text: drawn.text + (hit.damage ? ' / 피해 ' + comma(hit.damage) : '') }, hit));
+        return { ok: true };
+    }
     extra.awakeningAttackKind = isUltimateSkill(actor, skill) ? 'ultimate' : 'skill';
     const skillEffectMeta = () => ({
         effectElement: attackElementOf(actor, skill),
@@ -1530,6 +1550,10 @@ function nextDueItem(battle, limit) {
     const items = [];
     if (battle.opp.nextActionAt <= limit) items.push({ kind: 'action', side: 'opp', t: battle.opp.nextActionAt, order: 5 });
     ['me', 'opp'].forEach(key => {
+        if (battle[key].snapshot.stats.ilion) {
+            const drawAt = ilionCards.autoDrawAt(battle[key].runtime, equipmentStage(battle[key], '무한홀덤덱'), battle[key].enteredAt);
+            if (drawAt != null && drawAt <= limit) items.push({ kind: 'ilionDraw', side: key, t: drawAt, order: 0 });
+        }
         const summon = battle[key].runtime.summon;
         if (summon && summon.nextAttackAt <= limit && summon.nextAttackAt <= Number(summon.until || 0)) {
             items.push({ kind: 'summon', side: key, t: summon.nextAttackAt, order: 1 });
@@ -1565,6 +1589,16 @@ function nextDueItem(battle, limit) {
     if (items.length == 0) return null;
     items.sort((a, b) => a.t - b.t || a.order - b.order);
     return items[0];
+}
+
+function doIlionDrawTick(battle, actorKey, t) {
+    const actor = battle[actorKey], target = battle[actorKey === 'me' ? 'opp' : 'me'];
+    const drawn = ilionCards.tick(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'),
+        equipmentStage(actor, '어머니의 마음'), actor.enteredAt, t);
+    if (!drawn) return;
+    const extra = { cardDamage: true, dotAttack: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['equipment:무한홀덤덱'] };
+    const hit = actor.runtime.ilion.balanceHits > 0 ? dealDamage(actor, target, 0, extra, t) : { damage: 0, triggeredEffectIds: extra.triggeredEffectIds };
+    pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'skill', skillName: '헤즈업', text: '[무한홀덤덱] ' + drawn.text + (hit.damage ? ' / 균형 피해 ' + comma(hit.damage) : '') }, hit));
 }
 
 function checkKo(user, battle, t) {
@@ -1614,7 +1648,8 @@ function advanceBattle(user, nowMs) {
         const item = nextDueItem(battle, t0);
         if (!item || item.t >= battle.endsAt) break;
         expireStates(battle, item.t);
-        if (item.kind == 'action') doAiAction(battle, item.t);
+        if (item.kind === 'ilionDraw') doIlionDrawTick(battle, item.side, item.t);
+        else if (item.kind == 'action') doAiAction(battle, item.t);
         else if (item.kind == 'summon') doSummonTick(battle, item.side, item.t);
         else if (item.kind == 'mark') doMarkTick(battle, item.side, item.t);
         else if (item.kind == 'burn') doEquipmentBurnTick(battle, item.side, item.t);
@@ -2066,6 +2101,7 @@ function buffViews(side) {
         const order = equipmentStage(side, '리턴즈파겜') ? ((Number(equipment.attackCount || 0) + 1) % 3) + 1 : (Number(equipment.attackCount || 0) % 3) + 1;
         views.push({ name: '다음 공격 순서 ' + order, until: 0 });
     }
+    views.push(...ilionCards.views(side.runtime, now()).map(card => ({ name: card.label, until: card.active ? card.until : 0 })));
     return views;
 }
 

@@ -5,6 +5,7 @@ const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const shopCatalog = require('./shop_catalog');
 const combatEffects = require('./public/combat-effects.js');
+const ilionCards = require('./ilion_cards');
 const partyquest = require('./partyquest.js');
 const training = require('./training');
 const pvp = require('./pvp.js');
@@ -2017,6 +2018,10 @@ function getHFieldCharacterSprite(mainCard) {
     const cardType = mainCard.type == '전직' ? '전직' : '일반';
     const skin = getHFieldSpritePart(mainCard.skin);
     const candidates = [];
+    if (mainCard.type === '각성') {
+        if (skin) candidates.push([name, '각성', skin].join('__') + '.png');
+        if (!skin) candidates.push(name + '__각성.png');
+    }
     if (skin) {
         // 기존 파일명의 타입은 카드 타입과 무관하게 일반 → 전직 순서로 조회한다.
         candidates.push([name, '일반', skin].join('__') + '.png');
@@ -2079,7 +2084,9 @@ function buildHFieldState(user) {
             cardImageUrl: mainCard && mainCard.imageUrl || null,
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
-            spriteUrl: getHFieldCharacterSprite(mainCard)
+            spriteUrl: getHFieldCharacterSprite(mainCard),
+            ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
+            ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
         target: {
             name: phase == 'pillar' ? '부타의 기둥' : (dungeon.elite && dungeon.elite.name || '부타'),
@@ -2168,8 +2175,12 @@ function mapFieldTickEvent(event) {
     const killedCount = Math.max(0, Number(event && event.killedCount || 0));
     const source = String(event && event.source || '지속 피해');
     const fireEffect = /화상|겁화|장송곡/.test(source);
+    const ilionDraw = source == '무한홀덤덱';
     return combatEffects.annotateEvent(Object.assign({}, event, {
-        action: 'tick',
+        action: ilionDraw ? 'skill' : 'tick',
+        skillName: ilionDraw ? '헤즈업' : undefined,
+        triggeredEffectIds: ilionDraw ? ['equipment:무한홀덤덱'] : undefined,
+        effectTarget: ilionDraw ? (damage > 0 ? 'both' : 'actor') : undefined,
         effectKind: fireEffect ? 'burn' : /익테봇|수나타/.test(source) ? 'summon' : /그림자|심판|천공/.test(source) ? 'equipment' : 'skill',
         effectElement: fireEffect ? '화' : /그림자/.test(source) ? '암' : /심판|천공/.test(source) ? '명' : null,
         damage,
@@ -2184,7 +2195,7 @@ function drainWebFieldTickEvents(userName, state, includeKills, dailyMode = fals
     const buffered = rpgenius.drainFieldTickEvents(userName);
     if (!state || !state.inField && !dailyMode) return [];
     return buffered
-        .filter(event => event && event.fieldName == (state.fieldName || state.daily && state.daily.dungeonName) && (Number(event.damage || 0) > 0 || (includeKills && Number(event.killedCount || 0) > 0) || event.phaseChanged || event.cleared || event.defeated))
+        .filter(event => event && event.fieldName == (state.fieldName || state.daily && state.daily.dungeonName) && (Number(event.damage || 0) > 0 || (includeKills && Number(event.killedCount || 0) > 0) || event.phaseChanged || event.cleared || event.defeated || event.source == '무한홀덤덱'))
         .map(mapFieldTickEvent);
 }
 
@@ -2512,7 +2523,9 @@ function buildGeneralFieldState(user, dailyMode = false) {
             cardImageUrl: mainCard && mainCard.imageUrl || null,
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
-            spriteUrl: getHFieldCharacterSprite(mainCard)
+            spriteUrl: getHFieldCharacterSprite(mainCard),
+            ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
+            ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
         skills: getHFieldSkills(user, mainCard, runtime.inField ? runtime.fieldName : null),
         consumables: runtime.inField ? getHFieldRecoveryItems(user) : []
@@ -2839,14 +2852,14 @@ function describeWorldBossReward(entry) {
     return { kind: 'item', name: item && item.name || entry.item_name || '알 수 없는 아이템', count, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl };
 }
 
-function serializeWorldBossExtraSkill(id, cooldowns) {
+function serializeWorldBossExtraSkill(id, cooldowns, user) {
     const skill = WORLD_BOSS_EXTRA_SKILLS[Number(id)];
     if (!skill) return null;
     return {
         id: Number(id),
         name: skill.name,
         element: skill.element || null,
-        mpCost: Number(skill.mp_cost || 0),
+        mpCost: Math.round(Number(skill.mp_cost || 0) * ilionCards.mpMultiplier({ ilion: Number(user?.main_card?.id) === ilionCards.CARD_ID }, user?.field, skill.name, Date.now())),
         cooldownMs: Number(skill.cooltime || 0),
         cooldownEnd: Number(cooldowns && cooldowns[skill.name] || 0),
         desc: rpgenius.formatCurrentSkillDesc(skill, 0),
@@ -2875,7 +2888,7 @@ function buildWorldBossState(user) {
     const stats = rpgenius.calculateUserStats(user);
     const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
     const mainCard = serializeCard(user.main_card, user);
-    const selectedSkill = inField ? serializeWorldBossExtraSkill(user.field.chosenSkillId, user.field.skillCooldowns) : null;
+    const selectedSkill = inField ? serializeWorldBossExtraSkill(user.field.chosenSkillId, user.field.skillCooldowns, user) : null;
     const fieldSkills = inField ? getHFieldSkills(user, mainCard, fieldName) : [];
     const skills = selectedSkill ? [selectedSkill].concat(fieldSkills.filter(skill => skill.name != selectedSkill.name)) : fieldSkills;
     const bossCards = bosses.map(boss => {
@@ -2928,7 +2941,9 @@ function buildWorldBossState(user) {
             combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
             cardName: mainCard && mainCard.name || '', cardFormatted: mainCard && mainCard.formatted || '',
             cardImageUrl: mainCard && mainCard.imageUrl || null,
-            spriteUrl: getHFieldCharacterSprite(mainCard)
+            spriteUrl: getHFieldCharacterSprite(mainCard),
+            ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
+            ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
         target: current ? { name: current.name, element: current.element, hp: current.hp, maxHp: current.maxHp } : null,
         nextActionAt: inField ? Number(user.field.nextActionAt || 0) : 0,
@@ -5921,7 +5936,7 @@ function buildSkillInfo(card, user) {
     return data.skills.map(skillIndex => {
         const skill = skills[skillIndex];
         if (!skill) return null;
-        const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+        const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
         const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
         return {
             name: skill.name,
@@ -5966,7 +5981,7 @@ function serializeCard(card, user) {
             skills: Array.isArray(data.class.skills) ? data.class.skills.map(skillId => {
                 const skill = skills[Number(skillId)];
                 if (!skill) return null;
-                const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+                const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, skill.name, Date.now())));
                 const cooltime = Math.max(0, Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0));
                 return {
                     name: skill.name,
@@ -5985,7 +6000,7 @@ function serializeCard(card, user) {
             const stats = user ? rpgenius.calculateUserStats(user) : {};
             const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
             const star = Number(card.star || 0);
-            const mpCost = Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0))));
+            const mpCost = Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, specterSkill.name, Date.now())));
             const cooltime = Math.max(0, Number(specterSkill.cooltime || 0) + Number(stats.skillCooldown || 0));
             specterInfo = {
                 name: specterData.name,
@@ -6583,6 +6598,7 @@ function buildPetDex() {
 }
 
 const ORB_DEX_CATEGORIES = [
+    { name: '란도랜드2', parts: ['hat', 'shoes'], orbs: ['급락전문 보주', '나무 보주', '나일로머스크 보주', '대학원생 보주', '베재댜겨쇼 보주', '스테브잡션 보주', '신호등 보주', '야치요 보주', '에스코바르 보주', '연기금 보주', '워뇨띠 보주', '코트 보주', '키노 보주'] },
     { name: '대저택1', parts: ['weapon', 'armor', 'pants', 'support'], orbs: ['대탐정F 보주', '장충동왕족발보쌈 보주', '멸치볶음 보주', '조각 보주', '아리스 보주'] },
     { name: '월도랜드2', parts: ['hat', 'shoes'], orbs: ['뉴비 보주', '현식이아버지 보주', '직장인 보주'] },
     { name: '밍닝스플랜', parts: ['weapon'], orbs: ['쌩쑈메이커 보주', '첫 만남은 다시 guitar 보주', '흐음 보주'] },

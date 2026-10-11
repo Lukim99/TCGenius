@@ -42,7 +42,7 @@ async function rolls(value, fn) {
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, actual + ' ≠ ' + expected);
 test.before(() => rpg.initRpgeniusData());
 
-test('14종 × 8등급의 패시브·슬롯·스킬과 각성 이미지 레이어', () => {
+test('15종 × 8등급의 패시브·슬롯·스킬과 각성 이미지 레이어', () => {
     const compositor = require('../card_composite');
     for (const definition of awakening.definitions) for (let star = 4; star <= 11; star++) {
         const u = user(definition.name, star);

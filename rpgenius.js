@@ -54,6 +54,7 @@ const PETSET_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PetSet.json');
 const ORB_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Orb.json');
 const SPECTER_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Specter.json');
 const cardAwakening = require('./card_awakening');
+const ilionCards = require('./ilion_cards');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -265,7 +266,7 @@ function pushFieldTickEvent(userName, source, before, user, damageOverride, mess
     const list = fieldTickEvents[userName] || (fieldTickEvents[userName] = []);
     list.push({
         at: Date.now(), fieldName: before.fieldName, source, damage, killedCount,
-        message: before.phase == 'worldBoss' ? message : undefined,
+        message: before.phase == 'worldBoss' || source == '무한홀덤덱' ? message : undefined,
         defeated: (before.phase == 'dailyDungeon' || before.phase == 'worldBoss') && !sameField && Number(user.hp || 0) <= 1,
         bossDefeated: before.phase == 'worldBoss' && !sameField && Number(getWorldBossState(before.fieldName).hp || 0) <= 0,
         phaseBefore: before.phase, phaseAfter,
@@ -462,8 +463,10 @@ async function runFieldMarkTick(userName, trainingUser) {
 const fieldEquipmentDotTimers = {};
 function ensureFieldEquipmentDotTimer(user, channel) {
     if (!user || !user.field || user.field.training) return;
-    const state = user.field.equipmentState || {};
-    if (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
+    const state = deckStage ? getEquipmentCombatState(user) : user.field.equipmentState || {};
+    if (!deckStage && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) return;
+    if (deckStage) ilionCards.autoDrawAt(user.field, deckStage, Number(user.field.enteredAt || Date.now()));
     if (channel) activeFieldChannels[user.name] = channel;
     if (fieldEquipmentDotTimers[user.name]) return;
     fieldEquipmentDotTimers[user.name] = setInterval(() => enqueueFieldTick(user.name, () => runFieldEquipmentDotTick(user.name)).catch(e => console.error('[equipment dot tick]', e.message)), 200);
@@ -476,13 +479,23 @@ function clearFieldEquipmentDotTimer(userName) {
 async function runFieldEquipmentDotTick(userName, trainingUser) {
     const user = trainingUser || await getRPGUserByName(userName);
     const channel = activeFieldChannels[userName] || worldBossChannels[userName];
-    const state = user && user.field && user.field.equipmentState;
-    if (!user || !user.field || !state || (!state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
+    const deckStage = getIlionWeaponStage(user, '무한홀덤덱');
+    const state = user && user.field && (deckStage ? getEquipmentCombatState(user) : user.field.equipmentState);
+    if (!user || !user.field || !state || (!deckStage && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0))) { clearFieldEquipmentDotTimer(userName); return; }
     const context = getFieldCombatContext(user);
     if (context.error) { clearFieldEquipmentDotTimer(userName); return; }
     const tickTargetKey = getFieldCombatTargetKey(user, context);
     const now = Date.now();
     const pending = [];
+    const ilionBefore = captureFieldTickState(user);
+    const drawn = ilionCards.tick(user.field, user.field.skillCooldowns, deckStage, getIlionWeaponStage(user, '어머니의 마음'), Number(user.field.enteredAt || now), now);
+    if (drawn) {
+        let message = drawn.text;
+        if (Number(user.field.ilion.balanceHits || 0) > 0) message += '\n' + await applyFieldDamageAction(user, context, 0,
+            { cardDamage: true, dotAttack: true, disableEquipmentBonusDamage: true, notice: drawn.text, triggeredEffectIds: ['equipment:무한홀덤덱'] }, 'card', null);
+        pushFieldTickEvent(userName, '무한홀덤덱', ilionBefore, user, parseFieldTickDamage(message), message);
+    }
+    if (!drawn && !state.burn && !state.hellfire && !state.judgment && !state.dragonRegen && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length)) return;
     if (Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0) {
         const currentTargetKey = getFieldCombatTargetKey(user, context);
         const waiting = [];
@@ -578,7 +591,7 @@ async function runFieldEquipmentDotTick(userName, trainingUser) {
         }
         pushFieldTickEvent(userName, String(effect.label || '장비 효과'), tickBefore, user, tickDamage, effectMessage);
     }
-    if (!state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
+    if (!deckStage && !state.burn && !state.hellfire && !state.judgment && !(Array.isArray(state.shadowQueue) && state.shadowQueue.length > 0)) clearFieldEquipmentDotTimer(userName);
     if (!trainingUser) await user.save({ defer: true });
     if (channel && lines.length > 0) channel.sendChat(lines.join('\n'));
 }
@@ -2882,11 +2895,13 @@ function calculateCardSlotEffects(user) {
         ultimateDamage: 0,
         shieldFinalDamage: 0,
         finalAttackBonus: 0, cmb: 0, recoveryEfficiency: 0, bossDmg: 0, defBonus: 0,
-        criticalFinalDamage: 0, pnt: 0, summonDuration: 0, dotDamage: 0
+        criticalFinalDamage: 0, pnt: 0, summonDuration: 0, dotDamage: 0,
+        ilionDeckAttack: 0, firstStrikeDamage: 0
     };
     // 감소형 페널티 키는 대응 보너스 키에서 차감 (표시 수치는 양수로 저장)
     const applyEffect = (key, value) => {
         if (!value) return;
+        if (key === 'ilionDeckAttack' && Number(user.main_card?.id) !== ilionCards.CARD_ID) return;
         if (key === 'skillDamageReduction') { effects.skillDamageBonus -= value; return; }
         if (key === 'basicDamageReduction') { effects.basicDamageBonus -= value; return; }
         if (typeof effects[key] === 'undefined') return;
@@ -2943,7 +2958,8 @@ function formatCardSlotEffectLines(user) {
         ['damageBonus', '일반 몬스터 대상 피해'],
         ['finalAttackBonus', '최종 공격력 증가'], ['cmb', '연격 확률 증가'], ['recoveryEfficiency', '회복 효율 증가'],
         ['bossDmg', '보스 추가 피해 증가'], ['defBonus', '방어력 증가'], ['criticalFinalDamage', '치명타 공격 시 최종 피해 증가'],
-        ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가']
+        ['pnt', '방어 관통력 증가'], ['summonDuration', '소환수 지속 시간 증가'], ['dotDamage', '지속 피해 증가'],
+        ['ilionDeckAttack', '카드덱의 카드 1장당 최종 공격력 증가'], ['firstStrikeDamage', '선제공격 강화']
     ];
     return effectMap
         .filter(entry => Number(slotEffects[entry[0]] || 0) != 0)
@@ -4075,6 +4091,9 @@ function calculateUserStats(user, _out) {
     stats.finalAtk = (1 + Number(plusStats.finalAtk || 0) + Number(artifactValues.finalAtk || 0)) * (user.battleCryPotion && Date.now() < user.battleCryPotion.expired_at ? 1 + Number(user.battleCryPotion.amount || 0) : 1) - 1;
     stats.atk = Math.round(Number(stats.atk || 0) * stats.awakeningAttackMultiplier * (1 + Number(slotEffects.finalAttackBonus || 0)) * (1 + stats.finalAtk));
     if (_out && typeof _out == 'object') _out.plusStats = plusStats;
+    stats.ilion = Number(user.main_card?.id) === ilionCards.CARD_ID;
+    stats.ilionStar = Number(user.main_card?.star || 0);
+    ilionCards.applyStats(stats, user.field, slotEffects, Date.now());
     return stats;
 }
 
@@ -4594,12 +4613,12 @@ function getComboHitCount(stats) {
 }
 
 function applyCriticalDamage(damage, stats, extra, defenderStats) {
-    if (extra && extra.disableCritical) return { damage: Number(damage || 0), isCritical: false };
+    if (extra && extra.disableCritical && !stats.ilionForceCritical) return { damage: Number(damage || 0), isCritical: false };
     const critChance = Math.max(0, Number(stats.crit || 0) + Number(extra && extra.critChanceBonus || 0)) * (extra && typeof extra.critChanceMul != 'undefined' ? Number(extra.critChanceMul) : 1) + Number(extra && extra.awakeningCritChanceBonus || 0);
     const critMul = Number(stats.critMul || 1.4) + Number(extra && extra.critMulBonus || 0);
     const critDef = Math.max(0, Math.min(1, Number(defenderStats && defenderStats.critDef || 0)));
     const finalCritMul = 1 + Math.max(0, critMul - 1) * (1 - critDef);
-    const isCritical = extra && extra.forceCritical ? true : Math.random() < critChance;
+    const isCritical = stats.ilionForceCritical || (extra && extra.forceCritical) ? true : Math.random() < critChance;
     return {
         damage: isCritical ? Math.round(Number(damage || 0) * finalCritMul) : Number(damage || 0),
         isCritical: isCritical
@@ -4780,6 +4799,13 @@ function calculateAttackHitResult(rawDamage, defense, penetration, stats, slotEf
         const awakeningDamage = Math.round(finalDamage * extra.awakeningExtraDamage);
         finalDamage += awakeningDamage;
         damageComponents.push({ damage: awakeningDamage, type: 'additional', label: '각성 추가 피해', hitIndex: null, isCritical: false, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
+    }
+    for (let i = 0; i < Number(extra?.ilionBalanceHits || 0); i++) {
+        const balance = calculateAttackHitResult(Number(stats.atk || 0), defense, penetration, stats, slotEffects,
+            { hitCount: 1, cardDamage: true, disableEquipmentBonusDamage: true, attackElement: extra.attackElement }, defenderStats);
+        finalDamage += balance.finalDamage;
+        criticalCount += balance.criticalCount;
+        damageComponents.push({ damage: balance.finalDamage, type: 'additional', label: '균형', hitIndex: null, isCritical: balance.criticalCount > 0, isDestinyDamage: false, isTenthAtk: false, isComboHit: false });
     }
     return { hitCount, comboHitCount, attackUnitCount: separateBasicAttackHits ? hitCount : comboHitCount, hitDamages, hitDetails, damageComponents, finalDamage, criticalCount, bonusTripleZero, destinyDamageCount, trueDamageCount: destinyDamageCount, extraDamageDealt };
 }
@@ -5278,6 +5304,7 @@ async function enterDailyDungeon(user, dungeonName, channel) {
         elite: null,
         dailyEffects: []
     };
+    ensureFieldEquipmentDotTimer(user, channel);
     return [
         '✅ 일일 던전에 입장했습니다.',
         '- ' + dungeon.name,
@@ -5331,9 +5358,11 @@ async function enterField(user, fieldName, options, channel) {
             nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns,
             elite: { hp: Number(dungeon.elite.hp || 1) }, killCount: 0
         };
+        ensureFieldEquipmentDotTimer(user, channel);
         return '✅ 부타게임[H]에 입장했습니다.\n- 헬 초대장 x' + HELL_INVITATION_COST + ' 소모\n- ' + dungeon.elite.name + ' 등장!\n- HP ' + comma(dungeon.elite.hp);
     }
     user.field = { name: dungeon.name, enteredAt: Date.now(), nextActionAt: Number(cooldowns.nextActionAt || 0), skillCooldowns: cooldowns.skillCooldowns, killCount: 0, elite: null };
+    ensureFieldEquipmentDotTimer(user, channel);
     return '✅ 필드에 입장했습니다.\n- ' + dungeon.name;
 }
 
@@ -5517,6 +5546,7 @@ function confirmWorldBossSkill(user, indexArg, channel) {
             curseApplied: false
         };
     }
+    ensureFieldEquipmentDotTimer(user, channel);
     if (channel) startWorldBossSkillTimer(user, boss, channel);
     const lines = ['⚔️ 월드보스 ' + boss.name + ' 전투 시작!'];
     lines.push('- 선택 스킬: ' + skill.name);
@@ -5570,7 +5600,8 @@ function getActiveDailyDungeonEffect(user, now) {
 }
 
 function getFieldActionCooldownMs(user, now) {
-    return getActiveDailyDungeonEffects(user, now).some(effect => effect.type == 'punch') ? 1000 : randomInt(2000, 3000);
+    const base = getActiveDailyDungeonEffects(user, now).some(effect => effect.type == 'punch') ? 1000 : randomInt(2000, 3000);
+    return Math.max(500, base - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, now));
 }
 
 function setNextFieldActionAt(user) {
@@ -6678,6 +6709,12 @@ function getEquipmentCombatState(user) {
     return user.field.equipmentState;
 }
 
+function getIlionWeaponStage(user, name) {
+    if (Number(user?.main_card?.id) !== ilionCards.CARD_ID) return 0;
+    const entry = getEquippedNamed(user, name);
+    return entry ? getTranscendStage(entry.ref.equip, entry.data) : 0;
+}
+
 function applyTranscendPreAttack(user, context, rawDamage, extra, actionType, skill) {
     const stats = calculateUserStats(user);
     const state = getEquipmentCombatState(user);
@@ -7157,6 +7194,8 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
     extra.attackElement = getAttackElement(user, actionType === 'skill' ? skill : null);
     if (actionType === 'basic' && cardAwakening.getPassive(user.main_card)?.effect === 'waterBasic') extra.attackElement = '수';
     extra.combatTargetKey = getFieldCombatTargetKey(user, context);
+    ilionCards.prepareAttack(calculateUserStats(user), user.field, calculateCardSlotEffects(user), extra.combatTargetKey,
+        context.type === 'normal' || context.type === 'dailyDungeon' || (context.type === 'training' && context.dungeon.kind === 'normal'), extra, Date.now());
     const isHellPillar = context && context.type === 'hell' && context.phase === 'pillar';
     if (isHellPillar) {
         extra.hitCount = 1;
@@ -7566,7 +7605,7 @@ function executeMainCardSkillInField(user, skillName) {
     const equipmentSkill = isHellPillar
         ? { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, notices: [], state: JSON.parse(JSON.stringify(getEquipmentCombatState(user))) }
         : prepareTranscendSkillEffects(user, skillData.skill, stats);
-    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1)));
+    const mpCost = equipmentSkill.noMp ? 0 : Math.max(0, Math.round(Number(skillData.skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * Number(equipmentSkill.mpCostMul || 1) * ilionCards.mpMultiplier(stats, user.field, skillData.skill.name, now)));
     if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.field.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
@@ -7582,6 +7621,29 @@ function executeMainCardSkillInField(user, skillName) {
     extra.maxMp = maxMp;
     extra.receivedDamageReduction = getActiveFieldDamageReduction(user);
     extra.receivedDamageMul = getActiveFieldDamageMultiplier(user);
+    if (skillData.skill.name === '헤즈업') {
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+        const drawn = ilionCards.draw(user.field, user.field.skillCooldowns, getIlionWeaponStage(user, '무한홀덤덱'), getIlionWeaponStage(user, '어머니의 마음'), now);
+        extra.notice = drawn.text;
+        markTriggeredCombatEffect(extra, 'skill', '헤즈업');
+        const drawnStats = calculateUserStats(user);
+        const damage = drawnStats.awakening?.effect === 'headsUpDamage' ? Math.round(drawnStats.atk * drawnStats.awakening.value * (1 + Number(drawnStats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0))) : 0;
+        if (!damage) { extra.cardDamage = true; extra.dotAttack = true; }
+        if (damage > 0 || Number(user.field.ilion.balanceHits || 0) > 0) return applyFieldDamageAction(user, context, damage, extra, 'skill', skillData.skill);
+        storeFieldActionEffectIds(user.name, ['skill:헤즈업']);
+        if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);
+        return '🃏 ' + drawn.text + '\n- MP ' + comma(mpCost) + ' 소모 (' + comma(user.mp) + '/' + comma(maxMp) + ')';
+    }
+    if (skillData.skill.name === '느억맘' && getIlionWeaponStage(user, '어머니의 마음') > 0) {
+        const stage = getIlionWeaponStage(user, '어머니의 마음');
+        equipmentSkill.cooldownFlatReduction += (10 + 5 * (stage - 1)) * 1000;
+        commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+        ilionCards.excludeAll(user.field, user.field.skillCooldowns, stage, now);
+        Object.assign(stats, calculateUserStats(user));
+        extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .60 + .20 * (stage - 1);
+        markTriggeredCombatEffect(extra, 'equipment', '어머니의 마음');
+        extra.ilionCooldownCommitted = true;
+    }
     if (equipmentSkill.notices.length > 0) extra.notice = equipmentSkill.notices.join(' / ');
     if (skillData.skill.name == '유서새김' && getEquippedNamed(user, '흐음티콘')) markTriggeredCombatEffect(extra, 'equipment', '흐음티콘');
     if (skillData.skill.name == '범인은 이 안에' && getEquippedNamed(user, '피의 서약')) markTriggeredCombatEffect(extra, 'equipment', '피의 서약');
@@ -7806,7 +7868,7 @@ function executeMainCardSkillInField(user, skillName) {
     const rawDamage = extra.basicAttackSkill
         ? Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterBasic || 0) + Number(slotEffects.basicDamageBonus || 0)))
         : Math.round(Number(stats.atk || 0) * multiplier * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0) + nextSkillBonus));
-    commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
+    if (!extra.ilionCooldownCommitted) commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
     return applyFieldDamageAction(user, context, rawDamage, extra, 'skill', skillData.skill);
 }
 
@@ -7819,6 +7881,7 @@ function setWorldBossNextActionAt(user) {
     } else if (buffs.actionCooldownReduction) {
         delete buffs.actionCooldownReduction;
     }
+    cooldown = Math.max(500, cooldown - ilionCards.actionReduction({ ilion: Number(user.main_card?.id) === ilionCards.CARD_ID }, user.field, Date.now()));
     setFieldNextActionAt(user, Date.now() + cooldown);
 }
 
@@ -7841,6 +7904,7 @@ function dealDamageToWorldBoss(user, boss, rawDamage, opts) {
     const stats = calculateUserStats(user);
     const slotEffects = calculateCardSlotEffects(user);
     const extra = Object.assign({}, opts || {});
+    ilionCards.prepareAttack(stats, user.field, slotEffects, 'worldBoss:' + boss.name, false, extra, Date.now());
     cardAwakening.prepareAttack(stats, user.field, getWorldBossState(boss.name), extra, extra.awakeningAttackKind || (extra.isBasic ? 'basic' : 'skill'), Date.now());
     extra.finalDamageBonus = Number(extra.finalDamageBonus || 0) + getManaResonanceBonus(user, stats);
     const defenderStats = getWorldBossDefenderStats(boss);
@@ -7923,7 +7987,7 @@ async function useWorldBossChosenSkill(user, skillName) {
     const slotEffects = calculateCardSlotEffects(user);
     const maxMp = Number(stats.mp || 0);
     const mp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
-    const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0))));
+    const mpCost = Math.max(0, Math.round(Number(skill.mp_cost || 0) * (1 - Math.min(1, slotEffects.mpCostReduction)) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier(stats, user.field, skill.name, now)));
     if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.mp = mp - mpCost;
     const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * getSkillCooldownRate(stats));

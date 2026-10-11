@@ -1,0 +1,158 @@
+[
+  {
+    "category": "itemImage",
+    "file": "보주/급락전문 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/나무 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/나일로머스크 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/대학원생 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/베재댜겨쇼 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/스테브잡션 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/신호등 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/야치요 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/에스코바르 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/연기금 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/워뇨띠 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/코트 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "보주/키노 보주.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/초월 무한홀덤덱.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/초월 어머니의 마음.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "장비/고유 래퍼의 증표.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "아바타/2018.png"
+  },
+  {
+    "category": "itemImage",
+    "file": "사용/일리온 캐릭터 변환석.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/각성 2018 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/각성 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/일반 2018 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/일반 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/전직 2018 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/전직 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/캐릭터표지(각성).png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/캐릭터표지(일반).png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/캐릭터표지(전직).png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/프레스티지 일반 2018 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/프레스티지 일반 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/프레스티지 전직 2018 일리온.png"
+  },
+  {
+    "category": "cardImage",
+    "file": "카드분리/캐릭터/일리온/프레스티지 전직 일리온.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/일리온.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/일리온__전직.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/일리온__각성.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/캐릭터/일리온__일반__2018.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/이펙트/스킬/헤즈업.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/이펙트/스킬/느억맘.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/이펙트/장비/무한홀덤덱.png"
+  },
+  {
+    "category": "ui",
+    "file": "필드/이펙트/장비/어머니의 마음.png"
+  }
+]
