@@ -188,7 +188,7 @@
             const entry = ev.support && effects.find(e => e.kind === 'support' && e.name === ev.support);
             const start = entry ? Math.max(now, entry.start + (STRIKE + .3) * 1000) : now;
             const effect = { kind: ev.kind, target: ev.target, source: ev.source, support: ev.support || '', amount, start, life: LIFE[ev.kind], seed: hash(id), sounded: false };
-            if (ev.kind === 'shield-break' || ev.kind === 'shield-expire') quiet.set(ev.target, start + 1200);
+            if ((ev.kind === 'shield-break' || ev.kind === 'shield-expire') && !(ev.remainingShield > 0)) quiet.set(ev.target, start + 1200);
             if (ev.kind === 'shield-grant') quiet.delete(ev.target);
             effects.push(effect);
             if (effects.length > 48) effects.splice(effects.findIndex(e => e.kind !== 'support'), 1);

@@ -8,6 +8,7 @@ const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
+const combatShields = require('./combat_shields');
 const birthdayEvent = require('./birthday_raid');
 
 const PARTY_QUEST_PATH = path.join(__dirname, 'DB', 'RPGenius', 'PartyQuest.json');
@@ -188,7 +189,7 @@ function getPartyLiveStats(member) {
         member?.baseSnapshot?.slotEffects, Date.now());
     randoCharacters.tickMental(stats, member?.runtime, member?.baseSnapshot?.slotEffects, Date.now());
     return randoCharacters.applyStats(stats, member?.runtime, member?.baseSnapshot?.slotEffects,
-        member?.runtime?.shieldExpireAt > Date.now() ? member.runtime.shield : 0, Date.now());
+        member?.runtime ? refreshMemberShield(member) : 0, Date.now());
 }
 
 function tickPartyKino(room, member) {
@@ -261,7 +262,7 @@ function getPartyGoldBonus(member) {
 
 function getPartyConditionalFinalAttack(member) {
     let value = 0;
-    if (Number(member && member.runtime && member.runtime.shield || 0) > 0) value += getTranscendStageValue(member, '강릉함씨 32대손', .18, .05);
+    if (member && member.runtime && refreshMemberShield(member) > 0) value += getTranscendStageValue(member, '강릉함씨 32대손', .18, .05);
     return value;
 }
 
@@ -276,7 +277,7 @@ function canPartyReceiveHealing(member) {
     return !(state && Date.now() < Number(state.ignoreHealingUntil || 0));
 }
 
-function applyTranscendAllyEffect(room, source, target, kind) {
+function applyTranscendAllyEffect(room, source, target, kind, shield) {
     if (!source || !target || source === target || !target.runtime || target.runtime.dead) return;
     const durationBonus = getEquipmentEffectDurationBonus(source);
     const durationMs = (10 + durationBonus) * 1000;
@@ -299,7 +300,9 @@ function applyTranscendAllyEffect(room, source, target, kind) {
     if (kind === 'shield') {
         const sanctuaryArmor = getTranscendStageValue(source, '성역의 인도자 아머', .02, .02);
         if (sanctuaryArmor > 0 && Number(target.runtime.hp || 0) / Math.max(1, Number(target.runtime.hpMax || 1)) <= .50 && canPartyApplyShield(source, target)) {
-            grantMemberShield(room, source, target, Math.max(1, Math.round(target.runtime.hpMax * sanctuaryArmor * getPartyShieldMultiplier(source))));
+            grantMemberShield(room, source, target, Math.max(1, Math.round(target.runtime.hpMax * sanctuaryArmor * getPartyShieldMultiplier(source))), {
+                source: 'equipment:성역의 인도자 아머', expiresAt: shield && shield.expiresAt, hits: shield && shield.hits
+            });
         }
         const pantsMp = getTranscendStageValue(source, '성역의 인도자 트라우저', .01, .01);
         if (pantsMp > 0) target.runtime.mp = Math.min(target.runtime.mpMax, target.runtime.mp + Math.max(1, Math.round(target.runtime.mpMax * pantsMp)));
@@ -1525,9 +1528,28 @@ function emitPartyEffect(room, kind, source, target, amount, extra) {
     });
 }
 
-function grantMemberShield(room, source, target, amount, support) {
-    target.runtime.shield = Number(target.runtime.shield || 0) + amount;
-    emitPartyEffect(room, 'shield-grant', source, target, amount, support ? { support } : undefined);
+function refreshMemberShield(member, now = nowMs()) {
+    const r = member.runtime;
+    combatShields.layers(r, { amount: r.shield, expiresAt: r.shieldExpireAt, hits: r.shieldHits, expireHeal: r.shieldExpireHeal });
+    const active = combatShields.active(r, now);
+    r.shield = active.reduce((sum, layer) => sum + layer.amount, 0);
+    const deadlines = r.shieldLayers.filter(layer => layer.expiresAt).map(layer => layer.expiresAt);
+    r.shieldExpireAt = deadlines.length ? Math.min(...deadlines) : 0;
+    r.shieldHits = active.length === 1 ? Number(active[0].hits || 0) : 0;
+    r.shieldExpireHeal = active.reduce((sum, layer) => sum + Number(layer.expireHeal || 0), 0);
+    return r.shield;
+}
+
+function grantMemberShield(room, source, target, amount, options = {}) {
+    triggerShieldExpire(room, target);
+    const layer = combatShields.grant(target.runtime, {
+        source: options.source || 'shield', caster: options.caster ?? source?.name ?? '', amount,
+        expiresAt: options.expiresAt ?? (options.durationMs ? nowMs() + options.durationMs : 0),
+        hits: Number(options.hits || 0), expireHeal: Number(options.expireHeal || 0)
+    });
+    refreshMemberShield(target);
+    emitPartyEffect(room, 'shield-grant', source, target, amount, { support: options.support, shieldSource: layer.source, remainingShield: target.runtime.shield });
+    return layer;
 }
 
 function serializeRoomForSpectator(room) {
@@ -2509,7 +2531,7 @@ function stepRoom(room) {
                 r.buffs.splice(i, 1);
             }
         }
-        if (r.shieldExpireAt && Date.now() >= r.shieldExpireAt) triggerShieldExpire(room, m);
+        triggerShieldExpire(room, m);
         if (r.iktaeBot) {
             const now = Date.now();
             if (now > r.iktaeBot.expired_at) {
@@ -2660,17 +2682,21 @@ function stepRoom(room) {
 }
 
 function triggerShieldExpire(room, m) {
-    const r = m.runtime;
-    const heal = Math.round(Number(r.shieldExpireHeal || 0));
-    emitPartyEffect(room, 'shield-expire', null, m, Number(r.shield || 0));
-    r.shield = 0;
-    r.shieldHits = 0;
-    r.shieldExpireAt = 0;
-    if (heal > 0 && !r.dead) {
-        const healed = healMember(m, heal);
-        if (healed > 0) pushCombat(room, m.name + ' 보호막 소멸 → 생명력 +' + comma(healed), 'heal');
+    refreshMemberShield(m);
+    const expired = combatShields.expire(m.runtime, nowMs());
+    refreshMemberShield(m);
+    expired.forEach(layer => {
+        emitPartyEffect(room, 'shield-expire', null, m, layer.amount, { shieldSource: layer.source, remainingShield: m.runtime.shield });
+        healExpiredShield(room, m, layer);
+    });
+}
+
+function healExpiredShield(room, member, layer) {
+    const heal = Math.round(Number(layer.expireHeal || 0));
+    if (heal > 0 && !member.runtime.dead) {
+        const healed = healMember(member, heal);
+        if (healed > 0) pushCombat(room, member.name + ' 보호막 소멸 → 생명력 +' + comma(healed), 'heal');
     }
-    r.shieldExpireHeal = 0;
 }
 
 function expireBuff(member, buff) {
@@ -3883,11 +3909,7 @@ function useSupportSito(room, source) {
     for (const m of getAliveMembers(room)) {
         // 보호막 무효 스탯(disableShield)을 가진 대상만 제외 — 시전자는 파티원이 아니므로 source는 없다.
         if (!canPartyApplyShield(null, m)) continue;
-        const r = m.runtime;
-        grantMemberShield(room, source, m, SUPPORT_SITO_SHIELD, 'SitoSoym');
-        r.shieldHits = 99;
-        r.shieldExpireAt = nowMs() + SUPPORT_SITO_SEC * 1000;
-        r.shieldExpireHeal = 0;
+        grantMemberShield(room, source, m, SUPPORT_SITO_SHIELD, { source: 'support:SitoSoym', caster: '지원군', support: 'SitoSoym', durationMs: SUPPORT_SITO_SEC * 1000, hits: 99 });
         upsertMemberBuff(m, { id: 'supportSito', label: '사이토 소음', remain: SUPPORT_SITO_SEC });
     }
     room.supportSito = { remain: SUPPORT_SITO_SEC, tick: 1, sourceName: source && source.name };
@@ -3902,7 +3924,8 @@ function stepSupportSito(room, dt) {
     if (sp.tick <= 0) {
         sp.tick += 1;
         for (const m of getAliveMembers(room)) {
-            if (Number(m.runtime.shield || 0) <= 0) continue;
+            refreshMemberShield(m);
+            if (!combatShields.active(m.runtime, nowMs()).some(layer => layer.source === 'support:SitoSoym')) continue;
             healMember(m, Math.round(Number(m.runtime.hpMax || 0) * SUPPORT_SITO_TICK_HP_PCT), source, 'SitoSoym');
         }
     }
@@ -4736,6 +4759,7 @@ function computeMonsterDamage(room, mon, target) {
 
 function applyDamageToMember(room, member, dmg, source) {
     const r = member.runtime;
+    triggerShieldExpire(room, member);
     if (rpgenius.isAwakeningInvincible(member.name, member.baseSnapshot.stats)) {
         pushCombat(room, source + ' → ' + member.name + ' [무적]', 'buff');
         return;
@@ -4786,17 +4810,14 @@ function applyDamageToMember(room, member, dmg, source) {
         r.nextDamageReduction = 0;
     }
     if (r.shield > 0) {
-        const absorbed = Math.min(r.shield, dmg);
-        r.shield -= absorbed;
+        const result = combatShields.absorb(r, dmg);
+        const absorbed = result.absorbed;
+        refreshMemberShield(member);
         dmg -= absorbed;
         recordPartyDamageReduced(member, 'shield', absorbed);
         emitPartyEffect(room, 'shield-block', null, member, absorbed);
-        if (r.shieldHits > 0) {
-            r.shieldHits -= 1;
-            if (r.shieldHits <= 0) r.shield = 0;
-        }
-        if (r.shield <= 0) emitPartyEffect(room, 'shield-break', null, member, absorbed);
-        if (r.shield <= 0 && r.shieldExpireAt) triggerShieldExpire(room, member);
+        if (r.shield <= 0) emitPartyEffect(room, 'shield-break', null, member, absorbed, { remainingShield: 0 });
+        result.broken.forEach(layer => healExpiredShield(room, member, layer));
         if (dmg <= 0) {
             pushCombat(room, source + ' → ' + member.name + ' [방어]', 'damage');
             return;
@@ -5016,10 +5037,7 @@ function useSkill(name, skillName, targetName) {
         me.runtime.cooldownsUntil[ultimateName] = Math.max(nowMs(), Number(me.runtime.cooldownsUntil[ultimateName] || nowMs()) - Number(equipmentSkill.reduceUltimateCooldown) * 1000);
     }
     if (Number(equipmentSkill.selfShield || 0) > 0 && canPartyApplyShield(me, me)) {
-        grantMemberShield(room, me, me, Number(equipmentSkill.selfShield));
-        me.runtime.shieldHits = 99;
-        me.runtime.shieldExpireAt = nowMs() + Number(equipmentSkill.selfShieldDuration || 5) * 1000;
-        me.runtime.shieldExpireHeal = 0;
+        grantMemberShield(room, me, me, Number(equipmentSkill.selfShield), { source: 'equipment:심해의 갑옷', durationMs: Number(equipmentSkill.selfShieldDuration || 5) * 1000, hits: 99 });
     }
     executeSkillEffect(room, me, skillName, def, targetName, equipmentSkill);
     broadcastRoom(room);
@@ -5041,9 +5059,7 @@ function usePartySelfDestruct(room, member) {
     if (typeof equipmentSkill.hpAfter !== 'undefined') runtime.hp = Math.max(1, Number(equipmentSkill.hpAfter));
     commitPartySkillEquipmentSideEffects(room, equipmentSkill);
     if (Number(equipmentSkill.selfShield || 0) > 0 && canPartyApplyShield(member, member)) {
-        grantMemberShield(room, member, member, Number(equipmentSkill.selfShield));
-        runtime.shieldHits = 99;
-        runtime.shieldExpireAt = now + Number(equipmentSkill.selfShieldDuration || 5) * 1000;
+        grantMemberShield(room, member, member, Number(equipmentSkill.selfShield), { source: 'equipment:심해의 갑옷', durationMs: Number(equipmentSkill.selfShieldDuration || 5) * 1000, hits: 99 });
     }
     if (botActive) runtime.cooldownsUntil['익테봇 소환'] = Math.max(now, Number(runtime.cooldownsUntil['익테봇 소환'] || now) - 5000);
     if (sunataActive) runtime.cooldownsUntil['수나타 소환'] = Math.max(now, Number(runtime.cooldownsUntil['수나타 소환'] || now) - 5000);
@@ -5211,9 +5227,8 @@ function executeSkillEffect(room, caster, skillName, def, targetName, equipmentS
         const target = pickAllyTarget(room, caster, targetName) || caster;
         const amount = Math.max(1, Math.round(evalFormula(def.shield, ctx) * getPartyShieldMultiplier(caster)));
         if (canPartyApplyShield(caster, target)) {
-            grantMemberShield(room, caster, target, amount);
-            target.runtime.shieldHits = Number(def.shieldHits || 99);
-            applyTranscendAllyEffect(room, caster, target, 'shield');
+            const shield = grantMemberShield(room, caster, target, amount, { source: 'skill:' + skillName, hits: Number(def.shieldHits || 99) });
+            applyTranscendAllyEffect(room, caster, target, 'shield', shield);
             pushCombat(room, caster.name + ' [' + skillName + '] → ' + target.name + ' 보호막 +' + amount, 'buff');
         }
     }
@@ -5292,9 +5307,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
     if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(skillName)) {
         const mode = randoCharacters.switchMode({ ...stats, hp: caster.runtime.hpMax }, caster.runtime, caster.runtime.cooldownsUntil, skillName, nowMs());
         if (mode.shield && canPartyApplyShield(caster, caster)) {
-            caster.runtime.shield = mode.shield;
-            caster.runtime.shieldHits = 99;
-            caster.runtime.shieldExpireAt = nowMs() + 7000;
+            grantMemberShield(room, caster, caster, mode.shield, { source: 'awakening:워뇨띠', durationMs: 7000, hits: 99 });
         }
         finalAtk = Number(getPartyLiveStats(caster).atk || 0) * finalAtkMul * (1 + getPartyAttackBuffValue(caster)) * (1 + getPartyConditionalFinalAttack(caster));
         multiplier = mode.skillRate;
@@ -5350,15 +5363,13 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         const expireHeal = Math.round(caster.runtime.hpMax * 0.04);
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
+            let shield;
             if (canPartyApplyShield(caster, m)) {
-                grantMemberShield(room, caster, m, shieldAmt);
-                m.runtime.shieldHits = 99;
-                m.runtime.shieldExpireAt = Date.now() + 8000;
-                m.runtime.shieldExpireHeal = expireHeal;
+                shield = grantMemberShield(room, caster, m, shieldAmt, { source: 'skill:글버지', durationMs: 8000, hits: 99, expireHeal });
             }
             m.runtime.atkBuff = scalePartyAttackBuff(caster, allyAtk);
             upsertMemberBuff(m, { id: 'atkBuff', label: '글버지 (공+)', value: m.runtime.atkBuff, remain: 8 });
-            applyTranscendAllyEffect(room, caster, m, canPartyApplyShield(caster, m) ? 'shield' : 'buff');
+            applyTranscendAllyEffect(room, caster, m, canPartyApplyShield(caster, m) ? 'shield' : 'buff', shield);
         }
         pushCombat(room, caster.name + ' [글버지] → 파티 보호막 +' + comma(shieldAmt) + ' / 공격력 ▲', 'buff');
     }
@@ -5407,10 +5418,7 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         // 8초간 최대 MP의 ${2}만큼 본인 보호막 (솔로와 동일; 파티 전용 효과는 아래 공격력/MP)
         const piastShield = Math.max(1, Math.round(caster.runtime.mpMax * getSkillValue(skill, 1, star) * getPartyShieldMultiplier(caster)));
         if (canPartyApplyShield(caster, caster)) {
-            grantMemberShield(room, caster, caster, piastShield);
-            caster.runtime.shieldHits = 99;
-            caster.runtime.shieldExpireAt = Date.now() + 8000;
-            caster.runtime.shieldExpireHeal = 0;
+            grantMemberShield(room, caster, caster, piastShield, { source: 'skill:피아스트', durationMs: 8000, hits: 99 });
         }
         const allyAtk = getSkillValue(skill, 2, star);
         for (const m of room.members) {
@@ -5440,11 +5448,8 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            grantMemberShield(room, caster, m, shieldAmt);
-            m.runtime.shieldHits = 99;
-            m.runtime.shieldExpireAt = Date.now() + 10000;
-            m.runtime.shieldExpireHeal = 0;
-            applyTranscendAllyEffect(room, caster, m, 'shield');
+            const shield = grantMemberShield(room, caster, m, shieldAmt, { source: 'skill:감사합니다 친구야', durationMs: 10000, hits: 99 });
+            applyTranscendAllyEffect(room, caster, m, 'shield', shield);
         }
         caster.runtime.takenDmgMul = 0.7;
         upsertMemberBuff(caster, { id: 'takenDmgSelf', label: '감사합니다 친구야 (피해감소)', value: 0.7, remain: 10 });
@@ -5484,11 +5489,8 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            grantMemberShield(room, caster, m, shieldAmt);
-            m.runtime.shieldHits = 99;
-            m.runtime.shieldExpireAt = Date.now() + 12000;
-            m.runtime.shieldExpireHeal = 0;
-            applyTranscendAllyEffect(room, caster, m, 'shield');
+            const shield = grantMemberShield(room, caster, m, shieldAmt, { source: 'skill:핫식스의정력', durationMs: 12000, hits: 99 });
+            applyTranscendAllyEffect(room, caster, m, 'shield', shield);
         }
         pushCombat(room, caster.name + ' [핫식스의정력] → 파티 보호막 +' + comma(shieldAmt) + ' (12초)', 'buff');
     }
@@ -5497,11 +5499,8 @@ function executeMainCardSkillEffect(room, caster, skillName, def, targetName, eq
         for (const m of room.members) {
             if (!m.runtime || m.runtime.dead) continue;
             if (!canPartyApplyShield(caster, m)) continue;
-            grantMemberShield(room, caster, m, shieldAmt);
-            m.runtime.shieldHits = 99;
-            m.runtime.shieldExpireAt = Date.now() + 12000;
-            m.runtime.shieldExpireHeal = 0;
-            applyTranscendAllyEffect(room, caster, m, 'shield');
+            const shield = grantMemberShield(room, caster, m, shieldAmt, { source: 'skill:이어브피', durationMs: 12000, hits: 99 });
+            applyTranscendAllyEffect(room, caster, m, 'shield', shield);
         }
         pushCombat(room, caster.name + ' [이어브피] → 파티 보호막 +' + comma(shieldAmt) + ' (12초)', 'buff');
     }

@@ -242,18 +242,132 @@ test('보호막 횟수 소진은 파괴로, 자연 만료는 소멸과 실제 �
     let sent = ''; member.sseRes = { write: text => { sent += text; } };
     const kinds = () => [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]).kind);
     try {
-        Object.assign(member.runtime, { shield: 1000, shieldHits: 1, shieldExpireAt: Date.now() + 8000, shieldExpireHeal: 20, hp: 999950 });
+        member.runtime.hp = 999950;
+        party.__test.grantMemberShield(room, member, member, 1000, { source: 'test:횟수 보호막', durationMs: 8000, hits: 1, expireHeal: 20 });
+        sent = '';
         party.__test.applyDamageToMember(room, member, 25, '공격');
         assert.equal(member.runtime.shield, 0); assert.equal(member.runtime.hp, 999970);
         assert.deepEqual(kinds(), ['shield-block', 'shield-break', 'heal']);
         sent = '';
-        Object.assign(member.runtime, { shield: 1000, shieldHits: 99, shieldExpireHeal: 60, hp: 999970 });
+        member.runtime.hp = 999970;
+        party.__test.grantMemberShield(room, member, member, 1000, { source: 'test:시간 보호막', expiresAt: Date.now() - 1, hits: 99, expireHeal: 60 });
+        sent = '';
         party.__test.triggerShieldExpire(room, member);
         assert.equal(member.runtime.hp, 1000000); assert.equal(member.runtime.shield, 0);
         assert.deepEqual(kinds(), ['shield-expire', 'heal']);
         party.__test.triggerShieldExpire(room, member);
         assert.deepEqual(kinds(), ['shield-expire', 'heal']);
     } finally { member.sseRes = null; }
+});
+
+test('글버지는 시전자별로 갱신·만료·회복하며 다른 보호막의 수치와 소멸 연출을 보존한다', async () => {
+    const room = await battle('normal', 3), [a, b, target] = room.members;
+    const raw = require('../DB/RPGenius/Skills.json').find(skill => skill.name === '글버지');
+    a.baseSnapshot.transcendEquipment.entries = [{ name: '성역의 인도자 아머', stage: 1 }];
+    target.runtime.hp = 400000;
+    let time = Date.now(), sent = '';
+    const clock = mock.method(Date, 'now', () => time);
+    a.sseRes = { write: text => { sent += text; } };
+    const cast = caster => party.__test.executeMainCardSkillEffect(room, caster, '글버지', { raw, star: 4 });
+    try {
+        cast(a);
+        const first = target.runtime.shieldLayers.find(layer => layer.source === 'skill:글버지');
+        const amount = first.amount;
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        assert.equal(first.amount, amount - 100);
+        time += 1000; cast(b);
+        const other = structuredClone(target.runtime.shieldLayers.find(layer => layer.caster === b.name));
+        time += 1000; cast(a);
+        assert.equal(target.runtime.shieldLayers.length, 3);
+        assert.deepEqual(target.runtime.shieldLayers.find(layer => layer.caster === b.name), other);
+        const refreshed = target.runtime.shieldLayers.find(layer => layer.source === 'skill:글버지' && layer.caster === a.name);
+        assert.equal(refreshed.amount, amount); assert.equal(refreshed.expiresAt, time + 8000);
+        assert.equal(target.runtime.shieldLayers.find(layer => layer.source === 'equipment:성역의 인도자 아머').expiresAt, refreshed.expiresAt);
+        assert.equal(target.runtime.hp, 400000, '갱신은 소멸 회복을 발동하지 않는다');
+        time = other.expiresAt; sent = '';
+        party.__test.triggerShieldExpire(room, target);
+        assert.equal(target.runtime.hp, 440000); assert.equal(target.runtime.shield, amount + 20000);
+        const events = [...sent.matchAll(/event: party-effect\ndata: ([^\n]+)/g)].map(match => JSON.parse(match[1]));
+        assert.equal(events.find(event => event.kind === 'shield-expire').remainingShield, amount + 20000);
+        assert.equal(party.__test.serializeMember(target).runtime.shield, amount + 20000);
+        time = refreshed.expiresAt;
+        party.__test.triggerShieldExpire(room, target);
+        assert.equal(target.runtime.hp, 480000); assert.equal(target.runtime.shield, 0);
+        party.__test.triggerShieldExpire(room, target);
+        assert.equal(target.runtime.hp, 480000, '각 소멸 회복은 한 번만 적용한다');
+    } finally { a.sseRes = null; clock.mock.restore(); }
+});
+
+test('파티 워뇨띠 각성·심해의 갑옷·오로라는 각자 갱신되고 만료된다', async () => {
+    const room = await battle('normal', 2), [w, ally] = room.members;
+    Object.assign(w.baseSnapshot.stats, { wonyoddi: true, randoStar: 4, randoEquipment: {}, awakening: { effect: 'modeSwitch', value: 777 } });
+    w.baseSnapshot.transcendEquipment.entries = [{ name: '심해의 갑옷', stage: 1 }];
+    w.skills = ['모드 전환'];
+    w.skillDefs['모드 전환'] = { source: 'mainCard', raw: { name: '모드 전환' }, star: 4, mp: 15, cd: 5 };
+    let time = Date.now(); const start = time;
+    const clock = mock.method(Date, 'now', () => time), random = mock.method(Math, 'random', () => .5);
+    try {
+        party.__test.grantMemberShield(room, ally, w, 5000, { source: 'skill:이어브피', durationMs: 20000, hits: 99 });
+        room.supportGauge = 100;
+        assert.equal(party.useSupportSkill(w.name, '오로라').ok, true);
+        const other = structuredClone(w.runtime.shieldLayers);
+        room.awaitingChoices = false;
+        assert.equal(party.useSkill(w.name, '모드 전환').ok, true);
+        assert.equal(w.runtime.shield, 175000); assert.equal(w.runtime.shieldLayers.length, 4);
+        time += 1000; w.runtime.actionUntil = 0; w.runtime.cooldownsUntil['모드 전환'] = 0;
+        assert.equal(party.useSkill(w.name, '모드 전환').ok, true);
+        assert.equal(w.runtime.shield, 175000); assert.equal(w.runtime.shieldLayers.length, 4);
+        assert.deepEqual(w.runtime.shieldLayers.filter(layer => other.some(entry => entry.source === layer.source)), other);
+        time = start + 6000; party.__test.triggerShieldExpire(room, w);
+        assert.equal(w.runtime.shield, 125000);
+        time = start + 8000; party.__test.triggerShieldExpire(room, w);
+        assert.equal(w.runtime.shield, 55000);
+        time = start + 12000; party.__test.triggerShieldExpire(room, w);
+        assert.equal(w.runtime.shield, 5000);
+        assert.equal(party.__test.serializeMember(w).runtime.shield, 5000);
+    } finally { room.awaitingChoices = true; clock.mock.restore(); random.mock.restore(); }
+});
+
+test('빛의 장막과 성역 추가 보호막의 피격 횟수는 실제 흡수한 출처만 감소한다', async () => {
+    const room = await battle('normal', 2), [source, target] = room.members;
+    source.baseSnapshot.transcendEquipment.entries = [{ name: '성역의 인도자 아머', stage: 1 }];
+    source.skills = ['빛의 장막'];
+    source.skillDefs['빛의 장막'] = quests.find(quest => quest.extraSkills?.['빛의 장막']).extraSkills['빛의 장막'];
+    target.runtime.hp = 400000;
+    let time = Date.now(); const clock = mock.method(Date, 'now', () => time);
+    try {
+        party.__test.grantMemberShield(room, source, target, 5000, { source: 'skill:이어브피', durationMs: 12000, hits: 99 });
+        room.awaitingChoices = false;
+        assert.equal(party.useSkill(source.name, '빛의 장막', target.name).ok, true);
+        const curtain = target.runtime.shieldLayers.find(layer => layer.source === 'skill:빛의 장막');
+        const sanctuary = target.runtime.shieldLayers.find(layer => layer.source === 'equipment:성역의 인도자 아머');
+        assert.equal(curtain.expiresAt, 0); assert.equal(sanctuary.expiresAt, 0);
+        assert.equal(curtain.hits, 2); assert.equal(sanctuary.hits, 2);
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        assert.equal(curtain.hits, 2); assert.equal(sanctuary.hits, 2);
+        time += 12000; party.__test.triggerShieldExpire(room, target);
+        assert.equal(target.runtime.shield, 21015);
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        assert.equal(target.runtime.shield, 20000); assert.equal(sanctuary.hits, 2);
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        party.__test.applyDamageToMember(room, target, 100, '공격');
+        assert.equal(target.runtime.shield, 0); assert.equal(target.runtime.hp, 400000);
+    } finally { room.awaitingChoices = true; clock.mock.restore(); }
+});
+
+test('SitoSoym의 지속 회복은 다른 출처 보호막만 남은 대상에게 이어지지 않는다', async () => {
+    const room = await battle('normal', 2), [source, target] = room.members;
+    room.questId = 'butaGame'; room.supportGauge = 100;
+    source.runtime.hp = target.runtime.hp = 400000;
+    assert.equal(party.useSupportSkill(source.name, 'SitoSoym').ok, true);
+    party.__test.grantMemberShield(room, source, target, 50000, { source: 'skill:이어브피', durationMs: 20000, hits: 99 });
+    party.__test.applyDamageToMember(room, target, 25000, '공격');
+    assert.equal(target.runtime.shield, 50000);
+    assert.equal(target.runtime.shieldLayers.some(layer => layer.source === 'support:SitoSoym'), false);
+    room.supportSito.tick = 0;
+    tick(room);
+    assert.equal(source.runtime.hp, 430000); assert.equal(target.runtime.hp, 400000);
 });
 
 test('지원군 연출은 유효한 호출에만 한 번 전송하며 보호막 무효 대상과 재접속은 보존한다', async () => {

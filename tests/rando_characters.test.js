@@ -10,6 +10,7 @@ const read = key => JSON.parse(fs.readFileSync(path.join(__dirname, '../DB/RPGen
 const before = { Item: read('Item').concat({ name: '지정 캐릭터 변환석 주머니', choices: [{ id: 2, count: 3 }] }),
     Equipment: read('Equipment'), Fashion: read('Fashion'), Shop: { ...read('Shop'), 아바타: [] }, Bait: read('Bait') };
 const fixture = content.prepare(before);
+fixture.Equipment.armor.push(require('../transcend_equipment').definitions.armor.find(e => e.name === '심해의 갑옷'));
 const writes = [];
 AWS.S3.prototype.makeRequest = operation => {
     if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
@@ -142,6 +143,73 @@ test('실제 각성 워뇨띠: 고정 피해·7초 보호막·장비 단계와 �
     assert.equal(u.field.training.metrics.damage, 3885 + 684);
     assert.equal(rpg.calculateUserStats(u).atk, 1140);
 }));
+
+test('필드의 기존 보호막을 보존하고 워뇨띠 보호막만 갱신·흡수·만료한다', async () => at(210000, async () => {
+    const u = trainingUser(15, '각성');
+    delete u.field.shieldLayers;
+    u.field.shield = { amount: 5000, expired_at: 230000 };
+    await fixed(.5, () => rpg.useSkillInField(u, '모드 전환'));
+    assert.equal(u.field.shield.amount, 5700);
+    await at(213500, async () => {
+        u.field.nextActionAt = 0;
+        await fixed(.5, () => rpg.useSkillInField(u, '모드 전환'));
+        assert.equal(u.field.shield.amount, 5700);
+        assert.deepEqual(u.field.shieldLayers.find(layer => layer.source === 'legacy'), { source: 'legacy', caster: '', amount: 5000, expiresAt: 230000 });
+        u.field.training.target.counterAttack = true; u.field.training.target.atk = 100;
+        u.field.nextActionAt = 0;
+        await fixed(.5, () => rpg.useBasicAttackInField(u));
+        assert.equal(u.field.shieldLayers.find(layer => layer.source === 'legacy').amount, 5000);
+        assert.ok(u.field.shieldLayers.find(layer => layer.source === 'awakening:워뇨띠').amount < 700);
+        assert.equal(u.hp, 10000);
+    });
+    await at(220500, () => {
+        rpg.calculateUserStats(u);
+        assert.deepEqual(u.field.shield, { amount: 5000, expired_at: 230000 });
+        assert.equal(u.field.shieldLayers.length, 1);
+    });
+}));
+
+test('필드에서 심해의 갑옷과 각성 보호막은 각각 5초·7초 뒤 만료한다', async () => at(230000, async () => {
+    const u = trainingUser(15, '각성'); equip(u, '심해의 갑옷', 1, 'armor');
+    const hp = rpg.calculateUserStats(u).hp;
+    await fixed(.5, () => rpg.useSkillInField(u, '모드 전환'));
+    assert.equal(u.field.shield.amount, Math.round(hp * .05) + Math.round(hp * .07));
+    assert.equal(u.field.shieldLayers.find(layer => layer.source === 'equipment:심해의 갑옷').expiresAt, 235000);
+    assert.equal(u.field.shieldLayers.find(layer => layer.source === 'awakening:워뇨띠').expiresAt, 237000);
+    await at(235000, () => { rpg.calculateUserStats(u); assert.equal(u.field.shield.amount, Math.round(hp * .07)); });
+    await at(237000, () => { rpg.calculateUserStats(u); assert.equal(u.field.shield, null); });
+}));
+
+test('PvP도 기존 보호막과 장비·각성 보호막을 따로 유지하며 같은 각성 효과는 중첩하지 않는다', async () => {
+    let time = Date.now(); pvp.__setNow(() => time);
+    try {
+        const a = user(15, '각성'), b = user(0); equip(a, '심해의 갑옷', 1, 'armor');
+        await a.save(); await b.save();
+        pvp.ensurePvpState(a).daily.opponents = [{ name: b.name, rating: 1000 }];
+        await fixed(.5, async () => assert.equal((await pvp.startBattle(a, b.name)).ok, true));
+        const battle = a.pvp.battle; time = battle.me.nextActionAt;
+        battle.opp.nextActionAt = time + 60000; battle.opp.hp = 1e9;
+        const legacyUntil = time + 20000;
+        delete battle.me.shieldLayers;
+        battle.me.shield = { amount: 5000, until: legacyUntil };
+        battle.me.skillCooldowns = {}; battle.me.defendCooldownEnd = time + 10000;
+        await fixed(.5, () => assert.equal(pvp.playerSkill(a, '모드 전환').ok, true));
+        const first = structuredClone(battle.me.shieldLayers);
+        assert.equal(first.length, 3);
+        assert.equal(battle.me.shield.amount, first.reduce((sum, layer) => sum + layer.amount, 0));
+        time += 3500; battle.me.nextActionAt = time; battle.me.skillCooldowns = {};
+        await fixed(.5, () => assert.equal(pvp.playerSkill(a, '모드 전환').ok, true));
+        assert.equal(battle.me.shieldLayers.length, 3);
+        assert.deepEqual(battle.me.shieldLayers.find(layer => layer.source === 'legacy'), { source: 'legacy', caster: '', amount: 5000, expiresAt: legacyUntil });
+        const awake = battle.me.shieldLayers.find(layer => layer.source === 'awakening:워뇨띠');
+        assert.equal(awake.expiresAt, time + 7000);
+        time += 5000; pvp.advanceBattle(a);
+        assert.equal(battle.me.shieldLayers.some(layer => layer.source === 'equipment:심해의 갑옷'), false);
+        assert.equal(battle.me.shield.amount, 5000 + awake.amount);
+        time += 2000; pvp.advanceBattle(a);
+        assert.deepEqual(battle.me.shield, { amount: 5000, until: legacyUntil });
+    } finally { pvp.__setNow(null); }
+});
 
 test('실제 키노 스킬은 MP 대신 정신력, 처치 보너스와 카스 2초 간격 5틱', async () => at(300000, async () => {
     const u = trainingUser(16); u.field.training.targetHp = 1;

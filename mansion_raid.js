@@ -340,7 +340,7 @@ function createMansionRaid(engine) {
             E.pushCombat(room, '피카츄 → ' + mon.name + ' [-' + dealt + ']', 'skill');
         } else if (name === '오로라') {
             for (const member of alive(room)) {
-                if (E.canPartyApplyShield(null, member)) { E.grantMemberShield(room, source, member, 50000, '오로라'); member.runtime.shieldHits = 99; member.runtime.shieldExpireAt = Date.now() + 12000; }
+                if (E.canPartyApplyShield(null, member)) E.grantMemberShield(room, source, member, 50000, { source: 'support:오로라', caster: '지원군', support: '오로라', durationMs: 12000, hits: 99 });
             }
             room.mansionAurora = { remain: 4, tick: 1, sourceName: source.name };
         } else if (name === '눈뜬 장님') {

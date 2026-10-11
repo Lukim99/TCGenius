@@ -7,6 +7,7 @@ const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
+const combatShields = require('./combat_shields');
 const combatEffects = require('./public/combat-effects.js');
 
 const SKILLS_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Skills.json');
@@ -423,7 +424,7 @@ function expireSide(side, t) {
     // 소환수/표식은 만료 시각과 같은 시점의 마지막 틱까지 살려둔다 (틱 처리 직전 만료로 사라지지 않도록)
     if (runtime.summon && Number(runtime.summon.until || 0) < t) runtime.summon = null;
     if (runtime.mark && Number(runtime.mark.until || 0) < t) runtime.mark = null;
-    if (side.shield && Number(side.shield.until || 0) <= t) side.shield = null;
+    refreshShield(side, t);
 }
 
 function expireStates(battle, t) {
@@ -540,7 +541,8 @@ function getLiveEquipmentStats(side, t) {
     if (liberation && (liberation.choices || []).includes('resist')) stats.allElementRes = Number(stats.allElementRes || 0) + Number(liberation.resistValue || 0);
     ilionCards.applyStats(stats, side.runtime, side.snapshot.slotEffects, t);
     randoCharacters.tickMental(stats, side.runtime, side.snapshot.slotEffects, t);
-    return randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, side.shield && side.shield.until > t ? side.shield.amount : 0, t);
+    const shield = refreshShield(side, t);
+    return randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, shield && shield.amount || 0, t);
 }
 
 function prepareEquipmentAttack(actor, target, extra, t) {
@@ -892,10 +894,20 @@ function finishEquipmentAttack(actor, hit, t) {
     delete hit.judgmentDamage;
 }
 
-function setShield(side, amount, durationMs, t) {
+function refreshShield(side, t) {
+    combatShields.layers(side, side.shield && { amount: side.shield.amount, expiresAt: side.shield.until });
+    combatShields.expire(side, t);
+    const shield = combatShields.summary(side, t);
+    side.shield = shield.amount > 0 ? { amount: shield.amount, until: shield.expiresAt } : null;
+    return side.shield;
+}
+
+function setShield(side, amount, durationMs, t, source) {
     if (side.snapshot.stats.disableShield) return 0;
     const value = Math.max(0, Math.round(amount));
-    side.shield = { amount: value, until: t + durationMs };
+    refreshShield(side, t);
+    combatShields.grant(side, { source, caster: side.name, amount: value, expiresAt: t + durationMs });
+    refreshShield(side, t);
     return value;
 }
 
@@ -997,15 +1009,13 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     const shieldComponents = [];
     if (defender.shield && Number(defender.shield.amount || 0) > 0) {
         components.forEach(component => {
-            const amount = Math.min(Number(defender.shield && defender.shield.amount || 0), component.damage);
+            const amount = combatShields.absorb(defender, component.damage).absorbed;
             component.damage -= amount;
             absorbed += amount;
             if (amount > 0) shieldComponents.push({ damage: amount, critical: false, destiny: false, type: 'absorbed', label: component.label ? '보호막 흡수 · ' + component.label : '보호막 흡수' });
-            if (defender.shield) defender.shield.amount -= amount;
         });
-        if (defender.shield.amount <= 0) {
+        if (!refreshShield(defender, t)) {
             if (shieldComponents.length > 0) shieldComponents[shieldComponents.length - 1].shieldBroken = true;
-            defender.shield = null;
         }
     }
     components = components.filter(component => component.damage > 0);
@@ -1250,12 +1260,13 @@ function doSkill(battle, actorKey, skill, t) {
     let multiplier = value(0);
     const extra = Object.assign({ isSkill: true, skill, combatStats: stats }, equipmentSkill.extra || {});
     if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(name)) {
+        if (equipmentSkill.shield) setShield(actor, equipmentSkill.shield, equipmentDurationMs(actor, 5), t, 'equipment:심해의 갑옷');
         const mode = randoCharacters.switchMode(stats, actor.runtime, actor.skillCooldowns, name, t);
         if (!stats.randoEquipment['존버의 미학']) {
             actor.nextActionAt = t + (actor.nextActionAt - t) * .70;
             if (actor.defendCooldownEnd > t) actor.defendCooldownEnd = t + (actor.defendCooldownEnd - t) * .70;
         }
-        if (mode.shield) setShield(actor, mode.shield * PVP_HP_SCALE, 7000, t);
+        if (mode.shield) setShield(actor, mode.shield * PVP_HP_SCALE, 7000, t, 'awakening:워뇨띠');
         Object.assign(stats, getLiveEquipmentStats(actor, t));
         extra.modeSwitchDamage = true;
         extra.modeFixedDamage = mode.fixed;
@@ -1296,7 +1307,7 @@ function doSkill(battle, actorKey, skill, t) {
     });
     if (Number(equipmentSkill.shadowDamageRate || 0) > 0) extra.shadowDamageRate = Number(equipmentSkill.shadowDamageRate);
     if (Number(equipmentSkill.shield || 0) > 0) {
-        const amount = setShield(actor, equipmentSkill.shield, equipmentDurationMs(actor, 5), t);
+        const amount = setShield(actor, equipmentSkill.shield, equipmentDurationMs(actor, 5), t, 'equipment:심해의 갑옷');
         if (amount > 0) pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'shield', skillName: name, shield: amount, text: '심해의 갑옷 — 보호막 ' + comma(amount) }, skillEffectMeta()));
     }
 
@@ -1427,10 +1438,10 @@ function doSkill(battle, actorKey, skill, t) {
     if (name == '안면강타') actor.runtime.sivalonCharge = 5;
 
     let shieldAmount = 0;
-    if (name == '글버지') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 8000, t);
-    if (name == '피아스트') shieldAmount = setShield(actor, actor.maxMp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 8000, t);
-    if (name == '핫식스의정력') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t);
-    if (name == '이어브피') shieldAmount = setShield(actor, actor.maxMp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t);
+    if (name == '글버지') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 8000, t, 'skill:' + name);
+    if (name == '피아스트') shieldAmount = setShield(actor, actor.maxMp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 8000, t, 'skill:' + name);
+    if (name == '핫식스의정력') shieldAmount = setShield(actor, actor.maxHp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t, 'skill:' + name);
+    if (name == '이어브피') shieldAmount = setShield(actor, actor.maxMp * value(1) * (1 + Number(stats.shieldEfficiency || 0)), 12000, t, 'skill:' + name);
     if (name == '감사합니다 친구야') {
         actor.runtime.buffs.receivedDamageReduction = { value: 0.3, until: t + 10000 };
     }

@@ -2,10 +2,22 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-for (const line of fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([^#=]+)=(.*)$/);
-    if (match) process.env[match[1].trim()] = match[2].trim();
-}
+const AWS = require('aws-sdk');
+const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+AWS.S3.prototype.makeRequest = operation => {
+    if (operation === 'listObjectsV2') return { promise: async () => ({ Contents: [] }) };
+    throw new Error('Unexpected isolated S3 operation: ' + operation);
+};
+DynamoDBDocumentClient.prototype.send = async command => {
+    if (command.constructor.name === 'GetCommand') {
+        if (command.input.TableName !== 'rpgenius_data') return {};
+        if (command.input.Key.key === 'Quest') return { Item: { data: [] } };
+        const file = path.join(__dirname, '..', 'DB', 'RPGenius', command.input.Key.key + '.json');
+        return { Item: { data: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {} } };
+    }
+    if (command.constructor.name === 'ScanCommand') return { Items: [] };
+    throw new Error('Unexpected isolated DB command: ' + command.constructor.name);
+};
 
 const rpg = require('../rpgenius');
 const partyquest = require('../partyquest');

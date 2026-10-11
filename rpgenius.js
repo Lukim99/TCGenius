@@ -56,6 +56,7 @@ const SPECTER_PATH = path.join(__dirname, 'DB', 'RPGenius', 'Specter.json');
 const cardAwakening = require('./card_awakening');
 const ilionCards = require('./ilion_cards');
 const randoCharacters = require('./rando_characters');
+const combatShields = require('./combat_shields');
 const WORLD_BOSS_DAILY_LIMIT = 2;
 const WORLD_BOSS_VALOR_TOKEN_NAME = '용맹의 증표';
 const WORLD_BOSS_VALOR_TOKEN_DAILY_LIMIT = 3;
@@ -4122,7 +4123,7 @@ function calculateUserStats(user, _out) {
     randoCharacters.configureStats(stats, user.main_card, getTranscendEquipmentSnapshot(user));
     stats.wonyoddiShieldChance = Number(stats.wonyoddiShieldChance || 0) + Number(plusStats.wonyoddiShieldChance || 0);
     if (!_out?.skipRandoRuntime) randoCharacters.tickMental(stats, user.field, slotEffects, Date.now());
-    const randoShield = user.field?.shield;
+    const randoShield = !_out?.skipRandoRuntime && getFieldShield(user);
     if (!_out?.skipRandoRuntime) randoCharacters.applyStats(stats, user.field, slotEffects, randoShield && randoShield.expired_at > Date.now() ? randoShield.amount : 0, Date.now());
     return stats;
 }
@@ -5720,21 +5721,32 @@ function getActiveFieldDamageMultiplier(user) {
     return Math.max(0, Number(buff.value || 1));
 }
 
+function getFieldShield(user, now = Date.now()) {
+    const field = user && user.field;
+    if (!field) return null;
+    combatShields.layers(field, field.shield && { amount: field.shield.amount, expiresAt: field.shield.expired_at });
+    combatShields.expire(field, now);
+    const shield = combatShields.summary(field, now);
+    field.shield = shield.amount > 0 ? { amount: shield.amount, expired_at: shield.expiresAt } : null;
+    return field.shield;
+}
+
+function grantFieldShield(user, source, shield) {
+    getFieldShield(user);
+    combatShields.grant(user.field, { source, caster: user.name, amount: shield.amount, expiresAt: shield.expired_at });
+    return getFieldShield(user);
+}
+
 function applyFieldShieldAbsorption(user, damage, lines) {
     if (calculateUserStats(user).disableShield) {
-        if (user.field) user.field.shield = null;
+        if (user.field) { user.field.shieldLayers = []; user.field.shield = null; }
         return damage;
     }
-    const s = user.field && user.field.shield;
-    if (!s || Number(s.amount || 0) <= 0 || Number(s.expired_at || 0) <= Date.now()) {
-        if (user.field && user.field.shield) user.field.shield = null;
-        return damage;
-    }
-    const absorbed = Math.min(Number(s.amount || 0), damage);
-    s.amount -= absorbed;
-    if (lines && absorbed > 0) lines.push('🛡 보호막이 ' + comma(Math.round(absorbed)) + ' 피해를 흡수했습니다! (잔여 ' + comma(Math.max(0, Math.round(s.amount))) + ')');
-    if (s.amount <= 0) user.field.shield = null;
-    return damage - absorbed;
+    if (!getFieldShield(user)) return damage;
+    const result = combatShields.absorb(user.field, damage);
+    const shield = getFieldShield(user);
+    if (lines && result.absorbed > 0) lines.push('🛡 보호막이 ' + comma(Math.round(result.absorbed)) + ' 피해를 흡수했습니다! (잔여 ' + comma(Math.round(shield && shield.amount || 0)) + ')');
+    return result.damage;
 }
 
 function getEliteState(fieldName) {
@@ -7417,7 +7429,7 @@ function executeSelfDestructInField(user) {
     const equipmentSkill = prepareTranscendSkillEffects(user, syntheticSkill, stats);
     user.field.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
-    if (equipmentSkill.selfShield) user.field.shield = equipmentSkill.selfShield;
+    if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
     const stage = getTranscendStage(getEquippedNamed(user, '카카오의 계략').ref.equip, getEquippedNamed(user, '카카오의 계략').data);
     const summonCount = Number(botActive) + Number(sunataActive);
     const slotEffects = calculateCardSlotEffects(user);
@@ -7659,7 +7671,7 @@ function executeMainCardSkillInField(user, skillName) {
     } else if (mp < mpCost) return '❌ MP가 부족합니다.';
     user.field.equipmentState = equipmentSkill.state;
     if (typeof equipmentSkill.hpAfter != 'undefined') user.hp = Math.max(1, Number(equipmentSkill.hpAfter));
-    if (equipmentSkill.selfShield) user.field.shield = equipmentSkill.selfShield;
+    if (equipmentSkill.selfShield) grantFieldShield(user, 'equipment:심해의 갑옷', equipmentSkill.selfShield);
     user.mp = stats.kino ? 0 : mp - mpCost;
     if (stats.kino) Object.assign(stats, calculateUserStats(user));
 
@@ -7678,7 +7690,7 @@ function executeMainCardSkillInField(user, skillName) {
         commitFieldSkillCooldown(user, skillData.skill, stats, equipmentSkill, now);
         if (isWorldBoss) setWorldBossNextActionAt(user); else setNextFieldActionAt(user);
         const mode = randoCharacters.switchMode(stats, user.field, user.field.skillCooldowns, skillData.skill.name, now);
-        if (mode.shield) user.field.shield = { amount: mode.shield, expired_at: now + 7000 };
+        if (mode.shield) grantFieldShield(user, 'awakening:워뇨띠', { amount: mode.shield, expired_at: now + 7000 });
         extra.modeSwitchDamage = true;
         extra.modeFixedDamage = mode.fixed;
         extra.notice = mode.mode + ' 모드로 전환했습니다.';
@@ -7746,7 +7758,7 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '글버지') {
         const ratio = getSkillValue(skillData.skill, 1, star);
         const amount = Math.round(Number(stats.hp || 0) * ratio * (1 + Number(stats.shieldEfficiency || 0)));
-        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        if (!stats.disableShield) grantFieldShield(user, 'skill:글버지', { amount: amount, expired_at: Date.now() + 8000 });
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (!isHellPillar && skillData.skill.name == '나인 멘스 모리스') {
@@ -7813,7 +7825,7 @@ function executeMainCardSkillInField(user, skillName) {
     if (skillData.skill.name == '피아스트') {
         const ratio = getSkillValue(skillData.skill, 1, star);
         const amount = Math.round(maxMp * ratio * (1 + Number(stats.shieldEfficiency || 0)));
-        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 8000 };
+        if (!stats.disableShield) grantFieldShield(user, 'skill:피아스트', { amount: amount, expired_at: Date.now() + 8000 });
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (8초)';
     }
     if (skillData.skill.name == '수업끝') {
@@ -7873,12 +7885,12 @@ function executeMainCardSkillInField(user, skillName) {
     }
     if (skillData.skill.name == '핫식스의정력') {
         const amount = Math.round(Number(stats.hp || 0) * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.shieldEfficiency || 0)));
-        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        if (!stats.disableShield) grantFieldShield(user, 'skill:핫식스의정력', { amount: amount, expired_at: Date.now() + 12000 });
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
     }
     if (skillData.skill.name == '이어브피') {
         const amount = Math.round(maxMp * getSkillValue(skillData.skill, 1, star) * (1 + Number(stats.shieldEfficiency || 0)));
-        if (!stats.disableShield) user.field.shield = { amount: amount, expired_at: Date.now() + 12000 };
+        if (!stats.disableShield) grantFieldShield(user, 'skill:이어브피', { amount: amount, expired_at: Date.now() + 12000 });
         extra.shieldNotice = '🛡 보호막 +' + comma(amount) + ' (12초)';
     }
     if (skillData.skill.name == '댄져') {
