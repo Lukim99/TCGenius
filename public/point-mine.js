@@ -27,7 +27,7 @@ export function mountPointMine(root) {
     try { muted = localStorage.getItem('point-mine-muted') === 'true'; } catch (_) {}
     const sounds = { hit: new Audio(asset('mine-hit.wav')), reward: new Audio(asset('reward.wav')) };
     let soundTimer, resultTimer, minedResult = null, renderedView;
-    const selected = new Map();
+    const selected = new Set();
     const typeOf = pickaxe => state.pickaxeTypes.find(type => type.id === pickaxe?.id);
     const currentTool = () => state.pickaxes.find(tool => tool.uid === state.equippedUid);
     const blocked = () => busy || !!pending || !state.active;
@@ -77,7 +77,7 @@ export function mountPointMine(root) {
         } finally { busy = false; render(); }
         if (opened && !paused) {
             const type = typeOf(opened.pickaxe);
-            openDialog('곡괭이 획득', node('div', { class: 'pm-chest-reveal' }, sprite('pickaxes', type.spriteIndex, type.name, 'pm-large'), node('span', { class: 'pm-kicker' }, 'NEW PICKAXE'), node('h3', {}, type.name), node('p', {}, '내구도 ' + number(opened.pickaxe.durability) + ' / ' + number(opened.pickaxe.maxDurability)), node('button', { type: 'button', class: 'pm-button pm-primary', onclick: closeDialog }, '확인')));
+            openDialog('곡괭이 획득', node('div', { class: 'pm-chest-reveal' }, sprite('pickaxes', type.spriteIndex, type.name, 'pm-large'), node('span', { class: 'pm-kicker' }, 'NEW PICKAXE'), node('h3', {}, type.name), node('p', {}, '내구도 +' + number(opened.addedDurability) + ' · 합산 내구도 ' + number(opened.pickaxe.durability) + ' / ' + number(opened.pickaxe.maxDurability)), node('button', { type: 'button', class: 'pm-button pm-primary', onclick: closeDialog }, '확인')));
         }
     }
     function resultMessage() {
@@ -87,30 +87,11 @@ export function mountPointMine(root) {
         if (last.action === 'mine') return result.name + ' ×' + number(result.count) + ' 획득';
         if (last.action === 'open') return result.name + ' 획득!';
         if (last.action === 'equip') return result.name + ' 장착';
-        if (last.action === 'repair') return result.name + ' 내구도 ' + number(result.amount) + ' 수리';
         if (last.action === 'sell') return '광산 포인트 +' + number(result.points);
         return '';
     }
     function chestProbabilities() {
         openDialog('곡괭이 상자 확률', node('div', { class: 'pm-probabilities' }, ...state.pickaxeTypes.map(type => node('div', {}, sprite('pickaxes', type.spriteIndex, type.name), node('span', {}, type.name), node('strong', {}, percent(type.chance))))));
-    }
-    function repairDialog(tool) {
-        const type = typeOf(tool);
-        const missing = tool.maxDurability - tool.durability;
-        const affordable = Math.min(missing, ...type.repair.map(cost => Math.floor((state.ores.find(ore => ore.id === cost.oreId)?.count || 0) / cost.count)));
-        const input = node('input', { type: 'number', min: 1, max: missing, step: 1, value: Math.max(1, affordable), 'aria-label': '수리할 내구도' });
-        const costList = node('div', { class: 'pm-repair-costs' });
-        const submit = button('광물로 수리', () => perform('repair', { uid: tool.uid, amount: Number(input.value) }), affordable < 1, true);
-        function update() {
-            const amount = Number(input.value);
-            submit.disabled = blocked() || !Number.isSafeInteger(amount) || amount < 1 || amount > affordable;
-            costList.replaceChildren(...type.repair.map(cost => {
-                const ore = state.ores.find(ore => ore.id === cost.oreId);
-                return node('div', {}, sprite('ores', ore.spriteIndex, ore.name), node('span', {}, ore.name), node('strong', { class: ore.count < cost.count * amount ? 'pm-short' : '' }, number(ore.count) + ' / ' + number(cost.count * Math.max(0, amount))));
-            }));
-        }
-        input.addEventListener('input', update); update();
-        openDialog(type.name + ' 수리', node('div', { class: 'pm-repair' }, node('p', {}, '내구도 ' + number(tool.durability) + ' / ' + number(tool.maxDurability)), node('label', {}, '수리할 내구도', input), costList, node('p', { class: 'pm-muted' }, '보유 광물로 최대 ' + number(affordable) + ' 수리할 수 있습니다.'), submit));
     }
     function mineView() {
         const tool = currentTool(), type = typeOf(tool);
@@ -120,7 +101,7 @@ export function mountPointMine(root) {
         const controls = node('div', { class: 'pm-mine-controls' }, node('p', {}, type ? type.name + ' 장착 중' : '상자에서 곡괭이를 얻고 장착하세요'), tool ? durability(tool) : null,
             button(node('span', {}, node('span', { 'aria-hidden': 'true' }, '⛏'), busy && pending?.action === 'mine' ? '채굴 중…' : '광맥 채굴'), () => perform('mine'), !tool || tool.durability < 1 || !state.ready, true),
             node('small', {}, tool ? '남은 내구도 ' + number(tool.durability) + ' / ' + number(tool.maxDurability) : '열쇠 1개로 곡괭이 상자를 열 수 있습니다.'),
-            tool?.durability === 0 ? node('small', { class: 'pm-short' }, '내구도가 소진되었습니다. 수리하거나 다른 곡괭이를 장착하세요.') : null);
+            tool?.durability === 0 ? node('small', { class: 'pm-short' }, '내구도가 소진되었습니다. 상자에서 같은 종류를 얻거나 다른 곡괭이를 장착하세요.') : null);
         const stage = node('div', { class: 'pm-stage' }, node('div', { class: 'pm-cave-light', 'aria-hidden': 'true' }), node('span', { class: 'pm-chain pm-chain-left', 'aria-hidden': 'true' }), node('span', { class: 'pm-chain pm-chain-right', 'aria-hidden': 'true' }), scene, controls);
         if (minedResult) {
             const ore = state.ores.find(ore => ore.id === minedResult.oreId);
@@ -135,8 +116,7 @@ export function mountPointMine(root) {
             node('div', { class: 'pm-balance-card' }, node('span', {}, '보유 광산 포인트'), node('strong', {}, number(state.points), node('small', {}, 'P'))),
             node('div', { class: 'pm-balance-card' }, node('span', {}, '곡괭이 상자 열쇠'), node('strong', {}, number(state.keyCount), node('small', {}, '개'))),
             node('div', { class: 'pm-equipped-card' }, node('span', { class: 'pm-inventory-label' }, '현재 장비'), type ? sprite('pickaxes', type.spriteIndex, type.name, 'pm-medium') : node('p', { class: 'pm-muted' }, '장착된 곡괭이 없음'), type ? node('strong', {}, type.name) : null, tool ? durability(tool) : null,
-                tool ? node('small', { class: 'pm-muted' }, number(tool.durability) + ' / ' + number(tool.maxDurability)) : null,
-                type?.repair.length ? button('곡괭이 수리', () => repairDialog(tool), tool.durability >= tool.maxDurability) : null),
+                tool ? node('small', { class: 'pm-muted' }, number(tool.durability) + ' / ' + number(tool.maxDurability)) : null),
             node('p', { class: 'pm-profile-help pm-help' }, '필드에서 열쇠를 획득하세요.', node('br'), '하루 최대 2개까지 드랍됩니다.'));
     }
     function chestView() {
@@ -144,7 +124,7 @@ export function mountPointMine(root) {
             node('div', { class: 'pm-chest-showcase' }, node('article', { class: 'pm-chest-card' }, node('div', { class: 'pm-chest-art' + (busy && pending?.action === 'open' ? ' pm-opening' : '') }, node('span', { class: 'pm-chest-aura', 'aria-hidden': 'true' }), sprite(busy && pending?.action === 'open' ? 'openChests' : 'chests', 0, '곡괭이 상자', 'pm-large')),
                 node('div', { class: 'pm-chest-copy' }, node('span', { class: 'pm-kicker' }, 'NORMAL CHEST'), node('h3', {}, '곡괭이 상자'), node('p', {}, '나무 곡괭이부터 마스터 곡괭이까지', node('br'), number(state.pickaxeTypes.length) + '종 중 하나를 획득합니다.'), node('button', { type: 'button', class: 'pm-text-button', onclick: chestProbabilities }, '곡괭이 확률 보기')),
                 button(node('span', { class: 'pm-buy-label' }, node('span', {}, busy && pending?.action === 'open' ? '상자를 여는 중…' : '상자 열기'), node('strong', {}, '열쇠 1개')), () => perform('open'), state.keyCount < 1 || !state.ready, false))),
-            node('p', { class: 'pm-shop-footnote' }, '획득한 곡괭이는 인벤토리에 보관됩니다. 필드 사냥에서 상자 열쇠를 얻을 수 있습니다.'));
+            node('p', { class: 'pm-shop-footnote' }, '같은 종류의 곡괭이는 내구도가 합산됩니다. 필드 사냥에서 상자 열쇠를 얻을 수 있습니다.'));
     }
     function toolSection() {
         const tools = node('section', { class: 'pm-tools' }, node('div', { class: 'pm-shelf-head' }, node('h3', {}, '곡괭이'), node('span', { class: 'pm-slot-count' }, number(state.pickaxes.length)), node('span', { class: 'pm-shelf-rule', 'aria-hidden': 'true' })));
@@ -155,41 +135,34 @@ export function mountPointMine(root) {
             const equipped = entry.uid === state.equippedUid;
             list.append(node('div', { class: 'pm-tool' + (equipped ? ' pm-equipped' : '') + (entry.durability === 0 ? ' pm-broken' : '') }, node('span', { class: 'pm-tool-socket' }, sprite('pickaxes', definition.spriteIndex, definition.name)),
                 node('div', { class: 'pm-tool-info' }, node('div', { class: 'pm-tool-title' }, node('strong', {}, definition.name), equipped ? node('span', { class: 'pm-equipped-tag' }, '장착') : null), node('small', {}, '내구도 ' + number(entry.durability) + ' / ' + number(entry.maxDurability)), durability(entry),
-                    node('div', { class: 'pm-tool-actions' }, button(equipped ? '장착 중' : '장착', () => perform('equip', { uid: entry.uid }), equipped || entry.durability < 1), definition.repair.length ? button('수리', () => repairDialog(entry), entry.durability >= entry.maxDurability) : node('small', { class: 'pm-muted' }, '수리 불가')))));
+                    node('div', { class: 'pm-tool-actions' }, button(equipped ? '장착 중' : '장착', () => perform('equip', { uid: entry.uid }), equipped || entry.durability < 1)))));
         }
         if (!state.pickaxes.length) list.append(node('p', { class: 'pm-empty' }, '상자를 열어 첫 곡괭이를 얻어보세요.'));
         tools.append(list);
         return tools;
     }
-    function oreView(compact) {
-        const sum = () => state.ores.reduce((total, ore) => total + (selected.get(ore.id) || 0) * ore.value, 0);
+    function oreView() {
+        const sum = () => state.ores.reduce((total, ore) => total + (selected.has(ore.id) ? ore.count * ore.value : 0), 0);
         const total = node('strong', {}, number(sum()), node('small', {}, ' P'));
-        const sell = button(node('span', { class: 'pm-buy-label' }, node('span', {}, '광물 판매'), total), () => perform('sell', { ores: [...selected].filter(([, count]) => count > 0).map(([id, count]) => ({ id, count })) }), sum() < 1);
+        const sell = button(node('span', { class: 'pm-buy-label' }, node('span', {}, '광물 판매'), total), () => perform('sell', { ores: [...selected].map(id => ({ id })) }), sum() < 1);
         sell.classList.add('pm-sell-button');
-        function update() { total.replaceChildren(number(sum()), node('small', {}, ' P')); sell.disabled = blocked() || sum() < 1; }
         const grid = node('div', { class: 'pm-ore-grid' });
         const owned = state.ores.filter(ore => ore.count > 0);
         for (const ore of owned) {
-            const count = selected.get(ore.id) || 0;
-            const tile = node('article', { class: 'pm-ore' + (count ? ' pm-selected' : ''), 'data-ore': ore.id });
-            const select = node('button', { type: 'button', class: 'pm-ore-select', 'data-pm-ore': ore.id, 'aria-label': ore.name + ' 선택', 'aria-pressed': String(count > 0), disabled: blocked(), onclick: () => { selected.set(ore.id, selected.get(ore.id) ? 0 : ore.count); render(); } },
+            const checked = selected.has(ore.id);
+            const tile = node('article', { class: 'pm-ore' + (checked ? ' pm-selected' : ''), 'data-ore': ore.id });
+            const select = node('button', { type: 'button', class: 'pm-ore-select', 'data-pm-ore': ore.id, 'aria-label': ore.name + ' 선택', 'aria-pressed': String(checked), disabled: blocked(), onclick: () => { if (selected.has(ore.id)) selected.delete(ore.id); else selected.add(ore.id); render(); } },
                 node('span', { class: 'pm-ore-art' }, sprite('ores', ore.spriteIndex, ore.name), node('span', { class: 'pm-stack' }, '×' + number(ore.count))), node('strong', {}, ore.name), node('span', { class: 'pm-ore-price' }, '개당 ', node('b', {}, number(ore.value)), 'P'), node('span', { class: 'pm-check', 'aria-hidden': 'true' }, '✓'));
             tile.append(select);
-            const input = node('input', { type: 'number', min: 0, max: ore.count, step: 1, value: selected.get(ore.id) || 0, 'aria-label': ore.name + ' 교환 수량', disabled: ore.count < 1 || blocked() });
-            input.addEventListener('input', () => {
-                const count = Math.min(ore.count, Math.max(0, Math.floor(Number(input.value) || 0)));
-                selected.set(ore.id, count); input.value = count; tile.classList.toggle('pm-selected', count > 0); select.setAttribute('aria-pressed', String(count > 0)); update();
-            });
-            if (!compact) tile.append(node('label', { class: 'pm-ore-quantity' }, '수량', input));
             grid.append(tile);
         }
-        const allSelected = owned.length > 0 && owned.every(ore => selected.get(ore.id) === ore.count);
-        return { content: node('section', { class: 'pm-ores' }, node('div', { class: 'pm-shelf-head' }, node('h3', {}, '광물'), node('span', { class: 'pm-slot-count' }, number(owned.length)), node('span', { class: 'pm-shelf-rule', 'aria-hidden': 'true' }), button(allSelected ? '선택 해제' : '전체 선택', () => { selected.clear(); if (!allSelected) owned.forEach(ore => selected.set(ore.id, ore.count)); render(); }, owned.length === 0)),
-                owned.length ? grid : node('p', { class: 'pm-empty' }, '아직 채굴한 광물이 없습니다.'), node('p', { class: 'pm-help' }, compact ? '광물을 눌러 선택하세요. 수량은 인벤토리에서 조절할 수 있습니다.' : '수리할 광물은 남겨두고 원하는 수량만 판매하세요.')),
-            dock: node('div', { class: 'pm-sale-bar' }, sell, compact ? node('button', { type: 'button', class: 'pm-text-button', onclick: () => changeView('ores') }, '인벤토리 · 수량 조절') : node('small', { class: 'pm-muted' }, '광산 포인트는 계정 포인트와 별도로 보관됩니다.')) };
+        const allSelected = owned.length > 0 && owned.every(ore => selected.has(ore.id));
+        return { content: node('section', { class: 'pm-ores' }, node('div', { class: 'pm-shelf-head' }, node('h3', {}, '광물'), node('span', { class: 'pm-slot-count' }, number(owned.length)), node('span', { class: 'pm-shelf-rule', 'aria-hidden': 'true' }), button(allSelected ? '선택 해제' : '전체 선택', () => { selected.clear(); if (!allSelected) owned.forEach(ore => selected.add(ore.id)); render(); }, owned.length === 0)),
+                owned.length ? grid : node('p', { class: 'pm-empty' }, '아직 채굴한 광물이 없습니다.'), node('p', { class: 'pm-help' }, '선택한 광물은 보유 수량 전체를 판매합니다.')),
+            dock: node('div', { class: 'pm-sale-bar' }, sell, node('small', { class: 'pm-muted' }, '광산 포인트는 계정 포인트와 별도로 보관됩니다.')) };
     }
     function inventoryPanel(compact = false) {
-        const ores = oreView(compact);
+        const ores = oreView();
         return node('section', { class: 'pm-stone-panel pm-inventory' + (compact ? ' pm-compact-inventory' : ' pm-full-inventory') },
             node('div', { class: 'pm-panel-heading' }, node('div', {}, node('span', { class: 'pm-kicker' }, '보관함'), node('h2', {}, '인벤토리')), node('span', { class: 'pm-slot-count' }, number(state.pickaxes.length + state.ores.filter(ore => ore.count > 0).length) + '칸')),
             node('div', { class: 'pm-inventory-scroll', 'data-pm-scroll': compact ? 'side' : 'inventory' }, toolSection(), ores.content), ores.dock);

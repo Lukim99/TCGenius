@@ -106,10 +106,57 @@ test('두 상자 동시 개봉은 같은 계정 큐에서 한 번만 차감', as
     assert.equal(state.keyCount, 19); assert.equal(state.pickaxes.length, 1);
 });
 
-test('채굴 → 내구도 소모 → 광물 수리 → 선택 판매 → 1회 보상 교환과 저장 복원', async () => {
+test('기존 같은 종류의 내구도와 장착을 보존해 합산하고 추가 획득도 한 곡괭이에 저장한다', async () => {
+    const previous = { revision: 7, pickaxes: [
+        { uid: 'stone-first', id: 'stone', durability: 2, maxDurability: 8 },
+        { uid: 'wood-tool', id: 'wood', durability: 2, maxDurability: 5 },
+        { uid: 'stone-equipped', id: 'stone', durability: 0, maxDurability: 8 },
+        { uid: 'stone-last', id: 'stone', durability: 3, maxDurability: 8 }
+    ], equippedUid: 'stone-equipped', ores: { copper: 3 }, points: 123, exchanges: { orb: 1, job8: 2 }, totalMined: 19, nextMineAt: 0, lastAction: null };
+    await setState({ pointMine: structuredClone(previous) }); writes = [];
+    let state = (await request('')).data;
+    assert.equal(writes.length, 0);
+    assert.deepEqual((await rpg.getRPGUserByName(fixture.name)).pointMine, previous, '조회만으로 운영 보유 기록을 덮어쓰지 않는다');
+    assert.deepEqual(state.pickaxes, [
+        { uid: 'stone-first', id: 'stone', durability: 5, maxDurability: 24 },
+        { uid: 'wood-tool', id: 'wood', durability: 2, maxDurability: 5 }
+    ]);
+    assert.equal(state.equippedUid, 'stone-first');
+    const mineInput = body(7);
+    const mined = await forceDraw(0, () => request('mine', mineInput));
+    assert.equal(mined.status, 200); state = mined.data;
+    assert.equal(state.pickaxes[0].durability, 4);
+    assert.equal((await request('mine', mineInput)).data.replayed, true);
+    const openInput = body(8);
+    const opened = await forceDraw(.3, () => request('open', openInput));
+    assert.equal(opened.status, 200); state = opened.data;
+    assert.equal(state.pickaxes.length, 2);
+    assert.equal(state.pickaxes[0].uid, 'stone-first');
+    assert.equal(state.pickaxes[0].durability, 12);
+    assert.equal(state.pickaxes[0].maxDurability, 32);
+    assert.equal(state.lastAction.result.addedDurability, 8);
+    const replay = await request('open', openInput);
+    assert.equal(replay.data.replayed, true);
+    assert.equal(replay.data.pickaxes[0].durability, 12);
+    assert.equal(replay.data.keyCount, 19);
+    const saved = (await rpg.getRPGUserByName(fixture.name)).pointMine;
+    assert.equal(saved.pickaxes.length, 2); assert.equal(saved.equippedUid, 'stone-first');
+    assert.equal(saved.points, 123); assert.deepEqual(saved.exchanges, previous.exchanges);
+    assert.equal(saved.ores.copper, 3); assert.equal(saved.totalMined, 20);
+});
+
+test('소진된 종류를 다시 얻으면 기존 UID에 내구도를 더하고 채굴할 수 있다', async () => {
+    await setState({ pointMine: { revision: 0, pickaxes: [{ uid: 'empty-wood', id: 'wood', durability: 0, maxDurability: 5 }], equippedUid: 'empty-wood', ores: {}, points: 0, exchanges: {}, totalMined: 0, nextMineAt: 0, lastAction: null } });
+    const opened = await forceDraw(0, () => request('open', body(0)));
+    assert.equal(opened.status, 200);
+    assert.deepEqual(opened.data.pickaxes, [{ uid: 'empty-wood', id: 'wood', durability: 5, maxDurability: 10 }]);
+    assert.equal(opened.data.equippedUid, 'empty-wood');
+    assert.equal((await request('mine', body(1))).data.pickaxes[0].durability, 4);
+});
+
+test('채굴 → 내구도 소모 → 선택한 광물 전체 판매 → 1회 보상 교환과 저장 복원', async () => {
     const opened = await forceDraw(.3, () => request('open', body(0)));
     assert.equal(opened.data.lastAction.result.pickaxe.id, 'stone');
-    const uid = opened.data.equippedUid;
     const input = body(1);
     const mined = await forceDraw(0, () => request('mine', input));
     assert.equal(mined.status, 200); assert.equal(mined.data.lastAction.result.oreId, 'stone');
@@ -117,15 +164,14 @@ test('채굴 → 내구도 소모 → 광물 수리 → 선택 판매 → 1회 �
     const replay = await request('mine', input);
     assert.equal(replay.data.totalMined, 1); assert.equal(replay.data.replayed, true);
     assert.equal((await request('mine', body(2))).status, 429);
-    assert.equal((await request('repair', body(2, { uid, amount: 1 }))).status, 400);
     const current = await rpg.getRPGUserByName(fixture.name);
-    current.pointMine.ores = { stone: 2902 }; await current.save();
-    const repaired = await request('repair', body(2, { uid, amount: 1 }));
-    assert.equal(repaired.status, 200); assert.equal(repaired.data.pickaxes[0].durability, 8);
-    assert.equal(repaired.data.ores.find(ore => ore.id === 'stone').count, 2900);
-    const sold = await request('sell', body(3, { ores: [{ id: 'stone', count: 2900 }] }));
-    assert.equal(sold.status, 200); assert.equal(sold.data.points, 2900);
-    const rewardInput = body(4, { rewardId: 'card9' });
+    current.pointMine.ores = { stone: 1896, coal: 2, copper: 3 }; await current.save();
+    const sold = await request('sell', body(2, { ores: [{ id: 'stone' }, { id: 'coal' }] }));
+    assert.equal(sold.status, 200); assert.equal(sold.data.points, 1900);
+    assert.equal(sold.data.ores.find(ore => ore.id === 'stone').count, 0);
+    assert.equal(sold.data.ores.find(ore => ore.id === 'coal').count, 0);
+    assert.equal(sold.data.ores.find(ore => ore.id === 'copper').count, 3);
+    const rewardInput = body(3, { rewardId: 'card9' });
     const exchanged = await request('exchange', rewardInput);
     assert.equal(exchanged.status, 200); assert.equal(exchanged.data.points, 0); assert.equal(exchanged.data.exchanges.card9, 1);
     const rewardReplay = await request('exchange', rewardInput);
@@ -133,19 +179,20 @@ test('채굴 → 내구도 소모 → 광물 수리 → 선택 판매 → 1회 �
     const user = await rpg.getRPGUserByName(fixture.name);
     const rewardId = rpg.getDataCache('Item').findIndex(item => item?.name === '9성 카드팩');
     assert.equal(rpg.getInventoryItemCount(user, rewardId), 1);
-    assert.equal((await request('exchange', body(5, { rewardId: 'card9' }))).status, 400);
+    assert.equal((await request('exchange', body(4, { rewardId: 'card9' }))).status, 400);
     assert.equal(user.yutEvent.laps, 3);
     assert.ok(writes.some(write => /#inventory/.test(write.UpdateExpression || '') && /#pointMine/.test(write.UpdateExpression || '')));
-    assert.equal((await request('')).data.revision, 5);
+    assert.equal((await request('')).data.revision, 4);
 });
 
-test('내구도 0·나무 수리·수량 위조·없는 보상은 차감하지 않는다', async () => {
+test('내구도 0·종료된 수리·부분 판매·수량 위조·없는 보상은 차감하지 않는다', async () => {
     const state = (await forceDraw(0, () => request('open', body(0)))).data;
     const user = await rpg.getRPGUserByName(fixture.name);
     user.pointMine.pickaxes[0].durability = 0; user.pointMine.ores = { stone: 3 }; user.pointMine.points = 10000; await user.save();
     const snapshot = structuredClone(user.pointMine);
+    assert.equal((await request('repair', body(1, { uid: state.equippedUid, amount: 1 }))).status, 410);
     for (const [action, values] of [
-        ['mine', {}], ['equip', { uid: state.equippedUid }], ['repair', { uid: state.equippedUid, amount: 1 }],
+        ['mine', {}], ['equip', { uid: state.equippedUid }], ['sell', { ores: [{ id: 'stone', count: 1 }] }],
         ['sell', { ores: [{ id: 'stone', count: -1 }] }], ['sell', { ores: [{ id: 'stone', count: 1.5 }] }],
         ['sell', { ores: [{ id: 'stone', count: 4 }] }], ['sell', { ores: [{ id: 'stone', count: 1 }, { id: 'stone', count: 1 }] }],
         ['exchange', { rewardId: 'unknown' }]
@@ -158,15 +205,20 @@ test('내구도 0·나무 수리·수량 위조·없는 보상은 차감하지 �
 
 test('모든 변경 행동은 저장 실패 재시도에서도 재차감·재추첨·재지급하지 않는다', async () => {
     for (const [action, values] of [
-        ['open', {}], ['equip', { uid: 'stone-tool' }], ['mine', {}], ['repair', { uid: 'stone-tool', amount: 1 }],
-        ['sell', { ores: [{ id: 'stone', count: 10 }] }], ['exchange', { rewardId: 'genius-key' }]
+        ['open', {}], ['equip', { uid: 'stone-tool' }], ['mine', {}],
+        ['sell', { ores: [{ id: 'stone' }] }], ['exchange', { rewardId: 'genius-key' }]
     ]) {
         await setState({ pointMine: { revision: 0, pickaxes: [{ uid: 'stone-tool', id: 'stone', durability: 4, maxDurability: 8 }], equippedUid: 'stone-tool', ores: { stone: 30 }, points: 100, exchanges: {}, totalMined: 0, nextMineAt: 0, lastAction: null } });
         const input = body(0, values); failedWrites = true;
-        const failure = await forceDraw(0, () => request(action, input));
+        const failure = await forceDraw(.3, () => request(action, input));
         assert.equal(failure.status, 503, action); assert.equal(failure.data.retry, true);
         const changed = (await rpg.getRPGUserByName(fixture.name)).pointMine;
         assert.equal(changed.revision, 1);
+        if (action === 'open') {
+            assert.equal(changed.pickaxes.length, 1);
+            assert.equal(changed.pickaxes[0].durability, 12);
+            assert.equal(changed.pickaxes[0].maxDurability, 16);
+        }
         assert.equal((await request('open', body(1))).status, 503, '저장 실패를 새 행동으로 덮어쓸 수 없다');
         failedWrites = false;
         const replay = await forceDraw(.999, () => request(action, input));
@@ -192,18 +244,21 @@ test('반복 열쇠 보상과 운영 가격·수량을 사용하며 누락된 �
     assert.equal((await request('open', body(3))).status, 410);
 });
 
-test('변경된 8종 보상의 가격·수량·1회/10회 한도와 기존 교환 기록을 지킨다', async () => {
+test('변경된 15종 보상의 가격·수량·1회/3회/5회 한도와 기존 교환 기록을 지킨다', async () => {
     let state = (await forceDraw(.3, () => request('open', body(0)))).data;
     let user = await rpg.getRPGUserByName(fixture.name);
     user.pointMine.points = 60000;
-    user.pointMine.exchanges = { protection: 1, card8: 1, job8: 1 };
+    user.pointMine.exchanges = { protection: 1, 'advanced-protection': 1, card8: 1, job8: 1 };
     for (const name of ['8성 카드팩', '8성 전직 카드팩']) rpg.addInventoryItem(user, itemData.findIndex(item => item?.name === name), 1);
     await user.save(); state = (await request('')).data;
     const expected = [
-        ['orb-choice', '보주 선택 상자', 10000, 1, 1], ['orb', '보주 상자', 3900, 1, 1],
-        ['character-stone-pouch', '지정 캐릭터 변환석 주머니', 4900, 1, 1], ['zeta', '제타 카드팩', 3500, 1, 1],
-        ['card9', '9성 카드팩', 2900, 1, 1], ['job8', '8성 전직 카드팩', 2000, 1, 10],
-        ['card8', '8성 카드팩', 1000, 1, 10], ['genius-key', '지니어스의 열쇠', 100, 3, 0]
+        ['orb-choice', '보주 선택 상자', 7900, 1, 1], ['blessed-protection', '축복받은 장비 보호권', 4900, 1, 1],
+        ['orb', '보주 상자', 1900, 1, 1], ['character-stone-pouch', '지정 캐릭터 변환석 주머니', 1900, 1, 1],
+        ['zeta', '제타 카드팩', 2900, 1, 1], ['card9', '9성 카드팩', 1900, 1, 1],
+        ['advanced-protection', '고급 장비 보호권', 500, 1, 5], ['card8', '8성 카드팩', 400, 1, 5],
+        ['artifact-key', '아티팩트 옵션 변경열쇠', 300, 1, 3], ['protection', '장비 보호권', 200, 1, 5],
+        ['character-stone', '캐릭터 변환석', 80, 1, 0], ['genius-key', '지니어스의 열쇠', 30, 3, 0],
+        ['white-jewel', '화이트 쥬얼', 10, 1, 0], ['jewel', '쥬얼', 5, 1, 0], ['hell-invitation', '헬 초대장', 3, 1, 0]
     ];
     assert.equal(state.rewards.length, expected.length);
     for (const [id, name, cost, count, limit] of expected) {
@@ -233,9 +288,19 @@ test('변경된 8종 보상의 가격·수량·1회/10회 한도와 기존 교�
             assert.equal(user.pointMine.exchanges[id], limit);
         }
     }
-    assert.equal(user.pointMine.exchanges.protection, 1);
-    assert.equal((await request('exchange', body(state.revision, { rewardId: 'protection' }))).status, 400);
+    assert.equal(user.pointMine.exchanges.protection, 5);
+    assert.equal(user.pointMine.exchanges['advanced-protection'], 5);
+    assert.equal(user.pointMine.exchanges.job8, 1);
+    assert.equal((await request('exchange', body(state.revision, { rewardId: 'job8' }))).status, 400);
     assert.equal(rpg.getInventoryItemCount(user, itemData.findIndex(item => item?.name === '지니어스의 열쇠')), 6);
+});
+
+test('8성 카드팩의 이전 10회 교환 기록은 새 5회 한도에서도 초기화하지 않는다', async () => {
+    await forceDraw(0, () => request('open', body(0)));
+    const user = await rpg.getRPGUserByName(fixture.name);
+    user.pointMine.exchanges.card8 = 10; user.pointMine.points = 10000; await user.save();
+    assert.equal((await request('exchange', body(1, { rewardId: 'card8' }))).status, 400);
+    assert.equal(user.pointMine.exchanges.card8, 10); assert.equal(user.pointMine.points, 10000);
 });
 
 test('송편 상품의 기존 구매 기록·일일 1개 한도와 100포인트 열쇠 구매·상자 사용', async () => {
@@ -323,7 +388,7 @@ test('원본의 전용 광물·황금 제한과 운영 설정 검증', () => {
         assert.ok(ores.every(ore => !ore.exactPickaxe || ore.exactPickaxe === type.id));
         if (type.id === 'gold') assert.ok(!ores.some(ore => ore.id === 'jade'));
     }
-    for (const edit of [config => { config.rewards[0].cost = -1; }, config => { config.pickaxes[1].repair[0].count = 0; }, config => { config.pickaxes[0].weight = 0; }]) {
+    for (const edit of [config => { config.rewards[0].cost = -1; }, config => { config.mineIntervalMs = 0; }, config => { config.pickaxes[0].weight = 0; }]) {
         const config = structuredClone(DEFAULT_CONFIG); edit(config); assert.throws(() => validateConfig(config));
     }
 });

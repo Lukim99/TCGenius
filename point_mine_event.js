@@ -11,13 +11,12 @@ function validateConfig(config) {
     if (!config || typeof config.active !== 'boolean' || !positive(config.mineIntervalMs) || !Array.isArray(config.pickaxes) || !config.pickaxes.length || !Array.isArray(config.ores) || !config.ores.length || !Array.isArray(config.rewards)) invalid();
     const unique = entries => entries.every(entry => entry && typeof entry.id === 'string' && /^[a-zA-Z0-9_-]{1,60}$/.test(entry.id) && typeof entry.name === 'string') && new Set(entries.map(entry => entry.id)).size === entries.length;
     if (![config.pickaxes, config.ores, config.rewards].every(unique)) invalid();
-    const oreIds = new Set(config.ores.map(ore => ore.id));
     const pickaxeIds = new Set(config.pickaxes.map(pickaxe => pickaxe.id));
     for (const ore of config.ores) {
         if (!positive(ore.value) || !Number.isFinite(ore.weight) || ore.weight <= 0 || !Number.isInteger(ore.spriteIndex) || ore.spriteIndex < 0 || ore.spriteIndex > 15 || !(Number.isInteger(ore.minRank) && ore.minRank >= 0 || pickaxeIds.has(ore.exactPickaxe)) || ore.blockedPickaxe && !pickaxeIds.has(ore.blockedPickaxe)) invalid();
     }
     for (const pickaxe of config.pickaxes) {
-        if (!positive(pickaxe.durability) || !Number.isFinite(pickaxe.weight) || pickaxe.weight <= 0 || !Number.isInteger(pickaxe.rank) || pickaxe.rank < 0 || !Number.isInteger(pickaxe.spriteIndex) || pickaxe.spriteIndex < 0 || pickaxe.spriteIndex > 15 || !Array.isArray(pickaxe.repair) || new Set(pickaxe.repair.map(cost => cost.oreId)).size !== pickaxe.repair.length || pickaxe.repair.some(cost => !oreIds.has(cost.oreId) || !positive(cost.count))) invalid();
+        if (!positive(pickaxe.durability) || !Number.isFinite(pickaxe.weight) || pickaxe.weight <= 0 || !Number.isInteger(pickaxe.rank) || pickaxe.rank < 0 || !Number.isInteger(pickaxe.spriteIndex) || pickaxe.spriteIndex < 0 || pickaxe.spriteIndex > 15) invalid();
         if (!oreDistribution(config, pickaxe).length) invalid();
     }
     if (config.rewards.some(reward => !positive(reward.count) || !positive(reward.cost) || !Number.isSafeInteger(reward.limit) || reward.limit < 0)) invalid();
@@ -35,7 +34,20 @@ function draw(entries, random) {
 }
 
 function getState(user) {
-    return user.pointMine || { revision: 0, pickaxes: [], equippedUid: null, ores: {}, points: 0, exchanges: {}, totalMined: 0, nextMineAt: 0, lastAction: null };
+    const state = user.pointMine || { revision: 0, pickaxes: [], equippedUid: null, ores: {}, points: 0, exchanges: {}, totalMined: 0, nextMineAt: 0, lastAction: null };
+    const tools = new Map();
+    let equippedUid = state.equippedUid;
+    // 기존 보유분도 내구도를 보존해 합친다. 조회에서는 저장하지 않는다.
+    for (const tool of state.pickaxes) {
+        const combined = tools.get(tool.id);
+        if (!combined) tools.set(tool.id, { ...tool });
+        else {
+            combined.durability += tool.durability;
+            combined.maxDurability += tool.maxDurability;
+            if (tool.uid === state.equippedUid) equippedUid = combined.uid;
+        }
+    }
+    return { ...state, pickaxes: [...tools.values()], equippedUid };
 }
 
 function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDisplayAssets, serializeItemUse = handler => handler, now = Date.now, random = () => crypto.randomInt(0x100000000) / 0x100000000 }) {
@@ -69,7 +81,8 @@ function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDi
             res.json(status(user, configuration()));
         } catch (error) { res.status(error.status || 503).json({ error: error.status ? error.message : '광산 정보를 불러오지 못했습니다.' }); }
     });
-    for (const action of ['open', 'equip', 'mine', 'repair', 'sell', 'exchange']) {
+    server.post('/api/point-mine/repair', requireUser, (req, res) => res.status(410).json({ error: '곡괭이 수리 기능이 종료되었습니다.' }));
+    for (const action of ['open', 'equip', 'mine', 'sell', 'exchange']) {
         server.post('/api/point-mine/' + action, requireUser, serializeItemUse(async (req, res) => {
             res.setHeader('Cache-Control', 'no-store');
             try {
@@ -102,19 +115,25 @@ function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDi
                             if (id < 0) fail(503, '곡괭이 상자 열쇠가 등록되지 않았습니다.');
                             if (rpg.getInventoryItemCount(user, id) < 1) fail(400, '곡괭이 상자 열쇠가 부족합니다. 필드 사냥으로 획득해주세요.');
                             const type = draw(config.pickaxes, random);
-                            const tool = { uid: crypto.randomUUID(), id: type.id, durability: type.durability, maxDurability: type.durability };
-                            state.pickaxes.push(tool);
+                            let tool = state.pickaxes.find(entry => entry.id === type.id);
+                            if (tool) {
+                                tool.durability += type.durability;
+                                tool.maxDurability += type.durability;
+                            } else {
+                                tool = { uid: crypto.randomUUID(), id: type.id, durability: type.durability, maxDurability: type.durability };
+                                state.pickaxes.push(tool);
+                            }
                             if (!state.pickaxes.some(entry => entry.uid === state.equippedUid && entry.durability > 0)) state.equippedUid = tool.uid;
                             if (!rpg.removeInventoryItem(user, id, 1)) fail(409, '열쇠 보유량이 변경되었습니다.', { refresh: true });
-                            result = { pickaxe: tool, name: type.name };
-                        } else if (['equip', 'mine', 'repair'].includes(action)) {
+                            result = { pickaxe: tool, name: type.name, addedDurability: type.durability };
+                        } else if (['equip', 'mine'].includes(action)) {
                             if (!pickaxe || !definition) fail(400, '곡괭이를 선택해주세요. 상자에서 곡괭이를 얻을 수 있습니다.');
                             if (action === 'equip') {
-                                if (pickaxe.durability <= 0) fail(400, '내구도가 소진된 곡괭이입니다. 먼저 수리해주세요.');
+                                if (pickaxe.durability <= 0) fail(400, '내구도가 소진된 곡괭이입니다. 상자에서 같은 종류를 얻거나 다른 곡괭이를 장착해주세요.');
                                 state.equippedUid = pickaxe.uid;
                                 result = { name: definition.name };
-                            } else if (action === 'mine') {
-                                if (pickaxe.durability <= 0) fail(400, '곡괭이 내구도가 소진되었습니다. 수리하거나 다른 곡괭이를 장착해주세요.');
+                            } else {
+                                if (pickaxe.durability <= 0) fail(400, '곡괭이 내구도가 소진되었습니다. 상자에서 같은 종류를 얻거나 다른 곡괭이를 장착해주세요.');
                                 if (now() < state.nextMineAt) fail(429, '채굴 중입니다. 잠시 후 다시 눌러주세요.');
                                 const ore = draw(oreDistribution(config, definition), random);
                                 state.ores[ore.id] = (state.ores[ore.id] || 0) + 1;
@@ -122,26 +141,18 @@ function registerPointMineRoutes(server, { rpgenius: rpg, requireUser, getItemDi
                                 state.totalMined++;
                                 state.nextMineAt = now() + config.mineIntervalMs;
                                 result = { oreId: ore.id, name: ore.name, count: 1, durability: pickaxe.durability };
-                            } else {
-                                const amount = request.amount;
-                                if (!positive(amount) || amount > pickaxe.maxDurability - pickaxe.durability) fail(400, '수리할 내구도 수량을 확인해주세요.');
-                                if (!definition.repair.length) fail(400, '이 곡괭이는 수리할 수 없습니다.');
-                                const costs = definition.repair.map(cost => ({ ...cost, count: cost.count * amount }));
-                                if (costs.some(cost => !positive(cost.count) || (state.ores[cost.oreId] || 0) < cost.count)) fail(400, '수리할 광물이 부족합니다.');
-                                for (const cost of costs) state.ores[cost.oreId] -= cost.count;
-                                pickaxe.durability += amount;
-                                result = { name: definition.name, amount, costs };
                             }
                         } else if (action === 'sell') {
                             if (!Array.isArray(request.ores) || !request.ores.length || request.ores.length > config.ores.length || new Set(request.ores.map(ore => ore?.id)).size !== request.ores.length) fail(400, '포인트로 바꿀 광물을 선택해주세요.');
                             let points = 0;
                             for (const entry of request.ores) {
                                 const ore = config.ores.find(ore => ore.id === entry?.id);
-                                if (!ore || !positive(entry.count) || (state.ores[entry.id] || 0) < entry.count) fail(400, '광물 보유량과 수량을 확인해주세요.');
-                                points += ore.value * entry.count;
+                                const count = state.ores[entry?.id] || 0;
+                                if (!ore || !positive(count) || entry.count != null && entry.count !== count) fail(400, '선택한 광물은 보유 수량 전체를 판매합니다. 보유량을 확인해주세요.');
+                                points += ore.value * count;
                             }
                             if (!positive(points) || !Number.isSafeInteger(state.points + points)) fail(400, '교환할 광물 수량을 확인해주세요.');
-                            for (const entry of request.ores) state.ores[entry.id] -= entry.count;
+                            for (const entry of request.ores) state.ores[entry.id] = 0;
                             state.points += points;
                             result = { points };
                         } else {
