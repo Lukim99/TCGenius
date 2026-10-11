@@ -6012,13 +6012,14 @@ function serializeCard(card, user) {
             const stats = user ? rpgenius.calculateUserStats(user) : {};
             const slotEffects = user ? rpgenius.calculateCardSlotEffects(user) : {};
             const star = Number(card.star || 0);
-            const mpCost = Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, specterSkill.name, Date.now())));
+            const mpCost = Number(card.id) === randoCharacters.KINO_ID ? randoCharacters.mentalCost(stats, specterSkill) : Math.max(0, Math.round(Number(specterSkill.mp_cost || 0) * (1 - Math.min(1, Number(slotEffects.mpCostReduction || 0))) * (1 + Number(stats.mpReduce || 0)) * ilionCards.mpMultiplier({ ilion: Number(card.id) === ilionCards.CARD_ID, ilionStar: star }, Number(card.id) === Number(user?.main_card?.id) ? user?.field : null, specterSkill.name, Date.now())));
             const cooltime = Math.max(0, Number(specterSkill.cooltime || 0) + Number(stats.skillCooldown || 0));
             specterInfo = {
                 name: specterData.name,
                 skill: {
                     name: specterSkill.name,
                     mpCost,
+                    resourceLabel: Number(card.id) === randoCharacters.KINO_ID ? '정신력' : 'MP',
                     cooltimeText: rpgenius.formatCooltime(cooltime),
                     descLines: rpgenius.formatCurrentSkillDesc(specterSkill, star).split('\n').filter(Boolean)
                 }
@@ -6504,7 +6505,8 @@ function buildCharacterDex() {
         return {
             id: Number(skillId),
             name: skill.name,
-            mpCost: Number(skill.mp_cost || 0),
+            mpCost: Number(skill.mental_cost ?? skill.mp_cost ?? 0),
+            resourceLabel: skill.mental_cost != null ? '정신력' : 'MP',
             cooltimeText: rpgenius.formatCooltime(Number(skill.cooltime || 0)),
             descLines: rpgenius.formatSkillDescWithIncrease(skill).split('\n').filter(Boolean)
         };
@@ -7574,7 +7576,7 @@ async function buyShopItem(userName, body) {
     try { shopCatalog.shopRecordAddress(shopId); } catch (e) { return { error: e.message }; }
     if (!Number.isInteger(count) || count < 1 || count > 999) return { error: '구매 수량이 올바르지 않습니다.' };
 
-    await Promise.all(['Shop', 'ShopState', ...(shopType === '패키지' ? ['Item', 'Bundle'] : [])].map(key => rpgenius.loadRpgeniusDataEntry(key, { consistentRead: true })));
+    await Promise.all(['Shop', 'ShopState', ...(shopType === '패키지' ? ['Item', 'Bundle', 'Pack'] : [])].map(key => rpgenius.loadRpgeniusDataEntry(key, { consistentRead: true })));
     const user = await rpgenius.getRPGUserByName(userName);
     if (!user) return { error: '유저를 찾을 수 없습니다.' };
     ensureInventoryShape(user);

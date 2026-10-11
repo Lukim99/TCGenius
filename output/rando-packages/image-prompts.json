@@ -1,0 +1,25 @@
+[
+  {
+    "generator": "image_gen",
+    "source": "C:/Users/dodom/.codex/generated_images/01a127d1-7d22-7a40-8880-0dfb2d720d2f/exec-c1a647f9-7634-4566-841a-21cb5d2a99ba.png",
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠__일반__란도랜드2.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: identity-preserve\nAsset type: transparent full-body WebGL RPG battle character sprite.\nInput image 1 is the original portrait and is the strict identity reference: reproduce this same adult woman's recognizable facial proportions, large gentle eyes, softly rounded cheeks, delicate nose, pink lips, long dark brown wavy hair, loose white bonnet with very fine pale blue pinstripes, and pale pink knit sweater. Input image 2 is the existing sprite to edit; preserve its energetic wide stance, complete full-body framing, dark wide-leg jeans, white sneakers, lighting realism and clean silhouette.\nPrimary request: improve the likeness to image 1, especially the face and innocent friendly expression, while retaining an energetic combat-ready pose. Her face, gaze, chest orientation, and forward empty hand must point toward SCREEN RIGHT. Keep natural rounded facial features from the portrait; do not sharpen or change the face into a different generic fighter. Make the bonnet roomy and soft like the reference, rather than a fitted cap. Both hands must be completely empty. Her long wavy hair can flow with the battle stance.\nScene/backdrop: genuinely transparent alpha background, no floor or shadow plate.\nComposition: one single full-body character, head and both feet fully visible with comfortable margins, centered, tall portrait orientation, game sprite photorealistic rendering. No crop, no text, no watermark, no UI, no extra objects, no weapon, no aura or effects."
+  },
+  {
+    "generator": "image_gen",
+    "source": "C:/Users/dodom/.codex/generated_images/01a127d1-7d22-7a40-8880-0dfb2d720d2f/exec-716f5bfa-fcd9-44d4-8f6f-de390043b1f5.png",
+    "references": [
+      "C:/Users/dodom/.codex/generated_images/01a127d1-7d22-7a40-8880-0dfb2d720d2f/exec-c1a647f9-7634-4566-841a-21cb5d2a99ba.png"
+    ],
+    "file": "DB/RPGenius/ui/필드/캐릭터/워뇨띠__일반__란도랜드2.png",
+    "size": [
+      512,
+      768
+    ],
+    "prompt": "Use case: precise-object-edit\nEdit target: the supplied transparent RPG combat sprite. Keep the exact same face, likeness, hair, roomy white pinstripe bonnet, pink knit sweater, jeans, white sneakers, dynamic battle pose, empty hands and screen-right gaze. Change ONLY framing: make the entire character 12% smaller within the portrait canvas and restore all hand fingertips and shoe edges so no anatomy or clothing touches or crosses the canvas boundary. Leave a clean transparent margin on all four sides. Same photorealistic quality. Do not change facial features, pose, clothing, colors or lighting. Genuine alpha transparency, no backdrop, no glow, no shadow plate, no text, no objects."
+  }
+]

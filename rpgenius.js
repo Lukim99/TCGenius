@@ -933,7 +933,7 @@ function formatCharacterCardList() {
         (card.skills || []).forEach(skillIndex => {
             const skill = skills[skillIndex];
             if (skill) {
-                lines.push('- 스킬: [ ' + skill.name + ' ]  MP ' + Number(skill.mp_cost || 0));
+                lines.push('- 스킬: [ ' + skill.name + ' ]  ' + (skill.mental_cost != null ? '정신력' : 'MP') + ' ' + Number(skill.mental_cost ?? skill.mp_cost ?? 0));
                 formatSkillDesc(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
                 lines.push(' ㄴ 쿨타임: ' + formatCooltime(skill.cooltime));
             }
@@ -1217,7 +1217,7 @@ function formatCharacterCardDetail(card) {
     (card.skills || []).forEach(skillIndex => {
         const skill = skills[skillIndex];
         if (skill) {
-            lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ]');
+            lines.push('- ' + skill.name + ' [ ' + Number(skill.mental_cost ?? skill.mp_cost ?? 0) + ' ' + (skill.mental_cost != null ? '정신력' : 'MP') + ' ]');
             formatSkillDescWithIncrease(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
         }
     });
@@ -1236,7 +1236,7 @@ function formatCharacterCardDetail(card) {
             card.class.skills.forEach(skillIndex => {
                 const skill = skills[skillIndex];
                 if (skill) {
-                    lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ]');
+                    lines.push('- ' + skill.name + ' [ ' + Number(skill.mental_cost ?? skill.mp_cost ?? 0) + ' ' + (skill.mental_cost != null ? '정신력' : 'MP') + ' ]');
                     formatSkillDescWithIncrease(skill).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
                 }
             });
@@ -5504,7 +5504,9 @@ async function enterWorldBossField(user, boss, options, channel) {
         const skill = getExtraSkillById(id);
         const star = Number(user.main_card && user.main_card.star || 0);
         lines.push('');
-        lines.push((i + 1) + '. ' + skill.name + ' [ MP ' + comma(Number(skill.mp_cost || 0)) + ' ] 쿨타임 ' + (Number(skill.cooltime || 0) / 1000) + '초');
+        const kino = Number(user.main_card?.id) === randoCharacters.KINO_ID;
+        const cost = kino ? randoCharacters.mentalCost(calculateUserStats(user), skill) : Number(skill.mp_cost || 0);
+        lines.push((i + 1) + '. ' + skill.name + ' [ ' + (kino ? '정신력' : 'MP') + ' ' + comma(cost) + ' ] 쿨타임 ' + (Number(skill.cooltime || 0) / 1000) + '초');
         lines.push(' ㄴ ' + formatSkillDesc(skill, star));
     });
     lines.push('', '/RPGenius 월드보스선택 [1/2/3]');
@@ -8841,7 +8843,9 @@ function formatEquipmentInfo(user) {
             const skill = skills[skillIndex];
             if (!skill) return;
             const cooltime = Math.max(0, (Number(skill.cooltime || 0) + Number(stats.skillCooldown || 0)) * getSkillCooldownRate(stats));
-            lines.push('- ' + skill.name + ' [ ' + Number(skill.mp_cost || 0) + ' MP ] 쿨타임 ' + formatCooltime(cooltime));
+            const kino = Number(mainCard.id) === randoCharacters.KINO_ID;
+            const cost = kino ? randoCharacters.mentalCost(stats, skill) : Number(skill.mp_cost || 0);
+            lines.push('- ' + skill.name + ' [ ' + cost + ' ' + (kino ? '정신력' : 'MP') + ' ] 쿨타임 ' + formatCooltime(cooltime));
             formatCurrentSkillDesc(skill, star).split('\n').forEach(desc => lines.push(' ㄴ ' + desc));
         });
     } else {
@@ -12825,6 +12829,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     }
     // '패키지' 상점의 '아이템'이 실제로는 번들인 경우, 번들 아이템을 지급하지 않고 구성품을 즉시 수령시킨다.
     let bundleData = null;
+    const instantPacks = new Map();
     if (shopType == '패키지' && shopItem.type == '아이템') {
         const shopItems = getDataCache('Item', []);
         const itemData = shopItems[shopItem.item_id];
@@ -12836,6 +12841,13 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             const bundles = getDataCache('Bundle', []);
             bundleData = bundles[itemData.pack];
             if (!Array.isArray(bundleData)) return '❌ 처리할 수 없는 번들 상품입니다.';
+            const packs = getDataCache('Pack', []);
+            for (const reward of bundleData.filter(entry => entry.autoUse === true)) {
+                const gacha = shopItems[reward.item_id];
+                const pack = gacha?.type === '가챠' && typeof gacha.pack === 'number' ? packs[gacha.pack] : null;
+                if (reward.type !== '아이템' || !Array.isArray(pack) || !pack.length || pack.some(entry => entry.type !== '아이템' || !shopItems[entry.item_id] || !(Number(entry.roll) > 0))) return '❌ 구매 즉시 추첨할 가챠 구성을 확인해주세요.';
+                instantPacks.set(reward, { pack, num: Number(gacha.num || 1) });
+            }
             const cardRewards = bundleData.filter(reward => reward.type === '캐릭터카드');
             if (cardRewards.some(reward => !buildCharacterCardReward(reward))) return '❌ 처리할 수 없는 캐릭터 카드 보상입니다.';
             const requiredSpace = cardRewards.reduce((total, reward) => total + Number(typeof reward.count === 'object' ? reward.count.max : reward.count || 1), 0) * Number(shopItem.count) * count;
@@ -12862,7 +12874,12 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             bundleSummary = {};
             const cardStart = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card.length : 0;
             const grantCount = Number(shopItem.count) * count;
-            for (let i = 0; i < grantCount; i++) bundleData.forEach(reward => grantPackReward(user, reward, bundleSummary));
+            for (let i = 0; i < grantCount; i++) bundleData.forEach(reward => {
+                const instant = instantPacks.get(reward);
+                if (instant) {
+                    for (let j = 0; j < rollCount(reward.count) * instant.num; j++) grantPackReward(user, pickPackEntry(instant.pack), bundleSummary);
+                } else grantPackReward(user, reward, bundleSummary);
+            });
             if (_out && typeof _out == 'object') _out.bundleGranted = bundleSummary;
             if (_out && typeof _out == 'object') _out.grantedCards = (user.inventory && user.inventory.card || []).slice(cardStart).map(card => ({ ...card }));
         } else {
@@ -12897,7 +12914,7 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
     if (typeof limits.weekly == 'number') rec.weekly = Number(rec.weekly || 0) + count;
     if (typeof limits.monthly == 'number') rec.monthly = Number(rec.monthly || 0) + count;
 
-    if (shopType === '레이드' || shopItem.contentKey === 'artifact-package') {
+    if (shopType === '레이드' || ['artifact-package', 'rando-release-package'].includes(shopItem.contentKey)) {
         try { await commitProtectedUserChange(user, ['inventory', 'gold', 'garnet', 'point', 'mileage', 'shopPurchases']); }
         catch (error) { console.error('[raid shop] purchase:', error.name); return '❌ 보유 정보가 변경되었거나 저장하지 못했습니다. 상점을 다시 불러와주세요.'; }
     } else await user.save();

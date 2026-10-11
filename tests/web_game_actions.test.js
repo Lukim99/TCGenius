@@ -15,12 +15,14 @@ AWS.S3 = class {
 const fixture = { id: 'web-actions-test', name: '웹기능테스트', code: 'WEB-TEST-ONLY', _get: 1, avatarMigrated: true,
     logged_in: [], logged_in_agent: [], need_character_card_select: true };
 let databaseWrites = 0;
+let packageData = null;
 DynamoDBDocumentClient.prototype.send = async command => {
     const input = command.input;
     if (command.constructor.name === 'GetCommand') {
         if (input.TableName !== 'rpgenius_data') return {};
         const file = path.join(__dirname, '..', 'DB', 'RPGenius', input.Key.key + '.json');
         let data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+        if (packageData && Object.hasOwn(packageData, input.Key.key)) data = structuredClone(packageData[input.Key.key]);
         if (input.Key.key === 'Coupon') data = [{ code: 'WEB-REWARD', maxUse: 1, usedCount: 0, reward: [{ type: '골드', count: 123 }] }];
         if (input.Key.key === 'Pet') data = [{ name: '테스트 펫', rarity: '레어', stat: { atk: 1 }, special: {} }];
         return { Item: { key: input.Key.key, data } };
@@ -343,4 +345,143 @@ test('제작 결과는 실제 지급된 장비의 이름·이미지·수량을 �
     const equipment = result.data.changes.rewards.find(reward => reward.kind === 'equipment');
     assert.ok(equipment.name && equipment.iconUrl);
     assert.equal(equipment.count, 1);
+});
+
+test('키노의 일반·전직·각성 도감과 장착 정보는 MP 대신 정신력 소모량을 표시한다', async () => {
+    const user = await reset({ main_card: { id: 16, star: 4, type: '각성' } });
+    const dex = await request('/api/dex/equipment');
+    assert.equal(dex.status, 200);
+    const kino = dex.data.character.find(card => card.name === '키노');
+    assert.equal(kino.skills[0].resourceLabel, '정신력');
+    assert.equal(kino.skills[0].mpCost, 40);
+    assert.equal(kino.jobClass.skills[0].resourceLabel, '정신력');
+    assert.equal(kino.jobClass.skills[0].mpCost, 80);
+    assert.deepEqual(kino.awakening.skills.map(skill => [skill.resourceLabel, skill.mpCost]), [['정신력', 40], ['정신력', 80]]);
+    assert.equal(dex.data.character.find(card => card.name === '워뇨띠').skills[0].resourceLabel, 'MP');
+    assert.match(rpg.formatEquipmentInfo(user), /아이돌 할래\? \[ 40 정신력 \]/);
+    assert.doesNotMatch(rpg.formatEquipmentInfo(user), /아이돌 할래\? \[ 0 MP \]/);
+});
+
+const randoPackages = require('../scripts/register_rando_packages');
+function packageSource() {
+    const source = Object.fromEntries(['Item', 'Bundle', 'Pack', 'Shop'].map(key => [key, JSON.parse(fs.readFileSync(path.join(__dirname, '../DB/RPGenius', key + '.json'), 'utf8'))]));
+    for (const item of require('../scripts/register_rando_characters').itemDefinitions) {
+        if (!source.Item.some(existing => existing?.name === item.name)) source.Item.push(structuredClone(item));
+    }
+    const orbData = JSON.parse(fs.readFileSync(path.join(__dirname, '../DB/RPGenius/Orb.json'), 'utf8'));
+    for (const orb of orbData.orbs) {
+        if (!source.Item.some(item => item?.name === orb.name)) source.Item.push({ name: orb.name, type: '사용', use: '보주' });
+    }
+    if (!source.Item.some(item => item?.name === '일리온 캐릭터 변환석')) source.Item.push({ name: '일리온 캐릭터 변환석', type: '사용', use: '변환', charId: 14 });
+    if (!source.Item.some(item => item?.name === '헬 초대장')) source.Item.push({ name: '헬 초대장', type: '티켓', no_trade: true });
+    if (!Array.isArray(source.Shop['패키지'])) source.Shop['패키지'] = [];
+    return source;
+}
+
+test('패키지 등록은 기존 운영 꾸러미·인덱스·상품 설정을 보존하고 재실행해도 변경하지 않는다', () => {
+    const source = packageSource(), snapshot = structuredClone(source);
+    const prepared = randoPackages.prepare(source);
+    assert.deepEqual(source, snapshot);
+    for (const key of ['Item', 'Bundle', 'Pack']) assert.deepEqual(prepared[key].slice(0, source[key].length), source[key]);
+    assert.deepEqual(prepared.Shop['패키지'].slice(0, source.Shop['패키지'].length), source.Shop['패키지']);
+    assert.deepEqual(randoPackages.prepare(prepared), prepared);
+    const orb = prepared.Item.find(item => item.name === randoPackages.randomOrbName);
+    assert.equal(prepared.Pack[orb.pack].length, 13);
+    assert.ok(prepared.Pack[orb.pack].every(reward => reward.roll === 1 / 13));
+    const first = prepared.Item.find(item => item.name === randoPackages.definitions[0].name);
+    prepared.Bundle[first.pack] = [];
+    prepared.Shop['패키지'].at(-1).price.amount = 17;
+    assert.deepEqual(randoPackages.prepare(prepared), prepared, '운영자가 변경하거나 비워 둔 신규 구성도 보존한다');
+});
+
+test('패키지 6종의 가격·구매 제한과 일반 구성품 수량을 적용하고 재구매·동시 구매를 막는다', async () => {
+    packageData = randoPackages.prepare(packageSource());
+    try {
+        await Promise.all(Object.keys(packageData).map(key => rpg.loadRpgeniusDataEntry(key)));
+        const catalog = (await request('/api/shop')).data.shop['패키지'];
+        for (const definition of randoPackages.definitions) {
+            const itemId = packageData.Item.findIndex(item => item.name === definition.name);
+            const product = catalog.find(item => item.display.name === definition.name);
+            assert.equal(product.price.amount, definition.price);
+            assert.equal(product.limitInfo.limits.max, definition.max);
+            if (definition.rewards.some(reward => reward.autoUse)) continue;
+            await reset({ point: 50000, garnet: 0 });
+            const results = definition.max === 1 && definition.price === 330
+                ? await Promise.all([request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 }), request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 })])
+                : [await request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: definition.max })];
+            assert.equal(results.filter(result => result.status === 200).length, 1, JSON.stringify(results));
+            const bought = results.find(result => result.status === 200);
+            assert.ok(bought.data.bundleGranted.length);
+            const user = await rpg.getRPGUserByName(fixture.name);
+            assert.equal(user.point, 50000 - definition.price * definition.max);
+            assert.equal(rpg.getInventoryItemCount(user, itemId), 0);
+            for (const reward of definition.rewards) {
+                if (reward.type === '가넷') assert.equal(user.garnet, reward.count * definition.max);
+                else assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === reward.name)), reward.count * definition.max);
+            }
+            const snapshot = JSON.stringify({ inventory: user.inventory, point: user.point, garnet: user.garnet, mileage: user.mileage });
+            assert.equal((await request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 })).status, 400);
+            const current = await rpg.getRPGUserByName(fixture.name);
+            assert.equal(JSON.stringify({ inventory: current.inventory, point: current.point, garnet: current.garnet, mileage: current.mileage }), snapshot);
+        }
+    } finally { packageData = null; }
+});
+
+test('보주 패키지는 구매 수량만큼 즉시 추첨하며 가챠 아이템을 남기지 않고 잘못된 구성에서는 차감하지 않는다', async t => {
+    packageData = randoPackages.prepare(packageSource());
+    t.mock.method(Math, 'random', () => 0.05);
+    try {
+        await reset({ point: 50000 });
+        const packageId = packageData.Item.findIndex(item => item.name === '란도랜드2보주출시패키지');
+        const product = packageData.Shop['패키지'].find(item => item.item_id === packageId);
+        const body = { shopType: '패키지', shopId: product.shopId, count: 2 };
+        const bought = await request('/api/shop/buy', body);
+        assert.equal(bought.status, 200, JSON.stringify(bought.data));
+        assert.equal(bought.data.bundleGranted.length, 1);
+        assert.equal(bought.data.bundleGranted[0].name, '급락전문 보주');
+        assert.equal(bought.data.bundleGranted[0].count, 2);
+        const randomId = packageData.Item.findIndex(item => item.name === randoPackages.randomOrbName);
+        let user = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(user.point, 46000);
+        assert.equal(rpg.getInventoryItemCount(user, randomId), 0);
+        assert.equal(rpg.getInventoryItemCount(user, packageId), 0);
+        assert.equal((await request('/api/shop/buy', body)).status, 400, '누적 3회 제한 초과');
+        assert.equal((await request('/api/shop/buy', { ...body, count: 1 })).status, 200);
+        user = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === '급락전문 보주')), 3);
+        assert.equal(user.point, 44000);
+        await reset({ point: 50000 });
+        packageData.Pack[packageData.Item[randomId].pack] = [];
+        const rejected = await request('/api/shop/buy', { ...body, count: 1 });
+        assert.equal(rejected.status, 400);
+        assert.match(rejected.data.error, /가챠 구성/);
+        user = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(user.point, 50000);
+        assert.equal(user.inventory.item.length, 0);
+    } finally { packageData = null; }
+});
+
+test('신규 패키지 저장이 다른 재화 변경과 충돌하면 포인트·보상·구매 기록을 보존한다', async t => {
+    packageData = randoPackages.prepare(packageSource());
+    try {
+        const user = await reset({ point: 50000 });
+        const snapshot = JSON.parse(JSON.stringify(user));
+        const originalSend = DynamoDBDocumentClient.prototype.send;
+        t.mock.method(DynamoDBDocumentClient.prototype, 'send', async function(command) {
+            const input = command.input;
+            if (command.constructor.name === 'UpdateCommand' && input.TableName === 'rpgenius_user' && input.ConditionExpression?.startsWith('attribute_exists(id) AND')) throw Object.assign(new Error('Concurrent purchase'), { name: 'ConditionalCheckFailedException' });
+            if (command.constructor.name === 'GetCommand' && input.TableName === 'rpgenius_user') return { Item: structuredClone(snapshot) };
+            return originalSend.call(this, command);
+        });
+        const itemId = packageData.Item.findIndex(item => item.name === '왕꿈틀이맛보기패키지');
+        const product = packageData.Shop['패키지'].find(item => item.item_id === itemId);
+        const rejected = await request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 });
+        assert.equal(rejected.status, 400);
+        const current = await rpg.getRPGUserByName(fixture.name);
+        assert.equal(current.point, snapshot.point);
+        assert.equal(current.garnet, snapshot.garnet);
+        assert.equal(current.mileage, snapshot.mileage);
+        assert.deepEqual(current.inventory, snapshot.inventory);
+        assert.deepEqual(current.shopPurchases, snapshot.shopPurchases);
+    } finally { packageData = null; }
 });

@@ -1,0 +1,37 @@
+[
+  {
+    "category": "itemImage",
+    "file": "번들/왕꿈틀이맛보기패키지.png",
+    "sha256": "35b681869e5fd122d4a67d3f97af0f99620003118cb438c970cd34e4ca8bf2e3"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/왕꿈틀이패키지.png",
+    "sha256": "7b118dcd6035ff1648b1f10df436f4ef455f21f1a66942f2deb7148a0b41208f"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/란도랜드2보주출시패키지.png",
+    "sha256": "6f4573a2d24faf7ead31ab5322c00bf38905470858d75d6a79ec289fdb0ab151"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/일리온출시기념패키지.png",
+    "sha256": "6fde964b8db78ce259288faa77ffc6f72900a45759ef1ee49d1edf0a9408faaa"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/워뇨띠출시기념패키지.png",
+    "sha256": "c6af2c917eef610f6cf4f2b81831e7c7a0e3b59eb341c3399b5d8190d2dce08d"
+  },
+  {
+    "category": "itemImage",
+    "file": "번들/키노출시기념패키지.png",
+    "sha256": "a32c4db53bdd3aa4f336d10864bb8c7a5502b7b7b2f74cc1b1b05e01f3f5aa57"
+  },
+  {
+    "category": "itemImage",
+    "file": "가챠/란도랜드2 랜덤 보주.png",
+    "sha256": "6f4573a2d24faf7ead31ab5322c00bf38905470858d75d6a79ec289fdb0ab151"
+  }
+]
