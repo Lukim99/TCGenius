@@ -2940,7 +2940,7 @@ function buildWorldBossState(user) {
             valorCount: valorId >= 0 ? rpgenius.getInventoryItemCount(user, valorId) : 0,
             valorIconUrl: valorId >= 0 ? getItemDisplayAssets(items[valorId]).iconUrl : null
         },
-        candidates: pending ? (pending.candidates || []).map(id => serializeWorldBossExtraSkill(id, {})).filter(Boolean) : [],
+        candidates: pending ? (pending.candidates || []).map(id => serializeWorldBossExtraSkill(id, {}, user)).filter(Boolean) : [],
         player: {
             name: user.name, level: Number(user.level || 1),
             hp: typeof user.hp == 'undefined' ? maxHp : Number(user.hp || 0), maxHp,
