@@ -1,445 +1,655 @@
 [
   {
-    "primary_card": [
-      0,
-      10
-    ],
+    "name": "수영장 파티",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 800
+        "atk": 80,
+        "hp": 1000
       }
     },
-    "name": "수영장 파티",
+    "primary_card": [
+      0,
+      10,
+      13
+    ],
     "requireStar": 6
   },
   {
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "requireStar": 6,
     "name": "정장",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       2,
       5
-    ]
+    ],
+    "requireStar": 6
   },
   {
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
     "name": "치어리더",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       9
     ],
     "requireStar": 6
   },
   {
+    "name": "범죄도시",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 800
+        "atk": 80,
+        "hp": 1000
       }
     },
-    "name": "범죄도시",
-    "requireStar": 6,
     "primary_card": [
       1
-    ]
+    ],
+    "requireStar": 6
   },
   {
+    "name": "백만뷰",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 800
+        "atk": 80,
+        "hp": 1000
       }
     },
-    "name": "백만뷰",
-    "requireStar": 6,
     "primary_card": [
       3
-    ]
+    ],
+    "requireStar": 6
   },
   {
     "name": "피규어",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       4
     ],
-    "requireStar": 6,
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    }
+    "requireStar": 6
   },
   {
     "name": "도깨비",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 800
+        "atk": 80,
+        "hp": 1000
       }
     },
-    "requireStar": 6,
     "primary_card": [
       8
-    ]
-  },
-  {
-    "name": "홍백가합전",
-    "primary_card": [
-      6
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
     "requireStar": 6
   },
   {
+    "name": "홍백가합전",
     "option": {
+      "plusStat": {},
       "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
+        "atk": 80,
+        "hp": 1000
+      }
     },
-    "requireStar": 6,
+    "primary_card": [
+      6
+    ],
+    "requireStar": 6
+  },
+  {
     "name": "월즈",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       7
-    ]
+    ],
+    "requireStar": 6
   },
   {
     "isHigh": true,
-    "requireStar": 6,
     "name": "고급 수영장 파티",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 1100
+        "atk": 150,
+        "hp": 1500
       }
     },
     "primary_card": [
       0,
-      10
-    ]
+      10,
+      13
+    ],
+    "requireStar": 6
   },
   {
-    "requireStar": 6,
+    "isHigh": true,
+    "name": "고급 치어리더",
     "option": {
       "plusStat": {},
       "stat": {
-        "hp": 1100
+        "atk": 150,
+        "hp": 1500
       }
     },
-    "name": "고급 치어리더",
     "primary_card": [
       9
     ],
-    "isHigh": true
+    "requireStar": 6
   },
   {
     "isHigh": true,
+    "name": "고급 도깨비",
     "option": {
+      "plusStat": {},
       "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
+        "atk": 150,
+        "hp": 1500
+      }
     },
-    "requireStar": 6,
     "primary_card": [
       8
     ],
-    "name": "고급 도깨비"
+    "requireStar": 6
   },
   {
+    "isHigh": true,
     "name": "고급 월즈",
-    "requireStar": 6,
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
     "primary_card": [
       7
     ],
-    "isHigh": true,
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    }
+    "requireStar": 6
   },
   {
+    "isHigh": true,
     "name": "고급 범죄도시",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
     "primary_card": [
       1
     ],
-    "isHigh": true,
-    "requireStar": 6,
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    }
+    "requireStar": 6
   },
   {
-    "requireStar": 6,
     "name": "5강진출",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       11
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    }
+    "requireStar": 6
   },
   {
     "name": "드레스",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       0
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
+    "requireStar": 6,
     "type": "전직"
   },
   {
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
     "isHigh": true,
+    "name": "고급 드레스",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
     "primary_card": [
       0
     ],
-    "type": "전직",
-    "name": "고급 드레스"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
     "name": "러블리",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       1
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
+    "requireStar": 6,
     "type": "전직"
   },
   {
+    "isHigh": true,
+    "name": "고급 러블리",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
     "primary_card": [
       1
     ],
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "고급 러블리",
-    "isHigh": true
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "나만아니면돼",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       2
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "나만아니면돼"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "1억뷰",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       3
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "1억뷰"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "단발",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       4
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "단발"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "메이저리거",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       5
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "메이저리거"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "킥백",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       6
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "킥백"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
-    "primary_card": [
-      7
-    ],
+    "name": "오징어게임",
     "option": {
+      "plusStat": {},
       "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
+        "atk": 80,
+        "hp": 1000
+      }
     },
-    "type": "전직",
-    "name": "요네"
-  },
-  {
-    "primary_card": [
-      7
-    ],
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "고급 요네",
-    "isHigh": true
-  },
-  {
     "primary_card": [
       8
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "오징어게임"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
-    "primary_card": [
-      8
-    ],
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
+    "isHigh": true,
     "name": "고급 오징어게임",
-    "isHigh": true
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
+    "primary_card": [
+      8
+    ],
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "아이돌",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       9
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "아이돌"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
-    "primary_card": [
-      9
-    ],
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
+    "isHigh": true,
     "name": "고급 아이돌",
-    "isHigh": true
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
+    "primary_card": [
+      9
+    ],
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "산타",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       10
     ],
-    "option": {
-      "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
-    "name": "산타"
+    "requireStar": 6,
+    "type": "전직"
   },
   {
-    "primary_card": [
-      10
-    ],
-    "option": {
-      "stat": {
-        "hp": 1100
-      },
-      "plusStat": {}
-    },
-    "type": "전직",
+    "isHigh": true,
     "name": "고급 산타",
-    "isHigh": true
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
+    "primary_card": [
+      10
+    ],
+    "requireStar": 6,
+    "type": "전직"
   },
   {
+    "name": "국가대표",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
     "primary_card": [
       11
     ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "name": "흑백요리사",
     "option": {
+      "plusStat": {},
       "stat": {
-        "hp": 800
-      },
-      "plusStat": {}
+        "atk": 80,
+        "hp": 1000
+      }
     },
-    "type": "전직",
-    "name": "국가대표"
+    "primary_card": [
+      12
+    ],
+    "requireStar": 6
+  },
+  {
+    "name": "미쉐린",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      12
+    ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "name": "데블스플랜",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      13
+    ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "isHigh": true,
+    "name": "고급 데블스플랜",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1500
+      }
+    },
+    "primary_card": [
+      13
+    ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "exclusive": true,
+    "name": "MZ사원",
+    "option": {
+      "plusStat": {
+        "itemDropChance": 0.03
+      },
+      "stat": {
+        "atk": 150,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      0
+    ],
+    "requireStar": 6
+  },
+  {
+    "exclusive": true,
+    "name": "MZ사원",
+    "option": {
+      "plusStat": {
+        "itemDropChance": 0.03
+      },
+      "stat": {
+        "atk": 150,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      0
+    ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "exclusive": true,
+    "name": "체리 바이트",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "darkAtk": 30,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      10
+    ],
+    "requireStar": 6
+  },
+  {
+    "exclusive": true,
+    "name": "체리 바이트",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "darkAtk": 30,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      10
+    ],
+    "requireStar": 6,
+    "type": "전직"
+  },
+  {
+    "exclusive": true,
+    "name": "DVA",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 150,
+        "hp": 1000,
+        "pnt": 30
+      }
+    },
+    "primary_card": [
+      9
+    ]
+  },
+  {
+    "exclusive": true,
+    "name": "이터널스",
+    "option": {
+      "plusStat": {
+        "extraDamage": 0.03
+      },
+      "stat": {
+        "atk": 150,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      1
+    ]
+  },
+  {
+    "name": "2018",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      14
+    ],
+    "requireStar": 6
+  },
+  {
+    "name": "란도랜드2",
+    "option": {
+      "plusStat": {},
+      "stat": {
+        "atk": 80,
+        "hp": 1000
+      }
+    },
+    "primary_card": [
+      15,
+      16
+    ],
+    "requireStar": 6
   }
 ]

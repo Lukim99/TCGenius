@@ -1,267 +1,1391 @@
 [
-    {
-        "name": "청정한 귀걸이",
-        "materials": [
-            { "type": "아이템", "item_id": 42, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 3 }
-        ]
-    },
-    {
-        "name": "천원지폐뭉치",
-        "materials": [
-            { "type": "아이템", "item_id": 43, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 4 }
-        ]
-    },
-    {
-        "name": "추파춥스 사탕반지",
-        "materials": [
-            { "type": "아이템", "item_id": 44, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 5 }
-        ]
-    },
-    {
-        "name": "지짐의 비법노트",
-        "materials": [
-            { "type": "아이템", "item_id": 45, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 6 }
-        ]
-    },
-    {
-        "name": "컬러체인",
-        "materials": [
-            { "type": "아이템", "item_id": 46, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 7 }
-        ]
-    },
-    {
-        "name": "빨간딱지",
-        "materials": [
-            { "type": "아이템", "item_id": 47, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 8 }
-        ]
-    },
-    {
-        "name": "스트레이트 포커",
-        "materials": [
-            { "type": "아이템", "item_id": 48, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 9 }
-        ]
-    },
-    {
-        "name": "테무산 꿈뭉치",
-        "materials": [
-            { "type": "아이템", "item_id": 49, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 10 }
-        ]
-    },
-    {
-        "name": "아리랑치기용 각목",
-        "materials": [
-            { "type": "아이템", "item_id": 50, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 11 }
-        ]
-    },
-    {
-        "name": "'000'",
-        "materials": [
-            { "type": "아이템", "item_id": 51, "count": 3 },
-            { "type": "골드", "count": 100000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 12 }
-        ]
-    },
-    {
-        "name": "국회의사당 모형",
-        "materials": [
-            { "type": "아이템", "item_id": 52, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 13 }
-        ]
-    },
-    {
-        "name": "우선순위",
-        "materials": [
-            { "type": "아이템", "item_id": 53, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 14 }
-        ]
-    },
-    {
-        "name": "썸포 이어링",
-        "materials": [
-            { "type": "아이템", "item_id": 54, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 15 }
-        ]
-    },
-    {
-        "name": "가넷브레이커",
-        "materials": [
-            { "type": "아이템", "item_id": 55, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 16 }
-        ]
-    },
-    {
-        "name": "예언자의 결속반지",
-        "materials": [
-            { "type": "아이템", "item_id": 56, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 17 }
-        ]
-    },
-    {
-        "name": "스코어의 증표",
-        "materials": [
-            { "type": "아이템", "item_id": 57, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 18 }
-        ]
-    },
-    {
-        "name": "배신의 증표",
-        "materials": [
-            { "type": "아이템", "item_id": 58, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 19 }
-        ]
-    },
-    {
-        "name": "중력지배",
-        "materials": [
-            { "type": "아이템", "item_id": 59, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 20 }
-        ]
-    },
-    {
-        "name": "원한",
-        "materials": [
-            { "type": "아이템", "item_id": 60, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 21 }
-        ]
-    },
-    {
-        "name": "푸른눈의 목걸이",
-        "materials": [
-            { "type": "아이템", "item_id": 61, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 22 }
-        ]
-    },
-    {
-        "name": "행복한 목걸이",
-        "materials": [
-            { "type": "아이템", "item_id": 62, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 23 }
-        ]
-    },
-    {
-        "name": "뇌우",
-        "materials": [
-            { "type": "아이템", "item_id": 63, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 24 }
-        ]
-    },
-    {
-        "name": "시간수급자",
-        "materials": [
-            { "type": "아이템", "item_id": 64, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 25 }
-        ]
-    },
-    {
-        "name": "데우스 엑스 마키나",
-        "materials": [
-            { "type": "아이템", "item_id": 65, "count": 5 },
-            { "type": "골드", "count": 10000 }
-        ],
-        "crafted": [
-            { "type": "장신구", "accessory_id": 26 }
-        ]
-    },
-    {
-        "name": "흑막의 영혼석",
-        "materials": [
-            { "type": "아이템", "item_id": 271, "count": 15 }
-        ],
-        "crafted": [
-            { "type": "아이템", "item_id": 270, "count": 1 }
-        ]
-    },
-    {
-        "name": "게임체인저",
-        "materials": [
-            {
-                "type": "아이템",
-                "item_id": 285,
-                "count": 10
-            }
-        ],
-        "crafted": [
-            {
-                "type": "장신구",
-                "accessory_id": 27
-            }
-        ]
-    }
+  {
+    "name": "청정한 귀걸이",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 42
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 3
+      }
+    ]
+  },
+  {
+    "name": "천원지폐뭉치",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 43
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 4
+      }
+    ]
+  },
+  {
+    "name": "추파춥스 사탕반지",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 44
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 5
+      }
+    ]
+  },
+  {
+    "name": "지짐의 비법노트",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 45
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 6
+      }
+    ]
+  },
+  {
+    "name": "컬러체인",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 46
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 7
+      }
+    ]
+  },
+  {
+    "name": "빨간딱지",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 47
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 8
+      }
+    ]
+  },
+  {
+    "name": "스트레이트 포커",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 48
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 9
+      }
+    ]
+  },
+  {
+    "name": "테무산 꿈뭉치",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 49
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 10
+      }
+    ]
+  },
+  {
+    "name": "아리랑치기용 각목",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 50
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 11
+      }
+    ]
+  },
+  {
+    "name": "'000'",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 3,
+        "item_id": 51
+      },
+      {
+        "type": "골드",
+        "count": 100000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 12
+      }
+    ]
+  },
+  {
+    "name": "국회의사당 모형",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 52
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 13
+      }
+    ]
+  },
+  {
+    "name": "우선순위",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 53
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 14
+      }
+    ]
+  },
+  {
+    "name": "썸포 이어링",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 54
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 15
+      }
+    ]
+  },
+  {
+    "name": "가넷브레이커",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 55
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 16
+      }
+    ]
+  },
+  {
+    "name": "예언자의 결속반지",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 56
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 17
+      }
+    ]
+  },
+  {
+    "name": "스코어의 증표",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 57
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 18
+      }
+    ]
+  },
+  {
+    "name": "배신의 증표",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 58
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 19
+      }
+    ]
+  },
+  {
+    "name": "중력지배",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 59
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 20
+      }
+    ]
+  },
+  {
+    "name": "원한",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 60
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 21
+      }
+    ]
+  },
+  {
+    "name": "푸른눈의 목걸이",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 61
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 22
+      }
+    ]
+  },
+  {
+    "name": "행복한 목걸이",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 62
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 23
+      }
+    ]
+  },
+  {
+    "name": "뇌우",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 63
+      },
+      {
+        "count": 10000,
+        "type": "골드"
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 24
+      }
+    ]
+  },
+  {
+    "name": "시간수급자",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 64
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 25
+      }
+    ]
+  },
+  {
+    "name": "데우스 엑스 마키나",
+    "materials": [
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 65
+      },
+      {
+        "type": "골드",
+        "count": 10000
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 26
+      }
+    ]
+  },
+  {
+    "name": "딜러 지렁이",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 37
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 84
+      }
+    ]
+  },
+  {
+    "name": "중급 장비 상자",
+    "materials": [
+      {
+        "count": 3,
+        "type": "아이템",
+        "item_id": 29
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 92
+      }
+    ]
+  },
+  {
+    "name": "검은 환생의 불꽃",
+    "materials": [
+      {
+        "count": 2,
+        "type": "아이템",
+        "item_id": 102
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 103
+      }
+    ]
+  },
+  {
+    "name": "독재자의 영혼석",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 5,
+        "item_id": 122
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 121
+      }
+    ]
+  },
+  {
+    "name": "어둠 조각",
+    "materials": [
+      {
+        "count": 100,
+        "type": "아이템",
+        "item_id": 134
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ]
+  },
+  {
+    "name": "흑화 호두 장신구 상자",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 4,
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 137
+      }
+    ]
+  },
+  {
+    "name": "관통하는 호두의 핏빛 분장",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 20,
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 31
+      }
+    ]
+  },
+  {
+    "name": "치명적인 호두의 핏빛 분장",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 20,
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 32
+      }
+    ]
+  },
+  {
+    "name": "공격적인 호두의 핏빛 분장",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 20,
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 33
+      }
+    ]
+  },
+  {
+    "name": "방어적인 호두의 핏빛 분장",
+    "materials": [
+      {
+        "count": 20,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 34
+      }
+    ]
+  },
+  {
+    "name": "친화적인 호두의 핏빛 분장",
+    "materials": [
+      {
+        "count": 20,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 35
+      }
+    ]
+  },
+  {
+    "name": "어둠조각 쥬얼",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 124
+      }
+    ]
+  },
+  {
+    "name": "관통하는 흑화한 핏빛 분장",
+    "materials": [
+      {
+        "count": 1,
+        "type": "장신구",
+        "accessory_id": 31
+      },
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 36
+      }
+    ]
+  },
+  {
+    "name": "치명적인 흑화한 핏빛 분장",
+    "materials": [
+      {
+        "count": 1,
+        "type": "장신구",
+        "accessory_id": 32
+      },
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 37
+      }
+    ]
+  },
+  {
+    "name": "공격적인 흑화한 핏빛 분장",
+    "materials": [
+      {
+        "count": 1,
+        "type": "장신구",
+        "accessory_id": 33
+      },
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 38
+      }
+    ]
+  },
+  {
+    "name": "방어적인 흑화한 핏빛 분장",
+    "materials": [
+      {
+        "type": "장신구",
+        "count": 1,
+        "accessory_id": 34
+      },
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 39
+      }
+    ]
+  },
+  {
+    "name": "친화적인 흑화한 핏빛 분장",
+    "materials": [
+      {
+        "type": "장신구",
+        "count": 1,
+        "accessory_id": 35
+      },
+      {
+        "count": 5,
+        "type": "아이템",
+        "item_id": 135
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 40
+      }
+    ]
+  },
+  {
+    "name": "익명 지렁이",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 37
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 144
+      }
+    ]
+  },
+  {
+    "name": "제타 캐릭터 변환석",
+    "materials": [
+      {
+        "count": 10,
+        "type": "아이템",
+        "item_id": 36
+      },
+      {
+        "count": 10000,
+        "type": "아이템",
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 153
+      }
+    ]
+  },
+  {
+    "name": "24BS 유치원생",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 200,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 1
+      }
+    ]
+  },
+  {
+    "name": "24BS 코노모리",
+    "materials": [
+      {
+        "count": 200,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 2
+      }
+    ]
+  },
+  {
+    "name": "24BS 싸이코패스",
+    "materials": [
+      {
+        "count": 200,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 3
+      }
+    ]
+  },
+  {
+    "name": "24BS 롤충에서탈출",
+    "materials": [
+      {
+        "count": 200,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 4
+      }
+    ]
+  },
+  {
+    "name": "24BS 시그니를",
+    "materials": [
+      {
+        "count": 200,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 5
+      }
+    ]
+  },
+  {
+    "name": "24GM dlckdgus",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 6
+      }
+    ]
+  },
+  {
+    "name": "24GM 조밍닝",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 7
+      }
+    ]
+  },
+  {
+    "name": "24GM 건마",
+    "materials": [
+      {
+        "count": 100,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 8
+      }
+    ]
+  },
+  {
+    "name": "24GM 브란도",
+    "materials": [
+      {
+        "count": 100,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 9
+      }
+    ]
+  },
+  {
+    "name": "24GM 싸이지니",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 10
+      }
+    ]
+  },
+  {
+    "name": "24GB 파이브",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 50,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 11
+      }
+    ]
+  },
+  {
+    "name": "24GB 인스펙터",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 50,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 12
+      }
+    ]
+  },
+  {
+    "name": "24GB 월야환담",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 50,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 13
+      }
+    ]
+  },
+  {
+    "name": "24GB 아르세우스",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 50,
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 14
+      }
+    ]
+  },
+  {
+    "name": "24GB 라울",
+    "materials": [
+      {
+        "count": 50,
+        "type": "아이템",
+        "item_id": 155
+      }
+    ],
+    "crafted": [
+      {
+        "type": "펫",
+        "pet_id": 15
+      }
+    ]
+  },
+  {
+    "name": "100억",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 10,
+        "item_id": 167
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 41
+      }
+    ]
+  },
+  {
+    "name": "시그마 캐릭터 변환석",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 30,
+        "item_id": 36
+      },
+      {
+        "count": 30000,
+        "type": "아이템",
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 179
+      }
+    ]
+  },
+  {
+    "name": "오메가 캐릭터 변환석",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 60,
+        "item_id": 36
+      },
+      {
+        "type": "아이템",
+        "count": 60000,
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 180
+      }
+    ]
+  },
+  {
+    "name": "밍플 지렁이",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 10000,
+        "item_id": 37
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 261
+      }
+    ]
+  },
+  {
+    "name": "해피엔딩",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 10,
+        "item_id": 256
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 42
+      }
+    ]
+  },
+  {
+    "name": "완성된 갸라도스 퍼즐",
+    "materials": [
+      {
+        "count": 100,
+        "type": "아이템",
+        "item_id": 268
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 43
+      }
+    ]
+  },
+  {
+    "name": "상급 강화석",
+    "materials": [
+      {
+        "count": 1000,
+        "type": "아이템",
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 271
+      }
+    ]
+  },
+  {
+    "name": "헬 초대장",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 273
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 272
+      }
+    ]
+  },
+  {
+    "name": "오프라인 최강자상 트로피",
+    "materials": [
+      {
+        "count": 10,
+        "type": "아이템",
+        "item_id": 355
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 70
+      }
+    ]
+  },
+  {
+    "name": "전직 제타 캐릭터 변환석",
+    "materials": [
+      {
+        "count": 10,
+        "type": "아이템",
+        "item_id": 177
+      },
+      {
+        "count": 10000,
+        "type": "아이템",
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 356
+      }
+    ]
+  },
+  {
+    "name": "전직 시그마 캐릭터 변환석",
+    "materials": [
+      {
+        "count": 30,
+        "type": "아이템",
+        "item_id": 177
+      },
+      {
+        "count": 30000,
+        "type": "아이템",
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 357
+      }
+    ]
+  },
+  {
+    "name": "전직 오메가 캐릭터 변환석",
+    "materials": [
+      {
+        "count": 60,
+        "type": "아이템",
+        "item_id": 177
+      },
+      {
+        "type": "아이템",
+        "count": 60000,
+        "item_id": 0
+      }
+    ],
+    "crafted": [
+      {
+        "count": 1,
+        "type": "아이템",
+        "item_id": 358
+      }
+    ]
+  },
+  {
+    "name": "강화석",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 271
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1000,
+        "item_id": 0
+      }
+    ]
+  },
+  {
+    "name": "흑막의 영혼석",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 15,
+        "item_id": 382
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아이템",
+        "count": 1,
+        "item_id": 381
+      }
+    ]
+  },
+  {
+    "name": "게임체인저",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 10,
+        "item_id": 405
+      }
+    ],
+    "crafted": [
+      {
+        "type": "장신구",
+        "accessory_id": 71
+      }
+    ]
+  },
+  {
+    "name": "[레어]아티팩트",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 30,
+        "item_id": 408
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아티팩트",
+        "artifact_id": 0,
+        "count": 1
+      }
+    ]
+  },
+  {
+    "name": "[유니크]아티팩트",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 100,
+        "item_id": 408
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아티팩트",
+        "artifact_id": 1,
+        "count": 1
+      }
+    ]
+  },
+  {
+    "name": "[레전더리]아티팩트",
+    "materials": [
+      {
+        "type": "아이템",
+        "count": 300,
+        "item_id": 408
+      }
+    ],
+    "crafted": [
+      {
+        "type": "아티팩트",
+        "artifact_id": 2,
+        "count": 1
+      }
+    ]
+  }
 ]

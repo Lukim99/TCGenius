@@ -1,0 +1,3477 @@
+[
+  {
+    "minLevel": 1,
+    "name": "고인물 사냥",
+    "rewards": [
+      {
+        "item_id": 201,
+        "type": "아이템",
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 1000000,
+          "min": 1000000
+        }
+      }
+    ],
+    "enabled": true,
+    "id": 1,
+    "objectives": [
+      {
+        "type": "eliteKill",
+        "field": "뉴비즈",
+        "count": 1
+      }
+    ],
+    "categories": [
+      "일반"
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 3
+    },
+    "desc": "평화로운 뉴비즈에 고인물이 깽판을 치고 다닌다고 한다.\n고인물을 사냥하자.",
+    "maxLevel": 300,
+    "skippable": false
+  },
+  {
+    "id": 2,
+    "desc": "안녕! 나는 XXX... 야.\n만나서 반가워!\n처음 카카오톡 방에 들어오면 있는 튜토리얼을 잘 따라왔을까?\n잘 체크했는지 한 번 알아보게 상점에서 '마나 포션'을 사와볼래?\n\n만약 초보자 키트를 잘 사용했다면 마나 포션이 이미 있을거야..!",
+    "skippable": true,
+    "enabled": true,
+    "name": "RPGENIUS에 온 걸 환영해!",
+    "maxLevel": 300,
+    "unlock": {
+      "type": "always"
+    },
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 9,
+        "type": "deliver"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 1,
+    "rewards": [
+      {
+        "item_id": 9,
+        "count": {
+          "min": 5,
+          "max": 5
+        },
+        "type": "아이템"
+      }
+    ]
+  },
+  {
+    "unlock": {
+      "type": "quest",
+      "quest_id": 2
+    },
+    "name": "[뉴비즈]뉴비들의 예선전",
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "enabled": true,
+    "desc": "상점 이용법도 익혔으니, 이제 직접 싸워볼 차례야.\n\n이곳은 뉴비즈.\n아직 이름조차 알려지지 않은 뉴비들이 모여\n다음 무대로 올라가기 위한 예선전을 치르는 곳이지.\n\n우선 주변의 뉴비들을 상대하면서 실전 감각을 익혀봐!",
+    "rewards": [
+      {
+        "type": "아이템",
+        "item_id": 6,
+        "count": {
+          "max": 10,
+          "min": 10
+        }
+      },
+      {
+        "count": {
+          "min": 50,
+          "max": 50
+        },
+        "type": "경험치"
+      }
+    ],
+    "epicOrder": 2,
+    "minLevel": 1,
+    "skippable": true,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "뉴비즈",
+        "count": 10
+      }
+    ],
+    "id": 3
+  },
+  {
+    "minLevel": 2,
+    "epicOrder": 3,
+    "objectives": [
+      {
+        "count": 20,
+        "field": "뉴비즈",
+        "type": "kill"
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "min": 10,
+          "max": 10
+        },
+        "type": "아이템",
+        "item_id": 9
+      },
+      {
+        "count": {
+          "min": 300,
+          "max": 300
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 369,
+          "max": 369
+        },
+        "type": "골드"
+      }
+    ],
+    "id": 4,
+    "categories": [
+      "에픽"
+    ],
+    "desc": "생각보다 잘하는데?\n\n여기 모인 참가자들은 모두 똑같은 뉴비지만,\n누군가는 이곳에서 떨어지고 누군가는 다음 무대로 올라가게 돼.\n\n결국 처음부터 필요한 건 하나야.\n\n다른 참가자보다 오래 살아남는 것.\n\n조금만 더 뉴비즈를 돌파해보자.",
+    "enabled": true,
+    "maxLevel": 300,
+    "name": "[뉴비즈]살아남는 자",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 3
+    },
+    "skippable": true
+  },
+  {
+    "epicOrder": 4,
+    "id": 5,
+    "enabled": true,
+    "unlock": {
+      "quest_id": 4,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "count": 15,
+        "type": "kill",
+        "field": "피지컬텐"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "name": "[피지컬텐]자동으로 흘러가는 경기",
+    "minLevel": 6,
+    "rewards": [
+      {
+        "item_id": 19,
+        "type": "아이템",
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      {
+        "type": "경험치",
+        "count": {
+          "min": 823,
+          "max": 823
+        }
+      },
+      {
+        "count": {
+          "min": 760,
+          "max": 760
+        },
+        "type": "골드"
+      }
+    ],
+    "skippable": true,
+    "desc": "우리가 겪게 될 다음 스테이지는 피지컬텐이야.\n\n그런데 이곳은 조금 특이해.\n참가자 전원이 직접 움직이지 않고, 오토 플레이에 모든 걸 맡겼던 리그거든.\n\n그래서인지 다른 리그에 비하면 경쟁도 꽤 느슨한 편이야.\n가볍게 상대들을 정리하면서 피지컬텐의 분위기를 살펴보자."
+  },
+  {
+    "enabled": true,
+    "desc": "벌써 마지막 경기야.\n\n모두가 오토였던 만큼 승부는 빠르게 끝났고,\n그렇게 살아남은 단 한 명이 피지컬텐의 우승자가 되었지.\n\n그리고 그 우승자가 손에 넣은 상금은 무려……\n\n1,000원.\n\n그래도 우승 상금은 우승 상금이니까.\n피지컬텐의 마지막 상대를 쓰러뜨리고 천 원을 챙겨가자.",
+    "id": 6,
+    "epicOrder": 5,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 5
+    },
+    "name": "[피지컬텐]천원짜리 우승자(?)",
+    "rewards": [
+      {
+        "type": "아이템",
+        "item_id": 43,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      {
+        "type": "경험치",
+        "count": {
+          "min": 1000,
+          "max": 1000
+        }
+      },
+      {
+        "count": {
+          "min": 1000,
+          "max": 1000
+        },
+        "type": "골드"
+      }
+    ],
+    "objectives": [
+      {
+        "field": "피지컬텐",
+        "count": 25,
+        "type": "kill"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 7,
+    "maxLevel": 300,
+    "skippable": true
+  },
+  {
+    "id": 7,
+    "rewards": [
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "type": "아이템",
+        "item_id": 20
+      },
+      {
+        "count": {
+          "max": 1242,
+          "min": 1242
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 1606,
+          "min": 1606
+        },
+        "type": "골드"
+      }
+    ],
+    "desc": "다음 경기장은 극한의농락전이야.\n\n보통 대회라면 모두가 우승을 노리겠지만,\n이곳은 정반대였어.\n\n우승하면 안 되는 리그.\n끝까지 살아남되, 마지막 승자가 되지는 않는 것.\n\n이 이상한 승부가 왜 ‘농락전’이라 불렸는지 직접 확인해봐.",
+    "unlock": {
+      "quest_id": 6,
+      "type": "quest"
+    },
+    "epicOrder": 6,
+    "name": "[극한의농락전]이기면 손해?",
+    "minLevel": 11,
+    "maxLevel": 300,
+    "categories": [
+      "에픽"
+    ],
+    "skippable": true,
+    "objectives": [
+      {
+        "count": 15,
+        "field": "극한의농락전",
+        "type": "kill"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "epicOrder": 7,
+    "enabled": true,
+    "rewards": [
+      {
+        "item_id": 44,
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      },
+      {
+        "type": "경험치",
+        "count": {
+          "min": 1424,
+          "max": 1424
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 1808,
+          "min": 1808
+        }
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "minLevel": 12,
+    "desc": "결국 누군가는 우승자가 되어야 했어.\n\n수많은 참가자가 우승을 피하기 위해 몸부림쳤지만,\n마지막까지 남아버린 한 명에게는 피할 수 없는 보상이 주어졌지.\n\n그렇게 손에 들어온 우승 상금은……\n\n츄파춥스 단 하나.\n\n이제야 왜 이 대회의 이름에 ‘농락’이 붙었는지 알겠지?\n\n마지막 경기를 끝내고,\n영광스러운(?) 우승 상금을 받아가자.",
+    "skippable": true,
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 25,
+        "field": "극한의농락전"
+      }
+    ],
+    "name": "[극한의농락전]우승의 대가",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 7
+    },
+    "id": 8
+  },
+  {
+    "rewards": [
+      {
+        "count": {
+          "min": 2024,
+          "max": 2024
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 2304,
+          "max": 2304
+        },
+        "type": "골드"
+      },
+      {
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "아이템",
+        "item_id": 21
+      }
+    ],
+    "enabled": true,
+    "skippable": true,
+    "maxLevel": 300,
+    "id": 9,
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 20,
+        "field": "흑백지대"
+      }
+    ],
+    "minLevel": 16,
+    "unlock": {
+      "quest_id": 8,
+      "type": "quest"
+    },
+    "desc": "다음 무대는 흑백지대야.\n\n이곳에서는 참가자들끼리의 승부만큼이나\n그들을 지켜보는 두 심사위원의 평가가 중요했지.\n\n붕종원, 그리고 ​지짐.\n\n두 사람의 선택 하나하나가\n흑팀과 백팀의 운명을 갈랐다고 해.\n\n우선 흑백지대의 참가자들을 상대하며\n심사대 앞까지 올라가보자.",
+    "categories": [
+      "에픽"
+    ],
+    "name": "[흑백지대]두 심사위원",
+    "epicOrder": 8
+  },
+  {
+    "epicOrder": 9,
+    "desc": "긴 심사가 끝나고,\n마침내 흑백지대의 결과가 결정됐어.\n\n수많은 참가자들이 살아남기 위해 경쟁했지만\n마지막까지 이름을 올린 우승자는 모두 같은 팀이었지.\n\n백팀, 그리고 세 명의 우승자.\n\n붕종원과 지짐의 심사를 통과하며\n결국 흑백지대의 마지막을 장식한 건 백색이었어.\n\n이제 너도 마지막 관문을 넘어\n다음 기록으로 이동하자.",
+    "id": 10,
+    "categories": [
+      "에픽"
+    ],
+    "unlock": {
+      "quest_id": 9,
+      "type": "quest"
+    },
+    "enabled": true,
+    "rewards": [
+      {
+        "item_id": 45,
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "아이템"
+      },
+      {
+        "count": {
+          "min": 2550,
+          "max": 2550
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 2875,
+          "max": 2875
+        },
+        "type": "골드"
+      }
+    ],
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 30,
+        "field": "흑백지대"
+      }
+    ],
+    "minLevel": 17,
+    "skippable": true,
+    "name": "[흑백지대]결국 남은 것은 백색"
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "id": 12,
+    "enabled": true,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 21,
+        "type": "아이템"
+      },
+      {
+        "type": "경험치",
+        "count": {
+          "max": 4446,
+          "min": 4446
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 3878,
+          "min": 3878
+        }
+      }
+    ],
+    "skippable": true,
+    "desc": "다음 무대는 관찰자들의 도시야.\n\n이 리그는 유독 진행 과정에서 이상한 일이 많았어.\n게임을 관리하던 딜러가 수차례 실수를 반복했고,\n그때마다 이미 정해졌던 승부가 조금씩 흔들렸지.\n\n그런데 이상해.\n\n단순한 실수라고 하기엔,\n잘못된 순간마다 똑같은 흔적이 남아 있어.\n\n우선 도시를 돌아다니며\n당시의 기록을 확인해보자.",
+    "name": "[관찰자들의 도시]잘못된 진행",
+    "epicOrder": 10,
+    "minLevel": 21,
+    "objectives": [
+      {
+        "count": 20,
+        "field": "관찰자들의 도시",
+        "type": "kill"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 10
+    }
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "unlock": {
+      "quest_id": 12,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "count": 30,
+        "field": "관찰자들의 도시",
+        "type": "kill"
+      }
+    ],
+    "epicOrder": 11,
+    "skippable": true,
+    "minLevel": 22,
+    "id": 13,
+    "name": "[관찰자들의 도시]기록의 균열",
+    "enabled": true,
+    "rewards": [
+      {
+        "count": {
+          "min": 6402,
+          "max": 6402
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 4531,
+          "max": 4531
+        },
+        "type": "골드"
+      }
+    ],
+    "desc": "찾았다.\n\n딜러의 실수가 있었던 장소마다\n공간에 작은 균열이 남아 있어.\n\n그리고 균열 너머에는\n실제로 벌어진 것과는 조금 다른 경기 결과가 보이고 있어.\n\n누군가 실수를 이용한 건지,\n아니면 처음부터 실수를 만들어낸 건지는 아직 알 수 없어.\n\n하지만 한 가지는 확실해.\n\n누군가 이미 끝난 대회의 결과를 바꾸려 하고 있어.\n\n균열에 남아 있는 흔적을 쫓아\n다음 경기장으로 이동하자.",
+    "maxLevel": 300
+  },
+  {
+    "unlock": {
+      "quest_id": 13,
+      "type": "quest"
+    },
+    "id": 14,
+    "skippable": true,
+    "desc": "균열의 흔적을 따라 도착한 곳은 파산게임장이야.\n\n이곳의 승부는 간단해.\n각종 미니게임으로 돈을 벌고, 그 돈으로 자신의 등급을 올리거나 상대를 파산시키는 것.\n\n퀴즈, 방탈출, 운, 정치까지.\n어떤 능력이든 돈으로 바꿀 수 있지만 한순간의 선택으로 전부 잃을 수도 있어.\n\n그리고 무엇보다 조심해야 할 건 차감권이야.\n돈을 아무리 많이 모아도 차감권을 맞으면 순식간에 계획이 무너질 테니까.",
+    "maxLevel": 300,
+    "name": "[파산게임장]돈이 곧 생명",
+    "epicOrder": 12,
+    "categories": [
+      "에픽"
+    ],
+    "enabled": true,
+    "minLevel": 26,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 11061,
+          "min": 11061
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 5794,
+          "min": 5794
+        }
+      },
+      {
+        "item_id": 47,
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "objectives": [
+      {
+        "count": 20,
+        "type": "kill",
+        "field": "파산게임장"
+      }
+    ]
+  },
+  {
+    "epicOrder": 13,
+    "objectives": [
+      {
+        "field": "파산게임장",
+        "count": 30,
+        "type": "kill"
+      }
+    ],
+    "name": "[파산게임장]사라지는 돈",
+    "categories": [
+      "에픽"
+    ],
+    "desc": "역시 잘 만들어진 게임장이야.\n\n미니게임에서 더 많은 돈을 벌기 위해 위험을 감수하고,\n그 돈으로 등급을 높일지 상대를 공격할지 선택해야 하지.\n\n하지만 기록을 살펴보던 중 이상한 장면을 발견했어.\n\n분명 차감권을 맞지 않았는데도\n누군가의 돈이 기록에서 조금씩 사라지고 있어.\n\n관찰자들의 도시에서 발견했던 균열과 같은 흔적이야.\n\n누군가 이번에는 경기의 결과가 아니라,\n승부에 사용되는 기록 자체를 건드리고 있는 것 같아.\n\n흔적이 사라지기 전에 다음 경기장으로 이동하자.",
+    "skippable": true,
+    "minLevel": 27,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 15927,
+          "min": 15927
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 6784,
+          "max": 6784
+        }
+      },
+      {
+        "type": "아이템",
+        "item_id": 47,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      }
+    ],
+    "id": 16,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 14
+    },
+    "enabled": true
+  },
+  {
+    "minLevel": 31,
+    "epicOrder": 14,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 19112,
+          "min": 19112
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 7777,
+          "max": 7777
+        }
+      }
+    ],
+    "unlock": {
+      "quest_id": 16,
+      "type": "quest"
+    },
+    "id": 17,
+    "categories": [
+      "에픽"
+    ],
+    "enabled": true,
+    "maxLevel": 300,
+    "name": "[월도랜드1]월야의 도박랜드",
+    "desc": "다음 무대는 월도랜드1.\n\n정식 명칭은 월야의 도박랜드.\n파산게임의 정신적 계승작답게 미니게임으로 돈을 벌고, 그 돈을 굴려 살아남는 구조는 그대로 이어졌어.\n\n다만 이번에는 훨씬 복잡해졌지.\n\n그리고 시작한 지 불과 38분 만에 첫 탈락자가 나올 정도로\n승부의 속도 역시 빨랐다고 해.\n\n우선 월도랜드의 규칙에 적응하면서 기록을 따라가보자.",
+    "objectives": [
+      {
+        "count": 25,
+        "field": "월도랜드1",
+        "type": "kill"
+      }
+    ],
+    "skippable": true
+  },
+  {
+    "desc": "빠르게 탈락자가 나온 만큼\n끝까지 살아남는 건 결코 쉽지 않았어.\n\n수많은 미니게임과 선택을 통과한 끝에\n첫 번째 월도랜드의 정상에 오른 사람은 장의사.\n\n그렇게 월야의 도박랜드 첫 기록은\n장의사의 우승으로 끝났지.\n\n그런데 경기장 한편에서 또다시 이상한 흔적이 발견됐어.\n\n누군가 월도랜드의 기록까지 들여다보고 있는 것 같아.\n\n아직은 기록을 바꾸지는 못한 모양이지만,\n이 흔적이 어디까지 이어지는지 확인해야겠어.\n\n그런데... 뭔가 모를 고대종의 냄새가 나는데. 기분 탓인가...",
+    "categories": [
+      "에픽"
+    ],
+    "skippable": true,
+    "maxLevel": 300,
+    "minLevel": 32,
+    "unlock": {
+      "quest_id": 17,
+      "type": "quest"
+    },
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 22934,
+          "min": 22934
+        }
+      },
+      {
+        "count": {
+          "max": 7981,
+          "min": 7981
+        },
+        "type": "골드"
+      },
+      {
+        "item_id": 42,
+        "type": "아이템",
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      }
+    ],
+    "enabled": true,
+    "objectives": [
+      {
+        "field": "월도랜드1",
+        "count": 35,
+        "type": "kill"
+      }
+    ],
+    "name": "[월도랜드1]첫 번째 월도랜드의 승자",
+    "id": 18,
+    "epicOrder": 15
+  },
+  {
+    "skippable": true,
+    "name": "[월도랜드2]두 번째 도박랜드",
+    "enabled": true,
+    "rewards": [
+      {
+        "count": {
+          "max": 27520,
+          "min": 27520
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 8307,
+          "max": 8307
+        },
+        "type": "골드"
+      }
+    ],
+    "minLevel": 36,
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 16,
+    "objectives": [
+      {
+        "count": 25,
+        "type": "kill",
+        "field": "월도랜드2"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 18
+    },
+    "desc": "다음 무대는 월도랜드2.\n\n첫 번째 월도랜드의 방식은 그대로 남아 있었지만,\n이번에는 조금 다른 흐름으로 승부가 이어졌어.\n\n수많은 미니게임과 선택 끝에\n마지막까지 살아남은 건 테무랜드와 일장춘몽.\n\n둘은 나란히 월도랜드2의 우승자가 되었지.",
+    "id": 19,
+    "maxLevel": 300
+  },
+  {
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 39628,
+          "max": 39628
+        }
+      },
+      {
+        "count": {
+          "max": 10203,
+          "min": 10203
+        },
+        "type": "골드"
+      }
+    ],
+    "minLevel": 37,
+    "name": "[월도랜드2]일장춘몽",
+    "desc": "긴 승부가 끝난 뒤,\n'누군가' 말하길 모든 것이 한순간의 꿈처럼 느껴졌다고 해.\n\n일장춘몽을 꾸고 눈을 떠보니,\n테무랜드가 월도랜드였다.\n\n조금 이상한 말 같지만,\n월도랜드에서는 그 정도가 딱 어울리는 결말일지도 몰라.\n\n테무랜드와 일장춘몽의 우승으로\n두 번째 월도랜드의 기록도 여기서 마무리됐어.\n\n이제 다음 기록으로 이동하자.",
+    "categories": [
+      "에픽"
+    ],
+    "id": 20,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "월도랜드2",
+        "count": 35
+      }
+    ],
+    "maxLevel": 300,
+    "skippable": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 19
+    },
+    "enabled": true,
+    "epicOrder": 17
+  },
+  {
+    "epicOrder": 18,
+    "name": "[월도랜드3]제약 속의 투자",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 20
+    },
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 55465,
+          "min": 55465
+        }
+      },
+      {
+        "count": {
+          "min": 13253,
+          "max": 13253
+        },
+        "type": "골드"
+      }
+    ],
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 30,
+        "field": "월도랜드3"
+      }
+    ],
+    "desc": "세 번째 월도랜드에 도착했어.\n\n이번 승부의 중심은 주식.\n하지만 마음대로 사고팔 수 있었던 건 아니야.\n\n수많은 제약조건 속에서 자산을 불리고,\n제한된 선택만으로 다른 참가자보다 앞서가야 했지.\n\n잘못된 판단 하나면 쌓아온 모든 것이 무너지는 곳이야.",
+    "skippable": true,
+    "enabled": true,
+    "minLevel": 41,
+    "id": 21,
+    "categories": [
+      "에픽"
+    ]
+  },
+  {
+    "enabled": true,
+    "objectives": [
+      {
+        "count": 40,
+        "type": "kill",
+        "field": "월도랜드3"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "rewards": [
+      {
+        "count": {
+          "min": 64694,
+          "max": 64694
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 15881,
+          "max": 15881
+        }
+      },
+      {
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "아이템",
+        "item_id": 50
+      }
+    ],
+    "name": "[월도랜드3]오래된 향기",
+    "minLevel": 42,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 21
+    },
+    "id": 22,
+    "epicOrder": 19,
+    "desc": "수많은 제약과 변동을 견뎌낸 끝에\n월도랜드3에도 결국 한 명의 우승자가 탄생했어.\n\n그런데 이상하다.\n\n우승자의 기록을 살펴보던 중,\n어딘가 굉장히 오래된 기운이 느껴져.\n\n마치 아주 오래전부터 이곳의 승부를 지켜봐 온 존재……\n\n‘고대종’의 향기야.\n\n아직 그 정체가 모습을 드러낸 건 아니지만,\n이 흔적은 기억해두는 게 좋겠어.\n\n언젠가 다시 마주치게 될 것 같으니까.",
+    "skippable": true,
+    "maxLevel": 300
+  },
+  {
+    "skippable": true,
+    "name": "[더지니어서 현장]63인의 무대",
+    "desc": "이 곳은 더지니어서 현장.\n\n무려 63명의 참가자가 한꺼번에 모였던,\n지금까지와는 비교도 안 될 만큼 거대한 규모의 리그였지.\n\n사람이 많아진 만큼 사건도, 변수도, 기록도 넘쳐나고 있어.\n\n그리고 이 복잡한 현장 어딘가에서\n우리가 쫓던 그 흔적이 다시 발견됐어.\n\n인파를 헤치고 녀석의 행방을 찾아보자.",
+    "enabled": true,
+    "minLevel": 46,
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 30,
+        "field": "더지니어서 현장"
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 81494,
+          "min": 81494
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 16959,
+          "max": 16959
+        },
+        "type": "골드"
+      }
+    ],
+    "id": 23,
+    "epicOrder": 20,
+    "maxLevel": 300,
+    "unlock": {
+      "quest_id": 22,
+      "type": "quest"
+    },
+    "categories": [
+      "에픽"
+    ]
+  },
+  {
+    "enabled": true,
+    "maxLevel": 300,
+    "name": "[더지니어서 현장]인파 속의 그림자",
+    "categories": [
+      "에픽"
+    ],
+    "objectives": [
+      {
+        "field": "더지니어서 현장",
+        "count": 40,
+        "type": "kill"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 23
+    },
+    "id": 24,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 102658,
+          "min": 102658
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 19381,
+          "max": 19381
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 22,
+        "type": "아이템"
+      }
+    ],
+    "epicOrder": 21,
+    "desc": "찾았다.\n\n멀리서 분명히 봤어.\n기록의 균열이 생길 때마다 나타났던 그 녀석이야.\n\n하지만 하필 이곳에는 63명이나 되는 참가자들이 몰려 있어.\n\n잠깐 시야에서 놓친 사이,\n녀석은 수많은 사람들 사이로 완전히 섞여버렸어.\n\n놓치긴 했지만 한 가지는 확실해졌어.\n\n균열은 우연이 아니야. 누군가 직접 움직이고 있어.\n\n녀석이 향한 방향을 기억해두자.",
+    "skippable": true,
+    "minLevel": 47
+  },
+  {
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "해고전쟁시대",
+        "count": 35
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 51,
+    "rewards": [
+      {
+        "count": {
+          "max": 119739,
+          "min": 119739
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 20166,
+          "max": 20166
+        },
+        "type": "골드"
+      },
+      {
+        "card_id": 1,
+        "type": "캐릭터카드",
+        "display_star": 7,
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "name": "[해고전쟁시대]국회의사당의 승리",
+    "id": 25,
+    "desc": "다음 무대는 해고전쟁시대.\n\n이곳에서는 국회의사당 팀과\n뭔마 없는 뭔마 팀이 정면으로 맞붙었어.\n\n치열한 승부 끝에 살아남은 쪽은 국회의사당 팀.\n그 승리를 기념하기 위해\n작은 국회의사당 미니어처까지 만들어졌다고 해.\n\n하지만 지금은 기념품을 구경하고 있을 때가 아니야.\n\n저기 도망가는 녀석은 뭔마...?!\n아, 아니 일단 저 녀석말고 다른 녀석을 쫓아야 해!!",
+    "epicOrder": 22,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 24
+    },
+    "skippable": true,
+    "enabled": true,
+    "maxLevel": 300
+  },
+  {
+    "name": "[해고전쟁시대]검게 물든 국회의사당",
+    "rewards": [
+      {
+        "count": {
+          "max": 150836,
+          "min": 150836
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 23481,
+          "max": 23481
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 52,
+        "type": "아이템"
+      }
+    ],
+    "objectives": [
+      {
+        "field": "해고전쟁시대",
+        "count": 45,
+        "type": "kill"
+      }
+    ],
+    "minLevel": 52,
+    "maxLevel": 300,
+    "epicOrder": 23,
+    "skippable": true,
+    "unlock": {
+      "quest_id": 25,
+      "type": "quest"
+    },
+    "categories": [
+      "에픽"
+    ],
+    "id": 26,
+    "enabled": true,
+    "desc": "국회의사당의 승리 기록도 확인했고,\n이제 다음 흔적을 쫓아가려던 순간……\n\n기념 미니어처에서 이상한 빛이 새어 나오기 시작했어.\n\n처음에는 작은 점처럼 보였지만\n순식간에 국회의사당 전체가 검은 빛에 잠겨버렸지.\n\n그리고 바닥이 갈라지기 시작했어.\n\n잠깐, 이건 균열이 아니야.\n아래쪽에서 무언가가 우리를 끌어당기고 있어……!"
+  },
+  {
+    "id": 27,
+    "enabled": true,
+    "objectives": [
+      {
+        "field": "밍닝스플랜",
+        "count": 40,
+        "type": "kill"
+      },
+      {
+        "type": "eliteKill",
+        "count": 1,
+        "field": "밍닝스플랜"
+      }
+    ],
+    "minLevel": 56,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 175934,
+          "max": 175934
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 26333,
+          "min": 26333
+        }
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "name": "[밍닝스플랜]추락한 곳에서 만난 둘",
+    "maxLevel": 300,
+    "skippable": true,
+    "desc": "검은 빛에 휩쓸려 정신을 차린 곳은 밍닝스플랜.\n\n그런데 이곳에서는 이미 누군가 전투를 벌이고 있었어.\n\n밍닝스플랜의 우승자 안성재,\n그리고 이름을 부르기 조금 어려운 흐음.\n\n……그냥 앞으로는 흠시원이라고 부르자.\n\n둘은 서로를 도우며 이곳을 헤쳐나가고 있었고,\n지금은 정체불명의 데빌과 맞서 싸우는 중이야.\n\n일단 이야기는 나중에 하고,\n둘을 도와 데빌부터 처리하자.",
+    "epicOrder": 24,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 26
+    }
+  },
+  {
+    "epicOrder": 25,
+    "maxLevel": 300,
+    "desc": "데빌을 쓰러뜨리고 나서야\n안성재와 흠시원에게 지금까지 있었던 일을 설명할 수 있었어.\n\n관찰자들의 도시에서 발견된 균열,\n사라진 기록,\n인파 속에서 놓쳐버린 수상한 녀석,\n그리고 국회의사당에서 뿜어져 나온 검은 빛까지.\n\n그런데 두 사람 역시\n밍닝스플랜 곳곳에서 비슷한 이상 현상을 발견하고 있었다고 해.\n\n이제 혼자 쫓을 필요는 없겠어.\n\n안성재와 흠시원이 연합군에 합류했다.\n\n셋이서 함께 이 이상 현상의 정체를 쫓아보자.",
+    "unlock": {
+      "quest_id": 27,
+      "type": "quest"
+    },
+    "minLevel": 57,
+    "skippable": true,
+    "categories": [
+      "에픽"
+    ],
+    "name": "[밍닝스플랜]처음으로 생긴 동료",
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 205208,
+          "max": 205208
+        }
+      },
+      {
+        "count": {
+          "max": 28291,
+          "min": 28291
+        },
+        "type": "골드"
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "type": "캐릭터카드",
+        "card_id": 12,
+        "display_star": 7
+      },
+      {
+        "type": "캐릭터카드",
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "card_id": 13,
+        "display_star": 7
+      }
+    ],
+    "id": 28,
+    "objectives": [
+      {
+        "field": "밍닝스플랜",
+        "type": "kill",
+        "count": 50
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "skippable": true,
+    "minLevel": 61,
+    "enabled": true,
+    "unlock": {
+      "quest_id": 28,
+      "type": "quest"
+    },
+    "categories": [
+      "에픽"
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 221624,
+          "min": 221624
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 30100,
+          "min": 30100
+        }
+      }
+    ],
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "로투지",
+        "count": 30
+      }
+    ],
+    "id": 29,
+    "desc": "밍닝스플랜을 빠져나온 뒤 도착한 곳은 로투지.\n\n여긴 분위기부터 달라.\n지금까지 살아남아온 강자들이 한곳에 몰려\n서로 물고 뜯는 난전이 벌어지고 있어.\n\n안성재, 흠시원과 함께 움직이지 않으면\n이 인파 속에서 순식간에 고립될 거야.\n\n일단 앞을 막는 녀석들부터 뚫고 나가자.",
+    "maxLevel": 300,
+    "name": "[로투지]강자들의 난장판",
+    "epicOrder": 26
+  },
+  {
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 221624,
+          "min": 221624
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 32620,
+          "min": 32620
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 21,
+        "type": "아이템"
+      }
+    ],
+    "maxLevel": 300,
+    "categories": [
+      "에픽"
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 29
+    },
+    "enabled": true,
+    "epicOrder": 27,
+    "skippable": true,
+    "id": 30,
+    "name": "[로투지]살아서 빠져나가라",
+    "minLevel": 62,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "로투지",
+        "count": 30
+      }
+    ],
+    "desc": "정면으로 싸우는 것만으로도 벅찬데\n사방에서 강자들이 계속 몰려들고 있어.\n\n여기서는 누가 우승했는지 따질 여유도 없어.\n지금 중요한 건 단 하나.\n\n이 개싸움판에서 살아서 빠져나가는 것.\n\n안성재가 길을 열고,\n흠시원이 뒤를 막는다.\n\n이 틈을 놓치지 말고\n셋이 함께 로투지를 돌파하자."
+  },
+  {
+    "skippable": true,
+    "desc": "로투지의 난전을 빠져나온 뒤,\n눈앞에 처음 보는 빛이 나타났어.\n\n이건 단순한 보석이 아니야.\n\n수많은 기록과 힘을 담을 수 있는\n마법적인 자원, 가넷.\n\n앞으로 더 위험한 곳으로 가려면\n이 가넷의 힘이 분명 필요할 거야.\n\n마침 눈앞에 하나가 남아 있어.\n단 1개라도 확보해두자.",
+    "maxLevel": 300,
+    "name": "[가넷게임]마력을 품은 돌",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 30
+    },
+    "minLevel": 66,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 256113,
+          "max": 256113
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 33788,
+          "min": 33788
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "type": "가넷"
+      }
+    ],
+    "enabled": true,
+    "id": 31,
+    "objectives": [
+      {
+        "field": "가넷게임",
+        "type": "kill",
+        "count": 30
+      }
+    ],
+    "epicOrder": 28,
+    "categories": [
+      "에픽"
+    ]
+  },
+  {
+    "maxLevel": 300,
+    "categories": [
+      "에픽"
+    ],
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 30,
+        "field": "가넷게임"
+      }
+    ],
+    "desc": "가넷에 손을 뻗는 순간,\n주변의 공간이 갈라지기 시작했어.\n\n균열 너머에서 정체불명의 몬스터들이\n가넷을 지키려는 듯 쏟아져 나오고 있어.\n\n왜 저 녀석들이 가넷을 노리는지는 모르겠지만,\n이대로 물러날 수는 없어.\n\n다가올 싸움을 위해서라도\n가넷 단 1개는 반드시 가져가야 해.\n\n안성재, 흠시원과 함께\n차원에서 기어나온 몬스터들을 밀어내고 가넷을 쟁취하자.",
+    "skippable": true,
+    "minLevel": 66,
+    "rewards": [
+      {
+        "count": {
+          "min": 318167,
+          "max": 318167
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 34391,
+          "max": 34391
+        },
+        "type": "골드"
+      },
+      {
+        "type": "가넷",
+        "count": {
+          "min": 100,
+          "max": 100
+        }
+      }
+    ],
+    "enabled": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 31
+    },
+    "epicOrder": 29,
+    "name": "[가넷게임]단 하나의 가넷",
+    "id": 32
+  },
+  {
+    "enabled": true,
+    "categories": [
+      "에픽"
+    ],
+    "desc": "가넷을 손에 넣은 뒤 도착한 곳은 예언의결속.\n\n이곳에는 오래전부터 미래를 본다는 예언자가 있었어.\n\n그런데 우리가 도착하자마자\n예언자는 한 가지 말을 반복했지.\n\n“곧, 존재해서는 안 될 것이 나타난다.”\n\n처음엔 단순한 경고인 줄 알았어.\n하지만 이곳의 기록을 살펴보니 이상한 흔적이 보여.\n\n아직 우리가 가본 적도 없는 장소.\n\n‘이세계 대저택’\n\n그곳의 기록 일부가\n이미 이 시대에 섞여 들어와 있어.",
+    "maxLevel": 300,
+    "id": 33,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "예언의결속",
+        "count": 30
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 367681,
+          "min": 367681
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 38888,
+          "max": 38888
+        }
+      }
+    ],
+    "epicOrder": 30,
+    "skippable": true,
+    "name": "[예언의결속]다가오는 위험",
+    "minLevel": 71,
+    "unlock": {
+      "quest_id": 32,
+      "type": "quest"
+    }
+  },
+  {
+    "desc": "이건 단순한 기록의 오류가 아니야.\n\n아직 일어나지도 않은 미래의 사건이\n과거의 기록 속에 분명히 존재하고 있어.\n\n누군가가 시간의 순서를 무시한 채\n여러 대회의 기억을 억지로 뒤섞고 있는 것 같아.\n\n그리고 예언자는 마지막으로 이렇게 말했어.\n\n“위험은 이미 이곳까지 왔다.”\n\n그 순간,\n예언의결속 깊숙한 곳에서\n지금까지의 균열과는 비교도 되지 않는 거대한 기운이 느껴졌어.\n\n일단 이곳의 기록부터 마무리하자.",
+    "enabled": true,
+    "id": 34,
+    "skippable": true,
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 31,
+    "minLevel": 71,
+    "rewards": [
+      {
+        "count": {
+          "min": 456768,
+          "max": 456768
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 40008,
+          "max": 40008
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 24,
+        "type": "아이템"
+      }
+    ],
+    "name": "[예언의결속]뒤섞인 시간",
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "field": "예언의결속",
+        "count": 30,
+        "type": "kill"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 33
+    }
+  },
+  {
+    "skippable": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 34
+    },
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "min": 100000,
+          "max": 100000
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 3235,
+          "min": 3235
+        },
+        "type": "골드"
+      },
+      {
+        "type": "아이템",
+        "count": {
+          "max": 10,
+          "min": 10
+        },
+        "item_id": 134
+      }
+    ],
+    "minLevel": 71,
+    "categories": [
+      "에픽"
+    ],
+    "desc": "예언자의 경고대로,\n예언의결속 깊숙한 곳에서 거대한 균열이 열렸어.\n\n그곳에서 모습을 드러낸 건\n아직 우리가 만나서는 안 되는 존재.\n\n미래의 이세계 대저택에서 흘러온 딜러, 흑화 호두야.\n\n지금은 저 녀석을 쓰러뜨리는 것보다\n직접 그 변칙을 마주하는 것이 중요해.\n\n연합군도 함께할 거야.\n흑화 호두가 무엇을 남기는지 직접 확인하자.\n\n(!콘텐츠 > 사냥 > 레이드에서 최소 1인 ~ 최대 5인이 참가 가능합니다.)",
+    "objectives": [
+      {
+        "quest": "흑화 호두",
+        "type": "partyJoin",
+        "count": 1
+      }
+    ],
+    "enabled": true,
+    "name": "[흑화호두]미래에서 온 적",
+    "id": 37,
+    "epicOrder": 32
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 522952,
+          "min": 522952
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 42019,
+          "min": 42019
+        }
+      },
+      {
+        "item_id": 57,
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "skippable": true,
+    "id": 38,
+    "minLevel": 76,
+    "name": "[스코어서바이벌]움직이는 점수",
+    "enabled": true,
+    "epicOrder": 33,
+    "desc": "흑화 호두와 마주친 뒤,\n우리는 다시 균열의 흔적을 따라 이동했어.\n\n도착한 곳은 스코어 서바이벌.\n\n어딘가 더지니어서 현장과 비슷한 모습이지만\n이번에는 확실히 이상한 점이 보여.\n\n이곳의 핵심은 참가자들의 점수 기록인데……\n\n숫자들이 제자리에 있지 않아.\n\n올라가야 할 점수가 떨어지고,\n사라졌던 숫자가 다시 나타나며,\n아무도 건드리지 않았는데 순위가 계속 뒤바뀌고 있어.\n\n이번에는 기록을 바꾸는 정도가 아니야.\n\n기록 자체가 통제를 벗어나고 있어.",
+    "objectives": [
+      {
+        "count": 30,
+        "field": "스코어서바이벌",
+        "type": "kill"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 37
+    },
+    "maxLevel": 300
+  },
+  {
+    "id": 39,
+    "categories": [
+      "에픽"
+    ],
+    "name": "[스코어서바이벌]무너지는 규칙",
+    "enabled": true,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "스코어서바이벌",
+        "count": 30
+      }
+    ],
+    "epicOrder": 34,
+    "maxLevel": 300,
+    "skippable": true,
+    "rewards": [
+      {
+        "count": {
+          "min": 640637,
+          "max": 640637
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 44238,
+          "min": 44238
+        },
+        "type": "골드"
+      }
+    ],
+    "desc": "점수판을 가까이서 확인해봤어.\n\n누군가 숫자를 직접 조작하고 있는 흔적은 없어.\n\n오히려 점수 하나하나가\n자기 마음대로 움직이는 것처럼 보여.\n\n관찰자들의 도시에서는 결과가 바뀌려 했고,\n파산게임장에서는 기록이 사라졌고,\n예언의결속에서는 미래의 존재까지 나타났어.\n\n그리고 이제는……\n\n이 세계의 규칙 자체가 망가지기 시작한 거야.\n\n더 늦기 전에 원인을 찾아야 해.\n\n흩어진 숫자들이 향하는 곳을 따라\n다음 기록으로 이동하자.",
+    "unlock": {
+      "quest_id": 38,
+      "type": "quest"
+    },
+    "minLevel": 76
+  },
+  {
+    "epicOrder": 35,
+    "skippable": true,
+    "enabled": true,
+    "id": 40,
+    "name": "[독재자게임장]배신자의 실토",
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 733464,
+          "min": 733464
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 46291,
+          "max": 46291
+        },
+        "type": "골드"
+      },
+      {
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "item_id": 58
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 81,
+    "unlock": {
+      "quest_id": 39,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "count": 30,
+        "type": "kill",
+        "field": "독재자게임장"
+      },
+      {
+        "count": 1,
+        "field": "독재자게임장",
+        "type": "eliteKill"
+      }
+    ],
+    "desc": "스코어 서바이벌을 빠져나오자,\n누군가 우리 앞을 가로막았어.\n\n끝까지 입을 다물고 있던 배신자였지.\n\n그런데 상황이 걷잡을 수 없이 커지자\n결국 모든 걸 실토하기 시작했어.\n\n기록을 건드리고,\n규칙을 어긋나게 만들며,\n지금까지 균열을 키워온 자.\n\n그 중심에는 독재자가 있었어.\n\n다행히 독재자는 한때 월드보스로 모습을 드러냈다가\n이미 토벌된 상태라고 해.\n\n적어도 녀석과 다시 싸울 일은 없겠지.\n\n……정말 그걸로 끝난 걸까?"
+  },
+  {
+    "id": 41,
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 36,
+    "desc": "독재자는 사라졌지만,\n녀석이 망가뜨린 규칙까지 원래대로 돌아온 건 아니었어.\n\n어긋난 기록과 뒤틀린 규칙들이 서로 충돌하면서\n검은 구름이 모든 지역을 뒤덮기 시작했거든.\n\n이른 바 카오스클라우드.. 라고 한다는데,\n\n이대로 두면 이미 지나온 경기장들까지\n무너진 규칙에 완전히 잠식될 거야.\n\n연합군과 함께\n곳곳에 남은 혼돈을 걷어내자.\n\n범인은 밝혀냈어.\n\n이제 녀석이 남긴 흔적을 치울 차례야.",
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 898523,
+          "min": 898523
+        }
+      },
+      {
+        "count": {
+          "min": 48201,
+          "max": 48201
+        },
+        "type": "골드"
+      },
+      {
+        "item_id": 160,
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "type": "아이템"
+      }
+    ],
+    "enabled": true,
+    "skippable": true,
+    "name": "[독재자게임장]검은 구름",
+    "maxLevel": 300,
+    "unlock": {
+      "quest_id": 40,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "독재자게임장",
+        "count": 30
+      }
+    ],
+    "minLevel": 81
+  },
+  {
+    "enabled": true,
+    "objectives": [
+      {
+        "count": 30,
+        "type": "kill",
+        "field": "중달"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "unlock": {
+      "quest_id": 41,
+      "type": "quest"
+    },
+    "skippable": true,
+    "minLevel": 86,
+    "epicOrder": 37,
+    "desc": "카오스 클라우드를 걷어내며 걸어가다 보니,\n저 멀리 마침내 이세계 대저택이 모습을 드러냈어.\n아니나 다를까 검은 구름에 휩싸여 있는 대저택이군.\n\n흑화 호두가 남긴 말도 이제 곧 확인할 수 있겠지.\n\n그런데 대저택으로 향하던 길목에서\n갑자기 수많은 트랩이 작동하기 시작했어.\n\n여긴 그냥 달려서는 통과할 수 없어.\n\n빠르면 트랩에 걸리고,\n느리면 길 자체가 닫혀버려.\n\n이곳은 ‘중달’.\n\n말 그대로,\n중간 속도로 달려야 살아남는 곳이야.",
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 1028718,
+          "max": 1028718
+        }
+      },
+      {
+        "count": {
+          "min": 51138,
+          "max": 51138
+        },
+        "type": "골드"
+      }
+    ],
+    "id": 42,
+    "name": "[중달]너무 빠르지도, 느리지도 않게"
+  },
+  {
+    "objectives": [
+      {
+        "count": 30,
+        "field": "중달",
+        "type": "kill"
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 1260222,
+          "min": 1260222
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 53222,
+          "max": 53222
+        },
+        "type": "골드"
+      }
+    ],
+    "id": 43,
+    "desc": "트랩을 하나씩 피해가며\n마침내 중달의 끝에 도착했어.\n\n안성재와 흠시원도 무사히 따라왔고,\n이제 눈앞에는 거대한 저택이 선명하게 보여.\n\n예언의결속에서 처음 발견한 미래의 기록.\n그리고 흑화 호두가 남긴 말.\n\n“대저택에서 기다리고 있다.”\n\n드디어 그 장소에 도착한 거야.\n\n이제부터는\n우리가 아직 알지 못했던 미래의 기록 속으로 직접 들어가게 될 거야.",
+    "minLevel": 86,
+    "categories": [
+      "에픽"
+    ],
+    "name": "[중달]대저택 바로 앞",
+    "epicOrder": 38,
+    "maxLevel": 300,
+    "skippable": true,
+    "unlock": {
+      "quest_id": 42,
+      "type": "quest"
+    },
+    "enabled": true
+  },
+  {
+    "id": 44,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 43
+    },
+    "skippable": true,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "이세계대저택",
+        "count": 30
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "min": 1429374,
+          "max": 1429374
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 56103,
+          "max": 56103
+        },
+        "type": "골드"
+      },
+      {
+        "display_star": 7,
+        "card_id": 3,
+        "type": "캐릭터카드",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      },
+      {
+        "type": "캐릭터카드",
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "display_star": 7,
+        "card_id": 0
+      }
+    ],
+    "desc": "마침내 도착한 이세계 대저택.\n\n흑화 호두의 경고 때문에\n무언가 끔찍한 일이 벌어지고 있을 줄 알았는데……\n\n생각보다 대저택 자체는 멀쩡해 보여.\n\n문제는 카오스 클라우드를 타고 흘러들어온 몬스터들이야.\n\n그리고 저 앞에서 이미 누군가 녀석들과 싸우고 있어.\n\n오버라이드, 그리고 ​빵귤.\n\n일단 연합군도 합세해서\n대저택에 들어온 몬스터들부터 몰아내자.",
+    "categories": [
+      "에픽"
+    ],
+    "enabled": true,
+    "minLevel": 91,
+    "epicOrder": 39,
+    "name": "[이세계대저택]생각보다 멀쩡한 대저택",
+    "maxLevel": 300
+  },
+  {
+    "name": "[이세계대저택]빵귤의 사고",
+    "desc": "몬스터를 정리하던 도중\n빵귤이 마법을 사용했는데……\n\n……잠깐.\n\n저건 몬스터가 아니라 켄시잖아!\n\n빵귤의 마법을 정통으로 맞아버린 켄시가\n그대로 쓰러지고 말았어.\n\n다행히 크게 다친 건 아닌 것 같지만,\n이대로 두고 갈 수는 없겠지.\n\n근처 상점에서 상급 체력 포션을 하나 구해오자.",
+    "unlock": {
+      "quest_id": 44,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 8,
+        "type": "deliver"
+      }
+    ],
+    "id": 45,
+    "epicOrder": 40,
+    "categories": [
+      "에픽"
+    ],
+    "enabled": true,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 152223,
+          "max": 152223
+        }
+      }
+    ],
+    "minLevel": 91,
+    "skippable": true
+  },
+  {
+    "unlock": {
+      "type": "quest",
+      "quest_id": 45
+    },
+    "objectives": [
+      {
+        "count": 30,
+        "type": "kill",
+        "field": "이세계대저택"
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "max": 1726611,
+          "min": 1726611
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 63289,
+          "max": 63289
+        }
+      },
+      {
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "캐릭터카드",
+        "card_id": 6,
+        "display_star": 7
+      },
+      {
+        "display_star": 7,
+        "type": "캐릭터카드",
+        "card_id": 4,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      }
+    ],
+    "maxLevel": 300,
+    "desc": "상급 체력 포션을 마신 켄시가\n다행히 다시 정신을 차렸어.\n\n빵귤과 한바탕 말다툼이 벌어지긴 했지만……\n뭐, 어떻게 저떻게 화해한 모양이야.\n\n오버라이드와 빵귤 역시\n카오스 클라우드와 대저택에서 벌어지는 이상 현상을 그냥 두고 볼 수 없다고 해.\n\n켄시도 함께하기로 했고.\n\n그렇게 오버라이드, 빵귤, 켄시가 연합군에 합류했다.\n\n처음에는 셋뿐이었던 연합군도\n어느새 제법 많은 인원이 모였어.\n\n이제 이세계 대저택의 기록을\n조금 더 깊숙이 확인해보자.",
+    "categories": [
+      "에픽"
+    ],
+    "id": 46,
+    "enabled": true,
+    "epicOrder": 41,
+    "skippable": true,
+    "name": "[이세계대저택]커지는 연합군",
+    "minLevel": 91
+  },
+  {
+    "enabled": true,
+    "desc": "대저택을 지나 도착한 곳은 높동.\n\n그곳에서는 이미 두 사람이\n서로 물러설 생각도 없이 맞붙고 있었어.\n\n한쪽은 제우스.\n그리고 다른 한쪽은……\n\n월도랜드3에서 희미하게 느껴졌던,\n그 오래된 기운과 닮아 있어.\n\n고대종, 타이란트.\n\n둘 사이에 무슨 일이 있었는지는 모르겠지만\n싸움이 계속되면 높동 전체가 버티지 못할 것 같아.\n\n누구의 편이든 상관없어.\n우선 한쪽을 도와 이 싸움부터 끝내자.",
+    "id": 47,
+    "skippable": true,
+    "name": "[높동]신과 고대종",
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 42,
+    "objectives": [
+      {
+        "type": "kill",
+        "count": 30,
+        "field": "높동"
+      }
+    ],
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 1958364,
+          "max": 1958364
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 67313,
+          "min": 67313
+        }
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 16,
+        "type": "아이템"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 46
+    },
+    "minLevel": 96,
+    "maxLevel": 300
+  },
+  {
+    "skippable": true,
+    "name": "[높동]싸움 끝에 남은 것",
+    "categories": [
+      "에픽"
+    ],
+    "id": 48,
+    "minLevel": 96,
+    "epicOrder": 43,
+    "unlock": {
+      "quest_id": 47,
+      "type": "quest"
+    },
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 2365603,
+          "min": 2365603
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 69691,
+          "min": 69691
+        },
+        "type": "골드"
+      },
+      {
+        "display_star": 7,
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "card_id": 7,
+        "type": "캐릭터카드"
+      },
+      {
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "display_star": 7,
+        "card_id": 8,
+        "type": "캐릭터카드"
+      }
+    ],
+    "desc": "결국 한쪽의 손을 들어주긴 했어.\n\n그걸로 끝날 줄 알았지.\n\n하지만 패배한 쪽도 등을 돌리지 않았어.\n오히려 아무 말 없이 우리 뒤를 따라오기 시작했거든.\n\n제우스는 못마땅한 표정을 지었고,\n타이란트 역시 썩 마음에 들어 보이진 않았어.\n\n그래도 두 사람 모두 알고 있었던 거야.\n\n지금 싸워야 할 상대는 서로가 아니라는 걸.\n\n그렇게 어쩌다 보니,\n한 명을 데려오려다 두 명을 얻어버렸어.\n\n제우스와 타이란트가 연합군에 합류했다.",
+    "objectives": [
+      {
+        "count": 30,
+        "field": "높동",
+        "type": "kill"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "id": 49,
+    "name": "[마동]무너진 동네",
+    "enabled": true,
+    "categories": [
+      "에픽"
+    ],
+    "objectives": [
+      {
+        "field": "마동",
+        "count": 30,
+        "type": "kill"
+      }
+    ],
+    "desc": "높동을 지나 도착한 마동은\n이미 멀쩡한 곳을 찾기 힘들 정도로 폐허가 되어 있었어.\n\n제우스와 타이란트가 벌였던 전투의 여파도 남아 있었지만,\n그것만으로 설명하기엔 상황이 너무 심각해.\n\n카오스 클라우드의 영향인지\n사방에서 몬스터들이 끝도 없이 쏟아져 나오고 있어.\n\n연합군 전원이 전투에 나섰고,\n각자 구역을 나눠 몬스터들을 밀어내기 시작했어.\n\n그런데 저 멀리……\n\n누군가 혼자서 이미 한 구역을 정리하고 있어.\n\n딜러장이야.",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 48
+    },
+    "minLevel": 101,
+    "rewards": [
+      {
+        "count": {
+          "max": 2365603,
+          "min": 2365603
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 73694,
+          "min": 73694
+        },
+        "type": "골드"
+      }
+    ],
+    "maxLevel": 300,
+    "epicOrder": 44,
+    "skippable": true
+  },
+  {
+    "rewards": [
+      {
+        "count": {
+          "min": 2365603,
+          "max": 2365603
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 73694,
+          "min": 73694
+        }
+      },
+      {
+        "display_star": 7,
+        "type": "캐릭터카드",
+        "card_id": 10,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      {
+        "card_id": 2,
+        "type": "캐릭터카드",
+        "display_star": 7,
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "name": "[마동]홀로 걷는 자",
+    "id": 50,
+    "enabled": true,
+    "categories": [
+      "에픽"
+    ],
+    "skippable": true,
+    "desc": "연합군과 딜러장이 힘을 합치자\n넘쳐나던 몬스터들도 하나둘 모습을 감췄어.\n\n마동은 여전히 폐허지만,\n적어도 당장 무너질 위험은 막아낸 것 같아.\n\n이 정도면 딜러장도\n연합군에 합류할 생각이 있지 않을까?\n\n그에게 다가가 말을 걸어보려던 순간……\n\n“흥……”\n\n딜러장은 짧은 한마디만 남기고\n순식간에 자취를 감춰버렸어.\n\n……도와주긴 했는데,\n우리와 함께할 생각은 없는 모양이야.\n\n일단 마동의 정리는 끝났어.\n연합군을 재정비하고 다음 장소로 이동하자.",
+    "epicOrder": 45,
+    "minLevel": 101,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 49
+    },
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "count": 30,
+        "type": "kill",
+        "field": "마동"
+      }
+    ]
+  },
+  {
+    "epicOrder": 46,
+    "rewards": [
+      {
+        "count": {
+          "min": 2683125,
+          "max": 2683125
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 77142,
+          "min": 77142
+        },
+        "type": "골드"
+      }
+    ],
+    "desc": "마동의 폐허를 빠져나오자\n오랜만에 조금은 평온한 장소가 나타났어.\n\n이곳은 빌라.\n\n연합군은 잠시 숨을 돌릴 수 있었지만,\n카오스 클라우드는 아직 끝나지 않았어.\n\n타이란트의 말로는, 뒤틀린 시간과 기록의 흐름을 바로잡으려면\n‘시계의 주인’​을 찾아야 한다고 해.\n\n그가 있는 곳은 더타임모텔.\n\n빌라와 리조트를 지나야 그곳에 도착할 수 있어.\n\n이제 목적지는 정해졌어.\n카오스 클라우드를 끝낼 실마리를 찾으러 가자.",
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "field": "빌라",
+        "count": 30,
+        "type": "kill"
+      }
+    ],
+    "minLevel": 106,
+    "name": "[빌라]시계의 주인을 찾아서",
+    "id": 52,
+    "skippable": true,
+    "enabled": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 50
+    }
+  },
+  {
+    "enabled": true,
+    "desc": "리조트로 향하는 길은 눈앞이야.\n\n그런데 출구를 거대한 무언가가 완전히 막고 있어.\n\n……바다거북?\n\n어떻게 여기까지 들어온 건지는 모르겠지만,\n카오스 클라우드의 영향 때문인지 평범한 녀석은 아닌 것 같아.\n\n지금은 우회할 시간도 없어.\n\n시계의 주인을 만나려면\n저 거북부터 치워야 해.\n\n연합군과 함께 길을 뚫고\n리조트로 이동하자.",
+    "objectives": [
+      {
+        "type": "deliver",
+        "count": 1,
+        "item_id": 63
+      }
+    ],
+    "maxLevel": 300,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 52
+    },
+    "id": 53,
+    "epicOrder": 47,
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 106,
+    "name": "[빌라]길을 막은 바다거북",
+    "skippable": true,
+    "rewards": [
+      {
+        "count": {
+          "min": 3241079,
+          "max": 3241079
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 81377,
+          "max": 81377
+        },
+        "type": "골드"
+      }
+    ]
+  },
+  {
+    "name": "[리조트]잠깐의 횡재",
+    "skippable": true,
+    "desc": "바다거북을 쓰러뜨리고 도착한 곳은 리조트.\n\n더타임모텔까지는 이제 얼마 남지 않았어.\n\n그런데 이동하던 중,\n연합군이 꽤 수상한 건물을 하나 발견했어.\n\n시침증권거래소.\n\n시계와 관련된 장소라면\n시계의 주인에 대한 단서가 있을지도 모르겠어.\n\n안으로 들어가 확인해보니……\n\n단서는 없고 골드만 잔뜩 있네.\n\n……이 정도는 여비로 조금 가져가도 되지 않을까?",
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 48,
+    "id": 54,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "리조트",
+        "count": 30
+      }
+    ],
+    "rewards": [
+      {
+        "count": {
+          "min": 3676112,
+          "max": 3676112
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 1000000,
+          "max": 1000000
+        }
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 53
+    },
+    "minLevel": 111,
+    "enabled": true,
+    "maxLevel": 300
+  },
+  {
+    "enabled": true,
+    "unlock": {
+      "quest_id": 54,
+      "type": "quest"
+    },
+    "minLevel": 111,
+    "categories": [
+      "에픽"
+    ],
+    "skippable": true,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 4440556,
+          "min": 4440556
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 88416,
+          "max": 88416
+        },
+        "type": "골드"
+      }
+    ],
+    "name": "[리조트]시간이 모이는 곳",
+    "objectives": [
+      {
+        "field": "리조트",
+        "type": "kill",
+        "count": 30
+      }
+    ],
+    "desc": "시침증권거래소에서는\n시계의 주인에 대한 직접적인 정보는 찾지 못했어.\n\n하지만 이상한 사실 하나는 확인했지.\n\n이곳에서 오가는 모든 시간의 기록이\n한 장소를 향하고 있었어.\n\n더타임모텔.\n\n카오스 클라우드로 뒤틀린 시간도,\n과거와 미래가 뒤섞인 기록도\n결국 그곳과 연결되어 있는 것 같아.\n\n이제 목적지는 바로 앞이야.\n\n연합군과 함께 리조트를 빠져나가\n시계의 주인을 만나러 가자.",
+    "epicOrder": 49,
+    "id": 55
+  },
+  {
+    "epicOrder": 50,
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "field": "더타임모텔",
+        "type": "kill",
+        "count": 30
+      }
+    ],
+    "enabled": true,
+    "unlock": {
+      "quest_id": 55,
+      "type": "quest"
+    },
+    "name": "[더타임모텔]시계의 주인",
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 5036589,
+          "min": 5036589
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 93582,
+          "min": 93582
+        }
+      }
+    ],
+    "minLevel": 116,
+    "id": 56,
+    "desc": "마침내 더타임모텔에서\n우리가 찾아 헤매던 시계의 주인을 만났어.\n\n카오스 클라우드에 대해 묻자,\n그는 대답 대신 창밖을 가리켰지.\n\n“그것보다 주변이 너무 시끄럽군.\n먼저 저 녀석들부터 좀 치워주지.”\n\n……급한 건 우리 쪽인데.\n\n어쩔 수 없어.\n일단 모텔 주변의 몬스터부터 정리하자.",
+    "skippable": true
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 116,
+    "id": 57,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 56
+    },
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 65,
+        "type": "deliver"
+      }
+    ],
+    "epicOrder": 51,
+    "skippable": true,
+    "enabled": true,
+    "name": "[더타임모텔]제 말만 하는 시계의 주인",
+    "desc": "몬스터를 전부 정리하고 다시 물어봤어.\n\n카오스 클라우드는 어떻게 없애는지,\n뒤틀린 기록은 어떻게 되돌리는지.\n\n그런데 시계의 주인은 혼잣말처럼 중얼거리기만 했어.\n\n“이미 지나쳐온 곳에 있지……”\n“아니, 그것보다 내 시계태엽이 하나 부족하군.”\n\n……뭐?\n\n결국 제대로 된 설명은 한마디도 듣지 못한 채\n이번에는 시계태엽을 찾아오라는 부탁까지 받았어.\n\n정말 자기 할 말만 하는 사람이야.\n\n그래도 ‘지나쳐온 곳’이라는 말은 기억해두자.",
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "max": 6083944,
+          "min": 6083944
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "max": 96629,
+          "min": 96629
+        },
+        "type": "골드"
+      }
+    ]
+  },
+  {
+    "maxLevel": 300,
+    "desc": "시계태엽을 건네주자\n시계의 주인은 만족한 듯 시계를 다시 움직이기 시작했어.\n\n그리고 우리가 떠나기 직전,\n또 한마디를 툭 던졌지.\n\n“너희가 지나온 도박의 땅을 다시 찾아가 봐.”\n\n도박의 땅이라면……\n\n월도랜드.\n\n그 말을 믿고 이동한 끝에 도착한 곳은\n우리가 알던 곳보다 훨씬 뒤틀리고 커져버린 월도랜드4였어.\n\n분명 익숙한 곳이어야 하는데,\n길부터 전혀 기억나지 않아.\n\n일단 내부를 확인해보자.",
+    "id": 59,
+    "rewards": [
+      {
+        "count": {
+          "max": 6900561,
+          "min": 6900561
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 108379,
+          "min": 108379
+        }
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "objectives": [
+      {
+        "field": "월도랜드4",
+        "count": 30,
+        "type": "kill"
+      }
+    ],
+    "enabled": true,
+    "minLevel": 121,
+    "skippable": true,
+    "name": "[월도랜드4]지나쳐온 곳",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 57
+    },
+    "epicOrder": 52
+  },
+  {
+    "desc": "……이상해.\n\n분명 계속 앞으로 가고 있었는데\n아까 지나온 장소가 또 나오고 있어.\n\n안성재는 이쪽이 맞다고 하고,\n흠시원은 정반대라고 하고,\n제우스와 타이란트는 또 서로 다른 길을 주장하고 있어.\n\n시계의 주인이 말한 ‘지나쳐온 곳의 무언가’​는\n대체 어디에 있다는 거야?\n\n결국 연합군은 월도랜드4 한복판에서\n완전히 길을 잃어버리고 말았어.\n\n우선 흩어지지 말자.\n\n이곳에는 단순히 길만 뒤틀린 게 아닌 것 같아.",
+    "id": 60,
+    "enabled": true,
+    "minLevel": 121,
+    "epicOrder": 53,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 6900561,
+          "max": 6900561
+        }
+      },
+      {
+        "count": {
+          "min": 123819,
+          "max": 123819
+        },
+        "type": "골드"
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 59
+    },
+    "categories": [
+      "에픽"
+    ],
+    "name": "[월도랜드4]길을 잃다",
+    "skippable": true,
+    "objectives": [
+      {
+        "type": "kill",
+        "field": "월도랜드4",
+        "count": 30
+      }
+    ]
+  },
+  {
+    "objectives": [
+      {
+        "field": "월도랜드5",
+        "count": 50,
+        "type": "kill"
+      }
+    ],
+    "epicOrder": 54,
+    "minLevel": 131,
+    "desc": "월도랜드4를 헤매고 또 헤맨 끝에\n더욱 넓은 월도랜드5까지 들어와 버렸어.\n\n문제는 이곳이 너무 넓다는 거야.\n\n시계의 주인이 말한 단서가 정말 이곳에 있다 해도,\n이 수없이 넓은 공간에서 흔적 하나를 찾는 건 쉽지 않아.\n\n연합군이 각자 구역을 나눠 수색하기로 했어.\n\n이번에는 길부터 잃지 않는 게 중요하겠네.",
+    "skippable": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 60
+    },
+    "categories": [
+      "에픽"
+    ],
+    "id": 61,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 14691950,
+          "min": 14691950
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 168812,
+          "min": 168812
+        }
+      }
+    ],
+    "name": "[월도랜드5]끝없는 도박랜드",
+    "enabled": true,
+    "maxLevel": 300
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "desc": "한참을 찾아다닌 끝에\n무너진 구조물 아래에서 이상한 돌조각을 발견했어.\n\n처음 보는 문양이 새겨져 있는데……\n연합군 중 누구도 무슨 뜻인지 알아보지 못했지.\n\n그때 타이란트가 조용히 돌조각을 집어 들었어.\n\n“……이건 오래됐다. 나보다도 훨씬.”\n\n원시적인 문양,\n그리고 그 중심에 새겨진 이름.\n\n부타.\n\n타이란트의 말로는\n이 흔적은 ‘부타족’​이라 불리던 자들의 영역을 가리키고 있다고 해.\n\n시계의 주인이 말했던 단서가 이것이라면,\n다음 목적지는 정해졌어.\n\n부타게임.\n\n그곳이라면 카오스 클라우드의 시작에\n조금 더 가까워질 수 있을지도 몰라.",
+    "unlock": {
+      "quest_id": 61,
+      "type": "quest"
+    },
+    "rewards": [
+      {
+        "count": {
+          "max": 21437642,
+          "min": 21437642
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 193710,
+          "min": 193710
+        }
+      }
+    ],
+    "name": "[월도랜드5]오래된 문양",
+    "minLevel": 131,
+    "id": 62,
+    "maxLevel": 300,
+    "epicOrder": 55,
+    "skippable": true,
+    "enabled": true,
+    "objectives": [
+      {
+        "count": 50,
+        "field": "월도랜드5",
+        "type": "kill"
+      }
+    ]
+  },
+  {
+    "name": "[부타게임]부타족의 영역",
+    "epicOrder": 56,
+    "id": 63,
+    "desc": "월도랜드5에서 발견한 오래된 문양을 따라\n마침내 부타게임에 도착했어.\n\n이곳에는 오래전부터 살아온 듯한\n정체불명의 부타족들이 모여 있어.\n\n연합군이 다가가자 녀석들은 말을 걸기는커녕\n일제히 경계하며 길을 막아섰지.\n\n웬 소환사도 한 명 보이는데... 저기도 목적이 같은건가?\n\n우선 카오스 클라우드에 대한 단서를 얻으려면\n일단 이들의 영역 안쪽까지 들어가야 할 것 같아.\n\n우선 앞을 가로막는 부타들부터 상대하자.",
+    "unlock": {
+      "quest_id": 62,
+      "type": "quest"
+    },
+    "enabled": true,
+    "minLevel": 141,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 25713654,
+          "min": 25713654
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 233116,
+          "max": 233116
+        }
+      },
+      {
+        "type": "캐릭터카드",
+        "card_id": 11,
+        "display_star": 7,
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "skippable": true,
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "field": "부타게임",
+        "count": 50,
+        "type": "kill"
+      }
+    ],
+    "categories": [
+      "에픽"
+    ]
+  },
+  {
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 141,
+    "epicOrder": 57,
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "field": "부타게임",
+        "type": "kill",
+        "count": 100
+      }
+    ],
+    "id": 64,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 30842573,
+          "min": 30842573
+        }
+      },
+      {
+        "count": {
+          "min": 258193,
+          "max": 258193
+        },
+        "type": "골드"
+      }
+    ],
+    "skippable": true,
+    "desc": "부타족을 헤치고 조금 더 깊숙이 들어왔지만\n이번에는 주변에서 수많은 몬스터들이 몰려오기 시작했어.\n\n연합군과 함께 녀석들을 하나씩 처리하던 그때,\n\n갑자기 전장의 분위기가 달라졌어.\n\n부타족들이 일제히 뒤로 물러나고,\n그들 앞에 한 사람이 모습을 드러냈지.\n\n타부자고.\n\n부타게임의 딜러이자\n이곳을 지키는 문지기야.\n\n아무래도 여기서부터는\n쉽게 지나가게 해줄 생각이 없는 것 같아.",
+    "unlock": {
+      "quest_id": 63,
+      "type": "quest"
+    },
+    "name": "[부타게임]부타의 문지기",
+    "enabled": true
+  },
+  {
+    "desc": "타부자고는 연합군을 바라본 채\n부타족의 안쪽으로 들어가는 길을 막아섰어.\n\n그리고 그의 뒤편에서는\n지금까지와는 비교도 되지 않는 강한 기운이 느껴지고 있어.\n\n과거 부타였던 플레이어,\n그리고 지금은 부타게임 깊숙한 곳에 자리 잡은 잉여왕.\n\n이들의 영역에서 원하는 것을 얻으려면\n결국 부타게임의 시험을 직접 통과하는 수밖에 없어.\n\n타부자고를 넘어,\n잉여왕이 기다리는 곳까지 나아가자.\n\n부타족들에게 인질로 잡혀있던 지오, X, Sitosoym도 우리를 도와.\n\n[부타게임 레이드 입장 방법]\n콘텐츠 > 사냥 > 레이드 > 부타게임으로 최소 1인 ~ 최대 4인까지 참여 가능합니다.",
+    "epicOrder": 58,
+    "objectives": [
+      {
+        "count": 1,
+        "type": "partyJoin",
+        "quest": "부타게임"
+      }
+    ],
+    "name": "[부타게임]부타의 시험",
+    "categories": [
+      "에픽"
+    ],
+    "minLevel": 141,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 64
+    },
+    "maxLevel": 300,
+    "enabled": true,
+    "id": 65,
+    "skippable": true,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 100814,
+          "min": 100814
+        }
+      },
+      {
+        "count": {
+          "max": 5600,
+          "min": 5600
+        },
+        "type": "골드"
+      },
+      {
+        "item_id": 298,
+        "type": "아이템",
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      }
+    ]
+  },
+  {
+    "desc": "잉여왕은 끝까지 쓰러지지 않았어.\n\n몇 번을 몰아붙여도 다시 일어났고,\n마지막 순간까지 발악하듯 힘을 짜내고 있었지.\n\n그런 잉여왕에게 마지막 일격을 꽂아 넣은 건\n연합군도, 부타족도 아니었어.\n\n전장 끝에 서 있던 검은색의 ‘X’.\n\n단 한 번의 움직임으로\n잉여왕을 완전히 끝내버지.\n\n하지만 녀석의 정체를 확인하기도 전에\n주변의 공간이 갑자기 흔들리기 시작했어.\n\n그리고 누군가 네 이름을 불렀지.\n\n“{플레이어.}”\n\n……뭐야?\n\n머리가 깨질 듯 아파오더니,\n눈앞의 부타게임이 산산이 부서지기 시작했어.",
+    "rewards": [
+      {
+        "count": {
+          "min": 44373553,
+          "max": 44373553
+        },
+        "type": "경험치"
+      },
+      {
+        "count": {
+          "min": 301829,
+          "max": 301829
+        },
+        "type": "골드"
+      }
+    ],
+    "enabled": true,
+    "id": 70,
+    "objectives": [
+      {
+        "field": "서울오프라인",
+        "count": 50,
+        "type": "kill"
+      }
+    ],
+    "skippable": true,
+    "name": "[서울오프라인]마지막 일격... 그리고",
+    "minLevel": 151,
+    "categories": [
+      "에픽"
+    ],
+    "maxLevel": 300,
+    "epicOrder": 59,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 65
+    }
+  },
+  {
+    "id": 71,
+    "enabled": true,
+    "desc": "눈을 뜨자 완전히 다른 풍경이 펼쳐져 있었어.\n\n대저택도,\n월도랜드도,\n부타족도 보이지 않아.\n\n사람들이 오가고,\n건물들이 늘어서 있고,\n지금까지 지나온 어떤 필드보다도 현실에 가까운 장소.\n\n서울오프라인.\n\n……그런데 잠깐.\n\n현실이라면 저 녀석들은 뭐야?\n\n카오스 클라우드에서 보던 몬스터들이\n서울 곳곳을 돌아다니고 있어.\n\n설마 이쪽 세계까지\n균열이 이어진 건가?\n\n머리는 아직 아프지만,\n지금은 생각할 시간이 없어.\n\n'플레이어. 당장 눈앞의 몬스터들부터 정리해줘. 우리의 즐거웠던 기억...이...'",
+    "objectives": [
+      {
+        "field": "서울오프라인",
+        "count": 100,
+        "type": "kill"
+      }
+    ],
+    "name": "[서울오프라인]현실에 떨어지다",
+    "maxLevel": 300,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 70
+    },
+    "minLevel": 151,
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 60,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "max": 47146900,
+          "min": 47146900
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 332900,
+          "max": 332900
+        }
+      }
+    ],
+    "skippable": true
+  },
+  {
+    "desc": "현실 세계를 정리해온 후,\n\n마치 꿈처럼, 또 어디론가 이동해왔어.\n\n이 곳은 시간이 조금 더 지난 후로 보여지고\n\n익숙한.. 공간이지.\n\n딜러룸에 가면 뭔가 해답을 얻을 수 있지 않을까?\n\n...라고 생각하던 찰나,\n\n누군가 길을 가로막는다.",
+    "name": "[인트리그미션]앞길을 가로막고 서있는 문지기",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 71
+    },
+    "maxLevel": 300,
+    "skippable": true,
+    "enabled": true,
+    "id": 75,
+    "objectives": [
+      {
+        "field": "인트리그미션",
+        "type": "kill",
+        "count": 100
+      }
+    ],
+    "categories": [
+      "에픽"
+    ],
+    "epicOrder": 61,
+    "rewards": [
+      {
+        "type": "경험치",
+        "count": {
+          "min": 72070193,
+          "max": 72070193
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 491700,
+          "max": 491700
+        }
+      }
+    ],
+    "minLevel": 161
+  },
+  {
+    "rewards": [
+      {
+        "count": {
+          "min": 72070193,
+          "max": 72070193
+        },
+        "type": "경험치"
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 504100,
+          "max": 504100
+        }
+      }
+    ],
+    "id": 76,
+    "epicOrder": 62,
+    "categories": [
+      "에픽"
+    ],
+    "skippable": true,
+    "objectives": [
+      {
+        "count": 120,
+        "field": "인트리그미션",
+        "type": "kill"
+      }
+    ],
+    "desc": "문지기를 처치한 후 딜러룸의 미닫이문을 열었는데...\n\n그러더니 엄청나게 강력한 빛이 뿜어져 나와 눈을 막을 수 밖에 없었어.\n\n...\n\n...\n\n꿈이었나?\n\n한 순간에 작은 꿈.\n\n그리고... 내 손에 쥔 종잇조각의 무언가.\n\n아까 나를 불렀던 사람이 준건가?\n\n[꼬깃한 종잇장을 펴본다.]",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 75
+    },
+    "enabled": true,
+    "maxLevel": 300,
+    "minLevel": 161,
+    "name": "[인트리그미션]딜러룸의 문을 열고 도착한 곳은"
+  },
+  {
+    "name": "[가이드]전직 시스템",
+    "desc": "5성부터는 카드가 '전직'을 할 수 있습니다.\n\n콘텐츠 - 전직조합 - 똑같은 등급의 일반 캐릭터 3장을 합치면 100% 확률로 전직을 하실 수 있습니다.\n\n그리고 이건... 방금 얻으신 보상을 뺏어가는 대신 드리는 선물입니다.",
+    "maxLevel": 300,
+    "categories": [
+      "일반"
+    ],
+    "id": 11,
+    "rewards": [
+      {
+        "item_id": 201,
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "아이템"
+      }
+    ],
+    "minLevel": 1,
+    "objectives": [
+      {
+        "item_id": 21,
+        "type": "deliver",
+        "count": 1
+      }
+    ],
+    "skippable": false,
+    "enabled": true,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 9
+    }
+  },
+  {
+    "unlock": {
+      "quest_id": 74,
+      "type": "quest"
+    },
+    "desc": "5성부터는 '각성'을 진행할 수 있습니다.\n\n콘텐츠 - 각성조합 - 똑같은 등급의 전직 캐릭터 3장과 보석 6종을 합치면 100% 확률로 각성을 하실 수 있습니다.\n\n용기의 보석 - 주간 레이드(하드) 퀘스트 / 레이드 클리어 시 추가 획득 가능\n희생의 보석 - 초월 상점 > 초월 조각 5개로 교환 가능\n투지의 보석 - PVP 결과에서 획득 가능\n권능의 보석 - 일반 상점에서 1억 골드로 구매 가능\n지혜의 보석 - '[일일]지혜의 보석' 퀘스트로 획득 가능\n인내의 보석 - 전지역 일반 사냥 중 랜덤 드랍",
+    "enabled": true,
+    "rewards": [
+      {
+        "card_type": "각성",
+        "type": "캐릭터카드",
+        "card_id": 0,
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "display_star": 7
+      }
+    ],
+    "maxLevel": 300,
+    "name": "[가이드]각성 시스템",
+    "id": 81,
+    "skippable": false,
+    "minLevel": 10,
+    "objectives": [
+      {
+        "type": "deliver",
+        "count": 1,
+        "item_id": 397
+      }
+    ],
+    "categories": [
+      "일반"
+    ]
+  },
+  {
+    "rewards": [
+      {
+        "item_id": 47,
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "min": 100000,
+          "max": 100000
+        }
+      }
+    ],
+    "desc": "내가 차감권 방어를 해줄게!\n\n100만원으로 방ㅇ.... 응?\n차감권 필요하다고?\n\n어... 그... 그래 다시 돌려줄게..",
+    "unlock": {
+      "quest_id": 14,
+      "type": "quest"
+    },
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 47,
+        "type": "deliver"
+      }
+    ],
+    "maxLevel": 300,
+    "id": 15,
+    "minLevel": 26,
+    "categories": [
+      "일반"
+    ],
+    "skippable": false,
+    "name": "앗.. 차감권을 맞았다",
+    "enabled": true
+  },
+  {
+    "objectives": [
+      {
+        "type": "partyClear",
+        "count": 1,
+        "quest": "흑화 호두"
+      }
+    ],
+    "enabled": true,
+    "id": 35,
+    "rewards": [
+      {
+        "type": "아이템",
+        "item_id": 137,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      {
+        "type": "아이템",
+        "count": {
+          "max": 10000,
+          "min": 10000
+        },
+        "item_id": 0
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 34
+    },
+    "categories": [
+      "일반"
+    ],
+    "name": "[흑화호두]존재하지 않아야 할 자",
+    "desc": "예언자의 말이 사실이었어.\n\n균열 속에서 모습을 드러낸 건\n이세계 대저택의 딜러, 호두.\n\n문제는 이세계 대저택은\n아직 우리가 도착하지도 않은 미래의 리그라는 거야.\n\n게다가 눈앞의 호두는 우리가 알던 정상적인 모습이 아니야.\n\n승부에 대한 집착과 뒤틀린 기억에 잠식되어,\n온몸에서 검은 기운을 뿜어내고 있어.\n\n연합군 모두 전투를 준비하고 있어.\n\n미래에서 흘러온 최초의 거대한 변칙.\n흑화 호두를 막아야 해.",
+    "maxLevel": 300,
+    "minLevel": 71,
+    "skippable": false
+  },
+  {
+    "name": "[흑화호두]대저택에서 기다리는 자들",
+    "minLevel": 71,
+    "categories": [
+      "일반"
+    ],
+    "skippable": false,
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 134,
+        "type": "deliver"
+      }
+    ],
+    "id": 36,
+    "desc": "흑화 호두를 쓰러뜨렸다.\n\n몸을 감싸고 있던 검은 기운이 사라지자,\n호두의 모습도 균열 속으로 조금씩 흩어지기 시작했어.\n\n그리고 완전히 사라지기 직전,\n호두가 우리를 바라보며 한마디를 남겼지.\n\n“대저택에서 기다리고 있다.”\n\n……대저택?\n\n분명 이세계 대저택을 말하는 거겠지.\n\n하지만 그곳은 아직 한참 뒤의 시대야.\n\n미래의 호두는 어떻게 이곳에 나타난 걸까.\n\n그리고 대저택에서는\n도대체 무슨 일이 벌어지고 있는 거지?",
+    "enabled": true,
+    "rewards": [
+      {
+        "item_id": 135,
+        "type": "아이템",
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "unlock": {
+      "type": "quest",
+      "quest_id": 35
+    },
+    "maxLevel": 300
+  },
+  {
+    "categories": [
+      "일반"
+    ],
+    "objectives": [
+      {
+        "type": "deliver",
+        "count": 100,
+        "item_id": 271
+      }
+    ],
+    "maxLevel": 300,
+    "skippable": false,
+    "enabled": true,
+    "rewards": [
+      {
+        "raid_id": "mansionNormal",
+        "type": "레이드해금"
+      },
+      {
+        "raid_id": "mansionHard",
+        "type": "레이드해금"
+      },
+      {
+        "type": "레이드해금",
+        "raid_id": "mansionNightmare"
+      }
+    ],
+    "name": "[E세계대저택]종잇장에 쓰여져 있던 것",
+    "minLevel": 161,
+    "desc": "-----\n플레이어.\n\n도와주세요.\n\n당신이 보았던 건 환상이자 저희 세계에서 일어난 일이에요.\n\n제가 알기론, 그 쪽 세계에선 오래 전에 흑화한 호두를 물리친 걸로 알아요.\n\n하지만 그 영향은 곧, 저희 세계에 미쳐버려서 E세계 대저택 안에 봉인되어있던...\n\n'건축물'들이 깨어나 주변의 모든 빛을 집어삼키고 있어요.\n\n그 규모는 점점 더 커지고 있고, 저희의 힘으로는 막을 수 없는 상태가 됐어요..\n\n상급 강화석이라고 불리던가요..?\n\n그 이물질로 차원 생성을 도와드릴 수 있으니, 부디 꼭 도움을 부탁드립니다...\n-----",
+    "id": 77,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 76
+    }
+  },
+  {
+    "unlock": {
+      "type": "quest",
+      "quest_id": 77
+    },
+    "id": 80,
+    "objectives": [
+      {
+        "type": "partyClear",
+        "quest": "E세계대저택 (난이도 상관 없이)",
+        "count": 1
+      }
+    ],
+    "maxLevel": 300,
+    "minLevel": 161,
+    "name": "[E세계대저택]빛을 삼키는 곳을 향해.",
+    "categories": [
+      "일반"
+    ],
+    "skippable": false,
+    "enabled": true,
+    "rewards": [
+      {
+        "type": "골드",
+        "count": {
+          "min": 100,
+          "max": 100
+        }
+      },
+      {
+        "item_id": 409,
+        "count": {
+          "min": 10,
+          "max": 10
+        },
+        "type": "아이템"
+      }
+    ],
+    "desc": "눈을 감으니, 그 곳엔 아름답고도 어두운 대저택이 있었다.\n\n우리가 흑화호두를 잡았던 그 곳과 매우 똑같다.\n\n하지만... 완전히 다른 것들이 우리를 기다리고 있었다."
+  },
+  {
+    "rewards": [
+      {
+        "count": {
+          "max": 100,
+          "min": 100
+        },
+        "type": "경험치"
+      }
+    ],
+    "enabled": true,
+    "objectives": [
+      {
+        "item_id": 0,
+        "count": 1,
+        "type": "deliver"
+      }
+    ],
+    "categories": [
+      "일반"
+    ],
+    "id": 51,
+    "minLevel": 101,
+    "name": "[가이드]일일던전 시스템",
+    "skippable": false,
+    "maxLevel": 300,
+    "desc": "101레벨 필드(10레벨 단위)부터는 '일일던전'이 추가됩니다.\n\n명령어 '/rpg 일일던전'을 통해 들어갈 수 있으며,\n\n콘텐츠 - 사냥 - 일일던전으로도 입장 가능합니다.\n\n하루 한 번 입장 가능하며, 몬스터 처치할 때마다 일정 확률로 주어지는 버프로 5000마리를 사냥하면 최종 클리어가 됩니다.\n\n기존 사냥 분량의 압축된 보상을 주니 매일마다 꼭 까먹지 말고 클리어하세요.",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 49
+    }
+  },
+  {
+    "minLevel": 116,
+    "enabled": true,
+    "desc": "시계의 주인이 무언갈 중얼중얼 외우고 있다.\n'TIME PRISON'?...\n\n주변에서 중요한 아이템을 구해다주면 더 깊은 스토리를 들을 수 있을지도 모른다.",
+    "id": 58,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 57
+    },
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "type": "deliver",
+        "count": 15,
+        "item_id": 63
+      },
+      {
+        "count": 15,
+        "item_id": 64,
+        "type": "deliver"
+      },
+      {
+        "type": "deliver",
+        "item_id": 65,
+        "count": 15
+      }
+    ],
+    "name": "타임 프리즌?",
+    "categories": [
+      "일반"
+    ],
+    "skippable": false,
+    "rewards": [
+      {
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "item_id": 292,
+        "type": "아이템"
+      }
+    ]
+  },
+  {
+    "enabled": true,
+    "minLevel": 141,
+    "maxLevel": 300,
+    "id": 66,
+    "rewards": [
+      {
+        "type": "골드",
+        "count": {
+          "max": 100,
+          "min": 100
+        }
+      }
+    ],
+    "categories": [
+      "일반"
+    ],
+    "skippable": false,
+    "desc": "부타의 시험을 통과하고 레인 보주를 획득하셨군요.\n\n그 보주는 '사용'을 통해 장비에 부여할 수 있으며, 보주별로 부여 가능한 부위가 있으며 능력치가 존재합니다.\n\n한 장비에는 하나의 보주 밖에 부여할 수 없으며, 새로운 보주를 부여하게 될 시 기존의 보주는 사라지고 적용됩니다.\n\n모든 보주에는 지금까지의 플레이어들 기록이 남아 압축되어 있습니다.\n\n플레이어 여러분의 좋은 활약을 기대합니다. :)",
+    "unlock": {
+      "item_id": 298,
+      "type": "item"
+    },
+    "objectives": [
+      {
+        "count": 1,
+        "item_id": 0,
+        "type": "deliver"
+      }
+    ],
+    "name": "[가이드]보주 시스템"
+  },
+  {
+    "unlock": {
+      "quest_id": 64,
+      "type": "quest"
+    },
+    "skippable": false,
+    "objectives": [
+      {
+        "count": 5,
+        "type": "deliver",
+        "item_id": 272
+      }
+    ],
+    "enabled": true,
+    "maxLevel": 300,
+    "categories": [
+      "일반"
+    ],
+    "rewards": [
+      {
+        "type": "아이템",
+        "item_id": 272,
+        "count": {
+          "min": 30,
+          "max": 30
+        }
+      }
+    ],
+    "id": 67,
+    "minLevel": 141,
+    "desc": "부타게임에서 싸우다 보니\n정체불명의 헬 초대장을 몇 장 발견했어.\n\n평범한 종이처럼 보이는데,\n여러 장을 모아 한꺼번에 사용하자 주변의 공기가 갑자기 뒤틀리기 시작했지.\n\n그리고 눈앞에 피어오른 건……\n\n익숙한 카오스 클라우드.\n\n하지만 이번에는 구름 너머로\n우리가 지나왔던 부타게임과 비슷하면서도 전혀 다른 장소가 보여.\n\n분명 부타게임인데...?\n초대장은 단순한 입장권이 아니었던 모양이야.\n\nㅡㅡㅡㅡㅡㅡ\n'[H]필드' , 일명 헬 필드가 141레벨부터 오픈됩니다.\n콘텐츠 > 사냥 > 헬 필드를 통해 입장할 수 있으며, 한 번 입장 시 30장의 헬 초대장이 소모됩니다.\n또한, 추가로 얻은 '헬 도전장'은 '헬 초대장'의 거래가능 버전이며, 제작을 통해 초대장으로 변경할 수 있습니다.",
+    "name": "[가이드]지옥으로의 초대장1"
+  },
+  {
+    "name": "[가이드]지옥으로의 초대장2",
+    "desc": "카오스 클라우드 안으로 들어가자\n훨씬 강해진 부타게임의 엘리트 몬스터들이 기다리고 있었어.\n\n힘들게 녀석 하나를 쓰러뜨리자,\n시체가 사라진 자리에서 처음 보는 영롱한 빛이 피어올랐지.\n\n빛 속에서 발견된 건\n평범한 장비와는 비교할 수 없는 힘을 가진 초월 장비와\n그 힘을 만들어낼 수 있는 초월 조각이었어.\n\n위험한 곳인 만큼,\n그 안에서 얻을 수 있는 것도 특별한 모양이야.\n\n앞으로 헬 초대장을 얻는다면\n그냥 버리지 말고 모아두는 게 좋겠어.",
+    "maxLevel": 300,
+    "skippable": false,
+    "minLevel": 141,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 67
+    },
+    "enabled": true,
+    "rewards": [
+      {
+        "type": "아이템",
+        "item_id": 334,
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "categories": [
+      "일반"
+    ],
+    "id": 68,
+    "objectives": [
+      {
+        "type": "deliver",
+        "item_id": 274,
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "[가이드]아티팩트...?",
+    "unlock": {
+      "type": "quest",
+      "quest_id": 80
+    },
+    "categories": [
+      "일반"
+    ],
+    "id": 79,
+    "desc": "E세계대저택의 정화 작업을 완료하고 건축물에서 뜯겨져 나온 파편을 얻었어.\n강렬한 힘을 내보이길래, 마을의 슈크림 마법사에게 갖다줬더니 '아티팩트'라고 칭하더라고.\n\n등급이 높아질수록 강력한 힘을 가지고,\n내가 원하는 능력을 얻기 위해서는 많은 힘이 들어간다고 해.\n\n비용을 지불해서 재설정을 할 수 있고 나에게 필요한 능력은 잠금시킬 수 있어.\n\n'발현도'는 말그대로 아티팩트가 발현된 만큼 올라가는 수치라는군.\n\n그리고 이 열쇠를 사용하면 재설정과는 상관없이 모든 옵션이 바뀐다고 해.\n\n나에게 필요한 걸 찾아 강화하면 아주 강해질 수 있겠어..!",
+    "enabled": true,
+    "maxLevel": 300,
+    "rewards": [
+      {
+        "count": {
+          "min": 1,
+          "max": 1
+        },
+        "type": "아이템",
+        "item_id": 411
+      }
+    ],
+    "skippable": false,
+    "objectives": [
+      {
+        "count": 5,
+        "type": "deliver",
+        "item_id": 408
+      }
+    ],
+    "minLevel": 161
+  },
+  {
+    "unlock": {
+      "type": "quest",
+      "quest_id": 65
+    },
+    "desc": "부타게임 깊숙한 곳에서\n다시 강력한 기운이 감지되고 있습니다.\n\n한 차례 쓰러뜨렸던 잉여왕이지만,\n주변에 남아 있던 부타의 힘이 다시 모이며 모습을 드러낸 것 같습니다.\n\n더 많은 힘을 되찾기 전에\n부타게임으로 향해 잉여왕을 토벌해주세요.\n\n목표 : 잉여왕(하드) 1회 처치",
+    "rewards": [
+      {
+        "item_id": 271,
+        "type": "아이템",
+        "count": {
+          "max": 300,
+          "min": 300
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 3000000,
+          "min": 3000000
+        }
+      },
+      {
+        "type": "아이템",
+        "item_id": 393,
+        "count": {
+          "max": 1,
+          "min": 1
+        }
+      }
+    ],
+    "categories": [
+      "주간"
+    ],
+    "name": "[부타게임-레이드]잉여왕(하드) 토벌",
+    "minLevel": 141,
+    "enabled": true,
+    "maxLevel": 300,
+    "id": 69,
+    "skippable": false,
+    "objectives": [
+      {
+        "count": 1,
+        "quest": "부타게임 (하드)",
+        "type": "partyClear"
+      }
+    ]
+  },
+  {
+    "skippable": false,
+    "rewards": [
+      {
+        "item_id": 271,
+        "type": "아이템",
+        "count": {
+          "max": 500,
+          "min": 500
+        }
+      },
+      {
+        "type": "골드",
+        "count": {
+          "max": 5000000,
+          "min": 5000000
+        }
+      },
+      {
+        "type": "아이템",
+        "item_id": 393,
+        "count": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    ],
+    "maxLevel": 300,
+    "objectives": [
+      {
+        "type": "partyClear",
+        "count": 1,
+        "quest": "E세계대저택 (하드)"
+      }
+    ],
+    "id": 78,
+    "desc": "E세계대저택 깊숙한 곳에서 다시 또 한 번 강력한 기운이 감지되고 있습니다.\n\n건축물들이 또 다시 재생되고 있다는 소문입니다.\n\n더 많은 빛을 흡수하기 전에 E세계대저택으로 향해 위플래쉬를 토벌해주세요.\n\n목표 : 위플래쉬(하드) 1회 처치",
+    "minLevel": 161,
+    "unlock": {
+      "type": "quest",
+      "quest_id": 80
+    },
+    "name": "[E세계대저택-레이드]위플래쉬(하드) 토벌",
+    "enabled": true,
+    "categories": [
+      "주간"
+    ]
+  },
+  {
+    "name": "PVP도 한 번 즐겨보지 않겠어?",
+    "rewards": [
+      {
+        "count": {
+          "min": 20,
+          "max": 20
+        },
+        "type": "가넷"
+      }
+    ],
+    "id": 72,
+    "categories": [
+      "일반"
+    ],
+    "maxLevel": 300,
+    "skippable": false,
+    "minLevel": 50,
+    "unlock": {
+      "type": "always"
+    },
+    "objectives": [
+      {
+        "count": 3,
+        "type": "pvp"
+      }
+    ],
+    "enabled": true,
+    "desc": "이제 어느정도 성장을 했다면, 다른 플레이어와 겨룰 수 있는 PVP를 즐겨봐!\n\n콘텐츠 - PVP에서 원하는 대결 상대를 골라 대결할 수 있어.\n\n하루에 5번(추가 2회) 가능하고,\n\n매 전투마다 전리품이 나오니 꼭 해보는 걸 추천해!"
+  },
+  {
+    "minLevel": 1,
+    "rewards": [
+      {
+        "count": {
+          "max": 2000,
+          "min": 2000
+        },
+        "item_id": 0,
+        "type": "아이템"
+      },
+      {
+        "type": "경험치",
+        "count": {
+          "max": 10000,
+          "min": 10000
+        }
+      }
+    ],
+    "desc": "오늘도 활기차게 PVP 5번 진행하고 파이팅해보자!",
+    "categories": [
+      "일일"
+    ],
+    "objectives": [
+      {
+        "count": 5,
+        "type": "pvp"
+      }
+    ],
+    "id": 73,
+    "enabled": true,
+    "name": "[PVP]오늘도 결투!",
+    "unlock": {
+      "quest_id": 72,
+      "type": "quest"
+    },
+    "skippable": false,
+    "maxLevel": 300
+  },
+  {
+    "desc": "힘으로 열 수 없는 현자의 문 앞에 섰습니다.\n매일 달라지는 논리 퍼즐의 모든 단서를 엮어, 당신의 지혜를 증명하세요.\n\n정답을 맞히면 지혜의 보석을 받을 수 있습니다.\n문제는 계정마다 다르며, 매일 한국시간 자정에 새로 출제됩니다. 오답이어도 다시 도전할 수 있습니다.",
+    "rewards": [
+      {
+        "type": "아이템",
+        "count": {
+          "max": 1,
+          "min": 1
+        },
+        "item_id": 397
+      }
+    ],
+    "id": 74,
+    "unlock": {
+      "type": "always"
+    },
+    "minLevel": 10,
+    "objectives": [
+      {
+        "type": "wisdomPuzzle",
+        "count": 1
+      }
+    ],
+    "enabled": true,
+    "name": "[일일]지혜의 보석",
+    "maxLevel": 300,
+    "categories": [
+      "일일"
+    ],
+    "skippable": false
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "contentType": "image/png",
+    "createdAt": 1791014266072,
+    "id": "mus3ng7s_14b85f9400",
+    "key": "tcgenius/banners/mus3ng7s_14b85f9400.png",
+    "originalName": "261002 01.png",
+    "size": 2642274,
+    "targetTab": "party",
+    "targetUrl": ""
+  },
+  {
+    "contentType": "image/png",
+    "createdAt": 1791767892294,
+    "id": "mv4kc9xi_1331338ef3",
+    "key": "tcgenius/banners/mv4kc9xi_1331338ef3.png",
+    "originalName": "ab826d18-a2e0-407a-87a5-4d1d1b2e71de.png",
+    "size": 2700097,
+    "targetTab": "포인트 광산",
+    "targetUrl": ""
+  },
+  {
+    "contentType": "image/png",
+    "createdAt": 1785669183186,
+    "id": "msbpbrv6_aa23b3c2d0",
+    "key": "tcgenius/banners/msbpbrv6_aa23b3c2d0.png",
+    "originalName": "260715 01.png",
+    "size": 3078290,
+    "targetTab": "shop",
+    "targetUrl": ""
+  },
+  {
+    "contentType": "image/png",
+    "createdAt": 1785669207534,
+    "id": "msbpcani_299a01ab16",
+    "key": "tcgenius/banners/msbpcani_299a01ab16.png",
+    "originalName": "상시.png",
+    "size": 2407561,
+    "targetTab": "shop",
+    "targetUrl": ""
+  }
+]

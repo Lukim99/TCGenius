@@ -1,294 +1,1333 @@
 {
-    "일반": [
-        {
-            "type": "아이템",
-            "item_id": 6,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 50
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 7,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 240
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 8,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 460
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 9,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 50
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 10,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 250
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 14,
-            "count": 1,
-            "price": {
-                "goods": "gold",
-                "amount": 100
-            }
-        }
-    ],
-    "포인트": [
-        {
-            "type": "가넷",
-            "count": 400,
-            "price": {
-                "goods": "point",
-                "amount": 1400
-            }
-        },
-        {
-            "type": "가넷",
-            "count": 1000,
-            "price": {
-                "goods": "point",
-                "amount": 3400
-            }
-        },
-        {
-            "type": "가넷",
-            "count": 2000,
-            "price": {
-                "goods": "point",
-                "amount": 6700
-            }
-        },
-        {
-            "type": "가넷",
-            "count": 4000,
-            "price": {
-                "goods": "point",
-                "amount": 13100
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 1,
-            "count": 1,
-            "price": {
-                "goods": "point",
-                "amount": 50
-            }
-        }
-    ],
-    "가넷": [
-        {
-            "type": "아이템",
-            "item_id": 3,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 420
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 17,
-            "count": 3,
-            "price": {
-                "goods": "garnet",
-                "amount": 45
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 17,
-            "count": 8,
-            "price": {
-                "goods": "garnet",
-                "amount": 110
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 17,
-            "count": 50,
-            "price": {
-                "goods": "garnet",
-                "amount": 650
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 17,
-            "count": 100,
-            "price": {
-                "goods": "garnet",
-                "amount": 1250
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 32,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 200
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 33,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 600
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 34,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 1800
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 36,
-            "count": 1,
-            "price": {
-                "goods": "garnet",
-                "amount": 80
-            }
-        }
-    ],
-    "마일리지": [
-        {
-            "type": "아이템",
-            "item_id": 1,
-            "count": 1,
-            "price": {
-                "goods": "mileage",
-                "amount": 50
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 36,
-            "count": 1,
-            "price": {
-                "goods": "mileage",
-                "amount": 20
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 21,
-            "count": 1,
-            "price": {
-                "goods": "mileage",
-                "amount": 500
-            }
-        }
-    ],
-    "출석": [
-        {
-            "type": "골드",
-            "count": 8000,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 1
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 16,
-            "count": 2,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 3
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 2,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 5
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 21,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 7
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 3,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 10
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 23,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 14
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 4,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 21
-            }
-        },
-        {
-            "type": "아이템",
-            "item_id": 24,
-            "count": 1,
-            "price": {
-                "goods": "item",
-                "item_id": 71,
-                "amount": 25
-            }
-        }
-    ]
+  "가넷": [
+    {
+      "count": 1,
+      "item_id": 3,
+      "limits": {},
+      "price": {
+        "amount": 420,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.0",
+      "type": "아이템"
+    },
+    {
+      "count": 3,
+      "item_id": 17,
+      "limits": {},
+      "price": {
+        "amount": 45,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.1",
+      "type": "아이템"
+    },
+    {
+      "count": 8,
+      "item_id": 17,
+      "limits": {},
+      "price": {
+        "amount": 110,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.2",
+      "type": "아이템"
+    },
+    {
+      "count": 50,
+      "item_id": 17,
+      "limits": {},
+      "price": {
+        "amount": 650,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.3",
+      "type": "아이템"
+    },
+    {
+      "count": 100,
+      "item_id": 17,
+      "limits": {},
+      "price": {
+        "amount": 1250,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.4",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 32,
+      "limits": {},
+      "price": {
+        "amount": 200,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.5",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 33,
+      "limits": {},
+      "price": {
+        "amount": 600,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.6",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 34,
+      "limits": {},
+      "price": {
+        "amount": 1800,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.7",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 36,
+      "limits": {},
+      "price": {
+        "amount": 80,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.8",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 177,
+      "limits": {},
+      "price": {
+        "amount": 150,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.9",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 90,
+      "limits": {},
+      "price": {
+        "amount": 100,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.10",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 120,
+      "limits": {
+        "daily": 2
+      },
+      "price": {
+        "amount": 60,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.11",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 138,
+      "limits": {},
+      "price": {
+        "amount": 420,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.12",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 156,
+      "limits": {},
+      "price": {
+        "amount": 80,
+        "goods": "garnet"
+      },
+      "shopId": "legacy.6rCA64S3.13",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 433,
+      "limits": {},
+      "price": {
+        "amount": 210,
+        "goods": "garnet"
+      },
+      "shopId": "shop_2a84a53f286f43cdb863624b2f132ec1",
+      "type": "아이템"
+    }
+  ],
+  "레이드": [
+    {
+      "artifact_id": 2,
+      "contentKey": "mansion-shard-legendary-first",
+      "count": 1,
+      "limits": {
+        "max": 1
+      },
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 20,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_5476299e94fc8af61fbb6702484147b4",
+      "type": "아티팩트"
+    },
+    {
+      "artifact_id": 2,
+      "contentKey": "mansion-shard-legendary",
+      "count": 1,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 60,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_a811ee44486ce1ec64d1efe2ee743fc2",
+      "type": "아티팩트"
+    },
+    {
+      "artifact_id": 1,
+      "contentKey": "mansion-shard-unique",
+      "count": 1,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 10,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_0ffea98a1395cb5320f40fe7b51dbb75",
+      "type": "아티팩트"
+    },
+    {
+      "artifact_id": 0,
+      "contentKey": "mansion-shard-rare",
+      "count": 1,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 3,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_16a170e1703e4ee47063d1d316fa8189",
+      "type": "아티팩트"
+    },
+    {
+      "contentKey": "mansion-shard-zeta-first",
+      "count": 1,
+      "item_id": 26,
+      "limits": {
+        "max": 1
+      },
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 20,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_836a7c48f63c384898f592192737a885",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-nine",
+      "count": 1,
+      "item_id": 25,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 50,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_ae071574457e3cce845d6943ce1d9292",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-eight",
+      "count": 1,
+      "item_id": 24,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 20,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_7c88399357bfe7a3fe03d150c3b8ab6e",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-stone",
+      "count": 50,
+      "item_id": 271,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_f9a5f1bb398998b8a0a905c15625baad",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-support",
+      "count": 1,
+      "item_id": 97,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 25,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_8324b2aa341aa177063b366ff8e01115",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-gem",
+      "count": 1,
+      "item_id": 101,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 15,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_a23932f7c15659e5f14c49bbcc7ee1e6",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "mansion-shard-potion",
+      "count": 3,
+      "item_id": 410,
+      "materialTab": "이세계 파편",
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 409
+      },
+      "shopId": "shop_69c82170a11a417657bc8664d0e0ec2d",
+      "type": "아이템"
+    }
+  ],
+  "마일리지": [
+    {
+      "count": 1,
+      "item_id": 1,
+      "limits": {},
+      "price": {
+        "amount": 50,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.0",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 36,
+      "limits": {},
+      "price": {
+        "amount": 20,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.1",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 201,
+      "limits": {},
+      "price": {
+        "amount": 100,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.2",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 202,
+      "limits": {},
+      "price": {
+        "amount": 300,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.3",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 75,
+      "limits": {},
+      "price": {
+        "amount": 20000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.4",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 157,
+      "limits": {},
+      "price": {
+        "amount": 10000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.5",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 178,
+      "limits": {},
+      "price": {
+        "amount": 20000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.6",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 177,
+      "limits": {},
+      "price": {
+        "amount": 40,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.7",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 수영장 파티",
+      "limits": {},
+      "price": {
+        "amount": 1400,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.8",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 치어리더",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.9",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 도깨비",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.10",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 월즈",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.11",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 범죄도시",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.12",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 드레스",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.13",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 러블리",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.14",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 오징어게임",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.15",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 아이돌",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.16",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 산타",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.17",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "고급 데블스플랜",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "mileage"
+      },
+      "shopId": "legacy.66eI7J2866as7KeA.18",
+      "type": "아바타"
+    }
+  ],
+  "아바타": [
+    {
+      "count": 1,
+      "fashion": "수영장 파티",
+      "limits": {},
+      "price": {
+        "amount": 1400,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.0",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "정장",
+      "limits": {},
+      "price": {
+        "amount": 1200,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.1",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "치어리더",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.2",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "범죄도시",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.3",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "백만뷰",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.4",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "피규어",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.5",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "도깨비",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.6",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "홍백가합전",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.7",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "월즈",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.8",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "5강진출",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.9",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "드레스",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.10",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "러블리",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.11",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "나만아니면돼",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.12",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "1억뷰",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.13",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "단발",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.14",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "메이저리거",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.15",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "킥백",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.16",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "오징어게임",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.17",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "아이돌",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.18",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "산타",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.19",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "국가대표",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.20",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "흑백요리사",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.21",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "미쉐린",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.22",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "데블스플랜",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7JWE67CU7YOA.23",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "2018",
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "shop_af87d7fc59a943eeafca07803d0e0bd0",
+      "type": "아바타"
+    },
+    {
+      "count": 1,
+      "fashion": "란도랜드2",
+      "limits": {},
+      "price": {
+        "amount": 1200,
+        "goods": "point"
+      },
+      "shopId": "shop_45b8536d02d64f5d9c42c1d4e1a26a81",
+      "type": "아바타"
+    }
+  ],
+  "일반": [
+    {
+      "count": 1,
+      "item_id": 6,
+      "limits": {},
+      "price": {
+        "amount": 50,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.0",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 7,
+      "limits": {},
+      "price": {
+        "amount": 240,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.1",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 8,
+      "limits": {},
+      "price": {
+        "amount": 460,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.2",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 9,
+      "limits": {},
+      "price": {
+        "amount": 50,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.3",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 10,
+      "limits": {},
+      "price": {
+        "amount": 250,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.4",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 120,
+      "limits": {
+        "daily": 1
+      },
+      "price": {
+        "amount": 10000,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.5",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 123,
+      "limits": {
+        "daily": 2
+      },
+      "price": {
+        "amount": 100000,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.6",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 138,
+      "limits": {
+        "weekly": 1
+      },
+      "price": {
+        "amount": 3000000,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.7",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 168,
+      "limits": {},
+      "price": {
+        "amount": 2250,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.8",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 169,
+      "limits": {},
+      "price": {
+        "amount": 425,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.9",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 416,
+      "limits": {
+        "daily": 1
+      },
+      "price": {
+        "amount": 100,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.10",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 396,
+      "limits": {},
+      "price": {
+        "amount": 100000000,
+        "goods": "gold"
+      },
+      "shopId": "legacy.7J2867CY.11",
+      "type": "아이템"
+    }
+  ],
+  "초월": [
+    {
+      "count": 30,
+      "item_id": 272,
+      "limits": {},
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 274
+      },
+      "shopId": "legacy.7LSI7JuU.0",
+      "type": "아이템"
+    },
+    {
+      "count": 15,
+      "item_id": 273,
+      "limits": {},
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 274
+      },
+      "shopId": "legacy.7LSI7JuU.1",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 275,
+      "limits": {},
+      "price": {
+        "amount": 20,
+        "goods": "item",
+        "item_id": 274
+      },
+      "shopId": "legacy.7LSI7JuU.2",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 276,
+      "limits": {},
+      "price": {
+        "amount": 200,
+        "goods": "item",
+        "item_id": 274
+      },
+      "shopId": "legacy.7LSI7JuU.3",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 394,
+      "limits": {},
+      "price": {
+        "amount": 5,
+        "goods": "item",
+        "item_id": 274
+      },
+      "shopId": "legacy.7LSI7JuU.4",
+      "type": "아이템"
+    }
+  ],
+  "출석": [
+    {
+      "count": 1,
+      "item_id": 124,
+      "limits": {},
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.0",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 36,
+      "limits": {},
+      "price": {
+        "amount": 3,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.1",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 201,
+      "limits": {},
+      "price": {
+        "amount": 5,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.2",
+      "type": "아이템"
+    },
+    {
+      "count": 50,
+      "item_id": 144,
+      "limits": {},
+      "price": {
+        "amount": 7,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.3",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 3,
+      "limits": {},
+      "price": {
+        "amount": 10,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.4",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 203,
+      "limits": {},
+      "price": {
+        "amount": 14,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.5",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 4,
+      "limits": {},
+      "price": {
+        "amount": 21,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.6",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 204,
+      "limits": {},
+      "price": {
+        "amount": 25,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.7",
+      "type": "아이템"
+    },
+    {
+      "count": 10,
+      "item_id": 272,
+      "limits": {},
+      "price": {
+        "amount": 1,
+        "goods": "item",
+        "item_id": 71
+      },
+      "shopId": "legacy.7Lac7ISd.8",
+      "type": "아이템"
+    }
+  ],
+  "패키지": [
+    {
+      "count": 1,
+      "item_id": 277,
+      "limits": {
+        "max": 1
+      },
+      "price": {
+        "amount": 550,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Yyo7YKk7KeA.0",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 327,
+      "limits": {
+        "weekly": 1
+      },
+      "price": {
+        "amount": 1990,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Yyo7YKk7KeA.1",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 436,
+      "limits": {
+        "max": 1
+      },
+      "price": {
+        "amount": 330,
+        "goods": "point"
+      },
+      "shopId": "shop_528807c0dabd41e38d223ee5a2cbf4ab",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 437,
+      "limits": {
+        "max": 3
+      },
+      "price": {
+        "amount": 1100,
+        "goods": "point"
+      },
+      "shopId": "shop_50098816597c4c6bac20f17b50b73156",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 438,
+      "limits": {
+        "max": 3
+      },
+      "price": {
+        "amount": 2000,
+        "goods": "point"
+      },
+      "shopId": "shop_4eedfd9f68a44ed9b701e8fb18dd9532",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 439,
+      "limits": {
+        "max": 1
+      },
+      "price": {
+        "amount": 4900,
+        "goods": "point"
+      },
+      "shopId": "shop_4e1b1fcbc041498b85272e022330e8b4",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 440,
+      "limits": {
+        "max": 1
+      },
+      "price": {
+        "amount": 4900,
+        "goods": "point"
+      },
+      "shopId": "shop_e9083ab6e34942418beb81ca4354c0c0",
+      "type": "아이템"
+    },
+    {
+      "contentKey": "rando-release-package",
+      "count": 1,
+      "item_id": 441,
+      "limits": {
+        "max": 1
+      },
+      "price": {
+        "amount": 4900,
+        "goods": "point"
+      },
+      "shopId": "shop_352f63039f0f477aa7a23539154172a6",
+      "type": "아이템"
+    }
+  ],
+  "포인트": [
+    {
+      "count": 400,
+      "limits": {},
+      "price": {
+        "amount": 700,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.0",
+      "type": "가넷"
+    },
+    {
+      "count": 1000,
+      "limits": {},
+      "price": {
+        "amount": 1700,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.1",
+      "type": "가넷"
+    },
+    {
+      "count": 2000,
+      "limits": {},
+      "price": {
+        "amount": 3350,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.2",
+      "type": "가넷"
+    },
+    {
+      "count": 4000,
+      "limits": {},
+      "price": {
+        "amount": 6550,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.3",
+      "type": "가넷"
+    },
+    {
+      "count": 1,
+      "item_id": 1,
+      "limits": {},
+      "price": {
+        "amount": 50,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.4",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 359,
+      "limits": {},
+      "price": {
+        "amount": 1000,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.5",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 399,
+      "limits": {},
+      "price": {
+        "amount": 1500,
+        "goods": "point"
+      },
+      "shopId": "legacy.7Y-s7J247Yq4.6",
+      "type": "아이템"
+    },
+    {
+      "count": 1,
+      "item_id": 416,
+      "limits": {},
+      "price": {
+        "amount": 100,
+        "goods": "point"
+      },
+      "shopId": "shop_0235640304814a7a91a8cdb51a288774",
+      "type": "아이템"
+    }
+  ]
 }

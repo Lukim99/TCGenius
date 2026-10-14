@@ -1,0 +1,521 @@
+{
+  "active": true,
+  "mineIntervalMs": 640,
+  "ores": [
+    {
+      "id": "stone",
+      "minRank": 0,
+      "name": "돌",
+      "spriteIndex": 0,
+      "value": 1,
+      "weight": 1
+    },
+    {
+      "id": "coal",
+      "minRank": 0,
+      "name": "석탄",
+      "spriteIndex": 1,
+      "value": 2,
+      "weight": 0.55
+    },
+    {
+      "id": "copper",
+      "minRank": 1,
+      "name": "구리 광석",
+      "spriteIndex": 2,
+      "value": 3,
+      "weight": 0.30250000000000005
+    },
+    {
+      "id": "iron",
+      "minRank": 1,
+      "name": "철 광석",
+      "spriteIndex": 3,
+      "value": 5,
+      "weight": 0.16637500000000005
+    },
+    {
+      "id": "silver",
+      "minRank": 2,
+      "name": "은 광석",
+      "spriteIndex": 4,
+      "value": 10,
+      "weight": 0.09150625000000003
+    },
+    {
+      "id": "gold",
+      "minRank": 3,
+      "name": "금 광석",
+      "spriteIndex": 5,
+      "value": 15,
+      "weight": 0.05032843750000002
+    },
+    {
+      "blockedPickaxe": "gold",
+      "id": "jade",
+      "minRank": 4,
+      "name": "비취석",
+      "spriteIndex": 6,
+      "value": 25,
+      "weight": 0.027680640625000013
+    },
+    {
+      "id": "obsidian",
+      "minRank": 6,
+      "name": "흑요석",
+      "spriteIndex": 7,
+      "value": 40,
+      "weight": 0.01522435234375001
+    },
+    {
+      "id": "topaz",
+      "minRank": 7,
+      "name": "토파즈",
+      "spriteIndex": 8,
+      "value": 60,
+      "weight": 0.008373393789062506
+    },
+    {
+      "id": "amethyst",
+      "minRank": 8,
+      "name": "자수정",
+      "spriteIndex": 9,
+      "value": 80,
+      "weight": 0.004605366583984379
+    },
+    {
+      "id": "aquamarine",
+      "minRank": 9,
+      "name": "아쿠아마린",
+      "spriteIndex": 10,
+      "value": 100,
+      "weight": 0.0025329516211914085
+    },
+    {
+      "exactPickaxe": "ruby",
+      "id": "ruby",
+      "minRank": null,
+      "name": "루비",
+      "spriteIndex": 13,
+      "value": 250,
+      "weight": 0.0013931233916552746
+    },
+    {
+      "exactPickaxe": "sapphire",
+      "id": "sapphire",
+      "minRank": null,
+      "name": "사파이어",
+      "spriteIndex": 12,
+      "value": 300,
+      "weight": 0.0007662178654104011
+    },
+    {
+      "id": "emerald",
+      "minRank": 12,
+      "name": "에메랄드",
+      "spriteIndex": 11,
+      "value": 150,
+      "weight": 0.0004214198259757207
+    },
+    {
+      "id": "diamond",
+      "minRank": 14,
+      "name": "다이아몬드",
+      "spriteIndex": 14,
+      "value": 400,
+      "weight": 0.00023178090428664638
+    },
+    {
+      "id": "mithril",
+      "minRank": 15,
+      "name": "미스릴",
+      "spriteIndex": 15,
+      "value": 1000,
+      "weight": 0.00012747949735765552
+    }
+  ],
+  "pickaxes": [
+    {
+      "durability": 5,
+      "id": "wood",
+      "name": "나무 곡괭이",
+      "rank": 0,
+      "repair": [],
+      "spriteIndex": 0,
+      "weight": 2400
+    },
+    {
+      "durability": 8,
+      "id": "stone",
+      "name": "돌 곡괭이",
+      "rank": 1,
+      "repair": [
+        {
+          "count": 2,
+          "oreId": "stone"
+        }
+      ],
+      "spriteIndex": 1,
+      "weight": 2400
+    },
+    {
+      "durability": 12,
+      "id": "rusty_iron",
+      "name": "녹슨 철 곡괭이",
+      "rank": 2,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "copper"
+        }
+      ],
+      "spriteIndex": 2,
+      "weight": 2000
+    },
+    {
+      "durability": 18,
+      "id": "bronze",
+      "name": "청동 곡괭이",
+      "rank": 3,
+      "repair": [
+        {
+          "count": 2,
+          "oreId": "coal"
+        }
+      ],
+      "spriteIndex": 4,
+      "weight": 1600
+    },
+    {
+      "durability": 26,
+      "id": "steel",
+      "name": "강철 곡괭이",
+      "rank": 4,
+      "repair": [
+        {
+          "count": 2,
+          "oreId": "copper"
+        }
+      ],
+      "spriteIndex": 3,
+      "weight": 900
+    },
+    {
+      "durability": 38,
+      "id": "gold",
+      "name": "황금 곡괭이",
+      "rank": 5,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "iron"
+        }
+      ],
+      "spriteIndex": 5,
+      "weight": 400
+    },
+    {
+      "durability": 55,
+      "id": "titanium",
+      "name": "티타늄 곡괭이",
+      "rank": 6,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "silver"
+        },
+        {
+          "count": 1,
+          "oreId": "coal"
+        },
+        {
+          "count": 1,
+          "oreId": "stone"
+        }
+      ],
+      "spriteIndex": 6,
+      "weight": 150
+    },
+    {
+      "durability": 80,
+      "id": "platinum",
+      "name": "백금 곡괭이",
+      "rank": 7,
+      "repair": [
+        {
+          "count": 2,
+          "oreId": "silver"
+        },
+        {
+          "count": 2,
+          "oreId": "coal"
+        }
+      ],
+      "spriteIndex": 7,
+      "weight": 80
+    },
+    {
+      "durability": 115,
+      "id": "obsidian",
+      "name": "흑요석 곡괭이",
+      "rank": 8,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "obsidian"
+        }
+      ],
+      "spriteIndex": 8,
+      "weight": 30
+    },
+    {
+      "durability": 165,
+      "id": "alloy",
+      "name": "강화 합금 곡괭이",
+      "rank": 9,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "obsidian"
+        },
+        {
+          "count": 1,
+          "oreId": "silver"
+        },
+        {
+          "count": 1,
+          "oreId": "iron"
+        }
+      ],
+      "spriteIndex": 9,
+      "weight": 15
+    },
+    {
+      "durability": 235,
+      "id": "ruby",
+      "name": "루비 곡괭이",
+      "rank": 10,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "amethyst"
+        },
+        {
+          "count": 1,
+          "oreId": "coal"
+        },
+        {
+          "count": 1,
+          "oreId": "stone"
+        }
+      ],
+      "spriteIndex": 10,
+      "weight": 10
+    },
+    {
+      "durability": 330,
+      "id": "sapphire",
+      "name": "사파이어 곡괭이",
+      "rank": 11,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "amethyst"
+        },
+        {
+          "count": 1,
+          "oreId": "gold"
+        },
+        {
+          "count": 1,
+          "oreId": "stone"
+        }
+      ],
+      "spriteIndex": 11,
+      "weight": 6
+    },
+    {
+      "durability": 460,
+      "id": "orichalcum",
+      "name": "오리하르콘 곡괭이",
+      "rank": 12,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "amethyst"
+        },
+        {
+          "count": 1,
+          "oreId": "iron"
+        },
+        {
+          "count": 1,
+          "oreId": "coal"
+        }
+      ],
+      "spriteIndex": 12,
+      "weight": 4
+    },
+    {
+      "durability": 640,
+      "id": "adamantium",
+      "name": "아다만티움 곡괭이",
+      "rank": 13,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "aquamarine"
+        }
+      ],
+      "spriteIndex": 13,
+      "weight": 3
+    },
+    {
+      "durability": 880,
+      "id": "astral",
+      "name": "아스트랄 곡괭이",
+      "rank": 14,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "emerald"
+        },
+        {
+          "count": 1,
+          "oreId": "obsidian"
+        },
+        {
+          "count": 1,
+          "oreId": "coal"
+        }
+      ],
+      "spriteIndex": 14,
+      "weight": 1.5
+    },
+    {
+      "durability": 1200,
+      "id": "master",
+      "name": "마스터 곡괭이",
+      "rank": 15,
+      "repair": [
+        {
+          "count": 1,
+          "oreId": "diamond"
+        },
+        {
+          "count": 1,
+          "oreId": "silver"
+        }
+      ],
+      "spriteIndex": 15,
+      "weight": 0.5
+    }
+  ],
+  "rewards": [
+    {
+      "cost": 7900,
+      "count": 1,
+      "id": "orb-choice",
+      "limit": 1,
+      "name": "보주 선택 상자"
+    },
+    {
+      "cost": 4900,
+      "count": 1,
+      "id": "blessed-protection",
+      "limit": 1,
+      "name": "축복받은 장비 보호권"
+    },
+    {
+      "cost": 1900,
+      "count": 1,
+      "id": "orb",
+      "limit": 1,
+      "name": "보주 상자"
+    },
+    {
+      "cost": 1900,
+      "count": 1,
+      "id": "character-stone-pouch",
+      "limit": 1,
+      "name": "지정 캐릭터 변환석 주머니"
+    },
+    {
+      "cost": 2900,
+      "count": 1,
+      "id": "zeta",
+      "limit": 1,
+      "name": "제타 카드팩"
+    },
+    {
+      "cost": 1900,
+      "count": 1,
+      "id": "card9",
+      "limit": 1,
+      "name": "9성 카드팩"
+    },
+    {
+      "cost": 500,
+      "count": 1,
+      "id": "advanced-protection",
+      "limit": 5,
+      "name": "고급 장비 보호권"
+    },
+    {
+      "cost": 400,
+      "count": 1,
+      "id": "card8",
+      "limit": 5,
+      "name": "8성 카드팩"
+    },
+    {
+      "cost": 300,
+      "count": 1,
+      "id": "artifact-key",
+      "limit": 3,
+      "name": "아티팩트 옵션 변경열쇠"
+    },
+    {
+      "cost": 200,
+      "count": 1,
+      "id": "protection",
+      "limit": 5,
+      "name": "장비 보호권"
+    },
+    {
+      "cost": 80,
+      "count": 1,
+      "id": "character-stone",
+      "limit": 0,
+      "name": "캐릭터 변환석"
+    },
+    {
+      "cost": 30,
+      "count": 3,
+      "id": "genius-key",
+      "limit": 0,
+      "name": "지니어스의 열쇠"
+    },
+    {
+      "cost": 10,
+      "count": 1,
+      "id": "white-jewel",
+      "limit": 0,
+      "name": "화이트 쥬얼"
+    },
+    {
+      "cost": 5,
+      "count": 1,
+      "id": "jewel",
+      "limit": 0,
+      "name": "쥬얼"
+    },
+    {
+      "cost": 3,
+      "count": 1,
+      "id": "hell-invitation",
+      "limit": 0,
+      "name": "헬 초대장"
+    }
+  ]
+}

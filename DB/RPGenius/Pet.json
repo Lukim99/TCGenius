@@ -1,0 +1,242 @@
+[
+  {
+    "special": {
+      "fishBasket": 150,
+      "fishingSpeed": 0.1
+    },
+    "stat": {
+      "hp": 100
+    },
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24FS 롤충에서탈출",
+    "plusStat": {},
+    "desc": "2024년 파이널쇼다운 우승자 롤충에서탈출 펫이다. 2024 베스티스의 세트효과를 받는다.",
+    "rarity": "고유"
+  },
+  {
+    "special": {
+      "autoFragment": 1
+    },
+    "stat": {},
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24BS 유치원생",
+    "plusStat": {},
+    "rarity": "레전더리",
+    "desc": "2024년 우승팀 베스티스 리더 유치원생 펫이다. 2024 베스티스의 세트효과를 받는다."
+  },
+  {
+    "special": {
+      "fishingSpeed": 0.1
+    },
+    "stat": {},
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24BS 코노모리",
+    "plusStat": {},
+    "rarity": "레전더리",
+    "desc": "2024년 우승팀 베스티스 메인매치 에이스 코노모리 펫이다. 2024 베스티스의 세트효과를 받는다."
+  },
+  {
+    "special": {
+      "hpRegen": 20
+    },
+    "stat": {},
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24BS 싸이코패스",
+    "plusStat": {},
+    "desc": "2024년 우승팀 베스티스 데스매치 에이스 싸이코패스 펫이다. 2024 베스티스의 세트효과를 받는다.",
+    "rarity": "레전더리"
+  },
+  {
+    "special": {
+      "canShortcut": 2
+    },
+    "stat": {},
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24BS 롤충에서탈출",
+    "plusStat": {},
+    "desc": "2024년 우승팀 베스티스 조커 롤충에서탈출 펫이다. 2024 베스티스의 세트효과를 받는다.",
+    "rarity": "레전더리"
+  },
+  {
+    "special": {
+      "fishBasket": 100
+    },
+    "stat": {},
+    "set": "2024 베스티스",
+    "upgrade": [],
+    "name": "24BS 시그니를",
+    "plusStat": {},
+    "rarity": "레전더리",
+    "desc": "2024년 우승팀 베스티스 서포터 시그니를 펫이다. 2024 베스티스의 세트효과를 받는다."
+  },
+  {
+    "special": {
+      "autoFragment": 0.5
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GM dlckdgus",
+    "plusStat": {},
+    "rarity": "유니크",
+    "desc": "2024년 준우승팀 게임마스터즈 서포터 dlckdgus 펫이다."
+  },
+  {
+    "special": {
+      "fishingSpeed": 0.07
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GM 조밍닝",
+    "plusStat": {},
+    "desc": "2024년 준우승팀 게임마스터즈 조커 조밍닝 펫이다.",
+    "rarity": "유니크"
+  },
+  {
+    "special": {
+      "canShortcut": 1
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GM 건마",
+    "plusStat": {},
+    "rarity": "유니크",
+    "desc": "2024년 준우승팀 게임마스터즈 리더 건마 펫이다."
+  },
+  {
+    "special": {
+      "autoAttend": true
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GM 브란도",
+    "plusStat": {},
+    "desc": "2024년 준우승팀 게임마스터즈 메인매치 에이스 브란도 펫이다.",
+    "rarity": "유니크"
+  },
+  {
+    "special": {
+      "hpRegen": 30
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GM 싸이지니",
+    "plusStat": {},
+    "desc": "2024년 준우승팀 게임마스터즈 데스매치 에이스 싸이지니 펫이다.",
+    "rarity": "유니크"
+  },
+  {
+    "special": {
+      "autoFragment": 0.25
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GB 파이브",
+    "plusStat": {},
+    "desc": "2024년 3위팀 겜블러 리더 파이브 펫이다.",
+    "rarity": "레어"
+  },
+  {
+    "special": {
+      "fishingSpeed": 0.04
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GB 인스펙터",
+    "plusStat": {},
+    "rarity": "레어",
+    "desc": "2024년 3위팀 겜블러 메인매치 에이스 인스펙터 펫이다."
+  },
+  {
+    "special": {
+      "fishBasket": 50
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GB 월야환담",
+    "plusStat": {},
+    "desc": "2024년 3위팀 겜블러 데스매치 에이스 월야환담 펫이다.",
+    "rarity": "레어"
+  },
+  {
+    "special": {
+      "mpRegen": 40
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GB 아르세우스",
+    "plusStat": {},
+    "rarity": "레어",
+    "desc": "2024년 3위팀 겜블러 조커 아르세우스 펫이다."
+  },
+  {
+    "special": {
+      "hpRegen": 40
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "24GB 라울",
+    "plusStat": {},
+    "rarity": "레어",
+    "desc": "2024년 3위팀 겜블러 서포터 라울 펫이다."
+  },
+  {
+    "special": {},
+    "stat": {},
+    "upgrade": [],
+    "name": "타부자고",
+    "plusStat": {
+      "atk": 0.01
+    },
+    "rarity": "유니크",
+    "desc": "부타게임에서 퍼즐을 던져대던 타부자고 펫이다."
+  },
+  {
+    "special": {
+      "hpRegen": 20
+    },
+    "stat": {},
+    "upgrade": [],
+    "name": "잉여왕",
+    "plusStat": {
+      "itemDropChance": 0.1
+    },
+    "rarity": "레전더리",
+    "desc": "부타게임의 최종 보스, 잉여왕 펫이다."
+  },
+  {
+    "special": {},
+    "stat": {
+      "hp": 815
+    },
+    "upgrade": [],
+    "name": "대한독립만세",
+    "plusStat": {},
+    "desc": "2026년 8.15 광복절 기념으로 출시된 펫.",
+    "rarity": "고유"
+  },
+  {
+    "name": "조각",
+    "plusStat": {
+      "finalAtk": 0.01
+    },
+    "stat": {},
+    "upgrade": [],
+    "rarity": "유니크",
+    "desc": "최종 공격력 +1%."
+  },
+  {
+    "name": "위플래쉬",
+    "plusStat": {
+      "gold": 0.1
+    },
+    "stat": {},
+    "upgrade": [],
+    "rarity": "레전더리",
+    "desc": "골드 획득량 +10%."
+  }
+]
