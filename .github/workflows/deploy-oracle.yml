@@ -22,9 +22,9 @@ jobs:
           REVISION: ${{ github.sha }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/oracle
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/oracle
           chmod 600 ~/.ssh/oracle
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
           ssh -i ~/.ssh/oracle -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=20 \
             "rpgenius-deploy@$ORACLE_HOST" "$REVISION"
