@@ -1,0 +1,14 @@
+rpgenius.kro.kr {
+    @maintenance file {
+        root /var/lib/rpgenius
+        try_files maintenance
+    }
+    handle @maintenance {
+        header Retry-After 30
+        header Cache-Control no-store
+        respond "Server update in progress. Please retry shortly." 503
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+}

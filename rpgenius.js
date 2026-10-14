@@ -623,7 +623,8 @@ const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+        sessionToken: process.env.AWS_SESSION_TOKEN
     }
 });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -795,31 +796,6 @@ async function migrateBlackCurtainContent() {
 }
 
 initRpgeniusData().catch(e => console.error('[RPGenius 데이터 초기화] ' + e.message));
-
-// 유생의 주사위 이벤트 종료 시, 일반 상점에서 판매 중인 '유생의 주사위'를 '펀치기계 토큰'으로 자동 전환한다.
-function migrateEventDiceShopItemToPunchToken() {
-    const items = getDataCache('Item', []);
-    const diceItemId = items.findIndex(item => item && item.name == EVENT_DICE_DROP_ITEM_NAME);
-    const tokenItemId = items.findIndex(item => item && item.name == PUNCH_TOKEN_ITEM_NAME);
-    if (diceItemId == -1 || tokenItemId == -1) return;
-    const shops = getDataCache('Shop', {});
-    const shop = shops['일반'];
-    if (!Array.isArray(shop)) return;
-    let changed = false;
-    shop.forEach(entry => {
-        if (entry && entry.type == '아이템' && entry.item_id == diceItemId) {
-            entry.item_id = tokenItemId;
-            changed = true;
-        }
-    });
-    if (changed) saveRpgeniusDataEntry('Shop', shops).catch(e => console.error('[event->punch] Shop 갱신 실패: ' + e.message));
-}
-(function scheduleEventDiceEndShopMigration() {
-    const run = () => initRpgeniusData().then(migrateEventDiceShopItemToPunchToken);
-    const delay = EVENT_DICE_END_TS - Date.now();
-    if (delay <= 0) run();
-    else setTimeout(run, delay);
-})();
 
 function getRandomString(len) {
     const chars = '023456789ABCDEFGHJKLMNOPQRSTUVWXTZabcdefghikmnopqrstuvwxyz';
@@ -13048,6 +13024,11 @@ async function ensureUserCacheReady() {
     try { await initUserCache(); return true; } catch (_) { return false; }
 }
 
+async function isRuntimeReady() {
+    await initRpgeniusData();
+    return !userShutdownFlushStarted && RPGENIUS_DATA_KEYS.every(key => Object.hasOwn(rpgeniusDataCache, key)) && await ensureUserCacheReady();
+}
+
 // DB 전체를 다시 읽어 캐시를 갱신한다.
 // force=false: 미반영(dirty) 로컬 변경이 있는 유저는 보존, 항목 삭제 없음 (외부 프로세스가 만든 유저 편입용)
 // force=true: DB를 그대로 미러링 — 로컬 변경 폐기 (PITR 복원 등 "DB가 정답"일 때만)
@@ -16403,6 +16384,7 @@ function __setQuestDefs(defs) {
 }
 
 module.exports = {
+    isRuntimeReady,
     PARTY_QUEST_CLEAR_GROUPS,
     getDailyDungeons,
     clearFieldRuntimeTimers,

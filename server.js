@@ -34,6 +34,10 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const fs = require('fs');
 
 const server = express();
+server.get('/healthz', async (req, res) => {
+    const ready = await rpgenius.isRuntimeReady() && assetStore.syncState.status === 'done';
+    res.set('Cache-Control', 'no-store').status(ready ? 200 : 503).json({ ready, revision: process.env.DEPLOY_REVISION || null });
+});
 const webchat = createWebChat({ onChat: rpgenius.onChat, getUserByName: rpgenius.getRPGUserByName });
 server.use(compression()); // SSE(/api/chat/:roomId/stream)는 Cache-Control: no-transform으로 자동 제외됨
 server.use(express.json({ limit: '5mb' }));
@@ -58,7 +62,8 @@ const dynamoClient = new DynamoDBClient({
     region: 'ap-northeast-2',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+        sessionToken: process.env.AWS_SESSION_TOKEN
     }
 });
 const dynamoDocClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -102,7 +107,8 @@ const bannerS3 = new AWS.S3({
     region: process.env.AWS_REGION || 'ap-northeast-2',
     credentials: new AWS.Credentials({
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+        sessionToken: process.env.AWS_SESSION_TOKEN
     })
 });
 

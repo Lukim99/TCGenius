@@ -21,7 +21,8 @@ const s3 = new AWS.S3({
     region: process.env.AWS_REGION || 'ap-northeast-2',
     credentials: new AWS.Credentials({
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_KEY_ID
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+        sessionToken: process.env.AWS_SESSION_TOKEN
     })
 });
 
