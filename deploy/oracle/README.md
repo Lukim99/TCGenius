@@ -12,6 +12,8 @@ The root-owned `/usr/local/sbin/rpgenius-deploy` is installed from `deploy.sh`. 
 
 Runtime variables are in `/etc/rpgenius/app.env` (root-only, never committed). Assets use Docker volumes `rpgenius-cardImage`, `rpgenius-itemImage`, and `rpgenius-ui`. Container logs rotate at 3 × 10 MB. Docker and Caddy start on VM reboot.
 
+Caddy uses free ZeroSSL ACME certificates because the shared `kro.kr` domain hit Let's Encrypt's issuance limit during cutover. `/etc/caddy/acme.env` supplies `ACME_EMAIL` through a systemd `EnvironmentFile` override. Caddy stores its account/certificates under `/var/lib/caddy` and renews automatically. Keep this directory when updating Caddy.
+
 Useful administrator commands:
 
 ```sh

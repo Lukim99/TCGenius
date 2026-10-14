@@ -1,4 +1,12 @@
+{
+    email {$ACME_EMAIL}
+}
+
 rpgenius.kro.kr {
+    # kro.kr shares Let's Encrypt's registered-domain issuance limit.
+    tls {
+        issuer zerossl
+    }
     @maintenance file {
         root /var/lib/rpgenius
         try_files maintenance
