@@ -1949,6 +1949,7 @@ server.post('/api/quests/puzzle/answer', requireUser, async (req, res) => {
 // ===== [H]필드 =====
 const H_FIELD_NAME = '부타게임[H]';
 const H_FIELD_RECOVERY_TYPES = new Set(['체력회복', '마나회복', '체력회복%', '마나회복%']);
+const FIELD_POTION_TYPES = new Set([...H_FIELD_RECOVERY_TYPES, '최종공격력비약']);
 
 function getHFieldTicketInfo(user) {
     const items = rpgenius.getDataCache('Item', []);
@@ -1968,10 +1969,11 @@ function getHFieldRecoveryItems(user) {
     const items = rpgenius.getDataCache('Item', []);
     return buildInventoryItems(user).filter(entry => {
         const data = items[Number(entry.id)];
-        return data && data.type == '소모품' && (data.use_func || []).some(func => func && H_FIELD_RECOVERY_TYPES.has(func.type));
+        return data && data.type == '소모품' && (data.use_func || []).some(func => func && FIELD_POTION_TYPES.has(func.type));
     }).map(entry => {
         const data = items[Number(entry.id)];
-        const effects = (data.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)).map(func => {
+        const effects = (data.use_func || []).filter(func => func && FIELD_POTION_TYPES.has(func.type)).map(func => {
+            if (func.type === '최종공격력비약') return '최종 공격력 +' + Math.round(Number(func.amount || 0) * 100) + '% · ' + Number(func.duration || 0) + '초';
             const resource = String(func.type).startsWith('체력') ? 'HP' : 'MP';
             const amount = String(func.type).endsWith('%') ? Math.round(Number(func.amount || 0) * 100) + '%' : Number(func.amount || 0).toLocaleString('ko-KR');
             return resource + ' +' + amount;
@@ -2096,6 +2098,7 @@ function buildHFieldState(user) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            attackOrder: rpgenius.getEquipmentAttackOrderPreview(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2360,8 +2363,8 @@ server.post('/api/hfield/use-consumable', requireUser, (req, res) => runHFieldMu
     const items = rpgenius.getDataCache('Item', []);
     const item = Number.isInteger(itemId) ? items[itemId] : null;
     const recoveryFuncs = item && item.type == '소모품'
-        ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
-    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 회복 소모품이 아닙니다.', state: buildHFieldState(user) };
+        ? (item.use_func || []).filter(func => func && FIELD_POTION_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 물약이 아닙니다.', state: buildHFieldState(user) };
     if (rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '아이템이 부족합니다.', state: buildHFieldState(user) };
     const stats = rpgenius.calculateUserStats(user);
     const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
@@ -2369,7 +2372,7 @@ server.post('/api/hfield/use-consumable', requireUser, (req, res) => runHFieldMu
     const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
     const restoresHp = recoveryFuncs.some(func => String(func.type).startsWith('체력'));
     const restoresMp = recoveryFuncs.some(func => String(func.type).startsWith('마나'));
-    if ((!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
+    if (!recoveryFuncs.some(func => func.type === '최종공격력비약') && (!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
         return { ok: false, message: '회복할 HP나 MP가 없습니다.', state: buildHFieldState(user) };
     }
     const message = await rpgenius.useItem(user, item.name, 1);
@@ -2542,6 +2545,7 @@ function buildGeneralFieldState(user, dailyMode = false) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            attackOrder: rpgenius.getEquipmentAttackOrderPreview(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2731,8 +2735,8 @@ server.post(apiBase + '/use-consumable', requireUser, (req, res) => runGeneralFi
     const items = rpgenius.getDataCache('Item', []);
     const item = Number.isInteger(itemId) ? items[itemId] : null;
     const recoveryFuncs = item && item.type == '소모품'
-        ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
-    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 회복 소모품이 아닙니다.', state: buildGeneralFieldState(user, dailyMode) };
+        ? (item.use_func || []).filter(func => func && FIELD_POTION_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0) return { ok: false, message: '사용할 수 있는 물약이 아닙니다.', state: buildGeneralFieldState(user, dailyMode) };
     if (rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '아이템이 부족합니다.', state: buildGeneralFieldState(user, dailyMode) };
     const stats = rpgenius.calculateUserStats(user);
     const maxHp = Number(stats.hp || 0), maxMp = Number(stats.mp || 0);
@@ -2740,7 +2744,7 @@ server.post(apiBase + '/use-consumable', requireUser, (req, res) => runGeneralFi
     const beforeMp = typeof user.mp == 'undefined' ? maxMp : Number(user.mp || 0);
     const restoresHp = recoveryFuncs.some(func => String(func.type).startsWith('체력'));
     const restoresMp = recoveryFuncs.some(func => String(func.type).startsWith('마나'));
-    if ((!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
+    if (!recoveryFuncs.some(func => func.type === '최종공격력비약') && (!restoresHp || beforeHp >= maxHp) && (!restoresMp || beforeMp >= maxMp)) {
         return { ok: false, message: '회복할 HP나 MP가 없습니다.', state: buildGeneralFieldState(user, dailyMode) };
     }
     const message = await rpgenius.useItem(user, item.name, 1);
@@ -2965,6 +2969,7 @@ function buildWorldBossState(user) {
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
+            attackOrder: rpgenius.getEquipmentAttackOrderPreview(user),
             ilionDeck: Number(user.main_card?.id) === ilionCards.CARD_ID ? ilionCards.views(user.field, Date.now()) : null,
             ilionDeckLimit: user.equipments?.weapon && rpgenius.getEquipmentData('weapon', user.equipments.weapon.id)?.name === '무한홀덤덱' ? 3 : 2
         },
@@ -2973,7 +2978,7 @@ function buildWorldBossState(user) {
         curseApplied: !!(inField && rpgenius.isBlackCurtainHealingBlocked(user)),
         elapsedMs: inField ? Math.max(0, Date.now() - Number(user.field.enteredAt || Date.now())) : 0,
         skills,
-        consumables: inField && !rpgenius.isBlackCurtainHealingBlocked(user) ? getHFieldRecoveryItems(user) : []
+        consumables: inField ? getHFieldRecoveryItems(user).map(item => ({ ...item, disabled: rpgenius.isBlackCurtainHealingBlocked(user) && (rpgenius.getDataCache('Item', [])[item.id].use_func || []).some(func => H_FIELD_RECOVERY_TYPES.has(func.type)) })) : []
     };
 }
 
@@ -3126,11 +3131,10 @@ server.post('/api/worldboss/skill', requireUser, (req, res) => runWorldBossMutat
 
 server.post('/api/worldboss/use-consumable', requireUser, (req, res) => runWorldBossMutation(req, res, async user => {
     if (!user.field || !user.field.worldBoss || user.field.skillSelecting) return { ok: false, message: '월드보스 전투 중이 아닙니다.', state: buildWorldBossState(user) };
-    if (rpgenius.isBlackCurtainHealingBlocked(user)) return { ok: false, message: '흑막의 저주로 회복할 수 없습니다.', state: buildWorldBossState(user) };
     const itemId = Number(req.body && req.body.itemId);
     const items = rpgenius.getDataCache('Item', []), item = Number.isInteger(itemId) ? items[itemId] : null;
-    const recoveryFuncs = item && item.type == '소모품' ? (item.use_func || []).filter(func => func && H_FIELD_RECOVERY_TYPES.has(func.type)) : [];
-    if (!item || recoveryFuncs.length == 0 || rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '사용할 수 있는 회복 소모품이 없거나 부족합니다.', state: buildWorldBossState(user) };
+    const recoveryFuncs = item && item.type == '소모품' ? (item.use_func || []).filter(func => func && FIELD_POTION_TYPES.has(func.type)) : [];
+    if (!item || recoveryFuncs.length == 0 || rpgenius.getInventoryItemCount(user, itemId) < 1) return { ok: false, message: '사용할 수 있는 물약이 없거나 부족합니다.', state: buildWorldBossState(user) };
     const before = captureWorldBossAction(user);
     const message = await rpgenius.useItem(user, item.name, 1);
     const state = buildWorldBossState(user);
@@ -3595,14 +3599,8 @@ server.post('/api/cards/avatar', requireUser, async (req, res) => {
 });
 
 // ===== 장착 프리셋 =====
-// 슬롯 1은 기본 제공. 2·3번 100가넷, 4번 300포인트, 5번 500포인트로 순차 해금.
-const PRESET_UNLOCK_COSTS = [
-    null,
-    { currency: 'garnet', amount: 100 },
-    { currency: 'garnet', amount: 100 },
-    { currency: 'point', amount: 300 },
-    { currency: 'point', amount: 500 }
-];
+// 슬롯 1은 기본 제공. 나머지 슬롯은 각각 20가넷으로 순차 해금.
+const PRESET_UNLOCK_COSTS = Array.from({ length: rpgenius.PRESET_SLOT_COUNT }, (_, i) => i ? { currency: 'garnet', amount: 20 } : null);
 const PRESET_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
 
 function getUnlockedPresetSlots(user) {
@@ -3703,31 +3701,31 @@ server.post('/api/presets/rename', requireUser, async (req, res) => {
     }
 });
 
-server.post('/api/presets/unlock', requireUser, async (req, res) => {
+server.post('/api/presets/unlock', requireUser, serializeItemUse(async (req, res) => {
     try {
         const slot = Number(req.body && req.body.slot);
-        const user = await rpgenius.getRPGUserByName(req.session.name);
-        if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
-        const unlocked = getUnlockedPresetSlots(user);
-        if (!Number.isInteger(slot) || slot != unlocked) return res.status(400).json({ error: '슬롯은 순서대로 해금할 수 있습니다.' });
-        const cost = PRESET_UNLOCK_COSTS[slot];
-        if (!cost) return res.status(400).json({ error: '해금할 수 없는 슬롯입니다.' });
-        if (cost.currency == 'garnet') {
-            if (Number(user.garnet || 0) < cost.amount) return res.status(400).json({ error: '가넷이 부족합니다. (' + comma(cost.amount) + ' 가넷 필요)' });
-            user.garnet = Number(user.garnet || 0) - cost.amount;
-        } else {
-            if (Number(user.point || 0) < cost.amount) return res.status(400).json({ error: '포인트가 부족합니다. (' + comma(cost.amount) + 'P 필요)' });
-            user.point = Number(user.point || 0) - cost.amount;
-            rpgenius.addPointSpendMileage(user, cost.amount);
-        }
-        user.presetSlotsUnlocked = slot + 1;
-        await user.save();
-        res.json(buildPresetPayload(user));
+        const seed = await rpgenius.getRPGUserByName(req.session.name);
+        if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+        await rpgenius.enqueueFieldAction(seed, async () => {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            const unlocked = getUnlockedPresetSlots(user);
+            if (!Number.isInteger(slot) || slot < 1 || slot >= rpgenius.PRESET_SLOT_COUNT || slot > unlocked) return res.status(400).json({ error: '슬롯은 순서대로 해금할 수 있습니다.' });
+            // 슬롯 번호 자체를 재시도 키로 사용한다. 저장 재시도 시 중복 차감하지 않는다.
+            if (slot === unlocked) {
+                const cost = PRESET_UNLOCK_COSTS[slot];
+                if (Number(user.garnet || 0) < cost.amount) return res.status(400).json({ error: '가넷이 부족합니다. (' + comma(cost.amount) + ' 가넷 필요)' });
+                user.garnet = Number(user.garnet || 0) - cost.amount;
+                user.presetSlotsUnlocked = slot + 1;
+            }
+            const saved = await user.save();
+            if (!saved?.success) return res.status(503).json({ error: '저장을 확인하지 못했습니다. 다시 누르면 추가 소모 없이 저장을 재시도합니다.' });
+            res.json(buildPresetPayload(user));
+        });
     } catch (e) {
         console.error('presets unlock error:', e);
         res.status(500).json({ error: '서버 오류' });
     }
-});
+}));
 
 // ===== 봉인된 자물쇠 =====
 const LOCKBOX_ITEM_NAME = '봉인된 자물쇠';
@@ -9482,13 +9480,14 @@ function renderHFieldApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>부타게임 [H]</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<link rel="stylesheet" href="/static/hfield.css"></head><body>
+<link rel="stylesheet" href="/static/hfield.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="hFieldRoot" class="hf-root" aria-label="부타게임 하드 필드">
   <canvas id="hfCanvas" aria-label="부타게임 하드 필드 전투 화면"></canvas>
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9499,13 +9498,14 @@ function renderGeneralFieldApp(sess, mode = 'regular') {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>${title}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<link rel="stylesheet" href="/static/hfield.css"></head><body>
+<link rel="stylesheet" href="/static/hfield.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="hFieldRoot" class="hf-root" aria-label="${title}">
   <canvas id="hfCanvas" aria-label="${title} 전투 화면"></canvas>
   <canvas id="hfHud"></canvas>
 </main>
 <script>window.HFIELD_ME=${JSON.stringify(sess.name)};window.FIELD_MODE=${JSON.stringify(mode)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-shortcuts.js"></script>
 <script src="/static/hfield.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;
@@ -9515,7 +9515,7 @@ function renderWorldBossApp(sess) {
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>월드보스 [흑막]</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<link rel="stylesheet" href="/static/worldboss.css"></head><body>
+<link rel="stylesheet" href="/static/worldboss.css"><link rel="stylesheet" href="/static/combat-shortcuts.css"></head><body>
 <main id="worldBossRoot" class="wb-root" aria-label="월드보스 흑막 전투">
   <canvas id="wbCanvas" aria-label="월드보스 WebGL 전투 화면"></canvas>
   <canvas id="wbHud" tabindex="-1"></canvas>
@@ -9538,6 +9538,7 @@ function renderWorldBossApp(sess) {
 </dialog>
 <script>window.WORLD_BOSS_ME=${JSON.stringify(sess.name)};</script>
 <script src="/static/combat-effects.js"></script>
+<script src="/static/combat-shortcuts.js"></script>
 <script src="/static/worldboss.js"></script>
 <script type="module" src="/static/chuseok.js"></script>
 </body></html>`;

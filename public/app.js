@@ -3435,34 +3435,37 @@ async function applyPresetSlot(slot) {
 
 // 해금 구매 모달 (상점식 가격 계산서)
 function openPresetUnlockModal(slot, cost) {
+    const d = presetState.data;
+    if (!cost || slot !== d.unlocked) return;
+    modalRequestToken++;
+    setModalVariant();
     $('#modalTitle').textContent = '프리셋 슬롯 해금';
     $('#modalSub').style.display = 'none';
-    const d = presetState.data;
-    const bal = cost.currency === 'garnet' ? Number(d.garnet || 0) : Number(d.point || 0);
-    const after = bal - cost.amount;
-    const receiptRow = (label, amount, variant) => el('div', { class: 'shop-receipt-row' + (variant ? ' ' + variant : '') },
-        el('span', { class: 'shop-receipt-label' }, label),
-        el('div', { class: 'shop-receipt-val' },
-            cost.iconUrl ? el('img', { src: cost.iconUrl, alt: '', style: 'width:16px;height:16px;object-fit:contain' }) : null,
-            el('span', null, comma(Math.abs(amount)))));
-    const btn = el('button', { class: 'burning-unlock-btn' }, '해금하기');
-    btn.onclick = async () => {
-        btn.disabled = true;
+    const balance = Number(d.garnet || 0), after = balance - cost.amount;
+    const buy = el('button', { class: 'primary', disabled: after < 0 }, '20가넷으로 해금');
+    buy.onclick = async () => {
+        buy.disabled = true;
         try {
             presetState.data = await postApi('/api/presets/unlock', { slot });
             closeModal();
             renderPresets();
-        } catch (e) { showAlert(e.message); btn.disabled = false; }
+        } catch (e) { showAlert(e.message); buy.disabled = after < 0; }
     };
-    const body = el('div', { class: 'burning-unlock-modal' },
-        el('div', { class: 'burning-unlock-icon' }, '🔓'),
-        el('div', { class: 'burning-unlock-desc' }, (slot + 1) + '번 프리셋 슬롯을 해금하시겠습니까?'),
-        el('div', { class: 'shop-receipt preset-unlock-receipt' },
-            receiptRow('현재 보유', bal),
-            receiptRow('소모', cost.amount, 'deduct'),
+    const body = el('div', { class: 'shop-buy-modal preset-unlock-modal' },
+        el('div', { class: 'shop-buy-item-row' },
+            el('div', { class: 'preset-unlock-sigil', 'aria-hidden': 'true' }, String(slot + 1).padStart(2, '0')),
+            el('div', { class: 'preset-unlock-info' },
+                el('div', { class: 'shop-buy-name' }, (slot + 1) + '번 프리셋'),
+                el('div', { class: 'shop-buy-meta' }, '장비와 카드를 저장하고 한 번에 교체하세요.'))),
+        el('div', { class: 'preset-unlock-progress' },
+            el('span', null, '보유 프리셋'), el('strong', null, d.unlocked + ' → ' + (d.unlocked + 1)), el('span', null, '/ ' + d.slotCount)),
+        el('div', { class: 'shop-receipt' },
+            buildReceiptRow('현재 보유', { goods: 'garnet' }, balance),
+            buildReceiptRow('해금 비용', { goods: 'garnet' }, cost.amount, 'deduct'),
             el('div', { class: 'shop-receipt-divider' }),
-            receiptRow('해금 후 잔액', after, after < 0 ? 'neg' : 'result')),
-        btn);
+            buildReceiptRow('해금 후 잔액', { goods: 'garnet' }, after, after < 0 ? 'neg' : 'result')),
+        after < 0 ? el('p', { class: 'preset-unlock-warning' }, '가넷이 부족합니다.') : null,
+        el('div', { class: 'shop-buy-footer' }, el('button', { onclick: closeModal }, '취소'), buy));
     $('#modalBody').replaceChildren(body);
     $('#modalBg').classList.add('active');
 }
@@ -3698,7 +3701,7 @@ function renderPresets() {
     if (!root || !d) return;
     // 해금된 슬롯 + 다음 해금 대상 1개만 표시
     const visible = Math.min(d.slotCount, d.unlocked + 1);
-    root.replaceChildren(el('div', { class: 'preset-grid' },
+    root.replaceChildren(el('div', { class: 'preset-capacity' }, el('b', null, '보유 프리셋 ' + d.unlocked + ' / ' + d.slotCount), el('span', null, d.unlocked < d.slotCount ? '슬롯당 20가넷' : '모든 슬롯 해금 완료')), el('div', { class: 'preset-grid' },
         Array.from({ length: visible }, (_, i) => presetCard(i))));
 }
 

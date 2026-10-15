@@ -235,6 +235,25 @@ function tickPartyIlion(room, member) {
     }
 }
 
+function pausePartyIlion(room, paused) {
+    const now = nowMs();
+    for (const member of room.members) {
+        if (!member.runtime || !member.baseSnapshot?.stats.ilion) continue;
+        const r = member.runtime;
+        ilionCards.autoDrawAt(r, Number(getTranscendEquipmentEntry(member, '무한홀덤덱')?.stage || 0), Number(r.equipmentState?.combatStartedAt || now));
+        if (!r.ilion) continue;
+        if (paused) {
+            if (r.ilion.pausedAt == null) r.ilion.pausedAt = now;
+        } else if (r.ilion.pausedAt != null) {
+            const from = r.ilion.pausedAt, elapsed = Math.max(0, now - from);
+            for (const card of r.ilion.deck) if (card.until > from) card.until += elapsed;
+            for (const key of ['autoDrawAt', 'motherCritUntil']) if (r.ilion[key] > from) r.ilion[key] += elapsed;
+            if (r.ilion.corrosion?.until > from) r.ilion.corrosion.until += elapsed;
+            delete r.ilion.pausedAt;
+        }
+    }
+}
+
 function getActiveKingElementBonus(member) {
     const buffs = member && member.runtime && member.runtime.kingmakerBuffs || {};
     return Object.keys(buffs).reduce((sum, key) => {
@@ -1103,7 +1122,9 @@ function serializeMember(m) {
                 label: b.label,
                 remain: Number(b.remain || 0) >= PERMANENT_BUFF_SEC ? null : Math.max(0, Math.round(b.remain * 10) / 10),
                 stack: Math.max(0, Math.round(Number(b.stack || 0)))
-            })).concat(ilionCards.views(m.runtime, nowMs()).map(card => ({ id: 'ilion:' + card.name, label: card.label, remain: card.active && card.until ? remainSeconds(card.until) : null, stack: 0 }))),
+            })).concat(ilionCards.views(m.runtime, m.runtime.ilion?.pausedAt ?? nowMs()).map(card => ({ id: 'ilion:' + card.name, label: card.label, remain: card.active && card.until ? Math.max(0, (card.until - (m.runtime.ilion?.pausedAt ?? nowMs())) / 1000) : null, stack: 0 })),
+                m.runtime.ilion?.autoDrawAt ? [{ id: 'ilion:auto', label: '무한홀덤덱 · 다음 추첨', remain: Math.max(0, (m.runtime.ilion.autoDrawAt - (m.runtime.ilion.pausedAt ?? nowMs())) / 1000), stack: 0 }] : []),
+            ilionPaused: m.runtime.ilion?.pausedAt != null,
             shield: Math.round(m.runtime.shield || 0),
             sealRemain: Math.max(0, Math.round(Number(m.runtime.sealRemain || 0) * 10) / 10),
             dead: !!m.runtime.dead,
@@ -1987,7 +2008,7 @@ async function start(hostName) {
             const manaResonance = user ? getManaResonanceSnapshot(user) : null;
             const thorns = user ? getThornsSnapshot(user) : null;
             const elementChain = user && typeof rpgenius.getEquipmentElementChain === 'function' ? rpgenius.getEquipmentElementChain(user) : null;
-            const transcendEquipment = user && typeof rpgenius.getTranscendEquipmentSnapshot === 'function' ? rpgenius.getTranscendEquipmentSnapshot(user) : { entries: [], setCounts: {} };
+            const transcendEquipment = user && typeof rpgenius.getTranscendEquipmentSnapshot === 'function' ? rpgenius.getTranscendEquipmentSnapshot(user, { includeAllActive: true }) : { entries: [], setCounts: {} };
             m.baseSnapshot = { stats: baseStats || { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: slotEffects || {}, mainCardSkills, immortalArmor, manaResonance, thorns, elementChain, transcendEquipment };
         } catch (_) {
             m.baseSnapshot = { stats: { atk: 100, def: 50, hp: 1000, mp: 500, crit: 0, critMul: 1.4 }, slotEffects: {}, mainCardSkills: [], immortalArmor: null };
@@ -2066,6 +2087,7 @@ async function start(hostName) {
     room.result = null;
     room.startedAt = Date.now();
     room.introUntil = Date.now() + INTRO_GRACE_MS;
+    pausePartyIlion(room, true);
     room.phaseTransition = null;
     room.combatLog = [];
     // 퀘스트: 파티 퀘스트 참여 집계 (진행도가 변한 유저만 저장)
@@ -2116,6 +2138,7 @@ function setupPhase(room) {
 
 function endPhase(room) {
     stopTick(room);
+    pausePartyIlion(room, true);
     const quest = getQuestById(room.questId);
     const next = quest.phases[room.phaseIndex + 1];
     if (room.questId !== birthdayEvent.ID) pushNotice(room, (quest.phases[room.phaseIndex] && quest.phases[room.phaseIndex].name) + ' 클리어', 'big', 4500);
@@ -2412,8 +2435,9 @@ function stopTick(room) {
 
 function stepRoom(room) {
     if (room.state !== 'inProgress') { stopTick(room); return; }
-    if (room.awaitingChoices) return;
+    if (room.awaitingChoices) { pausePartyIlion(room, true); return; }
     const dt = TICK_MS / 1000;
+    pausePartyIlion(room, isIntroActive(room));
     if (mansionRaid.transition(room, dt)) { broadcastRoom(room); return; }
     if (isIntroActive(room)) {
         if (birthdayRaid.transition(room)) broadcastRoom(room);
@@ -5901,7 +5925,7 @@ module.exports = {
     getRoomOf,
     POSITION_LIST,
     __test: {
-        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion, tickPartyKino, serializeMember,
+        executeMainCardSkillEffect, getPartyLiveStats, tickPartyIlion, tickPartyKino, serializeMember, pausePartyIlion,
         proceedToNextPhase,
         applyDamageToMember,
         healMember,

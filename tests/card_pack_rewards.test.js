@@ -483,3 +483,75 @@ test('일괄 보조 카드의 수량·성급·보호 위치·오메가 제한을
         assert.deepEqual(after.inventory, beforeCards); assert.equal(after.gold, gold); assert.equal(after.bulkCombineReceipt, null);
     }
 });
+
+
+test('프리셋 20칸은 각 20가넷이며 재시도·동시 요청은 중복 차감하지 않는다', async () => {
+    let u = await resetWebCards([], { presets: [null, { name: '기존' }], presetSlotsUnlocked: 5, garnet: 300, point: 777 });
+    const first = await post('/api/presets/unlock', { slot: 5 });
+    assert.equal(first.status, 200); assert.equal(first.data.slotCount, 20); assert.equal(first.data.unlocked, 6);
+    assert.ok(first.data.costs.slice(1).every(c => c.currency === 'garnet' && c.amount === 20));
+    assert.equal(u.presets[1].name, '기존');
+    await post('/api/presets/unlock', { slot: 5 }); u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 280);
+    await Promise.all([post('/api/presets/unlock', { slot: 6 }), post('/api/presets/unlock', { slot: 6 })]);
+    u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 260); assert.equal(u.presetSlotsUnlocked, 7);
+    assert.equal((await post('/api/presets/unlock', { slot: 9 })).status, 400);
+    for (let slot = 7; slot < 20; slot++) assert.equal((await post('/api/presets/unlock', { slot })).status, 200);
+    u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 0); assert.equal(u.point, 777); assert.equal(u.presetSlotsUnlocked, 20);
+    assert.equal((await post('/api/presets/unlock', { slot: 20 })).status, 400);
+    u.presetSlotsUnlocked = 19; await u.save(); assert.equal((await post('/api/presets/unlock', { slot: 19 })).status, 400);
+});
+
+test('잠긴 보조장비는 검은 환생의 불꽃 목록과 사용 직전 모두 차단하고 취소 시 반환한다', async () => {
+    const u = user(), flame = itemId('검은 환생의 불꽃');
+    const support = { type: 'support', id: 0, locked: true, rolled: { atk: 123 } };
+    u.inventory.equipment = [support]; rpg.addInventoryItem(u, flame, 1);
+    assert.match(await rpg.useItem(u, '검은 환생의 불꽃', 1), /잠금 해제된.*없어/);
+    assert.equal(rpg.getInventoryItemCount(u, flame), 1); assert.deepEqual(support.rolled, { atk: 123 });
+    support.locked = false;
+    await rpg.useItem(u, '검은 환생의 불꽃', 1);
+    const option = rpg.getWebItemUsePending(u).options[0]; assert.ok(option);
+    support.locked = true;
+    assert.match(rpg.resolveWebItemUsePending(u, option.value ?? option.number), /잠긴 장비/);
+    assert.deepEqual(support.rolled, { atk: 123 }); assert.equal(rpg.getWebItemUsePending(u).options.length, 0);
+    rpg.cancelWebItemUsePending(u); assert.equal(rpg.getInventoryItemCount(u, flame), 1);
+});
+
+test('WebGL 일반·H필드·월드보스에서 최대 HP/MP로도 투신의 함성 포션을 사용한다', async () => {
+    const regular = rpg.getRegularFieldDungeons()[0], id = itemId('투신의 함성 포션');
+    for (const [endpoint, field] of [
+        ['/api/field', { name: regular.name, killCount: 0 }],
+        ['/api/hfield', { name: '부타게임[H]', phase: 'normal', killCount: 0 }],
+        ['/api/worldboss', { name: '흑막', worldBoss: true, skillSelecting: false, chosenSkillId: 0 }]
+    ]) {
+        let u = await resetWebCards([], { level: 300, equipments: {}, main_card: { id: 0, star: 6, type: '일반' }, battleCryPotion: null, field: { ...field, enteredAt: Date.now(), skillCooldowns: {}, equipmentState: {} } });
+        u.equipments.support = { id: rpg.getDataCache('Equipment').support.findIndex(e => e.name === '판테온 레거시') };
+        const stats = rpg.calculateUserStats(u); u.hp = stats.hp; u.mp = stats.mp;
+        rpg.addInventoryItem(u, id, 2); if (endpoint === '/api/worldboss') u.field.blackCurtain = { curseApplied: true }; await u.save();
+        const result = await post(endpoint + '/use-consumable', { itemId: id });
+        assert.equal(result.status, 200); assert.equal(result.data.ok, true, result.data.message);
+        u = await rpg.getRPGUserByName(seed.name); assert.equal(rpg.getInventoryItemCount(u, id), 1); assert.equal(u.battleCryPotion.amount, .25);
+        assert.ok(result.data.state.consumables.some(item => item.id === id && item.effect.includes('25%')));
+        assert.equal(result.data.state.player.level, 300); assert.equal(result.data.state.player.attackOrder, 1);
+        assert.ok(rpg.calculateUserStats(u).atk >= Math.round(stats.atk * 1.25));
+        rpg.clearFieldRuntimeTimers(u.name);
+    }
+});
+
+test('판테온·리턴즈 공격 순서는 실제 타격 횟수와 PvP 공개 상태에 일치한다', async () => {
+    const u = user(), equipment = rpg.getDataCache('Equipment');
+    const dungeon = rpg.getRegularFieldDungeons()[0];
+    for (const [name, orders] of [['판테온 레거시', [1, 2, 3, 1]], ['리턴즈파겜', [2, 3, 1, 2]]]) {
+        u.equipments = { support: { id: equipment.support.findIndex(e => e.name === name) } };
+        u.field = { name: dungeon.name, killCount: 0, enteredAt: Date.now(), equipmentState: {} };
+        for (const expected of orders) {
+            assert.equal(rpg.getEquipmentAttackOrderPreview(u), expected);
+            rpg.applyTranscendPreAttack(u, { type: 'normal', dungeon }, 100, {}, 'basic', null);
+        }
+    }
+    const a = user(), b = user(); a.equipments.support = { id: equipment.support.findIndex(e => e.name === '판테온 레거시') }; a.level = 123;
+    await a.save(); await b.save(); pvp.ensurePvpState(a).daily.opponents = [{ name: b.name, rating: 1000 }];
+    assert.equal((await pvp.startBattle(a, b.name)).ok, true);
+    assert.equal(pvp.buildBattleView(a).me.level, 123); assert.equal(pvp.buildBattleView(a).me.attackOrder, 1);
+    a.pvp.battle.me.runtime.equipment.attackCount = 2;
+    assert.equal(pvp.buildBattleView(a).me.attackOrder, 3); assert.equal(pvp.buildBattleView(a).opp.attackOrder, null);
+});

@@ -180,7 +180,7 @@
         }
         for (const m of currentRoom.members || []) {
             const buffs = m.runtime && Array.isArray(m.runtime.buffs) ? m.runtime.buffs : [];
-            for (const b of buffs) { if (b.remain == null) continue; b.remain = Math.max(0, Number(b.remain || 0) - dt); }
+            for (const b of buffs) { if (b.remain == null || m.runtime.ilionPaused && String(b.id).startsWith('ilion:')) continue; b.remain = Math.max(0, Number(b.remain || 0) - dt); }
             if (m.runtime && Number(m.runtime.sealRemain || 0) > 0) m.runtime.sealRemain = Math.max(0, Number(m.runtime.sealRemain) - dt);
         }
         if (currentRoom.voteState) {

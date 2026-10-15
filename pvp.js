@@ -2192,6 +2192,7 @@ function buildSideView(side) {
         name: side.name,
         level: side.level,
         rating: side.rating,
+        attackOrder: equipmentStage(side, '판테온 레거시') || equipmentStage(side, '리턴즈파겜') ? ((Number(equipmentRuntime(side).attackCount || 0) + (equipmentStage(side, '리턴즈파겜') ? 1 : 0)) % 3) + 1 : null,
         hp: side.hp,
         maxHp: side.maxHp,
         mp: side.mp,

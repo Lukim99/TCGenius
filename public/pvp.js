@@ -455,7 +455,7 @@
         }
         oppPlate(w){
             if(stage!=='battle'||!view||!view.opp)return;
-            const side=view.opp,narrow=w<700,pw=narrow?Math.min(226,w*.6):300,ph=narrow?86:94,p=narrow?12:22,x=w-pw-p,y=p+(narrow?40:44),c=this.ctx;
+            const side=view.opp,narrow=w<700,pw=narrow?Math.min(226,w*.6):300,ph=(narrow?86:94)+(side.attackOrder?28:0),p=narrow?12:22,x=w-pw-p,y=p+(narrow?40:44),c=this.ctx;
             this.panel(x,y,pw,ph,'rgba(224,101,92,.6)');
             const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
@@ -469,16 +469,18 @@
             this.text(number(side.hp)+' / '+number(side.maxHp),infoRight,hpY-8,8,800,'right','#e9e5dc');
             this.bar(infoX,mpY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
             this.text((side.resourceLabel||'MP')+' '+number(side.resource??side.mp),infoRight,mpY-8,8,800,'right','#a9b6c4');
+            if(effectCatalog&&side.attackOrder)effectCatalog.drawAttackOrder(this,side.attackOrder,x+8,y+ph-25,pw-16);
         }
         myPlate(w,h){
             if(stage!=='battle'||!view||!view.me)return;
-            const side=view.me,narrow=w<700,c=this.ctx,pw=narrow?Math.min(238,w*.62):304,ph=narrow?84:94,x=narrow?12:24,y=h-(narrow?172:178);
+            const side=view.me,narrow=w<700,c=this.ctx,pw=narrow?Math.min(238,w*.62):304,orderHeight=side.attackOrder?28:0,ph=(narrow?84:94)+orderHeight,x=narrow?12:24,y=h-(narrow?172:178)-orderHeight;
             this.panel(x,y,pw,ph,'rgba(232,176,75,.58)');
             const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(232,176,75,.72)';c.stroke();
             this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52);
-            if(Number(side.defendUntil||0)>now())this.badge(infoRight,y+9,'방어 중','#7ec4ff');
+            this.text('Lv. '+number(side.level),infoRight,y+16,9,800,'right','#c9c8c5');
+            if(Number(side.defendUntil||0)>now())this.badge(px+ps,y+68,'방어 중','#7ec4ff');
             this.text(side.cardFormatted||[side.cardSkin,side.cardName].filter(Boolean).join(' '),infoX,y+34,narrow?8:10,700,'left','#aeb4bf',infoW);
             const hpTextY=y+(narrow?48:52),hpBarY=y+(narrow?54:59),mpTextY=y+(narrow?65:71),mpBarY=y+(narrow?71:78);
             this.text('HP',infoX,hpTextY,8,800,'left','#bbb1a0');
@@ -487,6 +489,7 @@
             this.text('MP',infoX,mpTextY,8,800,'left','#bbb1a0');
             this.text(number(side.mp),infoRight,mpTextY,8,800,'right','#e9e5dc');
             this.bar(infoX,mpBarY,infoW,6,side.resource??side.mp,side.maxResource??side.maxMp,'#147fc4');
+            if(effectCatalog&&side.attackOrder)effectCatalog.drawAttackOrder(this,side.attackOrder,x+8,y+ph-25,pw-16);
         }
         // 소환수·표식·버프 배지를 각 캐릭터 머리 위에 표시
         sideBadges(w,h){
@@ -506,7 +509,7 @@
         }
         combatLog(w,h){
             if(stage!=='battle'||!logs.length)return;
-            const narrow=w<700,lines=logs.slice(-4),x=narrow?12:26,base=h-(narrow?182:196),lineH=narrow?14:16;
+            const narrow=w<700,lines=logs.slice(-4),x=narrow?12:26,base=h-(narrow?182:196)-(view?.me?.attackOrder?28:0),lineH=narrow?14:16;
             lines.forEach((entry,index)=>{
                 const alpha=.42+(index+1)/lines.length*.58,col=entry.tone==='bad'?'224,101,92':entry.tone==='good'?'240,197,110':'220,224,230';
                 this.text(entry.text,x,base-(lines.length-1-index)*lineH,narrow?9:10,entry.tone==='good'?800:650,'left','rgba('+col+','+alpha+')',Math.min(narrow?w-24:460,w*.48));

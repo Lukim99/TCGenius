@@ -274,3 +274,47 @@ test('실제 PvP 시간 진행으로 무한홀덤덱이 자동 추첨하며 유�
         for (const id of event.effectIds) assert.ok(fs.existsSync(path.join(__dirname, '../DB/RPGenius/ui', effects.assetPath(id))), id);
     } finally { pvp.__setNow(null); }
 });
+
+test('실제 레이드 입장 시 무한홀덤덱 스냅샷과 8초 자동 추첨', async () => {
+    const api = require('../partyquest');
+    const u = user(); u.level = 300; u.unlockedRaids = ['mansionNormal']; equip(u, '무한홀덤덱', 3); await u.save();
+    const result = await api.createRoom(u.name, 'mansionNormal'); assert.ok(result.roomId, JSON.stringify(result));
+    try {
+        api.setReady(u.name, true);
+        assert.equal((await api.start(u.name)).ok, true);
+        const room = api.getRoomOf(u.name), member = room.members[0];
+        assert.equal(member.baseSnapshot.stats.ilion, true);
+        assert.ok(member.baseSnapshot.transcendEquipment.entries.some(e => e.name === '무한홀덤덱' && e.stage === 3));
+        room.introUntil = 0;
+        delete member.runtime.ilion.pausedAt;
+        member.runtime.ilion.autoDrawAt = Date.now() - 1;
+        await fixed(.6, () => party.stepRoom(room));
+        assert.equal(member.runtime.ilion.deck.length, 1);
+        assert.ok(member.runtime.ilion.deck[0].until - Date.now() > 3900);
+        const originalNow = Date.now; let time = originalNow(); Date.now = () => time;
+        try {
+            member.runtime.ilion.motherCritUntil = time + 5000;
+            const expires = member.runtime.ilion.deck[0].until, drawAt = member.runtime.ilion.autoDrawAt;
+            room.monster.bossState.form = 'transition'; room.monster.bossState.transitionRemain = 4;
+            party.stepRoom(room); time += 2200; party.stepRoom(room);
+            room.monster.bossState.form = 'body'; party.stepRoom(room);
+            assert.equal(member.runtime.ilion.deck[0].until, expires + 2200);
+            assert.equal(member.runtime.ilion.autoDrawAt, drawAt + 2200);
+            assert.equal(member.runtime.ilion.motherCritUntil - time, 5000);
+        } finally { Date.now = originalNow; }
+        room.awaitingChoices = true;
+    } finally { api.leaveRoom(u.name); }
+});
+
+test('레이드 전환은 일리온 4초 카드와 자동 추첨을 함께 동결한다', () => {
+    const original = Date.now; let time = 10000; Date.now = () => time;
+    try {
+        const member = { baseSnapshot: { stats: { ...baseStats }, transcendEquipment: { entries: [{ name: '무한홀덤덱', stage: 3 }] } }, runtime: { equipmentState: { combatStartedAt: 10000 }, ilion: { deck: [{ name: '심판', until: 14000 }, { name: '제후', until: 9000 }], autoDrawAt: 18000, balanceHits: 0 } } };
+        const room = { members: [member] };
+        party.pausePartyIlion(room, true); time += 2200; party.pausePartyIlion(room, false);
+        assert.equal(member.runtime.ilion.deck[0].until - time, 4000);
+        assert.equal(member.runtime.ilion.deck[1].until, 9000);
+        assert.equal(member.runtime.ilion.autoDrawAt - time, 8000);
+        assert.equal(ilion.applyStats({ ...baseStats }, member.runtime, {}, time).finalDamage, .5);
+    } finally { Date.now = original; }
+});

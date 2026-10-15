@@ -288,10 +288,21 @@
         });
     }
 
+    function drawAttackOrder(hud, order, x, y, width) {
+        if (!order) return;
+        hud.text('다음 공격', x, y + 10, 10, 800, 'left', '#e8c784');
+        const gap = 5, start = x + 58, size = (width - 58 - gap * 2) / 3;
+        for (let i = 1; i <= 3; i++) {
+            const active = i === order, left = start + (i - 1) * (size + gap);
+            hud.panel(left, y, size, 21, active ? '#f4c265' : '#4a4c55');
+            hud.text(i + '타' + (active ? ' ◀' : ''), left + size / 2, y + 10, 10, active ? 900 : 600, 'center', active ? '#ffe4a0' : '#838996');
+        }
+    }
+
     return {
         DIRS, SKILL_TARGETS, id, unique, sourceEffects, labelEffects, skillEffects, skillTarget,
         effectIdsFor, presentationEffectIds,
         eventEffectIds, hitEffectIds, annotateEvent, parseEffectId,
-        fileName, assetPath, assetUrl, motionProfile, drawCardDeck
+        fileName, assetPath, assetUrl, motionProfile, drawCardDeck, drawAttackOrder
     };
 });

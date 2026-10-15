@@ -10911,7 +10911,7 @@ function unequipEquipmentByNumber(user, numberArg) {
 }
 
 // ===== 장착 프리셋 (장비/메인 카드/슬롯 카드 스냅샷) =====
-const PRESET_SLOT_COUNT = 5;
+const PRESET_SLOT_COUNT = 20;
 
 // 장비 인스턴스에 영구 uid를 부여해 동일 종류 다른 장비와 혼동 없이 식별한다.
 // cloneEquipmentInstance가 전체 필드를 복사하므로 장착/해제/거래 이동에도 uid는 유지되고,
@@ -11287,7 +11287,7 @@ function getSupportRerollTargets(user) {
     return getAllUserEquipments(user)
         .map((entry, index) => {
             const type = entry.equip.type || entry.type;
-            if (type != 'support') return null;
+            if (type != 'support' || entry.equip.locked) return null;
             const equipment = getEquipmentData('support', entry.equip.id);
             if (!equipment) return null;
             return { number: index + 1, entry, equipment };
@@ -11315,6 +11315,7 @@ function rerollSupportEquipment(user, numberArg) {
     if (!selected) return '❌ 존재하지 않는 장비 번호입니다.';
     const type = selected.equip.type || selected.type;
     if (type != 'support') return '❌ 보조 장비만 선택할 수 있습니다.';
+    if (selected.equip.locked) return '❌ 잠긴 장비에는 검은 환생의 불꽃을 사용할 수 없습니다.';
     const equipment = getEquipmentData('support', selected.equip.id);
     if (!equipment) return '❌ 잘못된 보조 장비 데이터입니다.';
     selected.equip.rolled = rollSupportEquipmentStats(equipment);
@@ -12459,7 +12460,7 @@ async function useItem(user, itemName, countArg, options = {}) {
             const targets = getSupportRerollTargets(user);
             if (targets.length == 0) {
                 addInventoryItem(user, itemId, useCount);
-                lines.push('❌ 보조 장비가 없어 아이템을 반환했습니다.');
+                lines.push('❌ 잠금 해제된 보조 장비가 없어 아이템을 반환했습니다.');
             } else {
                 user.pendingAction = { type: '보조장비리롤', consumedItemId: itemId, consumedItemCount: useCount };
                 lines.push('스탯을 재설정할 보조 장비를 선택해주세요.');
@@ -16790,6 +16791,7 @@ module.exports = {
     getManaResonanceBonus,
     getEquipmentElementChain,
     getTranscendEquipmentSnapshot,
+    getEquipmentAttackOrderPreview,
     grantButagameFieldBonusDrops,
     useTranscendUpgradeKit,
     getElementDamageMultiplier,
