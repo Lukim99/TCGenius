@@ -3257,6 +3257,31 @@ function runCardCombine(user) {
     return lines.join('\n');
 }
 
+function getBulkCardCombineSelection(user, star, cardType) {
+    const info = Number.isInteger(star) && getCardCombineInfo(star);
+    if (!info || !['일반', '전직', '각성'].includes(cardType)) return { error: '조합할 성급과 카드 종류를 선택해주세요.' };
+    const cards = (user.inventory && user.inventory.card || []).filter(card => Number(card.star || 0) === star && (card.type || '일반') === cardType && !card.locked);
+    const times = Math.floor(cards.length / 3);
+    if (!times) return { error: '같은 성급·종류의 잠기지 않은 카드가 3장 이상 필요합니다.' };
+    return { star, cardType, times, gold: times * info.gold, cards: cards.slice(0, times * 3) };
+}
+
+function runBulkCardCombine(user, star, cardType) {
+    const selection = getBulkCardCombineSelection(user, star, cardType);
+    if (selection.error) return selection;
+    if (Number(user.gold || 0) < selection.gold) return { error: '골드가 부족합니다. 필요 골드: ' + comma(selection.gold) };
+    const results = [];
+    for (let i = 0; i < selection.cards.length; i += 3) {
+        const numbers = selection.cards.slice(i, i + 3).map(card => user.inventory.card.indexOf(card) + 1);
+        user.pendingAction = { type: '카드조합', numbers };
+        const message = runCardCombine(user);
+        if (message.startsWith('❌')) throw new Error(message);
+        const card = { ...user.inventory.card[user.inventory.card.length - 1] };
+        results.push({ card, success: star === 11 || card.star > star });
+    }
+    return { times: selection.times, spentGold: selection.gold, results };
+}
+
 function getJobCombineSelection(user, numberArgs) {
     const cards = user.inventory && Array.isArray(user.inventory.card) ? user.inventory.card : [];
     if (!Array.isArray(numberArgs) || numberArgs.length != 3) return { error: '❌ 카드번호 3개를 선택해주세요.' };
@@ -3509,6 +3534,13 @@ function equipMainCharacterCard(user, numberArg) {
     let msg = '✅ 메인 캐릭터 카드를 장착했습니다.\n- ' + formatUserCard(card);
     if (removed) msg += '\n⚠️ 메인 카드 변경으로 보조 장비 <' + removed.rarity + '> ' + removed.name + '(이)가 장착 해제되었습니다.';
     return msg;
+}
+
+function getCardInventoryState(user) {
+    const limit = Number(user.maxCardLimit || 52);
+    const expansions = Math.max(0, Math.floor((limit - 52) / 8));
+    return { used: (user.inventory && user.inventory.card || []).length, limit, maxLimit: 300, step: 8,
+        expansions, maxExpansions: 31, nextCost: limit < 300 && expansions < 31 ? (expansions + 1) * 10 : null };
 }
 
 function getRemainingCardInventorySpace(user) {
@@ -16628,6 +16660,9 @@ module.exports = {
     getCardCombineCount,
     getCardCombineGuaranteeCount,
     getRemainingCardInventorySpace,
+    getCardInventoryState,
+    getBulkCardCombineSelection,
+    runBulkCardCombine,
     getTradeTicketItemId,
     getCardTicketCost,
     cloneEquipmentInstance,

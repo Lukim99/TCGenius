@@ -237,3 +237,148 @@ test('반환용 원시 인벤토리 추가는 기존 카드팩을 자동 개봉�
     assert.equal(value.inventory.card.length, 0); assert.equal(rpg.getInventoryItemCount(value, id), 4);
     assert.ok(writes.length > 0);
 });
+
+async function resetWebCards(cards = [], extra = {}) {
+    const value = await rpg.getRPGUserByName(seed.name);
+    Object.assign(value, { maxCardLimit: 52, garnet: 5000, gold: 10000000, field: null, pendingAction: null, pendingFragment: null,
+        bulkCombineReceipt: null, cardInventoryReceipt: null, inventory: { card: cards, item: [], equipment: [], pet: [] } }, extra);
+    await value.save();
+    return value;
+}
+
+test('실제 필드 공격 API는 카드팩 상자 대신 카드 보상을 표시하고 한도 초과 시 상자도 남기지 않는다', async () => {
+    const dungeon = rpg.getRegularFieldDungeons()[0];
+    for (const full of [false, true]) {
+        await resetWebCards(full ? [{ id: 0, star: 0, type: '일반' }] : [], { maxCardLimit: 1,
+            level: dungeon.requireLevel, main_card: { id: 0, star: 11, type: '일반' }, hp: 1000000, mp: 1000000,
+            field: { name: dungeon.name, killCount: 0, nextActionAt: 0, skillCooldowns: {}, equipmentState: {} } });
+        const result = await fixed(0, () => post('/api/field/attack', {}));
+        assert.equal(result.status, 200); assert.equal(result.data.ok, true, result.data.message);
+        assert.ok(!result.data.event.rewards.some(reward => reward.name === '카드팩 상자'));
+        if (!full) assert.ok(result.data.event.rewards.some(reward => reward.kind === 'card' && reward.card && reward.iconUrl));
+        else assert.match(result.data.message, /버려진.*x1/);
+        const after = await rpg.getRPGUserByName(seed.name);
+        assert.equal(after.inventory.card.length, 1); assert.equal(rpg.getInventoryItemCount(after, itemId('카드팩 상자')), 0);
+    }
+});
+
+test('카드 인벤토리는 51/52를 반환하며 8칸씩 31회 확장하고 비용 10~310가넷을 한 번씩만 차감한다', async () => {
+    await resetWebCards(Array.from({ length: 51 }, () => ({ id: 0, star: 0 })), { garnet: 4960 });
+    const inventory = await (await fetch(base + '/api/inventory/cards', { headers: { Cookie: cookie } })).json();
+    assert.equal(inventory.capacity.used, 51); assert.equal(inventory.capacity.limit, 52); assert.equal(inventory.capacity.nextCost, 10);
+    for (let step = 0; step < 31; step++) {
+        const body = { requestId: 'expand-inventory-' + step, limit: 52 + 8 * step };
+        const result = await post('/api/inventory/cards/expand', body);
+        assert.equal(result.status, 200, JSON.stringify(result.data));
+        assert.equal(result.data.expansion.cost, (step + 1) * 10); assert.equal(result.data.capacity.limit, 60 + 8 * step);
+        const replay = await post('/api/inventory/cards/expand', body);
+        assert.equal(replay.status, 200); assert.deepEqual(replay.data.expansion, result.data.expansion);
+    }
+    const after = await rpg.getRPGUserByName(seed.name);
+    assert.equal(after.maxCardLimit, 300); assert.equal(after.garnet, 0); assert.equal(after.inventory.card.length, 51);
+    assert.equal((await post('/api/inventory/cards/expand', { requestId: 'expand-over-limit-31', limit: 300 })).status, 400);
+});
+
+test('확장은 가넷 부족·오래된 한도·동시 요청·저장 실패 재시도에서 중복 차감하지 않는다', async () => {
+    await resetWebCards([], { garnet: 9 });
+    assert.equal((await post('/api/inventory/cards/expand', { requestId: 'expand-no-money-00', limit: 52 })).status, 400);
+    await resetWebCards();
+    const body = { requestId: 'expand-concurrent-00', limit: 52 };
+    const results = await Promise.all([post('/api/inventory/cards/expand', body), post('/api/inventory/cards/expand', body)]);
+    assert.ok(results.some(result => result.status === 200));
+    assert.equal((await rpg.getRPGUserByName(seed.name)).garnet, 4990);
+    assert.equal((await post('/api/inventory/cards/expand', { requestId: 'expand-stale-limit-00', limit: 52 })).status, 409);
+    await resetWebCards();
+    const original = DynamoDBDocumentClient.prototype.send;
+    let fail = true;
+    DynamoDBDocumentClient.prototype.send = async function(command) {
+        if (fail && command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') { fail = false; throw new Error('isolated save failure'); }
+        return original.call(this, command);
+    };
+    try {
+        const request = { requestId: 'expand-save-retry-00', limit: 52 };
+        assert.equal((await post('/api/inventory/cards/expand', request)).status, 503);
+        assert.equal((await post('/api/inventory/cards/expand', request)).status, 200);
+        const after = await rpg.getRPGUserByName(seed.name);
+        assert.equal(after.maxCardLimit, 60); assert.equal(after.garnet, 4990);
+    } finally { DynamoDBDocumentClient.prototype.send = original; }
+});
+
+test('일괄 조합은 선택 성급·종류만 처음 카드 3장씩 처리하고 잠금·나머지 카드와 보조 아이템을 보존한다', async () => {
+    const cards = [...Array.from({ length: 7 }, (_, id) => ({ id: id % 3, star: 4, type: '일반' })),
+        { id: 0, star: 4, type: '일반', locked: true }, { id: 1, star: 4, type: '전직' }, { id: 0, star: 5, type: '일반' }];
+    const value = await resetWebCards(cards);
+    const items = rpg.getDataCache('Item');
+    value.inventory.item = [items.findIndex(item => item?.protect?.star === 4), items.findIndex(item => Number(item?.lucky) > 0)].filter(id => id >= 0).map(id => ({ id, count: 1 }));
+    const savedItems = structuredClone(value.inventory.item); await value.save();
+    const meta = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+    const body = { requestId: 'bulk-combine-first-00', revision: meta.meta.bulkRevision, version: meta.cards[0].version, star: 4, cardType: '일반' };
+    const result = await fixed(0, () => post('/api/combine/bulk', body));
+    assert.equal(result.status, 200, JSON.stringify(result.data)); assert.equal(result.data.times, 2);
+    assert.equal(result.data.spentGold, rpg.getCardCombineInfo(4).gold * 2);
+    assert.ok(result.data.results.every(entry => entry.success && entry.card.star === 5));
+    assert.equal(result.data.results.length, 2);
+    const replay = await fixed(.99, () => post('/api/combine/bulk', body));
+    assert.equal(replay.status, 200); assert.deepEqual(replay.data.results, result.data.results);
+    const after = await rpg.getRPGUserByName(seed.name);
+    assert.equal(after.inventory.card.length, 6); assert.equal(after.inventory.card.filter(card => card.locked).length, 1);
+    assert.equal(after.inventory.card.filter(card => card.type === '전직').length, 1);
+    assert.equal(after.gold, 10000000 - result.data.spentGold); assert.equal(after.pendingAction, null);
+    assert.deepEqual(after.inventory.item, savedItems);
+    assert.equal((await post('/api/combine/bulk', { ...body, requestId: 'bulk-combine-stale-00' })).status, 409);
+});
+
+test('일괄 조합 실패 결과를 다시 사용하지 않고 오메가도 원래 재료 수만큼 처리한다', async () => {
+    for (const star of [0, 4, 11]) {
+        await resetWebCards(Array.from({ length: 9 }, () => ({ id: 0, star, type: '일반' })));
+        const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+        const body = { requestId: 'bulk-same-star-' + star + '-00', star, cardType: '일반', revision: 0, version: data.cards[0].version };
+        const result = await fixed(.99, () => post('/api/combine/bulk', body));
+        assert.equal(result.status, 200, JSON.stringify(result.data)); assert.equal(result.data.times, 3);
+        assert.equal((await rpg.getRPGUserByName(seed.name)).inventory.card.length, 3);
+        if (star === 4) assert.deepEqual(result.data.results.map(entry => entry.success), [false, false, true]);
+        else assert.ok(result.data.results.every(entry => entry.card.star === star && entry.success === (star === 11)));
+    }
+});
+
+test('일괄 조합은 오래된 카드 목록·골드 부족·사냥 중·잘못된 종류를 처리하기 전에 거부한다', async () => {
+    for (const endpoint of ['/api/combine/bulk', '/api/inventory/cards/expand']) {
+        const response = await fetch(base + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        assert.equal(response.status, 401);
+    }
+    await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star: 4, type: '일반' })), { gold: 0 });
+    const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+    const body = { requestId: 'bulk-rejected-case-00', star: 4, cardType: '일반', revision: 0, version: data.cards[0].version };
+    assert.equal((await post('/api/combine/bulk', body)).status, 400);
+    assert.equal((await post('/api/combine/bulk', { ...body, version: 'old' })).status, 409);
+    assert.equal((await post('/api/combine/bulk', { ...body, cardType: 'all' })).status, 400);
+    const value = await rpg.getRPGUserByName(seed.name); value.field = { name: '왕십리역' }; await value.save();
+    assert.equal((await post('/api/combine/bulk', body)).status, 409);
+    assert.equal((await rpg.getRPGUserByName(seed.name)).inventory.card.length, 6);
+});
+
+test('일괄 조합은 동시 요청과 저장 실패 재시도에서도 결과·골드를 한 번만 처리한다', async () => {
+    for (const saveFailure of [false, true]) {
+        await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star: 0, type: '일반' })));
+        const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+        const body = { requestId: 'bulk-save-retry-' + saveFailure, star: 0, cardType: '일반', revision: 0, version: data.cards[0].version };
+        const original = DynamoDBDocumentClient.prototype.send;
+        let fail = saveFailure;
+        DynamoDBDocumentClient.prototype.send = async function(command) {
+            if (fail && command.constructor.name === 'UpdateCommand' && command.input.TableName === 'rpgenius_user') { fail = false; throw new Error('isolated bulk save failure'); }
+            return original.call(this, command);
+        };
+        try {
+            if (saveFailure) {
+                assert.equal((await post('/api/combine/bulk', body)).status, 503);
+                assert.equal((await post('/api/combine/bulk', body)).status, 200);
+            } else {
+                const results = await Promise.all([post('/api/combine/bulk', body), post('/api/combine/bulk', body)]);
+                assert.ok(results.some(result => result.status === 200));
+            }
+            const after = await rpg.getRPGUserByName(seed.name);
+            assert.equal(after.inventory.card.length, 2); assert.equal(after.bulkCombineReceipt.times, 2);
+            assert.equal(after.gold, 10000000 - 2 * rpg.getCardCombineInfo(0).gold);
+        } finally { DynamoDBDocumentClient.prototype.send = original; }
+    }
+});

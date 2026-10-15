@@ -106,8 +106,8 @@ test('청심환은 폭주 중에도 정신력 30까지 전투불능, 최대 정�
     rando.tickMental(stats, runtime, {}, 6000); near(runtime.kino.value, 150); assert.equal(runtime.kino.berserk, false);
 });
 
-test('청심환은 스킬 소모 직후 최대 정신력의 40% 이하에서 남은 정신력을 소모하고 타격 회복 전에 폭주한다', () => {
-    for (const [mental, cost, expected, berserk] of [[150, 89, 61, false], [150, 90, 0, true], [150, 91, 0, true], [160, 95, 65, false], [160, 96, 0, true]]) {
+test('청심환은 스킬 소모 직후 최대 정신력의 20% 이하에서 남은 정신력을 소모하고 타격 회복 전에 폭주한다', () => {
+    for (const [mental, cost, expected, berserk] of [[150, 119, 31, false], [150, 120, 0, true], [150, 121, 0, true], [160, 127, 33, false], [160, 128, 0, true], [150, 90, 60, false]]) {
         const stats = { kino: true, mental, randoEquipment: { '청심환': 1 } }, runtime = {};
         assert.equal(rando.spendMental(stats, runtime, cost, 1000), true);
         near(runtime.kino.value, expected); assert.equal(runtime.kino.berserk, berserk); assert.equal(runtime.kino.exhausted, berserk);
@@ -119,12 +119,12 @@ test('청심환은 스킬 소모 직후 최대 정신력의 40% 이하에서 남
     near(runtime.kino.value, 60); assert.equal(runtime.kino.berserk, false); assert.equal(runtime.kino.exhausted, false);
 });
 
-test('청심환은 이미 폭주 중이면 40% 이하에서도 다시 정신력을 소모하지 않는다', () => {
+test('청심환은 이미 폭주 중이면 20% 이하에서도 다시 정신력을 소모하지 않는다', () => {
     const stats = { kino: true, mental: 150, randoEquipment: { '청심환': 1 } };
     const runtime = { kino: { value: 100, at: 1000, exhausted: false, berserk: true } };
-    assert.equal(rando.spendMental(stats, runtime, 50, 1000), true);
-    near(runtime.kino.value, 50); assert.equal(runtime.kino.berserk, true); assert.equal(runtime.kino.exhausted, false);
-    assert.equal(rando.spendMental(stats, runtime, 50, 1000), true);
+    assert.equal(rando.spendMental(stats, runtime, 75, 1000), true);
+    near(runtime.kino.value, 25); assert.equal(runtime.kino.berserk, true); assert.equal(runtime.kino.exhausted, false);
+    assert.equal(rando.spendMental(stats, runtime, 25, 1000), true);
     near(runtime.kino.value, 0); assert.equal(runtime.kino.berserk, true); assert.equal(runtime.kino.exhausted, true);
 });
 
@@ -246,11 +246,12 @@ test('실제 키노 스킬은 MP 대신 정신력, 처치 보너스와 카스 2�
     assert.equal(spray.field.training.metrics.damage, 3576 + 744 * 5);
 }));
 
-test('실제 카스 살포는 회복 슬롯과 청심환 장착 시 150에서 90 소모로 폭주한 뒤 타격 정신력 5만 회복한다', async () => at(320000, async () => {
+test('실제 카스 살포는 회복 슬롯과 청심환 장착 시 최대 150 중 120에서 90 소모로 폭주한 뒤 타격 정신력 5만 회복한다', async () => at(320000, async () => {
     const real = user(16, '전직'); equip(real, '청심환', 3); real.card_slot = [{ id: 16, star: 11, type: '일반' }];
     const u = training.configure(real, { player: { crit: 0, cmb: 0, maxCmb: 0 }, target: { def: 0, counterAttack: false } });
     assert.equal(rpg.calculateUserStats(u).mental, 150); near(u.field.kino.value, 150);
     assert.equal(rpg.calculateCardSlotEffects(u).mentalRegen, 8);
+    u.field.kino.value = 120;
     const result = await fixed(.5, () => rpg.useSkillInField(u, '카스 살포'));
     assert.ok(!result.startsWith('❌'), result);
     near(u.field.kino.value, 5); assert.equal(u.field.kino.berserk, true); assert.equal(u.field.kino.exhausted, true);
@@ -319,6 +320,7 @@ test('실제 PvP 카스 살포도 청심환 폭주를 타격 회복 전에 발�
         assert.equal((await pvp.startBattle(a, b.name)).ok, true);
         const battle = a.pvp.battle; time = battle.me.nextActionAt; battle.opp.nextActionAt = time + 60000; battle.opp.hp = 1e9;
         battle.me.skillCooldowns = {};
+        battle.me.runtime.kino = { value: 120, at: time, exhausted: false, berserk: false };
         await fixed(.5, () => assert.equal(pvp.playerSkill(a, '카스 살포').ok, true));
         near(battle.me.runtime.kino.value, 5); assert.equal(battle.me.runtime.kino.berserk, true); assert.equal(battle.me.runtime.kino.exhausted, true);
         assert.equal(pvp.buildBattleView(a).me.maxResource, 150);

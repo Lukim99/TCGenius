@@ -1257,7 +1257,7 @@ server.get('/api/inventory/:kind', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const kind = String(req.params.kind || '');
         if (kind == 'items') return res.json({ items: buildInventoryItems(user) });
-        if (kind == 'cards') return res.json({ cards: buildInventoryCards(user) });
+        if (kind == 'cards') return res.json({ cards: buildInventoryCards(user), capacity: rpgenius.getCardInventoryState(user) });
         if (kind == 'equipment') return res.json({ equipment: buildInventoryEquipment(user) });
         if (kind == 'pet') return res.json({ pet: buildInventoryPets(user) });
         return res.status(400).json({ error: '알 수 없는 인벤토리 종류입니다.' });
@@ -1453,7 +1453,7 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
         if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
         const kind = String(req.params.kind || '');
         if (kind == 'items') return res.json({ items: buildInventoryItems(user) });
-        if (kind == 'cards') return res.json({ cards: buildInventoryCards(user) });
+        if (kind == 'cards') return res.json({ cards: buildInventoryCards(user), capacity: rpgenius.getCardInventoryState(user) });
         if (kind == 'equipment') return res.json({ equipment: buildInventoryEquipment(user) });
         if (kind == 'pet') return res.json({ pet: buildInventoryPets(user) });
         return res.status(400).json({ error: '알 수 없는 인벤토리 종류입니다.' });
@@ -6152,6 +6152,8 @@ function buildCombineCards(user) {
             name: s.name,
             formatted: s.formatted,
             imageUrl: s.imageUrl,
+            locked: card.locked === true,
+            special: !!(card.skin || card.isSpecter),
             version: inventoryVersion(user, 'cards'),
             combinable: !!rpgenius.getCardCombineInfo(star)
         };
@@ -6186,7 +6188,7 @@ function buildCombineMeta(user) {
         protect[star] = rpgenius.getProtectItemIdForCardStar(user, star) != -1;
     }
     const lucky = rpgenius.getLuckyCardItems(user).map(l => ({ rate: l.lucky, name: l.name }));
-    return { table, protect, lucky, gold: Number(user.gold || 0) };
+    return { table, protect, lucky, gold: Number(user.gold || 0), bulkRevision: Number(user.bulkCombineReceipt && user.bulkCombineReceipt.revision || 0) };
 }
 
 function getEquipmentData(type, id) {
@@ -9316,6 +9318,12 @@ function renderUserDashboard(sess, opts) {
         <label class="inventory-search"><span aria-hidden="true">⌕</span><input id="inventorySearch" type="search" placeholder="이름으로 검색" autocomplete="off"><button id="inventorySearchClear" type="button" aria-label="검색어 지우기">×</button></label>
       </div>
       <div id="inventoryActions" class="inventory-actions"></div>
+      <label id="inventoryCardSortControl" class="inventory-card-tools" hidden>카드 정렬
+        <select id="inventoryCardSort" aria-label="카드 정렬">
+          <option value="character-asc">캐릭터명 오름차순</option><option value="character-desc">캐릭터명 내림차순</option>
+          <option value="star-asc">성급 오름차순</option><option value="star-desc">성급 내림차순</option>
+        </select>
+      </label>
       <div id="viewer" class="viewer inventory-viewer"></div>
     </section>
   </div>

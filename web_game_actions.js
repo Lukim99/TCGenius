@@ -98,7 +98,8 @@ function registerGameActionRoutes(server, deps) {
                     const before = !options.read && !options.preview ? presentation.snapshot(user) : null;
                     const result = await handler(user, req.body || {}, req);
                     if (!options.read && !options.preview) {
-                        await user.save();
+                        const saved = await user.save();
+                        if (options.receipt && !saved?.success) fail('저장을 확인하지 못했습니다. 같은 버튼을 다시 누르면 추가 소모 없이 저장을 재시도합니다.', 503);
                         return { ok: true, ...result, changes: presentation.changes(before, user), state: state(user), profile: buildProfile(user) };
                     }
                     return result;
@@ -146,6 +147,46 @@ function registerGameActionRoutes(server, deps) {
         if (selected.error) fail(selected.error);
         return { cards: buildCards(user), numbers: selected.numbers };
     }, { read: true });
+
+    function checkRequestId(body) {
+        if (typeof body.requestId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId)) fail('화면을 다시 열고 시도해주세요.');
+    }
+    route('post', '/api/inventory/cards/expand', (user, body) => {
+        checkRequestId(body);
+        let receipt = user.cardInventoryReceipt;
+        if (receipt?.requestId === body.requestId) {
+            if (body.limit !== receipt.previousLimit) fail('이전 확장 요청과 다릅니다.', 409);
+        } else {
+            const capacity = rpg.getCardInventoryState(user);
+            if (body.limit !== capacity.limit) fail('보유 한도가 변경되었습니다. 인벤토리를 다시 열어주세요.', 409);
+            if (capacity.nextCost == null) fail('카드 인벤토리는 최대 300칸까지 확장할 수 있습니다.');
+            if (Number(user.garnet || 0) < capacity.nextCost) fail('가넷이 부족합니다.');
+            user.garnet = Number(user.garnet || 0) - capacity.nextCost;
+            user.maxCardLimit = Math.min(capacity.maxLimit, capacity.limit + capacity.step);
+            receipt = user.cardInventoryReceipt = { requestId: body.requestId, previousLimit: capacity.limit, limit: user.maxCardLimit, cost: capacity.nextCost };
+        }
+        return { action: 'cards-expand', expansion: receipt, capacity: rpg.getCardInventoryState(user) };
+    }, { receipt: true });
+
+    route('post', '/api/combine/bulk', async (user, body) => {
+        checkRequestId(body);
+        let receipt = user.bulkCombineReceipt;
+        if (receipt?.requestId === body.requestId) {
+            if (body.star !== receipt.star || body.cardType !== receipt.cardType) fail('이전 조합 요청과 다릅니다.', 409);
+        } else {
+            if (!Number.isSafeInteger(body.revision) || body.revision !== Number(receipt?.revision || 0)) fail('일괄 조합 내역이 변경되었습니다. 화면을 다시 열어주세요.', 409);
+            await rpg.stopFishingForCommand(user);
+            assertVersion(user, 'cards', body.version);
+            const selection = rpg.getBulkCardCombineSelection(user, body.star, body.cardType);
+            if (selection.error) fail(selection.error);
+            if (Number(user.gold || 0) < selection.gold) fail('골드가 부족합니다.');
+            const result = rpg.runBulkCardCombine(user, body.star, body.cardType);
+            if (result.error) fail(result.error);
+            receipt = user.bulkCombineReceipt = { ...result, star: body.star, cardType: body.cardType, requestId: body.requestId, revision: body.revision + 1 };
+        }
+        return { action: 'cards-bulk-combine', ...receipt, results: receipt.results.map(result => ({ ...result, card: buildCards({ ...user, inventory: { ...user.inventory, card: [result.card] } })[0] })),
+            cards: buildCards(user), revision: receipt.revision };
+    }, { receipt: true });
 
     const kinds = { 'cards-sell': 'cards', 'items-sell': 'items', 'equipment-disassemble': 'equipment', 'pets-extract': 'pet' };
     function preview(user, body) {

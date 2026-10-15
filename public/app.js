@@ -2928,7 +2928,8 @@ function updateInventoryChrome(kind, data) {
     const meta = INVENTORY_KIND_META[kind] || INVENTORY_KIND_META.items;
     $('#viewerTitle').textContent = meta.title;
     $('#inventoryTotalLabel').textContent = meta.countLabel;
-    $('#inventoryTotal').textContent = comma(inventoryCount(kind, data));
+    $('#inventoryTotal').textContent = kind === 'cards' && data.capacity ? comma(data.capacity.used) + '/' + comma(data.capacity.limit) : comma(inventoryCount(kind, data));
+    if ($('#inventoryCardSortControl')) $('#inventoryCardSortControl').hidden = kind !== 'cards';
     $$('.inv-kind-tab').forEach(button => {
         const active = button.dataset.kind === kind;
         button.classList.toggle('active', active);
@@ -2958,6 +2959,10 @@ function renderInventoryData(kind, data) {
     }
     if (kind === 'cards') {
         const cards = data.cards.filter(card => inventoryMatches(card.formatted || card.name, query));
+        const order = $('#inventoryCardSort')?.value || 'character-asc';
+        const direction = order.endsWith('-desc') ? -1 : 1;
+        cards.sort((a, b) => direction * (order.startsWith('star-') ? a.star - b.star || a.name.localeCompare(b.name, 'ko-KR')
+            : a.name.localeCompare(b.name, 'ko-KR') || a.star - b.star) || a.number - b.number);
         $('#viewer').replaceChildren(cards.length ? el('div', { class: 'card-grid inventory-card-grid' }, cards.map(card => cardNode(card, true, openInventoryCardModal))) : emptySearch);
     }
     if (kind === 'equipment') {
@@ -2994,6 +2999,9 @@ async function loadInventory(kind) {
 $$('.inv-kind-tab').forEach(btn => btn.onclick = () => loadInventory(btn.dataset.kind).catch(e => $('#viewer').replaceChildren(el('div', { class: 'empty err' }, e.message))));
 if ($('#inventorySearch')) $('#inventorySearch').oninput = () => {
     if (currentInventoryData) renderInventoryData(currentInventoryKind, currentInventoryData);
+};
+if ($('#inventoryCardSort')) $('#inventoryCardSort').onchange = () => {
+    if (currentInventoryKind === 'cards' && currentInventoryData) renderInventoryData('cards', currentInventoryData);
 };
 if ($('#inventorySearchClear')) $('#inventorySearchClear').onclick = () => {
     $('#inventorySearch').value = '';
