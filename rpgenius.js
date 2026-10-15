@@ -233,6 +233,7 @@ function captureFieldTickState(user) {
         targetHp: getFieldTargetHpForTick(user),
         killCount: getRegularFieldKillCountForTick(user),
         gold: Number(user && user.gold || 0),
+        cardCount: (user && user.inventory && user.inventory.card || []).length,
         itemCounts: new Map(user && user.inventory && Array.isArray(user.inventory.item)
             ? user.inventory.item.map(item => [Number(item.id), Number(item.count || 0)]) : [])
     };
@@ -254,6 +255,9 @@ function getFieldTickRewards(user, before, message) {
         const gained = Number(item.count || 0) - Number(before.itemCounts.get(itemId) || 0);
         if (gained <= 0) return;
         rewards.push({ kind: 'item', itemId, name: items[itemId] && items[itemId].name || '알 수 없는 아이템', count: gained });
+    });
+    (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
+        rewards.push({ kind: 'card', card: { ...card }, name: formatUserCard(card), count: 1 });
     });
     return rewards;
 }
@@ -3374,7 +3378,7 @@ function combineCardPacks(user, starArg, countArg) {
         lastRoll = roll;
     }
     const failCount = times - successCount;
-    if (successCount > 0) addInventoryItem(user, outputItemId, successCount);
+    const result = successCount > 0 ? grantItemReward(user, outputItemId, successCount) : null;
     if (failCount > 0) addInventoryItem(user, inputItemId, failCount);
     cleanupInventoryItems(user);
     const lines = ['✅ ' + inputPackName + ' x' + comma(requiredPacks) + ' 조합 완료 (' + comma(times) + '회)'];
@@ -3383,7 +3387,8 @@ function combineCardPacks(user, starArg, countArg) {
     else if (lastRoll && lastRoll.guarantee > 0) lines.push('- 보정 카운트: ' + comma(lastRoll.count) + '/' + comma(lastRoll.guarantee));
     lines.push('- 소모 🪙 ' + comma(totalGold));
     lines.push('', '[ 결과 ]');
-    lines.push('- ' + outputPackName + ' x' + comma(successCount));
+    if (result) lines.push(...formatItemReward(result));
+    else lines.push('- 성공 결과 없음');
     if (failCount > 0) lines.push('- ' + inputPackName + ' x' + comma(failCount) + ' 반환');
     return lines.join('\n');
 }
@@ -5910,8 +5915,8 @@ function grantWorldBossRewardItems(user, rewardItems, lines) {
                 if (lines) lines.push('- (아이템 누락) item_id=' + itemId);
                 return;
             }
-            addInventoryItem(user, itemId, count);
-            if (lines) lines.push('- ' + item.name + ' x' + comma(count));
+            const result = grantItemReward(user, itemId, count);
+            if (lines) lines.push(...formatItemReward(result));
             granted++;
         }
     });
@@ -6020,9 +6025,7 @@ function applyEliteReward(user, dungeon, slotEffects, extra, lines) {
         if (reward.type == '아이템') {
             const itemId = Number.isInteger(reward.item_id) ? reward.item_id : items.findIndex(item => item && item.name == reward.item_name);
             if (!items[itemId]) { rewardLines.push('- 보상 아이템 설정 필요: ' + String(reward.item_name || reward.item_id)); return; }
-            addInventoryItem(user, itemId, count);
-            const item = items[itemId];
-            rewardLines.push('- ' + (item ? item.name : '알 수 없는 아이템') + ' x' + comma(count));
+            rewardLines.push(...formatItemReward(grantItemReward(user, itemId, count)));
         }
     });
     lines.push('', '[ 엘리트 처치 보상 ]');
@@ -6265,15 +6268,15 @@ function grantDailyDungeonClearReward(user, dungeon, stats, slotEffects, extra, 
     itemRewards.forEach(item => { item.count *= rewardMultiplier; });
     const levelUps = addExperience(user, expReward);
     user.gold = Number(user.gold || 0) + goldReward;
-    itemRewards.forEach(item => addInventoryItem(user, item.id, item.count));
+    const grantedItems = itemRewards.map(item => grantItemReward(user, item.id, item.count));
     const lines = ['🎉 일일 던전 클리어!', '- ' + dungeon.name];
     if (rolled.lucky) lines.push('', '🍀 럭키 타임! 클리어 보상을 2배로 획득합니다!');
     lines.push('', '[ 클리어 보상 ]', '- XP ' + comma(expReward), '- 🪙 ' + comma(goldReward));
-    itemRewards.forEach(item => lines.push('- ' + item.name + ' x' + comma(item.count)));
+    grantedItems.forEach(result => lines.push(...formatItemReward(result)));
     if (levelUps > 0) lines.push('- 레벨업! Lv. ' + user.level);
     saveFieldCooldowns(user);
     finishDailyDungeonState(user, 'cleared');
-    getDailyDungeonDailyState(user).clearReward = { exp: expReward, gold: goldReward, items: itemRewards.map(item => ({ name: item.name, count: item.count })), lucky: rolled.lucky };
+    getDailyDungeonDailyState(user).clearReward = { exp: expReward, gold: goldReward, items: grantedItems.map(result => ({ name: result.name, count: result.count, itemId: result.itemId, discarded: result.discarded })), lucky: rolled.lucky };
     clearFieldRuntimeTimers(user.name);
     user.field = null;
     lines.push('', '✅ 보상을 획득하고 일일 던전에서 자동 퇴장했습니다.');
@@ -6488,8 +6491,7 @@ function buildHuntResult(user, dungeon, rawDamage, extra) {
             const items = getDataCache('Item', []);
             const dropItemId = items.findIndex(item => item.name == '카드팩 상자');
             if (dropItemId != -1) {
-                addInventoryItem(user, dropItemId, 1);
-                lines.push('- 📦 ' + items[dropItemId].name + ' 획득!');
+                lines.push(...formatItemReward(grantItemReward(user, dropItemId, 1)));
             }
         }
         const pointMineDaily = getPointMineDropDailyState(user);
@@ -9157,6 +9159,66 @@ function addInventoryItem(user, itemId, count) {
     cleanupInventoryItems(user);
 }
 
+// 카드 전용 팩/상자는 운영 구성 그대로 즉시 개봉한다. 일반 꾸러미는 사용 시 구성품을 지급한다.
+function isCardPackItem(itemId, visiting = new Set()) {
+    const item = getDataCache('Item', [])[itemId];
+    if (!item || visiting.has(Number(itemId))) return false;
+    if (item.type == '가챠' && ['캐릭터 카드팩', '전직 캐릭터 카드팩'].includes(item.pack && item.pack.type)) return true;
+    if (!['가챠', '번들'].includes(item.type) || typeof item.pack != 'number') return false;
+    const entries = getDataCache(item.type == '번들' ? 'Bundle' : 'Pack', [])[item.pack];
+    if (!Array.isArray(entries) || entries.length == 0) return false;
+    visiting.add(Number(itemId));
+    const result = entries.every(entry => entry.type == '캐릭터카드'
+        || entry.type == '아이템' && isCardPackItem(entry.item_id, visiting));
+    visiting.delete(Number(itemId));
+    return result;
+}
+
+function grantCharacterCardReward(user, card, summary) {
+    if (!card) return;
+    if (getRemainingCardInventorySpace(user) < 1) {
+        addRewardSummary(summary, 'discardedCard', '카드 인벤토리 공간 부족으로 버려진 캐릭터 카드', 1);
+        return;
+    }
+    if (card.skin) unlockAvatar(user, card.skin, 0);
+    user.inventory.card.push(card);
+    addRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), formatUserCard(card), 1);
+}
+
+// 신규 수령에 사용한다. 취소·환불은 addInventoryItem으로 원래 아이템을 복원한다.
+function grantItemReward(user, itemId, count, summary) {
+    const item = getDataCache('Item', [])[itemId];
+    const received = {};
+    const cardStart = (user.inventory && user.inventory.card || []).length;
+    const converted = isCardPackItem(itemId);
+    if (!converted) {
+        addInventoryItem(user, itemId, count);
+        addRewardSummary(received, 'item:' + itemId, item ? item.name : '알 수 없는 아이템', count);
+    } else if (item.pack && typeof item.pack == 'object') {
+        grantCharacterCardPack(user, item.pack, count, received);
+    } else {
+        const entries = getDataCache(item.type == '번들' ? 'Bundle' : 'Pack', [])[item.pack];
+        for (let i = 0; i < count; i++) {
+            if (item.type == '번들') entries.forEach(entry => grantPackReward(user, entry, received));
+            else for (let j = 0; j < Number(item.num || 1); j++) grantPackReward(user, pickPackEntry(entries), received);
+        }
+    }
+    if (summary) Object.keys(received).forEach(key => addRewardSummary(summary, key, received[key].label, received[key].count));
+    const cards = (user.inventory && user.inventory.card || []).slice(cardStart).map(card => ({ ...card }));
+    const discarded = Number(received.discardedCard && received.discardedCard.count || 0);
+    return {
+        kind: converted ? 'card' : 'item', itemId: Number(itemId), converted,
+        name: !converted ? (item ? item.name : '알 수 없는 아이템')
+            : cards.length == 1 && !discarded ? formatUserCard(cards[0]) : '랜덤 캐릭터 카드' + (discarded ? ' (' + comma(discarded) + '장 버림)' : ''),
+        count: converted ? cards.length + discarded : count,
+        cards, discarded, summary: received
+    };
+}
+
+function formatItemReward(result) {
+    return Object.keys(result.summary).map(key => formatRewardSummaryEntry(key, result.summary[key]));
+}
+
 function getInventoryItemCount(user, itemId) {
     if (!user.inventory || !Array.isArray(user.inventory.item)) return 0;
     const item = user.inventory.item.find(inv => inv.id == itemId);
@@ -9850,8 +9912,7 @@ function grantAttendanceBlessingItem(user, name, count, lines) {
         console.error('[blessing] 출석 보상 아이템을 찾을 수 없습니다: ' + name);
         return;
     }
-    addInventoryItem(user, itemId, count);
-    lines.push('- ' + name + ' x' + comma(count));
+    lines.push(...formatItemReward(grantItemReward(user, itemId, count)));
 }
 
 function checkAttendance(user) {
@@ -9953,7 +10014,7 @@ function formatCraftMaterial(material, need) {
 function grantCraftEntry(user, entry) {
     const count = getRecipeEntryCount(entry);
     if (entry.type == '아이템') {
-        addInventoryItem(user, entry.item_id, count);
+        grantItemReward(user, entry.item_id, count);
         return;
     }
     if (entry.type == '아티팩트') {
@@ -10171,8 +10232,7 @@ function consumeFragment(user) {
             return '❌ 보상 아이템 \'' + chosen.name + '\'을(를) 찾을 수 없습니다.';
         }
         const count = Number(chosen.count || 1);
-        addInventoryItem(user, itemId, count);
-        lines.push('- ' + chosen.name + ' x' + comma(count));
+        lines.push(...formatItemReward(grantItemReward(user, itemId, count)));
     } else {
         user.pendingFragment = null;
         return '❌ 알 수 없는 보상 형식입니다.';
@@ -10272,7 +10332,8 @@ function addFishingReward(user, reward) {
     if (typeof reward === 'object') {
         if (getRemainingCardInventorySpace(user) > 0) user.inventory.card.push(reward);
         else user.fishingCards.push(reward);
-    } else addFishingNetItem(user, reward, 1);
+    } else if (isCardPackItem(reward)) grantItemReward(user, reward, 1);
+    else addFishingNetItem(user, reward, 1);
 }
 
 function formatFishingNet(user) {
@@ -10403,15 +10464,12 @@ async function stopFishingForCommand(user) {
 
 async function clearFishingNet(user) {
     normalizeFishingData(user);
-    const items = getDataCache('Item', []);
     const lines = ['✅ ' + user.name + '님이 살림망을 비웠습니다.', '[ 획득 결과 ]'];
     let hasItem = false;
     Object.keys(user.fishingNet).forEach(itemId => {
         const count = Number(user.fishingNet[itemId] || 0);
         if (count <= 0) return;
-        addInventoryItem(user, Number(itemId), count);
-        const data = items[itemId];
-        if (data) lines.push('- ' + data.name + ' x' + comma(count));
+        lines.push(...formatItemReward(grantItemReward(user, Number(itemId), count)));
         hasItem = true;
     });
     const caughtCards = user.fishingCards.splice(0, getRemainingCardInventorySpace(user));
@@ -10462,7 +10520,7 @@ async function handleAdminCommand(command, adminUser) {
     if (itemId == -1) return '❌ 존재하지 않는 아이템입니다.';
 
     if (command.args[0] == '아이템지급') {
-        addInventoryItem(targetUser, itemId, count);
+        grantItemReward(targetUser, itemId, count);
     } else {
         if (getInventoryItemCount(targetUser, itemId) < count) return '❌ 대상 사용자의 아이템 수량이 부족합니다.';
         removeInventoryItem(targetUser, itemId, count);
@@ -11169,11 +11227,10 @@ function selectItemChoice(user, numberArg) {
     }
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1 || number > entries.length) return '❌ 존재하지 않는 번호입니다.\n/RPGenius 선택 [번호]';
-    const items = getDataCache('Item', []);
     const picked = entries[number - 1];
-    addInventoryItem(user, picked.id, picked.count);
+    const result = grantItemReward(user, picked.id, picked.count);
     user.pendingAction = null;
-    return '✅ 아이템을 교환했습니다.\n[ 획득 결과 ]\n- ' + items[picked.id].name + ' x' + comma(picked.count);
+    return ['✅ 아이템을 교환했습니다.', '[ 획득 결과 ]', ...formatItemReward(result)].join('\n');
 }
 
 function getSupportRerollTargets(user) {
@@ -11802,7 +11859,6 @@ function rollCount(count) {
 }
 
 function grantPackReward(user, reward, summary) {
-    const items = getDataCache('Item', []);
     const equipments = getDataCache('Equipment', {});
     const count = rollCount(reward.count);
     if (reward.type == '경험치') {
@@ -11811,9 +11867,7 @@ function grantPackReward(user, reward, summary) {
         return;
     }
     if (reward.type == '아이템') {
-        addInventoryItem(user, reward.item_id, count);
-        const item = items[reward.item_id];
-        addRewardSummary(summary, 'item:' + reward.item_id, (item ? item.name : '알 수 없는 아이템'), count);
+        grantItemReward(user, reward.item_id, count, summary);
         return;
     }
     if (reward.type == '캐릭터카드') {
@@ -11822,9 +11876,7 @@ function grantPackReward(user, reward, summary) {
         for (let i = 0; i < count; i++) {
             const card = buildCharacterCardReward(reward);
             if (!card) continue;
-            if (card.skin) unlockAvatar(user, card.skin, 0); // 스킨 지정 카드는 해당 아바타도 해금
-            user.inventory.card.push(card);
-            addRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), formatUserCard(card), 1);
+            grantCharacterCardReward(user, card, summary);
         }
         return;
     }
@@ -11966,9 +12018,7 @@ function grantCharacterCardPack(user, pack, useCount, summary) {
         const star = randomInt(minStar, maxStar) - 1;
         const card = { id: id, star: star, type: isJob ? '전직' : '일반' };
         applyPackSkinToCard(card, pack.skin);
-        if (card.skin) unlockAvatar(user, card.skin, 0); // 스킨 지정 카드팩은 해당 아바타도 해금
-        user.inventory.card.push(card);
-        addRewardSummary(summary, 'card:' + card.id + ':' + star + ':' + (card.skin || ''), formatUserCard(card), 1);
+        grantCharacterCardReward(user, card, summary);
     }
 }
 
@@ -12161,12 +12211,6 @@ async function useItem(user, itemName, countArg, options = {}) {
     let useCount = countArg == null || countArg === '' ? 1 : Number(countArg);
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
     if (getInventoryItemCount(user, itemId) < useCount) return '❌ 아이템이 부족합니다.';
-    const requestedUseCount = useCount;
-    if (item.pack && (item.pack.type == '캐릭터 카드팩' || item.pack.type == '전직 캐릭터 카드팩')) {
-        const remainingSpace = getRemainingCardInventorySpace(user);
-        if (remainingSpace < 1) return '❌ 캐릭터 카드 인벤토리가 가득 찼습니다.';
-        useCount = Math.min(useCount, remainingSpace);
-    }
 
     const requirements = item.require || [];
     for (const require of requirements) {
@@ -12239,7 +12283,6 @@ async function useItem(user, itemName, countArg, options = {}) {
     requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
 
     const lines = ['✅ ' + item.name + ' x' + comma(useCount) + ' 사용'];
-    if (requestedUseCount > useCount) lines.push('- 캐릭터 카드 인벤토리 공간 부족으로 ' + comma(requestedUseCount - useCount) + '개는 사용되지 않았습니다.');
     if (item.type == '소모품') {
         (item.use_func || []).forEach(func => applyUseFunc(user, func, useCount, lines));
     }
@@ -12838,8 +12881,6 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             }
             const cardRewards = bundleData.filter(reward => reward.type === '캐릭터카드');
             if (cardRewards.some(reward => !buildCharacterCardReward(reward))) return '❌ 처리할 수 없는 캐릭터 카드 보상입니다.';
-            const requiredSpace = cardRewards.reduce((total, reward) => total + Number(typeof reward.count === 'object' ? reward.count.max : reward.count || 1), 0) * Number(shopItem.count) * count;
-            if (getRemainingCardInventorySpace(user) < requiredSpace) return '❌ 캐릭터 카드 인벤토리 공간이 부족합니다. (필요 ' + comma(requiredSpace) + '칸)';
         }
     }
     const totalPrice = Number(shopItem.price.amount) * count;
@@ -12871,7 +12912,11 @@ async function purchaseShopItem(user, shopType, indexArg, countArg, _out) {
             if (_out && typeof _out == 'object') _out.bundleGranted = bundleSummary;
             if (_out && typeof _out == 'object') _out.grantedCards = (user.inventory && user.inventory.card || []).slice(cardStart).map(card => ({ ...card }));
         } else {
-            addInventoryItem(user, shopItem.item_id, Number(shopItem.count) * count);
+            const result = grantItemReward(user, shopItem.item_id, Number(shopItem.count) * count);
+            if (result.converted) {
+                bundleSummary = result.summary;
+                if (_out) { _out.bundleGranted = result.summary; _out.grantedCards = result.cards; }
+            }
         }
     } else if (shopItem.type === '아티팩트') {
         for (let i = 0; i < Number(shopItem.count || 1) * count; i++) addEquipmentInventory(user, 'artifact', shopItem.artifact_id);
@@ -13613,7 +13658,7 @@ function resetTradeConfirmations(session) {
     session.bConfirmed = false;
 }
 
-function refundOfferToUser(user, offer) {
+function refundOfferToUser(user, offer, receiveRewards = false) {
     if (Number(offer.gold || 0) > 0) user.gold = Number(user.gold || 0) + Number(offer.gold || 0);
     if (Number(offer.garnet || 0) > 0) user.garnet = Number(user.garnet || 0) + Number(offer.garnet || 0);
     if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };
@@ -13621,10 +13666,14 @@ function refundOfferToUser(user, offer) {
     if (!Array.isArray(user.inventory.equipment)) user.inventory.equipment = [];
     (offer.cards || []).forEach(card => user.inventory.card.push(card));
     (offer.equipments || []).forEach(equip => user.inventory.equipment.push(JSON.parse(JSON.stringify(equip))));
+    const summary = {};
     Object.keys(offer.items || {}).forEach(itemId => {
         const count = Number(offer.items[itemId] || 0);
-        if (count > 0) addInventoryItem(user, Number(itemId), count);
+        if (count <= 0) return;
+        if (receiveRewards) grantItemReward(user, Number(itemId), count, summary);
+        else addInventoryItem(user, Number(itemId), count);
     });
+    return summary;
 }
 
 async function cancelActiveTrade(session, reason, channel) {
@@ -13806,7 +13855,7 @@ function applyTradeOffer(user, args) {
     return '❌ 지원하지 않는 거래 항목입니다.';
 }
 
-function buildTradeGainLines(receivedOffer) {
+function buildTradeGainLines(receivedOffer, itemSummary) {
     const items = getDataCache('Item', []);
     const lines = [];
     (receivedOffer.equipments || []).forEach(entry => {
@@ -13819,7 +13868,8 @@ function buildTradeGainLines(receivedOffer) {
         const cost = getCardTicketCost(card);
         lines.push('- ' + formatUserCard(card) + (cost > 0 ? ' (거래권 ' + comma(cost) + '장 소모)' : ''));
     });
-    Object.keys(receivedOffer.items || {}).forEach(itemId => {
+    if (itemSummary) lines.push(...Object.keys(itemSummary).map(key => formatRewardSummaryEntry(key, itemSummary[key])));
+    else Object.keys(receivedOffer.items || {}).forEach(itemId => {
         const count = Number(receivedOffer.items[itemId] || 0);
         if (count <= 0) return;
         const data = items[itemId];
@@ -13881,16 +13931,16 @@ async function finalizeTrade(session, channel) {
         equipments: (session.aOffer.equipments || []).map(equip => markEquipmentTraded(equip)),
         items: session.aOffer.items
     };
-    refundOfferToUser(aUser, aReceive);
-    refundOfferToUser(bUser, bReceive);
+    const aItemSummary = refundOfferToUser(aUser, aReceive, true);
+    const bItemSummary = refundOfferToUser(bUser, bReceive, true);
 
     delete aUser.tradeEscrow; delete bUser.tradeEscrow;
     await commitTradeUsers([aUser, bUser]);
     finishTradeSession(session, 'completed', '거래가 완료되었습니다.', { [session.a]: aReceive, [session.b]: bReceive });
 
     const lines = ['✅ 거래가 성사되었습니다!', ''];
-    const aGain = buildTradeGainLines(session.bOffer);
-    const bGain = buildTradeGainLines(session.aOffer);
+    const aGain = buildTradeGainLines(session.bOffer, aItemSummary);
+    const bGain = buildTradeGainLines(session.aOffer, bItemSummary);
     lines.push('[ ' + aUser.name + '님 획득 결과 ]');
     if (aGain.length == 0) lines.push('- 없음'); else lines.push(...aGain);
     lines.push('');
@@ -14168,7 +14218,7 @@ async function claimMailGifts(user, id) {
         else if (g.type == 'equipment' && g.equip) { user.inventory.equipment.push(JSON.parse(JSON.stringify(g.equip))); const d = describeMailGift(g); lines.push(d ? d.label : '장비'); }
         else if (g.type == 'pet' && g.pet) { user.inventory.pet.push(clonePetInstance(g.pet)); const d = describeMailGift(g); lines.push(d ? d.label : '펫'); }
         else if (g.type == 'card' && g.card) { user.inventory.card.push({ id: Number(g.card.id), star: Number(g.card.star || 0), type: g.card.type || '일반' }); const d = describeMailGift(g); lines.push(d ? d.label : '캐릭터 카드'); }
-        else if (g.type == 'item') { addInventoryItem(user, Number(g.id), Number(g.count || 0)); const d = describeMailGift(g); lines.push(d ? d.label : '아이템'); }
+        else if (g.type == 'item') { lines.push(...formatItemReward(grantItemReward(user, Number(g.id), Number(g.count || 0)))); }
         else if (g.type == 'title') { const t = getTitleById(g.titleId); const first = unlockTitle(user, g.titleId); lines.push('🏅 칭호 「' + (t ? t.name : g.titleId) + '」' + (first ? '' : ' (이미 보유)')); }
         else if (g.type == 'avatar') { const first = unlockAvatar(user, g.name, Number(g.trades || 0)); lines.push('🧥 ' + String(g.name) + ' 아바타' + (first ? '' : ' (이미 보유)')); }
     });
@@ -16548,6 +16598,9 @@ module.exports = {
     getSlotEffectValueAtStar,
     formatSlotEffectProgression,
     addInventoryItem,
+    isCardPackItem,
+    grantItemReward,
+    formatItemReward,
     removeInventoryItem,
     getInventoryItemCount,
     getBoundItemCount,

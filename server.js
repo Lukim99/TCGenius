@@ -1351,7 +1351,7 @@ server.post('/api/inventory/items/:id/choose', requireUser, serializeItemUse(asy
             if (!reward || choiceId === itemId || !Number.isSafeInteger(reward.count) || reward.count < 1) return res.status(400).json({ error: '선택할 수 없는 아이템입니다.' });
             if (rpgenius.getInventoryItemCount(user, itemId) < 1) return res.status(400).json({ error: '남은 주머니가 없습니다.' });
             rpgenius.removeInventoryItem(user, itemId, 1);
-            rpgenius.addInventoryItem(user, choiceId, reward.count);
+            reward = { ...reward, ...rpgenius.grantItemReward(user, choiceId, reward.count) };
             if (!user.itemChoiceState) user.itemChoiceState = {};
             user.itemChoiceState[itemId] = { version: previous.version + 1, reward };
         }
@@ -1664,7 +1664,7 @@ server.post('/api/event/dice/roll', requireUser, async (req, res) => {
         }
 
         rpgenius.removeInventoryItem(user, diceItemId, 1);
-        if (hit) rpgenius.addInventoryItem(user, rewardItemId, rewardCount);
+        if (hit) rpgenius.grantItemReward(user, rewardItemId, rewardCount);
         rpgenius.cleanupInventoryItems(user);
         await user.save();
         await rpgenius.saveRpgeniusDataEntry('Ceil', ceilData);
@@ -1858,14 +1858,15 @@ server.post('/api/levelreward', requireUser, async (req, res) => {
         if (!Array.isArray(user.claimedLevelRewards)) user.claimedLevelRewards = [];
         if (user.claimedLevelRewards.includes(level)) return res.status(400).json({ error: '이미 수령한 보상입니다.' });
         const allItems = rpgenius.getDataCache('Item', []);
+        const granted = [];
         for (const [name, count] of reward.items) {
             const itemId = allItems.findIndex(it => it && it.name === name);
-            if (itemId !== -1) rpgenius.addInventoryItem(user, itemId, count);
+            if (itemId !== -1) granted.push(rpgenius.grantItemReward(user, itemId, count));
         }
         if (reward.garnet) user.garnet = Number(user.garnet || 0) + reward.garnet;
         user.claimedLevelRewards.push(level);
         await user.save();
-        res.json({ ok: true, profile: buildUserProfile(user) });
+        res.json({ ok: true, profile: buildUserProfile(user), discardedCards: granted.reduce((sum, result) => sum + result.discarded, 0) });
     } catch (e) {
         console.error('levelreward claim error:', e);
         res.status(500).json({ error: '서버 오류' });
@@ -2126,6 +2127,7 @@ function captureHFieldAction(user) {
             ? Number(user.field.pillarHp || 0)
             : Number(user.field.elite && user.field.elite.hp || 0),
         itemCounts,
+        cardCount: (user.inventory && user.inventory.card || []).length,
         equipmentCount: user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment.length : 0
     };
 }
@@ -2142,6 +2144,9 @@ function getHFieldRewards(user, before) {
             kind: 'equipment', name: item.name, count: 1, rarity: item.rarity,
             iconUrl: item.iconUrl, frameUrl: item.frameUrl, typeLabel: item.typeLabel
         }));
+    (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
+        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardImageUrl(card), frameUrl: null });
+    });
     return rewards;
 }
 
@@ -2169,6 +2174,7 @@ function parseFieldIncomingHits(message) {
 
 function mapFieldTickReward(reward) {
     const mapped = Object.assign({}, reward || {});
+    if (mapped.kind == 'card') return Object.assign(mapped, { iconUrl: getCardImageUrl(mapped.card), frameUrl: null });
     if (mapped.kind != 'item') return mapped;
     const items = rpgenius.getDataCache('Item', []);
     const item = Number.isInteger(Number(mapped.itemId)) ? items[Number(mapped.itemId)] : items.find(entry => entry && entry.name == mapped.name);
@@ -2512,7 +2518,7 @@ function buildGeneralFieldState(user, dailyMode = false) {
         clearRewards: daily && daily.clearReward ? [
             { kind: 'exp', name: '경험치', count: daily.clearReward.exp },
             { kind: 'currency', name: '골드', count: daily.clearReward.gold },
-            ...(daily.clearReward.items || []).map(reward => Object.assign({ kind: 'item' }, reward, getItemDisplayAssets((rpgenius.getDataCache('Item', []) || []).find(item => item && item.name === reward.name))))
+            ...(daily.clearReward.items || []).map(reward => Object.assign({ kind: 'item' }, reward, getItemDisplayAssets((rpgenius.getDataCache('Item', []) || [])[reward.itemId] || (rpgenius.getDataCache('Item', []) || []).find(item => item && item.name === reward.name))))
         ] : [],
         nextActionAt: runtime.inField ? Number(user.field.nextActionAt || 0) : 0,
         charge: runtime.inField ? Number(user.field.sivalonCharge || 0) : 0,
@@ -2560,6 +2566,7 @@ function captureGeneralFieldAction(user, dailyMode = false) {
         exp: Number(user.exp || 0),
         gold: Number(user.gold || 0),
         itemCounts,
+        cardCount: (user.inventory && user.inventory.card || []).length,
         equipmentCount: user.inventory && Array.isArray(user.inventory.equipment) ? user.inventory.equipment.length : 0
     };
 }
@@ -2980,6 +2987,7 @@ function captureWorldBossAction(user) {
         playerHp: Number(user.hp || 0),
         playerMp: Number(user.mp || 0),
         gold: Number(user.gold || 0), garnet: Number(user.garnet || 0),
+        cardCount: (user.inventory && user.inventory.card || []).length,
         itemCounts: new Map((user.inventory && Array.isArray(user.inventory.item) ? user.inventory.item : []).map(item => [Number(item.id), Number(item.count || 0)]))
     };
 }
@@ -2996,6 +3004,9 @@ function getWorldBossActionRewards(user, before) {
         if (gained <= 0 || !items[id]) return;
         const assets = getItemDisplayAssets(items[id]);
         rewards.push({ kind: 'item', name: items[id].name, count: gained, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl });
+    });
+    (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
+        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardImageUrl(card), frameUrl: null });
     });
     return rewards;
 }
@@ -4351,7 +4362,7 @@ server.post('/api/hotdeal/buy', requireUser, async (req, res) => {
             if (Number(user.garnet || 0) < pick.amount) return res.status(400).json({ error: '가넷이 부족합니다.' });
             user.garnet = Number(user.garnet || 0) - pick.amount;
         }
-        rpgenius.addInventoryItem(user, pick.id, pick.count);
+        rpgenius.grantItemReward(user, pick.id, pick.count);
         user.hotDealPurchases[periodKey].push(slot);
         // 이전 섹터 기록 정리
         Object.keys(user.hotDealPurchases).forEach(k => { if (k !== periodKey) delete user.hotDealPurchases[k]; });
@@ -5045,7 +5056,7 @@ server.post('/api/users/grant', requireAdmin, async (req, res) => {
             const itemId = items.findIndex(item => item && item.name == itemName);
             if (itemId == -1) return res.status(404).json({ error: '존재하지 않는 아이템입니다.' });
             if (amount > 0) {
-                rpgenius.addInventoryItem(user, itemId, amount);
+                rpgenius.grantItemReward(user, itemId, amount);
             } else {
                 const have = rpgenius.getInventoryItemCount(user, itemId);
                 if (have < -amount) return res.status(400).json({ error: '대상 보유 수량이 부족합니다. (보유 ' + have + ')' });
@@ -7078,7 +7089,7 @@ function buildBaitDetail(item) {
         kind: 'chance',
         title: '낚시 획득 확률',
         rollCount: 1,
-        note: rewards.some(r => r.card) ? '낚은 카드는 카드 인벤토리에 들어갑니다. 공간이 부족하면 살림망에 보관됩니다.' : '낚시 1회마다 아래 아이템 중 하나를 획득합니다.',
+        note: rewards.some(r => r.card) ? '낚은 카드는 카드 인벤토리에 들어갑니다. 공간이 부족하면 살림망에 보관됩니다.' : '낚시 1회마다 아래 보상 중 하나를 획득합니다. 카드팩 당첨 시 캐릭터 카드를 즉시 지급하며, 카드 인벤토리 공간이 부족하면 버립니다.',
         entries: rewards.map(reward => {
             const display = reward.card ? (reward.card.id != null
                 ? buildDetailRewardDisplay({ type: '캐릭터카드', ...reward.card, card_type: reward.card.type, count: 1 })
@@ -8228,7 +8239,7 @@ async function buyAuction(buyerName, auctionId, buyCountArg) {
         const eqEntry = rpgenius.markEquipmentTraded(rpgenius.cloneEquipmentInstance(entry.payload, entry.payload.type));
         buyer.inventory.equipment.push(eqEntry);
     } else if (entry.kind == 'item') {
-        rpgenius.addInventoryItem(buyer, Number(entry.payload.id), buyCount);
+        rpgenius.grantItemReward(buyer, Number(entry.payload.id), buyCount);
     } else if (entry.kind == 'pet') {
         const petEntry = rpgenius.markPetTraded(rpgenius.clonePetInstance(entry.payload));
         buyer.inventory.pet.push(petEntry);
@@ -8673,7 +8684,7 @@ async function fulfillBuyOrder(sellerName, orderId, body) {
         const sellerTradable = rpgenius.getTradableItemCount(seller, itemId);
         if (sellerTradable < sellCount) return { error: '귀속 아이템은 판매할 수 없습니다. (거래 가능 ' + sellerTradable + '개)' };
         if (!rpgenius.removeInventoryItem(seller, itemId, sellCount)) return { error: '아이템 차감에 실패했습니다.' };
-        rpgenius.addInventoryItem(buyer, itemId, sellCount);
+        rpgenius.grantItemReward(buyer, itemId, sellCount);
     } else if (entry.kind == 'pet') {
         const pets = (seller.inventory && seller.inventory.pet) || [];
         const index = Number(body.index);

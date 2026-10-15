@@ -48,7 +48,11 @@ function spendMental(stats, runtime, amount, now) {
     const s = mentalState(stats, runtime, now);
     if (s.exhausted || s.value < amount) return false;
     s.value = Math.max(0, s.value - amount);
-    if (s.value === 0) { s.exhausted = true; s.berserk = Number(stats.randoEquipment?.['청심환'] || 0) > 0; }
+    if (!s.berserk && Number(stats.randoEquipment?.['청심환'] || 0) > 0 && s.value <= Number(stats.mental || 100) * .40) {
+        s.value = 0;
+        s.berserk = true;
+    }
+    if (s.value === 0) s.exhausted = true;
     return true;
 }
 

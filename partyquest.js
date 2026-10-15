@@ -647,10 +647,8 @@ function grantPartyQuestPackReward(user, reward, summary) {
             frameUrl: '/item-image?dir=' + encodeURIComponent('프레임') + '&file=' + encodeURIComponent('[장비]' + rarity + '.png') };
     }
     if (reward.type === '아이템') {
-        rpgenius.addInventoryItem(user, reward.item_id, count);
-        const item = items[reward.item_id];
-        addPartyQuestRewardSummary(summary, 'item:' + reward.item_id, item ? item.name : '알 수 없는 아이템', count);
-        return { kind: 'item', itemId: Number(reward.item_id), name: item ? item.name : '알 수 없는 아이템', count };
+        const granted = rpgenius.grantItemReward(user, reward.item_id, count, summary);
+        return { ...granted, ...getPartyQuestItemAsset(reward.item_id, 0) };
     }
     if (reward.type === '캐릭터카드') {
         if (!user.inventory) user.inventory = { card: [], item: [], equipment: [] };

@@ -5387,6 +5387,7 @@ function renderLevelRewardList(rewards, userLevel) {
                 try {
                     const result = await postApi('/api/levelreward', { level: r.level });
                     if (result.profile) renderProfile(result.profile);
+                    if (result.discardedCards) showAlert('카드 인벤토리 공간 부족으로 캐릭터 카드 ' + comma(result.discardedCards) + '장을 버렸습니다.');
                     await loadLevelRewards();
                 } catch (e) {
                     showAlert(e.message);

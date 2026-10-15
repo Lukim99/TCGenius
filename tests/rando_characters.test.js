@@ -7,7 +7,7 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const rando = require('../rando_characters');
 const content = require('../scripts/register_rando_characters');
 const read = key => JSON.parse(fs.readFileSync(path.join(__dirname, '../DB/RPGenius', key + '.json'), 'utf8'));
-const before = { Item: read('Item').concat({ name: '지정 캐릭터 변환석 주머니', choices: [{ id: 2, count: 3 }] }),
+const before = { Item: read('Item').map(item => item.name === '지정 캐릭터 변환석 주머니' ? { ...item, choices: [{ id: 2, count: 3 }] } : item),
     Equipment: read('Equipment'), Fashion: read('Fashion'), Shop: { ...read('Shop'), 아바타: [] }, Bait: read('Bait') };
 const fixture = content.prepare(before);
 fixture.Equipment.armor.push(require('../transcend_equipment').definitions.armor.find(e => e.name === '심해의 갑옷'));
@@ -104,6 +104,28 @@ test('청심환은 폭주 중에도 정신력 30까지 전투불능, 최대 정�
     assert.equal(rando.mentalCost(stats, { mental_cost: 40 }), 50);
     rando.tickMental(stats, runtime, {}, 2000); near(runtime.kino.value, 30); assert.equal(runtime.kino.exhausted, false); assert.equal(runtime.kino.berserk, true);
     rando.tickMental(stats, runtime, {}, 6000); near(runtime.kino.value, 150); assert.equal(runtime.kino.berserk, false);
+});
+
+test('청심환은 스킬 소모 직후 최대 정신력의 40% 이하에서 남은 정신력을 소모하고 타격 회복 전에 폭주한다', () => {
+    for (const [mental, cost, expected, berserk] of [[150, 89, 61, false], [150, 90, 0, true], [150, 91, 0, true], [160, 95, 65, false], [160, 96, 0, true]]) {
+        const stats = { kino: true, mental, randoEquipment: { '청심환': 1 } }, runtime = {};
+        assert.equal(rando.spendMental(stats, runtime, cost, 1000), true);
+        near(runtime.kino.value, expected); assert.equal(runtime.kino.berserk, berserk); assert.equal(runtime.kino.exhausted, berserk);
+        rando.onHit(stats, runtime, 1, { isSkill: true }, 0, 1000);
+        near(runtime.kino.value, expected + 5); assert.equal(runtime.kino.berserk, berserk);
+    }
+    const stats = { kino: true, mental: 150, randoEquipment: {} }, runtime = {};
+    assert.equal(rando.spendMental(stats, runtime, 90, 1000), true);
+    near(runtime.kino.value, 60); assert.equal(runtime.kino.berserk, false); assert.equal(runtime.kino.exhausted, false);
+});
+
+test('청심환은 이미 폭주 중이면 40% 이하에서도 다시 정신력을 소모하지 않는다', () => {
+    const stats = { kino: true, mental: 150, randoEquipment: { '청심환': 1 } };
+    const runtime = { kino: { value: 100, at: 1000, exhausted: false, berserk: true } };
+    assert.equal(rando.spendMental(stats, runtime, 50, 1000), true);
+    near(runtime.kino.value, 50); assert.equal(runtime.kino.berserk, true); assert.equal(runtime.kino.exhausted, false);
+    assert.equal(rando.spendMental(stats, runtime, 50, 1000), true);
+    near(runtime.kino.value, 0); assert.equal(runtime.kino.berserk, true); assert.equal(runtime.kino.exhausted, true);
 });
 
 test('박카스 저정신력 회복은 30에서 종료, 1/3단계 카스 쿨타임·피해량', () => {
@@ -224,6 +246,20 @@ test('실제 키노 스킬은 MP 대신 정신력, 처치 보너스와 카스 2�
     assert.equal(spray.field.training.metrics.damage, 3576 + 744 * 5);
 }));
 
+test('실제 카스 살포는 회복 슬롯과 청심환 장착 시 150에서 90 소모로 폭주한 뒤 타격 정신력 5만 회복한다', async () => at(320000, async () => {
+    const real = user(16, '전직'); equip(real, '청심환', 3); real.card_slot = [{ id: 16, star: 11, type: '일반' }];
+    const u = training.configure(real, { player: { crit: 0, cmb: 0, maxCmb: 0 }, target: { def: 0, counterAttack: false } });
+    assert.equal(rpg.calculateUserStats(u).mental, 150); near(u.field.kino.value, 150);
+    assert.equal(rpg.calculateCardSlotEffects(u).mentalRegen, 8);
+    const result = await fixed(.5, () => rpg.useSkillInField(u, '카스 살포'));
+    assert.ok(!result.startsWith('❌'), result);
+    near(u.field.kino.value, 5); assert.equal(u.field.kino.berserk, true); assert.equal(u.field.kino.exhausted, true);
+    assert.ok(u.field.training.metrics.damage > 0);
+    assert.ok(rpg.drainFieldActionEffectIds(u.name).includes('equipment:청심환'));
+    u.field.nextActionAt = 0;
+    assert.match(await rpg.useBasicAttackInField(u), /정신력이 30까지 회복될 때까지 전투불능/);
+}));
+
 test('실제 장비 스탯: 청심환 최대 정신력·쿨타임, 고유 장비 정신력 및 보호막 확률', () => {
     const k = user(16, '각성'); equip(k, '청심환', 3); equip(k, '원빌리언 사원증', 1, 'support');
     const stats = rpg.calculateUserStats(k); assert.equal(stats.mental, 160); assert.equal(stats.mp, 0); near(stats.cooldown, .14); near(stats.dotDamage, .20);
@@ -275,6 +311,20 @@ test('실제 PvP: 모드 전환과 별도 일반 공격 쿨타임, 키노 정신
     } finally { pvp.__setNow(null); }
 });
 
+test('실제 PvP 카스 살포도 청심환 폭주를 타격 회복 전에 발동한다', async () => {
+    let time = Date.now(); pvp.__setNow(() => time);
+    try {
+        const a = user(16, '전직'), b = user(0); equip(a, '청심환', 3); await a.save(); await b.save();
+        pvp.ensurePvpState(a).daily.opponents = [{ name: b.name, rating: 1000 }];
+        assert.equal((await pvp.startBattle(a, b.name)).ok, true);
+        const battle = a.pvp.battle; time = battle.me.nextActionAt; battle.opp.nextActionAt = time + 60000; battle.opp.hp = 1e9;
+        battle.me.skillCooldowns = {};
+        await fixed(.5, () => assert.equal(pvp.playerSkill(a, '카스 살포').ok, true));
+        near(battle.me.runtime.kino.value, 5); assert.equal(battle.me.runtime.kino.berserk, true); assert.equal(battle.me.runtime.kino.exhausted, true);
+        assert.equal(pvp.buildBattleView(a).me.maxResource, 150);
+    } finally { pvp.__setNow(null); }
+});
+
 test('왕꿈틀이 19종 정확한 확률과 신규 캐릭터 카드팩 포함', async () => {
     const u = user(); u.bait = '왕꿈틀이';
     assert.equal(content.baitDefinition.rewards.reduce((sum, entry) => sum + entry.rate, 0), 200000);
@@ -318,7 +368,9 @@ test('각성 변환석은 각성 대상만 변환하고 등급·스펙터·잠�
 test('신규 운영 등록은 기존 항목·빈 구성 보존 및 재실행 무변경, 상점 가격·거래 불가', () => {
     const untouched = structuredClone(before);
     const after = content.prepare(before); assert.deepEqual(before, untouched);
-    assert.deepEqual(after.Item.slice(0, before.Item.length - 1), before.Item.slice(0, -1));
+    const expectedItems = structuredClone(before.Item), pouchId = before.Item.findIndex(e => e.name === '지정 캐릭터 변환석 주머니');
+    expectedItems[pouchId].choices = after.Item[pouchId].choices;
+    assert.deepEqual(after.Item.slice(0, before.Item.length), expectedItems);
     assert.deepEqual(after.Item.find(e => e.name === '지정 캐릭터 변환석 주머니').choices[0], { id: 2, count: 3 });
     for (const part of Object.keys(before.Equipment)) assert.deepEqual(after.Equipment[part].slice(0, before.Equipment[part].length), before.Equipment[part]);
     assert.deepEqual(content.prepare(after), after);

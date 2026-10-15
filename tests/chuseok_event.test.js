@@ -94,7 +94,10 @@ test('중복 클릭과 재접속은 정확히 1개 지급, 수령 기록과 아�
     assert.ok(claims.every(result => result.status === 200 && result.data.claimed));
     assert.equal(claims.filter(result => !result.data.replayed).length, 1);
     const id = rpg.getDataCache('Item', []).findIndex(item => item?.name === REWARD_NAME);
-    assert.equal(rpg.getInventoryItemCount(await user(), id), 1);
+    assert.equal(rpg.getInventoryItemCount(await user(), id), 0);
+    assert.equal((await user()).inventory.card.length, 1);
+    assert.equal((await user()).inventory.card[0].type, '전직');
+    assert.equal((await user()).inventory.card[0].star, 4);
     assert.equal(rpg.getInventoryItemCount(await user('chuseok-b'), id), 0);
     assert.equal(writes.length, 1);
     assert.ok(writes[0].ExpressionAttributeValues[':v_inventory']);
@@ -102,7 +105,10 @@ test('중복 클릭과 재접속은 정확히 1개 지급, 수령 기록과 아�
     assert.equal((await request('/enter', 'chuseok-a', {})).data.showIntro, false);
     time = END_AT;
     assert.equal((await request('/claim', 'chuseok-a', {})).data.replayed, true);
-    assert.equal(rpg.getInventoryItemCount(await user(), id), 1);
+    assert.equal(rpg.getInventoryItemCount(await user(), id), 0);
+    assert.equal((await user()).inventory.card.length, 1);
+    assert.equal((await user()).inventory.card[0].type, '전직');
+    assert.equal((await user()).inventory.card[0].star, 4);
 });
 test('누락된 운영 아이템과 윷/송편 처리 중에는 보상을 변경하지 않는다', async () => {
     await reset(); await request('/enter', 'chuseok-a', {});
@@ -151,7 +157,10 @@ test('저장 실패 후 재시도는 보상을 추가하지 않고 저장을 재
     failWrites = false;
     assert.equal((await request('/claim', 'chuseok-a', {})).data.replayed, true);
     const id = rpg.getDataCache('Item', []).findIndex(item => item?.name === REWARD_NAME);
-    assert.equal(rpg.getInventoryItemCount(await user(), id), 1);
+    assert.equal(rpg.getInventoryItemCount(await user(), id), 0);
+    assert.equal((await user()).inventory.card.length, 1);
+    assert.equal((await user()).inventory.card[0].type, '전직');
+    assert.equal((await user()).inventory.card[0].star, 4);
 });
 test('실제 일반 사냥에서 4% 난수는 당일 카드팩만 드랍하며 무처치/레벨 제한은 유지', async () => {
     const oldNow = Date.now, oldRandom = Math.random;
@@ -168,13 +177,14 @@ test('실제 일반 사냥에서 4% 난수는 당일 카드팩만 드랍하며 �
         return { text, value };
     }
     try {
-        assert.doesNotMatch(hunt(START_AT-1).text, /카드팩 상자 획득/);
-        const during = hunt(START_AT).text;
-        assert.match(during, /카드팩 상자 획득/);
-        assert.doesNotMatch(during, /📦 (장비 상자|중급 장비 상자|보조 장비 상자) 획득/);
-        assert.doesNotMatch(hunt(END_AT).text, /카드팩 상자 획득/);
-        assert.doesNotMatch(hunt(START_AT, 0).text, /카드팩 상자 획득/);
-        assert.doesNotMatch(hunt(START_AT, 100, dungeon.requireLevel, true).text, /카드팩 상자 획득/);
-        assert.doesNotMatch(hunt(START_AT, 1e8, Number(dungeon.requireLevel)+100).text, /카드팩 상자 획득/);
+        assert.equal(hunt(START_AT-1).value.inventory.card.length, 0);
+        const during = hunt(START_AT);
+        assert.equal(during.value.inventory.card.length, 1);
+        assert.equal(rpg.getInventoryItemCount(during.value, rpg.getDataCache('Item').findIndex(item => item?.name === '카드팩 상자')), 0);
+        assert.doesNotMatch(during.text, /📦 (장비 상자|중급 장비 상자|보조 장비 상자) 획득/);
+        assert.equal(hunt(END_AT).value.inventory.card.length, 0);
+        assert.equal(hunt(START_AT, 0).value.inventory.card.length, 0);
+        assert.equal(hunt(START_AT, 100, dungeon.requireLevel, true).value.inventory.card.length, 0);
+        assert.equal(hunt(START_AT, 1e8, Number(dungeon.requireLevel)+100).value.inventory.card.length, 0);
     } finally { Date.now = oldNow; Math.random = oldRandom; }
 });

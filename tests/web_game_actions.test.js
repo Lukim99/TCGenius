@@ -417,7 +417,16 @@ test('패키지 6종의 가격·구매 제한과 일반 구성품 수량을 적�
             assert.equal(rpg.getInventoryItemCount(user, itemId), 0);
             for (const reward of definition.rewards) {
                 if (reward.type === '가넷') assert.equal(user.garnet, reward.count * definition.max);
-                else assert.equal(rpg.getInventoryItemCount(user, packageData.Item.findIndex(item => item.name === reward.name)), reward.count * definition.max);
+                else {
+                    const rewardId = packageData.Item.findIndex(item => item.name === reward.name);
+                    const isCard = rpg.isCardPackItem(rewardId);
+                    assert.equal(rpg.getInventoryItemCount(user, rewardId), isCard ? 0 : reward.count * definition.max);
+                    if (isCard) {
+                        const pack = packageData.Item[rewardId].pack;
+                        const type = pack.type === '전직 캐릭터 카드팩' ? '전직' : '일반';
+                        assert.equal(user.inventory.card.filter(card => card.type === type && card.star === pack.range.min - 1).length, reward.count * definition.max);
+                    }
+                }
             }
             const snapshot = JSON.stringify({ inventory: user.inventory, point: user.point, garnet: user.garnet, mileage: user.mileage });
             assert.equal((await request('/api/shop/buy', { shopType: '패키지', shopId: product.shopId, count: 1 })).status, 400);

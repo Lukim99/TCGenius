@@ -1846,9 +1846,9 @@ function grantPlayReward(user) {
     const item = pool[randomInt(0, pool.length - 1)];
     const itemId = items.indexOf(item);
     if (itemId < 0) return null;
-    rpgenius.addInventoryItem(user, itemId, 1);
+    const reward = rpgenius.grantItemReward(user, itemId, 1);
     const assets = injected.getItemAssets ? injected.getItemAssets(item) : {};
-    return { name: item.name, count: 1, iconUrl: assets && assets.iconUrl || null, frameUrl: assets && assets.frameUrl || null };
+    return { ...reward, name: reward.converted ? reward.name : item.name, iconUrl: assets && assets.iconUrl || null, frameUrl: assets && assets.frameUrl || null };
 }
 
 function finishBattle(user, battle, outcome, reason, t) {

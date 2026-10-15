@@ -2218,7 +2218,10 @@ test('생일 선물은 중복 요청에서 한 병만 소모하며 생존자 전
     assert.ok(rewards[0].items.some(it => it.iconUrl?.includes(encodeURIComponent('케이크.png'))));
     assert.deepEqual(rewards[0].items.map(item => item.count), [1, 1, 1006, 1, 10, 3, 1]);
     const user = await rpg.getRPGUserByName(seeds[0].name); assert.equal(user.titleProgress[birthday.CLAIM], true);
-    for (const [name, count] of [['9성 카드팩', 1], ['케이크', 10], ['고급 장비 보호권', 3], ['럭키카드30%', 1]]) {
+    assert.equal(rpg.getInventoryItemCount(user, data.Item.findIndex(item => item?.name === '9성 카드팩')), 0);
+    assert.equal(user.inventory.card.length, 1); assert.equal(user.inventory.card[0].star, 8);
+    assert.deepEqual(records.get(user.id).inventory.card, user.inventory.card);
+    for (const [name, count] of [['케이크', 10], ['고급 장비 보호권', 3], ['럭키카드30%', 1]]) {
         const id = data.Item.findIndex(item => item?.name === name);
         assert.equal(rpg.getInventoryItemCount(user, id), count, name);
         assert.equal(records.get(user.id).inventory.item.find(item => item.id === id).count, count, name);
@@ -2300,4 +2303,35 @@ test('엔진을 다시 불러오면 보관한 거래 품목을 복구하고 확�
     assert.equal((await recovered.getRPGUserByName(user.name)).gold, 1000000000);
     assert.deepEqual((await recovered.getRPGUserByName(user.name)).inventory.equipment[0], original);
     await rpg.reloadAllUsersFromDb(true);
+});
+
+
+test('카드팩 거래는 취소 시 원품을 반환하고 성사 시 수령자에게 카드 지급·초과 폐기한다', async () => {
+    for (const cancel of [true, false]) {
+        let state = await prepareDirectTrade();
+        const sender = await rpg.getRPGUserByName(seeds[0].name), receiver = await rpg.getRPGUserByName(seeds[1].name);
+        const id = data.Item.findIndex(item => item?.name === '9성 카드팩');
+        rpg.addInventoryItem(sender, id, 2); receiver.maxCardLimit = 1;
+        await sender.save(); await receiver.save();
+        const candidate = (await request('/api/trade/inventory')).data.items.find(item => item.id === id);
+        const registered = await request('/api/trade/register', { ...tradeVersion(state), kind: 'item', itemId: id, count: 2, version: candidate.version });
+        assert.equal(registered.status, 200); state = registered.data.state;
+        if (cancel) {
+            assert.equal((await request('/api/trade/cancel', tradeVersion(state))).status, 200);
+            const restored = await rpg.getRPGUserByName(sender.name);
+            assert.equal(rpg.getInventoryItemCount(restored, id), 2); assert.equal(restored.inventory.card.length, 0);
+        } else {
+            assert.equal((await request('/api/trade/confirm', tradeVersion(state))).status, 200);
+            const completed = await request('/api/trade/confirm', tradeVersion(state), receiver.name);
+            assert.equal(completed.status, 200); assert.equal(completed.data.state.result.status, 'completed');
+            const received = await rpg.getRPGUserByName(receiver.name);
+            assert.equal(rpg.getInventoryItemCount(received, id), 0);
+            assert.equal(received.inventory.card.length, 1); assert.equal(received.inventory.card[0].star, 8);
+            assert.deepEqual(records.get(received.id).inventory.card, received.inventory.card);
+            assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(sender.name), id), 0);
+            const snapshot = structuredClone(received.inventory);
+            assert.equal((await request('/api/trade/confirm', tradeVersion(state), receiver.name)).status, 409);
+            assert.deepEqual((await rpg.getRPGUserByName(receiver.name)).inventory, snapshot);
+        }
+    }
 });
