@@ -2851,7 +2851,7 @@ function lockboxRewardRow(r, i, bonus) {
     if (r.frameUrl) thumbChildren.push(el('img', { class: 'lb-frame', src: r.frameUrl, alt: '' }));
     if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
     return el('div', { class: 'lockbox-reward-row' + (bonus ? ' bonus' : ''), style: 'animation-delay:' + (i * 0.08) + 's' },
-        el('div', { class: 'lockbox-reward-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-reward-thumb' + (r.type === 'card' ? ' card-icon' : '') }, ...thumbChildren),
         el('div', { class: 'lockbox-reward-info' },
             el('div', { class: 'lockbox-reward-name' }, r.name),
             el('div', { class: 'lockbox-reward-count' }, 'x' + comma(r.count))
@@ -2865,7 +2865,7 @@ function lockboxMiniItem(r, bonus) {
     if (r.iconUrl) thumbChildren.push(el('img', { class: 'lb-icon', src: r.iconUrl, alt: r.name }));
     return el('div', { class: 'lockbox-mini' + (bonus ? ' bonus' : '') },
         el('span', { class: 'lockbox-mini-tag' }, bonus ? '보너스' : '메인'),
-        el('div', { class: 'lockbox-mini-thumb' }, ...thumbChildren),
+        el('div', { class: 'lockbox-mini-thumb' + (r.type === 'card' ? ' card-icon' : '') }, ...thumbChildren),
         el('div', { class: 'lockbox-mini-info' },
             el('div', { class: 'lockbox-mini-name' }, r.name),
             el('div', { class: 'lockbox-mini-count' }, 'x' + comma(r.count))
@@ -5455,7 +5455,7 @@ function currencyNode(currency, amount, suffix) {
 function auctionThumbEl(entry, options) {
     const d = entry.display || {};
     const style = options && options.style ? options.style : null;
-    if (d.imageUrl) return el('div', { class: 'auc-thumb card', style }, el('img', { src: d.imageUrl, alt: d.name }));
+    if (d.imageUrl) return el('div', { class: 'auc-thumb card' + (entry.kind === 'card' ? ' square' : ''), style }, el('img', { src: d.imageUrl, alt: d.name }));
     const foreground = d.iconUrl
         ? el('img', { class: 'auc-item-img', src: d.iconUrl, alt: d.name })
         : el('span', { class: 'auc-icon' }, AUCTION_KIND_ICON[entry.kind] || '📦');

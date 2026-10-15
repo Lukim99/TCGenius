@@ -1356,7 +1356,7 @@
         members.forEach((member, index) => {
             const card = member.card || {};
             const portrait = el('div', { class: 'pq-damage-portrait' });
-            if (card.imageUrl) portrait.append(el('img', { src: card.imageUrl, alt: card.name || member.name || '' }));
+            if (card.iconUrl || card.imageUrl) portrait.append(el('img', { src: card.iconUrl || card.imageUrl, alt: card.name || member.name || '' }));
             else portrait.append(el('span', null, String(index + 1)));
             const share = totalDamage > 0 ? Number(member.damage || 0) / totalDamage * 100 : 0;
             graph.append(el('div', { class: 'pq-damage-player' },

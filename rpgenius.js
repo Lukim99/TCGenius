@@ -12049,7 +12049,7 @@ function openSealedLockbox(user, count) {
         for (let r = 0; r < num; r++) {
             const s = {};
             grantPackReward(user, pickPackEntry(pack), s);
-            rollGroups.push(Object.keys(s).map(k => ({ name: s[k].label, count: s[k].count })));
+            rollGroups.push(Object.keys(s).map(k => ({ key: k, name: s[k].label, count: s[k].count })));
         }
         result.push({ main: rollGroups[0] || [], bonus: rollGroups.slice(1).reduce((a, g) => a.concat(g), []) });
     }

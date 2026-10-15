@@ -21,7 +21,7 @@ function createGamePresentation({ inventories, card, itemAssets, rpg }) {
             const key = JSON.stringify([kind, entry.id, entry.type, entry.star, entry.level, entry.skin,
                 entry.potentialDisplay, entry.specter, entry.orb, entry.soul, entry.expireAt, entry.statLines]);
             entries.push({ key, kind, name: entry.name, detail: (entry.starText || entry.rarity || entry.typeLabel || '') + (entry.level > 0 ? ' · +' + entry.level : ''),
-                iconUrl: entry.imageUrl || entry.iconUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? entry.count : 1 });
+                iconUrl: entry.iconUrl || entry.imageUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? entry.count : 1 });
         }));
         for (const [key, name] of Object.entries(currencies)) entries.push({ key, kind: 'currency', name, count: Number(user[key] || 0) });
         (user.avatars || []).forEach(avatar => entries.push({ key: 'avatar:' + avatar.name, kind: '아바타', name: avatar.name, count: 1 }));
@@ -72,7 +72,7 @@ function registerGameActionRoutes(server, deps) {
             items: Object.entries(user.fishingNet || {}).filter(([, count]) => count > 0).map(([id, count]) => ({
                 name: items[id] ? items[id].name : '알 수 없는 아이템', count,
                 ...itemAssets(items[id])
-            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.imageUrl })))
+            })).concat(buildCards({ ...user, inventory: { ...user.inventory, card: user.fishingCards || [] } }).map(card => ({ name: card.formatted, count: 1, kind: 'card', iconUrl: card.iconUrl })))
         };
     }
     function state(user) {
@@ -222,7 +222,7 @@ function registerGameActionRoutes(server, deps) {
         }
         const targets = inventories[kind](user).filter(entry => kind === 'items' ? entry.id === body.id : numbers.includes(entry.number))
             .map(entry => ({ name: entry.name, detail: entry.starText || entry.rarity || entry.typeLabel || '',
-                iconUrl: entry.imageUrl || entry.iconUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? body.count : 1 }));
+                iconUrl: entry.iconUrl || entry.imageUrl, frameUrl: entry.frameUrl, count: kind === 'items' ? body.count : 1 }));
         const token = crypto.createHash('sha256').update(JSON.stringify([body.action, body.version, numbers, body.id, body.count, targets, rewards])).digest('hex');
         return { token, action: body.action, targets, rewards };
     }

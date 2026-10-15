@@ -15,7 +15,7 @@ const assetStore = require('./asset_store.js');
 const { registerYutRoutes } = require('./yut_event.js');
 const { registerPointMineRoutes } = require('./point_mine_event.js');
 const { registerChuseokRoutes } = require('./chuseok_event.js');
-partyquest.setCardImageResolver((card, user) => getCardImageUrl(card, user));
+partyquest.setCardImageResolver((card, user, square) => getCardImageUrl(card, user, square));
 const { createWebChat } = require('./webchat.js');
 const { inventoryVersion, registerGameActionRoutes, createGamePresentation } = require('./web_game_actions');
 const { DynamoDBClient, DescribeTableCommand, DescribeContinuousBackupsCommand, RestoreTableToPointInTimeCommand, DeleteTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -955,7 +955,7 @@ function attachMailGiftIcons(g) {
         const data = pets[g.petId];
         if (data) { g.iconUrl = getPetIconUrl(data); g.frameUrl = getAuctionFrameUrl('equipment', data.rarity); }
     } else if (g.type === 'card') {
-        g.iconUrl = getCardImageUrl({ id: g.cardId, star: g.star, type: g.cardType }, { prestige: false, jobPrestige: false });
+        g.iconUrl = getCardIconUrl({ id: g.cardId, star: g.star, type: g.cardType }, { prestige: false, jobPrestige: false });
     } else if (g.type === 'title') {
         g.iconUrl = rpgenius.getTitleImageUrl(g.name);
     }
@@ -1887,7 +1887,7 @@ function decorateQuestBoard(user) {
         objectives: quest.objectives.map(objective => Object.assign({}, objective, objective.itemId != null ? { iconUrl: iconOf(objective.itemId) } : {})),
         rewards: quest.rewards.map(reward => Object.assign({}, reward,
             reward.itemId != null ? { iconUrl: iconOf(reward.itemId) }
-                : reward.card ? { iconUrl: getCardImageUrl(reward.card) }
+                : reward.card ? { iconUrl: getCardIconUrl(reward.card) }
                 : currencyIcons[reward.type] ? { iconUrl: currencyIcons[reward.type] } : {}))
     }));
 }
@@ -2090,7 +2090,7 @@ function buildHFieldState(user) {
             cardName: mainCard && mainCard.name || '',
             cardFormatted: mainCard && mainCard.formatted || '',
             cardStar: mainCard ? Number(mainCard.star || 0) : null,
-            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            cardImageUrl: mainCard && mainCard.iconUrl || null,
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
             spriteUrl: getHFieldCharacterSprite(mainCard),
@@ -2145,7 +2145,7 @@ function getHFieldRewards(user, before) {
             iconUrl: item.iconUrl, frameUrl: item.frameUrl, typeLabel: item.typeLabel
         }));
     (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
-        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardImageUrl(card), frameUrl: null });
+        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardIconUrl(card), frameUrl: null });
     });
     return rewards;
 }
@@ -2174,7 +2174,7 @@ function parseFieldIncomingHits(message) {
 
 function mapFieldTickReward(reward) {
     const mapped = Object.assign({}, reward || {});
-    if (mapped.kind == 'card') return Object.assign(mapped, { iconUrl: getCardImageUrl(mapped.card), frameUrl: null });
+    if (mapped.kind == 'card') return Object.assign(mapped, { iconUrl: getCardIconUrl(mapped.card), frameUrl: null });
     if (mapped.kind != 'item') return mapped;
     const items = rpgenius.getDataCache('Item', []);
     const item = Number.isInteger(Number(mapped.itemId)) ? items[Number(mapped.itemId)] : items.find(entry => entry && entry.name == mapped.name);
@@ -2536,7 +2536,7 @@ function buildGeneralFieldState(user, dailyMode = false) {
             cardName: mainCard && mainCard.name || '',
             cardFormatted: mainCard && mainCard.formatted || '',
             cardStar: mainCard ? Number(mainCard.star || 0) : null,
-            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            cardImageUrl: mainCard && mainCard.iconUrl || null,
             cardType: mainCard && mainCard.type || '일반',
             cardSkin: mainCard && mainCard.skin || '',
             spriteUrl: getHFieldCharacterSprite(mainCard),
@@ -2961,7 +2961,7 @@ function buildWorldBossState(user) {
             atk: Number(stats.atk || 0), def: Number(stats.def || 0),
             combatPower: Number(rpgenius.calculateCombatPower(user).total || 0),
             cardName: mainCard && mainCard.name || '', cardFormatted: mainCard && mainCard.formatted || '',
-            cardImageUrl: mainCard && mainCard.imageUrl || null,
+            cardImageUrl: mainCard && mainCard.iconUrl || null,
             spriteUrl: getHFieldCharacterSprite(mainCard),
             ...randoCharacters.view(stats, user.field),
             basicUntil: Number(user.field?.basicUntil || 0),
@@ -3006,7 +3006,7 @@ function getWorldBossActionRewards(user, before) {
         rewards.push({ kind: 'item', name: items[id].name, count: gained, iconUrl: assets.iconUrl, frameUrl: assets.frameUrl });
     });
     (user.inventory && user.inventory.card || []).slice(before.cardCount || 0).forEach(card => {
-        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardImageUrl(card), frameUrl: null });
+        rewards.push({ kind: 'card', card: { ...card }, name: rpgenius.formatUserCard(card), count: 1, iconUrl: getCardIconUrl(card), frameUrl: null });
     });
     return rewards;
 }
@@ -3772,15 +3772,7 @@ server.post('/api/inventory/use-lockbox', requireUser, async (req, res) => {
         const out = rpgenius.openSealedLockbox(user, count);
         if (out.error) return res.status(400).json({ error: out.error });
         await user.save();
-        const items = rpgenius.getDataCache('Item', []);
-        const enrich = r => {
-            const itemData = items.find(it => it && it.name === r.name);
-            return {
-                name: r.name, count: r.count,
-                iconUrl: itemData ? getItemIconUrl(itemData) : null,
-                frameUrl: itemData ? getAuctionFrameUrl('item') : null
-            };
-        };
+        const enrich = r => buildRewardSummaryDisplay({ [r.key]: { label: r.name, count: r.count } })[0];
         const opens = out.opens.map(o => ({ main: o.main.map(enrich), bonus: o.bonus.map(enrich) }));
         res.json({ ok: true, opens, ...buildLockboxKeys(user) });
     } catch (e) {
@@ -4843,6 +4835,7 @@ server.get('/card-image', requireUser, async (req, res) => {
             type: String(req.query.type || '일반'),
             skin: String(req.query.skin || ''),
             prestige: req.query.prestige == '1',
+            square: req.query.square === '1',
             specter: req.query.specter === '1',
             awakeningSpecter: req.query.awakeningSpecter === '1'
         });
@@ -5779,7 +5772,7 @@ function getMaxExpForLevel(level) {
     return typeof value == 'number' ? value : 0;
 }
 
-function getCardImageUrl(card, user) {
+function getCardImageUrl(card, user, square = false) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const data = card && characterCards[card.id];
     if (!data) return null;
@@ -5790,15 +5783,21 @@ function getCardImageUrl(card, user) {
         star: Number(card.star || 0),
         type,
         skin: typeof card.skin == 'string' ? card.skin.trim() : '',
-        prestige
+        prestige,
+        square
     };
     if (!cardComposite.canCompose(spec)) return null;
     const params = ['name=' + encodeURIComponent(spec.name), 'star=' + spec.star, 'type=' + encodeURIComponent(spec.type)];
+    if (square) params.push('square=1');
     if (spec.skin) params.push('skin=' + encodeURIComponent(spec.skin));
     if (spec.prestige) params.push('prestige=1');
     if (card.specter) params.push('specter=1');
     if (rpgenius.getCardAwakeningSpecter(card)) params.push('awakeningSpecter=1');
     return '/card-image?' + params.join('&');
+}
+
+function getCardIconUrl(card, user) {
+    return getCardImageUrl(card, user, true);
 }
 
 function getCharacterCoverImageUrl(data) {
@@ -6054,6 +6053,7 @@ function serializeCard(card, user) {
         name: data.name,
         formatted: rpgenius.formatUserCard(card),
         imageUrl: getCardImageUrl(card, user),
+        iconUrl: getCardIconUrl(card, user),
         slotEffect: buildSlotEffectInfo(card, data),
         skills: buildSkillInfo(card, user),
         classInfo,
@@ -6152,6 +6152,7 @@ function buildCombineCards(user) {
             name: s.name,
             formatted: s.formatted,
             imageUrl: s.imageUrl,
+            iconUrl: s.iconUrl,
             locked: card.locked === true,
             special: !!(card.skin || card.isSpecter),
             version: inventoryVersion(user, 'cards'),
@@ -6940,7 +6941,7 @@ function buildBundleContents(data) {
             }
             const cardType = entry.card_type || entry.cardType || '일반';
             if (!cardData) return { type: '캐릭터카드', cardType, name: starText + ' ' + (cardType === '일반' ? '' : cardType + ' ') + '랜덤 캐릭터 카드', count: countStr, label: '🃏' };
-            const iconUrl = getCardImageUrl({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false });
+            const iconUrl = getCardIconUrl({ id: cardId, star: starForImg, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false });
             return { type: '캐릭터카드', name: (['전직', '각성'].includes(cardType) ? '[' + cardType + '] ' : '') + cardData.name + ' ' + starText, count: countStr, iconUrl, frameUrl: null, label: iconUrl ? null : '🃏' };
         }
         return null;
@@ -7009,7 +7010,7 @@ function buildDetailRewardDisplay(entry) {
             type: '캐릭터카드',
             name: (['전직', '각성'].includes(cardType) ? '[' + cardType + '] ' : '') + data.name + ' ' + formatStar(star),
             count,
-            iconUrl: getCardImageUrl({ id: cardId, star, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false, jobPrestige: false }),
+            iconUrl: getCardIconUrl({ id: cardId, star, type: cardType, skin: entry.skin ? String(entry.skin) : '' }, { prestige: false, jobPrestige: false }),
             label: '카드'
         };
     }
@@ -7069,7 +7070,7 @@ function buildCharacterPackOutcomes(pack) {
                 name: entry.data.name + ' · ' + formatStar(star),
                 detail: skin ? skin + ' 패션' : '',
                 count: '1',
-                iconUrl: getCardImageUrl({ id: entry.id, star, type: isJob ? '전직' : '일반', skin }, { prestige: false, jobPrestige: false }),
+                iconUrl: getCardIconUrl({ id: entry.id, star, type: isJob ? '전직' : '일반', skin }, { prestige: false, jobPrestige: false }),
                 label: '카드',
                 chance
             });
@@ -7381,7 +7382,7 @@ function decorateWebItemUsePending(pending, user) {
         options: (pending.options || []).map(option => {
             const decorated = Object.assign({}, option);
             if (option.kind === 'card' && option.card) {
-                decorated.iconUrl = getCardImageUrl(option.card, user);
+                decorated.iconUrl = getCardIconUrl(option.card, user);
             } else if (option.kind === 'equipment') {
                 const data = equipment[option.equipmentType] && equipment[option.equipmentType][option.equipmentId];
                 if (data) {
@@ -7471,7 +7472,7 @@ function buildRewardSummaryDisplay(summary) {
             iconUrl = data ? getPetIconUrl(data) : null;
             frameUrl = data ? getAuctionFrameUrl('equipment', data.rarity) : null;
         } else if (type === 'card') {
-            iconUrl = getCardImageUrl({ id: Number(parts[1]), star: Number(parts[2]), type: parts[3], skin: parts.slice(4).join(':') }, { prestige: false });
+            iconUrl = getCardIconUrl({ id: Number(parts[1]), star: Number(parts[2]), type: parts[3], skin: parts.slice(4).join(':') }, { prestige: false });
         } else if (type === 'title') {
             const title = rpgenius.getTitleById(parts.slice(1).join(':'));
             return { type, name: (title ? title.name : '알 수 없는') + ' 칭호', count: entry.count, iconUrl: title ? rpgenius.getTitleImageUrl(title.name) : null, frameUrl: null };
@@ -7879,7 +7880,7 @@ function serializeAuctionEntry(entry, currentUserName, equipmentContext) {
     let equipmentDetail = null;
     let orbDetail = null;
     if (entry.kind == 'card') {
-        imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
+        imageUrl = getCardIconUrl(entry.payload || {}, { prestige: false });
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         const type = entry.payload && entry.payload.type;
@@ -8423,7 +8424,7 @@ function serializeBuyOrderEntry(entry, currentUserName) {
     let iconUrl = null;
     let statLines = null;
     if (entry.kind == 'card') {
-        imageUrl = getCardImageUrl(entry.payload || {}, { prestige: false });
+        imageUrl = getCardIconUrl(entry.payload || {}, { prestige: false });
     } else if (entry.kind == 'equipment') {
         const data = getEquipmentData(entry.payload && entry.payload.type, entry.payload && entry.payload.id);
         frameUrl = getAuctionFrameUrl('equipment', data && data.rarity);
@@ -8755,7 +8756,7 @@ function buildBuyOrderLookups() {
     const items = rpgenius.getDataCache('Item', []);
     const cardList = characterCards.map((data, id) => {
         if (!data) return null;
-        return { id, name: data.name, imageUrl: getCardImageUrl({ id, star: 0 }, { prestige: false }) };
+        return { id, name: data.name, imageUrl: getCardIconUrl({ id, star: 0 }, { prestige: false }) };
     }).filter(Boolean);
     const pack = (list, type) => (list || []).map((e, id) => {
         if (!e || e.no_trade === true) return null;
@@ -9311,7 +9312,7 @@ function renderUserDashboard(sess, opts) {
     <section class="panel inventory-shell">
       <div class="inventory-head">
         <div class="inventory-title-block"><h2 id="viewerTitle">인벤토리</h2></div>
-        <div class="inventory-total"><span id="inventoryTotalLabel">보유 슬롯</span><b id="inventoryTotal">0</b></div>
+        <div class="inventory-total"><span id="inventoryTotalLabel">보유 슬롯</span><b id="inventoryTotal">0</b><button id="inventoryExpand" type="button" aria-label="카드 인벤토리 확장" hidden>+</button></div>
       </div>
       <div class="inventory-console">
         <div class="inv-kind-tabs" role="tablist" aria-label="인벤토리 분류">

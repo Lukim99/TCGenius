@@ -663,7 +663,7 @@ function grantPartyQuestPackReward(user, reward, summary) {
             last = card;
             addPartyQuestRewardSummary(summary, 'card:' + card.id + ':' + card.star + ':' + (card.type || '일반') + ':' + (card.skin || ''), rpgenius.formatUserCard(card), 1);
         }
-        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count, iconUrl: cardImageUrlResolver ? cardImageUrlResolver(last, user) : null } : null;
+        return last ? { kind: 'card', card: last, name: rpgenius.formatUserCard(last), count, iconUrl: cardImageUrlResolver ? cardImageUrlResolver(last, user, true) : null } : null;
     }
     if (reward.type === '골드') {
         user.gold = Number(user.gold || 0) + count;
@@ -1666,7 +1666,8 @@ function buildMemberCard(user) {
     try {
         if (cardImageUrlResolver) imageUrl = cardImageUrlResolver({ id: mc.id, star: mc.star, type: mc.type, skin: mc.skin }, user);
     } catch (_) {}
-    return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl };
+    const iconUrl = cardImageUrlResolver ? cardImageUrlResolver(mc, user, true) : null;
+    return { name: data.name, star: Number(mc.star || 0), type: mc.type || '일반', imageUrl, iconUrl };
 }
 
 function shuffleBirthdayCards(room) {

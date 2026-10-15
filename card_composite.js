@@ -8,6 +8,7 @@ const zlib = require('zlib');
 const SPLIT_IMAGE_PATH = path.join(__dirname, 'DB', 'RPGenius', 'cardImage', '카드분리');
 const CHARACTER_DIR = path.join(SPLIT_IMAGE_PATH, '캐릭터');
 const FRAME_DIR = path.join(SPLIT_IMAGE_PATH, '프레임');
+const ICON_DIR = path.join(__dirname, 'DB', 'RPGenius', 'cardImage', '아이콘');
 const SPECTER_GEM_DIR = path.join(__dirname, 'public', 'assets', 'specter-gems');
 
 const GREEK_BY_STAR = { 10: '제타', 11: '시그마', 12: '오메가' };
@@ -177,6 +178,12 @@ function resolveCardLayers(card) {
     // 전직 프레임은 5성부터 존재 — 그 아래는 일반 카드로 취급 (구 평면 이미지의 폴백과 동일)
     const isJob = card.type === '전직' && s >= 5;
     const isAwakening = card.type === '각성' && s >= 5;
+    if (card.square === true) {
+        const kind = isAwakening ? '각성' : isJob ? '전직' : '일반';
+        const character = firstExisting(path.join(ICON_DIR, '이미지'), [kind + ' ' + card.name + '.png']);
+        const border = firstExisting(path.join(ICON_DIR, '프레임'), [kind + ' ' + (greek || s + '성') + ' 프레임.png']);
+        return character && border ? { background: null, character, border } : null;
+    }
     const prestige = !isAwakening && card.prestige === true && !!greek; // 프레스티지 프레임/아트는 제타+ 전용
 
     // 캐릭터 아트: 티어 폴백 체인 × (아바타 → 기본 외형)
@@ -277,7 +284,8 @@ function composeCardImage(card) {
         for (const gem of gems) {
             const badge = getSpecterGem(gem.file);
             const overlay = Buffer.alloc(base.rgba.length);
-            for (let y = 0; y < 64; y++) badge.copy(overlay, ((gem.y + y) * base.width + base.width - 80) * 4, y * 64 * 4, (y + 1) * 64 * 4);
+            const x = card.square === true ? 20 : base.width - 80;
+            for (let y = 0; y < 64; y++) badge.copy(overlay, ((gem.y + y) * base.width + x) * 4, y * 64 * 4, (y + 1) * 64 * 4);
             blendOver(base.rgba, overlay);
         }
         result = encodePng(base.width, base.height, base.rgba);

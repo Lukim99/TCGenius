@@ -255,11 +255,47 @@ test('실제 필드 공격 API는 카드팩 상자 대신 카드 보상을 표�
         const result = await fixed(0, () => post('/api/field/attack', {}));
         assert.equal(result.status, 200); assert.equal(result.data.ok, true, result.data.message);
         assert.ok(!result.data.event.rewards.some(reward => reward.name === '카드팩 상자'));
-        if (!full) assert.ok(result.data.event.rewards.some(reward => reward.kind === 'card' && reward.card && reward.iconUrl));
+        if (!full) assert.ok(result.data.event.rewards.some(reward => reward.kind === 'card' && reward.card && reward.iconUrl?.includes('square=1')));
         else assert.match(result.data.message, /버려진.*x1/);
         const after = await rpg.getRPGUserByName(seed.name);
         assert.equal(after.inventory.card.length, 1); assert.equal(rpg.getInventoryItemCount(after, itemId('카드팩 상자')), 0);
     }
+});
+
+test('웹 인벤토리는 세로 카드와 정사각형 아이콘을 제공하고 삽니다 목록·이미지 API도 아이콘을 사용한다', async () => {
+    await resetWebCards([{ id: 0, star: 10, type: '각성' }]);
+    const get = async endpoint => fetch(base + endpoint, { headers: { Cookie: cookie } });
+    const inventory = await (await get('/api/inventory/cards')).json();
+    assert.ok(!inventory.cards[0].imageUrl.includes('square=1'));
+    assert.match(inventory.cards[0].iconUrl, /square=1/);
+    const lookups = await (await get('/api/buyorder/lookups')).json();
+    assert.ok(lookups.cards.every(card => card.imageUrl.includes('square=1')));
+    const response = await get(inventory.cards[0].iconUrl);
+    assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /image\/png/);
+    const image = require('../card_composite').decodePng(Buffer.from(await response.arrayBuffer()));
+    assert.equal(image.width, 800); assert.equal(image.height, 800);
+});
+
+test('자물쇠 개봉은 카드 보상 식별자·아이콘을 보존하고 초과 폐기는 획득 카드로 표시하지 않는다', async () => {
+    const lock = rpg.getDataCache('Item')[itemId('봉인된 자물쇠')], packs = rpg.getDataCache('Pack');
+    const previous = packs[lock.pack], num = lock.num;
+    packs[lock.pack] = [{ type: '아이템', item_id: itemId('9성 카드팩'), count: 1, roll: 1 }];
+    lock.num = 2;
+    try {
+        for (const count of [1, 10]) {
+            const value = await resetWebCards([], { maxCardLimit: 1 });
+            for (const req of lock.require || []) rpg.addInventoryItem(value, req.id, req.count * count);
+            await value.save();
+            const result = await post('/api/inventory/use-lockbox', { count });
+            assert.equal(result.status, 200); assert.equal(result.data.opens.length, count);
+            const rewards = result.data.opens.flatMap(open => [...open.main, ...open.bonus]);
+            assert.equal(rewards.filter(reward => reward.type === 'card').length, 1);
+            assert.match(rewards[0].iconUrl, /square=1/);
+            assert.equal(rewards[0].frameUrl, null);
+            assert.equal(rewards.filter(reward => reward.type === 'discardedCard').length, count * 2 - 1);
+            assert.ok(rewards.filter(reward => reward.type === 'discardedCard').every(reward => !reward.iconUrl));
+        }
+    } finally { packs[lock.pack] = previous; lock.num = num; }
 });
 
 test('카드 인벤토리는 51/52를 반환하며 8칸씩 31회 확장하고 비용 10~310가넷을 한 번씩만 차감한다', async () => {

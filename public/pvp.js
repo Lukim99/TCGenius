@@ -457,7 +457,7 @@
             if(stage!=='battle'||!view||!view.opp)return;
             const side=view.opp,narrow=w<700,pw=narrow?Math.min(226,w*.6):300,ph=narrow?86:94,p=narrow?12:22,x=w-pw-p,y=p+(narrow?40:44),c=this.ctx;
             this.panel(x,y,pw,ph,'rgba(224,101,92,.6)');
-            const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardImageUrl);
+            const ps=narrow?46:54,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(224,101,92,.7)';c.stroke();
             this.text(side.name,infoX,y+15,narrow?12:14,900,'left','#ffeae5',infoW-52);
@@ -474,7 +474,7 @@
             if(stage!=='battle'||!view||!view.me)return;
             const side=view.me,narrow=w<700,c=this.ctx,pw=narrow?Math.min(238,w*.62):304,ph=narrow?84:94,x=narrow?12:24,y=h-(narrow?172:178);
             this.panel(x,y,pw,ph,'rgba(232,176,75,.58)');
-            const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardImageUrl);
+            const ps=narrow?50:58,px=x+8,py=y+8,infoX=px+ps+9,infoRight=x+pw-9,infoW=infoRight-infoX,portrait=this.image(side.cardIconUrl || side.cardImageUrl);
             c.save();this.cutPath(px,py,ps,ps,6);c.clip();if(portrait)c.drawImage(portrait,px,py,ps,ps);else{c.fillStyle='#11141b';c.fillRect(px,py,ps,ps);}c.restore();
             this.cutPath(px,py,ps,ps,6);c.strokeStyle='rgba(232,176,75,.72)';c.stroke();
             this.text(side.name,infoX,y+16,narrow?13:15,900,'left','#fff5df',infoW-52);
@@ -531,7 +531,7 @@
         }
         vsCard(side,x,y,cw,ch,accent,narrow){
             const c=this.ctx;this.panel(x,y,cw,ch,accent,true);
-            const art=Math.min(cw-26,ch*.52),ax=x+(cw-art)/2,ay=y+16,portrait=this.image(side&&side.cardImageUrl);
+            const art=Math.min(cw-26,ch*.52),ax=x+(cw-art)/2,ay=y+16,portrait=this.image(side&&(side.cardIconUrl || side.cardImageUrl));
             c.save();this.cutPath(ax,ay,art,art,8);c.clip();if(portrait)c.drawImage(portrait,ax,ay,art,art);else{c.fillStyle='#11141b';c.fillRect(ax,ay,art,art);}c.restore();
             this.cutPath(ax,ay,art,art,8);c.strokeStyle=accent;c.lineWidth=1;c.stroke();
             this.text(side&&side.name||'-',x+cw/2,ay+art+20,narrow?13:16,900,'center','#f7f2e8',cw-16);
@@ -813,7 +813,7 @@
         const card = me.mainCard || {};
         return {
             name: me.name, level: me.level, rating: me.rating, spriteUrl: card.spriteUrl || '',
-            cardName: card.name, cardFormatted: card.formatted, cardImageUrl: card.imageUrl, cardStar: card.star, cardType: card.type
+            cardName: card.name, cardFormatted: card.formatted, cardImageUrl: card.imageUrl, cardIconUrl: card.iconUrl, cardStar: card.star, cardType: card.type
         };
     }
 
