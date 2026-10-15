@@ -40,6 +40,10 @@
             if (!state.active && dialog.open) dialog.close();
             slots.forEach((slot, i) => {
                 const item = (state.items || []).find(item => item.name === slot.name), button = buttons[i];
+                button.disabled = !!state.busy || !item || item.disabled || item.count < 1;
+                const contentKey = JSON.stringify([slot.key, slot.name, item?.iconUrl, item?.count, item?.effect, item?.disabled]);
+                if (button.dataset.contentKey === contentKey) return;
+                button.dataset.contentKey = contentKey;
                 button.replaceChildren(node('kbd', '', slot.key));
                 if (item?.iconUrl) {
                     const image = node('img'); image.src = item.iconUrl; image.alt = ''; button.append(image);
@@ -47,7 +51,6 @@
                 button.append(node('span', 'combat-quick-count', item ? item.disabled ? '봉인' : String(item.count) : slot.name ? '소진' : '지정'));
                 button.title = slot.name ? slot.name + ' · ' + (item?.effect || '보유 물약 없음') : '설정에서 물약을 지정하세요';
                 button.setAttribute('aria-label', slot.key + ' · ' + button.title);
-                button.disabled = !!state.busy || !item || item.disabled || item.count < 1;
             });
         }
         settings.onclick = () => {
