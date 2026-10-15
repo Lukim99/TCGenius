@@ -6188,7 +6188,12 @@ function buildCombineMeta(user) {
         protect[star] = rpgenius.getProtectItemIdForCardStar(user, star) != -1;
     }
     const lucky = rpgenius.getLuckyCardItems(user).map(l => ({ rate: l.lucky, name: l.name }));
-    return { table, protect, lucky, gold: Number(user.gold || 0), bulkRevision: Number(user.bulkCombineReceipt && user.bulkCombineReceipt.revision || 0) };
+    const assists = rpgenius.getDataCache('Item', []).flatMap((item, id) => {
+        const count = rpgenius.getInventoryItemCount(user, id);
+        if (!count || !(Number(item?.lucky) > 0 || item?.protect)) return [];
+        return [{ id, name: item.name, count, luckyRate: Number(item.lucky || 0), protectStar: item.protect ? Number(item.protect.star) : null, ...getItemDisplayAssets(item) }];
+    });
+    return { table, protect, lucky, assists, gold: Number(user.gold || 0), bulkRevision: Number(user.bulkCombineReceipt && user.bulkCombineReceipt.revision || 0) };
 }
 
 function getEquipmentData(type, id) {

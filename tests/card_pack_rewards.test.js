@@ -359,9 +359,11 @@ test('일괄 조합은 오래된 카드 목록·골드 부족·사냥 중·잘�
 
 test('일괄 조합은 동시 요청과 저장 실패 재시도에서도 결과·골드를 한 번만 처리한다', async () => {
     for (const saveFailure of [false, true]) {
-        await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star: 0, type: '일반' })));
+        const value = await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star: 0, type: '일반' })));
+        const luckyId = rpg.getDataCache('Item').findIndex(item => Number(item?.lucky) > 0);
+        value.inventory.item = [{ id: luckyId, count: 2 }]; await value.save();
         const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
-        const body = { requestId: 'bulk-save-retry-' + saveFailure, star: 0, cardType: '일반', revision: 0, version: data.cards[0].version };
+        const body = { requestId: 'bulk-save-retry-' + saveFailure, star: 0, cardType: '일반', revision: 0, version: data.cards[0].version, assist: { itemId: luckyId } };
         const original = DynamoDBDocumentClient.prototype.send;
         let fail = saveFailure;
         DynamoDBDocumentClient.prototype.send = async function(command) {
@@ -378,7 +380,70 @@ test('일괄 조합은 동시 요청과 저장 실패 재시도에서도 결과�
             }
             const after = await rpg.getRPGUserByName(seed.name);
             assert.equal(after.inventory.card.length, 2); assert.equal(after.bulkCombineReceipt.times, 2);
+            assert.equal(rpg.getInventoryItemCount(after, luckyId), 0);
             assert.equal(after.gold, 10000000 - 2 * rpg.getCardCombineInfo(0).gold);
         } finally { DynamoDBDocumentClient.prototype.send = original; }
+    }
+});
+
+test('일괄 조합 럭키는 선택한 이벤트 아이템만 매회 1장 소모하고 곱연산 확률을 적용한다', async () => {
+    const items = rpg.getDataCache('Item');
+    const luckyIds = items.flatMap((item, id) => item?.lucky === .3 ? [id] : []);
+    assert.ok(luckyIds.length >= 2);
+    const chosen = luckyIds.at(-1), other = luckyIds[0];
+    const value = await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star: 4, type: '일반' })), { cardCombineCounts: {} });
+    value.inventory.item = [{ id: chosen, count: 2 }, { id: other, count: 10 }]; await value.save();
+    const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+    assert.deepEqual(data.meta.assists.map(item => [item.id, item.count]).sort((a, b) => a[0] - b[0]), [[other, 10], [chosen, 2]]);
+    const body = { requestId: 'bulk-lucky-exact-item', star: 4, cardType: '일반', revision: 0, version: data.cards[0].version, assist: { itemId: chosen } };
+    const baseRate = rpg.getCardCombineInfo(4).rate;
+    const result = await fixed(baseRate * 1.15, () => post('/api/combine/bulk', body));
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.ok(result.data.results.every(entry => entry.success && entry.card.star === 5 && !entry.preservedCard));
+    const after = await rpg.getRPGUserByName(seed.name);
+    assert.equal(rpg.getInventoryItemCount(after, chosen), 0); assert.equal(rpg.getInventoryItemCount(after, other), 10);
+    assert.equal(result.data.assist.itemId, chosen); assert.equal(result.data.assist.count, 2);
+    const replay = await fixed(.99, () => post('/api/combine/bulk', body));
+    assert.deepEqual(replay.data.results, result.data.results);
+    assert.equal((await post('/api/combine/bulk', { ...body, assist: { itemId: other } })).status, 409);
+    assert.equal((await post('/api/combine/bulk', { ...body, assist: null })).status, 409);
+});
+
+test('일괄 조합 보호는 각 묶음의 선택 위치를 실패할 때만 보존하며 보존 카드를 재사용하지 않는다', async () => {
+    const protectId = rpg.getDataCache('Item').findIndex(item => item?.protect?.star === 4);
+    for (const protectIndex of [0, 1, 2]) {
+        const cards = Array.from({ length: 9 }, (_, id) => ({ id: id % 3, star: 4, type: '일반', skin: id % 3 }));
+        const value = await resetWebCards(cards, { cardCombineCounts: {} });
+        value.inventory.item = [{ id: protectId, count: 3 }]; await value.save();
+        const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+        const body = { requestId: 'bulk-protect-position-' + protectIndex, star: 4, cardType: '일반', revision: 0, version: data.cards[0].version, assist: { itemId: protectId, protectIndex } };
+        const result = await fixed(.99, () => post('/api/combine/bulk', body));
+        assert.equal(result.status, 200, JSON.stringify(result.data));
+        assert.deepEqual(result.data.results.map(entry => entry.success), [false, false, true]);
+        assert.deepEqual(result.data.results.map(entry => entry.preservedCard?.id ?? null), [protectIndex, protectIndex, null]);
+        const after = await rpg.getRPGUserByName(seed.name);
+        assert.equal(after.inventory.card.length, 5); assert.equal(rpg.getInventoryItemCount(after, protectId), 0);
+        assert.equal(after.inventory.card.filter(card => card.skin === protectIndex).length, 2);
+        const replay = await post('/api/combine/bulk', body);
+        assert.deepEqual(replay.data.results, result.data.results);
+        assert.equal((await post('/api/combine/bulk', { ...body, assist: { itemId: protectId, protectIndex: (protectIndex + 1) % 3 } })).status, 409);
+    }
+});
+
+test('일괄 보조 카드의 수량·성급·보호 위치·오메가 제한을 소모 전에 검증한다', async () => {
+    const items = rpg.getDataCache('Item'), protectId = items.findIndex(item => item?.protect?.star === 4), luckyId = items.findIndex(item => Number(item?.lucky) > 0);
+    for (const [star, assist] of [[4, { itemId: luckyId }], [4, { itemId: protectId, protectIndex: 1 }],
+        [3, { itemId: protectId, protectIndex: 1 }], [4, { itemId: protectId, protectIndex: 3 }],
+        [4, { itemId: luckyId, protectIndex: 0 }], [4, { itemId: -1 }], [4, { itemId: '1' }], [4, []],
+        [11, { itemId: luckyId }], [11, { itemId: protectId, protectIndex: 0 }]]) {
+        const value = await resetWebCards(Array.from({ length: 6 }, () => ({ id: 0, star, type: '일반' })), { cardCombineCounts: {} });
+        value.inventory.item = [{ id: luckyId, count: 1 }, { id: protectId, count: 1 }]; await value.save();
+        const beforeCards = structuredClone(value.inventory), gold = value.gold;
+        const data = await (await fetch(base + '/api/combine/cards', { headers: { Cookie: cookie } })).json();
+        const body = { requestId: 'bulk-invalid-support-00', star, cardType: '일반', revision: 0, version: data.cards[0].version, assist };
+        const result = await post('/api/combine/bulk', body);
+        assert.equal(result.status, 400, JSON.stringify({ assist, result }));
+        const after = await rpg.getRPGUserByName(seed.name);
+        assert.deepEqual(after.inventory, beforeCards); assert.equal(after.gold, gold); assert.equal(after.bulkCombineReceipt, null);
     }
 });

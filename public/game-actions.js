@@ -414,43 +414,104 @@ async function openBulkCombine() {
         const grades = [...new Map(data.cards.filter(card => card.combinable).map(card => [card.star, card.starText])).entries()].sort((a, b) => a[0] - b[0]);
         const grade = el('select', { 'aria-label': '일괄 조합 성급' }, ...grades.map(([value, label]) => el('option', { value }, label)));
         const type = el('select', { 'aria-label': '일괄 조합 카드 종류' }, ...['일반', '전직', '각성'].map(value => el('option', { value }, value)));
-        const summary = el('div', { class: 'bulk-combine-summary' });
+        const summary = el('div', { class: 'bulk-combine-summary', 'aria-live': 'polite' });
         const materials = el('div', { class: 'bulk-combine-materials' });
+        const materialLabel = el('summary', null, '재료 카드 확인');
+        const supportOptions = el('div', { class: 'bulk-assist-items' });
+        const supportInfo = el('div', { class: 'bulk-assist-info', 'aria-live': 'polite' });
         const submit = el('button', { type: 'button', class: 'game-button primary' }, '일괄 조합');
-        let selected = [], times = 0, cost = 0, request = null;
+        let selected = [], times = 0, cost = 0, request = null, selectedAssist = null, assistItemId = null;
+        const mode = gameChoiceChips('일괄 조합 보조 카드', [{ value: 'none', label: '사용 안 함' }, { value: 'lucky', label: '럭키 카드' }, { value: 'protect', label: '보호 카드' }], 'none', () => { assistItemId = null; render(); });
+        mode.classList.add('bulk-assist-modes');
+        const position = gameChoiceChips('각 묶음의 보호 대상', [0, 1, 2].map(value => ({ value, label: (value + 1) + '번째 카드' })), 0, () => render());
+        const positionRow = el('div', { class: 'bulk-protect-position' }, el('span', { class: 'game-field-label' }, '각 묶음에서 실패 시 보존할 카드'), position);
+        const assistBody = () => selectedAssist ? { itemId: selectedAssist.id, ...(mode.value === 'protect' ? { protectIndex: position.value } : {}) } : null;
         const render = () => {
             request = null;
             const candidates = data.cards.filter(card => card.combinable && !card.locked && card.star === Number(grade.value) && card.type === type.value).sort((a, b) => a.number - b.number);
             times = Math.floor(candidates.length / 3);
             selected = candidates.slice(0, times * 3);
-            cost = times * Number(data.meta.table[grade.value]?.gold || 0);
-            summary.replaceChildren(el('strong', null, times + '회 조합 · 재료 ' + selected.length + '장'), gameGoldAmount(cost),
-                el('span', null, '보유 골드 ' + comma(data.meta.gold)),
-                ...(selected.some(card => card.special) ? [el('p', { class: 'err' }, '패션·스펙터 카드가 재료에 포함되어 사라집니다.')] : []));
-            const preview = gameAssetSection('사용할 재료 카드', selected.map(card => ({ name: card.formatted, iconUrl: card.imageUrl, count: 1 })), 'target');
-            materials.replaceChildren(...(preview ? [preview] : [el('p', { class: 'empty' }, '같은 성급·종류의 카드가 3장 이상 필요합니다.')]));
-            submit.disabled = !times || cost > data.meta.gold;
-            submit.textContent = cost > data.meta.gold ? '골드 부족' : times + '회 일괄 조합';
+            const omega = Number(grade.value) === 11;
+            if (omega) mode.value = 'none';
+            [...mode.children].forEach((button, index) => {
+                button.disabled = omega && index > 0;
+                button.setAttribute('aria-pressed', ['none', 'lucky', 'protect'][index] === mode.value);
+            });
+            const options = (data.meta.assists || []).filter(item => mode.value === 'lucky' ? item.luckyRate > 0 : mode.value === 'protect' && item.protectStar === Number(grade.value));
+            selectedAssist = options.find(item => item.id === assistItemId) || options[0] || null;
+            assistItemId = selectedAssist?.id ?? null;
+            supportOptions.replaceChildren(...options.map(item => el('button', { type: 'button', class: 'bulk-assist-item', 'aria-pressed': item.id === assistItemId,
+                onclick: () => { assistItemId = item.id; render(); } },
+                item.iconUrl ? el('img', { src: item.iconUrl, alt: '', onerror: e => e.currentTarget.replaceWith(el('span', { class: 'bulk-assist-symbol', 'aria-hidden': 'true' }, item.luckyRate > 0 ? '♧' : '◇')) }) : el('span', { class: 'bulk-assist-symbol', 'aria-hidden': 'true' }, mode.value === 'lucky' ? '♧' : '◇'),
+                el('span', null, el('strong', null, item.name), el('small', null, '보유 ' + comma(item.count) + '장')))));
+            supportOptions.hidden = mode.value === 'none';
+            positionRow.hidden = mode.value !== 'protect';
+            const missing = mode.value !== 'none' && (!selectedAssist || selectedAssist.count < times);
+            supportInfo.replaceChildren(el('span', { class: missing ? 'err' : '' }, mode.value === 'none'
+                ? (omega ? '오메가 조합은 보조 카드 없이 진행합니다.' : '보조 카드 없이 기본 확률로 조합합니다.')
+                : selectedAssist ? '필요 ' + times + '장 / 보유 ' + comma(selectedAssist.count) + '장' : '사용할 수 있는 ' + (mode.value === 'lucky' ? '럭키' : '해당 성급의 보호') + ' 카드가 없습니다.'),
+                ...(mode.value === 'none' ? [] : [el('small', null, '성공·실패와 관계없이 매 조합마다 1장씩 소모합니다.') ]));
+            const info = data.meta.table[grade.value];
+            cost = times * Number(info?.gold || 0);
+            const rate = Math.min(1, Number(info?.rate || 0) * (1 + Number(selectedAssist?.luckyRate || 0)));
+            summary.replaceChildren(
+                el('div', null, el('span', null, '조합 횟수'), el('b', null, times + '회'), el('small', null, '재료 ' + selected.length + '장')),
+                el('div', null, el('span', null, '필요 골드'), gameGoldAmount(cost), el('small', { class: cost > data.meta.gold ? 'err' : '' }, '보유 ' + comma(data.meta.gold))),
+                el('div', null, el('span', null, '성공 확률'), el('b', null, (omega ? 100 : Math.round(rate * 1000) / 10) + '%'), el('small', null, info?.guarantee ? '확정 보정 ' + info.count + '/' + info.guarantee : '매 조합 기준')));
+            materialLabel.textContent = '재료 카드 확인 · ' + selected.length + '장';
+            materials.replaceChildren(...Array.from({ length: times }, (_, index) => el('div', { class: 'bulk-material-batch' },
+                el('strong', null, (index + 1) + '회'), el('div', { class: 'bulk-material-trio' }, ...selected.slice(index * 3, index * 3 + 3).map((card, cardIndex) => {
+                    const tile = cardNode(card, true);
+                    if (mode.value === 'protect' && selectedAssist && cardIndex === position.value) {
+                        tile.classList.add('protected'); tile.appendChild(el('span', { class: 'bulk-card-badge' }, '보호 대상'));
+                    }
+                    return tile;
+                })))));
+            if (!times) materials.appendChild(el('p', { class: 'empty' }, '같은 성급·종류의 카드가 3장 이상 필요합니다.'));
+            warning.hidden = !selected.some(card => card.special);
+            submit.disabled = !times || cost > data.meta.gold || missing;
+            submit.textContent = missing ? '보조 카드 부족' : cost > data.meta.gold ? '골드 부족' : times + '회 일괄 조합';
         };
+        const warning = el('p', { class: 'bulk-combine-warning err' }, '패션·스펙터 카드가 재료에 포함되어 사라질 수 있습니다.');
         grade.onchange = type.onchange = render;
         submit.onclick = async () => {
-            if (combineState.busy || !times) return;
-            if (!await showConfirm(selected.length + '장의 재료와 ' + comma(cost) + ' 골드를 소모하여 ' + times + '회 조합할까요?', '조합')) return;
-            request ||= { requestId: crypto.randomUUID(), star: Number(grade.value), cardType: type.value, version: data.cards[0]?.version, revision: data.meta.bulkRevision };
-            combineState.busy = true; submit.disabled = grade.disabled = type.disabled = true;
+            if (combineState.busy || submit.disabled || !times) return;
+            const supportText = selectedAssist ? '\n' + selectedAssist.name + ' ' + times + '장 사용' + (mode.value === 'protect' ? ' · 각 묶음의 ' + (position.value + 1) + '번째 카드 보호' : '') : '';
+            if (!await showConfirm(selected.length + '장의 재료와 ' + comma(cost) + ' 골드로 ' + times + '회 조합합니다.' + supportText + '\n조합할까요?', '조합')) return;
+            request ||= { requestId: crypto.randomUUID(), star: Number(grade.value), cardType: type.value, assist: assistBody(), version: data.cards[0]?.version, revision: data.meta.bulkRevision };
+            combineState.busy = true;
+            shell.querySelectorAll('button,select').forEach(node => node.disabled = true);
             try {
                 const result = await postApi('/api/combine/bulk', request);
                 if (result.profile) renderProfile(result.profile);
                 const successes = result.results.filter(entry => entry.success).length;
-                openRichModal('일괄 조합 결과', result.times + '회 · 성공 ' + successes + '회 · 실패 ' + (result.times - successes) + '회 · 사용 골드 ' + comma(result.spentGold), [
-                    el('div', { class: 'card-grid bulk-combine-results' }, ...result.results.map((entry, index) => el('div', { class: 'bulk-combine-result' },
-                        el('strong', { class: entry.success ? 'ok' : 'err' }, (index + 1) + '회 · ' + (entry.success ? '성공' : '실패')), cardNode(entry.card, false))))]);
+                const preserved = result.results.filter(entry => entry.preservedCard).map(entry => entry.preservedCard);
+                const resultGroup = (label, cards, tone) => cards.length ? el('section', { class: 'bulk-result-group ' + tone },
+                    el('h4', null, label, el('span', null, cards.length + '장')),
+                    el('div', { class: 'card-grid bulk-combine-results' }, ...cards.map(card => cardNode(card, true)))) : null;
+                openRichModal('일괄 조합 완료', result.times + '회 · 성공 ' + successes + '회 · 실패 ' + (result.times - successes) + '회', [
+                    el('div', { class: 'bulk-combine-shell' },
+                        el('div', { class: 'bulk-result-cost' }, gameGoldAmount(result.spentGold), el('span', null, '사용'), result.assist ? el('small', null, result.assist.name + ' ×' + result.assist.count + ' 사용') : null),
+                        resultGroup('조합 성공', result.results.filter(entry => entry.success).map(entry => entry.card), 'success'),
+                        resultGroup('조합 실패 · 같은 성급 획득', result.results.filter(entry => !entry.success).map(entry => entry.card), 'failure'),
+                        resultGroup('보호 효과로 보존', preserved, 'preserved'))]);
                 await loadCombine();
             } catch (error) { await showAlert(error.message); }
-            finally { combineState.busy = false; submit.disabled = grade.disabled = type.disabled = false; }
+            finally {
+                combineState.busy = false;
+                if (shell.isConnected) {
+                    const retry = request;
+                    shell.querySelectorAll('button,select').forEach(node => node.disabled = false);
+                    render(); request = retry;
+                }
+            }
         };
-        openRichModal('카드 일괄 조합', '같은 성급·종류의 카드를 3장씩 조합합니다. 잠금 카드는 제외하며 보호·럭키 카드는 사용하지 않습니다. 결과 카드는 다시 재료로 쓰지 않습니다.', [
-            el('div', { class: 'bulk-combine-controls' }, el('label', null, '성급', grade), el('label', null, '종류', type)), summary, materials, submit]);
+        const shell = el('div', { class: 'bulk-combine-shell' },
+            el('div', { class: 'bulk-combine-controls' }, el('label', null, '성급', grade), el('label', null, '카드 종류', type)),
+            el('section', { class: 'bulk-combine-assist' }, el('div', { class: 'game-section-head' }, el('strong', null, '보조 카드'), el('span', null, '한 종류만 선택')), mode, supportOptions, positionRow, supportInfo),
+            summary, el('details', { class: 'bulk-material-preview' }, materialLabel, materials), warning,
+            el('p', { class: 'game-note' }, '잠금 카드는 제외합니다. 획득·보존 카드는 이번 조합의 재료로 다시 쓰지 않습니다.'), submit);
+        openRichModal('카드 일괄 조합', '같은 성급·종류의 카드를 3장씩 조합합니다.', [shell]);
         render();
     } catch (error) { await showAlert(error.message); }
 }

@@ -592,7 +592,9 @@ async function loadHomeBanners() {
 function cardNode(card, compact, onClick) {
     if (!card || !card.name) return el('div', { class: 'empty-card' }, '카드 없음');
     const props = { class: 'card-tile ' + (compact ? 'compact' : '') };
-    if (typeof onClick === 'function') props.onclick = () => onClick(card);
+    if (typeof onClick === 'function') Object.assign(props, { role: 'button', tabindex: 0, onclick: () => onClick(card), onkeydown: e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(card); }
+    } });
     return el('div', props,
         card.imageUrl ? el('img', { src: card.imageUrl, alt: card.formatted }) : el('div', { class: 'no-img' }, card.name),
         el('div', { class: 'card-name' }, card.formatted)
@@ -1280,7 +1282,9 @@ function openCardSlotModal(card, slotNumber) {
 }
 
 function emptyCardSlotNode() {
-    return el('div', { class: 'card-tile compact slot-addable', onclick: () => openCardSlotPicker(null, null) },
+    return el('div', { class: 'card-tile compact slot-addable', role: 'button', tabindex: 0, onclick: () => openCardSlotPicker(null, null), onkeydown: e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCardSlotPicker(null, null); }
+    } },
         el('div', { class: 'empty-card slot-add' },
             el('span', { class: 'slot-add-plus' }, '+'),
             el('span', { class: 'slot-add-label' }, '카드 장착')

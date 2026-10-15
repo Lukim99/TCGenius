@@ -3212,14 +3212,15 @@ function runCardCombine(user) {
     }
     const protectIndex = Number(pending.protectIndex);
     const useProtection = Number.isInteger(protectIndex) && protectIndex >= 0 && protectIndex < 3;
-    const protectItemId = useProtection ? getProtectItemIdForCardStar(user, selection.star) : -1;
-    if (useProtection && (protectItemId == -1 || getInventoryItemCount(user, protectItemId) < 1)) return '❌ 보호 카드가 부족합니다.';
+    const items = getDataCache('Item', []);
+    const protectItemId = useProtection ? (pending.protectItemId ?? getProtectItemIdForCardStar(user, selection.star)) : -1;
+    if (useProtection && (!items[protectItemId]?.protect || Number(items[protectItemId].protect.star) !== selection.star || getInventoryItemCount(user, protectItemId) < 1)) return '❌ 보호 카드가 부족합니다.';
     const protectedCard = useProtection ? Object.assign({}, selection.selected[protectIndex]) : null;
     // 럭키 카드 (보호 카드와 동시 사용 불가)
     const luckyRate = Math.max(0, Number(pending.luckyRate || 0));
     const useLucky = !useProtection && luckyRate > 0;
-    const luckyItemId = useLucky ? getLuckyItemIdForRate(user, luckyRate) : -1;
-    if (useLucky && (luckyItemId == -1 || getInventoryItemCount(user, luckyItemId) < 1)) return '❌ 럭키 카드가 부족합니다.';
+    const luckyItemId = useLucky ? (pending.luckyItemId ?? getLuckyItemIdForRate(user, luckyRate)) : -1;
+    if (useLucky && (!(Number(items[luckyItemId]?.lucky) > 0) || Math.abs(Number(items[luckyItemId].lucky) - luckyRate) >= 1e-9 || getInventoryItemCount(user, luckyItemId) < 1)) return '❌ 럭키 카드가 부족합니다.';
     user.gold = Number(user.gold || 0) - selection.info.gold;
     selection.numbers.slice().sort((a, b) => b - a).forEach(number => user.inventory.card.splice(number - 1, 1));
     const combineRoll = rollCardCombineSuccess(user, 'card', selection.star, selection.info.rate * (useLucky ? (1 + luckyRate) : 1), useLucky ? selection.info.rate : null);
@@ -3257,29 +3258,46 @@ function runCardCombine(user) {
     return lines.join('\n');
 }
 
-function getBulkCardCombineSelection(user, star, cardType) {
+function getBulkCardCombineSelection(user, star, cardType, assist = null) {
     const info = Number.isInteger(star) && getCardCombineInfo(star);
     if (!info || !['일반', '전직', '각성'].includes(cardType)) return { error: '조합할 성급과 카드 종류를 선택해주세요.' };
     const cards = (user.inventory && user.inventory.card || []).filter(card => Number(card.star || 0) === star && (card.type || '일반') === cardType && !card.locked);
     const times = Math.floor(cards.length / 3);
     if (!times) return { error: '같은 성급·종류의 잠기지 않은 카드가 3장 이상 필요합니다.' };
-    return { star, cardType, times, gold: times * info.gold, cards: cards.slice(0, times * 3) };
+    let support = null;
+    if (assist != null) {
+        if (typeof assist !== 'object' || Array.isArray(assist) || !Number.isSafeInteger(assist.itemId) || assist.itemId < 0) return { error: '사용할 보조 카드를 선택해주세요.' };
+        if (star === 11) return { error: '오메가 조합에는 보조 카드를 사용할 수 없습니다.' };
+        const item = getDataCache('Item', [])[assist.itemId];
+        if (item?.protect && Number(item.protect.star) === star && Number.isInteger(assist.protectIndex) && assist.protectIndex >= 0 && assist.protectIndex < 3) {
+            support = { itemId: assist.itemId, kind: 'protect', name: item.name, protectIndex: assist.protectIndex, count: times };
+        } else if (Number(item?.lucky) > 0 && assist.protectIndex == null) {
+            support = { itemId: assist.itemId, kind: 'lucky', name: item.name, luckyRate: Number(item.lucky), count: times };
+        } else return { error: '선택한 성급에 맞는 럭키 카드 또는 보호 대상을 선택해주세요.' };
+        if (getInventoryItemCount(user, assist.itemId) < times) return { error: support.name + '가 부족합니다. 조합 ' + times + '회에 ' + times + '장이 필요합니다.' };
+    }
+    return { star, cardType, times, gold: times * info.gold, cards: cards.slice(0, times * 3), assist: support };
 }
 
-function runBulkCardCombine(user, star, cardType) {
-    const selection = getBulkCardCombineSelection(user, star, cardType);
+function runBulkCardCombine(user, star, cardType, assist = null) {
+    const selection = getBulkCardCombineSelection(user, star, cardType, assist);
     if (selection.error) return selection;
     if (Number(user.gold || 0) < selection.gold) return { error: '골드가 부족합니다. 필요 골드: ' + comma(selection.gold) };
     const results = [];
     for (let i = 0; i < selection.cards.length; i += 3) {
         const numbers = selection.cards.slice(i, i + 3).map(card => user.inventory.card.indexOf(card) + 1);
         user.pendingAction = { type: '카드조합', numbers };
+        const support = selection.assist;
+        if (support?.kind === 'protect') Object.assign(user.pendingAction, { protectIndex: support.protectIndex, protectItemId: support.itemId });
+        if (support?.kind === 'lucky') Object.assign(user.pendingAction, { luckyRate: support.luckyRate, luckyItemId: support.itemId });
         const message = runCardCombine(user);
         if (message.startsWith('❌')) throw new Error(message);
         const card = { ...user.inventory.card[user.inventory.card.length - 1] };
-        results.push({ card, success: star === 11 || card.star > star });
+        const success = star === 11 || card.star > star;
+        const preservedCard = !success && support?.kind === 'protect' ? { ...selection.cards[i + support.protectIndex] } : null;
+        results.push({ card, success, preservedCard });
     }
-    return { times: selection.times, spentGold: selection.gold, results };
+    return { times: selection.times, spentGold: selection.gold, assist: selection.assist, results };
 }
 
 function getJobCombineSelection(user, numberArgs) {
