@@ -3442,7 +3442,7 @@ function openPresetUnlockModal(slot, cost) {
     $('#modalTitle').textContent = '프리셋 슬롯 해금';
     $('#modalSub').style.display = 'none';
     const balance = Number(d.garnet || 0), after = balance - cost.amount;
-    const buy = el('button', { class: 'primary', disabled: after < 0 }, '20가넷으로 해금');
+    const buy = el('button', { class: 'primary', disabled: after < 0 }, comma(cost.amount) + '가넷으로 해금');
     buy.onclick = async () => {
         buy.disabled = true;
         try {
@@ -3701,7 +3701,7 @@ function renderPresets() {
     if (!root || !d) return;
     // 해금된 슬롯 + 다음 해금 대상 1개만 표시
     const visible = Math.min(d.slotCount, d.unlocked + 1);
-    root.replaceChildren(el('div', { class: 'preset-capacity' }, el('b', null, '보유 프리셋 ' + d.unlocked + ' / ' + d.slotCount), el('span', null, d.unlocked < d.slotCount ? '슬롯당 20가넷' : '모든 슬롯 해금 완료')), el('div', { class: 'preset-grid' },
+    root.replaceChildren(el('div', { class: 'preset-capacity' }, el('b', null, '보유 프리셋 ' + d.unlocked + ' / ' + d.slotCount), el('span', null, d.unlocked < d.slotCount ? '다음 슬롯 ' + comma(d.costs[d.unlocked].amount) + '가넷' : '모든 슬롯 해금 완료')), el('div', { class: 'preset-grid' },
         Array.from({ length: visible }, (_, i) => presetCard(i))));
 }
 

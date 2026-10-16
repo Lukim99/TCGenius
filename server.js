@@ -3599,8 +3599,9 @@ server.post('/api/cards/avatar', requireUser, async (req, res) => {
 });
 
 // ===== 장착 프리셋 =====
-// 슬롯 1은 기본 제공. 나머지 슬롯은 각각 20가넷으로 순차 해금.
-const PRESET_UNLOCK_COSTS = Array.from({ length: rpgenius.PRESET_SLOT_COUNT }, (_, i) => i ? { currency: 'garnet', amount: 20 } : null);
+// 기존 2~5번 슬롯의 가격 수치는 유지하고 재화만 가넷으로 통일한다.
+// 추가 슬롯은 기존 최고 가격인 500가넷에서 더 높아지지 않는다.
+const PRESET_UNLOCK_COSTS = Array.from({ length: rpgenius.PRESET_SLOT_COUNT }, (_, i) => i ? { currency: 'garnet', amount: [0, 100, 100, 300, 500][i] ?? 500 } : null);
 const PRESET_TYPE_LABELS = { weapon: '무기', hat: '모자', armor: '갑옷', pants: '하의', shoes: '신발', accessory: '장신구', support: '보조', artifact: '아티팩트' };
 
 function getUnlockedPresetSlots(user) {

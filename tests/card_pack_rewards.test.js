@@ -485,15 +485,17 @@ test('일괄 보조 카드의 수량·성급·보호 위치·오메가 제한을
 });
 
 
-test('프리셋 20칸은 각 20가넷이며 재시도·동시 요청은 중복 차감하지 않는다', async () => {
-    let u = await resetWebCards([], { presets: [null, { name: '기존' }], presetSlotsUnlocked: 5, garnet: 300, point: 777 });
+test('프리셋 기존 가격은 가넷으로 유지하고 추가 슬롯은 500가넷이며 재시도·동시 요청은 중복 차감하지 않는다', async () => {
+    let u = await resetWebCards([], { presets: [null, { name: '기존' }], presetSlotsUnlocked: 5, garnet: 7500, point: 777 });
     const first = await post('/api/presets/unlock', { slot: 5 });
     assert.equal(first.status, 200); assert.equal(first.data.slotCount, 20); assert.equal(first.data.unlocked, 6);
-    assert.ok(first.data.costs.slice(1).every(c => c.currency === 'garnet' && c.amount === 20));
+    assert.ok(first.data.costs.slice(1).every(c => c.currency === 'garnet'));
+    assert.deepEqual(first.data.costs.slice(1, 5).map(c => c.amount), [100, 100, 300, 500]);
+    assert.ok(first.data.costs.slice(5).every(c => c.amount === 500));
     assert.equal(u.presets[1].name, '기존');
-    await post('/api/presets/unlock', { slot: 5 }); u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 280);
+    await post('/api/presets/unlock', { slot: 5 }); u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 7000);
     await Promise.all([post('/api/presets/unlock', { slot: 6 }), post('/api/presets/unlock', { slot: 6 })]);
-    u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 260); assert.equal(u.presetSlotsUnlocked, 7);
+    u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 6500); assert.equal(u.presetSlotsUnlocked, 7);
     assert.equal((await post('/api/presets/unlock', { slot: 9 })).status, 400);
     for (let slot = 7; slot < 20; slot++) assert.equal((await post('/api/presets/unlock', { slot })).status, 200);
     u = await rpg.getRPGUserByName(seed.name); assert.equal(u.garnet, 0); assert.equal(u.point, 777); assert.equal(u.presetSlotsUnlocked, 20);
