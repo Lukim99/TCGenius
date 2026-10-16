@@ -2,6 +2,7 @@
 // 상대는 방어 덱(카드 + AI 규칙)만 스냅샷으로 복제해 공격자 레코드 위에서 순수하게 시뮬레이션한다.
 // 상대 레코드는 전투 중에는 절대 건드리지 않고, 종료 시 레이팅/전적만 상대 계정 큐로 반영한다.
 const fs = require('fs');
+const tcgEquipment = require('./tcg_equipment_effects');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
 const cardAwakening = require('./card_awakening');
@@ -546,9 +547,33 @@ function getLiveEquipmentStats(side, t) {
     return randoCharacters.applyStats(stats, side.runtime, side.snapshot.slotEffects, shield && shield.amount || 0, t);
 }
 
+function activatePvpTcg(actor, target, extra, t) {
+    const state = equipmentRuntime(actor);
+    const equipment = actor.snapshot.equipment || {};
+    if (!state.tcgSources?.length || Number(equipment.setCounts?.['TCG의 유산'] || 0) < 4) { delete state.tcgSources; return []; }
+    const stats = getLiveEquipmentStats(actor, t);
+    return tcgEquipment.activate(tcgEquipment.context({
+        mode: 'pvp', state, runtime: actor.runtime, actor, stats, now: t, extra,
+        entries: equipment.entries, setCount: equipment.setCounts?.['TCG의 유산'] || 0,
+        maxHp: actor.maxHp, maxMp: actor.maxMp, cooldowns: actor.skillCooldowns,
+        heal: amount => { if (actor.hp > 0 && t >= Number(state.ignoreHealingUntil || 0)) actor.hp = Math.min(actor.maxHp, actor.hp + amount); },
+        shield: (amount, until, name) => setShield(actor, amount * (1 + Number(stats.shieldEfficiency || 0)), until - t, t, 'equipment:' + name),
+        gold: () => {}, // PvP never awards combat gold.
+        element: element => rpgenius.getElementDamageMultiplier(element, stats, target ? getLiveEquipmentStats(target, t) : {}),
+        startTimer: () => {}, ally: () => {},
+        defense: (value, milliseconds) => { state.kingmakerDefenseDebuff = { value, until: t + milliseconds }; extra.defReductionBonus = Number(extra.defReductionBonus || 0) + value; },
+        culprit: (takenFinalDamage, defReduction, milliseconds) => { state.culprit = { takenFinalDamage, defReduction, until: t + milliseconds }; },
+        prisonKey: until => { actor.runtime.buffs.receivedDamageMul = { value: 1.5, until }; extra.critChanceBonus = Number(extra.critChanceBonus || 0) + .10; extra.damageBonusMul = Number(extra.damageBonusMul || 0) + .30; }
+    }));
+}
+
 function prepareEquipmentAttack(actor, target, extra, t) {
     if (extra.summonAttack || extra.dotAttack || extra.disableEquipmentBonusDamage) return;
     const state = equipmentRuntime(actor);
+    const markEquipment = name => { markTriggeredEffect(extra, 'equipment', name); tcgEquipment.recordInstant(state, name); };
+    const tcgBefore = tcgEquipment.capture(state);
+    tcgEquipment.consumeAttack(state, extra);
+    extra.onEquipmentProc = name => tcgEquipment.record(state, name);
     const stats = extra.combatStats || getLiveEquipmentStats(actor, t);
     const skill = extra.skill || null;
     const actionType = extra.isSkill ? 'skill' : 'basic';
@@ -573,57 +598,57 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         ['manaBurnAttackBuff', '마나번 햇'], ['manaBurnElementBuff', equipmentStage(actor, '현자의 마나번 로브') ? '현자의 마나번 로브' : '마나번 로브'],
         ['manaBurnCritBuff', '마나번 트라우저'], ['manaBurnExtraBuff', '마나번 슈즈'],
         ['coinBuff', '일레이나 전용 동전'], ['encoreBuff', '앵콜'], ['bloodHatBuff', '핏빛 모자'], ['liberationBuff', '해방의 열쇠']
-    ].forEach(([key, name]) => { if (includedAtStart[key]) markTriggeredEffect(extra, 'equipment', name); });
+    ].forEach(([key, name]) => { if (includedAtStart[key]) markEquipment(name); });
 
-    if (active('culprit')) { add('finalDamageBonus', state.culprit.takenFinalDamage); add('defReductionBonus', state.culprit.defReduction); markTriggeredEffect(extra, 'equipment', '피의 서약'); }
-    if (active('fortuneExtraDamage')) { add('extraDamageBonus', state.fortuneExtraDamage.value); markTriggeredEffect(extra, 'equipment', '행운의 복주머니'); }
-    if (active('ultimatumHatBuff')) { add('damageBonusMul', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0))); markTriggeredEffect(extra, 'equipment', '최후통첩 모자'); }
-    if (active('deepWaterAttackBuff') && attackElement == '수') { add('finalDamageBonus', state.deepWaterAttackBuff.value); markTriggeredEffect(extra, 'equipment', '심해의 모자'); }
-    if (active('darkAttackBuff') && attackElement == '암') { add('finalDamageBonus', state.darkAttackBuff.value); markTriggeredEffect(extra, 'equipment', '심연의 신발'); }
-    if (active('blackEchoShoesBuff') && attackElement == '암') { add('extraDamageBonus', state.blackEchoShoesBuff.value); markTriggeredEffect(extra, 'equipment', '검은 잔향 신발'); }
+    if (active('culprit')) { add('finalDamageBonus', state.culprit.takenFinalDamage); add('defReductionBonus', state.culprit.defReduction); markEquipment('피의 서약'); }
+    if (active('fortuneExtraDamage')) { add('extraDamageBonus', state.fortuneExtraDamage.value); markEquipment('행운의 복주머니'); }
+    if (active('ultimatumHatBuff')) { add('damageBonusMul', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0))); markEquipment('최후통첩 모자'); }
+    if (active('deepWaterAttackBuff') && attackElement == '수') { add('finalDamageBonus', state.deepWaterAttackBuff.value); markEquipment('심해의 모자'); }
+    if (active('darkAttackBuff') && attackElement == '암') { add('finalDamageBonus', state.darkAttackBuff.value); markEquipment('심연의 신발'); }
+    if (active('blackEchoShoesBuff') && attackElement == '암') { add('extraDamageBonus', state.blackEchoShoesBuff.value); markEquipment('검은 잔향 신발'); }
     const attackBuffEfficiency = 1 + Number(stats.attackBuffEfficiency || 0);
     if (actor.runtime.summon && Number(actor.runtime.summon.until || 0) > t && Number(actor.runtime.summon.buff || 0) != 0) { add('damageBonusMul', Number(actor.runtime.summon.buff) * attackBuffEfficiency); markTriggeredEffect(extra, 'summon', '수나타 강화'); }
     if (actor.runtime.gunryeok && Number(actor.runtime.gunryeok.until || 0) > t && Number(actor.runtime.gunryeok.atkBuff || 0) != 0) { add('damageBonusMul', Number(actor.runtime.gunryeok.atkBuff) * attackBuffEfficiency); markTriggeredEffect(extra, 'skill', '건력'); }
-    if (hasEquipmentPassive(actor, 4) && mpRatio >= .75) { add('finalDamageBonus', .05); markTriggeredEffect(extra, 'equipment', '마력 감응'); }
-    if (Number(state.beomStacksUntil || 0) > t && Number(state.beomStacks || 0) > 0 && attackElement == '명') { add('finalDamageBonus', Math.min(7, Number(state.beomStacks)) * .02); markTriggeredEffect(extra, 'equipment', '범부의 대나무'); }
+    if (hasEquipmentPassive(actor, 4) && mpRatio >= .75) { add('finalDamageBonus', .05); markEquipment('마력 감응'); }
+    if (Number(state.beomStacksUntil || 0) > t && Number(state.beomStacks || 0) > 0 && attackElement == '명') { add('finalDamageBonus', Math.min(7, Number(state.beomStacks)) * .02); markEquipment('범부의 대나무'); }
     if (Number(state.trueBeomUntil || 0) > t) {
         add('damageBonusMul', equipmentStep(actor, '범부의 대나무', .30, .05) * (1 + Number(stats.attackBuffEfficiency || 0)));
         if (actionType == 'skill') add('extraDamageBonus', equipmentStep(actor, '범부의 대나무', .30, .10));
-        markTriggeredEffect(extra, 'equipment', '범부의 대나무');
+        markEquipment('범부의 대나무');
     }
 
-    if (actionType == 'skill' && equipmentStage(actor, '감옥열쇠')) { const overflow = Math.max(0, Number(stats.crit || 0) - 1); add('damageBonusMul', overflow * equipmentStep(actor, '감옥열쇠', .20, .10)); if (overflow > 0) markTriggeredEffect(extra, 'equipment', '감옥열쇠'); }
+    if (actionType == 'skill' && equipmentStage(actor, '감옥열쇠')) { const overflow = Math.max(0, Number(stats.crit || 0) - 1); add('damageBonusMul', overflow * equipmentStep(actor, '감옥열쇠', .20, .10)); if (overflow > 0) markEquipment('감옥열쇠'); }
     if (actionType == 'skill' && isUltimateSkill(actor, skill)) add('damageBonusMul', Number(stats.ultimateDamage || 0));
     if (actionType == 'skill' && skill && skill.name == '끝판왕' && equipmentStage(actor, 'Lv1 초보')) {
         add('damageBonusMul', equipmentStep(actor, 'Lv1 초보', 1.30, .40));
         if (hpRatio <= .30) add('finalDamageBonus', equipmentStep(actor, 'Lv1 초보', .40, .15));
-        markTriggeredEffect(extra, 'equipment', 'Lv1 초보');
+        markEquipment('Lv1 초보');
     }
     if (actionType == 'skill' && skill && skill.name == '청정수 투척' && equipmentStage(actor, '정수 필터망')) {
         add('pntBonus', equipmentStep(actor, '정수 필터망', 25, 10));
         state.cleanWaterBuff = { value: equipmentStep(actor, '정수 필터망', .08, .03), until: t + equipmentDurationMs(actor, 6) };
-        markTriggeredEffect(extra, 'equipment', '정수 필터망');
+        markEquipment('정수 필터망');
     }
-    if (active('cleanWaterBuff') && attackElement == '수') { add('finalDamageBonus', state.cleanWaterBuff.value); markTriggeredEffect(extra, 'equipment', '정수 필터망'); }
+    if (active('cleanWaterBuff') && attackElement == '수') { add('finalDamageBonus', state.cleanWaterBuff.value); markEquipment('정수 필터망'); }
     if (actionType == 'skill' && skill && skill.name == '댄져' && equipmentStage(actor, '썩어버린 물')) {
         if (Math.min(3, Number(state.rottenWaterStacks || 0)) >= 3) add('extraDamageBonus', .20);
         state.rottenWaterStacks = 0;
-        markTriggeredEffect(extra, 'equipment', '썩어버린 물');
+        markEquipment('썩어버린 물');
     }
     if (actionType == 'skill' && skill && skill.name == '비리' && equipmentStage(actor, '치명적인 매력')) {
         add('critChanceBonus', -Math.max(0, Number(stats.crit || 0)));
         add('critMulBonus', Math.max(0, Number(stats.crit || 0)) * equipmentStep(actor, '치명적인 매력', .70, .15));
-        markTriggeredEffect(extra, 'equipment', '치명적인 매력');
+        markEquipment('치명적인 매력');
     }
     if (actionType == 'skill' && skill && skill.name == '비리' && equipmentStage(actor, '비리의 맛')) {
         state.bribeNextBasic = { damage: equipmentStep(actor, '비리의 맛', .40, .12), darkBonus: equipmentStep(actor, '비리의 맛', .65, .15) };
-        markTriggeredEffect(extra, 'equipment', '비리의 맛');
+        markEquipment('비리의 맛');
     }
     if (actionType == 'basic' && state.bribeNextBasic) {
         extra.rawDamageMultiplier = 1 + Number(state.bribeNextBasic.damage || 0);
         extra.bribeDarkBonus = Number(state.bribeNextBasic.darkBonus || 0);
         state.bribeNextBasic = null;
-        markTriggeredEffect(extra, 'equipment', '비리의 맛');
+        markEquipment('비리의 맛');
     }
     if (actionType == 'skill' && active('burn')) {
         const mythicBurnShoes = equipmentStage(actor, '종말을 걷는 장송곡');
@@ -645,66 +670,67 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             }
         }
     }
-    if (equipmentStage(actor, '진사이') && hpRatio <= .20) { add('finalDamageBonus', equipmentStep(actor, '진사이', .30, .05)); markTriggeredEffect(extra, 'equipment', '진사이'); }
+    if (equipmentStage(actor, '진사이') && hpRatio <= .20) { add('finalDamageBonus', equipmentStep(actor, '진사이', .30, .05)); markEquipment('진사이'); }
     if (hpRatio <= .50) {
         add('extraDamageBonus', Number(stats.bloodyShoesExtraDamage || 0) + Number(stats.vladimirExtraDamage || 0));
-        if (Number(stats.bloodyShoesExtraDamage || 0) > 0) markTriggeredEffect(extra, 'equipment', '블러디 슈즈');
-        if (Number(stats.vladimirExtraDamage || 0) > 0) markTriggeredEffect(extra, 'equipment', '블라디미르');
+        if (Number(stats.bloodyShoesExtraDamage || 0) > 0) markEquipment('블러디 슈즈');
+        if (Number(stats.vladimirExtraDamage || 0) > 0) markEquipment('블라디미르');
     }
     if (actionType == 'skill' && hpRatio <= .60 && Number(stats.blackEchoSkillDamage || 0) > 0) {
         const currentSkillMul = Math.max(.01, 1 + Number(stats.afterSkill || 0));
         extra.rawDamageMultiplier = Number(extra.rawDamageMultiplier || 1) * ((currentSkillMul + Number(stats.blackEchoSkillDamage)) / currentSkillMul);
-        markTriggeredEffect(extra, 'equipment', '검은 잔향 하의');
+        markEquipment('검은 잔향 하의');
     }
-    if (actor.shield && Number(actor.shield.amount || 0) > 0 && equipmentStage(actor, '강릉함씨 32대손')) { add('damageBonusMul', equipmentStep(actor, '강릉함씨 32대손', .18, .05)); markTriggeredEffect(extra, 'equipment', '강릉함씨 32대손'); }
+    if (actor.shield && Number(actor.shield.amount || 0) > 0 && equipmentStage(actor, '강릉함씨 32대손')) { add('damageBonusMul', equipmentStep(actor, '강릉함씨 32대손', .18, .05)); markEquipment('강릉함씨 32대손'); }
     if (equipmentSetCount(actor, '최후 통첩') >= 4) {
         if (targetHpRatio >= .70) add('finalDamageBonus', .10);
         if (targetHpRatio <= .30) add('finalDamageBonus', .18);
         if (targetHpRatio >= .70 || targetHpRatio <= .30) markTriggeredEffect(extra, 'set', '최후 통첩');
     }
-    if (targetHpRatio <= .60 && equipmentStage(actor, '정복자의 최후통첩')) { add('finalDamageBonus', .20); markTriggeredEffect(extra, 'equipment', '정복자의 최후통첩'); }
-    if (targetHpRatio <= .30 && equipmentStage(actor, '최후통첩 트라우저')) { add('pntBonus', equipmentStep(actor, '최후통첩 트라우저', 150, 40)); markTriggeredEffect(extra, 'equipment', '최후통첩 트라우저'); }
-    if (targetHpRatio <= .30 && equipmentStage(actor, '최후통첩 슈즈')) { add('extraDamageBonus', equipmentStep(actor, '최후통첩 슈즈', .20, .05)); markTriggeredEffect(extra, 'equipment', '최후통첩 슈즈'); }
+    if (targetHpRatio <= .60 && equipmentStage(actor, '정복자의 최후통첩')) { add('finalDamageBonus', .20); markEquipment('정복자의 최후통첩'); }
+    if (targetHpRatio <= .30 && equipmentStage(actor, '최후통첩 트라우저')) { add('pntBonus', equipmentStep(actor, '최후통첩 트라우저', 150, 40)); markEquipment('최후통첩 트라우저'); }
+    if (targetHpRatio <= .30 && equipmentStage(actor, '최후통첩 슈즈')) { add('extraDamageBonus', equipmentStep(actor, '최후통첩 슈즈', .20, .05)); markEquipment('최후통첩 슈즈'); }
     if (targetHpRatio <= .50 && equipmentStage(actor, '최후통첩 모자') && t >= Number(state.ultimatumHatReadyAt || 0)) {
         state.ultimatumHatBuff = { value: equipmentStep(actor, '최후통첩 모자', .15, .04), until: t + equipmentDurationMs(actor, 8) };
         state.ultimatumHatReadyAt = t + equipmentCooldownMs(actor, 12);
         add('damageBonusMul', Number(state.ultimatumHatBuff.value || 0) * (1 + Number(stats.attackBuffEfficiency || 0)));
-        markTriggeredEffect(extra, 'equipment', '최후통첩 모자');
+        markEquipment('최후통첩 모자');
     }
     if (equipmentStage(actor, '과소평가')) {
         const elapsed = t - Number(actor.enteredAt || t);
         add('damageBonusMul', elapsed < 10000 ? -.15 : equipmentStep(actor, '과소평가', .25, .08));
         if (elapsed >= 10000) add('critMulBonus', equipmentStep(actor, '과소평가', .20, .06));
-        markTriggeredEffect(extra, 'equipment', '과소평가');
+        markEquipment('과소평가');
     }
     if (equipmentStage(actor, '마나 증폭 장치')) {
         if (mpRatio > .20) add('damageBonusMul', Number(stats.manaAmplifierFinalAtk || equipmentStep(actor, '마나 증폭 장치', .10, .06)));
         if (mpRatio >= .50) add('extraDamageBonus', equipmentStep(actor, '마나 증폭 장치', .08, .04));
-        if (mpRatio > .20) markTriggeredEffect(extra, 'equipment', '마나 증폭 장치');
+        if (mpRatio > .20) markEquipment('마나 증폭 장치');
     }
     if (equipmentStage(actor, '포상 정산 반지')) {
         const diff = Math.abs(hpRatio - mpRatio);
         if (diff >= .30) add('damageBonusMul', equipmentStep(actor, '포상 정산 반지', .12, .04));
         if (diff >= .50) add('finalDamageBonus', equipmentStep(actor, '포상 정산 반지', .16, .04));
-        if (diff >= .30) markTriggeredEffect(extra, 'equipment', '포상 정산 반지');
+        if (diff >= .30) markEquipment('포상 정산 반지');
         if (!state.settlementRecoveryAt) state.settlementRecoveryAt = Number(actor.enteredAt || t) + 4000;
         if (t >= Number(state.settlementRecoveryAt || 0)) {
             const ticks = Math.floor((t - Number(state.settlementRecoveryAt)) / 4000) + 1;
             if (hpRatio < mpRatio) actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(1, Math.round(actor.maxHp * .01 * ticks * (1 + Number(stats.recoveryEfficiency || 0)))));
             else if (mpRatio < hpRatio) actor.mp = Math.min(actor.maxMp, actor.mp + Math.max(1, Math.round(actor.maxMp * .01 * ticks)));
+            if (hpRatio !== mpRatio) tcgEquipment.record(state, '포상 정산 반지');
             state.settlementRecoveryAt += ticks * 4000;
-            markTriggeredEffect(extra, 'equipment', '포상 정산 반지');
+            markEquipment('포상 정산 반지');
         }
     }
-    if (equipmentStage(actor, '심연의 신발') && hpRatio <= .50 && active('abyssBuff')) { add('damageBonusMul', .08); markTriggeredEffect(extra, 'equipment', '심연의 신발'); }
-    if (actionType == 'basic' && Number(state.deepNextBasic || 0) > 0) { extra.deepWaterBonus = Number(state.deepNextBasic); state.deepNextBasic = 0; markTriggeredEffect(extra, 'equipment', '심해의 모자'); }
+    if (equipmentStage(actor, '심연의 신발') && hpRatio <= .50 && active('abyssBuff')) { add('damageBonusMul', .08); markEquipment('심연의 신발'); }
+    if (actionType == 'basic' && Number(state.deepNextBasic || 0) > 0) { extra.deepWaterBonus = Number(state.deepNextBasic); state.deepNextBasic = 0; markEquipment('심해의 모자'); }
     if (actionType == 'basic' && equipmentStage(actor, '쿨다운 목걸이')) {
         const skills = sideSkills(actor);
         if (skills.length > 0 && skills.every(entry => Number(actor.skillCooldowns[entry.name] || 0) > t)) {
             add('damageBonusMul', equipmentStep(actor, '쿨다운 목걸이', .12, .03));
             extra.rawDamageMultiplier = Number(extra.rawDamageMultiplier || 1) * (1 + equipmentStep(actor, '쿨다운 목걸이', .35, .10));
             actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(1, Math.round(actor.maxHp * .001 * Math.max(1, Number(extra.attackUnitCount || 1)) * (1 + Number(stats.recoveryEfficiency || 0)))));
-            markTriggeredEffect(extra, 'equipment', '쿨다운 목걸이');
+            markEquipment('쿨다운 목걸이');
             markTriggeredEffect(extra, 'combat', 'HP 회복');
         }
     }
@@ -724,7 +750,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
                 actor.mp -= cost;
                 state[buffKey] = { value, until: t + equipmentDurationMs(actor, 60) };
                 state[readyKey] = t + equipmentCooldownMs(actor, 60);
-                markTriggeredEffect(extra, 'equipment', name);
+                markEquipment(name);
                 markTriggeredEffect(extra, 'set', '마나번');
                 markTriggeredEffect(extra, 'combat', 'MP 소모');
             }
@@ -733,30 +759,30 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         if (!includedAtStart[buffKey] && buff && Number(buff.until || 0) > t) {
             if (modifierKey == 'allElementAtk') extra.equipmentAllElementAtk = Number(extra.equipmentAllElementAtk || 0) + Number(buff.value || 0);
             else extra[modifierKey] = Number(extra[modifierKey] || 0) + Number(buff.value || 0);
-            markTriggeredEffect(extra, 'equipment', name);
+            markEquipment(name);
         }
     }
     const attackUnitCount = Math.max(1, Number(extra.attackUnitCount || 1));
     if (attackUnitCount > 1) {
-        if (equipmentStage(actor, '유랄 목걸이')) markTriggeredEffect(extra, 'equipment', '유랄 목걸이');
-        if (equipmentStage(actor, '유랄 장갑')) markTriggeredEffect(extra, 'equipment', '유랄 장갑');
-        if (equipmentStage(actor, '유생의 개지랄')) markTriggeredEffect(extra, 'equipment', '유생의 개지랄');
+        if (equipmentStage(actor, '유랄 목걸이')) markEquipment('유랄 목걸이');
+        if (equipmentStage(actor, '유랄 장갑')) markEquipment('유랄 장갑');
+        if (equipmentStage(actor, '유생의 개지랄')) markEquipment('유생의 개지랄');
         if (equipmentSetCount(actor, '유랄') >= 2) markTriggeredEffect(extra, 'set', '유랄');
     }
     const perAttackUnitExtras = Array.from({ length: attackUnitCount }, () => ({}));
     const addUnit = (unit, key, value) => { perAttackUnitExtras[unit][key] = Number(perAttackUnitExtras[unit][key] || 0) + Number(value || 0); };
     let rainbowTriggeredUnit = -1;
     for (let unit = 0; unit < attackUnitCount; unit++) {
-        if (Number(state.flowingBloodNext || 0) > 0) { addUnit(unit, 'finalDamageBonus', state.flowingBloodNext); state.flowingBloodNext = 0; markTriggeredEffect(extra, 'equipment', '흐르는 피'); }
+        if (Number(state.flowingBloodNext || 0) > 0) { addUnit(unit, 'finalDamageBonus', state.flowingBloodNext); state.flowingBloodNext = 0; markEquipment('흐르는 피'); }
         if (equipmentStage(actor, '핏빛 모자') && t >= Number(state.bloodHatReadyAt || 0)) {
             const cost = Math.max(1, Math.floor(actor.hp * .03));
             actor.hp = Math.max(1, actor.hp - cost);
             state.bloodHatBuff = { value: equipmentStep(actor, '핏빛 모자', .18, .04) * (1 + Number(stats.attackBuffEfficiency || 0)), until: t + equipmentDurationMs(actor, 15) };
             state.bloodHatReadyAt = t + equipmentCooldownMs(actor, 15);
-            if (equipmentStage(actor, '흐르는 피')) state.flowingBloodNext = equipmentStep(actor, '흐르는 피', .12, .04);
-            markTriggeredEffect(extra, 'equipment', '핏빛 모자');
+            if (equipmentStage(actor, '흐르는 피')) { state.flowingBloodNext = equipmentStep(actor, '흐르는 피', .12, .04); tcgEquipment.record(state, '흐르는 피'); }
+            markEquipment('핏빛 모자');
             markTriggeredEffect(extra, 'combat', '자해');
-            if (equipmentStage(actor, '흐르는 피')) markTriggeredEffect(extra, 'equipment', '흐르는 피');
+            if (equipmentStage(actor, '흐르는 피')) markEquipment('흐르는 피');
         }
         if (!includedAtStart.bloodHatBuff && active('bloodHatBuff')) addUnit(unit, 'damageBonusMul', state.bloodHatBuff.value);
         if (equipmentStage(actor, '일레이나 전용 동전') && t >= Number(state.coinReadyAt || 0)) {
@@ -764,7 +790,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
                 ? { type: 'water', value: equipmentStep(actor, '일레이나 전용 동전', 250, 50), until: t + equipmentDurationMs(actor, 300) }
                 : { type: 'crit', value: equipmentStep(actor, '일레이나 전용 동전', .20, .05), until: t + equipmentDurationMs(actor, 300) };
             state.coinReadyAt = t + equipmentCooldownMs(actor, 300);
-            markTriggeredEffect(extra, 'equipment', '일레이나 전용 동전');
+            markEquipment('일레이나 전용 동전');
         }
         if (!includedAtStart.coinBuff && state.coinBuff && Number(state.coinBuff.until || 0) > t) {
             if (state.coinBuff.type == 'water') addUnit(unit, 'waterAtk', state.coinBuff.value);
@@ -774,7 +800,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             // 골드 결과는 전투 경제에 반영하지 않되, 원본 4종 추첨 확률은 유지한다.
             const pool = ['extra', 'final', 'mp', 'gold'];
             const picked = [];
-            const count = equipmentSetCount(actor, 'TCG의 유산') >= 4 ? 2 : 1;
+            const count = 1;
             while (picked.length < count) {
                 const choice = pool[randomInt(0, pool.length - 1)];
                 if (!picked.includes(choice)) picked.push(choice);
@@ -785,18 +811,16 @@ function prepareEquipmentAttack(actor, target, extra, t) {
                 if (choice == 'mp') actor.mp = Math.min(actor.maxMp, actor.mp + Math.max(1, Math.round(actor.maxMp * equipmentStep(actor, '메가카운트 추첨기', .005, .005))));
                 if (choice == 'gold' && equipmentStage(actor, '행운의 복주머니')) state.fortuneExtraDamage = { value: equipmentStep(actor, '행운의 복주머니', .10, .05), until: t + equipmentDurationMs(actor, 10) };
             });
-            markTriggeredEffect(extra, 'equipment', '메가카운트 추첨기');
-            if (equipmentSetCount(actor, 'TCG의 유산') >= 4) markTriggeredEffect(extra, 'set', 'TCG의 유산');
+            markEquipment('메가카운트 추첨기');
         }
         if (equipmentStage(actor, '해방의 열쇠') && t >= Number(state.liberationReadyAt || 0)) {
             const pool = ['element', 'attack', 'resist'];
             const choices = [];
-            const count = equipmentSetCount(actor, 'TCG의 유산') >= 4 ? 2 : 1;
+            const count = 1;
             while (choices.length < count) { const choice = pool[randomInt(0, pool.length - 1)]; if (!choices.includes(choice)) choices.push(choice); }
             state.liberationBuff = { choices, elementValue: equipmentStep(actor, '해방의 열쇠', 70, 20), resistValue: equipmentStep(actor, '해방의 열쇠', 80, 20), until: t + equipmentDurationMs(actor, 10) };
             state.liberationReadyAt = t + equipmentCooldownMs(actor, 15);
-            markTriggeredEffect(extra, 'equipment', '해방의 열쇠');
-            if (equipmentSetCount(actor, 'TCG의 유산') >= 4) markTriggeredEffect(extra, 'set', 'TCG의 유산');
+            markEquipment('해방의 열쇠');
         }
         if (state.liberationBuff && Number(state.liberationBuff.until || 0) > t) {
             const choices = state.liberationBuff.choices || [];
@@ -805,7 +829,7 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         }
         if (equipmentStage(actor, '킹메이커 팔찌')) {
             state.kingmakerDefenseDebuff = { value: equipmentStep(actor, '킹메이커 팔찌', .10, .02), until: t + equipmentDurationMs(actor, 5) };
-            markTriggeredEffect(extra, 'equipment', '킹메이커 팔찌');
+            markEquipment('킹메이커 팔찌');
             markTriggeredEffect(extra, 'combat', '방어력 감소');
         }
         if (active('kingmakerDefenseDebuff')) addUnit(unit, 'defReductionBonus', state.kingmakerDefenseDebuff.value);
@@ -817,22 +841,22 @@ function prepareEquipmentAttack(actor, target, extra, t) {
             if (rainbowTriggeredUnit < 0 && t >= Number(state.rainbowReadyAt || 0)) {
                 addUnit(unit, 'rainbowAttackRatio', equipmentStep(actor, '레인보우 프리즘', 1.8, .4));
                 rainbowTriggeredUnit = unit;
-                markTriggeredEffect(extra, 'equipment', '레인보우 프리즘');
+                markEquipment('레인보우 프리즘');
                 markTriggeredEffect(extra, 'combat', '프리즘 추가 공격');
             }
         }
         state.attackCount = Number(state.attackCount || 0) + 1;
-        if (equipmentStage(actor, '예고편')) { addUnit(unit, 'finalDamageBonus', -.04 + Number(state.previewNextFinal || 0)); state.previewNextFinal = equipmentStep(actor, '예고편', .06, .02); markTriggeredEffect(extra, 'equipment', '예고편'); }
-        if (equipmentStage(actor, '예고의 예고') && state.attackCount % 2 == 0) { addUnit(unit, 'extraDamageBonus', equipmentStep(actor, '예고의 예고', .15, .05)); markTriggeredEffect(extra, 'equipment', '예고의 예고'); }
-        if (equipmentStage(actor, '예고의 예고의 예고') && state.attackCount % 3 == 0) { addUnit(unit, 'critChanceBonus', equipmentStep(actor, '예고의 예고의 예고', .10, .05)); markTriggeredEffect(extra, 'equipment', '예고의 예고의 예고'); }
+        if (equipmentStage(actor, '예고편')) { addUnit(unit, 'finalDamageBonus', -.04 + Number(state.previewNextFinal || 0)); state.previewNextFinal = equipmentStep(actor, '예고편', .06, .02); markEquipment('예고편'); }
+        if (equipmentStage(actor, '예고의 예고') && state.attackCount % 2 == 0) { addUnit(unit, 'extraDamageBonus', equipmentStep(actor, '예고의 예고', .15, .05)); markEquipment('예고의 예고'); }
+        if (equipmentStage(actor, '예고의 예고의 예고') && state.attackCount % 3 == 0) { addUnit(unit, 'critChanceBonus', equipmentStep(actor, '예고의 예고의 예고', .10, .05)); markEquipment('예고의 예고의 예고'); }
         if (equipmentSetCount(actor, '복선 회수') >= 4) {
             const cycle = equipmentStage(actor, '리턴즈파겜') ? ((state.attackCount % 3) + 1) : (((state.attackCount - 1) % 3) + 1);
             if (cycle == 1) addUnit(unit, 'finalDamageBonus', -.08);
             if (cycle == 2) { addUnit(unit, 'critChanceBonus', .20); addUnit(unit, 'critMulBonus', .20); }
             if (cycle == 3) { addUnit(unit, 'finalDamageBonus', .25); addUnit(unit, 'pntBonus', 120); }
             markTriggeredEffect(extra, 'set', '복선 회수');
-            if (equipmentStage(actor, '리턴즈파겜')) markTriggeredEffect(extra, 'equipment', '리턴즈파겜');
-            else if (equipmentStage(actor, '판테온 레거시')) markTriggeredEffect(extra, 'equipment', '판테온 레거시');
+            if (equipmentStage(actor, '리턴즈파겜')) markEquipment('리턴즈파겜');
+            else if (equipmentStage(actor, '판테온 레거시')) markEquipment('판테온 레거시');
         }
     }
     extra.perAttackUnitExtras = perAttackUnitExtras;
@@ -859,32 +883,36 @@ function prepareEquipmentAttack(actor, target, extra, t) {
         }
         if (equipmentStage(actor, '왓 타임 이즈 잇 나우') && Number(state.dropoutStacks || 0) > 0) {
             args.hitExtra.critMulBonus = Number(args.hitExtra.critMulBonus || 0) + Math.min(4, Number(state.dropoutStacks || 0)) * equipmentStep(actor, '왓 타임 이즈 잇 나우', .08, .03);
-            markTriggeredEffect(extra, 'equipment', '왓 타임 이즈 잇 나우');
+            markEquipment('왓 타임 이즈 잇 나우');
         }
     };
     extra.afterAttackUnit = ({ isCritical }) => {
+        const tcgHitBefore = tcgEquipment.capture(state);
         let additionalDamage = 0;
         let label = null;
-        if (equipmentStage(actor, '앵콜') && isCritical) { state.encoreBuff = { attack: equipmentStep(actor, '앵콜', .12, .03) * (1 + Number(stats.attackBuffEfficiency || 0)), critMul: .20, until: t + equipmentDurationMs(actor, 6) }; markTriggeredEffect(extra, 'equipment', '앵콜'); }
+        if (equipmentStage(actor, '앵콜') && isCritical) { state.encoreBuff = { attack: equipmentStep(actor, '앵콜', .12, .03) * (1 + Number(stats.attackBuffEfficiency || 0)), critMul: .20, until: t + equipmentDurationMs(actor, 6) }; markEquipment('앵콜'); }
         if (equipmentStage(actor, '왓 타임 이즈 잇 나우')) {
             const stacks = Math.min(4, Number(state.dropoutStacks || 0));
             if (isCritical) {
-                if (stacks > 0) { additionalDamage = Math.round(Number(stats.atk || 0) * equipmentStep(actor, '왓 타임 이즈 잇 나우', .50, .05) * stacks * rpgenius.getElementDamageMultiplier(attackElement, stats, getLiveEquipmentStats(target, t))); label = '중퇴 추가 피해'; markTriggeredEffect(extra, 'equipment', '왓 타임 이즈 잇 나우'); }
+                if (stacks > 0) { additionalDamage = Math.round(Number(stats.atk || 0) * equipmentStep(actor, '왓 타임 이즈 잇 나우', .50, .05) * stacks * rpgenius.getElementDamageMultiplier(attackElement, stats, getLiveEquipmentStats(target, t))); label = '중퇴 추가 피해'; markEquipment('왓 타임 이즈 잇 나우'); }
                 state.dropoutStacks = 0;
             } else state.dropoutStacks = Math.min(4, stacks + 1);
         }
-        if (equipmentStage(actor, '진사이') && Math.random() < .05) { actor.hp = Math.min(actor.maxHp, actor.hp + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markTriggeredEffect(extra, 'equipment', '진사이'); markTriggeredEffect(extra, 'combat', 'HP 회복'); }
+        if (equipmentStage(actor, '진사이') && Math.random() < .05) { actor.hp = Math.min(actor.maxHp, actor.hp + Math.round(200 * (1 + Number(stats.recoveryEfficiency || 0)))); markEquipment('진사이'); markTriggeredEffect(extra, 'combat', 'HP 회복'); tcgEquipment.record(state, '진사이'); }
         if (equipmentStage(actor, '잿불 모자') && t >= Number(state.burnReadyAt || 0)) {
             const duration = 8 + Number(stats.burnDurationFlat || 0) + (equipmentStage(actor, '행운의 복주머니') ? 3 : 0);
             const tickDamage = Math.max(1, Math.round(Number(stats.atk || 0) * equipmentStep(actor, '잿불 모자', .30, .05)
                 * (1 + Number(stats.dotDamage || 0) + Number(stats.burnDamage || 0) + (equipmentSetCount(actor, '잿불의 장송곡') >= 4 ? .35 : 0))));
             state.burn = { tickDamage, nextTickAt: t + EQUIPMENT_DOT_TICK_MS, until: t + duration * 1000 };
             state.burnReadyAt = t + equipmentCooldownMs(actor, 6);
-            markTriggeredEffect(extra, 'equipment', '잿불 모자');
+            markEquipment('잿불 모자');
             markTriggeredEffect(extra, 'combat', '화상 부여');
         }
+        additionalDamage += tcgEquipment.finishHit(state, tcgHitBefore, extra, post => activatePvpTcg(actor, target, post, t));
         return { additionalDamage, label };
     };
+    tcgEquipment.collect(state, tcgBefore);
+    activatePvpTcg(actor, target, extra, t);
 }
 
 function finishEquipmentAttack(actor, hit, t) {
@@ -1088,8 +1116,11 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     if (defender.hp > 0 && defender.hp / Math.max(1, defender.maxHp) <= .20 && hasEquipmentPassive(defender, 3) && t >= Number(defenderState.dragonRegenReadyAt || 0)) {
         defenderState.dragonRegen = { ticksLeft: 5, nextTickAt: t + 1000 };
         defenderState.dragonRegenReadyAt = t + 65000;
+        tcgEquipment.record(defenderState, '불굴');
         defenderEffectIds.push(combatEffects.id('equipment', '불굴'));
     }
+    if (reflectedHits.length) tcgEquipment.record(defenderState, '가시');
+    if (defender.hp > 0) tcgEquipment.outsideAttack(defenderState, proc => activatePvpTcg(defender, attacker, proc, t));
     randoCharacters.onHit(aStats, attacker.runtime, result.hitCount, extra, defender.hp <= 0 ? 1 : 0, t);
     const hit = { damage, hits: components, criticalCount: Number(result.criticalCount || 0), hitCount: Number(result.hitCount || 1), absorbed, dodged: false, heal, mpRecovery, targetHeal, reflectedDamage, reflectedHits, selfDamage: reflectedDamage, effectElement: extra.attackElement || null, triggeredEffectIds: combatEffects.unique(extra.triggeredEffectIds || []) };
     if (judgmentDamage != damage) hit.judgmentDamage = judgmentDamage;
@@ -1109,76 +1140,86 @@ function hasSkill(side, skillName) {
 
 function prepareEquipmentSkill(side, skill, t, combatStats) {
     const state = JSON.parse(JSON.stringify(equipmentRuntime(side)));
+    const markEquipment = name => { markTriggeredEffect(result.extra, 'equipment', name); tcgEquipment.recordInstant(state, name); };
+    const tcgBefore = tcgEquipment.capture(state);
     const stats = combatStats || getLiveEquipmentStats(side, t);
     const result = { mpCostMul: 1, extra: {}, cooldownFlatReduction: 0, cooldownOverride: null, ultimateCooldownReduction: 0, state };
     let virtualHp = side.hp;
     const sinceSkill = t - Number(state.lastSkillAt || side.enteredAt || t);
-    const markHpCost = () => { if (equipmentStage(side, '흐르는 피')) state.flowingBloodNext = equipmentStep(side, '흐르는 피', .12, .04); };
+    const markHpCost = () => { if (equipmentStage(side, '흐르는 피')) { state.flowingBloodNext = equipmentStep(side, '흐르는 피', .12, .04); tcgEquipment.record(state, '흐르는 피'); } };
     const spendHp = rate => { const cost = Math.max(1, Math.floor(virtualHp * rate)); virtualHp = Math.max(1, virtualHp - cost); result.hpAfter = virtualHp; markHpCost(); return cost; };
     const add = (key, value) => { result.extra[key] = Number(result.extra[key] || 0) + Number(value || 0); };
-    if (equipmentStage(side, '불량 배터리') && Math.random() < .20) { result.noMp = true; add('damageBonusMul', -.12); markTriggeredEffect(result.extra, 'equipment', '불량 배터리'); }
+    if (equipmentStage(side, '불량 배터리') && Math.random() < .20) { result.noMp = true; add('damageBonusMul', -.12); markEquipment('불량 배터리'); }
     if (equipmentStage(side, '썩어버린 물')) {
         const stacks = Math.min(3, Number(state.rottenWaterStacks || 0));
         result.mpCostMul *= 1 + .06 * stacks;
         add('damageBonusMul', stacks * equipmentStep(side, '썩어버린 물', .05, .02));
-        if (skill.name == '청정수 투척') { state.rottenWaterStacks = Math.min(3, stacks + 1); markTriggeredEffect(result.extra, 'equipment', '썩어버린 물'); }
+        if (skill.name == '청정수 투척') { state.rottenWaterStacks = Math.min(3, stacks + 1); markEquipment('썩어버린 물'); }
     }
-    if (equipmentStage(side, '모노레일 타이머') && sinceSkill >= 15000) { add('critMulBonus', equipmentStep(side, '모노레일 타이머', .40, .08)); markTriggeredEffect(result.extra, 'equipment', '모노레일 타이머'); }
-    if (equipmentStage(side, '결합 타이머') && sinceSkill >= 10000) { add('extraDamageBonus', equipmentStep(side, '결합 타이머', .20, .07)); markTriggeredEffect(result.extra, 'equipment', '결합 타이머'); }
-    if (equipmentStage(side, '십결모 타이머') && sinceSkill >= 10000) { add('damageBonusMul', .30); add('critChanceBonus', .25); markTriggeredEffect(result.extra, 'equipment', '십결모 타이머'); }
+    if (equipmentStage(side, '모노레일 타이머') && sinceSkill >= 15000) { add('critMulBonus', equipmentStep(side, '모노레일 타이머', .40, .08)); markEquipment('모노레일 타이머'); }
+    if (equipmentStage(side, '결합 타이머') && sinceSkill >= 10000) { add('extraDamageBonus', equipmentStep(side, '결합 타이머', .20, .07)); markEquipment('결합 타이머'); }
+    if (equipmentStage(side, '십결모 타이머') && sinceSkill >= 10000) { add('damageBonusMul', .30); add('critChanceBonus', .25); markEquipment('십결모 타이머'); }
     if (equipmentSetCount(side, '딜레이') >= 4 && sinceSkill >= 15000) { add('finalDamageBonus', .25); add('pntBonus', 100); result.mpCostMul *= 1.25; markTriggeredEffect(result.extra, 'set', '딜레이'); }
     if (equipmentSetCount(side, '복선 회수') >= 4) {
         const nextOrder = equipmentStage(side, '리턴즈파겜') ? ((Number(state.attackCount || 0) + 1) % 3) + 1 : (Number(state.attackCount || 0) % 3) + 1;
         if (nextOrder == 1) result.mpCostMul *= .80;
     }
-    if (equipmentStage(side, 'DMC 마이크')) { state.dmcSkillCount = Number(state.dmcSkillCount || 0) + 1; if (state.dmcSkillCount % 3 == 0) { add('finalDamageBonus', equipmentStep(side, 'DMC 마이크', .40, .10)); markTriggeredEffect(result.extra, 'equipment', 'DMC 마이크'); } }
+    if (equipmentStage(side, 'DMC 마이크')) { state.dmcSkillCount = Number(state.dmcSkillCount || 0) + 1; if (state.dmcSkillCount % 3 == 0) { add('finalDamageBonus', equipmentStep(side, 'DMC 마이크', .40, .10)); markEquipment('DMC 마이크'); } }
     if (skill.name == '백억이요' && equipmentStage(side, '범부의 대나무')) {
         if (t >= Number(state.beomStacksUntil || 0)) state.beomStacks = 0;
         state.beomStacks = Math.min(7, Number(state.beomStacks || 0) + 1);
         state.beomStacksUntil = t + equipmentDurationMs(side, 10);
         if (state.beomStacks >= 7) state.trueBeomUntil = t + equipmentDurationMs(side, 10);
-        markTriggeredEffect(result.extra, 'equipment', '범부의 대나무');
+        markEquipment('범부의 대나무');
     }
     if (skill.name == '초특급한탕') {
         result.superJackpot = Math.random() < .10;
         if (!result.superJackpot && equipmentStage(side, '교촌 주머니')) {
             result.cooldownFlatReduction += 30000;
             if (equipmentStage(side, '행운의 복주머니')) state.fortuneExtraDamage = { value: equipmentStep(side, '행운의 복주머니', .10, .05), until: t + equipmentDurationMs(side, 10) };
-            markTriggeredEffect(result.extra, 'equipment', '교촌 주머니');
+            markEquipment('교촌 주머니');
         }
     }
     if (equipmentStage(side, '운명의 주사위') && t >= Number(state.destinyDiceReadyAt || 0)) {
-        const types = equipmentSetCount(side, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        const types = [Math.random() < .5 ? 'crit' : 'critMul'];
         state.destinyDiceBuff = { types, until: t + equipmentDurationMs(side, 8) };
         state.destinyDiceReadyAt = t + equipmentCooldownMs(side, 15);
-        markTriggeredEffect(result.extra, 'equipment', '운명의 주사위');
+        markEquipment('운명의 주사위');
     }
     if (state.destinyDiceBuff && Number(state.destinyDiceBuff.until || 0) > t) {
         if ((state.destinyDiceBuff.types || []).includes('crit')) add('critChanceBonus', equipmentStep(side, '운명의 주사위', .15, .04));
         if ((state.destinyDiceBuff.types || []).includes('critMul')) add('critMulBonus', equipmentStep(side, '운명의 주사위', .30, .08));
-        markTriggeredEffect(result.extra, 'equipment', '운명의 주사위');
+        markEquipment('운명의 주사위');
     }
     if (equipmentStage(side, '심판의 주사위') && t >= Number(state.judgeDiceReadyAt || 0)) {
-        const types = equipmentSetCount(side, 'TCG의 유산') >= 4 ? ['crit', 'critMul'] : [Math.random() < .5 ? 'crit' : 'critMul'];
+        const types = [Math.random() < .5 ? 'crit' : 'critMul'];
         state.judgeDiceBuff = { types, until: t + equipmentDurationMs(side, 10) };
         state.judgeDiceReadyAt = t + equipmentCooldownMs(side, 14);
-        markTriggeredEffect(result.extra, 'equipment', '심판의 주사위');
+        markEquipment('심판의 주사위');
     }
     if (state.judgeDiceBuff && Number(state.judgeDiceBuff.until || 0) > t) {
         if ((state.judgeDiceBuff.types || []).includes('crit')) add('critChanceBonus', .30);
         if ((state.judgeDiceBuff.types || []).includes('critMul')) add('critMulBonus', .50);
-        markTriggeredEffect(result.extra, 'equipment', '심판의 주사위');
+        markEquipment('심판의 주사위');
     }
-    if (skill.name == '자인' && equipmentStage(side, '궁택토')) { result.cooldownOverride = 0; markTriggeredEffect(result.extra, 'equipment', '궁택토'); }
+    if (skill.name == '자인' && equipmentStage(side, '궁택토')) { result.cooldownOverride = 0; markEquipment('궁택토'); }
     if (isUltimateSkill(side, skill)) result.cooldownFlatReduction += Number(stats.ultimateCooldownFlat || 0);
     if (equipmentSetCount(side, '심해의 순환') >= 4 && t >= Number(state.deepSetReadyAt || 0)) { result.ultimateCooldownReduction = 3000; state.deepSetReadyAt = t + equipmentCooldownMs(side, 12); markTriggeredEffect(result.extra, 'set', '심해의 순환'); }
-    if (equipmentStage(side, '심해의 신발')) { result.selfCooldownRate = equipmentStep(side, '심해의 신발', .04, .01); result.selfCooldownCap = 3000; markTriggeredEffect(result.extra, 'equipment', '심해의 신발'); }
-    if (equipmentStage(side, '심해의 갑옷') && !stats.disableShield) { result.shield = Math.round(side.maxHp * equipmentStep(side, '심해의 갑옷', .05, .01) * (1 + Number(stats.shieldEfficiency || 0))); markTriggeredEffect(result.extra, 'equipment', '심해의 갑옷'); }
-    if (equipmentStage(side, '심해의 모자')) { state.deepNextBasic = equipmentStep(side, '심해의 모자', .60, .15); state.deepWaterAttackBuff = { value: .08, until: t + equipmentDurationMs(side, 6) }; markTriggeredEffect(result.extra, 'equipment', '심해의 모자'); }
-    if (equipmentStage(side, '검은 잔향 신발') && t >= Number(state.blackEchoShoesReadyAt || 0)) { state.blackEchoShoesBuff = { value: equipmentStep(side, '검은 잔향 신발', .07, .03), until: t + equipmentDurationMs(side, 60) }; state.blackEchoShoesReadyAt = t + equipmentCooldownMs(side, 60); markTriggeredEffect(result.extra, 'equipment', '검은 잔향 신발'); }
+    if (equipmentStage(side, '심해의 신발')) { result.selfCooldownRate = equipmentStep(side, '심해의 신발', .04, .01); result.selfCooldownCap = 3000; markEquipment('심해의 신발'); }
+    if (equipmentStage(side, '심해의 갑옷') && !stats.disableShield) { result.shield = Math.round(side.maxHp * equipmentStep(side, '심해의 갑옷', .05, .01) * (1 + Number(stats.shieldEfficiency || 0))); markEquipment('심해의 갑옷'); }
+    if (equipmentStage(side, '심해의 모자')) { state.deepNextBasic = equipmentStep(side, '심해의 모자', .60, .15); state.deepWaterAttackBuff = { value: .08, until: t + equipmentDurationMs(side, 6) }; markEquipment('심해의 모자'); }
+    if (equipmentStage(side, '검은 잔향 신발') && t >= Number(state.blackEchoShoesReadyAt || 0)) { state.blackEchoShoesBuff = { value: equipmentStep(side, '검은 잔향 신발', .07, .03), until: t + equipmentDurationMs(side, 60) }; state.blackEchoShoesReadyAt = t + equipmentCooldownMs(side, 60); markEquipment('검은 잔향 신발'); }
     if (equipmentSetCount(side, '검은 잔향') >= 4 && t >= Number(state.blackEchoSetReadyAt || 0)) { spendHp(.02); result.shadowDamageRate = virtualHp / Math.max(1, side.maxHp) <= .50 ? .50 : .35; state.blackEchoSetReadyAt = t + equipmentCooldownMs(side, 12); markTriggeredEffect(result.extra, 'set', '검은 잔향'); }
-    if (equipmentStage(side, '심연의 신발')) { if (virtualHp / Math.max(1, side.maxHp) > .50) spendHp(.02); state.darkAttackBuff = { value: .25, until: t + equipmentDurationMs(side, 12) }; state.abyssBuff = { until: t + equipmentDurationMs(side, 12) }; markTriggeredEffect(result.extra, 'equipment', '심연의 신발'); }
+    if (equipmentStage(side, '심연의 신발')) { if (virtualHp / Math.max(1, side.maxHp) > .50) spendHp(.02); state.darkAttackBuff = { value: .25, until: t + equipmentDurationMs(side, 12) }; state.abyssBuff = { until: t + equipmentDurationMs(side, 12) }; markEquipment('심연의 신발'); }
     state.lastSkillAt = t;
+    if (skill.name === '불사조' && equipmentStage(side, '감옥열쇠')) tcgEquipment.record(state, '감옥열쇠');
+    if (skill.name === '느억맘' && equipmentStage(side, '어머니의 마음')) tcgEquipment.record(state, '어머니의 마음');
+    if (skill.name === '감사합니다 친구야' && equipmentStage(side, '강릉함씨 32대손')) tcgEquipment.record(state, '강릉함씨 32대손');
+    if (skill.name === '범인은 이 안에' && equipmentStage(side, '피의 서약')) tcgEquipment.record(state, '피의 서약');
+    if (result.shield) tcgEquipment.record(state, '심해의 갑옷');
+    if (skill.name === '청정수 투척' && equipmentStage(side, '썩어버린 물')) tcgEquipment.record(state, '썩어버린 물');
+    tcgEquipment.collect(state, tcgBefore);
+    tcgEquipment.consumeSkill(state, result, false);
     return result;
 }
 
@@ -1259,7 +1300,8 @@ function doSkill(battle, actorKey, skill, t) {
     if (name != '건력' && actor.runtime.gunryeok) clearGunryeok(actor);
 
     let multiplier = value(0);
-    const extra = Object.assign({ isSkill: true, skill, combatStats: stats }, equipmentSkill.extra || {});
+    const extra = Object.assign({ isSkill: true, skill, skillName: name, mpCost, combatStats: stats }, equipmentSkill.extra || {});
+    activatePvpTcg(actor, target, extra, t);
     if (stats.wonyoddi && ['모드 전환', '원영적사고 모드 전환'].includes(name)) {
         if (equipmentSkill.shield) setShield(actor, equipmentSkill.shield, equipmentDurationMs(actor, 5), t, 'equipment:심해의 갑옷');
         const mode = randoCharacters.switchMode(stats, actor.runtime, actor.skillCooldowns, name, t);
@@ -1274,6 +1316,7 @@ function doSkill(battle, actorKey, skill, t) {
         extra.skillName = name;
         markTriggeredEffect(extra, 'skill', name);
         if (mode.skillRate) markTriggeredEffect(extra, 'equipment', '가면 스위처');
+        activatePvpTcg(actor, target, extra, t);
         if (stats.randoEquipment['존버의 미학']) markTriggeredEffect(extra, 'equipment', '존버의 미학');
         const raw = Math.round(stats.atk * mode.skillRate * (1 + Number(stats.afterSkill || 0) + Number(slotEffects.skillDamageBonus || 0)));
         const hit = raw || mode.fixed ? dealDamage(actor, target, raw, extra, t) : { damage: 0, triggeredEffectIds: extra.triggeredEffectIds };
@@ -1477,6 +1520,8 @@ function doSkill(battle, actorKey, skill, t) {
             const mpBeforeRecovery = actor.mp;
             actor.mp = Math.min(actor.maxMp, actor.mp + Math.max(1, Math.round(actor.maxMp * .03)));
             state.currentShoesReadyAt = t + equipmentCooldownMs(actor, 8);
+            tcgEquipment.record(state, '해류를 거스르는 신발');
+            tcgEquipment.outsideAttack(state, proc => activatePvpTcg(actor, target, proc, t));
             hit.mpRecovery = Number(hit.mpRecovery || 0) + Math.max(0, actor.mp - mpBeforeRecovery);
             hit.triggeredEffectIds = combatEffects.unique([].concat(hit.triggeredEffectIds || [], [
                 combatEffects.id('equipment', '해류를 거스르는 신발'),
@@ -1669,6 +1714,9 @@ function doIlionDrawTick(battle, actorKey, t) {
     const drawn = ilionCards.tick(actor.runtime, actor.skillCooldowns, equipmentStage(actor, '무한홀덤덱'),
         equipmentStage(actor, '어머니의 마음'), actor.enteredAt, t);
     if (!drawn) return;
+    const equipmentState = equipmentRuntime(actor);
+    tcgEquipment.record(equipmentState, '무한홀덤덱');
+    tcgEquipment.outsideAttack(equipmentState, extra => activatePvpTcg(actor, target, extra, t));
     const extra = { cardDamage: true, dotAttack: true, disableEquipmentBonusDamage: true, triggeredEffectIds: ['equipment:무한홀덤덱'] };
     const hit = actor.runtime.ilion.balanceHits > 0 ? dealDamage(actor, target, 0, extra, t) : { damage: 0, triggeredEffectIds: extra.triggeredEffectIds };
     pushEvent(battle, Object.assign({ at: t, actor: actorKey, action: 'skill', skillName: '헤즈업', text: '[무한홀덤덱] ' + drawn.text + (hit.damage ? ' / 균형 피해 ' + comma(hit.damage) : '') }, hit));

@@ -51,6 +51,7 @@ function spendMental(stats, runtime, amount, now) {
     if (!s.berserk && Number(stats.randoEquipment?.['청심환'] || 0) > 0 && s.value <= Number(stats.mental || 100) * .20) {
         s.value = 0;
         s.berserk = true;
+        s.tcgProc = true;
     }
     if (s.value === 0) s.exhausted = true;
     return true;
@@ -86,6 +87,10 @@ function switchMode(stats, runtime, cooldowns, skillName, now, rng = Math.random
     else { s.cycle = (Number(s.cycle || 0) + 1) % 3; s.mode = rng() < .07 ? '럭키비키' : modes[s.cycle]; }
     s.firstDamage = .30 + .03 * stats.randoStar;
     s.nextBasicExtra = step(Number(stats.randoEquipment?.['가면 스위처'] || 0), .20, .10);
+    if (Number(stats.randoEquipment?.['가면 스위처'] || 0) > 0) {
+        const equipmentState = runtime.equipmentState || runtime.equipment || (runtime.equipmentState = {});
+        (equipmentState.tcgSources || (equipmentState.tcgSources = [])).push('가면 스위처');
+    }
     if (!stats.randoEquipment?.['존버의 미학']) {
         for (const key of Object.keys(cooldowns || {})) cooldowns[key] = now + Math.max(0, Number(cooldowns[key]) - now) * .70;
         for (const key of ['basicUntil', 'nextActionAt', 'actionUntil']) if (runtime[key] > now) runtime[key] = now + (runtime[key] - now) * .70;
@@ -98,6 +103,11 @@ function switchMode(stats, runtime, cooldowns, skillName, now, rng = Math.random
 function prepareAttack(stats, runtime, extra) {
     if (extra.randoPrepared) return;
     extra.randoPrepared = true;
+    if (runtime?.kino?.tcgProc) {
+        delete runtime.kino.tcgProc;
+        const equipmentState = runtime.equipmentState || runtime.equipment || (runtime.equipmentState = {});
+        (equipmentState.tcgSources || (equipmentState.tcgSources = [])).push('청심환');
+    }
     const direct = !(extra.dotAttack || extra.summonAttack || extra.counterDamage || extra.isBotAutoAttack || extra.modeSwitchDamage);
     if (stats.kino && runtime?.kino?.berserk && stats.randoEquipment?.['청심환']) {
         extra.triggeredEffectIds = [...new Set([...(extra.triggeredEffectIds || []), 'equipment:청심환'])];

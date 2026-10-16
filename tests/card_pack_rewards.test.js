@@ -557,3 +557,127 @@ test('판테온·리턴즈 공격 순서는 실제 타격 횟수와 PvP 공개 �
     a.pvp.battle.me.runtime.equipment.attackCount = 2;
     assert.equal(pvp.buildBattleView(a).me.attackOrder, 3); assert.equal(pvp.buildBattleView(a).opp.attackOrder, null);
 });
+
+function tcgUser() {
+    const u = user(), equipment = rpg.getDataCache('Equipment');
+    u.equipments = { hat: { id: equipment.hat.findIndex(e => e.name === '마나번 햇'), transcendStage: 3 },
+        support: { id: equipment.support.findIndex(e => e.name === '행운의 복주머니') }, accessory: {} };
+    for (const [index, name] of ['메가카운트 추첨기', '운명의 주사위', '해방의 열쇠'].entries()) u.equipments.accessory[index] = { id: equipment.accessory.findIndex(e => e.name === name) };
+    return u;
+}
+
+test('TCG 필드·월드보스 추가 발동은 장착 방어구의 쿨타임을 무시하고 원래 쿨타임은 보존한다', async () => {
+    for (const worldBoss of [false, true]) {
+        const u = tcgUser(), dungeon = rpg.getRegularFieldDungeons()[0], now = Date.now();
+        u.field = { name: worldBoss ? '흑막' : dungeon.name, worldBoss, enteredAt: now, skillCooldowns: {}, equipmentState: { manaBurnAttackBuffReadyAt: now + 60000, liberationReadyAt: now + 60000 } };
+        const stats = rpg.calculateUserStats(u); u.mp = stats.mp;
+        const extra = { attackUnitCount: 1 };
+        await fixed(0, () => rpg.applyTranscendPreAttack(u, { type: 'normal', dungeon }, 100, extra, 'basic', null));
+        assert.ok(u.field.equipmentState.manaBurnAttackBuff?.expiredAt > now, '공격 장비 발동이 다른 장착 방어구를 실행');
+        assert.equal(u.field.equipmentState.manaBurnAttackBuffReadyAt, now + 60000);
+        assert.ok(u.mp < stats.mp); assert.ok(extra.triggeredEffectIds.includes('set:TCG의 유산'));
+        assert.equal(u.field.equipmentState.tcgSources, undefined, '추가 발동은 재연쇄하지 않는다');
+        rpg.clearFieldRuntimeTimers(u.name);
+    }
+});
+
+test('TCG 레이드와 PvP에서도 원래 조건을 무시해 장착 방어구가 발동한다', async () => {
+    const u = tcgUser(), now = Date.now(), stats = rpg.calculateUserStats(u);
+    const member = { name: u.name, baseSnapshot: { stats, slotEffects: {}, transcendEquipment: rpg.getTranscendEquipmentSnapshot(u, { includeAllActive: true }) },
+        runtime: { hp: stats.hp, hpMax: stats.hp, mp: stats.mp, mpMax: stats.mp, cooldownsUntil: {}, equipmentState: { manaBurnAttackReadyAt: now + 60000, liberationReadyAt: now + 60000 } } };
+    const monster = { name: 'TCG 검증', type: 'boss', hp: 100000, hpMax: 100000, stats: {}, debuffs: [] };
+    const room = { members: [member], monster, phaseIndex: 0, questId: 'mansionNormal' };
+    const extra = { comboHitCount: 1 };
+    await fixed(0, () => party.preparePartyAttackUnits(room, member, monster, extra, stats));
+    assert.ok(member.runtime.equipmentAtkBuffs.manaBurnAttack?.expiredAt > now);
+    assert.equal(member.runtime.equipmentState.manaBurnAttackReadyAt, now + 60000);
+    const a = tcgUser(), b = user(); await a.save(); await b.save();
+    pvp.ensurePvpState(a).daily.opponents = [{ name: b.name, rating: 1000 }];
+    assert.equal((await pvp.startBattle(a, b.name)).ok, true);
+    const battle = a.pvp.battle; battle.startedAt = now - 10000; battle.lastTickAt = now;
+    battle.me.nextActionAt = 0; battle.opp.nextActionAt = now + 100000;
+    battle.me.runtime.equipment = { manaBurnAttackBuffReadyAt: now + 60000, liberationReadyAt: now + 60000 };
+    await fixed(0, () => pvp.playerAttack(a));
+    assert.ok(battle.me.runtime.equipment.manaBurnAttackBuff?.until > now);
+    assert.equal(battle.me.runtime.equipment.manaBurnAttackBuffReadyAt, now + 60000);
+});
+
+test('TCG는 4세트에서만 발동하고 지속 중인 버프는 새 발동으로 세지 않는다', async () => {
+    const tcg = require('../tcg_equipment_effects');
+    const state = { manaBurnAttackBuff: { value: .15, expiredAt: Date.now() + 60000 } };
+    tcg.collect(state, tcg.capture(state)); assert.equal(state.tcgSources, undefined);
+    const u = tcgUser(); delete u.equipments.support;
+    const dungeon = rpg.getRegularFieldDungeons()[0];
+    u.field = { name: dungeon.name, enteredAt: Date.now(), equipmentState: { manaBurnAttackBuffReadyAt: Date.now() + 60000 } };
+    const extra = {}; await fixed(0, () => rpg.applyTranscendPreAttack(u, { type: 'normal', dungeon }, 100, extra, 'basic', null));
+    assert.equal(u.field.equipmentState.manaBurnAttackBuff, undefined);
+    assert.ok(!extra.triggeredEffectIds.includes('set:TCG의 유산'));
+});
+
+test('TCG 추첨은 원래 장비를 제외하며 다른 장비 발동에도 정확히 한 번 실행한다', async () => {
+    const tcg = require('../tcg_equipment_effects');
+    for (const random of [0, .49, .99]) {
+        const state = {}, actor = { hp: 100, mp: 100 }, extra = {}, calls = [];
+        const ctx = tcg.context({ mode: 'field', state, runtime: {}, actor, stats: { hp: 1000, mp: 1000 }, now: 1000, extra, setCount: 4,
+            entries: [{ name: '심해의 갑옷', stage: 1 }, { name: '진사이', stage: 1 }, { name: '핏빛 모자', stage: 1 }],
+            heal: amount => { calls.push('진사이'); actor.hp += amount; }, shield: () => calls.push('심해의 갑옷') });
+        tcg.record(state, '심해의 갑옷');
+        const selected = await fixed(random, () => tcg.activate(ctx));
+        assert.equal(selected.length, 1); assert.notEqual(selected[0], '심해의 갑옷');
+        assert.equal(state.tcgSources, undefined); assert.deepEqual(tcg.activate(ctx), []);
+        if (selected[0] === '진사이') assert.equal(actor.hp, 300);
+        else { assert.equal(actor.hp, 97); assert.equal(state.bloodHatBuff.expiredAt, 16000); }
+        assert.ok(!calls.includes('심해의 갑옷'));
+    }
+});
+
+test('TCG 예약 공격 효과는 지속 피해가 소모하지 않으며 추가 피해는 재연쇄 없이 한 번 계산된다', async () => {
+    const tcg = require('../tcg_equipment_effects'), state = { tcgPendingExtra: { tcgCelestia: 1, tcgExtraHit: 1 } };
+    const dot = { dotAttack: true }; tcg.consumeAttack(state, dot);
+    assert.ok(state.tcgPendingExtra); assert.equal(dot.tcgCelestia, undefined);
+    const extra = { hitCount: 1, disableCritical: true }; tcg.consumeAttack(state, extra);
+    assert.equal(state.tcgPendingExtra, undefined);
+    const procs = []; extra.onEquipmentProc = name => procs.push(name);
+    const hit = await fixed(.5, () => rpg.calculateAttackHitResult(100, 0, 0, { atk: 100, crit: 0 }, {}, extra, {}));
+    assert.equal(hit.finalDamage, 215); assert.deepEqual(procs, []);
+    const next = {}; tcg.consumeAttack(state, next); assert.deepEqual(next, {});
+});
+
+test('TCG로 새로 발동한 앵콜의 치명타 피해는 필드 스탯과 타격 보정에 중복되지 않는다', async () => {
+    const u = tcgUser(), equipment = rpg.getDataCache('Equipment'); u.equipments.hat = null;
+    const id = equipment.weapon.findIndex(e => e.name === '앵콜');
+    u.equipments.weapon = { id }; u.main_card.id = equipment.weapon[id].requireMainCard[0];
+    const dungeon = rpg.getRegularFieldDungeons()[0];
+    u.field = { name: dungeon.name, enteredAt: Date.now(), equipmentState: {}, skillCooldowns: {} };
+    const before = rpg.calculateUserStats(u), extra = {};
+    await fixed(0, () => rpg.applyTranscendPreAttack(u, { type: 'normal', dungeon }, 100, extra, 'basic', null));
+    const after = rpg.calculateUserStats(u), hitExtra = {};
+    extra.beforeAttackUnit({ hitExtra });
+    assert.ok(Math.abs(after.critMul - before.critMul - .20) < 1e-8);
+    assert.equal(Number(hitExtra.critMulBonus || 0), 0);
+});
+
+test('TCG 추가 발동은 보호막 금지와 회복 금지를 우회하지 않으며 실패한 스킬은 효과를 커밋하지 않는다', async () => {
+    const u = tcgUser(), equipment = rpg.getDataCache('Equipment');
+    u.equipments.hat = null;
+    u.equipments.armor = { id: equipment.armor.findIndex(e => e.name === '심해의 갑옷') };
+    const dungeon = rpg.getRegularFieldDungeons()[0];
+    u.field = { name: dungeon.name, enteredAt: Date.now(), skillCooldowns: {}, equipmentState: {} };
+    u.mp = 0;
+    const before = structuredClone(u);
+    assert.match(await rpg.useSkillInField(u, rpg.getMainCardSkills(u)[0].skill.name), /MP가 부족/);
+    assert.deepEqual(u.field.equipmentState, before.field.equipmentState);
+    for (const name of ['콰트로 1악장', '진사이']) {
+        const target = tcgUser(), id = equipment.weapon.findIndex(e => e.name === name), data = equipment.weapon[id];
+        target.main_card.id = data.requireMainCard[0]; target.equipments.hat = null;
+        target.equipments.weapon = { id };
+        target.equipments.armor = name === '콰트로 1악장' ? { id: equipment.armor.findIndex(e => e.name === '심해의 갑옷') } : null;
+        target.field = { name: '흑막', worldBoss: true, blackCurtain: { curseApplied: true }, enteredAt: Date.now(), equipmentState: {}, skillCooldowns: {} };
+        const stats = rpg.calculateUserStats(target); target.hp = Math.round(stats.hp / 2); target.mp = stats.mp;
+        const hp = target.hp, extra = {};
+        await fixed(0, () => rpg.applyTranscendPreAttack(target, { type: 'normal', dungeon }, 100, extra, 'basic', null));
+        if (name === '콰트로 1악장') { assert.equal(stats.disableShield, 1); assert.ok(!target.field.shield?.amount); }
+        else assert.equal(target.hp, hp);
+        rpg.clearFieldRuntimeTimers(target.name);
+    }
+});
