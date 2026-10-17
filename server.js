@@ -1350,8 +1350,10 @@ server.post('/api/inventory/items/:id/choose', requireUser, serializeItemUse(asy
             reward = buildItemChoiceOptions(item).find(option => option.itemId === choiceId);
             if (!reward || choiceId === itemId || !Number.isSafeInteger(reward.count) || reward.count < 1) return res.status(400).json({ error: '선택할 수 없는 아이템입니다.' });
             if (rpgenius.getInventoryItemCount(user, itemId) < 1) return res.status(400).json({ error: '남은 주머니가 없습니다.' });
+            const granted = rpgenius.grantItemReward(user, choiceId, reward.count, undefined, { requireCardSpace: true });
+            if (granted.error) return res.status(400).json({ error: granted.error });
             rpgenius.removeInventoryItem(user, itemId, 1);
-            reward = { ...reward, ...rpgenius.grantItemReward(user, choiceId, reward.count) };
+            reward = { ...reward, ...granted };
             if (!user.itemChoiceState) user.itemChoiceState = {};
             user.itemChoiceState[itemId] = { version: previous.version + 1, reward };
         }

@@ -9302,7 +9302,7 @@ function grantCharacterCardReward(user, card, summary) {
 }
 
 // 신규 수령에 사용한다. 취소·환불은 addInventoryItem으로 원래 아이템을 복원한다.
-function grantItemReward(user, itemId, count, summary) {
+function grantItemReward(user, itemId, count, summary, options = {}) {
     const item = getDataCache('Item', [])[itemId];
     const received = {};
     const cardStart = (user.inventory && user.inventory.card || []).length;
@@ -9310,14 +9310,12 @@ function grantItemReward(user, itemId, count, summary) {
     if (!converted) {
         addInventoryItem(user, itemId, count);
         addRewardSummary(received, 'item:' + itemId, item ? item.name : '알 수 없는 아이템', count);
-    } else if (item.pack && typeof item.pack == 'object') {
-        grantCharacterCardPack(user, item.pack, count, received);
     } else {
-        const entries = getDataCache(item.type == '번들' ? 'Bundle' : 'Pack', [])[item.pack];
-        for (let i = 0; i < count; i++) {
-            if (item.type == '번들') entries.forEach(entry => grantPackReward(user, entry, received));
-            else for (let j = 0; j < Number(item.num || 1); j++) grantPackReward(user, pickPackEntry(entries), received);
+        const rewards = rollItemPackRewards(item, count);
+        if (options.requireCardSpace && getRemainingCardInventorySpace(user) < rewards.filter(reward => reward.card).length) {
+            return { error: '캐릭터 카드 인벤토리 공간이 부족합니다.' };
         }
+        grantRolledPackRewards(user, rewards, received);
     }
     if (summary) Object.keys(received).forEach(key => addRewardSummary(summary, key, received[key].label, received[key].count));
     const cards = (user.inventory && user.inventory.card || []).slice(cardStart).map(card => ({ ...card }));
@@ -11344,7 +11342,12 @@ function selectItemChoice(user, numberArg) {
     const number = Number(numberArg);
     if (!Number.isInteger(number) || number < 1 || number > entries.length) return '❌ 존재하지 않는 번호입니다.\n/RPGenius 선택 [번호]';
     const picked = entries[number - 1];
-    const result = grantItemReward(user, picked.id, picked.count);
+    const result = grantItemReward(user, picked.id, picked.count, undefined, { requireCardSpace: true });
+    if (result.error) {
+        const refund = refundPendingActionItem(user, pending);
+        user.pendingAction = null;
+        return '❌ ' + result.error + (refund ? '\n[ 반환 ]\n- ' + refund : '');
+    }
     user.pendingAction = null;
     return ['✅ 아이템을 교환했습니다.', '[ 획득 결과 ]', ...formatItemReward(result)].join('\n');
 }
@@ -12123,20 +12126,57 @@ function openSealedLockbox(user, count) {
     return { opens: result };
 }
 
-function grantCharacterCardPack(user, pack, useCount, summary) {
+function rollCharacterCardPack(pack, useCount) {
     const characterCards = readJson(CHARACTER_CARDS_PATH, []);
     const isJob = pack.type == '전직 캐릭터 카드팩';
     const candidateIds = characterCards.map((_, i) => i).filter(i => isJob ? hasJobClass(i) : true);
-    if (candidateIds.length == 0) return;
+    if (candidateIds.length == 0) return [];
     const minStar = Number(pack.range && pack.range.min || 1);
     const maxStar = Number(pack.range && pack.range.max || minStar);
+    const cards = [];
     for (let i = 0; i < useCount; i++) {
         const id = candidateIds[randomInt(0, candidateIds.length - 1)];
         const star = randomInt(minStar, maxStar) - 1;
         const card = { id: id, star: star, type: isJob ? '전직' : '일반' };
         applyPackSkinToCard(card, pack.skin);
-        grantCharacterCardReward(user, card, summary);
+        cards.push({ card });
     }
+    return cards;
+}
+
+// 아이템 한 개의 결과를 먼저 확정해 카드 공간을 검사한다. 지급할 때는 다시 추첨하지 않는다.
+function rollItemPackRewards(item, count) {
+    if (item.pack && typeof item.pack == 'object') return rollCharacterCardPack(item.pack, count);
+    const entries = getDataCache(item.type == '번들' ? 'Bundle' : 'Pack', [])[item.pack];
+    const rewards = [];
+    for (let i = 0; i < count; i++) {
+        if (item.type == '번들') entries.forEach(entry => rewards.push(...rollPackReward(entry)));
+        else for (let j = 0; j < Number(item.num || 1); j++) rewards.push(...rollPackReward(pickPackEntry(entries)));
+    }
+    return rewards;
+}
+
+function rollPackReward(reward) {
+    const count = rollCount(reward.count);
+    if (reward.type == '아이템' && isCardPackItem(reward.item_id)) {
+        return rollItemPackRewards(getDataCache('Item', [])[reward.item_id], count);
+    }
+    if (reward.type == '캐릭터카드') {
+        const cards = [];
+        for (let i = 0; i < count; i++) {
+            const card = buildCharacterCardReward(reward);
+            if (card) cards.push({ card });
+        }
+        return cards;
+    }
+    return [{ reward: { ...reward, count } }];
+}
+
+function grantRolledPackRewards(user, rewards, summary) {
+    rewards.forEach(reward => {
+        if (reward.card) grantCharacterCardReward(user, reward.card, summary);
+        else grantPackReward(user, reward.reward, summary);
+    });
 }
 
 function grantEquipmentBox(user, pack, useCount, summary) {
@@ -12329,6 +12369,27 @@ async function useItem(user, itemName, countArg, options = {}) {
     if (!Number.isInteger(useCount) || useCount < 1) return '❌ 갯수는 1 이상의 정수여야 합니다.';
     if (getInventoryItemCount(user, itemId) < useCount) return '❌ 아이템이 부족합니다.';
 
+    const requestedCount = useCount;
+    let rolledRewards = null;
+    if (item.type == '번들' || item.type == '가챠' && !['초월상자', '보주상자'].includes(item.use)
+        && (typeof item.pack == 'number' || ['캐릭터 카드팩', '전직 캐릭터 카드팩'].includes(item.pack && item.pack.type))) {
+        if ((item.type == '번들' || typeof item.pack == 'number') && !Array.isArray(getDataCache(item.type == '번들' ? 'Bundle' : 'Pack', [])[item.pack])) {
+            return '❌ 사용할 수 없는 ' + (item.type == '번들' ? '번들' : '가챠') + '입니다.';
+        }
+        rolledRewards = [];
+        let space = getRemainingCardInventorySpace(user);
+        useCount = 0;
+        for (let i = 0; i < requestedCount; i++) {
+            const rewards = rollItemPackRewards(item, 1);
+            const cardCount = rewards.filter(reward => reward.card).length;
+            if (cardCount > space) break;
+            rolledRewards.push(...rewards);
+            space -= cardCount;
+            useCount++;
+        }
+        if (useCount == 0) return '❌ 캐릭터 카드 인벤토리 공간이 부족합니다. 아이템은 소모되지 않았습니다.';
+    }
+
     const requirements = item.require || [];
     for (const require of requirements) {
         const requiredCount = Number(require.count || 0) * useCount;
@@ -12336,10 +12397,6 @@ async function useItem(user, itemName, countArg, options = {}) {
             const requireItem = items[require.id];
             return '❌ 필요한 아이템이 부족합니다.\n- ' + (requireItem ? requireItem.name : '알 수 없는 아이템') + ' x' + comma(requiredCount);
         }
-    }
-    if (item.type == '번들') {
-        const bundles = getDataCache('Bundle', []);
-        if (!Array.isArray(bundles[item.pack])) return '❌ 사용할 수 없는 번들입니다.';
     }
     if (item.type == '사용') {
         if (item.use == '축복사용권' && useCount != 1) return '❌ 한 번에 1개만 사용할 수 있습니다.';
@@ -12400,12 +12457,15 @@ async function useItem(user, itemName, countArg, options = {}) {
     requirements.forEach(require => removeInventoryItem(user, require.id, Number(require.count || 0) * useCount));
 
     const lines = ['✅ ' + item.name + ' x' + comma(useCount) + ' 사용'];
+    if (useCount < requestedCount) lines.push('- 카드 인벤토리 공간 부족으로 ' + item.name + ' x' + comma(requestedCount - useCount) + '은(는) 사용하지 않았습니다.');
     if (item.type == '소모품') {
         (item.use_func || []).forEach(func => applyUseFunc(user, func, useCount, lines));
     }
     if (item.type == '가챠') {
         const summary = {};
-        if (item.use == '초월상자') {
+        if (rolledRewards) {
+            grantRolledPackRewards(user, rolledRewards, summary);
+        } else if (item.use == '초월상자') {
             const rarity = '초월';
             const candidates = [];
             const equipments = getDataCache('Equipment', {});
@@ -12429,16 +12489,6 @@ async function useItem(user, itemName, countArg, options = {}) {
                 addInventoryItem(user, id, 1);
                 addRewardSummary(summary, 'item:' + id, items[id].name, 1);
             }
-        } else if (typeof item.pack == 'number') {
-            const packs = getDataCache('Pack', []);
-            const pack = packs[item.pack];
-            if (!Array.isArray(pack)) return '❌ 사용할 수 없는 가챠입니다.';
-            const rollCount = Number(item.num || 1) * useCount;
-            for (let i = 0; i < rollCount; i++) grantPackReward(user, pickPackEntry(pack), summary);
-        } else if (item.pack && (item.pack.type == '캐릭터 카드팩' || item.pack.type == '전직 캐릭터 카드팩')) {
-            if (!user.inventory) user.inventory = { card: [], item: [] };
-            if (!Array.isArray(user.inventory.card)) user.inventory.card = [];
-            grantCharacterCardPack(user, item.pack, useCount, summary);
         } else if (item.pack && item.pack.type == '장비 상자') {
             if (!grantEquipmentBox(user, item.pack, useCount, summary)) return '❌ 사용할 수 없는 장비 상자입니다.';
         } else if (item.pack && item.pack.type == '보조 장비 상자') {
@@ -12452,10 +12502,8 @@ async function useItem(user, itemName, countArg, options = {}) {
         Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }
     if (item.type == '번들') {
-        const bundles = getDataCache('Bundle', []);
-        const bundle = bundles[item.pack];
         const summary = {};
-        for (let i = 0; i < useCount; i++) bundle.forEach(reward => grantPackReward(user, reward, summary));
+        grantRolledPackRewards(user, rolledRewards, summary);
         lines.push('[ 획득 결과 ]');
         Object.keys(summary).forEach(key => lines.push(formatRewardSummaryEntry(key, summary[key])));
     }

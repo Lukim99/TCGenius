@@ -107,12 +107,110 @@ test('운영자가 지정한 중첩 구성·추첨 횟수·전직 등급을 그�
     assert.equal(value.inventory.item.length, 0);
 });
 
-test('기존 카드팩 사용도 요청량 전체를 소비하고 카드 공간 초과분을 버린다', async () => {
+test('카드팩 4개 사용 시 3칸에 들어가는 3개만 소비하고 1개는 남긴다', async () => {
+    for (const name of ['5성 카드팩', '9성 전직 카드팩', '카드팩 상자', '딜러장 카드팩', '[6월]패션 카드팩']) {
+        const value = user(5), id = itemId(name);
+        value.inventory.card.push({ id: 0, star: 0, type: '일반' }, { id: 1, star: 0, type: '일반' });
+        rpg.addInventoryItem(value, id, 4);
+        const message = await fixed(0, () => rpg.useItem(value, name, 4));
+        assert.equal(value.inventory.card.length, 5, name);
+        assert.equal(rpg.getInventoryItemCount(value, id), 1, name);
+        assert.match(message, /x3 사용/);
+        assert.match(message, /공간.*부족/);
+        assert.doesNotMatch(message, /버려진/);
+    }
+});
+
+test('카드 공간이 없으면 카드팩을 보존한다', async () => {
     const value = user(1), id = itemId('5성 카드팩');
+    value.inventory.card.push({ id: 0, star: 0, type: '일반' });
+    rpg.addInventoryItem(value, id, 4);
+    const before = structuredClone(value.inventory);
+    assert.match(await rpg.useItem(value, '5성 카드팩', 4), /^❌.*공간.*부족/);
+    assert.deepEqual(value.inventory, before);
+});
+
+test('중첩 카드 꾸러미는 한 개의 전체 보상이 들어갈 때만 사용하고 실제 사용분의 재료만 소비한다', async () => {
+    const items = rpg.getDataCache('Item'), packs = rpg.getDataCache('Pack'), bundles = rpg.getDataCache('Bundle');
+    const material = itemId('강화석');
+    const pack = packs.push([{ type: '아이템', item_id: itemId('5성 카드팩'), count: 1, roll: 1 }]) - 1;
+    const wrapper = items.push({ name: '공간 검증 중첩 팩', type: '가챠', pack, num: 2 }) - 1;
+    const bundle = bundles.push([{ type: '골드', count: 17 }, { type: '아이템', item_id: wrapper, count: 1 }]) - 1;
+    const id = items.push({ name: '공간 검증 꾸러미', type: '번들', pack: bundle, require: [{ id: material, count: 2 }] }) - 1;
+    const value = user(3), gold = value.gold;
+    rpg.addInventoryItem(value, id, 2); rpg.addInventoryItem(value, material, 2);
+    const message = await fixed(0, () => rpg.useItem(value, items[id].name, 2));
+    assert.match(message, /x1 사용/);
+    assert.equal(value.inventory.card.length, 2);
+    assert.equal(rpg.getInventoryItemCount(value, id), 1);
+    assert.equal(rpg.getInventoryItemCount(value, material), 0);
+    assert.equal(value.gold, gold + 17);
+    const before = structuredClone(value.inventory), goldBefore = value.gold;
+    assert.match(await fixed(0, () => rpg.useItem(value, items[id].name, 1)), /^❌.*공간.*부족/);
+    assert.deepEqual(value.inventory, before); assert.equal(value.gold, goldBefore);
+});
+
+test('랜덤 카드 수량은 실제 추첨 결과로 공간을 확인하고 다시 추첨하지 않는다', async () => {
+    const items = rpg.getDataCache('Item'), packs = rpg.getDataCache('Pack');
+    const pack = packs.push([{ type: '캐릭터카드', card_id: 0, star: 4, count: { min: 1, max: 3 }, roll: 1 }]) - 1;
+    const id = items.push({ name: '공간 검증 랜덤 팩', type: '가챠', pack }) - 1;
+    const value = user(3);
+    rpg.addInventoryItem(value, id, 4);
+    assert.match(await fixed(0, () => rpg.useItem(value, items[id].name, 4)), /x3 사용/);
+    assert.equal(value.inventory.card.length, 3);
+    assert.equal(rpg.getInventoryItemCount(value, id), 1);
+    const crowded = user(2); rpg.addInventoryItem(crowded, id, 1);
+    assert.match(await fixed(.999, () => rpg.useItem(crowded, items[id].name, 1)), /^❌.*공간.*부족/);
+    assert.equal(crowded.inventory.card.length, 0);
+    assert.equal(rpg.getInventoryItemCount(crowded, id), 1);
+});
+
+test('혼합 가챠는 확정된 수량을 지급하고 공간을 초과하는 회차부터 남긴다', async () => {
+    const items = rpg.getDataCache('Item'), packs = rpg.getDataCache('Pack'), material = itemId('강화석');
+    const pack = packs.push([{ type: '아이템', item_id: material, count: { min: 2, max: 4 }, roll: .5 },
+        { type: '캐릭터카드', card_id: 0, star: 4, count: 1, roll: .5 }]) - 1;
+    const id = items.push({ name: '공간 검증 혼합 가챠', type: '가챠', pack }) - 1;
+    const value = user(1); value.inventory.card.push({ id: 1, star: 0, type: '일반' });
+    rpg.addInventoryItem(value, id, 2);
+    const original = Math.random, rolls = [.1, .5, .9]; let draws = 0;
+    Math.random = () => { assert.ok(draws < rolls.length, '지급 시 다시 추첨하지 않는다'); return rolls[draws++]; };
+    let message;
+    try { message = await rpg.useItem(value, items[id].name, 2); }
+    finally { Math.random = original; }
+    assert.match(message, /x1 사용/); assert.equal(draws, 3);
+    assert.equal(rpg.getInventoryItemCount(value, id), 1);
+    assert.equal(rpg.getInventoryItemCount(value, material), 3);
+    assert.equal(value.inventory.card.length, 1);
+});
+
+test('공간이 충분하면 요청한 카드팩을 모두 사용하고 카드가 없는 꾸러미는 가득 차도 사용한다', async () => {
+    const value = user(3), id = itemId('5성 카드팩');
     rpg.addInventoryItem(value, id, 3);
-    const message = await fixed(0, () => rpg.useItem(value, '5성 카드팩', 3));
-    assert.equal(value.inventory.card.length, 1); assert.equal(rpg.getInventoryItemCount(value, id), 0);
-    assert.match(message, /버려진.*x2/);
+    const message = await rpg.useItem(value, '5성 카드팩', 3);
+    assert.match(message, /x3 사용/); assert.doesNotMatch(message, /공간.*부족/);
+    assert.equal(value.inventory.card.length, 3); assert.equal(rpg.getInventoryItemCount(value, id), 0);
+    const items = rpg.getDataCache('Item'), bundles = rpg.getDataCache('Bundle');
+    const bundle = bundles.push([{ type: '골드', count: 7 }]) - 1;
+    const ordinary = items.push({ name: '공간 검증 일반 꾸러미', type: '번들', pack: bundle }) - 1;
+    const gold = value.gold;
+    rpg.addInventoryItem(value, ordinary, 2);
+    assert.match(await rpg.useItem(value, items[ordinary].name, 2), /x2 사용/);
+    assert.equal(value.gold, gold + 14); assert.equal(rpg.getInventoryItemCount(value, ordinary), 0);
+});
+
+test('명령어 선택권은 카드 공간이 부족하면 반환하고 공간 확보 후 정상 사용한다', async () => {
+    const items = rpg.getDataCache('Item');
+    const id = items.push({ name: '공간 검증 명령어 선택권', type: '사용', use: '아이템선택', choices: [{ id: itemId('9성 카드팩'), count: 2 }] }) - 1;
+    const value = user(1);
+    rpg.addInventoryItem(value, id, 1);
+    assert.match(await rpg.useItem(value, items[id].name, 1), /^✅/);
+    assert.match(await rpg.resolveWebItemUsePending(value, 1), /^❌.*공간.*부족/);
+    assert.equal(value.inventory.card.length, 0); assert.equal(rpg.getInventoryItemCount(value, id), 1);
+    assert.equal(value.pendingAction, null);
+    value.maxCardLimit = 2;
+    await rpg.useItem(value, items[id].name, 1);
+    assert.match(await rpg.resolveWebItemUsePending(value, 1), /^✅/);
+    assert.equal(value.inventory.card.length, 2); assert.equal(rpg.getInventoryItemCount(value, id), 0);
 });
 
 test('꾸러미·가챠 보상은 다른 구성품을 보존하고 카드팩만 즉시 지급한다', async () => {
@@ -203,19 +301,38 @@ test('쿠폰과 우편 수령은 공간이 없어도 보상을 소비하며 재�
     assert.equal(value.inventory.card.length, 1);
 });
 
-test('웹 선택권은 카드로 지급하고 같은 개봉 번호 재시도는 재추첨하지 않는다', async () => {
+test('웹 카드팩 사용은 들어가는 수량만 소비하고 가득 차면 남은 아이템을 보존한다', async () => {
+    const value = await rpg.getRPGUserByName(seed.name), id = itemId('9성 카드팩');
+    value.maxCardLimit = 3; value.inventory = { card: [], item: [], equipment: [], pet: [] };
+    rpg.addInventoryItem(value, id, 4); await value.save();
+    const result = await post('/api/inventory/items/' + id + '/use', { count: 4 });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.remainingCount, 1);
+    assert.equal((await rpg.getRPGUserByName(seed.name)).inventory.card.length, 3);
+    assert.equal((await post('/api/inventory/items/' + id + '/use', { count: 1 })).status, 400);
+    assert.equal(rpg.getInventoryItemCount(await rpg.getRPGUserByName(seed.name), id), 1);
+});
+
+test('웹 선택권은 공간 부족 시 보존하고 공간 확보 후 같은 개봉 번호로 한 번만 지급한다', async () => {
     const value = await rpg.getRPGUserByName(seed.name);
     value.maxCardLimit = 1; value.inventory = { card: [], item: [], equipment: [], pet: [] }; value.itemChoiceState = {};
     const items = rpg.getDataCache('Item');
     const pouch = items.push({ name: '즉시 카드 선택권', type: '사용', use: '아이템선택', choices: [{ id: itemId('9성 카드팩'), count: 3 }] }) - 1;
     rpg.addInventoryItem(value, pouch, 1); await value.save();
     const body = { itemId: itemId('9성 카드팩'), version: 0 };
+    const blocked = await post('/api/inventory/items/' + pouch + '/choose', body);
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /공간.*부족/);
+    assert.equal(value.inventory.card.length, 0);
+    assert.equal(rpg.getInventoryItemCount(value, pouch), 1);
+    assert.deepEqual(value.itemChoiceState, {});
+    value.maxCardLimit = 3; await value.save();
     const first = await post('/api/inventory/items/' + pouch + '/choose', body);
-    assert.equal(first.status, 200); assert.equal(first.data.reward.discarded, 2);
+    assert.equal(first.status, 200); assert.equal(first.data.reward.discarded, 0);
     const replay = await post('/api/inventory/items/' + pouch + '/choose', body);
     assert.deepEqual(replay.data.reward, first.data.reward);
     const after = await rpg.getRPGUserByName(seed.name);
-    assert.equal(after.inventory.card.length, 1); assert.equal(rpg.getInventoryItemCount(after, pouch), 0);
+    assert.equal(after.inventory.card.length, 3); assert.equal(rpg.getInventoryItemCount(after, pouch), 0);
     assert.equal(rpg.getInventoryItemCount(after, body.itemId), 0);
 });
 
