@@ -49,12 +49,9 @@ const staleEquipment = {
 };
 content.applyEquipmentBalancePatch(staleEquipment);
 assert.strictEqual(staleEquipment.armor[0].stat.darkRes, 100);
-assert.strictEqual(staleEquipment.armor[0].desc, allEntries.find(entry => entry.data.name === '검은 잔향 갑옷').data.desc);
-assert.strictEqual(staleEquipment.shoes[0].desc, allEntries.find(entry => entry.data.name === '검은 잔향 신발').data.desc);
-assert.strictEqual(staleEquipment.accessory[0].desc, allEntries.find(entry => entry.data.name === '777 목걸이').data.desc);
-assert.strictEqual(staleEquipment.accessory[1].desc, allEntries.find(entry => entry.data.name === '777 반지').data.desc);
-assert.strictEqual(staleEquipment.support[0].desc, allEntries.find(entry => entry.data.name === '777 장갑').data.desc);
-assert.strictEqual(staleEquipment.support[1].desc, allEntries.find(entry => entry.data.name === '행운의 장갑').data.desc);
+for (const list of Object.values(staleEquipment)) {
+    for (const data of list) assert.strictEqual(data.desc, '이전 설명', '운영 장비 설명을 코드 기본값으로 덮어쓰면 안 된다.');
+}
 
 const frameDir = path.join(__dirname, '..', 'DB', 'RPGenius', 'itemImage', '프레임');
 const transcendFrame = fs.readFileSync(path.join(frameDir, '[장비]초월.png'));

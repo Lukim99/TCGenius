@@ -553,7 +553,6 @@ function applyEquipmentBalancePatch(equipments) {
         definitions[type].filter(data => balancePatchNames.has(data.name)).forEach(source => {
             const target = equipments[type].find(data => data && data.name == source.name);
             if (!target) return;
-            target.desc = source.desc;
             if (source.name == '검은 잔향 갑옷') {
                 if (!target.stat || typeof target.stat != 'object') target.stat = {};
                 target.stat.darkRes = 100;
