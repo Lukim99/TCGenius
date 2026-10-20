@@ -1470,7 +1470,9 @@ const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
 registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, serializeItemUse });
 registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getItemIconUrl, getEquipmentIconUrl, getCharacterSprite: getHFieldCharacterSprite,
+    getCombatView: user => ({ player: buildHFieldState(user).player, skills: getHFieldSkills(user, serializeCard(user.main_card, user), user.field?.name) }),
     getMonsterSprite: enemy => {
+        if (enemy.kind === 'judge') return '/static/assets/paradise/judge-boss.webp';
         const atlas = enemy.sourceField === '인트리그미션' ? { atlasUrl: getGeneralFieldAssetUrl('필드/몬스터/인트리그미션.png'), row: 0, rows: 1 } : getGeneralFieldAtlas(enemy.sourceIndex);
         return atlas ? { ...atlas, column: enemy.kind === 'normal' ? 0 : 1 } : null;
     }

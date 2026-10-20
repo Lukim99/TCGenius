@@ -12,24 +12,19 @@
     const metals = { silver: ['#f4f8fa', '#7f8d96', '#e2e9ec', '#66737b'], gold: ['#fff0c2', '#b4842f', '#f2d184', '#86601f'], prismatic: ['#ffd9f3', '#8fd3ff', '#c4a3ff', '#ffe0a3', '#97eed2'], cursed: ['#ffb8c1', '#84243a', '#df6b7d', '#561522'], ember: ['#ffd2a0', '#8a2f14', '#f08048', '#4f1a0c'], iron: ['#e6ddd0', '#6d625a', '#c4b8aa', '#4a403a'] };
     const glowTint = { silver: [.75, .86, .92], gold: [1, .8, .45], prismatic: [.75, .62, 1], cursed: [1, .36, .42] };
     const tier = { silver: '실버 증강', gold: '골드 증강', prismatic: '프리즘 증강', cursed: '저주 증강' };
-    const POWER_WARNING = '위험! 권장 전투력 오버';
+    const POWER_WARNING = '위험!';
     let state = null, ranking = null, busy = false, pending = null, offset = 0, message = '', messageUntil = 0, fontsReady = false;
     let overlay = null, overlayPage = 0, focused = 1, hover = -1, pointer = { x: 0, y: 0 }, selection = null;
-    let sceneKey = '', sceneAt = performance.now(), attackAt = -10000, combatDamage = 0, lastHp = null, regions = [], regionKey = '', puzzleKey = '', activeScene = 'lobby', expiredPuzzle = '';
-    let muted = localStorage.getItem('paradise-muted') === '1', audioContext = null;
+    let sceneKey = '', sceneAt = performance.now(), regions = [], regionKey = '', puzzleKey = '', activeScene = 'lobby', expiredPuzzle = '';
+    const audio = window.ParadiseAudio, battle = window.ParadiseBattle, battleRoot = document.getElementById('paBattle');
+    let battleUntil = 0, heldBattle = null, keyboardCard = -1, inputMode = 'pointer';
+    const hoverLevels = [0, 0, 0]; let hoverTime = performance.now();
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
     const ctx = hudCanvas.getContext('2d');
     function announce(text, visible = true) { live.textContent = String(text || ''); message = visible ? live.textContent : ''; messageUntil = performance.now() + 4500; }
-    function sound(kind) {
-        if (muted) return;
-        try {
-            audioContext ||= new (window.AudioContext || window.webkitAudioContext)(); audioContext.resume();
-            const notes = kind === 'select' ? [392, 587, 784] : kind === 'reveal' ? [220, 330, 440] : [330];
-            notes.forEach((hz, i) => { const o = audioContext.createOscillator(), g = audioContext.createGain(), t = audioContext.currentTime + i * .08; o.type = 'triangle'; o.frequency.value = hz; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.045, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .3); o.connect(g).connect(audioContext.destination); o.start(t); o.stop(t + .32); });
-        } catch (_) {}
-    }
+    function sound(kind) { audio.play(kind); }
 
     // 기존 필드와 같은 WebGL 장면 + 캔버스 HUD 구조. 증강 카드는 화면 크기 그대로의 텍스처로 올려 글자가 축소되지 않게 한다.
     class CorridorGL {
@@ -153,21 +148,29 @@
     }
 
     async function fetchState() {
-        if (busy || pending || document.hidden) return;
+        if (busy || pending || document.hidden || performance.now()<battleUntil) return;
         try { const response = await fetch('/api/paradise', { cache: 'no-store' }); if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (!response.ok) throw new Error(result.error); accept(result); } catch (error) { announce(error.message); }
     }
     async function fetchRanking() { try { const response = await fetch('/api/paradise/ranking', { cache: 'no-store' }); if (response.ok) ranking = await response.json(); else announce('주간 랭킹을 불러오지 못했습니다.'); } catch (_) { announce('주간 랭킹 연결을 확인해주세요.'); } }
     function accept(next) {
         const run = next.run;
+        const previous=battleState(state), upcoming=battleState(next), events=run?.combatEvents||[];
+        const latest=previous&&events.filter(e=>e.enemyId===previous.target.id).at(-1);
+        const leaving=previous&&(!upcoming||upcoming.target.id!==previous.target.id);
+        if(previous&&leaving&&latest&&(latest.cleared||latest.defeated)) {
+            heldBattle={...previous,serverNow:next.serverTime,player:{...previous.player,...next.player},target:{...previous.target,hp:latest.targetHp}};
+            const duration=battle.update(heldBattle,events,next.runId);
+            if(duration)battleUntil=performance.now()+duration;
+        } else if(upcoming) battle.update(upcoming,events,next.runId);
         const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : ''))]);
-        if (key !== sceneKey) { sceneKey = key; sceneAt = performance.now(); selection = null; focused = 1; hover = -1; fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') sound('reveal'); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
+        if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') setTimeout(()=>{if(state?.run?.phase==='augment')sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
         // 낙하 결과는 서버 응답 뒤에만 착지 연출로 보여준다.
         const drop = run?.mode === 'hell' ? run.lastDrop : null, dropKey = drop ? [run.id, drop.from, drop.to].join() : '';
-        if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; fall = null; }
+        if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; sound('land'); fall = null; }
         lastDropKey = dropKey;
-        if (lastHp != null && run?.phase === 'combat' && state?.run?.enemy?.id === run.enemy.id && run.enemy.hp < lastHp) { combatDamage = lastHp - run.enemy.hp; attackAt = performance.now(); }
-        lastHp = run?.enemy?.hp ?? null; state = next; offset = next.serverTime - Date.now(); activeScene = !run ? 'lobby' : run.phase === 'event' ? run.event.id : run.phase;
+        state = next; offset = next.serverTime - Date.now(); activeScene = !run ? 'lobby' : run.phase === 'event' ? run.event.id : run.phase;
         if (!ranking || ranking.week !== next.weekly.week) fetchRanking();
+        audio.setScene(run?.status==='active'?(run.mode==='hell'?'hell':'heaven'):null);
         syncPuzzle(); regionKey = '';
     }
     async function mutate(action, input = {}, retry = false) {
@@ -232,7 +235,7 @@
         if (!mobile) { text(ctx, `주간 최고 ${state.weekly.bestFloor ? state.weekly.bestFloor + '층' : '—'}`, rankX - 14, 26, 13, '#e4d09c', 'right', 600); text(ctx, `전투력 ${fmt(p.combatPower)}`, rankX - 14, 44, 12, '#a3b2b8', 'right'); }
         hitButton(rankX, 16, rankW, 36, '주간 순위', () => { overlay = 'ranking'; overlayPage = 0; fetchRanking(); }, { glyph: mobile ? '순위' : '주간 순위' });
         }
-        hitButton(w - 52, 16, 36, 36, muted ? '소리 켜기' : '소리 끄기', () => { muted = !muted; localStorage.setItem('paradise-muted', muted ? '1' : '0'); if (!muted) sound('tap'); }, { glyph: '♪', strike: muted, size: 15 });
+        hitButton(w - 52, 16, 36, 36, audio.muted ? '소리 켜기' : '소리 끄기', () => audio.toggle(), { glyph: '♪', strike: audio.muted, size: 15 });
         if (run?.status === 'active') { if (!hell) hitButton(16, h - 52, mobile ? 96 : 112, 36, '유물 · 증강', () => { overlay = 'inventory'; overlayPage = 0; }); hitButton(w - (mobile ? 96 : 112), h - 52, mobile ? 80 : 96, 36, hell ? '탐험 포기' : '귀환', () => { overlay = 'retire'; }); }
         if (message && t < messageUntil) {
             const width = Math.min(w - 32, 560), bottom = run?.phase === 'combat' ? (mobile ? 256 : 230) : run?.phase === 'puzzle' ? 172 : run?.phase === 'augment' && mobile ? 178 : 110;
@@ -290,24 +293,33 @@
         return state.run.choices.map((choice, i) => {
             const delta = i - focused, scale = mobile && delta ? .88 : 1;
             let x = mobile ? w / 2 - cardW / 2 + delta * cardW * .84 : w / 2 + (i - 1) * (cardW + 28) - cardW / 2;
-            const progress = reduced ? 1 : clamp((t - sceneAt - i * 140) / 600, 0, 1), ease = 1 - Math.pow(1 - progress, 3);
-            let width = cardW * scale * Math.max(.035, Math.sin(ease * Math.PI / 2)), height = cardH * scale, yy = y + (1 - ease) * 60 + (mobile && delta ? cardH * .06 : 0);
+            const progress = reduced ? 1 : clamp((t - sceneAt - i * 90) / 280, 0, 1), ease = 1 - Math.pow(1 - progress, 3);
+            const slotX=x, slotY=y+(mobile&&delta?cardH*.06:0);
+            let width = cardW * scale, height = cardH * scale, yy = y + (1 - ease) * 12 + (mobile && delta ? cardH * .06 : 0);
             x += (cardW - width) / 2;
             const selected = selection?.index === i, hoverCard = hover === i || mobile && i === focused;
             if (selection) { const p = clamp((t - selection.started) / 430, 0, 1); if (!selected) yy += p * 120; else { width *= 1 + p * .06; height *= 1 + p * .06; x -= p * cardW * .03; yy -= p * 18; } }
-            else if (hoverCard && !reduced && !mobile) yy -= 6;
-            return { choice, x, y: yy, w: width, h: height, i, alpha: selection && !selected ? 1 - clamp((t - selection.started) / 350, 0, 1) : mobile && delta ? .5 : 1, hover: hoverCard, progress };
+            else if (!reduced && !mobile) { const amount=hoverLevels[i]; yy-=4*amount; x-=cardW*.0125*amount; width*=1+.025*amount; height*=1+.025*amount; }
+            return { choice, x, y: yy, w: width, h: height, slotX, slotY, slotW:cardW*scale, slotH:cardH*scale, i, alpha: selection && !selected ? 1 - clamp((t - selection.started) / 350, 0, 1) : (mobile && delta ? .5 : 1)*ease, hover: hoverCard, progress };
         });
     }
     function augments(w, h, t) {
         const geo = cardGeometry(w, h), mobile = geo.mobile;
         text(ctx, '증강 선택', w / 2, mobile ? 82 : geo.y - 46, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
-        const layouts = cardLayouts(w, h, t), order = [...layouts].sort((a, b) => Number(a.i === focused) - Number(b.i === focused));
+        const dt=Math.min(50,t-hoverTime); hoverTime=t;
+        const slots=cardLayouts(w,h,t);
+        const active=inputMode==='keyboard'?keyboardCard:slots.findIndex(r=>inside(r.slotX,r.slotY,r.slotW,r.slotH));
+        if(active!==hover&&active>=0&&t-sceneAt>460)sound('hover');
+        hover=active;
+        hoverLevels.forEach((level,i)=>{const target=i===active?1:0;hoverLevels[i]=level+(target-level)*Math.min(1,dt/(target?70:95));});
+        const layouts = cardLayouts(w, h, t), order = mobile ? [...layouts].sort((a, b) => Number(a.i === focused) - Number(b.i === focused)) : layouts;
         for (const card of order) {
             if (card.hover && !selection) renderer.quad(renderer.glow, card.x - card.w * .2, card.y - card.h * .08, card.w * 1.4, card.h * 1.16, [...(glowTint[card.choice.rarity] || glowTint.gold), .16]);
-            const tilt = mobile ? 0 : card.hover ? clamp((pointer.x - card.x - card.w / 2) / card.w, -.5, .5) : 0;
-            renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [1, 1, 1, card.alpha], [0, 0, 1, 1], tilt);
-            register(Math.max(0, card.x), card.y, Math.min(w, card.x + card.w) - Math.max(0, card.x), card.h, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || card.progress < .95);
+            const amount=hoverLevels[card.i], brightness=mobile?1:hover<0?1:card.i===hover?1+.06*amount:.92;
+            renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [brightness, brightness, brightness, card.alpha]);
+            if(amount>.01&&!mobile){ctx.save();ctx.globalAlpha=amount*.55;chamfer(ctx,card.x+1,card.y+1,card.w-2,card.h-2,12);ctx.strokeStyle=colors[card.choice.rarity]||colors.gold;ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=14;ctx.stroke();ctx.restore();}
+            register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
+
         }
         if (mobile) {
             const dotsY = geo.y + geo.cardH + 18;
@@ -315,38 +327,24 @@
             for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(w / 2 + (i - 1) * 16, dotsY, i === focused ? 4 : 3, 0, Math.PI * 2); ctx.fillStyle = i === focused ? '#f0d58e' : 'rgba(255,255,255,.3)'; ctx.fill(); }
             hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 증강', () => { focused = (focused + 1) % 3; }, { glyph: '›', size: 20 });
             hitButton(w / 2 - 120, h - 116, 240, 48, '이 증강 선택', () => choose(state.run.choices[focused], focused), { primary: true, size: 16, disabled: !!selection });
-        } else if (geo.y + geo.cardH + 34 < h - 60) text(ctx, '카드를 클릭하거나 1–3 키로 선택', w / 2, geo.y + geo.cardH + 34, 13, '#9aa7ad', 'center');
+        }
         if (selection) { const p = clamp((t - selection.started) / 430, 0, 1); ctx.fillStyle = `rgba(255,232,180,${Math.sin(p * Math.PI) * .1})`; ctx.fillRect(0, 0, w, h); }
     }
-    function combat(w, h, t) {
-        const run = state.run, enemy = run.enemy, p = state.player, mobile = w < 700;
-        const shake = !reduced && t - attackAt < 280 ? Math.sin((t - attackAt) / 19) * 6 * (1 - (t - attackAt) / 280) : 0;
-        const stageTop = mobile ? h * .25 : h * .24, stageH = mobile ? h * .42 : h * .52;
-        renderer.sprite(p.sprite, w * .10 + shake, stageTop, w * .32, stageH);
-        if (typeof enemy.sprite === 'string') renderer.sprite(enemy.sprite, w * .57 - shake, stageTop, w * .32, stageH, enemy.kind === 'mirror');
-        else if (enemy.sprite?.atlasUrl) { const image = renderer.image(enemy.sprite.atlasUrl), s = enemy.sprite; if (image?.ready) renderer.quad(image, w * .55 - shake, stageTop + stageH * .1, w * .34, stageH * .9, [1, 1, 1, 1], [s.column / 2, s.row / s.rows, .5, 1 / s.rows]); }
-        const bw = Math.min(w * (mobile ? .84 : .46), 600), by = mobile ? 84 : 96;
-        text(ctx, enemy.name, w / 2, by, mobile ? 20 : 24, '#f6eedc', 'center', 700, w - 40); bar((w - bw) / 2, by + 18, bw, mobile ? 14 : 16, enemy.hp, enemy.maxHp, '#c7474b', `${fmt(enemy.hp)} / ${fmt(enemy.maxHp)}`);
-        if (run.mode !== 'hell') text(ctx, `권장 전투력 ${fmt(enemy.recommendedPower)}${enemy.kind === 'elite' ? ' · 정예' : ''}`, w / 2, by + 50, 13, '#d2c296', 'center', 600);
-        else if (enemy.kind === 'elite') text(ctx, '정예', w / 2, by + 50, 14, '#f0a070', 'center', 700);
-        if (enemy.traits.length) paragraph(ctx, enemy.traits.join(' · '), w / 2, by + 72, w - 40, 13, '#e6ad94', 18, 2, 'center');
-        if (combatDamage && t - attackAt < 1100) text(ctx, fmt(combatDamage), w * .73, stageTop + stageH * .17 - (t - attackAt) / 30, mobile ? 34 : 52, '#ffe08a', 'center', 800);
-        const panelW = mobile ? w - 24 : Math.min(860, w - 64), panelH = mobile ? 140 : 108, panelX = (w - panelW) / 2, bottomY = h - 60 - panelH;
-        panel(ctx, panelX, bottomY, panelW, panelH);
-        const barsW = mobile ? panelW - 32 : 240, bx = panelX + 16;
-        text(ctx, p.card?.name || p.name, bx, bottomY + 18, 14, '#efe2bd', 'left', 700, barsW); bar(bx, bottomY + 32, barsW, 16, p.hp, p.maxHp, '#3fae7c', `${fmt(p.hp)} / ${fmt(p.maxHp)}`); bar(bx, bottomY + 52, barsW, 14, p.mp, p.maxMp, '#3d78c4', `${fmt(p.mp)} / ${fmt(p.maxMp)}`);
-        const list = [{ name: '일반 공격', basic: true, cost: 0, cooldownEnd: run.nextActionAt }, ...run.skills];
-        const actionX = mobile ? panelX + 16 : panelX + 280, actionY = mobile ? bottomY + 76 : bottomY + 14, gap = 10, cellH = mobile ? 42 : 52, cell = mobile ? Math.min(62, (panelW - 32 - gap * (list.length - 1)) / list.length) : Math.min(68, (panelW - 296 - gap * (list.length - 1)) / list.length);
-        list.forEach((skill, i) => {
-            const x = actionX + i * (cell + gap), cooldown = Math.max(0, (Math.max(run.nextActionAt, skill.cooldownEnd || 0) - now()) / 1000), disabled = cooldown > 0 || busy, hovered = !disabled && inside(x, actionY, cell, cellH);
-            rr(ctx, x, actionY, cell, cellH, 9); ctx.fillStyle = hovered ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.04)'; ctx.fill(); ctx.strokeStyle = disabled ? 'rgba(255,255,255,.1)' : skill.basic ? '#d8b56acc' : 'rgba(205,218,224,.38)'; ctx.lineWidth = 1; ctx.stroke();
-            sigil(ctx, skill.basic ? 'firstStrike' : 'manaCycle', x + cell / 2, actionY + cellH / 2, cellH * .52, disabled ? '#5f6b70' : skill.basic ? '#ecd08e' : '#d5dde0');
-            if (cooldown) { rr(ctx, x, actionY, cell, cellH, 9); ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fill(); text(ctx, cooldown.toFixed(1), x + cell / 2, actionY + cellH / 2 + 1, 16, '#f2dc9e', 'center', 700); }
-            text(ctx, skill.name, x + cell / 2, actionY + cellH + 11, mobile ? 11 : 12, '#cfd6d8', 'center', 500, cell + 8);
-            register(x, actionY, cell, cellH, skill.name + (cooldown ? ` · ${cooldown.toFixed(1)}초` : ''), () => { sound('tap'); mutate(skill.basic ? 'attack' : 'skill', skill.basic ? {} : { skill: skill.name }); }, disabled);
-        });
-        if (!mobile && run.combatLog?.length) paragraph(ctx, run.combatLog[0], w / 2, bottomY - 20, w * .7, 13, '#d0d4c8', 18, 1, 'center');
+    function battleState(snapshot) {
+        if (!snapshot?.run?.enemy || !snapshot.battle) return null;
+        const run=snapshot.run, enemy=run.enemy, sprite=enemy.sprite;
+        return { ...snapshot.battle, serverNow:snapshot.serverTime, inField:true, phase:'elite',
+            nextActionAt:run.nextActionAt, combatLog:run.combatLog, target:enemy,
+            activeField:{backgroundUrl:asset(run.mode==='hell'?'hell':'corridor'),monster:typeof sprite==='string'?{spriteUrl:sprite}:sprite||{}} };
     }
+    function combat(w, h, t) {
+        const locked=busy||!!pending||!!overlay||t<battleUntil;
+        const current=t<battleUntil?heldBattle:battleState(state);
+        if(!current)return;
+        battle.update(current, [], state.runId, true);
+        for(const r of battle.draw(t, locked)) register(r.x,r.y,r.w,r.h,r.label,r.action,locked);
+    }
+    battle.onAction=(action, body)=>mutate(action, action==='skill'?{skill:body.skillName}:{});
     function eventScene(w, h, t) {
         const e = state.run.event, mobile = w < 700, boxW = mobile ? w - 32 : Math.min(1100, w - Math.max(64, w * .16)), boxX = (w - boxW) / 2, bottom = h - 64;
         const n = e.choices.length, cols = mobile ? 1 : n, gap = mobile ? 10 : 16, cw = (boxW - gap * (cols - 1)) / cols, descSize = mobile ? 14 : 15, lh = descSize * 1.45;
@@ -426,7 +424,7 @@
         ctx.fillStyle = `rgba(0,0,0,${.8 * (1 - p)})`; ctx.fillRect(0, 0, w, h);
         ctx.save(); ctx.globalAlpha = fade; text(ctx, `지하 ${landing.drop.to}층`, w / 2, y, mobile ? 40 : 56, '#ffe0b0', 'center', 800); text(ctx, `${landing.drop.distance}층 낙하`, w / 2, y + (mobile ? 38 : 48), 16, '#f0a070', 'center', 700); ctx.restore();
     }
-    function descend(side) { if (busy || pending || fall || landing) return; fall = { side, started: performance.now() }; sound('select'); setTimeout(() => mutate('descend', { side }), reduced ? 0 : 650); }
+    function descend(side) { if (busy || pending || fall || landing) return; fall = { side, started: performance.now() }; sound('descent'); setTimeout(() => mutate('descend', { side }), reduced ? 0 : 650); }
     // 방향이 기운 균열: 바위 테두리가 겹겹이 좁아지며 용암 빛 쪽으로 꺾인다.
     function chasm(c, x, y, w, h, dir, t, lit) {
         const k = Math.min(12, w * .06), cx = x + w / 2, cy = y + h * .4, vx = cx + dir * w * .2, vy = y + h * .66;
@@ -524,7 +522,7 @@
     function chestScene(w, h, t) {
         const run = state.run, list = (run.chests || []).filter(c => !c.opened), n = list.length, mobile = w < 700, open = chestPick ? (reduced ? 1 : clamp((t - chestPick.started) / 520, 0, 1)) : 0, opens = run.opensRemaining ?? 1;
         const head = `지하 ${run.clearedFloor || 0}층 보상 · ${opens}회 개봉 가능`;
-        const pick = chest => { if (busy || pending || chestPick || opens <= 0) return; chestPick = { id: chest.id, started: performance.now() }; sound('select'); setTimeout(() => mutate('chest', { chest: chest.id }), reduced ? 0 : 560); };
+        const pick = chest => { if (busy || pending || chestPick || opens <= 0) return; chestPick = { id: chest.id, started: performance.now() }; sound('chest'); setTimeout(() => mutate('chest', { chest: chest.id }), reduced ? 0 : 560); };
         const label = chest => `${chest.name} · ${chest.description}`;
         if (mobile) {
             const cw = Math.min(w - 84, 300), ch = Math.min(h - 318, 440), y = 128; chestPage = clamp(chestPage, 0, Math.max(0, n - 1));
@@ -622,21 +620,29 @@
         }
     }
     function syncRegions() {
-        const key = JSON.stringify(regions.map(r => [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.label, r.disabled]));
-        if (key === regionKey) return; regionKey = key;
-        const focusLabel = document.activeElement?.getAttribute('aria-label'); controls.replaceChildren();
-        regions.forEach(region => { const button = document.createElement('button'); button.type = 'button'; button.setAttribute('aria-label', region.label); button.disabled = region.disabled; button.style.cssText = `left:${region.x}px;top:${region.y}px;width:${region.w}px;height:${region.h}px`; button.onclick = region.fn; button.onfocus = () => { pointer.x = region.x + region.w / 2; pointer.y = region.y + region.h / 2; }; controls.append(button); if (focusLabel === region.label) button.focus({ preventScroll: true }); });
+        const children=[...controls.children];
+        regions.forEach((region,i)=>{
+            let button=children[i];
+            if(!button){button=document.createElement('button');button.type='button';controls.append(button);}
+            button.setAttribute('aria-label',region.label);button.disabled=region.disabled;
+            button.style.cssText=`left:${region.x}px;top:${region.y}px;width:${region.w}px;height:${region.h}px`;
+            button.onclick=region.fn;
+            button.onfocus=()=>{if(inputMode!=='keyboard')return;const index=state?.run?.choices?.findIndex(c=>region.label.includes(c.name));if(index>=0)keyboardCard=index;};
+        });
+        children.slice(regions.length).forEach(button=>button.remove());
     }
     function frame(t) {
         const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
         if (sceneCanvas.width !== Math.round(w * dpr) || sceneCanvas.height !== Math.round(h * dpr)) { sceneCanvas.width = hudCanvas.width = Math.round(w * dpr); sceneCanvas.height = hudCanvas.height = Math.round(h * dpr); }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); regions = [];
-        renderer.begin(w, h); sceneBackground(w, h, t);
+        const inCombat=state?.run?.phase==='combat'||t<battleUntil;
+        battleRoot.hidden=!inCombat; sceneCanvas.hidden=inCombat;
+        if(!inCombat){renderer.begin(w, h);sceneBackground(w,h,t);}
         if (!state) text(ctx, '불러오는 중…', w / 2, h / 2, 16, '#d8cfb8', 'center', 600);
         else {
             const run = state.run, hell = run?.mode === 'hell';
             // 패배·포기 후에도 status='ended'인 채로 상자 선택이 이어지므로 phase를 먼저 본다.
-            if (hell && run.phase === 'chests') chestScene(w, h, t); else if (hell && (run.status === 'ended' || run.phase === 'ended')) hellEnded(w, h, t); else if (hell && run.phase === 'descent') descentScene(w, h, t); else if (hell && run.phase === 'altar') altarScene(w, h, t);
+            if(inCombat)combat(w,h,t); else if (hell && run.phase === 'chests') chestScene(w, h, t); else if (hell && (run.status === 'ended' || run.phase === 'ended')) hellEnded(w, h, t); else if (hell && run.phase === 'descent') descentScene(w, h, t); else if (hell && run.phase === 'altar') altarScene(w, h, t);
             else if (!state.run) lobby(w, h, t); else if (state.run.phase === 'augment') augments(w, h, t); else if (state.run.phase === 'combat') combat(w, h, t); else if (state.run.phase === 'event') eventScene(w, h, t); else if (state.run.phase === 'puzzle') puzzleScene(w, h); else ended(w, h);
             // 연출 중에는 장면 행동을 받지 않는다.
             if (hell || fall || landing) { if (landing) regions.forEach(r => { r.disabled = true; }); dropFx(w, h, t); }
@@ -644,15 +650,17 @@
             if (overlay) { puzzleForm.hidden = true; drawOverlay(w, h); }
             if (pending && !busy) { hitButton(w / 2 - 140, h / 2 - 24, 280, 48, '저장 확인 · 같은 요청 재시도', () => mutate(pending.action, {}, true), { primary: true }); const r = regions[regions.length - 1]; r.disabled = false; }
         }
-        if (state?.run?.phase === 'augment' && w >= 700 && !overlay) { const cards = cardLayouts(w, h, t); hover = cards.findIndex(r => pointer.x >= r.x && pointer.x <= r.x + r.w && pointer.y >= r.y && pointer.y <= r.y + r.h); }
         syncRegions(); requestAnimationFrame(frame);
     }
-    addEventListener('pointermove', event => { pointer.x = event.clientX; pointer.y = event.clientY; });
+    addEventListener('pointermove', event => { if(Math.hypot(pointer.x-event.clientX,pointer.y-event.clientY)>4)inputMode='pointer';pointer.x=event.clientX;pointer.y=event.clientY; });
+    addEventListener('pointerdown',()=>{inputMode='pointer';audio.unlock();});
+    document.addEventListener('pointerleave',()=>{pointer={x:-1000,y:-1000};});
     let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if (state?.run?.phase === 'augment' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, 2); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
-    addEventListener('keydown', event => { if (event.target instanceof HTMLInputElement || busy || pending) return; if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); } if (state?.run?.phase === 'combat' && !overlay && event.code === 'Space') { event.preventDefault(); mutate('attack'); }
+    addEventListener('keydown', event => { inputMode='keyboard';audio.unlock();if (event.target instanceof HTMLInputElement || busy || pending || performance.now()<battleUntil) return; if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); } if(state?.run?.phase==='combat'&&!overlay)battle.key(event);
         const side = { ArrowLeft: -1, ArrowRight: 1 }[event.key]; if (!side || overlay || state?.run?.mode !== 'hell') return;
         if (state.run.phase === 'descent') descend(side < 0 ? 'left' : 'right'); else if (state.run.phase === 'chests' && !chestPick) chestPage += side; });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchState(); });
-    setInterval(() => { if (state?.run?.phase === 'combat' || state && state.weekly.resetsAt <= now()) fetchState(); }, 4000);
+    document.addEventListener('visibilitychange', () => { audio.visibility();if(!document.hidden)fetchState();else{battle.reset();battleUntil=0;} });
+    addEventListener('pagehide',()=>audio.stop());
+    setInterval(() => { if (state?.run?.phase === 'combat' || state && state.weekly.resetsAt <= now()) fetchState(); }, 1000);
     fetchState(); requestAnimationFrame(frame);
 })();

@@ -94,6 +94,41 @@ test('회랑 API는 인증이 필요하고 임의 상태 전이를 허용하지 
     assert.equal((await request('/api/paradise/event', { ...bodyFor(state), choice: 'rift' })).status, 400);
 });
 
+test('낙원 전투는 필드 HUD 데이터와 중복 재생 없는 실제 타격 사건을 전달한다', async () => {
+    const user = await reset();
+    corridor.enter(user); corridor.startCombat(user, 'judge'); await user.save();
+    const before = (await request('/api/paradise')).data;
+    assert.equal(before.run.enemy.sprite, '/static/assets/paradise/judge-boss.webp');
+    assert.equal(before.battle.player.spriteUrl, before.player.sprite);
+    assert.ok(before.battle.skills.every(skill => Number.isFinite(skill.mpCost)));
+    const body = bodyFor(before);
+    const first = await request('/api/paradise/attack', body);
+    assert.equal(first.status, 200, JSON.stringify(first.data));
+    const event = first.data.state.run.combatEvents.at(-1);
+    assert.equal(event.enemyId, before.run.enemy.id);
+    assert.equal(event.damage, event.hits.reduce((sum, hit) => sum + hit.damage, 0));
+    assert.equal(event.received, event.receivedHits.reduce((sum, hit) => sum + hit.damage, 0));
+    assert.ok(event.id && event.at);
+    const retry = await request('/api/paradise/attack', body);
+    const poll = await request('/api/paradise');
+    assert.deepEqual(retry.data.state.run.combatEvents, first.data.state.run.combatEvents);
+    assert.deepEqual(poll.data.run.combatEvents, first.data.state.run.combatEvents);
+});
+
+test('사망 후 HP 1로 정산되어도 마지막 타격은 패배 사건으로 전달한다', async t => {
+    const user = await reset(); corridor.enter(user); corridor.startCombat(user, 'judge');
+    user.hp = 1; Object.assign(user.paradise.enemy, { hp: 100000000, maxHp: 100000000, atk: 100000000, pnt: 100000000 });
+    user.field.elite.hp = 100000000; await user.save();
+    t.mock.method(Math, 'random', () => .99);
+    const before = (await request('/api/paradise')).data;
+    const result = await request('/api/paradise/attack', bodyFor(before));
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.state.run.status, 'ended');
+    assert.equal(result.data.state.player.hp, 1);
+    assert.equal(result.data.state.run.combatEvents.at(-1).defeated, true);
+    assert.equal(result.data.state.run.combatEvents.at(-1).cleared, false);
+});
+
 function setupHell(t, rewards) {
     const hell = require('../paradise_hell'), initial = require('../paradise_hell_content').INITIAL_CONFIG;
     const get = rpg.getDataCache, items = [...data.Item, ...hell.KEYS.map(key => ({ name: key.name, type: '재료' }))];
@@ -268,6 +303,22 @@ test('동시 입장·재전송은 입장권 한 장만 사용하고 재접속해
     assert.deepEqual(restored.paradise, user.paradise);
     const differentRequest = await request('/api/paradise/enter', bodyFor(state)); assert.equal(differentRequest.status, 400);
 });
+test('회랑은 현재 HP·MP와 관계없이 가득 찬 상태로 입장하고 전투마다 재충전하지 않는다', async () => {
+    const user = await reset(); user.hp = 1; user.mp = 0; await user.save();
+    const before = (await request('/api/paradise')).data;
+    const result = await request('/api/paradise/enter', bodyFor(before));
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    const player = result.data.state.player;
+    assert.equal(player.hp, player.maxHp); assert.equal(player.mp, player.maxMp);
+    const saved = await rpg.getRPGUserByName(account.name);
+    saved.hp = 10; saved.mp = 0; corridor.startCombat(saved, 'normal');
+    assert.equal(saved.hp, 10); assert.equal(saved.mp, 0);
+    const blocked = await reset(); blocked.hp = 1; blocked.mp = 0;
+    rpg.removeInventoryItem(blocked, data.Item.length - 1, 3);
+    assert.ok(corridor.enter(blocked).error);
+    assert.equal(blocked.hp, 1); assert.equal(blocked.mp, 0);
+});
+
 test('권장 전투력의 모든 기준층과 엘리트 1.2배가 실제 몬스터 스탯에 적용된다', async () => {
     const user = await reset(); corridor.enter(user, () => .99);
     for (const [floor, cp] of corridor.CP_ANCHORS) {
@@ -557,13 +608,21 @@ test('붕괴 수락은 사건 전투의 강화와 특별 보스의 카드 계약
     }
 });
 
-test('이동 후 권장 전투력을 초과하는 증강과 확률 이동 사건에만 경고한다', async t => {
+test('이동 후 권장 전투력이 현재 전투력의 1.5배 이상일 때만 경고한다', async t => {
     const user = await reset(); corridor.enter(user, () => .99);
-    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: 100000 }));
+    let playerPower = 100000;
+    t.mock.method(rpg, 'calculateCombatPower', () => ({ total: playerPower }));
     user.paradise.floor = 9; user.paradise.phase = 'augment'; user.paradise.choices = ['contract', 'rest', 'rewind'];
     const choices = corridor.view(user).run.choices;
-    assert.equal(choices[0].powerWarning.floor, 12); assert.ok(choices[0].powerWarning.recommendedPower > 100000);
+    assert.equal(choices[0].powerWarning, null);
     assert.equal(choices[1].powerWarning, null); assert.equal(choices[2].powerWarning, null);
+    user.paradise.floor = 12; // 계약 +3층: 150,000, 정확히 1.5배.
+    assert.equal(corridor.view(user).run.choices[0].powerWarning.floor, 15);
+    playerPower = 100001;
+    assert.equal(corridor.view(user).run.choices[0].powerWarning, null);
+    playerPower = 99999;
+    assert.equal(corridor.view(user).run.choices[0].powerWarning.floor, 15);
+    playerPower = 100000; user.paradise.floor = 9;
     forceEvent(user, 'casino'); const events = corridor.view(user).run.event.choices;
     assert.equal(events[0].powerWarning.conditional, true); assert.equal(events[1].powerWarning.floor, 59);
     user.paradise.floor = 990; user.paradise.phase = 'augment'; user.paradise.choices = ['forbidden'];

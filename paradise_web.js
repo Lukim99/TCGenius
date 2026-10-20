@@ -1,7 +1,8 @@
 const corridor = require('./paradise');
 const hell = require('./paradise_hell');
+const combatEffects = require('./public/combat-effects');
 
-function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl }) {
+function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
     const state = user => {
@@ -10,6 +11,8 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         view.player.sprite = getCharacterSprite(view.player.card);
         if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
         if (view.run) view.run.combatLog = user.paradise.combatLog || [];
+        if (view.run) view.run.combatEvents = user.paradise.combatEvents || [];
+        if (view.run?.phase === 'combat') view.battle = getCombatView(user);
         if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => ({ ...reward,
             iconUrl: reward.kind === 'item' ? getItemIconUrl(rpgenius.getDataCache('Item', [])[reward.id]) : serializeCard(reward.card, user)?.imageUrl }));
         if (view.run) for (const choice of view.run.choices) if (choice.equipment) {
@@ -20,7 +23,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     };
     server.get('/paradise', (req, res) => {
         if (!getSession(req)?.name) return res.redirect('/');
-        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script src="/static/paradise.js" defer></script></body></html>`);
+        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><div id="paBattle" hidden><canvas id="hfCanvas" aria-hidden="true"></canvas><canvas id="hfHud" aria-hidden="true"></canvas></div><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script>window.FIELD_MODE="paradise";</script><script src="/static/combat-effects.js" defer></script><script src="/static/paradise-audio.js" defer></script><script src="/static/hfield.js" defer></script><script src="/static/paradise.js" defer></script></body></html>`);
     });
     server.get('/api/paradise', requireUser, async (req, res) => {
         try {
@@ -68,8 +71,18 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'retire') { corridor.finish(user); result = { message: user.paradise.mode === 'hell' ? '지옥에서 귀환했습니다.' : '회랑에서 귀환했습니다. 종료 보상을 수령해주세요.' }; }
                     else {
                         if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: state(user) };
+                        const sequence = Number(user.paradise.combatSequence || 0), enemyId = user.paradise.enemy.id;
                         const message = action === 'attack' ? await rpgenius.useBasicAttackInField(user) : await rpgenius.useSkillInField(user, typeof body.skill === 'string' ? body.skill : '');
                         result = String(message).startsWith('❌') ? { error: String(message).replace(/^❌\s*/, '') } : { message };
+                        const triggeredEffectIds = rpgenius.drainFieldActionEffectIds(user.name);
+                        if (!result.error && action === 'skill' && Number(user.paradise.combatSequence || 0) === sequence) {
+                            const run = user.paradise;
+                            run.combatSequence = sequence + 1;
+                            run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
+                                id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId,
+                                action: 'skill', skillName: body.skill, triggeredEffectIds, hits: [], receivedHits: [], damage: 0, received: 0
+                            })].slice(-12);
+                        }
                     }
                     if (result.error) return { ...result, state: state(user) };
                     user.paradise.revision++;

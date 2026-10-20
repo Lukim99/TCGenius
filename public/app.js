@@ -3708,7 +3708,6 @@ function renderPresets() {
 // ===== 사냥 메뉴 =====
 // 카드 배경 이미지: DB/RPGenius/ui/사냥/<이름>.png (없으면 어두운 카드로 폴백)
 const HUNT_MENU = [
-    { key: '낙원', level: '천상 999층 · 지옥 지하 100층', imageUrl: '/static/assets/paradise/corridor.webp', action: () => { location.href = '/paradise'; } },
     { key: '일반 필드', level: 'Lv.1 ~ 300', action: () => { location.href = '/field'; } },
     { key: '헬 필드', level: 'Lv.141 ~ 300', action: () => { location.href = '/hfield'; } },
     { key: '일일던전', level: 'Lv.101 ~ 300', action: () => { location.href = '/daily-dungeon'; } },
@@ -3720,7 +3719,8 @@ const HUNT_MENU = [
             else showAlert('레이드는 71레벨부터 이용할 수 있습니다.');
         } catch (e) { showAlert(e.message); }
     } },
-    { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } }
+    { key: '훈련장', level: 'Lv.1 ~ 300', imageUrl: '/rpg-ui?file=' + encodeURIComponent('필드/훈련장.png'), action: () => { location.href = '/training'; } },
+    { key: '낙원', level: '천상 999층 · 지옥 지하 100층', imageUrl: '/static/assets/paradise/corridor.webp', action: () => { location.href = '/paradise'; } }
 ];
 
 function renderHuntMenu() {

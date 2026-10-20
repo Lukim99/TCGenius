@@ -190,7 +190,7 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
     run.insurance = false;
     user.field = { name: run.mode === 'hell' ? '지옥' : '천상의 회랑', paradise: true, enteredAt: Date.now(), nextActionAt: 0, skillCooldowns: {}, equipmentState: {}, elite: kind === 'normal' ? null : { hp: enemy.hp, encounteredAt: Date.now() } };
     if (has(run, 'orb')) heal(user, 0, .30);
-    log(run, `${enemy.name} 조우 · 권장 전투력 ${enemy.recommendedPower.toLocaleString('ko-KR')}`);
+    log(run, `${enemy.name} 조우`);
 }
 function nextEncounter(user, random = Math.random) {
     const run = user.paradise;
@@ -218,9 +218,8 @@ function enter(user, random = Math.random) {
     const id = rpg().getDataCache('Item', []).findIndex(i => i?.name === TICKET);
     if (id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: TICKET + ' 1장이 필요합니다.' };
     const stats = rpg().calculateUserStats(user);
-    if (Number(user.hp ?? stats.hp) <= 1) return { error: 'HP를 회복한 후 입장해주세요.' };
     rpg().removeInventoryItem(user, id, 1);
-    user.hp = Math.min(stats.hp, Number(user.hp ?? stats.hp)); user.mp = Math.min(stats.mp, Number(user.mp ?? stats.mp));
+    user.hp = stats.hp; user.mp = stats.mp;
     user.paradise = { id: crypto.randomUUID(), revision: 0, status: 'active', phase: 'combat', floor: 1, clearedFloor: 0, distortion: 0, effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], battlesWon: 0, elitesWon: 0, rewardUnits: 0, eliteUnits: 0, startedAt: Date.now(), baseRewards: structuredClone(config.baseRewards), receipt: null };
     user.paradise.milestoneRewards = structuredClone(config.milestoneRewards || []);
     startCombat(user, 'normal', null, random);
@@ -264,9 +263,9 @@ function eventChoices(user) {
         forge: [['enhance', equipment + ' 강화', '다음 3회 전투 수치형 패시브 2배. 다음 엘리트 HP +50%.'], ['modify', equipment + ' 개조', '이번 탐험 동안 수치형 패시브 +20%. 최대 HP -15%.'], ['skip', '거절한다', '+5층, 최대 HP의 10% 회복.']],
         mirror: [['fight', '거울을 부순다', '회랑 강화가 없는 자신의 복제본과 전투. 승리: 공격력 +20%, 종료 보상 +30% 계약.'], ['trade', '거울 속 자신과 거래한다', '모든 강화·저주·유물을 포기. 종료 보상 +40% 계약. 이미 얻은 종료 계약은 보존.'], ['skip', '거울을 무시한다', '+5층.']],
         chests: [['red', '붉은 상자', '공격 강화가 나올 확률이 높습니다.'], ['blue', '푸른 상자', '방어·회복 강화가 나올 확률이 높습니다.'], ['gold', '황금 상자', '강력한 보물 또는 저주. 드물게 9성 전직 카드 확정 보상 계약.']],
-        judge: [['three', '일반 몬스터 3마리와 연속 전투', '전부 승리: 공격력 +15%.'], ['elite', '엘리트 몬스터 1마리와 전투', '승리: 공격력 +25%.'], ['boss', '심판자에게 도전', '일반 적 권장 전투력의 3.5배. 승리: 특별 유물(최종 피해 +35%, 종료 보상 +50%) 및 8성 전직 카드 계약.']],
+        judge: [['three', '일반 몬스터 3마리와 연속 전투', '전부 승리: 공격력 +15%.'], ['elite', '엘리트 몬스터 1마리와 전투', '승리: 공격력 +25%.'], ['boss', '심판자에게 도전', '매우 강력한 보스. 승리: 특별 유물(최종 피해 +35%, 종료 보상 +50%) 및 8성 전직 카드 계약.']],
         well: [['blood', '피를 바친다', '최대 HP -20%, 공격력 +30%.'], ['drink', '우물의 물을 마신다', 'HP·MP 전부 회복. 다음 2회 전투 받는 피해 +20%.'], ['destroy', '우물을 파괴한다', '일반 몬스터 2마리 연속 전투. 모두 승리: 최대 HP +10%.']],
-        collapse: [['prevent', '붕괴를 막는다', '현재 HP -50%, 뒤틀림 -50.'], ['accept', '붕괴를 받아들인다', '다음 3회 전투 적 공격력·보상 2배. 뒤틀림 50으로 안정화.'], ['rift', '균열 속으로 뛰어든다', '+50층, 권장 전투력 4배의 특수 보스. 승리: 특별 유물 및 9성 전직 카드 계약.']]
+        collapse: [['prevent', '붕괴를 막는다', '현재 HP -50%, 뒤틀림 -50.'], ['accept', '붕괴를 받아들인다', '다음 3회 전투 적 공격력·보상 2배. 뒤틀림 50으로 안정화.'], ['rift', '균열 속으로 뛰어든다', '+50층, 매우 강력한 특수 보스. 승리: 특별 유물 및 9성 전직 카드 계약.']]
     };
     return (entries[event.id] || []).map(([id, name, desc]) => ({ id, name, desc }));
 }
@@ -453,7 +452,7 @@ function powerWarning(user, floors, enemyKind = 'normal', conditional = false) {
     const kind = floor === MAX_FLOOR && enemyKind === 'normal' ? 'final' : enemyKind;
     const power = Math.round(recommendedPower(floor) * ({ elite: 1.2, judge: 3.5, rift: 4, final: 2 }[kind] || 1));
     const playerPower = rpg().calculateCombatPower(user).total;
-    return power > playerPower ? { floor, recommendedPower: power, playerPower, conditional, enemyKind: kind } : null;
+    return power >= playerPower * 1.5 ? { floor, recommendedPower: power, playerPower, conditional, enemyKind: kind } : null;
 }
 function eventPowerWarning(user, id) {
     const event = user.paradise.event?.id;

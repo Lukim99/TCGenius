@@ -7416,6 +7416,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const run = user.paradise;
     if (!paradise.active(user) || run.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
     const enemy = run.enemy, field = user.field;
+    const presentationHits = [];
     const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user);
     applyPetRegen(user, stats, null);
     cardAwakening.prepareAttack(stats, field, enemy, extra, extra.awakeningAttackKind || (extra.isBasic ? 'basic' : 'skill'), Date.now());
@@ -7472,6 +7473,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
             received = consumeNextDamageReduction(user, received);
             if (isAwakeningInvincible(user.name, stats)) received = 0;
             received = applyFieldShieldAbsorption(user, received, lines);
+            if (received > 0) presentationHits.push({ damage: received, critical: false });
             const beforeHp = Number(user.hp);
             user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received)), stats.hp);
             run.battle.comeback += Math.max(0, beforeHp - user.hp) / Math.max(1, stats.hp);
@@ -7493,9 +7495,30 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         user.mp = Math.min(user.mp, Number(extra.paradiseMpBefore ?? user.mp));
     }
     run.combatLog = [...lines, ...(run.combatLog || [])].slice(0, 18);
-    if (user.hp <= 0) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '천상의 회랑 탐험이 끝났습니다. 종료 보상은 낙원에서 수령할 수 있습니다.'); }
+    const defeated = user.hp <= 0;
+    if (defeated) { paradise.finish(user, 'defeated'); lines.push(run.mode === 'hell' ? '지옥 탐험이 끝났습니다. 마지막 클리어 층의 보상 상자를 확인해주세요.' : '천상의 회랑 탐험이 끝났습니다. 종료 보상은 낙원에서 수령할 수 있습니다.'); }
     else if (enemy.hp <= 0) { paradise.victory(user); lines.push('전투 승리!'); }
     else if (manual) setNextFieldActionAt(user);
+    // 전투 연출에는 회복과 섞인 HP 차이가 아니라 엔진이 판정한 타격을 전달한다.
+    const hits = (hit.hitDetails || []).map(detail => ({ damage: detail.damage, critical: !!detail.isCritical, destiny: !!detail.isDestinyDamage }));
+    // 거울의 회피/방어가 최종 피해를 바꾼 경우 타격별 숫자에도 같은 판정을 반영한다.
+    const detailTotal = hits.reduce((sum, detail) => sum + detail.damage, 0);
+    if (detailTotal && detailTotal !== hit.finalDamage) {
+        let remaining = hit.finalDamage;
+        hits.forEach((detail, index) => { detail.damage = index === hits.length - 1 ? remaining : Math.min(remaining, Math.round(detail.damage * hit.finalDamage / detailTotal)); remaining -= detail.damage; });
+    }
+    if (!hits.length && hit.finalDamage > 0) hits.push({ damage: hit.finalDamage, critical: !!hit.criticalCount });
+    run.combatSequence = Number(run.combatSequence || 0) + 1;
+    const event = combatEffects.annotateEvent({
+        id: run.id + ':' + run.combatSequence, at: Date.now(), enemyId: enemy.id,
+        action: manual ? extra.isBasic ? 'basic' : 'skill' : 'tick', skillName: extra.skillName || null,
+        triggeredEffectIds: extra.triggeredEffectIds || [], effectElement: extra.attackElement || null,
+        receivedEffectElement: enemy.element || null, hits, damage: hit.finalDamage,
+        receivedHits: presentationHits, received: presentationHits.reduce((sum, detail) => sum + detail.damage, 0),
+        criticalCount: hit.criticalCount || 0, targetHp: enemy.hp,
+        cleared: enemy.hp <= 0 && !defeated, defeated
+    });
+    run.combatEvents = [...(run.combatEvents || []), event].slice(-12);
     return lines.join('\n');
 }
 
