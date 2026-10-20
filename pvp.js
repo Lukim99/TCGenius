@@ -968,7 +968,10 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     const awakeningReduction = Number(aSlot.hpDamageReduction || 0) + receivedDamageReduction(attacker, defender) - Number(aStats.takenDamage || 0) + 1 - receivedDamageMul(attacker)
         + Number(attacker.runtime.buffs.nextDamageReduction && attacker.runtime.buffs.nextDamageReduction.value || 0) + (isDefending(attacker, t) ? .5 : 0);
     base *= cardAwakening.runtimeAttackRatio(aStats, aSlot, attacker.maxHp, attacker.maxMp, awakeningReduction, Number(extra.awakeningStacks ?? attacker.runtime.nmmStacks ?? 0));
-    const incomingDamageMul = (rpgenius.isAwakeningInvincible(defender.name, dStats, t) ? 0 : 1) * Math.max(0, 1 + Number(dStats.takenDamage || 0))
+    const invincible = defender.corridorMirror
+        ? dStats.awakening?.effect === 'lastStand' && t < Number(defender.runtime.awakeningSurvival?.invincibleUntil || 0)
+        : rpgenius.isAwakeningInvincible(defender.name, dStats, t);
+    const incomingDamageMul = (invincible ? 0 : 1) * Math.max(0, 1 + Number(dStats.takenDamage || 0))
         * (1 - Math.min(1, Number(dSlot.hpDamageReduction || 0)))
         * (1 - Math.min(1, receivedDamageReduction(defender, attacker)))
         * receivedDamageMul(defender);
@@ -1053,9 +1056,13 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     // 실제 처리 순서(소환수 피해 대행 → 남은 피해를 보호막 흡수)와 같은 순서로 표시한다.
     components.push(...summonComponents, ...shieldComponents);
     const awakeningHpBefore = defender.hp;
-    defender.hp = rpgenius.resolveAwakeningHp(defender.name, dStats, defender.hp, Math.max(0, defender.hp - damage), t);
+    if (defender.corridorReceiveDamage) {
+        damage = defender.corridorReceiveDamage(damage, Number(result.hitCount || 1), t);
+    } else defender.hp = resolveSideHp(defender, dStats, Math.max(0, defender.hp - damage), t);
     if (defender.hp !== Math.max(0, awakeningHpBefore - damage)) {
         damage = Math.max(0, awakeningHpBefore - defender.hp);
+    }
+    if (damage !== judgmentDamage) {
         let remaining = damage;
         components.forEach(component => {
             if (component.type === 'absorbed' || component.type === 'summonAbsorbed') return;
@@ -1065,7 +1072,8 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
     }
     if (isDirectAttack && defender.hp > 0 && defender.hp / Math.max(1, defender.maxHp) < .05 && equipmentStage(attacker, '징수의 총')) {
         const beforeExecute = defender.hp;
-        defender.hp = rpgenius.resolveAwakeningHp(defender.name, dStats, beforeExecute, 0, t);
+        if (defender.corridorReceiveDamage) defender.corridorReceiveDamage(beforeExecute, 1, t);
+        else defender.hp = resolveSideHp(defender, dStats, 0, t);
         const executeDamage = beforeExecute - defender.hp;
         damage += executeDamage;
         components.push({ damage: executeDamage, critical: false, destiny: false, type: 'additional', label: '징수의 총 처형' });
@@ -1093,7 +1101,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
         mpRecovery = attacker.mp - before;
     }
     let targetHeal = 0;
-    if (damage > 0 && Number(dSlot.killRecoveryChance || 0) > 0 && Math.random() < Number(dSlot.killRecoveryChance)) {
+    if (!defender.corridorReceiveDamage && damage > 0 && Number(dSlot.killRecoveryChance || 0) > 0 && Math.random() < Number(dSlot.killRecoveryChance)) {
         const before = defender.hp;
         defender.hp = Math.min(defender.maxHp, defender.hp + Math.round(damage * .20 * (1 + Number(dStats.recoveryEfficiency || 0))));
         targetHeal = defender.hp - before;
@@ -1106,7 +1114,7 @@ function dealDamage(attacker, defender, rawDamage, extra, t) {
             let reflected = Math.max(0, Math.round(Number(dStats.def || 0) * .25 * (randomInt(98, 102) / 100)));
             if (reflected <= 0) continue;
             const beforeReflect = attacker.hp;
-            attacker.hp = rpgenius.resolveAwakeningHp(attacker.name, aStats, beforeReflect, Math.max(0, beforeReflect - reflected), t);
+            attacker.hp = resolveSideHp(attacker, aStats, Math.max(0, beforeReflect - reflected), t);
             if (attacker.hp !== Math.max(0, beforeReflect - reflected)) reflected = beforeReflect - attacker.hp;
             reflectedHits.push({ damage: reflected, label: '가시 반사' });
             reflectedDamage += reflected;
@@ -1309,7 +1317,7 @@ function doSkill(battle, actorKey, skill, t) {
             actor.nextActionAt = t + (actor.nextActionAt - t) * .70;
             if (actor.defendCooldownEnd > t) actor.defendCooldownEnd = t + (actor.defendCooldownEnd - t) * .70;
         }
-        if (mode.shield) setShield(actor, mode.shield * PVP_HP_SCALE, 7000, t, 'awakening:워뇨띠');
+        if (mode.shield) setShield(actor, mode.shield * (actor.corridorMirror ? 1 : PVP_HP_SCALE), 7000, t, 'awakening:워뇨띠');
         Object.assign(stats, getLiveEquipmentStats(actor, t));
         extra.modeSwitchDamage = true;
         extra.modeFixedDamage = mode.fixed;
@@ -2434,14 +2442,26 @@ async function buildPvpOverview(user) {
 }
 
 // 회랑의 거울은 PVP의 스킬·패시브 AI를 재사용한다. 랭킹·일일 횟수·PVP 보상은 생성하지 않는다.
+function resolveSideHp(side, stats, nextHp, t) {
+    if (!side.corridorMirror) return rpgenius.resolveAwakeningHp(side.name, stats, side.hp, nextHp, t);
+    const survival = side.runtime.awakeningSurvival || (side.runtime.awakeningSurvival = {});
+    return cardAwakening.resolveSurvival(stats.awakening, survival, side.hp, nextHp, t, false);
+}
 function createCorridorMirror(user) {
     const side = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), DEFAULT_RULES);
     side.name = '거울 속의 ' + user.name;
     side.maxHp = side.hp = Number(side.snapshot.stats.hp);
     side.enteredAt = Date.now();
+    side.nextActionAt = side.enteredAt;
+    side.corridorMirror = true;
     return side;
 }
 function getCorridorMirrorStats(side) { return getLiveEquipmentStats(side, Date.now()); }
+function corridorMirrorReflection(side, damage, t = Date.now()) {
+    const stats = getLiveEquipmentStats(side, t);
+    side.hp = resolveSideHp(side, stats, Math.max(0, side.hp - damage), t);
+    return side.hp;
+}
 function corridorMirrorHit(side, user, damage, extra) {
     const t = Date.now(); expireSide(side, t);
     // 방어/보호막/피해 반사 등은 기존 PVP 방어 파이프라인으로 처리한다. 공격은 솔로 엔진이 이미 계산했다.
@@ -2450,26 +2470,33 @@ function corridorMirrorHit(side, user, damage, extra) {
     const result = dealDamage(actor, side, damage, { precalculatedDamage: true, disableEquipmentBonusDamage: true, summonAttack: !!extra.summonAttack, dotAttack: !!extra.dotAttack }, t);
     return { ...result, hp: side.hp, reflectedDamage: Math.max(0, Number(user.hp) - actor.hp) };
 }
-function corridorMirrorTurn(side, user, stats, hp) {
-    const t = Date.now();
+function corridorMirrorTurn(side, user, stats, hp, receiveDamage, t = Date.now()) {
+    const before = JSON.stringify(side);
+    side.corridorMirror = true;
+    // 이전 저장 형식의 0 타이머를 실제 전투 시작 시각으로 옮긴다.
+    if (!side.nextActionAt) side.nextActionAt = side.enteredAt || t;
     const target = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), null);
     target.snapshot.stats = structuredClone(stats);
     const beforeHp = Number(user.hp);
     target.maxHp = stats.hp; target.hp = beforeHp; target.maxMp = stats.mp; target.mp = Number(user.mp);
-    // 실제 HP 감소·보호막·회랑 부활은 솔로 전투가 처리한다. 여기서는 AI가 낸 피해량만 반환한다.
+    // 플레이어의 보호막·가시·회랑 부활은 필드 엔진이 타격마다 처리한다.
     target.snapshot.passiveIds = [];
+    if (receiveDamage) target.corridorReceiveDamage = (damage, count, at) => {
+        const received = receiveDamage(damage, count, at);
+        target.hp = Number(user.hp); target.mp = Number(user.mp);
+        return received;
+    };
     target.enteredAt = t;
     if (side.corridorTargetRuntime) target.runtime = side.corridorTargetRuntime;
     side.hp = hp;
     const battle = { me: target, opp: side, seq: 0, events: [] };
-    const actionDue = side.nextActionAt <= t;
-    side.nextActionAt = Math.max(side.nextActionAt, t + 1);
     for (let step = 0; step < ADVANCE_STEP_LIMIT && target.hp > 0 && side.hp > 0; step++) {
         const item = nextDueItem(battle, t);
         if (!item) break;
         expireStates(battle, item.t);
         if (item.kind === 'ilionDraw') doIlionDrawTick(battle, item.side, item.t);
         else if (item.kind === 'kinoSpray') doKinoSprayTick(battle, item.side, item.t);
+        else if (item.kind === 'action') doAiAction(battle, item.t);
         else if (item.kind === 'summon') doSummonTick(battle, item.side, item.t);
         else if (item.kind === 'mark') doMarkTick(battle, item.side, item.t);
         else if (item.kind === 'burn') doEquipmentBurnTick(battle, item.side, item.t);
@@ -2480,13 +2507,14 @@ function corridorMirrorTurn(side, user, stats, hp) {
         else if (item.kind === 'judgment') doEquipmentJudgment(battle, item.side, item.t);
     }
     expireStates(battle, t);
-    if (actionDue && target.hp > 0 && side.hp > 0) doAiAction(battle, t);
     side.corridorTargetRuntime = target.runtime;
-    return { damage: Math.max(0, beforeHp - target.hp), hp: side.hp, mp: side.mp, messages: battle.events.filter(e => e.actor === 'opp').map(e => e.text).filter(Boolean) };
+    return { changed: battle.events.length > 0 || before !== JSON.stringify(side), events: battle.events,
+        damage: Math.max(0, beforeHp - target.hp), hp: side.hp, maxHp: side.maxHp, mp: side.mp, maxMp: side.maxMp,
+        messages: battle.events.filter(e => e.actor === 'opp').map(e => e.text).filter(Boolean) };
 }
 
 module.exports = {
-    createCorridorMirror, corridorMirrorTurn, getCorridorMirrorStats, corridorMirrorHit,
+    createCorridorMirror, corridorMirrorTurn, getCorridorMirrorStats, corridorMirrorHit, corridorMirrorReflection,
     configure,
     ensurePvpState,
     ensureDaily,

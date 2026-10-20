@@ -435,7 +435,8 @@
             const narrow = innerWidth < 700, phase = display && display.phase;
             if (embedded) {
                 const sprite = display?.target?.sprite;
-                const fit = typeof sprite === 'string' ? this.fit('dummy', narrow ? .50 : .72, narrow ? .46 : .40) : this.fitAtlas(narrow ? .50 : .72, narrow ? .46 : .40, sprite?.rows);
+                const mirror = display?.target?.kind === 'mirror';
+                const fit = typeof sprite === 'string' ? this.fit('dummy', mirror ? (narrow ? .47 : .68) : (narrow ? .50 : .72), mirror ? (narrow ? .48 : .36) : (narrow ? .46 : .40)) : this.fitAtlas(narrow ? .50 : .72, narrow ? .46 : .40, sprite?.rows);
                 return { x: narrow ? .75 : .76, y: .90 - fit.height * .60 };
             }
             if (phase === 'pillar') {
@@ -575,8 +576,21 @@
             const now = performance.now(), critical = !!(hit && hit.critical), destiny = !!(hit && hit.destiny);
             const player = this.playerEffectPoint('target'), target = this.targetEffectPoint(this.state || {}, event, false);
             this.playerHitUntil = now + (critical ? 440 : 320);
-            this.combatEffect(player.x,player.y,{action:'attack',effectElement:event&&event.receivedEffectElement||null},hit,target.x);
+            this.combatEffect(player.x,player.y,event?.actor==='enemy'?event:{action:'attack',effectElement:event&&event.receivedEffectElement||null},hit,target.x);
             if(critical||destiny)this.burst(player.x,player.y,destiny?[.72,.3,1,.65]:[1,.58,.14,.65],critical?14:10);
+        }
+        animateEnemy(event, previous) {
+            const now = performance.now(), actor = this.targetEffectPoint(previous, event, false), target = this.playerEffectPoint('target');
+            const audience = event.action === 'skill' ? effectCatalog?.skillTarget(event) : null;
+            if (event.action !== 'tick') {
+                this.enemyAttackAt = now;
+                this.enemyAttackKind = audience === 'actor' ? 'buff' : event.action;
+            }
+            if (event.action === 'skill' && (audience === 'actor' || audience === 'both')) this.castEffect(actor.x, actor.y, event, 'actor');
+            const hits = (event.receivedHits || []).filter(hit => hit.damage > 0);
+            if (hits.length) hits.forEach((hit, index) => this.later(() => this.receiveHit(hit, event), 80 + index * 95));
+            else if (event.received > 0) this.later(() => this.receiveHit({damage:event.received}, event), 80);
+            else if (event.action === 'skill' && audience !== 'actor') this.castEffect(target.x, target.y, event, 'target');
         }
         animate(event, previous) {
             const now = performance.now();
@@ -647,9 +661,11 @@
                 this.draw(null,playerX,.83,narrow?.4:.27,.11,{mode:1,color:[.08,.45,1,.25]});
                 this.draw(this.textures.player,playerX,playerY,playerFit.width,playerFit.height,{flash:time<this.playerHitUntil?.75:0});
                 if (embedded) {
-                    const target=display.target||{},sprite=target.sprite,hit=time<this.targetHitUntil,x=(narrow?.75:.76)+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
-                    const opts={flash:hit?.65:0,color:[1,1,1,1]};
-                    if(typeof sprite==='string'){const fit=this.fit('dummy',narrow?.50:.72,narrow?.46:.40);this.draw(this.textures.dummy,x,.90-fit.height/2,fit.width,fit.height,opts);}
+                    const enemyProgress=clamp((time-(this.enemyAttackAt??-10000))/(this.enemyAttackKind==='skill'?620:430),0,1);
+                    const enemyLunge=reducedMotion||this.enemyAttackKind==='buff'?0:Math.sin(enemyProgress*Math.PI)*.12;
+                    const target=display.target||{},sprite=target.sprite,hit=time<this.targetHitUntil,x=(narrow?.75:.76)-enemyLunge+(hit&&!reducedMotion?Math.sin(time*.12)*.006:0);
+                    const opts={flash:hit?.65:0,color:[1,1,1,1],uv:target.kind==='mirror'?[1,0,-1,1]:[0,0,1,1]};
+                    if(typeof sprite==='string'){const mirror=target.kind==='mirror',fit=this.fit('dummy',mirror?(narrow?.47:.68):(narrow?.50:.72),mirror?(narrow?.48:.36):(narrow?.46:.40));this.draw(this.textures.dummy,x,.90-fit.height/2,fit.width,fit.height,opts);}
                     else if(sprite){const fit=this.fitAtlas(narrow?.50:.72,narrow?.46:.40,sprite.rows);this.drawAtlasMonster(sprite,sprite.column===1,x,.90-fit.height/2,narrow?.50:.72,narrow?.46:.40,opts);}
                 } else if (trainingMode) {
                     const fit=this.fit('dummy',narrow?.55:.66,narrow?.42:.34),hit=time<this.targetHitUntil;
@@ -871,7 +887,7 @@
             else if(Number(event.damage||0)>0)this.damagePops.push({damage:Number(event.damage),critical:Number(event.criticalCount||0)>0,skill:event.skillName||'',start:now,x,y,received:false});
             if(regularMode&&Number(event.killedCount||0)>0)this.damagePops.push({kills:Number(event.killedCount),start:now+Math.max(120,hits.length*95),x:regularMode&&phase==='normal'?.72:x,y:narrow?.68:.54});
             const receivedX=narrow?.24:.25,receivedY=embedded?renderer.playerEffectPoint('target').y:narrow?.68:.55;
-            if(receivedHits.length)receivedHits.forEach((hit,index)=>this.damagePops.push({damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||'',start:receivedAt+index*95,x:receivedX,y:receivedY,received:true}));
+            if(receivedHits.length)receivedHits.forEach((hit,index)=>this.damagePops.push({damage:Number(hit.damage),critical:!!hit.critical,destiny:!!hit.destiny,skill:hit.label||(event.actor==='enemy'&&index===0?event.skillName||'':''),start:receivedAt+index*95,x:receivedX,y:receivedY,received:true}));
             else if(Number(event.received||0)>0)this.damagePops.push({damage:Number(event.received),critical:false,start:receivedAt,x:receivedX,y:receivedY,received:true});
         }
         addRecovery(event){const now=performance.now(),narrow=innerWidth<700,hp=Number(event&&event.recoveredHp||0),mp=Number(event&&event.recoveredMp||0),x=narrow?.24:.25;if(hp>0)this.damagePops.push({damage:hp,recovery:true,resource:'HP',start:now,x,y:narrow?.68:.56});if(mp>0)this.damagePops.push({damage:mp,recovery:true,resource:'MP',start:now+(hp>0?120:0),x,y:narrow?.72:.61});}
@@ -964,6 +980,7 @@
                 if (runId !== id) { seen.clear(); initialized = false; runId = id; }
                 if (enemyId !== next?.target?.id) {
                     renderer.releaseHold(); renderer.particles=[]; renderer.effectSprites=[]; hud.damagePops=[];
+                    renderer.enemyAttackAt=-10000;
                     hud.bossKey=''; logs=[]; enemyId=next?.target?.id;
                 }
                 state=next;
@@ -975,7 +992,7 @@
                     seen.add(event.id);
                     if(!initialized||quiet||document.hidden||Date.now()+clockOffset-event.at>5000||event.enemyId!==next?.target?.id)continue;
                     const before=previous||next;
-                    if(event.action==='tick')renderer.tickHit(before,event);else renderer.animate(event,before);
+                    if(event.actor==='enemy')renderer.animateEnemy(event,before);else if(event.action==='tick')renderer.tickHit(before,event);else renderer.animate(event,before);
                     hud.addDamage(event,before);
                     if(event.action==='skill')audio.play('skill',.68);else if(event.damage>0)audio.hit();
                     if(event.criticalCount){audio.play('crit',.82);hud.impact(true);}else if(event.damage>0)hud.impact(false);

@@ -5,6 +5,11 @@ const combatEffects = require('./public/combat-effects');
 function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl, getCombatView }) {
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
+    const advanceMirror = async user => {
+        if (!rpgenius.advanceParadiseMirror(user)) return;
+        const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
+        await rpgenius.commitProtectedUserChange(user, keys);
+    };
     const state = user => {
         const view = corridor.view(user);
         view.player.card = serializeCard(user.main_card, user);
@@ -30,7 +35,12 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             const user = await rpgenius.getRPGUserByName(req.session.name);
             if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
             res.setHeader('Cache-Control', 'no-store');
-            res.json(state(user));
+            const view = await rpgenius.enqueueFieldAction(user, async () => {
+                const latest = await rpgenius.getRPGUserByName(req.session.name);
+                await advanceMirror(latest);
+                return state(latest);
+            });
+            res.json(view);
         } catch (error) { console.error('[paradise view]', error.message); res.status(500).json({ error: '회랑 상태를 불러오지 못했습니다.' }); }
     });
     server.get('/api/paradise/ranking', requireUser, async (req, res) => {
@@ -51,10 +61,11 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                 if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
                 const payload = await rpgenius.enqueueFieldAction(seed, async () => {
                     const user = await rpgenius.getRPGUserByName(req.session.name);
+                    await advanceMirror(user);
                     const receipt = user.paradiseReceipt;
                     if (receipt?.id === body.requestId) {
                         if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
-                        return { ok: true, message: receipt.message, state: state(user) };
+                        return { ok: true, message: receipt.message, reveal: receipt.reveal || null, state: state(user) };
                     }
                     if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
                     if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
@@ -62,7 +73,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     if (action === 'enter') result = body.mode === 'hell' ? hell.enter(user, body.key) : body.mode && body.mode !== 'heaven' ? { error: '알 수 없는 낙원 입장입니다.' } : corridor.enter(user);
                     else if (action === 'descend') result = hell.descend(user, body.side);
                     else if (action === 'altar') result = hell.altar(user);
-                    else if (action === 'continue') result = hell.continueAltar(user);
+                    else if (action === 'continue') result = user.paradise.mode === 'hell' ? hell.continueAltar(user) : corridor.continueExploration(user);
                     else if (action === 'chest') result = hell.openChest(user, body.chest);
                     else if (action === 'augment') result = corridor.chooseAugment(user, body.choice);
                     else if (action === 'event') result = corridor.chooseEvent(user, body.choice);
@@ -86,11 +97,11 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     }
                     if (result.error) return { ...result, state: state(user) };
                     user.paradise.revision++;
-                    user.paradiseReceipt = { id: body.requestId, action, message: result.message || '완료' };
+                    user.paradiseReceipt = { id: body.requestId, action, message: result.message || '완료', reveal: result.reveal || null };
                     // 입장권, 탐험 전이, 카드/재화 정산을 동일한 유저 문서에 조건부 저장한다.
                     const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
                     await rpgenius.commitProtectedUserChange(user, keys);
-                    return { ok: true, message: result.message, state: state(user) };
+                    return { ok: true, message: result.message, reveal: result.reveal || null, state: state(user) };
                 });
                 res.status(payload.error ? payload.stale ? 409 : 400 : 200).json(payload);
             } catch (error) {

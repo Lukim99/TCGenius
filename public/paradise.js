@@ -20,6 +20,7 @@
     let battleUntil = 0, heldBattle = null, keyboardCard = -1, inputMode = 'pointer';
     const hoverLevels = [0, 0, 0]; let hoverTime = performance.now();
     let hellKey = null, fall = null, landing = null, lastDropKey = '', chestPick = null, chestPage = 0;
+    let outcomeReveal = null;
     const now = () => Date.now() + offset;
     const rand = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
     const ctx = hudCanvas.getContext('2d');
@@ -98,7 +99,10 @@
         chamfer(c, x, y, w, h, 6); c.fillStyle = 'rgba(224,63,74,.12)'; c.fill(); c.strokeStyle = 'rgba(239,85,96,.5)'; c.lineWidth = 1; c.stroke();
         text(c, POWER_WARNING, x + w / 2, y + h / 2, 14, '#ff777f', 'center', 700, w - 20);
     }
-    function sigil(c, id, x, y, size, color) {
+    function sigil(c, id, x, y, size, color, category) {
+        if (category && !['firstStrike','blade','execution','combo','comeback','lastStand','unyielding','ironSkin','insurance','thirst','risk','devil','glass','focus','clarity','pilgrim','future','rewind','forbidden','rest','gambler','greed','contract','cursedTreasure','duplicate'].includes(id)) {
+            id = { basic:'blade', skill:'manaCycle', critical:'focus', combo:'combo', defense:'ironSkin', recovery:'thirst', exploration:'rewind', risk:'devil', reward:'contract' }[category] || id;
+        }
         c.save(); c.translate(x, y); c.scale(size / 100, size / 100); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 4.5; c.lineCap = 'round'; c.lineJoin = 'round';
         const stroke = points => { path(c, points, false); c.stroke(); };
         const circle = (x, y, r) => { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke(); };
@@ -118,7 +122,10 @@
     function paintCard(choice, icon, w, h) {
         const dpr = Math.min(devicePixelRatio || 1, 2), canvas = document.createElement('canvas'); canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); const c = canvas.getContext('2d'); c.scale(dpr, dpr);
         const color = colors[choice.rarity] || colors.gold, warn = choice.powerWarning, top = 8, cx = w / 2, edge = metal(c, choice.rarity, 0, 0, w, h);
-        const artH = Math.round(Math.min(w * .66, h * (h < 460 ? (warn ? .32 : .37) : .44))), cy = top + artH * .55;
+        const pad = Math.round(w * .08), tw = w - pad * 2, nameSize = clamp(Math.round(w * .074), 20, 25), names = wrap(c, choice.name, tw, nameSize, 2, 700);
+        const bodySize = clamp(Math.round(w * .5) / 10, 14.5, 16.5), lh = bodySize * 1.5;
+        const textHeight = names.length * nameSize * 1.22 + wrap(c, choice.desc, tw, bodySize, 30).length * lh + 112 + (warn ? 44 : 0);
+        const artH = Math.round(Math.max(48, Math.min(w * .66, h * .44, h - textHeight))), cy = top + artH * .55;
         const outline = () => chamfer(c, 2, top, w - 4, h - top - 2, 16);
         outline(); const bg = c.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, choice.rarity === 'cursed' ? '#2a161c' : '#1a2430'); bg.addColorStop(.5, '#0e141b'); bg.addColorStop(1, '#090d12'); c.fillStyle = bg; c.fill();
         c.save(); c.clip(); const light = c.createRadialGradient(cx, cy, 0, cx, cy, w * .62); light.addColorStop(0, color + '4a'); light.addColorStop(.45, color + '12'); light.addColorStop(1, color + '00'); c.fillStyle = light; c.fillRect(0, 0, w, artH + 60); c.restore();
@@ -126,16 +133,15 @@
         const r = Math.min(w * .3, artH * .44), disc = c.createRadialGradient(cx, cy - r * .2, 0, cx, cy, r); disc.addColorStop(0, color + '3a'); disc.addColorStop(.7, '#0d131add'); disc.addColorStop(1, '#080c11'); c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fillStyle = disc; c.fill(); c.strokeStyle = edge; c.lineWidth = 1.5; c.stroke();
         c.beginPath(); c.arc(cx, cy, r - 5, 0, Math.PI * 2); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1; c.stroke();
         if (icon?.ready) { const [sx, sy, sw, sh] = trimmed(icon), box = r * 1.5, k = box / Math.max(sw, sh), dw = sw * k, dh = sh * k; c.save(); c.beginPath(); c.arc(cx, cy, r - 2, 0, Math.PI * 2); c.clip(); c.shadowColor = 'rgba(0,0,0,.7)'; c.shadowBlur = 14; c.shadowOffsetY = 4; c.drawImage(icon.image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh); c.restore(); }
-        else sigil(c, choice.id, cx, cy, r * 1.15, color);
+        else sigil(c, choice.id, cx, cy, r * 1.15, color, choice.category);
         outline(); c.strokeStyle = edge; c.lineWidth = 2.5; c.stroke();
         chamfer(c, 8, top + 6, w - 16, h - top - 14, 12); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1; c.stroke();
         path(c, [[cx, 0], [cx + 9, top], [cx, top * 2], [cx - 9, top]]); c.fillStyle = metal(c, choice.rarity, cx - 9, 0, 18, 16); c.fill(); c.strokeStyle = '#0b0f14'; c.lineWidth = 1.5; c.stroke();
-        const pad = Math.round(w * .08), tw = w - pad * 2, nameSize = clamp(Math.round(w * .074), 20, 25), names = wrap(c, choice.name, tw, nameSize, 2, 700);
         let y = top + artH + 10 + nameSize * .6;
         names.forEach((name, i) => text(c, name, cx, y + i * nameSize * 1.22, nameSize, '#f5efe2', 'center', 700));
         y += (names.length - 1) * nameSize * 1.22 + nameSize * .6 + 12; line(c, cx - 14, y, cx + 14, y, color + 'bb', 2); y += 18;
         const tag = choice.equipment ? '장착 장비 전용' : choice.dangerous ? '위험 계약 · 뒤틀림 +10' : '', footTop = h - 2 - 50, warnTop = footTop - (warn ? 44 : 0);
-        const bodySize = clamp(Math.round(w * .5) / 10, 14.5, 16.5), lh = bodySize * 1.5, maxLines = Math.max(2, Math.floor((warnTop - 6 - y) / lh));
+        const maxLines = Math.max(2, Math.floor((warnTop - 6 - y) / lh));
         paragraph(c, choice.desc, cx, y + bodySize * .5, tw, bodySize, '#d6dce0', lh, maxLines, 'center');
         if (warn) drawWarning(c, pad - 6, warnTop, w - (pad - 6) * 2, 32);
         // 하단 띠: 카드 외곽에 맞춰 잘린 어두운 바탕 + 금속 구분선, 층 이동과 조건을 한 줄로.
@@ -175,16 +181,18 @@
     }
     async function mutate(action, input = {}, retry = false) {
         if (busy || pending && !retry) return; busy = true; regionKey = '';
-        if (!retry) pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: state.revision, runId: state.runId } };
+        if (!retry) { outcomeReveal = null; pending = { action, body: { ...input, requestId: crypto.randomUUID(), revision: state.revision, runId: state.runId } }; }
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
             if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (result.retryable) throw new Error(result.error);
-            pending = null; if (result.state) accept(result.state); if (result.error) { announce(result.error); selection = null; fall = null; chestPick = null; } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim'].includes(action));
+            pending = null; if (result.state) accept(result.state); if (result.error) { announce(result.error); selection = null; fall = null; chestPick = null; } else if (result.reveal) {
+                outcomeReveal = {...result.reveal, at:performance.now()}; announce(result.message, false); sound(result.reveal.positive ? 'reveal' : 'land');
+            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim'].includes(action));
             if (['augment', 'event', 'retire', 'claim'].includes(action)) fetchRanking();
         } catch (error) { announce(error.message || '연결이 끊겼습니다. 같은 요청으로 재시도해주세요.'); selection = null; fall = null; chestPick = null; }
         finally { busy = false; regionKey = ''; }
     }
-    function choose(choice, index) { if (busy || pending || selection) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('augment', { choice: choice.id }), reduced ? 0 : 430); }
+    function choose(choice, index) { if (!choice || busy || pending || selection) return; selection = { index, started: performance.now() }; sound('select'); setTimeout(() => mutate('augment', { choice: choice.id }), reduced ? 0 : 430); }
 
     function syncPuzzle() {
         const event = state?.run?.phase === 'puzzle' ? state.run.event : null;
@@ -241,8 +249,23 @@
             const width = Math.min(w - 32, 560), bottom = run?.phase === 'combat' ? (mobile ? 256 : 230) : run?.phase === 'puzzle' ? 172 : run?.phase === 'augment' && mobile ? 178 : 110;
             // 지옥의 비전투 장면은 하단에 행동 버튼이 몰려 있어 알림을 상단에 띄운다.
             const ty = hell && run.phase !== 'combat' ? 62 : h - bottom;
-            panel(ctx, (w - width) / 2, ty, width, 40, { alpha: .92, r: 20 }); paragraph(ctx, message.split('\n')[0], w / 2, ty + 20, width - 32, 14, '#efe7d2', 20, 1, 'center');
+            const rows=wrap(ctx,message,width-32,14,12), height=rows.length*21+24, top=Math.max(64,ty-height+40);
+            panel(ctx, (w - width) / 2, top, width, height, { alpha: .96, r: 3 });
+            rows.forEach((row,i)=>text(ctx,row,w/2,top+22+i*21,14,'#efe7d2','center',500));
         }
+    }
+    function revealOutcome(w, h, t) {
+        if (!outcomeReveal) return;
+        const elapsed=t-outcomeReveal.at;
+        if(elapsed>6500){outcomeReveal=null;return;}
+        const mobile=w<700,width=Math.min(w-32,540),x=(w-width)/2,y=mobile?70:84,color=outcomeReveal.positive?'#edce85':'#f19a9e';
+        const rows=wrap(ctx,outcomeReveal.text,width-96,mobile?15:17,12),height=Math.max(96,rows.length*25+30);
+        ctx.save();ctx.globalAlpha=reduced?1:Math.min(1,elapsed/180,(6500-elapsed)/350);
+        panel(ctx,x,y,width,height,{alpha:.97,edge:color+'88',r:2});
+        if(!reduced&&elapsed<600){ctx.shadowColor=color;ctx.shadowBlur=18*Math.sin(elapsed/600*Math.PI);}
+        sigil(ctx,outcomeReveal.motif,x+37,y+height/2,36,color);
+        rows.forEach((row,i)=>text(ctx,row,x+72,y+26+i*25,mobile?15:17,i?color:'#fff3d9','left',i?600:700));
+        ctx.restore();
     }
     function sceneBackground(w, h, t) {
         if (state?.run?.mode === 'hell' || state && !state.run && overlay === 'hell') return hellBackground(w, h, t);
@@ -290,9 +313,10 @@
     }
     function cardLayouts(w, h, t) {
         const { mobile, cardW, cardH, y } = cardGeometry(w, h);
+        focused=clamp(focused,0,Math.max(0,state.run.choices.length-1));
         return state.run.choices.map((choice, i) => {
             const delta = i - focused, scale = mobile && delta ? .88 : 1;
-            let x = mobile ? w / 2 - cardW / 2 + delta * cardW * .84 : w / 2 + (i - 1) * (cardW + 28) - cardW / 2;
+            let x = mobile ? w / 2 - cardW / 2 + delta * cardW * .84 : w / 2 + (i - (state.run.choices.length-1)/2) * (cardW + 28) - cardW / 2;
             const progress = reduced ? 1 : clamp((t - sceneAt - i * 90) / 280, 0, 1), ease = 1 - Math.pow(1 - progress, 3);
             const slotX=x, slotY=y+(mobile&&delta?cardH*.06:0);
             let width = cardW * scale, height = cardH * scale, yy = y + (1 - ease) * 12 + (mobile && delta ? cardH * .06 : 0);
@@ -305,6 +329,13 @@
     }
     function augments(w, h, t) {
         const geo = cardGeometry(w, h), mobile = geo.mobile;
+        const count=state.run.choices.length;
+        if(!count){
+            text(ctx,'더 선택할 증강이 없습니다',w/2,h*.43,20,'#f5ecd6','center',700);
+            if(state.run.continueWarning)drawWarning(ctx,w/2-120,h*.5-40,240,30);
+            hitButton(w/2-120,h*.5,240,48,'5층 올라가기',()=>mutate('continue'),{primary:true});
+            return;
+        }
         text(ctx, '증강 선택', w / 2, mobile ? 82 : geo.y - 46, mobile ? 18 : 24, '#f5ecd6', 'center', 700);
         const dt=Math.min(50,t-hoverTime); hoverTime=t;
         const slots=cardLayouts(w,h,t);
@@ -323,9 +354,9 @@
         }
         if (mobile) {
             const dotsY = geo.y + geo.cardH + 18;
-            hitButton(w / 2 - 86, dotsY - 18, 40, 36, '이전 증강', () => { focused = (focused + 2) % 3; }, { glyph: '‹', size: 20 });
-            for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(w / 2 + (i - 1) * 16, dotsY, i === focused ? 4 : 3, 0, Math.PI * 2); ctx.fillStyle = i === focused ? '#f0d58e' : 'rgba(255,255,255,.3)'; ctx.fill(); }
-            hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 증강', () => { focused = (focused + 1) % 3; }, { glyph: '›', size: 20 });
+            if(count>1)hitButton(w / 2 - 86, dotsY - 18, 40, 36, '이전 증강', () => { focused = (focused + count - 1) % count; }, { glyph: '‹', size: 20 });
+            for (let i = 0; i < count; i++) { ctx.beginPath(); ctx.arc(w / 2 + (i - (count-1)/2) * 16, dotsY, i === focused ? 4 : 3, 0, Math.PI * 2); ctx.fillStyle = i === focused ? '#f0d58e' : 'rgba(255,255,255,.3)'; ctx.fill(); }
+            if(count>1)hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 증강', () => { focused = (focused + 1) % count; }, { glyph: '›', size: 20 });
             hitButton(w / 2 - 120, h - 116, 240, 48, '이 증강 선택', () => choose(state.run.choices[focused], focused), { primary: true, size: 16, disabled: !!selection });
         }
         if (selection) { const p = clamp((t - selection.started) / 430, 0, 1); ctx.fillStyle = `rgba(255,232,180,${Math.sin(p * Math.PI) * .1})`; ctx.fillRect(0, 0, w, h); }
@@ -346,9 +377,11 @@
     }
     battle.onAction=(action, body)=>mutate(action, action==='skill'?{skill:body.skillName}:{});
     function eventScene(w, h, t) {
-        const e = state.run.event, mobile = w < 700, boxW = mobile ? w - 32 : Math.min(1100, w - Math.max(64, w * .16)), boxX = (w - boxW) / 2, bottom = h - 64;
-        const n = e.choices.length, cols = mobile ? 1 : n, gap = mobile ? 10 : 16, cw = (boxW - gap * (cols - 1)) / cols, descSize = mobile ? 14 : 15, lh = descSize * 1.45;
-        const measured = e.choices.map(choice => 48 + wrap(ctx, choice.desc, cw - 40, descSize, mobile ? 3 : 4).length * lh + (choice.powerWarning ? 40 : 0) + 14);
+        const e = state.run.event, mobile = w < 700, boxW = mobile ? w - 32 : Math.min(1100, w - Math.max(64, w * .16)), boxX = (w - boxW) / 2, bottom = h - 68;
+        const n = e.choices.length, cols = mobile ? 1 : n, gap = mobile ? 8 : 16, cw = (boxW - gap * (cols - 1)) / cols, descSize = mobile && h<740 ? 13 : 14, lh = descSize * 1.5;
+        const descriptions=e.choices.map(choice=>choice.desc.split('\n').flatMap(part=>wrap(ctx,part,cw-40,descSize,20).map(row=>({row,tone:/실패|대신|바칩니다|저주|받는 피해/.test(part)?'#e6a2a6':/[+]|회복|얻습니다/.test(part)?'#e7d29d':'#d1d7dc'}))));
+        const names=e.choices.map(choice=>wrap(ctx,choice.name,cw-40-(choice.powerWarning?52:0),mobile?17:18,3,700));
+        const measured = e.choices.map((choice,i) => 28 + names[i].length*23 + descriptions[i].length*lh + 12);
         const heights = mobile ? measured : measured.map(() => Math.max(...measured)), total = mobile ? heights.reduce((a, b) => a + b, 0) + gap * (n - 1) : heights[0], top = bottom - total;
         const titleSize = mobile ? 24 : 30, storySize = mobile ? 14 : 16, slh = storySize * 1.55, quoteSize = mobile ? 15 : 17;
         let story = wrap(ctx, e.story, boxW, storySize, mobile ? 3 : 2), quote = !!e.quote;
@@ -361,10 +394,10 @@
         let cy = top;
         e.choices.forEach((choice, i) => {
             const x = boxX + (mobile ? 0 : i * (cw + gap)), ch = heights[i], yy = mobile ? cy : top, tint = choice.id === 'red' ? '#d0626a' : choice.id === 'blue' ? '#6f9fd6' : '#d9b56a', hovered = inside(x, yy, cw, ch);
-            panel(ctx, x, yy, cw, ch, { alpha: hovered ? .9 : .8, edge: tint + (hovered ? 'cc' : '66'), r: 10 }); rr(ctx, x + 1, yy + 12, 3, ch - 24, 1.5); ctx.fillStyle = tint; ctx.fill();
-            text(ctx, choice.name, x + 20, yy + 26, mobile ? 17 : 18, '#f6edd8', 'left', 700, cw - 40);
-            paragraph(ctx, choice.desc, x + 20, yy + 50 + descSize / 2, cw - 40, descSize, '#c9d3d5', lh, mobile ? 3 : 4);
-            if (choice.powerWarning) drawWarning(ctx, x + 16, yy + ch - 46, cw - 32, 32);
+            panel(ctx, x, yy, cw, ch, { alpha: hovered ? .94 : .88, edge: hovered?tint+'cc':'#ffffff14', r: 2 }); rr(ctx, x + 1, yy + 12, 2, ch - 24, 0); ctx.fillStyle = tint; ctx.fill();
+            names[i].forEach((row,j)=>text(ctx,row,x+20,yy+24+j*23,mobile?17:18,'#f6edd8','left',700));
+            descriptions[i].forEach(({row,tone},j)=>text(ctx,row,x+20,yy+28+names[i].length*23+j*lh,descSize,tone,'left',500));
+            if (choice.powerWarning) text(ctx,POWER_WARNING,x+cw-18,yy+24,14,'#ff777f','right',700);
             register(x, yy, cw, ch, choice.name + ' · ' + choice.desc + warnLabel(choice.powerWarning), () => { sound('tap'); mutate('event', { choice: choice.id }); });
             cy += ch + gap;
         });
@@ -647,6 +680,7 @@
             // 연출 중에는 장면 행동을 받지 않는다.
             if (hell || fall || landing) { if (landing) regions.forEach(r => { r.disabled = true; }); dropFx(w, h, t); }
             gameHud(w, h, t);
+            revealOutcome(w,h,t);
             if (overlay) { puzzleForm.hidden = true; drawOverlay(w, h); }
             if (pending && !busy) { hitButton(w / 2 - 140, h / 2 - 24, 280, 48, '저장 확인 · 같은 요청 재시도', () => mutate(pending.action, {}, true), { primary: true }); const r = regions[regions.length - 1]; r.disabled = false; }
         }
@@ -655,7 +689,7 @@
     addEventListener('pointermove', event => { if(Math.hypot(pointer.x-event.clientX,pointer.y-event.clientY)>4)inputMode='pointer';pointer.x=event.clientX;pointer.y=event.clientY; });
     addEventListener('pointerdown',()=>{inputMode='pointer';audio.unlock();});
     document.addEventListener('pointerleave',()=>{pointer={x:-1000,y:-1000};});
-    let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if (state?.run?.phase === 'augment' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, 2); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
+    let touchX = 0; addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, { passive: true }); addEventListener('touchend', event => { if (state?.run?.phase === 'augment' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !selection) focused = clamp(focused + (event.changedTouches[0].clientX < touchX ? 1 : -1), 0, Math.max(0,state.run.choices.length-1)); else if (state?.run?.phase === 'chests' && innerWidth < 700 && Math.abs(event.changedTouches[0].clientX - touchX) > 40 && !chestPick) chestPage += event.changedTouches[0].clientX < touchX ? 1 : -1; }, { passive: true });
     addEventListener('keydown', event => { inputMode='keyboard';audio.unlock();if (event.target instanceof HTMLInputElement || busy || pending || performance.now()<battleUntil) return; if (event.key === 'Escape') { overlay = null; syncPuzzle(); } if (state?.run?.phase === 'augment' && /^[123]$/.test(event.key)) { const i = Number(event.key) - 1; if (innerWidth < 700) focused = i; else choose(state.run.choices[i], i); } if(state?.run?.phase==='combat'&&!overlay)battle.key(event);
         const side = { ArrowLeft: -1, ArrowRight: 1 }[event.key]; if (!side || overlay || state?.run?.mode !== 'hell') return;
         if (state.run.phase === 'descent') descend(side < 0 ? 'left' : 'right'); else if (state.run.phase === 'chests' && !chestPick) chestPage += side; });

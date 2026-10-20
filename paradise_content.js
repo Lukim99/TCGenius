@@ -1,5 +1,14 @@
 // 회랑에서만 사용하는 강화·유물. 운영 아이템/장비 정의를 수정하지 않는다.
-const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', ...options });
+const CATEGORIES = {
+    lastStand: 'risk', risk: 'risk', future: 'risk', devil: 'risk', forbidden: 'risk', gambler: 'risk', glass: 'risk',
+    unyielding: 'defense', insurance: 'defense', ironSkin: 'defense', deepArmor: 'defense',
+    manaCycle: 'recovery', thirst: 'recovery', breath: 'recovery', pilgrim: 'recovery', rest: 'recovery',
+    focus: 'critical', dice: 'critical', encore: 'critical', dropout: 'critical', charm: 'critical', foreshadowCrit: 'critical', monorail: 'critical',
+    combo: 'combo', staff: 'skill', shoes: 'skill', filter: 'skill',
+    duplicate: 'exploration', rewind: 'exploration', clarity: 'exploration',
+    cursedTreasure: 'reward', greed: 'reward', contract: 'reward'
+};
+const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', category: CATEGORIES[id] || 'basic', ...options });
 const AUGMENTS = [
     a('lastStand', '최후의 저항', 8, 'HP 30% 이하일 때 최종 피해 +40%', { lastStand: 1 }),
     a('firstStrike', '첫 번째 일격', 10, '매 전투 첫 공격의 피해량 2배', { firstStrike: 1 }),
@@ -47,12 +56,13 @@ const AUGMENTS = [
     ].map(([id, equipment, floors, battles, label, multiplier]) => a(id, equipment + ' 강화', floors,
         `다음 ${battles}회 전투에서 ${label} ${multiplier}배`, {}, { equipment, battles, multiplier })),
     a('ironSkin', '천상의 갑주', 6, '방어력 +20%, 받는 피해 -5%', { def: .20, taken: -.05 }, { rarity: 'silver', category: 'defense' }),
-    a('breath', '고요한 숨결', 5, '최대 MP +20%, 즉시 MP 20% 회복', { mp: .20 }, { special: 'breath', rarity: 'silver', category: 'defense' }),
-    a('pilgrim', '순례자의 축복', 8, '최대 HP +15%, 즉시 HP 15% 회복', { hp: .15 }, { special: 'pilgrim', rarity: 'silver', category: 'defense' }),
+    a('breath', '고요한 숨결', 5, '최대 MP +20%, 즉시 MP 20% 회복', { mp: .20 }, { special: 'breath', rarity: 'silver' }),
+    a('pilgrim', '순례자의 축복', 8, '최대 HP +15%, 즉시 HP 15% 회복', { hp: .15 }, { special: 'pilgrim', rarity: 'silver' }),
     a('blade', '빛의 칼날', 10, '공격력 +12%', { atk: .12 }, { rarity: 'silver' }),
     a('clarity', '균열의 통찰', 5, '최종 피해 +10%, 뒤틀림 -10', { final: .10 }, { special: 'clarity' }),
     a('glass', '유리 날개', 30, '최종 피해 +35%, 최대 HP -20%', { final: .35, hp: -.20 }, { dangerous: true, rarity: 'cursed' }),
-    a('rest', '길 잃은 별빛', -5, 'HP·MP 30% 회복', {}, { special: 'rest', rarity: 'silver', category: 'defense' })
+    a('rest', '길 잃은 별빛', -5, 'HP·MP 30% 회복', {}, { special: 'rest', rarity: 'silver' }),
+    ...require('./paradise_augments_extra')
 ];
 
 const RELICS = [

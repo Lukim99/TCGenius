@@ -1126,6 +1126,14 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
     }
 });
 
+server.get('/api/dex/augments', requireUser, (req, res) => {
+    const { AUGMENTS } = require('./paradise_content');
+    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, special, dangerous }) => ({
+        id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous,
+        condition: equipment ? equipment + ' 장착 시에만 등장' : special === 'duplicate' ? '능력치 강화 효과를 획득한 뒤 등장' : null
+    })) });
+});
+
 server.get('/api/titles', requireUser, async (req, res) => {
     try {
         const user = await rpgenius.getRPGUserByName(req.session.name);
@@ -1472,7 +1480,10 @@ registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, s
 registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getItemIconUrl, getEquipmentIconUrl, getCharacterSprite: getHFieldCharacterSprite,
     getCombatView: user => ({ player: buildHFieldState(user).player, skills: getHFieldSkills(user, serializeCard(user.main_card, user), user.field?.name) }),
     getMonsterSprite: enemy => {
+        if (enemy.portrait === 'gambler') return '/static/assets/paradise/gambler.webp';
         if (enemy.kind === 'judge') return '/static/assets/paradise/judge-boss.webp';
+        if (enemy.kind === 'rift') return '/static/assets/paradise/rift-boss.webp';
+        if (enemy.kind === 'final') return '/static/assets/paradise/final-warden.webp';
         const atlas = enemy.sourceField === '인트리그미션' ? { atlasUrl: getGeneralFieldAssetUrl('필드/몬스터/인트리그미션.png'), row: 0, rows: 1 } : getGeneralFieldAtlas(enemy.sourceIndex);
         return atlas ? { ...atlas, column: enemy.kind === 'normal' ? 0 : 1 } : null;
     }
@@ -9459,7 +9470,7 @@ function renderUserDashboard(sess, opts) {
     <aside class="dex-sidebar" aria-label="도감 종류">
       <h2>도감</h2>
       <div class="dex-tabs">
-        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button>
+        <button class="dex-tab active" data-tab="weapon">무기</button><button class="dex-tab" data-tab="hat">모자</button><button class="dex-tab" data-tab="armor">갑옷</button><button class="dex-tab" data-tab="pants">하의</button><button class="dex-tab" data-tab="shoes">신발</button><button class="dex-tab" data-tab="accessory">장신구</button><button class="dex-tab" data-tab="support">보조</button><button class="dex-tab" data-tab="artifact">아티팩트</button><button class="dex-tab" data-tab="orb">보주</button><button class="dex-tab" data-tab="specter">스펙터</button><button class="dex-tab" data-tab="pet">펫</button><button class="dex-tab" data-tab="character"><span>캐릭터</span> <span>카드</span></button><button class="dex-tab" data-tab="title">칭호</button><button class="dex-tab" data-tab="potential">잠재능력</button><button class="dex-tab" data-tab="augment">회랑 증강</button>
       </div>
     </aside>
     <div class="dex-content"><div id="dexRarityFilterBar" class="dex-filter-bar" hidden><label class="dex-filter-label" for="dexRarityFilter">등급</label><select id="dexRarityFilter" class="dex-rarity-select" aria-label="도감 등급 필터"><option value="all">전체 등급</option></select><span id="dexRarityCount" class="dex-filter-count"></span></div><div id="dexList" class="dex-grid"></div></div>

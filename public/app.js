@@ -7527,6 +7527,7 @@ $$('.rank-tab').forEach(btn => btn.onclick = () => {
 // ===== 도감 =====
 let dexData = null;
 let potentialDexData = null;
+let augmentDexData = null;
 let dexTab = 'weapon';
 let dexRarity = 'all';
 
@@ -8147,6 +8148,9 @@ function dexCharacterDetail(entry) {
 let titlesData = null;
 const titleDexState = { search: '', filter: 'all' };
 const characterDexState = { search: '', filter: 'all' };
+const augmentDexState = { search: '', filter: 'all', category: 'all' };
+const AUGMENT_CATEGORIES = { basic: '공격', skill: '스킬', critical: '치명타', combo: '연격', defense: '방어·생존', recovery: '회복', exploration: '탐험', risk: '위험·거래', reward: '보상' };
+const AUGMENT_RARITIES = { silver: '실버', gold: '골드', prismatic: '프리즘', cursed: '저주' };
 let titleSaving = false;
 
 function dexCollection(grid, state, filters, placeholder, renderItems) {
@@ -8185,6 +8189,36 @@ function renderCharacterDex(grid) {
         list.replaceChildren(...(entries.length ? entries.map(dexCharacterCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
         return entries.length;
     });
+}
+
+function dexAugmentCard(entry) {
+    return el('article', { class: 'dex-augment-card', 'data-rarity': entry.rarity },
+        el('div', { class: 'dex-augment-head' },
+            el('h3', null, entry.name),
+            el('span', { class: 'dex-augment-floors' + (entry.floors < 0 ? ' descending' : '') }, (entry.floors > 0 ? '+' : '') + entry.floors + '층')),
+        el('div', { class: 'dex-augment-meta' }, [AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : null].filter(Boolean).join(' · ')),
+        el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc)),
+        entry.condition ? el('div', { class: 'dex-augment-condition' }, entry.condition) : null
+    );
+}
+
+function renderAugmentDex(grid) {
+    const toolbar = dexCollection(grid, augmentDexState, [['all', '전체'], ['common', '공통'], ['equipment', '장착 전용']], '증강 이름 · 효과 · 장비 검색', list => {
+        list.className = 'dex-augment-grid';
+        const query = augmentDexState.search.trim().toLocaleLowerCase();
+        const entries = (augmentDexData.augments || []).filter(entry =>
+            [entry.name, entry.desc, entry.equipment || '', AUGMENT_CATEGORIES[entry.category] || ''].join(' ').toLocaleLowerCase().includes(query)
+            && (augmentDexState.filter === 'all' || (augmentDexState.filter === 'equipment' ? entry.equipment : !entry.equipment))
+            && (augmentDexState.category === 'all' || entry.category === augmentDexState.category));
+        list.replaceChildren(...(entries.length ? entries.map(dexAugmentCard) : [el('div', { class: 'empty' }, '검색 결과가 없습니다.')]));
+        return entries.length;
+    });
+    const category = el('select', { class: 'dex-rarity-select', 'aria-label': '증강 유형', onchange: event => { augmentDexState.category = event.target.value; renderDex(); } },
+        el('option', { value: 'all' }, '모든 유형'),
+        ...Object.entries(AUGMENT_CATEGORIES).map(([value, label]) => el('option', { value }, label)));
+    category.value = augmentDexState.category;
+    toolbar.insertBefore(category, toolbar.lastElementChild);
+    grid.insertBefore(el('p', { class: 'dex-augment-note' }, '한 탐험에서 같은 증강은 다시 등장하지 않습니다.'), toolbar.nextSibling);
 }
 
 async function changeDexTitle(id, statsOnly) {
@@ -8315,6 +8349,11 @@ function applyDexRarityFilter(entries) {
 
 function renderDex() {
     const grid = $('#dexList');
+    if (dexTab === 'augment') {
+        hideDexRarityFilter();
+        if (augmentDexData) renderAugmentDex(grid);
+        return;
+    }
     if (dexTab === 'potential') {
         hideDexRarityFilter();
         grid.className = 'dex-grid dex-pot-grid';
@@ -8359,6 +8398,16 @@ function renderDex() {
 }
 
 async function loadDex() {
+    if (dexTab === 'augment') {
+        hideDexRarityFilter();
+        if (!augmentDexData) {
+            $('#dexList').replaceChildren(el('div', { class: 'loading' }, '불러오는 중...'));
+            try { augmentDexData = await api('/api/dex/augments'); }
+            catch (e) { $('#dexList').replaceChildren(el('div', { class: 'empty err' }, e.message)); return; }
+        }
+        renderDex();
+        return;
+    }
     if (dexTab === 'potential') {
         hideDexRarityFilter();
         if (!potentialDexData) {
@@ -8391,6 +8440,7 @@ $$('.dex-tab').forEach(btn => btn.onclick = () => {
     dexTab = btn.dataset.tab;
     $$('.dex-tab').forEach(b => b.classList.toggle('active', b === btn));
     loadDex();
+    if (dexTab === 'augment') setDexSidebarVisible(false);
 });
 
 const dexSidebarMobileQuery = window.matchMedia('(max-width: 860px)');

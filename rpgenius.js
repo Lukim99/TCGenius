@@ -7412,6 +7412,66 @@ function applyFieldDamageAction(user, context, rawDamage, extra, actionType, ski
 }
 
 // 일반 필드의 카드/스킬/장비 계산을 그대로 쓰고, 처치·보상·사망만 회랑 규칙으로 처리한다.
+function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines, at = Date.now()) {
+    const run = user.paradise, enemy = run.enemy, field = user.field;
+    received = Math.round(received * paradise.incomingMultiplier(user, received));
+    if (field.iktaeBot && field.iktaeBot.hp > 0 && at < Number(field.iktaeBot.expired_at || 0)) {
+        const absorbed = Math.round(received * .30);
+        received -= absorbed; field.iktaeBot.hp -= absorbed;
+        lines.push('🤖 익테봇이 ' + comma(absorbed) + ' 피해를 대신 받았습니다.');
+        if (field.iktaeBot.hp <= 0) { field.iktaeBot = null; clearFieldIktaeBot(user.name); }
+    }
+    received = consumeNextDamageReduction(user, received);
+    if (isAwakeningInvincible(user.name, stats, at)) received = 0;
+    received = applyFieldShieldAbsorption(user, received, lines);
+    const beforeHp = Number(user.hp);
+    user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received), at), stats.hp);
+    const lostHp = Math.max(0, beforeHp - user.hp);
+    run.battle.comeback += lostHp / Math.max(1, stats.hp);
+    paradise.onDamageTaken(user, lostHp);
+    lines.push('❗ 받은 피해 ' + comma(lostHp));
+    if (received > 0 && receivedHits) {
+        let reflected = 0;
+        for (let i = 0; i < receivedHits; i++) reflected += applyDamageVariance(getThornsReflect(user, stats));
+        if (enemy.mirror) enemy.hp = require('./pvp').corridorMirrorReflection(enemy.mirror, reflected, at);
+        else enemy.hp = Math.max(0, enemy.hp - reflected);
+        if (field.elite) field.elite.hp = enemy.hp;
+        if (reflected) lines.push('💥 가시 반사 ' + comma(reflected));
+    }
+    applyDamageTakenSlotRecovery(user, stats.hp, received, slots, stats, lines);
+    tryImmortalArmorRegen(user, stats.hp, lines);
+    return received;
+}
+
+function advanceParadiseMirror(user, at = Date.now()) {
+    const run = user.paradise;
+    if (!paradise.active(user) || run.phase !== 'combat' || !run.enemy?.mirror) return false;
+    const enemy = run.enemy, stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
+    const result = require('./pvp').corridorMirrorTurn(enemy.mirror, user, stats, enemy.hp,
+        (damage, count, time) => receiveParadiseDamage(user, damage, count, stats, slots, lines, time), at);
+    if (!result.changed) return false;
+    Object.assign(enemy, { hp: result.hp, maxHp: result.maxHp, mp: result.mp, maxMp: result.maxMp });
+    if (user.field.elite) user.field.elite.hp = enemy.hp;
+    run.combatLog = [...result.messages, ...lines, ...(run.combatLog || [])].slice(0, 18);
+    const defeated = user.hp <= 0, cleared = enemy.hp <= 0 && !defeated;
+    if (defeated) paradise.finish(user, 'defeated');
+    else if (cleared) paradise.victory(user);
+    result.events.forEach((event, index) => {
+        run.combatSequence = Number(run.combatSequence || 0) + 1;
+        const last = index === result.events.length - 1, incoming = event.actor === 'opp';
+        const hits = (event.hits || []).filter(hit => !['absorbed', 'summonAbsorbed'].includes(hit.type));
+        run.combatEvents = [...(run.combatEvents || []), combatEffects.annotateEvent({
+            ...event, id: run.id + ':' + run.combatSequence, enemyId: enemy.id,
+            actor: incoming ? 'enemy' : 'player',
+            action: event.action === 'attack' ? 'basic' : event.action === 'skill' ? 'skill' : 'tick',
+            hits: incoming ? [] : hits, damage: incoming ? 0 : event.damage,
+            receivedHits: incoming ? hits : [], received: incoming ? event.damage : 0,
+            targetHp: enemy.hp, cleared: last && cleared, defeated: last && defeated
+        })].slice(-12);
+    });
+    return true;
+}
+
 function buildParadiseHuntResult(user, rawDamage, extra) {
     const run = user.paradise;
     if (!paradise.active(user) || run.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
@@ -7432,8 +7492,9 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         const result = require('./pvp').corridorMirrorHit(enemy.mirror, user, hit.finalDamage, extra);
         hit.finalDamage = result.damage; enemy.hp = result.hp;
         if (result.dodged) { hit.criticalCount = 0; hit.hitCount = 0; }
-        if (result.reflectedDamage) user.hp = paradise.survive(user, user.hp - result.reflectedDamage, stats.hp);
+        if (result.reflectedDamage) user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, user.hp, Math.max(0, user.hp - result.reflectedDamage), Date.now()), stats.hp);
     }
+    paradise.afterAttack(user, extra, hit);
     if (multiplier !== 1) for (const detail of hit.hitDetails || []) detail.damage = Math.round(Number(detail.damage || 0) * multiplier);
     applyNmmStackGain(user, extra, hit); applyTenthAtkCounter(user, extra, hit);
     queueBlackShadow(user, extra, hit.finalDamage); recordFieldJudgmentDamage(user, attackExtra, hit.finalDamage);
@@ -7451,43 +7512,14 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
         if (extra.skillHpRecovery) applyFlatSkillRecovery(user, stats.hp, extra.skillHpRecovery, stats, lines);
         if (extra.skillMpRecovery) applySkillMpRecovery(user, stats.mp, extra.skillMpRecovery, stats, lines);
         applySkillRecovery(user, stats.hp, extra, lines);
-        if (enemy.hp > 0) {
+        if (enemy.hp > 0 && !enemy.mirror) {
             let received, receivedHits = 1;
-            if (enemy.mirror) {
-                const mirror = require('./pvp').corridorMirrorTurn(enemy.mirror, user, stats, enemy.hp);
-                received = mirror.damage;
-                enemy.hp = mirror.hp; enemy.mp = mirror.mp;
-                lines.push(...mirror.messages);
-            } else {
-                const incoming = Math.random() < Number(stats.avd || 0) ? null : calculateMonsterAttackHitResult(targetStats, stats, slots, extra);
-                received = incoming ? incoming.finalDamage : 0;
-                receivedHits = incoming ? Number(incoming.hitCount || 1) : 0;
-                if (!incoming) lines.push('💨 공격을 회피했습니다.');
-            }
-            if (field.iktaeBot && field.iktaeBot.hp > 0 && Date.now() < Number(field.iktaeBot.expired_at || 0)) {
-                const absorbed = Math.round(received * .30);
-                received -= absorbed; field.iktaeBot.hp -= absorbed;
-                lines.push('🤖 익테봇이 ' + comma(absorbed) + ' 피해를 대신 받았습니다.');
-                if (field.iktaeBot.hp <= 0) { field.iktaeBot = null; clearFieldIktaeBot(user.name); }
-            }
-            received = consumeNextDamageReduction(user, received);
-            if (isAwakeningInvincible(user.name, stats)) received = 0;
-            received = applyFieldShieldAbsorption(user, received, lines);
+            const incoming = Math.random() < Number(stats.avd || 0) ? null : calculateMonsterAttackHitResult(targetStats, stats, slots, extra);
+            received = incoming ? incoming.finalDamage : 0;
+            receivedHits = incoming ? Number(incoming.hitCount || 1) : 0;
+            if (!incoming) lines.push('💨 공격을 회피했습니다.');
+            received = receiveParadiseDamage(user, received, receivedHits, stats, slots, lines);
             if (received > 0) presentationHits.push({ damage: received, critical: false });
-            const beforeHp = Number(user.hp);
-            user.hp = paradise.survive(user, resolveAwakeningHp(user.name, stats, beforeHp, Math.max(0, beforeHp - received)), stats.hp);
-            run.battle.comeback += Math.max(0, beforeHp - user.hp) / Math.max(1, stats.hp);
-            lines.push('❗ 받은 피해 ' + comma(Math.max(0, beforeHp - user.hp)));
-            if (received > 0 && receivedHits) {
-                let reflected = 0;
-                for (let i = 0; i < receivedHits; i++) reflected += applyDamageVariance(getThornsReflect(user, stats));
-                enemy.hp = Math.max(0, enemy.hp - reflected);
-                if (enemy.mirror) enemy.mirror.hp = enemy.hp;
-                if (field.elite) field.elite.hp = enemy.hp;
-                if (reflected) lines.push('💥 가시 반사 ' + comma(reflected));
-            }
-            applyDamageTakenSlotRecovery(user, stats.hp, received, slots, stats, lines);
-            tryImmortalArmorRegen(user, stats.hp, lines);
         }
     }
     if (run.effects.noHealing) {
@@ -16994,6 +17026,7 @@ module.exports = {
     enterField,
     leaveField,
     enqueueFieldAction,
+    advanceParadiseMirror,
     useBasicAttackInField,
     useSkillInField,
     getPendingFragmentInfo,
