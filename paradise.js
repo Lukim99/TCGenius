@@ -5,12 +5,38 @@ const wisdom = require('./wisdom_puzzle');
 const rpg = () => require('./rpgenius');
 const TICKET = '천상의 회랑 입장권';
 const MAX_FLOOR = 999;
+const TIME_LIMIT_MS = 15 * 60 * 1000;
 const CP_ANCHORS = [[1, 10000], [10, 100000], [100, 1000000], [200, 10000000], [300, 30000000], [400, 60000000], [500, 100000000], [600, 200000000], [700, 300000000], [800, 400000000], [900, 500000000], [999, 1000000000]];
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pick = (list, random = Math.random) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
 const active = user => user?.paradise?.status === 'active' && user.field?.paradise === true;
 const has = (run, id) => run.relics.includes(id);
 const log = (run, text) => { run.history.unshift({ floor: run.floor, text }); run.history.length = Math.min(60, run.history.length); };
+
+function remainingTime(run, now = Date.now()) {
+    if (!run?.clock) return TIME_LIMIT_MS;
+    return Math.max(0, run.clock.remainingMs - (run.clock.paused || run.status !== 'active' ? 0 : Math.max(0, now - run.clock.updatedAt)));
+}
+function setPhase(user, phase) {
+    const run = user.paradise, now = Date.now();
+    if (run.mode !== 'hell') run.clock = { remainingMs: remainingTime(run, now), updatedAt: now, paused: phase === 'augment' || phase === 'ended' };
+    run.phase = phase;
+}
+function isTimedOut(user, now = Date.now()) {
+    return active(user) && user.paradise.mode !== 'hell' && remainingTime(user.paradise, now) <= 0;
+}
+function advanceTime(user) {
+    if (!active(user) || user.paradise.mode === 'hell') return false;
+    const run = user.paradise;
+    // 업데이트 전부터 진행 중인 탐험에는 최초 확인 시점부터 제한 시간을 부여한다.
+    if (!run.clock) { setPhase(user, run.phase); run.revision++; return true; }
+    if (!isTimedOut(user)) return false;
+    finish(user, 'timedOut');
+    const result = claim(user);
+    if (result.error) run.timeoutClaimError = result.error;
+    run.revision++;
+    return true;
+}
 
 function getResources(user) {
     if (!active(user)) return user;
@@ -142,7 +168,11 @@ function grantRelic(user, special, random = Math.random) {
     const pool = RELICS.filter(relic => special ? relic.id === special : !relic.special && !has(run, relic.id));
     if (!pool.length) { addEffect(user, { atk: .05 }); log(run, '유물의 잔향: 공격력 +5%'); return '유물의 잔향 · 공격력 +5%'; }
     const relic = pick(pool, random);
-    if (!has(run, relic.id)) run.relics.push(relic.id);
+    if (!has(run, relic.id)) {
+        run.relics.push(relic.id);
+        // 획득 전 전투 기록은 유물의 발동 횟수에 포함하지 않는다.
+        if (['meditationCenser', 'returnLantern'].includes(relic.id)) (run.relicState ||= {})[relic.id] = { wins: 0 };
+    }
     clampResources(user);
     log(run, '천상 유물 획득 · ' + relic.name);
     return relic.name + ' 획득';
@@ -158,23 +188,45 @@ function eligibleAugment(user, choice, equipped = equipmentOptions(user).map(e =
         && (!choice.requiresRelics || ordinaryRelics(run).length >= choice.requiresRelics)
         && (!choice.requiresCardContract || run.contracts.some(c => c.star));
 }
+function drawAugment(run, pool, shown, random) {
+    const weights = run.distortion >= 50 ? { silver: 35, gold: 30, prismatic: 15, cursed: 20 } : { silver: 40, gold: 35, prismatic: 20, cursed: 5 };
+    const firstRarity = AUGMENTS.find(a => a.id === shown[0])?.rarity;
+    const diverse = shown.length === 2 && AUGMENTS.find(a => a.id === shown[1])?.rarity === firstRarity ? pool.filter(a => a.rarity !== firstRarity) : pool;
+    const candidates = diverse.length ? diverse : pool;
+    if (!candidates.length) return null;
+    const rarities = Object.entries(weights).filter(([rarity]) => candidates.some(a => a.rarity === rarity));
+    let roll = random() * rarities.reduce((sum, [, weight]) => sum + weight, 0);
+    const rarity = (rarities.find(([, weight]) => (roll -= weight) < 0) || rarities.at(-1))[0];
+    return pick(candidates.filter(a => a.rarity === rarity), random);
+}
 function offerAugments(user, random = Math.random) {
     const run = user.paradise, equipped = equipmentOptions(user).map(e => e.name);
     const pool = AUGMENTS.filter(a => !obtainedAugment(run, a.id) && eligibleAugment(user, a, equipped));
     const choices = [];
     while (choices.length < 3 && pool.length) {
-        // 등급부터 추첨해 등록 개수가 많은 골드에 쏠리지 않게 한다. 가능하면 세 장이 모두 같은 등급인 경우도 피한다.
-        const weights = run.distortion >= 50 ? { silver: 35, gold: 30, prismatic: 15, cursed: 20 } : { silver: 40, gold: 35, prismatic: 20, cursed: 5 };
-        const firstRarity = AUGMENTS.find(a => a.id === choices[0])?.rarity;
-        const diverse = choices.length === 2 && AUGMENTS.find(a => a.id === choices[1])?.rarity === firstRarity ? pool.filter(a => a.rarity !== firstRarity) : pool;
-        const candidates = diverse.length ? diverse : pool;
-        const rarities = Object.entries(weights).filter(([rarity]) => candidates.some(a => a.rarity === rarity));
-        let roll = random() * rarities.reduce((sum, [, weight]) => sum + weight, 0);
-        const rarity = (rarities.find(([, weight]) => (roll -= weight) < 0) || rarities.at(-1))[0];
-        const choice = pick(candidates.filter(a => a.rarity === rarity), random);
+        const choice = drawAugment(run, pool, choices, random);
         choices.push(choice.id); pool.splice(pool.indexOf(choice), 1);
     }
-    run.phase = 'augment'; run.choices = choices; run.event = null;
+    setPhase(user, 'augment'); run.choices = choices; run.event = null;
+    run.offerId = crypto.randomUUID(); run.rerolled = choices.map(() => false); run.offerSeen = [...choices];
+}
+function rerollPool(user) {
+    const run = user.paradise, equipped = equipmentOptions(user).map(e => e.name);
+    return AUGMENTS.filter(a => !obtainedAugment(run, a.id) && !run.choices.includes(a.id) && !(run.offerSeen || []).includes(a.id) && eligibleAugment(user, a, equipped));
+}
+function rerollAugment(user, id, random = Math.random) {
+    const run = user.paradise;
+    if (!active(user) || run.mode === 'hell' || run.phase !== 'augment' || run.completed) return { error: '증강 선택 단계에서만 새로고침할 수 있습니다.' };
+    const index = run.choices.indexOf(id);
+    if (index < 0) return { error: '현재 제시된 증강을 새로고침해주세요.' };
+    if (run.rerolled?.[index]) return { error: '이 선택지는 이미 새로고침했습니다.' };
+    const choice = drawAugment(run, rerollPool(user), run.choices.filter((_, i) => i !== index), random);
+    if (!choice) return { error: '새로 제시할 수 있는 증강이 없습니다.' };
+    run.rerolled ||= run.choices.map(() => false);
+    run.offerSeen ||= [...run.choices];
+    run.rerolled[index] = true; run.offerSeen.push(choice.id); run.choices[index] = choice.id;
+    if (has(run, 'riftLens')) run.distortion = Math.max(0, run.distortion - 2);
+    return { message: '증강 선택지를 새로고침했습니다.' };
 }
 function continueExploration(user, random = Math.random) {
     const run = user.paradise;
@@ -260,7 +312,7 @@ function createMonster(user, kind = 'normal', random = Math.random) {
 function startCombat(user, kind = 'normal', sequence = null, random = Math.random) {
     const run = user.paradise;
     rpg().clearFieldRuntimeTimers(user.name);
-    run.phase = 'combat'; run.event = null; run.choices = []; run.sequence = sequence;
+    setPhase(user, 'combat'); run.event = null; run.choices = []; run.sequence = sequence;
     run.lastOutcome = null;
     const enemy = createMonster(user, kind, random);
     if (sequence?.reward === 'casino') { enemy.name = '잊혀진 도박사'; enemy.portrait = 'gambler'; }
@@ -287,7 +339,7 @@ function startCombat(user, kind = 'normal', sequence = null, random = Math.rando
 }
 function nextEncounter(user, random = Math.random) {
     const run = user.paradise;
-    if (run.distortion >= 100) { run.phase = 'event'; run.event = { id: 'collapse' }; return; }
+    if (run.distortion >= 100) { setPhase(user, 'event'); run.event = { id: 'collapse' }; return; }
     if (run.floor === MAX_FLOOR) return startCombat(user, 'final', null, random);
     if (run.forceElite) { run.forceElite = false; return startCombat(user, 'elite', null, random); }
     const eliteChance = run.distortion >= 25 ? .30 : .15;
@@ -296,7 +348,7 @@ function nextEncounter(user, random = Math.random) {
         const pool = Object.keys(EVENTS).filter(id => id !== 'collapse' && (id !== 'forge' || equipmentOptions(user).length));
         if (run.distortion >= 50) pool.push('mirror', 'chests', 'judge');
         const id = pick(pool, random);
-        run.phase = 'event'; run.event = { id };
+        setPhase(user, 'event'); run.event = { id };
         if (id === 'forge') run.event.equipment = pick(equipmentOptions(user), random).name;
         log(run, EVENTS[id].title);
     } else startCombat(user, roll < .35 + eliteChance ? 'elite' : 'normal', null, random);
@@ -406,7 +458,7 @@ function chooseAugment(user, id, random = Math.random) {
     move(user, choice.floors, choice.dangerous);
     log(run, `${choice.name} · ${choice.floors > 0 ? '+' : ''}${choice.floors}층`);
     if (choice.encounter && run.distortion < 100 && run.floor < MAX_FLOOR) {
-        run.phase = 'event'; run.event = { id: choice.encounter }; run.choices = [];
+        setPhase(user, 'event'); run.event = { id: choice.encounter }; run.choices = [];
         if (choice.encounter === 'forge') run.event.equipment = pick(equipmentOptions(user), random).name;
         log(run, EVENTS[choice.encounter].title);
     } else nextEncounter(user, random);
@@ -444,7 +496,7 @@ function chooseEvent(user, id, input = {}, random = Math.random) {
             if (id === 'skip') move(user, 5);
             else {
                 const puzzle = wisdom.getPuzzle(pick(['2026-01-03', '2026-01-04'], random), run.id, crypto.randomUUID());
-                run.phase = 'puzzle'; run.event = { id: 'puzzle', puzzle, deadline: Date.now() + 120000 }; return { message: '봉인을 풀어주세요. 제한 시간 120초.' };
+                setPhase(user, 'puzzle'); run.event = { id: 'puzzle', puzzle, deadline: Date.now() + 120000 }; return { message: '봉인을 풀어주세요. 제한 시간 120초.' };
             }
             break;
         case 'casino':
@@ -526,6 +578,15 @@ function answerPuzzle(user, answer, random = Math.random) {
     if (skipped && !expired) { move(user, 5); message = '퍼즐을 건너뛰었습니다. +5층'; }
     else if (checked.correct) { const attack = random() < .5; addEffect(user, attack ? { atk: .10 } : { final: .08 }); move(user, 10); run.distortion = Math.max(0, run.distortion - 10); message = '봉인 해제!\n' + (attack ? '공격력 +10%' : '최종 피해 +8%') + '\n+10층 · 뒤틀림 -10'; }
     else { resources.hp = Math.max(1, Math.floor(resources.hp * .85)); message = expired ? '시간 초과 · 현재 HP -15%' : '오답 · 현재 HP -15%'; }
+    if (checked.correct && has(run, 'crystalVial')) {
+        heal(user, .15, .15);
+        const progress = (run.relicState ||= {});
+        if (Number(progress.crystalVial || 0) < 3) {
+            progress.crystalVial = Number(progress.crystalVial || 0) + 1;
+            run.effects.reward = Number(run.effects.reward || 0) + .05;
+            message += '\n새벽의 이슬병 · 종료 보상 +5%';
+        }
+    }
     log(run, message); run.lastOutcome = message; offerAugments(user, random);
     return { message, reveal: { motif: 'clarity', positive: checked.correct, text: message } };
 }
@@ -571,6 +632,11 @@ function combatNotice(extra, text) { extra.notice = [extra.notice, text].filter(
 function prepareAttack(user, extra) {
     if (!active(user) || extra.summonAttack || extra.dotAttack || extra.isBotAutoAttack) return;
     const run = user.paradise;
+    if (extra.isBasic && has(run, 'tuningFork') && run.battle.tuningForkReady) {
+        run.battle.tuningForkReady = false;
+        extra.defReductionBonus = 1;
+        combatNotice(extra, '천상의 소리굽쇠 · 방어력 무시');
+    }
     if (run.effects.sparkJar && run.battle.sparks >= 3) {
         extra.forceCritical = true; run.battle.sparks = 0;
         combatNotice(extra, '불꽃 저금통 · 확정 치명타');
@@ -600,6 +666,14 @@ function onSkillUsed(user, spent, skillName) {
     const run = user.paradise, effects = sumEffects(run);
     run.battle.skillsUsed = Number(run.battle.skillsUsed || 0) + 1;
     if (skillName) run.battle.skillNames = [...new Set([...(run.battle.skillNames || []), skillName])];
+    if (has(run, 'starlightSpool') && run.battle.skillsUsed === 1) {
+        const stats = rpg().calculateUserStats(user);
+        if (!stats.disableShield) require('./combat_shields').grant(user.field, { source: 'paradise:starlightSpool', caster: user.name, amount: Math.round(stats.hp * .10 * (1 + Number(stats.shieldEfficiency || 0))), expiresAt: Date.now() + 10000 });
+    }
+    if (has(run, 'echoBell') && run.battle.skillsUsed % 3 === 0) run.battle.echoBellReady = true;
+    const ultimate = skillName && rpg().getUltimateSkills(user).some(entry => entry.skill.name === skillName);
+    if (has(run, 'tuningFork') && ultimate) run.battle.tuningForkReady = true;
+    if (has(run, 'runeQuill') && skillName && !ultimate) run.battle.quillSkills = [...new Set([...(run.battle.quillSkills || []), skillName])];
     for (const quest of run.quests || []) if (quest.status === 'active' && quest.condition === 'basicOnly') questResult(run, quest, false);
     if (effects.spellWeave) run.battle.spellWeaveReady = true;
     if (effects.skillGuard) run.battle.skillGuardReady = true;
@@ -653,6 +727,7 @@ function attackMultiplier(user, extra) {
         if (effects.sameRhythm) multiplier *= 1 + Math.min(.48, battle.sameTypeStreak * effects.sameRhythm);
         if (effects.missedFortune && battle.missedFortuneReady) multiplier *= 1 + effects.missedFortune;
         if (type === 'basic') {
+            if (has(run, 'echoBell') && battle.echoBellReady) { multiplier *= 2; battle.echoBellReady = false; combatNotice(extra, '메아리 종 · 피해 2배'); }
             if (effects.quietBlade && !battle.skillsUsed) multiplier *= 1 + effects.quietBlade;
             if (effects.spellWeave && battle.spellWeaveReady) { multiplier *= 1 + effects.spellWeave; battle.spellWeaveReady = false; }
             if (effects.swordCharge) battle.basicCharges = Math.min(3, Number(battle.basicCharges || 0) + 1);
@@ -738,6 +813,25 @@ function victory(user, random = Math.random) {
     const run = user.paradise, enemy = run.enemy, elite = enemy.kind === 'elite';
     const units = (run.battle.doubledReward ? 2 : 1) * (elite && has(run, 'necklace') ? 2 : 1);
     run.battlesWon++; run.rewardUnits += units;
+    const progress = (run.relicState ||= {});
+    for (const id of ['meditationCenser', 'returnLantern']) {
+        if (!has(run, id)) continue;
+        const relic = (progress[id] ||= { wins: 0 });
+        if (++relic.wins % 3 !== 0) continue;
+        if (id === 'meditationCenser') { heal(user, .20, .20); log(run, '명상 향로 · HP와 MP 회복'); }
+        else if (Number(progress.timeRestored || 0) < 120000) {
+            const now = Date.now(), before = remainingTime(run, now), restored = Math.min(20000, TIME_LIMIT_MS - before, 120000 - Number(progress.timeRestored || 0));
+            run.clock = { remainingMs: before + restored, updatedAt: now, paused: false };
+            progress.timeRestored = Number(progress.timeRestored || 0) + restored;
+            log(run, `귀환 등불 · 탐험 시간 ${Math.round(restored / 1000)}초 회복`);
+        }
+    }
+    if (has(run, 'runeQuill') && (run.battle.quillSkills || []).length >= 3 && Number(progress.runeQuill || 0) < 2) {
+        progress.runeQuill = Number(progress.runeQuill || 0) + 1;
+        const message = '룬 깃펜 · ' + grantAdventureReward(user, { star: 7, type: '일반' }, random);
+        run.rewardReveal = { motif: 'contract', positive: true, text: [run.rewardReveal?.text, message].filter(Boolean).join('\n') };
+        log(run, message);
+    }
     recordFloor(user);
     run.clearedFloor = Math.max(run.clearedFloor, run.floor);
     if (elite) { run.elitesWon++; run.eliteUnits += units; run.distortion = Math.max(0, run.distortion - 5); if (has(run, 'crown')) heal(user, .15); }
@@ -779,11 +873,11 @@ function victory(user, random = Math.random) {
         for (let i = 0; i < units; i++) if (random() < .35) grantRelic(user, null, random);
     }
     if (enemy.kind === 'final') {
-        run.completed = true; run.phase = 'augment'; run.choices = []; run.event = null;
+        run.completed = true; setPhase(user, 'augment'); run.choices = []; run.event = null;
         log(run, '999층 정복 · 귀환하여 보상을 정산해주세요.');
         return;
     }
-    if (run.distortion >= 100) { run.phase = 'event'; run.event = { id: 'collapse' }; }
+    if (run.distortion >= 100) { setPhase(user, 'event'); run.event = { id: 'collapse' }; }
     else offerAugments(user, random);
 }
 function canReturn(user) {
@@ -792,7 +886,7 @@ function canReturn(user) {
         || run.status === 'ended' && run.outcome === 'cleared' && !run.claimed && !run.returnedAt);
 }
 function rewardEligible(run) {
-    return run.outcome === 'retired' || run.outcome === 'cleared' && !!run.returnedAt;
+    return run.outcome === 'retired' || ['cleared', 'timedOut'].includes(run.outcome) && !!run.returnedAt;
 }
 function finish(user, outcome = 'retired') {
     if (user.paradise.mode === 'hell') {
@@ -800,17 +894,20 @@ function finish(user, outcome = 'retired') {
         return { message: '지옥에서 귀환했습니다.' };
     }
     const run = user.paradise;
-    if (outcome !== 'defeated') {
+    if (outcome === 'timedOut') {
+        if (!isTimedOut(user)) return { error: '아직 탐험 시간이 남아 있습니다.' };
+        run.returnedAt = Date.now();
+    } else if (outcome !== 'defeated') {
         if (!canReturn(user)) return { error: '귀환은 증강 선택 단계에서만 가능합니다.' };
         run.returnedAt = Date.now();
         outcome = run.completed || run.outcome === 'cleared' ? 'cleared' : 'retired';
     }
     rpg().clearFieldRuntimeTimers(user.name);
-    run.status = 'ended'; run.phase = 'ended'; run.outcome = outcome; run.endedAt = Date.now(); run.event = null; run.choices = [];
+    setPhase(user, 'ended'); run.status = 'ended'; run.outcome = outcome; run.endedAt = Date.now(); run.event = null; run.choices = [];
     for (const quest of run.quests || []) if (quest.status === 'active') quest.status = 'failed';
     run.rewardBonus = Number(run.effects.reward || 0) + Number(run.ring || 0) + (has(run, 'judgment') ? .50 : 0) + (has(run, 'riftHeart') ? .75 : 0) + run.contracts.reduce((sum, c) => sum + Number(c.bonus || 0), 0);
     user.field = null;
-    log(run, outcome === 'cleared' ? '999층 완주 · 천상의 끝' : outcome === 'defeated' ? '탐험 종료 · 전투 불능' : '귀환 · 종료 보상 정산');
+    log(run, outcome === 'cleared' ? '999층 완주 · 천상의 끝' : outcome === 'defeated' ? '탐험 종료 · 전투 불능' : outcome === 'timedOut' ? '제한 시간 종료 · 자동 귀환' : '귀환 · 종료 보상 정산');
     return { message: outcome === 'defeated' ? '전투에서 패배하여 탐험 보상과 계약 보상을 잃었습니다.' : '천상에서 귀환했습니다. 종료 보상을 수령해주세요.' };
 }
 function previewRewards(run) {
@@ -857,6 +954,7 @@ function claim(user) {
     }
     user.inventory.card.push(...cards);
     run.claimed = true; run.claimedAt = Date.now(); run.rewards = { rewards, cards };
+    delete run.timeoutClaimError;
     return { message: '종료 보상을 수령했습니다.', reveal: { kind: 'rewards', title: '회랑 보상', items: claimedRewards(run) } };
 }
 function claimedRewards(run) {
@@ -883,13 +981,18 @@ function view(user) {
         relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).filter(([id]) => AUGMENTS.some(a => a.id === id)).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
         contracts: run.contracts, quests: (run.quests || []).map(q => ({ name: q.name, remaining: q.remaining, progress: q.progress, target: q.target || q.battles, status: q.status })), history: run.history.slice(0, 20), lastOutcome: run.lastOutcome || null, rewards: previewRewards(run), rewardBonus: run.rewardBonus || 0, nextActionAt: Number(user.field?.nextActionAt || 0),
         rewardSummary: run.mode === 'hell' ? [] : claimedRewards(run),
+        offerId: run.offerId || null, timer: run.mode === 'hell' ? null : { remainingMs: remainingTime(run), paused: run.phase === 'augment' || run.status === 'ended' }, timeoutClaimError: run.timeoutClaimError || null,
         skills: rpg().getMainCardSkills(user).map(({ skill }) => ({ name: skill.name, cost: skill.mp_cost, cooldownEnd: Number(user.field?.skillCooldowns?.[skill.name] || 0) })) };
     if (result.run) {
         if (run.phase === 'augment' && !run.completed && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal');
         result.run.highestFloor = Number(run.highestFloor || run.clearedFloor || run.floor);
-        for (const choice of result.run.choices) choice.powerWarning = powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal');
+        const canReroll = result.run.choices.length > 0 && !run.completed && rerollPool(user).length > 0;
+        for (const choice of result.run.choices) {
+            choice.canReroll = canReroll && !run.rerolled?.[run.choices.indexOf(choice.id)];
+            choice.powerWarning = powerWarning(user, choice.floors, choice.id === 'rewind' || AUGMENTS.find(a => a.id === choice.id)?.acquire?.forceElite || AUGMENTS.find(a => a.id === choice.id)?.quest?.forceElite || run.forceElite ? 'elite' : 'normal');
+        }
         for (const choice of result.run.event?.choices || []) choice.powerWarning = eventPowerWarning(user, choice.id);
     }
     return require('./paradise_hell').decorateView(result, user);
 }
-module.exports = { TICKET, MAX_FLOOR, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, view, weeklyInfo, recordFloor, buildWeeklyRanking };
+module.exports = { TICKET, MAX_FLOOR, TIME_LIMIT_MS, CP_ANCHORS, AUGMENTS, RELICS, EVENTS, active, getResources, validateConfig, recommendedPower, equipmentOptions, equipmentMultiplier, applyStats, sumEffects, enter, chooseAugment, rerollAugment, chooseEvent, answerPuzzle, startCombat, rebalanceEnemy, nextEncounter, offerAugments, continueExploration, grantRelic, addEffect, move, heal, onSkillUsed, cooldownMultiplier, prepareAttack, modifyHit, attackMultiplier, afterAttack, incomingMultiplier, onDamageTaken, survive, victory, finish, claim, view, weeklyInfo, recordFloor, buildWeeklyRanking, remainingTime, isTimedOut, advanceTime };

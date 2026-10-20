@@ -299,3 +299,94 @@ test('삼색·첫 주문·세 빛 수집·삼중 서약을 실제 기술과 치�
     dot(user); assert.equal(user.paradise.relics.length, 1);
     mechanics.onVictory(user); assert.equal(user.paradise.effects.reward, .03);
 });
+
+test('새 유물의 첫 스킬 보호막·세 스킬 후 평타 배율은 실제 전투와 전투별 한도를 따른다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('skillIgnition'), stats = rpg.calculateUserStats(user);
+    corridor.grantRelic(user, 'starlightSpool'); corridor.grantRelic(user, 'echoBell');
+    await skill(user, '도화선 점화');
+    const amount = Math.round(stats.hp * .10 * (1 + Number(stats.shieldEfficiency || 0)));
+    assert.equal(shields.summary(user.field, Date.now()).amount, amount);
+    shields.absorb(user.field, amount / 2);
+    await skill(user, '도화선 점화'); await skill(user, '도화선 점화');
+    assert.equal(shields.summary(user.field, Date.now()).amount, amount / 2);
+    assert.equal(user.paradise.battle.echoBellReady, true);
+    dot(user); assert.equal(user.paradise.battle.echoBellReady, true);
+    const doubled = hit(user).damage, plain = hit(user).damage;
+    assert.equal(doubled, plain * 2); assert.equal(user.paradise.battle.echoBellReady, false);
+    battle(user); await skill(user, '도화선 점화');
+    assert.equal(shields.summary(user.field, Date.now()).amount, amount);
+    const slot = Object.keys(data.Equipment).find(key => data.Equipment[key].some(item => item.name === '콰트로 1악장'));
+    user.equipments[slot] = { id: data.Equipment[slot].findIndex(item => item.name === '콰트로 1악장'), level: 0 };
+    battle(user); await skill(user, '도화선 점화');
+    assert.equal(shields.summary(user.field, Date.now()).amount, 0);
+});
+
+test('소리굽쇠는 전직·스펙터 궁극기 후 일반 공격 한 번에만 방어력을 무시한다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh(); corridor.grantRelic(user, 'tuningFork'); user.main_card.specter = '빅뱅 스펙터';
+    for (const name of ['유드 알레프', '빅뱅']) {
+        battle(user); user.paradise.enemy.def = 10000;
+        const defended = hit(user).damage;
+        await skill(user, name);
+        assert.equal(user.paradise.battle.tuningForkReady, true);
+        dot(user); assert.equal(user.paradise.battle.tuningForkReady, true);
+        const pierced = hit(user).damage;
+        assert.ok(pierced > defended); assert.equal(user.paradise.battle.tuningForkReady, false);
+        assert.equal(hit(user).damage, defended);
+    }
+});
+
+test('향로·등불은 획득 이후 3승마다 발동하고 회복 봉쇄·시간 회복 2분 한도를 따른다', t => {
+    const user = fresh(); user.paradise.battlesWon = 2;
+    corridor.grantRelic(user, 'meditationCenser'); corridor.grantRelic(user, 'returnLantern');
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
+    user.paradise.clock = { remainingMs: 600000, updatedAt: now, paused: false };
+    const stats = rpg.calculateUserStats(user);
+    resources(user).hp = resources(user).mp = 1;
+    for (let i = 1; i <= 21; i++) {
+        now += 1000; corridor.victory(user, () => .99);
+        if (i === 2) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
+        if (i === 3) {
+            assert.equal(resources(user).hp, 1 + Math.round(stats.hp * .20));
+            assert.equal(resources(user).mp, 1 + Math.round(stats.mp * .20));
+            assert.equal(corridor.remainingTime(user.paradise), 617000);
+            user.paradise.effects.noHealing = 1; resources(user).hp = resources(user).mp = 1;
+        }
+        if (i >= 6) assert.deepEqual([resources(user).hp, resources(user).mp], [1, 1]);
+        if (i < 21) battle(user);
+    }
+    assert.equal(user.paradise.relicState.timeRestored, 120000);
+    assert.equal(corridor.remainingTime(user.paradise), 699000);
+});
+
+test('룬 깃펜은 서로 다른 일반·습득 스킬을 요구하고 궁극기를 제외하며 카드 계약은 최대 2회 준다', async t => {
+    t.mock.method(Math, 'random', () => .99);
+    const user = fresh('skillIgnition', 'skillBulwark'); corridor.grantRelic(user, 'runeQuill');
+    for (let i = 0; i < 4; i++) {
+        battle(user);
+        resources(user).mp = rpg.calculateUserStats(user).mp;
+        await skill(user, '유드 알레프'); await skill(user, '도화선 점화'); await skill(user, '도화선 점화');
+        assert.equal(user.paradise.battle.quillSkills.length, 1);
+        if (i > 0) { await skill(user, '자인'); await skill(user, '유리 방벽'); }
+        corridor.victory(user, () => .99);
+        assert.equal(user.paradise.contracts.filter(c => c.star === 7 && c.type === '일반').length, Math.min(i, 2));
+    }
+    assert.match(user.paradise.rewardReveal.text, /룬 깃펜.*7성 일반/);
+});
+
+test('탐험 시간이 끝나면 자동 피해·거울 행동·일반 공격·스킬보다 귀환 정산을 우선한다', async () => {
+    for (const action of ['basic', 'skill']) {
+        const user = fresh('skillIgnition');
+        user.paradise.clock.updatedAt -= 1000000;
+        const hp = user.paradise.enemy.hp;
+        assert.match(rpg.buildHuntResult(user, {}, 1e10, { isBasic: false, dotAttack: true, summonAttack: true }), /제한 시간/);
+        assert.equal(user.paradise.enemy.hp, hp);
+        assert.equal(rpg.advanceParadiseMirror(user), false);
+        const message = action === 'basic' ? await rpg.useBasicAttackInField(user) : await rpg.useSkillInField(user, '도화선 점화');
+        assert.match(message, /자동 귀환/);
+        assert.equal(user.paradise.outcome, 'timedOut'); assert.equal(user.paradise.claimed, true);
+        assert.equal(user.paradise.enemy.hp, hp); assert.equal(user.field, null);
+        assert.deepEqual([user.hp, user.mp], [19, 7]);
+    }
+});

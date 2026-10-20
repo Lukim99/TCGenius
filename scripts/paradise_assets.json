@@ -170,5 +170,41 @@
   {
     "file": "relic-riftHeart.webp",
     "sha256": "179f552d7c2b6bd93741e9895b2db775e6b593486e73112bb274a4a4a45fe562"
+  },
+  {
+    "file": "relic-meditationCenser.webp",
+    "sha256": "874c8261eab7aa3a2336054f76cc022ecd652fbb0690090bcd9e3566d90e5fd5"
+  },
+  {
+    "file": "relic-starlightSpool.webp",
+    "sha256": "48e6152ff9e547b13f02c1aadd2ef30852548a22cfa228ebc41436f62ccced6f"
+  },
+  {
+    "file": "relic-echoBell.webp",
+    "sha256": "c4d5c24f4181b08ea4488505f163c638c1a9ba5919d460204f6d83ca9ffe0b5f"
+  },
+  {
+    "file": "relic-riftLens.webp",
+    "sha256": "9607577359f029c8904171f5f202f7e17840c1f88d1ed55afa500d9f6c6ea246"
+  },
+  {
+    "file": "relic-returnLantern.webp",
+    "sha256": "64153d1b5f4e8ab8f82f3e7fcc09262f5f655d2bd52179e504a9264eac07ff82"
+  },
+  {
+    "file": "relic-tuningFork.webp",
+    "sha256": "e8784dd445f109bf4752b1788e3105f7349237d83738f43a610edb9de8642bdb"
+  },
+  {
+    "file": "relic-runeQuill.webp",
+    "sha256": "ef3a3ba59c7bfb283a1e7e69d6eda70ebe73b4086539a846dce3469b36d1555c"
+  },
+  {
+    "file": "relic-crystalVial.webp",
+    "sha256": "6f975f5fc2d6ebaf3a156385f8f6a9971e5de071ee20222f08a013e27fa68706"
+  },
+  {
+    "file": "bag.webp",
+    "sha256": "eeb000fc88837e028a277123b324160b0496d390fd6a27da1fcf8ac16c49d2ee"
   }
 ]

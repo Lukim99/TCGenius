@@ -6652,6 +6652,7 @@ function tryEncounterFragment(user, dungeon, lines) {
 }
 
 async function useBasicAttackInField(user, channel) {
+    if (paradise.isTimedOut(user)) { paradise.advanceTime(user); return '제한 시간이 종료되어 천상에서 자동 귀환했습니다.'; }
     if (user.field?.paradise && user.paradise?.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
     if (user && user.name) storeFieldActionEffectIds(user.name, []);
     if (!user.field || !user.field.name) return '❌ 필드에 입장한 상태가 아닙니다.';
@@ -6695,6 +6696,7 @@ async function useBasicAttackInField(user, channel) {
 function getFieldCombatContext(user) {
     if (!user.field || !user.field.name) return { error: '❌ 필드에 입장한 상태가 아닙니다.' };
     if (user.field.paradise) {
+        if (paradise.isTimedOut(user)) return { error: '❌ 탐험 제한 시간이 종료되었습니다.' };
         if (!paradise.active(user) || user.paradise.phase !== 'combat') return { error: '❌ 낙원 화면에서 다음 선택을 완료해주세요.' };
         const enemy = user.paradise.enemy;
         return { type: enemy.kind === 'normal' ? 'normal' : 'elite', dungeon: { ...enemy, hp: enemy.maxHp, elite: { ...enemy, hp: enemy.maxHp } } };
@@ -7484,7 +7486,7 @@ function receiveParadiseDamage(user, received, receivedHits, stats, slots, lines
 function advanceParadiseMirror(user, at = Date.now()) {
     const resources = paradise.getResources(user);
     const run = user.paradise;
-    if (!paradise.active(user) || run.phase !== 'combat' || !run.enemy?.mirror) return false;
+    if (!paradise.active(user) || paradise.isTimedOut(user, at) || run.phase !== 'combat' || !run.enemy?.mirror) return false;
     const enemy = run.enemy, stats = calculateUserStats(user), slots = calculateCardSlotEffects(user), lines = [];
     const result = require('./pvp').corridorMirrorTurn(enemy.mirror, user, stats, enemy.hp,
         (damage, count, time) => receiveParadiseDamage(user, damage, count, stats, slots, lines, time), at);
@@ -7515,6 +7517,7 @@ function buildParadiseHuntResult(user, rawDamage, extra) {
     const resources = paradise.getResources(user);
     const run = user.paradise;
     if (!paradise.active(user) || run.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
+    if (paradise.isTimedOut(user)) return '❌ 탐험 제한 시간이 종료되었습니다.';
     const enemy = run.enemy, field = user.field;
     const presentationHits = [];
     const stats = calculateUserStats(user), slots = calculateCardSlotEffects(user);
@@ -7700,6 +7703,7 @@ async function applyWorldBossDamageAction(user, boss, rawDamage, extra, actionTy
 }
 
 function useSkillInField(user, skillName, channel) {
+    if (paradise.isTimedOut(user)) { paradise.advanceTime(user); return '제한 시간이 종료되어 천상에서 자동 귀환했습니다.'; }
     const resources = paradise.getResources(user);
     if (user.field?.paradise && user.paradise?.phase !== 'combat') return '❌ 낙원 화면에서 다음 선택을 완료해주세요.';
     const blockedSkill = paradiseCharacters.skillBlocked(user);

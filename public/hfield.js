@@ -728,7 +728,7 @@
         topControls(w){const p=w<650?12:22,bw=42,bh=34;this.panel(p,p,bw,bh,'rgba(170,180,194,.45)');this.line(p+25,p+9,p+15,p+17,'#e4e8ed',2);this.line(p+15,p+17,p+25,p+25,'#e4e8ed',2);this.region(p,p,bw,bh,()=>backOrLeave());const x=w-p-bw;this.panel(x,p,bw,bh,'rgba(170,180,194,.45)');const sx=x+20;this.line(sx-7,p+14,sx-2,p+14,'#e4e8ed',2);this.line(sx-2,p+14,sx+4,p+9,'#e4e8ed',2);this.line(sx+4,p+9,sx+4,p+25,'#e4e8ed',2);if(!audio.muted){this.ctx.beginPath();this.ctx.arc(sx+5,p+17,8,-.8,.8);this.ctx.strokeStyle='#e4e8ed';this.ctx.stroke();}else this.line(sx-7,p+9,sx+10,p+26,'#e0655c',2);this.region(x,p,bw,bh,()=>audio.toggle());}
         bossHud(w){
             if(!state||!state.inField)return;
-            const narrow=w<650,bw=Math.min(narrow?w-120:720,w*.72),x=(w-bw)/2,y=embedded?78:narrow?13:16;
+            const narrow=w<650,bw=Math.min(narrow?w-120:720,w*.72),x=(w-bw)/2,y=embedded?(state.paradiseRelics&&w>=700?120:78):narrow?13:16;
             if(regularMode&&state.phase==='normal'){
                 const field=state.activeField||state.currentField||{},kills=Number(state.killCount||0),progress=Math.min(100,kills);
                 this.text(field.name||state.fieldName||'일반 필드',w/2,y+9,narrow?16:20,900,'center','#f7f2e8');

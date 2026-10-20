@@ -168,13 +168,22 @@
             const duration=battle.update(heldBattle,events,next.runId);
             if(duration)battleUntil=performance.now()+duration;
         } else if(upcoming) battle.update(upcoming,events,next.runId);
-        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : ''))]);
+        const key = JSON.stringify([run?.id, run?.phase, run?.event?.id, run?.enemy?.id, run?.offerId || run?.choices?.map(c => c.id), run?.altarUsed, run?.chests?.map(c => c.id + (c.opened ? '!' : ''))]);
         if (key !== sceneKey) { sceneKey = key; sceneAt = Math.max(performance.now(),battleUntil); selection = null; focused = 1; hover = -1; keyboardCard = -1; hoverLevels.fill(0); fall = null; chestPick = null; chestPage = 0; renderer.clearCards(); if (run?.phase === 'augment') setTimeout(()=>{if(state?.run?.phase==='augment')sound('reveal');},Math.max(0,battleUntil-performance.now())); if (run?.altarUsed && run.phase === 'altar') sound('reveal'); }
         // 낙하 결과는 서버 응답 뒤에만 착지 연출로 보여준다.
         const drop = run?.mode === 'hell' ? run.lastDrop : null, dropKey = drop ? [run.id, drop.from, drop.to].join() : '';
         if (drop && state && dropKey !== lastDropKey) { landing = { drop, at: performance.now() }; sound('land'); fall = null; }
         lastDropKey = dropKey;
+        const autoReturn = run?.outcome === 'timedOut' && (state?.run?.id !== run.id || state.run.outcome !== 'timedOut');
         state = next; offset = next.serverTime - Date.now(); activeScene = !run ? 'lobby' : run.phase === 'event' ? run.event.id : run.phase;
+        if (autoReturn) {
+            overlay = null; outcomeReveal = null;
+            if (run.claimed && run.rewardSummary?.length) {
+                rewardReveal = { title: '자동 귀환 보상', items: run.rewardSummary, page: 0, at: performance.now() };
+                rewardReveal.items.forEach(item => { if (item.iconUrl) renderer.image(item.iconUrl); }); sound('reveal');
+            }
+            announce(run.timeoutClaimError || '제한 시간이 종료되어 자동 귀환했습니다.', false);
+        }
         if (!ranking || ranking.week !== next.weekly.week) fetchRanking();
         audio.setScene(run?.status==='active'?(run.mode==='hell'?'hell':'heaven'):null);
         syncPuzzle(); regionKey = '';
@@ -185,14 +194,15 @@
         try {
             const response = await fetch('/api/paradise/' + pending.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending.body) });
             if (response.status === 401) { location.href = '/'; return; } const result = await response.json(); if (result.retryable) throw new Error(result.error);
-            pending = null; if (result.state) accept(result.state); if (result.error) { announce(result.error); selection = null; fall = null; chestPick = null; } else if (result.reveal?.kind === 'rewards') {
+            pending = null; if (result.state) accept(result.state); if (result.error) { if (state.run?.outcome !== 'timedOut' || action === 'claim') announce(result.error); selection = null; fall = null; chestPick = null; } else if (result.reveal?.kind === 'rewards') {
                 rewardReveal = { ...result.reveal, page: 0, at: performance.now() };
                 rewardReveal.items.forEach(item => { if (item.iconUrl) renderer.image(item.iconUrl); });
                 announce('보상을 획득했습니다. ' + result.reveal.items.map(item => `${item.name} ${fmt(item.count)}개`).join(', '), false);
                 sound('reveal');
             } else if (result.reveal) {
                 outcomeReveal = {...result.reveal, at:performance.now()}; announce(result.message, false); sound(result.reveal.positive ? 'reveal' : 'land');
-            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim'].includes(action));
+            } else if (!['attack', 'skill'].includes(action)) announce(result.message, !['enter', 'retire', 'claim', 'reroll'].includes(action));
+            if (!result.error && action === 'reroll') { renderer.clearCards(); sound('reveal'); }
             if (!result.error && action === 'enter' && state.run?.mode !== 'hell') {
                 heavenEntry = { at: performance.now(), ticket: state.ticket.iconUrl };
                 renderer.image(state.ticket.iconUrl); sound('reveal');
@@ -253,8 +263,19 @@
         hitButton(rankX, 16, rankW, 36, '주간 순위', () => { overlay = 'ranking'; overlayPage = 0; fetchRanking(); }, { glyph: mobile ? '순위' : '주간 순위' });
         }
         hitButton(w - 52, 16, 36, 36, audio.muted ? '소리 켜기' : '소리 끄기', () => audio.toggle(), { glyph: '♪', strike: audio.muted, size: 15 });
+        if (run?.status === 'active' && run.timer) {
+            const ms = Math.max(0, run.timer.remainingMs - (run.timer.paused ? 0 : now() - state.serverTime)), seconds = Math.ceil(ms / 1000);
+            const label = `${run.timer.paused ? 'Ⅱ  ' : ''}${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+            text(ctx, label, mobile ? (w < 360 ? w - 16 : rankX - 12) : w / 2, mobile && w < 360 ? 67 : 29, mobile ? 13 : 16, run.timer.paused ? '#9dd7cf' : seconds <= 60 ? '#f18b88' : '#e3dccb', mobile ? 'right' : 'center', 700);
+        }
         if (run?.status === 'active') {
-            if (!hell) hitButton(16, h - 52, mobile ? 112 : 144, 36, '유물 · 증강 · 계약', () => { overlay = 'inventory'; overlayPage = 0; }, { size: mobile ? 12 : 14 });
+            if (!hell) {
+                const hovered = inside(14, h - 62, 48, 48);
+                ctx.save(); ctx.shadowColor = '#e5c57d'; ctx.shadowBlur = hovered ? 14 : 3;
+                iconAt(asset('bag'), 18, h - 58, 40); ctx.restore();
+                register(14, h - 62, 48, 48, '가방 열기', () => { overlay = 'inventory'; overlayPage = 0; });
+                if (!mobile) relicStrip(w);
+            }
             if (hell || run.canReturn) hitButton(w - (mobile ? 96 : 112), h - 52, mobile ? 80 : 96, 36, hell ? '탐험 포기' : '귀환', () => { overlay = 'retire'; });
         }
         if (message && t < messageUntil && !overlay) {
@@ -265,6 +286,25 @@
             const rows=wrap(ctx,message,width-32,14,12), height=rows.length*21+24, top=Math.max(64,ty-height+40);
             panel(ctx, (w - width) / 2, top, width, height, { alpha: .96, r: 3 });
             rows.forEach((row,i)=>text(ctx,row,w/2,top+22+i*21,14,'#efe7d2','center',500));
+        }
+    }
+    function relicStrip(w) {
+        const relics = state.run.relics, step = Math.min(42, (w - 32) / Math.max(1, relics.length)), size = step - 4, y = 65;
+        let tooltip = null;
+        relics.forEach((relic, i) => {
+            const x = 16 + i * step, hovered = inside(x, y, step, size);
+            ctx.save(); ctx.globalAlpha = relic.spent ? .35 : 1;
+            ctx.shadowColor = '#e6ce8b'; ctx.shadowBlur = hovered ? 12 : 2;
+            iconAt(relic.iconUrl, x + 2, y, size); ctx.restore();
+            register(x, y, step, size, `${relic.name} · ${relic.desc}${relic.spent ? ' · 사용 완료' : ''}`, () => { inventoryTab = 'relics'; overlay = 'inventory'; overlayPage = 0; });
+            if (hovered && !overlay) tooltip = { relic, x };
+        });
+        if (tooltip) {
+            const width = 286, x = Math.min(w - width - 16, tooltip.x), top = y + size + 10, relic = tooltip.relic;
+            const rows = wrap(ctx, relic.desc, width - 28, 13, 8);
+            panel(ctx, x, top, width, 46 + rows.length * 20, { alpha: .97, edge: '#bfa76b88', r: 3 });
+            text(ctx, relic.name + (relic.spent ? ' · 사용 완료' : ''), x + 14, top + 23, 15, '#edd59a', 'left', 700);
+            rows.forEach((row, i) => text(ctx, row, x + 14, top + 48 + i * 20, 13, '#dce1e1', 'left', 500));
         }
     }
     function compactNotice(value, w, h, t, until, color, maxLines, dismiss) {
@@ -447,8 +487,8 @@
     }
     function cardGeometry(w, h) {
         if (w < 700) { const cardW = Math.min(w - 84, 300), y = 104; return { mobile: true, cardW, cardH: Math.min(cardW / .6, h - y - 160), y }; }
-        const cardW = Math.min(clamp(h - 270, 320, 560) * .6, (w - 200) / 3), cardH = cardW / .6;
-        return { mobile: false, cardW, cardH, y: Math.max(148, h / 2 - cardH / 2 + 16) };
+        const cardW = Math.min(clamp(h - 290, 210, 540) * .6, (w - 200) / 3), cardH = cardW / .6;
+        return { mobile: false, cardW, cardH, y: Math.max(164, h / 2 - cardH / 2 + 8) };
     }
     function cardLayouts(w, h, t) {
         const { mobile, cardW, cardH, y } = cardGeometry(w, h);
@@ -493,14 +533,16 @@
             renderer.quad(renderer.card(card.choice, geo.cardW, geo.cardH), card.x, card.y, card.w, card.h, [brightness, brightness, brightness, card.alpha]);
             if(amount>.01&&!mobile){ctx.save();ctx.globalAlpha=amount*.55;chamfer(ctx,card.x+1,card.y+1,card.w-2,card.h-2,12);ctx.strokeStyle=colors[card.choice.rarity]||colors.gold;ctx.lineWidth=2;ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=14;ctx.stroke();ctx.restore();}
             register(Math.max(0, card.slotX), card.slotY, Math.min(w, card.slotX + card.slotW) - Math.max(0, card.slotX), card.slotH, `${tier[card.choice.rarity] || '증강'} ${card.choice.name} · ${card.choice.desc} · ${card.choice.floors > 0 ? '+' : ''}${card.choice.floors}층${warnLabel(card.choice.powerWarning)}`, () => mobile && focused !== card.i ? (focused = card.i, sound('tap')) : choose(card.choice, card.i), !!selection || t-sceneAt<460);
-
+            if (!mobile) hitButton(card.slotX + card.slotW / 2 - 48, geo.y + geo.cardH + 12, 96, 36, `${card.choice.name} 새로고침`, () => mutate('reroll', { choice: card.choice.id }), { glyph: card.choice.canReroll ? '↻  1' : '↻  0', size: 18, disabled: !card.choice.canReroll || !!selection || t-sceneAt<460 });
         }
         if (mobile) {
             const dotsY = geo.y + geo.cardH + 18;
             if(count>1)hitButton(w / 2 - 86, dotsY - 18, 40, 36, '이전 증강', () => { focused = (focused + count - 1) % count; }, { glyph: '‹', size: 20 });
             for (let i = 0; i < count; i++) { ctx.beginPath(); ctx.arc(w / 2 + (i - (count-1)/2) * 16, dotsY, i === focused ? 4 : 3, 0, Math.PI * 2); ctx.fillStyle = i === focused ? '#f0d58e' : 'rgba(255,255,255,.3)'; ctx.fill(); }
             if(count>1)hitButton(w / 2 + 46, dotsY - 18, 40, 36, '다음 증강', () => { focused = (focused + 1) % count; }, { glyph: '›', size: 20 });
-            hitButton(w / 2 - 120, h - 116, 240, 48, '이 증강 선택', () => choose(state.run.choices[focused], focused), { primary: true, size: 16, disabled: !!selection });
+            const choice = state.run.choices[focused];
+            hitButton(w / 2 - 134, h - 116, 66, 48, `${choice.name} 새로고침`, () => mutate('reroll', { choice: choice.id }), { glyph: choice.canReroll ? '↻ 1' : '↻ 0', size: 18, disabled: !choice.canReroll || !!selection });
+            hitButton(w / 2 - 58, h - 116, 192, 48, '이 증강 선택', () => choose(choice, focused), { primary: true, size: 16, disabled: !!selection });
         }
         if (selection) { const p = clamp((t - selection.started) / 430, 0, 1); ctx.fillStyle = `rgba(255,232,180,${Math.sin(p * Math.PI) * .1})`; ctx.fillRect(0, 0, w, h); }
     }
@@ -508,7 +550,7 @@
         if (!snapshot?.run?.enemy || !snapshot.battle) return null;
         const run=snapshot.run, enemy=run.enemy, sprite=enemy.sprite;
         return { ...snapshot.battle, serverNow:snapshot.serverTime, inField:true, phase:'elite',
-            nextActionAt:run.nextActionAt, combatLog:run.combatLog, target:enemy,
+            nextActionAt:run.nextActionAt, combatLog:run.combatLog, target:enemy, paradiseRelics: run.mode !== 'hell' && run.relics.length > 0,
             activeField:{backgroundUrl:asset(run.mode==='hell'?'hell':'corridor'),monster:typeof sprite==='string'?{spriteUrl:sprite}:sprite||{}} };
     }
     function combat(w, h, t) {
@@ -564,7 +606,7 @@
     }
     function ended(w, h) {
         const run = state.run, mobile = w < 700, y0 = h * .14 + (mobile ? 28 : 0);
-        text(ctx, run.outcome === 'cleared' ? '회랑 정복' : run.outcome === 'defeated' ? '전투 패배' : '탐험 종료', w / 2, y0, mobile ? 20 : 24, '#ece0c4', 'center', 700);
+        text(ctx, run.outcome === 'cleared' ? '회랑 정복' : run.outcome === 'defeated' ? '전투 패배' : run.outcome === 'timedOut' ? '시간 종료 · 자동 귀환' : '탐험 종료', w / 2, y0, mobile ? 20 : 24, '#ece0c4', 'center', 700);
         text(ctx, run.highestFloor || run.clearedFloor || run.floor, w / 2, y0 + 66, mobile ? 56 : 72, '#f2d58a', 'center', 800); text(ctx, '도달층', w / 2, y0 + 112, 13, '#b8bfc2', 'center', 600);
         const stats = [['클리어', run.clearedFloor + '층'], ['승리', run.battlesWon + '회'], ['정예 처치', run.elitesWon + '회']], sw = Math.min(140, (w - 56) / 3), sy = y0 + 140;
         stats.forEach(([label, value], i) => { const x = w / 2 - sw / 2 + (i - 1) * (sw + 12); panel(ctx, x, sy, sw, 64, { alpha: .78 }); text(ctx, value, x + sw / 2, sy + 25, 18, '#f5ecd6', 'center', 700, sw - 12); text(ctx, label, x + sw / 2, sy + 47, 12, '#9fabb1', 'center', 500); });
@@ -574,6 +616,7 @@
         if (rewards.length) rewards.slice(0, rows).forEach((reward, i) => text(ctx, reward, (w - rw) / 2 + 18, ry + 46 + i * 26, 15, '#f0d99e', 'left', 600, rw - 36));
         else text(ctx, run.outcome === 'defeated' ? '패배하여 탐험 보상과 계약 보상을 잃었습니다.' : run.canReturn ? '귀환하여 보상을 정산해주세요.' : '지급할 보상이 없습니다.', (w - rw) / 2 + 18, ry + 46, mobile ? 13 : 15, '#b8c0c3', 'left', 500, rw - 36);
         const label = run.canReturn ? '귀환하고 정산' : run.canClaim ? '종료 보상 수령' : '낙원으로 돌아가기';
+        if (run.timeoutClaimError) paragraph(ctx, run.timeoutClaimError, (w - rw) / 2 + 12, Math.min(ry + rh + 22, h - 172), rw - 24, 12, '#edb27c', 18, 3);
         hitButton(w / 2 - 130, h - 108, 260, 50, label, () => {
             if (run.canReturn) mutate('retire');
             else if (run.canClaim) mutate('claim');
@@ -831,7 +874,7 @@
             const used = paragraph(ctx, '탐험을 종료하고 획득한 계약과 보상을 정산합니다. 입장권은 반환되지 않습니다.', x + 24, y + 96, bw - 48, 16, '#dde3e3', 26, 4);
             text(ctx, '주간 최고 도달층은 보존됩니다.', x + 24, y + 96 + used + 10, 14, '#e2cf9c', 'left', 600); hitButton(w / 2 - 120, y + bh - 128, 240, 48, '귀환하고 정산', () => { overlay = null; mutate('retire'); }, { primary: true, size: 15 }); hitButton(w / 2 - 120, y + bh - 68, 240, 44, '탐험 계속', () => { overlay = null; syncPuzzle(); });
         } else {
-            const lines = ['입장권 1장으로 1층부터 시작합니다. HP와 MP는 다음 전투로 이어집니다.', '전투와 사건 뒤, 세 개의 증강 중 하나를 선택합니다. 장비 전용 증강은 실제 장착한 장비만 등장합니다.', '더 큰 도약과 위험한 계약은 뒤틀림을 높입니다. 100이 되면 회랑이 붕괴합니다.', '증강 선택 단계에서 귀환해야 보상과 계약을 정산할 수 있습니다. 전투에서 패배하면 보상을 잃습니다. 999층 정복 후에도 귀환해주세요.', '기본 보상과 입장권 획득처는 운영자 설정에 따릅니다. 주간 기록은 매주 월요일 0시 초기화됩니다.']; let yy = y + 92; for (const value of lines) yy += paragraph(ctx, value, x + 24, yy, bw - 48, 15, '#d3dbdc', 23, 4) + 14;
+            const lines = ['입장권 1장으로 1층부터 시작합니다. HP와 MP는 다음 전투로 이어집니다.', '전투와 사건 뒤, 세 개의 증강 중 하나를 선택합니다. 선택지는 각각 한 번씩 새로고침할 수 있습니다.', '탐험 제한 시간은 15분이며 증강 선택 중에는 멈춥니다. 시간이 끝나면 자동 귀환하고 획득한 보상을 정산합니다.', '큰 도약과 위험한 계약은 뒤틀림을 높입니다. 100이 되면 회랑이 붕괴합니다.', '직접 귀환은 증강 선택 단계에서만 가능합니다. 전투에서 패배하면 보상을 잃습니다. 999층 정복 후에도 귀환해주세요.', '기본 보상과 입장권 획득처는 운영자 설정에 따릅니다. 주간 기록은 매주 월요일 0시 초기화됩니다.']; let yy = y + 92; for (const value of lines) yy += paragraph(ctx, value, x + 24, yy, bw - 48, 15, '#d3dbdc', 23, 4) + 14;
         }
     }
     function syncRegions() {
@@ -881,6 +924,6 @@
         if (state.run.phase === 'descent') descend(side < 0 ? 'left' : 'right'); else if (state.run.phase === 'chests' && !chestPick) chestPage += side; });
     document.addEventListener('visibilitychange', () => { audio.visibility();if(!document.hidden)fetchState();else{battle.reset();battleUntil=0;} });
     addEventListener('pagehide',()=>audio.stop());
-    setInterval(() => { if (state?.run?.phase === 'combat' || state && state.weekly.resetsAt <= now()) fetchState(); }, 1000);
+    setInterval(() => { if (state?.run?.status === 'active' && (state.run.phase === 'combat' || state.run.timer && (!state.run.timer.paused || state.run.timer.remainingMs <= 0)) || state && state.weekly.resetsAt <= now()) fetchState(); }, 1000);
     fetchState(); requestAnimationFrame(frame);
 })();

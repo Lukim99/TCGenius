@@ -1323,3 +1323,141 @@ test('주간 순위 보상은 참가상을 더해 우편 발송하고 재시작�
     assert.equal(winner.garnet, 2000);
     for (let i = 1; i <= 6; i++) persisted.delete('weekly-' + i);
 });
+
+test('15분은 전투·이벤트·퍼즐에서 흐르고 증강 선택·새로고침·재접속 중에는 멈춘다', async t => {
+    const user = await reset();
+    let now = Date.now(); t.mock.method(Date, 'now', () => now);
+    corridor.enter(user, () => .99);
+    assert.equal(corridor.view(user).run.timer.remainingMs, 900000);
+    now += 60000; corridor.victory(user, () => .99);
+    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 840000, paused: true });
+    const round = user.paradise.offerId;
+    now += 3600000;
+    assert.equal(corridor.rerollAugment(user, user.paradise.choices[0], () => .4).error, undefined);
+    assert.equal(user.paradise.offerId, round);
+    assert.equal(corridor.remainingTime(structuredClone(user.paradise)), 840000);
+    assert.equal(corridor.advanceTime(user), false);
+    user.paradise.choices = ['firstStrike']; corridor.chooseAugment(user, 'firstStrike', () => 0);
+    assert.equal(user.paradise.phase, 'event');
+    assert.equal(corridor.view(user).run.timer.paused, false);
+    now += 20000; forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve');
+    now += 10000;
+    corridor.answerPuzzle(user, null);
+    assert.deepEqual(corridor.view(user).run.timer, { remainingMs: 810000, paused: true });
+});
+
+test('증강 자리마다 1회만 새로고침하며 중복·획득·장착 조건과 동시 요청을 검증한다', async () => {
+    const user = await reset(); corridor.enter(user); corridor.victory(user, () => .99);
+    user.paradise.relics.push('riftLens'); user.paradise.distortion = 10;
+    user.paradise.acquired.lastStand = 1;
+    const initial = [...user.paradise.choices], remaining = corridor.remainingTime(user.paradise);
+    await user.save();
+    let view = (await request('/api/paradise')).data;
+    const body = { ...bodyFor(view), choice: initial[0] };
+    const [a, b] = await Promise.all([request('/api/paradise/reroll', body), request('/api/paradise/reroll', body)]);
+    assert.equal(a.status, 200); assert.equal(b.status, 200);
+    assert.deepEqual(a.data.state.run.choices, b.data.state.run.choices);
+    view = b.data.state;
+    assert.deepEqual(view.run.choices.map(c => c.canReroll), [false, true, true]);
+    assert.deepEqual(view.run.choices.slice(1).map(c => c.id), initial.slice(1));
+    assert.ok(!initial.includes(view.run.choices[0].id));
+    assert.equal(view.run.choices[0].equipment, undefined);
+    assert.notEqual(view.run.choices[0].id, 'lastStand');
+    assert.equal(view.run.distortion, 8); assert.equal(view.run.timer.remainingMs, remaining);
+    const again = await request('/api/paradise/reroll', { ...bodyFor(view), choice: view.run.choices[0].id });
+    assert.equal(again.status, 400); assert.match(again.data.error, /이미 새로고침/);
+    for (const index of [1, 2]) {
+        const result = await request('/api/paradise/reroll', { ...bodyFor(view), choice: view.run.choices[index].id });
+        assert.equal(result.status, 200); view = result.data.state;
+    }
+    assert.equal(new Set(view.run.choices.map(c => c.id)).size, 3);
+    assert.deepEqual(view.run.choices.map(c => c.canReroll), [false, false, false]);
+    const latest = await rpg.getRPGUserByName(account.name);
+    const seen = latest.paradise.offerSeen;
+    assert.equal(new Set(seen).size, 6);
+    corridor.startCombat(latest); corridor.victory(latest);
+    assert.deepEqual(corridor.view(latest).run.choices.map(c => c.canReroll), [true, true, true]);
+});
+
+test('새로고침할 후보가 소진되면 횟수를 쓰지 않고 지옥·전투 중 새로고침은 거절한다', async t => {
+    const user = await reset(); corridor.enter(user);
+    assert.match(corridor.rerollAugment(user, 'firstStrike').error, /선택 단계/);
+    corridor.offerAugments(user);
+    user.paradise.offerSeen = corridor.AUGMENTS.map(a => a.id);
+    assert.match(corridor.rerollAugment(user, user.paradise.choices[0]).error, /새로 제시/);
+    assert.deepEqual(user.paradise.rerolled, [false, false, false]);
+    assert.ok(corridor.view(user).run.choices.every(c => !c.canReroll));
+    const env = setupHell(t), hellUser = await env.user(); env.hell.enter(hellUser, env.hell.KEYS[0].name);
+    assert.match(corridor.rerollAugment(hellUser, 'firstStrike').error, /선택 단계/);
+    assert.equal(corridor.view(hellUser).run.timer, null);
+    assert.equal(corridor.advanceTime(hellUser), false);
+});
+
+test('시간 만료는 전투·이벤트·퍼즐에서도 자동 귀환하고 동시 조회·재요청에 한 번만 정산한다', async () => {
+    for (const phase of ['combat', 'event', 'puzzle']) {
+        const user = await reset(); corridor.enter(user);
+        const outside = [user.hp, user.mp];
+        user.paradise.floor = user.paradise.clearedFloor = user.paradise.highestFloor = 100;
+        user.paradise.battlesWon = user.paradise.rewardUnits = 1;
+        user.paradise.contracts.push({ star: 5, type: '전직', name: '5성 전직 카드' });
+        if (phase !== 'combat') { forceEvent(user, 'puzzle'); if (phase === 'puzzle') corridor.chooseEvent(user, 'solve'); }
+        const before = Number(user.gold || 0);
+        user.paradise.clock = { remainingMs: 100, updatedAt: Date.now() - 1000, paused: false };
+        await user.save();
+        const results = await Promise.all([request('/api/paradise'), request('/api/paradise')]);
+        for (const result of results) {
+            assert.equal(result.status, 200);
+            assert.equal(result.data.run.outcome, 'timedOut');
+            assert.equal(result.data.run.claimed, true);
+            assert.equal(result.data.run.phase, 'ended');
+            assert.ok(result.data.run.rewardSummary.length > 0);
+        }
+        const saved = await rpg.getRPGUserByName(account.name);
+        assert.equal(saved.gold - before, 10000); assert.equal(saved.inventory.card.length, 1);
+        assert.equal(saved.field, null); assert.deepEqual([saved.hp, saved.mp], outside);
+        const claim = await request('/api/paradise/claim', bodyFor(results[1].data));
+        assert.equal(claim.status, 200);
+        assert.equal(saved.gold - before, 10000); assert.equal(saved.inventory.card.length, 1);
+    }
+});
+
+test('시간 만료 시 카드 공간 부족은 미수령 보상으로 보존하며 진행 중 구형 탐험은 15분을 부여한다', async () => {
+    const user = await reset(); corridor.enter(user);
+    delete user.paradise.clock;
+    user.paradise.startedAt = Date.now() - 86400000;
+    assert.equal(corridor.advanceTime(user), true);
+    assert.ok(corridor.remainingTime(user.paradise) > 899000);
+    user.paradise.contracts.push({ star: 5, type: '전직', name: '5성 전직 카드' });
+    user.maxCardLimit = 1; user.inventory.card.push({ id: 0, star: 5, type: '일반' });
+    user.paradise.clock.updatedAt = Date.now() - 1000000;
+    assert.equal(corridor.advanceTime(user), true);
+    assert.equal(user.paradise.outcome, 'timedOut'); assert.ok(!user.paradise.claimed);
+    assert.match(corridor.view(user).run.timeoutClaimError, /보관함 공간/);
+    assert.equal(corridor.view(user).run.canClaim, true);
+    user.inventory.card.length = 0;
+    assert.equal(corridor.claim(user).error, undefined);
+    assert.equal(corridor.view(user).run.timeoutClaimError, null);
+    assert.equal(user.inventory.card.length, 1);
+});
+
+test('유물 설명을 문장으로 통일하고 퍼즐 유물은 성공할 때만 회복·최대 15% 보상을 준다', async () => {
+    assert.ok(corridor.RELICS.length >= 22);
+    assert.ok(corridor.RELICS.every(r => /합니다\.$/.test(r.desc) && r.iconUrl.includes('relic-')));
+    assert.ok(corridor.AUGMENTS.every(a => !a.name.startsWith('패시브:')));
+    const user = await reset(); corridor.enter(user); user.paradise.relics.push('crystalVial');
+    const stats = rpg.calculateUserStats(user);
+    for (let i = 0; i < 4; i++) {
+        forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve');
+        corridor.getResources(user).hp = corridor.getResources(user).mp = 1;
+        corridor.answerPuzzle(user, user.paradise.event.puzzle.solution, () => .99);
+        assert.equal(corridor.getResources(user).hp, 1 + Math.round(stats.hp * .15));
+        assert.equal(corridor.getResources(user).mp, 1 + Math.round(stats.mp * .15));
+    }
+    assert.ok(Math.abs(user.paradise.effects.reward - .15) < 1e-9);
+    forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve'); corridor.getResources(user).hp = 1;
+    corridor.answerPuzzle(user, null);
+    assert.equal(corridor.getResources(user).hp, 1);
+    forceEvent(user, 'puzzle'); corridor.chooseEvent(user, 'solve'); user.paradise.effects.noHealing = 1;
+    corridor.answerPuzzle(user, user.paradise.event.puzzle.solution);
+    assert.equal(corridor.getResources(user).hp, 1);
+});

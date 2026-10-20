@@ -6,12 +6,13 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
     const weeklyRewards = require('./paradise_rewards');
     weeklyRewards.startWeeklyRewards();
     const advanceCombat = async user => {
+        const timeAdvanced = corridor.advanceTime(user);
         const resourcesAdded = corridor.active(user) && !user.paradise.resources;
         if (resourcesAdded) { corridor.getResources(user); user.paradise.revision++; }
         const chestLimitChanged = hell.normalizeChestSelection(user);
         const rebalanced = corridor.rebalanceEnemy(user);
         const advanced = rpgenius.advanceParadiseMirror(user);
-        if (!resourcesAdded && !chestLimitChanged && !rebalanced && !advanced) return;
+        if (!timeAdvanced && !resourcesAdded && !chestLimitChanged && !rebalanced && !advanced) return;
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
@@ -81,7 +82,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
             res.json(corridor.buildWeeklyRanking(await rpgenius.getAllRPGUsers(), user));
         } catch (error) { console.error('[paradise ranking]', error.message); res.status(500).json({ error: '주간 랭킹을 불러오지 못했습니다.' }); }
     });
-    for (const action of ['enter', 'augment', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'descend', 'altar', 'continue', 'chest']) {
+    for (const action of ['enter', 'augment', 'reroll', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'descend', 'altar', 'continue', 'chest']) {
         server.post('/api/paradise/' + action, requireUser, async (req, res) => {
             const body = req.body || {};
             if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
@@ -106,6 +107,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     else if (action === 'continue') result = user.paradise.mode === 'hell' ? hell.continueAltar(user) : corridor.continueExploration(user);
                     else if (action === 'chest') result = hell.openChest(user, body.chest);
                     else if (action === 'augment') result = corridor.chooseAugment(user, body.choice);
+                    else if (action === 'reroll') result = corridor.rerollAugment(user, body.choice);
                     else if (action === 'event') result = corridor.chooseEvent(user, body.choice);
                     else if (action === 'puzzle') result = corridor.answerPuzzle(user, body.skip === true ? null : body.answer);
                     else if (action === 'claim') result = corridor.claim(user);

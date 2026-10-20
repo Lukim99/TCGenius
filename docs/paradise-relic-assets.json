@@ -71,6 +71,51 @@
       "id": "riftHeart",
       "file": "DB/RPGenius/ui/낙원/relic-riftHeart.webp",
       "prompt": "Use case: stylized-concept. Asset type: a single premium fantasy RPG inventory relic icon. Painterly polished game item rendering, crisp readable silhouette, rich tactile metal and gemstone detail, coherent celestial/dark fantasy treasure style. One isolated object centered on a square transparent canvas, no background or ground, no frame, no label, no letters, no watermark. Keep the entire object and subtle glow inside the central 58% of the canvas, with generous even transparent padding (about 21% on every side) matching existing RPG item icons. Strong readable small-icon lighting. Subject: The Heart of the Rift relic: a jagged faceted violet crystal heart encircled by two broken floating black-gold arcs, a luminous cyan crack through its center, intense contained magical energy. Crystal artifact, not an anatomical organ."
+    },
+    {
+      "id": "meditationCenser",
+      "file": "DB/RPGenius/ui/낙원/relic-meditationCenser.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: An antique celestial bronze incense censer with three short feet, pierced star openings, pale teal light within and one delicate twisting trail of silver vapor."
+    },
+    {
+      "id": "starlightSpool",
+      "file": "DB/RPGenius/ui/낙원/relic-starlightSpool.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A small silver spool wrapped in luminous blue-gold silk thread, a crescent-shaped silver spindle and a few elegant loose glowing threads."
+    },
+    {
+      "id": "echoBell",
+      "file": "DB/RPGenius/ui/낙원/relic-echoBell.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A weathered golden handbell with a sapphire clapper and elegant etched concentric rings, slightly tilted with a subtle blue resonance glow."
+    },
+    {
+      "id": "riftLens",
+      "file": "DB/RPGenius/ui/낙원/relic-riftLens.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: An ornate obsidian and silver handheld magnifying lens containing a luminous violet hairline fracture, a short dark grip, clean strong silhouette."
+    },
+    {
+      "id": "returnLantern",
+      "file": "DB/RPGenius/ui/낙원/relic-returnLantern.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A small antique brass lantern holding a floating cyan star flame, graceful arched handle, faint warm gold edge light and deep blue glass."
+    },
+    {
+      "id": "tuningFork",
+      "file": "DB/RPGenius/ui/낙원/relic-tuningFork.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A ceremonial silver tuning fork with two long golden-edged prongs, a luminous amethyst at the junction, a compact carved handle, gentle violet resonance."
+    },
+    {
+      "id": "runeQuill",
+      "file": "DB/RPGenius/ui/낙원/relic-runeQuill.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A single elegant white-to-midnight-blue feather quill, golden writing tip and silver ornamental collar, tiny glowing cyan motes, no writing."
+    },
+    {
+      "id": "crystalVial",
+      "file": "DB/RPGenius/ui/낙원/relic-crystalVial.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A faceted pale blue crystal vial holding glowing dawn dew, a tiny golden stopper and fine gold leaf collar, soft pearlescent pink-blue light."
+    },
+    {
+      "id": "bag",
+      "file": "DB/RPGenius/ui/낙원/bag.webp",
+      "prompt": "Use case: stylized-concept. Create one premium fantasy RPG inventory icon, painterly polished game art, crisp readable silhouette, tactile metal and gemstone details matching celestial dark-fantasy relics. A single isolated object centered on a square transparent canvas. No background, ground, frame, label, letters, numbers, watermark, or extra objects. Entire object and subtle glow must stay in the central 58% of the image with even transparent padding on all sides. Strong legibility at small icon size. Subject: A compact well-worn dark brown adventurer backpack with two shoulder straps, an elegant brass buckle and a small glowing cyan crystal clasp, front three-quarter view, premium game inventory bag icon."
     }
   ]
 }
