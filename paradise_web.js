@@ -12,6 +12,14 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
         await rpgenius.commitProtectedUserChange(user, keys);
     };
+    const rewardView = (reward, user) => {
+        const card = reward.kind === 'card' ? serializeCard(reward.card, user) : null;
+        return { kind: reward.kind, name: card?.name || reward.name, count: reward.count,
+            iconUrl: reward.kind === 'item' ? getItemIconUrl(rpgenius.getDataCache('Item', [])[reward.id])
+                : reward.kind === 'gold' ? '/item-image?dir=' + encodeURIComponent('화폐') + '&file=' + encodeURIComponent('골드.png') : card?.imageUrl || null,
+            ...(card ? { star: card.starText, cardType: card.type } : {}) };
+    };
+    const revealView = (reveal, user) => reveal?.kind === 'rewards' ? { ...reveal, items: reveal.items.map(reward => rewardView(reward, user)) } : reveal || null;
     const state = user => {
         const view = corridor.view(user);
         view.player.card = serializeCard(user.main_card, user);
@@ -20,8 +28,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
         if (view.run) view.run.combatLog = user.paradise.combatLog || [];
         if (view.run) view.run.combatEvents = user.paradise.combatEvents || [];
         if (view.run?.phase === 'combat') view.battle = getCombatView(user);
-        if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => ({ ...reward,
-            iconUrl: reward.kind === 'item' ? getItemIconUrl(rpgenius.getDataCache('Item', [])[reward.id]) : serializeCard(reward.card, user)?.imageUrl }));
+        if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => rewardView(reward, user));
         if (view.run) for (const choice of view.run.choices) if (choice.equipment) {
             const equipped = rpgenius.getEquippedEquipmentData(user).find(e => e.data.name === choice.equipment);
             if (equipped) choice.iconUrl = getEquipmentIconUrl(equipped.data);
@@ -67,7 +74,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     const receipt = user.paradiseReceipt;
                     if (receipt?.id === body.requestId) {
                         if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
-                        return { ok: true, message: receipt.message, reveal: receipt.reveal || null, state: state(user) };
+                        return { ok: true, message: receipt.message, reveal: revealView(receipt.reveal, user), state: state(user) };
                     }
                     if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
                     if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
@@ -108,7 +115,7 @@ function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, ser
                     // 입장권, 탐험 전이, 카드/재화 정산을 동일한 유저 문서에 조건부 저장한다.
                     const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
                     await rpgenius.commitProtectedUserChange(user, keys);
-                    return { ok: true, message: result.message, reveal: result.reveal || null, state: state(user) };
+                    return { ok: true, message: result.message, reveal: revealView(result.reveal, user), state: state(user) };
                 });
                 res.status(payload.error ? payload.stale ? 409 : 400 : 200).json(payload);
             } catch (error) {

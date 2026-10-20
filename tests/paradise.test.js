@@ -258,6 +258,12 @@ test('제단 추가 상자는 후보와 개봉 횟수를 함께 늘리고 풍요
         const body = { ...bodyFor(state), chest: state.run.chests[i].id };
         const results = await Promise.all([request('/api/paradise/chest', body), request('/api/paradise/chest', body)]);
         assert.ok(results.every(r => r.status === 200), JSON.stringify(results)); state = (await request('/api/paradise')).data;
+        assert.equal(results[0].data.reveal.kind, 'rewards');
+        assert.deepEqual(results[0].data.reveal, results[1].data.reveal);
+        const stones = results[0].data.reveal.items.find(item => item.name === '상급 강화석');
+        assert.equal(stones.count, i === 4 ? 120 : 40);
+        assert.ok(Object.hasOwn(stones, 'iconUrl')); // 로컬 격리 테스트에는 운영 아이템 이미지가 없다.
+        assert.ok(!results[0].data.reveal.items.some(item => Object.hasOwn(item, 'card')));
     }
     assert.equal(state.run.opensRemaining, 0); assert.equal(state.run.claimed, true);
     assert.equal((await request('/api/paradise/chest', { ...bodyFor(state), chest: firstId })).status, 400);
@@ -427,14 +433,13 @@ test('황금 상자는 희귀 보상을 미리 노출하지 않고 실제 획득
     }
 });
 
-test('증강 도감은 새 등급·장착·유물·계약 조건을 모두 제공한다', async () => {
+test('증강 도감은 모든 증강을 제공하되 등장 조건 안내를 노출하지 않는다', async () => {
     await reset();
     const result = await request('/api/dex/augments');
     assert.equal(result.status, 200);
     assert.equal(result.data.augments.length, 193);
     assert.equal(result.data.augments.filter(a => a.equipment).length, 72);
-    assert.match(result.data.augments.find(a => a.id === 'emptyHand').condition, /유물 3개/);
-    assert.match(result.data.augments.find(a => a.id === 'doubleSignature').condition, /계약/);
+    assert.ok(result.data.augments.every(a => !Object.hasOwn(a, 'condition') && !a.desc.includes('등장')));
     assert.equal(result.data.augments.find(a => a.id === 'sevenBells').rarity, 'prismatic');
 });
 
@@ -556,6 +561,13 @@ test('종료 기본 보상과 5성/9성 계약을 정확한 등급으로 한 번
     const state = (await request('/api/paradise')).data, body = bodyFor(state);
     const result = await request('/api/paradise/claim', body); assert.equal(result.status, 200, JSON.stringify(result.data));
     const repeat = await request('/api/paradise/claim', body); assert.equal(repeat.status, 200);
+    assert.equal(result.data.reveal.kind, 'rewards');
+    assert.equal(result.data.reveal.items[0].count, 2600);
+    assert.deepEqual(result.data.reveal, repeat.data.reveal);
+    const cardRewards = result.data.reveal.items.filter(item => item.kind === 'card');
+    assert.equal(cardRewards.length, 2);
+    assert.ok(cardRewards.every(item => item.iconUrl && item.cardType === '전직' && !Object.hasOwn(item, 'card')));
+    assert.deepEqual((await request('/api/paradise')).data.run.rewardSummary, result.data.reveal.items);
     const latest = await rpg.getRPGUserByName(account.name);
     assert.equal(latest.gold - beforeGold, 2600); assert.deepEqual(latest.inventory.card.map(c => c.star), [4, 8]);
     assert.ok(latest.inventory.card.every(c => c.type === '전직'));

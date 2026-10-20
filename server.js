@@ -1128,9 +1128,8 @@ server.get('/api/dex/potential', requireUser, (req, res) => {
 
 server.get('/api/dex/augments', requireUser, (req, res) => {
     const { AUGMENTS } = require('./paradise_content');
-    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, special, dangerous, requiresEquipment, requiresRelics, requiresCardContract }) => ({
-        id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous,
-        condition: equipment ? equipment + ' 장착 시에만 등장' : requiresEquipment ? '강화 가능한 장비 장착 시 등장' : requiresRelics ? `사용 가능한 일반 회랑 유물 ${requiresRelics}개 이상 보유 시 등장` : requiresCardContract ? '카드 보상 계약 보유 시 등장' : special === 'duplicate' ? '능력치 강화 효과를 획득한 뒤 등장' : null
+    res.json({ augments: AUGMENTS.map(({ id, name, desc, floors, rarity, category, equipment, dangerous }) => ({
+        id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous
     })) });
 });
 

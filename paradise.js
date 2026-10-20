@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES } = require('./paradise_content');
+const EQUIPMENT_AUGMENTS = new Map(AUGMENTS.filter(a => a.equipment).map(a => [a.equipment, a]));
 const wisdom = require('./wisdom_puzzle');
 const rpg = () => require('./rpgenius');
 const TICKET = '천상의 회랑 입장권';
@@ -63,7 +64,10 @@ function equipmentMultiplier(user, name, scope = 'combat') {
     if (!active(user)) return 1;
     const run = user.paradise;
     let multiplier = 1 + Number(run.equipmentPermanent[name] || 0);
-    for (const buff of run.temporary) if (buff.battles > 0 && buff.equipment === name && !(buff.combatOnly && scope !== 'combat')) multiplier *= buff.multiplier;
+    const augment = EQUIPMENT_AUGMENTS.get(name);
+    // 획득 기록으로 적용하므로 업데이트 전에 얻었거나 횟수가 만료된 증강도 탐험 내내 유지한다.
+    if (augment && run.acquired[augment.id] && (scope === 'combat' || augment.staticPassive)) multiplier *= augment.multiplier;
+    for (const buff of run.temporary) if (buff.id !== augment?.id && buff.battles > 0 && buff.equipment === name && !(buff.combatOnly && scope !== 'combat')) multiplier *= buff.multiplier;
     if (has(run, 'sheath') && user.equipments?.weapon && rpg().getEquipmentData('weapon', user.equipments.weapon.id)?.name === name) multiplier += .20;
     return multiplier;
 }
@@ -307,7 +311,6 @@ function chooseAugment(user, id, random = Math.random) {
     if (choice.equipment && !equipmentOptions(user).some(e => e.name === choice.equipment)) return { error: '해당 장비가 장착되어 있지 않습니다.' };
     if (!eligibleAugment(user, choice)) return { error: '이 증강의 장착·유물·계약 조건을 더 이상 만족하지 않습니다.' };
     addEffect(user, choice.effect);
-    if (choice.equipment) run.temporary.push({ id, name: choice.name, equipment: choice.equipment, multiplier: choice.multiplier, battles: choice.battles, combatOnly: !choice.staticPassive });
     switch (choice.special) {
         case 'future': run.temporary.push({ id, name: choice.name, battles: 3, effects: { atk: .50 }, forceEliteAfter: true }); break;
         case 'insurance': run.insurance = true; break;
@@ -805,7 +808,16 @@ function claim(user) {
     }
     user.inventory.card.push(...cards);
     run.claimed = true; run.claimedAt = Date.now(); run.rewards = { rewards, cards };
-    return { message: '종료 보상을 수령했습니다.' };
+    return { message: '종료 보상을 수령했습니다.', reveal: { kind: 'rewards', title: '회랑 보상', items: claimedRewards(run) } };
+}
+function claimedRewards(run) {
+    if (!run.claimed || !run.rewards) return [];
+    const items = rpg().getDataCache('Item', []);
+    return [
+        ...run.rewards.rewards.map(reward => ({ kind: reward.type === '아이템' ? 'item' : reward.type === '골드' ? 'gold' : 'experience',
+            id: reward.type === '아이템' ? items.findIndex(item => item?.name === reward.name) : null, name: reward.name || reward.type, count: reward.count })),
+        ...run.rewards.cards.map(card => ({ kind: 'card', card, name: rpg().formatUserCard(card), count: 1 }))
+    ];
 }
 function view(user) {
     const run = user.paradise, config = rpg().getDataCache('Paradise', null), stats = rpg().calculateUserStats(user);
@@ -818,8 +830,9 @@ function view(user) {
     result.run = { id: run.id, status: run.status, phase: run.phase, floor: run.floor, clearedFloor: run.clearedFloor, distortion: run.distortion, outcome: run.outcome || null, claimed: !!run.claimed, battlesWon: run.battlesWon, elitesWon: run.elitesWon, enemy: run.phase === 'combat' ? enemy : null,
         choices: run.phase === 'augment' ? run.choices.filter(id => !obtainedAugment(run, id)).map(id => AUGMENTS.find(a => a.id === id)).map(({ id, name, desc, floors, rarity, category, equipment, dangerous }) => ({ id, name, desc, floors, rarity, category, equipment, dangerous: !!dangerous })) : [],
         event: run.event ? { id: run.event.id, ...EVENTS[run.event.id], equipment: run.event.equipment || null, choices: run.phase === 'event' ? eventChoices(user) : [], ...(run.phase === 'puzzle' ? { puzzle: run.event.puzzle.publicPuzzle, deadline: run.event.deadline } : {}) } : null,
-        relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
+        relics: run.relics.map(id => ({ ...RELICS.find(r => r.id === id), spent: id === 'feather' && !!run.featherUsed })), effects: Object.entries(run.acquired).map(([id, count]) => ({ ...AUGMENTS.find(a => a.id === id), count })), permanentEffects: sumEffects(run), temporary: run.temporary.filter(buff => !buff.equipment || EQUIPMENT_AUGMENTS.get(buff.equipment)?.id !== buff.id).map(({ name, battles }) => ({ name, battles })), equipmentPermanent: run.equipmentPermanent,
         contracts: run.contracts, quests: (run.quests || []).map(q => ({ name: q.name, remaining: q.remaining, progress: q.progress, target: q.target || q.battles, status: q.status })), history: run.history.slice(0, 20), lastOutcome: run.lastOutcome || null, rewards: previewRewards(run), rewardBonus: run.rewardBonus || 0, nextActionAt: Number(user.field?.nextActionAt || 0),
+        rewardSummary: run.mode === 'hell' ? [] : claimedRewards(run),
         skills: rpg().getMainCardSkills(user).map(({ skill }) => ({ name: skill.name, cost: skill.mp_cost, cooldownEnd: Number(user.field?.skillCooldowns?.[skill.name] || 0) })) };
     if (result.run) {
         if (run.phase === 'augment' && !result.run.choices.length) result.run.continueWarning = powerWarning(user, 5, 'normal');

@@ -163,7 +163,7 @@ function openChest(user, id) {
     }
     chest.opened = true; run.opensRemaining--;
     if (!run.opensRemaining) { run.claimed = true; run.claimedAt = Date.now(); run.phase = 'ended'; }
-    return { message: chest.name + ' 개봉' };
+    return { message: chest.name + ' 개봉', reveal: { kind: 'rewards', title: chest.name, rich: chest.rich, items: structuredClone(chest.loot) } };
 }
 function decorateView(view, user) {
     const config = rpg().getDataCache('Paradise', null)?.hell, items = rpg().getDataCache('Item', []);

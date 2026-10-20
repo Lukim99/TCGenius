@@ -8197,8 +8197,7 @@ function dexAugmentCard(entry) {
             el('h3', null, entry.name),
             el('span', { class: 'dex-augment-floors' + (entry.floors < 0 ? ' descending' : '') }, (entry.floors > 0 ? '+' : '') + entry.floors + '층')),
         el('div', { class: 'dex-augment-meta' }, [AUGMENT_RARITIES[entry.rarity], AUGMENT_CATEGORIES[entry.category], entry.equipment ? '장착 전용' : null].filter(Boolean).join(' · ')),
-        el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc)),
-        entry.condition ? el('div', { class: 'dex-augment-condition' }, entry.condition) : null
+        el('div', { class: 'dex-augment-effect' }, dexRichText(entry.desc))
     );
 }
 

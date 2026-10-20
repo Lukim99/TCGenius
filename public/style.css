@@ -571,7 +571,6 @@ h2{margin:0 0 16px;font-size:16px;font-weight:700;letter-spacing:.01em;color:var
 .dex-augment-floors{flex:none;padding-top:2px;color:#e8ca89;font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums}.dex-augment-floors.descending{color:#9ebbd7}
 .dex-augment-meta{margin-top:6px;color:var(--augment-tone);font-size:11px;line-height:1.5}
 .dex-augment-effect{margin-top:16px;color:var(--text-2);font-size:13px;line-height:1.8;word-break:keep-all;overflow-wrap:anywhere}.dex-augment-effect strong{color:var(--text);font-weight:650}
-.dex-augment-condition{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);color:var(--text-2);font-size:11px;line-height:1.6;word-break:keep-all}
 @media(max-width:640px){.dex-augment-card{padding:15px}.dex-collection-toolbar:has(+.dex-augment-note){gap:10px}.dex-collection-toolbar:has(+.dex-augment-note) input{max-width:none;min-width:0;flex-basis:100%}.dex-collection-toolbar:has(+.dex-augment-note) .dex-collection-filters{flex:1 1 100%}.dex-collection-toolbar:has(+.dex-augment-note) .dex-collection-filters button{flex:1;padding:7px 8px;white-space:nowrap}}
 .dex-title-current{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border-strong);border-radius:10px;overflow:hidden;background:var(--panel)}
 .dex-title-current section{min-width:0;padding:18px 22px}

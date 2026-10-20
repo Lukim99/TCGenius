@@ -42,7 +42,7 @@ const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8
 const equipmentAdditions = corridor.AUGMENTS.filter(a => a.equipment).slice(22);
 const adventure = require('../paradise_augments_adventure');
 function equipped(id, stage = 1) {
-    const augment = equipmentAdditions.find(a => a.id === id);
+    const augment = corridor.AUGMENTS.find(a => a.id === id);
     const user = fresh();
     const [slot, list] = Object.entries(data.Equipment).find(([, list]) => Array.isArray(list) && list.some(e => e.name === augment.equipment));
     const index = list.findIndex(e => e.name === augment.equipment), definition = list[index];
@@ -54,10 +54,10 @@ function equipped(id, stage = 1) {
     return user;
 }
 
-test('새 장비 증강 50개는 유효 장착 조건·만료·중복 제한을 지키며 원본 장비를 변경하지 않는다', () => {
+test('장비 증강 72개는 유효 장착 조건·중복 제한을 지키며 탐험이 끝날 때까지 유지된다', () => {
     assert.equal(equipmentAdditions.length, 50);
     const originals = structuredClone(rpg.getDataCache('Equipment', {}));
-    for (const augment of equipmentAdditions) {
+    for (const augment of corridor.AUGMENTS.filter(a => a.equipment)) {
         const user = equipped(augment.id);
         // 이 장비 증강만 남겨 추첨 확률에 의존하지 않고 노출 여부를 확인한다.
         for (const other of corridor.AUGMENTS) if (other.id !== augment.id) user.paradise.acquired[other.id] = 1;
@@ -74,14 +74,39 @@ test('새 장비 증강 50개는 유효 장착 조건·만료·중복 제한을 
         corridor.offerAugments(user, () => 0); assert.deepEqual(user.paradise.choices, [augment.id]);
         assert.ok(!choose(user, augment.id).error, augment.id);
         close(corridor.equipmentMultiplier(user, augment.equipment), augment.multiplier);
-        for (let i = 0; i < augment.battles; i++) {
+        for (let i = 0; i < 5; i++) {
             corridor.startCombat(user, 'normal', null, () => .99);
             corridor.victory(user, () => .99);
+            close(corridor.equipmentMultiplier(user, augment.equipment), augment.multiplier);
         }
-        assert.equal(corridor.equipmentMultiplier(user, augment.equipment), 1);
         assert.ok(!user.paradise.choices.includes(augment.id));
+        corridor.finish(user);
+        assert.equal(corridor.equipmentMultiplier(user, augment.equipment), 1);
     }
     assert.deepEqual(rpg.getDataCache('Equipment', {}), originals);
+});
+
+test('기존 장비 증강은 중복 적용 없이 영구화하며 대장장이 강화만 만료되고 거울 거래는 증강을 제거한다', () => {
+    const user = equipped('manaHat'), name = '마나번 햇';
+    user.paradise.acquired.manaHat = 1;
+    user.paradise.temporary.push(
+        { id: 'manaHat', name: name + ' 강화', equipment: name, multiplier: 2, battles: 1, combatOnly: true },
+        { id: 'forge', name: name + ' · 대장장이 강화', equipment: name, multiplier: 2, battles: 3 }
+    );
+    assert.equal(corridor.equipmentMultiplier(user, name), 4);
+    assert.equal(corridor.equipmentMultiplier(user, name, 'static'), 2);
+    assert.deepEqual(corridor.view(user).run.temporary.map(b => b.name), [name + ' · 대장장이 강화']);
+    for (let i = 0; i < 3; i++) {
+        corridor.startCombat(user, 'normal', null, () => .99); corridor.victory(user, () => .99);
+        assert.equal(corridor.equipmentMultiplier(user, name), i < 2 ? 4 : 2);
+    }
+    const restored = structuredClone(user.paradise);
+    user.paradise = restored;
+    assert.equal(corridor.equipmentMultiplier(user, name), 2);
+    assert.equal(corridor.equipmentMultiplier(user, name, 'static'), 1);
+    user.paradise.phase = 'event'; user.paradise.event = { id: 'mirror' };
+    corridor.chooseEvent(user, 'trade', {}, () => .99);
+    assert.equal(corridor.equipmentMultiplier(user, name), 1);
 });
 
 test('상시·조건부 장비 패시브 증강은 1·3단계 실제 스탯을 강화하고 기본 공격력·체력·방어력은 보존한다', () => {
