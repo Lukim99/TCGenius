@@ -39,9 +39,8 @@ function enter(user, keyName, random = Math.random) {
     const key = KEYS.find(key => key.name === keyName), items = rpg().getDataCache('Item', []), id = items.findIndex(item => item?.name === keyName);
     if (!key || id < 0 || rpg().getInventoryItemCount(user, id) < 1) return { error: '보유한 지옥 열쇠를 선택해주세요.' };
     const stats = rpg().calculateUserStats(user);
-    if (Number(user.hp ?? stats.hp) <= 1) return { error: 'HP를 회복한 후 입장해주세요.' };
     rpg().removeInventoryItem(user, id, 1);
-    user.hp = Math.min(stats.hp, Number(user.hp ?? stats.hp)); user.mp = Math.min(stats.mp, Number(user.mp ?? stats.mp));
+    user.hp = stats.hp; user.mp = stats.mp;
     user.paradise = { id: crypto.randomUUID(), revision: 0, mode: 'hell', status: 'active', phase: 'combat', floor: 1, highestFloor: 1, clearedFloor: 0,
         effects: {}, relics: [], temporary: [], equipmentPermanent: {}, history: [], acquired: {}, contracts: [], choices: [], distortion: 0,
         battlesWon: 0, elitesWon: 0, rewardUnits: 0, eliteUnits: 0, startedAt: Date.now(), baseRewards: [], milestoneRewards: [],

@@ -186,6 +186,32 @@ test('지옥 낙하는 1~20층, 로켓은 16~20층이며 100층에 멈추고 천
     for (const floor of [1,9,10,19,20,90,99,100]) assert.equal(env.hell.recommendedPower(floor), 30000 * (1 + Math.floor(floor / 10)));
 });
 
+test('지옥은 모든 열쇠로 HP·MP 100% 입장하며 낙하·입장 재전송·입장 실패로 회복하지 않는다', async t => {
+    const env = setupHell(t);
+    for (const key of env.hell.KEYS) {
+        const user = await env.user(key.name); user.hp = 1; user.mp = 0; await user.save();
+        const before = (await request('/api/paradise')).data, body = { ...bodyFor(before), mode: 'hell', key: key.name };
+        const result = await request('/api/paradise/enter', body);
+        assert.equal(result.status, 200, JSON.stringify(result.data));
+        assert.equal(result.data.state.player.hp, result.data.state.player.maxHp);
+        assert.equal(result.data.state.player.mp, result.data.state.player.maxMp);
+        const saved = await rpg.getRPGUserByName(account.name);
+        assert.equal(persisted.get(account.id).hp, result.data.state.player.maxHp);
+        assert.equal(persisted.get(account.id).mp, result.data.state.player.maxMp);
+        saved.hp = 10; saved.mp = 0; await saved.save();
+        const retry = await request('/api/paradise/enter', body);
+        assert.equal(retry.status, 200);
+        assert.equal(retry.data.state.player.hp, 10); assert.equal(retry.data.state.player.mp, 0);
+        corridor.victory(saved); env.hell.descend(saved, 'left', () => 0);
+        assert.equal(saved.hp, 10); assert.equal(saved.mp, 0);
+        assert.equal(saved.paradise.phase, 'combat');
+        const blocked = await env.user(key.name); blocked.hp = 1; blocked.mp = 0;
+        rpg.removeInventoryItem(blocked, env.items.findIndex(item => item.name === key.name), 2);
+        assert.ok(env.hell.enter(blocked, key.name).error);
+        assert.equal(blocked.hp, 1); assert.equal(blocked.mp, 0);
+    }
+});
+
 test('지옥 11의 배수에는 제단만 나오고 40/20/20/20 구간 및 추가 낙하가 적용된다', async t => {
     const env = setupHell(t);
     for (const floor of [11,22,33,44,55,66,77,88,99]) {

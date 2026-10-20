@@ -675,7 +675,7 @@
         });
         if (!list.length) text(ctx, '획득한 보상이 없습니다.', w / 2, ry + 37, 15, '#b8b0aa', 'center');
         if (pages > 1) { const py = ry + rh - 46; hitButton(rx + 12, py, 64, 36, '이전', () => chestPage--, { disabled: chestPage <= 0, size: 13 }); text(ctx, `${chestPage + 1} / ${pages}`, w / 2, py + 18, 14, '#c9bdb2', 'center', 600); hitButton(rx + rw - 76, py, 64, 36, '다음', () => chestPage++, { disabled: chestPage >= pages - 1, size: 13 }); }
-        hitButton(w / 2 - 130, h - 108, 260, 50, '로비로', () => { state.run = null; activeScene = 'lobby'; sceneKey = ''; }, { primary: true, size: 16 });
+        hitButton(w / 2 - 130, h - 108, 260, 50, '낙원으로 돌아가기', () => { state.run = null; activeScene = 'lobby'; sceneKey = ''; }, { primary: true, size: 16 });
     }
     function drawOverlay(w, h) {
         const keys = state.hell?.keys || [], hell = state.run?.mode === 'hell';
