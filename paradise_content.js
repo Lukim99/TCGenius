@@ -1,0 +1,86 @@
+// 회랑에서만 사용하는 강화·유물. 운영 아이템/장비 정의를 수정하지 않는다.
+const a = (id, name, floors, desc, effect, options = {}) => ({ id, name, floors, desc, effect, rarity: 'gold', ...options });
+const AUGMENTS = [
+    a('lastStand', '최후의 저항', 8, 'HP 30% 이하일 때 최종 피해 +40%', { lastStand: 1 }),
+    a('firstStrike', '첫 번째 일격', 10, '매 전투 첫 공격의 피해량 2배', { firstStrike: 1 }),
+    a('execution', '처형자의 낙인', 12, 'HP 20% 이하인 적에게 피해 +50%', { execution: 1 }),
+    a('unyielding', '불굴의 의지', 6, '전투당 한 번, 치명적인 피해를 받으면 HP 1로 생존', { unyielding: 1 }),
+    a('manaCycle', '마력 순환', 8, '스킬 사용 시 소비한 MP의 20% 회복', { manaCycle: 1 }),
+    a('focus', '완벽한 집중', 12, '치명타마다 치명타 피해 +5%, 최대 50%', { focus: 1 }),
+    a('thirst', '피의 갈증', 15, '적 처치 시 최대 HP 10% 회복', { thirst: 1 }),
+    a('risk', '위험한 거래', 15, '현재 HP가 낮을수록 공격력 증가, 최대 +50%', { risk: 1 }),
+    a('combo', '연격의 달인', 10, '최대 연격 +1, 공격력 -10%', { maxCmb: 1, atk: -.10 }),
+    a('comeback', '역전의 용사', 5, '받은 피해가 최대 HP의 10%일 때마다 다음 공격 피해 +5%, 최대 +30%', { comeback: 1 }),
+    a('future', '미래의 대가', -10, '다음 3회 전투 공격력 +50%, 이후 엘리트 강제 등장', {}, { special: 'future', dangerous: true, rarity: 'cursed' }),
+    a('insurance', '회랑의 보험', 12, '다음 전투에서 사망해도 한 번만 HP 30%로 부활', {}, { special: 'insurance' }),
+    a('duplicate', '복제된 축복', 15, '직전에 획득한 능력치 강화 효과를 50% 추가 획득', {}, { special: 'duplicate', rarity: 'prismatic' }),
+    a('devil', '악마의 거래', 20, '공격력 +25%, 이후 HP·MP를 포함한 모든 회복 효과 무효화', { atk: .25, noHealing: 1 }, { dangerous: true, rarity: 'cursed' }),
+    a('forbidden', '금지된 힘', 25, '다음 전투 모든 스킬 쿨타임 50% 감소, 받는 피해 +50%', {}, { special: 'forbidden', dangerous: true, rarity: 'cursed' }),
+    a('rewind', '시간 역행', -15, 'HP·MP 전부 회복, 다음 전투 엘리트 확정', {}, { special: 'rewind' }),
+    a('gambler', '회랑의 도박사', 15, '50% 확률로 공격력 +30%, 50% 확률로 공격력 -20%', {}, { special: 'gambler' }),
+    a('cursedTreasure', '저주받은 보물', 20, '종료 보상 +30%, 다음 엘리트 공격력 +50%', { reward: .30 }, { special: 'cursedTreasure', dangerous: true, rarity: 'cursed' }),
+    a('greed', '탐욕의 인장', 10, '앞으로 3회 전투를 모두 승리하면 종료 보상 +20%', {}, { special: 'greed' }),
+    a('contract', '신비한 계약', 3, '종료 시 5성 전직 카드 1장 확정 획득', {}, { special: 'contract', rarity: 'prismatic' }),
+    ...[
+        ['staff', '쿠루미의 힘이 깃든 지팡이', 5, 2, '장비 패시브 효과', 2],
+        ['manaHat', '마나번 햇', 8, 3, '공격력 증가 효과', 2],
+        ['bloodHat', '핏빛 모자', -3, 2, '공격력 증가 효과', 2],
+        ['lottery', '메가카운트 추첨기', 10, 3, '공격 관련 추첨 효과', 2],
+        ['dice', '운명의 주사위', 12, 3, '치명타 관련 효과', 1.5],
+        ['necklace', '쿨다운 목걸이', 5, 3, '일반 공격 피해 증가 효과', 2],
+        ['shoes', '심해의 신발', 10, 3, '스킬 쿨타임 감소 효과', 2],
+        ['encore', '앵콜', 12, 3, '치명타 시 공격력 증가 효과', 2],
+        ['dropout', '왓 타임 이즈 잇 나우', 8, 3, '낙오 중첩의 치명타 피해 및 소모 시 추가 피해', 2],
+        ['beginner', 'Lv1 초보', 15, 2, '끝판왕 피해 증가·저체력 최종 피해 증가 효과', 1.5],
+        ['filter', '정수 필터망', 6, 3, '청정수 투척의 관통 및 수속성 피해 증가 효과', 2],
+        ['bribe', '비리의 맛', 8, 3, '비리 후 일반 공격 증가 및 암속성 추가 피해', 2],
+        ['charm', '치명적인 매력', 10, 3, '비리의 치명타 피해 전환 비율', 1.5],
+        ['liberation', '해방의 열쇠', 10, 3, '추첨으로 얻는 공격력·속성 강화·저항 효과', 2],
+        ['kingmaker', '킹메이커 팔찌', 8, 3, '공격 시 적 방어력 감소 효과', 2],
+        ['prism', '레인보우 프리즘', 12, 3, '조건부 최종 피해 및 프리즘 추가 공격', 1.5],
+        ['foreshadow', '예고의 예고', 6, 3, '두 번째 공격마다 추가 피해 효과', 2],
+        ['foreshadowCrit', '예고의 예고의 예고', 6, 3, '세 번째 공격마다 치명타 확률 증가 효과', 2],
+        ['deepArmor', '심해의 갑옷', 5, 3, '스킬 사용 시 보호막 획득량', 2],
+        ['deepHat', '심해의 모자', 6, 3, '스킬 사용 후 다음 일반 공격 피해 증가 효과', 2],
+        ['monorail', '모노레일 타이머', 7, 3, '15초간 스킬 미사용 후 치명타 피해 증가 효과', 2],
+        ['coupled', '결합 타이머', 9, 3, '10초간 스킬 미사용 후 추가 피해 증가 효과', 2]
+    ].map(([id, equipment, floors, battles, label, multiplier]) => a(id, equipment + ' 강화', floors,
+        `다음 ${battles}회 전투에서 ${label} ${multiplier}배`, {}, { equipment, battles, multiplier })),
+    a('ironSkin', '천상의 갑주', 6, '방어력 +20%, 받는 피해 -5%', { def: .20, taken: -.05 }, { rarity: 'silver', category: 'defense' }),
+    a('breath', '고요한 숨결', 5, '최대 MP +20%, 즉시 MP 20% 회복', { mp: .20 }, { special: 'breath', rarity: 'silver', category: 'defense' }),
+    a('pilgrim', '순례자의 축복', 8, '최대 HP +15%, 즉시 HP 15% 회복', { hp: .15 }, { special: 'pilgrim', rarity: 'silver', category: 'defense' }),
+    a('blade', '빛의 칼날', 10, '공격력 +12%', { atk: .12 }, { rarity: 'silver' }),
+    a('clarity', '균열의 통찰', 5, '최종 피해 +10%, 뒤틀림 -10', { final: .10 }, { special: 'clarity' }),
+    a('glass', '유리 날개', 30, '최종 피해 +35%, 최대 HP -20%', { final: .35, hp: -.20 }, { dangerous: true, rarity: 'cursed' }),
+    a('rest', '길 잃은 별빛', -5, 'HP·MP 30% 회복', {}, { special: 'rest', rarity: 'silver', category: 'defense' })
+];
+
+const RELICS = [
+    ['crown', '피 묻은 왕관', '엘리트 처치 시 최대 HP 15% 회복'],
+    ['compass', '낡은 나침반', '층수 감소 선택 시 공격력 +4%, 최대 20%'],
+    ['ring', '탐욕의 반지', '20층 이상 이동하는 선택 시 종료 보상 +5%, 최대 25%'],
+    ['clock', '깨진 시계', '매 전투 첫 스킬 쿨타임 50% 감소'],
+    ['feather', '불사의 깃털', '치명적인 피해를 탐험당 한 번 방지하고 HP 30% 회복'],
+    ['orb', '마력의 구슬', '전투 시작 시 MP 30% 회복'],
+    ['dice', '도박사의 주사위', '확률형 이벤트 성공 확률 +10%p'],
+    ['redContract', '붉은 계약서', '최대 HP -20%, 최종 피해 +20%'],
+    ['key', '회랑의 열쇠', '보물 이벤트에서 좋은 보상 등장 확률 +15%p'],
+    ['hourglass', '뒤집힌 모래시계', '다음 전투 적 공격력 -30%, 전투 후 소멸'],
+    ['sheath', '잊혀진 검집', '장착 무기의 수치형 패시브 효과 +20%'],
+    ['necklace', '저주받은 목걸이', '받는 피해 +15%, 엘리트 처치 보상 2배'],
+    ['judgment', '심판자의 성흔', '최종 피해 +35%, 종료 보상 +50% · 심판자 전용'],
+    ['riftHeart', '균열의 심장', '공격력 +40%, 받는 피해 -15%, 종료 보상 +75% · 붕괴 보스 전용']
+].map(([id, name, desc]) => ({ id, name, desc, special: ['judgment', 'riftHeart'].includes(id) }));
+
+const EVENTS = {
+    puzzle: { title: '현자의 봉인', story: '부서진 석판 위로 문양이 떠오릅니다. 짧은 시간 안에 봉인을 풀어야 합니다.', quote: '정답은 언제나 그 안에 있다.' },
+    casino: { title: '잊혀진 도박장', story: '회랑 한가운데 오래된 카지노가 나타납니다. 낡은 테이블에서 도박사가 말을 겁니다.', quote: '운을 시험할 자신이 있나?' },
+    forge: { title: '미쳐버린 대장장이', story: '회랑 한구석에서 망치 소리가 들립니다. 대장장이가 당신의 장비를 바라봅니다.', quote: '그 장비… 내가 더 강하게 만들어줄 수 있지.' },
+    mirror: { title: '거울 속의 자신', story: '거대한 거울에 자신의 모습이 비칩니다. 그런데 거울 속의 자신이 움직이기 시작합니다.', quote: '너보다 내가 이 힘을 더 잘 사용할 수 있어.' },
+    chests: { title: '세 개의 상자', story: '당신 앞에 세 개의 상자가 놓여 있습니다. 각각 다른 문양이 새겨져 있습니다.', quote: '한 번 열린 운명은 되돌릴 수 없다.' },
+    judge: { title: '회랑의 심판자', story: '검은 갑옷을 입은 심판자가 길을 막습니다. 검 끝에서 무거운 심판의 빛이 흘러나옵니다.', quote: '네 힘을 증명해 보아라.' },
+    well: { title: '피로 물든 우물', story: '오래된 우물에서 붉은 물이 흘러나옵니다. 우물 속에서 목소리가 들려옵니다.', quote: '네 생명을 바친다면 더 큰 힘을 주겠다.' },
+    collapse: { title: '회랑이 붕괴하기 시작합니다!', story: '천상이 갈라지고 발밑의 별들이 추락합니다. 뒤틀린 회랑이 마지막 선택을 요구합니다.', quote: '돌아갈 것인가, 균열 너머로 나아갈 것인가.' }
+};
+const EQUIPMENT_NAMES = AUGMENTS.filter(a => a.equipment).map(a => a.equipment);
+module.exports = { AUGMENTS, RELICS, EVENTS, EQUIPMENT_NAMES };

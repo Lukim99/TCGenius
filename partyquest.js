@@ -1768,6 +1768,7 @@ async function createRoom(hostName, questId, password) {
     try {
         const user = await rpgenius.getRPGUserByName(hostName);
         if (!user) return { error: '캐릭터 정보를 불러올 수 없습니다.' };
+        if (user.field?.paradise) return { error: '낙원 탐험을 마친 후 이용해주세요.' };
         const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
         if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;
@@ -1842,6 +1843,7 @@ async function joinRoom(roomId, name, password) {
     try {
         const user = await rpgenius.getRPGUserByName(name);
         if (!user || !quest) return { error: '레이드 입장 정보를 불러올 수 없습니다.' };
+        if (user.field?.paradise) return { error: '낙원 탐험을 마친 후 이용해주세요.' };
         const unlockError = rpgenius.getRaidUnlockError(user, quest.id);
         if (unlockError) return { error: unlockError };
         const level = user ? Number(user.level || 1) : 1;

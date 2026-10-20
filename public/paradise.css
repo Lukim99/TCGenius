@@ -1,0 +1,12 @@
+@font-face{font-family:ParadiseSans;src:url('/static/fonts/pretendard/PretendardVariable.woff2') format('woff2-variations'),url('/static/fonts/pretendard/PretendardVariable.woff2') format('woff2');font-weight:45 920;font-style:normal;font-display:swap}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#06090d;color:#efe9dc;font-family:ParadiseSans,Pretendard,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;touch-action:manipulation;-webkit-font-smoothing:antialiased}
+#paradiseRoot{position:fixed;inset:0;overflow:hidden}#paScene,#paHud,#paControls{position:absolute;inset:0;width:100%;height:100%}#paScene{z-index:0}#paHud{z-index:1;pointer-events:none}#paControls{z-index:2;pointer-events:none}
+#paControls button{position:absolute;pointer-events:auto;background:transparent;border:0;padding:0;color:transparent;cursor:pointer;border-radius:4px;-webkit-tap-highlight-color:transparent}
+#paControls button:disabled{cursor:default}#paControls button:focus-visible{outline:2px solid #f0d58e;outline-offset:2px;background:#fff1c80d}#paControls button:focus:not(:focus-visible){outline:0}
+#paPuzzle{position:absolute;z-index:3;left:50%;top:45%;transform:translateX(-50%);display:grid;gap:6px;max-width:92vw}#paPuzzle[hidden]{display:none}
+#paPuzzle input{width:44px;height:48px;border:1px solid #e8d29a59;background:#0c1218e6;color:#f6eedb;text-align:center;font:650 20px ParadiseSans,'Malgun Gothic',sans-serif;border-radius:8px;outline-offset:2px;box-shadow:inset 0 1px 0 #ffffff12}
+#paPuzzle input:focus{outline:2px solid #f0d58e;border-color:#f0d58e}#paPuzzle input[readonly]{color:#d6c48e;background:#ffffff0f;border-color:#ffffff1f}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#paFatal{position:absolute;inset:20%;z-index:4;padding:28px;background:#0c1218f5;border:1px solid #ffffff24;border-radius:14px;line-height:1.7;font-size:15px}#paFatal[hidden]{display:none}
+#paFatal button{font:600 15px ParadiseSans,'Malgun Gothic',sans-serif;color:#1d1608;background:linear-gradient(#f0d18a,#b98a3e);border:0;border-radius:10px;padding:12px 22px;margin-top:12px;cursor:pointer}
+@media(max-width:600px){#paPuzzle input{width:38px;height:44px;font-size:18px}#paFatal{inset:15% 5%}}

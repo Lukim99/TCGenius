@@ -1,0 +1,90 @@
+const corridor = require('./paradise');
+const hell = require('./paradise_hell');
+
+function registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getCharacterSprite, getMonsterSprite, getEquipmentIconUrl, getItemIconUrl }) {
+    const weeklyRewards = require('./paradise_rewards');
+    weeklyRewards.startWeeklyRewards();
+    const state = user => {
+        const view = corridor.view(user);
+        view.player.card = serializeCard(user.main_card, user);
+        view.player.sprite = getCharacterSprite(view.player.card);
+        if (view.run?.enemy) view.run.enemy.sprite = view.run.enemy.kind === 'mirror' ? view.player.sprite : getMonsterSprite(view.run.enemy);
+        if (view.run) view.run.combatLog = user.paradise.combatLog || [];
+        if (view.run?.rewardSummary) view.run.rewardSummary = view.run.rewardSummary.map(reward => ({ ...reward,
+            iconUrl: reward.kind === 'item' ? getItemIconUrl(rpgenius.getDataCache('Item', [])[reward.id]) : serializeCard(reward.card, user)?.imageUrl }));
+        if (view.run) for (const choice of view.run.choices) if (choice.equipment) {
+            const equipped = rpgenius.getEquippedEquipmentData(user).find(e => e.data.name === choice.equipment);
+            if (equipped) choice.iconUrl = getEquipmentIconUrl(equipped.data);
+        }
+        return view;
+    };
+    server.get('/paradise', (req, res) => {
+        if (!getSession(req)?.name) return res.redirect('/');
+        res.type('html').send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#05090e"><title>낙원</title><link rel="stylesheet" href="/static/paradise.css"></head><body><main id="paradiseRoot" aria-label="낙원"><canvas id="paScene" aria-hidden="true"></canvas><canvas id="paHud" aria-hidden="true"></canvas><div id="paControls" aria-label="게임 조작"></div><form id="paPuzzle" hidden></form><div id="paLive" class="sr-only" role="status" aria-live="polite"></div><div id="paFatal" hidden></div></main><noscript>낙원에 입장하려면 JavaScript를 켜주세요.</noscript><script src="/static/paradise.js" defer></script></body></html>`);
+    });
+    server.get('/api/paradise', requireUser, async (req, res) => {
+        try {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+            res.setHeader('Cache-Control', 'no-store');
+            res.json(state(user));
+        } catch (error) { console.error('[paradise view]', error.message); res.status(500).json({ error: '회랑 상태를 불러오지 못했습니다.' }); }
+    });
+    server.get('/api/paradise/ranking', requireUser, async (req, res) => {
+        try {
+            const user = await rpgenius.getRPGUserByName(req.session.name);
+            if (!user) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+            res.setHeader('Cache-Control', 'no-store');
+            res.json(corridor.buildWeeklyRanking(await rpgenius.getAllRPGUsers(), user));
+        } catch (error) { console.error('[paradise ranking]', error.message); res.status(500).json({ error: '주간 랭킹을 불러오지 못했습니다.' }); }
+    });
+    for (const action of ['enter', 'augment', 'event', 'puzzle', 'attack', 'skill', 'retire', 'claim', 'descend', 'altar', 'continue', 'chest']) {
+        server.post('/api/paradise/' + action, requireUser, async (req, res) => {
+            const body = req.body || {};
+            if (!/^[a-zA-Z0-9-]{16,80}$/.test(body.requestId || '') || !Number.isSafeInteger(body.revision) || body.revision < 0 || body.runId != null && typeof body.runId !== 'string') return res.status(400).json({ error: '낙원 화면을 새로 열어주세요.' });
+            try {
+                await weeklyRewards.settleWeekly();
+                const seed = await rpgenius.getRPGUserByName(req.session.name);
+                if (!seed) return res.status(404).json({ error: '유저를 찾을 수 없습니다.' });
+                const payload = await rpgenius.enqueueFieldAction(seed, async () => {
+                    const user = await rpgenius.getRPGUserByName(req.session.name);
+                    const receipt = user.paradiseReceipt;
+                    if (receipt?.id === body.requestId) {
+                        if (receipt.action !== action) return { error: '이미 다른 동작에 사용한 요청입니다.' };
+                        return { ok: true, message: receipt.message, state: state(user) };
+                    }
+                    if (Number(user.paradise?.revision || 0) !== body.revision || (user.paradise?.id || null) !== (body.runId || null)) return { error: '다른 화면에서 탐험이 진행되었습니다. 현재 상태를 다시 불러왔습니다.', state: state(user), stale: true };
+                    if (!['enter', 'claim', 'chest'].includes(action) && !corridor.active(user)) return { error: '진행 중인 낙원 탐험이 없습니다.', state: state(user) };
+                    let result;
+                    if (action === 'enter') result = body.mode === 'hell' ? hell.enter(user, body.key) : body.mode && body.mode !== 'heaven' ? { error: '알 수 없는 낙원 입장입니다.' } : corridor.enter(user);
+                    else if (action === 'descend') result = hell.descend(user, body.side);
+                    else if (action === 'altar') result = hell.altar(user);
+                    else if (action === 'continue') result = hell.continueAltar(user);
+                    else if (action === 'chest') result = hell.openChest(user, body.chest);
+                    else if (action === 'augment') result = corridor.chooseAugment(user, body.choice);
+                    else if (action === 'event') result = corridor.chooseEvent(user, body.choice);
+                    else if (action === 'puzzle') result = corridor.answerPuzzle(user, body.skip === true ? null : body.answer);
+                    else if (action === 'claim') result = corridor.claim(user);
+                    else if (action === 'retire') { corridor.finish(user); result = { message: user.paradise.mode === 'hell' ? '지옥에서 귀환했습니다.' : '회랑에서 귀환했습니다. 종료 보상을 수령해주세요.' }; }
+                    else {
+                        if (user.paradise.phase !== 'combat') return { error: '전투 중에만 공격할 수 있습니다.', state: state(user) };
+                        const message = action === 'attack' ? await rpgenius.useBasicAttackInField(user) : await rpgenius.useSkillInField(user, typeof body.skill === 'string' ? body.skill : '');
+                        result = String(message).startsWith('❌') ? { error: String(message).replace(/^❌\s*/, '') } : { message };
+                    }
+                    if (result.error) return { ...result, state: state(user) };
+                    user.paradise.revision++;
+                    user.paradiseReceipt = { id: body.requestId, action, message: result.message || '완료' };
+                    // 입장권, 탐험 전이, 카드/재화 정산을 동일한 유저 문서에 조건부 저장한다.
+                    const keys = Object.keys(user).filter(key => key !== 'id' && !key.startsWith('__') && user[key] !== undefined && typeof user[key] !== 'function');
+                    await rpgenius.commitProtectedUserChange(user, keys);
+                    return { ok: true, message: result.message, state: state(user) };
+                });
+                res.status(payload.error ? payload.stale ? 409 : 400 : 200).json(payload);
+            } catch (error) {
+                console.error('[paradise ' + action + ']', error.message);
+                res.status(503).json({ error: '저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해주세요.', retryable: true });
+            }
+        });
+    }
+}
+module.exports = { registerParadiseRoutes };

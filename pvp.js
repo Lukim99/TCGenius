@@ -2144,6 +2144,7 @@ async function buyExtraPlay(user) {
 // ===== 전투 시작 =====
 
 async function startBattle(user, opponentName) {
+    if (user.field?.paradise) return { ok: false, message: '낙원 탐험을 마친 후 이용해주세요.' };
     const state = ensurePvpState(user);
     await ensureDaily(user);
     advanceBattle(user); // 방치된 전투는 시간 초과로 먼저 정리한다
@@ -2432,7 +2433,60 @@ async function buildPvpOverview(user) {
     };
 }
 
+// 회랑의 거울은 PVP의 스킬·패시브 AI를 재사용한다. 랭킹·일일 횟수·PVP 보상은 생성하지 않는다.
+function createCorridorMirror(user) {
+    const side = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), DEFAULT_RULES);
+    side.name = '거울 속의 ' + user.name;
+    side.maxHp = side.hp = Number(side.snapshot.stats.hp);
+    side.enteredAt = Date.now();
+    return side;
+}
+function getCorridorMirrorStats(side) { return getLiveEquipmentStats(side, Date.now()); }
+function corridorMirrorHit(side, user, damage, extra) {
+    const t = Date.now(); expireSide(side, t);
+    // 방어/보호막/피해 반사 등은 기존 PVP 방어 파이프라인으로 처리한다. 공격은 솔로 엔진이 이미 계산했다.
+    const actor = makeSide(user, { stats: { hp: Number(user.hp), mp: 0, atk: 0 }, slotEffects: {}, skillIndexes: [], equipment: { entries: [], setCounts: {} }, passiveIds: [], elementChain: {} }, null);
+    actor.hp = actor.maxHp = Number(user.hp); actor.enteredAt = t;
+    const result = dealDamage(actor, side, damage, { precalculatedDamage: true, disableEquipmentBonusDamage: true, summonAttack: !!extra.summonAttack, dotAttack: !!extra.dotAttack }, t);
+    return { ...result, hp: side.hp, reflectedDamage: Math.max(0, Number(user.hp) - actor.hp) };
+}
+function corridorMirrorTurn(side, user, stats, hp) {
+    const t = Date.now();
+    const target = makeSide(user, buildSideSnapshot(user, equippedDeck(user)), null);
+    target.snapshot.stats = structuredClone(stats);
+    const beforeHp = Number(user.hp);
+    target.maxHp = stats.hp; target.hp = beforeHp; target.maxMp = stats.mp; target.mp = Number(user.mp);
+    // 실제 HP 감소·보호막·회랑 부활은 솔로 전투가 처리한다. 여기서는 AI가 낸 피해량만 반환한다.
+    target.snapshot.passiveIds = [];
+    target.enteredAt = t;
+    if (side.corridorTargetRuntime) target.runtime = side.corridorTargetRuntime;
+    side.hp = hp;
+    const battle = { me: target, opp: side, seq: 0, events: [] };
+    const actionDue = side.nextActionAt <= t;
+    side.nextActionAt = Math.max(side.nextActionAt, t + 1);
+    for (let step = 0; step < ADVANCE_STEP_LIMIT && target.hp > 0 && side.hp > 0; step++) {
+        const item = nextDueItem(battle, t);
+        if (!item) break;
+        expireStates(battle, item.t);
+        if (item.kind === 'ilionDraw') doIlionDrawTick(battle, item.side, item.t);
+        else if (item.kind === 'kinoSpray') doKinoSprayTick(battle, item.side, item.t);
+        else if (item.kind === 'summon') doSummonTick(battle, item.side, item.t);
+        else if (item.kind === 'mark') doMarkTick(battle, item.side, item.t);
+        else if (item.kind === 'burn') doEquipmentBurnTick(battle, item.side, item.t);
+        else if (item.kind === 'burnExpire') doEquipmentBurnExpire(battle, item.side, item.t);
+        else if (item.kind === 'hellfire') doEquipmentHellfireTick(battle, item.side, item.t);
+        else if (item.kind === 'shadow') doEquipmentShadowTick(battle, item.side, item.t);
+        else if (item.kind === 'dragonRegen') doDragonRegenTick(battle, item.side, item.t);
+        else if (item.kind === 'judgment') doEquipmentJudgment(battle, item.side, item.t);
+    }
+    expireStates(battle, t);
+    if (actionDue && target.hp > 0 && side.hp > 0) doAiAction(battle, t);
+    side.corridorTargetRuntime = target.runtime;
+    return { damage: Math.max(0, beforeHp - target.hp), hp: side.hp, mp: side.mp, messages: battle.events.filter(e => e.actor === 'opp').map(e => e.text).filter(Boolean) };
+}
+
 module.exports = {
+    createCorridorMirror, corridorMirrorTurn, getCorridorMirrorStats, corridorMirrorHit,
     configure,
     ensurePvpState,
     ensureDaily,

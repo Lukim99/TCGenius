@@ -3,6 +3,7 @@ const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
 const rpgenius = require('./rpgenius.js');
+const { registerParadiseRoutes } = require('./paradise_web');
 const shopCatalog = require('./shop_catalog');
 const combatEffects = require('./public/combat-effects.js');
 const ilionCards = require('./ilion_cards');
@@ -1468,6 +1469,12 @@ server.get('/api/inventory/:kind/:name', requireUser, async (req, res) => {
 const EVENT_DICE_ITEM_NAME = '유생의 주사위';
 registerYutRoutes(server, { rpgenius, requireUser, getItemDisplayAssets });
 registerPointMineRoutes(server, { rpgenius, requireUser, getItemDisplayAssets, serializeItemUse });
+registerParadiseRoutes(server, { rpgenius, requireUser, getSession, serializeCard, getItemIconUrl, getEquipmentIconUrl, getCharacterSprite: getHFieldCharacterSprite,
+    getMonsterSprite: enemy => {
+        const atlas = enemy.sourceField === '인트리그미션' ? { atlasUrl: getGeneralFieldAssetUrl('필드/몬스터/인트리그미션.png'), row: 0, rows: 1 } : getGeneralFieldAtlas(enemy.sourceIndex);
+        return atlas ? { ...atlas, column: enemy.kind === 'normal' ? 0 : 1 } : null;
+    }
+});
 registerChuseokRoutes(server, { rpgenius, requireUser });
 
 // 유생의 주사위 이벤트 종료 시각(KST 2026-07-10 23:59). 이후 서버 차원에서 굴리기 차단.
@@ -5153,6 +5160,10 @@ server.put('/api/data/:key', requireAdmin, async (req, res) => {
     const key = String(req.params.key);
     if (!rpgenius.RPGENIUS_DATA_KEYS.includes(key)) return res.status(400).json({ error: '허용되지 않은 키입니다.' });
     if (!req.body || typeof req.body.data == 'undefined') return res.status(400).json({ error: 'data 필드가 비어있습니다.' });
+    if (key === 'Paradise') {
+        const error = require('./paradise').validateConfig(req.body.data);
+        if (error) return res.status(400).json({ error });
+    }
     if (key == 'Equipment') {
         const requiredSlots = ['weapon', 'hat', 'armor', 'pants', 'shoes', 'accessory', 'support', 'artifact'];
         const missingSlots = requiredSlots.filter(slot => !Array.isArray(req.body.data && req.body.data[slot]));
@@ -5825,6 +5836,9 @@ function getAuctionFrameUrl(kind, rarity) {
 
 function getItemIconUrl(item) {
     if (!item || !item.type || !item.name) return null;
+    if (item.name === '천상의 회랑 입장권') return '/static/assets/paradise/ticket.webp';
+    const paradiseRewardIcons = { '천상의 증표': 'heaven-token', '지옥 열쇠': 'hell-key', '화려한 지옥 열쇠': 'hell-key-ornate', '찬란한 지옥 열쇠': 'hell-key-radiant' };
+    if (paradiseRewardIcons[item.name]) return '/static/assets/paradise/' + paradiseRewardIcons[item.name] + '.webp';
     if (item.name === '곡괭이 상자 열쇠') return '/static/assets/point-mine/key.png';
     if (item.name === '윷') return '/item-image?dir=%EC%9D%B4%EB%B2%A4%ED%8A%B8&file=%EC%9C%B7.png';
     if (item.name === '송편') return getItemImageUrl('이벤트', '송편.png');
